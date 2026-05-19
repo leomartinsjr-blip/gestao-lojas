@@ -1,0 +1,1584 @@
+{
+  "nextId": 272,
+  "months": {
+    "2026-05": {
+      "id": 1,
+      "year": 2026,
+      "month": 5
+    },
+    "2026-04": {
+      "id": 37,
+      "year": 2026,
+      "month": 4
+    },
+    "2026-06": {
+      "id": 73,
+      "year": 2026,
+      "month": 6
+    },
+    "2026-07": {
+      "id": 109,
+      "year": 2026,
+      "month": 7
+    },
+    "2026-08": {
+      "id": 145,
+      "year": 2026,
+      "month": 8
+    },
+    "2026-09": {
+      "id": 181,
+      "year": 2026,
+      "month": 9
+    },
+    "2026-10": {
+      "id": 217,
+      "year": 2026,
+      "month": 10
+    }
+  },
+  "cards": {
+    "2026-05-escritorio-performance": {
+      "id": 2,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-escritorio-estoque_marca": {
+      "id": 3,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-escritorio-estoque_grupo": {
+      "id": 4,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-escritorio-pauta": {
+      "id": 5,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-escritorio-pendencias": {
+      "id": 6,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-delrey-performance": {
+      "id": 7,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-delrey-estoque_marca": {
+      "id": 8,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-delrey-estoque_grupo": {
+      "id": 9,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-delrey-pauta": {
+      "id": 10,
+      "content": "",
+      "items": [
+        {
+          "id": 266,
+          "text": "oi",
+          "done": false,
+          "createdAt": "2026-05-19T01:11:06.094Z"
+        }
+      ],
+      "attachments": []
+    },
+    "2026-05-delrey-pendencias": {
+      "id": 11,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-minas-performance": {
+      "id": 12,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-minas-estoque_marca": {
+      "id": 13,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-minas-estoque_grupo": {
+      "id": 14,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-minas-pauta": {
+      "id": 15,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-minas-pendencias": {
+      "id": 16,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-contagem-performance": {
+      "id": 17,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-contagem-estoque_marca": {
+      "id": 18,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-contagem-estoque_grupo": {
+      "id": 19,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-contagem-pauta": {
+      "id": 20,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-contagem-pendencias": {
+      "id": 21,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-estacao-performance": {
+      "id": 22,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-estacao-estoque_marca": {
+      "id": 23,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-estacao-estoque_grupo": {
+      "id": 24,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-estacao-pauta": {
+      "id": 25,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-estacao-pendencias": {
+      "id": 26,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-tommy-performance": {
+      "id": 27,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-tommy-estoque_marca": {
+      "id": 28,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-tommy-estoque_grupo": {
+      "id": 29,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-tommy-pauta": {
+      "id": 30,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-tommy-pendencias": {
+      "id": 31,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-lez-performance": {
+      "id": 32,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-lez-estoque_marca": {
+      "id": 33,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-lez-estoque_grupo": {
+      "id": 34,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-lez-pauta": {
+      "id": 35,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-05-lez-pendencias": {
+      "id": 36,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-escritorio-performance": {
+      "id": 38,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-escritorio-estoque_marca": {
+      "id": 39,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-escritorio-estoque_grupo": {
+      "id": 40,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-escritorio-pauta": {
+      "id": 41,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-escritorio-pendencias": {
+      "id": 42,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-delrey-performance": {
+      "id": 43,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-delrey-estoque_marca": {
+      "id": 44,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-delrey-estoque_grupo": {
+      "id": 45,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-delrey-pauta": {
+      "id": 46,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-delrey-pendencias": {
+      "id": 47,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-minas-performance": {
+      "id": 48,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-minas-estoque_marca": {
+      "id": 49,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-minas-estoque_grupo": {
+      "id": 50,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-minas-pauta": {
+      "id": 51,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-minas-pendencias": {
+      "id": 52,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-contagem-performance": {
+      "id": 53,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-contagem-estoque_marca": {
+      "id": 54,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-contagem-estoque_grupo": {
+      "id": 55,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-contagem-pauta": {
+      "id": 56,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-contagem-pendencias": {
+      "id": 57,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-estacao-performance": {
+      "id": 58,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-estacao-estoque_marca": {
+      "id": 59,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-estacao-estoque_grupo": {
+      "id": 60,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-estacao-pauta": {
+      "id": 61,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-estacao-pendencias": {
+      "id": 62,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-tommy-performance": {
+      "id": 63,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-tommy-estoque_marca": {
+      "id": 64,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-tommy-estoque_grupo": {
+      "id": 65,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-tommy-pauta": {
+      "id": 66,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-tommy-pendencias": {
+      "id": 67,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-lez-performance": {
+      "id": 68,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-lez-estoque_marca": {
+      "id": 69,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-lez-estoque_grupo": {
+      "id": 70,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-lez-pauta": {
+      "id": 71,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-04-lez-pendencias": {
+      "id": 72,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-escritorio-performance": {
+      "id": 74,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-escritorio-estoque_marca": {
+      "id": 75,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-escritorio-estoque_grupo": {
+      "id": 76,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-escritorio-pauta": {
+      "id": 77,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-escritorio-pendencias": {
+      "id": 78,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-delrey-performance": {
+      "id": 79,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-delrey-estoque_marca": {
+      "id": 80,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-delrey-estoque_grupo": {
+      "id": 81,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-delrey-pauta": {
+      "id": 82,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-delrey-pendencias": {
+      "id": 83,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-minas-performance": {
+      "id": 84,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-minas-estoque_marca": {
+      "id": 85,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-minas-estoque_grupo": {
+      "id": 86,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-minas-pauta": {
+      "id": 87,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-minas-pendencias": {
+      "id": 88,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-contagem-performance": {
+      "id": 89,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-contagem-estoque_marca": {
+      "id": 90,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-contagem-estoque_grupo": {
+      "id": 91,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-contagem-pauta": {
+      "id": 92,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-contagem-pendencias": {
+      "id": 93,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-estacao-performance": {
+      "id": 94,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-estacao-estoque_marca": {
+      "id": 95,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-estacao-estoque_grupo": {
+      "id": 96,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-estacao-pauta": {
+      "id": 97,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-estacao-pendencias": {
+      "id": 98,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-tommy-performance": {
+      "id": 99,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-tommy-estoque_marca": {
+      "id": 100,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-tommy-estoque_grupo": {
+      "id": 101,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-tommy-pauta": {
+      "id": 102,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-tommy-pendencias": {
+      "id": 103,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-lez-performance": {
+      "id": 104,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-lez-estoque_marca": {
+      "id": 105,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-lez-estoque_grupo": {
+      "id": 106,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-lez-pauta": {
+      "id": 107,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-06-lez-pendencias": {
+      "id": 108,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-escritorio-performance": {
+      "id": 110,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-escritorio-estoque_marca": {
+      "id": 111,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-escritorio-estoque_grupo": {
+      "id": 112,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-escritorio-pauta": {
+      "id": 113,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-escritorio-pendencias": {
+      "id": 114,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-delrey-performance": {
+      "id": 115,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-delrey-estoque_marca": {
+      "id": 116,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-delrey-estoque_grupo": {
+      "id": 117,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-delrey-pauta": {
+      "id": 118,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-delrey-pendencias": {
+      "id": 119,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-minas-performance": {
+      "id": 120,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-minas-estoque_marca": {
+      "id": 121,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-minas-estoque_grupo": {
+      "id": 122,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-minas-pauta": {
+      "id": 123,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-minas-pendencias": {
+      "id": 124,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-contagem-performance": {
+      "id": 125,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-contagem-estoque_marca": {
+      "id": 126,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-contagem-estoque_grupo": {
+      "id": 127,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-contagem-pauta": {
+      "id": 128,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-contagem-pendencias": {
+      "id": 129,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-estacao-performance": {
+      "id": 130,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-estacao-estoque_marca": {
+      "id": 131,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-estacao-estoque_grupo": {
+      "id": 132,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-estacao-pauta": {
+      "id": 133,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-estacao-pendencias": {
+      "id": 134,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-tommy-performance": {
+      "id": 135,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-tommy-estoque_marca": {
+      "id": 136,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-tommy-estoque_grupo": {
+      "id": 137,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-tommy-pauta": {
+      "id": 138,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-tommy-pendencias": {
+      "id": 139,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-lez-performance": {
+      "id": 140,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-lez-estoque_marca": {
+      "id": 141,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-lez-estoque_grupo": {
+      "id": 142,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-lez-pauta": {
+      "id": 143,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-07-lez-pendencias": {
+      "id": 144,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-escritorio-performance": {
+      "id": 146,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-escritorio-estoque_marca": {
+      "id": 147,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-escritorio-estoque_grupo": {
+      "id": 148,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-escritorio-pauta": {
+      "id": 149,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-escritorio-pendencias": {
+      "id": 150,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-delrey-performance": {
+      "id": 151,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-delrey-estoque_marca": {
+      "id": 152,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-delrey-estoque_grupo": {
+      "id": 153,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-delrey-pauta": {
+      "id": 154,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-delrey-pendencias": {
+      "id": 155,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-minas-performance": {
+      "id": 156,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-minas-estoque_marca": {
+      "id": 157,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-minas-estoque_grupo": {
+      "id": 158,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-minas-pauta": {
+      "id": 159,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-minas-pendencias": {
+      "id": 160,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-contagem-performance": {
+      "id": 161,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-contagem-estoque_marca": {
+      "id": 162,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-contagem-estoque_grupo": {
+      "id": 163,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-contagem-pauta": {
+      "id": 164,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-contagem-pendencias": {
+      "id": 165,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-estacao-performance": {
+      "id": 166,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-estacao-estoque_marca": {
+      "id": 167,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-estacao-estoque_grupo": {
+      "id": 168,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-estacao-pauta": {
+      "id": 169,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-estacao-pendencias": {
+      "id": 170,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-tommy-performance": {
+      "id": 171,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-tommy-estoque_marca": {
+      "id": 172,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-tommy-estoque_grupo": {
+      "id": 173,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-tommy-pauta": {
+      "id": 174,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-tommy-pendencias": {
+      "id": 175,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-lez-performance": {
+      "id": 176,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-lez-estoque_marca": {
+      "id": 177,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-lez-estoque_grupo": {
+      "id": 178,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-lez-pauta": {
+      "id": 179,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-08-lez-pendencias": {
+      "id": 180,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-escritorio-performance": {
+      "id": 182,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-escritorio-estoque_marca": {
+      "id": 183,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-escritorio-estoque_grupo": {
+      "id": 184,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-escritorio-pauta": {
+      "id": 185,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-escritorio-pendencias": {
+      "id": 186,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-delrey-performance": {
+      "id": 187,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-delrey-estoque_marca": {
+      "id": 188,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-delrey-estoque_grupo": {
+      "id": 189,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-delrey-pauta": {
+      "id": 190,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-delrey-pendencias": {
+      "id": 191,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-minas-performance": {
+      "id": 192,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-minas-estoque_marca": {
+      "id": 193,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-minas-estoque_grupo": {
+      "id": 194,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-minas-pauta": {
+      "id": 195,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-minas-pendencias": {
+      "id": 196,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-contagem-performance": {
+      "id": 197,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-contagem-estoque_marca": {
+      "id": 198,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-contagem-estoque_grupo": {
+      "id": 199,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-contagem-pauta": {
+      "id": 200,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-contagem-pendencias": {
+      "id": 201,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-estacao-performance": {
+      "id": 202,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-estacao-estoque_marca": {
+      "id": 203,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-estacao-estoque_grupo": {
+      "id": 204,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-estacao-pauta": {
+      "id": 205,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-estacao-pendencias": {
+      "id": 206,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-tommy-performance": {
+      "id": 207,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-tommy-estoque_marca": {
+      "id": 208,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-tommy-estoque_grupo": {
+      "id": 209,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-tommy-pauta": {
+      "id": 210,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-tommy-pendencias": {
+      "id": 211,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-lez-performance": {
+      "id": 212,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-lez-estoque_marca": {
+      "id": 213,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-lez-estoque_grupo": {
+      "id": 214,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-lez-pauta": {
+      "id": 215,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-09-lez-pendencias": {
+      "id": 216,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-escritorio-performance": {
+      "id": 218,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-escritorio-estoque_marca": {
+      "id": 219,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-escritorio-estoque_grupo": {
+      "id": 220,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-escritorio-pauta": {
+      "id": 221,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-escritorio-pendencias": {
+      "id": 222,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-delrey-performance": {
+      "id": 223,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-delrey-estoque_marca": {
+      "id": 224,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-delrey-estoque_grupo": {
+      "id": 225,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-delrey-pauta": {
+      "id": 226,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-delrey-pendencias": {
+      "id": 227,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-minas-performance": {
+      "id": 228,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-minas-estoque_marca": {
+      "id": 229,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-minas-estoque_grupo": {
+      "id": 230,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-minas-pauta": {
+      "id": 231,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-minas-pendencias": {
+      "id": 232,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-contagem-performance": {
+      "id": 233,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-contagem-estoque_marca": {
+      "id": 234,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-contagem-estoque_grupo": {
+      "id": 235,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-contagem-pauta": {
+      "id": 236,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-contagem-pendencias": {
+      "id": 237,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-estacao-performance": {
+      "id": 238,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-estacao-estoque_marca": {
+      "id": 239,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-estacao-estoque_grupo": {
+      "id": 240,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-estacao-pauta": {
+      "id": 241,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-estacao-pendencias": {
+      "id": 242,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-tommy-performance": {
+      "id": 243,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-tommy-estoque_marca": {
+      "id": 244,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-tommy-estoque_grupo": {
+      "id": 245,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-tommy-pauta": {
+      "id": 246,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-tommy-pendencias": {
+      "id": 247,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-lez-performance": {
+      "id": 248,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-lez-estoque_marca": {
+      "id": 249,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-lez-estoque_grupo": {
+      "id": 250,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-lez-pauta": {
+      "id": 251,
+      "content": "",
+      "items": [],
+      "attachments": []
+    },
+    "2026-10-lez-pendencias": {
+      "id": 252,
+      "content": "",
+      "items": [],
+      "attachments": []
+    }
+  },
+  "employees": [
+    {
+      "id": 253,
+      "name": "BRUNO",
+      "board": "delrey"
+    },
+    {
+      "id": 254,
+      "name": "GUILHERME",
+      "board": "delrey"
+    },
+    {
+      "id": 255,
+      "name": "TONY",
+      "board": "delrey"
+    },
+    {
+      "id": 256,
+      "name": "CECILIA",
+      "board": "delrey"
+    },
+    {
+      "id": 257,
+      "name": "CARLA",
+      "board": "delrey"
+    }
+  ],
+  "folgas": [],
+  "dailySales": {
+    "2026-05-delrey": {
+      "meta": {
+        "mensal": 180000,
+        "weights": {}
+      },
+      "entries": {}
+    },
+    "2026-05-contagem": {
+      "meta": {
+        "mensal": 0,
+        "weights": {
+          "2026-05-01": 3.23,
+          "2026-05-02": 3.225806
+        }
+      },
+      "entries": {}
+    },
+    "2026-06-delrey": {
+      "meta": {
+        "mensal": 180000,
+        "weights": {}
+      },
+      "entries": {
+        "2026-06-01": {
+          "value": 3000,
+          "pecas": 30,
+          "fluxo": 0
+        },
+        "2026-06-02": {
+          "value": 6000,
+          "pecas": 0,
+          "fluxo": 0
+        }
+      }
+    }
+  }
+}
