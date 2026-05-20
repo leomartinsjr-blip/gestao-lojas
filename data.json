@@ -1,5 +1,5 @@
 {
-  "nextId": 292,
+  "nextId": 302,
   "months": {
     "2026-05": {
       "id": 1,
@@ -1685,6 +1685,57 @@
       "comissaoSemMeta": 4.5,
       "comissaoMeta2": 5.5,
       "comissaoSuper": 6
+    },
+    {
+      "id": 298,
+      "name": "KEVYN RIBEIRO SILVA",
+      "board": "estacao",
+      "apelido": "KEVYN",
+      "cpf": "",
+      "admissao": "",
+      "cargo": "VENDEDOR",
+      "salario": 0,
+      "comissaoSemMeta": 4.5,
+      "comissao": 5,
+      "comissaoMeta2": 5.5,
+      "comissaoSuper": 6,
+      "isVendedor": true,
+      "inativo": false,
+      "desligamento": ""
+    },
+    {
+      "id": 299,
+      "name": "ANDRE LUIZ ANTUNES DE ARAÚJO",
+      "board": "estacao",
+      "apelido": "ANDRE",
+      "cpf": "",
+      "admissao": "",
+      "cargo": "VENDEDOR",
+      "salario": 0,
+      "comissaoSemMeta": 4.5,
+      "comissao": 5,
+      "comissaoMeta2": 5.5,
+      "comissaoSuper": 6,
+      "isVendedor": true,
+      "inativo": false,
+      "desligamento": ""
+    },
+    {
+      "id": 300,
+      "name": "TIAGO CHRISTIAN RAMOS DE OLIVEIRA",
+      "board": "estacao",
+      "apelido": "TIAGO",
+      "cpf": "",
+      "admissao": "",
+      "cargo": "VENDEDOR",
+      "salario": 0,
+      "comissaoSemMeta": 4.5,
+      "comissao": 5,
+      "comissaoMeta2": 5.5,
+      "comissaoSuper": 6,
+      "isVendedor": true,
+      "inativo": false,
+      "desligamento": ""
     }
   ],
   "folgas": [
@@ -1712,6 +1763,36 @@
       "id": 288,
       "employeeId": 257,
       "date": "2026-05-08"
+    },
+    {
+      "id": 292,
+      "employeeId": 277,
+      "date": "2026-05-01"
+    },
+    {
+      "id": 293,
+      "employeeId": 278,
+      "date": "2026-05-02"
+    },
+    {
+      "id": 294,
+      "employeeId": 279,
+      "date": "2026-05-03"
+    },
+    {
+      "id": 295,
+      "employeeId": 289,
+      "date": "2026-05-04"
+    },
+    {
+      "id": 296,
+      "employeeId": 290,
+      "date": "2026-05-05"
+    },
+    {
+      "id": 297,
+      "employeeId": 291,
+      "date": "2026-05-06"
     }
   ],
   "dailySales": {
@@ -2526,6 +2607,247 @@
           "atendimentos": 1
         }
       }
+    },
+    "2026-05-estacao-299": {
+      "meta": {
+        "mensal": 46666.67
+      },
+      "entries": {
+        "2026-05-03": {
+          "value": 1309.5,
+          "pecas": 5,
+          "atendimentos": 2
+        },
+        "2026-05-04": {
+          "value": 979.7,
+          "pecas": 4,
+          "atendimentos": 4
+        },
+        "2026-05-06": {
+          "value": 944.5,
+          "pecas": 6,
+          "atendimentos": 3
+        },
+        "2026-05-07": {
+          "value": 1569.8,
+          "pecas": 4,
+          "atendimentos": 3
+        },
+        "2026-05-08": {
+          "value": 1439.8,
+          "pecas": 6,
+          "atendimentos": 5
+        },
+        "2026-05-09": {
+          "value": 3569.2,
+          "pecas": 16,
+          "atendimentos": 11
+        },
+        "2026-05-10": {
+          "value": 400,
+          "pecas": 1,
+          "atendimentos": 1
+        },
+        "2026-05-11": {
+          "value": 488.92,
+          "pecas": 3,
+          "atendimentos": 2
+        },
+        "2026-05-12": {
+          "value": 1549.7,
+          "pecas": 7,
+          "atendimentos": 4
+        },
+        "2026-05-13": {
+          "value": 1810.63,
+          "pecas": 7,
+          "atendimentos": 4
+        },
+        "2026-05-14": {
+          "value": 999.7,
+          "pecas": 3,
+          "atendimentos": 3
+        },
+        "2026-05-15": {
+          "value": 475,
+          "pecas": 3,
+          "atendimentos": 1
+        },
+        "2026-05-16": {
+          "value": 2559.54,
+          "pecas": 10,
+          "atendimentos": 9
+        },
+        "2026-05-17": {
+          "value": 399.8,
+          "pecas": 3,
+          "atendimentos": 2
+        }
+      }
+    },
+    "2026-05-estacao-298": {
+      "meta": {
+        "mensal": 46666.67
+      },
+      "entries": {
+        "2026-05-01": {
+          "value": 1226.8,
+          "pecas": 8,
+          "atendimentos": 5
+        },
+        "2026-05-02": {
+          "value": 3419.5,
+          "pecas": 11,
+          "atendimentos": 8
+        },
+        "2026-05-03": {
+          "value": 1120,
+          "pecas": 6,
+          "atendimentos": 2
+        },
+        "2026-05-04": {
+          "value": 1019.9,
+          "pecas": 7,
+          "atendimentos": 2
+        },
+        "2026-05-05": {
+          "value": 1589.9,
+          "pecas": 7,
+          "atendimentos": 4
+        },
+        "2026-05-07": {
+          "value": 969.9,
+          "pecas": 5,
+          "atendimentos": 3
+        },
+        "2026-05-08": {
+          "value": 2360.6,
+          "pecas": 14,
+          "atendimentos": 7
+        },
+        "2026-05-09": {
+          "value": 5946.9,
+          "pecas": 26,
+          "atendimentos": 10
+        },
+        "2026-05-10": {
+          "value": 1078,
+          "pecas": 5,
+          "atendimentos": 2
+        },
+        "2026-05-11": {
+          "value": 1250,
+          "pecas": 3,
+          "atendimentos": 2
+        },
+        "2026-05-12": {
+          "value": 2305,
+          "pecas": 7,
+          "atendimentos": 6
+        },
+        "2026-05-14": {
+          "value": 419.9,
+          "pecas": 2,
+          "atendimentos": 2
+        },
+        "2026-05-15": {
+          "value": 970,
+          "pecas": 5,
+          "atendimentos": 2
+        },
+        "2026-05-16": {
+          "value": 1099.7,
+          "pecas": 5,
+          "atendimentos": 4
+        },
+        "2026-05-18": {
+          "value": 600,
+          "pecas": 3,
+          "atendimentos": 2
+        }
+      }
+    },
+    "2026-05-estacao-300": {
+      "meta": {
+        "mensal": 46666.67
+      },
+      "entries": {
+        "2026-05-01": {
+          "value": 1170,
+          "pecas": 5,
+          "atendimentos": 3
+        },
+        "2026-05-02": {
+          "value": 1398.2,
+          "pecas": 5,
+          "atendimentos": 5
+        },
+        "2026-05-04": {
+          "value": 489.9,
+          "pecas": 2,
+          "atendimentos": 2
+        },
+        "2026-05-05": {
+          "value": 1269.9,
+          "pecas": 4,
+          "atendimentos": 3
+        },
+        "2026-05-06": {
+          "value": 220,
+          "pecas": 1,
+          "atendimentos": 1
+        },
+        "2026-05-07": {
+          "value": 230,
+          "pecas": 1,
+          "atendimentos": 1
+        },
+        "2026-05-08": {
+          "value": 1150,
+          "pecas": 4,
+          "atendimentos": 2
+        },
+        "2026-05-09": {
+          "value": 2484.9,
+          "pecas": 16,
+          "atendimentos": 6
+        },
+        "2026-05-10": {
+          "value": 1019.9,
+          "pecas": 6,
+          "atendimentos": 5
+        },
+        "2026-05-11": {
+          "value": 910,
+          "pecas": 2,
+          "atendimentos": 1
+        },
+        "2026-05-13": {
+          "value": 240,
+          "pecas": 1,
+          "atendimentos": 1
+        },
+        "2026-05-15": {
+          "value": 1385,
+          "pecas": 9,
+          "atendimentos": 4
+        },
+        "2026-05-16": {
+          "value": 819.6,
+          "pecas": 4,
+          "atendimentos": 4
+        },
+        "2026-05-17": {
+          "value": 1055,
+          "pecas": 6,
+          "atendimentos": 2
+        },
+        "2026-05-18": {
+          "value": 1467.8,
+          "pecas": 6,
+          "atendimentos": 4
+        }
+      }
     }
   },
   "weeklyMetas": {
@@ -2598,5 +2920,21 @@
     "2026-10": 115500,
     "2026-11": 139556,
     "2026-12": 346650
-  }
+  },
+  "campaigns": [
+    {
+      "id": 301,
+      "name": "Maior PA - Maio",
+      "kpi": "pa",
+      "startDate": "2026-05-01",
+      "endDate": "2026-05-31",
+      "stores": [
+        "delrey",
+        "minas",
+        "contagem",
+        "estacao"
+      ],
+      "createdAt": "2026-05-20T04:03:23.012Z"
+    }
+  ]
 }

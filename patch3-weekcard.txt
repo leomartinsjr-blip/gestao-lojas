@@ -1,0 +1,44 @@
+  // ── CARD: Semana (with nav arrows) ──────────────────────────────────────
+  if (!DASH_WEEK.refDate) DASH_WEEK.refDate = todayStr;
+  const week = getWeekForDate(DASH_WEEK.refDate);
+  const isCurrentWeek = week.startStr <= todayStr && todayStr <= week.endStr;
+
+  const rightCard = document.createElement('div');
+  rightCard.className = 'main-card';
+  rightCard.style.marginTop = '1.25rem';
+  rightCard.id = 'dashWeekCard';
+  rightCard.innerHTML = `
+    <div class="main-card-hdr">
+      <span class="main-card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <rect x="3" y="4" width="18" height="18" rx="2"/>
+          <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+          <line x1="3" y1="10" x2="21" y2="10"/>
+        </svg>
+        Semana
+      </span>
+      <div class="dash-wk-nav">
+        <button class="dash-wk-btn" id="dashWkPrev" title="Semana anterior">&#8592;</button>
+        <span id="dashWkLabel" class="dash-wk-label">${week.label}${isCurrentWeek ? ' <span class="main-card-badge">Atual</span>' : ''}</span>
+        <button class="dash-wk-btn" id="dashWkNext" title="Próxima semana">&#8594;</button>
+      </div>
+    </div>
+    <div class="main-card-body" id="dashWeekBody"></div>
+  `;
+  leftCol.appendChild(rightCard);
+  _renderDashWeekBody(rightCard.querySelector('#dashWeekBody'), week);
+
+  document.getElementById('dashWkPrev').addEventListener('click', () => {
+    const _p = n => String(n).padStart(2,'0');
+    const d = new Date(DASH_WEEK.refDate + 'T00:00:00');
+    d.setDate(d.getDate() - 7);
+    DASH_WEEK.refDate = `${d.getFullYear()}-${_p(d.getMonth()+1)}-${_p(d.getDate())}`;
+    _refreshDashWeek();
+  });
+  document.getElementById('dashWkNext').addEventListener('click', () => {
+    const _p = n => String(n).padStart(2,'0');
+    const d = new Date(DASH_WEEK.refDate + 'T00:00:00');
+    d.setDate(d.getDate() + 7);
+    DASH_WEEK.refDate = `${d.getFullYear()}-${_p(d.getMonth()+1)}-${_p(d.getDate())}`;
+    _refreshDashWeek();
+  });

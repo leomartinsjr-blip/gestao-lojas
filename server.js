@@ -545,6 +545,66 @@ app.put('/api/weekly-metas/:year/:month/:weekStart/:empId', requireAuth, (req, r
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/campaigns ────────────────────────────────────────────────────
+app.get('/api/campaigns', requireAuth, (req, res) => {
+  const db   = readDB();
+  const all  = db.campaigns || [];
+  const { board } = req.session.user;
+  res.json(board ? all.filter(c => c.stores.includes(board)) : all);
+});
+
+// ── POST /api/campaigns ───────────────────────────────────────────────────
+app.post('/api/campaigns', requireAuth, (req, res) => {
+  try {
+    const { board } = req.session.user;
+    if (board && board !== 'escritorio') return res.status(403).json({ error: 'Sem permissão' });
+    const { name, kpi, startDate, endDate, stores } = req.body;
+    if (!name?.trim() || !kpi || !startDate || !endDate || !Array.isArray(stores) || !stores.length)
+      return res.status(400).json({ error: 'Campos obrigatórios: name, kpi, startDate, endDate, stores' });
+    const db = readDB();
+    if (!db.campaigns) db.campaigns = [];
+    const campaign = {
+      id: nextId(db),
+      name: name.trim(), kpi, startDate, endDate, stores,
+      createdAt: new Date().toISOString(),
+    };
+    db.campaigns.push(campaign);
+    writeDB(db);
+    res.json(campaign);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── PUT /api/campaigns/:id ────────────────────────────────────────────────
+app.put('/api/campaigns/:id', requireAuth, (req, res) => {
+  try {
+    const { board } = req.session.user;
+    if (board && board !== 'escritorio') return res.status(403).json({ error: 'Sem permissão' });
+    const id = parseInt(req.params.id);
+    const { name, kpi, startDate, endDate, stores } = req.body;
+    if (!name?.trim() || !kpi || !startDate || !endDate || !Array.isArray(stores) || !stores.length)
+      return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
+    const db = readDB();
+    const idx = (db.campaigns || []).findIndex(c => c.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'Campanha não encontrada' });
+    db.campaigns[idx] = { ...db.campaigns[idx], name: name.trim(), kpi, startDate, endDate, stores };
+    writeDB(db);
+    res.json(db.campaigns[idx]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── DELETE /api/campaigns/:id ─────────────────────────────────────────────
+app.delete('/api/campaigns/:id', requireAuth, (req, res) => {
+  try {
+    const { board } = req.session.user;
+    if (board && board !== 'escritorio') return res.status(403).json({ error: 'Sem permissão' });
+    const id = parseInt(req.params.id);
+    const db = readDB();
+    db.campaigns = (db.campaigns || []).filter(c => c.id !== id);
+    writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/historico ─────────────────────────────────────────────────────
 app.get('/api/historico', requireAuth, (req, res) => {
   const db = readDB();

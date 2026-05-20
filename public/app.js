@@ -14,7 +14,7 @@ const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
 // ── State ──────────────────────────────────────────────────────────────────
-const S = { year: 2026, month: 5, user: null, employees: [], weights: {}, vsales: {}, weeklyMetas: {}, folgas: [] };
+const S = { year: 2026, month: 5, user: null, employees: [], weights: {}, vsales: {}, weeklyMetas: {}, folgas: [], campaigns: [] };
 
 let saveTimeout = null;
 
@@ -75,6 +75,7 @@ async function checkAuth() {
     document.getElementById('userChip').textContent = S.user.label || S.user.username;
     const isAdmin = !S.user.board || S.user.board === 'escritorio';
     document.getElementById('funcBtn').style.display = isAdmin ? '' : 'none';
+    document.getElementById('campanhasBtn').style.display = isAdmin ? '' : 'none';
     const now = new Date();
     S.year  = now.getFullYear();
     S.month = now.getMonth() + 1;
@@ -107,6 +108,7 @@ function initLoginForm() {
       document.getElementById('userChip').textContent = S.user.label || S.user.username;
       const isAdmin = !S.user.board || S.user.board === 'escritorio';
       document.getElementById('funcBtn').style.display = isAdmin ? '' : 'none';
+      document.getElementById('campanhasBtn').style.display = isAdmin ? '' : 'none';
       hideLogin();
       const now = new Date();
       S.year  = now.getFullYear();
@@ -177,6 +179,10 @@ async function loadData() {
     S.vsales      = Object.fromEntries(vsalesArr);
     S.weeklyMetas = weeklyMetas || {};
     S.folgas      = folgas || [];
+
+    const campaigns = await apiFetch('GET', '/api/campaigns').catch(() => []);
+    S.campaigns = campaigns || [];
+    _updateCampanhasBtn();
 
     renderDashboard();
 
@@ -474,6 +480,83 @@ function renderDashboard() {
   const rightCol = document.createElement('div');
   rightCol.className = 'main-right-col';
   grid.appendChild(rightCol);
+
+  // ── CARD: Campanha Ativa (mini ranking top 5) ───────────────────────────
+  const userBoard = S.user?.board || null;
+  const activeCampaigns = (S.campaigns || []).filter(c =>
+    c.startDate <= todayStr && c.endDate >= todayStr &&
+    (!userBoard || c.stores.includes(userBoard))
+  );
+  if (activeCampaigns.length > 0) {
+    const camp = activeCampaigns[0];
+    const campEmps = S.employees.filter(e =>
+      e.isVendedor !== false && !e.inativo && camp.stores.includes(e.board)
+    );
+    const campRanking = campEmps.map(emp => {
+      const entries = (S.vsales[emp.id] || {}).entries || {};
+      let totalVendas = 0, totalPecas = 0, totalAtend = 0;
+      for (const [date, entry] of Object.entries(entries)) {
+        if (date >= camp.startDate && date <= camp.endDate) {
+          totalVendas += entry.value || 0;
+          totalPecas  += entry.pecas || 0;
+          totalAtend  += entry.atendimentos || 0;
+        }
+      }
+      let kpiValue = 0;
+      switch (camp.kpi) {
+        case 'vendas': kpiValue = totalVendas; break;
+        case 'pecas':  kpiValue = totalPecas;  break;
+        case 'atendimentos': kpiValue = totalAtend; break;
+        case 'pa': kpiValue = totalAtend > 0 ? totalPecas / totalAtend : 0; break;
+      }
+      return { emp, kpiValue };
+    }).sort((a, b) => b.kpiValue - a.kpiValue).slice(0, 5);
+
+    const campMaxVal = campRanking.length ? Math.max(...campRanking.map(r => r.kpiValue), 0.001) : 0.001;
+    const campMedals = ['🥇','🥈','🥉'];
+    const campFmt = d => d.split('-').reverse().join('/');
+
+    const campRowsHtml = campRanking.map((r, i) => {
+      const pct   = campMaxVal > 0 ? (r.kpiValue / campMaxVal * 100) : 0;
+      const medal = i < 3 ? campMedals[i] : `#${i+1}`;
+      const color = BOARDS[r.emp.board]?.color || '#8B949E';
+      const name  = r.emp.apelido || r.emp.name.split(' ')[0];
+      return `
+        <div class="camp-dash-row">
+          <span class="camp-dash-pos">${medal}</span>
+          <span class="camp-dash-name">${name}</span>
+          <div class="camp-dash-bar-wrap"><div class="camp-dash-bar" style="width:${pct.toFixed(1)}%;background:${color}"></div></div>
+          <span class="camp-dash-val">${formatKpiValue(camp.kpi, r.kpiValue)}</span>
+        </div>`;
+    }).join('');
+
+    const campDashCard = document.createElement('div');
+    campDashCard.className = 'main-card camp-dash-card';
+    campDashCard.innerHTML = `
+      <div class="main-card-hdr">
+        <span class="main-card-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/>
+            <path d="M4 22h16"/>
+            <path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/>
+            <path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/>
+            <path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>
+          </svg>
+          ${camp.name}
+        </span>
+        <span class="main-card-sub">${campFmt(camp.startDate)} → ${campFmt(camp.endDate)}</span>
+      </div>
+      <div class="main-card-body">
+        <div class="camp-dash-kpi-lbl">${KPI_LABELS[camp.kpi] || camp.kpi}</div>
+        ${campRowsHtml || '<div style="color:var(--muted);font-size:.8rem;padding:.5rem 0">Sem dados no período</div>'}
+      </div>
+    `;
+    campDashCard.addEventListener('click', () => {
+      openCampanhasModal();
+      setTimeout(() => renderCampaignRanking(camp), 60);
+    });
+    rightCol.appendChild(campDashCard);
+  }
 
   const folgasCard = document.createElement('div');
   folgasCard.className = 'main-card';
@@ -2686,6 +2769,297 @@ function initFuncionariosModal() {
   });
 }
 
+// ── Campanhas ─────────────────────────────────────────────────────────────
+const KPI_LABELS = {
+  vendas:       'Vendas (R$)',
+  pa:           'PA (peças/ticket)',
+  atendimentos: 'Atendimentos',
+  pecas:        'Peças',
+};
+
+function formatKpiValue(kpi, val) {
+  if (val === null || val === undefined) return '—';
+  if (kpi === 'vendas') return 'R$ ' + val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (kpi === 'pa')     return val.toFixed(2);
+  return Math.round(val).toLocaleString('pt-BR');
+}
+
+function _campMonthsInRange(startDate, endDate) {
+  const months = [];
+  const s = new Date(startDate + 'T00:00:00');
+  const e = new Date(endDate   + 'T00:00:00');
+  let cur = new Date(s.getFullYear(), s.getMonth(), 1);
+  while (cur <= e) {
+    months.push({ year: cur.getFullYear(), month: cur.getMonth() + 1 });
+    cur.setMonth(cur.getMonth() + 1);
+  }
+  return months;
+}
+
+async function calcCampaignRanking(campaign) {
+  const emps = S.employees.filter(e =>
+    e.isVendedor !== false && campaign.stores.includes(e.board)
+  );
+  const months = _campMonthsInRange(campaign.startDate, campaign.endDate);
+
+  const empVsales = {};
+  await Promise.all(emps.map(async emp => {
+    empVsales[emp.id] = {};
+    await Promise.all(months.map(async ({ year, month }) => {
+      const data = await apiFetch('GET', `/api/vsales/${year}/${month}/${emp.board}/${emp.id}`)
+        .catch(() => ({ entries: {} }));
+      Object.assign(empVsales[emp.id], data.entries || {});
+    }));
+  }));
+
+  return emps.map(emp => {
+    const entries = empVsales[emp.id] || {};
+    let totalVendas = 0, totalPecas = 0, totalAtend = 0;
+    for (const [date, entry] of Object.entries(entries)) {
+      if (date >= campaign.startDate && date <= campaign.endDate) {
+        totalVendas += entry.value || 0;
+        totalPecas  += entry.pecas || 0;
+        totalAtend  += entry.atendimentos || 0;
+      }
+    }
+    let kpiValue = 0;
+    switch (campaign.kpi) {
+      case 'vendas':       kpiValue = totalVendas; break;
+      case 'pecas':        kpiValue = totalPecas; break;
+      case 'atendimentos': kpiValue = totalAtend; break;
+      case 'pa': kpiValue = totalAtend > 0 ? totalPecas / totalAtend : 0; break;
+    }
+    return { emp, kpiValue };
+  }).sort((a, b) => b.kpiValue - a.kpiValue);
+}
+
+function renderCampanhasPanel() {
+  const isAdmin = !S.user?.board || S.user.board === 'escritorio';
+  const body = document.getElementById('campanhasBody');
+  const today = new Date().toISOString().slice(0, 10);
+  const fmt = d => d.split('-').reverse().join('/');
+
+  const visible = isAdmin
+    ? (S.campaigns || [])
+    : (S.campaigns || []).filter(c => c.stores.includes(S.user.board));
+
+  const listHtml = visible.map(c => {
+    const isActive = c.startDate <= today && c.endDate >= today;
+    const isPast   = c.endDate < today;
+    const statusCls   = isPast ? 'camp-status-past' : isActive ? 'camp-status-active' : 'camp-status-future';
+    const statusLabel = isPast ? 'Encerrada' : isActive ? 'Em andamento' : 'Futura';
+    const storeLabels = c.stores.map(s => BOARDS[s]?.label || s).join(', ');
+    return `
+      <div class="camp-card">
+        <div class="camp-card-main">
+          <div class="camp-card-title">${c.name}</div>
+          <div class="camp-card-meta">
+            <span class="${statusCls}">${statusLabel}</span>
+            <span class="camp-meta-pill">${KPI_LABELS[c.kpi] || c.kpi}</span>
+            <span class="camp-meta-pill">${fmt(c.startDate)} → ${fmt(c.endDate)}</span>
+            <span class="camp-meta-pill">${storeLabels}</span>
+          </div>
+        </div>
+        <div class="camp-card-actions">
+          <button class="camp-view-btn" data-id="${c.id}">Ver Ranking</button>
+          ${isAdmin ? `<button class="camp-edit-btn" data-id="${c.id}">Editar</button><button class="camp-del-btn" data-id="${c.id}">Excluir</button>` : ''}
+        </div>
+      </div>`;
+  }).join('');
+
+  body.innerHTML = `
+    <div class="camp-toolbar">
+      ${isAdmin ? '<button class="add-item-btn camp-new-btn" id="campNewBtn">+ Nova Campanha</button>' : ''}
+    </div>
+    <div class="camp-list">${listHtml || '<div class="camp-empty">Nenhuma campanha cadastrada.</div>'}</div>
+  `;
+
+  if (isAdmin) {
+    document.getElementById('campNewBtn').addEventListener('click', () => renderCampaignForm(null));
+    body.querySelectorAll('.camp-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const c = (S.campaigns || []).find(x => x.id === parseInt(btn.dataset.id));
+        if (c) renderCampaignForm(c);
+      });
+    });
+    body.querySelectorAll('.camp-del-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const c = (S.campaigns || []).find(x => x.id === parseInt(btn.dataset.id));
+        if (!c || !confirm(`Excluir campanha "${c.name}"?`)) return;
+        try {
+          await apiFetch('DELETE', `/api/campaigns/${c.id}`);
+          S.campaigns = S.campaigns.filter(x => x.id !== c.id);
+          renderCampanhasPanel();
+          toast('Campanha excluída');
+        } catch (e) { toast('Erro: ' + e.message, true); }
+      });
+    });
+  }
+
+  body.querySelectorAll('.camp-view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const c = (S.campaigns || []).find(x => x.id === parseInt(btn.dataset.id));
+      if (c) renderCampaignRanking(c);
+    });
+  });
+}
+
+async function renderCampaignRanking(campaign) {
+  const body = document.getElementById('campanhasBody');
+  const today = new Date().toISOString().slice(0, 10);
+  const fmt = d => d.split('-').reverse().join('/');
+  const isActive = campaign.startDate <= today && campaign.endDate >= today;
+  const isPast   = campaign.endDate < today;
+  const statusCls   = isPast ? 'camp-status-past' : isActive ? 'camp-status-active' : 'camp-status-future';
+  const statusLabel = isPast ? 'Encerrada' : isActive ? 'Em andamento' : 'Futura';
+  const storeLabels = campaign.stores.map(s => BOARDS[s]?.label || s).join(', ');
+
+  body.innerHTML = `
+    <div class="camp-rank-hdr">
+      <button class="camp-back-btn" id="campBackBtn">← Voltar</button>
+      <div class="camp-rank-title">${campaign.name}</div>
+      <div class="camp-rank-meta">
+        <span class="camp-meta-pill">${KPI_LABELS[campaign.kpi] || campaign.kpi}</span>
+        <span class="camp-meta-pill">${fmt(campaign.startDate)} → ${fmt(campaign.endDate)}</span>
+        <span class="camp-meta-pill">${storeLabels}</span>
+        <span class="${statusCls}">${statusLabel}</span>
+      </div>
+    </div>
+    <div class="camp-rank-list"><div class="camp-empty">Calculando ranking…</div></div>
+  `;
+  document.getElementById('campBackBtn').addEventListener('click', renderCampanhasPanel);
+
+  const ranking = await calcCampaignRanking(campaign);
+  const maxVal = ranking.length ? Math.max(...ranking.map(r => r.kpiValue), 0.001) : 0.001;
+  const medals = ['🥇','🥈','🥉'];
+
+  const rowsHtml = ranking.map((r, i) => {
+    const pct   = maxVal > 0 ? (r.kpiValue / maxVal * 100) : 0;
+    const medal = i < 3 ? medals[i] : `#${i + 1}`;
+    const color = BOARDS[r.emp.board]?.color || '#8B949E';
+    const store = BOARDS[r.emp.board]?.label || r.emp.board;
+    const name  = r.emp.apelido || r.emp.name.split(' ')[0];
+    return `
+      <div class="camp-rank-row">
+        <div class="camp-rank-pos">${medal}</div>
+        <div class="camp-rank-info">
+          <div class="camp-rank-name">${name}</div>
+          <div class="camp-rank-store" style="color:${color}">${store}</div>
+        </div>
+        <div class="camp-rank-bar-wrap">
+          <div class="camp-rank-bar" style="width:${pct.toFixed(1)}%;background:${color}"></div>
+        </div>
+        <div class="camp-rank-val">${formatKpiValue(campaign.kpi, r.kpiValue)}</div>
+      </div>`;
+  }).join('');
+
+  body.querySelector('.camp-rank-list').innerHTML =
+    rowsHtml || '<div class="camp-empty">Sem dados no período.</div>';
+}
+
+function renderCampaignForm(campaign) {
+  const isEdit = !!campaign;
+  const body   = document.getElementById('campanhasBody');
+  const today  = new Date().toISOString().slice(0, 10);
+
+  const storeOpts = Object.entries(BOARDS)
+    .filter(([k]) => k !== 'escritorio')
+    .map(([k, v]) => {
+      const checked = campaign?.stores?.includes(k) ? 'checked' : '';
+      return `<label class="camp-store-check"><input type="checkbox" value="${k}" ${checked}><span style="color:${v.color}">${v.label}</span></label>`;
+    }).join('');
+
+  body.innerHTML = `
+    <div class="camp-form">
+      <button class="camp-back-btn" id="campFormBackBtn">← Voltar</button>
+      <div class="camp-form-title">${isEdit ? 'Editar Campanha' : 'Nova Campanha'}</div>
+      <div class="camp-form-grid">
+        <div class="camp-form-field camp-field-wide">
+          <label>Nome da Campanha</label>
+          <input type="text" id="campName" class="camp-input" placeholder="Ex: Maior PA - Junho" value="${campaign?.name || ''}">
+        </div>
+        <div class="camp-form-field">
+          <label>KPI</label>
+          <select id="campKpi" class="camp-select">
+            ${Object.entries(KPI_LABELS).map(([k, v]) =>
+              `<option value="${k}" ${campaign?.kpi === k ? 'selected' : ''}>${v}</option>`
+            ).join('')}
+          </select>
+        </div>
+        <div class="camp-form-field" style="grid-column:1/2">
+          <label>Data Início</label>
+          <input type="date" id="campStart" class="camp-input" value="${campaign?.startDate || today}">
+        </div>
+        <div class="camp-form-field">
+          <label>Data Fim</label>
+          <input type="date" id="campEnd" class="camp-input" value="${campaign?.endDate || today}">
+        </div>
+        <div class="camp-form-field camp-field-wide">
+          <label>Lojas participantes</label>
+          <div class="camp-store-checks">${storeOpts}</div>
+        </div>
+      </div>
+      <div class="camp-form-actions">
+        <button class="folgas-cancel-btn" id="campFormCancelBtn">Cancelar</button>
+        <button class="ds-meta-save-btn" id="campFormSaveBtn">${isEdit ? 'Salvar' : 'Criar Campanha'}</button>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('campFormBackBtn').addEventListener('click', renderCampanhasPanel);
+  document.getElementById('campFormCancelBtn').addEventListener('click', renderCampanhasPanel);
+  document.getElementById('campFormSaveBtn').addEventListener('click', async () => {
+    const name   = document.getElementById('campName').value.trim();
+    const kpi    = document.getElementById('campKpi').value;
+    const start  = document.getElementById('campStart').value;
+    const end    = document.getElementById('campEnd').value;
+    const stores = [...document.querySelectorAll('.camp-store-checks input:checked')].map(x => x.value);
+
+    if (!name)           return toast('Informe o nome da campanha', 'warn');
+    if (!start || !end)  return toast('Informe as datas', 'warn');
+    if (end < start)     return toast('Data fim deve ser após a data início', 'warn');
+    if (!stores.length)  return toast('Selecione ao menos uma loja', 'warn');
+
+    try {
+      const payload = { name, kpi, startDate: start, endDate: end, stores };
+      if (isEdit) {
+        const updated = await apiFetch('PUT', `/api/campaigns/${campaign.id}`, payload);
+        const idx = (S.campaigns || []).findIndex(c => c.id === campaign.id);
+        if (idx !== -1) S.campaigns[idx] = updated;
+      } else {
+        const created = await apiFetch('POST', '/api/campaigns', payload);
+        if (!S.campaigns) S.campaigns = [];
+        S.campaigns.push(created);
+      }
+      toast(isEdit ? 'Campanha atualizada!' : 'Campanha criada!');
+      renderCampanhasPanel();
+    } catch (e) { toast('Erro: ' + e.message, true); }
+  });
+}
+
+function _updateCampanhasBtn() {
+  const isAdmin  = !S.user?.board || S.user.board === 'escritorio';
+  const hasCamps = isAdmin || (S.campaigns || []).some(c => c.stores.includes(S.user?.board));
+  document.getElementById('campanhasBtn').style.display = hasCamps ? '' : 'none';
+}
+
+function openCampanhasModal() {
+  document.getElementById('campanhasOverlay').classList.remove('hidden');
+  renderCampanhasPanel();
+}
+
+function closeCampanhasModal() {
+  document.getElementById('campanhasOverlay').classList.add('hidden');
+}
+
+function initCampanhasModal() {
+  document.getElementById('campanhasBtn').addEventListener('click', openCampanhasModal);
+  document.getElementById('campanhasClose').addEventListener('click', closeCampanhasModal);
+  document.getElementById('campanhasOverlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('campanhasOverlay')) closeCampanhasModal();
+  });
+}
+
 // ── Meta celebration ──────────────────────────────────────────────────────
 function triggerMetaCelebration(label, color) {
   const COLORS = ['#FBBF24','#3FB950','#58A6FF','#FF7B72','#F0883E','#D2A8FF', color, '#ffffff'];
@@ -2738,6 +3112,7 @@ function init() {
   initWeightsModal();
   initWeeklyModal();
   initFuncionariosModal();
+  initCampanhasModal();
   document.getElementById('logoutBtn').addEventListener('click', logout);
 document.getElementById('btnPrev').addEventListener('click', () => navigate(-1));
   document.getElementById('btnNext').addEventListener('click', () => navigate(1));

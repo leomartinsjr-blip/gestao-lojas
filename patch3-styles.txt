@@ -1,0 +1,30 @@
+/* ── Dash week nav arrows ─────────────────────────────────────────────── */
+.dash-wk-nav { display: flex; align-items: center; gap: .5rem; }
+.dash-wk-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text2); border-radius: .35rem; width: 1.6rem; height: 1.6rem; cursor: pointer; font-size: .9rem; display: flex; align-items: center; justify-content: center; transition: background .15s, border-color .15s, color .15s; padding: 0; }
+.dash-wk-btn:hover { background: #1e2430; border-color: #58A6FF; color: #fff; }
+.dash-wk-label { font-size: .78rem; color: var(--text); font-weight: 600; white-space: nowrap; }
+
+/* ── Folgas calendar ──────────────────────────────────────────────────── */
+.folga-cal { padding: .5rem .6rem .65rem; }
+.folga-cal-row { display: grid; grid-template-columns: repeat(7, 1fr); gap: .2rem; }
+.folga-cal-hdr { margin-bottom: .3rem; }
+.folga-cal-dname { text-align: center; font-size: .6rem; font-weight: 700; color: var(--text2); text-transform: uppercase; padding: .15rem 0; }
+.folga-cal-cell { min-height: 2.3rem; padding: .18rem .1rem .12rem; border-radius: .3rem; display: flex; flex-direction: column; align-items: center; background: transparent; }
+.folga-cal-empty { background: transparent !important; border: none !important; }
+.folga-cal-daynum { font-size: .7rem; color: var(--text2); font-weight: 500; line-height: 1.3; }
+.folga-cal-has-folga { background: rgba(248,113,113,.09); border: 1px solid rgba(248,113,113,.22); }
+.folga-cal-has-folga .folga-cal-daynum { color: #f87171; font-weight: 700; }
+.folga-cal-dots { display: flex; flex-wrap: wrap; gap: .1rem; justify-content: center; margin-top: .12rem; }
+.folga-cal-dot { font-size: .48rem; font-weight: 700; width: 1.3rem; height: .95rem; border-radius: .2rem; display: flex; align-items: center; justify-content: center; color: #fff; opacity: .92; cursor: default; }
+
+/* ── Comparativo table ─────────────────────────────────────────────────── */
+.comp-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.comp-thead-tr { background: #1e2430; }
+.comp-th { padding: .45rem .55rem; text-align: left; font-weight: 700; font-size: .68rem; color: #8B949E; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.comp-th-r { text-align: right; }
+.comp-row { border-bottom: 1px solid var(--border); transition: background .1s; }
+.comp-row:last-child { border-bottom: none; }
+.comp-row:hover { background: var(--surface2); }
+.comp-td { padding: .42rem .55rem; color: var(--text); }
+.comp-td-name { font-weight: 500; font-size: .8rem; }
+.comp-td-num { text-align: right; font-variant-numeric: tabular-nums; color: var(--text2); font-size: .78rem; }

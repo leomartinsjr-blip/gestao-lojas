@@ -1,0 +1,252 @@
+function _renderDashFolgas(body) {
+  const pad = n => String(n).padStart(2,'0');
+  const daysInMonth = new Date(S.year, S.month, 0).getDate();
+  const firstDay = new Date(S.year, S.month - 1, 1).getDay();
+
+  const fByDate = {};
+  for (const f of S.folgas) {
+    if (!fByDate[f.date]) fByDate[f.date] = [];
+    fByDate[f.date].push(f.employeeId);
+  }
+
+  const empMap = {};
+  for (const emp of S.employees) empMap[emp.id] = emp;
+
+  const DAYS_SHORT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+  let html = '<div class="folga-cal">';
+  html += '<div class="folga-cal-row folga-cal-hdr">';
+  for (const d of DAYS_SHORT) html += `<div class="folga-cal-dname">${d}</div>`;
+  html += '</div>';
+
+  const cells = [];
+  for (let i = 0; i < firstDay; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+  while (cells.length % 7 !== 0) cells.push(null);
+
+  for (let i = 0; i < cells.length; i += 7) {
+    html += '<div class="folga-cal-row">';
+    for (let j = 0; j < 7; j++) {
+      const day = cells[i + j];
+      if (!day) { html += '<div class="folga-cal-cell folga-cal-empty"></div>'; continue; }
+      const ds = `${S.year}-${pad(S.month)}-${pad(day)}`;
+      const empIds = fByDate[ds] || [];
+      const hasFolga = empIds.length > 0;
+      const dots = empIds.map(id => {
+        const emp = empMap[id];
+        if (!emp) return '';
+        const initials = emp.name.split(' ').map(w => w[0]).slice(0,2).join('');
+        const color = BOARDS[emp.board]?.color || '#64748b';
+        return `<span class="folga-cal-dot" style="background:${color}" title="${emp.name}">${initials}</span>`;
+      }).join('');
+      html += `<div class="folga-cal-cell${hasFolga ? ' folga-cal-has-folga' : ''}"><span class="folga-cal-daynum">${day}</span>${hasFolga ? `<div class="folga-cal-dots">${dots}</div>` : ''}</div>`;
+    }
+    html += '</div>';
+  }
+  html += '</div>';
+  body.innerHTML = html;
+}
+
+function _renderDashWeekBody(body, week, extraData) {
+  const pad = n => String(n).padStart(2,'0');
+  const fBRL = v => v == null || v === 0 ? '—' : new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v);
+  const fPct = v => v == null ? '—' : v.toFixed(1)+'%';
+  const fDec = v => v == null ? '—' : v.toFixed(2);
+
+  const vendedores = S.employees.filter(e => e.isVendedor !== false);
+  const byBoard = {};
+  for (const emp of vendedores) {
+    if (!byBoard[emp.board]) byBoard[emp.board] = [];
+    byBoard[emp.board].push(emp);
+  }
+  const visible = visibleBoards();
+
+  for (const [bk, bc] of visible) {
+    const emps = byBoard[bk] || [];
+    if (emps.length === 0) continue;
+
+    let totValor=0, totPecas=0, totAtend=0, totMeta=0, totPremio=0;
+
+    const rows = emps.map(emp => {
+      const k = calcWeekKpis(emp, week, extraData);
+      totValor += k.valor; totPecas += k.pecas; totAtend += k.atend; totMeta += k.wMeta;
+      if (k.pTotal != null) totPremio += k.pTotal;
+
+      const pctCls  = k.pctMeta  == null ? '' : k.pctMeta  >= 100 ? 'kpi-pos' : k.pctMeta  >= 80 ? 'kpi-warn' : 'kpi-neg';
+      const projCls = k.projecao == null ? '' : k.projecao >= k.wMeta ? 'kpi-pos' : 'kpi-neg';
+
+      const premioHtml = k.isFuture
+        ? '<span class="dw-p-pending">—</span>'
+        : `<span class="dw-p ${k.hitMeta?'dw-p-ok':'dw-p-warn'}">R$${PREMIO_VENDAS}${k.hitMeta?'✓':'?'}</span>
+           <span class="dw-p ${k.hitPA?'dw-p-ok':'dw-p-warn'}">+R$${PREMIO_PA}${k.hitPA?'✓':'?'}</span>`;
+
+      return `<tr class="dw-row">
+        <td class="dw-td dw-td-name">${emp.name}</td>
+        <td class="dw-td dw-td-num">${fBRL(k.wMeta||null)}</td>
+        <td class="dw-td dw-td-num">${fBRL(k.valor||null)}</td>
+        <td class="dw-td dw-td-num ${pctCls}">${fPct(k.pctMeta)}</td>
+        <td class="dw-td dw-td-num ${projCls}">${fBRL(k.projecao)}</td>
+        <td class="dw-td dw-td-num">${fDec(k.pa)}</td>
+        <td class="dw-td dw-premio">${premioHtml}</td>
+      </tr>`;
+    }).join('');
+
+    const totPct = (totMeta>0&&totValor>0) ? totValor/totMeta*100 : null;
+    const totPa  = (totPecas>0&&totAtend>0) ? totPecas/totAtend : null;
+    const tpCls  = totPct==null?'': totPct>=100?'kpi-pos': totPct>=80?'kpi-warn':'kpi-neg';
+
+    const sec = document.createElement('div');
+    sec.innerHTML = `
+      <div class="dw-store-hdr">
+        <span class="dw-store-dot" style="background:${bc.color}"></span>${bc.label}
+      </div>
+      <table class="dw-table">
+        <thead><tr class="dw-thead-tr">
+          <th class="dw-th">Vendedor</th>
+          <th class="dw-th dw-th-r">Meta Sem.</th>
+          <th class="dw-th dw-th-r">Realizado</th>
+          <th class="dw-th dw-th-r">% Meta</th>
+          <th class="dw-th dw-th-r">Projeção</th>
+          <th class="dw-th dw-th-r">PA</th>
+          <th class="dw-th dw-th-r">Prêmio</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr class="dw-total-row">
+          <td class="dw-td">Total</td>
+          <td class="dw-td dw-td-num">${fBRL(totMeta||null)}</td>
+          <td class="dw-td dw-td-num">${fBRL(totValor||null)}</td>
+          <td class="dw-td dw-td-num ${tpCls}">${fPct(totPct)}</td>
+          <td class="dw-td dw-td-num">—</td>
+          <td class="dw-td dw-td-num">${totPa!=null?totPa.toFixed(2):'—'}</td>
+          <td class="dw-td dw-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+        </tr></tfoot>
+      </table>`;
+    body.appendChild(sec);
+  }
+}
+
+async function _refreshDashWeek() {
+  const pad = n => String(n).padStart(2,'0');
+  const t = new Date();
+  const todayStr = `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
+  const week = getWeekForDate(DASH_WEEK.refDate || todayStr);
+  const isCurrentWeek = week.startStr <= todayStr && todayStr <= week.endStr;
+
+  const labelEl = document.getElementById('dashWkLabel');
+  if (labelEl) {
+    labelEl.innerHTML = week.label + (isCurrentWeek ? ' <span class="main-card-badge">Atual</span>' : '');
+  }
+
+  const curKey = `${S.year}-${pad(S.month)}`;
+  const extraData = {};
+  const startDate = new Date(week.startStr + 'T00:00:00');
+  const toLoad = new Set();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(startDate); d.setDate(d.getDate() + i);
+    const mk = `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
+    if (mk !== curKey) toLoad.add(mk);
+  }
+  for (const mk of toLoad) {
+    const [y, m] = mk.split('-').map(Number);
+    extraData[mk] = await loadMonthData(y, m);
+  }
+
+  const body = document.getElementById('dashWeekBody');
+  if (!body) return;
+  body.innerHTML = '';
+  _renderDashWeekBody(body, week, Object.keys(extraData).length ? extraData : undefined);
+}
+
+function _getCompMonths() {
+  let m1y = S.year, m1m = S.month - 1;
+  if (m1m === 0) { m1y--; m1m = 12; }
+  let m2y = S.year, m2m = S.month - 2;
+  if (m2m <= 0) { m2y--; m2m += 12; }
+  const lyY = S.year - 1, lyM = S.month;
+  return {
+    m1: { year: m1y, month: m1m, label: MONTHS_PT[m1m-1].slice(0,3)+'/'+String(m1y).slice(2) },
+    m2: { year: m2y, month: m2m, label: MONTHS_PT[m2m-1].slice(0,3)+'/'+String(m2y).slice(2) },
+    ly: { year: lyY, month: lyM, label: MONTHS_PT[lyM-1].slice(0,3)+'/'+String(lyY).slice(2) },
+  };
+}
+
+async function _loadCompCard(body, cm) {
+  const pad = n => String(n).padStart(2,'0');
+  const fV = v => !v ? '—' : new Intl.NumberFormat('pt-BR',{minimumFractionDigits:0,maximumFractionDigits:0}).format(Math.round(v));
+  const fPct = v => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+
+  const [d1, d2, dLY] = await Promise.all([
+    loadMonthData(cm.m1.year, cm.m1.month),
+    loadMonthData(cm.m2.year, cm.m2.month),
+    loadMonthData(cm.ly.year, cm.ly.month),
+  ]);
+
+  const today = new Date();
+  const yest = new Date(today); yest.setDate(yest.getDate() - 1);
+  const yStr = `${yest.getFullYear()}-${pad(yest.getMonth()+1)}-${pad(yest.getDate())}`;
+
+  const daysInCur = new Date(S.year, S.month, 0).getDate();
+  const defWCur = +(100 / daysInCur).toFixed(6);
+  let wAccum = 0;
+  for (let d = 1; d <= daysInCur; d++) {
+    const ds = `${S.year}-${pad(S.month)}-${pad(d)}`;
+    if (ds > yStr) break;
+    wAccum += (S.weights[ds] ?? defWCur);
+  }
+
+  function sumBoard(year, month, vsalesData, board, closed) {
+    const emps = S.employees.filter(e => e.board === board && e.isVendedor !== false);
+    const dim = new Date(year, month, 0).getDate();
+    let valor = 0;
+    for (const emp of emps) {
+      const entries = (vsalesData[emp.id] || {}).entries || {};
+      for (let d = 1; d <= dim; d++) {
+        const ds = `${year}-${pad(month)}-${pad(d)}`;
+        if (!closed && ds > yStr) break;
+        const e = entries[ds];
+        if (e) valor += e.value || 0;
+      }
+    }
+    return valor;
+  }
+
+  const visible = visibleBoards().filter(([bk]) => bk !== 'escritorio');
+  let html = `<table class="comp-table">
+    <thead><tr class="comp-thead-tr">
+      <th class="comp-th">Loja</th>
+      <th class="comp-th comp-th-r">Proj.${MONTHS_PT[S.month-1].slice(0,3)}</th>
+      <th class="comp-th comp-th-r">${cm.ly.label}</th>
+      <th class="comp-th comp-th-r">Δ%</th>
+      <th class="comp-th comp-th-r">${cm.m1.label}</th>
+      <th class="comp-th comp-th-r">${cm.m2.label}</th>
+    </tr></thead><tbody>`;
+
+  for (const [bk, bc] of visible) {
+    const emps = S.employees.filter(e => e.board === bk && e.isVendedor !== false);
+    if (emps.length === 0) continue;
+
+    const cur  = sumBoard(S.year, S.month, S.vsales, bk, false);
+    const m1v  = sumBoard(cm.m1.year, cm.m1.month, d1.vsales, bk, true);
+    const m2v  = sumBoard(cm.m2.year, cm.m2.month, d2.vsales, bk, true);
+    const lyv  = sumBoard(cm.ly.year, cm.ly.month, dLY.vsales, bk, true);
+
+    const proj  = (wAccum > 0 && cur > 0) ? cur / wAccum * 100 : (cur || null);
+    const delta = (lyv > 0 && proj) ? (proj - lyv) / lyv * 100 : null;
+    const dCls  = delta == null ? '' : delta >= 0 ? 'kpi-pos' : 'kpi-neg';
+
+    html += `<tr class="comp-row">
+      <td class="comp-td comp-td-name">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${bc.color};margin-right:.4rem;vertical-align:middle;"></span>${bc.label}
+      </td>
+      <td class="comp-td comp-td-num">${fV(proj)}</td>
+      <td class="comp-td comp-td-num">${fV(lyv)}</td>
+      <td class="comp-td comp-td-num ${dCls}">${fPct(delta)}</td>
+      <td class="comp-td comp-td-num">${fV(m1v)}</td>
+      <td class="comp-td comp-td-num">${fV(m2v)}</td>
+    </tr>`;
+  }
+
+  html += '</tbody></table>';
+  body.innerHTML = html;
+}
+

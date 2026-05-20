@@ -1495,3 +1495,106 @@ body {
 /* PA coloring */
 .pa-ok  { color: #3FB950 !important; font-weight: 600; }
 .pa-low { color: #F85149 !important; font-weight: 600; }
+
+/* ── Campanhas ──────────────────────────────────────────────────────── */
+.camp-toolbar { display: flex; align-items: center; gap: .75rem; padding: .25rem 0 1.25rem; }
+.camp-new-btn { margin-left: auto; }
+
+.camp-list { display: flex; flex-direction: column; gap: .75rem; }
+
+.camp-card {
+  display: flex; align-items: center; gap: 1rem;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: .75rem; padding: 1rem 1.25rem;
+  transition: border-color .15s;
+}
+.camp-card:hover { border-color: var(--border2); }
+.camp-card-main { flex: 1; min-width: 0; }
+.camp-card-title { font-size: 1rem; font-weight: 700; color: var(--text); margin-bottom: .4rem; }
+.camp-card-meta  { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; }
+
+.camp-meta-pill {
+  font-size: .72rem; font-weight: 600; padding: .18rem .55rem;
+  border-radius: 2rem; background: var(--surface3); color: var(--muted);
+  white-space: nowrap;
+}
+.camp-status-active { font-size: .72rem; font-weight: 700; padding: .18rem .55rem; border-radius: 2rem; background: rgba(63,185,80,.15); color: #3FB950; white-space: nowrap; }
+.camp-status-past   { font-size: .72rem; font-weight: 700; padding: .18rem .55rem; border-radius: 2rem; background: rgba(139,148,158,.12); color: var(--muted); white-space: nowrap; }
+.camp-status-future { font-size: .72rem; font-weight: 700; padding: .18rem .55rem; border-radius: 2rem; background: rgba(88,166,255,.15); color: var(--accent); white-space: nowrap; }
+
+.camp-card-actions { display: flex; gap: .5rem; flex-shrink: 0; }
+.camp-view-btn {
+  padding: .4rem .9rem; border-radius: .45rem; font-size: .8rem; font-weight: 600;
+  background: rgba(88,166,255,.15); color: var(--accent); border: 1px solid rgba(88,166,255,.3);
+  cursor: pointer; transition: background .15s;
+}
+.camp-view-btn:hover { background: rgba(88,166,255,.28); }
+.camp-edit-btn {
+  padding: .4rem .8rem; border-radius: .45rem; font-size: .8rem; font-weight: 600;
+  background: var(--surface3); color: var(--text); border: 1px solid var(--border);
+  cursor: pointer; transition: background .15s;
+}
+.camp-edit-btn:hover { background: var(--border2); }
+.camp-del-btn {
+  padding: .4rem .8rem; border-radius: .45rem; font-size: .8rem; font-weight: 600;
+  background: rgba(248,81,73,.1); color: #F85149; border: 1px solid rgba(248,81,73,.25);
+  cursor: pointer; transition: background .15s;
+}
+.camp-del-btn:hover { background: rgba(248,81,73,.22); }
+
+.camp-empty { text-align: center; color: var(--muted); padding: 2.5rem 0; font-size: .9rem; }
+
+/* Ranking */
+.camp-rank-hdr { margin-bottom: 1.5rem; }
+.camp-back-btn {
+  background: none; border: none; color: var(--muted); font-size: .82rem; cursor: pointer;
+  padding: 0; margin-bottom: .75rem; display: inline-flex; align-items: center; gap: .3rem;
+  transition: color .15s;
+}
+.camp-back-btn:hover { color: var(--text); }
+.camp-rank-title { font-size: 1.35rem; font-weight: 800; color: var(--text); margin-bottom: .5rem; }
+.camp-rank-meta  { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+
+.camp-rank-list { display: flex; flex-direction: column; gap: .6rem; }
+
+.camp-rank-row {
+  display: grid; grid-template-columns: 2.5rem 10rem 1fr 6.5rem;
+  align-items: center; gap: .75rem;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: .6rem; padding: .75rem 1rem;
+}
+.camp-rank-pos { font-size: 1.3rem; text-align: center; line-height: 1; }
+.camp-rank-name { font-size: .92rem; font-weight: 700; color: var(--text); }
+.camp-rank-store { font-size: .72rem; font-weight: 600; margin-top: .1rem; }
+.camp-rank-bar-wrap { height: 10px; border-radius: 5px; background: var(--surface3); overflow: hidden; }
+.camp-rank-bar { height: 100%; border-radius: 5px; transition: width .4s ease; }
+.camp-rank-val { font-size: .9rem; font-weight: 700; color: var(--text); text-align: right; white-space: nowrap; }
+
+/* Form */
+.camp-form { max-width: 640px; }
+.camp-form-title { font-size: 1.1rem; font-weight: 700; color: var(--text); margin: .75rem 0 1.25rem; }
+.camp-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .9rem; }
+.camp-form-field { display: flex; flex-direction: column; gap: .4rem; }
+.camp-form-field label { font-size: .78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.camp-field-wide { grid-column: 1 / -1; }
+.camp-input, .camp-select {
+  background: var(--surface2); border: 1px solid var(--border); border-radius: .45rem;
+  color: var(--text); font-size: .88rem; padding: .5rem .75rem; outline: none;
+  transition: border-color .15s;
+}
+.camp-input:focus, .camp-select:focus { border-color: var(--accent); }
+.camp-store-checks { display: flex; flex-wrap: wrap; gap: .5rem .9rem; }
+.camp-store-check { display: flex; align-items: center; gap: .35rem; font-size: .85rem; font-weight: 600; cursor: pointer; }
+.camp-store-check input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+.camp-form-actions { display: flex; gap: .75rem; justify-content: flex-end; margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+
+/* Dashboard mini-card */
+.camp-dash-card { cursor: pointer; transition: border-color .15s; }
+.camp-dash-card:hover { border-color: var(--accent); }
+.camp-dash-kpi-lbl { font-size: .72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; margin-bottom: .65rem; }
+.camp-dash-row { display: grid; grid-template-columns: 1.8rem 1fr 4rem 5.5rem; align-items: center; gap: .5rem; margin-bottom: .45rem; }
+.camp-dash-pos { font-size: 1rem; text-align: center; line-height: 1; }
+.camp-dash-name { font-size: .85rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.camp-dash-bar-wrap { height: 8px; border-radius: 4px; background: var(--surface3); overflow: hidden; }
+.camp-dash-bar { height: 100%; border-radius: 4px; transition: width .4s; }
+.camp-dash-val { font-size: .82rem; font-weight: 700; color: var(--text); text-align: right; white-space: nowrap; }

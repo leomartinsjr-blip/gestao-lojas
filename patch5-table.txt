@@ -1,0 +1,118 @@
+  // Monthly table
+  const DASH_COLS = [
+    { key:'name',     label:'Vendedor',  cls:'' },
+    { key:'mensal',   label:'Meta Mês',  cls:'dash-th-r' },
+    { key:'valor',    label:'Realizado', cls:'dash-th-r' },
+    { key:'pctMeta',  label:'% Meta',    cls:'dash-th-r' },
+    { key:'projecao', label:'Projeção', cls:'dash-th-r' },
+    { key:'pa',       label:'PA',        cls:'dash-th-r' },
+    { key:'tm',       label:'TM',        cls:'dash-th-r' },
+  ];
+  const headHtml = DASH_COLS.map(c => {
+    const active = DASH_SORT.col === c.key;
+    const arr = active ? (DASH_SORT.dir > 0 ? '↑' : '↓') : '⇅';
+    return `<th class="dash-th ${c.cls} dash-th-sort" data-col="${c.key}">${c.label}<span class="sort-arr${active?' sort-arr-on':''}">${arr}</span></th>`;
+  }).join('');
+
+  const table = document.createElement('table');
+  table.className = 'dash-table';
+  table.innerHTML = `<thead><tr class="dash-thead-tr">${headHtml}</tr></thead>`;
+  const tbody = document.createElement('tbody');
+  table.appendChild(tbody);
+
+  for (const [bk, bc] of visible) {
+    const emps = byBoard[bk] || [];
+    if (emps.length === 0) continue;
+
+    const storeRow = document.createElement('tr');
+    storeRow.className = 'dash-store-hdr';
+    storeRow.innerHTML = `<td colspan="7" class="dash-store-hdr-td">
+      <span class="dash-store-dot" style="background:${bc.color}"></span>${bc.label}
+    </td>`;
+    tbody.appendChild(storeRow);
+
+    // Pre-compute KPIs for sorting
+    const rowData = emps.map(emp => {
+      const vsale  = S.vsales[emp.id] || { meta: { mensal: 0 }, entries: {} };
+      const mensal = vsale.meta?.mensal || 0;
+      const entries= vsale.entries || {};
+      let valor=0, pecas=0, atend=0;
+      for (let d=1; d<=daysInMonth; d++) {
+        const ds = `${S.year}-${pad(S.month)}-${pad(d)}`;
+        if (ds > yStr) break;
+        const e = entries[ds];
+        if (e) { valor += e.value||0; pecas += e.pecas||0; atend += e.atendimentos||0; }
+      }
+      const metaAccum = mensal * weightAccum / 100;
+      const pctMeta   = (metaAccum > 0 && valor > 0) ? valor/metaAccum*100 : null;
+      const projecao  = (valor > 0 && metaAccum > 0) ? valor/metaAccum*mensal : null;
+      const pa        = (pecas > 0 && atend > 0) ? pecas/atend : null;
+      const tm        = (valor > 0 && atend > 0) ? valor/atend : null;
+      return { emp, valor, pecas, atend, mensal, pctMeta, projecao, pa, tm };
+    });
+
+    if (DASH_SORT.col) {
+      rowData.sort((a, b) => {
+        const ka = DASH_SORT.col === 'name' ? a.emp.name : a[DASH_SORT.col];
+        const kb = DASH_SORT.col === 'name' ? b.emp.name : b[DASH_SORT.col];
+        if (ka == null && kb == null) return 0;
+        if (ka == null) return 1;
+        if (kb == null) return -1;
+        if (typeof ka === 'string') return DASH_SORT.dir * ka.localeCompare(kb, 'pt-BR');
+        return DASH_SORT.dir * (ka - kb);
+      });
+    }
+
+    let totValor=0, totPecas=0, totAtend=0, totMeta=0;
+    for (const { emp, valor, pecas, atend, mensal, pctMeta, projecao, pa, tm } of rowData) {
+      totValor += valor; totPecas += pecas; totAtend += atend; totMeta += mensal;
+      const pctCls  = pctMeta  == null ? '' : pctMeta  >= 100 ? 'kpi-pos' : pctMeta  >= 80 ? 'kpi-warn' : 'kpi-neg';
+      const projCls = projecao == null ? '' : projecao >= mensal ? 'kpi-pos' : projecao >= mensal*0.9 ? 'kpi-warn' : 'kpi-neg';
+      const row = document.createElement('tr');
+      row.className = 'dash-row';
+      row.innerHTML = `
+        <td class="dash-td dash-td-name">${emp.apelido || emp.name}</td>
+        <td class="dash-td dash-td-num">${fBRL(mensal || null)}</td>
+        <td class="dash-td dash-td-num">${fBRL(valor || null)}</td>
+        <td class="dash-td dash-td-num ${pctCls}">${fPct(pctMeta)}</td>
+        <td class="dash-td dash-td-num ${projCls}">${fBRL(projecao)}</td>
+        <td class="dash-td dash-td-num">${fDec(pa)}</td>
+        <td class="dash-td dash-td-num">${fBRL(tm)}</td>
+      `;
+      tbody.appendChild(row);
+    }
+
+    const totMetaAccum = totMeta * weightAccum / 100;
+    const totPct  = (totMetaAccum > 0 && totValor > 0) ? totValor/totMetaAccum*100 : null;
+    const totProj = (totValor > 0 && totMetaAccum > 0) ? totValor/totMetaAccum*totMeta : null;
+    const totPa   = (totPecas > 0 && totAtend > 0) ? totPecas/totAtend : null;
+    const totTm   = (totValor > 0 && totAtend > 0) ? totValor/totAtend : null;
+    const tpCls   = totPct  == null ? '' : totPct  >= 100 ? 'kpi-pos' : totPct  >= 80 ? 'kpi-warn' : 'kpi-neg';
+    const tprCls  = totProj == null ? '' : totProj >= totMeta ? 'kpi-pos' : totProj >= totMeta*0.9 ? 'kpi-warn' : 'kpi-neg';
+
+    const totalRow = document.createElement('tr');
+    totalRow.className = 'dash-total-row';
+    totalRow.innerHTML = `
+      <td class="dash-td">Total ${bc.label}</td>
+      <td class="dash-td dash-td-num">${fBRL(totMeta || null)}</td>
+      <td class="dash-td dash-td-num">${fBRL(totValor || null)}</td>
+      <td class="dash-td dash-td-num ${tpCls}">${fPct(totPct)}</td>
+      <td class="dash-td dash-td-num ${tprCls}">${fBRL(totProj)}</td>
+      <td class="dash-td dash-td-num">${totPa != null ? totPa.toFixed(2) : '—'}</td>
+      <td class="dash-td dash-td-num">${fBRL(totTm)}</td>
+    `;
+    tbody.appendChild(totalRow);
+  }
+
+  leftBody.appendChild(table);
+
+  // Wire sort clicks
+  table.querySelectorAll('.dash-th-sort').forEach(th =>
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (DASH_SORT.col === col) DASH_SORT.dir *= -1;
+      else { DASH_SORT.col = col; DASH_SORT.dir = 1; }
+      renderDashboard();
+    })
+  );
+

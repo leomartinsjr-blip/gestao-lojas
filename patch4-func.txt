@@ -1,0 +1,163 @@
+function empAvatarHtml(emp, size) {
+  size = size || 36;
+  if (emp.foto) {
+    return `<img src="${emp.foto}" class="func-avatar-img" style="width:${size}px;height:${size}px;" alt="">`;
+  }
+  const initials = emp.name.split(' ').filter(Boolean).map(w => w[0]).slice(0,2).join('').toUpperCase();
+  const color = BOARDS[emp.board]?.color || '#64748b';
+  return `<span class="func-avatar-ini" style="width:${size}px;height:${size}px;background:${color}22;color:${color};font-size:${Math.round(size*0.36)}px;">${initials}</span>`;
+}
+
+function renderFuncionariosTable() {
+  const filter     = document.getElementById('funcBoardFilter').value;
+  const showInativo = document.getElementById('funcShowInativo')?.checked;
+  const list = FE.employees
+    .filter(e => !filter || e.board === filter)
+    .filter(e => showInativo || !e.inativo);
+
+  const tbody = document.getElementById('funcTableBody');
+  if (list.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:1.5rem;color:var(--muted)">Nenhum funcionário cadastrado.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = list.map(e => {
+    const loja = BOARDS[e.board]?.label || e.board;
+    const isV  = e.isVendedor !== false;
+    const inativo = !!e.inativo;
+    const statusBadge = inativo
+      ? `<span class="func-badge func-badge-inativo">Inativo</span>${e.desligamento ? '<br><small style="color:var(--text2);font-size:.68rem;">'+e.desligamento.split('-').reverse().join('/')+'</small>' : ''}`
+      : `<span class="func-badge func-badge-ativo">Ativo</span>`;
+    return `<tr class="${inativo ? 'func-row-inativo' : ''}">
+      <td class="func-td-avatar">${empAvatarHtml(e, 34)}</td>
+      <td>${e.name}</td>
+      <td>${loja}</td>
+      <td>${e.cargo || '—'}</td>
+      <td>${e.admissao ? e.admissao.split('-').reverse().join('/') : '—'}</td>
+      <td><span class="func-badge ${isV ? 'func-badge-yes' : 'func-badge-no'}">${isV ? 'Sim' : 'Não'}</span></td>
+      <td>${statusBadge}</td>
+      <td class="func-actions">
+        <button class="func-edit-btn" data-id="${e.id}">Editar</button>
+        <button class="func-del-btn"  data-id="${e.id}">Excluir</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  tbody.querySelectorAll('.func-edit-btn').forEach(btn =>
+    btn.addEventListener('click', () => openFuncForm(parseInt(btn.dataset.id))));
+  tbody.querySelectorAll('.func-del-btn').forEach(btn =>
+    btn.addEventListener('click', () => deleteFuncionario(parseInt(btn.dataset.id))));
+}
+
+function openFuncForm(id) {
+  FE.editingId = id || null;
+  FE.newPhotoFile = null;
+  const emp = id ? FE.employees.find(e => e.id === id) : null;
+  document.getElementById('funcForm').classList.remove('hidden');
+  document.getElementById('funcFormTitle').textContent = emp ? 'Editar Funcionário' : 'Novo Funcionário';
+
+  const boardSel = document.getElementById('funcBoard');
+  boardSel.innerHTML = Object.entries(BOARDS)
+    .filter(([k]) => k !== 'escritorio')
+    .map(([k,v]) => `<option value="${k}" ${emp?.board === k ? 'selected' : ''}>${v.label}</option>`).join('');
+  if (S.user?.board) { boardSel.value = S.user.board; boardSel.disabled = true; }
+
+  document.getElementById('funcNome').value      = emp?.name      || '';
+  document.getElementById('funcCPF').value       = emp?.cpf       || '';
+  document.getElementById('funcAdmissao').value  = emp?.admissao  || '';
+  document.getElementById('funcCargo').value     = emp?.cargo     || '';
+  document.getElementById('funcSalario').value   = emp?.salario   || '';
+  document.getElementById('funcComissao').value  = emp?.comissao  || '';
+  document.getElementById('funcIsVend').checked  = emp ? emp.isVendedor !== false : true;
+  document.getElementById('funcInativo').checked = !!emp?.inativo;
+  document.getElementById('funcDesligamento').value = emp?.desligamento || '';
+  document.getElementById('funcDesligamentoWrap').style.display = emp?.inativo ? '' : 'none';
+
+  // Photo preview
+  FE.currentPhotoUrl = emp?.foto || null;
+  _updateFotoPreview(emp);
+
+  document.getElementById('funcNome').focus();
+}
+
+function _updateFotoPreview(emp) {
+  const img      = document.getElementById('funcFotoImg');
+  const initials = document.getElementById('funcFotoInitials');
+  const removeBtn= document.getElementById('funcFotoRemove');
+  const preview  = document.getElementById('funcFotoPreview');
+
+  if (FE.newPhotoFile) {
+    const url = URL.createObjectURL(FE.newPhotoFile);
+    img.src = url; img.style.display = ''; initials.style.display = 'none';
+    removeBtn.style.display = '';
+  } else if (FE.currentPhotoUrl) {
+    img.src = FE.currentPhotoUrl; img.style.display = ''; initials.style.display = 'none';
+    removeBtn.style.display = '';
+  } else {
+    img.src = ''; img.style.display = 'none';
+    const name = document.getElementById('funcNome').value || (emp?.name) || '?';
+    const ini  = name.split(' ').filter(Boolean).map(w => w[0]).slice(0,2).join('').toUpperCase() || '?';
+    const boardVal = document.getElementById('funcBoard')?.value;
+    const color = BOARDS[boardVal]?.color || '#64748b';
+    initials.textContent = ini;
+    initials.style.color = color;
+    initials.style.display = '';
+    removeBtn.style.display = 'none';
+  }
+}
+
+function hideFuncForm() {
+  document.getElementById('funcForm').classList.add('hidden');
+  document.getElementById('funcFotoInput').value = '';
+  FE.editingId = null;
+  FE.newPhotoFile = null;
+  FE.currentPhotoUrl = null;
+}
+
+async function saveFuncionario() {
+  const name      = document.getElementById('funcNome').value.trim();
+  const board     = document.getElementById('funcBoard').value;
+  const cpf       = document.getElementById('funcCPF').value.trim();
+  const admissao  = document.getElementById('funcAdmissao').value;
+  const cargo     = document.getElementById('funcCargo').value.trim();
+  const salario   = parseFloat(document.getElementById('funcSalario').value) || 0;
+  const comissao  = parseFloat(document.getElementById('funcComissao').value) || 0;
+  const isVendedor= document.getElementById('funcIsVend').checked;
+  const inativo   = document.getElementById('funcInativo').checked;
+  const desligamento = document.getElementById('funcDesligamento').value;
+  const fotoRemoved  = !FE.newPhotoFile && !FE.currentPhotoUrl && !!FE.editingId;
+
+  if (!name || !board) { toast('Nome e loja são obrigatórios', true); return; }
+
+  const btn = document.getElementById('funcSaveBtn');
+  btn.disabled = true;
+  try {
+    const body = { name, board, cpf, admissao, cargo, salario, comissao, isVendedor, inativo, desligamento };
+    if (fotoRemoved) body.foto = '';
+    let emp;
+    if (FE.editingId) {
+      emp = await apiFetch('PUT', `/api/employees/${FE.editingId}`, body);
+      const idx = FE.employees.findIndex(e => e.id === FE.editingId);
+      if (idx !== -1) FE.employees[idx] = emp;
+    } else {
+      emp = await apiFetch('POST', '/api/employees', body);
+      FE.employees.push(emp);
+    }
+    // Upload new photo if selected
+    if (FE.newPhotoFile) {
+      const fd = new FormData();
+      fd.append('photo', FE.newPhotoFile);
+      const r = await fetch(`/api/employees/${emp.id}/photo`, { method: 'POST', body: fd });
+      const pd = await r.json();
+      emp.foto = pd.url;
+      const idx = FE.employees.findIndex(e => e.id === emp.id);
+      if (idx !== -1) FE.employees[idx].foto = pd.url;
+    }
+    renderFuncionariosTable();
+    hideFuncForm();
+    toast(`"${name}" salvo ✓`);
+    loadData();
+  } catch(e) { toast('Erro: ' + e.message, true); }
+  finally { btn.disabled = false; }
+}
+
