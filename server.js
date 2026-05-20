@@ -8,10 +8,20 @@ const app  = express();
 const PORT = process.env.PORT || 3000;
 
 // ── Storage paths ──────────────────────────────────────────────────────────
-const DATA_FILE    = path.join(__dirname, 'data.json');
-const USERS_FILE   = path.join(__dirname, 'users.json');
-const UPLOADS_DIR  = path.join(__dirname, 'uploads');
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR);
+// DATA_DIR permite apontar para um volume persistente (ex: Railway /data)
+const DATA_DIR     = process.env.DATA_DIR || __dirname;
+const DATA_FILE    = path.join(DATA_DIR,  'data.json');
+const USERS_FILE   = path.join(DATA_DIR,  'users.json');
+const UPLOADS_DIR  = path.join(DATA_DIR,  'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+// Seed: copia users.json e data.json do bundle se não existirem no volume
+const SEED_USERS = path.join(__dirname, 'users.json');
+const SEED_DATA  = path.join(__dirname, 'data.json');
+if (!fs.existsSync(USERS_FILE) && fs.existsSync(SEED_USERS))
+  fs.copyFileSync(SEED_USERS, USERS_FILE);
+if (!fs.existsSync(DATA_FILE) && fs.existsSync(SEED_DATA))
+  fs.copyFileSync(SEED_DATA, DATA_FILE);
 
 // ── JSON DB helpers ────────────────────────────────────────────────────────
 function readDB() {
