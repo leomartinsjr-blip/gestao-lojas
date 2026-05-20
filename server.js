@@ -237,14 +237,47 @@ app.get('/api/employees', requireAuth, (req, res) => {
 // ── POST /api/employees ────────────────────────────────────────────────────
 app.post('/api/employees', requireAuth, (req, res) => {
   try {
-    const { name, board } = req.body;
+    const { name, board, cpf, admissao, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento, apelido } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
     const db = readDB();
     if (!db.employees) db.employees = [];
-    const emp = { id: nextId(db), name: name.trim(), board };
+    const emp = {
+      id: nextId(db), name: name.trim(), board,
+      apelido: apelido || '',
+      cpf: cpf || '', admissao: admissao || '', cargo: cargo || '',
+      salario: salario || 0, comissaoSemMeta: comissaoSemMeta || 0, comissao: comissao || 0,
+      comissaoMeta2: comissaoMeta2 || 0, comissaoSuper: comissaoSuper || 0,
+      isVendedor: isVendedor !== false,
+      inativo: inativo === true || inativo === 'true',
+      desligamento: desligamento || '',
+    };
     db.employees.push(emp);
     writeDB(db);
     res.json(emp);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── PUT /api/employees/:id ─────────────────────────────────────────────────
+app.put('/api/employees/:id', requireAuth, (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const { name, board, cpf, admissao, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento, apelido } = req.body;
+    if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
+    const db = readDB();
+    const idx = (db.employees || []).findIndex(e => e.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'not found' });
+    db.employees[idx] = {
+      ...db.employees[idx], name: name.trim(), board,
+      apelido: apelido || '',
+      cpf: cpf || '', admissao: admissao || '', cargo: cargo || '',
+      salario: salario || 0, comissaoSemMeta: comissaoSemMeta || 0, comissao: comissao || 0,
+      comissaoMeta2: comissaoMeta2 || 0, comissaoSuper: comissaoSuper || 0,
+      isVendedor: isVendedor !== false,
+      inativo: inativo === true || inativo === 'true',
+      desligamento: desligamento || '',
+    };
+    writeDB(db);
+    res.json(db.employees[idx]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -258,6 +291,23 @@ app.delete('/api/employees/:id', requireAuth, (req, res) => {
     writeDB(db);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/employees/:id/photo ─────────────────────────────────────────
+app.post('/api/employees/:id/photo', requireAuth, upload.single('photo'), (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    if (!req.file) return res.status(400).json({ error: 'No file' });
+    const db  = readDB();
+    const idx = (db.employees || []).findIndex(e => e.id === id);
+    if (idx === -1) return res.status(404).json({ error: 'not found' });
+    const old = db.employees[idx].foto;
+    if (old) try { fs.unlinkSync(path.join(UPLOADS_DIR, path.basename(old))); } catch {}
+    const url = '/uploads/' + req.file.filename;
+    db.employees[idx].foto = url;
+    writeDB(db);
+    res.json({ url });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── GET /api/folgas/:year/:month ───────────────────────────────────────────
@@ -357,6 +407,138 @@ app.delete('/api/dailysales/:year/:month/:board/:date', requireAuth, (req, res) 
     writeDB(db);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/weights/:year/:month ──────────────────────────────────────────
+app.get('/api/weights/:year/:month', requireAuth, (req, res) => {
+  try {
+    const key = monthKey(parseInt(req.params.year), parseInt(req.params.month));
+    const db  = readDB();
+    res.json((db.globalWeights || {})[key] || {});
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/weights/:year/:month ─────────────────────────────────────────
+app.post('/api/weights/:year/:month', requireAuth, (req, res) => {
+  try {
+    const key = monthKey(parseInt(req.params.year), parseInt(req.params.month));
+    const db  = readDB();
+    if (!db.globalWeights) db.globalWeights = {};
+    db.globalWeights[key] = req.body.weights || {};
+    writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/vsales/:year/:month/:board/:empId ─────────────────────────────
+app.get('/api/vsales/:year/:month/:board/:empId', requireAuth, (req, res) => {
+  try {
+    const { year, month, board, empId } = req.params;
+    const key = `${monthKey(parseInt(year), parseInt(month))}-${board}-${empId}`;
+    const db  = readDB();
+    res.json((db.vsales || {})[key] || { meta: { mensal: 0 }, entries: {} });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/vsales/:year/:month/:board/:empId/meta ───────────────────────
+app.post('/api/vsales/:year/:month/:board/:empId/meta', requireAuth, (req, res) => {
+  try {
+    const { year, month, board, empId } = req.params;
+    const key = `${monthKey(parseInt(year), parseInt(month))}-${board}-${empId}`;
+    const db  = readDB();
+    if (!db.vsales) db.vsales = {};
+    if (!db.vsales[key]) db.vsales[key] = { meta: { mensal: 0 }, entries: {} };
+    db.vsales[key].meta.mensal = parseFloat(req.body.mensal) || 0;
+    writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── PUT /api/vsales/:year/:month/:board/:empId/:date ───────────────────────
+app.put('/api/vsales/:year/:month/:board/:empId/:date', requireAuth, (req, res) => {
+  try {
+    const { year, month, board, empId, date } = req.params;
+    const key = `${monthKey(parseInt(year), parseInt(month))}-${board}-${empId}`;
+    const db  = readDB();
+    if (!db.vsales) db.vsales = {};
+    if (!db.vsales[key]) db.vsales[key] = { meta: { mensal: 0 }, entries: {} };
+    db.vsales[key].entries[date] = {
+      value:        parseFloat(req.body.value)      || 0,
+      pecas:        parseInt(req.body.pecas)        || 0,
+      atendimentos: parseInt(req.body.atendimentos) || 0,
+    };
+    writeDB(db);
+    res.json(db.vsales[key].entries[date]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── DELETE /api/vsales/:year/:month/:board/:empId/:date ────────────────────
+app.delete('/api/vsales/:year/:month/:board/:empId/:date', requireAuth, (req, res) => {
+  try {
+    const { year, month, board, empId, date } = req.params;
+    const key = `${monthKey(parseInt(year), parseInt(month))}-${board}-${empId}`;
+    const db  = readDB();
+    if (db.vsales?.[key]?.entries?.[date]) delete db.vsales[key].entries[date];
+    writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/storefluxo/:year/:month/:board ────────────────────────────────
+app.get('/api/storefluxo/:year/:month/:board', requireAuth, (req, res) => {
+  try {
+    const { year, month, board } = req.params;
+    const key = `${monthKey(parseInt(year), parseInt(month))}-${board}`;
+    const db  = readDB();
+    res.json((db.storeFluxo || {})[key] || {});
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── PUT /api/storefluxo/:year/:month/:board/:date ──────────────────────────
+app.put('/api/storefluxo/:year/:month/:board/:date', requireAuth, (req, res) => {
+  try {
+    const { year, month, board, date } = req.params;
+    const key = `${monthKey(parseInt(year), parseInt(month))}-${board}`;
+    const db  = readDB();
+    if (!db.storeFluxo) db.storeFluxo = {};
+    if (!db.storeFluxo[key]) db.storeFluxo[key] = {};
+    const val = parseInt(req.body.value) || 0;
+    if (val === 0) delete db.storeFluxo[key][date];
+    else db.storeFluxo[key][date] = val;
+    writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/weekly-metas/:year/:month ────────────────────────────────────
+app.get('/api/weekly-metas/:year/:month', requireAuth, (req, res) => {
+  try {
+    const key = monthKey(parseInt(req.params.year), parseInt(req.params.month));
+    const db  = readDB();
+    res.json((db.weeklyMetas || {})[key] || {});
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── PUT /api/weekly-metas/:year/:month/:weekStart/:empId ──────────────────
+app.put('/api/weekly-metas/:year/:month/:weekStart/:empId', requireAuth, (req, res) => {
+  try {
+    const key      = monthKey(parseInt(req.params.year), parseInt(req.params.month));
+    const { weekStart, empId } = req.params;
+    const { meta } = req.body;
+    const db = readDB();
+    if (!db.weeklyMetas)          db.weeklyMetas = {};
+    if (!db.weeklyMetas[key])     db.weeklyMetas[key] = {};
+    if (!db.weeklyMetas[key][weekStart]) db.weeklyMetas[key][weekStart] = {};
+    db.weeklyMetas[key][weekStart][empId] = { meta: parseFloat(meta) || 0 };
+    writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/historico ─────────────────────────────────────────────────────
+app.get('/api/historico', requireAuth, (req, res) => {
+  const db = readDB();
+  res.json(db.historico || {});
 });
 
 // ── Start ──────────────────────────────────────────────────────────────────

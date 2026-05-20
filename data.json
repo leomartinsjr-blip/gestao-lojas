@@ -1,5 +1,5 @@
 {
-  "nextId": 272,
+  "nextId": 292,
   "months": {
     "2026-05": {
       "id": 1,
@@ -1519,31 +1519,201 @@
   "employees": [
     {
       "id": 253,
-      "name": "BRUNO",
-      "board": "delrey"
+      "name": "BRUNO PIRES GUIMARÃES",
+      "board": "delrey",
+      "cpf": "",
+      "admissao": "",
+      "cargo": "VENDEDOR",
+      "salario": 0,
+      "comissao": 5,
+      "isVendedor": true,
+      "apelido": "BRUNO",
+      "inativo": false,
+      "desligamento": "",
+      "comissaoSemMeta": 4.5,
+      "comissaoMeta2": 5.5,
+      "comissaoSuper": 6
     },
     {
       "id": 254,
       "name": "GUILHERME",
-      "board": "delrey"
+      "board": "delrey",
+      "apelido": "",
+      "cpf": "",
+      "admissao": "",
+      "cargo": "",
+      "salario": 0,
+      "comissaoSemMeta": 4.5,
+      "comissao": 5,
+      "comissaoMeta2": 5.5,
+      "comissaoSuper": 6,
+      "isVendedor": true,
+      "inativo": false,
+      "desligamento": ""
     },
     {
       "id": 255,
-      "name": "TONY",
-      "board": "delrey"
+      "name": "EUDES OTONIEL DA CUNHA LOPES",
+      "board": "delrey",
+      "apelido": "TONY",
+      "cpf": "",
+      "admissao": "",
+      "cargo": "",
+      "salario": 0,
+      "comissaoSemMeta": 4.5,
+      "comissao": 5,
+      "comissaoMeta2": 5.5,
+      "comissaoSuper": 6,
+      "isVendedor": true,
+      "inativo": false,
+      "desligamento": ""
     },
     {
       "id": 256,
       "name": "CECILIA",
-      "board": "delrey"
+      "board": "delrey",
+      "cpf": "",
+      "admissao": "",
+      "cargo": "Caixa",
+      "salario": 1850,
+      "comissao": 0,
+      "isVendedor": false
     },
     {
       "id": 257,
       "name": "CARLA",
-      "board": "delrey"
+      "board": "delrey",
+      "cpf": "",
+      "admissao": "",
+      "cargo": "Gerente",
+      "salario": 4000,
+      "comissao": 0,
+      "isVendedor": false
+    },
+    {
+      "id": 277,
+      "name": "ATHOS TAYLON CHAVES SILVA",
+      "board": "minas",
+      "cpf": "",
+      "admissao": "",
+      "cargo": "GERENTE VENDEDOR",
+      "salario": 0,
+      "comissao": 5,
+      "isVendedor": true,
+      "apelido": "ATHOS",
+      "inativo": false,
+      "desligamento": "",
+      "comissaoSemMeta": 4.5,
+      "comissaoMeta2": 5.5,
+      "comissaoSuper": 6
+    },
+    {
+      "id": 278,
+      "name": "YAGO",
+      "board": "minas",
+      "cpf": "",
+      "admissao": "",
+      "cargo": "VENDEDOR",
+      "salario": 4.5,
+      "comissao": 0,
+      "isVendedor": true
+    },
+    {
+      "id": 279,
+      "name": "BERNARDO ROBERT DUARTE DOS SANTOS",
+      "board": "minas",
+      "cpf": "",
+      "admissao": "",
+      "cargo": "VENDEDOR",
+      "salario": 0,
+      "comissao": 5,
+      "isVendedor": true,
+      "apelido": "BERNARDO",
+      "comissaoSemMeta": 4.5,
+      "comissaoMeta2": 5.5,
+      "comissaoSuper": 6,
+      "inativo": false,
+      "desligamento": ""
+    },
+    {
+      "id": 289,
+      "name": "IANN MARCKS NEVES DE CARVALHO",
+      "board": "contagem",
+      "apelido": "IANN",
+      "cpf": "",
+      "admissao": "",
+      "cargo": "VENDEDOR",
+      "salario": 0,
+      "comissao": 5,
+      "isVendedor": true,
+      "inativo": false,
+      "desligamento": "",
+      "comissaoSemMeta": 4.5,
+      "comissaoMeta2": 5.5,
+      "comissaoSuper": 6
+    },
+    {
+      "id": 290,
+      "name": "LEONARDO JOSAFA DE OLIVEIRA JUNIOR",
+      "board": "contagem",
+      "apelido": "LEO",
+      "cpf": "",
+      "admissao": "",
+      "cargo": "GERENTE VENDEDOR",
+      "salario": 0,
+      "comissao": 5,
+      "isVendedor": true,
+      "inativo": false,
+      "desligamento": "",
+      "comissaoSemMeta": 4.5,
+      "comissaoMeta2": 5.5,
+      "comissaoSuper": 6
+    },
+    {
+      "id": 291,
+      "name": "GABRIEL HOMERO DOS REIS VIEIRA UNTAR",
+      "board": "contagem",
+      "apelido": "GABRIEL",
+      "cpf": "",
+      "admissao": "",
+      "cargo": "VENDEDOR",
+      "salario": 0,
+      "comissao": 5,
+      "isVendedor": true,
+      "inativo": false,
+      "desligamento": "",
+      "comissaoSemMeta": 4.5,
+      "comissaoMeta2": 5.5,
+      "comissaoSuper": 6
     }
   ],
-  "folgas": [],
+  "folgas": [
+    {
+      "id": 284,
+      "employeeId": 253,
+      "date": "2026-05-04"
+    },
+    {
+      "id": 285,
+      "employeeId": 254,
+      "date": "2026-05-05"
+    },
+    {
+      "id": 286,
+      "employeeId": 255,
+      "date": "2026-05-06"
+    },
+    {
+      "id": 287,
+      "employeeId": 256,
+      "date": "2026-05-07"
+    },
+    {
+      "id": 288,
+      "employeeId": 257,
+      "date": "2026-05-08"
+    }
+  ],
   "dailySales": {
     "2026-05-delrey": {
       "meta": {
@@ -1580,5 +1750,853 @@
         }
       }
     }
+  },
+  "globalWeights": {
+    "2026-05": {
+      "2026-05-01": 3.5,
+      "2026-05-02": 5.5,
+      "2026-05-03": 3,
+      "2026-05-04": 2,
+      "2026-05-05": 2,
+      "2026-05-06": 2,
+      "2026-05-07": 3,
+      "2026-05-08": 6,
+      "2026-05-09": 12.5,
+      "2026-05-10": 2.5,
+      "2026-05-11": 2,
+      "2026-05-12": 2,
+      "2026-05-13": 2,
+      "2026-05-14": 2.5,
+      "2026-05-15": 3.5,
+      "2026-05-16": 6.5,
+      "2026-05-17": 3,
+      "2026-05-18": 2,
+      "2026-05-19": 2,
+      "2026-05-20": 2,
+      "2026-05-21": 2.5,
+      "2026-05-22": 3,
+      "2026-05-23": 6,
+      "2026-05-24": 3,
+      "2026-05-25": 1.5,
+      "2026-05-26": 1.5,
+      "2026-05-27": 1.5,
+      "2026-05-28": 2,
+      "2026-05-29": 2.5,
+      "2026-05-30": 5,
+      "2026-05-31": 2
+    },
+    "2026-06": {
+      "2026-06-01": 2,
+      "2026-06-02": 2,
+      "2026-06-03": 2,
+      "2026-06-04": 2.5,
+      "2026-06-05": 4.5,
+      "2026-06-06": 8.3,
+      "2026-06-07": 3.5,
+      "2026-06-08": 3,
+      "2026-06-09": 3.5,
+      "2026-06-10": 4,
+      "2026-06-11": 5,
+      "2026-06-12": 8,
+      "2026-06-13": 6,
+      "2026-06-14": 3.5,
+      "2026-06-15": 2,
+      "2026-06-16": 2,
+      "2026-06-17": 2.5,
+      "2026-06-18": 2.5,
+      "2026-06-19": 3.5,
+      "2026-06-20": 5,
+      "2026-06-21": 3,
+      "2026-06-22": 2,
+      "2026-06-23": 2,
+      "2026-06-24": 2,
+      "2026-06-25": 2,
+      "2026-06-26": 2.2,
+      "2026-06-27": 5,
+      "2026-06-28": 2.5,
+      "2026-06-29": 2,
+      "2026-06-30": 2
+    }
+  },
+  "vsales": {
+    "2026-05-delrey-253": {
+      "meta": {
+        "mensal": 60000
+      },
+      "entries": {
+        "2026-05-01": {
+          "value": 5293.8,
+          "pecas": 17,
+          "atendimentos": 11
+        },
+        "2026-05-02": {
+          "value": 1757.8,
+          "pecas": 4,
+          "atendimentos": 3
+        },
+        "2026-05-03": {
+          "value": 2059.4,
+          "pecas": 8,
+          "atendimentos": 6
+        },
+        "2026-05-05": {
+          "value": 1632.5,
+          "pecas": 7,
+          "atendimentos": 4
+        },
+        "2026-05-06": {
+          "value": 559.8,
+          "pecas": 2,
+          "atendimentos": 2
+        },
+        "2026-05-07": {
+          "value": 2147.3,
+          "pecas": 8,
+          "atendimentos": 6
+        },
+        "2026-05-08": {
+          "value": 2694.1,
+          "pecas": 11,
+          "atendimentos": 10
+        },
+        "2026-05-09": {
+          "value": 6028.3,
+          "pecas": 21,
+          "atendimentos": 13
+        },
+        "2026-05-10": {
+          "value": 2254.1,
+          "pecas": 11,
+          "atendimentos": 7
+        },
+        "2026-05-11": {
+          "value": 1719.7,
+          "pecas": 5,
+          "atendimentos": 3
+        },
+        "2026-05-13": {
+          "value": 299.9,
+          "pecas": 1,
+          "atendimentos": 1
+        },
+        "2026-05-14": {
+          "value": 1879.2,
+          "pecas": 10,
+          "atendimentos": 6
+        },
+        "2026-05-15": {
+          "value": 689.7,
+          "pecas": 3,
+          "atendimentos": 2
+        },
+        "2026-05-16": {
+          "value": 3496,
+          "pecas": 11,
+          "atendimentos": 8
+        },
+        "2026-05-18": {
+          "value": 739.5,
+          "pecas": 4,
+          "atendimentos": 4
+        },
+        "2026-05-19": {
+          "value": 2633.3,
+          "pecas": 8,
+          "atendimentos": 6
+        }
+      }
+    },
+    "2026-05-delrey-254": {
+      "meta": {
+        "mensal": 60000
+      },
+      "entries": {
+        "2026-05-01": {
+          "value": 1499.4,
+          "pecas": 8,
+          "atendimentos": 6
+        },
+        "2026-05-02": {
+          "value": 3533.2,
+          "pecas": 13,
+          "atendimentos": 7
+        },
+        "2026-05-04": {
+          "value": 1194.4,
+          "pecas": 6,
+          "atendimentos": 2
+        },
+        "2026-05-05": {
+          "value": 1399.6,
+          "pecas": 4,
+          "atendimentos": 3
+        },
+        "2026-05-06": {
+          "value": 1589.5,
+          "pecas": 6,
+          "atendimentos": 5
+        },
+        "2026-05-07": {
+          "value": 1573.8,
+          "pecas": 4,
+          "atendimentos": 3
+        },
+        "2026-05-08": {
+          "value": 1279.5,
+          "pecas": 5,
+          "atendimentos": 4
+        },
+        "2026-05-09": {
+          "value": 4375.6,
+          "pecas": 18,
+          "atendimentos": 10
+        },
+        "2026-05-10": {
+          "value": 1839.3,
+          "pecas": 7,
+          "atendimentos": 6
+        },
+        "2026-05-12": {
+          "value": 1679.4,
+          "pecas": 8,
+          "atendimentos": 5
+        },
+        "2026-05-13": {
+          "value": 1414.6,
+          "pecas": 5,
+          "atendimentos": 4
+        },
+        "2026-05-14": {
+          "value": 559.8,
+          "pecas": 3,
+          "atendimentos": 3
+        },
+        "2026-05-15": {
+          "value": 949.6,
+          "pecas": 4,
+          "atendimentos": 2
+        },
+        "2026-05-16": {
+          "value": 1279.4,
+          "pecas": 6,
+          "atendimentos": 2
+        },
+        "2026-05-17": {
+          "value": 1443.7,
+          "pecas": 5,
+          "atendimentos": 4
+        },
+        "2026-05-18": {
+          "value": 749.8,
+          "pecas": 2,
+          "atendimentos": 2
+        }
+      }
+    },
+    "2026-05-delrey-255": {
+      "meta": {
+        "mensal": 60000
+      },
+      "entries": {
+        "2026-05-02": {
+          "value": 4136.5,
+          "pecas": 13,
+          "atendimentos": 6
+        },
+        "2026-05-03": {
+          "value": 3178.7,
+          "pecas": 15,
+          "atendimentos": 7
+        },
+        "2026-05-04": {
+          "value": 529.8,
+          "pecas": 2,
+          "atendimentos": 2
+        },
+        "2026-05-06": {
+          "value": 1429.4,
+          "pecas": 6,
+          "atendimentos": 5
+        },
+        "2026-05-07": {
+          "value": 2729.4,
+          "pecas": 10,
+          "atendimentos": 7
+        },
+        "2026-05-08": {
+          "value": 1989.3,
+          "pecas": 6,
+          "atendimentos": 6
+        },
+        "2026-05-09": {
+          "value": 5793.6,
+          "pecas": 20,
+          "atendimentos": 13
+        },
+        "2026-05-10": {
+          "value": 499.9,
+          "pecas": 1,
+          "atendimentos": 1
+        },
+        "2026-05-11": {
+          "value": 2114.4,
+          "pecas": 8,
+          "atendimentos": 4
+        },
+        "2026-05-12": {
+          "value": 1309.6,
+          "pecas": 4,
+          "atendimentos": 2
+        },
+        "2026-05-14": {
+          "value": 1039.8,
+          "pecas": 3,
+          "atendimentos": 3
+        },
+        "2026-05-15": {
+          "value": 5304.1,
+          "pecas": 13,
+          "atendimentos": 6
+        },
+        "2026-05-16": {
+          "value": 1677.3,
+          "pecas": 8,
+          "atendimentos": 6
+        },
+        "2026-05-17": {
+          "value": 2209.6,
+          "pecas": 6,
+          "atendimentos": 3
+        },
+        "2026-05-19": {
+          "value": 899.7,
+          "pecas": 3,
+          "atendimentos": 2
+        }
+      }
+    },
+    "2026-05-minas-277": {
+      "meta": {
+        "mensal": 46666.67
+      },
+      "entries": {
+        "2026-05-02": {
+          "value": 290,
+          "pecas": 1,
+          "atendimentos": 1
+        },
+        "2026-05-03": {
+          "value": 1010,
+          "pecas": 4,
+          "atendimentos": 2
+        },
+        "2026-05-05": {
+          "value": 750,
+          "pecas": 2,
+          "atendimentos": 2
+        },
+        "2026-05-07": {
+          "value": 700,
+          "pecas": 3,
+          "atendimentos": 2
+        },
+        "2026-05-08": {
+          "value": 1913,
+          "pecas": 8,
+          "atendimentos": 6
+        },
+        "2026-05-09": {
+          "value": 3249.9,
+          "pecas": 9,
+          "atendimentos": 7
+        },
+        "2026-05-11": {
+          "value": 499.9,
+          "pecas": 2,
+          "atendimentos": 2
+        },
+        "2026-05-12": {
+          "value": 1010,
+          "pecas": 4,
+          "atendimentos": 3
+        },
+        "2026-05-13": {
+          "value": 862,
+          "pecas": 4,
+          "atendimentos": 1
+        },
+        "2026-05-14": {
+          "value": 399,
+          "pecas": 2,
+          "atendimentos": 2
+        },
+        "2026-05-15": {
+          "value": 2329.9,
+          "pecas": 10,
+          "atendimentos": 7
+        },
+        "2026-05-16": {
+          "value": 1199.6,
+          "pecas": 5,
+          "atendimentos": 3
+        },
+        "2026-05-17": {
+          "value": 1100,
+          "pecas": 4,
+          "atendimentos": 2
+        },
+        "2026-05-18": {
+          "value": 2469.5,
+          "pecas": 7,
+          "atendimentos": 2
+        },
+        "2026-05-19": {
+          "value": 659.9,
+          "pecas": 2,
+          "atendimentos": 2
+        }
+      }
+    },
+    "2026-05-minas-278": {
+      "meta": {
+        "mensal": 46666.67
+      },
+      "entries": {
+        "2026-05-01": {
+          "value": 2894,
+          "pecas": 16,
+          "atendimentos": 8
+        },
+        "2026-05-02": {
+          "value": 1285,
+          "pecas": 6,
+          "atendimentos": 4
+        },
+        "2026-05-04": {
+          "value": 2029.8,
+          "pecas": 10,
+          "atendimentos": 7
+        },
+        "2026-05-05": {
+          "value": 1190,
+          "pecas": 5,
+          "atendimentos": 4
+        },
+        "2026-05-06": {
+          "value": 1642,
+          "pecas": 6,
+          "atendimentos": 4
+        },
+        "2026-05-07": {
+          "value": 1610,
+          "pecas": 5,
+          "atendimentos": 3
+        },
+        "2026-05-08": {
+          "value": 1739.9,
+          "pecas": 6,
+          "atendimentos": 4
+        },
+        "2026-05-09": {
+          "value": 3170,
+          "pecas": 12,
+          "atendimentos": 9
+        },
+        "2026-05-10": {
+          "value": 1025,
+          "pecas": 6,
+          "atendimentos": 6
+        },
+        "2026-05-11": {
+          "value": 200,
+          "pecas": 1,
+          "atendimentos": 1
+        },
+        "2026-05-15": {
+          "value": 900,
+          "pecas": 3,
+          "atendimentos": 3
+        },
+        "2026-05-16": {
+          "value": 3505,
+          "pecas": 13,
+          "atendimentos": 9
+        },
+        "2026-05-18": {
+          "value": 960,
+          "pecas": 4,
+          "atendimentos": 4
+        },
+        "2026-05-19": {
+          "value": 209,
+          "pecas": 1,
+          "atendimentos": 1
+        }
+      }
+    },
+    "2026-05-minas-279": {
+      "meta": {
+        "mensal": 46666.67
+      },
+      "entries": {
+        "2026-05-02": {
+          "value": 1269.9,
+          "pecas": 5,
+          "atendimentos": 3
+        },
+        "2026-05-03": {
+          "value": 860,
+          "pecas": 6,
+          "atendimentos": 2
+        },
+        "2026-05-04": {
+          "value": 300,
+          "pecas": 1,
+          "atendimentos": 1
+        },
+        "2026-05-06": {
+          "value": 680,
+          "pecas": 5,
+          "atendimentos": 4
+        },
+        "2026-05-07": {
+          "value": 430,
+          "pecas": 2,
+          "atendimentos": 2
+        },
+        "2026-05-08": {
+          "value": 590,
+          "pecas": 4,
+          "atendimentos": 3
+        },
+        "2026-05-09": {
+          "value": 2205,
+          "pecas": 12,
+          "atendimentos": 7
+        },
+        "2026-05-10": {
+          "value": 570,
+          "pecas": 2,
+          "atendimentos": 2
+        },
+        "2026-05-13": {
+          "value": 1399.9,
+          "pecas": 5,
+          "atendimentos": 5
+        },
+        "2026-05-14": {
+          "value": 255,
+          "pecas": 1,
+          "atendimentos": 1
+        },
+        "2026-05-16": {
+          "value": 875,
+          "pecas": 4,
+          "atendimentos": 3
+        },
+        "2026-05-17": {
+          "value": 380,
+          "pecas": 2,
+          "atendimentos": 2
+        },
+        "2026-05-19": {
+          "value": 370,
+          "pecas": 2,
+          "atendimentos": 2
+        }
+      }
+    },
+    "2026-05-contagem-290": {
+      "meta": {
+        "mensal": 46666.67
+      },
+      "entries": {
+        "2026-05-02": {
+          "value": 1390,
+          "pecas": 6,
+          "atendimentos": 5
+        },
+        "2026-05-03": {
+          "value": 600,
+          "pecas": 3,
+          "atendimentos": 3
+        },
+        "2026-05-05": {
+          "value": 1200,
+          "pecas": 6,
+          "atendimentos": 4
+        },
+        "2026-05-06": {
+          "value": 300,
+          "pecas": 1,
+          "atendimentos": 1
+        },
+        "2026-05-07": {
+          "value": 2560,
+          "pecas": 8,
+          "atendimentos": 5
+        },
+        "2026-05-08": {
+          "value": 1160,
+          "pecas": 9,
+          "atendimentos": 3
+        },
+        "2026-05-09": {
+          "value": 1260,
+          "pecas": 6,
+          "atendimentos": 5
+        },
+        "2026-05-12": {
+          "value": 200,
+          "pecas": 1,
+          "atendimentos": 1
+        },
+        "2026-05-13": {
+          "value": 1530,
+          "pecas": 4,
+          "atendimentos": 2
+        },
+        "2026-05-15": {
+          "value": 1320,
+          "pecas": 3,
+          "atendimentos": 2
+        },
+        "2026-05-16": {
+          "value": 300,
+          "pecas": 2,
+          "atendimentos": 1
+        },
+        "2026-05-17": {
+          "value": 2930,
+          "pecas": 5,
+          "atendimentos": 4
+        },
+        "2026-05-19": {
+          "value": 2770,
+          "pecas": 8,
+          "atendimentos": 3
+        }
+      }
+    },
+    "2026-05-contagem-289": {
+      "meta": {
+        "mensal": 46666.67
+      },
+      "entries": {
+        "2026-05-02": {
+          "value": 5100,
+          "pecas": 26,
+          "atendimentos": 8
+        },
+        "2026-05-04": {
+          "value": 3720,
+          "pecas": 16,
+          "atendimentos": 5
+        },
+        "2026-05-06": {
+          "value": 2640,
+          "pecas": 11,
+          "atendimentos": 4
+        },
+        "2026-05-07": {
+          "value": 600,
+          "pecas": 4,
+          "atendimentos": 2
+        },
+        "2026-05-08": {
+          "value": 2270,
+          "pecas": 12,
+          "atendimentos": 7
+        },
+        "2026-05-09": {
+          "value": 7095,
+          "pecas": 27,
+          "atendimentos": 12
+        },
+        "2026-05-10": {
+          "value": 4390,
+          "pecas": 19,
+          "atendimentos": 5
+        },
+        "2026-05-11": {
+          "value": 2680,
+          "pecas": 8,
+          "atendimentos": 5
+        },
+        "2026-05-13": {
+          "value": 990,
+          "pecas": 3,
+          "atendimentos": 2
+        },
+        "2026-05-14": {
+          "value": 830,
+          "pecas": 4,
+          "atendimentos": 3
+        },
+        "2026-05-15": {
+          "value": 2220,
+          "pecas": 9,
+          "atendimentos": 5
+        },
+        "2026-05-16": {
+          "value": 3580,
+          "pecas": 16,
+          "atendimentos": 8
+        },
+        "2026-05-17": {
+          "value": 930,
+          "pecas": 4,
+          "atendimentos": 2
+        },
+        "2026-05-18": {
+          "value": 2840,
+          "pecas": 11,
+          "atendimentos": 4
+        },
+        "2026-05-19": {
+          "value": 460,
+          "pecas": 3,
+          "atendimentos": 1
+        }
+      }
+    },
+    "2026-05-contagem-291": {
+      "meta": {
+        "mensal": 46666.67
+      },
+      "entries": {
+        "2026-05-02": {
+          "value": 3600,
+          "pecas": 12,
+          "atendimentos": 3
+        },
+        "2026-05-03": {
+          "value": 2000,
+          "pecas": 7,
+          "atendimentos": 2
+        },
+        "2026-05-05": {
+          "value": 1330,
+          "pecas": 4,
+          "atendimentos": 2
+        },
+        "2026-05-06": {
+          "value": 220,
+          "pecas": 1,
+          "atendimentos": 1
+        },
+        "2026-05-07": {
+          "value": 850,
+          "pecas": 4,
+          "atendimentos": 2
+        },
+        "2026-05-08": {
+          "value": 2070,
+          "pecas": 10,
+          "atendimentos": 4
+        },
+        "2026-05-09": {
+          "value": 1410,
+          "pecas": 7,
+          "atendimentos": 4
+        },
+        "2026-05-12": {
+          "value": 870,
+          "pecas": 3,
+          "atendimentos": 2
+        },
+        "2026-05-14": {
+          "value": 400,
+          "pecas": 1,
+          "atendimentos": 1
+        },
+        "2026-05-15": {
+          "value": 1570,
+          "pecas": 6,
+          "atendimentos": 1
+        },
+        "2026-05-16": {
+          "value": 770,
+          "pecas": 3,
+          "atendimentos": 1
+        },
+        "2026-05-19": {
+          "value": 300,
+          "pecas": 1,
+          "atendimentos": 1
+        }
+      }
+    }
+  },
+  "weeklyMetas": {
+    "2026-05": {
+      "2026-05-01": {
+        "253": {
+          "meta": 0
+        }
+      }
+    }
+  },
+  "historico": {
+    "2022-01": 165385,
+    "2022-02": 168003,
+    "2022-03": 234286,
+    "2022-04": 266401,
+    "2022-05": 302791,
+    "2022-06": 322301,
+    "2022-07": 283809,
+    "2022-08": 281544,
+    "2022-09": 270658,
+    "2022-10": 273128,
+    "2022-11": 233726,
+    "2022-12": 702491,
+    "2023-01": 231820,
+    "2023-02": 192965,
+    "2023-03": 260198,
+    "2023-04": 234835,
+    "2023-05": 267007,
+    "2023-06": 302000,
+    "2023-07": 278639,
+    "2023-08": 221782,
+    "2023-09": 254105,
+    "2023-10": 234534,
+    "2023-11": 241181,
+    "2023-12": 652603,
+    "2024-01": 174910,
+    "2024-02": 178876,
+    "2024-03": 191244,
+    "2024-04": 173915,
+    "2024-05": 220048,
+    "2024-06": 274312,
+    "2024-07": 220773,
+    "2024-08": 233149,
+    "2024-09": 207684,
+    "2024-10": 236554,
+    "2024-11": 241121,
+    "2024-12": 593236,
+    "2025-01": 150997,
+    "2025-02": 158402,
+    "2025-03": 162633,
+    "2025-04": 184631,
+    "2025-05": 213998,
+    "2025-06": 209802,
+    "2025-07": 173548,
+    "2025-08": 175903,
+    "2025-09": 143292,
+    "2025-10": 154790,
+    "2025-11": 187029,
+    "2025-12": 464571,
+    "2026-01": 134642,
+    "2026-02": 119759,
+    "2026-03": 128296,
+    "2026-04": 128061,
+    "2026-05": 159679,
+    "2026-06": 156549,
+    "2026-07": 129497,
+    "2026-08": 131254,
+    "2026-09": 106921,
+    "2026-10": 115500,
+    "2026-11": 139556,
+    "2026-12": 346650
   }
 }
