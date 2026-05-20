@@ -423,7 +423,7 @@ function renderDashboard() {
       <td class="dash-td dash-td-num">${fBRL(totValor || null)}</td>
       <td class="dash-td dash-td-num ${tpCls}">${fPct(totPct)}</td>
       <td class="dash-td dash-td-num ${tprCls}">${fBRL(totProj)}</td>
-      <td class="dash-td dash-td-num">${totPa != null ? totPa.toFixed(2) : '—'}</td>
+      <td class="dash-td dash-td-num${totPa != null ? (totPa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${totPa != null ? totPa.toFixed(2) : '—'}</td>
       <td class="dash-td dash-td-num">${fBRL(totTm)}</td>
     `;
     tbody.appendChild(totalRow);
@@ -775,7 +775,7 @@ function _renderDashWeekBody(body, week, extraData) {
           <td class="dw-td dw-td-num">${fBRL(totValor||null)}</td>
           <td class="dw-td dw-td-num ${tpCls}">${fPct(totPct)}</td>
           <td class="dw-td dw-td-num ${tprojCls}">${hasProj ? fBRL(totProjecao) : '—'}</td>
-          <td class="dw-td dw-td-num">${totPa!=null?totPa.toFixed(2):'—'}</td>
+          <td class="dw-td dw-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
           <td class="dw-td dw-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
         </tr></tfoot>
       </table>`;
@@ -2621,7 +2621,7 @@ async function renderWeeklyModal() {
           <td class="wk-td wk-td-num">${fBRL(totValor||null)}</td>
           <td class="wk-td wk-td-num ${tpCls}">${fPct(totPct)}</td>
           <td class="wk-td wk-td-num ${tprojCls2}">${hasProj2 ? fBRL(totProjecao2) : '—'}</td>
-          <td class="wk-td wk-td-num">${totPa!=null?totPa.toFixed(2):'—'}</td>
+          <td class="wk-td wk-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
           <td class="wk-td wk-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
         </tr></tfoot>
       </table>`;
