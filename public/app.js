@@ -477,11 +477,15 @@ function renderDashboard() {
     _refreshDashWeek();
   });
 
+  const midCol = document.createElement('div');
+  midCol.className = 'main-mid-col';
+  grid.appendChild(midCol);
+
   const rightCol = document.createElement('div');
   rightCol.className = 'main-right-col';
   grid.appendChild(rightCol);
 
-  // ── CARD: Campanha Ativa (mini ranking top 5) ───────────────────────────
+  // ── CARD: Campanha Ativa (mini ranking top 5) — na coluna do meio ────────
   const userBoard = S.user?.board || null;
   const activeCampaigns = (S.campaigns || []).filter(c =>
     c.startDate <= todayStr && c.endDate >= todayStr &&
@@ -555,9 +559,30 @@ function renderDashboard() {
       openCampanhasModal();
       setTimeout(() => renderCampaignRanking(camp), 60);
     });
-    rightCol.appendChild(campDashCard);
+    midCol.appendChild(campDashCard);
   }
 
+  // ── CARD: Comparativo por Loja → coluna do meio ─────────────────────────
+  const compCard = document.createElement('div');
+  compCard.className = 'main-card';
+  compCard.innerHTML = `
+    <div class="main-card-hdr">
+      <span class="main-card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        Comparativo por Loja
+      </span>
+      <span class="main-card-sub" id="compCardSub">${MONTHS_PT[S.month-1]} ${S.year}</span>
+    </div>
+    <div class="main-card-body" id="compCardBody">
+      <div style="padding:.85rem;text-align:center;font-size:.78rem;color:var(--muted)">Carregando...</div>
+    </div>
+  `;
+  midCol.appendChild(compCard);
+  _loadCompCard(compCard.querySelector('#compCardBody')).catch(e => console.error(e));
+
+  // ── CARD: Folgas → coluna direita ────────────────────────────────────────
   const folgasCard = document.createElement('div');
   folgasCard.className = 'main-card';
   folgasCard.innerHTML = `
@@ -576,27 +601,6 @@ function renderDashboard() {
   `;
   rightCol.appendChild(folgasCard);
   _renderDashFolgas(folgasCard.querySelector('#dashFolgasBody'));
-
-  // ── CARD: Comparativo por Loja ───────────────────────────────────────────
-  const compCard = document.createElement('div');
-  compCard.className = 'main-card';
-  compCard.style.marginTop = '1.25rem';
-  compCard.innerHTML = `
-    <div class="main-card-hdr">
-      <span class="main-card-title">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-        </svg>
-        Comparativo por Loja
-      </span>
-      <span class="main-card-sub" id="compCardSub">${MONTHS_PT[S.month-1]} ${S.year}</span>
-    </div>
-    <div class="main-card-body" id="compCardBody">
-      <div style="padding:1rem;text-align:center;font-size:.8rem;color:var(--text2)">Carregando...</div>
-    </div>
-  `;
-  rightCol.appendChild(compCard);
-  _loadCompCard(compCard.querySelector('#compCardBody')).catch(e => console.error(e));
 }
 
 
