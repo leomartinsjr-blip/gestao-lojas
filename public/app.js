@@ -14,7 +14,7 @@ const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
 // ── State ──────────────────────────────────────────────────────────────────
-const S = { year: 2026, month: 5, user: null, employees: [], weights: {}, vsales: {}, weeklyMetas: {}, folgas: [], campaigns: [] };
+const S = { year: 2026, month: 5, user: null, employees: [], weights: {}, vsales: {}, weeklyMetas: {}, folgas: [], campaigns: [], nfItems: [] };
 
 let saveTimeout = null;
 
@@ -180,8 +180,12 @@ async function loadData() {
     S.weeklyMetas = weeklyMetas || {};
     S.folgas      = folgas || [];
 
-    const campaigns = await apiFetch('GET', '/api/campaigns').catch(() => []);
+    const [campaigns, nfItems] = await Promise.all([
+      apiFetch('GET', '/api/campaigns').catch(() => []),
+      apiFetch('GET', '/api/nf-items').catch(() => []),
+    ]);
     S.campaigns = campaigns || [];
+    S.nfItems   = nfItems || [];
     _updateCampanhasBtn();
 
     renderDashboard();
@@ -293,6 +297,7 @@ function renderDashboard() {
   // ── CARD: Performance Mensal ────────────────────────────────────────────
   const leftCard = document.createElement('div');
   leftCard.className = 'main-card';
+  leftCard.dataset.cardId = 'card-perf';
   leftCard.innerHTML = `
     <div class="main-card-hdr">
       <span class="main-card-title">
@@ -560,12 +565,14 @@ function renderDashboard() {
       openCampanhasModal();
       setTimeout(() => renderCampaignRanking(camp), 60);
     });
+    campDashCard.dataset.cardId = 'card-camp';
     midCol.appendChild(campDashCard);
   }
 
   // ── CARD: Folgas → coluna direita ────────────────────────────────────────
   const folgasCard = document.createElement('div');
   folgasCard.className = 'main-card';
+  folgasCard.dataset.cardId = 'card-folgas';
   folgasCard.innerHTML = `
     <div class="main-card-hdr">
       <span class="main-card-title">
@@ -586,6 +593,7 @@ function renderDashboard() {
   // ── CARD: Comparativo por Loja → coluna esquerda (abaixo da performance) ─
   const compCard = document.createElement('div');
   compCard.className = 'main-card';
+  compCard.dataset.cardId = 'card-comp';
   compCard.innerHTML = `
     <div class="main-card-hdr">
       <span class="main-card-title">
@@ -602,6 +610,10 @@ function renderDashboard() {
   `;
   leftCol.appendChild(compCard);
   _loadCompCard(compCard.querySelector('#compCardBody')).catch(e => console.error(e));
+
+  // ── CARD: Recebimento de NF Autorizado ───────────────────────────────────
+  renderNFCard(midCol);
+
 }
 
 
@@ -3100,6 +3112,202 @@ function initCampanhasModal() {
   document.getElementById('campanhasOverlay').addEventListener('click', e => {
     if (e.target === document.getElementById('campanhasOverlay')) closeCampanhasModal();
   });
+}
+
+// ── Recebimento de NF ─────────────────────────────────────────────────────
+function _escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+const NF_STORES = ['delrey','minas','contagem','estacao','tommy','lez'];
+
+function _fmtNFDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  const p = n => String(n).padStart(2,'0');
+  return `${p(d.getDate())}/${p(d.getMonth()+1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function _renderNFActive(body, board, refresh) {
+  const items = (S.nfItems || []).filter(x => x.board === board && !x.archived);
+  if (!items.length) {
+    body.innerHTML = '<div style="padding:.75rem 0;color:var(--muted);font-size:.8rem;text-align:center">Nenhum item ativo</div>';
+    return;
+  }
+  body.innerHTML = items.map(item => `
+    <div class="nf-item${item.checked ? ' nf-checked' : ''}" data-id="${item.id}">
+      <label class="nf-chk-label">
+        <input type="checkbox" class="nf-chk" data-id="${item.id}"${item.checked ? ' checked' : ''}>
+        <span class="nf-item-text">${_escHtml(item.text)}</span>
+      </label>
+      <span class="nf-item-meta">${_escHtml(item.addedBy)}</span>
+      <button class="nf-del-btn" data-id="${item.id}" title="Arquivar">&times;</button>
+    </div>
+  `).join('');
+
+  body.querySelectorAll('.nf-chk').forEach(chk => {
+    chk.addEventListener('change', async () => {
+      const id = parseInt(chk.dataset.id);
+      await apiFetch('PATCH', `/api/nf-items/${id}`, { checked: chk.checked }).catch(() => {});
+      const item = S.nfItems.find(x => x.id === id);
+      if (item) item.checked = chk.checked;
+      const row = body.querySelector(`.nf-item[data-id="${id}"]`);
+      if (row) row.classList.toggle('nf-checked', chk.checked);
+    });
+  });
+
+  body.querySelectorAll('.nf-del-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = parseInt(btn.dataset.id);
+      const updated = await apiFetch('PATCH', `/api/nf-items/${id}`, { archived: true }).catch(() => null);
+      const item = S.nfItems.find(x => x.id === id);
+      if (item && updated) Object.assign(item, updated);
+      _renderNFActive(body, board, refresh);
+      refresh();
+    });
+  });
+}
+
+function _renderNFHistory(body, board, refresh) {
+  const isAdmin = !S.user?.board || S.user?.board === 'escritorio';
+  const items = (S.nfItems || []).filter(x => x.board === board && x.archived)
+    .sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''));
+
+  if (!items.length) {
+    body.innerHTML = '<div style="padding:.75rem 0;color:var(--muted);font-size:.8rem;text-align:center">Histórico vazio</div>';
+    return;
+  }
+
+  body.innerHTML = `
+    ${isAdmin ? `<div class="nf-hist-header"><button class="nf-clear-btn" id="nfClearAll">Limpar tudo</button></div>` : ''}
+    ${items.map(item => `
+      <div class="nf-item nf-checked nf-hist-item" data-id="${item.id}">
+        <span class="nf-item-text">${_escHtml(item.text)}</span>
+        <span class="nf-item-meta">${_escHtml(item.archivedBy || item.addedBy)} · ${_fmtNFDate(item.archivedAt)}</span>
+        ${isAdmin ? `<button class="nf-del-btn" data-id="${item.id}" title="Excluir">&times;</button>` : ''}
+      </div>
+    `).join('')}
+  `;
+
+  body.querySelectorAll('.nf-del-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = parseInt(btn.dataset.id);
+      await apiFetch('DELETE', `/api/nf-items/${id}`).catch(() => {});
+      S.nfItems = S.nfItems.filter(x => x.id !== id);
+      _renderNFHistory(body, board, refresh);
+      refresh();
+    });
+  });
+
+  const clearAll = body.querySelector('#nfClearAll');
+  if (clearAll) {
+    clearAll.addEventListener('click', async () => {
+      const toDelete = (S.nfItems || []).filter(x => x.board === board && x.archived);
+      await Promise.all(toDelete.map(x => apiFetch('DELETE', `/api/nf-items/${x.id}`).catch(() => {})));
+      S.nfItems = S.nfItems.filter(x => !(x.board === board && x.archived));
+      _renderNFHistory(body, board, refresh);
+      refresh();
+    });
+  }
+}
+
+function renderNFCard(container) {
+  const isAdmin = !S.user?.board || S.user?.board === 'escritorio';
+  const userBoard = S.user?.board;
+  let activeBoard = isAdmin ? NF_STORES[0] : userBoard;
+  let showHistory = false;
+
+  const card = document.createElement('div');
+  card.className = 'main-card';
+
+  const tabsHtml = isAdmin ? `
+    <div class="nf-tabs">
+      ${NF_STORES.map(b => `
+        <button class="nf-tab${b === activeBoard ? ' active' : ''}" data-board="${b}"
+          style="--nf-tab-color:${BOARDS[b]?.color || '#8B949E'}">
+          ${BOARDS[b]?.label || b}
+        </button>`).join('')}
+    </div>` : '';
+
+  card.innerHTML = `
+    <div class="main-card-hdr">
+      <span class="main-card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <polyline points="9 15 11 17 15 13"/>
+        </svg>
+        Recebimento de NF Autorizado
+      </span>
+      ${!isAdmin ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
+      <button class="nf-hist-btn" id="nfHistBtn" style="display:none">Histórico</button>
+    </div>
+    ${tabsHtml}
+    <div class="main-card-body nf-card-body" id="nfCardBody"></div>
+    <div class="nf-add-row" id="nfAddRow">
+      <input type="text" class="nf-input" id="nfInput" placeholder="Adicionar item…" maxlength="120">
+      <button class="nf-add-btn" id="nfAddBtn">+</button>
+    </div>
+  `;
+  container.appendChild(card);
+
+  const body    = card.querySelector('#nfCardBody');
+  const addRow  = card.querySelector('#nfAddRow');
+  const histBtn = card.querySelector('#nfHistBtn');
+  const input   = card.querySelector('#nfInput');
+  const addBtn  = card.querySelector('#nfAddBtn');
+
+  function refresh() {
+    const archived = (S.nfItems || []).filter(x => x.board === activeBoard && x.archived);
+    if (archived.length > 0) {
+      histBtn.style.display = '';
+      histBtn.textContent = showHistory ? '← Voltar' : `Histórico (${archived.length})`;
+    } else {
+      histBtn.style.display = 'none';
+      if (showHistory) { showHistory = false; }
+    }
+    if (showHistory) {
+      _renderNFHistory(body, activeBoard, refresh);
+      addRow.style.display = 'none';
+    } else {
+      _renderNFActive(body, activeBoard, refresh);
+      addRow.style.display = '';
+    }
+  }
+
+  refresh();
+
+  histBtn.addEventListener('click', () => {
+    showHistory = !showHistory;
+    refresh();
+  });
+
+  if (isAdmin) {
+    card.querySelectorAll('.nf-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        activeBoard = tab.dataset.board;
+        showHistory = false;
+        card.querySelectorAll('.nf-tab').forEach(t => t.classList.toggle('active', t === tab));
+        refresh();
+      });
+    });
+  }
+
+  async function addNFItem() {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    try {
+      const item = await apiFetch('POST', '/api/nf-items', { text, board: activeBoard });
+      S.nfItems = [...S.nfItems, item];
+      refresh();
+    } catch (e) {
+      toast('Erro ao adicionar item', true);
+    }
+  }
+
+  addBtn.addEventListener('click', addNFItem);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') addNFItem(); });
 }
 
 // ── Meta celebration ──────────────────────────────────────────────────────

@@ -609,6 +609,83 @@ app.delete('/api/campaigns/:id', requireAuth, (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/nf-items ─────────────────────────────────────────────────────
+app.get('/api/nf-items', requireAuth, (req, res) => {
+  const db = readDB();
+  res.json(db.nfItems || []);
+});
+
+// ── POST /api/nf-items ────────────────────────────────────────────────────
+app.post('/api/nf-items', requireAuth, (req, res) => {
+  try {
+    const { text, board } = req.body;
+    if (!text?.trim()) return res.status(400).json({ error: 'Texto obrigatório' });
+    if (!board || !BOARDS.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
+    const db = readDB();
+    if (!db.nfItems) db.nfItems = [];
+    const item = {
+      id: nextId(db),
+      text: text.trim(),
+      board,
+      checked: false,
+      addedBy: req.session.user.label || req.session.user.username,
+      addedAt: new Date().toISOString(),
+    };
+    db.nfItems.push(item);
+    writeDB(db);
+    res.json(item);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── PATCH /api/nf-items/:id ───────────────────────────────────────────────
+app.patch('/api/nf-items/:id', requireAuth, (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const db = readDB();
+    const item = (db.nfItems || []).find(x => x.id === id);
+    if (!item) return res.status(404).json({ error: 'Item não encontrado' });
+    if ('checked' in req.body) item.checked = !!req.body.checked;
+    if ('text' in req.body && req.body.text?.trim()) item.text = req.body.text.trim();
+    if (req.body.archived === true && !item.archived) {
+      item.archived = true;
+      item.archivedAt = new Date().toISOString();
+      item.archivedBy = req.session.user.label || req.session.user.username;
+    }
+    writeDB(db);
+    res.json(item);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── DELETE /api/nf-items/:id ──────────────────────────────────────────────
+app.delete('/api/nf-items/:id', requireAuth, (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const db = readDB();
+    db.nfItems = (db.nfItems || []).filter(x => x.id !== id);
+    writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/layout ───────────────────────────────────────────────────────
+app.get('/api/layout', requireAuth, (req, res) => {
+  const db = readDB();
+  const { username } = req.session.user;
+  res.json((db.layouts || {})[username] || null);
+});
+
+// ── PUT /api/layout ────────────────────────────────────────────────────────
+app.put('/api/layout', requireAuth, (req, res) => {
+  try {
+    const db = readDB();
+    const { username } = req.session.user;
+    if (!db.layouts) db.layouts = {};
+    db.layouts[username] = req.body.layout;
+    writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/historico ─────────────────────────────────────────────────────
 app.get('/api/historico', requireAuth, (req, res) => {
   const db = readDB();
