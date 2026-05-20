@@ -751,6 +751,7 @@ function _renderDashWeekBody(body, week, extraData) {
     const totPct = (totMeta>0&&totValor>0) ? totValor/totMeta*100 : null;
     const totPa  = (totPecas>0&&totAtend>0) ? totPecas/totAtend : null;
     const tpCls  = totPct==null?'': totPct>=100?'kpi-pos': totPct>=80?'kpi-warn':'kpi-neg';
+    const tprojCls = !hasProj ? '' : totProjecao >= totMeta ? 'kpi-pos' : 'kpi-neg';
 
     const sec = document.createElement('div');
     sec.innerHTML = `
@@ -773,7 +774,7 @@ function _renderDashWeekBody(body, week, extraData) {
           <td class="dw-td dw-td-num">${fBRL(totMeta||null)}</td>
           <td class="dw-td dw-td-num">${fBRL(totValor||null)}</td>
           <td class="dw-td dw-td-num ${tpCls}">${fPct(totPct)}</td>
-          <td class="dw-td dw-td-num">${hasProj ? fBRL(totProjecao) : '—'}</td>
+          <td class="dw-td dw-td-num ${tprojCls}">${hasProj ? fBRL(totProjecao) : '—'}</td>
           <td class="dw-td dw-td-num">${totPa!=null?totPa.toFixed(2):'—'}</td>
           <td class="dw-td dw-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
         </tr></tfoot>
@@ -2589,6 +2590,7 @@ async function renderWeeklyModal() {
     const totPa  = (totPecas>0&&totAtend>0) ? totPecas/totAtend : null;
     const totPct = (totMeta>0&&totValor>0) ? totValor/totMeta*100 : null;
     const tpCls  = totPct == null ? '' : totPct>=100?'kpi-pos':totPct>=80?'kpi-warn':'kpi-neg';
+    const tprojCls2 = !hasProj2 ? '' : totProjecao2 >= totMeta ? 'kpi-pos' : 'kpi-neg';
 
     if (isCurrent && totMeta > 0 && totValor >= totMeta) {
       const storeKey = `wk-store-${bk}-${week.startStr}`;
@@ -2618,7 +2620,7 @@ async function renderWeeklyModal() {
           <td class="wk-td wk-td-num">${fBRL(totMeta||null)}</td>
           <td class="wk-td wk-td-num">${fBRL(totValor||null)}</td>
           <td class="wk-td wk-td-num ${tpCls}">${fPct(totPct)}</td>
-          <td class="wk-td wk-td-num">${hasProj2 ? fBRL(totProjecao2) : '—'}</td>
+          <td class="wk-td wk-td-num ${tprojCls2}">${hasProj2 ? fBRL(totProjecao2) : '—'}</td>
           <td class="wk-td wk-td-num">${totPa!=null?totPa.toFixed(2):'—'}</td>
           <td class="wk-td wk-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
         </tr></tfoot>
