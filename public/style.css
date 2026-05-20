@@ -106,17 +106,16 @@ body {
 /* ── Main grid layout ─────────────────────────────────────────────── */
 .main-grid {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1.5fr) minmax(0, 1.1fr);
+  grid-template-columns: minmax(0, 1.9fr) minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
 }
-.main-left-col  { min-width: 0; }
-.main-mid-col   { min-width: 0; display: flex; flex-direction: column; gap: 1rem; }
-.main-right-col { min-width: 0; }
+.main-left-col  { min-width: 0; display: flex; flex-direction: column; gap: 1rem; }
+.main-mid-col   { display: none; }
+.main-right-col { min-width: 0; display: flex; flex-direction: column; gap: 1rem; }
 
-@media (max-width: 1150px) {
-  .main-grid { grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); }
-  .main-right-col { grid-column: 1 / -1; }
+@media (max-width: 900px) {
+  .main-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
   .main-grid { grid-template-columns: 1fr; }
@@ -1485,7 +1484,6 @@ body {
   width: 26px; height: 26px; padding: 0;
   transition: background .1s;
 }
-.folga-mini-tbl tbody tr:not(.folga-mini-store-row):nth-child(even) .folga-mini-name-td,
 .folga-mini-tbl tbody tr:not(.folga-mini-store-row):nth-child(even) .folga-mini-cell:not(.folga-mini-on) { background: rgba(255,255,255,.02); }
 .folga-mini-cell:hover { background: rgba(88,166,255,.12) !important; }
 .folga-mini-mark { display: block; width: 10px; height: 10px; border-radius: 50%; margin: 0 auto; }
@@ -1583,6 +1581,24 @@ body {
   transition: border-color .15s;
 }
 .camp-input:focus, .camp-select:focus { border-color: var(--accent); }
+/* Scope toggle */
+.camp-scope-toggle { display: flex; gap: 0; border-radius: .45rem; overflow: hidden; border: 1px solid var(--border); width: fit-content; }
+.camp-scope-opt {
+  display: flex; align-items: center; gap: .4rem;
+  padding: .45rem 1.1rem; font-size: .84rem; font-weight: 600;
+  color: var(--muted); cursor: pointer; transition: all .15s;
+  background: var(--surface2);
+}
+.camp-scope-opt + .camp-scope-opt { border-left: 1px solid var(--border); }
+.camp-scope-opt input[type="radio"] { display: none; }
+.camp-scope-opt.active { background: var(--accent); color: #fff; }
+.camp-scope-opt:hover:not(.active) { background: var(--surface3); color: var(--text); }
+
+/* Scope badges */
+.camp-scope-badge { font-size: .65rem; font-weight: 700; padding: .1rem .4rem; border-radius: .3rem; vertical-align: middle; margin-left: .3rem; }
+.camp-scope-rede { background: rgba(251,191,36,.2); color: #FBBF24; }
+.camp-scope-loja { background: rgba(139,148,158,.15); color: var(--muted); }
+
 .camp-store-checks { display: flex; flex-wrap: wrap; gap: .5rem .9rem; }
 .camp-store-check { display: flex; align-items: center; gap: .35rem; font-size: .85rem; font-weight: 600; cursor: pointer; }
 .camp-store-check input { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }

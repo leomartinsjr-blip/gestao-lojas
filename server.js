@@ -550,7 +550,7 @@ app.get('/api/campaigns', requireAuth, (req, res) => {
   const db   = readDB();
   const all  = db.campaigns || [];
   const { board } = req.session.user;
-  res.json(board ? all.filter(c => c.stores.includes(board)) : all);
+  res.json(board ? all.filter(c => c.scope === 'rede' || c.stores.includes(board)) : all);
 });
 
 // ── POST /api/campaigns ───────────────────────────────────────────────────
@@ -558,7 +558,7 @@ app.post('/api/campaigns', requireAuth, (req, res) => {
   try {
     const { board } = req.session.user;
     if (board && board !== 'escritorio') return res.status(403).json({ error: 'Sem permissão' });
-    const { name, kpi, startDate, endDate, stores } = req.body;
+    const { name, kpi, startDate, endDate, stores, scope } = req.body;
     if (!name?.trim() || !kpi || !startDate || !endDate || !Array.isArray(stores) || !stores.length)
       return res.status(400).json({ error: 'Campos obrigatórios: name, kpi, startDate, endDate, stores' });
     const db = readDB();
@@ -566,6 +566,7 @@ app.post('/api/campaigns', requireAuth, (req, res) => {
     const campaign = {
       id: nextId(db),
       name: name.trim(), kpi, startDate, endDate, stores,
+      scope: scope === 'rede' ? 'rede' : 'loja',
       createdAt: new Date().toISOString(),
     };
     db.campaigns.push(campaign);
@@ -580,13 +581,16 @@ app.put('/api/campaigns/:id', requireAuth, (req, res) => {
     const { board } = req.session.user;
     if (board && board !== 'escritorio') return res.status(403).json({ error: 'Sem permissão' });
     const id = parseInt(req.params.id);
-    const { name, kpi, startDate, endDate, stores } = req.body;
+    const { name, kpi, startDate, endDate, stores, scope } = req.body;
     if (!name?.trim() || !kpi || !startDate || !endDate || !Array.isArray(stores) || !stores.length)
       return res.status(400).json({ error: 'Campos obrigatórios ausentes' });
     const db = readDB();
     const idx = (db.campaigns || []).findIndex(c => c.id === id);
     if (idx === -1) return res.status(404).json({ error: 'Campanha não encontrada' });
-    db.campaigns[idx] = { ...db.campaigns[idx], name: name.trim(), kpi, startDate, endDate, stores };
+    db.campaigns[idx] = {
+      ...db.campaigns[idx], name: name.trim(), kpi, startDate, endDate, stores,
+      scope: scope === 'rede' ? 'rede' : 'loja',
+    };
     writeDB(db);
     res.json(db.campaigns[idx]);
   } catch (e) { res.status(500).json({ error: e.message }); }

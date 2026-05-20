@@ -489,12 +489,13 @@ function renderDashboard() {
   const userBoard = S.user?.board || null;
   const activeCampaigns = (S.campaigns || []).filter(c =>
     c.startDate <= todayStr && c.endDate >= todayStr &&
-    (!userBoard || c.stores.includes(userBoard))
+    (!userBoard || c.scope === 'rede' || c.stores.includes(userBoard))
   );
   if (activeCampaigns.length > 0) {
     const camp = activeCampaigns[0];
     const campEmps = S.employees.filter(e =>
-      e.isVendedor !== false && !e.inativo && camp.stores.includes(e.board)
+      e.isVendedor !== false && !e.inativo &&
+      (camp.scope === 'rede' || camp.stores.includes(e.board))
     );
     const campRanking = campEmps.map(emp => {
       const entries = (S.vsales[emp.id] || {}).entries || {};
@@ -559,30 +560,10 @@ function renderDashboard() {
       openCampanhasModal();
       setTimeout(() => renderCampaignRanking(camp), 60);
     });
-    midCol.appendChild(campDashCard);
+    rightCol.appendChild(campDashCard);
   }
 
-  // ── CARD: Comparativo por Loja → coluna do meio ─────────────────────────
-  const compCard = document.createElement('div');
-  compCard.className = 'main-card';
-  compCard.innerHTML = `
-    <div class="main-card-hdr">
-      <span class="main-card-title">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
-        </svg>
-        Comparativo por Loja
-      </span>
-      <span class="main-card-sub" id="compCardSub">${MONTHS_PT[S.month-1]} ${S.year}</span>
-    </div>
-    <div class="main-card-body" id="compCardBody">
-      <div style="padding:.85rem;text-align:center;font-size:.78rem;color:var(--muted)">Carregando...</div>
-    </div>
-  `;
-  midCol.appendChild(compCard);
-  _loadCompCard(compCard.querySelector('#compCardBody')).catch(e => console.error(e));
-
-  // ── CARD: Folgas → coluna direita ────────────────────────────────────────
+  // ── CARD: Folgas → coluna direita (após campanha) ────────────────────────
   const folgasCard = document.createElement('div');
   folgasCard.className = 'main-card';
   folgasCard.innerHTML = `
@@ -601,6 +582,26 @@ function renderDashboard() {
   `;
   rightCol.appendChild(folgasCard);
   _renderDashFolgas(folgasCard.querySelector('#dashFolgasBody'));
+
+  // ── CARD: Comparativo por Loja → coluna esquerda (abaixo da performance) ─
+  const compCard = document.createElement('div');
+  compCard.className = 'main-card';
+  compCard.innerHTML = `
+    <div class="main-card-hdr">
+      <span class="main-card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        Comparativo por Loja
+      </span>
+      <span class="main-card-sub" id="compCardSub">${MONTHS_PT[S.month-1]} ${S.year}</span>
+    </div>
+    <div class="main-card-body" id="compCardBody">
+      <div style="padding:.85rem;text-align:center;font-size:.78rem;color:var(--muted)">Carregando...</div>
+    </div>
+  `;
+  leftCol.appendChild(compCard);
+  _loadCompCard(compCard.querySelector('#compCardBody')).catch(e => console.error(e));
 }
 
 
@@ -2802,7 +2803,8 @@ function _campMonthsInRange(startDate, endDate) {
 
 async function calcCampaignRanking(campaign) {
   const emps = S.employees.filter(e =>
-    e.isVendedor !== false && campaign.stores.includes(e.board)
+    e.isVendedor !== false &&
+    (campaign.scope === 'rede' || campaign.stores.includes(e.board))
   );
   const months = _campMonthsInRange(campaign.startDate, campaign.endDate);
 
@@ -2845,23 +2847,26 @@ function renderCampanhasPanel() {
 
   const visible = isAdmin
     ? (S.campaigns || [])
-    : (S.campaigns || []).filter(c => c.stores.includes(S.user.board));
+    : (S.campaigns || []).filter(c => c.scope === 'rede' || c.stores.includes(S.user.board));
 
   const listHtml = visible.map(c => {
     const isActive = c.startDate <= today && c.endDate >= today;
     const isPast   = c.endDate < today;
     const statusCls   = isPast ? 'camp-status-past' : isActive ? 'camp-status-active' : 'camp-status-future';
     const statusLabel = isPast ? 'Encerrada' : isActive ? 'Em andamento' : 'Futura';
-    const storeLabels = c.stores.map(s => BOARDS[s]?.label || s).join(', ');
+    const scopeLabel  = c.scope === 'rede' ? 'Toda a Rede' : c.stores.map(s => BOARDS[s]?.label || s).join(', ');
+    const scopeBadge  = c.scope === 'rede'
+      ? '<span class="camp-scope-badge camp-scope-rede">Rede</span>'
+      : '<span class="camp-scope-badge camp-scope-loja">Loja</span>';
     return `
       <div class="camp-card">
         <div class="camp-card-main">
-          <div class="camp-card-title">${c.name}</div>
+          <div class="camp-card-title">${c.name} ${scopeBadge}</div>
           <div class="camp-card-meta">
             <span class="${statusCls}">${statusLabel}</span>
             <span class="camp-meta-pill">${KPI_LABELS[c.kpi] || c.kpi}</span>
             <span class="camp-meta-pill">${fmt(c.startDate)} → ${fmt(c.endDate)}</span>
-            <span class="camp-meta-pill">${storeLabels}</span>
+            <span class="camp-meta-pill">${scopeLabel}</span>
           </div>
         </div>
         <div class="camp-card-actions">
@@ -2916,12 +2921,17 @@ async function renderCampaignRanking(campaign) {
   const isPast   = campaign.endDate < today;
   const statusCls   = isPast ? 'camp-status-past' : isActive ? 'camp-status-active' : 'camp-status-future';
   const statusLabel = isPast ? 'Encerrada' : isActive ? 'Em andamento' : 'Futura';
-  const storeLabels = campaign.stores.map(s => BOARDS[s]?.label || s).join(', ');
+  const storeLabels = campaign.scope === 'rede'
+    ? 'Toda a Rede'
+    : campaign.stores.map(s => BOARDS[s]?.label || s).join(', ');
+  const scopeBadge = campaign.scope === 'rede'
+    ? '<span class="camp-scope-badge camp-scope-rede">Rede</span>'
+    : '<span class="camp-scope-badge camp-scope-loja">Loja</span>';
 
   body.innerHTML = `
     <div class="camp-rank-hdr">
       <button class="camp-back-btn" id="campBackBtn">← Voltar</button>
-      <div class="camp-rank-title">${campaign.name}</div>
+      <div class="camp-rank-title">${campaign.name} ${scopeBadge}</div>
       <div class="camp-rank-meta">
         <span class="camp-meta-pill">${KPI_LABELS[campaign.kpi] || campaign.kpi}</span>
         <span class="camp-meta-pill">${fmt(campaign.startDate)} → ${fmt(campaign.endDate)}</span>
@@ -2962,16 +2972,17 @@ async function renderCampaignRanking(campaign) {
 }
 
 function renderCampaignForm(campaign) {
-  const isEdit = !!campaign;
-  const body   = document.getElementById('campanhasBody');
-  const today  = new Date().toISOString().slice(0, 10);
+  const isEdit    = !!campaign;
+  const body      = document.getElementById('campanhasBody');
+  const today     = new Date().toISOString().slice(0, 10);
+  const curScope  = campaign?.scope || 'loja';
+  const ALL_STORE_KEYS = Object.keys(BOARDS).filter(k => k !== 'escritorio');
 
-  const storeOpts = Object.entries(BOARDS)
-    .filter(([k]) => k !== 'escritorio')
-    .map(([k, v]) => {
-      const checked = campaign?.stores?.includes(k) ? 'checked' : '';
-      return `<label class="camp-store-check"><input type="checkbox" value="${k}" ${checked}><span style="color:${v.color}">${v.label}</span></label>`;
-    }).join('');
+  const storeOpts = ALL_STORE_KEYS.map(k => {
+    const v       = BOARDS[k];
+    const checked = campaign?.stores?.includes(k) ? 'checked' : '';
+    return `<label class="camp-store-check"><input type="checkbox" value="${k}" ${checked}><span style="color:${v.color}">${v.label}</span></label>`;
+  }).join('');
 
   body.innerHTML = `
     <div class="camp-form">
@@ -2990,6 +3001,17 @@ function renderCampaignForm(campaign) {
             ).join('')}
           </select>
         </div>
+        <div class="camp-form-field camp-field-wide">
+          <label>Abrangência</label>
+          <div class="camp-scope-toggle">
+            <label class="camp-scope-opt ${curScope === 'loja' ? 'active' : ''}">
+              <input type="radio" name="campScope" value="loja" ${curScope === 'loja' ? 'checked' : ''}> Por Loja
+            </label>
+            <label class="camp-scope-opt ${curScope === 'rede' ? 'active' : ''}">
+              <input type="radio" name="campScope" value="rede" ${curScope === 'rede' ? 'checked' : ''}> Por Rede
+            </label>
+          </div>
+        </div>
         <div class="camp-form-field" style="grid-column:1/2">
           <label>Data Início</label>
           <input type="date" id="campStart" class="camp-input" value="${campaign?.startDate || today}">
@@ -2998,7 +3020,7 @@ function renderCampaignForm(campaign) {
           <label>Data Fim</label>
           <input type="date" id="campEnd" class="camp-input" value="${campaign?.endDate || today}">
         </div>
-        <div class="camp-form-field camp-field-wide">
+        <div class="camp-form-field camp-field-wide" id="campStoresField" ${curScope === 'rede' ? 'style="display:none"' : ''}>
           <label>Lojas participantes</label>
           <div class="camp-store-checks">${storeOpts}</div>
         </div>
@@ -3010,22 +3032,35 @@ function renderCampaignForm(campaign) {
     </div>
   `;
 
+  // Toggle store selector based on scope
+  body.querySelectorAll('input[name="campScope"]').forEach(radio => {
+    radio.addEventListener('change', () => {
+      const isRede = radio.value === 'rede';
+      document.getElementById('campStoresField').style.display = isRede ? 'none' : '';
+      body.querySelectorAll('.camp-scope-opt').forEach(lbl => lbl.classList.remove('active'));
+      radio.closest('.camp-scope-opt').classList.add('active');
+    });
+  });
+
   document.getElementById('campFormBackBtn').addEventListener('click', renderCampanhasPanel);
   document.getElementById('campFormCancelBtn').addEventListener('click', renderCampanhasPanel);
   document.getElementById('campFormSaveBtn').addEventListener('click', async () => {
-    const name   = document.getElementById('campName').value.trim();
-    const kpi    = document.getElementById('campKpi').value;
-    const start  = document.getElementById('campStart').value;
-    const end    = document.getElementById('campEnd').value;
-    const stores = [...document.querySelectorAll('.camp-store-checks input:checked')].map(x => x.value);
+    const name  = document.getElementById('campName').value.trim();
+    const kpi   = document.getElementById('campKpi').value;
+    const start = document.getElementById('campStart').value;
+    const end   = document.getElementById('campEnd').value;
+    const scope = body.querySelector('input[name="campScope"]:checked')?.value || 'loja';
+    const stores = scope === 'rede'
+      ? ALL_STORE_KEYS
+      : [...document.querySelectorAll('.camp-store-checks input:checked')].map(x => x.value);
 
-    if (!name)           return toast('Informe o nome da campanha', 'warn');
-    if (!start || !end)  return toast('Informe as datas', 'warn');
-    if (end < start)     return toast('Data fim deve ser após a data início', 'warn');
-    if (!stores.length)  return toast('Selecione ao menos uma loja', 'warn');
+    if (!name)                       return toast('Informe o nome da campanha', 'warn');
+    if (!start || !end)              return toast('Informe as datas', 'warn');
+    if (end < start)                 return toast('Data fim deve ser após a data início', 'warn');
+    if (scope === 'loja' && !stores.length) return toast('Selecione ao menos uma loja', 'warn');
 
     try {
-      const payload = { name, kpi, startDate: start, endDate: end, stores };
+      const payload = { name, kpi, startDate: start, endDate: end, stores, scope };
       if (isEdit) {
         const updated = await apiFetch('PUT', `/api/campaigns/${campaign.id}`, payload);
         const idx = (S.campaigns || []).findIndex(c => c.id === campaign.id);
@@ -3043,7 +3078,10 @@ function renderCampaignForm(campaign) {
 
 function _updateCampanhasBtn() {
   const isAdmin  = !S.user?.board || S.user.board === 'escritorio';
-  const hasCamps = isAdmin || (S.campaigns || []).some(c => c.stores.includes(S.user?.board));
+  const board    = S.user?.board;
+  const hasCamps = isAdmin || (S.campaigns || []).some(c =>
+    c.scope === 'rede' || c.stores.includes(board)
+  );
   document.getElementById('campanhasBtn').style.display = hasCamps ? '' : 'none';
 }
 
