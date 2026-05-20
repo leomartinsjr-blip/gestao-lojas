@@ -560,10 +560,10 @@ function renderDashboard() {
       openCampanhasModal();
       setTimeout(() => renderCampaignRanking(camp), 60);
     });
-    rightCol.appendChild(campDashCard);
+    midCol.appendChild(campDashCard);
   }
 
-  // ── CARD: Folgas → coluna direita (após campanha) ────────────────────────
+  // ── CARD: Folgas → coluna direita ────────────────────────────────────────
   const folgasCard = document.createElement('div');
   folgasCard.className = 'main-card';
   folgasCard.innerHTML = `
