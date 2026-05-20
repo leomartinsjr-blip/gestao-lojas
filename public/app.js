@@ -14,7 +14,7 @@ const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
 // ── State ──────────────────────────────────────────────────────────────────
-const S = { year: 2026, month: 5, user: null, employees: [], weights: {}, vsales: {}, weeklyMetas: {}, folgas: [], campaigns: [], nfItems: [] };
+const S = { year: 2026, month: 5, user: null, employees: [], weights: {}, vsales: {}, weeklyMetas: {}, folgas: [], campaigns: [], nfItems: [], meetingItems: [] };
 
 let saveTimeout = null;
 
@@ -180,12 +180,16 @@ async function loadData() {
     S.weeklyMetas = weeklyMetas || {};
     S.folgas      = folgas || [];
 
-    const [campaigns, nfItems] = await Promise.all([
+    const [campaigns, nfItems, boletas, meetingItems] = await Promise.all([
       apiFetch('GET', '/api/campaigns').catch(() => []),
       apiFetch('GET', '/api/nf-items').catch(() => []),
+      apiFetch('GET', '/api/boletas').catch(() => []),
+      apiFetch('GET', '/api/meeting-items').catch(() => []),
     ]);
-    S.campaigns = campaigns || [];
-    S.nfItems   = nfItems || [];
+    S.campaigns    = campaigns    || [];
+    S.nfItems      = nfItems      || [];
+    S.boletas      = boletas      || [];
+    S.meetingItems = meetingItems || [];
     _updateCampanhasBtn();
 
     renderDashboard();
@@ -414,7 +418,7 @@ function renderDashboard() {
     const totalRow = document.createElement('tr');
     totalRow.className = 'dash-total-row';
     totalRow.innerHTML = `
-      <td class="dash-td">Total ${bc.label}</td>
+      <td class="dash-td">Total <strong>${bc.label}</strong></td>
       <td class="dash-td dash-td-num">${fBRL(totMeta || null)}</td>
       <td class="dash-td dash-td-num">${fBRL(totValor || null)}</td>
       <td class="dash-td dash-td-num ${tpCls}">${fPct(totPct)}</td>
@@ -444,7 +448,6 @@ function renderDashboard() {
 
   const rightCard = document.createElement('div');
   rightCard.className = 'main-card';
-  rightCard.style.marginTop = '1.25rem';
   rightCard.id = 'dashWeekCard';
   rightCard.innerHTML = `
     <div class="main-card-hdr">
@@ -566,7 +569,7 @@ function renderDashboard() {
       setTimeout(() => renderCampaignRanking(camp), 60);
     });
     campDashCard.dataset.cardId = 'card-camp';
-    midCol.appendChild(campDashCard);
+    leftCol.appendChild(campDashCard);
   }
 
   // ── CARD: Folgas → coluna direita ────────────────────────────────────────
@@ -611,8 +614,14 @@ function renderDashboard() {
   leftCol.appendChild(compCard);
   _loadCompCard(compCard.querySelector('#compCardBody')).catch(e => console.error(e));
 
+  // ── CARD: Boletas de Defeito ─────────────────────────────────────────────
+  renderBoletasCard(midCol);
+
   // ── CARD: Recebimento de NF Autorizado ───────────────────────────────────
   renderNFCard(midCol);
+
+  // ── CARD: Reunião Mensal ──────────────────────────────────────────────────
+  renderMeetingCard(midCol);
 
 }
 
@@ -666,7 +675,7 @@ function _renderDashFolgas(body) {
     const bc = BOARDS[bk] || { label: bk, color: '#64748b' };
     html += `<tr class="folga-mini-store-row">
       <td colspan="${totalCols}" class="folga-mini-store-td" style="background:${bc.color}22;border-left:3px solid ${bc.color}">
-        ${bc.label}
+        <strong>${bc.label}</strong>
       </td></tr>`;
     for (const emp of emps) {
       const color = bc.color;
@@ -742,7 +751,7 @@ function _renderDashWeekBody(body, week, extraData) {
     const sec = document.createElement('div');
     sec.innerHTML = `
       <div class="dw-store-hdr">
-        <span class="dw-store-dot" style="background:${bc.color}"></span>${bc.label}
+        <span class="dw-store-dot" style="background:${bc.color}"></span><strong>${bc.label}</strong>
       </div>
       <table class="dw-table">
         <thead><tr class="dw-thead-tr">
@@ -891,7 +900,7 @@ async function _loadCompCard(body) {
     if (lyVal) sumLY   += lyVal;
 
     html += `<tr class="comp-row">
-      <td class="comp-td comp-td-name" style="border-left:3px solid ${bc.color};padding-left:.5rem">${bc.label}</td>
+      <td class="comp-td comp-td-name" style="border-left:3px solid ${bc.color};padding-left:.5rem"><strong>${bc.label}</strong></td>
       <td class="comp-td comp-td-num comp-val-cur">${fV(proj)}</td>
       <td class="comp-td comp-td-num">${fV(lyVal)}</td>
       <td class="comp-td comp-td-num ${dCls}">${fPct(delta)}</td>
@@ -1019,7 +1028,7 @@ let perfChart = null, perfAnnualChart = null;
 
 const ALL_STORES = ['delrey','minas','contagem','estacao','tommy','lez'];
 const PD = {
-  board: null, year: null, month: null, data: null,
+  board: null, year: null, month: null, data: null, metaLoja: 0,
   activeEmpId: null, employees: [], allVsales: {}, weights: {}, fluxo: {},
   container: null,
 };
@@ -1366,6 +1375,8 @@ async function loadAndRenderDaily(board) {
     PD.weights    = await apiFetch('GET', `/api/weights/${PD.year}/${PD.month}`);
     PD.fluxo      = await apiFetch('GET', `/api/storefluxo/${PD.year}/${PD.month}/${board}`);
     PD.allVsales  = {};
+    const dsData  = await apiFetch('GET', `/api/dailysales/${PD.year}/${PD.month}/${board}`);
+    PD.metaLoja   = dsData.meta?.mensal || 0;
     await Promise.all(PD.employees.map(async emp => {
       PD.allVsales[emp.id] = await apiFetch('GET', `/api/vsales/${PD.year}/${PD.month}/${board}/${emp.id}`);
     }));
@@ -1393,7 +1404,13 @@ function renderVendedorSheet() {
   const totActive = PD.activeEmpId === 'total';
   tabs += `<button class="ds-vtab ds-vtab-total${totActive ? ' ds-vtab-active' : ''}" data-empid="total">TOTAL</button>`;
   const adminBar = isAdmin
-    ? `<div class="ds-admin-bar"><button class="ds-weights-btn" id="dsWeightsBtn">⚖ Pesos Diários %</button></div>`
+    ? `<div class="ds-admin-bar">
+        <button class="ds-weights-btn" id="dsWeightsBtn">⚖ Pesos Diários %</button>
+        <div class="ds-excel-btns">
+          <a class="ds-excel-btn ds-excel-down" id="dsExcelDown" href="/api/excel/${PD.year}/${PD.month}/${PD.board}" download>⬇ Baixar Excel</a>
+          <label class="ds-excel-btn ds-excel-up" id="dsExcelUpLabel">⬆ Upload Excel<input type="file" id="dsExcelUpInput" accept=".xlsx,.xls" style="display:none"></label>
+        </div>
+       </div>`
     : '';
 
   body.innerHTML = `<div class="ds-wrap">
@@ -1404,6 +1421,29 @@ function renderVendedorSheet() {
 
   if (isAdmin) {
     body.querySelector('#dsWeightsBtn')?.addEventListener('click', openWeightsModal);
+
+    const upInput = body.querySelector('#dsExcelUpInput');
+    upInput?.addEventListener('change', async () => {
+      const file = upInput.files[0];
+      if (!file) return;
+      const label = body.querySelector('#dsExcelUpLabel');
+      label.textContent = '⏳ Enviando…';
+      try {
+        const fd = new FormData();
+        fd.append('file', file);
+        const res = await fetch(`/api/excel/${PD.year}/${PD.month}/${PD.board}`, {
+          method: 'POST', body: fd, credentials: 'same-origin'
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Erro no upload');
+        toast(`✓ ${data.updated} registros atualizados`);
+        await loadAndRenderDaily(PD.board);
+      } catch (e) {
+        toast('Erro no upload: ' + e.message, true);
+        label.innerHTML = '⬆ Upload Excel<input type="file" id="dsExcelUpInput" accept=".xlsx,.xls" style="display:none">';
+      }
+      upInput.value = '';
+    });
   }
 
   body.querySelectorAll('.ds-vtab').forEach(btn => {
@@ -1431,7 +1471,33 @@ function _dsHelpers() {
   return { fBRL, fPct, fNum, fDec };
 }
 
-function _dsRows(mensal, entries, weights, year, month) {
+function computeSellerDayGoals(empId) {
+  const { year, month } = PD;
+  if (!PD.metaLoja) return null;
+  const days   = new Date(year, month, 0).getDate();
+  const defW   = +(100 / days).toFixed(6);
+  const vacSet = new Set(PD.allVsales[empId]?.meta?.vacationDays || []);
+  const goals  = {};
+  for (let d = 1; d <= days; d++) {
+    const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    if (vacSet.has(dateStr)) { goals[dateStr] = { goal: 0, nActive: 0, isVacation: true }; continue; }
+    const W           = PD.weights[dateStr] ?? defW;
+    const storeDayGoal = PD.metaLoja * W / 100;
+    const nActive     = Math.max(1, PD.employees.filter(e =>
+      !(PD.allVsales[e.id]?.meta?.vacationDays || []).includes(dateStr)
+    ).length);
+    goals[dateStr] = { goal: storeDayGoal / nActive, nActive, isVacation: false };
+  }
+  return goals;
+}
+
+function computeSellerMensal(empId) {
+  const goals = computeSellerDayGoals(empId);
+  if (!goals) return PD.allVsales[empId]?.meta?.mensal || 0;
+  return Object.values(goals).reduce((s, v) => s + v.goal, 0);
+}
+
+function _dsRows(mensal, entries, weights, year, month, dayGoals) {
   const days    = new Date(year, month, 0).getDate();
   const defW    = +(100 / days).toFixed(6);
   const DAY_S   = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
@@ -1442,7 +1508,8 @@ function _dsRows(mensal, entries, weights, year, month) {
     const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
     const dow     = new Date(year, month - 1, d).getDay();
     const w       = weights[dateStr] ?? defW;
-    const metaDia = mensal * w / 100;
+    const dg      = dayGoals?.[dateStr];
+    const metaDia = dg !== undefined ? dg.goal : mensal * w / 100;
     metaAccum    += metaDia;
     const entry   = entries[dateStr] || null;
     const valor   = entry?.value || 0;
@@ -1457,7 +1524,7 @@ function _dsRows(mensal, entries, weights, year, month) {
     const tm  = (atend > 0 && entry)     ? valor / atend : null;
     rows.push({ d, dateStr, dow, w, metaDia, metaAccum, entry, valor, pecas, atend,
                 realAccum, pctAting, desvio, projecao, pa, pm, tm,
-                isToday: dateStr === todayStr, DAY_S });
+                dayInfo: dg || null, isToday: dateStr === todayStr, DAY_S });
   }
   return rows;
 }
@@ -1474,15 +1541,17 @@ function _dsGroupHeader(extraCols) {
 
 function buildVendedorSheet(emp, isAdmin) {
   const { year, month } = PD;
-  const vsale   = PD.allVsales[emp.id] || { meta: { mensal: 0 }, entries: {} };
-  const mensal  = vsale.meta.mensal || 0;
+  const vsale    = PD.allVsales[emp.id] || { meta: { mensal: 0 }, entries: {} };
+  const dayGoals = computeSellerDayGoals(emp.id);
+  const mensal   = computeSellerMensal(emp.id);
   const { fBRL, fPct, fNum, fDec } = _dsHelpers();
-  const rows    = _dsRows(mensal, vsale.entries || {}, PD.weights, year, month);
+  const rows     = _dsRows(mensal, vsale.entries || {}, PD.weights, year, month, dayGoals);
 
+  const fmtTier      = v => v > 0 ? v.toFixed(2).replace('.',',') : '—';
   const metaInputVal = mensal > 0 ? mensal.toFixed(2).replace('.',',') : '';
-  const fmtTier = v => v > 0 ? v.toFixed(2).replace('.',',') : '—';
   const meta2Val     = fmtTier(mensal * 1.10);
   const superMetaVal = fmtTier(mensal * 1.10 * 1.20);
+  const vacDays      = vsale.meta?.vacationDays || [];
 
   const wrap = document.createElement('div');
   wrap.innerHTML = `
@@ -1492,8 +1561,7 @@ function buildVendedorSheet(emp, isAdmin) {
         <div class="ds-meta-seg ds-meta-seg-1">
           <span class="ds-meta-seg-lbl">META 1${emp.comissao ? ` <span class="ds-meta-com-badge">${emp.comissao}%</span>` : ''}</span>
           <div class="ds-meta-seg-val-wrap">
-            <input type="text" class="ds-meta-input ds-meta-input-hl" id="dsMetaInput" value="${metaInputVal}" placeholder="0,00" ${!isAdmin ? 'disabled' : ''}>
-            ${isAdmin ? `<button class="ds-meta-save-btn" id="dsMetaSaveBtn">✓</button>` : ''}
+            <span class="ds-meta-input ds-meta-input-hl" style="cursor:default;user-select:none">${metaInputVal || '—'}</span>
           </div>
         </div>
         <div class="ds-meta-seg ds-meta-seg-2">
@@ -1505,7 +1573,8 @@ function buildVendedorSheet(emp, isAdmin) {
           <span class="ds-meta-seg-val" id="dsMetaSuperVal">${superMetaVal}</span>
         </div>
       </div>
-      ${isAdmin ? `<div class="ds-weight-hint-row"><span class="ds-weight-hint">· Clique em <strong>Peso%</strong> para ajustar</span></div>` : ''}
+      ${isAdmin && PD.metaLoja > 0 ? `<div class="ds-weight-hint-row"><span class="ds-weight-hint">· Clique em <strong>Part%</strong> para marcar/desmarcar férias do dia${vacDays.length > 0 ? ` · <span style="color:var(--down)">${vacDays.length} dia(s) de férias</span>` : ''}</span></div>` : ''}
+      ${isAdmin && !PD.metaLoja ? `<div class="ds-weight-hint-row"><span class="ds-weight-hint">· Configure a <strong>Meta da Loja</strong> na aba TOTAL para calcular metas automaticamente</span></div>` : ''}
     </div>
     <div class="ds-table-wrap"><table class="ds-table">
       <thead>
@@ -1513,7 +1582,7 @@ function buildVendedorSheet(emp, isAdmin) {
         <tr>
           <th class="ds-th-dia">Data</th>
           <th class="ds-th-meta">Meta Diária</th><th class="ds-th-meta">Meta Acum</th>
-          <th title="Peso % do dia">Peso%</th>
+          <th title="Participação % do vendedor neste dia (0% = férias)">Part%</th>
           <th>% Ating</th><th>Desvio R$</th>
           <th class="ds-th-fillable">Valor</th><th>Acumulado</th><th>Projeção</th>
           <th class="ds-th-fillable">Pç</th><th class="ds-th-fillable" title="Atendimentos">Atend</th>
@@ -1527,17 +1596,21 @@ function buildVendedorSheet(emp, isAdmin) {
   const tfoot = wrap.querySelector('tfoot');
 
   for (const r of rows) {
-    const isWE  = r.dow === 0 || r.dow === 6;
-    const trCls = [isWE ? 'ds-we' : '', r.isToday ? 'ds-today' : ''].filter(Boolean).join(' ');
-    const pCls  = r.pctAting != null ? (r.pctAting >= 100 ? 'pf-pos' : r.pctAting >= 80 ? 'ds-warn' : 'pf-neg') : '';
-    const dCls  = r.desvio != null ? (r.desvio >= 0 ? 'pf-pos' : 'pf-neg') : '';
+    const isVac  = r.dayInfo?.isVacation || false;
+    const isWE   = r.dow === 0 || r.dow === 6;
+    const trCls  = [isWE ? 'ds-we' : '', r.isToday ? 'ds-today' : '', isVac ? 'ds-vac-day' : ''].filter(Boolean).join(' ');
+    const pCls   = r.pctAting != null ? (r.pctAting >= 100 ? 'pf-pos' : r.pctAting >= 80 ? 'ds-warn' : 'pf-neg') : '';
+    const dCls   = r.desvio != null ? (r.desvio >= 0 ? 'pf-pos' : 'pf-neg') : '';
+    const partPct = r.dayInfo
+      ? (isVac ? '0.00%' : `${(100 / r.dayInfo.nActive).toFixed(2)}%`)
+      : r.w.toFixed(2) + '%';
     const tr = document.createElement('tr');
     tr.className = trCls; tr.dataset.date = r.dateStr;
     tr.innerHTML = `
       <td class="ds-td-dia">${r.d}<small class="ds-dow">${r.DAY_S[r.dow]}</small></td>
       <td class="ds-td-meta">${mensal > 0 ? fBRL(r.metaDia)    : '—'}</td>
       <td class="ds-td-meta">${mensal > 0 ? fBRL(r.metaAccum)  : '—'}</td>
-      <td class="ds-td-peso${isAdmin ? ' ds-editable' : ''}" data-date="${r.dateStr}">${r.w.toFixed(2)}%</td>
+      <td class="ds-td-peso${isAdmin && PD.metaLoja > 0 ? ' ds-editable' : ''}" data-date="${r.dateStr}" style="${isVac ? 'color:var(--down)' : ''}">${partPct}</td>
       <td class="ds-td-pct ${pCls}">${r.pctAting != null ? fPct(r.pctAting) : '—'}</td>
       <td class="${dCls}">${r.desvio != null ? fBRL(r.desvio) : '—'}</td>
       <td class="ds-td-edit ds-td-fillable${r.entry ? ' ds-has-val' : ''}" data-field="value"        data-date="${r.dateStr}">${r.entry ? fBRL(r.valor) : '<span class="ds-empty">—</span>'}</td>
@@ -1577,19 +1650,9 @@ function buildVendedorSheet(emp, isAdmin) {
     <td>${totTM != null ? fBRL(totTM) : '—'}</td>`;
   tfoot.appendChild(tftr);
 
-  if (isAdmin) {
-    const metaInp = wrap.querySelector('#dsMetaInput');
-    metaInp?.addEventListener('input', () => {
-      const v = parseFloat(metaInp.value.replace(/[^\d,\.]/g,'').replace(',','.')) || 0;
-      wrap.querySelector('#dsMeta2Val').textContent    = v > 0 ? (v*1.10).toFixed(2).replace('.',',') : '—';
-      wrap.querySelector('#dsMetaSuperVal').textContent= v > 0 ? (v*1.10*1.20).toFixed(2).replace('.',',') : '—';
-    });
-    wrap.querySelector('#dsMetaSaveBtn')?.addEventListener('click', () => {
-      const raw = metaInp.value.replace(/[^\d,\.]/g,'').replace(',','.');
-      saveVendedorMeta(emp.id, parseFloat(raw) || 0);
-    });
+  if (isAdmin && PD.metaLoja > 0) {
     wrap.querySelectorAll('.ds-td-peso.ds-editable').forEach(td =>
-      td.addEventListener('click', () => startGlobalWeightEdit(td)));
+      td.addEventListener('click', () => toggleVacationDay(emp.id, td.dataset.date)));
   }
   wrap.querySelectorAll('.ds-td-edit').forEach(td =>
     td.addEventListener('click', () => startVendCellEdit(td, emp.id)));
@@ -1601,7 +1664,9 @@ function buildTotalSheet(isAdmin) {
   const { year, month } = PD;
   const emps        = PD.employees;
   const { fBRL, fPct, fNum, fDec } = _dsHelpers();
-  const totalMensal = emps.reduce((s,e) => s + (PD.allVsales[e.id]?.meta?.mensal || 0), 0);
+  const totalMensal = PD.metaLoja > 0
+    ? emps.reduce((s,e) => s + computeSellerMensal(e.id), 0)
+    : emps.reduce((s,e) => s + (PD.allVsales[e.id]?.meta?.mensal || 0), 0);
 
   // Build merged entries per date
   const days    = new Date(year, month, 0).getDate();
@@ -1639,23 +1704,28 @@ function buildTotalSheet(isAdmin) {
   const fmtTier = v => v > 0 ? v.toFixed(2).replace('.',',') : '—';
   const meta2Total     = fmtTier(totalMensal * 1.10);
   const superMetaTotal = fmtTier(totalMensal * 1.10 * 1.20);
-  const metaInputTotal = totalMensal > 0 ? totalMensal.toFixed(2).replace('.',',') : '';
+  const metaLojaFmt    = PD.metaLoja > 0 ? PD.metaLoja.toFixed(2).replace('.',',') : '';
 
   const wrap = document.createElement('div');
   wrap.innerHTML = `
     <div class="ds-top-bar">
       <div class="ds-meta-bar">
         <div class="ds-meta-seg ds-meta-seg-1">
-          <span class="ds-meta-seg-lbl">META 1</span>
-          <span class="ds-meta-seg-val">${metaInputTotal || '—'}</span>
+          <span class="ds-meta-seg-lbl">META DA LOJA</span>
+          ${isAdmin
+            ? `<div class="ds-meta-seg-val-wrap">
+                 <input type="text" class="ds-meta-input ds-meta-input-hl" id="dsMetaLojaInput" value="${metaLojaFmt}" placeholder="0,00">
+                 <button class="ds-meta-save-btn" id="dsMetaLojaSaveBtn">✓</button>
+               </div>`
+            : `<span class="ds-meta-seg-val">${metaLojaFmt || '—'}</span>`}
         </div>
         <div class="ds-meta-seg ds-meta-seg-2">
           <span class="ds-meta-seg-lbl">META 2 <span class="ds-meta-seg-badge">+10%</span></span>
-          <span class="ds-meta-seg-val">${meta2Total}</span>
+          <span class="ds-meta-seg-val" id="dsTotalMeta2Val">${meta2Total}</span>
         </div>
         <div class="ds-meta-seg ds-meta-seg-3">
           <span class="ds-meta-seg-lbl">SUPER META <span class="ds-meta-seg-badge">+20%</span></span>
-          <span class="ds-meta-seg-val">${superMetaTotal}</span>
+          <span class="ds-meta-seg-val" id="dsTotalSuperVal">${superMetaTotal}</span>
         </div>
       </div>
       ${isAdmin ? `<div class="ds-weight-hint-row"><span class="ds-weight-hint">· Clique em <strong>Peso%</strong> para ajustar (global — vale p/ todas as lojas)</span></div>` : ''}
@@ -1738,6 +1808,10 @@ function buildTotalSheet(isAdmin) {
   tfoot.appendChild(tftr);
 
   if (isAdmin) {
+    wrap.querySelector('#dsMetaLojaSaveBtn')?.addEventListener('click', () => {
+      const raw = wrap.querySelector('#dsMetaLojaInput').value.replace(/[^\d,\.]/g,'').replace(',','.');
+      saveMetaLoja(parseFloat(raw) || 0);
+    });
     wrap.querySelectorAll('.ds-td-peso.ds-editable').forEach(td =>
       td.addEventListener('click', () => startGlobalWeightEdit(td)));
   }
@@ -1806,6 +1880,49 @@ async function saveVendedorMeta(empId, mensal) {
     renderVendedorSheet();
     _syncPDToS();
   } catch(e) { toast('Erro ao salvar meta: ' + e.message, true); }
+}
+
+async function saveMetaLoja(metaLoja) {
+  try {
+    await apiFetch('POST', `/api/dailysales/${PD.year}/${PD.month}/${PD.board}/meta`, { mensal: metaLoja });
+    PD.metaLoja = metaLoja;
+    await _saveAllSellerMensals();
+    toast('Meta da loja distribuída ✓');
+    renderVendedorSheet();
+    _syncPDToS();
+  } catch(e) { toast('Erro ao salvar meta da loja: ' + e.message, true); }
+}
+
+async function _saveAllSellerMensals() {
+  await Promise.all(PD.employees.map(async emp => {
+    const mensal = computeSellerMensal(emp.id);
+    await apiFetch('POST', `/api/vsales/${PD.year}/${PD.month}/${PD.board}/${emp.id}/meta`, { mensal });
+    if (!PD.allVsales[emp.id]) PD.allVsales[emp.id] = { meta: { mensal: 0 }, entries: {} };
+    PD.allVsales[emp.id].meta.mensal = mensal;
+  }));
+}
+
+function toggleVacationDay(empId, dateStr) {
+  if (!PD.allVsales[empId]) PD.allVsales[empId] = { meta: { mensal: 0 }, entries: {} };
+  if (!PD.allVsales[empId].meta.vacationDays) PD.allVsales[empId].meta.vacationDays = [];
+  const vd  = PD.allVsales[empId].meta.vacationDays;
+  const idx = vd.indexOf(dateStr);
+  if (idx >= 0) vd.splice(idx, 1); else vd.push(dateStr);
+  saveSellerVacationDays(empId);
+}
+
+async function saveSellerVacationDays(empId) {
+  const scrollTop = document.querySelector('#dailyBody .ds-table-wrap')?.scrollTop || 0;
+  try {
+    const vacationDays = PD.allVsales[empId]?.meta?.vacationDays || [];
+    await apiFetch('POST', `/api/vsales/${PD.year}/${PD.month}/${PD.board}/${empId}/meta`, { vacationDays });
+    await _saveAllSellerMensals();
+    toast('Férias atualizadas ✓');
+    renderVendedorSheet();
+    const tw = document.querySelector('#dailyBody .ds-table-wrap');
+    if (tw) tw.scrollTop = scrollTop;
+    _syncPDToS();
+  } catch(e) { toast('Erro ao salvar férias: ' + e.message, true); }
 }
 
 function startVendCellEdit(td, empId) {
@@ -3128,6 +3245,234 @@ function _fmtNFDate(iso) {
   return `${p(d.getDate())}/${p(d.getMonth()+1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
+// ── Reunião Mensal ────────────────────────────────────────────────────────
+
+function _renderMeetingActive(body, board, isAdmin, refresh) {
+  const items = (S.meetingItems || []).filter(x =>
+    x.board === board && x.year === S.year && x.month === S.month && !x.archived
+  );
+  if (!items.length) {
+    body.innerHTML = '<div style="padding:.75rem 0;color:var(--muted);font-size:.8rem;text-align:center">Nenhum item</div>';
+    return;
+  }
+  body.innerHTML = items.map(item => {
+    const isLoja = item.visibility === 'loja';
+    const fromLoja = item.origin === 'loja';
+    const originBadge = fromLoja
+      ? `<span class="mtg-origin-loja">📌 Da loja</span>`
+      : '';
+    const visBtn = isAdmin && !fromLoja
+      ? `<button class="mtg-vis-btn${isLoja ? ' mtg-vis-loja' : ' mtg-vis-adm'}" data-id="${item.id}" title="${isLoja ? 'Enviado para loja — clique para tornar privado' : 'Privado (só adm) — clique para enviar à loja'}">
+           ${isLoja ? '👁 Loja' : '🔒 Adm'}
+         </button>` : '';
+    const canDelete = isAdmin || (item.origin === 'loja' && item.addedBy === (S.user?.label || S.user?.username));
+    return `<div class="nf-item" data-id="${item.id}">
+      <label class="nf-chk-label">
+        <input type="checkbox" class="mtg-chk" data-id="${item.id}">
+        <span class="nf-item-text">${_escHtml(item.text)}</span>
+      </label>
+      <span class="nf-item-meta" style="display:flex;align-items:center;gap:.35rem">
+        ${originBadge}${visBtn}
+        <span class="nf-date-tag">Criado ${_fmtNFDate(item.addedAt)}</span>
+      </span>
+      ${canDelete ? `<button class="nf-del-btn" data-id="${item.id}" title="Arquivar">&times;</button>` : ''}
+    </div>`;
+  }).join('');
+
+  body.querySelectorAll('.mtg-chk').forEach(chk => {
+    chk.addEventListener('change', async () => {
+      if (!chk.checked) return;
+      const id = parseInt(chk.dataset.id);
+      chk.disabled = true;
+      const updated = await apiFetch('PATCH', `/api/meeting-items/${id}`, { checked: true }).catch(() => null);
+      const item = S.meetingItems.find(x => x.id === id);
+      if (item && updated) Object.assign(item, updated);
+      _renderMeetingActive(body, board, isAdmin, refresh);
+      refresh();
+    });
+  });
+
+  body.querySelectorAll('.mtg-vis-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = parseInt(btn.dataset.id);
+      const item = S.meetingItems.find(x => x.id === id);
+      if (!item) return;
+      const newVis = item.visibility === 'loja' ? 'admin' : 'loja';
+      const updated = await apiFetch('PATCH', `/api/meeting-items/${id}`, { visibility: newVis }).catch(() => null);
+      if (item && updated) Object.assign(item, updated);
+      _renderMeetingActive(body, board, isAdmin, refresh);
+    });
+  });
+
+  if (isAdmin) {
+    body.querySelectorAll('.nf-del-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = parseInt(btn.dataset.id);
+        const updated = await apiFetch('PATCH', `/api/meeting-items/${id}`, { archived: true }).catch(() => null);
+        const item = S.meetingItems.find(x => x.id === id);
+        if (item && updated) Object.assign(item, updated);
+        _renderMeetingActive(body, board, isAdmin, refresh);
+        refresh();
+      });
+    });
+  }
+}
+
+function _renderMeetingHistory(body, board, isAdmin, refresh) {
+  const items = (S.meetingItems || []).filter(x =>
+    x.board === board && x.year === S.year && x.month === S.month && x.archived
+  ).sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''));
+
+  if (!items.length) {
+    body.innerHTML = '<div style="padding:.75rem 0;color:var(--muted);font-size:.8rem;text-align:center">Histórico vazio</div>';
+    return;
+  }
+
+  body.innerHTML = `
+    ${isAdmin ? `<div class="nf-hist-header"><button class="nf-clear-btn" id="mtgClearAll">Limpar tudo</button></div>` : ''}
+    ${items.map(item => `
+      <div class="nf-item nf-checked nf-hist-item" data-id="${item.id}">
+        <div class="nf-hist-item-main">
+          <span class="nf-item-text">${_escHtml(item.text)}</span>
+          <div class="nf-hist-dates">
+            <span class="nf-date-tag">Criado ${_fmtNFDate(item.addedAt)} por ${_escHtml(item.addedBy)}</span>
+            <span class="nf-date-sep">·</span>
+            <span class="nf-date-tag nf-date-archived">✓ Arquivado ${_fmtNFDate(item.archivedAt)} por ${_escHtml(item.archivedBy || item.addedBy)}</span>
+          </div>
+        </div>
+        ${isAdmin ? `<button class="nf-del-btn" data-id="${item.id}" title="Excluir">&times;</button>` : ''}
+      </div>
+    `).join('')}
+  `;
+
+  if (isAdmin) {
+    body.querySelectorAll('.nf-del-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = parseInt(btn.dataset.id);
+        await apiFetch('DELETE', `/api/meeting-items/${id}`).catch(() => {});
+        S.meetingItems = S.meetingItems.filter(x => x.id !== id);
+        _renderMeetingHistory(body, board, isAdmin, refresh);
+        refresh();
+      });
+    });
+
+    const clearAll = body.querySelector('#mtgClearAll');
+    if (clearAll) {
+      clearAll.addEventListener('click', async () => {
+        const toDelete = (S.meetingItems || []).filter(x =>
+          x.board === board && x.year === S.year && x.month === S.month && x.archived
+        );
+        await Promise.all(toDelete.map(x => apiFetch('DELETE', `/api/meeting-items/${x.id}`).catch(() => {})));
+        S.meetingItems = S.meetingItems.filter(x =>
+          !(x.board === board && x.year === S.year && x.month === S.month && x.archived)
+        );
+        _renderMeetingHistory(body, board, isAdmin, refresh);
+        refresh();
+      });
+    }
+  }
+}
+
+function renderMeetingCard(container) {
+  const isAdmin = !S.user?.board || S.user?.board === 'escritorio';
+  const userBoard = S.user?.board;
+  let activeBoard = isAdmin ? NF_STORES[0] : userBoard;
+  let showHistory = false;
+
+  const card = document.createElement('div');
+  card.className = 'main-card';
+
+  const tabsHtml = isAdmin ? `
+    <div class="nf-tabs">
+      ${NF_STORES.map(b => `
+        <button class="nf-tab${b === activeBoard ? ' active' : ''}" data-board="${b}"
+          style="--nf-tab-color:${BOARDS[b]?.color || '#8B949E'}">
+          ${BOARDS[b]?.label || b}
+        </button>`).join('')}
+    </div>` : '';
+
+  card.innerHTML = `
+    <div class="main-card-hdr">
+      <span class="main-card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        Reunião Mensal
+      </span>
+      ${!isAdmin ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
+      <button class="nf-hist-btn" id="mtgHistBtn" style="display:none">Histórico</button>
+    </div>
+    ${tabsHtml}
+    <div class="main-card-body nf-card-body" id="mtgCardBody"></div>
+    <div class="nf-add-row" id="mtgAddRow">
+      <input type="text" class="nf-input" id="mtgInput" placeholder="${isAdmin ? 'Adicionar pauta…' : 'Enviar pendência para adm…'}" maxlength="200">
+      <button class="nf-add-btn" id="mtgAddBtn">+</button>
+    </div>
+  `;
+  container.appendChild(card);
+
+  const body   = card.querySelector('#mtgCardBody');
+  const histBtn = card.querySelector('#mtgHistBtn');
+  const addRow  = card.querySelector('#mtgAddRow');
+  const input   = card.querySelector('#mtgInput');
+  const addBtn  = card.querySelector('#mtgAddBtn');
+
+  function refresh() {
+    const archived = (S.meetingItems || []).filter(x =>
+      x.board === activeBoard && x.year === S.year && x.month === S.month && x.archived
+    );
+    if (archived.length > 0) {
+      histBtn.style.display = '';
+      histBtn.textContent = showHistory ? '← Voltar' : `Histórico (${archived.length})`;
+    } else {
+      histBtn.style.display = 'none';
+      if (showHistory) showHistory = false;
+    }
+    if (showHistory) {
+      _renderMeetingHistory(body, activeBoard, isAdmin, refresh);
+      if (addRow) addRow.style.display = 'none';
+    } else {
+      _renderMeetingActive(body, activeBoard, isAdmin, refresh);
+      if (addRow) addRow.style.display = '';
+    }
+  }
+
+  refresh();
+
+  histBtn.addEventListener('click', () => { showHistory = !showHistory; refresh(); });
+
+  if (isAdmin) {
+    card.querySelectorAll('.nf-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        activeBoard = tab.dataset.board;
+        showHistory = false;
+        card.querySelectorAll('.nf-tab').forEach(t => t.classList.toggle('active', t === tab));
+        refresh();
+      });
+    });
+  }
+
+  async function addMeetingItem() {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    try {
+      const item = await apiFetch('POST', '/api/meeting-items', {
+        text, board: activeBoard, year: S.year, month: S.month,
+        visibility: isAdmin ? 'admin' : 'loja'
+      });
+      S.meetingItems = [...S.meetingItems, item];
+      refresh();
+    } catch (e) { toast('Erro ao adicionar item', true); }
+  }
+
+  addBtn.addEventListener('click', addMeetingItem);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') addMeetingItem(); });
+}
+
 function _renderNFActive(body, board, refresh) {
   const items = (S.nfItems || []).filter(x => x.board === board && !x.archived);
   if (!items.length) {
@@ -3135,24 +3480,26 @@ function _renderNFActive(body, board, refresh) {
     return;
   }
   body.innerHTML = items.map(item => `
-    <div class="nf-item${item.checked ? ' nf-checked' : ''}" data-id="${item.id}">
+    <div class="nf-item" data-id="${item.id}">
       <label class="nf-chk-label">
-        <input type="checkbox" class="nf-chk" data-id="${item.id}"${item.checked ? ' checked' : ''}>
+        <input type="checkbox" class="nf-chk" data-id="${item.id}">
         <span class="nf-item-text">${_escHtml(item.text)}</span>
       </label>
-      <span class="nf-item-meta">${_escHtml(item.addedBy)}</span>
+      <span class="nf-item-meta">${_escHtml(item.addedBy)} · <span class="nf-date-tag">Criado ${_fmtNFDate(item.addedAt)}</span></span>
       <button class="nf-del-btn" data-id="${item.id}" title="Arquivar">&times;</button>
     </div>
   `).join('');
 
   body.querySelectorAll('.nf-chk').forEach(chk => {
     chk.addEventListener('change', async () => {
+      if (!chk.checked) return;
       const id = parseInt(chk.dataset.id);
-      await apiFetch('PATCH', `/api/nf-items/${id}`, { checked: chk.checked }).catch(() => {});
+      chk.disabled = true;
+      const updated = await apiFetch('PATCH', `/api/nf-items/${id}`, { checked: true }).catch(() => null);
       const item = S.nfItems.find(x => x.id === id);
-      if (item) item.checked = chk.checked;
-      const row = body.querySelector(`.nf-item[data-id="${id}"]`);
-      if (row) row.classList.toggle('nf-checked', chk.checked);
+      if (item && updated) Object.assign(item, updated);
+      _renderNFActive(body, board, refresh);
+      refresh();
     });
   });
 
@@ -3182,8 +3529,14 @@ function _renderNFHistory(body, board, refresh) {
     ${isAdmin ? `<div class="nf-hist-header"><button class="nf-clear-btn" id="nfClearAll">Limpar tudo</button></div>` : ''}
     ${items.map(item => `
       <div class="nf-item nf-checked nf-hist-item" data-id="${item.id}">
-        <span class="nf-item-text">${_escHtml(item.text)}</span>
-        <span class="nf-item-meta">${_escHtml(item.archivedBy || item.addedBy)} · ${_fmtNFDate(item.archivedAt)}</span>
+        <div class="nf-hist-item-main">
+          <span class="nf-item-text">${_escHtml(item.text)}</span>
+          <div class="nf-hist-dates">
+            <span class="nf-date-tag">Criado ${_fmtNFDate(item.addedAt)} por ${_escHtml(item.addedBy)}</span>
+            <span class="nf-date-sep">·</span>
+            <span class="nf-date-tag nf-date-archived">✓ Arquivado ${_fmtNFDate(item.archivedAt)} por ${_escHtml(item.archivedBy || item.addedBy)}</span>
+          </div>
+        </div>
         ${isAdmin ? `<button class="nf-del-btn" data-id="${item.id}" title="Excluir">&times;</button>` : ''}
       </div>
     `).join('')}
@@ -3353,6 +3706,357 @@ function triggerMetaCelebration(label, color) {
   setTimeout(() => { overlay.remove(); banner.remove(); }, 7500);
 }
 
+// ── Boletas de Defeito ─────────────────────────────────────────────────────
+const NF_STORES_BOL = ['delrey','minas','contagem','estacao','tommy','lez'];
+
+function _boletaDaysLeft(b) {
+  if (!b.dataEntregue) return null;
+  const dead = new Date(b.dataEntregue);
+  dead.setDate(dead.getDate() + 30);
+  const today = new Date(); today.setHours(0,0,0,0); dead.setHours(0,0,0,0);
+  return Math.ceil((dead - today) / 86400000);
+}
+
+function _boletaBadge(days) {
+  if (days === null) return '';
+  if (days < 0)  return `<span class="bol-badge bol-expired">VENCIDO ${Math.abs(days)}d</span>`;
+  if (days === 0) return `<span class="bol-badge bol-expired">VENCE HOJE</span>`;
+  if (days <= 7) return `<span class="bol-badge bol-urgent">${days}d restantes</span>`;
+  if (days <= 15) return `<span class="bol-badge bol-warn">${days}d restantes</span>`;
+  return `<span class="bol-badge bol-ok">${days}d restantes</span>`;
+}
+
+function renderBoletasCard(container) {
+  const isAdmin   = !S.user?.board || S.user?.board === 'escritorio';
+  const userBoard = S.user?.board;
+  const pending   = (S.boletas || [])
+    .filter(b => b.status === 'pendente' && (isAdmin || b.board === userBoard))
+    .sort((a, b) => (_boletaDaysLeft(a) ?? 9999) - (_boletaDaysLeft(b) ?? 9999));
+
+  const card = document.createElement('div');
+  card.className = 'main-card'; card.id = 'boletasCard';
+
+  const itemsHtml = pending.length === 0
+    ? '<div class="nf-empty">Nenhuma boleta pendente</div>'
+    : pending.map(b => {
+        const days = _boletaDaysLeft(b);
+        const storeTag = isAdmin ? ` <span style="color:${BOARDS[b.board]?.color || '#8B949E'}">${BOARDS[b.board]?.label || b.board}</span>` : '';
+        const info = [b.produto, b.tamanho, b.cor].filter(Boolean).join(' · ');
+        return `<div class="bol-item" data-id="${b.id}" style="cursor:pointer">
+          <div class="bol-item-top">
+            <span class="bol-num">#${String(b.numero).padStart(3,'0')}${storeTag}</span>
+            ${_boletaBadge(days)}
+          </div>
+          <div class="bol-item-nome">${b.nome || '—'}</div>
+          ${info ? `<div class="bol-item-info">${info}</div>` : ''}
+          ${b.defeito ? `<div class="bol-item-defeito">${b.defeito}</div>` : ''}
+        </div>`;
+      }).join('');
+
+  card.innerHTML = `
+    <div class="main-card-hdr">
+      <span class="main-card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="16" y1="13" x2="8" y2="13"/>
+          <line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+        Defeitos
+        ${pending.length > 0 ? `<span class="bol-count-badge">${pending.length}</span>` : ''}
+      </span>
+    </div>
+    <div class="main-card-body bol-card-body">${itemsHtml}</div>
+    <div class="nf-add-row">
+      <input type="text" class="nf-input" id="boletasCardInput" placeholder="Adicionar defeito…" maxlength="120" readonly style="cursor:pointer">
+      <button class="nf-add-btn" id="boletasNewCardBtn">+</button>
+    </div>`;
+
+  container.appendChild(card);
+  card.querySelector('#boletasNewCardBtn').addEventListener('click', () => openBoletasModal('new'));
+  card.querySelector('#boletasCardInput').addEventListener('click', () => openBoletasModal('new'));
+  card.querySelectorAll('.bol-item').forEach(el =>
+    el.addEventListener('click', () => openBoletasModal('view', parseInt(el.dataset.id))));
+}
+
+function openBoletasModal(view = 'list', boletaId = null) {
+  document.getElementById('boletasOverlay').classList.remove('hidden');
+  _renderBoletasModal(view, boletaId);
+}
+
+function closeBoletasModal() {
+  document.getElementById('boletasOverlay').classList.add('hidden');
+}
+
+function _renderBoletasModal(view, boletaId) {
+  const body     = document.getElementById('boletasBody');
+  const isAdmin  = !S.user?.board || S.user?.board === 'escritorio';
+  const userBoard = S.user?.board;
+
+  if (view === 'new' || view === 'edit') {
+    const boleta = boletaId ? (S.boletas||[]).find(b=>b.id===boletaId) : null;
+    body.innerHTML = _boletaFormHtml(boleta, isAdmin, userBoard);
+    _initBoletaForm(body, boleta, isAdmin, userBoard);
+  } else if (view === 'view') {
+    const boleta = (S.boletas||[]).find(b=>b.id===boletaId);
+    if (!boleta) { _renderBoletasModal('list', null); return; }
+    body.innerHTML = _boletaDetailHtml(boleta, isAdmin);
+    _initBoletaDetail(body, boleta, isAdmin);
+  } else {
+    body.innerHTML = _boletasListHtml(isAdmin, userBoard);
+    _initBoletasList(body, isAdmin, userBoard);
+  }
+}
+
+function _boletasListHtml(isAdmin, userBoard) {
+  return `<div class="bol-list-wrap">
+    <div class="bol-list-header">
+      <div class="bol-filter-tabs">
+        <button class="bol-filter-tab active" data-filter="pendente">Pendentes</button>
+        <button class="bol-filter-tab" data-filter="resolvido">Resolvidas</button>
+        <button class="bol-filter-tab" data-filter="all">Todas</button>
+      </div>
+      <div style="display:flex;gap:.5rem;align-items:center">
+        ${isAdmin ? `<select id="bolStoreFilter" class="bol-input" style="width:auto;padding:4px 8px">
+          <option value="">Todas as lojas</option>
+          ${NF_STORES_BOL.map(b=>`<option value="${b}">${BOARDS[b]?.label||b}</option>`).join('')}
+        </select>` : ''}
+        <button class="bol-btn-primary" id="bolNewBtn">+ Nova Boleta</button>
+      </div>
+    </div>
+    <div id="bolListBody" class="bol-list-body"></div>
+  </div>`;
+}
+
+function _initBoletasList(body, isAdmin, userBoard) {
+  let filter = 'pendente';
+  let storeFilter = isAdmin ? '' : userBoard;
+
+  const listBody = body.querySelector('#bolListBody');
+
+  function renderList() {
+    const items = (S.boletas||[]).filter(b => {
+      if (storeFilter && b.board !== storeFilter) return false;
+      if (!isAdmin && b.board !== userBoard) return false;
+      if (filter === 'pendente') return b.status === 'pendente';
+      if (filter === 'resolvido') return b.status === 'resolvido';
+      return true;
+    }).sort((a, b) => {
+      if (filter === 'pendente') return (_boletaDaysLeft(a)??9999) - (_boletaDaysLeft(b)??9999);
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+
+    if (!items.length) {
+      listBody.innerHTML = '<div class="nf-empty" style="padding:2rem">Nenhuma boleta encontrada</div>';
+      return;
+    }
+
+    listBody.innerHTML = items.map(b => {
+      const days = _boletaDaysLeft(b);
+      const storeTag = isAdmin ? `<span class="bol-list-store" style="color:${BOARDS[b.board]?.color||'#8B949E'}">${BOARDS[b.board]?.label||b.board}</span>` : '';
+      const info = [b.produto, b.tamanho, b.cor].filter(Boolean).join(' · ');
+      const resolvedInfo = b.status === 'resolvido' ? `<span class="bol-resolved-tag">✓ Resolvida${b.resolvedAt ? ' em '+new Date(b.resolvedAt).toLocaleDateString('pt-BR') : ''}</span>` : _boletaBadge(days);
+      return `<div class="bol-list-item" data-id="${b.id}">
+        <div class="bol-list-item-left">
+          <div class="bol-list-item-top"><span class="bol-num">#${String(b.numero).padStart(3,'0')}</span>${storeTag}</div>
+          <div class="bol-list-item-nome">${b.nome||'—'}</div>
+          ${info ? `<div class="bol-item-info">${info}</div>` : ''}
+          ${b.defeito ? `<div class="bol-item-defeito">${b.defeito}</div>` : ''}
+        </div>
+        <div class="bol-list-item-right">${resolvedInfo}</div>
+      </div>`;
+    }).join('');
+
+    listBody.querySelectorAll('.bol-list-item').forEach(el =>
+      el.addEventListener('click', () => _renderBoletasModal('view', parseInt(el.dataset.id))));
+  }
+
+  renderList();
+
+  body.querySelectorAll('.bol-filter-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      body.querySelectorAll('.bol-filter-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      filter = btn.dataset.filter;
+      renderList();
+    });
+  });
+
+  const storeSelect = body.querySelector('#bolStoreFilter');
+  if (storeSelect) storeSelect.addEventListener('change', () => { storeFilter = storeSelect.value; renderList(); });
+
+  body.querySelector('#bolNewBtn').addEventListener('click', () => _renderBoletasModal('new', null));
+}
+
+function _boletaDetailHtml(b, isAdmin) {
+  const days = _boletaDaysLeft(b);
+  const storeColor = BOARDS[b.board]?.color || '#8B949E';
+  const fDate = d => d ? new Date(d+'T12:00:00').toLocaleDateString('pt-BR') : '—';
+  const row = (label, val) => val ? `<div class="bol-detail-row"><span class="bol-detail-lbl">${label}</span><span class="bol-detail-val">${val}</span></div>` : '';
+
+  return `<div class="bol-detail">
+    <div class="bol-detail-hdr">
+      <div>
+        <div style="display:flex;align-items:center;gap:.75rem">
+          <span class="bol-num" style="font-size:1.1rem">#${String(b.numero).padStart(3,'0')}</span>
+          <span style="color:${storeColor};font-weight:600">${BOARDS[b.board]?.label||b.board}</span>
+          ${b.status==='resolvido' ? '<span class="bol-resolved-tag">✓ Resolvida</span>' : (days!==null?_boletaBadge(days):'')}
+        </div>
+        <div style="color:var(--muted);font-size:.8rem;margin-top:.25rem">Criada em ${fDate(b.createdAt?.slice(0,10))} por ${b.createdBy||'—'}</div>
+      </div>
+      <div style="display:flex;gap:.5rem">
+        ${b.status==='pendente' ? `<button class="bol-btn-primary" id="bolResolveBtn">✓ Resolver</button>` : `<button class="bol-btn-reopen" id="bolReopenBtn">↩ Reabrir</button>`}
+        ${isAdmin ? `<button class="bol-btn-edit" id="bolEditBtn">Editar</button>
+        <button class="bol-btn-del" id="bolDelBtn">Excluir</button>` : ''}
+        <button class="bol-btn-secondary" id="bolBackBtn">← Voltar</button>
+      </div>
+    </div>
+    <div class="bol-detail-body">
+      <div class="bol-detail-section">
+        <div class="bol-detail-section-title">Cliente</div>
+        ${row('Nome', b.nome)} ${row('CPF', b.cpf)} ${row('Tel', b.tel)} ${row('Email', b.email)}
+        ${row('Endereço', [b.endereco, b.numeroEnd, b.compl].filter(Boolean).join(', '))}
+        ${row('Bairro', b.bairro)} ${row('CEP', b.cep)} ${row('Cidade', b.cidade)}
+      </div>
+      <div class="bol-detail-section">
+        <div class="bol-detail-section-title">Produto</div>
+        ${row('Produto', b.produto)} ${row('Tamanho', b.tamanho)} ${row('Cor', b.cor)}
+        ${row('Ref', b.ref)} ${row('Código', b.codigo)} ${row('Fabricante', b.fabricante)}
+        ${row('Doc', b.doc)} ${row('Data da Compra', fDate(b.dataCompra))}
+      </div>
+      <div class="bol-detail-section">
+        <div class="bol-detail-section-title">Defeito & Prazo</div>
+        ${row('Defeito', b.defeito)}
+        ${row('Data Entregue', fDate(b.dataEntregue))}
+        ${row('Prazo', b.dataEntregue ? `30 dias → vence em ${fDate(new Date(new Date(b.dataEntregue).setDate(new Date(b.dataEntregue).getDate()+30)).toISOString().slice(0,10))}` : null)}
+        ${b.status==='resolvido' ? row('Resolvida em', fDate(b.resolvedAt?.slice(0,10))+' por '+(b.resolvedBy||'—')) : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+function _initBoletaDetail(body, boleta, isAdmin) {
+  body.querySelector('#bolBackBtn').addEventListener('click', () => _renderBoletasModal('list', null));
+  body.querySelector('#bolResolveBtn')?.addEventListener('click', async () => {
+    try {
+      const updated = await apiFetch('PATCH', `/api/boletas/${boleta.id}`, { status: 'resolvido' });
+      const idx = S.boletas.findIndex(b => b.id === boleta.id);
+      if (idx >= 0) S.boletas[idx] = updated;
+      renderDashboard();
+      _renderBoletasModal('view', boleta.id);
+      toast('Boleta resolvida ✓');
+    } catch(e) { toast('Erro: ' + e.message, true); }
+  });
+  body.querySelector('#bolReopenBtn')?.addEventListener('click', async () => {
+    try {
+      const updated = await apiFetch('PATCH', `/api/boletas/${boleta.id}`, { status: 'pendente', resolvedAt: null, resolvedBy: null });
+      const idx = S.boletas.findIndex(b => b.id === boleta.id);
+      if (idx >= 0) S.boletas[idx] = updated;
+      renderDashboard();
+      _renderBoletasModal('view', boleta.id);
+      toast('Boleta reaberta');
+    } catch(e) { toast('Erro: ' + e.message, true); }
+  });
+  body.querySelector('#bolEditBtn')?.addEventListener('click', () => _renderBoletasModal('edit', boleta.id));
+  body.querySelector('#bolDelBtn')?.addEventListener('click', async () => {
+    if (!confirm(`Excluir boleta #${String(boleta.numero).padStart(3,'0')}?`)) return;
+    try {
+      await apiFetch('DELETE', `/api/boletas/${boleta.id}`);
+      S.boletas = S.boletas.filter(b => b.id !== boleta.id);
+      renderDashboard();
+      _renderBoletasModal('list', null);
+      toast('Boleta excluída');
+    } catch(e) { toast('Erro: ' + e.message, true); }
+  });
+}
+
+function _boletaFormHtml(boleta, isAdmin, userBoard) {
+  const v = (field) => boleta?.[field] || '';
+  const board = boleta?.board || (isAdmin ? NF_STORES_BOL[0] : userBoard);
+  return `<div class="bol-form">
+    <div class="bol-form-section">
+      <div class="bol-form-section-title">Cliente</div>
+      <div class="bol-form-grid">
+        <div class="bol-fg bol-span3"><label>Nome *</label><input type="text" name="nome" class="bol-input" value="${v('nome')}" required></div>
+        <div class="bol-fg"><label>CPF</label><input type="text" name="cpf" class="bol-input" value="${v('cpf')}"></div>
+        <div class="bol-fg bol-span2"><label>Endereço</label><input type="text" name="endereco" class="bol-input" value="${v('endereco')}"></div>
+        <div class="bol-fg"><label>Nº</label><input type="text" name="numeroEnd" class="bol-input" value="${v('numeroEnd')}"></div>
+        <div class="bol-fg"><label>Compl</label><input type="text" name="compl" class="bol-input" value="${v('compl')}"></div>
+        <div class="bol-fg"><label>Bairro</label><input type="text" name="bairro" class="bol-input" value="${v('bairro')}"></div>
+        <div class="bol-fg"><label>CEP</label><input type="text" name="cep" class="bol-input" value="${v('cep')}"></div>
+        <div class="bol-fg bol-span2"><label>Cidade</label><input type="text" name="cidade" class="bol-input" value="${v('cidade')}"></div>
+        <div class="bol-fg"><label>Tel</label><input type="text" name="tel" class="bol-input" value="${v('tel')}"></div>
+        <div class="bol-fg bol-span2"><label>Email</label><input type="email" name="email" class="bol-input" value="${v('email')}"></div>
+      </div>
+    </div>
+    <div class="bol-form-section">
+      <div class="bol-form-section-title">Produto</div>
+      <div class="bol-form-grid">
+        <div class="bol-fg bol-span2"><label>Produto *</label><input type="text" name="produto" class="bol-input" value="${v('produto')}" required></div>
+        <div class="bol-fg"><label>Tamanho</label><input type="text" name="tamanho" class="bol-input" value="${v('tamanho')}"></div>
+        <div class="bol-fg"><label>Cor</label><input type="text" name="cor" class="bol-input" value="${v('cor')}"></div>
+        <div class="bol-fg"><label>Ref</label><input type="text" name="ref" class="bol-input" value="${v('ref')}"></div>
+        <div class="bol-fg"><label>Código</label><input type="text" name="codigo" class="bol-input" value="${v('codigo')}"></div>
+        <div class="bol-fg"><label>Fabricante</label><input type="text" name="fabricante" class="bol-input" value="${v('fabricante')}"></div>
+        <div class="bol-fg"><label>Doc</label><input type="text" name="doc" class="bol-input" value="${v('doc')}"></div>
+        <div class="bol-fg"><label>Data da Compra *</label><input type="date" name="dataCompra" class="bol-input" value="${v('dataCompra')}" required></div>
+      </div>
+    </div>
+    <div class="bol-form-section">
+      <div class="bol-form-section-title">Defeito & Prazo</div>
+      <div class="bol-form-grid">
+        <div class="bol-fg bol-span4"><label>Defeito *</label><textarea name="defeito" class="bol-input" rows="3" required>${v('defeito')}</textarea></div>
+        <div class="bol-fg bol-span2"><label>Data Entregue ao cliente * <small>(início do prazo de 30 dias)</small></label><input type="date" name="dataEntregue" class="bol-input" value="${v('dataEntregue')}" required></div>
+        ${isAdmin ? `<div class="bol-fg bol-span2"><label>Loja *</label><select name="board" class="bol-input">
+          ${NF_STORES_BOL.map(b=>`<option value="${b}"${b===board?' selected':''}>${BOARDS[b]?.label||b}</option>`).join('')}
+        </select></div>` : `<input type="hidden" name="board" value="${userBoard}">`}
+      </div>
+    </div>
+    <div class="bol-form-actions">
+      <button class="bol-btn-secondary" id="bolFormCancelBtn">Cancelar</button>
+      <button class="bol-btn-primary" id="bolFormSaveBtn">${boleta ? 'Salvar Alterações' : 'Criar Boleta'}</button>
+    </div>
+  </div>`;
+}
+
+function _initBoletaForm(body, boleta, isAdmin, userBoard) {
+  body.querySelector('#bolFormCancelBtn').addEventListener('click', () =>
+    boleta ? _renderBoletasModal('view', boleta.id) : _renderBoletasModal('list', null));
+
+  body.querySelector('#bolFormSaveBtn').addEventListener('click', async () => {
+    const data = {};
+    body.querySelectorAll('[name]').forEach(el => { data[el.name] = el.value.trim(); });
+    if (!data.nome) { toast('Nome é obrigatório', true); return; }
+    if (!data.produto) { toast('Produto é obrigatório', true); return; }
+    if (!data.dataCompra) { toast('Data da Compra é obrigatória', true); return; }
+    if (!data.dataEntregue) { toast('Data entregue é obrigatória', true); return; }
+    if (!data.board) data.board = userBoard;
+    try {
+      if (boleta) {
+        const updated = await apiFetch('PATCH', `/api/boletas/${boleta.id}`, data);
+        const idx = S.boletas.findIndex(b => b.id === boleta.id);
+        if (idx >= 0) S.boletas[idx] = updated;
+        renderDashboard();
+        _renderBoletasModal('view', boleta.id);
+      } else {
+        const created = await apiFetch('POST', '/api/boletas', data);
+        S.boletas.push(created);
+        renderDashboard();
+        _renderBoletasModal('view', created.id);
+      }
+      toast(boleta ? 'Boleta atualizada ✓' : 'Boleta criada ✓');
+    } catch(e) { toast('Erro: ' + e.message, true); }
+  });
+}
+
+function initBoletasModal() {
+  document.getElementById('boletasBtn').addEventListener('click', () => openBoletasModal('list'));
+  document.getElementById('boletasClose').addEventListener('click', closeBoletasModal);
+  document.getElementById('boletasOverlay').addEventListener('click', e => {
+    if (e.target.id === 'boletasOverlay') closeBoletasModal();
+  });
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
 function init() {
   initLoginForm();
@@ -3363,6 +4067,7 @@ function init() {
   initWeeklyModal();
   initFuncionariosModal();
   initCampanhasModal();
+  initBoletasModal();
   document.getElementById('logoutBtn').addEventListener('click', logout);
 document.getElementById('btnPrev').addEventListener('click', () => navigate(-1));
   document.getElementById('btnNext').addEventListener('click', () => navigate(1));

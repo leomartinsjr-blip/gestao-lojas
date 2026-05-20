@@ -1,8 +1,10 @@
-const express = require('express');
-const session = require('express-session');
-const multer  = require('multer');
-const path    = require('path');
-const fs      = require('fs');
+const express  = require('express');
+const session  = require('express-session');
+const multer   = require('multer');
+const path     = require('path');
+const fs       = require('fs');
+const XLSX     = require('xlsx');
+const ExcelJS  = require('exceljs');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -84,6 +86,13 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 function requireAuth(req, res, next) {
   if (req.session?.user) return next();
   res.status(401).json({ error: 'Não autenticado' });
+}
+
+function requireAdmin(req, res, next) {
+  if (!req.session?.user) return res.status(401).json({ error: 'Não autenticado' });
+  if (req.session.user.board && req.session.user.board !== 'escritorio')
+    return res.status(403).json({ error: 'Acesso restrito' });
+  next();
 }
 
 // ── POST /api/login ────────────────────────────────────────────────────────
@@ -458,7 +467,10 @@ app.post('/api/vsales/:year/:month/:board/:empId/meta', requireAuth, (req, res) 
     const db  = readDB();
     if (!db.vsales) db.vsales = {};
     if (!db.vsales[key]) db.vsales[key] = { meta: { mensal: 0 }, entries: {} };
-    db.vsales[key].meta.mensal = parseFloat(req.body.mensal) || 0;
+    if (req.body.mensal !== undefined)
+      db.vsales[key].meta.mensal = parseFloat(req.body.mensal) || 0;
+    if (req.body.vacationDays !== undefined)
+      db.vsales[key].meta.vacationDays = req.body.vacationDays;
     writeDB(db);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -491,6 +503,286 @@ app.delete('/api/vsales/:year/:month/:board/:empId/:date', requireAuth, (req, re
     if (db.vsales?.[key]?.entries?.[date]) delete db.vsales[key].entries[date];
     writeDB(db);
     res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/excel/:year/:month/:board — download fechamento ──────────────
+app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
+  try {
+    const { year, month, board } = req.params;
+    const y = parseInt(year), m = parseInt(month);
+    const db  = readDB();
+    const pad = n => String(n).padStart(2, '0');
+    const N   = new Date(y, m, 0).getDate();
+    const DAY_PT    = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+    const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                       'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const BOARD_NAMES = { delrey:'Del Rey', minas:'Minas', contagem:'Contagem',
+                          estacao:'Estação', tommy:'Tommy', lez:'Lez' };
+    const BOARD_COLORS = { delrey:'FF4F8B5A', minas:'FF3A7BD5', contagem:'FFE8833A',
+                           estacao:'FF9B59B6', tommy:'FFE74C3C', lez:'FF1ABC9C' };
+    const storeColor = BOARD_COLORS[board] || 'FF4F8B5A';
+    const storeName  = BOARD_NAMES[board]  || board;
+
+    // ── base data ──────────────────────────────────────────────────────────
+    const emps     = (db.employees || []).filter(e => e.board === board && e.isVendedor !== false && !e.inativo);
+    const mkKey    = `${y}-${pad(m)}`;
+    const dsKey    = `${y}-${pad(m)}-${board}`;
+    const metaLoja = db.dailySales?.[dsKey]?.meta?.mensal || 0;
+    const gWeights = (db.globalWeights || {})[mkKey] || {};
+    const defW     = 100 / N;
+
+    const vsMap = {};
+    for (const emp of emps) {
+      vsMap[emp.id] = db.vsales?.[`${y}-${pad(m)}-${board}-${emp.id}`] || { meta: { mensal: 0 }, entries: {} };
+    }
+
+    function sellerDayGoal(empId, ds) {
+      const vac = vsMap[empId]?.meta?.vacationDays || [];
+      if (metaLoja > 0) {
+        if (vac.includes(ds)) return 0;
+        const w = gWeights[ds] ?? defW;
+        const nActive = emps.filter(e => !(vsMap[e.id]?.meta?.vacationDays || []).includes(ds)).length;
+        return nActive > 0 ? (metaLoja * w / 100) / nActive : 0;
+      }
+      return (vsMap[empId]?.meta?.mensal || 0) * (gWeights[ds] ?? defW) / 100;
+    }
+
+    function sellerMensal(empId) {
+      if (metaLoja > 0) {
+        let s = 0;
+        for (let d = 1; d <= N; d++) s += sellerDayGoal(empId, `${y}-${pad(m)}-${pad(d)}`);
+        return s;
+      }
+      return vsMap[empId]?.meta?.mensal || 0;
+    }
+
+    // ── styles ─────────────────────────────────────────────────────────────
+    const C = {
+      HDR_BG:   { type:'pattern', pattern:'solid', fgColor:{ argb:'FF1C2333' } },
+      HDR_FG:   { bold:true, color:{ argb:'FFFFFFFF' }, size:10, name:'Calibri' },
+      TITLE_BG: (argb) => ({ type:'pattern', pattern:'solid', fgColor:{ argb } }),
+      TITLE_FG: { bold:true, color:{ argb:'FFFFFFFF' }, size:11, name:'Calibri' },
+      CALC_BG:  { type:'pattern', pattern:'solid', fgColor:{ argb:'FFF0F4FA' } },
+      EDIT_BG:  { type:'pattern', pattern:'solid', fgColor:{ argb:'FFFFFFFF' } },
+      WE_BG:    { type:'pattern', pattern:'solid', fgColor:{ argb:'FFF5F5F5' } },
+      TOT_BG:   { type:'pattern', pattern:'solid', fgColor:{ argb:'FF1C2333' } },
+      TOT_FG:   { bold:true, color:{ argb:'FFFFFFFF' }, size:10, name:'Calibri' },
+      POS_FG:   { bold:true, color:{ argb:'FF276749' } },
+      NEG_FG:   { bold:true, color:{ argb:'FF9B2335' } },
+      BORDER:   { style:'thin', color:{ argb:'FFD0D7DE' } },
+    };
+    const thinBorder = { top:C.BORDER, left:C.BORDER, bottom:C.BORDER, right:C.BORDER };
+    const fmtBRL  = '#,##0.00';
+    const fmtPct  = '0.00"%"';
+    const fmtDec  = '0.00';
+    const fmtInt  = '0';
+
+    // ── build one sheet ────────────────────────────────────────────────────
+    function buildSheet(wb, sheetName, empId) {
+      const ws = wb.addWorksheet(sheetName, { views:[{ state:'frozen', ySplit:3 }] });
+      ws.columns = [
+        { key:'data',   width:12 }, // A
+        { key:'dia',    width:6  }, // B
+        { key:'metad',  width:15 }, // C  META DIÁRIA
+        { key:'metaa',  width:16 }, // D  META ACUMULADA
+        { key:'pct',    width:10 }, // E  % ATING
+        { key:'dev',    width:14 }, // F  DESVIO
+        { key:'real',   width:16 }, // G  VALOR REALIZADO ← editável
+        { key:'proj',   width:14 }, // H  PROJEÇÃO
+        { key:'pcs',    width:7  }, // I  PÇ  ← editável
+        { key:'atd',    width:8  }, // J  ATEND ← editável
+        { key:'pa',     width:7  }, // K  PA
+      ];
+
+      const isTotal = empId === 'total';
+      const mensal  = isTotal
+        ? emps.reduce((s,e) => s + sellerMensal(e.id), 0)
+        : sellerMensal(empId);
+
+      // Row 1 — title
+      ws.mergeCells('A1:K1');
+      const titleCell = ws.getCell('A1');
+      const subtitle  = isTotal ? 'TOTAL DA LOJA' : (emps.find(e=>e.id===empId)?.name || sheetName);
+      titleCell.value = `${storeName.toUpperCase()} — ${MONTHS_PT[m-1].toUpperCase()} ${y} — ${subtitle.toUpperCase()}`;
+      titleCell.fill  = C.TITLE_BG(storeColor);
+      titleCell.font  = C.TITLE_FG;
+      titleCell.alignment = { horizontal:'center', vertical:'middle' };
+      ws.getRow(1).height = 22;
+
+      // Row 2 — sub-header (meta mensal)
+      ws.mergeCells('A2:K2');
+      const subCell = ws.getCell('A2');
+      subCell.value = `Meta Mensal: R$ ${mensal.toLocaleString('pt-BR',{minimumFractionDigits:2})}`;
+      subCell.fill  = { type:'pattern', pattern:'solid', fgColor:{ argb:'FF252E3D' } };
+      subCell.font  = { bold:true, color:{ argb:'FFADBAC7' }, size:9, name:'Calibri' };
+      subCell.alignment = { horizontal:'center', vertical:'middle' };
+      ws.getRow(2).height = 16;
+
+      // Row 3 — headers
+      const HEADS = ['DATA','DIA','META DIÁRIA','META ACUMULADA','% ATING','DESVIO','VALOR REALIZADO','PROJEÇÃO','PÇ','ATEND','PA'];
+      const hrow = ws.getRow(3);
+      hrow.height = 18;
+      HEADS.forEach((h, i) => {
+        const cell = hrow.getCell(i + 1);
+        cell.value = h; cell.fill = C.HDR_BG; cell.font = C.HDR_FG;
+        cell.alignment = { horizontal:'center', vertical:'middle', wrapText:true };
+        cell.border = thinBorder;
+      });
+
+      // Data rows (4 .. N+3)
+      for (let d = 1; d <= N; d++) {
+        const ds  = `${y}-${pad(m)}-${pad(d)}`;
+        const dow = new Date(y, m - 1, d).getDay();
+        const isWE = dow === 0 || dow === 6;
+        const rowN = d + 3;
+        const row  = ws.getRow(rowN);
+        row.height = 16;
+
+        let metaDia = 0, valor = 0, pecas = 0, atend = 0;
+        if (isTotal) {
+          for (const e of emps) {
+            metaDia += sellerDayGoal(e.id, ds);
+            const en = vsMap[e.id]?.entries?.[ds] || {};
+            valor += en.value||0; pecas += en.pecas||0; atend += en.atendimentos||0;
+          }
+        } else {
+          metaDia = sellerDayGoal(empId, ds);
+          const en = vsMap[empId]?.entries?.[ds] || {};
+          valor = en.value||0; pecas = en.pecas||0; atend = en.atendimentos||0;
+        }
+
+        // calc cols use formulas referencing the sheet itself
+        const cRow = rowN;
+        const set = (col, val, fmt, bg, fg) => {
+          const cell = row.getCell(col);
+          cell.value = val;
+          if (fmt) cell.numFmt = fmt;
+          cell.fill   = bg  || (isWE ? C.WE_BG : C.EDIT_BG);
+          if (fg) cell.font = fg;
+          cell.border = thinBorder;
+          cell.alignment = { horizontal: col <= 2 ? 'center' : 'right', vertical:'middle' };
+        };
+
+        // A DATA, B DIA
+        set(1, `${pad(d)}/${pad(m)}`, '@');
+        set(2, DAY_PT[dow], '@');
+        // C META DIÁRIA
+        set(3, metaDia > 0 ? +metaDia.toFixed(4) : null, fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
+        // D META ACUMULADA — formula =D(prev)+C(this) or =C(this) for d=1
+        set(4, d === 1 ? { formula:`C${cRow}` } : { formula:`D${cRow-1}+C${cRow}` }, fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
+        // E % ATING — =IF(D>0, G/D*100, "")
+        set(5, { formula:`IF(D${cRow}>0,G${cRow}/D${cRow}*100,"")` }, fmtPct, isWE ? C.WE_BG : C.CALC_BG);
+        // F DESVIO — =IF(D>0, G-D, "")
+        set(6, { formula:`IF(D${cRow}>0,G${cRow}-D${cRow},"")` }, fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
+        // G VALOR REALIZADO ← editável
+        set(7, valor > 0 ? +valor.toFixed(2) : null, fmtBRL);
+        // H PROJEÇÃO — =IF(AND(D>0,G>0),G/D*mensal,"")
+        set(8, { formula:`IF(AND(D${cRow}>0,G${cRow}>0),G${cRow}/D${cRow}*${mensal.toFixed(2)},"")` }, fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
+        // I PÇ ← editável
+        set(9, pecas > 0 ? pecas : null, fmtInt);
+        // J ATEND ← editável
+        set(10, atend > 0 ? atend : null, fmtInt);
+        // K PA — formula =IF(J>0, I/J, "")
+        set(11, { formula:`IF(J${cRow}>0,I${cRow}/J${cRow},"")` }, fmtDec, isWE ? C.WE_BG : C.CALC_BG);
+      }
+
+      // Total row (N+4)
+      const totRow = ws.getRow(N + 4);
+      totRow.height = 18;
+      const d1 = 4, dLast = N + 3;
+      const totData = [
+        ['TOTAL', '@'],
+        ['', '@'],
+        [{ formula:`SUM(C${d1}:C${dLast})` }, fmtBRL],   // C META DIÁRIA
+        [{ formula:`D${dLast}` },              fmtBRL],   // D META ACUM = last
+        [{ formula:`IF(D${N+4}>0,G${N+4}/D${N+4}*100,"")` }, fmtPct], // E
+        [{ formula:`IF(D${N+4}>0,G${N+4}-D${N+4},"")` },     fmtBRL], // F
+        [{ formula:`SUM(G${d1}:G${dLast})` }, fmtBRL],   // G REALIZADO
+        ['', '@'],                                         // H PROJEÇÃO
+        [{ formula:`SUM(I${d1}:I${dLast})` }, fmtInt],   // I PÇ
+        [{ formula:`SUM(J${d1}:J${dLast})` }, fmtInt],   // J ATEND
+        [{ formula:`IF(J${N+4}>0,I${N+4}/J${N+4},"")` }, fmtDec], // K PA
+      ];
+      totData.forEach(([val, fmt], i) => {
+        const cell = totRow.getCell(i + 1);
+        cell.value  = val; if (fmt && fmt !== '@') cell.numFmt = fmt;
+        cell.fill   = C.TOT_BG; cell.font = C.TOT_FG;
+        cell.border = thinBorder;
+        cell.alignment = { horizontal: i < 2 ? 'center' : 'right', vertical:'middle' };
+      });
+
+      // Conditional coloring for % ATING and DESVIO
+      for (let d = 1; d <= N + 1; d++) {
+        const rn = d === N + 1 ? N + 4 : d + 3;
+        // (conditional formatting not available in exceljs free, handled by formula fill above)
+      }
+    }
+
+    // ── build workbook ─────────────────────────────────────────────────────
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Gestão Lojas'; wb.created = new Date();
+
+    for (const emp of emps) {
+      buildSheet(wb, (emp.apelido || emp.name).slice(0, 31), emp.id);
+    }
+    buildSheet(wb, 'TOTAL', 'total');
+
+    res.setHeader('Content-Disposition', `attachment; filename="fechamento-${board}-${pad(m)}-${y}.xlsx"`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/excel/:year/:month/:board — upload fechamento ───────────────
+const excelUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+app.post('/api/excel/:year/:month/:board', requireAuth, excelUpload.single('file'), (req, res) => {
+  try {
+    const { year, month, board } = req.params;
+    const y = parseInt(year), m = parseInt(month);
+    const pad = n => String(n).padStart(2, '0');
+    const db = readDB();
+    if (!db.vsales) db.vsales = {};
+
+    const emps = (db.employees || []).filter(e => e.board === board && e.isVendedor !== false && !e.inativo);
+    const empByName = {};
+    for (const e of emps) {
+      const key = (e.apelido || e.name).slice(0, 31).toLowerCase();
+      empByName[key] = e;
+    }
+
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    let updated = 0;
+
+    for (const sheetName of wb.SheetNames) {
+      const emp = empByName[sheetName.toLowerCase()];
+      if (!emp) continue;
+      const ws = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+      const vsKey = `${y}-${pad(m)}-${board}-${emp.id}`;
+      if (!db.vsales[vsKey]) db.vsales[vsKey] = { meta: { mensal: 0 }, entries: {} };
+
+      for (let i = 1; i < rows.length; i++) {
+        const row = rows[i];
+        const datStr = String(row[0] || '').trim(); // DD/MM/YYYY
+        if (!datStr || !datStr.includes('/')) continue;
+        const parts = datStr.split('/');
+        if (parts.length < 3) continue;
+        const ds = `${parts[2]}-${parts[1]}-${parts[0]}`;
+        // cols: DATA(0), DIA(1), META DIÁRIA(2), META ACUM(3), %ATING(4), DESVIO(5), VALOR REALIZADO(6), PROJEÇÃO(7), PÇ(8), ATEND(9), PA(10)
+        const val  = parseFloat(String(row[6] ?? '').toString().replace(',', '.')) || 0;
+        const pec  = parseInt(row[8]) || 0;
+        const atd  = parseInt(row[9]) || 0;
+        if (val === 0 && pec === 0 && atd === 0) continue;
+        db.vsales[vsKey].entries[ds] = { value: val, pecas: pec, atendimentos: atd };
+        updated++;
+      }
+    }
+
+    writeDB(db);
+    res.json({ ok: true, updated });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -644,7 +936,14 @@ app.patch('/api/nf-items/:id', requireAuth, (req, res) => {
     const db = readDB();
     const item = (db.nfItems || []).find(x => x.id === id);
     if (!item) return res.status(404).json({ error: 'Item não encontrado' });
-    if ('checked' in req.body) item.checked = !!req.body.checked;
+    if ('checked' in req.body) {
+      item.checked = !!req.body.checked;
+      if (item.checked && !item.archived) {
+        item.archived = true;
+        item.archivedAt = new Date().toISOString();
+        item.archivedBy = req.session.user.label || req.session.user.username;
+      }
+    }
     if ('text' in req.body && req.body.text?.trim()) item.text = req.body.text.trim();
     if (req.body.archived === true && !item.archived) {
       item.archived = true;
@@ -662,6 +961,147 @@ app.delete('/api/nf-items/:id', requireAuth, (req, res) => {
     const id = parseInt(req.params.id);
     const db = readDB();
     db.nfItems = (db.nfItems || []).filter(x => x.id !== id);
+    writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/meeting-items ───────────────────────────────────────────────
+app.get('/api/meeting-items', requireAuth, (req, res) => {
+  const db = readDB();
+  const isAdmin = !req.session.user.board || req.session.user.board === 'escritorio';
+  const items = (db.meetingItems || []).filter(x =>
+    isAdmin || (x.board === req.session.user.board && x.visibility === 'loja')
+  );
+  res.json(items);
+});
+
+// ── POST /api/meeting-items ──────────────────────────────────────────────
+app.post('/api/meeting-items', requireAuth, (req, res) => {
+  try {
+    const { text, board, year, month, visibility } = req.body;
+    if (!text?.trim()) return res.status(400).json({ error: 'Texto obrigatório' });
+    const isAdmin = !req.session.user.board || req.session.user.board === 'escritorio';
+    const effectiveBoard = isAdmin ? board : req.session.user.board;
+    if (!effectiveBoard || !BOARDS.includes(effectiveBoard)) return res.status(400).json({ error: 'Loja inválida' });
+    const db = readDB();
+    if (!db.meetingItems) db.meetingItems = [];
+    const item = {
+      id: nextId(db),
+      text: text.trim(),
+      board: effectiveBoard,
+      year: parseInt(year) || new Date().getFullYear(),
+      month: parseInt(month) || (new Date().getMonth() + 1),
+      visibility: isAdmin ? (visibility === 'loja' ? 'loja' : 'admin') : 'loja',
+      origin: isAdmin ? 'admin' : 'loja',
+      checked: false,
+      addedBy: req.session.user.label || req.session.user.username,
+      addedAt: new Date().toISOString(),
+    };
+    db.meetingItems.push(item);
+    writeDB(db);
+    res.json(item);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── PATCH /api/meeting-items/:id ─────────────────────────────────────────
+app.patch('/api/meeting-items/:id', requireAuth, (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const db = readDB();
+    const item = (db.meetingItems || []).find(x => x.id === id);
+    if (!item) return res.status(404).json({ error: 'Item não encontrado' });
+    const isAdmin = !req.session.user.board || req.session.user.board === 'escritorio';
+    if ('visibility' in req.body && isAdmin) item.visibility = req.body.visibility === 'loja' ? 'loja' : 'admin';
+    if ('checked' in req.body) {
+      item.checked = !!req.body.checked;
+      if (item.checked && !item.archived) {
+        item.archived = true;
+        item.archivedAt = new Date().toISOString();
+        item.archivedBy = req.session.user.label || req.session.user.username;
+      }
+    }
+    if (req.body.archived === true && !item.archived) {
+      item.archived = true;
+      item.archivedAt = new Date().toISOString();
+      item.archivedBy = req.session.user.label || req.session.user.username;
+    }
+    writeDB(db);
+    res.json(item);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── DELETE /api/meeting-items/:id ────────────────────────────────────────
+app.delete('/api/meeting-items/:id', requireAdmin, (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const db = readDB();
+    db.meetingItems = (db.meetingItems || []).filter(x => x.id !== id);
+    writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/boletas ─────────────────────────────────────────────────────
+app.get('/api/boletas', requireAuth, (req, res) => {
+  const db = readDB();
+  res.json(db.boletas || []);
+});
+
+// ── POST /api/boletas ─────────────────────────────────────────────────────
+app.post('/api/boletas', requireAuth, (req, res) => {
+  try {
+    const { board } = req.body;
+    if (!board || !BOARDS.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
+    if (!req.body.nome?.trim()) return res.status(400).json({ error: 'Nome obrigatório' });
+    const db = readDB();
+    if (!db.boletas)    db.boletas    = [];
+    if (!db.boletaSeq)  db.boletaSeq  = {};
+    if (!db.boletaSeq[board]) db.boletaSeq[board] = 0;
+    db.boletaSeq[board]++;
+    const fields = ['nome','cpf','endereco','numeroEnd','compl','bairro','cep','cidade','tel','email',
+                    'produto','tamanho','ref','codigo','cor','fabricante','doc','dataCompra','defeito','dataEntregue'];
+    const boleta = { id: nextId(db), numero: db.boletaSeq[board], board, status: 'pendente',
+                     createdAt: new Date().toISOString(),
+                     createdBy: req.session.user.label || req.session.user.username };
+    fields.forEach(f => { boleta[f] = (req.body[f] || '').toString().trim() || null; });
+    db.boletas.push(boleta);
+    writeDB(db);
+    res.json(boleta);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── PATCH /api/boletas/:id ────────────────────────────────────────────────
+app.patch('/api/boletas/:id', requireAuth, (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const db = readDB();
+    const b  = (db.boletas || []).find(x => x.id === id);
+    if (!b) return res.status(404).json({ error: 'Boleta não encontrada' });
+    const fields = ['nome','cpf','endereco','numeroEnd','compl','bairro','cep','cidade','tel','email',
+                    'produto','tamanho','ref','codigo','cor','fabricante','doc','dataCompra','defeito','dataEntregue'];
+    fields.forEach(f => { if (f in req.body) b[f] = req.body[f] || null; });
+    if (req.body.status) {
+      b.status = req.body.status;
+      if (req.body.status === 'resolvido' && !b.resolvedAt) {
+        b.resolvedAt = new Date().toISOString();
+        b.resolvedBy = req.session.user.label || req.session.user.username;
+      } else if (req.body.status === 'pendente') {
+        b.resolvedAt = null;
+        b.resolvedBy = null;
+      }
+    }
+    writeDB(db);
+    res.json(b);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── DELETE /api/boletas/:id ───────────────────────────────────────────────
+app.delete('/api/boletas/:id', requireAuth, (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const db = readDB();
+    db.boletas = (db.boletas || []).filter(x => x.id !== id);
     writeDB(db);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
