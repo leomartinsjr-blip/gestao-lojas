@@ -3639,8 +3639,7 @@ function renderCaixaCard(container) {
       const saldo   = caixa - sangria;
       totalCaixa   += caixa;
       totalSangria += sangria;
-      const isSunday = dt.getDay() === 0;
-      rows.push({ d, dow, caixa, sangria, saldo, isSunday });
+      rows.push({ d, dow, caixa, sangria, saldo });
     }
     const totalSaldo = totalCaixa - totalSangria;
 
@@ -3660,7 +3659,7 @@ function renderCaixaCard(container) {
           <tbody id="caixaTbody">
             ${rows.map(r => `
               <tr class="${r.d === todayDay ? 'caixa-today' : ''}" data-day="${r.d}">
-                <td class="caixa-td-date">${pad(r.d)}/${pad(S.month)} <span style="color:var(--muted);font-size:.72rem">${r.dow}${r.isSunday ? ' <span style="color:var(--warn);font-size:.68rem">fech</span>' : ''}</span></td>
+                <td class="caixa-td-date">${pad(r.d)}/${pad(S.month)} <span style="color:var(--muted);font-size:.72rem">${r.dow}</span></td>
                 <td class="caixa-td-val caixa-caixa-cell" data-field="caixa" data-day="${r.d}">${r.caixa > 0 ? fmtCur(r.caixa) : '<span style="color:var(--muted)">—</span>'}</td>
                 <td class="caixa-td-val caixa-sangria-cell" data-field="sangria" data-day="${r.d}">${r.sangria > 0 ? fmtCur(r.sangria) : '<span style="color:var(--muted)">—</span>'}</td>
                 <td class="caixa-td-saldo ${r.caixa === 0 && r.sangria === 0 ? 'zero' : saldoClass(r.saldo)}">${r.caixa === 0 && r.sangria === 0 ? '<span style="color:var(--muted)">—</span>' : fmtCur(r.saldo)}</td>
