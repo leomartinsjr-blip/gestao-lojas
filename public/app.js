@@ -720,12 +720,13 @@ function _renderDashWeekBody(body, week, extraData) {
     const emps = byBoard[bk] || [];
     if (emps.length === 0) continue;
 
-    let totValor=0, totPecas=0, totAtend=0, totMeta=0, totPremio=0;
+    let totValor=0, totPecas=0, totAtend=0, totMeta=0, totPremio=0, totProjecao=0, hasProj=false;
 
     const rows = emps.map(emp => {
       const k = calcWeekKpis(emp, week, extraData);
       totValor += k.valor; totPecas += k.pecas; totAtend += k.atend; totMeta += k.wMeta;
       if (k.pTotal != null) totPremio += k.pTotal;
+      if (k.projecao != null) { totProjecao += k.projecao; hasProj = true; }
 
       const pctCls  = k.pctMeta  == null ? '' : k.pctMeta  >= 100 ? 'kpi-pos' : k.pctMeta  >= 80 ? 'kpi-warn' : 'kpi-neg';
       const projCls = k.projecao == null ? '' : k.projecao >= k.wMeta ? 'kpi-pos' : 'kpi-neg';
@@ -772,7 +773,7 @@ function _renderDashWeekBody(body, week, extraData) {
           <td class="dw-td dw-td-num">${fBRL(totMeta||null)}</td>
           <td class="dw-td dw-td-num">${fBRL(totValor||null)}</td>
           <td class="dw-td dw-td-num ${tpCls}">${fPct(totPct)}</td>
-          <td class="dw-td dw-td-num">—</td>
+          <td class="dw-td dw-td-num">${hasProj ? fBRL(totProjecao) : '—'}</td>
           <td class="dw-td dw-td-num">${totPa!=null?totPa.toFixed(2):'—'}</td>
           <td class="dw-td dw-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
         </tr></tfoot>
@@ -2543,12 +2544,13 @@ async function renderWeeklyModal() {
     const section = document.createElement('div');
     section.className = 'wk-section';
 
-    let totValor=0, totPecas=0, totAtend=0, totMeta=0, totPremio=0;
+    let totValor=0, totPecas=0, totAtend=0, totMeta=0, totPremio=0, totProjecao2=0, hasProj2=false;
 
     const rows = emps.map(emp => {
       const k = calcWeekKpis(emp, week, Object.keys(extraData).length ? extraData : null);
       totValor += k.valor; totPecas += k.pecas; totAtend += k.atend; totMeta += k.wMeta;
       if (k.pTotal != null) totPremio += k.pTotal;
+      if (k.projecao != null) { totProjecao2 += k.projecao; hasProj2 = true; }
 
       if (isCurrent && k.hitMeta && k.wMeta > 0) {
         const empKey = `wk-emp-${emp.id}-${week.startStr}`;
@@ -2616,7 +2618,7 @@ async function renderWeeklyModal() {
           <td class="wk-td wk-td-num">${fBRL(totMeta||null)}</td>
           <td class="wk-td wk-td-num">${fBRL(totValor||null)}</td>
           <td class="wk-td wk-td-num ${tpCls}">${fPct(totPct)}</td>
-          <td class="wk-td wk-td-num">—</td>
+          <td class="wk-td wk-td-num">${hasProj2 ? fBRL(totProjecao2) : '—'}</td>
           <td class="wk-td wk-td-num">${totPa!=null?totPa.toFixed(2):'—'}</td>
           <td class="wk-td wk-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
         </tr></tfoot>
