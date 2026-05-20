@@ -1,5 +1,5 @@
 {
-  "nextId": 302,
+  "nextId": 311,
   "months": {
     "2026-05": {
       "id": 1,
@@ -2935,6 +2935,97 @@
         "estacao"
       ],
       "createdAt": "2026-05-20T04:03:23.012Z"
+    },
+    {
+      "id": 302,
+      "name": "Maior venda MAIO",
+      "kpi": "vendas",
+      "startDate": "2026-05-01",
+      "endDate": "2026-05-31",
+      "stores": [
+        "delrey",
+        "minas",
+        "contagem",
+        "estacao",
+        "tommy",
+        "lez"
+      ],
+      "scope": "rede",
+      "createdAt": "2026-05-20T04:20:30.227Z"
     }
-  ]
+  ],
+  "nfItems": [
+    {
+      "id": 303,
+      "text": "NF - 000 TESTE",
+      "checked": false,
+      "addedBy": "Leonardo",
+      "addedAt": "2026-05-20T04:37:14.918Z"
+    },
+    {
+      "id": 304,
+      "text": "0120",
+      "checked": false,
+      "addedBy": "Leonardo",
+      "addedAt": "2026-05-20T04:37:28.464Z"
+    },
+    {
+      "id": 305,
+      "text": "0202030",
+      "checked": false,
+      "addedBy": "Leonardo",
+      "addedAt": "2026-05-20T04:37:29.878Z"
+    },
+    {
+      "id": 306,
+      "text": "0230303",
+      "checked": false,
+      "addedBy": "Leonardo",
+      "addedAt": "2026-05-20T04:37:31.211Z"
+    },
+    {
+      "id": 307,
+      "text": "030203",
+      "checked": false,
+      "addedBy": "Leonardo",
+      "addedAt": "2026-05-20T04:37:32.902Z"
+    },
+    {
+      "id": 308,
+      "text": "02303020",
+      "checked": false,
+      "addedBy": "Leonardo",
+      "addedAt": "2026-05-20T04:37:35.073Z"
+    },
+    {
+      "id": 309,
+      "text": "TESTE 123",
+      "board": "delrey",
+      "checked": false,
+      "addedBy": "Leonardo",
+      "addedAt": "2026-05-20T04:49:04.654Z"
+    },
+    {
+      "id": 310,
+      "text": "TESTE 1234",
+      "board": "delrey",
+      "checked": false,
+      "addedBy": "Leonardo",
+      "addedAt": "2026-05-20T04:49:11.766Z"
+    }
+  ],
+  "layouts": {
+    "leonardo": {
+      "col-0": [
+        "card-folgas",
+        "card-perf",
+        "card-comp"
+      ],
+      "col-1": [
+        "card-nf",
+        "card-camp"
+      ],
+      "col-2": []
+    }
+  }
 }
