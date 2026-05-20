@@ -1,5 +1,5 @@
 {
-  "nextId": 311,
+  "nextId": 317,
   "months": {
     "2026-05": {
       "id": 1,
@@ -1815,7 +1815,7 @@
     },
     "2026-06-delrey": {
       "meta": {
-        "mensal": 180000,
+        "mensal": 200000,
         "weights": {}
       },
       "entries": {
@@ -1902,7 +1902,9 @@
   "vsales": {
     "2026-05-delrey-253": {
       "meta": {
-        "mensal": 60000
+        "mensal": 60000,
+        "vacationPct": 50,
+        "vacationDays": []
       },
       "entries": {
         "2026-05-01": {
@@ -2076,7 +2078,8 @@
     },
     "2026-05-delrey-255": {
       "meta": {
-        "mensal": 60000
+        "mensal": 60000,
+        "vacationDays": []
       },
       "entries": {
         "2026-05-02": {
@@ -2848,6 +2851,25 @@
           "atendimentos": 4
         }
       }
+    },
+    "2026-06-delrey-253": {
+      "meta": {
+        "mensal": 66666.66666666669,
+        "vacationDays": []
+      },
+      "entries": {}
+    },
+    "2026-06-delrey-254": {
+      "meta": {
+        "mensal": 66666.66666666669
+      },
+      "entries": {}
+    },
+    "2026-06-delrey-255": {
+      "meta": {
+        "mensal": 66666.66666666669
+      },
+      "entries": {}
     }
   },
   "weeklyMetas": {
@@ -3001,9 +3023,12 @@
       "id": 309,
       "text": "TESTE 123",
       "board": "delrey",
-      "checked": false,
+      "checked": true,
       "addedBy": "Leonardo",
-      "addedAt": "2026-05-20T04:49:04.654Z"
+      "addedAt": "2026-05-20T04:49:04.654Z",
+      "archived": true,
+      "archivedAt": "2026-05-20T13:59:33.962Z",
+      "archivedBy": "Leonardo"
     },
     {
       "id": 310,
@@ -3026,6 +3051,137 @@
         "card-camp"
       ],
       "col-2": []
+    }
+  },
+  "boletas": [
+    {
+      "id": 311,
+      "numero": 1,
+      "board": "delrey",
+      "status": "resolvido",
+      "createdAt": "2026-05-20T13:52:45.208Z",
+      "createdBy": "Del Rey",
+      "nome": "TESTE",
+      "cpf": null,
+      "endereco": null,
+      "numeroEnd": null,
+      "compl": null,
+      "bairro": null,
+      "cep": null,
+      "cidade": null,
+      "tel": null,
+      "email": null,
+      "produto": "TENIS VANS",
+      "tamanho": null,
+      "ref": null,
+      "codigo": null,
+      "cor": null,
+      "fabricante": null,
+      "doc": null,
+      "dataCompra": "2026-05-01",
+      "defeito": "DESCOLANDO",
+      "dataEntregue": "2026-05-01",
+      "resolvedAt": "2026-05-20T13:52:48.846Z",
+      "resolvedBy": "Del Rey"
+    },
+    {
+      "id": 312,
+      "numero": 2,
+      "board": "delrey",
+      "status": "pendente",
+      "createdAt": "2026-05-20T13:54:46.587Z",
+      "createdBy": "Del Rey",
+      "nome": "TESTE 2",
+      "cpf": null,
+      "endereco": null,
+      "numeroEnd": null,
+      "compl": null,
+      "bairro": null,
+      "cep": null,
+      "cidade": null,
+      "tel": null,
+      "email": null,
+      "produto": "TENIS CONVERSE",
+      "tamanho": null,
+      "ref": null,
+      "codigo": null,
+      "cor": null,
+      "fabricante": null,
+      "doc": null,
+      "dataCompra": "2026-05-10",
+      "defeito": "DESCOLANDO",
+      "dataEntregue": "2026-05-10"
+    }
+  ],
+  "boletaSeq": {
+    "delrey": 2
+  },
+  "meetingItems": [
+    {
+      "id": 313,
+      "text": "RESOLVER PROBLEMA DA LOJA",
+      "board": "delrey",
+      "year": 2026,
+      "month": 5,
+      "visibility": "loja",
+      "checked": true,
+      "addedBy": "Leonardo",
+      "addedAt": "2026-05-20T14:12:16.535Z",
+      "archived": true,
+      "archivedAt": "2026-05-20T14:12:41.583Z",
+      "archivedBy": "Del Rey"
+    },
+    {
+      "id": 314,
+      "text": "Está faltanto produto X",
+      "board": "delrey",
+      "year": 2026,
+      "month": 5,
+      "visibility": "loja",
+      "origin": "loja",
+      "checked": false,
+      "addedBy": "Del Rey",
+      "addedAt": "2026-05-20T14:15:23.545Z"
+    },
+    {
+      "id": 315,
+      "text": "Otimizar vendedores",
+      "board": "delrey",
+      "year": 2026,
+      "month": 5,
+      "visibility": "loja",
+      "origin": "admin",
+      "checked": false,
+      "addedBy": "Leonardo",
+      "addedAt": "2026-05-20T14:15:45.996Z"
+    },
+    {
+      "id": 316,
+      "text": "Pauta restrita",
+      "board": "delrey",
+      "year": 2026,
+      "month": 5,
+      "visibility": "admin",
+      "origin": "admin",
+      "checked": false,
+      "addedBy": "Leonardo",
+      "addedAt": "2026-05-20T14:15:59.474Z"
+    }
+  ],
+  "caixa": {
+    "2026-05-delrey": {
+      "15": {
+        "caixa": 1500,
+        "sangria": 200,
+        "updatedAt": "2026-05-20T15:17:00.497Z",
+        "updatedBy": "leonardo"
+      },
+      "16": {
+        "caixa": 0,
+        "sangria": 0,
+        "updatedAt": "2026-05-20T15:18:10.068Z",
+        "updatedBy": "leonardo"
+      }
     }
   }
 }

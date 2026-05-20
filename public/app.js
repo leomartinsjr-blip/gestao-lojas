@@ -623,6 +623,9 @@ function renderDashboard() {
   // ── CARD: Reunião Mensal ──────────────────────────────────────────────────
   renderMeetingCard(midCol);
 
+  // ── CARD: Fechamento de Caixa ─────────────────────────────────────────────
+  renderCaixaCard(midCol);
+
 }
 
 
@@ -1955,11 +1958,19 @@ function startVendCellEdit(td, empId) {
         PD.allVsales[empId].entries[dateStr] = merged;
       }
     } catch(e) { toast('Erro: ' + e.message, true); }
-    renderVendedorSheet();
+    _renderKeepScroll();
     _syncPDToS();
   };
   inp.addEventListener('blur', commit);
-  inp.addEventListener('keydown', e => { if (e.key==='Enter') inp.blur(); if (e.key==='Escape') renderVendedorSheet(); });
+  inp.addEventListener('keydown', e => { if (e.key==='Enter') inp.blur(); if (e.key==='Escape') _renderKeepScroll(); });
+}
+
+function _renderKeepScroll() {
+  const tw = document.querySelector('#dailyBody .ds-table-wrap');
+  const scrollTop = tw?.scrollTop || 0;
+  renderVendedorSheet();
+  const tw2 = document.querySelector('#dailyBody .ds-table-wrap');
+  if (tw2) tw2.scrollTop = scrollTop;
 }
 
 function startFluxoCellEdit(td) {
@@ -1977,11 +1988,11 @@ function startFluxoCellEdit(td) {
       await apiFetch('PUT', `/api/storefluxo/${PD.year}/${PD.month}/${PD.board}/${dateStr}`, { value: val });
       if (val === 0) delete PD.fluxo[dateStr]; else PD.fluxo[dateStr] = val;
     } catch(e) { toast('Erro: ' + e.message, true); }
-    renderVendedorSheet();
+    _renderKeepScroll();
     _syncPDToS();
   };
   inp.addEventListener('blur', commit);
-  inp.addEventListener('keydown', e => { if (e.key==='Enter') inp.blur(); if (e.key==='Escape') renderVendedorSheet(); });
+  inp.addEventListener('keydown', e => { if (e.key==='Enter') inp.blur(); if (e.key==='Escape') _renderKeepScroll(); });
 }
 
 function startGlobalWeightEdit(td) {
@@ -3560,6 +3571,159 @@ function _renderNFHistory(body, board, refresh) {
       S.nfItems = S.nfItems.filter(x => !(x.board === board && x.archived));
       _renderNFHistory(body, board, refresh);
       refresh();
+    });
+  }
+}
+
+// ── Fechamento de Caixa ───────────────────────────────────────────────────
+function renderCaixaCard(container) {
+  const isAdmin  = !S.user?.board || S.user?.board === 'escritorio';
+  const userBoard = S.user?.board;
+  let activeBoard = isAdmin ? NF_STORES[0] : userBoard;
+
+  const card = document.createElement('div');
+  card.className = 'main-card';
+
+  const tabsHtml = isAdmin ? `
+    <div class="nf-tabs">
+      ${NF_STORES.map(b => `
+        <button class="nf-tab${b === activeBoard ? ' active' : ''}" data-board="${b}"
+          style="--nf-tab-color:${BOARDS[b]?.color || '#8B949E'}">
+          ${BOARDS[b]?.label || b}
+        </button>`).join('')}
+    </div>` : '';
+
+  card.innerHTML = `
+    <div class="main-card-hdr">
+      <span class="main-card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <rect x="2" y="7" width="20" height="14" rx="2"/>
+          <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+          <line x1="12" y1="12" x2="12" y2="16"/>
+          <line x1="10" y1="14" x2="14" y2="14"/>
+        </svg>
+        Fechamento de Caixa
+      </span>
+      ${!isAdmin ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
+    </div>
+    ${tabsHtml}
+    <div class="main-card-body caixa-card-body" id="caixaCardBody"></div>
+  `;
+  container.appendChild(card);
+
+  const body = card.querySelector('#caixaCardBody');
+
+  async function refresh() {
+    body.innerHTML = '<div style="padding:.75rem .85rem;color:var(--muted);font-size:.8rem">Carregando…</div>';
+    let data = {};
+    try {
+      data = await apiFetch('GET', `/api/caixa/${S.year}/${S.month}/${activeBoard}`);
+    } catch(e) { body.innerHTML = '<div style="padding:.75rem;color:var(--down);font-size:.8rem">Erro ao carregar</div>'; return; }
+
+    const daysInMonth = new Date(S.year, S.month, 0).getDate();
+    const today = new Date();
+    const isCurrentMonth = today.getFullYear() === S.year && (today.getMonth()+1) === S.month;
+    const todayDay = isCurrentMonth ? today.getDate() : -1;
+    const DAY_NAMES = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+    const pad = n => String(n).padStart(2,'0');
+    const fmtCur = v => (v === 0 || v === undefined || v === null) ? '—' : `R$ ${Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+
+    let totalCaixa = 0, totalSangria = 0;
+    const rows = [];
+    for (let d = 1; d <= daysInMonth; d++) {
+      const dt   = new Date(S.year, S.month - 1, d);
+      const dow  = DAY_NAMES[dt.getDay()];
+      const entry = data[d] || {};
+      const caixa   = entry.caixa   ?? 0;
+      const sangria = entry.sangria ?? 0;
+      const saldo   = caixa - sangria;
+      totalCaixa   += caixa;
+      totalSangria += sangria;
+      const isSunday = dt.getDay() === 0;
+      rows.push({ d, dow, caixa, sangria, saldo, isSunday });
+    }
+    const totalSaldo = totalCaixa - totalSangria;
+
+    const saldoClass = s => s > 0 ? 'pos' : s < 0 ? 'neg' : 'zero';
+
+    body.innerHTML = `
+      <div class="caixa-table-wrap">
+        <table class="caixa-table">
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Valor em Caixa</th>
+              <th>Sangria</th>
+              <th>Saldo</th>
+            </tr>
+          </thead>
+          <tbody id="caixaTbody">
+            ${rows.map(r => `
+              <tr class="${r.d === todayDay ? 'caixa-today' : ''}" data-day="${r.d}">
+                <td class="caixa-td-date">${pad(r.d)}/${pad(S.month)} <span style="color:var(--muted);font-size:.72rem">${r.dow}${r.isSunday ? ' <span style="color:var(--warn);font-size:.68rem">fech</span>' : ''}</span></td>
+                <td class="caixa-td-val caixa-caixa-cell" data-field="caixa" data-day="${r.d}">${r.caixa > 0 ? fmtCur(r.caixa) : '<span style="color:var(--muted)">—</span>'}</td>
+                <td class="caixa-td-val caixa-sangria-cell" data-field="sangria" data-day="${r.d}">${r.sangria > 0 ? fmtCur(r.sangria) : '<span style="color:var(--muted)">—</span>'}</td>
+                <td class="caixa-td-saldo ${r.caixa === 0 && r.sangria === 0 ? 'zero' : saldoClass(r.saldo)}">${r.caixa === 0 && r.sangria === 0 ? '<span style="color:var(--muted)">—</span>' : fmtCur(r.saldo)}</td>
+              </tr>`).join('')}
+          </tbody>
+          <tfoot>
+            <tr class="caixa-total-row">
+              <td>Total</td>
+              <td>${fmtCur(totalCaixa)}</td>
+              <td>${fmtCur(totalSangria)}</td>
+              <td class="caixa-total-saldo ${saldoClass(totalSaldo)}">${fmtCur(totalSaldo)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>`;
+
+    // scroll to today
+    if (todayDay > 0) {
+      const todayRow = body.querySelector(`tr[data-day="${todayDay}"]`);
+      if (todayRow) setTimeout(() => todayRow.scrollIntoView({ block: 'nearest' }), 50);
+    }
+
+    // cell editing — click on caixa or sangria cell
+    body.querySelectorAll('.caixa-caixa-cell, .caixa-sangria-cell').forEach(cell => {
+      cell.style.cursor = 'pointer';
+      cell.addEventListener('click', () => _caixaStartEdit(cell, data, activeBoard, refresh));
+    });
+  }
+
+  async function _caixaStartEdit(cell, data, board, refreshFn) {
+    if (cell.querySelector('input')) return;
+    const field = cell.dataset.field;
+    const day   = parseInt(cell.dataset.day);
+    const cur   = (data[day] || {})[field] ?? 0;
+
+    const inp = document.createElement('input');
+    inp.type = 'text'; inp.className = 'caixa-cell-input';
+    inp.value = cur > 0 ? cur : '';
+    inp.placeholder = '0,00';
+    cell.innerHTML = ''; cell.appendChild(inp);
+    inp.focus(); inp.select();
+
+    const commit = async () => {
+      const raw = inp.value.replace(',','.');
+      const val = parseFloat(raw) || 0;
+      try {
+        await apiFetch('PUT', `/api/caixa/${S.year}/${S.month}/${board}/${day}`, { [field]: val });
+      } catch(e) { toast('Erro: ' + e.message, true); }
+      await refreshFn();
+    };
+    inp.addEventListener('blur', commit);
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); if (e.key === 'Escape') refreshFn(); });
+  }
+
+  refresh();
+
+  if (isAdmin) {
+    card.querySelectorAll('.nf-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        activeBoard = tab.dataset.board;
+        card.querySelectorAll('.nf-tab').forEach(t => t.classList.toggle('active', t === tab));
+        refresh();
+      });
     });
   }
 }

@@ -1804,3 +1804,41 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .bol-detail-val { font-size: .85rem; }
 @media (max-width: 700px) { .bol-form-grid { grid-template-columns: repeat(2,1fr); }
   .bol-span3, .bol-span4 { grid-column: span 2; } }
+
+/* ── Fechamento de Caixa ─────────────────────────────────────────────────── */
+.caixa-card-body { padding: 0; }
+.caixa-table-wrap { max-height: 280px; overflow-y: auto; }
+.caixa-table {
+  width: 100%; border-collapse: collapse; font-size: .82rem;
+}
+.caixa-table thead th {
+  position: sticky; top: 0; background: var(--surface2);
+  color: var(--muted); font-size: .7rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .05em;
+  padding: .45rem .6rem; border-bottom: 1px solid var(--border);
+  text-align: right; white-space: nowrap;
+}
+.caixa-table thead th:first-child { text-align: left; }
+.caixa-table tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+.caixa-table tbody tr:last-child { border-bottom: none; }
+.caixa-table tbody tr:hover { background: var(--surface2); }
+.caixa-table tbody tr.caixa-today { background: rgba(88,166,255,.07); }
+.caixa-table tbody tr.caixa-today .caixa-td-date { color: var(--accent); font-weight: 700; }
+.caixa-td-date { padding: .38rem .6rem; color: var(--text); white-space: nowrap; font-size: .8rem; }
+.caixa-td-val { padding: .38rem .6rem; text-align: right; color: var(--text); white-space: nowrap; }
+.caixa-td-saldo { padding: .38rem .6rem; text-align: right; font-weight: 600; white-space: nowrap; }
+.caixa-td-saldo.pos { color: #3FB950; }
+.caixa-td-saldo.neg { color: #F85149; }
+.caixa-td-saldo.zero { color: var(--muted); }
+.caixa-cell-input {
+  width: 90px; background: var(--surface2); border: 1px solid var(--accent);
+  border-radius: 4px; color: var(--text); font-size: .82rem;
+  padding: .18rem .4rem; text-align: right; outline: none;
+}
+.caixa-total-row td {
+  padding: .42rem .6rem; border-top: 2px solid var(--border2);
+  font-size: .8rem; font-weight: 700; color: var(--text); text-align: right;
+}
+.caixa-total-row td:first-child { text-align: left; color: var(--muted); text-transform: uppercase; font-size: .7rem; letter-spacing: .05em; }
+.caixa-total-saldo.pos { color: #3FB950; }
+.caixa-total-saldo.neg { color: #F85149; }

@@ -579,7 +579,7 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
     const fmtInt  = '0';
 
     // ── build one sheet ────────────────────────────────────────────────────
-    function buildSheet(wb, sheetName, empId) {
+    async function buildSheet(wb, sheetName, empId) {
       const ws = wb.addWorksheet(sheetName, { views:[{ state:'frozen', ySplit:3 }] });
       ws.columns = [
         { key:'data',   width:12 }, // A
@@ -630,6 +630,16 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
         cell.border = thinBorder;
       });
 
+      // Pre-compute cumulative weight % for each day (server-side, embedded as constant)
+      // weightAcum[d] = sum(daily_weight/100) from day 1..d  →  range 0..1
+      const weightAcumByDay = {};
+      let wRunning = 0;
+      for (let d = 1; d <= N; d++) {
+        const ds = `${y}-${pad(m)}-${pad(d)}`;
+        wRunning += (gWeights[ds] ?? defW) / 100;
+        weightAcumByDay[d] = +wRunning.toFixed(8);
+      }
+
       // Data rows (4 .. N+3)
       for (let d = 1; d <= N; d++) {
         const ds  = `${y}-${pad(m)}-${pad(d)}`;
@@ -652,38 +662,44 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
           valor = en.value||0; pecas = en.pecas||0; atend = en.atendimentos||0;
         }
 
-        // calc cols use formulas referencing the sheet itself
         const cRow = rowN;
+        const wAcum = weightAcumByDay[d]; // peso acumulado até este dia (0..1)
+
+        // editable cols: G(7), I(9), J(10) — all others locked
+        const EDITABLE = new Set([7, 9, 10]);
         const set = (col, val, fmt, bg, fg) => {
           const cell = row.getCell(col);
           cell.value = val;
-          if (fmt) cell.numFmt = fmt;
+          if (fmt && fmt !== '@') cell.numFmt = fmt;
           cell.fill   = bg  || (isWE ? C.WE_BG : C.EDIT_BG);
           if (fg) cell.font = fg;
           cell.border = thinBorder;
           cell.alignment = { horizontal: col <= 2 ? 'center' : 'right', vertical:'middle' };
+          cell.protection = { locked: !EDITABLE.has(col) };
         };
 
-        // A DATA, B DIA
         set(1, `${pad(d)}/${pad(m)}`, '@');
         set(2, DAY_PT[dow], '@');
         // C META DIÁRIA
         set(3, metaDia > 0 ? +metaDia.toFixed(4) : null, fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
-        // D META ACUMULADA — formula =D(prev)+C(this) or =C(this) for d=1
+        // D META ACUMULADA
         set(4, d === 1 ? { formula:`C${cRow}` } : { formula:`D${cRow-1}+C${cRow}` }, fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
-        // E % ATING — =IF(D>0, G/D*100, "")
-        set(5, { formula:`IF(D${cRow}>0,G${cRow}/D${cRow}*100,"")` }, fmtPct, isWE ? C.WE_BG : C.CALC_BG);
-        // F DESVIO — =IF(D>0, G-D, "")
-        set(6, { formula:`IF(D${cRow}>0,G${cRow}-D${cRow},"")` }, fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
+        // E % ATING
+        set(5, { formula:`IF(D${cRow}>0,SUM(G4:G${cRow})/D${cRow}*100,"")` }, fmtPct, isWE ? C.WE_BG : C.CALC_BG);
+        // F DESVIO — realizado acumulado - meta acumulada
+        set(6, { formula:`IF(D${cRow}>0,SUM(G4:G${cRow})-D${cRow},"")` }, fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
         // G VALOR REALIZADO ← editável
         set(7, valor > 0 ? +valor.toFixed(2) : null, fmtBRL);
-        // H PROJEÇÃO — =IF(AND(D>0,G>0),G/D*mensal,"")
-        set(8, { formula:`IF(AND(D${cRow}>0,G${cRow}>0),G${cRow}/D${cRow}*${mensal.toFixed(2)},"")` }, fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
+        // H PROJEÇÃO = realizado acumulado / peso acumulado até hoje
+        set(8, wAcum > 0
+          ? { formula:`IF(SUM(G4:G${cRow})>0,SUM(G4:G${cRow})/${wAcum},"")` }
+          : null,
+          fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
         // I PÇ ← editável
         set(9, pecas > 0 ? pecas : null, fmtInt);
         // J ATEND ← editável
         set(10, atend > 0 ? atend : null, fmtInt);
-        // K PA — formula =IF(J>0, I/J, "")
+        // K PA
         set(11, { formula:`IF(J${cRow}>0,I${cRow}/J${cRow},"")` }, fmtDec, isWE ? C.WE_BG : C.CALC_BG);
       }
 
@@ -699,7 +715,7 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
         [{ formula:`IF(D${N+4}>0,G${N+4}/D${N+4}*100,"")` }, fmtPct], // E
         [{ formula:`IF(D${N+4}>0,G${N+4}-D${N+4},"")` },     fmtBRL], // F
         [{ formula:`SUM(G${d1}:G${dLast})` }, fmtBRL],   // G REALIZADO
-        ['', '@'],                                         // H PROJEÇÃO
+        [{ formula:`IF(G${N+4}>0,G${N+4}/${weightAcumByDay[N]},"")` }, fmtBRL], // H PROJEÇÃO total
         [{ formula:`SUM(I${d1}:I${dLast})` }, fmtInt],   // I PÇ
         [{ formula:`SUM(J${d1}:J${dLast})` }, fmtInt],   // J ATEND
         [{ formula:`IF(J${N+4}>0,I${N+4}/J${N+4},"")` }, fmtDec], // K PA
@@ -710,13 +726,26 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
         cell.fill   = C.TOT_BG; cell.font = C.TOT_FG;
         cell.border = thinBorder;
         cell.alignment = { horizontal: i < 2 ? 'center' : 'right', vertical:'middle' };
+        cell.protection = { locked: true };
       });
 
-      // Conditional coloring for % ATING and DESVIO
-      for (let d = 1; d <= N + 1; d++) {
-        const rn = d === N + 1 ? N + 4 : d + 3;
-        // (conditional formatting not available in exceljs free, handled by formula fill above)
+      // Lock header and title rows
+      for (let r = 1; r <= 3; r++) {
+        ws.getRow(r).eachCell(cell => { cell.protection = { locked: true }; });
       }
+
+      // Protect sheet — only G, I, J columns remain editable
+      await ws.protect('', {
+        selectLockedCells:   true,
+        selectUnlockedCells: true,
+        formatCells:    false,
+        formatColumns:  false,
+        formatRows:     false,
+        insertRows:     false,
+        deleteRows:     false,
+        sort:           false,
+        autoFilter:     false,
+      });
     }
 
     // ── build workbook ─────────────────────────────────────────────────────
@@ -724,9 +753,9 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
     wb.creator = 'Gestão Lojas'; wb.created = new Date();
 
     for (const emp of emps) {
-      buildSheet(wb, (emp.apelido || emp.name).slice(0, 31), emp.id);
+      await buildSheet(wb, (emp.apelido || emp.name).slice(0, 31), emp.id);
     }
-    buildSheet(wb, 'TOTAL', 'total');
+    await buildSheet(wb, 'TOTAL', 'total');
 
     res.setHeader('Content-Disposition', `attachment; filename="fechamento-${board}-${pad(m)}-${y}.xlsx"`);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -752,29 +781,40 @@ app.post('/api/excel/:year/:month/:board', requireAuth, excelUpload.single('file
       empByName[key] = e;
     }
 
-    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+    // read with cellFormula so cached values are available
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellFormula: false, cellNF: false });
     let updated = 0;
 
+    const dateRe = /^(\d{1,2})\/(\d{1,2})/; // matches DD/MM or DD/MM/YYYY
+
     for (const sheetName of wb.SheetNames) {
+      if (sheetName.toUpperCase() === 'TOTAL') continue; // skip total tab
       const emp = empByName[sheetName.toLowerCase()];
       if (!emp) continue;
-      const ws = wb.Sheets[sheetName];
-      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+      const ws  = wb.Sheets[sheetName];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '', raw: true });
 
       const vsKey = `${y}-${pad(m)}-${board}-${emp.id}`;
       if (!db.vsales[vsKey]) db.vsales[vsKey] = { meta: { mensal: 0 }, entries: {} };
 
-      for (let i = 1; i < rows.length; i++) {
-        const row = rows[i];
-        const datStr = String(row[0] || '').trim(); // DD/MM/YYYY
-        if (!datStr || !datStr.includes('/')) continue;
-        const parts = datStr.split('/');
-        if (parts.length < 3) continue;
-        const ds = `${parts[2]}-${parts[1]}-${parts[0]}`;
-        // cols: DATA(0), DIA(1), META DIÁRIA(2), META ACUM(3), %ATING(4), DESVIO(5), VALOR REALIZADO(6), PROJEÇÃO(7), PÇ(8), ATEND(9), PA(10)
-        const val  = parseFloat(String(row[6] ?? '').toString().replace(',', '.')) || 0;
-        const pec  = parseInt(row[8]) || 0;
-        const atd  = parseInt(row[9]) || 0;
+      for (let i = 0; i < rows.length; i++) {
+        const row   = rows[i];
+        const cell0 = String(row[0] ?? '').trim();
+        const match = dateRe.exec(cell0);
+        if (!match) continue; // skip header/title rows
+
+        const dd = match[1].padStart(2, '0');
+        const mm = match[2].padStart(2, '0');
+        if (mm !== pad(m)) continue; // wrong month
+        const ds = `${y}-${mm}-${dd}`;
+
+        // cols: DATA(0) DIA(1) META_D(2) META_A(3) %ATING(4) DESVIO(5) REALIZADO(6) PROJ(7) PÇ(8) ATEND(9) PA(10)
+        const toNum  = v => parseFloat(String(v ?? '').replace(',', '.')) || 0;
+        const toInt  = v => parseInt(v) || 0;
+        const val = toNum(row[6]);
+        const pec = toInt(row[8]);
+        const atd = toInt(row[9]);
         if (val === 0 && pec === 0 && atd === 0) continue;
         db.vsales[vsKey].entries[ds] = { value: val, pecas: pec, atendimentos: atd };
         updated++;
@@ -1039,6 +1079,41 @@ app.delete('/api/meeting-items/:id', requireAdmin, (req, res) => {
     db.meetingItems = (db.meetingItems || []).filter(x => x.id !== id);
     writeDB(db);
     res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/caixa/:year/:month/:board ───────────────────────────────────
+app.get('/api/caixa/:year/:month/:board', requireAuth, (req, res) => {
+  const { year, month, board } = req.params;
+  const user = req.session.user;
+  const isAdmin = !user.board || user.board === 'escritorio';
+  if (!isAdmin && user.board !== board) return res.status(403).json({ error: 'Sem acesso' });
+  const db = readDB();
+  const key = `${year}-${String(month).padStart(2,'0')}-${board}`;
+  res.json((db.caixa || {})[key] || {});
+});
+
+// ── PUT /api/caixa/:year/:month/:board/:day ───────────────────────────────
+app.put('/api/caixa/:year/:month/:board/:day', requireAuth, (req, res) => {
+  try {
+    const { year, month, board, day } = req.params;
+    const user = req.session.user;
+    const isAdmin = !user.board || user.board === 'escritorio';
+    if (!isAdmin && user.board !== board) return res.status(403).json({ error: 'Sem acesso' });
+    const { caixa, sangria } = req.body;
+    const db = readDB();
+    if (!db.caixa) db.caixa = {};
+    const key = `${year}-${String(month).padStart(2,'0')}-${board}`;
+    if (!db.caixa[key]) db.caixa[key] = {};
+    const d = parseInt(day);
+    db.caixa[key][d] = {
+      caixa:   caixa   !== undefined ? Number(caixa)   : (db.caixa[key][d]?.caixa   ?? 0),
+      sangria: sangria !== undefined ? Number(sangria) : (db.caixa[key][d]?.sangria ?? 0),
+      updatedAt: new Date().toISOString(),
+      updatedBy: user.name || user.username
+    };
+    writeDB(db);
+    res.json(db.caixa[key][d]);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
