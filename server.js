@@ -32,7 +32,11 @@ let mongoDb = null;
 
 async function initMongo() {
   if (!MONGODB_URI) return;
-  const client = new MongoClient(MONGODB_URI);
+  const client = new MongoClient(MONGODB_URI, {
+    serverSelectionTimeoutMS: 10000,
+    tls: true,
+    tlsAllowInvalidCertificates: false,
+  });
   await client.connect();
   mongoDb = client.db('gestao_lojas');
   // one-time migration from data.json if MongoDB collection is empty
