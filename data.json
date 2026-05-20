@@ -3171,9 +3171,9 @@
   "caixa": {
     "2026-05-delrey": {
       "15": {
-        "caixa": 1500,
-        "sangria": 200,
-        "updatedAt": "2026-05-20T15:17:00.497Z",
+        "caixa": 0,
+        "sangria": 0,
+        "updatedAt": "2026-05-20T15:18:32.344Z",
         "updatedBy": "leonardo"
       },
       "16": {
