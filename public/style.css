@@ -13,7 +13,7 @@
   --accent:    #58A6FF;
   --up:        #3FB950;
   --down:      #F85149;
-  --warn:      #D29922;
+  --warn:      #FBBF24;
 
   --col-escritorio: #8B949E;
   --col-delrey:     #58A6FF;
@@ -174,8 +174,8 @@ body {
   display: flex; flex-wrap: wrap; gap: .25rem; flex: 1;
 }
 .folga-mini-chip {
-  background: rgba(248,113,113,.15); color: #f87171;
-  border: 1px solid rgba(248,113,113,.3);
+  background: rgba(248,81,73,.15); color: #F85149;
+  border: 1px solid rgba(248,81,73,.3);
   font-size: .68rem; font-weight: 700;
   padding: .1rem .35rem; border-radius: .3rem;
   font-variant-numeric: tabular-nums;
@@ -247,12 +247,12 @@ body {
 .dash-total-row .dash-td {
   font-weight: 700; color: #fff; border: none;
 }
-.kpi-pos { color: #4ade80 !important; }
-.kpi-warn { color: #fbbf24 !important; }
-.kpi-neg  { color: #f87171 !important; }
-.dash-total-row .kpi-pos { color: #86efac !important; }
-.dash-total-row .kpi-neg { color: #fca5a5 !important; }
-.dash-total-row .kpi-warn { color: #fde68a !important; }
+.kpi-pos { color: #3FB950 !important; }
+.kpi-warn { color: #FBBF24 !important; }
+.kpi-neg  { color: #F85149 !important; }
+.dash-total-row .kpi-pos { color: #3FB950 !important; }
+.dash-total-row .kpi-neg { color: #F85149 !important; }
+.dash-total-row .kpi-warn { color: #FBBF24 !important; }
 
 /* ── Column ───────────────────────────────────────────────────────── */
 .column {
@@ -1240,9 +1240,9 @@ body {
   display: inline-block; font-size: .7rem; padding: .1rem .35rem;
   border-radius: .25rem; margin-left: .2rem; font-weight: 700;
 }
-.dw-p-ok   { background: rgba(74,222,128,.15); color: #4ade80; }
-.dw-p-no   { background: rgba(248,113,113,.12); color: #f87171; }
-.dw-p-warn { background: rgba(251,191,36,.1);  color: #fbbf24; }
+.dw-p-ok   { background: rgba(63,185,80,.15); color: #3FB950; }
+.dw-p-no   { background: rgba(248,81,73,.12); color: #F85149; }
+.dw-p-warn { background: rgba(251,191,36,.1);  color: #FBBF24; }
 .dw-p-pending { color: var(--muted); font-size: .75rem; }
 
 /* ── Weekly Modal content ─────────────────────────────────────────── */
@@ -1289,17 +1289,17 @@ body {
 .wk-total-row { background: #1e2430; }
 .wk-total-row .wk-td { color: #fff; font-weight: 700; border: none; text-align: right; }
 .wk-total-row .wk-td:first-child { text-align: left; }
-.wk-total-row .kpi-pos { color: #86efac !important; }
-.wk-total-row .kpi-neg { color: #fca5a5 !important; }
-.wk-total-row .kpi-warn { color: #fde68a !important; }
+.wk-total-row .kpi-pos { color: #3FB950 !important; }
+.wk-total-row .kpi-neg { color: #F85149 !important; }
+.wk-total-row .kpi-warn { color: #FBBF24 !important; }
 .wk-premio { text-align: right; white-space: nowrap; }
 .wk-p {
   display: inline-block; font-size: .7rem; padding: .1rem .35rem;
   border-radius: .25rem; margin-left: .2rem; font-weight: 700;
 }
-.wk-p-ok   { background: rgba(74,222,128,.15); color: #4ade80; }
-.wk-p-no   { background: rgba(248,113,113,.12); color: #f87171; }
-.wk-p-pend { background: rgba(251,191,36,.1);  color: #fbbf24; }
+.wk-p-ok   { background: rgba(63,185,80,.15); color: #3FB950; }
+.wk-p-no   { background: rgba(248,81,73,.12); color: #F85149; }
+.wk-p-pend { background: rgba(251,191,36,.1);  color: #FBBF24; }
 .wk-p-pending { color: var(--muted); font-size: .75rem; }
 
 /* ── Funcionários Modal ───────────────────────────────────────────── */
@@ -1383,8 +1383,8 @@ body {
 .folga-cal-cell { min-height: 2.3rem; padding: .18rem .1rem .12rem; border-radius: .3rem; display: flex; flex-direction: column; align-items: center; background: transparent; }
 .folga-cal-empty { background: transparent !important; border: none !important; }
 .folga-cal-daynum { font-size: .7rem; color: var(--text2); font-weight: 500; line-height: 1.3; }
-.folga-cal-has-folga { background: rgba(248,113,113,.09); border: 1px solid rgba(248,113,113,.22); }
-.folga-cal-has-folga .folga-cal-daynum { color: #f87171; font-weight: 700; }
+.folga-cal-has-folga { background: rgba(248,81,73,.09); border: 1px solid rgba(248,81,73,.22); }
+.folga-cal-has-folga .folga-cal-daynum { color: #F85149; font-weight: 700; }
 .folga-cal-dots { display: flex; flex-wrap: wrap; gap: .1rem; justify-content: center; margin-top: .12rem; }
 .folga-cal-dot { font-size: .48rem; font-weight: 700; width: 1.3rem; height: .95rem; border-radius: .2rem; display: flex; align-items: center; justify-content: center; color: #fff; opacity: .92; cursor: default; }
 
@@ -1418,12 +1418,12 @@ body {
 .func-photo-info { display: flex; flex-direction: column; gap: .35rem; }
 .func-photo-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: .4rem; padding: .3rem .75rem; font-size: .78rem; cursor: pointer; transition: background .15s; }
 .func-photo-btn:hover { background: #1e2430; border-color: #58A6FF; color: #fff; }
-.func-photo-remove { background: transparent; border: 1px solid rgba(248,113,113,.4); color: #f87171; border-radius: .4rem; padding: .25rem .6rem; font-size: .74rem; cursor: pointer; }
-.func-photo-remove:hover { background: rgba(248,113,113,.12); }
+.func-photo-remove { background: transparent; border: 1px solid rgba(248,81,73,.4); color: #F85149; border-radius: .4rem; padding: .25rem .6rem; font-size: .74rem; cursor: pointer; }
+.func-photo-remove:hover { background: rgba(248,81,73,.12); }
 .func-photo-hint { font-size: .68rem; color: var(--text2); }
 
 /* ── Func status badges ─────────────────────────────────────────────────── */
-.func-badge-ativo   { background: rgba(59,185,80,.18); color: #3FB950; border: 1px solid rgba(59,185,80,.35); }
+.func-badge-ativo   { background: rgba(63,185,80,.18); color: #3FB950; border: 1px solid rgba(63,185,80,.35); }
 .func-badge-inativo { background: rgba(139,148,158,.12); color: #8B949E; border: 1px solid rgba(139,148,158,.3); }
 .func-row-inativo td { opacity: .6; }
 
