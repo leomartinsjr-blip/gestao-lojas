@@ -1796,7 +1796,7 @@ initMongo()
 
       // Startup: encadeia para evitar conflito de flags
       doSync().finally(() => doHoje());              // hoje logo após o sync de fechamento
-      setTimeout(do30d, 30 * 1000);                 // 30d: 30s após startup (evita overlap)
+      setTimeout(do30d, MX_INTERVAL_30D_MS);          // 30d: só roda depois de 1 dia completo
       console.log('[Microvix/30d] Conferência 30 dias agendada — 1× por dia');
 
       setInterval(doSync, MX_INTERVAL_MS);
