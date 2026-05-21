@@ -989,20 +989,20 @@ body {
   border-radius: .25rem; margin-left: .2rem; vertical-align: middle;
 }
 .ds-meta-seg-2 .ds-meta-seg-badge { background: rgba(63,185,80,.3); color: #3FB950; }
-.ds-meta-seg-3 .ds-meta-seg-badge { background: rgba(251,191,36,.25); color: #FBBF24; }
+.ds-meta-seg-3 .ds-meta-seg-badge { background: rgba(88,166,255,.2); color: #58A6FF; }
 .ds-meta-seg-val {
   font-size: 1.2rem; font-weight: 800; letter-spacing: -.02em; white-space: nowrap;
 }
 .ds-meta-seg-1 .ds-meta-seg-val,
 .ds-meta-seg-2 .ds-meta-seg-val { color: #fff; }
-.ds-meta-seg-3 .ds-meta-seg-val { color: #FBBF24; }
+.ds-meta-seg-3 .ds-meta-seg-val { color: #58A6FF; }
 .ds-meta-seg-val-wrap { display: flex; align-items: center; gap: .4rem; }
 .ds-meta-com-badge {
   font-size: .7rem; font-weight: 700; padding: .05rem .35rem;
   border-radius: .25rem; margin-left: .25rem; vertical-align: middle;
   background: rgba(255,255,255,.15); color: #fff; letter-spacing: 0;
 }
-.ds-meta-com-badge-gold { background: rgba(251,191,36,.25); color: #FBBF24; }
+.ds-meta-com-badge-gold { background: rgba(88,166,255,.2); color: #58A6FF; }
 .ds-meta-input {
   background: transparent; border: none; border-bottom: 2px solid rgba(88,166,255,.6);
   border-radius: 0; color: #fff; font-family: inherit;
@@ -1044,8 +1044,8 @@ body {
 .ds-td-calc  { color: var(--muted); font-size: .75rem; }
 .ds-td-calc.pf-pos { color: #3FB950; }
 .ds-td-calc.pf-neg { color: #F85149; }
-.ds-th-meta  { color: #FBBF24 !important; text-align: center !important; }
-.ds-td-meta  { color: #FBBF24; font-size: .775rem; font-weight: 600; text-align: center !important; }
+.ds-th-meta  { color: #58A6FF !important; text-align: center !important; }
+.ds-td-meta  { color: #58A6FF; font-size: .775rem; font-weight: 600; text-align: center !important; }
 .ds-td-meta-total { font-size: .775rem; }
 .ds-th-fillable {
   color: #58A6FF !important;
@@ -1058,7 +1058,7 @@ body {
   cursor: pointer;
 }
 .ds-meta-input-hl { color: #fff !important; font-weight: 800; font-size: 1.2rem !important; letter-spacing: -.02em; text-align: center !important; }
-.ds-meta-hl  { color: #FBBF24; }
+.ds-meta-hl  { color: #58A6FF; }
 .ds-td-edit  { cursor: pointer; min-width: 90px; }
 .ds-td-edit:hover      { background: rgba(88,166,255,.1) !important; }
 .ds-editable           { cursor: pointer; }
