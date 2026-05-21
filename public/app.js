@@ -1672,6 +1672,7 @@ function renderTransTable(container, data) {
       <td class="trans-td">${s.descricao || '—'}</td>
       <td class="trans-td">${s.desc_cor || '—'}</td>
       <td class="trans-td trans-td-c">${s.desc_tamanho || '—'}</td>
+      <td class="trans-td trans-td-c trans-date">${s.ultimaVenda || '—'}</td>
       ${boards.map(b => {
         const q = fN(s.stocks[b]);
         const after = fN(s.stocksAfter[b]);
@@ -1702,6 +1703,7 @@ function renderTransTable(container, data) {
         <th class="trans-th">Produto</th>
         <th class="trans-th">Cor</th>
         <th class="trans-th trans-th-c">Tam</th>
+        <th class="trans-th trans-th-c">Últ. Venda</th>
         ${boards.map(b => `<th class="trans-th trans-th-c" style="color:${boardColor(b)}">${boardLabel(b)}</th>`).join('')}
         <th class="trans-th">Transferir</th>
       </tr></thead>

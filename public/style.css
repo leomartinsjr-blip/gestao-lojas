@@ -2158,3 +2158,4 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .trans-filter-btn.active { background: var(--fc, var(--accent)); border-color: var(--fc, var(--accent)); color: #fff; }
 .trans-filter-btn[data-filter=""].active { background: var(--accent); border-color: var(--accent); }
 .trans-setor { color: var(--muted); font-size: .72rem; white-space: nowrap; }
+.trans-date  { color: var(--muted); font-size: .72rem; white-space: nowrap; }

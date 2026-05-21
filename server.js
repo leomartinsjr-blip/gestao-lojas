@@ -1997,15 +1997,26 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
       console.warn('[Transferencias] Catálogo falhou, continuando sem descrições:', e.message);
     }
 
-    // ── Produtos vendidos desde 2024 (uma loja basta) ──
-    const ativosDesde2024 = new Set();
+    // ── Produtos vendidos desde 2024 + data da última venda (uma loja basta) ──
+    const ativosDesde2024  = new Set();
+    const ultimaVendaMap   = {}; // cod_produto → 'DD/MM/YYYY' da última venda
     try {
       const movAtivos = await fetchMovimento(firstCnpj, '2024-01-01', today, firstChave);
       for (const r of movAtivos) {
         if (r.cancelado === 'S' || r.cancelado === '1') continue;
         if (r.operacao === 'DS') continue;
         const cod = String(r.cod_produto || r.codproduto || '').trim();
-        if (cod) ativosDesde2024.add(cod);
+        if (!cod) continue;
+        ativosDesde2024.add(cod);
+        // data_documento vem como "DD/MM/YYYY HH:MM:SS" — guarda só a data
+        const dataBr = (r.data_documento || '').slice(0, 10); // "DD/MM/YYYY"
+        if (dataBr) {
+          const atual = ultimaVendaMap[cod];
+          // Compara como "YYYY-MM-DD" para ordenar corretamente
+          const [d, m, y] = dataBr.split('/');
+          const iso = `${y}-${m}-${d}`;
+          if (!atual || iso > atual) ultimaVendaMap[cod] = dataBr;
+        }
       }
     } catch (e) {
       console.warn('[Transferencias] Filtro 2024 falhou:', e.message);
@@ -2111,7 +2122,8 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
         stocks,
         giro,
         transfers,
-        stocksAfter: workStocks,
+        stocksAfter:  workStocks,
+        ultimaVenda:  ultimaVendaMap[cod] || '—',
       });
     }
 
