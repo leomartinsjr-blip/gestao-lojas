@@ -3,3 +3,4 @@ uploads/
 .env
 cookies.txt
 server.log
+backups/

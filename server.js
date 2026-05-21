@@ -210,6 +210,27 @@ app.delete('/api/users/:username', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// ── GET /api/backup  (admin — exporta dump completo do banco) ─────────────
+app.get('/api/backup', requireAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="gestao-lojas-backup-${ts}.json"`);
+    res.send(JSON.stringify(db, null, 2));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/restore  (admin — restaura dump completo) ───────────────────
+app.post('/api/restore', requireAdmin, async (req, res) => {
+  try {
+    const data = req.body;
+    if (!data || typeof data !== 'object') return res.status(400).json({ error: 'JSON inválido' });
+    await writeDB(data);
+    res.json({ ok: true, msg: 'Banco restaurado com sucesso' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/me ────────────────────────────────────────────────────────────
 app.get('/api/me', (req, res) => {
   if (!req.session?.user) return res.status(401).json({ error: 'Não autenticado' });
