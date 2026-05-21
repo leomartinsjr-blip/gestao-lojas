@@ -1078,8 +1078,8 @@ function _renderDashWeekBody(body, week, extraData) {
       <th class="dw-th dw-th-r">Meta Sem.</th>
       <th class="dw-th dw-th-r">Realizado</th>
       <th class="dw-th dw-th-r">% Meta</th>
-      <th class="dw-th dw-th-r">% Projeção</th>
       <th class="dw-th dw-th-r">Projeção</th>
+      <th class="dw-th dw-th-r">% Projeção</th>
       <th class="dw-th dw-th-r">PA</th>
       <th class="dw-th dw-th-r">Prêmio</th>
     </tr></thead>`;
@@ -1112,8 +1112,8 @@ function _renderDashWeekBody(body, week, extraData) {
           <td class="dw-td dw-td-num">${fBRL(k.wMeta||null)}</td>
           <td class="dw-td dw-td-num">${fBRL(k.valor||null)}</td>
           <td class="dw-td dw-td-num ${pctCls}">${fPct(k.pctMeta)}</td>
-          <td class="dw-td dw-td-num ${pctProjCls}">${fPct(k.pctProj)}</td>
           <td class="dw-td dw-td-num ${projCls}">${fBRL(k.projecao)}</td>
+          <td class="dw-td dw-td-num ${pctProjCls}">${fPct(k.pctProj)}</td>
           <td class="dw-td dw-td-num${k.pa!=null?(k.pa>=1.8?' pa-ok':' pa-low'):''}">${fDec(k.pa)}</td>
           <td class="dw-td dw-premio">${premioHtml}</td>
         </tr>`);
@@ -1139,8 +1139,8 @@ function _renderDashWeekBody(body, week, extraData) {
         <td class="dw-td dw-td-num">${fBRL(totMeta||null)}</td>
         <td class="dw-td dw-td-num">${fBRL(totValor||null)}</td>
         <td class="dw-td dw-td-num ${tpCls}">${fPct(totPct)}</td>
-        <td class="dw-td dw-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
         <td class="dw-td dw-td-num ${tprojCls}">${hasProj?fBRL(totProjecao):'—'}</td>
+        <td class="dw-td dw-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
         <td class="dw-td dw-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
         <td class="dw-td dw-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>`;
       storeRow.style.cursor = 'pointer';
@@ -1158,8 +1158,8 @@ function _renderDashWeekBody(body, week, extraData) {
           <td class="dw-td dw-td-num">${fBRL(totMeta||null)}</td>
           <td class="dw-td dw-td-num">${fBRL(totValor||null)}</td>
           <td class="dw-td dw-td-num ${tpCls}">${fPct(totPct)}</td>
-          <td class="dw-td dw-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
           <td class="dw-td dw-td-num ${tprojCls}">${hasProj?fBRL(totProjecao):'—'}</td>
+          <td class="dw-td dw-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
           <td class="dw-td dw-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
           <td class="dw-td dw-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
         </tr>`;
