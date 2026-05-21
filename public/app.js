@@ -3022,7 +3022,9 @@ function calcWeekKpis(emp, week, extraData) {
   const pPA     = isComplete ? (hitMeta && hitPA ? PREMIO_PA : 0) : null;
   const pTotal  = pVendas != null ? pVendas + (pPA||0) : null;
 
-  return { wMeta, valor, pa, pecas, atend, pctMeta, projecao,
+  const pctProj = (wMeta > 0 && projecao != null) ? projecao / wMeta * 100 : null;
+
+  return { wMeta, valor, pa, pecas, atend, pctMeta, pctProj, projecao,
            hitMeta, hitPA, pVendas, pPA, pTotal,
            isComplete, isFuture, daysElapsed, totalDays: 7 };
 }
@@ -3109,13 +3111,13 @@ async function renderWeeklyModal() {
     const section = document.createElement('div');
     section.className = 'wk-section';
 
-    let totValor=0, totPecas=0, totAtend=0, totMeta=0, totPremio=0, totProjecao2=0, hasProj2=false;
+    let totValor=0, totPecas=0, totAtend=0, totMeta=0, totPremio=0, totProjecao2=0, hasProj2=false, hasProj3=false;
 
     const rows = emps.map(emp => {
       const k = calcWeekKpis(emp, week, Object.keys(extraData).length ? extraData : null);
       totValor += k.valor; totPecas += k.pecas; totAtend += k.atend; totMeta += k.wMeta;
       if (k.pTotal != null) totPremio += k.pTotal;
-      if (k.projecao != null) { totProjecao2 += k.projecao; hasProj2 = true; }
+      if (k.projecao != null) { totProjecao2 += k.projecao; hasProj2 = true; hasProj3 = true; }
 
       if (isCurrent && k.hitMeta && k.wMeta > 0) {
         const empKey = `wk-emp-${emp.id}-${week.startStr}`;
@@ -3125,8 +3127,9 @@ async function renderWeeklyModal() {
         }
       }
 
-      const pctCls  = k.pctMeta  == null ? '' : k.pctMeta  >= 100 ? 'kpi-pos' : k.pctMeta  >= 80 ? 'kpi-warn' : 'kpi-neg';
-      const projCls = k.projecao == null ? '' : k.projecao >= k.wMeta ? 'kpi-pos' : 'kpi-neg';
+      const pctCls     = k.pctMeta  == null ? '' : k.pctMeta  >= 100 ? 'kpi-pos' : k.pctMeta  >= 80 ? 'kpi-warn' : 'kpi-neg';
+      const projCls    = k.projecao == null ? '' : k.projecao >= k.wMeta ? 'kpi-pos' : 'kpi-neg';
+      const pctProjCls = k.pctProj  == null ? '' : k.pctProj  >= 100 ? 'kpi-pos' : k.pctProj  >= 80 ? 'kpi-warn' : 'kpi-neg';
 
       const paEarned2 = k.hitMeta && k.hitPA;
       const premioHtml = k.isComplete
@@ -3146,15 +3149,18 @@ async function renderWeeklyModal() {
         <td class="wk-td wk-td-num">${fBRL(k.valor||null)}</td>
         <td class="wk-td wk-td-num ${pctCls}">${fPct(k.pctMeta)}</td>
         <td class="wk-td wk-td-num ${projCls}">${fBRL(k.projecao)}</td>
+        <td class="wk-td wk-td-num ${pctProjCls}">${fPct(k.pctProj)}</td>
         <td class="wk-td wk-td-num${k.pa != null ? (k.pa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${fDec(k.pa)}</td>
         <td class="wk-td wk-premio">${premioHtml}</td>
       </tr>`;
     }).join('');
 
-    const totPa  = (totPecas>0&&totAtend>0) ? totPecas/totAtend : null;
-    const totPct = (totMeta>0&&totValor>0) ? totValor/totMeta*100 : null;
-    const tpCls  = totPct == null ? '' : totPct>=100?'kpi-pos':totPct>=80?'kpi-warn':'kpi-neg';
-    const tprojCls2 = !hasProj2 ? '' : totProjecao2 >= totMeta ? 'kpi-pos' : 'kpi-neg';
+    const totPa      = (totPecas>0&&totAtend>0) ? totPecas/totAtend : null;
+    const totPct     = (totMeta>0&&totValor>0) ? totValor/totMeta*100 : null;
+    const tpCls      = totPct == null ? '' : totPct>=100?'kpi-pos':totPct>=80?'kpi-warn':'kpi-neg';
+    const tprojCls2  = !hasProj2 ? '' : totProjecao2 >= totMeta ? 'kpi-pos' : 'kpi-neg';
+    const totPctProj = (hasProj3 && totMeta > 0) ? totProjecao2 / totMeta * 100 : null;
+    const tpProjCls  = totPctProj == null ? '' : totPctProj>=100?'kpi-pos':totPctProj>=80?'kpi-warn':'kpi-neg';
 
     if (isCurrent && totMeta > 0 && totValor >= totMeta) {
       const storeKey = `wk-store-${bk}-${week.startStr}`;
@@ -3175,6 +3181,7 @@ async function renderWeeklyModal() {
           <th class="wk-th wk-th-r">Realizado</th>
           <th class="wk-th wk-th-r">% Meta</th>
           <th class="wk-th wk-th-r">Projeção</th>
+          <th class="wk-th wk-th-r">% Projeção</th>
           <th class="wk-th wk-th-r">PA</th>
           <th class="wk-th wk-th-r">Prêmio</th>
         </tr></thead>
@@ -3185,6 +3192,7 @@ async function renderWeeklyModal() {
           <td class="wk-td wk-td-num">${fBRL(totValor||null)}</td>
           <td class="wk-td wk-td-num ${tpCls}">${fPct(totPct)}</td>
           <td class="wk-td wk-td-num ${tprojCls2}">${hasProj2 ? fBRL(totProjecao2) : '—'}</td>
+          <td class="wk-td wk-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
           <td class="wk-td wk-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
           <td class="wk-td wk-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
         </tr></tfoot>
