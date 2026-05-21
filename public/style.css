@@ -276,6 +276,10 @@ body {
 .dash-total-row .dash-td {
   font-weight: 700; color: #fff; border: none;
 }
+.dash-grand-total { background: #1c2030; border-top: 2px solid #6366f1; }
+.dash-grand-total .dash-td {
+  font-weight: 700; color: #e2e8f0; border: none;
+}
 .kpi-pos { color: #3FB950 !important; }
 .kpi-warn { color: #FBBF24 !important; }
 .kpi-neg  { color: #F85149 !important; }

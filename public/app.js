@@ -492,6 +492,8 @@ function renderDashboard() {
   const tbody = document.createElement('tbody');
   table.appendChild(tbody);
 
+  let grandValor=0, grandPecas=0, grandAtend=0, grandMeta=0;
+
   for (const [bk, bc] of visible) {
     const emps = byBoard[bk] || [];
     if (emps.length === 0) continue;
@@ -538,6 +540,8 @@ function renderDashboard() {
     const totTm   = (totValor > 0 && totAtend > 0) ? totValor/totAtend : null;
     const tpCls   = totPct  == null ? '' : totPct  >= 100 ? 'kpi-pos' : totPct  >= 80 ? 'kpi-warn' : 'kpi-neg';
     const tprCls  = totProj == null ? '' : totProj >= totMeta ? 'kpi-pos' : totProj >= totMeta*0.9 ? 'kpi-warn' : 'kpi-neg';
+
+    grandValor += totValor; grandPecas += totPecas; grandAtend += totAtend; grandMeta += totMeta;
 
     const metaKey = `${bk}-${S.year}-${S.month}`;
     if (totProj != null && totMeta > 0 && totProj >= totMeta && !META_ACHIEVED.has(metaKey)) {
@@ -614,6 +618,28 @@ function renderDashboard() {
       `;
       tbody.appendChild(totalRow);
     }
+  }
+
+  if (isAdmin && [...visible].length > 1 && grandValor > 0) {
+    const gMetaAccum = grandMeta * weightAccum / 100;
+    const gPct  = (gMetaAccum > 0 && grandValor > 0) ? grandValor / gMetaAccum * 100 : null;
+    const gProj = (grandValor > 0 && gMetaAccum > 0) ? grandValor / gMetaAccum * grandMeta : null;
+    const gPa   = (grandPecas > 0 && grandAtend > 0) ? grandPecas / grandAtend : null;
+    const gTm   = (grandValor > 0 && grandAtend > 0) ? grandValor / grandAtend : null;
+    const gPCls = gPct  == null ? '' : gPct  >= 100 ? 'kpi-pos' : gPct  >= 80 ? 'kpi-warn' : 'kpi-neg';
+    const gPrCls = gProj == null ? '' : gProj >= grandMeta ? 'kpi-pos' : gProj >= grandMeta * 0.9 ? 'kpi-warn' : 'kpi-neg';
+    const grandRow = document.createElement('tr');
+    grandRow.className = 'dash-grand-total';
+    grandRow.innerHTML = `
+      <td class="dash-td"><strong>Total Geral</strong></td>
+      <td class="dash-td dash-td-num">${fBRL(grandMeta || null)}</td>
+      <td class="dash-td dash-td-num">${fBRL(grandValor || null)}</td>
+      <td class="dash-td dash-td-num ${gPCls}">${fPct(gPct)}</td>
+      <td class="dash-td dash-td-num ${gPrCls}">${fBRL(gProj)}</td>
+      <td class="dash-td dash-td-num${gPa != null ? (gPa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${gPa != null ? gPa.toFixed(2) : '—'}</td>
+      <td class="dash-td dash-td-num">${fBRL(gTm)}</td>
+    `;
+    tbody.appendChild(grandRow);
   }
 
   leftBody.appendChild(table);
