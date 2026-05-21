@@ -1584,15 +1584,15 @@ function buildDailyStoreTabs(activeBoard) {
     btn.className = 'perf-tab-btn';
     btn.dataset.store = k;
     btn.textContent = BOARDS[k]?.label || k;
-    btn.style.borderColor = BOARDS[k]?.color || '#8B949E';
-    btn.style.color = BOARDS[k]?.color || '#8B949E';
     const color = BOARDS[k]?.color || '#8B949E';
-    if (k === activeBoard) { btn.style.background = color; btn.style.color = '#0D1117'; }
+    btn.style.borderColor = color;
+    btn.style.background  = k === activeBoard ? color : '#0D1117';
+    btn.style.color       = k === activeBoard ? '#0D1117' : '#fff';
     btn.addEventListener('click', () => {
       document.querySelectorAll('#dailyStoreTabs .perf-tab-btn').forEach(b => {
         const c = BOARDS[b.dataset.store]?.color || '#8B949E';
-        b.style.background = b.dataset.store === k ? c : 'transparent';
-        b.style.color      = b.dataset.store === k ? '#0D1117' : c;
+        b.style.background = b.dataset.store === k ? c : '#0D1117';
+        b.style.color      = b.dataset.store === k ? '#0D1117' : '#fff';
       });
       PD.activeEmpId = null;
       loadAndRenderDaily(k);
