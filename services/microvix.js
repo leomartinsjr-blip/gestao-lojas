@@ -158,11 +158,10 @@ async function fetchEstoque(cnpj, chave, data) {
 // Requires dt_update_ini + dt_update_fim; timestamp=0 returns all
 async function fetchProdutos(cnpj, chave, timestamp = 0) {
   const today = new Date().toISOString().slice(0, 10);
-  // timestamp sozinho dá "Must declare @dt_update_fim";
-  // combinado com datas dá "parametro inválido" → tenta só as datas sem timestamp
   const body = buildRequest('LinxProdutos', cnpj, [
-    { id: 'dt_update_ini', valor: '2000-01-01T00:00:00' },
-    { id: 'dt_update_fim', valor: `${today}T23:59:59` },
+    { id: 'timestamp',        valor: String(timestamp) },
+    { id: 'dt_update_inicio', valor: '2000-01-01' },
+    { id: 'dt_update_fim',    valor: today },
   ], chave);
   const raw = await postRequest(body, 120_000); // catálogo pode ser grande
 
