@@ -1954,7 +1954,12 @@ app.get('/api/microvix/movimento-raw', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/transferencias?dias=30&lojas=delrey,minas,contagem,estacao,tommy,lez
+// Cache do catálogo LinxProdutos (raro de mudar — TTL 4h)
+let _catalogCache = null;
+let _catalogCacheAt = 0;
+const CATALOG_TTL = 4 * 3600 * 1000;
+
+// GET /api/transferencias?dias=30&lojas=delrey,minas,contagem,estacao
 app.get('/api/transferencias', requireAdmin, async (req, res) => {
   try {
     const { fetchEstoque, fetchProdutos, fetchMovimento } = require('./services/microvix');
@@ -1972,79 +1977,79 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
     const today = todayUTC.toISOString().slice(0, 10);
     const dtIni = new Date(todayUTC - dias * 86400_000).toISOString().slice(0, 10);
 
-    // ── Catálogo de produtos (uma loja basta — catálogo é compartilhado) ──
     const firstBoard = boards[0];
     const firstCnpj  = lojas[firstBoard].replace(/\D/g, '');
     const firstChave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
 
-    // catalog indexado por cod_barra E por cod_produto
-    const catalog = {};
-    try {
-      const prodRows = await fetchProdutos(firstCnpj, firstChave, 0);
-      for (const r of prodRows) {
-        const entry = {
-          descricao:    (r.descricao_basica || r.nome || '').trim(),
-          desc_cor:     (r.desc_cor  || '').trim(),
-          desc_tamanho: (r.desc_tamanho || '').trim(),
-          desc_setor:   (r.desc_setor || '').trim(),
-        };
-        const barra = (r.cod_barra || '').trim();
-        const cod   = String(r.cod_produto || '').trim();
-        if (barra) catalog[barra] = entry;
-        if (cod)   catalog[`p:${cod}`] = entry; // prefixo para não colidir
-      }
-    } catch (e) {
-      console.warn('[Transferencias] Catálogo falhou, continuando sem descrições:', e.message);
-    }
-
-    // ── Produtos vendidos desde 2024 + data da última venda (uma loja basta) ──
-    const ativosDesde2024  = new Set();
-    const ultimaVendaMap   = {}; // cod_produto → 'DD/MM/YYYY' da última venda
-    try {
-      const movAtivos = await fetchMovimento(firstCnpj, '2024-01-01', today, firstChave);
-      for (const r of movAtivos) {
-        if (r.cancelado === 'S' || r.cancelado === '1') continue;
-        if (r.operacao === 'DS') continue;
-        const cod = String(r.cod_produto || r.codproduto || '').trim();
-        if (!cod) continue;
-        ativosDesde2024.add(cod);
-        // data_documento vem como "DD/MM/YYYY HH:MM:SS" — guarda só a data
-        const dataBr = (r.data_documento || '').slice(0, 10); // "DD/MM/YYYY"
-        if (dataBr) {
-          const atual = ultimaVendaMap[cod];
-          // Compara como "YYYY-MM-DD" para ordenar corretamente
-          const [d, m, y] = dataBr.split('/');
-          const iso = `${y}-${m}-${d}`;
-          if (!atual || iso > atual) ultimaVendaMap[cod] = dataBr;
+    // ── Catálogo (cache 4h) + filtro 2024 em paralelo ──
+    const catalogPromise = (async () => {
+      if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
+      const cat = {};
+      try {
+        const prodRows = await fetchProdutos(firstCnpj, firstChave, 0);
+        for (const r of prodRows) {
+          const entry = {
+            descricao:    (r.descricao_basica || r.nome || '').trim(),
+            desc_cor:     (r.desc_cor     || '').trim(),
+            desc_tamanho: (r.desc_tamanho || '').trim(),
+            desc_setor:   (r.desc_setor   || '').trim(),
+          };
+          const barra = (r.cod_barra || '').trim();
+          const cod   = String(r.cod_produto || '').trim();
+          if (barra) cat[barra] = entry;
+          if (cod)   cat[`p:${cod}`] = entry;
         }
-      }
-    } catch (e) {
-      console.warn('[Transferencias] Filtro 2024 falhou:', e.message);
-    }
+        _catalogCache = cat; _catalogCacheAt = Date.now();
+      } catch (e) { console.warn('[Trans] Catálogo falhou:', e.message); }
+      return cat;
+    })();
 
-    const estoqueByBoard = {}; // board → cod_produto → { qty, cod_barra }
-    const giroByBoard    = {}; // board → cod_produto → qtdVendida
-    const catalogMov     = {}; // cod_produto → { descricao, desc_cor, desc_tamanho, setor }
+    const ativosPromise = (async () => {
+      const ativos = new Set();
+      const ultVenda = {};
+      try {
+        const movAtivos = await fetchMovimento(firstCnpj, '2024-01-01', today, firstChave);
+        for (const r of movAtivos) {
+          if (r.cancelado === 'S' || r.cancelado === '1') continue;
+          if (r.operacao === 'DS') continue;
+          const cod = String(r.cod_produto || r.codproduto || '').trim();
+          if (!cod) continue;
+          ativos.add(cod);
+          const dataBr = (r.data_documento || '').slice(0, 10);
+          if (dataBr) {
+            const [d, m, y] = dataBr.split('/');
+            const iso = `${y}-${m}-${d}`;
+            if (!ultVenda[cod] || iso > ultVenda[cod]) ultVenda[cod] = dataBr;
+          }
+        }
+      } catch (e) { console.warn('[Trans] Filtro 2024 falhou:', e.message); }
+      return { ativos, ultVenda };
+    })();
 
-    for (const board of boards) {
+    // ── Estoque + giro por loja em paralelo ──
+    const estoqueByBoard = {};
+    const giroByBoard    = {};
+    const catalogMov     = {};
+
+    await Promise.all(boards.map(async board => {
       const cnpj  = lojas[board].replace(/\D/g, '');
       const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
 
-      // ── Inventário: LinxProdutosInventario com data de hoje ──
-      const estRows = await fetchEstoque(cnpj, chave, today);
+      const [estRows, movRows] = await Promise.all([
+        fetchEstoque(cnpj, chave, today),
+        fetchMovimento(cnpj, dtIni, today, chave),
+      ]);
+
       estoqueByBoard[board] = {};
       for (const r of estRows) {
         const cod = String(r.cod_produto || r.codproduto || '').trim();
         const qty = parseFloat((r.quantidade || '0').replace(',', '.')) || 0;
         if (!cod || qty <= 0) continue;
-        if (!estoqueByBoard[board][cod]) {
+        if (!estoqueByBoard[board][cod])
           estoqueByBoard[board][cod] = { qty: 0, cod_barra: (r.cod_barra || r.codbarra || '').trim() };
-        }
         estoqueByBoard[board][cod].qty += qty;
       }
 
-      // ── Giro + catálogo de descrições via LinxMovimento ──
-      const movRows = await fetchMovimento(cnpj, dtIni, today, chave);
       giroByBoard[board] = {};
       for (const r of movRows) {
         if (r.cancelado === 'S' || r.cancelado === '1') continue;
@@ -2052,17 +2057,18 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
         const cod = String(r.cod_produto || r.codproduto || '').trim();
         if (!cod) continue;
         giroByBoard[board][cod] = (giroByBoard[board][cod] || 0) + (parseInt(r.quantidade || 0) || 1);
-        // Captura descrição/cor/tamanho/setor da primeira ocorrência
-        if (!catalogMov[cod]) {
-          catalogMov[cod] = {
-            descricao:    (r.descricao    || r.des_produto || r.nome || '').trim(),
-            desc_cor:     (r.desc_cor     || r.cor         || '').trim(),
-            desc_tamanho: (r.desc_tamanho || r.tamanho     || '').trim(),
-            setor:        (r.setor        || r.grupo       || r.departamento || '').trim(),
-          };
-        }
+        if (!catalogMov[cod]) catalogMov[cod] = {
+          descricao: (r.descricao || r.des_produto || '').trim(),
+          desc_cor:  (r.desc_cor  || '').trim(),
+          desc_tamanho: (r.desc_tamanho || '').trim(),
+          setor: (r.setor || r.grupo || '').trim(),
+        };
       }
-    }
+    }));
+
+    // Aguarda catálogo e filtro 2024 (já rodavam em paralelo com os estoques)
+    const [catalog, { ativos: ativosDesde2024, ultVenda: ultimaVendaMap }] =
+      await Promise.all([catalogPromise, ativosPromise]);
 
     // ── Todos os cod_produto com estoque em qualquer loja ──
     const allCods = new Set();
