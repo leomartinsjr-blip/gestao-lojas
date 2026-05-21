@@ -31,7 +31,7 @@ ${paramXml}
 </LinxMicrovix>`;
 }
 
-function postRequest(body) {
+function postRequest(body, timeoutMs = 60_000) {
   return new Promise((resolve, reject) => {
     const buf = Buffer.from(body, 'utf-8');
     const opts = {
@@ -49,7 +49,7 @@ function postRequest(body) {
       res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
     });
     req.on('error', reject);
-    req.setTimeout(30_000, () => { req.destroy(); reject(new Error('Microvix timeout')); });
+    req.setTimeout(timeoutMs, () => { req.destroy(); reject(new Error('Microvix timeout')); });
     req.write(buf);
     req.end();
   });
@@ -155,12 +155,15 @@ async function fetchEstoque(cnpj, chave, data) {
 }
 
 // Fetch LinxProdutos → product catalog with description, color, size per cod_barra
-// Uses timestamp pagination (pass 0 on first call)
+// Requires dt_update_ini + dt_update_fim; timestamp=0 returns all
 async function fetchProdutos(cnpj, chave, timestamp = 0) {
+  const today = new Date().toISOString().slice(0, 10);
   const body = buildRequest('LinxProdutos', cnpj, [
-    { id: 'timestamp', valor: String(timestamp) },
+    { id: 'timestamp',     valor: String(timestamp) },
+    { id: 'dt_update_ini', valor: '2000-01-01' },
+    { id: 'dt_update_fim', valor: today },
   ], chave);
-  const raw = await postRequest(body);
+  const raw = await postRequest(body, 120_000); // catálogo pode ser grande
 
   if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
     const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro desconhecido';
