@@ -156,17 +156,22 @@ async function fetchEstoque(cnpj, chave, data) {
 
 // Fetch LinxProdutos → product catalog with description, color, size per cod_barra
 // Requires dt_update_ini + dt_update_fim; timestamp=0 returns all
-// Pagina automaticamente em blocos de 5000 até esgotar o catálogo
-async function fetchProdutos(cnpj, chave, timestamp = 0) {
+// Pagina automaticamente em blocos de 5000 até esgotar o catálogo.
+// dataMov: filtra apenas produtos com movimento desde essa data (ex: '2024-01-01')
+async function fetchProdutos(cnpj, chave, timestamp = 0, dataMov = null) {
   const today = new Date().toISOString().slice(0, 10);
   const allRows = [];
   let ts = timestamp;
+  const extraParams = [
+    { id: 'dt_update_inicio', valor: '2000-01-01' },
+    { id: 'dt_update_fim',    valor: today },
+  ];
+  if (dataMov) extraParams.push({ id: 'data_mov_ini', valor: dataMov });
 
-  for (let page = 0; page < 20; page++) { // limite de segurança: 100 mil produtos
+  for (let page = 0; page < 20; page++) {
     const body = buildRequest('LinxProdutos', cnpj, [
-      { id: 'timestamp',        valor: String(ts) },
-      { id: 'dt_update_inicio', valor: '2000-01-01' },
-      { id: 'dt_update_fim',    valor: today },
+      { id: 'timestamp', valor: String(ts) },
+      ...extraParams,
     ], chave);
     const raw = await postRequest(body, 120_000);
 
@@ -177,10 +182,10 @@ async function fetchProdutos(cnpj, chave, timestamp = 0) {
 
     const rows = parseCsv(raw);
     allRows.push(...rows);
-    if (rows.length < 5000) break; // última página
+    if (rows.length < 5000) break;
 
     const maxTs = Math.max(...rows.map(r => parseInt(r.timestamp) || 0));
-    if (maxTs <= ts) break; // segurança contra loop infinito
+    if (maxTs <= ts) break;
     ts = maxTs;
   }
 
