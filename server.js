@@ -767,14 +767,10 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
         weightAcumByDay[d] = +wRunning.toFixed(8);
       }
 
+      // Pré-calcula valores por dia para gravar result junto com a fórmula
+      const dayData = [];
       for (let d = 1; d <= N; d++) {
-        const ds  = `${y}-${pad(m)}-${pad(d)}`;
-        const dow = new Date(y, m - 1, d).getDay();
-        const isWE = dow === 0 || dow === 6;
-        const rowN = d + 3;
-        const row  = ws.getRow(rowN);
-        row.height = 16;
-
+        const ds = `${y}-${pad(m)}-${pad(d)}`;
         let metaDia = 0, valor = 0, pecas = 0, atend = 0;
         if (isTotal) {
           for (const e of emps) {
@@ -787,9 +783,30 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
           const en = vsMap[empId]?.entries?.[ds] || {};
           valor = en.value||0; pecas = en.pecas||0; atend = en.atendimentos||0;
         }
+        dayData.push({ ds, metaDia, valor, pecas, atend });
+      }
 
+      // Totais acumulados
+      let metaAcum = 0, valorAcum = 0;
+
+      for (let d = 1; d <= N; d++) {
+        const { ds, metaDia, valor, pecas, atend } = dayData[d - 1];
+        metaAcum  += metaDia;
+        valorAcum += valor;
+
+        const dow  = new Date(y, m - 1, d).getDay();
+        const isWE = dow === 0 || dow === 6;
+        const rowN = d + 3;
+        const row  = ws.getRow(rowN);
+        row.height = 16;
         const cRow = rowN;
         const wAcum = weightAcumByDay[d];
+
+        const pctAting = metaAcum > 0 ? valorAcum / metaAcum * 100 : null;
+        const desvio   = metaAcum > 0 ? valorAcum - metaAcum : null;
+        const proj     = wAcum > 0 && valorAcum > 0 ? valorAcum / wAcum : null;
+        const pa       = atend > 0 ? pecas / atend : null;
+
         const EDITABLE = new Set([7, 9, 10]);
         const set = (col, val, fmt, bg, fg) => {
           const cell = row.getCell(col);
@@ -805,15 +822,19 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
         set(1, `${pad(d)}/${pad(m)}`, '@');
         set(2, DAY_PT[dow], '@');
         set(3, metaDia > 0 ? +metaDia.toFixed(4) : null, fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
-        set(4, d === 1 ? { formula:`C${cRow}` } : { formula:`D${cRow-1}+C${cRow}` }, fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
-        set(5, { formula:`IF(D${cRow}>0,SUM(G4:G${cRow})/D${cRow}*100,"")` }, fmtPct, isWE ? C.WE_BG : C.CALC_BG);
-        set(6, { formula:`IF(D${cRow}>0,SUM(G4:G${cRow})-D${cRow},"")` }, fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
+        set(4, { formula: d===1 ? `C${cRow}` : `D${cRow-1}+C${cRow}`, result: +metaAcum.toFixed(2) },
+            fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
+        set(5, { formula:`IF(D${cRow}>0,SUM(G4:G${cRow})/D${cRow}*100,"")`, result: pctAting ?? '' },
+            fmtPct, isWE ? C.WE_BG : C.CALC_BG);
+        set(6, { formula:`IF(D${cRow}>0,SUM(G4:G${cRow})-D${cRow},"")`, result: desvio ?? '' },
+            fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
         set(7, valor > 0 ? +valor.toFixed(2) : null, fmtBRL);
-        set(8, wAcum > 0 ? { formula:`IF(SUM(G4:G${cRow})>0,SUM(G4:G${cRow})/${wAcum},"")` } : null,
+        set(8, { formula:`IF(SUM(G4:G${cRow})>0,SUM(G4:G${cRow})/${wAcum},"")`, result: proj ?? '' },
             fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
         set(9,  pecas > 0 ? pecas : null, fmtInt);
         set(10, atend > 0 ? atend : null, fmtInt);
-        set(11, { formula:`IF(J${cRow}>0,I${cRow}/J${cRow},"")` }, fmtDec, isWE ? C.WE_BG : C.CALC_BG);
+        set(11, { formula:`IF(J${cRow}>0,I${cRow}/J${cRow},"")`, result: pa ?? '' },
+            fmtDec, isWE ? C.WE_BG : C.CALC_BG);
       }
 
       const totRow = ws.getRow(N + 4);
@@ -852,6 +873,7 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
 
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Gestão Lojas'; wb.created = new Date();
+    wb.calcProperties = { fullCalcOnLoad: true };
     for (const emp of emps)
       await buildSheet(wb, (emp.apelido || emp.name).slice(0, 31), emp.id);
     await buildSheet(wb, 'TOTAL', 'total');
