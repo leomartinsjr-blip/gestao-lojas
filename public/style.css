@@ -227,7 +227,7 @@ body {
   color: #fff; white-space: nowrap; cursor: pointer;
   user-select: none;
 }
-.dash-th:not(:first-child) { text-align: right; }
+.dash-th:not(:first-child) { text-align: right; min-width: 80px; }
 .dash-th-r { text-align: right !important; }
 .dash-edit-hint { font-size: .75rem; opacity: .9; font-weight: 400; }
 .dash-meta-edit {
@@ -271,7 +271,7 @@ body {
   padding: .38rem .75rem; color: var(--text);
 }
 .dash-td-name { font-weight: 500; }
-.dash-td-num  { text-align: right; font-variant-numeric: tabular-nums; }
+.dash-td-num  { text-align: right !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .dash-total-row { background: #292e38; border-top: 2px solid #484F58; }
 .dash-total-row .dash-td {
   font-weight: 700; color: #fff; border: none;
