@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express    = require('express');
 const session    = require('express-session');
 const { MongoStore } = require('connect-mongo');
@@ -7,6 +8,7 @@ const fs         = require('fs');
 const XLSX       = require('xlsx');
 const ExcelJS    = require('exceljs');
 const { MongoClient } = require('mongodb');
+const { runSync, runSyncRetroativo, getStatus } = require('./services/microvixSync');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -307,13 +309,14 @@ app.get('/api/employees', requireAuth, async (req, res) => {
 // ── POST /api/employees ────────────────────────────────────────────────────
 app.post('/api/employees', requireAuth, async (req, res) => {
   try {
-    const { name, board, cpf, admissao, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento, apelido } = req.body;
+    const { name, board, cpf, admissao, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento, apelido, microvixCod } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
     const db = await readDB();
     if (!db.employees) db.employees = [];
     const emp = {
       id: nextId(db), name: name.trim(), board,
       apelido: apelido || '',
+      microvixCod: microvixCod ? String(microvixCod).trim() : '',
       cpf: cpf || '', admissao: admissao || '', cargo: cargo || '',
       salario: salario || 0, comissaoSemMeta: comissaoSemMeta || 0, comissao: comissao || 0,
       comissaoMeta2: comissaoMeta2 || 0, comissaoSuper: comissaoSuper || 0,
@@ -331,7 +334,7 @@ app.post('/api/employees', requireAuth, async (req, res) => {
 app.put('/api/employees/:id', requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { name, board, cpf, admissao, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento, apelido } = req.body;
+    const { name, board, cpf, admissao, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento, apelido, microvixCod } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
     const db  = await readDB();
     const idx = (db.employees || []).findIndex(e => e.id === id);
@@ -339,6 +342,7 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
     db.employees[idx] = {
       ...db.employees[idx], name: name.trim(), board,
       apelido: apelido || '',
+      microvixCod: microvixCod !== undefined ? String(microvixCod).trim() : (db.employees[idx].microvixCod || ''),
       cpf: cpf || '', admissao: admissao || '', cargo: cargo || '',
       salario: salario || 0, comissaoSemMeta: comissaoSemMeta || 0, comissao: comissao || 0,
       comissaoMeta2: comissaoMeta2 || 0, comissaoSuper: comissaoSuper || 0,
@@ -498,6 +502,26 @@ app.post('/api/weights/:year/:month', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/board-settings ───────────────────────────────────────────────
+app.get('/api/board-settings', requireAuth, async (req, res) => {
+  try {
+    const db = await readDB();
+    res.json(db.boardSettings || {});
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── PUT /api/board-settings/:board ────────────────────────────────────────
+app.put('/api/board-settings/:board', requireAuth, async (req, res) => {
+  try {
+    const { board } = req.params;
+    const db = await readDB();
+    if (!db.boardSettings) db.boardSettings = {};
+    db.boardSettings[board] = { ...(db.boardSettings[board] || {}), ...req.body };
+    await writeDB(db);
+    res.json({ ok: true, settings: db.boardSettings[board] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/vsales/:year/:month/:board/:empId ─────────────────────────────
 app.get('/api/vsales/:year/:month/:board/:empId', requireAuth, async (req, res) => {
   try {
@@ -639,7 +663,8 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
 
       ws.mergeCells('A1:K1');
       const titleCell = ws.getCell('A1');
-      const subtitle  = isTotal ? 'TOTAL DA LOJA' : (emps.find(e=>e.id===empId)?.name || sheetName);
+      const empObj    = emps.find(e => e.id === empId);
+      const subtitle  = isTotal ? 'TOTAL DA LOJA' : (empObj ? (empObj.apelido || empObj.name) : sheetName);
       titleCell.value = `${storeName.toUpperCase()} — ${MONTHS_PT[m-1].toUpperCase()} ${y} — ${subtitle.toUpperCase()}`;
       titleCell.fill  = C.TITLE_BG(storeColor);
       titleCell.font  = C.TITLE_FG;
@@ -1208,12 +1233,396 @@ app.get('/api/historico', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Microvix sync routes ───────────────────────────────────────────────────
+const MX_INTERVAL_MS = parseInt(process.env.MICROVIX_INTERVAL_MIN || '20') * 60 * 1000;
+
+// GET  /api/microvix/status  → last sync info
+app.get('/api/microvix/status', requireAuth, (req, res) => {
+  res.json(getStatus());
+});
+
+// POST /api/microvix/sync    → manual trigger
+app.post('/api/microvix/sync', requireAuth, async (req, res) => {
+  try {
+    const result = await runSync(readDB, writeDB);
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// POST /api/microvix/sync-retroativo  { de, ate, boards? }
+app.post('/api/microvix/sync-retroativo', requireAuth, async (req, res) => {
+  try {
+    const { de, ate, boards } = req.body || {};
+    if (!de || !ate) return res.status(400).json({ error: 'Informe de e ate (YYYY-MM-DD)' });
+    const result = await runSyncRetroativo(readDB, writeDB, de, ate, boards);
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+// GET /api/microvix/wsdl     → fetch raw WSDL from Microvix (debug)
+app.get('/api/microvix/wsdl', requireAuth, async (req, res) => {
+  const https = require('https');
+  https.get('https://webapi.microvix.com.br/1.0/api/integracao?wsdl', r => {
+    let data = '';
+    r.on('data', c => data += c);
+    r.on('end', () => res.type('text/plain').send(data.slice(0, 5000)));
+  }).on('error', e => res.status(500).send(e.message));
+});
+
+// helper: first CNPJ from MICROVIX_LOJAS
+function firstCnpj() {
+  try { return Object.values(JSON.parse(process.env.MICROVIX_LOJAS || '{}'))[0] || ''; }
+  catch { return ''; }
+}
+
+// GET /api/microvix/funcionarios-raw → diagnóstico: campos e primeiras linhas do LinxFuncionarios
+app.get('/api/microvix/funcionarios-raw', requireAdmin, async (req, res) => {
+  try {
+    const { fetchFuncionarios } = require('./services/microvix');
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const result = {};
+    for (const [board, cnpj] of Object.entries(lojas)) {
+      const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+      try {
+        const rows = await fetchFuncionarios(cnpj.replace(/\D/g, ''), chave);
+        result[board] = { count: rows.length, fields: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 3) };
+      } catch (e) {
+        result[board] = { error: e.message };
+      }
+    }
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/microvix/raw     → returns raw rows for debugging field names
+app.post('/api/microvix/raw', requireAuth, async (req, res) => {
+  try {
+    const { fetchMovimento } = require('./services/microvix');
+    const cnpj = req.body?.cnpj || firstCnpj();
+    if (!cnpj) return res.status(400).json({ error: 'MICROVIX_LOJAS não configurado' });
+    const today = new Date().toISOString().slice(0, 10);
+    const rows  = await fetchMovimento(cnpj, today, today);
+    res.json({ date: today, count: rows.length, sample: rows.slice(0, 3) });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/microvix/raw      → TEMP debug (sem auth, remove depois)
+app.get('/api/microvix/raw', async (req, res) => {
+  try {
+    const { fetchMovimento } = require('./services/microvix');
+    const cnpj = req.query.cnpj || firstCnpj();
+    if (!cnpj) return res.status(400).json({ error: 'MICROVIX_LOJAS não configurado' });
+    const today = new Date().toISOString().slice(0, 10);
+    const rows  = await fetchMovimento(cnpj, today, today);
+    res.json({ date: today, count: rows.length, sample: rows.slice(0, 5), fields: rows[0] ? Object.keys(rows[0]) : [] });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/microvix/lojas    → TEMP: testa LinxLojas (só chave, sem CNPJ)
+app.get('/api/microvix/lojas', async (req, res) => {
+  const https = require('https');
+  const chave = process.env.MICROVIX_CHAVE;
+  const cnpj  = (process.env.MICROVIX_CNPJ || '').replace(/\D/g, '');
+  const xml = `<?xml version="1.0" encoding="utf-8"?>
+<LinxMicrovix>
+  <Authentication user="linx_export" password="linx_export" />
+  <ResponseFormat>csv</ResponseFormat>
+  <Command>
+    <Name>LinxLojas</Name>
+    <Parameters>
+      <Parameter id="chave">${chave}</Parameter>
+      <Parameter id="cnpjEmp">${cnpj}</Parameter>
+    </Parameters>
+  </Command>
+</LinxMicrovix>`;
+  console.log('[Microvix/lojas] XML:\n', xml);
+  const buf = Buffer.from(xml, 'utf-8');
+  const req2 = https.request({ hostname: 'webapi.microvix.com.br', path: '/1.0/api/integracao', method: 'POST', headers: { 'Content-Type': 'text/xml; charset=utf-8', 'Content-Length': buf.length } }, r => {
+    const chunks = [];
+    r.on('data', c => chunks.push(c));
+    r.on('end', () => {
+      const body = Buffer.concat(chunks).toString('utf-8');
+      console.log('[Microvix/lojas] Resposta:\n', body.slice(0, 2000));
+      res.type('text/plain').send(body);
+    });
+  });
+  req2.on('error', e => res.status(500).send(e.message));
+  req2.write(buf);
+  req2.end();
+});
+
+// GET /api/microvix/teste → TEMP: envia XML customizável via query string
+// ?cmd=LinxMovimento&params=chave,cnpjEmp,dt_ini,dt_fin&ini=01/05/2026&fin=20/05/2026
+app.get('/api/microvix/teste', async (req, res) => {
+  const https = require('https');
+  const chave  = process.env.MICROVIX_CHAVE;
+  const cnpj   = (req.query.cnpj || firstCnpj() || '').replace(/\D/g, '');
+  const cmd    = req.query.cmd  || 'LinxMovimento';
+  const ini    = req.query.ini  || '01/05/2026';
+  const fin    = req.query.fin  || '20/05/2026';
+  const portal = req.query.portal || '9425';
+
+  // Build params based on ?p= list e.g. ?p=chave,cnpjEmp,dt_ini,dt_fin
+  const pList  = (req.query.p || 'chave,cnpjEmp,dt_ini,dt_fin').split(',');
+  const pMap   = { chave, cnpjEmp: cnpj, portal, dt_ini: ini, dt_fin: fin, data_inicial: ini, data_fim: fin, empresa: '1' };
+  const pXml   = pList.map(k => `      <Parameter id="${k}">${pMap[k] ?? ''}</Parameter>`).join('\n');
+
+  const xml = `<?xml version="1.0" encoding="utf-8"?>
+<LinxMicrovix>
+  <Authentication user="linx_export" password="linx_export" />
+  <ResponseFormat>csv</ResponseFormat>
+  <Command>
+    <Name>${cmd}</Name>
+    <Parameters>
+${pXml}
+    </Parameters>
+  </Command>
+</LinxMicrovix>`;
+  console.log('[Microvix/teste] XML:\n', xml);
+  const buf = Buffer.from(xml, 'utf-8');
+  const req2 = https.request({ hostname: 'webapi.microvix.com.br', path: '/1.0/api/integracao', method: 'POST', headers: { 'Content-Type': 'text/xml; charset=utf-8', 'Content-Length': buf.length } }, r => {
+    const chunks = [];
+    r.on('data', c => chunks.push(c));
+    r.on('end', () => {
+      const body = Buffer.concat(chunks).toString('utf-8');
+      console.log('[Microvix/teste] Resposta:\n', body.slice(0, 3000));
+      res.type('text/plain').send(body);
+    });
+  });
+  req2.on('error', e => res.status(500).send(e.message));
+  req2.write(buf);
+  req2.end();
+});
+
+// GET /api/microvix/lojas-emp → TEMP: analisa empresa/deposito nos movimentos
+app.get('/api/microvix/lojas-emp', async (req, res) => {
+  try {
+    const { fetchMovimento } = require('./services/microvix');
+    const cnpj = process.env.MICROVIX_CNPJ;
+    const rows = await fetchMovimento(cnpj, '2026-05-01', '2026-05-19');
+    const combos = {};
+    for (const r of rows) {
+      const k = `empresa=${r.empresa} deposito=${r.deposito}`;
+      if (!combos[k]) combos[k] = { empresa: r.empresa, deposito: r.deposito, count: 0 };
+      combos[k].count++;
+    }
+    res.json({ total: rows.length, groups: Object.values(combos).sort((a,b) => b.count - a.count) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/microvix/conferencia?de=2026-05-01&ate=2026-05-20&board=delrey
+app.get('/api/microvix/conferencia', async (req, res) => {
+  try {
+    const { fetchMovimento, fetchVendedores, parseBrNum } = require('./services/microvix');
+    const board  = req.query.board || 'delrey';
+    const dtIni  = req.query.de    || '2026-05-01';
+    const dtFin  = req.query.ate   || new Date().toISOString().slice(0, 10);
+
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = lojas[board];
+    if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado em MICROVIX_LOJAS` });
+
+    const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+
+    // 1. Vendor map from Microvix
+    const vendRows = await fetchVendedores(cnpj, chave);
+    const vendMap  = {}; // cod → nome
+    for (const v of vendRows) vendMap[String(v.cod_vendedor).trim()] = v.nome_vendedor;
+
+    // 2. Movements from Microvix
+    const rows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
+    const mxAgg = {}; // "date|cod" → { date, cod, nome, value, pecas, docs }
+    for (const row of rows) {
+      if (row.cancelado === 'S' || row.cancelado === '1') continue;
+      const cod  = String(row.cod_vendedor || '').trim();
+      const date = (() => { const p=(row.data_documento||'').slice(0,10); const [d,m,y]=p.split('/'); return y?`${y}-${m}-${d}`:null; })();
+      if (!date || !cod) continue;
+      const key = `${date}|${cod}`;
+      if (!mxAgg[key]) mxAgg[key] = { date, cod, nome: vendMap[cod]||cod, value: 0, pecas: 0, docs: new Set() };
+      mxAgg[key].value += parseBrNum(row.valor_liquido);
+      mxAgg[key].pecas += parseInt(row.quantidade||0)||0;
+      mxAgg[key].docs.add(row.documento);
+    }
+
+    // 3. System data (vsales)
+    const db = await readDB();
+    const employees = (db.employees||[]).filter(e => e.board === board && !e.inativo);
+    const vsales = db.vsales || {};
+    // Build sys map: "date|microvixCod" → { value, pecas }
+    const sysAgg = {};
+    for (const emp of employees) {
+      if (!emp.microvixCod) continue;
+      // find all vsales keys for this employee in the date range
+      const prefix = `2026-05-${board}-${emp.id}`;
+      for (const [vsKey, vsd] of Object.entries(vsales)) {
+        if (!vsKey.includes(`-${board}-${emp.id}`)) continue;
+        for (const [date, entry] of Object.entries(vsd.entries || {})) {
+          if (date < dtIni || date > dtFin) continue;
+          const key = `${date}|${emp.microvixCod}`;
+          sysAgg[key] = { date, cod: emp.microvixCod, nome: emp.name, value: entry.value||0, pecas: entry.pecas||0 };
+        }
+      }
+    }
+
+    // 4. Build comparison
+    const allKeys = new Set([...Object.keys(mxAgg), ...Object.keys(sysAgg)]);
+    const rows2 = [];
+    for (const key of [...allKeys].sort()) {
+      const mx  = mxAgg[key];
+      const sys = sysAgg[key];
+      const mxVal  = mx  ? parseFloat(mx.value.toFixed(2))  : 0;
+      const sysVal = sys ? parseFloat(sys.value||0)          : 0;
+      const diff   = parseFloat((sysVal - mxVal).toFixed(2));
+      rows2.push({
+        date:    mx?.date || sys?.date,
+        cod:     mx?.cod  || sys?.cod,
+        nome:    mx?.nome || sys?.nome,
+        mx_valor:  mxVal,
+        mx_pecas:  mx?.pecas || 0,
+        sys_valor: sysVal,
+        sys_pecas: sys?.pecas || 0,
+        diff,
+        ok: Math.abs(diff) < 0.1,
+      });
+    }
+
+    res.json({ de: dtIni, ate: dtFin, board, total: rows2.length, rows: rows2 });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/microvix/sync-photos ────────────────────────────────────────
+// Downloads vendor photos from Microvix (LinxFuncionarios) and saves them locally.
+app.post('/api/microvix/sync-photos', requireAdmin, async (req, res) => {
+  const { fetchFuncionarios } = require('./services/microvix');
+  const https2 = require('https');
+  const http2  = require('http');
+
+  function normName(s) {
+    return (s || '').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  }
+
+  // Download a URL to a local file path, following up to 5 redirects
+  function downloadUrl(url, dest, redirects = 0) {
+    return new Promise((resolve, reject) => {
+      if (redirects > 5) return reject(new Error('Too many redirects'));
+      const getter = url.startsWith('https') ? https2 : http2;
+      getter.get(url, { timeout: 20000 }, res2 => {
+        if (res2.statusCode === 301 || res2.statusCode === 302 || res2.statusCode === 307) {
+          res2.resume();
+          const loc = res2.headers.location;
+          if (!loc) return reject(new Error('Redirect sem Location'));
+          const next = loc.startsWith('http') ? loc : new URL(loc, url).href;
+          return downloadUrl(next, dest, redirects + 1).then(resolve).catch(reject);
+        }
+        if (res2.statusCode !== 200) {
+          res2.resume();
+          return reject(new Error(`HTTP ${res2.statusCode} ao baixar foto`));
+        }
+        const file = fs.createWriteStream(dest);
+        res2.pipe(file);
+        file.on('finish', () => file.close(resolve));
+        file.on('error', err => { try { fs.unlinkSync(dest); } catch {} reject(err); });
+      }).on('error', err => { try { fs.unlinkSync(dest); } catch {} reject(err); });
+    });
+  }
+
+  try {
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    if (!Object.keys(lojas).length) return res.status(400).json({ error: 'MICROVIX_LOJAS não configurado' });
+
+    const { boards: boardFilter } = req.body || {};
+    const db        = await readDB();
+    const employees = db.employees || [];
+    const result    = { updated: 0, skipped: 0, errors: [], fields: null };
+
+    for (const [board, cnpj] of Object.entries(lojas)) {
+      if (boardFilter?.length && !boardFilter.includes(board)) continue;
+      const cnpjClean = cnpj.replace(/\D/g, '');
+      const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+
+      let rows;
+      try {
+        rows = await fetchFuncionarios(cnpjClean, chave);
+      } catch (e) {
+        result.errors.push(`[${board}] ${e.message}`);
+        continue;
+      }
+
+      if (!rows.length) continue;
+      if (!result.fields) result.fields = Object.keys(rows[0]);
+      console.log(`[Microvix/${board}] LinxFuncionarios: ${rows.length} linhas, campos:`, Object.keys(rows[0]).join(', '));
+
+      for (const row of rows) {
+        // Detect field names dynamically — Microvix uses different names per version
+        const cod      = String(row.cod_vendedor || row.cod_funcionario || row.CodVendedor || row.CodFuncionario || '').trim();
+        const nomeRaw  = row.nome_vendedor || row.nome_funcionario || row.NomeVendedor || row.NomeFuncionario || '';
+        const fotoUrl  = (row.foto || row.url_foto || row.foto_url || row.FotoUrl || row.Foto || '').trim();
+
+        if (!fotoUrl) { result.skipped++; continue; }
+        // Only handle HTTP(S) URLs — skip empty paths or file system paths
+        if (!fotoUrl.startsWith('http')) { result.skipped++; continue; }
+
+        // Match employee: prefer microvixCod, fall back to normalized name
+        const emp = employees.find(e => e.board === board && !e.inativo && e.microvixCod && String(e.microvixCod) === cod)
+          || employees.find(e => e.board === board && !e.inativo && normName(e.name) === normName(nomeRaw));
+
+        if (!emp) {
+          console.log(`[Microvix/${board}] Funcionário sem match: cod=${cod} nome="${nomeRaw}"`);
+          result.skipped++;
+          continue;
+        }
+
+        const filename = `emp-mx-${emp.id}.jpg`;
+        const dest     = path.join(UPLOADS_DIR, filename);
+
+        try {
+          await downloadUrl(fotoUrl, dest);
+          // Remove old photo file if it was a different file
+          const old = emp.foto;
+          if (old && path.basename(old) !== filename) {
+            try { fs.unlinkSync(path.join(UPLOADS_DIR, path.basename(old))); } catch {}
+          }
+          emp.foto = `/uploads/${filename}`;
+          result.updated++;
+          console.log(`[Microvix/${board}] Foto salva: ${emp.name} → ${filename}`);
+        } catch (e) {
+          result.errors.push(`${emp.name}: ${e.message}`);
+          console.error(`[Microvix/${board}] Erro ao baixar foto de ${emp.name}:`, e.message);
+        }
+      }
+    }
+
+    if (result.updated > 0) await writeDB(db);
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Start ──────────────────────────────────────────────────────────────────
 initMongo()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`\n✅  Gestão de Lojas → http://localhost:${PORT}\n`);
     });
+
+    // Auto-sync Microvix if credentials are set
+    if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
+      console.log(`[Microvix] Auto-sync a cada ${MX_INTERVAL_MS / 60000} min`);
+      const doSync = () => runSync(readDB, writeDB).catch(e => console.error('[Microvix]', e.message));
+      doSync(); // first run on startup
+      setInterval(doSync, MX_INTERVAL_MS);
+    } else {
+      console.log('[Microvix] Credenciais não configuradas — sync desativado');
+    }
   })
   .catch(err => {
     console.error('Falha ao conectar MongoDB:', err.message);

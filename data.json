@@ -1532,16 +1532,17 @@
       "desligamento": "",
       "comissaoSemMeta": 4.5,
       "comissaoMeta2": 5.5,
-      "comissaoSuper": 6
+      "comissaoSuper": 6,
+      "microvixCod": "50"
     },
     {
       "id": 254,
-      "name": "GUILHERME",
+      "name": "GUILHERME HENRIQUE FRANÇA DE SOUZA",
       "board": "delrey",
-      "apelido": "",
+      "apelido": "GUILHERME",
       "cpf": "",
       "admissao": "",
-      "cargo": "",
+      "cargo": "VENDEDOR",
       "salario": 0,
       "comissaoSemMeta": 4.5,
       "comissao": 5,
@@ -1549,7 +1550,8 @@
       "comissaoSuper": 6,
       "isVendedor": true,
       "inativo": false,
-      "desligamento": ""
+      "desligamento": "",
+      "microvixCod": "134"
     },
     {
       "id": 255,
@@ -1566,7 +1568,8 @@
       "comissaoSuper": 6,
       "isVendedor": true,
       "inativo": false,
-      "desligamento": ""
+      "desligamento": "",
+      "microvixCod": "175"
     },
     {
       "id": 256,
@@ -1605,18 +1608,26 @@
       "desligamento": "",
       "comissaoSemMeta": 4.5,
       "comissaoMeta2": 5.5,
-      "comissaoSuper": 6
+      "comissaoSuper": 6,
+      "microvixCod": ""
     },
     {
       "id": 278,
-      "name": "YAGO",
+      "name": "IAGO",
       "board": "minas",
       "cpf": "",
       "admissao": "",
       "cargo": "VENDEDOR",
       "salario": 4.5,
       "comissao": 0,
-      "isVendedor": true
+      "isVendedor": true,
+      "apelido": "IAGO",
+      "microvixCod": "",
+      "comissaoSemMeta": 0,
+      "comissaoMeta2": 0,
+      "comissaoSuper": 0,
+      "inativo": false,
+      "desligamento": ""
     },
     {
       "id": 279,
@@ -1633,7 +1644,8 @@
       "comissaoMeta2": 5.5,
       "comissaoSuper": 6,
       "inativo": false,
-      "desligamento": ""
+      "desligamento": "",
+      "microvixCod": ""
     },
     {
       "id": 289,
@@ -1650,7 +1662,8 @@
       "desligamento": "",
       "comissaoSemMeta": 4.5,
       "comissaoMeta2": 5.5,
-      "comissaoSuper": 6
+      "comissaoSuper": 6,
+      "microvixCod": ""
     },
     {
       "id": 290,
@@ -1667,7 +1680,8 @@
       "desligamento": "",
       "comissaoSemMeta": 4.5,
       "comissaoMeta2": 5.5,
-      "comissaoSuper": 6
+      "comissaoSuper": 6,
+      "microvixCod": ""
     },
     {
       "id": 291,
@@ -1684,7 +1698,8 @@
       "desligamento": "",
       "comissaoSemMeta": 4.5,
       "comissaoMeta2": 5.5,
-      "comissaoSuper": 6
+      "comissaoSuper": 6,
+      "microvixCod": ""
     },
     {
       "id": 298,
@@ -1701,7 +1716,8 @@
       "comissaoSuper": 6,
       "isVendedor": true,
       "inativo": false,
-      "desligamento": ""
+      "desligamento": "",
+      "microvixCod": ""
     },
     {
       "id": 299,
@@ -1718,7 +1734,8 @@
       "comissaoSuper": 6,
       "isVendedor": true,
       "inativo": false,
-      "desligamento": ""
+      "desligamento": "",
+      "microvixCod": ""
     },
     {
       "id": 300,
@@ -1735,35 +1752,11 @@
       "comissaoSuper": 6,
       "isVendedor": true,
       "inativo": false,
-      "desligamento": ""
+      "desligamento": "",
+      "microvixCod": ""
     }
   ],
   "folgas": [
-    {
-      "id": 284,
-      "employeeId": 253,
-      "date": "2026-05-04"
-    },
-    {
-      "id": 285,
-      "employeeId": 254,
-      "date": "2026-05-05"
-    },
-    {
-      "id": 286,
-      "employeeId": 255,
-      "date": "2026-05-06"
-    },
-    {
-      "id": 287,
-      "employeeId": 256,
-      "date": "2026-05-07"
-    },
-    {
-      "id": 288,
-      "employeeId": 257,
-      "date": "2026-05-08"
-    },
     {
       "id": 292,
       "employeeId": 277,
@@ -1910,169 +1903,214 @@
         "2026-05-01": {
           "value": 5293.8,
           "pecas": 17,
-          "atendimentos": 11
+          "atendimentos": 11,
+          "syncedAt": "2026-05-21T02:04:10.212Z"
         },
         "2026-05-02": {
-          "value": 1757.8,
-          "pecas": 4,
-          "atendimentos": 3
+          "value": 1957.7,
+          "pecas": 6,
+          "atendimentos": 4,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-03": {
           "value": 2059.4,
           "pecas": 8,
-          "atendimentos": 6
+          "atendimentos": 6,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-05": {
           "value": 1632.5,
           "pecas": 7,
-          "atendimentos": 4
+          "atendimentos": 4,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-06": {
           "value": 559.8,
           "pecas": 2,
-          "atendimentos": 2
+          "atendimentos": 2,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-07": {
           "value": 2147.3,
           "pecas": 8,
-          "atendimentos": 6
+          "atendimentos": 6,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-08": {
           "value": 2694.1,
           "pecas": 11,
-          "atendimentos": 10
+          "atendimentos": 10,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-09": {
           "value": 6028.3,
           "pecas": 21,
-          "atendimentos": 13
+          "atendimentos": 13,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-10": {
           "value": 2254.1,
-          "pecas": 11,
-          "atendimentos": 7
+          "pecas": 10,
+          "atendimentos": 6,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-11": {
           "value": 1719.7,
-          "pecas": 5,
-          "atendimentos": 3
+          "pecas": 4,
+          "atendimentos": 2,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-13": {
           "value": 299.9,
           "pecas": 1,
-          "atendimentos": 1
+          "atendimentos": 1,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-14": {
           "value": 1879.2,
           "pecas": 10,
-          "atendimentos": 6
+          "atendimentos": 6,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-15": {
           "value": 689.7,
           "pecas": 3,
-          "atendimentos": 2
+          "atendimentos": 2,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-16": {
           "value": 3496,
           "pecas": 11,
-          "atendimentos": 8
+          "atendimentos": 8,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-18": {
           "value": 739.5,
-          "pecas": 4,
-          "atendimentos": 4
+          "pecas": 5,
+          "atendimentos": 3,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-19": {
           "value": 2633.3,
           "pecas": 8,
-          "atendimentos": 6
+          "atendimentos": 6,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
+        },
+        "2026-05-20": {
+          "value": 1419.5,
+          "pecas": 5,
+          "atendimentos": 5,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         }
       }
     },
     "2026-05-delrey-254": {
       "meta": {
-        "mensal": 60000
+        "mensal": 60000,
+        "vacationDays": []
       },
       "entries": {
         "2026-05-01": {
           "value": 1499.4,
-          "pecas": 8,
-          "atendimentos": 6
+          "pecas": 7,
+          "atendimentos": 5,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-02": {
           "value": 3533.2,
           "pecas": 13,
-          "atendimentos": 7
+          "atendimentos": 7,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-04": {
           "value": 1194.4,
           "pecas": 6,
-          "atendimentos": 2
+          "atendimentos": 2,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-05": {
           "value": 1399.6,
           "pecas": 4,
-          "atendimentos": 3
+          "atendimentos": 3,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-06": {
           "value": 1589.5,
           "pecas": 6,
-          "atendimentos": 5
+          "atendimentos": 5,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-07": {
           "value": 1573.8,
-          "pecas": 4,
-          "atendimentos": 3
+          "pecas": 3,
+          "atendimentos": 2,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-08": {
           "value": 1279.5,
           "pecas": 5,
-          "atendimentos": 4
+          "atendimentos": 4,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-09": {
           "value": 4375.6,
           "pecas": 18,
-          "atendimentos": 10
+          "atendimentos": 11,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-10": {
           "value": 1839.3,
           "pecas": 7,
-          "atendimentos": 6
+          "atendimentos": 6,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-12": {
           "value": 1679.4,
           "pecas": 8,
-          "atendimentos": 5
+          "atendimentos": 5,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-13": {
           "value": 1414.6,
           "pecas": 5,
-          "atendimentos": 4
+          "atendimentos": 4,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-14": {
           "value": 559.8,
-          "pecas": 3,
-          "atendimentos": 3
+          "pecas": 2,
+          "atendimentos": 2,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-15": {
           "value": 949.6,
           "pecas": 4,
-          "atendimentos": 2
+          "atendimentos": 2,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-16": {
           "value": 1279.4,
           "pecas": 6,
-          "atendimentos": 2
+          "atendimentos": 2,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-17": {
           "value": 1443.7,
           "pecas": 5,
-          "atendimentos": 4
+          "atendimentos": 4,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-18": {
           "value": 749.8,
           "pecas": 2,
-          "atendimentos": 2
+          "atendimentos": 2,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
+        },
+        "2026-05-20": {
+          "value": 1007.7,
+          "pecas": 4,
+          "atendimentos": 4,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         }
       }
     },
@@ -2084,78 +2122,99 @@
       "entries": {
         "2026-05-02": {
           "value": 4136.5,
-          "pecas": 13,
-          "atendimentos": 6
+          "pecas": 12,
+          "atendimentos": 5,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-03": {
           "value": 3178.7,
           "pecas": 15,
-          "atendimentos": 7
+          "atendimentos": 7,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-04": {
           "value": 529.8,
           "pecas": 2,
-          "atendimentos": 2
+          "atendimentos": 2,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-06": {
           "value": 1429.4,
           "pecas": 6,
-          "atendimentos": 5
+          "atendimentos": 5,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-07": {
           "value": 2729.4,
           "pecas": 10,
-          "atendimentos": 7
+          "atendimentos": 7,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-08": {
           "value": 1989.3,
-          "pecas": 6,
-          "atendimentos": 6
+          "pecas": 8,
+          "atendimentos": 6,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-09": {
           "value": 5793.6,
           "pecas": 20,
-          "atendimentos": 13
+          "atendimentos": 13,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-10": {
           "value": 499.9,
-          "pecas": 1,
-          "atendimentos": 1
+          "pecas": 2,
+          "atendimentos": 1,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-11": {
           "value": 2114.4,
-          "pecas": 8,
-          "atendimentos": 4
+          "pecas": 9,
+          "atendimentos": 3,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-12": {
           "value": 1309.6,
           "pecas": 4,
-          "atendimentos": 2
+          "atendimentos": 2,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-14": {
           "value": 1039.8,
-          "pecas": 3,
-          "atendimentos": 3
+          "pecas": 2,
+          "atendimentos": 2,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-15": {
           "value": 5304.1,
-          "pecas": 13,
-          "atendimentos": 6
+          "pecas": 12,
+          "atendimentos": 5,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-16": {
           "value": 1677.3,
           "pecas": 8,
-          "atendimentos": 6
+          "atendimentos": 6,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-17": {
           "value": 2209.6,
           "pecas": 6,
-          "atendimentos": 3
+          "atendimentos": 3,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         },
         "2026-05-19": {
           "value": 899.7,
           "pecas": 3,
-          "atendimentos": 2
+          "atendimentos": 2,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
+        },
+        "2026-05-05": {
+          "value": 0,
+          "pecas": 0,
+          "atendimentos": 0,
+          "syncedAt": "2026-05-21T02:04:10.213Z"
         }
       }
     },
@@ -3182,6 +3241,14 @@
         "updatedAt": "2026-05-20T15:18:10.068Z",
         "updatedBy": "leonardo"
       }
+    }
+  },
+  "boardSettings": {
+    "delrey": {
+      "microvixSync": true
+    },
+    "minas": {
+      "microvixSync": false
     }
   }
 }

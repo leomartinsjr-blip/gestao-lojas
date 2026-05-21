@@ -1,0 +1,194 @@
+// ── Microvix sync orchestrator ─────────────────────────────────────────────
+const { fetchMovimento, fetchVendedores, parseBrNum } = require('./microvix');
+
+// MICROVIX_LOJAS = JSON { board → cnpj (digits only) }
+// e.g. {"delrey":"28519094000129","minas":"32473768000179"}
+function getLojas() {
+  try { return JSON.parse(process.env.MICROVIX_LOJAS || '{}'); }
+  catch { return {}; }
+}
+
+let lastSync  = null;
+let lastError = null;
+let running   = false;
+
+function pad(n) { return String(n).padStart(2, '0'); }
+
+function normName(s) {
+  return (s || '').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+// "DD/MM/YYYY HH:MM:SS" → "YYYY-MM-DD"
+function parseDate(s) {
+  const part = (s || '').slice(0, 10);
+  const [d, m, y] = part.split('/');
+  if (!y || !m || !d) return null;
+  return `${y}-${m}-${d}`;
+}
+
+async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
+  const cnpjClean = cnpj.replace(/\D/g, '');
+  // Allow per-board chave: MICROVIX_CHAVE_DELREY, MICROVIX_CHAVE_MINAS, etc.
+  const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+
+  // 1. Vendor map: cod_vendedor → normalized name
+  const vendRows = await fetchVendedores(cnpjClean, chave);
+  const vendMap  = {};
+  for (const v of vendRows) {
+    vendMap[String(v.cod_vendedor).trim()] = normName(v.nome_vendedor);
+  }
+  console.log(`[Microvix/${board}] ${vendRows.length} vendedores`);
+
+  // 2. Movements for date range
+  const rows = await fetchMovimento(cnpjClean, dtIni, dtFin, chave);
+  console.log(`[Microvix/${board}] ${rows.length} linhas de movimento (${dtIni} → ${dtFin})`);
+
+  if (!rows.length) return 0;
+
+  // 3. Aggregate by vendor + date (skip cancelled)
+  const agg = {};
+  for (const row of rows) {
+    if (row.cancelado === 'S' || row.cancelado === '1') continue;
+
+    const codVend  = String(row.cod_vendedor || '').trim();
+    const vendNorm = vendMap[codVend];
+    if (!vendNorm) continue;
+
+    const dateStr = parseDate(row.data_documento);
+    if (!dateStr) continue;
+
+    const sign = row.operacao === 'DS' ? -1 : 1; // devoluções reduzem o total
+    const key = `${codVend}||${dateStr}`;
+    if (!agg[key]) agg[key] = { codVend, vendNorm, date: dateStr, value: 0, pecas: 0, docs: new Set(), retDocs: new Set() };
+    agg[key].value += sign * parseBrNum(row.valor_liquido);
+    agg[key].pecas += sign * (parseInt(row.quantidade || 0, 10) || 0);
+    if (sign > 0) agg[key].docs.add(row.documento);
+    else agg[key].retDocs.add(row.documento);
+  }
+
+  // 4. Match employees and write
+  if (!db.vsales) db.vsales = {};
+  let updated = 0;
+
+  for (const entry of Object.values(agg)) {
+    const { codVend, vendNorm, date, value, pecas, docs, retDocs } = entry;
+    const year  = parseInt(date.slice(0, 4));
+    const month = parseInt(date.slice(5, 7));
+
+    // Match by microvixCod (preferred) or normalized name (fallback)
+    const emp = employees.find(e =>
+      e.board === board && !e.inativo && e.microvixCod && String(e.microvixCod) === codVend
+    ) || employees.find(e =>
+      e.board === board && !e.inativo && normName(e.name) === vendNorm
+    );
+    if (!emp) {
+      console.warn(`[Microvix/${board}] Vendedor não encontrado: cod=${codVend} nome="${vendNorm}"`);
+      continue;
+    }
+
+    const vsKey = `${year}-${pad(month)}-${board}-${emp.id}`;
+    if (!db.vsales[vsKey]) db.vsales[vsKey] = { meta: { mensal: 0 }, entries: {} };
+    db.vsales[vsKey].entries[date] = {
+      value:        parseFloat(value.toFixed(2)),
+      pecas,
+      atendimentos: docs.size - retDocs.size,
+      syncedAt:     new Date().toISOString(),
+    };
+    updated++;
+  }
+
+  return updated;
+}
+
+// Retorna a data a sincronizar: hoje se já passou das 22h BRT, senão ontem
+function syncTargetDate() {
+  const now = new Date();
+  const brtHour = new Date(now.getTime() - 3 * 60 * 60 * 1000).getUTCHours();
+  const target = brtHour >= 22 ? now : new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  return target.toISOString().slice(0, 10);
+}
+
+async function runSync(readDB, writeDB) {
+  if (running) return { skipped: true };
+  running = true;
+  try {
+    const lojas = getLojas();
+    if (!Object.keys(lojas).length) throw new Error('MICROVIX_LOJAS não configurado.');
+
+    const date      = syncTargetDate();
+    const db        = await readDB();
+    const employees = db.employees || [];
+    let totalUpdated = 0;
+
+    for (const [board, cnpj] of Object.entries(lojas)) {
+      if (db.boardSettings?.[board]?.microvixSync !== true) {
+        console.log(`[Microvix/${board}] Auto-sync desabilitado, pulando.`);
+        continue;
+      }
+      try {
+        const updated = await syncStore(board, cnpj, date, date, employees, db);
+        totalUpdated += updated;
+      } catch (err) {
+        console.error(`[Microvix/${board}] Erro:`, err.message);
+      }
+    }
+
+    await writeDB(db);
+    lastSync  = { at: new Date().toISOString(), updated: totalUpdated, date };
+    lastError = null;
+    console.log(`[Microvix] Sync OK — ${totalUpdated} vendedores atualizados`);
+    return lastSync;
+
+  } catch (err) {
+    lastError = err.message;
+    console.error('[Microvix] Sync erro:', err.message);
+    throw err;
+  } finally {
+    running = false;
+  }
+}
+
+async function runSyncRetroativo(readDB, writeDB, dtIni, dtFin, boards) {
+  if (running) throw new Error('Sync já em andamento, aguarde.');
+  running = true;
+  try {
+    const lojas = getLojas();
+    const targets = boards?.length
+      ? Object.fromEntries(Object.entries(lojas).filter(([b]) => boards.includes(b)))
+      : lojas;
+    if (!Object.keys(targets).length) throw new Error('Nenhuma loja válida encontrada.');
+
+    const db        = await readDB();
+    const employees = db.employees || [];
+    let totalUpdated = 0;
+
+    for (const [board, cnpj] of Object.entries(targets)) {
+      try {
+        const updated = await syncStore(board, cnpj, dtIni, dtFin, employees, db);
+        totalUpdated += updated;
+        console.log(`[Microvix] Retroativo ${board}: ${updated} entradas atualizadas`);
+      } catch (err) {
+        console.error(`[Microvix/${board}] Erro retroativo:`, err.message);
+      }
+    }
+
+    await writeDB(db);
+    const result = { at: new Date().toISOString(), updated: totalUpdated, dtIni, dtFin, boards: Object.keys(targets) };
+    lastSync  = result;
+    lastError = null;
+    console.log(`[Microvix] Sync retroativo OK — ${totalUpdated} entradas atualizadas`);
+    return result;
+
+  } catch (err) {
+    lastError = err.message;
+    throw err;
+  } finally {
+    running = false;
+  }
+}
+
+function getStatus() {
+  return { lastSync, lastError, running };
+}
+
+module.exports = { runSync, runSyncRetroativo, getStatus };

@@ -52,6 +52,13 @@
 
   <div class="topbar-right">
     <div id="saveIndicator" class="save-indicator hidden">Salvando…</div>
+    <button id="mxSyncBtn" class="mx-sync-btn" title="Sincronizar com Microvix">
+      <svg id="mxSyncIcon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+        <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+      </svg>
+      <span id="mxSyncLabel">Microvix</span>
+    </button>
 <button id="dailyBtn" class="folgas-topbar-btn" title="Fechamento Diário">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="3" y="3" width="18" height="18" rx="2"/>
@@ -256,108 +263,147 @@
         Funcionários
       </span>
       <div class="func-toolbar">
+        <input type="text" id="funcSearch" class="func-search" placeholder="Buscar por nome…">
         <select id="funcBoardFilter" class="folgas-filter"></select>
         <label class="func-inativo-toggle">
-          <input type="checkbox" id="funcShowInativo"> Mostrar inativos
+          <input type="checkbox" id="funcShowInativo"> Inativos
         </label>
         <button class="add-item-btn" id="funcNewBtn">+ Novo Funcionário</button>
+        <button class="func-mx-photos-btn hidden" id="funcMxPhotosBtn" title="Buscar fotos dos vendedores no Microvix">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M20.08 5H3.92A1.92 1.92 0 0 0 2 6.92v10.16A1.92 1.92 0 0 0 3.92 19h16.16A1.92 1.92 0 0 0 22 17.08V6.92A1.92 1.92 0 0 0 20.08 5z"/><circle cx="17.5" cy="8.5" r=".5" fill="currentColor"/></svg>
+          Fotos Microvix
+        </button>
       </div>
       <button class="folgas-close-btn" id="funcClose">✕</button>
     </div>
-    <div class="perf-body">
-      <!-- Form -->
-      <div id="funcForm" class="func-form hidden">
-        <div class="func-form-title" id="funcFormTitle">Novo Funcionário</div>
-        <div class="func-form-grid">
-          <!-- Photo -->
-          <div class="func-field func-field-photo-row">
-            <div class="func-photo-preview" id="funcFotoPreview">
+    <div class="perf-body func-body" id="funcBody">
+      <!-- Table -->
+      <div class="func-table-wrap">
+        <table class="func-table">
+          <thead>
+            <tr>
+              <th style="width:44px"></th>
+              <th>Nome</th>
+              <th>Loja</th>
+              <th>Cargo</th>
+              <th>Admissão</th>
+              <th>Comissão</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="funcTableBody"></tbody>
+        </table>
+      </div>
+
+      <!-- Drawer de edição -->
+      <div id="funcForm" class="func-form">
+        <!-- Cabeçalho do perfil -->
+        <div class="func-drawer-hdr">
+          <div class="func-drawer-avatar-wrap">
+            <div class="func-photo-preview func-drawer-avatar" id="funcFotoPreview">
               <img id="funcFotoImg" src="" alt="" style="display:none">
-              <span id="funcFotoInitials"></span>
+              <span id="funcFotoInitials" class="func-avatar-ini"></span>
             </div>
-            <div class="func-photo-info">
+            <div class="func-drawer-avatar-actions">
               <input type="file" id="funcFotoInput" accept="image/*" style="display:none">
-              <button type="button" class="func-photo-btn" id="funcFotoBtn">Escolher foto</button>
+              <button type="button" class="func-photo-btn" id="funcFotoBtn">Trocar foto</button>
               <button type="button" class="func-photo-remove" id="funcFotoRemove" style="display:none">Remover</button>
-              <span class="func-photo-hint">JPG / PNG até 5 MB</span>
             </div>
           </div>
-          <!-- Fields -->
-          <div class="func-field func-field-wide">
-            <label>Nome Completo</label>
-            <input type="text" id="funcNome" placeholder="Nome completo">
+          <div class="func-drawer-hdr-info">
+            <div class="func-drawer-title" id="funcFormTitle">Novo Funcionário</div>
+            <div class="func-drawer-subtitle" id="funcFormSubtitle"></div>
           </div>
-          <div class="func-field">
-            <label>Apelido</label>
-            <input type="text" id="funcApelido" placeholder="Como é chamado">
+          <button class="func-drawer-close" id="funcCancelBtn" title="Fechar">✕</button>
+        </div>
+
+        <div class="func-drawer-body">
+          <!-- Seção: Identificação -->
+          <div class="func-section-hdr">Identificação</div>
+          <div class="func-form-grid">
+            <div class="func-field func-field-wide">
+              <label>Nome Completo <span class="func-req">*</span></label>
+              <input type="text" id="funcNome" placeholder="Nome completo">
+            </div>
+            <div class="func-field">
+              <label>Apelido</label>
+              <input type="text" id="funcApelido" placeholder="Como é chamado">
+            </div>
+            <div class="func-field">
+              <label>CPF</label>
+              <input type="text" id="funcCPF" placeholder="000.000.000-00">
+            </div>
+            <div class="func-field">
+              <label>Loja <span class="func-req">*</span></label>
+              <select id="funcBoard" class="folgas-filter"></select>
+            </div>
+            <div class="func-field">
+              <label>Cargo</label>
+              <input type="text" id="funcCargo" placeholder="Vendedor, Gerente…">
+            </div>
+            <div class="func-field">
+              <label>Data de Admissão</label>
+              <input type="date" id="funcAdmissao">
+            </div>
+            <div class="func-field">
+              <label>Cód. Microvix</label>
+              <input type="text" id="funcMicrovixCod" placeholder="Ex: 50">
+            </div>
           </div>
-          <div class="func-field">
-            <label>CPF</label>
-            <input type="text" id="funcCPF" placeholder="000.000.000-00">
+
+          <!-- Seção: Contrato & Comissões -->
+          <div class="func-section-hdr">Contrato &amp; Comissões</div>
+          <div class="func-form-grid">
+            <div class="func-field">
+              <label>Salário Base (R$)</label>
+              <input type="number" id="funcSalario" placeholder="0,00" min="0" step="0.01">
+            </div>
+            <div class="func-field">
+              <label>Sem Meta (%)</label>
+              <input type="number" id="funcComissaoSemMeta" placeholder="0,00" min="0" step="0.01">
+            </div>
+            <div class="func-field">
+              <label>Meta 1 (%)</label>
+              <input type="number" id="funcComissao" placeholder="0,00" min="0" step="0.01">
+            </div>
+            <div class="func-field">
+              <label>Meta 2 (%)</label>
+              <input type="number" id="funcComissaoMeta2" placeholder="0,00" min="0" step="0.01">
+            </div>
+            <div class="func-field">
+              <label>Super Meta (%)</label>
+              <input type="number" id="funcComissaoSuper" placeholder="0,00" min="0" step="0.01">
+            </div>
           </div>
-          <div class="func-field">
-            <label>Data de Admissão</label>
-            <input type="date" id="funcAdmissao">
-          </div>
-          <div class="func-field">
-            <label>Cargo</label>
-            <input type="text" id="funcCargo" placeholder="Vendedor, Gerente…">
-          </div>
-          <div class="func-field">
-            <label>Loja</label>
-            <select id="funcBoard" class="folgas-filter"></select>
-          </div>
-          <div class="func-field">
-            <label>Salário Base (R$)</label>
-            <input type="number" id="funcSalario" placeholder="0,00" min="0" step="0.01">
-          </div>
-          <div class="func-field">
-            <label>Comissão Sem Meta (%)</label>
-            <input type="number" id="funcComissaoSemMeta" placeholder="0,00" min="0" step="0.01">
-          </div>
-          <div class="func-field">
-            <label>Comissão Meta 1 (%)</label>
-            <input type="number" id="funcComissao" placeholder="0,00" min="0" step="0.01">
-          </div>
-          <div class="func-field">
-            <label>Comissão Meta 2 (%)</label>
-            <input type="number" id="funcComissaoMeta2" placeholder="0,00" min="0" step="0.01">
-          </div>
-          <div class="func-field">
-            <label>Comissão Super Meta (%)</label>
-            <input type="number" id="funcComissaoSuper" placeholder="0,00" min="0" step="0.01">
-          </div>
-          <div class="func-field func-field-check">
-            <label class="func-check-label">
-              <input type="checkbox" id="funcIsVend" checked>
-              É vendedor (aparece no dashboard e fechamento)
-            </label>
-          </div>
-          <div class="func-field func-field-check">
-            <label class="func-check-label">
-              <input type="checkbox" id="funcInativo">
-              Inativo (mantém histórico)
-            </label>
-          </div>
-          <div class="func-field" id="funcDesligamentoWrap" style="display:none">
-            <label>Data de Desligamento</label>
-            <input type="date" id="funcDesligamento">
+
+          <!-- Seção: Status -->
+          <div class="func-section-hdr">Status</div>
+          <div class="func-form-grid func-form-grid-status">
+            <div class="func-field func-field-check">
+              <label class="func-check-label">
+                <input type="checkbox" id="funcIsVend" checked>
+                É vendedor
+              </label>
+            </div>
+            <div class="func-field func-field-check">
+              <label class="func-check-label">
+                <input type="checkbox" id="funcInativo">
+                Inativo
+              </label>
+            </div>
+            <div class="func-field" id="funcDesligamentoWrap" style="display:none">
+              <label>Data de Desligamento</label>
+              <input type="date" id="funcDesligamento">
+            </div>
           </div>
         </div>
+
         <div class="func-form-actions">
-          <button class="folgas-cancel-btn" id="funcCancelBtn">Cancelar</button>
+          <button class="folgas-cancel-btn" id="funcCancelBtn2">Cancelar</button>
           <button class="ds-meta-save-btn" id="funcSaveBtn">Salvar</button>
         </div>
       </div>
-      <!-- Table -->
-      <table class="func-table">
-        <thead>
-          <tr>
-            <th style="width:44px"></th><th>Nome</th><th>Loja</th><th>Cargo</th><th>Admissão</th><th>Vendedor</th><th>Status</th><th></th>
-          </tr>
-        </thead>
-        <tbody id="funcTableBody"></tbody>
-      </table>
     </div>
   </div>
 </div>

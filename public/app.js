@@ -82,9 +82,59 @@ async function checkAuth() {
     S._loginJustHappened = true;
     updateLabel();
     loadData();
+    initMicrovixSync();
   } catch {
     showLogin();
   }
+}
+
+// ── Microvix sync button ───────────────────────────────────────────────────
+function initMicrovixSync() {
+  const btn   = document.getElementById('mxSyncBtn');
+  const label = document.getElementById('mxSyncLabel');
+  if (!btn) return;
+
+  async function pollStatus() {
+    try {
+      const s = await apiFetch('GET', '/api/microvix/status');
+      if (s.lastSync) {
+        const t = new Date(s.lastSync.at);
+        const hm = t.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+        label.textContent = `Microvix ${hm}`;
+        btn.title = `Última sync: ${hm} — ${s.lastSync.updated} vendedores`;
+        btn.classList.remove('err');
+        btn.classList.add('ok');
+      }
+      if (s.lastError) {
+        label.textContent = 'Microvix ✗';
+        btn.title = s.lastError;
+        btn.classList.remove('ok');
+        btn.classList.add('err');
+      }
+    } catch {}
+  }
+
+  btn.addEventListener('click', async () => {
+    btn.classList.add('syncing');
+    label.textContent = 'Sincronizando…';
+    try {
+      const r = await apiFetch('POST', '/api/microvix/sync');
+      const hm = new Date(r.at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      label.textContent = `Microvix ${hm}`;
+      btn.title = `Sync OK: ${r.updated} vendedores atualizados`;
+      btn.classList.remove('syncing', 'err');
+      btn.classList.add('ok');
+      loadData(); // refresh dashboard
+    } catch (e) {
+      label.textContent = 'Microvix ✗';
+      btn.title = e.message || 'Erro ao sincronizar';
+      btn.classList.remove('syncing', 'ok');
+      btn.classList.add('err');
+    }
+  });
+
+  pollStatus();
+  setInterval(pollStatus, 60_000);
 }
 
 function initLoginForm() {
@@ -298,9 +348,74 @@ function renderDashboard() {
   leftCol.className = 'main-left-col';
   grid.appendChild(leftCol);
 
+  // ── CARD: Faturamento Diário ─────────────────────────────────────────────
+  {
+    if (!DASH_DAY.refDate || DASH_DAY.refDate > cutoff) DASH_DAY.refDate = cutoff;
+    const pad2 = n => String(n).padStart(2, '0');
+    const monthStart = `${S.year}-${pad2(S.month)}-01`;
+
+    const dayCard = document.createElement('div');
+    dayCard.className = 'main-card';
+    dayCard.dataset.cardId = 'card-dia';
+    dayCard.innerHTML = `
+      <div class="main-card-hdr">
+        <span class="main-card-title">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          Faturamento Diário
+        </span>
+        <div class="dash-wk-nav">
+          <button class="dash-wk-btn" id="dayCardPrev" title="Dia anterior">&#8592;</button>
+          <span class="dash-wk-label" id="dayCardLabel"></span>
+          <button class="dash-wk-btn" id="dayCardNext" title="Próximo dia">&#8594;</button>
+        </div>
+      </div>
+      <div class="main-card-body" id="dayCardBody"></div>
+    `;
+    leftCol.appendChild(dayCard);
+
+    function _updateDayCard() {
+      const d = DASH_DAY.refDate;
+      const lbl = d === todayStr ? `Hoje · ${d.slice(8)}/${d.slice(5,7)}` : `${d.slice(8)}/${d.slice(5,7)}`;
+      document.getElementById('dayCardLabel').textContent = lbl;
+      document.getElementById('dayCardPrev').disabled = d <= monthStart;
+      document.getElementById('dayCardNext').disabled = d >= cutoff;
+      _renderDayCardBody(document.getElementById('dayCardBody'), d);
+    }
+
+    document.getElementById('dayCardPrev').addEventListener('click', () => {
+      const d = new Date(DASH_DAY.refDate + 'T00:00:00');
+      d.setDate(d.getDate() - 1);
+      DASH_DAY.refDate = `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+      if (DASH_DAY.refDate < monthStart) DASH_DAY.refDate = monthStart;
+      _updateDayCard();
+    });
+    document.getElementById('dayCardNext').addEventListener('click', () => {
+      const d = new Date(DASH_DAY.refDate + 'T00:00:00');
+      d.setDate(d.getDate() + 1);
+      DASH_DAY.refDate = `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+      if (DASH_DAY.refDate > cutoff) DASH_DAY.refDate = cutoff;
+      _updateDayCard();
+    });
+
+    _updateDayCard();
+  }
+
   // ── CARD: Performance Mensal ────────────────────────────────────────────
   const leftCard = document.createElement('div');
   leftCard.className = 'main-card';
+  // Data mais recente com syncedAt no mês atual
+  let lastSyncedDate = '';
+  for (const vs of Object.values(S.vsales || {})) {
+    for (const [date, entry] of Object.entries(vs.entries || {})) {
+      if (entry.syncedAt && date > lastSyncedDate) lastSyncedDate = date;
+    }
+  }
+  const syncDateLabel = lastSyncedDate
+    ? ` · dados de ${lastSyncedDate.slice(8)}/${lastSyncedDate.slice(5,7)}`
+    : '';
+
   leftCard.dataset.cardId = 'card-perf';
   leftCard.innerHTML = `
     <div class="main-card-hdr">
@@ -310,7 +425,7 @@ function renderDashboard() {
         </svg>
         Performance Mensal
       </span>
-      <span class="main-card-sub">${['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][S.month-1]} ${S.year}</span>
+      <span class="main-card-sub">${['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][S.month-1]} ${S.year}<span class="main-card-sync-date">${syncDateLabel}</span></span>
     </div>
     <div class="main-card-body"></div>
   `;
@@ -345,7 +460,7 @@ function renderDashboard() {
 
     const storeRow = document.createElement('tr');
     storeRow.className = 'dash-store-hdr';
-    storeRow.innerHTML = `<td colspan="7" class="dash-store-hdr-td" style="background:${bc.color}22; border-left:3px solid ${bc.color};">
+    storeRow.innerHTML = `<td colspan="7" class="dash-store-hdr-td" style="border-left:3px solid ${bc.color};">
       <span class="dash-store-dot" style="background:${bc.color}"></span><strong>${bc.label}</strong>
     </td>`;
     tbody.appendChild(storeRow);
@@ -467,7 +582,7 @@ function renderDashboard() {
     </div>
     <div class="main-card-body" id="dashWeekBody"></div>
   `;
-  leftCol.appendChild(rightCard);
+  leftCol.insertBefore(rightCard, leftCard);
   _renderDashWeekBody(rightCard.querySelector('#dashWeekBody'), week);
 
   document.getElementById('dashWkPrev').addEventListener('click', () => {
@@ -499,6 +614,7 @@ function renderDashboard() {
     c.startDate <= todayStr && c.endDate >= todayStr &&
     (!userBoard || c.scope === 'rede' || c.stores.includes(userBoard))
   );
+  let campDashCard = null;
   if (activeCampaigns.length > 0) {
     const camp = activeCampaigns[0];
     const campEmps = S.employees.filter(e =>
@@ -543,7 +659,7 @@ function renderDashboard() {
         </div>`;
     }).join('');
 
-    const campDashCard = document.createElement('div');
+    campDashCard = document.createElement('div');
     campDashCard.className = 'main-card camp-dash-card';
     campDashCard.innerHTML = `
       <div class="main-card-hdr">
@@ -569,7 +685,6 @@ function renderDashboard() {
       setTimeout(() => renderCampaignRanking(camp), 60);
     });
     campDashCard.dataset.cardId = 'card-camp';
-    leftCol.appendChild(campDashCard);
   }
 
   // ── CARD: Folgas → coluna direita ────────────────────────────────────────
@@ -592,6 +707,9 @@ function renderDashboard() {
   `;
   rightCol.appendChild(folgasCard);
   _renderDashFolgas(folgasCard.querySelector('#dashFolgasBody'));
+
+  // Campanhas abaixo de Folgas (coluna direita)
+  if (campDashCard) rightCol.appendChild(campDashCard);
 
   // ── CARD: Comparativo por Loja → coluna esquerda (abaixo da performance) ─
   const compCard = document.createElement('div');
@@ -624,7 +742,7 @@ function renderDashboard() {
   renderMeetingCard(midCol);
 
   // ── CARD: Fechamento de Caixa ─────────────────────────────────────────────
-  renderCaixaCard(midCol);
+  renderCaixaCard(rightCol);
 
 }
 
@@ -702,6 +820,94 @@ function _renderDashFolgas(body) {
   body.innerHTML = html;
 }
 
+function _renderDayCardBody(body, dateStr) {
+  const pad = n => String(n).padStart(2, '0');
+  const fV  = v => 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const daysInMonth = new Date(S.year, S.month, 0).getDate();
+  const defW = +(100 / daysInMonth).toFixed(6);
+  const dayWeight = S.weights[dateStr] ?? defW;
+
+  const vendedores = S.employees.filter(e => e.isVendedor !== false && !e.inativo);
+  const byBoard = {};
+  for (const emp of vendedores) {
+    if (!byBoard[emp.board]) byBoard[emp.board] = [];
+    byBoard[emp.board].push(emp);
+  }
+
+  body.innerHTML = `
+    <div class="dia-col-hdr">
+      <span></span>
+      <span>Realizado</span>
+      <span>Meta Dia</span>
+      <span>PA</span>
+      <span>%</span>
+    </div>`;
+
+  let anyData = false;
+
+  for (const [bk, bc] of visibleBoards()) {
+    const emps = (byBoard[bk] || []).filter(e => {
+      const vsale = S.vsales[e.id] || {};
+      return (vsale.meta?.mensal || 0) > 0 || (vsale.entries?.[dateStr]?.value || 0) > 0;
+    });
+    if (!emps.length) continue;
+
+    anyData = true;
+    let storeTotalVal = 0, storeTotalMeta = 0, storeTotalPecas = 0, storeTotalAtend = 0;
+    let rowsHtml = '';
+
+    for (const emp of emps) {
+      const vsale   = S.vsales[emp.id] || { meta: { mensal: 0 }, entries: {} };
+      const entry   = vsale.entries?.[dateStr] || {};
+      const valor   = entry.value || 0;
+      const pecas   = entry.pecas || 0;
+      const atend   = entry.atendimentos || 0;
+      const metaDia = (vsale.meta?.mensal || 0) * dayWeight / 100;
+      const pa      = atend > 0 ? pecas / atend : null;
+      const pct     = metaDia > 0 ? valor / metaDia * 100 : null;
+
+      storeTotalVal   += valor;
+      storeTotalMeta  += metaDia;
+      storeTotalPecas += pecas;
+      storeTotalAtend += atend;
+
+      const pctCls = pct == null ? '' : pct >= 100 ? 'dia-pct-ok' : pct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
+      rowsHtml += `
+        <div class="dia-row">
+          <span class="dia-name">${emp.apelido || emp.name.split(' ')[0]}</span>
+          <span class="dia-val">${valor > 0 ? fV(valor) : '—'}</span>
+          <span class="dia-meta">${metaDia > 0 ? fV(metaDia) : '—'}</span>
+          <span class="dia-pa">${pa != null ? pa.toFixed(2) : '—'}</span>
+          <span class="dia-pct ${pctCls}">${pct != null ? pct.toFixed(1) + '%' : '—'}</span>
+        </div>`;
+    }
+
+    const storePa  = storeTotalAtend > 0 ? storeTotalPecas / storeTotalAtend : null;
+    const storePct = storeTotalMeta > 0 ? storeTotalVal / storeTotalMeta * 100 : null;
+    const sPctCls  = storePct == null ? '' : storePct >= 100 ? 'dia-pct-ok' : storePct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
+
+    body.insertAdjacentHTML('beforeend', `
+      <div class="dia-store-hdr">
+        <span class="dash-store-dot" style="background:${bc.color}"></span>
+        <strong>${bc.label}</strong>
+      </div>
+      ${rowsHtml}
+      <div class="dia-row dia-total-row">
+        <span class="dia-name">Total</span>
+        <span class="dia-val">${storeTotalVal > 0 ? fV(storeTotalVal) : '—'}</span>
+        <span class="dia-meta">${storeTotalMeta > 0 ? fV(storeTotalMeta) : '—'}</span>
+        <span class="dia-pa">${storePa != null ? storePa.toFixed(2) : '—'}</span>
+        <span class="dia-pct ${sPctCls}">${storePct != null ? storePct.toFixed(1) + '%' : '—'}</span>
+      </div>`);
+  }
+
+  if (!anyData) {
+    body.insertAdjacentHTML('beforeend',
+      '<div style="padding:.85rem 1rem;font-size:.78rem;color:var(--muted)">Sem lançamentos para este dia.</div>');
+  }
+}
+
 function _renderDashWeekBody(body, week, extraData) {
   const pad = n => String(n).padStart(2,'0');
   const fBRL = v => v == null || v === 0 ? '—' : new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v);
@@ -738,7 +944,7 @@ function _renderDashWeekBody(body, week, extraData) {
            <span class="dw-p ${paEarned?'dw-p-ok':k.hitPA&&!k.hitMeta?'dw-p-no':'dw-p-warn'}" title="${k.hitPA&&!k.hitMeta?'PA atingido mas meta venda não':''}">+${fBRL(PREMIO_PA)}${paEarned?' ✓':k.hitPA&&!k.hitMeta?' ✗':''}</span>`;
 
       return `<tr class="dw-row">
-        <td class="dw-td dw-td-name">${emp.name}</td>
+        <td class="dw-td dw-td-name">${emp.apelido || emp.name}</td>
         <td class="dw-td dw-td-num">${fBRL(k.wMeta||null)}</td>
         <td class="dw-td dw-td-num">${fBRL(k.valor||null)}</td>
         <td class="dw-td dw-td-num ${pctCls}">${fPct(k.pctMeta)}</td>
@@ -1035,7 +1241,7 @@ const ALL_STORES = ['delrey','minas','contagem','estacao','tommy','lez'];
 const PD = {
   board: null, year: null, month: null, data: null, metaLoja: 0,
   activeEmpId: null, employees: [], allVsales: {}, weights: {}, fluxo: {},
-  container: null,
+  container: null, boardSettings: {},
 };
 
 function _perfActiveView() {
@@ -1377,8 +1583,9 @@ async function loadAndRenderDaily(board) {
   try {
     const allEmps = await apiFetch('GET', '/api/employees');
     PD.employees  = allEmps.filter(e => e.board === board && e.isVendedor !== false);
-    PD.weights    = await apiFetch('GET', `/api/weights/${PD.year}/${PD.month}`);
-    PD.fluxo      = await apiFetch('GET', `/api/storefluxo/${PD.year}/${PD.month}/${board}`);
+    PD.weights       = await apiFetch('GET', `/api/weights/${PD.year}/${PD.month}`);
+    PD.fluxo         = await apiFetch('GET', `/api/storefluxo/${PD.year}/${PD.month}/${board}`);
+    PD.boardSettings = await apiFetch('GET', '/api/board-settings');
     PD.allVsales  = {};
     const dsData  = await apiFetch('GET', `/api/dailysales/${PD.year}/${PD.month}/${board}`);
     PD.metaLoja   = dsData.meta?.mensal || 0;
@@ -1404,13 +1611,17 @@ function renderVendedorSheet() {
     const active = PD.activeEmpId === emp.id;
     tabs += `<button class="ds-vtab${active ? ' ds-vtab-active' : ''}" data-empid="${emp.id}"
       style="${active ? `background:${color};border-color:${color};color:#0D1117` : `border-color:${color};color:${color}`}"
-    >${emp.name}</button>`;
+    >${emp.apelido || emp.name}</button>`;
   }
   const totActive = PD.activeEmpId === 'total';
   tabs += `<button class="ds-vtab ds-vtab-total${totActive ? ' ds-vtab-active' : ''}" data-empid="total">TOTAL</button>`;
+  const syncActive = PD.boardSettings?.[PD.board]?.microvixSync === true;
   const adminBar = isAdmin
     ? `<div class="ds-admin-bar">
         <button class="ds-weights-btn" id="dsWeightsBtn">⚖ Pesos Diários %</button>
+        <button class="ds-sync-toggle ${syncActive ? 'ds-sync-on' : 'ds-sync-off'}" id="dsSyncToggle" title="${syncActive ? 'Desativar sync Microvix (ativar preenchimento manual)' : 'Ativar sync Microvix'}">
+          ${syncActive ? '⚡ Microvix' : '✏ Manual'}
+        </button>
         <div class="ds-excel-btns">
           <a class="ds-excel-btn ds-excel-down" id="dsExcelDown" href="/api/excel/${PD.year}/${PD.month}/${PD.board}" download>⬇ Baixar Excel</a>
           <label class="ds-excel-btn ds-excel-up" id="dsExcelUpLabel">⬆ Upload Excel<input type="file" id="dsExcelUpInput" accept=".xlsx,.xls" style="display:none"></label>
@@ -1426,6 +1637,18 @@ function renderVendedorSheet() {
 
   if (isAdmin) {
     body.querySelector('#dsWeightsBtn')?.addEventListener('click', openWeightsModal);
+
+    body.querySelector('#dsSyncToggle')?.addEventListener('click', async () => {
+      const current = PD.boardSettings?.[PD.board]?.microvixSync === true;
+      const next = !current;
+      try {
+        await apiFetch('PUT', `/api/board-settings/${PD.board}`, { microvixSync: next });
+        if (!PD.boardSettings[PD.board]) PD.boardSettings[PD.board] = {};
+        PD.boardSettings[PD.board].microvixSync = next;
+        renderVendedorSheet();
+        toast(next ? '⚡ Microvix sync ativado para esta loja' : '✏ Modo manual ativado');
+      } catch (e) { toast('Erro: ' + e.message, true); }
+    });
 
     const upInput = body.querySelector('#dsExcelUpInput');
     upInput?.addEventListener('change', async () => {
@@ -1546,6 +1769,7 @@ function _dsGroupHeader(extraCols) {
 
 function buildVendedorSheet(emp, isAdmin) {
   const { year, month } = PD;
+  const syncActive = PD.boardSettings?.[PD.board]?.microvixSync === true;
   const vsale    = PD.allVsales[emp.id] || { meta: { mensal: 0 }, entries: {} };
   const dayGoals = computeSellerDayGoals(emp.id);
   const mensal   = computeSellerMensal(emp.id);
@@ -1561,7 +1785,7 @@ function buildVendedorSheet(emp, isAdmin) {
   const wrap = document.createElement('div');
   wrap.innerHTML = `
     <div class="ds-top-bar">
-      <div class="ds-meta-name"><strong>${emp.name}</strong></div>
+      <div class="ds-meta-name"><strong>${emp.apelido || emp.name}</strong></div>
       <div class="ds-meta-bar">
         <div class="ds-meta-seg ds-meta-seg-1">
           <span class="ds-meta-seg-lbl">META 1${emp.comissao ? ` <span class="ds-meta-com-badge">${emp.comissao}%</span>` : ''}</span>
@@ -1618,11 +1842,11 @@ function buildVendedorSheet(emp, isAdmin) {
       <td class="ds-td-peso${isAdmin && PD.metaLoja > 0 ? ' ds-editable' : ''}" data-date="${r.dateStr}" style="${isVac ? 'color:var(--down)' : ''}">${partPct}</td>
       <td class="ds-td-pct ${pCls}">${r.pctAting != null ? fPct(r.pctAting) : '—'}</td>
       <td class="${dCls}">${r.desvio != null ? fBRL(r.desvio) : '—'}</td>
-      <td class="ds-td-edit ds-td-fillable${r.entry ? ' ds-has-val' : ''}" data-field="value"        data-date="${r.dateStr}">${r.entry ? fBRL(r.valor) : '<span class="ds-empty">—</span>'}</td>
+      <td class="ds-td-edit ds-td-fillable${r.entry ? ' ds-has-val' : ''}${syncActive ? ' ds-sync-cell' : ''}" data-field="value"        data-date="${r.dateStr}">${r.entry ? fBRL(r.valor) : '<span class="ds-empty">—</span>'}</td>
       <td class="ds-td-calc">${r.entry ? fBRL(r.realAccum) : '—'}</td>
       <td class="ds-td-calc${r.projecao != null ? (r.projecao >= mensal ? ' pf-pos' : ' pf-neg') : ''}">${r.projecao != null ? fBRL(r.projecao) : '—'}</td>
-      <td class="ds-td-edit ds-td-fillable${r.entry && r.pecas > 0 ? ' ds-has-val' : ''}" data-field="pecas"        data-date="${r.dateStr}">${r.entry && r.pecas > 0 ? fNum(r.pecas) : '<span class="ds-empty">—</span>'}</td>
-      <td class="ds-td-edit ds-td-fillable${r.entry && r.atend > 0 ? ' ds-has-val' : ''}" data-field="atendimentos" data-date="${r.dateStr}">${r.entry && r.atend > 0 ? fNum(r.atend) : '<span class="ds-empty">—</span>'}</td>
+      <td class="ds-td-edit ds-td-fillable${r.entry && r.pecas > 0 ? ' ds-has-val' : ''}${syncActive ? ' ds-sync-cell' : ''}" data-field="pecas"        data-date="${r.dateStr}">${r.entry && r.pecas > 0 ? fNum(r.pecas) : '<span class="ds-empty">—</span>'}</td>
+      <td class="ds-td-edit ds-td-fillable${r.entry && r.atend > 0 ? ' ds-has-val' : ''}${syncActive ? ' ds-sync-cell' : ''}" data-field="atendimentos" data-date="${r.dateStr}">${r.entry && r.atend > 0 ? fNum(r.atend) : '<span class="ds-empty">—</span>'}</td>
       <td class="ds-td-calc${r.pa != null ? (r.pa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${r.pa != null ? fDec(r.pa) : '—'}</td>
       <td class="ds-td-calc">${r.pm != null ? fBRL(r.pm) : '—'}</td>
       <td class="ds-td-calc">${r.tm != null ? fBRL(r.tm) : '—'}</td>`;
@@ -1931,6 +2155,10 @@ async function saveSellerVacationDays(empId) {
 }
 
 function startVendCellEdit(td, empId) {
+  if (PD.boardSettings?.[PD.board]?.microvixSync === true) {
+    toast('Sync Microvix ativo — clique em "Manual" para editar manualmente.', true);
+    return;
+  }
   const field   = td.dataset.field;
   const dateStr = td.dataset.date;
   if (!PD.allVsales[empId]) PD.allVsales[empId] = { meta: { mensal: 0 }, entries: {} };
@@ -2315,6 +2543,7 @@ const PA_THRESHOLD = 1.80;
 
 let WK = { refDate: null, cache: {} };
 let DASH_WEEK = { refDate: null };
+let DASH_DAY  = { refDate: null };
 let DASH_SORT = { col: null, dir: 1 };
 const META_ACHIEVED = new Set();
 
@@ -2577,7 +2806,7 @@ async function renderWeeklyModal() {
         : `<td class="wk-td wk-td-num">${fBRL(k.wMeta||null)}</td>`;
 
       return `<tr class="wk-row">
-        <td class="wk-td wk-td-name">${emp.name}</td>
+        <td class="wk-td wk-td-name">${emp.apelido || emp.name}</td>
         ${metaCell}
         <td class="wk-td wk-td-num">${fBRL(k.valor||null)}</td>
         <td class="wk-td wk-td-num ${pctCls}">${fPct(k.pctMeta)}</td>
@@ -2706,36 +2935,48 @@ function empAvatarHtml(emp, size) {
 }
 
 function renderFuncionariosTable() {
-  const filter     = document.getElementById('funcBoardFilter').value;
+  const filter      = document.getElementById('funcBoardFilter').value;
   const showInativo = document.getElementById('funcShowInativo')?.checked;
+  const search      = (document.getElementById('funcSearch')?.value || '').toLowerCase().trim();
   const list = FE.employees
     .filter(e => !filter || e.board === filter)
-    .filter(e => showInativo || !e.inativo);
+    .filter(e => showInativo || !e.inativo)
+    .filter(e => !search || e.name.toLowerCase().includes(search) || (e.apelido||'').toLowerCase().includes(search));
 
   const tbody = document.getElementById('funcTableBody');
   if (list.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:1.5rem;color:var(--muted)">Nenhum funcionário cadastrado.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;padding:1.5rem;color:var(--muted)">Nenhum funcionário encontrado.</td></tr>';
     return;
   }
 
   tbody.innerHTML = list.map(e => {
-    const loja = BOARDS[e.board]?.label || e.board;
-    const isV  = e.isVendedor !== false;
-    const inativo = !!e.inativo;
+    const board   = BOARDS[e.board];
+    const lojaColor = board?.color || '#8B949E';
+    const lojaLabel = board?.label || e.board;
+    const inativo   = !!e.inativo;
+    const comissao  = e.comissao ? `${e.comissao}%` : e.comissaoSemMeta ? `${e.comissaoSemMeta}%` : '—';
     const statusBadge = inativo
-      ? `<span class="func-badge func-badge-inativo">Inativo</span>${e.desligamento ? '<br><small style="color:var(--text2);font-size:.68rem;">'+e.desligamento.split('-').reverse().join('/')+'</small>' : ''}`
+      ? `<span class="func-badge func-badge-inativo">Inativo</span>${e.desligamento ? `<div class="func-desl-date">${e.desligamento.split('-').reverse().join('/')}</div>` : ''}`
       : `<span class="func-badge func-badge-ativo">Ativo</span>`;
+    const nameHtml = e.apelido
+      ? `<div class="func-name-main">${e.apelido}</div><div class="func-name-sub">${e.name}</div>`
+      : `<div class="func-name-main">${e.name}</div>`;
     return `<tr class="${inativo ? 'func-row-inativo' : ''}">
-      <td class="func-td-avatar">${empAvatarHtml(e, 34)}</td>
-      <td>${e.name}</td>
-      <td>${loja}</td>
-      <td>${e.cargo || '—'}</td>
-      <td>${e.admissao ? e.admissao.split('-').reverse().join('/') : '—'}</td>
-      <td><span class="func-badge ${isV ? 'func-badge-yes' : 'func-badge-no'}">${isV ? 'Sim' : 'Não'}</span></td>
+      <td class="func-td-avatar">${empAvatarHtml(e, 36)}</td>
+      <td class="func-td-name">${nameHtml}</td>
+      <td><span class="func-loja-badge" style="border-color:${lojaColor};color:${lojaColor}">${lojaLabel}</span></td>
+      <td class="func-td-muted">${e.cargo || '—'}</td>
+      <td class="func-td-muted">${e.admissao ? e.admissao.split('-').reverse().join('/') : '—'}</td>
+      <td class="func-td-muted">${comissao}</td>
       <td>${statusBadge}</td>
       <td class="func-actions">
-        <button class="func-edit-btn" data-id="${e.id}">Editar</button>
-        <button class="func-del-btn"  data-id="${e.id}">Excluir</button>
+        <button class="func-edit-btn" data-id="${e.id}" title="Editar">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Editar
+        </button>
+        <button class="func-del-btn" data-id="${e.id}" title="Excluir">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+        </button>
       </td>
     </tr>`;
   }).join('');
@@ -2750,8 +2991,15 @@ function openFuncForm(id) {
   FE.editingId = id || null;
   FE.newPhotoFile = null;
   const emp = id ? FE.employees.find(e => e.id === id) : null;
-  document.getElementById('funcForm').classList.remove('hidden');
-  document.getElementById('funcFormTitle').textContent = emp ? 'Editar Funcionário' : 'Novo Funcionário';
+  document.getElementById('funcBody').classList.add('func-body--open');
+  document.getElementById('funcFormTitle').textContent = emp ? (emp.apelido || emp.name) : 'Novo Funcionário';
+  const sub = document.getElementById('funcFormSubtitle');
+  if (emp) {
+    const b = BOARDS[emp.board];
+    sub.innerHTML = `<span class="func-loja-badge" style="color:${b?.color || '#888'};border-color:${b?.color || '#888'}40">${b?.label || emp.board}</span>${emp.cargo ? ' · ' + emp.cargo : ''}`;
+  } else {
+    sub.textContent = '';
+  }
 
   const boardSel = document.getElementById('funcBoard');
   boardSel.innerHTML = Object.entries(BOARDS)
@@ -2761,7 +3009,8 @@ function openFuncForm(id) {
 
   document.getElementById('funcNome').value      = emp?.name      || '';
   document.getElementById('funcApelido').value   = emp?.apelido   || '';
-  document.getElementById('funcCPF').value       = emp?.cpf       || '';
+  document.getElementById('funcCPF').value         = emp?.cpf         || '';
+  document.getElementById('funcMicrovixCod').value = emp?.microvixCod || '';
   document.getElementById('funcAdmissao').value  = emp?.admissao  || '';
   document.getElementById('funcCargo').value     = emp?.cargo     || '';
   document.getElementById('funcSalario').value   = emp?.salario   || '';
@@ -2808,7 +3057,7 @@ function _updateFotoPreview(emp) {
 }
 
 function hideFuncForm() {
-  document.getElementById('funcForm').classList.add('hidden');
+  document.getElementById('funcBody').classList.remove('func-body--open');
   document.getElementById('funcFotoInput').value = '';
   FE.editingId = null;
   FE.newPhotoFile = null;
@@ -2819,7 +3068,8 @@ async function saveFuncionario() {
   const name      = document.getElementById('funcNome').value.trim();
   const board     = document.getElementById('funcBoard').value;
   const apelido   = document.getElementById('funcApelido').value.trim();
-  const cpf       = document.getElementById('funcCPF').value.trim();
+  const cpf          = document.getElementById('funcCPF').value.trim();
+  const microvixCod  = document.getElementById('funcMicrovixCod').value.trim();
   const admissao  = document.getElementById('funcAdmissao').value;
   const cargo     = document.getElementById('funcCargo').value.trim();
   const salario   = parseFloat(document.getElementById('funcSalario').value) || 0;
@@ -2837,7 +3087,7 @@ async function saveFuncionario() {
   const btn = document.getElementById('funcSaveBtn');
   btn.disabled = true;
   try {
-    const body = { name, apelido, board, cpf, admissao, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento };
+    const body = { name, apelido, board, cpf, microvixCod, admissao, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento };
     if (fotoRemoved) body.foto = '';
     let emp;
     if (FE.editingId) {
@@ -2896,9 +3146,18 @@ function initFuncionariosModal() {
       .map(([k,v]) => `<option value="${k}">${v.label}</option>`).join('');
   document.getElementById('funcBoardFilter').addEventListener('change', renderFuncionariosTable);
   document.getElementById('funcShowInativo').addEventListener('change', renderFuncionariosTable);
+  document.getElementById('funcSearch').addEventListener('input', renderFuncionariosTable);
   document.getElementById('funcNewBtn').addEventListener('click', () => openFuncForm(null));
   document.getElementById('funcCancelBtn').addEventListener('click', hideFuncForm);
+  document.getElementById('funcCancelBtn2').addEventListener('click', hideFuncForm);
   document.getElementById('funcSaveBtn').addEventListener('click', saveFuncionario);
+  document.getElementById('funcNome').addEventListener('input', () => {
+    if (!FE.editingId) {
+      const val = document.getElementById('funcNome').value.trim();
+      document.getElementById('funcFormTitle').textContent = val || 'Novo Funcionário';
+    }
+    _updateFotoPreview(null);
+  });
   document.getElementById('funcFotoBtn').addEventListener('click', () => document.getElementById('funcFotoInput').click());
   document.getElementById('funcFotoInput').addEventListener('change', e => {
     const file = e.target.files[0];
@@ -2916,6 +3175,32 @@ function initFuncionariosModal() {
     document.getElementById('funcDesligamentoWrap').style.display = e.target.checked ? '' : 'none';
     _updateFotoPreview(null);
   });
+
+  // Show "Fotos Microvix" button only for admins
+  if (isAdmin()) {
+    const mxBtn = document.getElementById('funcMxPhotosBtn');
+    mxBtn.classList.remove('hidden');
+    mxBtn.addEventListener('click', async () => {
+      mxBtn.disabled = true;
+      const orig = mxBtn.innerHTML;
+      mxBtn.innerHTML = '<span style="opacity:.6">Buscando…</span>';
+      try {
+        const r = await apiFetch('POST', '/api/microvix/sync-photos', {});
+        if (r.fields) console.log('[Microvix/fotos] campos disponíveis:', r.fields.join(', '));
+        const msg = r.updated
+          ? `${r.updated} foto${r.updated > 1 ? 's' : ''} atualizada${r.updated > 1 ? 's' : ''} ✓`
+          : `Nenhuma foto nova${r.skipped ? ` (${r.skipped} sem URL)` : ''}`;
+        toast(msg, r.updated === 0);
+        if (r.errors?.length) console.warn('[Microvix/fotos] Erros:', r.errors);
+        if (r.updated) { await loadFuncionarios(); }
+      } catch (e) {
+        toast('Erro ao buscar fotos: ' + e.message, true);
+      } finally {
+        mxBtn.innerHTML = orig;
+        mxBtn.disabled = false;
+      }
+    });
+  }
 }
 
 // ── Campanhas ─────────────────────────────────────────────────────────────

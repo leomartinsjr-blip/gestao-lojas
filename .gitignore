@@ -1,2 +1,5 @@
 node_modules/
 uploads/
+.env
+cookies.txt
+server.log
