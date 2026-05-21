@@ -77,6 +77,7 @@ async function checkAuth() {
     document.getElementById('funcBtn').style.display = isAdmin ? '' : 'none';
     document.getElementById('campanhasBtn').style.display = isAdmin ? '' : 'none';
     document.getElementById('usersBtn').style.display = isAdmin ? '' : 'none';
+    document.getElementById('perfBtn').style.display = isAdmin ? '' : 'none';
     const now = new Date();
     S.year  = now.getFullYear();
     S.month = now.getMonth() + 1;
