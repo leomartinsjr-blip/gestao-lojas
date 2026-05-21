@@ -75,7 +75,7 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
     const sign = row.operacao === 'DS' ? -1 : 1; // devoluções reduzem o total
     const key = `${codVend}||${dateStr}`;
     if (!agg[key]) agg[key] = { codVend, vendNorm, date: dateStr, value: 0, pecas: 0, docs: new Set(), retDocs: new Set() };
-    agg[key].value += sign * parseBrNum(row.valor_liquido);
+    agg[key].value += sign * parseBrNum(row.valor_total);
     agg[key].pecas += sign * (parseInt(row.quantidade || 0, 10) || 0);
     if (sign > 0) agg[key].docs.add(row.documento);
     else agg[key].retDocs.add(row.documento);

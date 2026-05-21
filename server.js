@@ -1497,7 +1497,7 @@ app.get('/api/microvix/conferencia', async (req, res) => {
       if (!date || !cod) continue;
       const key = `${date}|${cod}`;
       if (!mxAgg[key]) mxAgg[key] = { date, cod, nome: vendMap[cod]||cod, value: 0, pecas: 0, docs: new Set() };
-      mxAgg[key].value += parseBrNum(row.valor_liquido);
+      mxAgg[key].value += parseBrNum(row.valor_total);
       mxAgg[key].pecas += parseInt(row.quantidade||0)||0;
       mxAgg[key].docs.add(row.documento);
     }
