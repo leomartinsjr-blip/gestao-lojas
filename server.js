@@ -1234,7 +1234,7 @@ app.get('/api/historico', requireAuth, async (req, res) => {
 });
 
 // ── Microvix sync routes ───────────────────────────────────────────────────
-const MX_INTERVAL_MS = parseInt(process.env.MICROVIX_INTERVAL_MIN || '20') * 60 * 1000;
+const MX_INTERVAL_MS = parseInt(process.env.MICROVIX_INTERVAL_MIN || '5') * 60 * 1000;
 
 // GET  /api/microvix/status  → last sync info
 app.get('/api/microvix/status', requireAuth, (req, res) => {

@@ -292,6 +292,7 @@ async function loadData() {
 
 // ── Dashboard — weekly tracking ────────────────────────────────────────────
 function renderDashboard() {
+  if (_dayCardTimer) { clearInterval(_dayCardTimer); _dayCardTimer = null; }
   const c = document.getElementById('boardContainer');
   c.innerHTML = '';
 
@@ -400,6 +401,7 @@ function renderDashboard() {
     });
 
     _updateDayCard();
+    _startDayCardAutoRefresh();
   }
 
   // ── CARD: Performance Mensal ────────────────────────────────────────────
@@ -2544,6 +2546,53 @@ const PA_THRESHOLD = 1.80;
 let WK = { refDate: null, cache: {} };
 let DASH_WEEK = { refDate: null };
 let DASH_DAY  = { refDate: null };
+let _dayCardTimer = null;
+
+function _startDayCardAutoRefresh() {
+  if (_dayCardTimer) clearInterval(_dayCardTimer);
+  const now = new Date();
+  const isCurrentMonth = S.year === now.getFullYear() && S.month === now.getMonth() + 1;
+  if (!isCurrentMonth) return; // sem refresh em meses passados
+  const INTERVAL = 5 * 60 * 1000; // 5 min — alinhado ao sync do servidor
+  _dayCardTimer = setInterval(async () => {
+    try {
+      const pad = n => String(n).padStart(2, '0');
+      const todayStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
+      // Re-busca vsales de todos os funcionários do mês atual
+      const vsalesArr = await Promise.all(
+        S.employees.map(emp =>
+          apiFetch('GET', `/api/vsales/${S.year}/${S.month}/${emp.board}/${emp.id}`)
+            .then(d => [emp.id, d])
+            .catch(() => [emp.id, S.vsales[emp.id] || { meta: { mensal: 0 }, entries: {} }])
+        )
+      );
+      S.vsales = Object.fromEntries(vsalesArr);
+      // Atualiza o cutoff (último dia com dados)
+      const prefix = `${S.year}-${pad(S.month)}-`;
+      let lastFilled = null;
+      for (const emp of S.employees) {
+        for (const date of Object.keys((S.vsales[emp.id] || {}).entries || {})) {
+          if (date.startsWith(prefix) && (lastFilled === null || date > lastFilled)) lastFilled = date;
+        }
+      }
+      const cutoff = lastFilled || todayStr;
+      if (DASH_DAY.refDate > cutoff) DASH_DAY.refDate = cutoff;
+      // Re-renderiza só o body do card diário
+      const body = document.getElementById('dayCardBody');
+      const lbl  = document.getElementById('dayCardLabel');
+      const btnN = document.getElementById('dayCardNext');
+      if (!body) return;
+      _renderDayCardBody(body, DASH_DAY.refDate);
+      if (lbl) {
+        const d = DASH_DAY.refDate;
+        lbl.textContent = d === todayStr ? `Hoje · ${d.slice(8)}/${d.slice(5,7)}` : `${d.slice(8)}/${d.slice(5,7)}`;
+      }
+      if (btnN) btnN.disabled = DASH_DAY.refDate >= cutoff;
+    } catch (e) {
+      console.warn('[DayCard] Refresh error:', e.message);
+    }
+  }, INTERVAL);
+}
 let DASH_SORT = { col: null, dir: 1 };
 const META_ACHIEVED = new Set();
 
