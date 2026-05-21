@@ -1469,27 +1469,28 @@ function fmtBRLk(n) {
 }
 
 // Computa projeção real do mês atual (D-1 BRT) a partir dos vsales do board
+// Usa S (estado principal do dashboard) que já está carregado
 function computeCurMonthProj(board) {
   const pad = n => String(n).padStart(2, '0');
   const todayBRT = new Date(Date.now() - 3 * 60 * 60 * 1000);
-  if (PD.year !== todayBRT.getUTCFullYear() || PD.month !== todayBRT.getUTCMonth() + 1) return null;
+  if (S.year !== todayBRT.getUTCFullYear() || S.month !== todayBRT.getUTCMonth() + 1) return null;
   const yestBRT = new Date(Date.now() - 3 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000);
   const perfCutoff = `${yestBRT.getUTCFullYear()}-${pad(yestBRT.getUTCMonth()+1)}-${pad(yestBRT.getUTCDate())}`;
-  const daysInMonth = new Date(PD.year, PD.month, 0).getDate();
+  const daysInMonth = new Date(S.year, S.month, 0).getDate();
   const defW = 100 / daysInMonth;
   let wAccum = 0;
   for (let d = 1; d <= daysInMonth; d++) {
-    const ds = `${PD.year}-${pad(PD.month)}-${pad(d)}`;
+    const ds = `${S.year}-${pad(S.month)}-${pad(d)}`;
     if (ds > perfCutoff) break;
-    wAccum += (PD.weights[ds] ?? defW);
+    wAccum += (S.weights[ds] ?? defW);
   }
   if (wAccum === 0) return null;
   let realized = 0;
-  for (const emp of PD.employees) {
-    if (emp.board !== board) continue;
-    const entries = PD.allVsales[emp.id]?.entries || {};
+  for (const emp of S.employees) {
+    if (emp.board !== board || emp.isVendedor === false) continue;
+    const entries = (S.vsales[emp.id] || {}).entries || {};
     for (let d = 1; d <= daysInMonth; d++) {
-      const ds = `${PD.year}-${pad(PD.month)}-${pad(d)}`;
+      const ds = `${S.year}-${pad(S.month)}-${pad(d)}`;
       if (ds > perfCutoff) break;
       realized += entries[ds]?.value || 0;
     }
