@@ -1802,34 +1802,58 @@ app.post('/api/admin/import-data', requireAdmin, async (req, res) => {
 
 // ── Transferências entre lojas ─────────────────────────────────────────────
 
-// GET /api/microvix/estoque-probe?board=delrey → testa nomes de comando de estoque disponíveis
+// GET /api/microvix/estoque-probe?board=delrey → descobre empresa e testa comandos de estoque
 app.get('/api/microvix/estoque-probe', requireAdmin, async (req, res) => {
   try {
-    const { buildRequest, postRequest } = require('./services/microvix');
+    const { buildRequest, postRequest, fetchMovimento, parseCsv } = require('./services/microvix');
     const board = req.query.board || 'delrey';
     const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const cnpj  = lojas[board];
     if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado` });
     const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
 
-    const candidates = [
+    // 1. Descobre o código de empresa a partir de um movimento recente
+    const today = new Date().toISOString().slice(0, 10);
+    const dtIni = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
+    let empresa = null, deposito = null;
+    try {
+      const movRows = await fetchMovimento(cnpj, dtIni, today, chave);
+      if (movRows.length) {
+        empresa  = movRows[0].empresa  || null;
+        deposito = movRows[0].deposito || null;
+      }
+    } catch {}
+
+    // 2. Testa cada candidato — sem parâmetros extras e com empresa/deposito
+    const stockCmds = [
       'LinxEstoque', 'LinxSaldoEstoque', 'LinxEstoqueDepositos',
-      'LinxEstoqueProdutos', 'LinxProdutosEstoque', 'LinxProdutos',
-      'LinxEstoqueAtual', 'LinxMovimentoEstoque', 'LinxSaldoEstoqueProduto',
+      'LinxEstoqueProdutos', 'LinxProdutosEstoque', 'LinxEstoqueAtual',
+      'LinxMovimentoEstoque', 'LinxSaldoEstoqueProduto', 'LinxProdutos',
     ];
 
-    const results = {};
-    for (const cmd of candidates) {
-      try {
-        const raw = await postRequest(buildRequest(cmd, cnpj, [], chave));
-        if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
-          const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'erro';
-          results[cmd] = { ok: false, msg };
-        } else {
-          const lines = raw.trim().split(/\r?\n/).filter(l => l && !l.startsWith('sep='));
-          results[cmd] = { ok: true, rows: lines.length - 1, fields: lines[0] || '' };
-        }
-      } catch (e) { results[cmd] = { ok: false, msg: e.message }; }
+    async function tryCmd(cmd, extraParams) {
+      const raw = await postRequest(buildRequest(cmd, cnpj, extraParams, chave));
+      if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+        const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'erro';
+        return { ok: false, msg };
+      }
+      const lines = raw.trim().split(/\r?\n/).filter(l => l && !l.startsWith('sep='));
+      return { ok: true, rows: lines.length - 1, fields: lines[0] || '' };
+    }
+
+    const results = { empresa, deposito, commands: {} };
+    for (const cmd of stockCmds) {
+      // Tenta sem parâmetros extras
+      const r0 = await tryCmd(cmd, []).catch(e => ({ ok: false, msg: e.message }));
+      results.commands[cmd] = { noParams: r0 };
+
+      // Tenta com empresa (se descoberta)
+      if (empresa) {
+        const params = [{ id: 'empresa', valor: empresa }];
+        if (deposito) params.push({ id: 'deposito', valor: deposito });
+        const r1 = await tryCmd(cmd, params).catch(e => ({ ok: false, msg: e.message }));
+        results.commands[cmd].withEmpresa = r1;
+      }
     }
 
     res.json(results);
