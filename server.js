@@ -126,7 +126,7 @@ if (MONGODB_URI) {
   sessionOpts.store = MongoStore.create({ mongoUrl: MONGODB_URI, dbName: 'gestao_lojas', ttl: 8 * 3600 });
 }
 
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 app.use(session(sessionOpts));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(UPLOADS_DIR));
