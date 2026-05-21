@@ -1681,10 +1681,10 @@ function renderTransTable(container, data) {
     ).join(' ');
 
     html += `<tr class="trans-row">
-      <td class="trans-td trans-cod">${s.cod}</td>
-      <td class="trans-td">${s.desc || '—'}</td>
-      <td class="trans-td">${s.descCor || s.cor || '—'}</td>
-      <td class="trans-td trans-td-c">${s.tam || '—'}</td>
+      <td class="trans-td trans-cod">${s.referencia || s.barcode}</td>
+      <td class="trans-td">${s.descricao || '—'}</td>
+      <td class="trans-td">${s.desc_cor || '—'}</td>
+      <td class="trans-td trans-td-c">${s.desc_tamanho || '—'}</td>
       ${boards.map(b => {
         const q = fN(s.stocks[b]);
         const after = fN(s.stocksAfter[b]);

@@ -137,17 +137,37 @@ async function fetchFuncionarios(cnpj, chave) {
   return parseCsv(raw);
 }
 
-// Fetch LinxEstoque → array of stock rows per SKU (product+color+size)
-async function fetchEstoque(cnpj, chave) {
-  const body = buildRequest('LinxEstoque', cnpj, [], chave);
-  const raw  = await postRequest(body);
+// Fetch LinxProdutosInventario → stock per SKU (cod_barra/cod_produto + quantidade)
+// data: 'YYYY-MM-DD' (required by Microvix)
+async function fetchEstoque(cnpj, chave, data) {
+  const dataInv = data || new Date().toISOString().slice(0, 10);
+  const body = buildRequest('LinxProdutosInventario', cnpj, [
+    { id: 'data_inventario', valor: dataInv },
+  ], chave);
+  const raw = await postRequest(body);
 
   if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
     const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro desconhecido';
-    throw new Error(`Microvix API (estoque): ${msg}`);
+    throw new Error(`Microvix API (inventario): ${msg}`);
   }
 
   return parseCsv(raw);
 }
 
-module.exports = { fetchMovimento, fetchVendedores, fetchFuncionarios, fetchEstoque, parseBrNum, buildRequest, postRequest, parseCsv };
+// Fetch LinxProdutos → product catalog with description, color, size per cod_barra
+// Uses timestamp pagination (pass 0 on first call)
+async function fetchProdutos(cnpj, chave, timestamp = 0) {
+  const body = buildRequest('LinxProdutos', cnpj, [
+    { id: 'timestamp', valor: String(timestamp) },
+  ], chave);
+  const raw = await postRequest(body);
+
+  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro desconhecido';
+    throw new Error(`Microvix API (produtos): ${msg}`);
+  }
+
+  return parseCsv(raw);
+}
+
+module.exports = { fetchMovimento, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, parseBrNum, buildRequest, postRequest, parseCsv };
