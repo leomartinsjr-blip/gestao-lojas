@@ -1498,6 +1498,82 @@ app.get('/api/microvix/conferencia', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── POST /api/microvix/import-vendedores ──────────────────────────────────
+// Cria funcionários no sistema para vendedores ativos do Microvix que ainda não existem.
+app.post('/api/microvix/import-vendedores', requireAdmin, async (req, res) => {
+  const { fetchVendedores } = require('./services/microvix');
+
+  function toTitleCase(str) {
+    const preps = new Set(['de','da','do','dos','das','e','a','o','os','as','em','no','na','nos','nas','por','para','com','sem']);
+    return str.toLowerCase().split(' ').map((w, i) =>
+      (i > 0 && preps.has(w)) ? w : w.charAt(0).toUpperCase() + w.slice(1)
+    ).join(' ');
+  }
+  function normName(s) {
+    return (s || '').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  }
+
+  try {
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const { board: boardFilter } = req.body || {};
+    const targets = boardFilter
+      ? (lojas[boardFilter] ? { [boardFilter]: lojas[boardFilter] } : {})
+      : lojas;
+    if (!Object.keys(targets).length)
+      return res.status(400).json({ error: 'Board não encontrado em MICROVIX_LOJAS' });
+
+    const db = await readDB();
+    if (!db.employees) db.employees = [];
+    const result = { created: [], updated: [], skipped: [], errors: [] };
+
+    for (const [board, cnpj] of Object.entries(targets)) {
+      const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+      let rows;
+      try { rows = await fetchVendedores(cnpj.replace(/\D/g, ''), chave); }
+      catch (e) { result.errors.push(`[${board}] ${e.message}`); continue; }
+
+      for (const v of rows) {
+        const ativoRaw = String(v.ativo ?? '1').trim().toLowerCase();
+        if (['0','n','false','inativo'].includes(ativoRaw)) continue;
+
+        const cod  = String(v.cod_vendedor || '').trim();
+        const nome = (v.nome_vendedor || '').trim();
+        if (!cod || !nome) continue;
+
+        const byCod  = db.employees.find(e => e.board === board && e.microvixCod && String(e.microvixCod) === cod);
+        const byName = db.employees.find(e => e.board === board && normName(e.name) === normName(nome));
+        const existing = byCod || byName;
+
+        if (existing) {
+          if (!existing.microvixCod) {
+            existing.microvixCod = cod;
+            result.updated.push({ board, cod, nome: existing.name });
+          } else {
+            result.skipped.push({ board, cod, nome: existing.name });
+          }
+          continue;
+        }
+
+        const emp = {
+          id: nextId(db),
+          name: nome.toUpperCase(),
+          apelido: '',
+          board,
+          microvixCod: cod,
+          cpf: '', admissao: '', cargo: 'Vendedor',
+          salario: 0, comissaoSemMeta: 0, comissao: 0, comissaoMeta2: 0, comissaoSuper: 0,
+          isVendedor: true, inativo: false, desligamento: '',
+        };
+        db.employees.push(emp);
+        result.created.push({ board, cod, nome: emp.name, id: emp.id });
+      }
+    }
+
+    await writeDB(db);
+    res.json({ ok: true, ...result });
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }); }
+});
+
 // ── POST /api/microvix/sync-photos ────────────────────────────────────────
 // Downloads vendor photos from Microvix (LinxFuncionarios) and saves them locally.
 app.post('/api/microvix/sync-photos', requireAdmin, async (req, res) => {
