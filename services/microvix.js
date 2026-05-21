@@ -150,4 +150,4 @@ async function fetchEstoque(cnpj, chave) {
   return parseCsv(raw);
 }
 
-module.exports = { fetchMovimento, fetchVendedores, fetchFuncionarios, fetchEstoque, parseBrNum };
+module.exports = { fetchMovimento, fetchVendedores, fetchFuncionarios, fetchEstoque, parseBrNum, buildRequest, postRequest, parseCsv };

@@ -1802,7 +1802,41 @@ app.post('/api/admin/import-data', requireAdmin, async (req, res) => {
 
 // ── Transferências entre lojas ─────────────────────────────────────────────
 
-// GET /api/microvix/estoque-raw?board=delrey  → debug: campos e primeiras linhas de LinxEstoque
+// GET /api/microvix/estoque-probe?board=delrey → testa nomes de comando de estoque disponíveis
+app.get('/api/microvix/estoque-probe', requireAdmin, async (req, res) => {
+  try {
+    const { buildRequest, postRequest } = require('./services/microvix');
+    const board = req.query.board || 'delrey';
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = lojas[board];
+    if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado` });
+    const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+
+    const candidates = [
+      'LinxEstoque', 'LinxSaldoEstoque', 'LinxEstoqueDepositos',
+      'LinxEstoqueProdutos', 'LinxProdutosEstoque', 'LinxProdutos',
+      'LinxEstoqueAtual', 'LinxMovimentoEstoque', 'LinxSaldoEstoqueProduto',
+    ];
+
+    const results = {};
+    for (const cmd of candidates) {
+      try {
+        const raw = await postRequest(buildRequest(cmd, cnpj, [], chave));
+        if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+          const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'erro';
+          results[cmd] = { ok: false, msg };
+        } else {
+          const lines = raw.trim().split(/\r?\n/).filter(l => l && !l.startsWith('sep='));
+          results[cmd] = { ok: true, rows: lines.length - 1, fields: lines[0] || '' };
+        }
+      } catch (e) { results[cmd] = { ok: false, msg: e.message }; }
+    }
+
+    res.json(results);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/microvix/estoque-raw?board=delrey  → debug: campos e primeiras linhas
 app.get('/api/microvix/estoque-raw', requireAdmin, async (req, res) => {
   try {
     const { fetchEstoque } = require('./services/microvix');
