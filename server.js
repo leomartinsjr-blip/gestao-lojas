@@ -1997,6 +1997,20 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
       console.warn('[Transferencias] Catálogo falhou, continuando sem descrições:', e.message);
     }
 
+    // ── Produtos vendidos desde 2024 (uma loja basta) ──
+    const ativosDesde2024 = new Set();
+    try {
+      const movAtivos = await fetchMovimento(firstCnpj, '2024-01-01', today, firstChave);
+      for (const r of movAtivos) {
+        if (r.cancelado === 'S' || r.cancelado === '1') continue;
+        if (r.operacao === 'DS') continue;
+        const cod = String(r.cod_produto || r.codproduto || '').trim();
+        if (cod) ativosDesde2024.add(cod);
+      }
+    } catch (e) {
+      console.warn('[Transferencias] Filtro 2024 falhou:', e.message);
+    }
+
     const estoqueByBoard = {}; // board → cod_produto → { qty, cod_barra }
     const giroByBoard    = {}; // board → cod_produto → qtdVendida
     const catalogMov     = {}; // cod_produto → { descricao, desc_cor, desc_tamanho, setor }
@@ -2062,6 +2076,9 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
       for (const board of boards) giro[board] = giroByBoard[board][cod] || 0;
 
       // Doadoras: estoque ≥ 2 | Receptoras: estoque = 0
+      // Ignora produtos sem venda desde 2024
+      if (ativosDesde2024.size > 0 && !ativosDesde2024.has(cod)) continue;
+
       const donors    = boards.filter(b => stocks[b] >= 2).sort((a, b) => stocks[b] - stocks[a]);
       const receivers = boards.filter(b => stocks[b] === 0).sort((a, b) => giro[b] - giro[a]);
 
