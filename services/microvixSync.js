@@ -8,11 +8,26 @@ function getLojas() {
   catch { return {}; }
 }
 
-let lastSync  = null;
-let lastError = null;
-let running   = false;
+let lastSync      = null;
+let lastError     = null;
+let running       = false;
+let runningHoje   = false;
+let running30d    = false;
+let lastSync30d   = null;
+
+function anyRunning() { return running || runningHoje || running30d; }
 
 function pad(n) { return String(n).padStart(2, '0'); }
+
+function todayBRT() {
+  const brt = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  return `${brt.getUTCFullYear()}-${pad(brt.getUTCMonth() + 1)}-${pad(brt.getUTCDate())}`;
+}
+
+function daysAgoBRT(n) {
+  const brt = new Date(Date.now() - 3 * 60 * 60 * 1000 - n * 24 * 60 * 60 * 1000);
+  return `${brt.getUTCFullYear()}-${pad(brt.getUTCMonth() + 1)}-${pad(brt.getUTCDate())}`;
+}
 
 function normName(s) {
   return (s || '').toLowerCase().trim().normalize('NFD').replace(/[̀-ͯ]/g, '');
@@ -187,8 +202,84 @@ async function runSyncRetroativo(readDB, writeDB, dtIni, dtFin, boards) {
   }
 }
 
-function getStatus() {
-  return { lastSync, lastError, running };
+// Sync only today (BRT), always — used for the intraday faturamento card
+async function runSyncHoje(readDB, writeDB) {
+  if (anyRunning()) return { skipped: true };
+  runningHoje = true;
+  try {
+    const lojas = getLojas();
+    if (!Object.keys(lojas).length) throw new Error('MICROVIX_LOJAS não configurado.');
+
+    const date      = todayBRT();
+    const db        = await readDB();
+    const employees = db.employees || [];
+    let totalUpdated = 0;
+
+    for (const [board, cnpj] of Object.entries(lojas)) {
+      if (db.boardSettings?.[board]?.microvixSync !== true) {
+        continue;
+      }
+      try {
+        const updated = await syncStore(board, cnpj, date, date, employees, db);
+        totalUpdated += updated;
+      } catch (err) {
+        console.error(`[Microvix/hoje/${board}] Erro:`, err.message);
+      }
+    }
+
+    await writeDB(db);
+    console.log(`[Microvix/hoje] OK — ${totalUpdated} entradas em ${date}`);
+    return { at: new Date().toISOString(), updated: totalUpdated, date };
+  } catch (err) {
+    console.error('[Microvix/hoje] Erro:', err.message);
+    throw err;
+  } finally {
+    runningHoje = false;
+  }
 }
 
-module.exports = { runSync, runSyncRetroativo, getStatus };
+// Daily retroactive sync for last 30 days — catches cancellations, reversals, salesperson changes
+async function runSync30Dias(readDB, writeDB) {
+  if (anyRunning()) return { skipped: true };
+  running30d = true;
+  try {
+    const lojas = getLojas();
+    if (!Object.keys(lojas).length) throw new Error('MICROVIX_LOJAS não configurado.');
+
+    const dtIni = daysAgoBRT(30);
+    const dtFin = todayBRT();
+    const db        = await readDB();
+    const employees = db.employees || [];
+    let totalUpdated = 0;
+
+    for (const [board, cnpj] of Object.entries(lojas)) {
+      if (db.boardSettings?.[board]?.microvixSync !== true) {
+        console.log(`[Microvix/30d/${board}] Auto-sync desabilitado, pulando.`);
+        continue;
+      }
+      try {
+        const updated = await syncStore(board, cnpj, dtIni, dtFin, employees, db);
+        totalUpdated += updated;
+        console.log(`[Microvix/30d/${board}] ${updated} entradas atualizadas`);
+      } catch (err) {
+        console.error(`[Microvix/30d/${board}] Erro:`, err.message);
+      }
+    }
+
+    await writeDB(db);
+    lastSync30d = { at: new Date().toISOString(), updated: totalUpdated, dtIni, dtFin };
+    console.log(`[Microvix/30d] OK — ${totalUpdated} entradas, ${dtIni} → ${dtFin}`);
+    return lastSync30d;
+  } catch (err) {
+    console.error('[Microvix/30d] Erro:', err.message);
+    throw err;
+  } finally {
+    running30d = false;
+  }
+}
+
+function getStatus() {
+  return { lastSync, lastError, running, lastSync30d, runningHoje, running30d };
+}
+
+module.exports = { runSync, runSyncHoje, runSync30Dias, runSyncRetroativo, getStatus };

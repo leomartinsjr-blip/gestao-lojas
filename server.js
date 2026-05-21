@@ -8,7 +8,7 @@ const fs         = require('fs');
 const XLSX       = require('xlsx');
 const ExcelJS    = require('exceljs');
 const { MongoClient } = require('mongodb');
-const { runSync, runSyncRetroativo, getStatus } = require('./services/microvixSync');
+const { runSync, runSyncHoje, runSync30Dias, runSyncRetroativo, getStatus } = require('./services/microvixSync');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -1234,7 +1234,8 @@ app.get('/api/historico', requireAuth, async (req, res) => {
 });
 
 // ── Microvix sync routes ───────────────────────────────────────────────────
-const MX_INTERVAL_MS = parseInt(process.env.MICROVIX_INTERVAL_MIN || '5') * 60 * 1000;
+const MX_INTERVAL_MS    = parseInt(process.env.MICROVIX_INTERVAL_MIN    || '5')  * 60 * 1000;
+const MX_INTERVAL_30D_MS = 24 * 60 * 60 * 1000; // conferência 30d: 1× por dia
 
 // GET  /api/microvix/status  → last sync info
 app.get('/api/microvix/status', requireAuth, (req, res) => {
@@ -1739,9 +1740,19 @@ initMongo()
     // Auto-sync Microvix if credentials are set
     if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
       console.log(`[Microvix] Auto-sync a cada ${MX_INTERVAL_MS / 60000} min`);
-      const doSync = () => runSync(readDB, writeDB).catch(e => console.error('[Microvix]', e.message));
-      doSync(); // first run on startup
+
+      const doSync    = () => runSync(readDB, writeDB).catch(e => console.error('[Microvix]', e.message));
+      const doHoje    = () => runSyncHoje(readDB, writeDB).catch(e => console.error('[Microvix/hoje]', e.message));
+      const do30d     = () => runSync30Dias(readDB, writeDB).catch(e => console.error('[Microvix/30d]', e.message));
+
+      // Startup: encadeia para evitar conflito de flags
+      doSync().finally(() => doHoje());              // hoje logo após o sync de fechamento
+      setTimeout(do30d, 30 * 1000);                 // 30d: 30s após startup (evita overlap)
+      console.log('[Microvix/30d] Conferência 30 dias agendada — 1× por dia');
+
       setInterval(doSync, MX_INTERVAL_MS);
+      setInterval(doHoje, MX_INTERVAL_MS);           // hoje: mesma cadência (5 min)
+      setInterval(do30d,  MX_INTERVAL_30D_MS);       // 30d: 1× por dia
     } else {
       console.log('[Microvix] Credenciais não configuradas — sync desativado');
     }

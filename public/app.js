@@ -334,7 +334,8 @@ function renderDashboard() {
       if (date.startsWith(prefix) && (lastFilledDay === null || date > lastFilledDay)) lastFilledDay = date;
     }
   }
-  const cutoff = lastFilledDay || todayStr;
+  const isCurrentMonth = S.year === today.getFullYear() && S.month === today.getMonth() + 1;
+  const cutoff = isCurrentMonth ? todayStr : (lastFilledDay || todayStr);
 
   let weightAccum = 0;
   for (let d = 1; d <= daysInMonth; d++) {
@@ -495,13 +496,6 @@ function renderDashboard() {
     const emps = byBoard[bk] || [];
     if (emps.length === 0) continue;
 
-    const storeRow = document.createElement('tr');
-    storeRow.className = 'dash-store-hdr';
-    storeRow.innerHTML = `<td colspan="7" class="dash-store-hdr-td" style="border-left:3px solid ${bc.color};">
-      <span class="dash-store-dot" style="background:${bc.color}"></span><strong>${bc.label}</strong>
-    </td>`;
-    tbody.appendChild(storeRow);
-
     // Pre-compute KPIs for sorting
     const rowData = emps.map(emp => {
       const vsale  = S.vsales[emp.id] || { meta: { mensal: 0 }, entries: {} };
@@ -534,25 +528,9 @@ function renderDashboard() {
       });
     }
 
+    // Compute totals before rendering (needed for collapsed header)
     let totValor=0, totPecas=0, totAtend=0, totMeta=0;
-    for (const { emp, valor, pecas, atend, mensal, pctMeta, projecao, pa, tm } of rowData) {
-      totValor += valor; totPecas += pecas; totAtend += atend; totMeta += mensal;
-      const pctCls  = pctMeta  == null ? '' : pctMeta  >= 100 ? 'kpi-pos' : pctMeta  >= 80 ? 'kpi-warn' : 'kpi-neg';
-      const projCls = projecao == null ? '' : projecao >= mensal ? 'kpi-pos' : projecao >= mensal*0.9 ? 'kpi-warn' : 'kpi-neg';
-      const row = document.createElement('tr');
-      row.className = 'dash-row';
-      row.innerHTML = `
-        <td class="dash-td dash-td-name">${emp.apelido || emp.name}</td>
-        <td class="dash-td dash-td-num">${fBRL(mensal || null)}</td>
-        <td class="dash-td dash-td-num">${fBRL(valor || null)}</td>
-        <td class="dash-td dash-td-num ${pctCls}">${fPct(pctMeta)}</td>
-        <td class="dash-td dash-td-num ${projCls}">${fBRL(projecao)}</td>
-        <td class="dash-td dash-td-num${pa != null ? (pa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${fDec(pa)}</td>
-        <td class="dash-td dash-td-num">${fBRL(tm)}</td>
-      `;
-      tbody.appendChild(row);
-    }
-
+    for (const d of rowData) { totValor += d.valor; totPecas += d.pecas; totAtend += d.atend; totMeta += d.mensal; }
     const totMetaAccum = totMeta * weightAccum / 100;
     const totPct  = (totMetaAccum > 0 && totValor > 0) ? totValor/totMetaAccum*100 : null;
     const totProj = (totValor > 0 && totMetaAccum > 0) ? totValor/totMetaAccum*totMeta : null;
@@ -567,18 +545,75 @@ function renderDashboard() {
       setTimeout(() => triggerMetaCelebration(bc.label, bc.color), 350);
     }
 
-    const totalRow = document.createElement('tr');
-    totalRow.className = 'dash-total-row';
-    totalRow.innerHTML = `
-      <td class="dash-td">Total <strong>${bc.label}</strong></td>
-      <td class="dash-td dash-td-num">${fBRL(totMeta || null)}</td>
-      <td class="dash-td dash-td-num">${fBRL(totValor || null)}</td>
-      <td class="dash-td dash-td-num ${tpCls}">${fPct(totPct)}</td>
-      <td class="dash-td dash-td-num ${tprCls}">${fBRL(totProj)}</td>
-      <td class="dash-td dash-td-num${totPa != null ? (totPa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${totPa != null ? totPa.toFixed(2) : '—'}</td>
-      <td class="dash-td dash-td-num">${fBRL(totTm)}</td>
-    `;
-    tbody.appendChild(totalRow);
+    const isExp = isAdmin ? _perfExpanded.has(bk) : true;
+
+    // Store header row
+    const storeRow = document.createElement('tr');
+    if (isAdmin) {
+      storeRow.className = 'dash-store-hdr dash-store-collapse';
+      if (isExp) {
+        storeRow.innerHTML = `<td colspan="7" class="dash-store-hdr-td" style="border-left:3px solid ${bc.color};">
+          <span class="dia-chevron">▾</span>
+          <span class="dash-store-dot" style="background:${bc.color}"></span><strong>${bc.label}</strong>
+        </td>`;
+      } else {
+        storeRow.innerHTML = `
+          <td class="dash-td dash-store-hdr-td" style="border-left:3px solid ${bc.color};">
+            <span class="dia-chevron">▸</span>
+            <span class="dash-store-dot" style="background:${bc.color}"></span><strong>${bc.label}</strong>
+          </td>
+          <td class="dash-td dash-td-num">${fBRL(totMeta||null)}</td>
+          <td class="dash-td dash-td-num">${fBRL(totValor||null)}</td>
+          <td class="dash-td dash-td-num ${tpCls}">${fPct(totPct)}</td>
+          <td class="dash-td dash-td-num ${tprCls}">${fBRL(totProj)}</td>
+          <td class="dash-td dash-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
+          <td class="dash-td dash-td-num">${fBRL(totTm)}</td>`;
+      }
+      storeRow.style.cursor = 'pointer';
+      storeRow.addEventListener('click', () => {
+        if (_perfExpanded.has(bk)) _perfExpanded.delete(bk); else _perfExpanded.add(bk);
+        renderDashboard();
+      });
+    } else {
+      storeRow.className = 'dash-store-hdr';
+      storeRow.innerHTML = `<td colspan="7" class="dash-store-hdr-td" style="border-left:3px solid ${bc.color};">
+        <span class="dash-store-dot" style="background:${bc.color}"></span><strong>${bc.label}</strong>
+      </td>`;
+    }
+    tbody.appendChild(storeRow);
+
+    // Vendor rows + total (only when expanded or non-admin)
+    if (!isAdmin || isExp) {
+      for (const { emp, valor, pecas, atend, mensal, pctMeta, projecao, pa, tm } of rowData) {
+        const pctCls  = pctMeta  == null ? '' : pctMeta  >= 100 ? 'kpi-pos' : pctMeta  >= 80 ? 'kpi-warn' : 'kpi-neg';
+        const projCls = projecao == null ? '' : projecao >= mensal ? 'kpi-pos' : projecao >= mensal*0.9 ? 'kpi-warn' : 'kpi-neg';
+        const row = document.createElement('tr');
+        row.className = 'dash-row';
+        row.innerHTML = `
+          <td class="dash-td dash-td-name">${emp.apelido || emp.name}</td>
+          <td class="dash-td dash-td-num">${fBRL(mensal || null)}</td>
+          <td class="dash-td dash-td-num">${fBRL(valor || null)}</td>
+          <td class="dash-td dash-td-num ${pctCls}">${fPct(pctMeta)}</td>
+          <td class="dash-td dash-td-num ${projCls}">${fBRL(projecao)}</td>
+          <td class="dash-td dash-td-num${pa != null ? (pa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${fDec(pa)}</td>
+          <td class="dash-td dash-td-num">${fBRL(tm)}</td>
+        `;
+        tbody.appendChild(row);
+      }
+
+      const totalRow = document.createElement('tr');
+      totalRow.className = 'dash-total-row';
+      totalRow.innerHTML = `
+        <td class="dash-td">Total <strong>${bc.label}</strong></td>
+        <td class="dash-td dash-td-num">${fBRL(totMeta || null)}</td>
+        <td class="dash-td dash-td-num">${fBRL(totValor || null)}</td>
+        <td class="dash-td dash-td-num ${tpCls}">${fPct(totPct)}</td>
+        <td class="dash-td dash-td-num ${tprCls}">${fBRL(totProj)}</td>
+        <td class="dash-td dash-td-num${totPa != null ? (totPa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${totPa != null ? totPa.toFixed(2) : '—'}</td>
+        <td class="dash-td dash-td-num">${fBRL(totTm)}</td>
+      `;
+      tbody.appendChild(totalRow);
+    }
   }
 
   leftBody.appendChild(table);
@@ -858,8 +893,7 @@ function _renderDashFolgas(body) {
 }
 
 function _renderDayCardBody(body, dateStr) {
-  const pad = n => String(n).padStart(2, '0');
-  const fV  = v => 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fV = v => 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const daysInMonth = new Date(S.year, S.month, 0).getDate();
   const defW = +(100 / daysInMonth).toFixed(6);
@@ -882,6 +916,7 @@ function _renderDayCardBody(body, dateStr) {
     </div>`;
 
   let anyData = false;
+  let grandVal = 0, grandMeta = 0, grandPecas = 0, grandAtend = 0;
 
   for (const [bk, bc] of visibleBoards()) {
     const emps = (byBoard[bk] || []).filter(e => {
@@ -892,7 +927,7 @@ function _renderDayCardBody(body, dateStr) {
 
     anyData = true;
     let storeTotalVal = 0, storeTotalMeta = 0, storeTotalPecas = 0, storeTotalAtend = 0;
-    let rowsHtml = '';
+    const vendorRowsHtml = [];
 
     for (const emp of emps) {
       const vsale   = S.vsales[emp.id] || { meta: { mensal: 0 }, entries: {} };
@@ -910,47 +945,78 @@ function _renderDayCardBody(body, dateStr) {
       storeTotalAtend += atend;
 
       const pctCls = pct == null ? '' : pct >= 100 ? 'dia-pct-ok' : pct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
-      rowsHtml += `
-        <div class="dia-row">
+      vendorRowsHtml.push(`
+        <div class="dia-row dia-vendor-row">
           <span class="dia-name">${emp.apelido || emp.name.split(' ')[0]}</span>
           <span class="dia-val">${valor > 0 ? fV(valor) : '—'}</span>
           <span class="dia-meta">${metaDia > 0 ? fV(metaDia) : '—'}</span>
           <span class="dia-pa">${pa != null ? pa.toFixed(2) : '—'}</span>
           <span class="dia-pct ${pctCls}">${pct != null ? pct.toFixed(1) + '%' : '—'}</span>
-        </div>`;
+        </div>`);
     }
+
+    grandVal   += storeTotalVal;
+    grandMeta  += storeTotalMeta;
+    grandPecas += storeTotalPecas;
+    grandAtend += storeTotalAtend;
 
     const storePa  = storeTotalAtend > 0 ? storeTotalPecas / storeTotalAtend : null;
     const storePct = storeTotalMeta > 0 ? storeTotalVal / storeTotalMeta * 100 : null;
     const sPctCls  = storePct == null ? '' : storePct >= 100 ? 'dia-pct-ok' : storePct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
+    const isExp    = _dayCardExpanded.has(bk);
 
-    body.insertAdjacentHTML('beforeend', `
-      <div class="dia-store-hdr">
+    // Store row (always visible) — shows totals + chevron, click to expand
+    const storeRow = document.createElement('div');
+    storeRow.className = 'dia-row dia-store-row' + (isExp ? ' dia-store-expanded' : '');
+    storeRow.innerHTML = `
+      <span class="dia-name dia-store-label">
+        <span class="dia-chevron">${isExp ? '▾' : '▸'}</span>
         <span class="dash-store-dot" style="background:${bc.color}"></span>
-        <strong>${bc.label}</strong>
-      </div>
-      ${rowsHtml}
-      <div class="dia-row dia-total-row">
-        <span class="dia-name">Total</span>
-        <span class="dia-val">${storeTotalVal > 0 ? fV(storeTotalVal) : '—'}</span>
-        <span class="dia-meta">${storeTotalMeta > 0 ? fV(storeTotalMeta) : '—'}</span>
-        <span class="dia-pa">${storePa != null ? storePa.toFixed(2) : '—'}</span>
-        <span class="dia-pct ${sPctCls}">${storePct != null ? storePct.toFixed(1) + '%' : '—'}</span>
-      </div>`);
+        ${bc.label}
+      </span>
+      <span class="dia-val">${storeTotalVal > 0 ? fV(storeTotalVal) : '—'}</span>
+      <span class="dia-meta">${storeTotalMeta > 0 ? fV(storeTotalMeta) : '—'}</span>
+      <span class="dia-pa">${storePa != null ? storePa.toFixed(2) : '—'}</span>
+      <span class="dia-pct ${sPctCls}">${storePct != null ? storePct.toFixed(1) + '%' : '—'}</span>`;
+    storeRow.addEventListener('click', () => {
+      if (_dayCardExpanded.has(bk)) _dayCardExpanded.delete(bk);
+      else _dayCardExpanded.add(bk);
+      _renderDayCardBody(body, dateStr);
+    });
+    body.appendChild(storeRow);
+
+    // Vendor rows (only when expanded)
+    if (isExp) {
+      const wrap = document.createElement('div');
+      wrap.innerHTML = vendorRowsHtml.join('');
+      while (wrap.firstChild) body.appendChild(wrap.firstChild);
+    }
   }
 
   if (!anyData) {
     body.insertAdjacentHTML('beforeend',
       '<div style="padding:.85rem 1rem;font-size:.78rem;color:var(--muted)">Sem lançamentos para este dia.</div>');
+  } else {
+    const grandPa  = grandAtend > 0 ? grandPecas / grandAtend : null;
+    const grandPct = grandMeta  > 0 ? grandVal   / grandMeta  * 100 : null;
+    const gPctCls  = grandPct == null ? '' : grandPct >= 100 ? 'dia-pct-ok' : grandPct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
+    body.insertAdjacentHTML('beforeend', `
+      <div class="dia-row dia-grand-total">
+        <span class="dia-name">TOTAL GERAL</span>
+        <span class="dia-val">${grandVal > 0 ? fV(grandVal) : '—'}</span>
+        <span class="dia-meta">${grandMeta > 0 ? fV(grandMeta) : '—'}</span>
+        <span class="dia-pa">${grandPa != null ? grandPa.toFixed(2) : '—'}</span>
+        <span class="dia-pct ${gPctCls}">${grandPct != null ? grandPct.toFixed(1) + '%' : '—'}</span>
+      </div>`);
   }
 }
 
 function _renderDashWeekBody(body, week, extraData) {
-  const pad = n => String(n).padStart(2,'0');
   const fBRL = v => v == null || v === 0 ? '—' : new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v);
   const fPct = v => v == null ? '—' : v.toFixed(1)+'%';
   const fDec = v => v == null ? '—' : v.toFixed(2);
 
+  const isAdmin = !S.user?.board || S.user.board === 'escritorio';
   const vendedores = S.employees.filter(e => e.isVendedor !== false);
   const byBoard = {};
   for (const emp of vendedores) {
@@ -959,6 +1025,103 @@ function _renderDashWeekBody(body, week, extraData) {
   }
   const visible = visibleBoards();
 
+  // Admin: single table with one header row + one collapsible row per store
+  if (isAdmin) {
+    const table = document.createElement('table');
+    table.className = 'dw-table';
+    table.innerHTML = `<thead><tr class="dw-thead-tr">
+      <th class="dw-th">Loja</th>
+      <th class="dw-th dw-th-r">Meta Sem.</th>
+      <th class="dw-th dw-th-r">Realizado</th>
+      <th class="dw-th dw-th-r">% Meta</th>
+      <th class="dw-th dw-th-r">Projeção</th>
+      <th class="dw-th dw-th-r">PA</th>
+      <th class="dw-th dw-th-r">Prêmio</th>
+    </tr></thead>`;
+    const tbody = document.createElement('tbody');
+
+    for (const [bk, bc] of visible) {
+      const emps = byBoard[bk] || [];
+      if (emps.length === 0) continue;
+
+      let totValor=0, totPecas=0, totAtend=0, totMeta=0, totPremio=0, totProjecao=0, hasProj=false;
+      const vendorRows = [];
+
+      for (const emp of emps) {
+        const k = calcWeekKpis(emp, week, extraData);
+        totValor += k.valor; totPecas += k.pecas; totAtend += k.atend; totMeta += k.wMeta;
+        if (k.pTotal != null) totPremio += k.pTotal;
+        if (k.projecao != null) { totProjecao += k.projecao; hasProj = true; }
+
+        const pctCls  = k.pctMeta  == null ? '' : k.pctMeta  >= 100 ? 'kpi-pos' : k.pctMeta  >= 80 ? 'kpi-warn' : 'kpi-neg';
+        const projCls = k.projecao == null ? '' : k.projecao >= k.wMeta ? 'kpi-pos' : 'kpi-neg';
+        const paEarned = k.hitMeta && k.hitPA;
+        const premioHtml = k.isFuture
+          ? '<span class="dw-p-pending">—</span>'
+          : `<span class="dw-p ${k.hitMeta?'dw-p-ok':'dw-p-warn'}">${fBRL(PREMIO_VENDAS)}${k.hitMeta?' ✓':''}</span>
+             <span class="dw-p ${paEarned?'dw-p-ok':k.hitPA&&!k.hitMeta?'dw-p-no':'dw-p-warn'}" title="${k.hitPA&&!k.hitMeta?'PA atingido mas meta venda não':''}">+${fBRL(PREMIO_PA)}${paEarned?' ✓':k.hitPA&&!k.hitMeta?' ✗':''}</span>`;
+
+        vendorRows.push(`<tr class="dw-row">
+          <td class="dw-td dw-td-name" style="padding-left:1.4rem">${emp.apelido || emp.name}</td>
+          <td class="dw-td dw-td-num">${fBRL(k.wMeta||null)}</td>
+          <td class="dw-td dw-td-num">${fBRL(k.valor||null)}</td>
+          <td class="dw-td dw-td-num ${pctCls}">${fPct(k.pctMeta)}</td>
+          <td class="dw-td dw-td-num ${projCls}">${fBRL(k.projecao)}</td>
+          <td class="dw-td dw-td-num${k.pa!=null?(k.pa>=1.8?' pa-ok':' pa-low'):''}">${fDec(k.pa)}</td>
+          <td class="dw-td dw-premio">${premioHtml}</td>
+        </tr>`);
+      }
+
+      const totPct    = (totMeta>0&&totValor>0) ? totValor/totMeta*100 : null;
+      const totPa     = (totPecas>0&&totAtend>0) ? totPecas/totAtend : null;
+      const tpCls     = totPct==null?'': totPct>=100?'kpi-pos': totPct>=80?'kpi-warn':'kpi-neg';
+      const tprojCls  = !hasProj?'': totProjecao>=totMeta?'kpi-pos':'kpi-neg';
+      const isExp     = _weekExpanded.has(bk);
+
+      // Store summary row (always visible, clickable)
+      const storeRow = document.createElement('tr');
+      storeRow.className = 'dw-store-collapse-row';
+      storeRow.innerHTML = `
+        <td class="dw-td dw-td-name" style="border-left:3px solid ${bc.color}">
+          <span class="dia-chevron">${isExp?'▾':'▸'}</span>
+          <span class="dw-store-dot" style="background:${bc.color}"></span>
+          <strong>${bc.label}</strong>
+        </td>
+        <td class="dw-td dw-td-num">${fBRL(totMeta||null)}</td>
+        <td class="dw-td dw-td-num">${fBRL(totValor||null)}</td>
+        <td class="dw-td dw-td-num ${tpCls}">${fPct(totPct)}</td>
+        <td class="dw-td dw-td-num ${tprojCls}">${hasProj?fBRL(totProjecao):'—'}</td>
+        <td class="dw-td dw-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
+        <td class="dw-td dw-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>`;
+      storeRow.style.cursor = 'pointer';
+      storeRow.addEventListener('click', () => {
+        if (_weekExpanded.has(bk)) _weekExpanded.delete(bk); else _weekExpanded.add(bk);
+        _refreshDashWeek();
+      });
+      tbody.appendChild(storeRow);
+
+      // Vendor rows + total (only when expanded)
+      if (isExp) {
+        const wrap = document.createElement('tbody');
+        wrap.innerHTML = vendorRows.join('') + `<tr class="dw-total-row">
+          <td class="dw-td">Total</td>
+          <td class="dw-td dw-td-num">${fBRL(totMeta||null)}</td>
+          <td class="dw-td dw-td-num">${fBRL(totValor||null)}</td>
+          <td class="dw-td dw-td-num ${tpCls}">${fPct(totPct)}</td>
+          <td class="dw-td dw-td-num ${tprojCls}">${hasProj?fBRL(totProjecao):'—'}</td>
+          <td class="dw-td dw-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
+          <td class="dw-td dw-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+        </tr>`;
+        while (wrap.firstChild) tbody.appendChild(wrap.firstChild);
+      }
+    }
+
+    table.appendChild(tbody);
+    body.appendChild(table);
+    return;
+  }
+
+  // Non-admin: per-store section with its own table (unchanged)
   for (const [bk, bc] of visible) {
     const emps = byBoard[bk] || [];
     if (emps.length === 0) continue;
@@ -973,7 +1136,6 @@ function _renderDashWeekBody(body, week, extraData) {
 
       const pctCls  = k.pctMeta  == null ? '' : k.pctMeta  >= 100 ? 'kpi-pos' : k.pctMeta  >= 80 ? 'kpi-warn' : 'kpi-neg';
       const projCls = k.projecao == null ? '' : k.projecao >= k.wMeta ? 'kpi-pos' : 'kpi-neg';
-
       const paEarned = k.hitMeta && k.hitPA;
       const premioHtml = k.isFuture
         ? '<span class="dw-p-pending">—</span>'
@@ -991,10 +1153,10 @@ function _renderDashWeekBody(body, week, extraData) {
       </tr>`;
     }).join('');
 
-    const totPct = (totMeta>0&&totValor>0) ? totValor/totMeta*100 : null;
-    const totPa  = (totPecas>0&&totAtend>0) ? totPecas/totAtend : null;
-    const tpCls  = totPct==null?'': totPct>=100?'kpi-pos': totPct>=80?'kpi-warn':'kpi-neg';
-    const tprojCls = !hasProj ? '' : totProjecao >= totMeta ? 'kpi-pos' : 'kpi-neg';
+    const totPct   = (totMeta>0&&totValor>0) ? totValor/totMeta*100 : null;
+    const totPa    = (totPecas>0&&totAtend>0) ? totPecas/totAtend : null;
+    const tpCls    = totPct==null?'': totPct>=100?'kpi-pos': totPct>=80?'kpi-warn':'kpi-neg';
+    const tprojCls = !hasProj?'': totProjecao>=totMeta?'kpi-pos':'kpi-neg';
 
     const sec = document.createElement('div');
     sec.innerHTML = `
@@ -2582,6 +2744,9 @@ let WK = { refDate: null, cache: {} };
 let DASH_WEEK = { refDate: null };
 let DASH_DAY  = { refDate: null };
 let _dayCardTimer = null;
+const _dayCardExpanded  = new Set(); // lojas expandidas no card diário
+const _perfExpanded     = new Set(); // lojas expandidas em Performance Mensal (admin)
+const _weekExpanded     = new Set(); // lojas expandidas em Meta Semanal (admin)
 let DASH_BOARD_FILTER = new Set(); // empty = todas as lojas
 
 function _startDayCardAutoRefresh() {
@@ -2611,7 +2776,8 @@ function _startDayCardAutoRefresh() {
           if (date.startsWith(prefix) && (lastFilled === null || date > lastFilled)) lastFilled = date;
         }
       }
-      const cutoff = lastFilled || todayStr;
+      const isCurrentMo = S.year === now.getFullYear() && S.month === now.getMonth() + 1;
+      const cutoff = isCurrentMo ? todayStr : (lastFilled || todayStr);
       if (DASH_DAY.refDate > cutoff) DASH_DAY.refDate = cutoff;
       // Re-renderiza só o body do card diário
       const body = document.getElementById('dayCardBody');
@@ -4635,37 +4801,7 @@ function init() {
   initBoletasModal();
   document.getElementById('logoutBtn').addEventListener('click', logout);
 
-  // ── Export / Import (admin only) ────────────────────────────────────────
-  const isAdmin = !S.user?.board || S.user.board === 'escritorio';
-  if (isAdmin) {
-    const exportBtn = document.getElementById('adminExportBtn');
-    const importLabel = document.getElementById('adminImportLabel');
-    exportBtn.classList.remove('hidden');
-    importLabel.classList.remove('hidden');
 
-    exportBtn.addEventListener('click', async () => {
-      try {
-        const r = await fetch('/api/admin/export-data');
-        const blob = await r.blob();
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url; a.download = 'gestao-data.json'; a.click();
-        URL.revokeObjectURL(url);
-      } catch (e) { toast('Erro ao exportar: ' + e.message, true); }
-    });
-
-    document.getElementById('adminImportInput').addEventListener('change', async e => {
-      const file = e.target.files[0]; if (!file) return;
-      try {
-        const text = await file.text();
-        const data = JSON.parse(text);
-        const r = await apiFetch('POST', '/api/admin/import-data', data);
-        if (r.ok) { toast('Dados importados ✓'); await loadState(); renderDashboard(); }
-        else toast('Erro: ' + r.error, true);
-      } catch (err) { toast('Erro ao importar: ' + err.message, true); }
-      e.target.value = '';
-    });
-  }
 document.getElementById('btnPrev').addEventListener('click', () => navigate(-1));
   document.getElementById('btnNext').addEventListener('click', () => navigate(1));
   checkAuth();

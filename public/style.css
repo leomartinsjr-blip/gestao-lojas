@@ -257,6 +257,9 @@ body {
   background: #252a33;
   border-top: 2px solid var(--border2);
 }
+.dash-store-collapse { transition: background .12s; }
+.dash-store-collapse:hover td { background: #2d3340 !important; }
+.dash-store-collapse td { text-align: left; }
 .dash-store-dot {
   display: inline-block; width: 8px; height: 8px;
   border-radius: 50%; margin-right: .4rem; vertical-align: middle;
@@ -1284,6 +1287,14 @@ body {
   display: flex; align-items: center; justify-content: center; gap: .4rem;
   border-bottom: 1px solid var(--border2);
 }
+.dw-store-collapse {
+  cursor: pointer; justify-content: flex-start;
+  transition: background .12s;
+}
+.dw-store-collapse:hover { background: #2d3340; }
+.dw-store-collapse-row { cursor: pointer; transition: background .12s; }
+.dw-store-collapse-row td { background: #252a33; font-weight: 700; font-size: .78rem; border-top: 2px solid var(--border2); }
+.dw-store-collapse-row:hover td { background: #2d3340 !important; }
 .dw-store-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .dw-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
 .dw-thead-tr { background: #292e38; }
@@ -1538,12 +1549,6 @@ body {
   letter-spacing: .05em; color: var(--muted); text-align: right;
 }
 .dia-col-hdr span:first-child { text-align: left; }
-.dia-store-hdr {
-  display: flex; align-items: center; gap: .4rem;
-  font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
-  color: var(--muted); padding: .45rem .75rem .2rem;
-  border-top: 1px solid var(--border);
-}
 .dia-row {
   display: grid;
   grid-template-columns: 1fr 82px 82px 36px 44px;
@@ -1562,8 +1567,34 @@ body {
 .dia-pct-ok   { color: #3FB950; }
 .dia-pct-warn { color: #FBBF24; }
 .dia-pct-bad  { color: #F85149; }
-.dia-total-row { background: rgba(255,255,255,.02); border-top: 1px solid var(--border); margin-top: .1rem; }
-.dia-total-row .dia-name { font-weight: 700; font-size: .79rem; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+
+/* Store row (collapsible header) */
+.dia-store-row {
+  cursor: pointer;
+  border-top: 1px solid var(--border);
+  margin-top: .1rem;
+  background: rgba(255,255,255,.02);
+}
+.dia-store-row:hover { background: rgba(88,166,255,.08); }
+.dia-store-row .dia-val  { font-size: .79rem; }
+.dia-store-label {
+  display: flex; align-items: center; gap: .35rem;
+  font-weight: 700; font-size: .79rem;
+  text-transform: uppercase; letter-spacing: .03em;
+}
+.dia-chevron { font-size: .68rem; color: var(--muted); width: .7rem; flex-shrink: 0; }
+
+/* Vendor rows (shown when expanded) */
+.dia-vendor-row .dia-name { padding-left: 1.1rem; font-size: .8rem; font-weight: 400; }
+
+/* Grand total row */
+.dia-grand-total {
+  border-top: 2px solid var(--border);
+  margin-top: .2rem;
+  background: rgba(255,255,255,.03);
+}
+.dia-grand-total .dia-name { font-weight: 700; font-size: .78rem; letter-spacing: .04em; color: var(--muted); }
+.dia-grand-total .dia-val  { font-size: .82rem; }
 
 /* ── Dash week nav arrows ─────────────────────────────────────────────── */
 .dash-wk-nav { display: flex; align-items: center; gap: .5rem; }
