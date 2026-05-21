@@ -1951,49 +1951,45 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
       console.warn('[Transferencias] Catálogo falhou, continuando sem descrições:', e.message);
     }
 
-    const estoqueByBoard = {}; // board → { cod_barra → qty }
-    const giroByBoard    = {}; // board → { cod_barra → qtdVendida }
+    const estoqueByBoard = {}; // board → cod_produto → { qty, cod_barra }
+    const giroByBoard    = {}; // board → cod_produto → qtdVendida
+    const catalogMov     = {}; // cod_produto → { descricao, desc_cor, desc_tamanho, setor }
 
     for (const board of boards) {
       const cnpj  = lojas[board].replace(/\D/g, '');
       const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
 
       // ── Inventário: LinxProdutosInventario com data de hoje ──
-      // Agrupa por cod_produto (chave principal); captura também desc fields do próprio inventário
       const estRows = await fetchEstoque(cnpj, chave, today);
-      estoqueByBoard[board] = {}; // cod_produto → { qty, cod_barra, descricao, desc_cor, desc_tamanho }
+      estoqueByBoard[board] = {};
       for (const r of estRows) {
         const cod = String(r.cod_produto || r.codproduto || '').trim();
         const qty = parseFloat((r.quantidade || '0').replace(',', '.')) || 0;
         if (!cod || qty <= 0) continue;
         if (!estoqueByBoard[board][cod]) {
-          const barra = (r.cod_barra || r.codbarra || '').trim();
-          estoqueByBoard[board][cod] = {
-            qty: 0,
-            cod_barra:    barra,
-            descricao:    (r.descricao    || r.des_produto || r.nome || '').trim(),
-            desc_cor:     (r.desc_cor     || r.cor         || '').trim(),
-            desc_tamanho: (r.desc_tamanho || r.tamanho     || '').trim(),
-          };
-          // Indexa no catálogo por cod_produto também (fallback se não tiver por cod_barra)
-          if (!catalog[cod]) catalog[cod] = {
-            descricao:    estoqueByBoard[board][cod].descricao,
-            desc_cor:     estoqueByBoard[board][cod].desc_cor,
-            desc_tamanho: estoqueByBoard[board][cod].desc_tamanho,
-          };
+          estoqueByBoard[board][cod] = { qty: 0, cod_barra: (r.cod_barra || r.codbarra || '').trim() };
         }
         estoqueByBoard[board][cod].qty += qty;
       }
 
-      // ── Giro: LinxMovimento por cod_produto ──
+      // ── Giro + catálogo de descrições via LinxMovimento ──
       const movRows = await fetchMovimento(cnpj, dtIni, today, chave);
-      giroByBoard[board] = {}; // cod_produto → qtd vendida
+      giroByBoard[board] = {};
       for (const r of movRows) {
         if (r.cancelado === 'S' || r.cancelado === '1') continue;
         if (r.operacao === 'DS') continue;
         const cod = String(r.cod_produto || r.codproduto || '').trim();
         if (!cod) continue;
         giroByBoard[board][cod] = (giroByBoard[board][cod] || 0) + (parseInt(r.quantidade || 0) || 1);
+        // Captura descrição/cor/tamanho/setor da primeira ocorrência
+        if (!catalogMov[cod]) {
+          catalogMov[cod] = {
+            descricao:    (r.descricao    || r.des_produto || r.nome || '').trim(),
+            desc_cor:     (r.desc_cor     || r.cor         || '').trim(),
+            desc_tamanho: (r.desc_tamanho || r.tamanho     || '').trim(),
+            setor:        (r.setor        || r.grupo       || r.departamento || '').trim(),
+          };
+        }
       }
     }
 
@@ -2039,14 +2035,16 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
 
       if (!transfers.length) continue;
 
-      // Prioridade: campos do inventário → catálogo por cod_barra → catálogo por cod_produto
+      // Prioridade: LinxMovimento (tem descrição) → catálogo LinxProdutos
+      const mov = catalogMov[cod] || {};
       const cat = catalog[cod_barra] || catalog[cod] || {};
       sugestoes.push({
         cod_produto:  cod,
         cod_barra,
-        descricao:    invInfo?.descricao    || cat.descricao    || '—',
-        desc_cor:     invInfo?.desc_cor     || cat.desc_cor     || '—',
-        desc_tamanho: invInfo?.desc_tamanho || cat.desc_tamanho || '—',
+        descricao:    mov.descricao    || cat.descricao    || '—',
+        desc_cor:     mov.desc_cor     || cat.desc_cor     || '—',
+        desc_tamanho: mov.desc_tamanho || cat.desc_tamanho || '—',
+        setor:        mov.setor        || '—',
         stocks,
         giro,
         transfers,
@@ -2054,7 +2052,11 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
       });
     }
 
-    sugestoes.sort((a, b) => b.transfers.length - a.transfers.length || a.descricao.localeCompare(b.descricao, 'pt-BR'));
+    sugestoes.sort((a, b) => {
+      const sc = (a.setor || '').localeCompare(b.setor || '', 'pt-BR');
+      if (sc !== 0) return sc;
+      return String(a.cod_produto).localeCompare(String(b.cod_produto), 'pt-BR', { numeric: true });
+    });
 
     res.json({ boards, dias, total: sugestoes.length, sugestoes });
   } catch (e) {

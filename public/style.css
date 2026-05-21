@@ -2144,3 +2144,17 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   padding: .1rem .4rem; font-size: .75rem; margin: .1rem .1rem;
 }
 .trans-qty { font-weight: 700; color: #D29922; margin-left: .1rem; }
+.trans-filter-bar {
+  display: flex; align-items: center; gap: .4rem; flex-wrap: wrap;
+  padding: .5rem 0 .6rem;
+}
+.trans-filter-label { font-size: .72rem; color: var(--muted); white-space: nowrap; }
+.trans-filter-btn {
+  padding: .2rem .7rem; border-radius: 20px; border: 1px solid var(--border2);
+  background: var(--surface2); color: var(--text); font-size: .73rem; cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.trans-filter-btn[data-filter]:not([data-filter=""]) { border-color: var(--fc, var(--border2)); }
+.trans-filter-btn.active { background: var(--fc, var(--accent)); border-color: var(--fc, var(--accent)); color: #fff; }
+.trans-filter-btn[data-filter=""].active { background: var(--accent); border-color: var(--accent); }
+.trans-setor { color: var(--muted); font-size: .72rem; white-space: nowrap; }

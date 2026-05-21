@@ -1655,23 +1655,9 @@ function renderTransTable(container, data) {
       </span>`;
     }).join('');
 
-  let html = `
-    <div class="trans-summary">
-      <span class="trans-total"><strong>${total}</strong> SKU${total>1?'s':''} com sugestão · últimos ${dias} dias</span>
-      <div class="trans-pairs">${pairSummary}</div>
-    </div>
-    <div style="overflow-x:auto">
-    <table class="trans-table">
-      <thead><tr>
-        <th class="trans-th">Código</th>
-        <th class="trans-th">Produto</th>
-        <th class="trans-th">Cor</th>
-        <th class="trans-th trans-th-c">Tam</th>
-        ${boards.map(b => `<th class="trans-th trans-th-c" style="color:${boardColor(b)}">${boardLabel(b)}</th>`).join('')}
-        <th class="trans-th">Transferir</th>
-      </tr></thead><tbody>`;
-
-  for (const s of sugestoes) {
+  // Montar tabela com atributo data-boards para filtragem
+  const buildRows = (list) => list.map(s => {
+    const involvedBoards = new Set([...s.transfers.map(t => t.de), ...s.transfers.map(t => t.para)]);
     const transferStr = s.transfers.map(t =>
       `<span class="trans-move">
         <span style="color:${boardColor(t.de)}">${boardLabel(t.de)}</span>
@@ -1680,9 +1666,9 @@ function renderTransTable(container, data) {
         <span class="trans-qty">×${t.qty}</span>
       </span>`
     ).join(' ');
-
-    html += `<tr class="trans-row">
+    return `<tr class="trans-row" data-boards="${[...involvedBoards].join(',')}">
       <td class="trans-td trans-cod">${s.cod_produto}</td>
+      <td class="trans-td trans-setor">${s.setor || '—'}</td>
       <td class="trans-td">${s.descricao || '—'}</td>
       <td class="trans-td">${s.desc_cor || '—'}</td>
       <td class="trans-td trans-td-c">${s.desc_tamanho || '—'}</td>
@@ -1696,10 +1682,46 @@ function renderTransTable(container, data) {
       }).join('')}
       <td class="trans-td">${transferStr}</td>
     </tr>`;
-  }
+  }).join('');
 
-  html += `</tbody></table></div>`;
+  const html = `
+    <div class="trans-summary">
+      <span class="trans-total"><strong>${total}</strong> SKU${total>1?'s':''} com sugestão · últimos ${dias} dias</span>
+      <div class="trans-pairs">${pairSummary}</div>
+    </div>
+    <div class="trans-filter-bar">
+      <span class="trans-filter-label">Filtrar por loja:</span>
+      <button class="trans-filter-btn active" data-filter="">Todas</button>
+      ${boards.map(b => `<button class="trans-filter-btn" data-filter="${b}" style="--fc:${boardColor(b)}">${boardLabel(b)}</button>`).join('')}
+    </div>
+    <div style="overflow-x:auto">
+    <table class="trans-table" id="transDataTable">
+      <thead><tr>
+        <th class="trans-th">Código</th>
+        <th class="trans-th">Setor</th>
+        <th class="trans-th">Produto</th>
+        <th class="trans-th">Cor</th>
+        <th class="trans-th trans-th-c">Tam</th>
+        ${boards.map(b => `<th class="trans-th trans-th-c" style="color:${boardColor(b)}">${boardLabel(b)}</th>`).join('')}
+        <th class="trans-th">Transferir</th>
+      </tr></thead>
+      <tbody id="transTableBody">${buildRows(sugestoes)}</tbody>
+    </table></div>`;
+
   container.innerHTML = html;
+
+  // Wires filtros de loja
+  container.querySelectorAll('.trans-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      container.querySelectorAll('.trans-filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const f = btn.dataset.filter;
+      container.querySelectorAll('#transTableBody .trans-row').forEach(row => {
+        const rb = row.dataset.boards || '';
+        row.style.display = (!f || rb.split(',').includes(f)) ? '' : 'none';
+      });
+    });
+  });
 }
 
 function buildPerfTabs() {
