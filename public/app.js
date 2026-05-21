@@ -1468,9 +1468,39 @@ function fmtBRLk(n) {
   return fmtBRL(n);
 }
 
-function calcPerfMetrics(k) {
+// Computa projeção real do mês atual (D-1 BRT) a partir dos vsales do board
+function computeCurMonthProj(board) {
+  const pad = n => String(n).padStart(2, '0');
+  const todayBRT = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  if (PD.year !== todayBRT.getUTCFullYear() || PD.month !== todayBRT.getUTCMonth() + 1) return null;
+  const yestBRT = new Date(Date.now() - 3 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000);
+  const perfCutoff = `${yestBRT.getUTCFullYear()}-${pad(yestBRT.getUTCMonth()+1)}-${pad(yestBRT.getUTCDate())}`;
+  const daysInMonth = new Date(PD.year, PD.month, 0).getDate();
+  const defW = 100 / daysInMonth;
+  let wAccum = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds = `${PD.year}-${pad(PD.month)}-${pad(d)}`;
+    if (ds > perfCutoff) break;
+    wAccum += (PD.weights[ds] ?? defW);
+  }
+  if (wAccum === 0) return null;
+  let realized = 0;
+  for (const emp of PD.employees) {
+    if (emp.board !== board) continue;
+    const entries = PD.allVsales[emp.id]?.entries || {};
+    for (let d = 1; d <= daysInMonth; d++) {
+      const ds = `${PD.year}-${pad(PD.month)}-${pad(d)}`;
+      if (ds > perfCutoff) break;
+      realized += entries[ds]?.value || 0;
+    }
+  }
+  return realized > 0 ? Math.round(realized * 100 / wAccum) : null;
+}
+
+function calcPerfMetrics(k, curMonthOverride = null) {
   const d25 = PERF_HIST[k][2025];
-  const d26 = PERF_2026[k];
+  const d26 = PERF_2026[k].slice(); // cópia para não mutar o original
+  if (curMonthOverride !== null) d26[PERF_CUR] = curMonthOverride;
   const yoyReal = d26.map((v,i) => v !== null ? (v - d25[i]) / d25[i] * 100 : null);
   const last3   = PERF_LAST3.map(i => yoyReal[i]);
   const avgD    = last3.reduce((a,b) => a+b, 0) / 3;
@@ -1483,7 +1513,7 @@ function calcPerfMetrics(k) {
   const projRest = proj.slice(PERF_CUR).reduce((a,v) => a+(v||0), 0);
   const projTotal = realAcum + projRest;
   const total25 = d25.reduce((a,b) => a+b, 0);
-  return { d25, d26, yoyReal, yoyFull, last3, avgD, proj, realAcum, projTotal, total25 };
+  return { d25, d26, yoyReal, yoyFull, last3, avgD, proj, realAcum, projTotal, total25, curMonthOverride };
 }
 
 let perfChart = null, perfAnnualChart = null;
@@ -1554,7 +1584,8 @@ function renderPerfStore(k) {
     return;
   }
 
-  const m = calcPerfMetrics(k);
+  const curProj = computeCurMonthProj(k);
+  const m = calcPerfMetrics(k, curProj);
   const pProj = (m.projTotal - m.total25) / m.total25 * 100;
   const sign  = n => n > 0 ? '+' : '';
   const cls   = n => n >= 0 ? 'pf-pos' : 'pf-neg';
@@ -1610,7 +1641,7 @@ function renderPerfStore(k) {
     const real = m.d26[i];
     const proj = m.proj[i];
     const v26  = real !== null ? real : proj;
-    const isProj = real === null && v26 !== null;
+    const isProj = (real === null || i === PERF_CUR) && v26 !== null;
     histYears.forEach(y => { colTotals[y] += PERF_HIST[k][y][i]; });
     if (v26 !== null) colTotals.v26 += v26;
     const deltas = histYears.map((y,j) => j === 0 ? null : (h[j] - h[j-1]) / h[j-1] * 100);
