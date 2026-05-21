@@ -1891,8 +1891,23 @@ app.get('/api/microvix/estoque-raw', requireAdmin, async (req, res) => {
     const cnpj  = lojas[board];
     if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado em MICROVIX_LOJAS` });
     const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-    const rows  = await fetchEstoque(cnpj, chave);
+    const today = new Date().toISOString().slice(0, 10);
+    const rows  = await fetchEstoque(cnpj, chave, today);
     res.json({ total: rows.length, fields: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 5) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/microvix/produtos-raw?board=delrey  → debug: campos do catálogo LinxProdutos
+app.get('/api/microvix/produtos-raw', requireAdmin, async (req, res) => {
+  try {
+    const { fetchProdutos } = require('./services/microvix');
+    const board = req.query.board || 'delrey';
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = lojas[board];
+    if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado em MICROVIX_LOJAS` });
+    const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const rows  = await fetchProdutos(cnpj, chave, 0);
+    res.json({ total: rows.length, fields: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 3) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1944,15 +1959,28 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
       const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
 
       // ── Inventário: LinxProdutosInventario com data de hoje ──
-      // Agrupa por cod_produto (chave principal); cod_barra é usado para lookup no catálogo
+      // Agrupa por cod_produto (chave principal); captura também desc fields do próprio inventário
       const estRows = await fetchEstoque(cnpj, chave, today);
-      estoqueByBoard[board] = {}; // cod_produto → { qty, cod_barra }
+      estoqueByBoard[board] = {}; // cod_produto → { qty, cod_barra, descricao, desc_cor, desc_tamanho }
       for (const r of estRows) {
         const cod = String(r.cod_produto || r.codproduto || '').trim();
         const qty = parseFloat((r.quantidade || '0').replace(',', '.')) || 0;
         if (!cod || qty <= 0) continue;
         if (!estoqueByBoard[board][cod]) {
-          estoqueByBoard[board][cod] = { qty: 0, cod_barra: (r.cod_barra || r.codbarra || '').trim() };
+          const barra = (r.cod_barra || r.codbarra || '').trim();
+          estoqueByBoard[board][cod] = {
+            qty: 0,
+            cod_barra:    barra,
+            descricao:    (r.descricao    || r.des_produto || r.nome || '').trim(),
+            desc_cor:     (r.desc_cor     || r.cor         || '').trim(),
+            desc_tamanho: (r.desc_tamanho || r.tamanho     || '').trim(),
+          };
+          // Indexa no catálogo por cod_produto também (fallback se não tiver por cod_barra)
+          if (!catalog[cod]) catalog[cod] = {
+            descricao:    estoqueByBoard[board][cod].descricao,
+            desc_cor:     estoqueByBoard[board][cod].desc_cor,
+            desc_tamanho: estoqueByBoard[board][cod].desc_tamanho,
+          };
         }
         estoqueByBoard[board][cod].qty += qty;
       }
@@ -1980,10 +2008,12 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
     for (const cod of allCods) {
       const stocks = {};
       let cod_barra = '';
+      let invInfo = null; // descrição do próprio inventário
       for (const board of boards) {
         const e = estoqueByBoard[board][cod];
         stocks[board] = e ? Math.floor(e.qty) : 0;
-        if (e?.cod_barra) cod_barra = e.cod_barra;
+        if (e?.cod_barra && !cod_barra) cod_barra = e.cod_barra;
+        if (e && !invInfo && (e.descricao || e.desc_cor || e.desc_tamanho)) invInfo = e;
       }
 
       const giro = {};
@@ -2009,14 +2039,14 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
 
       if (!transfers.length) continue;
 
-      // Tenta descrição pelo cod_barra (catálogo) ou pelo cod_produto
+      // Prioridade: campos do inventário → catálogo por cod_barra → catálogo por cod_produto
       const cat = catalog[cod_barra] || catalog[cod] || {};
       sugestoes.push({
         cod_produto:  cod,
         cod_barra,
-        descricao:    cat.descricao    || '—',
-        desc_cor:     cat.desc_cor     || '—',
-        desc_tamanho: cat.desc_tamanho || '—',
+        descricao:    invInfo?.descricao    || cat.descricao    || '—',
+        desc_cor:     invInfo?.desc_cor     || cat.desc_cor     || '—',
+        desc_tamanho: invInfo?.desc_tamanho || cat.desc_tamanho || '—',
         stocks,
         giro,
         transfers,
