@@ -162,7 +162,6 @@ async function fetchProdutos(cnpj, chave, timestamp = 0) {
   const todayBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
   const body = buildRequest('LinxProdutos', cnpj, [
     { id: 'timestamp',     valor: String(timestamp) },
-    { id: 'dt_update_ini', valor: '01/01/2000' },
     { id: 'dt_update_fim', valor: todayBR },
   ], chave);
   const raw = await postRequest(body, 120_000); // catálogo pode ser grande
