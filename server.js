@@ -1977,18 +1977,21 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
     const firstCnpj  = lojas[firstBoard].replace(/\D/g, '');
     const firstChave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
 
-    const catalog = {}; // cod_barra → { descricao, desc_cor, desc_tamanho, referencia }
+    // catalog indexado por cod_barra E por cod_produto
+    const catalog = {};
     try {
       const prodRows = await fetchProdutos(firstCnpj, firstChave, 0);
       for (const r of prodRows) {
-        const barcode = (r.cod_barra || r.codbarra || '').trim();
-        if (!barcode) continue;
-        catalog[barcode] = {
-          descricao:    (r.descricao    || r.nome || '').trim(),
-          desc_cor:     (r.desc_cor     || r.cor  || '').trim(),
-          desc_tamanho: (r.desc_tamanho || r.tamanho || '').trim(),
-          referencia:   (r.referencia   || r.cod_produto || '').trim(),
+        const entry = {
+          descricao:    (r.descricao_basica || r.nome || '').trim(),
+          desc_cor:     (r.desc_cor  || '').trim(),
+          desc_tamanho: (r.desc_tamanho || '').trim(),
+          desc_setor:   (r.desc_setor || '').trim(),
         };
+        const barra = (r.cod_barra || '').trim();
+        const cod   = String(r.cod_produto || '').trim();
+        if (barra) catalog[barra] = entry;
+        if (cod)   catalog[`p:${cod}`] = entry; // prefixo para não colidir
       }
     } catch (e) {
       console.warn('[Transferencias] Catálogo falhou, continuando sem descrições:', e.message);
@@ -2078,16 +2081,16 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
 
       if (!transfers.length) continue;
 
-      // Prioridade: LinxMovimento (tem descrição) → catálogo LinxProdutos
+      // Prioridade: catálogo LinxProdutos (tem desc_setor) → fallback catalogMov
+      const cat = catalog[cod_barra] || catalog[`p:${cod}`] || {};
       const mov = catalogMov[cod] || {};
-      const cat = catalog[cod_barra] || catalog[cod] || {};
       sugestoes.push({
         cod_produto:  cod,
         cod_barra,
-        descricao:    mov.descricao    || cat.descricao    || '—',
-        desc_cor:     mov.desc_cor     || cat.desc_cor     || '—',
-        desc_tamanho: mov.desc_tamanho || cat.desc_tamanho || '—',
-        setor:        mov.setor        || '—',
+        descricao:    cat.descricao    || mov.descricao    || '—',
+        desc_cor:     cat.desc_cor     || mov.desc_cor     || '—',
+        desc_tamanho: cat.desc_tamanho || mov.desc_tamanho || '—',
+        setor:        cat.desc_setor   || mov.setor        || '—',
         stocks,
         giro,
         transfers,

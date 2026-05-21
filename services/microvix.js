@@ -156,21 +156,35 @@ async function fetchEstoque(cnpj, chave, data) {
 
 // Fetch LinxProdutos → product catalog with description, color, size per cod_barra
 // Requires dt_update_ini + dt_update_fim; timestamp=0 returns all
+// Pagina automaticamente em blocos de 5000 até esgotar o catálogo
 async function fetchProdutos(cnpj, chave, timestamp = 0) {
   const today = new Date().toISOString().slice(0, 10);
-  const body = buildRequest('LinxProdutos', cnpj, [
-    { id: 'timestamp',        valor: String(timestamp) },
-    { id: 'dt_update_inicio', valor: '2000-01-01' },
-    { id: 'dt_update_fim',    valor: today },
-  ], chave);
-  const raw = await postRequest(body, 120_000); // catálogo pode ser grande
+  const allRows = [];
+  let ts = timestamp;
 
-  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
-    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro desconhecido';
-    throw new Error(`Microvix API (produtos): ${msg}`);
+  for (let page = 0; page < 20; page++) { // limite de segurança: 100 mil produtos
+    const body = buildRequest('LinxProdutos', cnpj, [
+      { id: 'timestamp',        valor: String(ts) },
+      { id: 'dt_update_inicio', valor: '2000-01-01' },
+      { id: 'dt_update_fim',    valor: today },
+    ], chave);
+    const raw = await postRequest(body, 120_000);
+
+    if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+      const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro desconhecido';
+      throw new Error(`Microvix API (produtos): ${msg}`);
+    }
+
+    const rows = parseCsv(raw);
+    allRows.push(...rows);
+    if (rows.length < 5000) break; // última página
+
+    const maxTs = Math.max(...rows.map(r => parseInt(r.timestamp) || 0));
+    if (maxTs <= ts) break; // segurança contra loop infinito
+    ts = maxTs;
   }
 
-  return parseCsv(raw);
+  return allRows;
 }
 
 module.exports = { fetchMovimento, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, parseBrNum, buildRequest, postRequest, parseCsv };
