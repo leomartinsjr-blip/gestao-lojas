@@ -1911,6 +1911,22 @@ app.get('/api/microvix/produtos-raw', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/microvix/movimento-raw?board=delrey  → debug: campos de LinxMovimento
+app.get('/api/microvix/movimento-raw', requireAdmin, async (req, res) => {
+  try {
+    const { fetchMovimento } = require('./services/microvix');
+    const board = req.query.board || 'delrey';
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = lojas[board];
+    if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado em MICROVIX_LOJAS` });
+    const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const today = new Date().toISOString().slice(0, 10);
+    const dtIni = new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
+    const rows  = await fetchMovimento(cnpj, dtIni, today, chave);
+    res.json({ total: rows.length, fields: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 3) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/transferencias?dias=30&lojas=delrey,minas,contagem,estacao,tommy,lez
 app.get('/api/transferencias', requireAdmin, async (req, res) => {
   try {
