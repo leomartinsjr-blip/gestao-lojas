@@ -1432,8 +1432,8 @@ function openImg(url) {
 // ── Performance dashboard data ─────────────────────────────────────────────
 const PERF_MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 const PERF_AVAIL  = new Set(['delrey','minas','contagem','estacao']);
-const PERF_LAST3  = [1,2,3];  // Fev, Mar, Abr
 const PERF_CUR    = 4;         // Mai = em andamento
+const PERF_LAST3  = [PERF_CUR-2, PERF_CUR-1, PERF_CUR];  // Mar, Abr, Mai
 
 const PERF_HIST = {
   delrey: {
@@ -1510,8 +1510,9 @@ function calcPerfMetrics(k, curMonthOverride = null) {
   const d26 = PERF_2026[k].slice(); // cópia para não mutar o original
   if (curMonthOverride !== null) d26[PERF_CUR] = curMonthOverride;
   const yoyReal = d26.map((v,i) => v !== null ? (v - d25[i]) / d25[i] * 100 : null);
-  const last3   = PERF_LAST3.map(i => yoyReal[i]);
-  const avgD    = last3.reduce((a,b) => a+b, 0) / 3;
+  const last3      = PERF_LAST3.map(i => yoyReal[i]);
+  const last3valid = last3.filter(v => v !== null);
+  const avgD       = last3valid.length > 0 ? last3valid.reduce((a,b) => a+b, 0) / last3valid.length : 0;
   const proj    = PERF_MONTHS.map((_,i) => {
     if (d26[i] !== null) return d26[i];
     return Math.round(d25[i] * (1 + avgD/100));
@@ -1614,7 +1615,7 @@ function renderPerfStore(k) {
       <div class="perf-kpi" style="border-color:${m.avgD < -10 ? '#F85149' : 'var(--border)'}">
         <div class="perf-kpi-label">Média últimos 3 meses</div>
         <div class="perf-kpi-value ${cls(m.avgD)}">${sign(m.avgD)}${m.avgD.toFixed(1)}%</div>
-        <div class="perf-kpi-sub">Fev ${m.last3[0].toFixed(1)}% · Mar ${m.last3[1].toFixed(1)}% · Abr ${m.last3[2].toFixed(1)}%</div>
+        <div class="perf-kpi-sub">${PERF_LAST3.map((idx,j) => m.last3[j] !== null ? `${PERF_MONTHS[idx]} ${m.last3[j].toFixed(1)}%` : null).filter(Boolean).join(' · ')}</div>
       </div>
       <div class="perf-kpi" style="border-color:#D2992255">
         <div class="perf-kpi-label">Projeção 2026 (ano)</div>
