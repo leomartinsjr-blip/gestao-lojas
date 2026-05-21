@@ -1291,13 +1291,21 @@ async function _loadCompCard(body) {
   const STORE_KEYS = isAdmin ? ALL_STORE_KEYS : ALL_STORE_KEYS.filter(k => k === S.user.board);
   const mi = S.month - 1;
 
+  // D-1 BRT (igual ao Performance Mensal)
+  const _todayBRT = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  const _yestBRT  = new Date(Date.now() - 3 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000);
+  const todayBRTStr = `${_todayBRT.getUTCFullYear()}-${pad(_todayBRT.getUTCMonth()+1)}-${pad(_todayBRT.getUTCDate())}`;
+  const yesterdayBRTStr = `${_yestBRT.getUTCFullYear()}-${pad(_yestBRT.getUTCMonth()+1)}-${pad(_yestBRT.getUTCDate())}`;
+  const isCurrentMonth = S.year === _todayBRT.getUTCFullYear() && S.month === _todayBRT.getUTCMonth() + 1;
+
   let lastDay = null;
   for (const emp of S.employees) {
     for (const date of Object.keys((S.vsales[emp.id] || {}).entries || {})) {
       if (date.startsWith(prefix) && (lastDay === null || date > lastDay)) lastDay = date;
     }
   }
-  const cutoff = lastDay; // null = sem dados
+  // Mês atual: usa D-1 BRT como cutoff (igual ao Performance Mensal)
+  const cutoff = isCurrentMonth ? yesterdayBRTStr : lastDay;
 
   const defW = +(100 / daysInCur).toFixed(6);
   let wAccum = 0;
@@ -1322,11 +1330,11 @@ async function _loadCompCard(body) {
     }
   }
 
-  // Atualiza subtítulo com base no último dia preenchido
+  // Atualiza subtítulo com base no cutoff (D-1 para mês atual)
   const subEl = document.getElementById('compCardSub');
   if (subEl && cutoff) {
     const [,, dd] = cutoff.split('-');
-    subEl.textContent = `até dia ${parseInt(dd)}/${pad(S.month)}`;
+    subEl.textContent = `dados até ${parseInt(dd)}/${pad(S.month)}`;
   }
 
   const mesLabel = MONTHS_PT[mi].slice(0,3) + '/' + String(S.year).slice(2);
