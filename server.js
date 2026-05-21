@@ -1987,7 +1987,7 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
       if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
       const cat = {};
       try {
-        const prodRows = await fetchProdutos(firstCnpj, firstChave, 0, '2024-01-01');
+        const prodRows = await fetchProdutos(firstCnpj, firstChave, 0);
         for (const r of prodRows) {
           const entry = {
             descricao:    (r.descricao_basica || r.nome || '').trim(),
@@ -2005,11 +2005,36 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
       return cat;
     })();
 
+    // ── Movimento desde 2024 (filtro ativos + última venda) — uma loja basta ──
+    const ativosPromise = (async () => {
+      const ativos = new Set();
+      const ultVenda = {};
+      try {
+        const movAtivos = await fetchMovimento(firstCnpj, '2024-01-01', today, firstChave);
+        for (const r of movAtivos) {
+          if (r.cancelado === 'S' || r.cancelado === '1') continue;
+          if (r.operacao === 'DS') continue;
+          const cod = String(r.cod_produto || r.codproduto || '').trim();
+          if (!cod) continue;
+          ativos.add(cod);
+          const dataBr = (r.data_documento || '').slice(0, 10);
+          if (dataBr) {
+            const [d, m, y] = dataBr.split('/');
+            const iso = `${y}-${m}-${d}`;
+            if (!ultVenda[cod + '_iso'] || iso > ultVenda[cod + '_iso']) {
+              ultVenda[cod] = dataBr;
+              ultVenda[cod + '_iso'] = iso;
+            }
+          }
+        }
+      } catch (e) { console.warn('[Trans] Filtro 2024 falhou:', e.message); }
+      return { ativos, ultVenda };
+    })();
+
     // ── Estoque + giro por loja em paralelo ──
     const estoqueByBoard = {};
     const giroByBoard    = {};
     const catalogMov     = {};
-    const ultimaVendaMap = {}; // cod_produto → 'DD/MM/YYYY' última venda (período giro)
 
     await Promise.all(boards.map(async board => {
       const cnpj  = lojas[board].replace(/\D/g, '');
@@ -2038,28 +2063,17 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
         if (!cod) continue;
         giroByBoard[board][cod] = (giroByBoard[board][cod] || 0) + (parseInt(r.quantidade || 0) || 1);
         if (!catalogMov[cod]) catalogMov[cod] = {
-          descricao: (r.descricao || r.des_produto || '').trim(),
-          desc_cor:  (r.desc_cor  || '').trim(),
+          descricao:    (r.descricao    || r.des_produto || '').trim(),
+          desc_cor:     (r.desc_cor     || '').trim(),
           desc_tamanho: (r.desc_tamanho || '').trim(),
-          setor: (r.setor || r.grupo || '').trim(),
+          setor:        (r.setor        || r.grupo || '').trim(),
         };
-        // Captura data da última venda no período
-        const dataBr = (r.data_documento || '').slice(0, 10); // "DD/MM/YYYY"
-        if (dataBr) {
-          const [d, m, y] = dataBr.split('/');
-          const iso = `${y}-${m}-${d}`;
-          if (!ultimaVendaMap[cod] || iso > ultimaVendaMap[cod + '_iso']) {
-            ultimaVendaMap[cod] = dataBr;
-            ultimaVendaMap[cod + '_iso'] = iso;
-          }
-        }
       }
     }));
 
-    // Aguarda catálogo (já rodava em paralelo com os estoques)
-    const catalog = await catalogPromise;
-
-    // ultimaVendaMap já foi populado dentro do loop paralelo
+    // Aguarda catálogo e filtro 2024 (rodaram em paralelo com os estoques)
+    const [catalog, { ativos: ativosDesde2024, ultVenda: ultimaVendaMap }] =
+      await Promise.all([catalogPromise, ativosPromise]);
 
 
     // ── Todos os cod_produto com estoque em qualquer loja ──
@@ -2084,8 +2098,8 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
       const giro = {};
       for (const board of boards) giro[board] = giroByBoard[board][cod] || 0;
 
-      // Ignora produtos sem movimento desde 2024 (catálogo já filtrado por data_mov_ini)
-      if (Object.keys(catalog).length > 0 && !catalog[`p:${cod}`] && !catalog[cod_barra]) continue;
+      // Ignora produtos sem venda desde 2024
+      if (ativosDesde2024.size > 0 && !ativosDesde2024.has(cod)) continue;
 
       const donors    = boards.filter(b => stocks[b] >= 2).sort((a, b) => stocks[b] - stocks[a]);
       const receivers = boards.filter(b => stocks[b] === 0).sort((a, b) => giro[b] - giro[a]);
