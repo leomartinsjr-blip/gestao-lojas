@@ -1573,7 +1573,7 @@ function closePerfModal() {
 }
 
 // ── Transferências view ────────────────────────────────────────────────────
-const TRANS_BOARDS = ['delrey','minas','contagem','estacao','tommy','lez'];
+const TRANS_BOARDS = ['delrey','minas','contagem','estacao','lez'];
 let _transDias = 30;
 
 function openTransModal() {
@@ -1614,7 +1614,8 @@ function renderTransView() {
 async function loadTransSugestoes(container) {
   container.innerHTML = '<div class="trans-loading">Buscando estoque e vendas no Microvix…</div>';
   try {
-    const r = await fetch(`/api/transferencias?dias=${_transDias}`);
+    const lojas = TRANS_BOARDS.join(',');
+    const r = await fetch(`/api/transferencias?dias=${_transDias}&lojas=${lojas}`);
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || 'Erro desconhecido');
     renderTransTable(container, data);
@@ -1681,7 +1682,7 @@ function renderTransTable(container, data) {
     ).join(' ');
 
     html += `<tr class="trans-row">
-      <td class="trans-td trans-cod">${s.referencia || s.barcode}</td>
+      <td class="trans-td trans-cod">${s.cod_produto}</td>
       <td class="trans-td">${s.descricao || '—'}</td>
       <td class="trans-td">${s.desc_cor || '—'}</td>
       <td class="trans-td trans-td-c">${s.desc_tamanho || '—'}</td>

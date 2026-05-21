@@ -667,7 +667,7 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
     const storeColor = BOARD_COLORS[board] || 'FF4F8B5A';
     const storeName  = BOARD_NAMES[board]  || board;
 
-    const emps     = (db.employees || []).filter(e => e.board === board && e.isVendedor !== false && !e.inativo);
+    const emps     = (db.employees || []).filter(e => e.board === board && e.isVendedor !== false);
     const mkKey    = `${y}-${pad(m)}`;
     const dsKey    = `${y}-${pad(m)}-${board}`;
     const metaLoja = db.dailySales?.[dsKey]?.meta?.mensal || 0;
@@ -872,7 +872,7 @@ app.post('/api/excel/:year/:month/:board', requireAuth, excelUpload.single('file
     const db = await readDB();
     if (!db.vsales) db.vsales = {};
 
-    const emps = (db.employees || []).filter(e => e.board === board && e.isVendedor !== false && !e.inativo);
+    const emps = (db.employees || []).filter(e => e.board === board && e.isVendedor !== false);
     const empByName = {};
     for (const e of emps) {
       const key = (e.apelido || e.name).slice(0, 31).toLowerCase();
@@ -1922,43 +1922,50 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
       const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
 
       // ── Inventário: LinxProdutosInventario com data de hoje ──
+      // Agrupa por cod_produto (chave principal); cod_barra é usado para lookup no catálogo
       const estRows = await fetchEstoque(cnpj, chave, today);
-      estoqueByBoard[board] = {};
+      estoqueByBoard[board] = {}; // cod_produto → { qty, cod_barra }
       for (const r of estRows) {
-        const barcode = (r.cod_barra || r.codbarra || '').trim();
-        const qty     = parseFloat((r.quantidade || '0').replace(',', '.')) || 0;
-        if (!barcode || qty <= 0) continue;
-        estoqueByBoard[board][barcode] = (estoqueByBoard[board][barcode] || 0) + qty;
+        const cod = String(r.cod_produto || r.codproduto || '').trim();
+        const qty = parseFloat((r.quantidade || '0').replace(',', '.')) || 0;
+        if (!cod || qty <= 0) continue;
+        if (!estoqueByBoard[board][cod]) {
+          estoqueByBoard[board][cod] = { qty: 0, cod_barra: (r.cod_barra || r.codbarra || '').trim() };
+        }
+        estoqueByBoard[board][cod].qty += qty;
       }
 
-      // ── Giro: LinxMovimento por cod_barra ──
+      // ── Giro: LinxMovimento por cod_produto ──
       const movRows = await fetchMovimento(cnpj, dtIni, today, chave);
-      giroByBoard[board] = {};
+      giroByBoard[board] = {}; // cod_produto → qtd vendida
       for (const r of movRows) {
         if (r.cancelado === 'S' || r.cancelado === '1') continue;
         if (r.operacao === 'DS') continue;
-        const barcode = (r.cod_barra || r.codbarra || '').trim();
-        if (!barcode) continue;
-        giroByBoard[board][barcode] = (giroByBoard[board][barcode] || 0) + (parseInt(r.quantidade || 0) || 1);
+        const cod = String(r.cod_produto || r.codproduto || '').trim();
+        if (!cod) continue;
+        giroByBoard[board][cod] = (giroByBoard[board][cod] || 0) + (parseInt(r.quantidade || 0) || 1);
       }
     }
 
-    // ── Todos os SKUs com estoque em qualquer loja ──
-    const allBarcodes = new Set();
+    // ── Todos os cod_produto com estoque em qualquer loja ──
+    const allCods = new Set();
     for (const board of boards) {
-      for (const bc of Object.keys(estoqueByBoard[board])) allBarcodes.add(bc);
+      for (const cod of Object.keys(estoqueByBoard[board])) allCods.add(cod);
     }
 
     const sugestoes = [];
 
-    for (const barcode of allBarcodes) {
+    for (const cod of allCods) {
       const stocks = {};
+      let cod_barra = '';
       for (const board of boards) {
-        stocks[board] = Math.floor(estoqueByBoard[board][barcode] || 0);
+        const e = estoqueByBoard[board][cod];
+        stocks[board] = e ? Math.floor(e.qty) : 0;
+        if (e?.cod_barra) cod_barra = e.cod_barra;
       }
 
       const giro = {};
-      for (const board of boards) giro[board] = giroByBoard[board][barcode] || 0;
+      for (const board of boards) giro[board] = giroByBoard[board][cod] || 0;
 
       // Doadoras: estoque ≥ 2 | Receptoras: estoque = 0
       const donors    = boards.filter(b => stocks[b] >= 2).sort((a, b) => stocks[b] - stocks[a]);
@@ -1980,13 +1987,14 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
 
       if (!transfers.length) continue;
 
-      const cat = catalog[barcode] || {};
+      // Tenta descrição pelo cod_barra (catálogo) ou pelo cod_produto
+      const cat = catalog[cod_barra] || catalog[cod] || {};
       sugestoes.push({
-        barcode,
+        cod_produto:  cod,
+        cod_barra,
         descricao:    cat.descricao    || '—',
         desc_cor:     cat.desc_cor     || '—',
         desc_tamanho: cat.desc_tamanho || '—',
-        referencia:   cat.referencia   || barcode,
         stocks,
         giro,
         transfers,
