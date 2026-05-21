@@ -137,4 +137,17 @@ async function fetchFuncionarios(cnpj, chave) {
   return parseCsv(raw);
 }
 
-module.exports = { fetchMovimento, fetchVendedores, fetchFuncionarios, parseBrNum };
+// Fetch LinxEstoque → array of stock rows per SKU (product+color+size)
+async function fetchEstoque(cnpj, chave) {
+  const body = buildRequest('LinxEstoque', cnpj, [], chave);
+  const raw  = await postRequest(body);
+
+  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro desconhecido';
+    throw new Error(`Microvix API (estoque): ${msg}`);
+  }
+
+  return parseCsv(raw);
+}
+
+module.exports = { fetchMovimento, fetchVendedores, fetchFuncionarios, fetchEstoque, parseBrNum };

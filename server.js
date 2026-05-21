@@ -1800,6 +1800,148 @@ app.post('/api/admin/import-data', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Transferências entre lojas ─────────────────────────────────────────────
+
+// GET /api/microvix/estoque-raw?board=delrey  → debug: campos e primeiras linhas de LinxEstoque
+app.get('/api/microvix/estoque-raw', requireAdmin, async (req, res) => {
+  try {
+    const { fetchEstoque } = require('./services/microvix');
+    const board = req.query.board || 'delrey';
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = lojas[board];
+    if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado em MICROVIX_LOJAS` });
+    const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const rows  = await fetchEstoque(cnpj, chave);
+    res.json({ total: rows.length, fields: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 5) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/transferencias?dias=30&lojas=delrey,minas,contagem,estacao,tommy,lez
+app.get('/api/transferencias', requireAdmin, async (req, res) => {
+  try {
+    const { fetchEstoque, fetchMovimento } = require('./services/microvix');
+
+    const MINIMO = 1;
+    const dias   = Math.max(1, parseInt(req.query.dias || '30'));
+    const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const boards = (req.query.lojas
+      ? req.query.lojas.split(',')
+      : Object.keys(lojas)
+    ).filter(b => lojas[b]);
+
+    if (!boards.length) return res.status(400).json({ error: 'Nenhuma loja configurada em MICROVIX_LOJAS' });
+
+    // Date range for giro
+    const todayUTC = new Date();
+    const dtFin = todayUTC.toISOString().slice(0, 10);
+    const dtIni = new Date(todayUTC - dias * 86400_000).toISOString().slice(0, 10);
+
+    // Helper: resolve field from row trying multiple possible names
+    const f = (row, ...keys) => {
+      for (const k of keys) if (row[k] !== undefined && row[k] !== '') return String(row[k]).trim();
+      return '';
+    };
+    const fNum = (row, ...keys) => {
+      const v = f(row, ...keys);
+      return parseFloat(v.replace(/\./g, '').replace(',', '.')) || 0;
+    };
+
+    const estoqueByBoard = {}; // board → { skuKey → { cod, cor, tam, desc, descCor, qty } }
+    const giroByBoard    = {}; // board → { skuKey → qtdVendida }
+
+    for (const board of boards) {
+      const cnpj  = lojas[board].replace(/\D/g, '');
+      const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+
+      // ── Estoque ──
+      const estRows = await fetchEstoque(cnpj, chave);
+      estoqueByBoard[board] = {};
+      for (const r of estRows) {
+        const cod     = f(r, 'cod_produto', 'codigo_produto', 'codigoproduto');
+        const cor     = f(r, 'cod_cor', 'codigo_cor', 'codigocor', 'cor');
+        const tam     = f(r, 'tamanho', 'tam', 'grade');
+        const desc    = f(r, 'descricao', 'nome_produto', 'nomeproduto', 'descricao_produto');
+        const descCor = f(r, 'descricao_cor', 'nome_cor', 'nomecor');
+        const qty     = fNum(r, 'quantidade', 'saldo', 'estoque', 'qtd');
+        if (!cod || qty <= 0) continue;
+        const key = `${cod}|${cor}|${tam}`;
+        if (!estoqueByBoard[board][key]) {
+          estoqueByBoard[board][key] = { cod, cor, tam, desc, descCor, qty: 0 };
+        }
+        estoqueByBoard[board][key].qty += qty;
+      }
+
+      // ── Giro (vendas por SKU no período) ──
+      const movRows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
+      giroByBoard[board] = {};
+      for (const r of movRows) {
+        if (r.cancelado === 'S' || r.cancelado === '1') continue;
+        if (r.operacao === 'DS') continue;
+        const cod = f(r, 'cod_produto', 'codigo_produto', 'codigoproduto');
+        const cor = f(r, 'cod_cor', 'codigo_cor', 'codigocor', 'cor');
+        const tam = f(r, 'tamanho', 'tam', 'grade');
+        if (!cod) continue;
+        const key = `${cod}|${cor}|${tam}`;
+        giroByBoard[board][key] = (giroByBoard[board][key] || 0) + (parseInt(r.quantidade || 0) || 1);
+      }
+    }
+
+    // Todos os SKUs com estoque em qualquer loja
+    const allSkus = new Set();
+    for (const board of boards) {
+      for (const key of Object.keys(estoqueByBoard[board])) allSkus.add(key);
+    }
+
+    const sugestoes = [];
+
+    for (const key of allSkus) {
+      // Estoque atual por loja (inteiro, mínimo 0)
+      const stocks = {};
+      let meta = null;
+      for (const board of boards) {
+        const e = estoqueByBoard[board][key];
+        stocks[board] = e ? Math.floor(e.qty) : 0;
+        if (e && !meta) meta = { cod: e.cod, cor: e.cor, tam: e.tam, desc: e.desc, descCor: e.descCor };
+      }
+
+      // Giro por loja
+      const giro = {};
+      for (const board of boards) giro[board] = giroByBoard[board][key] || 0;
+
+      // Doadoras: estoque ≥ 2 (podem ceder 1 e ficar com ≥ 1)
+      // Receptoras: estoque = 0
+      const donors    = boards.filter(b => stocks[b] >= 2).sort((a, b) => stocks[b] - stocks[a]);
+      const receivers = boards.filter(b => stocks[b] === 0).sort((a, b) => giro[b] - giro[a]); // maior giro recebe primeiro
+
+      if (!donors.length || !receivers.length) continue;
+
+      const workStocks = { ...stocks };
+      const transfers  = [];
+
+      for (const rec of receivers) {
+        for (const don of donors) {
+          if (workStocks[don] < 2) continue;
+          transfers.push({ de: don, para: rec, qty: 1 });
+          workStocks[don] -= 1;
+          break;
+        }
+      }
+
+      if (!transfers.length) continue;
+
+      sugestoes.push({ ...meta, key, stocks, giro, transfers, stocksAfter: workStocks });
+    }
+
+    // Ordenar: mais transferências primeiro, depois por produto
+    sugestoes.sort((a, b) => b.transfers.length - a.transfers.length || a.desc.localeCompare(b.desc, 'pt-BR'));
+
+    res.json({ boards, dias, total: sugestoes.length, sugestoes });
+  } catch (e) {
+    console.error('[Transferencias]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Start ──────────────────────────────────────────────────────────────────
 initMongo()
   .then(() => {

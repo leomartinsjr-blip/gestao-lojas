@@ -99,6 +99,13 @@
       </svg>
       Performance
     </button>
+    <button id="transBtn" class="folgas-topbar-btn" style="display:none" title="Sugestão de Transferências">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+        <polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+      </svg>
+      Transferências
+    </button>
     <button id="boletasBtn" class="folgas-topbar-btn" title="Defeitos">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -157,6 +164,23 @@
       <button class="folgas-close-btn" id="perfClose" title="Fechar">✕</button>
     </div>
     <div class="perf-body" id="perfBody"></div>
+  </div>
+</div>
+
+<!-- TRANSFERÊNCIAS MODAL -->
+<div id="transOverlay" class="perf-overlay hidden">
+  <div class="perf-panel">
+    <div class="perf-hdr">
+      <span class="perf-hdr-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+          <polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+        </svg>
+        Sugestão de Transferências
+      </span>
+      <button class="folgas-close-btn" id="transClose" title="Fechar">✕</button>
+    </div>
+    <div class="perf-body" id="transBody"></div>
   </div>
 </div>
 

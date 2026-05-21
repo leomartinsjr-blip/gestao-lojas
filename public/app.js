@@ -78,6 +78,7 @@ async function checkAuth() {
     document.getElementById('campanhasBtn').style.display = isAdmin ? '' : 'none';
     document.getElementById('usersBtn').style.display = isAdmin ? '' : 'none';
     document.getElementById('perfBtn').style.display = isAdmin ? '' : 'none';
+    document.getElementById('transBtn').style.display = isAdmin ? '' : 'none';
     const now = new Date();
     S.year  = now.getFullYear();
     S.month = now.getMonth() + 1;
@@ -1571,6 +1572,135 @@ function closePerfModal() {
   if (perfAnnualChart) { perfAnnualChart.destroy(); perfAnnualChart = null; }
 }
 
+// ── Transferências view ────────────────────────────────────────────────────
+const TRANS_BOARDS = ['delrey','minas','contagem','estacao','tommy','lez'];
+let _transDias = 30;
+
+function openTransModal() {
+  document.getElementById('transOverlay').classList.remove('hidden');
+  renderTransView();
+}
+function closeTransModal() {
+  document.getElementById('transOverlay').classList.add('hidden');
+}
+
+function renderTransView() {
+  const body = document.getElementById('transBody');
+  body.innerHTML = `
+    <div class="trans-toolbar">
+      <label class="trans-label">Período para giro:</label>
+      <div class="trans-dias-group">
+        ${[30,60,90].map(d => `<button class="trans-dias-btn${d===_transDias?' active':''}" data-dias="${d}">${d} dias</button>`).join('')}
+      </div>
+      <button class="trans-calc-btn" id="transCalcBtn">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+        </svg>
+        Calcular sugestões
+      </button>
+    </div>
+    <div id="transResult" style="padding:.5rem 0"></div>`;
+
+  body.querySelectorAll('.trans-dias-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _transDias = parseInt(btn.dataset.dias);
+      body.querySelectorAll('.trans-dias-btn').forEach(b => b.classList.toggle('active', b === btn));
+    });
+  });
+
+  body.querySelector('#transCalcBtn').addEventListener('click', () => loadTransSugestoes(body.querySelector('#transResult')));
+}
+
+async function loadTransSugestoes(container) {
+  container.innerHTML = '<div class="trans-loading">Buscando estoque e vendas no Microvix…</div>';
+  try {
+    const r = await fetch(`/api/transferencias?dias=${_transDias}`);
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Erro desconhecido');
+    renderTransTable(container, data);
+  } catch (e) {
+    container.innerHTML = `<div class="trans-error">Erro: ${e.message}</div>`;
+  }
+}
+
+function renderTransTable(container, data) {
+  const { boards, dias, total, sugestoes } = data;
+  if (!total) {
+    container.innerHTML = `<div class="trans-empty">Nenhuma sugestão de transferência encontrada para os últimos ${dias} dias.<br><span style="color:var(--muted);font-size:.78rem">Todas as lojas já têm estoque mínimo de 1 peça por SKU.</span></div>`;
+    return;
+  }
+
+  const fN = v => v != null ? v : 0;
+  const boardLabel = k => BOARDS[k]?.label || k;
+  const boardColor = k => BOARDS[k]?.color || '#8B949E';
+
+  // Resumo de transferências agrupado por par De→Para
+  const pairCount = {};
+  for (const s of sugestoes) {
+    for (const t of s.transfers) {
+      const pk = `${t.de}→${t.para}`;
+      pairCount[pk] = (pairCount[pk] || 0) + 1;
+    }
+  }
+  const pairSummary = Object.entries(pairCount)
+    .sort((a,b) => b[1] - a[1])
+    .map(([pk, n]) => {
+      const [de, para] = pk.split('→');
+      return `<span class="trans-pair-chip">
+        <span style="color:${boardColor(de)}">${boardLabel(de)}</span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        <span style="color:${boardColor(para)}">${boardLabel(para)}</span>
+        <strong>${n} SKU${n>1?'s':''}</strong>
+      </span>`;
+    }).join('');
+
+  let html = `
+    <div class="trans-summary">
+      <span class="trans-total"><strong>${total}</strong> SKU${total>1?'s':''} com sugestão · últimos ${dias} dias</span>
+      <div class="trans-pairs">${pairSummary}</div>
+    </div>
+    <div style="overflow-x:auto">
+    <table class="trans-table">
+      <thead><tr>
+        <th class="trans-th">Código</th>
+        <th class="trans-th">Produto</th>
+        <th class="trans-th">Cor</th>
+        <th class="trans-th trans-th-c">Tam</th>
+        ${boards.map(b => `<th class="trans-th trans-th-c" style="color:${boardColor(b)}">${boardLabel(b)}</th>`).join('')}
+        <th class="trans-th">Transferir</th>
+      </tr></thead><tbody>`;
+
+  for (const s of sugestoes) {
+    const transferStr = s.transfers.map(t =>
+      `<span class="trans-move">
+        <span style="color:${boardColor(t.de)}">${boardLabel(t.de)}</span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        <span style="color:${boardColor(t.para)}">${boardLabel(t.para)}</span>
+        <span class="trans-qty">×${t.qty}</span>
+      </span>`
+    ).join(' ');
+
+    html += `<tr class="trans-row">
+      <td class="trans-td trans-cod">${s.cod}</td>
+      <td class="trans-td">${s.desc || '—'}</td>
+      <td class="trans-td">${s.descCor || s.cor || '—'}</td>
+      <td class="trans-td trans-td-c">${s.tam || '—'}</td>
+      ${boards.map(b => {
+        const q = fN(s.stocks[b]);
+        const after = fN(s.stocksAfter[b]);
+        const changed = after !== q;
+        return `<td class="trans-td trans-td-c ${q===0?'trans-zero':q>=2?'trans-ok':'trans-min'}">
+          ${q}${changed?` <span class="trans-after">→${after}</span>`:''}
+        </td>`;
+      }).join('')}
+      <td class="trans-td">${transferStr}</td>
+    </tr>`;
+  }
+
+  html += `</tbody></table></div>`;
+  container.innerHTML = html;
+}
+
 function buildPerfTabs() {
   const tabs = document.getElementById('perfStoreTabs');
   tabs.innerHTML = '';
@@ -1828,6 +1958,11 @@ function initPerfModal() {
   document.getElementById('perfClose').addEventListener('click', closePerfModal);
   document.getElementById('perfOverlay').addEventListener('click', e => {
     if (e.target.id === 'perfOverlay') closePerfModal();
+  });
+  document.getElementById('transBtn').addEventListener('click', openTransModal);
+  document.getElementById('transClose').addEventListener('click', closeTransModal);
+  document.getElementById('transOverlay').addEventListener('click', e => {
+    if (e.target.id === 'transOverlay') closeTransModal();
   });
 }
 
