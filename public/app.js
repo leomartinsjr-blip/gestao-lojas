@@ -2995,7 +2995,13 @@ function calcWeekKpis(emp, week, extraData) {
   const manualMeta = wkMetasForWeek[emp.id]?.meta;
   const wMeta      = (manualMeta > 0) ? manualMeta : autoMeta;
 
+  // D-1 BRT cutoff for projection (same logic as Performance Mensal)
+  const yestBRT = new Date(Date.now() - 3 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000);
+  const yesterdayBRTStr = `${yestBRT.getUTCFullYear()}-${pad(yestBRT.getUTCMonth()+1)}-${pad(yestBRT.getUTCDate())}`;
+  const projCutoff = week.endStr < yesterdayBRTStr ? week.endStr : yesterdayBRTStr;
+
   let valor = 0, pecas = 0, atend = 0, daysElapsed = 0;
+  let valorForProj = 0, weekWeightAccum = 0;
 
   for (const ds of dates) {
     if (ds > cutoff) break;
@@ -3010,6 +3016,26 @@ function calcWeekKpis(emp, week, extraData) {
     if (entry) { valor += entry.value||0; pecas += entry.pecas||0; atend += entry.atendimentos||0; }
   }
 
+  // Accumulate weight and sales up to D-1 BRT for projection
+  for (const ds of dates) {
+    if (ds > projCutoff) break;
+    const monthKey = ds.slice(0, 7);
+    if (monthKey === curKey) {
+      const daysInMonth = new Date(S.year, S.month, 0).getDate();
+      weekWeightAccum += (S.weights[ds] ?? +(100 / daysInMonth).toFixed(6));
+    } else if (extraData?.[monthKey]?.weights) {
+      const [y2, m2] = monthKey.split('-').map(Number);
+      weekWeightAccum += (extraData[monthKey].weights[ds] ?? +(100 / new Date(y2, m2, 0).getDate()).toFixed(6));
+    }
+    let projEntry;
+    if (monthKey === curKey) {
+      projEntry = vsale.entries?.[ds];
+    } else if (extraData?.[monthKey]?.vsales?.[emp.id]) {
+      projEntry = extraData[monthKey].vsales[emp.id].entries?.[ds];
+    }
+    if (projEntry) valorForProj += projEntry.value || 0;
+  }
+
   const pa = (pecas > 0 && atend > 0) ? pecas / atend : null;
   const pctMeta = (wMeta > 0 && valor > 0) ? valor / wMeta * 100 : null;
 
@@ -3018,8 +3044,8 @@ function calcWeekKpis(emp, week, extraData) {
   const isFuture   = week.startStr > todayStr;
 
   let projecao = null;
-  if (!isFuture && wMeta > 0 && daysElapsed > 0 && valor > 0) {
-    projecao = valor / (wMeta * daysElapsed / 7) * wMeta;
+  if (!isFuture && wMeta > 0 && weekWeightAccum > 0 && valorForProj > 0) {
+    projecao = valorForProj * weekWeightSum / weekWeightAccum;
   }
   if (isComplete) projecao = valor;
 
