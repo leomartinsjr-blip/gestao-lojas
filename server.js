@@ -1954,7 +1954,7 @@ app.get('/api/microvix/movimento-raw', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Cache do catálogo LinxProdutos e do filtro de ativos desde 2024 (TTL 4h)
+// Cache do catálogo LinxProdutos e do filtro de ativos desde 2025 (TTL 4h)
 let _catalogCache = null;
 let _catalogCacheAt = 0;
 let _ativosCache = null;   // { ativos: Set, ultVenda: {} }
@@ -1986,7 +1986,7 @@ function _warmTransCache(firstCnpj, firstChave) {
   }
 
   if (!_ativosCache || Date.now() - _ativosCacheAt >= CATALOG_TTL) {
-    fetchMovimento(firstCnpj, '2024-01-01', today, firstChave).then(movAtivos => {
+    fetchMovimento(firstCnpj, '2025-01-01', today, firstChave).then(movAtivos => {
       const ativos = new Set();
       const ultVenda = {};
       for (const r of movAtivos) {
@@ -2057,7 +2057,7 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
     }
 
     const catalog = _catalogCache;
-    const { ativos: ativosDesde2024, ultVenda: ultimaVendaMap } = _ativosCache;
+    const { ativos: ativosDesde2025, ultVenda: ultimaVendaMap } = _ativosCache;
 
     // ── Estoque + giro por loja em paralelo ──
     const estoqueByBoard = {};
@@ -2123,8 +2123,8 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
       const giro = {};
       for (const board of boards) giro[board] = giroByBoard[board][cod] || 0;
 
-      // Ignora produtos sem venda desde 2024
-      if (ativosDesde2024.size > 0 && !ativosDesde2024.has(cod)) continue;
+      // Ignora produtos sem movimento desde 2025
+      if (ativosDesde2025.size > 0 && !ativosDesde2025.has(cod)) continue;
 
       const donors    = boards.filter(b => stocks[b] >= 2).sort((a, b) => stocks[b] - stocks[a]);
       const receivers = boards.filter(b => stocks[b] === 0).sort((a, b) => giro[b] - giro[a]);
