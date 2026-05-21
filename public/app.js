@@ -202,7 +202,11 @@ function navigate(delta) {
 
 // ── Load data ──────────────────────────────────────────────────────────────
 function visibleBoards() {
-  if (!S.user?.board) return Object.entries(BOARDS);
+  if (!S.user?.board) {
+    const all = Object.entries(BOARDS);
+    if (DASH_BOARD_FILTER.size === 0) return all;
+    return all.filter(([k]) => k === 'escritorio' || DASH_BOARD_FILTER.has(k));
+  }
   return Object.entries(BOARDS).filter(([k]) => k === S.user.board);
 }
 
@@ -348,6 +352,37 @@ function renderDashboard() {
   const leftCol = document.createElement('div');
   leftCol.className = 'main-left-col';
   grid.appendChild(leftCol);
+
+  // ── FILTRO DE LOJAS ──────────────────────────────────────────────────────
+  if (isAdmin) {
+    const storeBoards = Object.entries(BOARDS).filter(([k]) => k !== 'escritorio');
+    const filterBar = document.createElement('div');
+    filterBar.className = 'dash-store-filter';
+    const allOn = DASH_BOARD_FILTER.size === 0;
+    filterBar.innerHTML =
+      `<button class="dash-store-chip" data-board="" style="${allOn ? 'color:var(--text);border-color:var(--border);background:var(--surface2,#2a2a2a)' : 'color:var(--muted)'}">Todas</button>` +
+      storeBoards.map(([k, bc]) => {
+        const on = allOn || DASH_BOARD_FILTER.has(k);
+        return `<button class="dash-store-chip" data-board="${k}" style="${on ? `color:${bc.color};border-color:${bc.color}55;background:${bc.color}18` : 'color:var(--muted)'}">
+          ${bc.label}
+        </button>`;
+      }).join('');
+
+    filterBar.querySelectorAll('.dash-store-chip').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const board = btn.dataset.board;
+        if (!board) {
+          DASH_BOARD_FILTER.clear();
+        } else {
+          if (DASH_BOARD_FILTER.has(board)) DASH_BOARD_FILTER.delete(board);
+          else DASH_BOARD_FILTER.add(board);
+          if (DASH_BOARD_FILTER.size === storeBoards.length) DASH_BOARD_FILTER.clear();
+        }
+        renderDashboard();
+      });
+    });
+    leftCol.appendChild(filterBar);
+  }
 
   // ── CARD: Faturamento Diário ─────────────────────────────────────────────
   {
@@ -2547,6 +2582,7 @@ let WK = { refDate: null, cache: {} };
 let DASH_WEEK = { refDate: null };
 let DASH_DAY  = { refDate: null };
 let _dayCardTimer = null;
+let DASH_BOARD_FILTER = new Set(); // empty = todas as lojas
 
 function _startDayCardAutoRefresh() {
   if (_dayCardTimer) clearInterval(_dayCardTimer);
