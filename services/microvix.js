@@ -157,11 +157,13 @@ async function fetchEstoque(cnpj, chave, data) {
 // Fetch LinxProdutos → product catalog with description, color, size per cod_barra
 // Requires dt_update_ini + dt_update_fim; timestamp=0 returns all
 async function fetchProdutos(cnpj, chave, timestamp = 0) {
-  const today = new Date().toISOString().slice(0, 10);
+  const now = new Date();
+  const pad = n => String(n).padStart(2, '0');
+  const todayBR = `${pad(now.getDate())}/${pad(now.getMonth()+1)}/${now.getFullYear()}`;
   const body = buildRequest('LinxProdutos', cnpj, [
     { id: 'timestamp',     valor: String(timestamp) },
-    { id: 'dt_update_ini', valor: '2000-01-01' },
-    { id: 'dt_update_fim', valor: today },
+    { id: 'dt_update_ini', valor: '01/01/2000' },
+    { id: 'dt_update_fim', valor: todayBR },
   ], chave);
   const raw = await postRequest(body, 120_000); // catálogo pode ser grande
 
