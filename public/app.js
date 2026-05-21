@@ -1294,7 +1294,7 @@ async function _loadCompCard(body) {
   const prefix    = `${S.year}-${pad(S.month)}-`;
 
   // Lojas visíveis: login individual vê só a sua
-  const ALL_STORE_KEYS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy'];
+  const ALL_STORE_KEYS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'lez'];
   const isAdmin = !S.user?.board || S.user.board === 'escritorio';
   const STORE_KEYS = isAdmin ? ALL_STORE_KEYS : ALL_STORE_KEYS.filter(k => k === S.user.board);
   const mi = S.month - 1;
@@ -1432,7 +1432,7 @@ function openImg(url) {
 
 // ── Performance dashboard data ─────────────────────────────────────────────
 const PERF_MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-const PERF_AVAIL  = new Set(['delrey','minas','contagem','estacao','tommy']);
+const PERF_AVAIL  = new Set(['delrey','minas','contagem','estacao','tommy','lez']);
 const PERF_CUR    = 4;         // Mai = em andamento
 const PERF_LAST3  = [PERF_CUR-2, PERF_CUR-1, PERF_CUR];  // Mar, Abr, Mai
 
@@ -1467,6 +1467,12 @@ const PERF_HIST = {
     2024:[ 70281, 67887, 71552, 96715, 94302,119344, 90020,124841, 54636, 75209,186100,503194],
     2025:[  null,  null,  null,  null,  null,196540,133765,129143, 83279,106346,112430,251056],
   },
+  lez: {
+    2022:[null,null,null,null,null,null,null,null,null,null,null,null],
+    2023:[null,null,null,null,null,null,null,null,null,null,null,null],
+    2024:[null,null,null,null,null,null,null,null,null,null,null,null],
+    2025:[null,null,null,null,null,null,null,77550,68753,83603,123697,207733],
+  },
 };
 const PERF_2026 = {
   delrey:   [134642,119759,128296,128061,null,null,null,null,null,null,null,null],
@@ -1474,6 +1480,7 @@ const PERF_2026 = {
   contagem: [ 79523, 81210, 93198,110985,null,null,null,null,null,null,null,null],
   estacao:  [ 72779, 77070, 95819, 78318,null,null,null,null,null,null,null,null],
   tommy:    [ 52889, 64108, 77176, 83443,null,null,null,null,null,null,null,null],
+  lez:      [112699, 57373, 49583, 81151,null,null,null,null,null,null,null,null],
 };
 
 function fmtBRL(n)  { if (n === null || n === undefined) return '—'; return 'R$ ' + Math.round(n).toLocaleString('pt-BR'); }
