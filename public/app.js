@@ -1294,7 +1294,7 @@ async function _loadCompCard(body) {
   const prefix    = `${S.year}-${pad(S.month)}-`;
 
   // Lojas visíveis: login individual vê só a sua
-  const ALL_STORE_KEYS = ['delrey', 'minas', 'contagem', 'estacao'];
+  const ALL_STORE_KEYS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy'];
   const isAdmin = !S.user?.board || S.user.board === 'escritorio';
   const STORE_KEYS = isAdmin ? ALL_STORE_KEYS : ALL_STORE_KEYS.filter(k => k === S.user.board);
   const mi = S.month - 1;
