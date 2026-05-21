@@ -1961,6 +1961,71 @@ let _ativosCache = null;   // { ativos: Set, ultVenda: {} }
 let _ativosCacheAt = 0;
 const CATALOG_TTL = 4 * 3600 * 1000;
 
+function _warmTransCache(firstCnpj, firstChave) {
+  const { fetchProdutos, fetchMovimento } = require('./services/microvix');
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (!_catalogCache || Date.now() - _catalogCacheAt >= CATALOG_TTL) {
+    fetchProdutos(firstCnpj, firstChave, 0).then(prodRows => {
+      const cat = {};
+      for (const r of prodRows) {
+        const entry = {
+          descricao:    (r.descricao_basica || r.nome || '').trim(),
+          desc_cor:     (r.desc_cor     || '').trim(),
+          desc_tamanho: (r.desc_tamanho || '').trim(),
+          desc_setor:   (r.desc_setor   || '').trim(),
+        };
+        const barra = (r.cod_barra || '').trim();
+        const cod   = String(r.cod_produto || '').trim();
+        if (barra) cat[barra] = entry;
+        if (cod)   cat[`p:${cod}`] = entry;
+      }
+      _catalogCache = cat; _catalogCacheAt = Date.now();
+      console.log(`[Trans] Catálogo aquecido: ${prodRows.length} produtos`);
+    }).catch(e => console.warn('[Trans] Preload catálogo falhou:', e.message));
+  }
+
+  if (!_ativosCache || Date.now() - _ativosCacheAt >= CATALOG_TTL) {
+    fetchMovimento(firstCnpj, '2024-01-01', today, firstChave).then(movAtivos => {
+      const ativos = new Set();
+      const ultVenda = {};
+      for (const r of movAtivos) {
+        if (r.cancelado === 'S' || r.cancelado === '1') continue;
+        if (r.operacao === 'DS') continue;
+        const cod = String(r.cod_produto || r.codproduto || '').trim();
+        if (!cod) continue;
+        ativos.add(cod);
+        const dataBr = (r.data_documento || '').slice(0, 10);
+        if (dataBr) {
+          const [d, m, y] = dataBr.split('/');
+          const iso = `${y}-${m}-${d}`;
+          if (!ultVenda[cod + '_iso'] || iso > ultVenda[cod + '_iso']) {
+            ultVenda[cod] = dataBr; ultVenda[cod + '_iso'] = iso;
+          }
+        }
+      }
+      _ativosCache = { ativos, ultVenda }; _ativosCacheAt = Date.now();
+      console.log(`[Trans] Ativos 2024 aquecido: ${ativos.size} produtos`);
+    }).catch(e => console.warn('[Trans] Preload ativos falhou:', e.message));
+  }
+}
+
+// GET /api/transferencias/preload — aquece caches em background, responde imediatamente
+app.get('/api/transferencias/preload', requireAdmin, (req, res) => {
+  const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+  const boards = Object.keys(lojas).filter(b => lojas[b]);
+  if (!boards.length) return res.json({ ok: false, error: 'Sem lojas configuradas' });
+  const firstBoard = boards[0];
+  const firstCnpj  = lojas[firstBoard].replace(/\D/g, '');
+  const firstChave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+  _warmTransCache(firstCnpj, firstChave);
+  res.json({
+    ok: true,
+    cached: { catalog: !!_catalogCache, ativos: !!_ativosCache },
+    msg: 'Aquecimento iniciado em background',
+  });
+});
+
 // GET /api/transferencias?dias=30&lojas=delrey,minas,contagem,estacao
 app.get('/api/transferencias', requireAdmin, async (req, res) => {
   try {
@@ -1983,58 +2048,16 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
     const firstCnpj  = lojas[firstBoard].replace(/\D/g, '');
     const firstChave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
 
-    // ── Catálogo (cache 4h) — já filtrado por data_mov_ini=2024-01-01 ──
-    // Produtos sem movimento desde 2024 não aparecem → elimina chamada separada
-    const catalogPromise = (async () => {
-      if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
-      const cat = {};
-      try {
-        const prodRows = await fetchProdutos(firstCnpj, firstChave, 0);
-        for (const r of prodRows) {
-          const entry = {
-            descricao:    (r.descricao_basica || r.nome || '').trim(),
-            desc_cor:     (r.desc_cor     || '').trim(),
-            desc_tamanho: (r.desc_tamanho || '').trim(),
-            desc_setor:   (r.desc_setor   || '').trim(),
-          };
-          const barra = (r.cod_barra || '').trim();
-          const cod   = String(r.cod_produto || '').trim();
-          if (barra) cat[barra] = entry;
-          if (cod)   cat[`p:${cod}`] = entry;
-        }
-        _catalogCache = cat; _catalogCacheAt = Date.now();
-      } catch (e) { console.warn('[Trans] Catálogo falhou:', e.message); }
-      return cat;
-    })();
+    // Aquece caches em background se necessário (não bloqueia)
+    _warmTransCache(firstCnpj, firstChave);
 
-    // ── Movimento desde 2024 (filtro ativos + última venda) — cache 4h ──
-    const ativosPromise = (async () => {
-      if (_ativosCache && Date.now() - _ativosCacheAt < CATALOG_TTL) return _ativosCache;
-      const ativos = new Set();
-      const ultVenda = {};
-      try {
-        const movAtivos = await fetchMovimento(firstCnpj, '2024-01-01', today, firstChave);
-        for (const r of movAtivos) {
-          if (r.cancelado === 'S' || r.cancelado === '1') continue;
-          if (r.operacao === 'DS') continue;
-          const cod = String(r.cod_produto || r.codproduto || '').trim();
-          if (!cod) continue;
-          ativos.add(cod);
-          const dataBr = (r.data_documento || '').slice(0, 10);
-          if (dataBr) {
-            const [d, m, y] = dataBr.split('/');
-            const iso = `${y}-${m}-${d}`;
-            if (!ultVenda[cod + '_iso'] || iso > ultVenda[cod + '_iso']) {
-              ultVenda[cod] = dataBr;
-              ultVenda[cod + '_iso'] = iso;
-            }
-          }
-        }
-        _ativosCache = { ativos, ultVenda };
-        _ativosCacheAt = Date.now();
-      } catch (e) { console.warn('[Trans] Filtro 2024 falhou:', e.message); }
-      return { ativos, ultVenda };
-    })();
+    // Se caches ainda não estão prontos, responde imediatamente para o cliente tentar de novo
+    if (!_catalogCache || !_ativosCache) {
+      return res.json({ cacheLoading: true, msg: 'Preparando dados… tente novamente em alguns segundos.' });
+    }
+
+    const catalog = _catalogCache;
+    const { ativos: ativosDesde2024, ultVenda: ultimaVendaMap } = _ativosCache;
 
     // ── Estoque + giro por loja em paralelo ──
     const estoqueByBoard = {};
@@ -2076,9 +2099,6 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
       }
     }));
 
-    // Aguarda catálogo e filtro 2024 (rodaram em paralelo com os estoques)
-    const [catalog, { ativos: ativosDesde2024, ultVenda: ultimaVendaMap }] =
-      await Promise.all([catalogPromise, ativosPromise]);
 
 
     // ── Todos os cod_produto com estoque em qualquer loja ──

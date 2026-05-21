@@ -1578,6 +1578,7 @@ let _transDias = 30;
 
 function openTransModal() {
   document.getElementById('transOverlay').classList.remove('hidden');
+  fetch('/api/transferencias/preload').catch(() => {});
   renderTransView();
 }
 function closeTransModal() {
@@ -1618,6 +1619,16 @@ async function loadTransSugestoes(container) {
     const r = await fetch(`/api/transferencias?dias=${_transDias}&lojas=${lojas}`);
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || 'Erro desconhecido');
+    if (data.cacheLoading) {
+      let secs = 20;
+      container.innerHTML = `<div class="trans-loading">Preparando dados… aguarde <span id="transCountdown">${secs}</span>s</div>`;
+      const iv = setInterval(() => {
+        const el = document.getElementById('transCountdown');
+        if (el) el.textContent = --secs;
+      }, 1000);
+      setTimeout(() => { clearInterval(iv); loadTransSugestoes(container); }, 20000);
+      return;
+    }
     renderTransTable(container, data);
   } catch (e) {
     container.innerHTML = `<div class="trans-error">Erro: ${e.message}</div>`;
