@@ -1954,9 +1954,11 @@ app.get('/api/microvix/movimento-raw', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Cache do catálogo LinxProdutos (raro de mudar — TTL 4h)
+// Cache do catálogo LinxProdutos e do filtro de ativos desde 2024 (TTL 4h)
 let _catalogCache = null;
 let _catalogCacheAt = 0;
+let _ativosCache = null;   // { ativos: Set, ultVenda: {} }
+let _ativosCacheAt = 0;
 const CATALOG_TTL = 4 * 3600 * 1000;
 
 // GET /api/transferencias?dias=30&lojas=delrey,minas,contagem,estacao
@@ -2005,8 +2007,9 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
       return cat;
     })();
 
-    // ── Movimento desde 2024 (filtro ativos + última venda) — uma loja basta ──
+    // ── Movimento desde 2024 (filtro ativos + última venda) — cache 4h ──
     const ativosPromise = (async () => {
+      if (_ativosCache && Date.now() - _ativosCacheAt < CATALOG_TTL) return _ativosCache;
       const ativos = new Set();
       const ultVenda = {};
       try {
@@ -2027,6 +2030,8 @@ app.get('/api/transferencias', requireAdmin, async (req, res) => {
             }
           }
         }
+        _ativosCache = { ativos, ultVenda };
+        _ativosCacheAt = Date.now();
       } catch (e) { console.warn('[Trans] Filtro 2024 falhou:', e.message); }
       return { ativos, ultVenda };
     })();
