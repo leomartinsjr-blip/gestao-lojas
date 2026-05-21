@@ -136,7 +136,7 @@ async function runSync(readDB, writeDB) {
     let totalUpdated = 0;
 
     for (const [board, cnpj] of Object.entries(lojas)) {
-      if (db.boardSettings?.[board]?.microvixSync !== true) {
+      if (db.boardSettings?.[board]?.microvixSync === false) {
         console.log(`[Microvix/${board}] Auto-sync desabilitado, pulando.`);
         continue;
       }
@@ -216,7 +216,7 @@ async function runSyncHoje(readDB, writeDB) {
     let totalUpdated = 0;
 
     for (const [board, cnpj] of Object.entries(lojas)) {
-      if (db.boardSettings?.[board]?.microvixSync !== true) {
+      if (db.boardSettings?.[board]?.microvixSync === false) {
         continue;
       }
       try {
@@ -253,7 +253,7 @@ async function runSync30Dias(readDB, writeDB) {
     let totalUpdated = 0;
 
     for (const [board, cnpj] of Object.entries(lojas)) {
-      if (db.boardSettings?.[board]?.microvixSync !== true) {
+      if (db.boardSettings?.[board]?.microvixSync === false) {
         console.log(`[Microvix/30d/${board}] Auto-sync desabilitado, pulando.`);
         continue;
       }
