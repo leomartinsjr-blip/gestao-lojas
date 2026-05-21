@@ -118,6 +118,14 @@
       </svg>
       Folgas
     </button>
+    <button id="usersBtn" class="folgas-topbar-btn hidden" title="Gerenciar Logins">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="9" cy="7" r="4"/>
+        <path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
+        <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
+      </svg>
+      Logins
+    </button>
     <div class="topbar-user">
       <div id="userChip" class="user-chip"></div>
       <button id="logoutBtn" class="logout-btn" title="Sair">
@@ -475,6 +483,47 @@
       <button class="folgas-close-btn" id="boletasClose" title="Fechar">✕</button>
     </div>
     <div class="perf-body" id="boletasBody"></div>
+  </div>
+</div>
+
+<!-- USERS MODAL -->
+<div id="usersOverlay" class="folgas-overlay hidden">
+  <div class="folgas-panel" style="max-width:600px">
+    <div class="folgas-hdr">
+      <span class="folgas-hdr-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="9" cy="7" r="4"/>
+          <path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/>
+          <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
+        </svg>
+        Gerenciar Logins
+      </span>
+      <button class="folgas-close-btn" id="usersClose" title="Fechar">✕</button>
+    </div>
+    <div class="users-body">
+      <!-- Formulário novo usuário -->
+      <div class="users-add-form">
+        <div class="users-form-title">Novo Usuário</div>
+        <div class="users-form-row">
+          <input id="newUsername" class="users-input" type="text" placeholder="Usuário (login)" autocomplete="off" spellcheck="false">
+          <input id="newLabel"    class="users-input" type="text" placeholder="Nome exibido">
+          <select id="newBoard" class="users-input users-select">
+            <option value="escritorio">Escritório (admin)</option>
+            <option value="delrey">Del Rey</option>
+            <option value="minas">Minas</option>
+            <option value="contagem">Contagem</option>
+            <option value="estacao">Estação</option>
+            <option value="tommy">Tommy</option>
+            <option value="lez">Lez a Lez</option>
+          </select>
+          <input id="newPassword" class="users-input" type="text" placeholder="Senha">
+          <button id="addUserBtn" class="users-add-btn">+ Adicionar</button>
+        </div>
+        <div id="usersFormError" class="users-form-error hidden"></div>
+      </div>
+      <!-- Lista de usuários -->
+      <div id="usersList" class="users-list"></div>
+    </div>
   </div>
 </div>
 

@@ -76,6 +76,7 @@ async function checkAuth() {
     const isAdmin = !S.user.board || S.user.board === 'escritorio';
     document.getElementById('funcBtn').style.display = isAdmin ? '' : 'none';
     document.getElementById('campanhasBtn').style.display = isAdmin ? '' : 'none';
+    document.getElementById('usersBtn').style.display = isAdmin ? '' : 'none';
     const now = new Date();
     S.year  = now.getFullYear();
     S.month = now.getMonth() + 1;
@@ -4818,6 +4819,112 @@ function initBoletasModal() {
   });
 }
 
+// ── Users Management ───────────────────────────────────────────────────────
+const BOARD_LABELS = {
+  escritorio: 'Escritório (admin)', delrey: 'Del Rey', minas: 'Minas',
+  contagem: 'Contagem', estacao: 'Estação', tommy: 'Tommy', lez: 'Lez a Lez'
+};
+
+async function _loadUsersList() {
+  const list = document.getElementById('usersList');
+  list.innerHTML = '<div class="users-loading">Carregando…</div>';
+  try {
+    const users = await apiFetch('GET', '/api/users');
+    if (!users.length) { list.innerHTML = '<div class="users-loading">Nenhum usuário</div>'; return; }
+    list.innerHTML = `
+      <table class="users-table">
+        <thead><tr>
+          <th class="users-th">Usuário</th>
+          <th class="users-th">Nome</th>
+          <th class="users-th">Board</th>
+          <th class="users-th">Nova Senha</th>
+          <th class="users-th"></th>
+        </tr></thead>
+        <tbody>
+        ${users.map(u => `
+          <tr class="users-tr" data-user="${u.username}">
+            <td class="users-td users-td-user">${u.username}</td>
+            <td class="users-td"><input class="users-input users-inline-input" data-field="label" value="${u.label}" placeholder="Nome"></td>
+            <td class="users-td">
+              <select class="users-input users-select users-inline-input" data-field="board">
+                ${Object.entries(BOARD_LABELS).map(([v,l]) => `<option value="${v}"${u.board===v?' selected':''}>${l}</option>`).join('')}
+              </select>
+            </td>
+            <td class="users-td"><input class="users-input users-inline-input" data-field="password" type="text" placeholder="••••••" autocomplete="off"></td>
+            <td class="users-td users-td-actions">
+              <button class="users-save-btn" data-user="${u.username}">Salvar</button>
+              <button class="users-del-btn" data-user="${u.username}">Excluir</button>
+            </td>
+          </tr>`).join('')}
+        </tbody>
+      </table>`;
+
+    list.querySelectorAll('.users-save-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const row = list.querySelector(`tr[data-user="${btn.dataset.user}"]`);
+        const body = {};
+        row.querySelectorAll('[data-field]').forEach(el => {
+          if (el.value.trim()) body[el.dataset.field] = el.value.trim();
+        });
+        try {
+          await apiFetch('PUT', `/api/users/${btn.dataset.user}`, body);
+          btn.textContent = '✓';
+          setTimeout(() => btn.textContent = 'Salvar', 1500);
+        } catch (e) { alert('Erro: ' + e.message); }
+      });
+    });
+
+    list.querySelectorAll('.users-del-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm(`Excluir usuário "${btn.dataset.user}"?`)) return;
+        try {
+          await apiFetch('DELETE', `/api/users/${btn.dataset.user}`);
+          _loadUsersList();
+        } catch (e) { alert('Erro: ' + e.message); }
+      });
+    });
+  } catch (e) {
+    list.innerHTML = `<div class="users-loading">Erro: ${e.message}</div>`;
+  }
+}
+
+function openUsersModal() {
+  document.getElementById('usersOverlay').classList.remove('hidden');
+  _loadUsersList();
+  document.getElementById('newUsername').focus();
+}
+
+function closeUsersModal() {
+  document.getElementById('usersOverlay').classList.add('hidden');
+}
+
+function initUsersModal() {
+  document.getElementById('usersBtn').addEventListener('click', openUsersModal);
+  document.getElementById('usersClose').addEventListener('click', closeUsersModal);
+  document.getElementById('usersOverlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('usersOverlay')) closeUsersModal();
+  });
+  document.getElementById('addUserBtn').addEventListener('click', async () => {
+    const username = document.getElementById('newUsername').value.trim();
+    const label    = document.getElementById('newLabel').value.trim();
+    const board    = document.getElementById('newBoard').value;
+    const password = document.getElementById('newPassword').value.trim();
+    const errEl    = document.getElementById('usersFormError');
+    errEl.classList.add('hidden');
+    if (!username || !password) { errEl.textContent = 'Usuário e senha são obrigatórios'; errEl.classList.remove('hidden'); return; }
+    try {
+      await apiFetch('POST', '/api/users', { username, label, board, password });
+      document.getElementById('newUsername').value = '';
+      document.getElementById('newLabel').value = '';
+      document.getElementById('newPassword').value = '';
+      _loadUsersList();
+    } catch (e) {
+      errEl.textContent = e.message;
+      errEl.classList.remove('hidden');
+    }
+  });
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
 function init() {
   initLoginForm();
@@ -4829,6 +4936,7 @@ function init() {
   initFuncionariosModal();
   initCampanhasModal();
   initBoletasModal();
+  initUsersModal();
   document.getElementById('logoutBtn').addEventListener('click', logout);
 
 

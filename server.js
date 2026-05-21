@@ -90,6 +90,10 @@ function readUsers() {
   catch { return {}; }
 }
 
+function writeUsers(users) {
+  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+}
+
 const BOARDS   = ['escritorio','delrey','minas','contagem','estacao','tommy','lez'];
 const SECTIONS = ['performance','estoque_marca','estoque_grupo','pauta','pendencias'];
 
@@ -159,6 +163,51 @@ app.post('/api/login', (req, res) => {
 // ── POST /api/logout ───────────────────────────────────────────────────────
 app.post('/api/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
+});
+
+// ── GET /api/users  (admin) ────────────────────────────────────────────────
+app.get('/api/users', requireAdmin, (req, res) => {
+  const users = readUsers();
+  const list = Object.entries(users).map(([username, u]) => ({
+    username, label: u.label || username, board: u.board || 'escritorio'
+  }));
+  res.json(list);
+});
+
+// ── POST /api/users  (admin) ───────────────────────────────────────────────
+app.post('/api/users', requireAdmin, (req, res) => {
+  const { username, password, label, board } = req.body || {};
+  if (!username || !password) return res.status(400).json({ error: 'Informe usuário e senha' });
+  const key = username.toLowerCase().trim();
+  const users = readUsers();
+  if (users[key]) return res.status(409).json({ error: 'Usuário já existe' });
+  users[key] = { password, label: label || key, board: board || 'escritorio' };
+  writeUsers(users);
+  res.json({ ok: true, username: key });
+});
+
+// ── PUT /api/users/:username  (admin) ─────────────────────────────────────
+app.put('/api/users/:username', requireAdmin, (req, res) => {
+  const key = req.params.username.toLowerCase();
+  const users = readUsers();
+  if (!users[key]) return res.status(404).json({ error: 'Usuário não encontrado' });
+  const { password, label, board } = req.body || {};
+  if (password) users[key].password = password;
+  if (label !== undefined) users[key].label = label;
+  if (board !== undefined) users[key].board = board;
+  writeUsers(users);
+  res.json({ ok: true });
+});
+
+// ── DELETE /api/users/:username  (admin) ──────────────────────────────────
+app.delete('/api/users/:username', requireAdmin, (req, res) => {
+  const key = req.params.username.toLowerCase();
+  if (key === req.session.user.username) return res.status(400).json({ error: 'Não pode excluir seu próprio usuário' });
+  const users = readUsers();
+  if (!users[key]) return res.status(404).json({ error: 'Usuário não encontrado' });
+  delete users[key];
+  writeUsers(users);
+  res.json({ ok: true });
 });
 
 // ── GET /api/me ────────────────────────────────────────────────────────────
