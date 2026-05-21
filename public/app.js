@@ -4634,6 +4634,38 @@ function init() {
   initCampanhasModal();
   initBoletasModal();
   document.getElementById('logoutBtn').addEventListener('click', logout);
+
+  // ── Export / Import (admin only) ────────────────────────────────────────
+  const isAdmin = !S.user?.board || S.user.board === 'escritorio';
+  if (isAdmin) {
+    const exportBtn = document.getElementById('adminExportBtn');
+    const importLabel = document.getElementById('adminImportLabel');
+    exportBtn.classList.remove('hidden');
+    importLabel.classList.remove('hidden');
+
+    exportBtn.addEventListener('click', async () => {
+      try {
+        const r = await fetch('/api/admin/export-data');
+        const blob = await r.blob();
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = 'gestao-data.json'; a.click();
+        URL.revokeObjectURL(url);
+      } catch (e) { toast('Erro ao exportar: ' + e.message, true); }
+    });
+
+    document.getElementById('adminImportInput').addEventListener('change', async e => {
+      const file = e.target.files[0]; if (!file) return;
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+        const r = await apiFetch('POST', '/api/admin/import-data', data);
+        if (r.ok) { toast('Dados importados ✓'); await loadState(); renderDashboard(); }
+        else toast('Erro: ' + r.error, true);
+      } catch (err) { toast('Erro ao importar: ' + err.message, true); }
+      e.target.value = '';
+    });
+  }
 document.getElementById('btnPrev').addEventListener('click', () => navigate(-1));
   document.getElementById('btnNext').addEventListener('click', () => navigate(1));
   checkAuth();

@@ -1683,6 +1683,52 @@ app.post('/api/microvix/sync-photos', requireAdmin, async (req, res) => {
   }
 });
 
+// ── GET /api/admin/export-data ────────────────────────────────────────────
+app.get('/api/admin/export-data', requireAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    res.setHeader('Content-Disposition', 'attachment; filename="gestao-data.json"');
+    res.json(db);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/admin/import-data ───────────────────────────────────────────
+// Mescla vsales (meta.mensal) e months do payload sem sobrescrever employees/users
+app.post('/api/admin/import-data', requireAdmin, async (req, res) => {
+  try {
+    const incoming = req.body;
+    if (!incoming || typeof incoming !== 'object')
+      return res.status(400).json({ error: 'Payload inválido' });
+
+    const db = await readDB();
+
+    // Mescla vsales: preserva entries locais, importa meta.mensal
+    if (incoming.vsales) {
+      if (!db.vsales) db.vsales = {};
+      for (const [empId, vs] of Object.entries(incoming.vsales)) {
+        if (!db.vsales[empId]) db.vsales[empId] = {};
+        if (vs.meta) db.vsales[empId].meta = vs.meta;
+        if (vs.entries) {
+          if (!db.vsales[empId].entries) db.vsales[empId].entries = {};
+          Object.assign(db.vsales[empId].entries, vs.entries);
+        }
+      }
+    }
+
+    // Mescla months (pesos diários, metas semanais, etc.)
+    if (incoming.months) {
+      if (!db.months) db.months = {};
+      for (const [mk, mv] of Object.entries(incoming.months)) {
+        if (!db.months[mk]) db.months[mk] = mv;
+        else db.months[mk] = { ...mv, ...db.months[mk] };
+      }
+    }
+
+    await writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Start ──────────────────────────────────────────────────────────────────
 initMongo()
   .then(() => {
