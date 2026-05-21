@@ -1078,6 +1078,7 @@ function _renderDashWeekBody(body, week, extraData) {
       <th class="dw-th dw-th-r">Meta Sem.</th>
       <th class="dw-th dw-th-r">Realizado</th>
       <th class="dw-th dw-th-r">% Meta</th>
+      <th class="dw-th dw-th-r">% Projeção</th>
       <th class="dw-th dw-th-r">Projeção</th>
       <th class="dw-th dw-th-r">PA</th>
       <th class="dw-th dw-th-r">Prêmio</th>
@@ -1097,8 +1098,9 @@ function _renderDashWeekBody(body, week, extraData) {
         if (k.pTotal != null) totPremio += k.pTotal;
         if (k.projecao != null) { totProjecao += k.projecao; hasProj = true; }
 
-        const pctCls  = k.pctMeta  == null ? '' : k.pctMeta  >= 100 ? 'kpi-pos' : k.pctMeta  >= 80 ? 'kpi-warn' : 'kpi-neg';
-        const projCls = k.projecao == null ? '' : k.projecao >= k.wMeta ? 'kpi-pos' : 'kpi-neg';
+        const pctCls     = k.pctMeta  == null ? '' : k.pctMeta  >= 100 ? 'kpi-pos' : k.pctMeta  >= 80 ? 'kpi-warn' : 'kpi-neg';
+        const pctProjCls = k.pctProj  == null ? '' : k.pctProj  >= 100 ? 'kpi-pos' : k.pctProj  >= 80 ? 'kpi-warn' : 'kpi-neg';
+        const projCls    = k.projecao == null ? '' : k.projecao >= k.wMeta ? 'kpi-pos' : 'kpi-neg';
         const paEarned = k.hitMeta && k.hitPA;
         const premioHtml = k.isFuture
           ? '<span class="dw-p-pending">—</span>'
@@ -1110,16 +1112,19 @@ function _renderDashWeekBody(body, week, extraData) {
           <td class="dw-td dw-td-num">${fBRL(k.wMeta||null)}</td>
           <td class="dw-td dw-td-num">${fBRL(k.valor||null)}</td>
           <td class="dw-td dw-td-num ${pctCls}">${fPct(k.pctMeta)}</td>
+          <td class="dw-td dw-td-num ${pctProjCls}">${fPct(k.pctProj)}</td>
           <td class="dw-td dw-td-num ${projCls}">${fBRL(k.projecao)}</td>
           <td class="dw-td dw-td-num${k.pa!=null?(k.pa>=1.8?' pa-ok':' pa-low'):''}">${fDec(k.pa)}</td>
           <td class="dw-td dw-premio">${premioHtml}</td>
         </tr>`);
       }
 
-      const totPct    = (totMeta>0&&totValor>0) ? totValor/totMeta*100 : null;
-      const totPa     = (totPecas>0&&totAtend>0) ? totPecas/totAtend : null;
-      const tpCls     = totPct==null?'': totPct>=100?'kpi-pos': totPct>=80?'kpi-warn':'kpi-neg';
-      const tprojCls  = !hasProj?'': totProjecao>=totMeta?'kpi-pos':'kpi-neg';
+      const totPct     = (totMeta>0&&totValor>0) ? totValor/totMeta*100 : null;
+      const totPctProj = (totMeta>0&&hasProj) ? totProjecao/totMeta*100 : null;
+      const totPa      = (totPecas>0&&totAtend>0) ? totPecas/totAtend : null;
+      const tpCls      = totPct==null?'': totPct>=100?'kpi-pos': totPct>=80?'kpi-warn':'kpi-neg';
+      const tpProjCls  = totPctProj==null?'': totPctProj>=100?'kpi-pos': totPctProj>=80?'kpi-warn':'kpi-neg';
+      const tprojCls   = !hasProj?'': totProjecao>=totMeta?'kpi-pos':'kpi-neg';
       const isExp     = _weekExpanded.has(bk);
 
       // Store summary row (always visible, clickable)
@@ -1134,6 +1139,7 @@ function _renderDashWeekBody(body, week, extraData) {
         <td class="dw-td dw-td-num">${fBRL(totMeta||null)}</td>
         <td class="dw-td dw-td-num">${fBRL(totValor||null)}</td>
         <td class="dw-td dw-td-num ${tpCls}">${fPct(totPct)}</td>
+        <td class="dw-td dw-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
         <td class="dw-td dw-td-num ${tprojCls}">${hasProj?fBRL(totProjecao):'—'}</td>
         <td class="dw-td dw-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
         <td class="dw-td dw-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>`;
@@ -1152,6 +1158,7 @@ function _renderDashWeekBody(body, week, extraData) {
           <td class="dw-td dw-td-num">${fBRL(totMeta||null)}</td>
           <td class="dw-td dw-td-num">${fBRL(totValor||null)}</td>
           <td class="dw-td dw-td-num ${tpCls}">${fPct(totPct)}</td>
+          <td class="dw-td dw-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
           <td class="dw-td dw-td-num ${tprojCls}">${hasProj?fBRL(totProjecao):'—'}</td>
           <td class="dw-td dw-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
           <td class="dw-td dw-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
