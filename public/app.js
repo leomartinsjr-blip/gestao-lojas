@@ -963,14 +963,15 @@ function _renderDayCardBody(body, dateStr) {
     const storePa  = storeTotalAtend > 0 ? storeTotalPecas / storeTotalAtend : null;
     const storePct = storeTotalMeta > 0 ? storeTotalVal / storeTotalMeta * 100 : null;
     const sPctCls  = storePct == null ? '' : storePct >= 100 ? 'dia-pct-ok' : storePct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
-    const isExp    = _dayCardExpanded.has(bk);
+    const isAdmin  = !S.user?.board || S.user.board === 'escritorio';
+    const isExp    = !isAdmin || _dayCardExpanded.has(bk);
 
-    // Store row (always visible) — shows totals + chevron, click to expand
+    // Store row (always visible) — shows totals + chevron, click to expand (admin only)
     const storeRow = document.createElement('div');
     storeRow.className = 'dia-row dia-store-row' + (isExp ? ' dia-store-expanded' : '');
     storeRow.innerHTML = `
       <span class="dia-name dia-store-label">
-        <span class="dia-chevron">${isExp ? '▾' : '▸'}</span>
+        ${isAdmin ? `<span class="dia-chevron">${isExp ? '▾' : '▸'}</span>` : ''}
         <span class="dash-store-dot" style="background:${bc.color}"></span>
         ${bc.label}
       </span>
@@ -978,14 +979,17 @@ function _renderDayCardBody(body, dateStr) {
       <span class="dia-meta">${storeTotalMeta > 0 ? fV(storeTotalMeta) : '—'}</span>
       <span class="dia-pa">${storePa != null ? storePa.toFixed(2) : '—'}</span>
       <span class="dia-pct ${sPctCls}">${storePct != null ? storePct.toFixed(1) + '%' : '—'}</span>`;
-    storeRow.addEventListener('click', () => {
-      if (_dayCardExpanded.has(bk)) _dayCardExpanded.delete(bk);
-      else _dayCardExpanded.add(bk);
-      _renderDayCardBody(body, dateStr);
-    });
+    if (isAdmin) {
+      storeRow.style.cursor = 'pointer';
+      storeRow.addEventListener('click', () => {
+        if (_dayCardExpanded.has(bk)) _dayCardExpanded.delete(bk);
+        else _dayCardExpanded.add(bk);
+        _renderDayCardBody(body, dateStr);
+      });
+    }
     body.appendChild(storeRow);
 
-    // Vendor rows (only when expanded)
+    // Vendor rows (always visible for store users, toggle for admin)
     if (isExp) {
       const wrap = document.createElement('div');
       wrap.innerHTML = vendorRowsHtml.join('');
