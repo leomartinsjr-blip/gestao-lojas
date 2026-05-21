@@ -1911,6 +1911,33 @@ app.get('/api/microvix/produtos-raw', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/microvix/produtos-xml?board=delrey  → retorna resposta RAW do Microvix para diagnóstico
+app.get('/api/microvix/produtos-xml', requireAdmin, async (req, res) => {
+  try {
+    const { buildRequest, postRequest } = require('./services/microvix');
+    const board = req.query.board || 'delrey';
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = (lojas[board] || '').replace(/\D/g, '');
+    if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado` });
+    const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Testa variações de params para descobrir o formato aceito
+    const variant = req.query.v || '1';
+    let params;
+    if (variant === '1') params = [{ id: 'timestamp', valor: '0' }, { id: 'dt_update_fim', valor: today }];
+    else if (variant === '2') params = [{ id: 'timestamp', valor: '1' }, { id: 'dt_update_fim', valor: today }];
+    else if (variant === '3') params = [{ id: 'dt_update_fim', valor: today }];
+    else if (variant === '4') params = [{ id: 'timestamp', valor: '0' }, { id: 'dt_update_fim', valor: `${today}T23:59:59` }];
+    else if (variant === '5') params = [{ id: 'timestamp', valor: '0' }];
+
+    const body = buildRequest('LinxProdutos', cnpj, params, chave);
+    const raw  = await postRequest(body, 30_000);
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.send(raw.slice(0, 2000)); // primeiros 2000 chars
+  } catch (e) { res.status(500).send(e.message); }
+});
+
 // GET /api/microvix/movimento-raw?board=delrey  → debug: campos de LinxMovimento
 app.get('/api/microvix/movimento-raw', requireAdmin, async (req, res) => {
   try {
