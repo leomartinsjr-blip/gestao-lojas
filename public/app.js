@@ -338,11 +338,24 @@ function renderDashboard() {
   const isCurrentMonth = S.year === today.getFullYear() && S.month === today.getMonth() + 1;
   const cutoff = isCurrentMonth ? todayStr : (lastFilledDay || todayStr);
 
+  // Performance Mensal usa D-1 (dados sempre completos)
+  const _yBRT = new Date(Date.now() - 3 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000);
+  const yesterdayStr = `${_yBRT.getUTCFullYear()}-${pad(_yBRT.getUTCMonth()+1)}-${pad(_yBRT.getUTCDate())}`;
+  const perfCutoff = isCurrentMonth ? yesterdayStr : (lastFilledDay || yesterdayStr);
+  const perfCutoffLabel = `dados até ${perfCutoff.slice(8)}/${perfCutoff.slice(5,7)}`;
+
   let weightAccum = 0;
   for (let d = 1; d <= daysInMonth; d++) {
     const ds = `${S.year}-${pad(S.month)}-${pad(d)}`;
     if (ds > cutoff) break;
     weightAccum += (S.weights[ds] ?? defW);
+  }
+
+  let perfWeightAccum = 0;
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds = `${S.year}-${pad(S.month)}-${pad(d)}`;
+    if (ds > perfCutoff) break;
+    perfWeightAccum += (S.weights[ds] ?? defW);
   }
 
 
@@ -464,7 +477,7 @@ function renderDashboard() {
         </svg>
         Performance Mensal
       </span>
-      <span class="main-card-sub">${['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][S.month-1]} ${S.year}<span class="main-card-sync-date">${syncDateLabel}</span></span>
+      <span class="main-card-sub">${['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][S.month-1]} ${S.year}<span class="main-card-sync-date">${perfCutoffLabel}</span></span>
     </div>
     <div class="main-card-body"></div>
   `;
@@ -507,11 +520,11 @@ function renderDashboard() {
       let valor=0, pecas=0, atend=0;
       for (let d=1; d<=daysInMonth; d++) {
         const ds = `${S.year}-${pad(S.month)}-${pad(d)}`;
-        if (ds > cutoff) break;
+        if (ds > perfCutoff) break;
         const e = entries[ds];
         if (e) { valor += e.value||0; pecas += e.pecas||0; atend += e.atendimentos||0; }
       }
-      const metaAccum = mensal * weightAccum / 100;
+      const metaAccum = mensal * perfWeightAccum / 100;
       const pctMeta   = (metaAccum > 0 && valor > 0) ? valor/metaAccum*100 : null;
       const projecao  = (valor > 0 && metaAccum > 0) ? valor/metaAccum*mensal : null;
       const pa        = (pecas > 0 && atend > 0) ? pecas/atend : null;
@@ -534,7 +547,7 @@ function renderDashboard() {
     // Compute totals before rendering (needed for collapsed header)
     let totValor=0, totPecas=0, totAtend=0, totMeta=0;
     for (const d of rowData) { totValor += d.valor; totPecas += d.pecas; totAtend += d.atend; totMeta += d.mensal; }
-    const totMetaAccum = totMeta * weightAccum / 100;
+    const totMetaAccum = totMeta * perfWeightAccum / 100;
     const totPct  = (totMetaAccum > 0 && totValor > 0) ? totValor/totMetaAccum*100 : null;
     const totProj = (totValor > 0 && totMetaAccum > 0) ? totValor/totMetaAccum*totMeta : null;
     const totPa   = (totPecas > 0 && totAtend > 0) ? totPecas/totAtend : null;
@@ -622,7 +635,7 @@ function renderDashboard() {
   }
 
   if (isAdmin && [...visible].length > 1 && grandValor > 0) {
-    const gMetaAccum = grandMeta * weightAccum / 100;
+    const gMetaAccum = grandMeta * perfWeightAccum / 100;
     const gPct  = (gMetaAccum > 0 && grandValor > 0) ? grandValor / gMetaAccum * 100 : null;
     const gProj = (grandValor > 0 && gMetaAccum > 0) ? grandValor / gMetaAccum * grandMeta : null;
     const gPa   = (grandPecas > 0 && grandAtend > 0) ? grandPecas / grandAtend : null;
