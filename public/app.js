@@ -1573,7 +1573,7 @@ function closePerfModal() {
 }
 
 // ── Transferências view ────────────────────────────────────────────────────
-const TRANS_BOARDS = ['delrey','minas','contagem','estacao','lez'];
+const TRANS_BOARDS = ['delrey','minas','contagem','estacao'];
 let _transDias = 30;
 
 function openTransModal() {
