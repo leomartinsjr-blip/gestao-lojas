@@ -989,20 +989,20 @@ body {
   border-radius: .25rem; margin-left: .2rem; vertical-align: middle;
 }
 .ds-meta-seg-2 .ds-meta-seg-badge { background: rgba(63,185,80,.3); color: #3FB950; }
-.ds-meta-seg-3 .ds-meta-seg-badge { background: rgba(88,166,255,.2); color: #58A6FF; }
+.ds-meta-seg-3 .ds-meta-seg-badge { background: rgba(251,191,36,.25); color: #FBBF24; }
 .ds-meta-seg-val {
   font-size: 1.2rem; font-weight: 800; letter-spacing: -.02em; white-space: nowrap;
 }
 .ds-meta-seg-1 .ds-meta-seg-val,
 .ds-meta-seg-2 .ds-meta-seg-val { color: #fff; }
-.ds-meta-seg-3 .ds-meta-seg-val { color: #58A6FF; }
+.ds-meta-seg-3 .ds-meta-seg-val { color: #FBBF24; }
 .ds-meta-seg-val-wrap { display: flex; align-items: center; gap: .4rem; }
 .ds-meta-com-badge {
   font-size: .7rem; font-weight: 700; padding: .05rem .35rem;
   border-radius: .25rem; margin-left: .25rem; vertical-align: middle;
   background: rgba(255,255,255,.15); color: #fff; letter-spacing: 0;
 }
-.ds-meta-com-badge-gold { background: rgba(88,166,255,.2); color: #58A6FF; }
+.ds-meta-com-badge-gold { background: rgba(251,191,36,.25); color: #FBBF24; }
 .ds-meta-input {
   background: transparent; border: none; border-bottom: 2px solid rgba(88,166,255,.6);
   border-radius: 0; color: #fff; font-family: inherit;
