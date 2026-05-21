@@ -3249,6 +3249,34 @@ function initFuncionariosModal() {
         mxBtn.disabled = false;
       }
     });
+
+    const impBtn = document.getElementById('funcMxImportBtn');
+    impBtn.classList.remove('hidden');
+    impBtn.addEventListener('click', async () => {
+      const boardSel = document.getElementById('funcBoardFilter');
+      const board = boardSel?.value || '';
+      const label = board || 'todas as lojas';
+      if (!confirm(`Importar vendedores ativos do Microvix para ${label}?`)) return;
+      impBtn.disabled = true;
+      const orig = impBtn.innerHTML;
+      impBtn.innerHTML = '<span style="opacity:.6">Importando…</span>';
+      try {
+        const r = await apiFetch('POST', '/api/microvix/import-vendedores', { board: board || undefined });
+        const parts = [];
+        if (r.created) parts.push(`${r.created} criado${r.created > 1 ? 's' : ''}`);
+        if (r.updated) parts.push(`${r.updated} atualizado${r.updated > 1 ? 's' : ''}`);
+        if (r.skipped) parts.push(`${r.skipped} já existente${r.skipped > 1 ? 's' : ''}`);
+        const msg = parts.length ? parts.join(', ') + ' ✓' : 'Nenhum vendedor novo encontrado';
+        toast(msg, !r.created && !r.updated);
+        if (r.errors?.length) console.warn('[Microvix/import] Erros:', r.errors);
+        if (r.created || r.updated) await loadFuncionarios();
+      } catch (e) {
+        toast('Erro ao importar: ' + e.message, true);
+      } finally {
+        impBtn.innerHTML = orig;
+        impBtn.disabled = false;
+      }
+    });
   }
 }
 
