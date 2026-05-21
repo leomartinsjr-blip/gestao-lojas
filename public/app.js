@@ -1432,7 +1432,7 @@ function openImg(url) {
 
 // ── Performance dashboard data ─────────────────────────────────────────────
 const PERF_MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-const PERF_AVAIL  = new Set(['delrey','minas','contagem','estacao']);
+const PERF_AVAIL  = new Set(['delrey','minas','contagem','estacao','tommy']);
 const PERF_CUR    = 4;         // Mai = em andamento
 const PERF_LAST3  = [PERF_CUR-2, PERF_CUR-1, PERF_CUR];  // Mar, Abr, Mai
 
@@ -1461,15 +1461,22 @@ const PERF_HIST = {
     2024:[109284,122665,133511,143844,188523,180783,158848,160592,130708,146317,155069,381802],
     2025:[116994, 92631, 95410,132345,134779,146808,116226,110715,104962,121011,117370,302912],
   },
+  tommy: {
+    2022:[null,null,null,null,null,null,null,null,null,null,null,null],
+    2023:[null,null,null,null,null,null,null,null,null,null,null,null],
+    2024:[ 70281, 67887, 71552, 96715, 94302,119344, 90020,124841, 54636, 75209,186100,503194],
+    2025:[  null,  null,  null,  null,  null,196540,133765,129143, 83279,106346,112430,251056],
+  },
 };
 const PERF_2026 = {
   delrey:   [134642,119759,128296,128061,null,null,null,null,null,null,null,null],
   minas:    [ 90962, 65116, 90731, 68912,null,null,null,null,null,null,null,null],
   contagem: [ 79523, 81210, 93198,110985,null,null,null,null,null,null,null,null],
   estacao:  [ 72779, 77070, 95819, 78318,null,null,null,null,null,null,null,null],
+  tommy:    [ 52889, 64108, 77176, 83443,null,null,null,null,null,null,null,null],
 };
 
-function fmtBRL(n)  { return 'R$ ' + Math.round(n).toLocaleString('pt-BR'); }
+function fmtBRL(n)  { if (n === null || n === undefined) return '—'; return 'R$ ' + Math.round(n).toLocaleString('pt-BR'); }
 function fmtBRLk(n) {
   if (n >= 1e6) return 'R$ ' + (n/1e6).toFixed(1).replace('.',',') + 'M';
   if (n >= 1e3) return 'R$ ' + (n/1e3).toFixed(0) + 'k';
@@ -1510,19 +1517,20 @@ function calcPerfMetrics(k, curMonthOverride = null) {
   const d25 = PERF_HIST[k][2025];
   const d26 = PERF_2026[k].slice(); // cópia para não mutar o original
   if (curMonthOverride !== null) d26[PERF_CUR] = curMonthOverride;
-  const yoyReal = d26.map((v,i) => v !== null ? (v - d25[i]) / d25[i] * 100 : null);
+  const yoyReal = d26.map((v,i) => v !== null && d25[i] !== null && d25[i] !== 0 ? (v - d25[i]) / d25[i] * 100 : null);
   const last3      = PERF_LAST3.map(i => yoyReal[i]);
   const last3valid = last3.filter(v => v !== null);
   const avgD       = last3valid.length > 0 ? last3valid.reduce((a,b) => a+b, 0) / last3valid.length : 0;
   const proj    = PERF_MONTHS.map((_,i) => {
     if (d26[i] !== null) return d26[i];
+    if (d25[i] === null) return null;
     return Math.round(d25[i] * (1 + avgD/100));
   });
-  const yoyFull = proj.map((v,i) => v !== null ? (v - d25[i]) / d25[i] * 100 : null);
+  const yoyFull = proj.map((v,i) => v !== null && d25[i] !== null && d25[i] !== 0 ? (v - d25[i]) / d25[i] * 100 : null);
   const realAcum = d26.slice(0, PERF_CUR).reduce((a,v) => a+(v||0), 0);
   const projRest = proj.slice(PERF_CUR).reduce((a,v) => a+(v||0), 0);
   const projTotal = realAcum + projRest;
-  const total25 = d25.reduce((a,b) => a+b, 0);
+  const total25 = d25.reduce((a,b) => a+(b||0), 0);
   return { d25, d26, yoyReal, yoyFull, last3, avgD, proj, realAcum, projTotal, total25, curMonthOverride };
 }
 
@@ -1627,8 +1635,8 @@ function renderPerfStore(k) {
 
   // ── Annual history ────────────────────────────────────────────────────────
   const HIST_YEARS = [2022, 2023, 2024, 2025];
-  const annualTotals = HIST_YEARS.map(y => PERF_HIST[k][y].reduce((a,b) => a+b, 0));
-  const annualYoY    = annualTotals.map((v,i) => i === 0 ? null : (v - annualTotals[i-1]) / annualTotals[i-1] * 100);
+  const annualTotals = HIST_YEARS.map(y => PERF_HIST[k][y].reduce((a,b) => a+(b||0), 0));
+  const annualYoY    = annualTotals.map((v,i) => i === 0 || annualTotals[i-1] === 0 ? null : (v - annualTotals[i-1]) / annualTotals[i-1] * 100);
 
   // ── Projection table ─────────────────────────────────────────────────────
   let tableHtml = `
@@ -1652,13 +1660,13 @@ function renderPerfStore(k) {
     const proj = m.proj[i];
     const v26  = real !== null ? real : proj;
     const isProj = (real === null || i === PERF_CUR) && v26 !== null;
-    histYears.forEach(y => { colTotals[y] += PERF_HIST[k][y][i]; });
+    histYears.forEach(y => { colTotals[y] += PERF_HIST[k][y][i] || 0; });
     if (v26 !== null) colTotals.v26 += v26;
-    const deltas = histYears.map((y,j) => j === 0 ? null : (h[j] - h[j-1]) / h[j-1] * 100);
-    const d2625  = v26 !== null ? (v26 - h[3]) / h[3] * 100 : null;
-    const d2624  = v26 !== null ? (v26 - h[2]) / h[2] * 100 : null;
-    const d2623  = v26 !== null ? (v26 - h[1]) / h[1] * 100 : null;
-    const d2622  = v26 !== null ? (v26 - h[0]) / h[0] * 100 : null;
+    const deltas = histYears.map((y,j) => j === 0 || h[j] === null || h[j-1] === null || h[j-1] === 0 ? null : (h[j] - h[j-1]) / h[j-1] * 100);
+    const d2625  = v26 !== null && h[3] !== null ? (v26 - h[3]) / h[3] * 100 : null;
+    const d2624  = v26 !== null && h[2] !== null ? (v26 - h[2]) / h[2] * 100 : null;
+    const d2623  = v26 !== null && h[1] !== null ? (v26 - h[1]) / h[1] * 100 : null;
+    const d2622  = v26 !== null && h[0] !== null ? (v26 - h[0]) / h[0] * 100 : null;
     const dCell  = (d, extra='') => d !== null
       ? `<td class="${cls(d)} ${extra}" style="font-size:.72rem;white-space:nowrap">${sign(d)+d.toFixed(1)}%</td>`
       : `<td class="${extra}" style="font-size:.72rem;color:var(--muted)">—</td>`;
@@ -1675,12 +1683,14 @@ function renderPerfStore(k) {
     </tr>`;
   });
   // Totals row
-  const totDeltas = histYears.map((y,j) => j === 0 ? null : (colTotals[y]-colTotals[histYears[j-1]])/colTotals[histYears[j-1]]*100);
-  const tot2625 = (colTotals.v26 - colTotals[2025]) / colTotals[2025] * 100;
-  const tot2624 = (colTotals.v26 - colTotals[2024]) / colTotals[2024] * 100;
-  const tot2623 = (colTotals.v26 - colTotals[2023]) / colTotals[2023] * 100;
-  const tot2622 = (colTotals.v26 - colTotals[2022]) / colTotals[2022] * 100;
-  const totDCell = (d, extra='') => `<td class="${cls(d)} ${extra}" style="font-size:.72rem">${sign(d)+d.toFixed(1)}%</td>`;
+  const totDeltas = histYears.map((y,j) => j === 0 || colTotals[histYears[j-1]] === 0 ? null : (colTotals[y]-colTotals[histYears[j-1]])/colTotals[histYears[j-1]]*100);
+  const tot2625 = colTotals[2025] !== 0 ? (colTotals.v26 - colTotals[2025]) / colTotals[2025] * 100 : null;
+  const tot2624 = colTotals[2024] !== 0 ? (colTotals.v26 - colTotals[2024]) / colTotals[2024] * 100 : null;
+  const tot2623 = colTotals[2023] !== 0 ? (colTotals.v26 - colTotals[2023]) / colTotals[2023] * 100 : null;
+  const tot2622 = colTotals[2022] !== 0 ? (colTotals.v26 - colTotals[2022]) / colTotals[2022] * 100 : null;
+  const totDCell = (d, extra='') => d !== null
+    ? `<td class="${cls(d)} ${extra}" style="font-size:.72rem">${sign(d)+d.toFixed(1)}%</td>`
+    : `<td class="${extra}" style="font-size:.72rem;color:var(--muted)">—</td>`;
   tableHtml += `</tbody><tfoot><tr class="total-row">
     <td>TOTAL</td>
     ${histYears.map((y,j) => `
