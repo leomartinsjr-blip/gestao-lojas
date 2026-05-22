@@ -2264,24 +2264,38 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
     let companies = [];   // [{ board, vendaCol, saldoCol }]
     let headerSheetIdx = -1;
 
+    console.log('[Excel] Abas encontradas:', wb.SheetNames);
+
     for (let i = 0; i < wb.SheetNames.length; i++) {
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1 });
-      const colRowIdx = rows.findIndex(r => Array.isArray(r) && r.includes('Código'));
+      // Aceita 'Código' com ou sem acento, e 'Codigo'
+      const colRowIdx = rows.findIndex(r => Array.isArray(r) &&
+        r.some(c => typeof c === 'string' && c.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase() === 'codigo'));
+      console.log(`[Excel] Aba ${i} "${wb.SheetNames[i]}": colRowIdx=${colRowIdx}, totalRows=${rows.length}`);
       if (colRowIdx === -1) continue;
       headerSheetIdx = i;
+      const headerRow  = rows[colRowIdx];
       const companyRow = colRowIdx > 0 ? rows[colRowIdx - 1] : [];
-      // Colunas de empresa começam a partir do índice 9, em pares (Vendas, Saldo)
-      for (let c = 9; c < (rows[colRowIdx] || []).length; c += 2) {
+      console.log('[Excel] headerRow[0..15]:', headerRow.slice(0, 15));
+      console.log('[Excel] companyRow[0..15]:', companyRow.slice(0, 15));
+      // Detecta índice real onde começam os pares de colunas das lojas
+      const startCol = headerRow.findIndex((h, idx) =>
+        idx >= 2 && typeof companyRow[idx] === 'string' && detectBoard(companyRow[idx])
+      );
+      const colStep = 2; // cada empresa tem 2 colunas: Vendas e Saldo
+      const loopStart = startCol !== -1 ? startCol : 9;
+      for (let c = loopStart; c < headerRow.length; c += colStep) {
         const raw = String(companyRow[c] || '').trim();
         if (!raw) continue;
         const board = detectBoard(raw);
         if (board) companies.push({ board, vendaCol: c, saldoCol: c + 1, label: raw });
       }
+      console.log('[Excel] Lojas detectadas:', companies.map(c => `${c.label}→${c.board}(col ${c.vendaCol},${c.saldoCol})`));
       break;
     }
 
     if (!companies.length || headerSheetIdx === -1)
-      return res.status(400).json({ error: 'Formato de Excel não reconhecido — não encontrei colunas de lojas.' });
+      return res.status(400).json({ error: 'Formato de Excel não reconhecido — não encontrei colunas de lojas. Veja o log do servidor.' });
 
     const boards = companies.map(c => c.board);
 
