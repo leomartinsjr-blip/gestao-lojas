@@ -1954,84 +1954,23 @@ app.get('/api/microvix/movimento-raw', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── Transferências: caches ──────────────────────────────────────────────────
-// catálogo LinxProdutos + ativos2025 (TTL 4h)
-let _catalogCache    = null;
-let _catalogCacheAt  = 0;
-let _ativosCache     = null;   // { ativos: Set, ultVenda: {} }
-let _ativosCacheAt   = 0;
-const CATALOG_TTL = 4 * 3600 * 1000;
-
-// resultado completo por número de dias (TTL 30min)
-let _transResultCache  = {};   // { [dias]: { result, at } }
-let _transWarmRunning  = {};   // { [dias]: true } — guard contra runs simultâneos
+// ── Transferências: cache de resultado (TTL 30min) ─────────────────────────
+let _transResultCache = {};
+let _transWarmRunning = {};
 const TRANS_RESULT_TTL = 30 * 60 * 1000;
 
-// Aquece catálogo e ativos em background (fire-and-forget)
-function _warmBaseCache(firstCnpj, firstChave) {
-  const { fetchProdutos, fetchMovimento } = require('./services/microvix');
-  const today = new Date().toISOString().slice(0, 10);
-
-  if (!_catalogCache || Date.now() - _catalogCacheAt >= CATALOG_TTL) {
-    fetchProdutos(firstCnpj, firstChave, 0).then(prodRows => {
-      const cat = {};
-      for (const r of prodRows) {
-        const entry = {
-          descricao:    (r.descricao_basica || r.nome || '').trim(),
-          desc_cor:     (r.desc_cor     || '').trim(),
-          desc_tamanho: (r.desc_tamanho || '').trim(),
-          desc_setor:   (r.desc_setor   || '').trim(),
-        };
-        const barra = (r.cod_barra || '').trim();
-        const cod   = String(r.cod_produto || '').trim();
-        if (barra) cat[barra] = entry;
-        if (cod)   cat[`p:${cod}`] = entry;
-      }
-      _catalogCache = cat; _catalogCacheAt = Date.now();
-      console.log(`[Trans] Catálogo aquecido: ${prodRows.length} produtos`);
-    }).catch(e => console.warn('[Trans] catálogo falhou:', e.message));
-  }
-
-  if (!_ativosCache || Date.now() - _ativosCacheAt >= CATALOG_TTL) {
-    fetchMovimento(firstCnpj, '2025-01-01', today, firstChave).then(movAtivos => {
-      const ativos = new Set();
-      const ultVenda = {};
-      for (const r of movAtivos) {
-        if (r.cancelado === 'S' || r.cancelado === '1') continue;
-        if (r.operacao === 'DS') continue;
-        const cod = String(r.cod_produto || r.codproduto || '').trim();
-        if (!cod) continue;
-        ativos.add(cod);
-        const dataBr = (r.data_documento || '').slice(0, 10);
-        if (dataBr) {
-          const [d, m, y] = dataBr.split('/');
-          const iso = `${y}-${m}-${d}`;
-          if (!ultVenda[cod + '_iso'] || iso > ultVenda[cod + '_iso']) {
-            ultVenda[cod] = dataBr; ultVenda[cod + '_iso'] = iso;
-          }
-        }
-      }
-      _ativosCache = { ativos, ultVenda }; _ativosCacheAt = Date.now();
-      console.log(`[Trans] Ativos 2025 aquecido: ${ativos.size} produtos`);
-    }).catch(e => console.warn('[Trans] ativos falhou:', e.message));
-  }
-}
-
-// Computa o resultado completo (chamado apenas pelo worker, nunca no request path)
+// Computa sugestões: estoque + movimento (N dias) por loja — sem fetches extras
 async function _buildTransResult(boards, lojas, dias) {
   const { fetchEstoque, fetchMovimento } = require('./services/microvix');
   const todayUTC = new Date();
   const today = todayUTC.toISOString().slice(0, 10);
   const dtIni = new Date(todayUTC - dias * 86400_000).toISOString().slice(0, 10);
 
-  const catalog = _catalogCache || {};
-  const { ativos: ativosDesde2025, ultVenda: ultimaVendaMap } =
-    _ativosCache || { ativos: new Set(), ultVenda: {} };
-
   const estoqueByBoard = {};
   const giroByBoard    = {};
-  const catalogMov     = {};
-  const ultCompraMap   = {};
+  const catalogMov     = {};   // info de produto vinda dos movRows
+  const ultVendaMap    = {};   // última venda por cod_produto (cross-board)
+  const ultCompraMap   = {};   // última entrada por cod_produto (cross-board)
 
   await Promise.all(boards.map(async board => {
     const cnpj  = lojas[board].replace(/\D/g, '');
@@ -2057,32 +1996,30 @@ async function _buildTransResult(boards, lojas, dias) {
       const cod = String(r.cod_produto || r.codproduto || '').trim();
       if (!cod) continue;
 
-      // Detectar entrada pelo campo tipo_movimentacao='E' ou operacao típica de entrada
       const tipoMov = (r.tipo_movimentacao || '').trim().toUpperCase();
       const operacao = (r.operacao || '').trim().toUpperCase();
       const isEntrada = tipoMov === 'E' || ['EC','ET','EE','EN','ENT','NF','NFS'].includes(operacao);
 
-      if (isEntrada) {
-        const raw = (r.data_documento || r.data_lancamento || '').slice(0, 10);
-        if (raw) {
-          const iso = raw.includes('/')
-            ? (() => { const [d,m,y] = raw.split('/'); return `${y}-${m}-${d}`; })()
-            : raw;
-          if (!ultCompraMap[cod] || iso > ultCompraMap[cod]) ultCompraMap[cod] = iso;
-        }
-        continue; // entradas não contam no giro de vendas
-      }
+      const raw = (r.data_documento || r.data_lancamento || '').slice(0, 10);
+      const iso = raw && raw.includes('/')
+        ? (() => { const [d,m,y] = raw.split('/'); return `${y}-${m}-${d}`; })()
+        : raw;
 
+      if (isEntrada) {
+        if (iso && (!ultCompraMap[cod] || iso > ultCompraMap[cod])) ultCompraMap[cod] = iso;
+        continue;
+      }
       if (operacao === 'DS') continue;
+
       giroByBoard[board][cod] = (giroByBoard[board][cod] || 0) + (parseInt(r.quantidade || 0) || 1);
+      if (iso && (!ultVendaMap[cod] || iso > ultVendaMap[cod])) ultVendaMap[cod] = iso;
       if (!catalogMov[cod]) catalogMov[cod] = {
         descricao:    (r.descricao    || r.des_produto || '').trim(),
         desc_cor:     (r.desc_cor     || '').trim(),
         desc_tamanho: (r.desc_tamanho || '').trim(),
-        setor:        (r.setor        || r.grupo || '').trim(),
+        setor:        (r.setor        || r.grupo       || '').trim(),
       };
     }
-
   }));
 
   const allCods = new Set();
@@ -2102,7 +2039,9 @@ async function _buildTransResult(boards, lojas, dias) {
     const giro = {};
     for (const board of boards) giro[board] = giroByBoard[board][cod] || 0;
 
-    if (ativosDesde2025.size > 0 && !ativosDesde2025.has(cod)) continue;
+    // Só considera produtos com algum movimento no período
+    const totalGiro = boards.reduce((s, b) => s + giro[b], 0);
+    if (totalGiro === 0) continue;
 
     const donors    = boards.filter(b => stocks[b] >= 2).sort((a, b) => stocks[b] - stocks[a]);
     const receivers = boards.filter(b => stocks[b] === 0).sort((a, b) => giro[b] - giro[a]);
@@ -2120,21 +2059,20 @@ async function _buildTransResult(boards, lojas, dias) {
     }
     if (!transfers.length) continue;
 
-    const cat = catalog[cod_barra] || catalog[`p:${cod}`] || {};
     const mov = catalogMov[cod] || {};
     sugestoes.push({
       cod_produto:  cod,
       cod_barra,
-      descricao:    cat.descricao    || mov.descricao    || '—',
-      desc_cor:     cat.desc_cor     || mov.desc_cor     || '—',
-      desc_tamanho: cat.desc_tamanho || mov.desc_tamanho || '—',
-      setor:        cat.desc_setor   || mov.setor        || '—',
+      descricao:    mov.descricao    || '—',
+      desc_cor:     mov.desc_cor     || '—',
+      desc_tamanho: mov.desc_tamanho || '—',
+      setor:        mov.setor        || '—',
       stocks,
       giro,
       transfers,
       stocksAfter:  workStocks,
-      ultimaVenda:  ultimaVendaMap[cod] || null,
-      ultimaCompra: ultCompraMap[cod]   || null,
+      ultimaVenda:  ultVendaMap[cod]  || null,
+      ultimaCompra: ultCompraMap[cod] || null,
     });
   }
 
@@ -2147,27 +2085,17 @@ async function _buildTransResult(boards, lojas, dias) {
   return { boards, dias, total: sugestoes.length, sugestoes };
 }
 
-// Worker: aquece tudo em background para um valor de dias
-async function _warmAllTrans(boards, lojas, dias, firstCnpj, firstChave) {
+// Aquece cache em background
+async function _warmAllTrans(boards, lojas, dias) {
   const key = String(dias);
   if (_transWarmRunning[key]) return;
   const cached = _transResultCache[key];
   if (cached && Date.now() - cached.at < TRANS_RESULT_TTL) return;
-
   _transWarmRunning[key] = true;
   try {
-    _warmBaseCache(firstCnpj, firstChave);
-
-    // Aguarda catálogo e ativos ficarem prontos (até 120s)
-    const start = Date.now();
-    while (!_catalogCache || !_ativosCache) {
-      if (Date.now() - start > 120_000) throw new Error('Timeout aguardando caches base');
-      await new Promise(r => setTimeout(r, 1500));
-    }
-
     const result = await _buildTransResult(boards, lojas, dias);
     _transResultCache[key] = { result, at: Date.now() };
-    console.log(`[Trans] Resultado cacheado (${dias}d): ${result.total} sugestões`);
+    console.log(`[Trans] Cacheado (${dias}d): ${result.total} sugestões`);
   } catch (e) {
     console.warn(`[Trans] warmAllTrans(${dias}d) falhou:`, e.message);
   } finally {
