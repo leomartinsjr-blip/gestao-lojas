@@ -1238,6 +1238,68 @@ app.delete('/api/meeting-items/:id', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/pendencias ────────────────────────────────────────────────────
+app.get('/api/pendencias', requireAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    res.json(db.pendencias || []);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/pendencias ───────────────────────────────────────────────────
+app.post('/api/pendencias', requireAdmin, async (req, res) => {
+  try {
+    const { text, assignedTo } = req.body;
+    if (!text?.trim()) return res.status(400).json({ error: 'Texto obrigatório' });
+    const db = await readDB();
+    if (!db.pendencias) db.pendencias = [];
+    const item = {
+      id: nextId(db),
+      text: text.trim(),
+      assignedTo: assignedTo || 'todos',
+      createdBy: req.session.user.username,
+      createdByLabel: req.session.user.label,
+      createdAt: new Date().toISOString(),
+      resolved: false,
+      resolvedAt: null,
+      resolvedBy: null,
+    };
+    db.pendencias.push(item);
+    await writeDB(db);
+    res.json(item);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── PATCH /api/pendencias/:id ──────────────────────────────────────────────
+app.patch('/api/pendencias/:id', requireAdmin, async (req, res) => {
+  try {
+    const id   = parseInt(req.params.id);
+    const db   = await readDB();
+    const item = (db.pendencias || []).find(x => x.id === id);
+    if (!item) return res.status(404).json({ error: 'Pendência não encontrada' });
+    if ('resolved' in req.body) {
+      item.resolved = !!req.body.resolved;
+      item.resolvedAt = item.resolved ? new Date().toISOString() : null;
+      item.resolvedBy = item.resolved ? (req.session.user.label || req.session.user.username) : null;
+    }
+    if ('text' in req.body && req.body.text?.trim()) item.text = req.body.text.trim();
+    if ('assignedTo' in req.body) item.assignedTo = req.body.assignedTo;
+    await writeDB(db);
+    res.json(item);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── DELETE /api/pendencias/:id ─────────────────────────────────────────────
+app.delete('/api/pendencias/:id', requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const db = await readDB();
+    db.pendencias = (db.pendencias || []).filter(x => x.id !== id);
+    await writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/caixa/:year/:month/:board ───────────────────────────────────
 app.get('/api/caixa/:year/:month/:board', requireAuth, async (req, res) => {
   try {

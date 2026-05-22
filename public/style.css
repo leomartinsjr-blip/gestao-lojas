@@ -2424,3 +2424,9 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .contrato-urgente  { background: rgba(200,60,60,.18);  color: #f07070; }
 .contrato-hoje     { background: rgba(200,60,60,.28);  color: #ff5555; font-weight: 700; }
 .contrato-vencido  { background: rgba(150,30,30,.25);  color: #ff4444; font-weight: 700; }
+
+/* ── Pendências ──────────────────────────────────────────────────────────── */
+.pend-tab { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: .72rem; padding: .2rem .55rem; border-radius: 4px; cursor: pointer; transition: background .15s, color .15s; }
+.pend-tab.active, .pend-tab:hover { background: #58A6FF; color: #0D1117; border-color: #58A6FF; }
+.pend-chip { display: inline-block; padding: .1rem .45rem; border-radius: 999px; font-size: .68rem; font-weight: 600; white-space: nowrap; }
+.pend-assign-sel { background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: .78rem; padding: 4px 8px; border-radius: 6px; cursor: pointer; flex-shrink: 0; }

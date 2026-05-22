@@ -14,7 +14,7 @@ const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
 // ── State ──────────────────────────────────────────────────────────────────
-const S = { year: 2026, month: 5, user: null, employees: [], weights: {}, vsales: {}, weeklyMetas: {}, folgas: [], campaigns: [], nfItems: [], meetingItems: [] };
+const S = { year: 2026, month: 5, user: null, employees: [], weights: {}, vsales: {}, weeklyMetas: {}, folgas: [], campaigns: [], nfItems: [], meetingItems: [], pendencias: [] };
 
 let saveTimeout = null;
 
@@ -300,16 +300,18 @@ async function loadData() {
     S.weeklyMetas = weeklyMetas || {};
     S.folgas      = folgas || [];
 
-    const [campaigns, nfItems, boletas, meetingItems] = await Promise.all([
+    const [campaigns, nfItems, boletas, meetingItems, pendencias] = await Promise.all([
       apiFetch('GET', '/api/campaigns').catch(() => []),
       apiFetch('GET', '/api/nf-items').catch(() => []),
       apiFetch('GET', '/api/boletas').catch(() => []),
       apiFetch('GET', '/api/meeting-items').catch(() => []),
+      apiFetch('GET', '/api/pendencias').catch(() => []),
     ]);
     S.campaigns    = campaigns    || [];
     S.nfItems      = nfItems      || [];
     S.boletas      = boletas      || [];
     S.meetingItems = meetingItems || [];
+    S.pendencias   = pendencias   || [];
     _updateCampanhasBtn();
 
     renderDashboard();
@@ -950,6 +952,9 @@ function renderDashboard() {
 
   // ── CARD: Reunião Mensal ──────────────────────────────────────────────────
   renderMeetingCard(midCol);
+
+  // ── CARD: Pendências ─────────────────────────────────────────────────────
+  renderPendenciasCard(midCol);
 
   // ── CARD: Fechamento de Caixa ─────────────────────────────────────────────
   renderCaixaCard(rightCol);
@@ -4620,6 +4625,201 @@ function _fmtNFDate(iso) {
   const d = new Date(iso);
   const p = n => String(n).padStart(2,'0');
   return `${p(d.getDate())}/${p(d.getMonth()+1)} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+// ── Pendências ────────────────────────────────────────────────────────────
+
+const PENDENCIA_USERS = [
+  { key: 'todos',      label: 'Todos',      color: '#8B949E' },
+  { key: 'leonardo',   label: 'Leonardo',   color: '#58A6FF' },
+  { key: 'ingrid',     label: 'Ingrid',     color: '#F78166' },
+  { key: 'escritorio', label: 'Escritório', color: '#3FB950' },
+];
+
+function _pendenciaChip(assignedTo) {
+  const u = PENDENCIA_USERS.find(x => x.key === assignedTo) || PENDENCIA_USERS[0];
+  return `<span class="pend-chip" style="background:${u.color}22;color:${u.color};border:1px solid ${u.color}44">${u.label}</span>`;
+}
+
+function _renderPendenciasActive(body, filter, myUsername, refresh) {
+  let items = (S.pendencias || []).filter(x => !x.resolved);
+  if (filter === 'mine') items = items.filter(x => x.assignedTo === myUsername || x.assignedTo === 'todos');
+  items.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+
+  if (!items.length) {
+    body.innerHTML = '<div style="padding:.75rem 0;color:var(--muted);font-size:.8rem;text-align:center">Nenhuma pendência</div>';
+    return;
+  }
+  body.innerHTML = items.map(item => `
+    <div class="nf-item" data-id="${item.id}">
+      <label class="nf-chk-label">
+        <input type="checkbox" class="nf-chk pend-chk" data-id="${item.id}">
+        <span class="nf-item-text">${_escHtml(item.text)}</span>
+      </label>
+      <span class="nf-item-meta" style="display:flex;align-items:center;gap:.35rem">
+        ${_pendenciaChip(item.assignedTo)}
+        <span class="nf-date-tag">${_escHtml(item.createdByLabel || item.createdBy)} ${_fmtNFDate(item.createdAt)}</span>
+      </span>
+      <button class="nf-del-btn pend-del" data-id="${item.id}" title="Excluir">&times;</button>
+    </div>`).join('');
+
+  body.querySelectorAll('.pend-chk').forEach(chk => {
+    chk.addEventListener('change', async () => {
+      if (!chk.checked) return;
+      const id = parseInt(chk.dataset.id);
+      chk.disabled = true;
+      const updated = await apiFetch('PATCH', `/api/pendencias/${id}`, { resolved: true }).catch(() => null);
+      const item = S.pendencias.find(x => x.id === id);
+      if (item && updated) Object.assign(item, updated);
+      _renderPendenciasActive(body, filter, myUsername, refresh);
+      refresh();
+    });
+  });
+
+  body.querySelectorAll('.pend-del').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = parseInt(btn.dataset.id);
+      if (!confirm('Excluir esta pendência?')) return;
+      await apiFetch('DELETE', `/api/pendencias/${id}`).catch(() => {});
+      S.pendencias = S.pendencias.filter(x => x.id !== id);
+      _renderPendenciasActive(body, filter, myUsername, refresh);
+      refresh();
+    });
+  });
+}
+
+function _renderPendenciasHistory(body, refresh) {
+  const items = (S.pendencias || [])
+    .filter(x => x.resolved)
+    .sort((a, b) => (b.resolvedAt || '').localeCompare(a.resolvedAt || ''));
+
+  if (!items.length) {
+    body.innerHTML = '<div style="padding:.75rem 0;color:var(--muted);font-size:.8rem;text-align:center">Histórico vazio</div>';
+    return;
+  }
+  body.innerHTML = `
+    <div class="nf-hist-header"><button class="nf-clear-btn" id="pendClearAll">Limpar tudo</button></div>
+    ${items.map(item => `
+      <div class="nf-item nf-checked nf-hist-item" data-id="${item.id}">
+        <div class="nf-hist-item-main">
+          <span class="nf-item-text">${_escHtml(item.text)}</span>
+          <div class="nf-hist-dates">
+            ${_pendenciaChip(item.assignedTo)}
+            <span class="nf-date-tag">por ${_escHtml(item.createdByLabel || item.createdBy)}</span>
+            <span class="nf-date-sep">·</span>
+            <span class="nf-date-tag nf-date-archived">✓ ${_fmtNFDate(item.resolvedAt)} por ${_escHtml(item.resolvedBy || '—')}</span>
+          </div>
+        </div>
+        <button class="nf-del-btn pend-hist-del" data-id="${item.id}" title="Excluir">&times;</button>
+      </div>`).join('')}`;
+
+  body.querySelectorAll('.pend-hist-del').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = parseInt(btn.dataset.id);
+      await apiFetch('DELETE', `/api/pendencias/${id}`).catch(() => {});
+      S.pendencias = S.pendencias.filter(x => x.id !== id);
+      _renderPendenciasHistory(body, refresh);
+      refresh();
+    });
+  });
+
+  body.querySelector('#pendClearAll')?.addEventListener('click', async () => {
+    const toDelete = (S.pendencias || []).filter(x => x.resolved);
+    await Promise.all(toDelete.map(x => apiFetch('DELETE', `/api/pendencias/${x.id}`).catch(() => {})));
+    S.pendencias = S.pendencias.filter(x => !x.resolved);
+    _renderPendenciasHistory(body, refresh);
+    refresh();
+  });
+}
+
+function renderPendenciasCard(container) {
+  const isAdmin = !S.user?.board;
+  if (!isAdmin) return;
+
+  const myUsername = S.user?.username;
+  let filter = 'mine';
+  let showHistory = false;
+
+  const card = document.createElement('div');
+  card.className = 'main-card';
+
+  card.innerHTML = `
+    <div class="main-card-hdr">
+      <span class="main-card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M9 11l3 3L22 4"/>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+        </svg>
+        Pendências
+      </span>
+      <div style="display:flex;align-items:center;gap:.4rem">
+        <button class="pend-tab active" data-filter="mine">Para mim</button>
+        <button class="pend-tab" data-filter="all">Todas</button>
+        <button class="nf-hist-btn" id="pendHistBtn" style="display:none">Histórico</button>
+      </div>
+    </div>
+    <div class="main-card-body nf-card-body" id="pendCardBody"></div>
+    <div class="nf-add-row" id="pendAddRow">
+      <input type="text" class="nf-input" id="pendInput" placeholder="Nova pendência…" maxlength="200">
+      <select class="pend-assign-sel" id="pendAssignSel">
+        ${PENDENCIA_USERS.map(u => `<option value="${u.key}"${u.key === myUsername ? ' selected' : ''}>${u.label}</option>`).join('')}
+      </select>
+      <button class="nf-add-btn" id="pendAddBtn">+</button>
+    </div>`;
+
+  container.appendChild(card);
+
+  const body      = card.querySelector('#pendCardBody');
+  const histBtn   = card.querySelector('#pendHistBtn');
+  const addRow    = card.querySelector('#pendAddRow');
+  const input     = card.querySelector('#pendInput');
+  const assignSel = card.querySelector('#pendAssignSel');
+  const addBtn    = card.querySelector('#pendAddBtn');
+
+  function refresh() {
+    const resolved = (S.pendencias || []).filter(x => x.resolved);
+    if (resolved.length > 0) {
+      histBtn.style.display = '';
+      histBtn.textContent = showHistory ? '← Voltar' : `Histórico (${resolved.length})`;
+    } else {
+      histBtn.style.display = 'none';
+      if (showHistory) showHistory = false;
+    }
+    if (showHistory) {
+      _renderPendenciasHistory(body, refresh);
+      addRow.style.display = 'none';
+    } else {
+      _renderPendenciasActive(body, filter, myUsername, refresh);
+      addRow.style.display = '';
+    }
+  }
+
+  refresh();
+
+  histBtn.addEventListener('click', () => { showHistory = !showHistory; refresh(); });
+
+  card.querySelectorAll('.pend-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      card.querySelectorAll('.pend-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      filter = btn.dataset.filter;
+      refresh();
+    });
+  });
+
+  async function addPendencia() {
+    const text = input.value.trim();
+    if (!text) return;
+    input.value = '';
+    try {
+      const item = await apiFetch('POST', '/api/pendencias', { text, assignedTo: assignSel.value });
+      S.pendencias = [...S.pendencias, item];
+      refresh();
+    } catch (e) { toast('Erro ao adicionar pendência', true); }
+  }
+
+  addBtn.addEventListener('click', addPendencia);
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') addPendencia(); });
 }
 
 // ── Reunião Mensal ────────────────────────────────────────────────────────
