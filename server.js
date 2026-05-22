@@ -8,6 +8,7 @@ const fs         = require('fs');
 const XLSX       = require('xlsx');
 const ExcelJS    = require('exceljs');
 const { MongoClient } = require('mongodb');
+const cron       = require('node-cron');
 const { runSync, runSyncHoje, runSync30Dias, runSyncRetroativo, getStatus } = require('./services/microvixSync');
 
 const app  = express();
@@ -1472,131 +1473,122 @@ app.put('/api/caixa/:year/:month/:board/:day', requireAuth, async (req, res) => 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── syncCaixaBoard — lógica compartilhada entre endpoint e cron ────────────
+// Sincroniza dinheiro + sangria de um board para year/month.
+// Nunca inclui o dia de hoje — cap em d-1.
+async function syncCaixaBoard(board, year, month) {
+  const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+  const cnpj  = lojas[board];
+  if (!cnpj) throw new Error(`Board "${board}" não mapeado em MICROVIX_LOJAS`);
+  const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+
+  const y = parseInt(year), m = parseInt(month);
+  const dtIni   = `${y}-${String(m).padStart(2,'0')}-01`;
+  const lastDay = new Date(y, m, 0).getDate();
+
+  const today  = new Date();
+  const todayY = today.getFullYear(), todayM = today.getMonth() + 1, todayD = today.getDate();
+  if (y > todayY || (y === todayY && m > todayM)) return { skipped: 'mês futuro', caixaByDay: {}, sangriaByDay: {} };
+  let capDay = lastDay;
+  if (y === todayY && m === todayM) {
+    capDay = Math.min(lastDay, todayD - 1);
+    if (capDay < 1) return { skipped: 'sem dias anteriores', caixaByDay: {}, sangriaByDay: {} };
+  }
+  const dtFin = `${y}-${String(m).padStart(2,'0')}-${String(capDay).padStart(2,'0')}`;
+
+  const { fetchMovimento, fetchSangrias, parseBrNum } = require('./services/microvix');
+
+  function extractDay(s) {
+    const str = String(s || '').trim();
+    const m1 = str.match(/^(\d{2})\/\d{2}\/\d{4}/);
+    if (m1) return parseInt(m1[1]);
+    const m2 = str.match(/^\d{4}-\d{2}-(\d{2})/);
+    if (m2) return parseInt(m2[1]);
+    return null;
+  }
+
+  const caixaByDay   = {};
+  const sangriaByDay = {};
+  const errors       = {};
+  const cnpjClean    = cnpj.replace(/\D/g, '');
+
+  // Cash sales via LinxMovimento (deduplicado por documento)
+  try {
+    const movRows  = await fetchMovimento(cnpj, dtIni, dtFin, chave);
+    const seenDocs = new Set();
+    for (const r of movRows) {
+      const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+      if (rowCnpj && rowCnpj !== cnpjClean) continue;
+      if (r.cancelado === 'S' || r.cancelado === '1') continue;
+      if (r.operacao !== 'S' && r.operacao !== 'DS') continue;
+      const serie = String(r.serie || r.serie_documento || r.num_serie || '').trim();
+      if (serie === '999') continue;
+      if (serie === '4' && r.operacao !== 'DS') continue;
+      const doc = String(r.documento || '').trim();
+      if (!doc || seenDocs.has(doc)) continue;
+      seenDocs.add(doc);
+      const day = extractDay(r.data_documento || r.data_emissao || '');
+      if (!day) continue;
+      const val = parseBrNum(r.total_dinheiro || '0');
+      if (val === 0) continue;
+      const sign = r.operacao === 'DS' ? -1 : 1;
+      caixaByDay[day] = (caixaByDay[day] || 0) + sign * val;
+    }
+  } catch (e) {
+    errors.movimento = e.message;
+    console.warn(`[caixa-microvix/${board}] Movimento: ${e.message}`);
+  }
+
+  // Sangrias via LinxSangriaSuprimentos
+  try {
+    const sgRows = await fetchSangrias(cnpj, dtIni, dtFin, chave);
+    for (const r of sgRows) {
+      const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+      if (rowCnpj && rowCnpj !== cnpjClean) continue;
+      if (r.cancelado === 'S' || r.cancelado === '1') continue;
+      const day = extractDay(r.data || '');
+      if (!day) continue;
+      const val = Math.abs(parseBrNum(r.valor || '0'));
+      if (val <= 0) continue;
+      sangriaByDay[day] = (sangriaByDay[day] || 0) + val;
+    }
+  } catch (e) {
+    errors.sangrias = e.message;
+    console.warn(`[caixa-microvix/${board}] Sangrias: ${e.message}`);
+  }
+
+  // Persist — preserva depósito existente
+  const db = await readDB();
+  if (!db.caixa) db.caixa = {};
+  const key = `${year}-${String(m).padStart(2,'0')}-${board}`;
+  if (!db.caixa[key]) db.caixa[key] = {};
+  for (let d = 1; d <= capDay; d++) {
+    const prev = db.caixa[key][d] || {};
+    if (caixaByDay[d] !== undefined || sangriaByDay[d] !== undefined) {
+      db.caixa[key][d] = {
+        ...prev,
+        caixa:    caixaByDay[d]   !== undefined ? caixaByDay[d]   : (prev.caixa   ?? 0),
+        sangria:  sangriaByDay[d] !== undefined ? sangriaByDay[d] : (prev.sangria ?? 0),
+        syncedAt: new Date().toISOString(),
+      };
+    }
+  }
+  await writeDB(db);
+
+  return { synced: true, caixaByDay, sangriaByDay, errors: Object.keys(errors).length ? errors : undefined };
+}
+
 // ── POST /api/caixa-microvix/:board/:year/:month ──────────────────────────
-// Syncs caixa (cash sales) and sangria from Microvix for a full month.
-// Only updates caixa/sangria fields; preserves existing deposito values.
-// Regra: nunca sincroniza o dia atual — sempre d-1 no máximo.
 app.post('/api/caixa-microvix/:board/:year/:month', requireAuth, async (req, res) => {
   try {
     const { board, year, month } = req.params;
-    // Lojas podem sincronizar apenas o próprio painel
-    const userBoard = req.session.user.board;
+    const userBoard   = req.session.user.board;
     const isAdminUser = !userBoard || userBoard === 'escritorio';
     if (!isAdminUser && userBoard !== board) {
       return res.status(403).json({ error: 'Acesso restrito ao seu próprio painel' });
     }
-
-    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-    const cnpj  = lojas[board];
-    if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado em MICROVIX_LOJAS` });
-    const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-
-    const y = parseInt(year), m = parseInt(month);
-    const dtIni   = `${y}-${String(m).padStart(2,'0')}-01`;
-    const lastDay = new Date(y, m, 0).getDate();
-
-    // Nunca sincroniza o dia de hoje — cap em d-1
-    const today = new Date();
-    const todayY = today.getFullYear(), todayM = today.getMonth() + 1, todayD = today.getDate();
-    if (y > todayY || (y === todayY && m > todayM)) {
-      return res.json({ synced: true, caixaByDay: {}, sangriaByDay: {}, skipped: 'mês futuro' });
-    }
-    let capDay = lastDay;
-    if (y === todayY && m === todayM) {
-      capDay = Math.min(lastDay, todayD - 1);
-      if (capDay < 1) return res.json({ synced: true, caixaByDay: {}, sangriaByDay: {}, skipped: 'sem dias anteriores' });
-    }
-    const dtFin = `${y}-${String(m).padStart(2,'0')}-${String(capDay).padStart(2,'0')}`;
-
-    const { fetchMovimento, fetchSangrias, parseBrNum } = require('./services/microvix');
-
-    // "DD/MM/YYYY …" or "YYYY-MM-DD" → day-of-month integer
-    function extractDay(s) {
-      const str = String(s || '').trim();
-      const m1 = str.match(/^(\d{2})\/\d{2}\/\d{4}/);
-      if (m1) return parseInt(m1[1]);
-      const m2 = str.match(/^\d{4}-\d{2}-(\d{2})/);
-      if (m2) return parseInt(m2[1]);
-      return null;
-    }
-
-    const caixaByDay   = {};
-    const sangriaByDay = {};
-    const errors       = {};
-
-    // Cash sales via LinxMovimento: deduplica por documento.
-    // DS (devolução) subtrai do total em vez de ser ignorado.
-    // Série 999 = transferência entre lojas, não é financeiro.
-    try {
-      const cnpjClean = cnpj.replace(/\D/g, '');
-      const movRows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
-      const seenDocs = new Set();
-      for (const r of movRows) {
-        const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
-        if (rowCnpj && rowCnpj !== cnpjClean) continue;
-        if (r.cancelado === 'S' || r.cancelado === '1') continue;
-        // Só operações de saída (S = venda, DS = devolução de cliente)
-        // E = entrada de fornecedor, DE = devolução p/ fornecedor — não afetam o caixa
-        if (r.operacao !== 'S' && r.operacao !== 'DS') continue;
-        const serie = String(r.serie || r.serie_documento || r.num_serie || '').trim();
-        // Série 999 = transferência entre lojas; série 4 S = NF-e ajuste/reemissão
-        if (serie === '999') continue;
-        if (serie === '4' && r.operacao !== 'DS') continue;
-        const doc = String(r.documento || '').trim();
-        if (!doc || seenDocs.has(doc)) continue;
-        seenDocs.add(doc);
-        const day = extractDay(r.data_documento || r.data_emissao || '');
-        if (!day) continue;
-        const val = parseBrNum(r.total_dinheiro || '0');
-        if (val === 0) continue;
-        // DS = devolução: cliente recebeu dinheiro de volta → subtrai
-        const sign = r.operacao === 'DS' ? -1 : 1;
-        caixaByDay[day] = (caixaByDay[day] || 0) + sign * val;
-      }
-    } catch (e) {
-      errors.movimento = e.message;
-      console.warn(`[caixa-microvix/${board}] Movimento: ${e.message}`);
-    }
-
-    // Sangrias via LinxSangriaSuprimentos
-    // Valores chegam negativos no campo valor — usa Math.abs
-    try {
-      const cnpjClean = cnpj.replace(/\D/g, '');
-      const sgRows = await fetchSangrias(cnpj, dtIni, dtFin, chave);
-      for (const r of sgRows) {
-        const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
-        if (rowCnpj && rowCnpj !== cnpjClean) continue;
-        if (r.cancelado === 'S' || r.cancelado === '1') continue;
-        const day = extractDay(r.data || '');
-        if (!day) continue;
-        const val = Math.abs(parseBrNum(r.valor || '0'));
-        if (val <= 0) continue;
-        sangriaByDay[day] = (sangriaByDay[day] || 0) + val;
-      }
-    } catch (e) {
-      errors.sangrias = e.message;
-      console.warn(`[caixa-microvix/${board}] Sangrias: ${e.message}`);
-    }
-
-    // Persist — only overwrite caixa/sangria; keep deposito
-    const db = await readDB();
-    if (!db.caixa) db.caixa = {};
-    const key = `${year}-${String(month).padStart(2,'0')}-${board}`;
-    if (!db.caixa[key]) db.caixa[key] = {};
-    for (let d = 1; d <= capDay; d++) {
-      const prev = db.caixa[key][d] || {};
-      if (caixaByDay[d] !== undefined || sangriaByDay[d] !== undefined) {
-        db.caixa[key][d] = {
-          ...prev,
-          caixa:    caixaByDay[d]   !== undefined ? caixaByDay[d]   : (prev.caixa   ?? 0),
-          sangria:  sangriaByDay[d] !== undefined ? sangriaByDay[d] : (prev.sangria ?? 0),
-          syncedAt: new Date().toISOString(),
-        };
-      }
-    }
-    await writeDB(db);
-
-    res.json({ synced: true, caixaByDay, sangriaByDay, errors: Object.keys(errors).length ? errors : undefined });
+    const result = await syncCaixaBoard(board, year, month);
+    res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2953,6 +2945,29 @@ initMongo()
     app.listen(PORT, () => {
       console.log(`\n✅  Gestão de Lojas → http://localhost:${PORT}\n`);
     });
+
+    // ── Cron: fechamento de caixa — diário 08:00 Brasília, sincroniza d-1 ──
+    if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
+      cron.schedule('0 8 * * *', async () => {
+        const now      = new Date();
+        const lojas    = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+        const boards   = Object.keys(lojas);
+        const year     = now.getFullYear();
+        const month    = now.getMonth() + 1;
+        console.log(`[caixa-cron] Iniciando sync de fechamento para ${boards.length} loja(s) — ${year}/${String(month).padStart(2,'0')}`);
+        for (const board of boards) {
+          try {
+            const r = await syncCaixaBoard(board, year, month);
+            const dias = Object.keys(r.caixaByDay || {}).length;
+            console.log(`[caixa-cron] ${board}: ${r.skipped || `${dias} dia(s) sincronizados`}`);
+          } catch (e) {
+            console.error(`[caixa-cron] ${board}: ${e.message}`);
+          }
+        }
+        console.log('[caixa-cron] Concluído');
+      }, { timezone: 'America/Sao_Paulo' });
+      console.log('[caixa-cron] Agendado para 08:00 America/Sao_Paulo');
+    }
 
     // Auto-sync Microvix if credentials are set
     if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
