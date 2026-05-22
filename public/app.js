@@ -4559,10 +4559,13 @@ function renderCaixaCard(container) {
         </table>
       </div>`;
 
-    // scroll to today
+    // scroll to today dentro do container (evita rolar a página toda no mobile)
     if (todayDay > 0) {
       const todayRow = body.querySelector(`tr[data-day="${todayDay}"]`);
-      if (todayRow) setTimeout(() => todayRow.scrollIntoView({ block: 'nearest' }), 50);
+      if (todayRow) setTimeout(() => {
+        const wrap = todayRow.closest('.caixa-table-wrap');
+        if (wrap) wrap.scrollTop = todayRow.offsetTop - wrap.clientHeight / 2 + todayRow.clientHeight / 2;
+      }, 50);
     }
 
     // cell editing — click on caixa or sangria cell
