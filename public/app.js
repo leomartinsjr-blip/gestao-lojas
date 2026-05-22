@@ -5623,9 +5623,17 @@ function _initBoletaDetail(body, boleta, isAdmin) {
   });
 }
 
+function _boletaCompraConstraints(dataEntregue) {
+  if (!dataEntregue) return { min: '', max: '' };
+  const ent = new Date(dataEntregue + 'T12:00:00');
+  const min = new Date(ent); min.setDate(min.getDate() - 90);
+  return { min: min.toISOString().slice(0, 10), max: dataEntregue };
+}
+
 function _boletaFormHtml(boleta, isAdmin, userBoard) {
   const v = (field) => boleta?.[field] || '';
   const board = boleta?.board || (isAdmin ? NF_STORES_BOL[0] : userBoard);
+  const cc = _boletaCompraConstraints(v('dataEntregue'));
   return `<div class="bol-form">
     <div class="bol-form-section">
       <div class="bol-form-section-title">Cliente</div>
@@ -5652,7 +5660,7 @@ function _boletaFormHtml(boleta, isAdmin, userBoard) {
         <div class="bol-fg"><label>Código</label><input type="text" name="codigo" class="bol-input" value="${v('codigo')}"></div>
         <div class="bol-fg"><label>Fabricante</label><input type="text" name="fabricante" class="bol-input" value="${v('fabricante')}"></div>
         <div class="bol-fg"><label>Doc</label><input type="text" name="doc" class="bol-input" value="${v('doc')}"></div>
-        <div class="bol-fg"><label>Data da Compra *</label><input type="date" name="dataCompra" class="bol-input" value="${v('dataCompra')}" required></div>
+        <div class="bol-fg"><label>Data da Compra *</label><input type="date" name="dataCompra" class="bol-input" value="${v('dataCompra')}" min="${cc.min}" max="${cc.max}" required></div>
       </div>
     </div>
     <div class="bol-form-section">
@@ -5676,6 +5684,18 @@ function _initBoletaForm(body, boleta, isAdmin, userBoard) {
   body.querySelector('#bolFormCancelBtn').addEventListener('click', () =>
     boleta ? _renderBoletasModal('view', boleta.id) : _renderBoletasModal('list', null));
 
+  const dataEntregueInput = body.querySelector('[name="dataEntregue"]');
+  const dataCompraInput   = body.querySelector('[name="dataCompra"]');
+  if (dataEntregueInput && dataCompraInput) {
+    dataEntregueInput.addEventListener('change', () => {
+      const cc = _boletaCompraConstraints(dataEntregueInput.value);
+      dataCompraInput.min = cc.min;
+      dataCompraInput.max = cc.max;
+      if (dataCompraInput.value && cc.min && dataCompraInput.value < cc.min) dataCompraInput.value = '';
+      if (dataCompraInput.value && cc.max && dataCompraInput.value > cc.max) dataCompraInput.value = '';
+    });
+  }
+
   body.querySelector('#bolFormSaveBtn').addEventListener('click', async () => {
     const data = {};
     body.querySelectorAll('[name]').forEach(el => { data[el.name] = el.value.trim(); });
@@ -5683,6 +5703,11 @@ function _initBoletaForm(body, boleta, isAdmin, userBoard) {
     if (!data.produto) { toast('Produto é obrigatório', true); return; }
     if (!data.dataCompra) { toast('Data da Compra é obrigatória', true); return; }
     if (!data.dataEntregue) { toast('Data entregue é obrigatória', true); return; }
+    if (data.dataCompra && data.dataEntregue) {
+      const diffDays = Math.round((new Date(data.dataEntregue + 'T12:00:00') - new Date(data.dataCompra + 'T12:00:00')) / 86400000);
+      if (diffDays < 0) { toast('Data da compra não pode ser posterior à data de entrega', true); return; }
+      if (diffDays > 90) { toast('Data da compra deve ser no máximo 90 dias antes da entrega ao cliente', true); return; }
+    }
     if (!data.board) data.board = userBoard;
     try {
       if (boleta) {
