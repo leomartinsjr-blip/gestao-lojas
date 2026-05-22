@@ -1515,9 +1515,11 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
         const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
         if (rowCnpj && rowCnpj !== cnpjClean) continue;
         if (r.cancelado === 'S' || r.cancelado === '1') continue;
+        // Só operações de saída (S = venda, DS = devolução de cliente)
+        // E = entrada de fornecedor, DE = devolução p/ fornecedor — não afetam o caixa
+        if (r.operacao !== 'S' && r.operacao !== 'DS') continue;
         const serie = String(r.serie || r.serie_documento || r.num_serie || '').trim();
         // Série 999 = transferência entre lojas; série 4 S = NF-e ajuste/reemissão
-        // Devoluções DS (qualquer série) ficam pois reduzem o saldo
         if (serie === '999') continue;
         if (serie === '4' && r.operacao !== 'DS') continue;
         const doc = String(r.documento || '').trim();
@@ -1616,13 +1618,14 @@ app.get('/api/microvix/caixa-debug', requireAdmin, async (req, res) => {
       const serie   = String(r.serie || r.serie_documento || r.num_serie || '').trim();
       const isCancelled = r.cancelado === 'S' || r.cancelado === '1';
       const isDev   = r.operacao === 'DS';
+      const isWrongOp  = r.operacao !== 'S' && r.operacao !== 'DS';
       const isSerie999 = serie === '999';
       const isSerie4S  = serie === '4' && !isDev;
       const isDup   = seenDocs.has(doc);
       const val     = parseBrNum(r.total_dinheiro || '0');
       const sign    = isDev ? -1 : 1;
       const cnpjMatch = !rowCnpj || rowCnpj === cnpjClean;
-      const counted = cnpjMatch && !isCancelled && !isSerie999 && !isSerie4S && !isDup && val !== 0;
+      const counted = cnpjMatch && !isCancelled && !isWrongOp && !isSerie999 && !isSerie4S && !isDup && val !== 0;
       dinheiroRows.push({ doc, serie, data_documento: r.data_documento, cnpj_emp: r.cnpj_emp, cancelado: r.cancelado, operacao: r.operacao, total_dinheiro: r.total_dinheiro, _cnpjMatch: cnpjMatch, _isDup: isDup, _isCancelled: isCancelled, _isDev: isDev, _isSerie999: isSerie999, _isSerie4S: isSerie4S, _counted: counted });
       if (counted) { seenDocs.add(doc); totalDinheiro += sign * val; }
       else if (!isDup) seenDocs.add(doc);
