@@ -5300,18 +5300,20 @@ function renderCaixaCard(container) {
   const userBoard = S.user?.board;
   let activeBoard = isAdmin ? NF_STORES[0] : userBoard;
 
+  const syncSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
+  const expandSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
+
+  function tabsMarkup(activeB) {
+    if (!isAdmin) return '';
+    return `<div class="nf-tabs">${NF_STORES.map(b => `
+      <button class="nf-tab${b === activeB ? ' active' : ''}" data-board="${b}"
+        style="--nf-tab-color:${BOARDS[b]?.color || '#8B949E'}">${BOARDS[b]?.label || b}
+      </button>`).join('')}</div>`;
+  }
+
+  // ── Mini card ──────────────────────────────────────────────────────────────
   const card = document.createElement('div');
   card.className = 'main-card';
-
-  const tabsHtml = isAdmin ? `
-    <div class="nf-tabs">
-      ${NF_STORES.map(b => `
-        <button class="nf-tab${b === activeBoard ? ' active' : ''}" data-board="${b}"
-          style="--nf-tab-color:${BOARDS[b]?.color || '#8B949E'}">
-          ${BOARDS[b]?.label || b}
-        </button>`).join('')}
-    </div>` : '';
-
   card.innerHTML = `
     <div class="main-card-hdr">
       <span class="main-card-title">
@@ -5324,27 +5326,45 @@ function renderCaixaCard(container) {
         Fechamento de Caixa
       </span>
       ${!isAdmin ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
-      ${isAdmin ? `<button class="caixa-sync-btn" id="caixaSyncBtn" title="Sincronizar Caixa e Sangria com Microvix">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-          <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-        </svg>
-        Microvix
-      </button>` : ''}
+      <div style="display:flex;gap:.3rem;margin-left:auto">
+        ${isAdmin ? `<button class="caixa-sync-btn" id="caixaSyncBtn" title="Sincronizar com Microvix">${syncSvg} Microvix</button>` : ''}
+        <button class="caixa-expand-btn" id="caixaExpandBtn" title="Expandir">${expandSvg}</button>
+      </div>
     </div>
-    ${tabsHtml}
-    <div class="main-card-body caixa-card-body" id="caixaCardBody"></div>
-  `;
+    ${tabsMarkup(activeBoard)}
+    <div class="main-card-body caixa-card-body" id="caixaCardBody"></div>`;
   container.appendChild(card);
 
-  const body = card.querySelector('#caixaCardBody');
+  // ── Fullscreen overlay ─────────────────────────────────────────────────────
+  const ovl = document.createElement('div');
+  ovl.className = 'caixa-overlay';
+  ovl.innerHTML = `
+    <div class="caixa-overlay-panel">
+      <div class="caixa-overlay-hdr">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0">
+          <rect x="2" y="7" width="20" height="14" rx="2"/>
+          <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+        </svg>
+        <span class="caixa-overlay-title">Fechamento de Caixa${!isAdmin ? ` — ${BOARDS[userBoard]?.label || ''}` : ''}</span>
+        ${isAdmin ? `<button class="caixa-sync-btn" id="caixaSyncBtnOvl" title="Sincronizar com Microvix">${syncSvg} Microvix</button>` : ''}
+        <button class="caixa-ovl-close" id="caixaOvlClose" title="Fechar">✕</button>
+      </div>
+      <div id="caixaOvlTabs"></div>
+      <div class="caixa-ovl-body" id="caixaOvlBody"></div>
+    </div>`;
+  document.body.appendChild(ovl);
 
-  async function refresh() {
-    body.innerHTML = '<div style="padding:.75rem .85rem;color:var(--muted);font-size:.8rem">Carregando…</div>';
+  const body    = card.querySelector('#caixaCardBody');
+  const ovlBody = ovl.querySelector('#caixaOvlBody');
+  const ovlTabs = ovl.querySelector('#caixaOvlTabs');
+
+  // ── Shared render ──────────────────────────────────────────────────────────
+  async function fetchAndRender(targetBody, board, onRefresh) {
+    targetBody.innerHTML = '<div style="padding:.75rem .85rem;color:var(--muted);font-size:.8rem">Carregando…</div>';
     let data = {};
     try {
-      data = await apiFetch('GET', `/api/caixa/${S.year}/${S.month}/${activeBoard}`);
-    } catch(e) { body.innerHTML = '<div style="padding:.75rem;color:var(--down);font-size:.8rem">Erro ao carregar</div>'; return; }
+      data = await apiFetch('GET', `/api/caixa/${S.year}/${S.month}/${board}`);
+    } catch(e) { targetBody.innerHTML = '<div style="padding:.75rem;color:var(--down);font-size:.8rem">Erro ao carregar</div>'; return; }
 
     const daysInMonth = new Date(S.year, S.month, 0).getDate();
     const today = new Date();
@@ -5354,75 +5374,55 @@ function renderCaixaCard(container) {
     const pad = n => String(n).padStart(2,'0');
     const fmtCur = v => (v === 0 || v === undefined || v === null) ? '—' : `R$ ${Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
-    let totalCaixa = 0, totalSangria = 0, totalDeposito = 0;
-    let saldoAcum = 0;
+    let totalCaixa = 0, totalSangria = 0, totalDeposito = 0, saldoAcum = 0;
     const rows = [];
     for (let d = 1; d <= daysInMonth; d++) {
       const dt    = new Date(S.year, S.month - 1, d);
-      const dow   = DAY_NAMES[dt.getDay()];
       const entry = data[d] || {};
       const caixa    = entry.caixa    ?? 0;
       const sangria  = entry.sangria  ?? 0;
       const deposito = entry.deposito ?? 0;
       saldoAcum += caixa - sangria - deposito;
-      totalCaixa    += caixa;
-      totalSangria  += sangria;
-      totalDeposito += deposito;
-      rows.push({ d, dow, caixa, sangria, deposito, saldo: saldoAcum });
+      totalCaixa += caixa; totalSangria += sangria; totalDeposito += deposito;
+      rows.push({ d, dow: DAY_NAMES[dt.getDay()], caixa, sangria, deposito, saldo: saldoAcum });
     }
     const totalSaldo = totalCaixa - totalSangria - totalDeposito;
-
-    const saldoClass = s => s > 0 ? 'pos' : s < 0 ? 'neg' : 'zero';
+    const sc = s => s > 0 ? 'pos' : s < 0 ? 'neg' : 'zero';
     const hasData = r => r.caixa > 0 || r.sangria > 0 || r.deposito > 0;
+    const dash = `<span style="color:var(--muted)">—</span>`;
 
-    body.innerHTML = `
+    targetBody.innerHTML = `
       <div class="caixa-table-wrap">
         <table class="caixa-table">
-          <thead>
-            <tr>
-              <th>Data</th>
-              <th>Dinheiro</th>
-              <th>Sangria</th>
-              <th>Depósito</th>
-              <th>Saldo</th>
-            </tr>
-          </thead>
-          <tbody id="caixaTbody">
-            ${rows.map(r => `
-              <tr class="${r.d === todayDay ? 'caixa-today' : ''}" data-day="${r.d}">
-                <td class="caixa-td-date">${pad(r.d)}/${pad(S.month)} <span style="color:var(--muted);font-size:.72rem">${r.dow}</span></td>
-                <td class="caixa-td-val caixa-caixa-cell" data-field="caixa" data-day="${r.d}">${r.caixa > 0 ? fmtCur(r.caixa) : '<span style="color:var(--muted)">—</span>'}</td>
-                <td class="caixa-td-val caixa-sangria-cell" data-field="sangria" data-day="${r.d}">${r.sangria > 0 ? fmtCur(r.sangria) : '<span style="color:var(--muted)">—</span>'}</td>
-                <td class="caixa-td-val caixa-deposito-cell" data-field="deposito" data-day="${r.d}">${r.deposito > 0 ? fmtCur(r.deposito) : '<span style="color:var(--muted)">—</span>'}</td>
-                <td class="caixa-td-saldo ${!hasData(r) ? 'zero' : saldoClass(r.saldo)}">${!hasData(r) ? '<span style="color:var(--muted)">—</span>' : fmtCur(r.saldo)}</td>
-              </tr>`).join('')}
-          </tbody>
-          <tfoot>
-            <tr class="caixa-total-row">
-              <td>Total</td>
-              <td>${fmtCur(totalCaixa)}</td>
-              <td>${fmtCur(totalSangria)}</td>
-              <td>${fmtCur(totalDeposito)}</td>
-              <td class="caixa-total-saldo ${saldoClass(totalSaldo)}">${fmtCur(totalSaldo)}</td>
-            </tr>
-          </tfoot>
+          <thead><tr><th>Data</th><th>Dinheiro</th><th>Sangria</th><th>Depósito</th><th>Saldo</th></tr></thead>
+          <tbody>${rows.map(r => `
+            <tr class="${r.d === todayDay ? 'caixa-today' : ''}" data-day="${r.d}">
+              <td class="caixa-td-date">${pad(r.d)}/${pad(S.month)} <span style="color:var(--muted);font-size:.72rem">${r.dow}</span></td>
+              <td class="caixa-td-val">${r.caixa > 0 ? fmtCur(r.caixa) : dash}</td>
+              <td class="caixa-td-val">${r.sangria > 0 ? fmtCur(r.sangria) : dash}</td>
+              <td class="caixa-td-val caixa-deposito-cell" data-field="deposito" data-day="${r.d}" style="cursor:pointer">${r.deposito > 0 ? fmtCur(r.deposito) : dash}</td>
+              <td class="caixa-td-saldo ${!hasData(r) ? 'zero' : sc(r.saldo)}">${!hasData(r) ? dash : fmtCur(r.saldo)}</td>
+            </tr>`).join('')}</tbody>
+          <tfoot><tr class="caixa-total-row">
+            <td>Total</td>
+            <td>${fmtCur(totalCaixa)}</td>
+            <td>${fmtCur(totalSangria)}</td>
+            <td>${fmtCur(totalDeposito)}</td>
+            <td class="caixa-total-saldo ${sc(totalSaldo)}">${fmtCur(totalSaldo)}</td>
+          </tr></tfoot>
         </table>
       </div>`;
 
-    // scroll to today dentro do container (evita rolar a página toda no mobile)
     if (todayDay > 0) {
-      const todayRow = body.querySelector(`tr[data-day="${todayDay}"]`);
+      const todayRow = targetBody.querySelector(`tr[data-day="${todayDay}"]`);
       if (todayRow) setTimeout(() => {
         const wrap = todayRow.closest('.caixa-table-wrap');
         if (wrap) wrap.scrollTop = todayRow.offsetTop - wrap.clientHeight / 2 + todayRow.clientHeight / 2;
       }, 50);
     }
 
-    // Dinheiro e Sangria são somente leitura (preenchidos via Microvix sync)
-    // Depósito é editável por todos
-    body.querySelectorAll('.caixa-deposito-cell').forEach(cell => {
-      cell.style.cursor = 'pointer';
-      cell.addEventListener('click', () => _caixaStartEdit(cell, data, activeBoard, refresh));
+    targetBody.querySelectorAll('.caixa-deposito-cell').forEach(cell => {
+      cell.addEventListener('click', () => _caixaStartEdit(cell, data, board, onRefresh));
     });
   }
 
@@ -5431,26 +5431,40 @@ function renderCaixaCard(container) {
     const field = cell.dataset.field;
     const day   = parseInt(cell.dataset.day);
     const cur   = (data[day] || {})[field] ?? 0;
-
     const inp = document.createElement('input');
     inp.type = 'text'; inp.className = 'caixa-cell-input';
-    inp.value = cur > 0 ? cur : '';
-    inp.placeholder = '0,00';
+    inp.value = cur > 0 ? cur : ''; inp.placeholder = '0,00';
     cell.innerHTML = ''; cell.appendChild(inp);
     inp.focus(); inp.select();
-
     const commit = async () => {
-      const raw = inp.value.replace(',','.');
-      const val = parseFloat(raw) || 0;
-      try {
-        await apiFetch('PUT', `/api/caixa/${S.year}/${S.month}/${board}/${day}`, { [field]: val });
-      } catch(e) { toast('Erro: ' + e.message, true); }
+      const val = parseFloat(inp.value.replace(',','.')) || 0;
+      try { await apiFetch('PUT', `/api/caixa/${S.year}/${S.month}/${board}/${day}`, { [field]: val }); }
+      catch(e) { toast('Erro: ' + e.message, true); }
       await refreshFn();
     };
     inp.addEventListener('blur', commit);
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); if (e.key === 'Escape') refreshFn(); });
   }
 
+  // ── Refresh functions ──────────────────────────────────────────────────────
+  function refresh()    { return fetchAndRender(body,    activeBoard, refresh); }
+  function refreshOvl() { return fetchAndRender(ovlBody, activeBoard, () => { refreshOvl(); refresh(); }); }
+
+  // ── Sync helper ────────────────────────────────────────────────────────────
+  async function doSync(btn, afterFn) {
+    btn.disabled = true; btn.innerHTML = 'Sincronizando…';
+    try {
+      const result = await apiFetch('POST', `/api/caixa-microvix/${activeBoard}/${S.year}/${S.month}`);
+      if (result.errors) {
+        const errs = Object.entries(result.errors).map(([k,v]) => `${k}: ${v}`).join('; ');
+        toast(`Sincronizado com erros — ${errs}`, true);
+      } else { toast('Microvix sincronizado'); }
+      await afterFn();
+    } catch(e) { toast('Erro ao sincronizar: ' + e.message, true); }
+    finally { btn.disabled = false; btn.innerHTML = `${syncSvg} Microvix`; }
+  }
+
+  // ── Card event handlers ────────────────────────────────────────────────────
   refresh();
 
   if (isAdmin) {
@@ -5461,31 +5475,35 @@ function renderCaixaCard(container) {
         refresh();
       });
     });
-
     const syncBtn = card.querySelector('#caixaSyncBtn');
-    if (syncBtn) {
-      syncBtn.addEventListener('click', async () => {
-        syncBtn.disabled = true;
-        syncBtn.textContent = 'Sincronizando…';
-        try {
-          const result = await apiFetch('POST', `/api/caixa-microvix/${activeBoard}/${S.year}/${S.month}`);
-          const nDias = Object.keys(result.caixaByDay || {}).length + Object.keys(result.sangriaByDay || {}).length;
-          if (result.errors) {
-            const errs = Object.entries(result.errors).map(([k,v]) => `${k}: ${v}`).join('; ');
-            toast(`Sincronizado com erros — ${errs}`, true);
-          } else {
-            toast(`Microvix sincronizado`);
-          }
-          await refresh();
-        } catch (e) {
-          toast('Erro ao sincronizar: ' + e.message, true);
-        } finally {
-          syncBtn.disabled = false;
-          syncBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Microvix`;
-        }
-      });
-    }
+    if (syncBtn) syncBtn.addEventListener('click', () => doSync(syncBtn, refresh));
   }
+
+  // ── Expand / overlay handlers ──────────────────────────────────────────────
+  card.querySelector('#caixaExpandBtn').addEventListener('click', () => {
+    ovlTabs.innerHTML = tabsMarkup(activeBoard);
+    ovl.classList.add('active');
+    document.body.style.overflow = 'hidden';
+    refreshOvl();
+
+    if (isAdmin) {
+      ovlTabs.querySelectorAll('.nf-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          activeBoard = tab.dataset.board;
+          ovlTabs.querySelectorAll('.nf-tab').forEach(t => t.classList.toggle('active', t === tab));
+          card.querySelectorAll('.nf-tab').forEach(t => t.classList.toggle('active', t.dataset.board === activeBoard));
+          refreshOvl();
+        });
+      });
+      const syncOvl = ovl.querySelector('#caixaSyncBtnOvl');
+      if (syncOvl) syncOvl.addEventListener('click', () => doSync(syncOvl, () => { refreshOvl(); refresh(); }));
+    }
+  });
+
+  function closeOvl() { ovl.classList.remove('active'); document.body.style.overflow = ''; }
+  ovl.querySelector('#caixaOvlClose').addEventListener('click', closeOvl);
+  ovl.addEventListener('click', e => { if (e.target === ovl) closeOvl(); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && ovl.classList.contains('active')) closeOvl(); });
 }
 
 function renderNFCard(container) {

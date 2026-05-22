@@ -2090,10 +2090,47 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   background: transparent; border: 1px solid var(--border2);
   color: var(--muted); font-size: .72rem; font-weight: 600;
   padding: .22rem .65rem; border-radius: 999px; cursor: pointer;
-  margin-left: auto; transition: border-color .15s, color .15s;
+  transition: border-color .15s, color .15s; white-space: nowrap;
 }
 .caixa-sync-btn:hover:not(:disabled) { border-color: #58A6FF; color: #58A6FF; }
 .caixa-sync-btn:disabled { opacity: .5; cursor: default; }
+.caixa-expand-btn {
+  display: flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid var(--border2);
+  color: var(--muted); padding: .22rem .4rem; border-radius: 999px; cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+.caixa-expand-btn:hover { border-color: var(--text); color: var(--text); }
+
+/* Caixa fullscreen overlay */
+.caixa-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.55); z-index: 600;
+  display: flex; align-items: center; justify-content: center;
+  opacity: 0; pointer-events: none; transition: opacity .18s;
+}
+.caixa-overlay.active { opacity: 1; pointer-events: auto; }
+.caixa-overlay-panel {
+  background: var(--surface); border: 1px solid var(--border2);
+  border-radius: 10px; width: min(96vw, 820px); max-height: 92vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0,0,0,.4);
+  transform: scale(.97); transition: transform .18s;
+}
+.caixa-overlay.active .caixa-overlay-panel { transform: scale(1); }
+.caixa-overlay-hdr {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .6rem .85rem; background: var(--surface2);
+  border-bottom: 1px solid var(--border); flex-shrink: 0;
+}
+.caixa-overlay-title { font-size: .88rem; font-weight: 700; color: var(--text); flex: 1; }
+.caixa-ovl-close {
+  background: transparent; border: none; color: var(--muted);
+  font-size: 1rem; cursor: pointer; padding: .2rem .45rem;
+  border-radius: 4px; line-height: 1;
+}
+.caixa-ovl-close:hover { color: var(--text); background: var(--surface3); }
+.caixa-ovl-body { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+.caixa-ovl-body .caixa-table-wrap { max-height: calc(92vh - 110px); }
 
 /* ── Transferências ─────────────────────────────────────────────────────── */
 .trans-tabs {
