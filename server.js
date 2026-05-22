@@ -1523,8 +1523,8 @@ app.get('/api/microvix/caixa-probe', requireAdmin, async (req, res) => {
       'LinxMovimentoFormasPagamentos', 'LinxPagamentos', 'LinxMovimentoPagto',
     ];
     const sangriaCandidates = [
-      'LinxSangrias', 'LinxSangria', 'LinxMovimentoSangria',
-      'LinxSangriasCaixa', 'LinxCaixaSangria',
+      'LinxSangriaSuprimentos', 'LinxSangrias', 'LinxSangria',
+      'LinxMovimentoSangria', 'LinxSangriasCaixa',
     ];
 
     const result = { pagamentos: {}, sangrias: {} };

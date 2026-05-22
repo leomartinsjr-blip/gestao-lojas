@@ -209,13 +209,13 @@ async function fetchFormasPagamentos(cnpj, dtIni, dtFin, chave) {
   return parseCsv(raw);
 }
 
-// Fetch LinxSangrias → cash withdrawals from register
+// Fetch LinxSangriaSuprimentos → sangrias e suprimentos de caixa
 async function fetchSangrias(cnpj, dtIni, dtFin, chave) {
   const extra = [
     { id: 'data_inicial', valor: dtIni },
     { id: 'data_fim',     valor: dtFin },
   ];
-  const body = buildRequest('LinxSangrias', cnpj, extra, chave);
+  const body = buildRequest('LinxSangriaSuprimentos', cnpj, extra, chave);
   const raw  = await postRequest(body);
   if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
     const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro desconhecido';
