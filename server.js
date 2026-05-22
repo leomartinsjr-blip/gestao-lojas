@@ -1493,7 +1493,7 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
 });
 
 // ── GET /api/microvix/caixa-probe?board=delrey&ini=YYYY-MM-DD&fin=YYYY-MM-DD ──
-// Debug: shows raw fields and sample rows from FormasPagamentos and Sangrias
+// Testa múltiplos nomes de comando para descobrir os corretos de pagamentos/sangrias
 app.get('/api/microvix/caixa-probe', requireAdmin, async (req, res) => {
   try {
     const board = req.query.board || 'delrey';
@@ -1502,21 +1502,38 @@ app.get('/api/microvix/caixa-probe', requireAdmin, async (req, res) => {
     if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado` });
     const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
     const today = new Date().toISOString().slice(0, 10);
-    const ini   = req.query.ini || new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
+    const ini   = req.query.ini || new Date(Date.now() - 3 * 86400_000).toISOString().slice(0, 10);
     const fin   = req.query.fin || today;
 
-    const { fetchFormasPagamentos, fetchSangrias } = require('./services/microvix');
-    const result = {};
+    const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
+    const extraParams = [{ id: 'data_inicial', valor: ini }, { id: 'data_fim', valor: fin }];
 
-    try {
-      const rows = await fetchFormasPagamentos(cnpj, ini, fin, chave);
-      result.formasPagamentos = { total: rows.length, fields: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 5) };
-    } catch (e) { result.formasPagamentos = { error: e.message }; }
+    async function tryCmd(cmd) {
+      const raw = await postRequest(buildRequest(cmd, cnpj, extraParams, chave), 15_000);
+      if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+        const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'erro';
+        return { ok: false, msg };
+      }
+      const rows = parseCsv(raw);
+      return { ok: true, rows: rows.length, fields: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 3) };
+    }
 
-    try {
-      const rows = await fetchSangrias(cnpj, ini, fin, chave);
-      result.sangrias = { total: rows.length, fields: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 5) };
-    } catch (e) { result.sangrias = { error: e.message }; }
+    const pagCandidates = [
+      'LinxFormasPagamentos', 'LinxFormaPagamento', 'LinxFormasPagto',
+      'LinxMovimentoFormasPagamentos', 'LinxPagamentos', 'LinxMovimentoPagto',
+    ];
+    const sangriaCandidates = [
+      'LinxSangrias', 'LinxSangria', 'LinxMovimentoSangria',
+      'LinxSangriasCaixa', 'LinxCaixaSangria',
+    ];
+
+    const result = { pagamentos: {}, sangrias: {} };
+    for (const cmd of pagCandidates) {
+      result.pagamentos[cmd] = await tryCmd(cmd).catch(e => ({ ok: false, msg: e.message }));
+    }
+    for (const cmd of sangriaCandidates) {
+      result.sangrias[cmd] = await tryCmd(cmd).catch(e => ({ ok: false, msg: e.message }));
+    }
 
     res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
