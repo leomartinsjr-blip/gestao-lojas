@@ -195,16 +195,17 @@ async function fetchProdutos(cnpj, chave, timestamp = 0, dataMov = null) {
 }
 
 // Fetch LinxFormasPagamentos → payment method breakdown per sale
-async function fetchFormasPagamentos(cnpj, dtIni, dtFin, chave) {
+// Fetch LinxMovimentoPlanos → one row per payment method per sale
+async function fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave) {
   const extra = [
     { id: 'data_inicial', valor: dtIni },
     { id: 'data_fim',     valor: dtFin },
   ];
-  const body = buildRequest('LinxFormasPagamentos', cnpj, extra, chave);
+  const body = buildRequest('LinxMovimentoPlanos', cnpj, extra, chave);
   const raw  = await postRequest(body);
   if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
     const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro desconhecido';
-    throw new Error(`Microvix API (formasPagamentos): ${msg}`);
+    throw new Error(`Microvix API (movimentoPlanos): ${msg}`);
   }
   return parseCsv(raw);
 }
@@ -224,4 +225,4 @@ async function fetchSangrias(cnpj, dtIni, dtFin, chave) {
   return parseCsv(raw);
 }
 
-module.exports = { fetchMovimento, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchFormasPagamentos, fetchSangrias, parseBrNum, buildRequest, postRequest, parseCsv };
+module.exports = { fetchMovimento, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchSangrias, parseBrNum, buildRequest, postRequest, parseCsv };

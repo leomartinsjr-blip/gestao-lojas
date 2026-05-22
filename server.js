@@ -1422,7 +1422,7 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
     const lastDay = new Date(y, m, 0).getDate();
     const dtFin   = `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
 
-    const { fetchMovimento, fetchSangrias, parseBrNum } = require('./services/microvix');
+    const { fetchMovimentoPlanos, fetchSangrias, parseBrNum } = require('./services/microvix');
 
     // "DD/MM/YYYY …" or "YYYY-MM-DD" → day-of-month integer
     function extractDay(s) {
@@ -1438,27 +1438,23 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
     const sangriaByDay = {};
     const errors       = {};
 
-    // Cash sales: soma total_dinheiro de LinxMovimento por dia.
-    // total_dinheiro é o total do documento (repetido em cada linha/item),
-    // então deduplica por numero de documento antes de somar.
+    // Cash sales via LinxMovimentoPlanos (1 linha por forma de pagamento por venda).
+    // Filtra pela descrição do plano contendo "DINHEIRO".
     try {
-      const movRows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
-      const seenDocs = new Set();
-      for (const r of movRows) {
-        if (r.cancelado === 'S' || r.cancelado === '1') continue;
-        if (r.operacao === 'DS') continue; // devolução
-        const doc = String(r.documento || r.num_nota || r.num_documento || '').trim();
-        if (!doc || seenDocs.has(doc)) continue;
-        seenDocs.add(doc);
-        const day = extractDay(r.data_documento || r.data_emissao || '');
+      const planRows = await fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave);
+      for (const r of planRows) {
+        const desc = (r.desc_plano || r.desc_forma_pagamento || r.plano || r.descricao || '').toUpperCase();
+        if (!desc.includes('DINHEIRO')) continue;
+        const dateStr = r.data_emissao || r.data_documento || r.data || '';
+        const day = extractDay(dateStr);
         if (!day) continue;
-        const val = parseBrNum(r.total_dinheiro || '0');
+        const val = parseBrNum(r.valor || r.valor_pagamento || r.valor_plano || '0');
         if (val <= 0) continue;
         caixaByDay[day] = (caixaByDay[day] || 0) + val;
       }
     } catch (e) {
       errors.movimento = e.message;
-      console.warn(`[caixa-microvix/${board}] Movimento: ${e.message}`);
+      console.warn(`[caixa-microvix/${board}] MovimentoPlanos: ${e.message}`);
     }
 
     // Sangrias via LinxSangriaSuprimentos
@@ -1528,7 +1524,7 @@ app.get('/api/microvix/caixa-probe', requireAdmin, async (req, res) => {
     }
 
     const pagCandidates = [
-      'LinxFormasPagamentos', 'LinxFormaPagamento', 'LinxFormasPagto',
+      'LinxMovimentoPlanos', 'LinxFormasPagamentos', 'LinxFormaPagamento',
       'LinxMovimentoFormasPagamentos', 'LinxPagamentos', 'LinxMovimentoPagto',
     ];
     const sangriaCandidates = [
