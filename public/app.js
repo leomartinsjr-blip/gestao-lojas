@@ -14,7 +14,7 @@ const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
 // ── State ──────────────────────────────────────────────────────────────────
-const S = { year: 2026, month: 5, user: null, employees: [], weights: {}, vsales: {}, weeklyMetas: {}, folgas: [], campaigns: [], nfItems: [], meetingItems: [], pendencias: [] };
+const S = { year: 2026, month: 5, user: null, employees: [], weights: {}, vsales: {}, weeklyMetas: {}, folgas: [], campaigns: [], nfItems: [], meetingItems: [], pendencias: [], requisicoes: [] };
 
 let saveTimeout = null;
 
@@ -300,19 +300,22 @@ async function loadData() {
     S.weeklyMetas = weeklyMetas || {};
     S.folgas      = folgas || [];
 
-    const [campaigns, nfItems, boletas, meetingItems, pendencias] = await Promise.all([
+    const [campaigns, nfItems, boletas, meetingItems, pendencias, requisicoes] = await Promise.all([
       apiFetch('GET', '/api/campaigns').catch(() => []),
       apiFetch('GET', '/api/nf-items').catch(() => []),
       apiFetch('GET', '/api/boletas').catch(() => []),
       apiFetch('GET', '/api/meeting-items').catch(() => []),
       apiFetch('GET', '/api/pendencias').catch(() => []),
+      apiFetch('GET', '/api/requisicoes').catch(() => []),
     ]);
     S.campaigns    = campaigns    || [];
     S.nfItems      = nfItems      || [];
     S.boletas      = boletas      || [];
     S.meetingItems = meetingItems || [];
     S.pendencias   = pendencias   || [];
+    S.requisicoes  = requisicoes  || [];
     _updateCampanhasBtn();
+    _updateLojaAcaoBadge();
 
     renderDashboard();
 
@@ -5956,6 +5959,255 @@ function _initBoletaForm(body, boleta, isAdmin, userBoard) {
   });
 }
 
+// ── Loja em Ação ──────────────────────────────────────────────────────────
+
+const EMBALAGENS_ITEMS = [
+  'Sacola de Papel P', 'Sacola de Papel M', 'Sacola de Papel G',
+  'Sacola TNT', 'Saco de Skate', 'Sacola de Patins',
+  'Seda', 'Etiqueta Adesivo de Presente',
+];
+const MATERIAIS_ITEMS = [
+  'Grampo', 'Grampeador', 'Cola', 'Fita larga (Durex)', 'Lápis', 'Caneta',
+  'Bloco de vale', 'Bloco de recibo', 'Cartão de Visita', 'Borracha', 'Tesoura',
+  'Extrator de grampo', 'Régua', 'Almofada de carimbo', 'Clips',
+  'Bobinas imp. fiscal', 'Lista da vez', 'Fechamento diário', 'Envelope caixa',
+  'Alarme', 'Carimbo CNPJ', 'Adesivo presente', 'Bloco de vendedor',
+  'Bloco de trocas', 'Bloco de conserto', 'RIBOW (tinta de tag)',
+  'Papel de cadastro', 'Bloco de reserva', 'Calculadora', 'Apontador',
+  'Bobinas PagSeguro', 'Marca texto', 'Etiqueta para tag', 'Munição',
+];
+const REQ_STATUS = {
+  'pendente':     { label: 'Pendente',     color: '#8B949E' },
+  'em-separacao': { label: 'Em Separação', color: '#E3B341' },
+  'enviado':      { label: 'Enviado',      color: '#58A6FF' },
+  'recebido':     { label: 'Recebido',     color: '#3FB950' },
+};
+
+function _reqStatusBadge(status) {
+  const s = REQ_STATUS[status] || REQ_STATUS['pendente'];
+  return `<span class="req-status-badge" style="background:${s.color}22;color:${s.color};border:1px solid ${s.color}44">${s.label}</span>`;
+}
+
+function _updateLojaAcaoBadge() {
+  const btn = document.getElementById('lojaAcaoBtn');
+  if (!btn || S.user?.board) return; // only for admin
+  const count = (S.requisicoes || []).filter(x => x.status === 'pendente' || x.status === 'em-separacao').length;
+  let badge = btn.querySelector('.req-badge');
+  if (count > 0) {
+    if (!badge) { badge = document.createElement('span'); badge.className = 'req-badge'; btn.appendChild(badge); }
+    badge.textContent = count;
+  } else if (badge) { badge.remove(); }
+}
+
+function openLojaAcaoModal() {
+  document.getElementById('lojaAcaoOverlay').classList.remove('hidden');
+  _renderLojaAcaoModal();
+}
+function closeLojaAcaoModal() {
+  document.getElementById('lojaAcaoOverlay').classList.add('hidden');
+}
+function _renderLojaAcaoModal() {
+  const body = document.getElementById('lojaAcaoBody');
+  if (!S.user?.board) _renderReqAdminView(body);
+  else _renderReqLojaView(body);
+}
+
+function _renderReqLojaView(body) {
+  const board = S.user.board;
+  let showForm = true;
+  function render() {
+    if (showForm) {
+      body.innerHTML = _reqFormHtml(board);
+      body.querySelector('#reqHistBtn').addEventListener('click', () => { showForm = false; render(); });
+      _initReqForm(body, board, () => { showForm = false; render(); });
+    } else {
+      _renderReqLojaHistory(body, board, () => { showForm = true; render(); });
+    }
+  }
+  render();
+}
+
+function _reqFormHtml(board) {
+  return `<div class="req-form-wrap">
+    <div class="req-form-top">
+      <h3 class="req-form-title">Nova Requisição — ${BOARDS[board]?.label || board}</h3>
+      <button class="req-link-btn" id="reqHistBtn">Ver histórico →</button>
+    </div>
+    <div class="req-section">
+      <div class="req-sec-hdr">📦 Embalagens — informe a quantidade necessária</div>
+      <div class="req-embal-grid">
+        ${EMBALAGENS_ITEMS.map(item => `
+          <div class="req-embal-row">
+            <span class="req-embal-nome">${_escHtml(item)}</span>
+            <input type="number" class="req-qty" data-item="${_escHtml(item)}" min="0" max="9999" placeholder="0">
+          </div>`).join('')}
+      </div>
+    </div>
+    <div class="req-section">
+      <div class="req-sec-hdr">🗂 Materiais — clique para selecionar o que precisa</div>
+      <div class="req-mat-grid">
+        ${MATERIAIS_ITEMS.map(item => `<button type="button" class="req-mat-btn" data-item="${_escHtml(item)}">${_escHtml(item)}</button>`).join('')}
+      </div>
+    </div>
+    <div class="req-section">
+      <div class="req-sec-hdr">Observação (opcional)</div>
+      <textarea class="req-obs" id="reqObs" placeholder="Ex: urgente, falta desde semana passada…" maxlength="500" rows="3"></textarea>
+    </div>
+    <div class="req-form-actions">
+      <button class="req-submit-btn" id="reqSubmitBtn">Enviar Requisição</button>
+    </div>
+  </div>`;
+}
+
+function _initReqForm(body, board, onSuccess) {
+  body.querySelectorAll('.req-mat-btn').forEach(btn =>
+    btn.addEventListener('click', () => btn.classList.toggle('active'))
+  );
+  body.querySelector('#reqSubmitBtn').addEventListener('click', async () => {
+    const embalagens = {};
+    body.querySelectorAll('.req-qty').forEach(input => {
+      const qty = parseInt(input.value) || 0;
+      if (qty > 0) embalagens[input.dataset.item] = qty;
+    });
+    const materiais = [...body.querySelectorAll('.req-mat-btn.active')].map(b => b.dataset.item);
+    if (!Object.keys(embalagens).length && !materiais.length) {
+      toast('Selecione ao menos um item', true); return;
+    }
+    const observacao = body.querySelector('#reqObs').value.trim();
+    const btn = body.querySelector('#reqSubmitBtn');
+    btn.disabled = true;
+    try {
+      const req = await apiFetch('POST', '/api/requisicoes', { embalagens, materiais, observacao });
+      S.requisicoes = [...(S.requisicoes || []), req];
+      _updateLojaAcaoBadge();
+      toast('Requisição enviada ✓');
+      onSuccess();
+    } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
+  });
+}
+
+function _renderReqLojaHistory(body, board, onBack) {
+  const items = (S.requisicoes || []).filter(x => x.board === board)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  body.innerHTML = `<div class="req-form-wrap">
+    <div class="req-form-top">
+      <h3 class="req-form-title">Histórico de Requisições</h3>
+      <button class="req-link-btn" id="reqBackBtn">← Nova requisição</button>
+    </div>
+    ${!items.length
+      ? '<div class="req-empty">Nenhuma requisição enviada ainda</div>'
+      : items.map(req => `
+        <div class="req-hist-card">
+          <div class="req-hist-card-top">
+            <span class="req-hist-date">${new Date(req.createdAt).toLocaleDateString('pt-BR')}</span>
+            ${_reqStatusBadge(req.status)}
+          </div>
+          ${Object.keys(req.embalagens||{}).length ? `<div class="req-hist-row"><b>Embalagens:</b> ${Object.entries(req.embalagens).map(([k,v])=>`${k}: <b>${v}</b>`).join(', ')}</div>` : ''}
+          ${(req.materiais||[]).length ? `<div class="req-hist-row"><b>Materiais:</b> ${req.materiais.join(', ')}</div>` : ''}
+          ${req.observacao ? `<div class="req-hist-obs">"${_escHtml(req.observacao)}"</div>` : ''}
+        </div>`).join('')}
+  </div>`;
+  body.querySelector('#reqBackBtn').addEventListener('click', onBack);
+}
+
+function _renderReqAdminView(body) {
+  let filterStatus = 'pendente';
+  let filterBoard  = '';
+  const STORE_BOARDS = ['delrey','minas','contagem','estacao','tommy','lez'];
+  const NEXT_STATUS = {
+    'pendente':     [['em-separacao','Em Separação'],['enviado','Enviado']],
+    'em-separacao': [['enviado','Enviado']],
+    'enviado':      [['recebido','Recebido']],
+    'recebido':     [],
+  };
+
+  function render() {
+    let items = (S.requisicoes || []);
+    if (filterStatus !== 'all') items = items.filter(x => x.status === filterStatus);
+    if (filterBoard) items = items.filter(x => x.board === filterBoard);
+    items = [...items].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    body.innerHTML = `<div class="req-admin-wrap">
+      <div class="req-admin-filters">
+        <div class="req-status-tabs">
+          ${[['pendente','Pendente'],['em-separacao','Em Separação'],['enviado','Enviado'],['recebido','Recebido'],['all','Todas']].map(([s,l]) =>
+            `<button class="req-stab${filterStatus===s?' active':''}" data-s="${s}">${l}</button>`).join('')}
+        </div>
+        <select class="req-board-sel" id="reqBoardSel">
+          <option value="">Todas as lojas</option>
+          ${STORE_BOARDS.map(b => `<option value="${b}"${b===filterBoard?' selected':''}>${BOARDS[b]?.label||b}</option>`).join('')}
+        </select>
+      </div>
+      <div class="req-admin-list">
+        ${!items.length
+          ? '<div class="req-empty">Nenhuma requisição encontrada</div>'
+          : items.map(req => {
+              const sc = BOARDS[req.board]?.color || '#8B949E';
+              const sl = BOARDS[req.board]?.label  || req.board;
+              const dt = new Date(req.createdAt).toLocaleDateString('pt-BR');
+              const embalHtml = Object.entries(req.embalagens||{}).map(([k,v]) =>
+                `<span class="req-embal-tag">${k}: <b>${v}</b></span>`).join('');
+              const matHtml = (req.materiais||[]).map(m =>
+                `<span class="req-mat-tag">${m}</span>`).join('');
+              const actions = (NEXT_STATUS[req.status]||[]).map(([s,l]) =>
+                `<button class="req-action-btn" data-id="${req.id}" data-status="${s}">${l}</button>`).join('');
+              return `<div class="req-admin-item">
+                <div class="req-admin-item-hdr">
+                  <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+                    <span style="font-weight:700;color:${sc}">${sl}</span>
+                    <span style="color:var(--muted);font-size:.78rem">${dt} · ${_escHtml(req.createdBy)}</span>
+                    ${_reqStatusBadge(req.status)}
+                  </div>
+                  <div style="display:flex;gap:.4rem;align-items:center">
+                    ${actions}
+                    <button class="req-del-btn" data-id="${req.id}" title="Excluir">✕</button>
+                  </div>
+                </div>
+                ${embalHtml ? `<div class="req-admin-tags">${embalHtml}</div>` : ''}
+                ${matHtml   ? `<div class="req-admin-tags req-mat-wrap">${matHtml}</div>` : ''}
+                ${req.observacao ? `<div class="req-admin-obs">"${_escHtml(req.observacao)}"</div>` : ''}
+                ${req.updatedAt ? `<div class="req-admin-upd">Atualizado ${new Date(req.updatedAt).toLocaleDateString('pt-BR')} por ${_escHtml(req.updatedBy||'—')}</div>` : ''}
+              </div>`;
+            }).join('')}
+      </div>
+    </div>`;
+
+    body.querySelectorAll('.req-stab').forEach(btn =>
+      btn.addEventListener('click', () => { filterStatus = btn.dataset.s; render(); }));
+    body.querySelector('#reqBoardSel')?.addEventListener('change', e => { filterBoard = e.target.value; render(); });
+
+    body.querySelectorAll('.req-action-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = parseInt(btn.dataset.id); btn.disabled = true;
+        try {
+          const upd = await apiFetch('PATCH', `/api/requisicoes/${id}`, { status: btn.dataset.status });
+          const i = S.requisicoes.findIndex(x => x.id === id);
+          if (i >= 0) S.requisicoes[i] = upd;
+          _updateLojaAcaoBadge(); render();
+        } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
+      });
+    });
+    body.querySelectorAll('.req-del-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Excluir esta requisição?')) return;
+        const id = parseInt(btn.dataset.id);
+        await apiFetch('DELETE', `/api/requisicoes/${id}`).catch(()=>{});
+        S.requisicoes = S.requisicoes.filter(x => x.id !== id);
+        _updateLojaAcaoBadge(); render();
+      });
+    });
+  }
+  render();
+}
+
+function initLojaAcaoModal() {
+  document.getElementById('lojaAcaoBtn').addEventListener('click', openLojaAcaoModal);
+  document.getElementById('lojaAcaoClose').addEventListener('click', closeLojaAcaoModal);
+  document.getElementById('lojaAcaoOverlay').addEventListener('click', e => {
+    if (e.target.id === 'lojaAcaoOverlay') closeLojaAcaoModal();
+  });
+}
+
 function initBoletasModal() {
   document.getElementById('boletasBtn').addEventListener('click', () => openBoletasModal('list'));
   document.getElementById('boletasClose').addEventListener('click', closeBoletasModal);
@@ -6080,6 +6332,7 @@ function init() {
   initWeeklyModal();
   initFuncionariosModal();
   initCampanhasModal();
+  initLojaAcaoModal();
   initBoletasModal();
   initUsersModal();
   document.getElementById('logoutBtn').addEventListener('click', logout);

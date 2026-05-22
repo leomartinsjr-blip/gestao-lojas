@@ -2436,3 +2436,56 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .pend-rec-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: .75rem; padding: .25rem .6rem; border-radius: 4px; cursor: pointer; transition: all .15s; white-space: nowrap; font-weight: 500; }
 .pend-rec-btn.active { background: var(--prc, #58A6FF); border-color: var(--prc, #58A6FF); color: #0D1117; font-weight: 700; }
 .pend-rec-btn:not(.active):hover { border-color: var(--prc, #58A6FF); color: var(--text); }
+
+/* ── Loja em Ação ────────────────────────────────────────────────────────── */
+.req-badge { display:inline-flex;align-items:center;justify-content:center;background:#F85149;color:#fff;font-size:.65rem;font-weight:700;min-width:16px;height:16px;border-radius:999px;padding:0 4px;margin-left:4px;vertical-align:middle; }
+.req-form-wrap { padding: 1rem 1.25rem 1.5rem; max-height: calc(100vh - 140px); overflow-y: auto; }
+.req-form-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+.req-form-title { font-size: 1rem; font-weight: 700; color: var(--text); margin: 0; }
+.req-link-btn { background: transparent; border: none; color: #58A6FF; font-size: .82rem; cursor: pointer; padding: 0; }
+.req-link-btn:hover { text-decoration: underline; }
+.req-section { margin-bottom: 1.25rem; }
+.req-sec-hdr { font-size: .78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .6rem; }
+.req-embal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: .4rem .75rem; }
+.req-embal-row { display: flex; align-items: center; gap: .5rem; }
+.req-embal-nome { font-size: .82rem; color: var(--text); flex: 1; }
+.req-qty { width: 70px; background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: .82rem; padding: .25rem .4rem; border-radius: 5px; text-align: center; }
+.req-qty:focus { outline: none; border-color: #58A6FF; }
+.req-mat-grid { display: flex; flex-wrap: wrap; gap: .4rem; }
+.req-mat-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: .78rem; padding: .3rem .65rem; border-radius: 4px; cursor: pointer; transition: all .15s; }
+.req-mat-btn.active { background: #1F3A5F; border-color: #58A6FF; color: #58A6FF; font-weight: 600; }
+.req-mat-btn:not(.active):hover { border-color: #58A6FF; color: var(--text); }
+.req-obs { width: 100%; background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: .82rem; padding: .5rem .65rem; border-radius: 6px; resize: vertical; font-family: inherit; box-sizing: border-box; }
+.req-obs:focus { outline: none; border-color: #58A6FF; }
+.req-form-actions { display: flex; justify-content: flex-end; margin-top: 1rem; }
+.req-submit-btn { background: #238636; border: 1px solid #2EA043; color: #fff; font-size: .85rem; font-weight: 600; padding: .5rem 1.25rem; border-radius: 6px; cursor: pointer; }
+.req-submit-btn:hover { background: #2EA043; }
+.req-submit-btn:disabled { opacity: .5; cursor: default; }
+.req-status-badge { display:inline-block;padding:.15rem .55rem;border-radius:999px;font-size:.72rem;font-weight:600;white-space:nowrap; }
+.req-empty { padding: 2rem; text-align: center; color: var(--muted); font-size: .85rem; }
+/* loja history */
+.req-hist-card { background: var(--hover-bg, rgba(255,255,255,.03)); border: 1px solid var(--border); border-radius: 7px; padding: .75rem 1rem; margin-bottom: .6rem; }
+.req-hist-card-top { display: flex; align-items: center; gap: .6rem; margin-bottom: .4rem; }
+.req-hist-date { font-size: .78rem; color: var(--muted); }
+.req-hist-row { font-size: .82rem; color: var(--text); margin-bottom: .25rem; }
+.req-hist-obs { font-size: .78rem; color: var(--muted); font-style: italic; margin-top: .3rem; }
+/* admin view */
+.req-admin-wrap { padding: 1rem 1.25rem; }
+.req-admin-filters { display: flex; align-items: center; gap: .75rem; margin-bottom: 1rem; flex-wrap: wrap; }
+.req-status-tabs { display: flex; gap: .3rem; flex-wrap: wrap; }
+.req-stab { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: .75rem; padding: .25rem .6rem; border-radius: 4px; cursor: pointer; transition: all .15s; }
+.req-stab.active { background: #58A6FF; border-color: #58A6FF; color: #0D1117; font-weight: 700; }
+.req-board-sel { background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: .8rem; padding: .25rem .6rem; border-radius: 4px; cursor: pointer; }
+.req-admin-list { display: flex; flex-direction: column; gap: .6rem; max-height: calc(100vh - 220px); overflow-y: auto; }
+.req-admin-item { border: 1px solid var(--border); border-radius: 8px; padding: .75rem 1rem; background: var(--hover-bg, rgba(255,255,255,.02)); }
+.req-admin-item-hdr { display: flex; justify-content: space-between; align-items: center; margin-bottom: .5rem; gap: .5rem; flex-wrap: wrap; }
+.req-admin-tags { display: flex; flex-wrap: wrap; gap: .3rem; margin-bottom: .35rem; }
+.req-embal-tag { background: #1F3A5F; color: #58A6FF; font-size: .74rem; padding: .15rem .5rem; border-radius: 4px; }
+.req-mat-tag { background: var(--card); border: 1px solid var(--border); color: var(--muted); font-size: .72rem; padding: .1rem .45rem; border-radius: 4px; }
+.req-admin-obs { font-size: .78rem; color: var(--muted); font-style: italic; margin: .25rem 0; }
+.req-admin-upd { font-size: .7rem; color: var(--muted); margin-top: .3rem; }
+.req-action-btn { background: #238636; border: 1px solid #2EA043; color: #fff; font-size: .75rem; font-weight: 600; padding: .25rem .65rem; border-radius: 5px; cursor: pointer; white-space: nowrap; }
+.req-action-btn:hover { background: #2EA043; }
+.req-action-btn:disabled { opacity: .5; cursor: default; }
+.req-del-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: .8rem; padding: .2rem .5rem; border-radius: 4px; cursor: pointer; }
+.req-del-btn:hover { border-color: #F85149; color: #F85149; }

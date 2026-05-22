@@ -1305,6 +1305,69 @@ app.delete('/api/pendencias/:id', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/requisicoes ───────────────────────────────────────────────────
+app.get('/api/requisicoes', requireAuth, async (req, res) => {
+  try {
+    const db      = await readDB();
+    const isAdmin = !req.session.user.board;
+    const items   = (db.requisicoes || []).filter(x =>
+      isAdmin || x.board === req.session.user.board
+    ).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    res.json(items);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/requisicoes ──────────────────────────────────────────────────
+app.post('/api/requisicoes', requireAuth, async (req, res) => {
+  try {
+    const board = req.session.user.board;
+    if (!board) return res.status(400).json({ error: 'Apenas lojas podem criar requisições' });
+    const { embalagens, materiais, observacao } = req.body;
+    const db = await readDB();
+    if (!db.requisicoes) db.requisicoes = [];
+    const item = {
+      id: nextId(db), board,
+      embalagens: embalagens || {},
+      materiais:  materiais  || [],
+      observacao: (observacao || '').trim(),
+      status:    'pendente',
+      createdAt:  new Date().toISOString(),
+      createdBy:  req.session.user.label || req.session.user.username,
+      updatedAt:  null,
+      updatedBy:  null,
+    };
+    db.requisicoes.push(item);
+    await writeDB(db);
+    res.json(item);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── PATCH /api/requisicoes/:id ────────────────────────────────────────────
+app.patch('/api/requisicoes/:id', requireAdmin, async (req, res) => {
+  try {
+    const id   = parseInt(req.params.id);
+    const db   = await readDB();
+    const item = (db.requisicoes || []).find(x => x.id === id);
+    if (!item) return res.status(404).json({ error: 'Requisição não encontrada' });
+    if (req.body.status) item.status = req.body.status;
+    item.updatedAt = new Date().toISOString();
+    item.updatedBy = req.session.user.label || req.session.user.username;
+    await writeDB(db);
+    res.json(item);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── DELETE /api/requisicoes/:id ───────────────────────────────────────────
+app.delete('/api/requisicoes/:id', requireAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const db = await readDB();
+    db.requisicoes = (db.requisicoes || []).filter(x => x.id !== id);
+    await writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/caixa/:year/:month/:board ───────────────────────────────────
 app.get('/api/caixa/:year/:month/:board', requireAuth, async (req, res) => {
   try {
