@@ -1086,6 +1086,7 @@ function _renderDashWeekBody(body, week, extraData) {
       <th class="dw-th dw-th-r">Prêmio</th>
     </tr></thead>`;
     const tbody = document.createElement('tbody');
+    let grandTotValor=0, grandTotMeta=0, grandTotPecas=0, grandTotAtend=0, grandTotPremio=0, grandTotProjecao=0, grandHasProj=false;
 
     for (const [bk, bc] of visible) {
       const emps = byBoard[bk] || [];
@@ -1167,9 +1168,36 @@ function _renderDashWeekBody(body, week, extraData) {
         </tr>`;
         while (wrap.firstChild) tbody.appendChild(wrap.firstChild);
       }
+
+      grandTotValor += totValor; grandTotMeta += totMeta;
+      grandTotPecas += totPecas; grandTotAtend += totAtend;
+      grandTotPremio += totPremio;
+      if (hasProj) { grandTotProjecao += totProjecao; grandHasProj = true; }
     }
 
     table.appendChild(tbody);
+
+    if (grandTotValor > 0) {
+      const gPct     = grandTotMeta>0 ? grandTotValor/grandTotMeta*100 : null;
+      const gPctProj = (grandTotMeta>0 && grandHasProj) ? grandTotProjecao/grandTotMeta*100 : null;
+      const gPa      = (grandTotPecas>0 && grandTotAtend>0) ? grandTotPecas/grandTotAtend : null;
+      const gpCls    = gPct==null?'': gPct>=100?'kpi-pos': gPct>=80?'kpi-warn':'kpi-neg';
+      const gpProjCls= gPctProj==null?'': gPctProj>=100?'kpi-pos': gPctProj>=80?'kpi-warn':'kpi-neg';
+      const gprojCls = !grandHasProj?'': grandTotProjecao>=grandTotMeta?'kpi-pos':'kpi-neg';
+      const gTfoot   = document.createElement('tfoot');
+      gTfoot.innerHTML = `<tr class="dw-total-row">
+        <td class="dw-td">Total Geral</td>
+        <td class="dw-td dw-td-num">${fBRL(grandTotMeta||null)}</td>
+        <td class="dw-td dw-td-num">${fBRL(grandTotValor||null)}</td>
+        <td class="dw-td dw-td-num ${gpCls}">${fPct(gPct)}</td>
+        <td class="dw-td dw-td-num ${gprojCls}">${grandHasProj?fBRL(grandTotProjecao):'—'}</td>
+        <td class="dw-td dw-td-num ${gpProjCls}">${fPct(gPctProj)}</td>
+        <td class="dw-td dw-td-num${gPa!=null?(gPa>=1.8?' pa-ok':' pa-low'):''}">${gPa!=null?gPa.toFixed(2):'—'}</td>
+        <td class="dw-td dw-td-num">R$ ${grandTotPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+      </tr>`;
+      table.appendChild(gTfoot);
+    }
+
     body.appendChild(table);
     return;
   }
