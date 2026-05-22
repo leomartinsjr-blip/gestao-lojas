@@ -1602,8 +1602,10 @@ function closePerfModal() {
 
 // ── Transferências view ────────────────────────────────────────────────────
 const TRANS_BOARDS = ['delrey','minas','contagem','estacao'];
-let _transDias = 30;
-let _transCompraFrom = '';   // ISO "YYYY-MM-DD" — filtro última entrada
+let _transDias      = 30;
+let _transCompraFrom = '';  // ISO "YYYY-MM-DD"
+let _transLojaFilter = '';  // board key
+let _transTipoFilter = '';  // 'enviar' | 'receber' | ''
 
 function openTransModal() {
   document.getElementById('transOverlay').classList.remove('hidden');
@@ -1684,41 +1686,52 @@ function renderTransTable(container, data) {
   const fN = v => v != null ? v : 0;
   const boardLabel = k => BOARDS[k]?.label || k;
   const boardColor = k => BOARDS[k]?.color || '#8B949E';
+  const fmtDate    = iso => iso ? iso.slice(0,10).split('-').reverse().join('/') : '—';
 
-  // Resumo de transferências agrupado por par De→Para
+  // Resumo por par De→Para
   const pairCount = {};
-  for (const s of sugestoes) {
+  for (const s of sugestoes)
     for (const t of s.transfers) {
       const pk = `${t.de}→${t.para}`;
       pairCount[pk] = (pairCount[pk] || 0) + 1;
     }
-  }
-  const pairSummary = Object.entries(pairCount)
-    .sort((a,b) => b[1] - a[1])
-    .map(([pk, n]) => {
-      const [de, para] = pk.split('→');
-      return `<span class="trans-pair-chip">
-        <span style="color:${boardColor(de)}">${boardLabel(de)}</span>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-        <span style="color:${boardColor(para)}">${boardLabel(para)}</span>
-        <strong>${n} SKU${n>1?'s':''}</strong>
+  const pairSummary = Object.entries(pairCount).sort((a,b) => b[1]-a[1]).map(([pk,n]) => {
+    const [de, para] = pk.split('→');
+    return `<span class="trans-pair-chip">
+      <span style="color:${boardColor(de)}">${boardLabel(de)}</span>
+      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+      <span style="color:${boardColor(para)}">${boardLabel(para)}</span>
+      <strong>${n} SKU${n>1?'s':''}</strong>
+    </span>`;
+  }).join('');
+
+  // Montar linhas
+  const buildRows = list => list.map(s => {
+    const senders   = [...new Set(s.transfers.map(t => t.de))];
+    const receivers = [...new Set(s.transfers.map(t => t.para))];
+    const compraIso = s.ultimaCompra || '';
+
+    const enviarHtml = senders.map(b => {
+      const q     = fN(s.stocks[b]);
+      const after = fN(s.stocksAfter[b]);
+      return `<span class="trans-sc trans-sc-send" style="--bc:${boardColor(b)}">
+        <span class="trans-sc-name">${boardLabel(b)}</span>
+        <span class="trans-sc-qty">${q}→${after}</span>
       </span>`;
     }).join('');
 
-  // Montar tabela com atributos data-boards e data-ultima-compra para filtragem
-  const fmtDate = iso => iso ? iso.slice(0, 10).split('-').reverse().join('/') : '—';
-  const buildRows = (list) => list.map(s => {
-    const involvedBoards = new Set([...s.transfers.map(t => t.de), ...s.transfers.map(t => t.para)]);
-    const transferStr = s.transfers.map(t =>
-      `<span class="trans-move">
-        <span style="color:${boardColor(t.de)}">${boardLabel(t.de)}</span>
-        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
-        <span style="color:${boardColor(t.para)}">${boardLabel(t.para)}</span>
-        <span class="trans-qty">×${t.qty}</span>
-      </span>`
-    ).join(' ');
-    const compraIso = s.ultimaCompra || '';
-    return `<tr class="trans-row" data-boards="${[...involvedBoards].join(',')}" data-ultima-compra="${compraIso}">
+    const receberHtml = receivers.map(b => {
+      const after = fN(s.stocksAfter[b]);
+      return `<span class="trans-sc trans-sc-recv" style="--bc:${boardColor(b)}">
+        <span class="trans-sc-name">${boardLabel(b)}</span>
+        <span class="trans-sc-qty">0→${after}</span>
+      </span>`;
+    }).join('');
+
+    return `<tr class="trans-row"
+        data-enviar="${senders.join(',')}"
+        data-receber="${receivers.join(',')}"
+        data-ultima-compra="${compraIso}">
       <td class="trans-td trans-cod">${s.cod_produto}</td>
       <td class="trans-td trans-setor">${s.setor || '—'}</td>
       <td class="trans-td">${s.descricao || '—'}</td>
@@ -1726,17 +1739,14 @@ function renderTransTable(container, data) {
       <td class="trans-td trans-td-c">${s.desc_tamanho || '—'}</td>
       <td class="trans-td trans-td-c trans-date">${fmtDate(s.ultimaVenda)}</td>
       <td class="trans-td trans-td-c trans-date">${fmtDate(compraIso)}</td>
-      ${boards.map(b => {
-        const q = fN(s.stocks[b]);
-        const after = fN(s.stocksAfter[b]);
-        const changed = after !== q;
-        return `<td class="trans-td trans-td-c ${q===0?'trans-zero':q>=2?'trans-ok':'trans-min'}">
-          ${q}${changed?` <span class="trans-after">→${after}</span>`:''}
-        </td>`;
-      }).join('')}
-      <td class="trans-td">${transferStr}</td>
+      <td class="trans-td trans-td-chips">${enviarHtml}</td>
+      <td class="trans-td trans-td-chips">${receberHtml}</td>
     </tr>`;
   }).join('');
+
+  const lojasBtns = boards.map(b =>
+    `<button class="trans-filter-btn trans-loja-btn${_transLojaFilter===b?' active':''}" data-loja="${b}" style="--fc:${boardColor(b)}">${boardLabel(b)}</button>`
+  ).join('');
 
   const html = `
     <div class="trans-summary">
@@ -1744,9 +1754,17 @@ function renderTransTable(container, data) {
       <div class="trans-pairs">${pairSummary}</div>
     </div>
     <div class="trans-filter-bar">
-      <span class="trans-filter-label">Filtrar por loja:</span>
-      <button class="trans-filter-btn active" data-filter="">Todas</button>
-      ${boards.map(b => `<button class="trans-filter-btn" data-filter="${b}" style="--fc:${boardColor(b)}">${boardLabel(b)}</button>`).join('')}
+      <div class="trans-filter-row">
+        <span class="trans-filter-label">Loja:</span>
+        <button class="trans-filter-btn trans-loja-btn${!_transLojaFilter?' active':''}" data-loja="">Todas</button>
+        ${lojasBtns}
+      </div>
+      <div class="trans-filter-row">
+        <span class="trans-filter-label">Tipo:</span>
+        <button class="trans-tipo-btn${!_transTipoFilter?' active':''}" data-tipo="">Todas</button>
+        <button class="trans-tipo-btn trans-tipo-send${_transTipoFilter==='enviar'?' active':''}" data-tipo="enviar">↑ Enviar</button>
+        <button class="trans-tipo-btn trans-tipo-recv${_transTipoFilter==='receber'?' active':''}" data-tipo="receber">↓ Receber</button>
+      </div>
     </div>
     <div style="overflow-x:auto">
     <table class="trans-table" id="transDataTable">
@@ -1758,42 +1776,58 @@ function renderTransTable(container, data) {
         <th class="trans-th trans-th-c">Tam</th>
         <th class="trans-th trans-th-c">Últ. Venda</th>
         <th class="trans-th trans-th-c">Últ. Entrada</th>
-        ${boards.map(b => `<th class="trans-th trans-th-c" style="color:${boardColor(b)}">${boardLabel(b)}</th>`).join('')}
-        <th class="trans-th">Transferir</th>
+        <th class="trans-th trans-th-send">↑ Enviar</th>
+        <th class="trans-th trans-th-recv">↓ Receber</th>
       </tr></thead>
       <tbody id="transTableBody">${buildRows(sugestoes)}</tbody>
     </table></div>`;
 
   container.innerHTML = html;
-  applyTransCompraFilter(container);
+  applyTransFilter(container);
 
-  // Filtro por loja
-  container.querySelectorAll('.trans-filter-btn').forEach(btn => {
+  // Filtro loja
+  container.querySelectorAll('.trans-loja-btn').forEach(btn => {
     btn.addEventListener('click', () => {
-      container.querySelectorAll('.trans-filter-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      const f = btn.dataset.filter;
-      container.querySelectorAll('#transTableBody .trans-row').forEach(row => {
-        const rb = row.dataset.boards || '';
-        const boardOk = !f || rb.split(',').includes(f);
-        const compraOk = _transCompraFrom ? (row.dataset.ultimaCompra || '') >= _transCompraFrom : true;
-        row.style.display = (boardOk && compraOk) ? '' : 'none';
-      });
+      _transLojaFilter = btn.dataset.loja;
+      container.querySelectorAll('.trans-loja-btn').forEach(b => b.classList.toggle('active', b === btn));
+      applyTransFilter(container);
+    });
+  });
+
+  // Filtro tipo
+  container.querySelectorAll('.trans-tipo-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _transTipoFilter = btn.dataset.tipo;
+      container.querySelectorAll('.trans-tipo-btn').forEach(b => b.classList.toggle('active', b === btn));
+      applyTransFilter(container);
     });
   });
 }
 
-function applyTransCompraFilter(container) {
-  const rows = container.querySelectorAll('#transTableBody .trans-row');
-  let visivel = 0;
-  rows.forEach(row => {
-    const compra = row.dataset.ultimaCompra || '';
-    const ok = !_transCompraFrom || compra >= _transCompraFrom;
-    row.style.display = ok ? '' : 'none';
-    if (ok) visivel++;
+function applyTransFilter(container) {
+  container.querySelectorAll('#transTableBody .trans-row').forEach(row => {
+    const enviar  = (row.dataset.enviar  || '').split(',');
+    const receber = (row.dataset.receber || '').split(',');
+    const compra  = row.dataset.ultimaCompra || '';
+
+    let lojaOk = true;
+    if (_transLojaFilter) {
+      if (_transTipoFilter === 'enviar')  lojaOk = enviar.includes(_transLojaFilter);
+      else if (_transTipoFilter === 'receber') lojaOk = receber.includes(_transLojaFilter);
+      else lojaOk = enviar.includes(_transLojaFilter) || receber.includes(_transLojaFilter);
+    } else if (_transTipoFilter === 'enviar') {
+      lojaOk = enviar.length > 0;
+    } else if (_transTipoFilter === 'receber') {
+      lojaOk = receber.length > 0;
+    }
+
+    const compraOk = !_transCompraFrom || compra >= _transCompraFrom;
+    row.style.display = (lojaOk && compraOk) ? '' : 'none';
   });
-  const counter = container.querySelector('.trans-compra-count');
-  if (counter) counter.textContent = _transCompraFrom ? `${visivel} SKU${visivel!==1?'s':''} visíveis` : '';
+}
+
+function applyTransCompraFilter(container) {
+  applyTransFilter(container);
 }
 
 function buildPerfTabs() {
