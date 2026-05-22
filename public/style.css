@@ -2278,6 +2278,31 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   .folgas-hdr { flex-wrap: wrap; gap: .4rem; }
   .folgas-month-nav { margin-left: 0; }
 
+  /* ── Faturamento Diário: colunas compactas ────────────────────────────── */
+  /* Grid original: 1fr 82px 82px 36px 44px — fixos somam 244px + padding ≈ 340px, apertado em ~390px */
+  /* Novo: fixos = 68+64+26+34 = 192px, sobram ~180px pro nome no iPhone */
+  .dia-col-hdr,
+  .dia-row {
+    grid-template-columns: 1fr 68px 64px 26px 34px;
+    padding-left:  .4rem;
+    padding-right: .4rem;
+    gap: 0 .2rem;
+  }
+  .dia-row { padding-top: .26rem; padding-bottom: .26rem; }
+  .dia-col-hdr { padding-top: .15rem; padding-bottom: .12rem; }
+  .dia-col-hdr span { font-size: .6rem; }
+
+  .dia-name { font-size: .78rem; }
+  .dia-val  { font-size: .75rem; }
+  .dia-meta { font-size: .7rem;  }
+  .dia-pa   { font-size: .7rem;  }
+  .dia-pct  { font-size: .72rem; }
+
+  /* Store label: ponto + chevron alinhados */
+  .dia-store-label { gap: .22rem; font-size: .76rem; }
+  .dia-chevron { font-size: .6rem; width: .55rem; }
+  .dia-store-label .dash-store-dot { width: 7px; height: 7px; flex-shrink: 0; }
+
   /* ── Performance Mensal: esconde Meta Mês (2), % Meta (4), TM (7) ── */
   .dash-table .dash-th:nth-child(2),
   .dash-table td:nth-child(2),
