@@ -95,11 +95,13 @@ function parseBrNum(s) {
 }
 
 // Fetch LinxMovimento (daily sales) for a date range YYYY-MM-DD
-async function fetchMovimento(cnpj, dtIni, dtFin, chave) {
-  const body = buildRequest('LinxMovimento', cnpj, [
+async function fetchMovimento(cnpj, dtIni, dtFin, chave, tipoMov = null) {
+  const extra = [
     { id: 'data_inicial', valor: dtIni },
     { id: 'data_fim',     valor: dtFin },
-  ], chave);
+  ];
+  if (tipoMov) extra.push({ id: 'tipo_movimentacao', valor: tipoMov });
+  const body = buildRequest('LinxMovimento', cnpj, extra, chave);
 
   const raw = await postRequest(body);
 

@@ -2091,6 +2091,13 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   background: var(--surface2);
 }
 .trans-label { font-size: .78rem; color: var(--muted); }
+.trans-compra-filter { display: flex; align-items: center; gap: .4rem; }
+.trans-date-input {
+  padding: .22rem .5rem; border-radius: 5px; border: 1px solid var(--border2);
+  background: var(--surface); color: var(--fg); font-size: .78rem; cursor: pointer;
+}
+.trans-date-input:focus { outline: none; border-color: #58A6FF; }
+.trans-compra-count { font-size: .73rem; color: var(--muted); }
 .trans-dias-group { display: flex; gap: .3rem; }
 .trans-dias-btn {
   padding: .25rem .6rem; border-radius: 5px; border: 1px solid var(--border2);
