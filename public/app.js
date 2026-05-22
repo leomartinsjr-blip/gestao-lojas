@@ -5355,6 +5355,7 @@ function renderCaixaCard(container) {
     const fmtCur = v => (v === 0 || v === undefined || v === null) ? '—' : `R$ ${Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
     let totalCaixa = 0, totalSangria = 0, totalDeposito = 0;
+    let saldoAcum = 0;
     const rows = [];
     for (let d = 1; d <= daysInMonth; d++) {
       const dt    = new Date(S.year, S.month - 1, d);
@@ -5363,11 +5364,11 @@ function renderCaixaCard(container) {
       const caixa    = entry.caixa    ?? 0;
       const sangria  = entry.sangria  ?? 0;
       const deposito = entry.deposito ?? 0;
-      const saldo    = caixa - sangria - deposito;
+      saldoAcum += caixa - sangria - deposito;
       totalCaixa    += caixa;
       totalSangria  += sangria;
       totalDeposito += deposito;
-      rows.push({ d, dow, caixa, sangria, deposito, saldo });
+      rows.push({ d, dow, caixa, sangria, deposito, saldo: saldoAcum });
     }
     const totalSaldo = totalCaixa - totalSangria - totalDeposito;
 
