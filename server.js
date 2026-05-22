@@ -1959,6 +1959,60 @@ let _transResultCache = {};
 let _transWarmRunning = {};
 const TRANS_RESULT_TTL = 30 * 60 * 1000;
 
+// Calcula transferências proporcionais ao giro de cada loja.
+// Retorna { transfers, workStocks, ideal } ou null se não há movimento.
+//   - ideal[b]: estoque ideal calculado pelo giro
+//   - donors: lojas com excesso (stock > ideal), ordenadas por maior excesso
+//   - receivers: lojas com déficit (stock < ideal), ordenadas por maior déficit
+//   - A doadora cede apenas seu excesso → seu giro é respeitado
+function _calcTransfersProporcional(boards, stocks, giro) {
+  const totalGiro  = boards.reduce((s, b) => s + (giro[b] || 0), 0);
+  const totalStock = boards.reduce((s, b) => s + (stocks[b] || 0), 0);
+  if (totalGiro === 0 || totalStock === 0) return null;
+
+  // Estoque ideal proporcional ao giro (floor + distribuição de resto)
+  const parts = boards.map(b => {
+    const exact = totalStock * (giro[b] || 0) / totalGiro;
+    return { b, floor: Math.floor(exact), rem: exact % 1 };
+  });
+  let assigned = parts.reduce((s, x) => s + x.floor, 0);
+  parts.sort((a, c) => c.rem - a.rem);
+  for (let i = 0; i < totalStock - assigned; i++) parts[i].floor++;
+  const ideal = {};
+  for (const { b, floor } of parts) ideal[b] = floor;
+
+  // Delta: positivo = excesso (cede), negativo = déficit (recebe)
+  const delta = {};
+  for (const b of boards) delta[b] = (stocks[b] || 0) - ideal[b];
+
+  const donors    = boards.filter(b => delta[b] > 0).sort((a, b) => delta[b] - delta[a]);
+  const receivers = boards.filter(b => delta[b] < 0).sort((a, b) => delta[a] - delta[b]);
+  if (!donors.length || !receivers.length) return null;
+
+  const workStocks = { ...stocks };
+  const workDelta  = { ...delta };
+  const transfers  = [];
+
+  for (const rec of receivers) {
+    let needed = -workDelta[rec];
+    for (const don of donors) {
+      if (workDelta[don] <= 0) continue;
+      const qty = Math.min(needed, workDelta[don]);
+      if (qty <= 0) continue;
+      transfers.push({ de: don, para: rec, qty });
+      workStocks[don] -= qty;
+      workStocks[rec] += qty;
+      workDelta[don]  -= qty;
+      workDelta[rec]  += qty;
+      needed          -= qty;
+      if (needed <= 0) break;
+    }
+  }
+
+  if (!transfers.length) return null;
+  return { transfers, workStocks, ideal };
+}
+
 // Computa sugestões: estoque + movimento (N dias) por loja — sem fetches extras
 async function _buildTransResult(boards, lojas, dias) {
   const { fetchEstoque, fetchMovimento } = require('./services/microvix');
@@ -2039,25 +2093,9 @@ async function _buildTransResult(boards, lojas, dias) {
     const giro = {};
     for (const board of boards) giro[board] = giroByBoard[board][cod] || 0;
 
-    // Só considera produtos com algum movimento no período
-    const totalGiro = boards.reduce((s, b) => s + giro[b], 0);
-    if (totalGiro === 0) continue;
-
-    const donors    = boards.filter(b => stocks[b] >= 2).sort((a, b) => stocks[b] - stocks[a]);
-    const receivers = boards.filter(b => stocks[b] === 0).sort((a, b) => giro[b] - giro[a]);
-    if (!donors.length || !receivers.length) continue;
-
-    const workStocks = { ...stocks };
-    const transfers  = [];
-    for (const rec of receivers) {
-      for (const don of donors) {
-        if (workStocks[don] < 2) continue;
-        transfers.push({ de: don, para: rec, qty: 1 });
-        workStocks[don] -= 1;
-        break;
-      }
-    }
-    if (!transfers.length) continue;
+    const calc = _calcTransfersProporcional(boards, stocks, giro);
+    if (!calc) continue;
+    const { transfers, workStocks, ideal } = calc;
 
     const mov = catalogMov[cod] || {};
     sugestoes.push({
@@ -2068,6 +2106,7 @@ async function _buildTransResult(boards, lojas, dias) {
       desc_tamanho: mov.desc_tamanho || '—',
       setor:        mov.setor        || '—',
       stocks,
+      ideal,
       giro,
       transfers,
       stocksAfter:  workStocks,
@@ -2195,29 +2234,14 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
       }
     }
 
-    // Aplica lógica de transferência (mesma do _buildTransResult)
+    // Aplica lógica proporcional ao giro
     const sugestoes = [];
 
     for (const [cod, stocks] of Object.entries(stocksMap)) {
       const giro = giroMap[cod] || {};
-      const totalGiro = boards.reduce((s, b) => s + (giro[b] || 0), 0);
-      if (totalGiro === 0) continue;
-
-      const donors    = boards.filter(b => (stocks[b] || 0) >= 2).sort((a, b) => (stocks[b] || 0) - (stocks[a] || 0));
-      const receivers = boards.filter(b => (stocks[b] || 0) === 0).sort((a, b) => (giro[b] || 0) - (giro[a] || 0));
-      if (!donors.length || !receivers.length) continue;
-
-      const workStocks = { ...stocks };
-      const transfers  = [];
-      for (const rec of receivers) {
-        for (const don of donors) {
-          if ((workStocks[don] || 0) < 2) continue;
-          transfers.push({ de: don, para: rec, qty: 1 });
-          workStocks[don] -= 1;
-          break;
-        }
-      }
-      if (!transfers.length) continue;
+      const calc = _calcTransfersProporcional(boards, stocks, giro);
+      if (!calc) continue;
+      const { transfers, workStocks, ideal } = calc;
 
       const info = catalogMap[cod] || {};
       sugestoes.push({
@@ -2227,6 +2251,7 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
         desc_tamanho: '—',
         setor:        info.setor || '—',
         stocks,
+        ideal,
         giro,
         transfers,
         stocksAfter:  workStocks,

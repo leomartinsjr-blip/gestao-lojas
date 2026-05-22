@@ -1832,10 +1832,11 @@ function renderTransTable(container, data) {
     }).join('');
 
     const receberHtml = receivers.map(b => {
-      const after = fN(s.stocksAfter[b]);
+      const before = fN(s.stocks[b]);
+      const after  = fN(s.stocksAfter[b]);
       return `<span class="trans-sc trans-sc-recv" style="--bc:${boardColor(b)}">
         <span class="trans-sc-name">${boardLabel(b)}</span>
-        <span class="trans-sc-qty">0→${after}</span>
+        <span class="trans-sc-qty">${before}→${after}</span>
       </span>`;
     }).join('');
 
