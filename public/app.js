@@ -935,7 +935,7 @@ function _renderDashFolgas(body) {
 }
 
 function _renderDayCardBody(body, dateStr) {
-  const fV = v => 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fV = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const daysInMonth = new Date(S.year, S.month, 0).getDate();
   const defW = +(100 / daysInMonth).toFixed(6);
