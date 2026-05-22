@@ -1422,7 +1422,7 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
     const lastDay = new Date(y, m, 0).getDate();
     const dtFin   = `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
 
-    const { fetchMovimentoPlanos, fetchSangrias, parseBrNum } = require('./services/microvix');
+    const { fetchMovimento, fetchSangrias, parseBrNum } = require('./services/microvix');
 
     // "DD/MM/YYYY …" or "YYYY-MM-DD" → day-of-month integer
     function extractDay(s) {
@@ -1438,49 +1438,45 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
     const sangriaByDay = {};
     const errors       = {};
 
-    // Cash sales via LinxMovimentoPlanos (1 linha por forma de pagamento por venda).
-    // Filtra pela descrição do plano contendo "DINHEIRO".
-    // Também filtra pelo CNPJ da loja caso a API retorne dados de múltiplas empresas.
+    // Cash sales via LinxMovimento: deduplica por documento para evitar somar
+    // total_dinheiro múltiplas vezes (campo repete em cada item da venda).
+    // Filtra por cnpj_emp para garantir apenas dados desta loja.
     try {
       const cnpjClean = cnpj.replace(/\D/g, '');
-      const planRows = await fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave);
-      console.log(`[caixa-microvix/${board}] MovimentoPlanos: ${planRows.length} linhas`);
-      if (planRows.length) console.log(`[caixa-microvix/${board}] campos:`, Object.keys(planRows[0]).join(', '));
-      for (const r of planRows) {
-        // Filtra por CNPJ se o campo existir na resposta
-        const rowCnpj = (r.cnpj || r.cnpj_emp || r.cnpjEmp || '').replace(/\D/g, '');
+      const movRows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
+      const seenDocs = new Set();
+      for (const r of movRows) {
+        const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
         if (rowCnpj && rowCnpj !== cnpjClean) continue;
-
-        const desc = (r.desc_plano || r.desc_forma_pagamento || r.plano || r.descricao || '').toUpperCase();
-        if (!desc.includes('DINHEIRO')) continue;
-        const dateStr = r.data_emissao || r.data_documento || r.data || '';
-        const day = extractDay(dateStr);
+        if (r.cancelado === 'S' || r.cancelado === '1') continue;
+        if (r.operacao === 'DS') continue;
+        const doc = String(r.documento || '').trim();
+        if (!doc || seenDocs.has(doc)) continue;
+        seenDocs.add(doc);
+        const day = extractDay(r.data_documento || r.data_emissao || '');
         if (!day) continue;
-        const val = parseBrNum(r.valor || r.valor_pagamento || r.valor_plano || '0');
+        const val = parseBrNum(r.total_dinheiro || '0');
         if (val <= 0) continue;
         caixaByDay[day] = (caixaByDay[day] || 0) + val;
       }
     } catch (e) {
       errors.movimento = e.message;
-      console.warn(`[caixa-microvix/${board}] MovimentoPlanos: ${e.message}`);
+      console.warn(`[caixa-microvix/${board}] Movimento: ${e.message}`);
     }
 
     // Sangrias via LinxSangriaSuprimentos
+    // Campos confirmados: cnpj_emp, data, valor, cancelado
     try {
       const cnpjClean = cnpj.replace(/\D/g, '');
       const sgRows = await fetchSangrias(cnpj, dtIni, dtFin, chave);
-      console.log(`[caixa-microvix/${board}] Sangrias: ${sgRows.length} linhas`);
-      if (sgRows.length) console.log(`[caixa-microvix/${board}] campos sangria:`, Object.keys(sgRows[0]).join(', '));
       for (const r of sgRows) {
-        const rowCnpj = (r.cnpj || r.cnpj_emp || r.cnpjEmp || '').replace(/\D/g, '');
+        const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
         if (rowCnpj && rowCnpj !== cnpjClean) continue;
-        const dateStr = r.data_hora || r.data_sangria || r.data || r.dt_sangria || r.data_lancamento || '';
-        const day     = extractDay(dateStr);
+        if (r.cancelado === 'S' || r.cancelado === '1') continue;
+        const day = extractDay(r.data || '');
         if (!day) continue;
-        // só sangrias, não suprimentos (tipo S = sangria, T = suprimento)
-        const tipo = (r.tipo || r.tipo_operacao || '').toUpperCase();
-        if (tipo && tipo !== 'S') continue;
         const val = parseBrNum(r.valor || '0');
+        if (val <= 0) continue;
         sangriaByDay[day] = (sangriaByDay[day] || 0) + val;
       }
     } catch (e) {
