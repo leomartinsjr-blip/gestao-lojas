@@ -2118,6 +2118,136 @@ function _transBoards(reqLojas) {
   return { boards, lojas, firstCnpj, firstChave };
 }
 
+// POST /api/equalizacao-excel — equalização via Excel importado
+const _equalizacaoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
+app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+
+    const XLSX = require('xlsx');
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+
+    // Mapeamento de nome de empresa no Excel → board key
+    function detectBoard(name) {
+      const n = name.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+      if (n.includes('CONTAGEM'))           return 'contagem';
+      if (n.includes('MINAS'))              return 'minas';
+      if (n.includes('ESTAC') || n.includes('ESTAÇÃO') || n.match(/LJ\s*4\b/)) return 'estacao';
+      if (n.includes('TOMMY'))              return 'tommy';
+      if (n.includes('LEZ'))               return 'lez';
+      if (n.includes('CONCEPT') || n.includes('DEL') || n.match(/LJ\s*1\b/)) return 'delrey';
+      return null;
+    }
+
+    // Localiza aba com header das colunas (tem "Código" e "Descrição")
+    let companies = [];   // [{ board, vendaCol, saldoCol }]
+    let headerSheetIdx = -1;
+
+    for (let i = 0; i < wb.SheetNames.length; i++) {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1 });
+      const colRowIdx = rows.findIndex(r => Array.isArray(r) && r.includes('Código'));
+      if (colRowIdx === -1) continue;
+      headerSheetIdx = i;
+      const companyRow = colRowIdx > 0 ? rows[colRowIdx - 1] : [];
+      // Colunas de empresa começam a partir do índice 9, em pares (Vendas, Saldo)
+      for (let c = 9; c < (rows[colRowIdx] || []).length; c += 2) {
+        const raw = String(companyRow[c] || '').trim();
+        if (!raw) continue;
+        const board = detectBoard(raw);
+        if (board) companies.push({ board, vendaCol: c, saldoCol: c + 1, label: raw });
+      }
+      break;
+    }
+
+    if (!companies.length || headerSheetIdx === -1)
+      return res.status(400).json({ error: 'Formato de Excel não reconhecido — não encontrei colunas de lojas.' });
+
+    const boards = companies.map(c => c.board);
+
+    // Lê todas as abas de dados (após o header)
+    const stocksMap  = {};  // cod → { board: qty }
+    const giroMap    = {};  // cod → { board: qty }
+    const catalogMap = {};  // cod → { descricao, setor }
+
+    for (let i = headerSheetIdx + 1; i < wb.SheetNames.length; i++) {
+      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1 });
+      let setor = '';
+      for (const r of rows) {
+        if (!r || !r.length) continue;
+        if (typeof r[0] === 'string' && r[0].startsWith('Setor')) {
+          setor = r[0].replace(/^Setor(Setor:?\s*)/i, '').trim();
+          continue;
+        }
+        if (typeof r[0] !== 'number') continue;
+
+        const cod = String(r[0]);
+        if (!stocksMap[cod]) { stocksMap[cod] = {}; giroMap[cod] = {}; }
+
+        for (const c of companies) {
+          const venda = parseInt(r[c.vendaCol]) || 0;
+          const saldo = parseInt(r[c.saldoCol]) || 0;
+          stocksMap[cod][c.board] = (stocksMap[cod][c.board] || 0) + saldo;
+          giroMap[cod][c.board]   = (giroMap[cod][c.board]   || 0) + venda;
+        }
+
+        if (!catalogMap[cod])
+          catalogMap[cod] = { descricao: String(r[1] || '').trim(), setor };
+      }
+    }
+
+    // Aplica lógica de transferência (mesma do _buildTransResult)
+    const sugestoes = [];
+
+    for (const [cod, stocks] of Object.entries(stocksMap)) {
+      const giro = giroMap[cod] || {};
+      const totalGiro = boards.reduce((s, b) => s + (giro[b] || 0), 0);
+      if (totalGiro === 0) continue;
+
+      const donors    = boards.filter(b => (stocks[b] || 0) >= 2).sort((a, b) => (stocks[b] || 0) - (stocks[a] || 0));
+      const receivers = boards.filter(b => (stocks[b] || 0) === 0).sort((a, b) => (giro[b] || 0) - (giro[a] || 0));
+      if (!donors.length || !receivers.length) continue;
+
+      const workStocks = { ...stocks };
+      const transfers  = [];
+      for (const rec of receivers) {
+        for (const don of donors) {
+          if ((workStocks[don] || 0) < 2) continue;
+          transfers.push({ de: don, para: rec, qty: 1 });
+          workStocks[don] -= 1;
+          break;
+        }
+      }
+      if (!transfers.length) continue;
+
+      const info = catalogMap[cod] || {};
+      sugestoes.push({
+        cod_produto:  cod,
+        descricao:    info.descricao || '—',
+        desc_cor:     '—',
+        desc_tamanho: '—',
+        setor:        info.setor || '—',
+        stocks,
+        giro,
+        transfers,
+        stocksAfter:  workStocks,
+        ultimaVenda:  null,
+        ultimaCompra: null,
+      });
+    }
+
+    sugestoes.sort((a, b) => {
+      const sc = (a.setor || '').localeCompare(b.setor || '', 'pt-BR');
+      if (sc !== 0) return sc;
+      return String(a.cod_produto).localeCompare(String(b.cod_produto), 'pt-BR', { numeric: true });
+    });
+
+    res.json({ boards, dias: null, total: sugestoes.length, sugestoes, source: 'excel' });
+  } catch (e) {
+    console.error('[Equalizacao Excel]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // GET /api/transferencias/preload — dispara aquecimento, responde imediatamente
 app.get('/api/transferencias/preload', requireAdmin, (req, res) => {
   const { boards, lojas, firstCnpj, firstChave } = _transBoards(null);

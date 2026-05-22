@@ -2085,11 +2085,29 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .caixa-total-saldo.neg { color: #F85149; }
 
 /* ── Transferências ─────────────────────────────────────────────────────── */
+.trans-tabs {
+  display: flex; gap: 0; border-bottom: 1px solid var(--border);
+  background: var(--surface2);
+}
+.trans-tab-btn {
+  padding: .55rem 1.2rem; border: none; background: transparent;
+  color: var(--muted); font-size: .8rem; font-weight: 500; cursor: pointer;
+  border-bottom: 2px solid transparent; transition: all .15s;
+}
+.trans-tab-btn:hover { color: var(--fg); }
+.trans-tab-btn.active { color: #58A6FF; border-bottom-color: #58A6FF; }
 .trans-toolbar {
   display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
   padding: .75rem 1rem; border-bottom: 1px solid var(--border);
   background: var(--surface2);
 }
+.trans-excel-upload-btn {
+  display: flex; align-items: center; gap: .4rem;
+  padding: .28rem .75rem; border-radius: 6px; border: 1px dashed var(--border2);
+  color: var(--muted); font-size: .78rem; cursor: pointer; transition: all .15s;
+}
+.trans-excel-upload-btn:hover { border-color: #58A6FF; color: #58A6FF; }
+.trans-calc-btn:disabled { opacity: .45; cursor: not-allowed; }
 .trans-label { font-size: .78rem; color: var(--muted); }
 .trans-compra-filter { display: flex; align-items: center; gap: .4rem; }
 .trans-date-input {

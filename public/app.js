@@ -1639,6 +1639,7 @@ let _transDias      = 30;
 let _transCompraFrom = '';  // ISO "YYYY-MM-DD"
 let _transLojaFilter = '';  // board key
 let _transTipoFilter = '';  // 'enviar' | 'receber' | ''
+let _transTab       = 'microvix'; // 'microvix' | 'excel'
 
 function openTransModal() {
   document.getElementById('transOverlay').classList.remove('hidden');
@@ -1652,6 +1653,28 @@ function closeTransModal() {
 function renderTransView() {
   const body = document.getElementById('transBody');
   body.innerHTML = `
+    <div class="trans-tabs">
+      <button class="trans-tab-btn${_transTab==='microvix'?' active':''}" data-tab="microvix">Via Microvix</button>
+      <button class="trans-tab-btn${_transTab==='excel'?' active':''}" data-tab="excel">Via Excel</button>
+    </div>
+    <div id="transTabContent"></div>`;
+
+  body.querySelectorAll('.trans-tab-btn').forEach(btn =>
+    btn.addEventListener('click', () => {
+      _transTab = btn.dataset.tab;
+      body.querySelectorAll('.trans-tab-btn').forEach(b => b.classList.toggle('active', b === btn));
+      renderTransTabContent(body.querySelector('#transTabContent'));
+    })
+  );
+  renderTransTabContent(body.querySelector('#transTabContent'));
+}
+
+function renderTransTabContent(container) {
+  if (_transTab === 'excel') {
+    renderTransExcelTab(container);
+    return;
+  }
+  container.innerHTML = `
     <div class="trans-toolbar">
       <label class="trans-label">Período para giro:</label>
       <div class="trans-dias-group">
@@ -1670,20 +1693,72 @@ function renderTransView() {
     </div>
     <div id="transResult" style="padding:.5rem 0"></div>`;
 
-  body.querySelectorAll('.trans-dias-btn').forEach(btn => {
+  container.querySelectorAll('.trans-dias-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       _transDias = parseInt(btn.dataset.dias);
-      body.querySelectorAll('.trans-dias-btn').forEach(b => b.classList.toggle('active', b === btn));
+      container.querySelectorAll('.trans-dias-btn').forEach(b => b.classList.toggle('active', b === btn));
     });
   });
 
-  body.querySelector('#transCompraFrom').addEventListener('change', e => {
+  container.querySelector('#transCompraFrom').addEventListener('change', e => {
     _transCompraFrom = e.target.value;
-    const result = body.querySelector('#transResult');
+    const result = container.querySelector('#transResult');
     if (result.querySelector('#transDataTable')) applyTransCompraFilter(result);
   });
 
-  body.querySelector('#transCalcBtn').addEventListener('click', () => loadTransSugestoes(body.querySelector('#transResult')));
+  container.querySelector('#transCalcBtn').addEventListener('click', () => loadTransSugestoes(container.querySelector('#transResult')));
+}
+
+function renderTransExcelTab(container) {
+  container.innerHTML = `
+    <div class="trans-toolbar">
+      <label class="trans-label">Importar Excel (CompraVendasSaldoPorEmpresa):</label>
+      <label class="trans-excel-upload-btn" id="transExcelLabel">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        <span id="transExcelFileName">Escolher arquivo .xls / .xlsx</span>
+        <input type="file" id="transExcelInput" accept=".xls,.xlsx" style="display:none">
+      </label>
+      <button class="trans-calc-btn" id="transExcelCalcBtn" disabled>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+        </svg>
+        Calcular sugestões
+      </button>
+    </div>
+    <div id="transExcelResult" style="padding:.5rem 0"></div>`;
+
+  const input   = container.querySelector('#transExcelInput');
+  const nameEl  = container.querySelector('#transExcelFileName');
+  const calcBtn = container.querySelector('#transExcelCalcBtn');
+  const result  = container.querySelector('#transExcelResult');
+
+  input.addEventListener('change', () => {
+    if (input.files[0]) {
+      nameEl.textContent = input.files[0].name;
+      calcBtn.disabled = false;
+    }
+  });
+
+  calcBtn.addEventListener('click', async () => {
+    if (!input.files[0]) return;
+    calcBtn.disabled = true;
+    result.innerHTML = '<div class="trans-loading">Processando Excel… aguarde.</div>';
+    try {
+      const fd = new FormData();
+      fd.append('file', input.files[0]);
+      const r = await fetch('/api/equalizacao-excel', { method: 'POST', body: fd });
+      if (!r.ok) { const t = await r.text(); throw new Error(t); }
+      const data = await r.json();
+      renderTransTable(result, data);
+    } catch (e) {
+      result.innerHTML = `<div class="trans-error">Erro: ${e.message}</div>`;
+    } finally {
+      calcBtn.disabled = false;
+    }
+  });
 }
 
 async function loadTransSugestoes(container) {
