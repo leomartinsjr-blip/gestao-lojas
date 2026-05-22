@@ -1518,6 +1518,70 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/microvix/caixa-debug?board=contagem&date=2026-05-02 ─────────
+// Mostra exatamente o que seria somado para dinheiro e sangria em um dia específico
+app.get('/api/microvix/caixa-debug', requireAdmin, async (req, res) => {
+  try {
+    const board = req.query.board || 'delrey';
+    const date  = req.query.date || new Date().toISOString().slice(0, 10);
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = lojas[board];
+    if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado` });
+    const chave    = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const cnpjClean = cnpj.replace(/\D/g, '');
+    const { fetchMovimento, fetchSangrias, parseBrNum } = require('./services/microvix');
+
+    function extractDay(s) {
+      const str = String(s || '').trim();
+      const m1 = str.match(/^(\d{2})\/\d{2}\/\d{4}/);
+      if (m1) return parseInt(m1[1]);
+      const m2 = str.match(/^\d{4}-\d{2}-(\d{2})/);
+      if (m2) return parseInt(m2[1]);
+      return null;
+    }
+    const targetDay = parseInt(date.slice(8, 10));
+    const dtIni = date.slice(0, 8) + '01';
+    const dtFin = date;
+
+    // --- Dinheiro ---
+    const movRows   = await fetchMovimento(cnpj, dtIni, dtFin, chave);
+    const seenDocs  = new Set();
+    const dinheiroRows = [];
+    let totalDinheiro = 0;
+    for (const r of movRows) {
+      const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+      const day     = extractDay(r.data_documento || r.data_emissao || '');
+      if (day !== targetDay) continue;
+      const doc     = String(r.documento || '').trim();
+      const isCancelled = r.cancelado === 'S' || r.cancelado === '1';
+      const isDev   = r.operacao === 'DS';
+      const isDup   = seenDocs.has(doc);
+      const val     = parseBrNum(r.total_dinheiro || '0');
+      const cnpjMatch = !rowCnpj || rowCnpj === cnpjClean;
+      dinheiroRows.push({ doc, data_documento: r.data_documento, cnpj_emp: r.cnpj_emp, cancelado: r.cancelado, operacao: r.operacao, total_dinheiro: r.total_dinheiro, _cnpjMatch: cnpjMatch, _isDup: isDup, _isCancelled: isCancelled, _isDev: isDev, _counted: cnpjMatch && !isCancelled && !isDev && !isDup && val > 0 });
+      if (cnpjMatch && !isCancelled && !isDev && !isDup && val > 0) { seenDocs.add(doc); totalDinheiro += val; }
+      else if (!isDup) seenDocs.add(doc);
+    }
+
+    // --- Sangrias ---
+    const sgRows = await fetchSangrias(cnpj, dtIni, dtFin, chave);
+    const sangriaRows = [];
+    let totalSangria = 0;
+    for (const r of sgRows) {
+      const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+      const day     = extractDay(r.data || '');
+      if (day !== targetDay) continue;
+      const isCancelled = r.cancelado === 'S' || r.cancelado === '1';
+      const val     = parseBrNum(r.valor || '0');
+      const cnpjMatch = !rowCnpj || rowCnpj === cnpjClean;
+      sangriaRows.push({ data: r.data, cnpj_emp: r.cnpj_emp, valor: r.valor, cancelado: r.cancelado, desc_historico: r.desc_historico, _cnpjMatch: cnpjMatch, _isCancelled: isCancelled, _counted: cnpjMatch && !isCancelled && val > 0 });
+      if (cnpjMatch && !isCancelled && val > 0) totalSangria += val;
+    }
+
+    res.json({ board, cnpjClean, date, targetDay, totalDinheiro, totalSangria, dinheiroRows: dinheiroRows.filter(r => r.data_documento), sangriaRows });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/microvix/caixa-probe?board=delrey&ini=YYYY-MM-DD&fin=YYYY-MM-DD ──
 // Testa múltiplos nomes de comando para descobrir os corretos de pagamentos/sangrias
 app.get('/api/microvix/caixa-probe', requireAdmin, async (req, res) => {
