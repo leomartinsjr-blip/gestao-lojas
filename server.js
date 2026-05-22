@@ -1440,9 +1440,17 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
 
     // Cash sales via LinxMovimentoPlanos (1 linha por forma de pagamento por venda).
     // Filtra pela descrição do plano contendo "DINHEIRO".
+    // Também filtra pelo CNPJ da loja caso a API retorne dados de múltiplas empresas.
     try {
+      const cnpjClean = cnpj.replace(/\D/g, '');
       const planRows = await fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave);
+      console.log(`[caixa-microvix/${board}] MovimentoPlanos: ${planRows.length} linhas`);
+      if (planRows.length) console.log(`[caixa-microvix/${board}] campos:`, Object.keys(planRows[0]).join(', '));
       for (const r of planRows) {
+        // Filtra por CNPJ se o campo existir na resposta
+        const rowCnpj = (r.cnpj || r.cnpj_emp || r.cnpjEmp || '').replace(/\D/g, '');
+        if (rowCnpj && rowCnpj !== cnpjClean) continue;
+
         const desc = (r.desc_plano || r.desc_forma_pagamento || r.plano || r.descricao || '').toUpperCase();
         if (!desc.includes('DINHEIRO')) continue;
         const dateStr = r.data_emissao || r.data_documento || r.data || '';
@@ -1459,8 +1467,13 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
 
     // Sangrias via LinxSangriaSuprimentos
     try {
+      const cnpjClean = cnpj.replace(/\D/g, '');
       const sgRows = await fetchSangrias(cnpj, dtIni, dtFin, chave);
+      console.log(`[caixa-microvix/${board}] Sangrias: ${sgRows.length} linhas`);
+      if (sgRows.length) console.log(`[caixa-microvix/${board}] campos sangria:`, Object.keys(sgRows[0]).join(', '));
       for (const r of sgRows) {
+        const rowCnpj = (r.cnpj || r.cnpj_emp || r.cnpjEmp || '').replace(/\D/g, '');
+        if (rowCnpj && rowCnpj !== cnpjClean) continue;
         const dateStr = r.data_hora || r.data_sangria || r.data || r.dt_sangria || r.data_lancamento || '';
         const day     = extractDay(dateStr);
         if (!day) continue;
