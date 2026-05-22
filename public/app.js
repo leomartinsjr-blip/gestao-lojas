@@ -3509,7 +3509,7 @@ function _startDayCardAutoRefresh() {
   const now = new Date();
   const isCurrentMonth = S.year === now.getFullYear() && S.month === now.getMonth() + 1;
   if (!isCurrentMonth) return; // sem refresh em meses passados
-  const INTERVAL = 5 * 60 * 1000; // 5 min — alinhado ao sync do servidor
+  const INTERVAL = 1 * 60 * 1000; // 1 min — alinhado ao sync do servidor
   _dayCardTimer = setInterval(async () => {
     try {
       const pad = n => String(n).padStart(2, '0');
