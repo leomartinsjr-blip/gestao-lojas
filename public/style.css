@@ -2301,12 +2301,10 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   .dia-chevron { font-size: .58rem; width: .5rem; }
   .dia-store-label .dash-store-dot { width: 6px; height: 6px; flex-shrink: 0; }
 
-  /* ── Performance Mensal: esconde Meta Mês (2), Projeção (5), TM (7) ── */
-  /* Visível: Vendedor · Realizado · % Meta · PA */
+  /* ── Performance Mensal: esconde Meta Mês (2), TM (7) ── */
+  /* Visível: Vendedor · Realizado · % Meta · Projeção · PA */
   .dash-table .dash-th:nth-child(2),
   .dash-table td:nth-child(2),
-  .dash-table .dash-th:nth-child(5),
-  .dash-table td:nth-child(5),
   .dash-table .dash-th:nth-child(7),
   .dash-table td:nth-child(7) { display: none; }
 
