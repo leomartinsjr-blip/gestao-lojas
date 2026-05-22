@@ -1422,7 +1422,7 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
     const lastDay = new Date(y, m, 0).getDate();
     const dtFin   = `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
 
-    const { fetchFormasPagamentos, fetchSangrias, parseBrNum } = require('./services/microvix');
+    const { fetchMovimento, fetchSangrias, parseBrNum } = require('./services/microvix');
 
     // "DD/MM/YYYY …" or "YYYY-MM-DD" → day-of-month integer
     function extractDay(s) {
@@ -1438,30 +1438,33 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
     const sangriaByDay = {};
     const errors       = {};
 
-    // Cash sales: filter FormasPagamentos rows for "DINHEIRO"
+    // Cash sales: soma total_dinheiro de LinxMovimento por dia (exclui cancelados e devoluções)
     try {
-      const fpRows = await fetchFormasPagamentos(cnpj, dtIni, dtFin, chave);
-      for (const r of fpRows) {
-        const desc = (r.desc_forma_pagamento || r.desc_pagamento || r.forma_pagamento || r.pagamento || '').toUpperCase();
-        if (!desc.includes('DINHEIRO')) continue;
-        const dateStr = r.data_emissao || r.data_pagamento || r.data || r.dt_emissao || '';
-        const day     = extractDay(dateStr);
+      const movRows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
+      for (const r of movRows) {
+        if (r.cancelado === 'S' || r.cancelado === '1') continue;
+        if (r.operacao === 'DS') continue; // devolução
+        const day = extractDay(r.data_documento || r.data_emissao || '');
         if (!day) continue;
-        const val = parseBrNum(r.valor_pagamento || r.valor || '0');
+        const val = parseBrNum(r.total_dinheiro || '0');
+        if (val <= 0) continue;
         caixaByDay[day] = (caixaByDay[day] || 0) + val;
       }
     } catch (e) {
-      errors.formasPagamentos = e.message;
-      console.warn(`[caixa-microvix/${board}] FormasPagamentos: ${e.message}`);
+      errors.movimento = e.message;
+      console.warn(`[caixa-microvix/${board}] Movimento: ${e.message}`);
     }
 
-    // Sangrias
+    // Sangrias via LinxSangriaSuprimentos
     try {
       const sgRows = await fetchSangrias(cnpj, dtIni, dtFin, chave);
       for (const r of sgRows) {
-        const dateStr = r.data_hora || r.data_sangria || r.data || r.dt_sangria || '';
+        const dateStr = r.data_hora || r.data_sangria || r.data || r.dt_sangria || r.data_lancamento || '';
         const day     = extractDay(dateStr);
         if (!day) continue;
+        // só sangrias, não suprimentos (tipo S = sangria, T = suprimento)
+        const tipo = (r.tipo || r.tipo_operacao || '').toUpperCase();
+        if (tipo && tipo !== 'S') continue;
         const val = parseBrNum(r.valor || '0');
         sangriaByDay[day] = (sangriaByDay[day] || 0) + val;
       }
