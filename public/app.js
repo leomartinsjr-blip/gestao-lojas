@@ -5963,7 +5963,7 @@ function _initBoletaForm(body, boleta, isAdmin, userBoard) {
 
 const EMBALAGENS_ITEMS = [
   'Sacola de Papel P', 'Sacola de Papel M', 'Sacola de Papel G',
-  'Sacola TNT', 'Saco de Skate', 'Sacola de Patins',
+  'Sacola TNT', 'Sacola de Plástico',
   'Seda', 'Etiqueta Adesivo de Presente',
 ];
 const MATERIAIS_ITEMS = [
