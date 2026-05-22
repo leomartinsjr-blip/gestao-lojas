@@ -1808,19 +1808,90 @@ function renderTransExcelTab(container) {
   calcBtn.addEventListener('click', async () => {
     if (!input.files[0]) return;
     calcBtn.disabled = true;
-    result.innerHTML = '<div class="trans-loading">Processando Excel… aguarde.</div>';
     try {
-      const fd = new FormData();
-      fd.append('file', input.files[0]);
-      const r = await fetch('/api/equalizacao-excel', { method: 'POST', body: fd });
-      if (!r.ok) { const t = await r.text(); throw new Error(t); }
-      const data = await r.json();
+      // Passo 1: lê e parseia o Excel no browser (evita upload de arquivo grande)
+      result.innerHTML = '<div class="trans-loading">Lendo arquivo…</div>';
+      const buffer = await input.files[0].arrayBuffer();
+      const XLSX_LOCAL = window.XLSX;
+      if (!XLSX_LOCAL) throw new Error('Biblioteca de leitura de Excel não carregada. Recarregue a página.');
+
+      const wb = XLSX_LOCAL.read(buffer, { type: 'array' });
+
+      function detectBoard(name) {
+        const n = name.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        if (n.includes('CONTAGEM')) return 'contagem';
+        if (n.includes('MINAS'))    return 'minas';
+        if (n.includes('ESTAC'))    return 'estacao';
+        if (n.includes('TOMMY'))    return 'tommy';
+        if (n.includes('LEZ'))      return 'lez';
+        if (n.includes('CONCEPT') || n.includes('DEL')) return 'delrey';
+        return null;
+      }
+
+      // Localiza aba com header de colunas
+      let companies = [], headerSheetIdx = -1;
+      for (let i = 0; i < wb.SheetNames.length; i++) {
+        const rows = XLSX_LOCAL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1 });
+        const colRowIdx = rows.findIndex(r => Array.isArray(r) &&
+          r.some(c => typeof c === 'string' && c.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase() === 'codigo'));
+        if (colRowIdx === -1) continue;
+        headerSheetIdx = i;
+        const headerRow  = rows[colRowIdx];
+        const companyRow = colRowIdx > 0 ? rows[colRowIdx - 1] : [];
+        const startCol = headerRow.findIndex((h, idx) => idx >= 2 && typeof companyRow[idx] === 'string' && detectBoard(companyRow[idx]));
+        for (let c = (startCol !== -1 ? startCol : 9); c < headerRow.length; c += 2) {
+          const raw = String(companyRow[c] || '').trim();
+          if (!raw) continue;
+          const board = detectBoard(raw);
+          if (board) companies.push({ board, vendaCol: c, saldoCol: c + 1 });
+        }
+        break;
+      }
+      if (!companies.length) throw new Error('Formato não reconhecido — não encontrei colunas de lojas no Excel.');
+
+      // Passo 2: extrai dados de todas as abas
+      result.innerHTML = '<div class="trans-loading">Extraindo produtos…</div>';
+      const products = {};
+      let currentSetor = '';
+      for (let i = headerSheetIdx + 1; i < wb.SheetNames.length; i++) {
+        const rows = XLSX_LOCAL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1 });
+        for (const r of rows) {
+          if (!r || !r.length) continue;
+          if (typeof r[0] === 'string' && r[0].includes('Setor')) {
+            currentSetor = r[0].replace(/^SetorSetor:\s*/i, '').replace(/\s*\(\d+\)\s*$/, '').trim();
+            continue;
+          }
+          if (typeof r[0] !== 'number') continue;
+          const cod = String(r[0]);
+          if (!products[cod]) {
+            const rawDate = String(r[8] || '').trim();
+            let ultimaCompra = null;
+            if (rawDate && rawDate !== '-' && rawDate.includes('/')) {
+              const [d, m, y] = rawDate.split('/');
+              ultimaCompra = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+            }
+            products[cod] = { cod, descricao: String(r[1] || '').trim(), setor: currentSetor, ultimaCompra, stocks: {}, giro: {} };
+          }
+          for (const c of companies) {
+            products[cod].stocks[c.board] = (products[cod].stocks[c.board] || 0) + (parseInt(r[c.saldoCol]) || 0);
+            products[cod].giro[c.board]   = (products[cod].giro[c.board]   || 0) + (parseInt(r[c.vendaCol]) || 0);
+          }
+        }
+      }
+
+      // Passo 3: envia dados extraídos (JSON pequeno) para o servidor calcular
+      result.innerHTML = '<div class="trans-loading">Calculando sugestões…</div>';
+      const boards = companies.map(c => c.board);
+      const data = await apiFetch('POST', '/api/equalizacao-dados', {
+        boards,
+        products: Object.values(products)
+      });
       renderTransTable(result, data);
     } catch (e) {
       let msg = e.message || e.toString() || 'Erro desconhecido';
       try { const j = JSON.parse(msg); msg = j.error || msg; } catch {}
       msg = msg.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      console.error('[Excel upload]', e);
+      console.error('[Excel]', e);
       result.innerHTML = `<div class="trans-error">Erro: ${msg}</div>`;
     } finally {
       calcBtn.disabled = false;

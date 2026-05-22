@@ -130,7 +130,7 @@ if (MONGODB_URI) {
   sessionOpts.store = MongoStore.create({ mongoUrl: MONGODB_URI, dbName: 'gestao_lojas', ttl: 8 * 3600 });
 }
 
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '50mb' }));
 app.use(session(sessionOpts));
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(UPLOADS_DIR));
@@ -2243,6 +2243,55 @@ function _transBoards(reqLojas) {
     : null;
   return { boards, lojas, firstCnpj, firstChave };
 }
+
+// POST /api/equalizacao-dados — equalização com dados pré-extraídos pelo browser (JSON)
+app.post('/api/equalizacao-dados', requireAdmin, async (req, res) => {
+  try {
+    const { boards, products } = req.body || {};
+    if (!Array.isArray(boards) || !Array.isArray(products) || !products.length)
+      return res.status(400).json({ error: 'Dados inválidos' });
+
+    const lojas = (() => { try { return JSON.parse(process.env.MICROVIX_LOJAS || '{}'); } catch { return {}; } })();
+    const catalog = await _getCatalog(lojas).catch(() => ({}));
+
+    const sugestoes = [];
+    for (const p of products) {
+      const calc = _calcTransfersProporcional(boards, p.stocks || {}, p.giro || {});
+      if (!calc) continue;
+      const { transfers, workStocks, ideal } = calc;
+      const cat = catalog[String(p.cod)] || {};
+      sugestoes.push({
+        cod_produto:  p.cod,
+        descricao:    cat.nome     || p.descricao || '—',
+        desc_cor:     cat.desc_cor || '—',
+        desc_tamanho: cat.desc_tam || '—',
+        setor:        cat.setor    || p.setor || '—',
+        marca:        cat.marca    || '—',
+        linha:        cat.linha    || '—',
+        stocks:       p.stocks,
+        ideal,
+        giro:         p.giro,
+        transfers,
+        stocksAfter:  workStocks,
+        ultimaVenda:  null,
+        ultimaCompra: p.ultimaCompra || null,
+      });
+    }
+
+    sugestoes.sort((a, b) => {
+      const ss = (a.setor || '').localeCompare(b.setor || '', 'pt-BR');
+      if (ss !== 0) return ss;
+      const sm = (a.marca || '').localeCompare(b.marca || '', 'pt-BR');
+      if (sm !== 0) return sm;
+      return String(a.cod_produto).localeCompare(String(b.cod_produto), 'pt-BR', { numeric: true });
+    });
+
+    res.json({ boards, dias: null, total: sugestoes.length, sugestoes, source: 'excel' });
+  } catch (e) {
+    console.error('[Equalizacao Dados]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // POST /api/equalizacao-excel — equalização via Excel importado
 const _equalizacaoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
