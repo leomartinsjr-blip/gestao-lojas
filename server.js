@@ -1381,6 +1381,18 @@ app.get('/api/caixa/:year/:month/:board', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── DELETE /api/caixa/:year/:month/:board — zera todos os dados do mês ────
+app.delete('/api/caixa/:year/:month/:board', requireAdmin, async (req, res) => {
+  try {
+    const { year, month, board } = req.params;
+    const db  = await readDB();
+    const key = `${year}-${String(month).padStart(2,'0')}-${board}`;
+    if (db.caixa) delete db.caixa[key];
+    await writeDB(db);
+    res.json({ ok: true, deleted: key });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── PUT /api/caixa/:year/:month/:board/:day ───────────────────────────────
 app.put('/api/caixa/:year/:month/:board/:day', requireAuth, async (req, res) => {
   try {
