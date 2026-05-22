@@ -1476,14 +1476,14 @@ app.put('/api/caixa/:year/:month/:board/:day', requireAuth, async (req, res) => 
 // ── syncCaixaBoard — lógica compartilhada entre endpoint e cron ────────────
 // Sincroniza dinheiro + sangria de um board para year/month.
 // Nunca inclui o dia de hoje — cap em d-1.
-async function syncCaixaBoard(board, year, month) {
+// dayOnly: se fornecido, restringe busca e persistência a esse dia específico.
+async function syncCaixaBoard(board, year, month, dayOnly = null) {
   const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
   const cnpj  = lojas[board];
   if (!cnpj) throw new Error(`Board "${board}" não mapeado em MICROVIX_LOJAS`);
   const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
 
   const y = parseInt(year), m = parseInt(month);
-  const dtIni   = `${y}-${String(m).padStart(2,'0')}-01`;
   const lastDay = new Date(y, m, 0).getDate();
 
   const today  = new Date();
@@ -1494,7 +1494,17 @@ async function syncCaixaBoard(board, year, month) {
     capDay = Math.min(lastDay, todayD - 1);
     if (capDay < 1) return { skipped: 'sem dias anteriores', caixaByDay: {}, sangriaByDay: {} };
   }
-  const dtFin = `${y}-${String(m).padStart(2,'0')}-${String(capDay).padStart(2,'0')}`;
+
+  // dayOnly: sincroniza apenas esse dia; deve estar dentro do intervalo válido
+  const startDay = dayOnly ?? 1;
+  const endDay   = dayOnly ?? capDay;
+  if (dayOnly && (dayOnly < 1 || dayOnly > capDay)) {
+    return { skipped: `dia ${dayOnly} fora do intervalo válido (1–${capDay})`, caixaByDay: {}, sangriaByDay: {} };
+  }
+
+  const pad2 = n => String(n).padStart(2, '0');
+  const dtIni = `${y}-${pad2(m)}-${pad2(startDay)}`;
+  const dtFin = `${y}-${pad2(m)}-${pad2(endDay)}`;
 
   const { fetchMovimento, fetchSangrias, parseBrNum } = require('./services/microvix');
 
@@ -1557,12 +1567,12 @@ async function syncCaixaBoard(board, year, month) {
     console.warn(`[caixa-microvix/${board}] Sangrias: ${e.message}`);
   }
 
-  // Persist — preserva depósito existente
+  // Persist — preserva depósito existente; toca apenas dias no intervalo sincronizado
   const db = await readDB();
   if (!db.caixa) db.caixa = {};
-  const key = `${year}-${String(m).padStart(2,'0')}-${board}`;
+  const key = `${year}-${pad2(m)}-${board}`;
   if (!db.caixa[key]) db.caixa[key] = {};
-  for (let d = 1; d <= capDay; d++) {
+  for (let d = startDay; d <= endDay; d++) {
     const prev = db.caixa[key][d] || {};
     if (caixaByDay[d] !== undefined || sangriaByDay[d] !== undefined) {
       db.caixa[key][d] = {
@@ -1579,6 +1589,8 @@ async function syncCaixaBoard(board, year, month) {
 }
 
 // ── POST /api/caixa-microvix/:board/:year/:month ──────────────────────────
+// Admin: sincroniza o mês inteiro (útil para reprocessamento).
+// Loja: sincroniza apenas d-1 — não toca em dados já persistidos.
 app.post('/api/caixa-microvix/:board/:year/:month', requireAuth, async (req, res) => {
   try {
     const { board, year, month } = req.params;
@@ -1587,7 +1599,14 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAuth, async (req, res
     if (!isAdminUser && userBoard !== board) {
       return res.status(403).json({ error: 'Acesso restrito ao seu próprio painel' });
     }
-    const result = await syncCaixaBoard(board, year, month);
+    // Lojas só sincronizam d-1 para não sobrescrever dados já corretos
+    let dayOnly = null;
+    if (!isAdminUser) {
+      const todayD = new Date().getDate();
+      if (todayD <= 1) return res.json({ skipped: 'primeiro dia do mês, sem d-1 disponível', caixaByDay: {}, sangriaByDay: {} });
+      dayOnly = todayD - 1;
+    }
+    const result = await syncCaixaBoard(board, year, month, dayOnly);
     res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -2949,17 +2968,23 @@ initMongo()
     // ── Cron: fechamento de caixa — diário 08:00 Brasília, sincroniza d-1 ──
     if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
       cron.schedule('0 8 * * *', async () => {
-        const now      = new Date();
-        const lojas    = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-        const boards   = Object.keys(lojas);
-        const year     = now.getFullYear();
-        const month    = now.getMonth() + 1;
-        console.log(`[caixa-cron] Iniciando sync de fechamento para ${boards.length} loja(s) — ${year}/${String(month).padStart(2,'0')}`);
+        // Computa ontem em horário de Brasília via offset fixo UTC-3
+        const now  = new Date();
+        const brt  = new Date(now.getTime() - 3 * 60 * 60 * 1000);
+        const yesterday = new Date(brt);
+        yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+        const syncYear  = yesterday.getUTCFullYear();
+        const syncMonth = yesterday.getUTCMonth() + 1;
+        const syncDay   = yesterday.getUTCDate();
+
+        const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+        const boards = Object.keys(lojas);
+        const pad2   = n => String(n).padStart(2, '0');
+        console.log(`[caixa-cron] Sync d-1 (${syncDay}/${pad2(syncMonth)}/${syncYear}) para ${boards.length} loja(s)`);
         for (const board of boards) {
           try {
-            const r = await syncCaixaBoard(board, year, month);
-            const dias = Object.keys(r.caixaByDay || {}).length;
-            console.log(`[caixa-cron] ${board}: ${r.skipped || `${dias} dia(s) sincronizados`}`);
+            const r = await syncCaixaBoard(board, syncYear, syncMonth, syncDay);
+            console.log(`[caixa-cron] ${board}: ${r.skipped || `dia ${syncDay} sincronizado`}`);
           } catch (e) {
             console.error(`[caixa-cron] ${board}: ${e.message}`);
           }

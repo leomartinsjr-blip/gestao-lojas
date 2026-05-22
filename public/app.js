@@ -5382,6 +5382,19 @@ function renderCaixaCard(container) {
       data = await apiFetch('GET', `/api/caixa/${S.year}/${S.month}/${board}`);
     } catch(e) { targetBody.innerHTML = '<div style="padding:.75rem;color:var(--down);font-size:.8rem">Erro ao carregar</div>'; return; }
 
+    // Busca saldo de fechamento do mês anterior para carry-over
+    const prevYear  = S.month === 1 ? S.year - 1 : S.year;
+    const prevMonth = S.month === 1 ? 12 : S.month - 1;
+    let saldoAcum = 0;
+    try {
+      const prevData  = await apiFetch('GET', `/api/caixa/${prevYear}/${prevMonth}/${board}`);
+      const prevDays  = new Date(prevYear, prevMonth, 0).getDate();
+      for (let d = 1; d <= prevDays; d++) {
+        const e = prevData[d] || {};
+        saldoAcum += (e.caixa ?? 0) - (e.sangria ?? 0) - (e.deposito ?? 0);
+      }
+    } catch(_) { /* sem carry-over */ }
+
     const daysInMonth = new Date(S.year, S.month, 0).getDate();
     const today = new Date();
     const isCurrentMonth = today.getFullYear() === S.year && (today.getMonth()+1) === S.month;
@@ -5390,7 +5403,7 @@ function renderCaixaCard(container) {
     const pad = n => String(n).padStart(2,'0');
     const fmtCur = v => (v === 0 || v === undefined || v === null) ? '—' : `R$ ${Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
-    let totalCaixa = 0, totalSangria = 0, totalDeposito = 0, saldoAcum = 0;
+    let totalCaixa = 0, totalSangria = 0, totalDeposito = 0;
     const rows = [];
     for (let d = 1; d <= daysInMonth; d++) {
       const dt    = new Date(S.year, S.month - 1, d);
@@ -5402,7 +5415,7 @@ function renderCaixaCard(container) {
       totalCaixa += caixa; totalSangria += sangria; totalDeposito += deposito;
       rows.push({ d, dow: DAY_NAMES[dt.getDay()], caixa, sangria, deposito, saldo: saldoAcum });
     }
-    const totalSaldo = totalCaixa - totalSangria - totalDeposito;
+    const totalSaldo = saldoAcum; // saldo acumulado incluindo carry-over do mês anterior
     const sc = s => s > 0 ? 'pos' : s < 0 ? 'neg' : 'zero';
     const hasData = r => r.caixa > 0 || r.sangria > 0 || r.deposito > 0;
     const dash = `<span style="color:var(--muted)">—</span>`;
