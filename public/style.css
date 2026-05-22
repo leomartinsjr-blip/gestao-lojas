@@ -2296,10 +2296,10 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   .dia-pa   { font-size: .67rem; }
   .dia-pct  { font-size: .69rem; }
 
-  /* Store label: dot + chevron alinhados */
+  /* Store label: sem dot, só chevron + nome */
   .dia-store-label { gap: .2rem; font-size: .72rem; }
   .dia-chevron { font-size: .58rem; width: .5rem; }
-  .dia-store-label .dash-store-dot { width: 6px; height: 6px; flex-shrink: 0; }
+  .dia-store-label .dash-store-dot { display: none; }
 
   /* ── Performance Mensal: esconde Meta Mês (2), TM (7) ── */
   /* Visível: Vendedor · Realizado · % Meta · Projeção · PA */
