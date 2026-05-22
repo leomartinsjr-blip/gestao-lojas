@@ -1843,9 +1843,12 @@ function renderTransTable(container, data) {
     return `<tr class="trans-row"
         data-enviar="${senders.join(',')}"
         data-receber="${receivers.join(',')}"
-        data-ultima-compra="${compraIso}">
+        data-ultima-compra="${compraIso}"
+        data-setor="${s.setor || ''}"
+        data-marca="${s.marca || ''}">
       <td class="trans-td trans-cod">${s.cod_produto}</td>
       <td class="trans-td trans-setor">${s.setor || '—'}</td>
+      <td class="trans-td trans-marca">${s.marca || '—'}</td>
       <td class="trans-td">${s.descricao || '—'}</td>
       <td class="trans-td">${s.desc_cor || '—'}</td>
       <td class="trans-td trans-td-c">${s.desc_tamanho || '—'}</td>
@@ -1862,7 +1865,7 @@ function renderTransTable(container, data) {
 
   const html = `
     <div class="trans-summary">
-      <span class="trans-total"><strong>${total}</strong> SKU${total>1?'s':''} com sugestão · últimos ${dias} dias</span>
+      <span class="trans-total"><strong>${total}</strong> SKU${total>1?'s':''} com sugestão${dias ? ` · últimos ${dias} dias` : ''}</span>
       <div class="trans-pairs">${pairSummary}</div>
     </div>
     <div class="trans-filter-bar">
@@ -1883,6 +1886,7 @@ function renderTransTable(container, data) {
       <thead><tr>
         <th class="trans-th">Código</th>
         <th class="trans-th">Setor</th>
+        <th class="trans-th">Marca</th>
         <th class="trans-th">Produto</th>
         <th class="trans-th">Cor</th>
         <th class="trans-th trans-th-c">Tam</th>

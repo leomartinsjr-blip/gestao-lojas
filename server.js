@@ -1959,6 +1959,42 @@ let _transResultCache = {};
 let _transWarmRunning = {};
 const TRANS_RESULT_TTL = 30 * 60 * 1000;
 
+// Cache do catálogo de produtos (LinxProdutos) — válido por 6 horas
+let _catalogCache = null;
+let _catalogCacheAt = 0;
+const CATALOG_TTL = 6 * 60 * 60 * 1000;
+
+async function _getCatalog(lojas) {
+  if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
+  const { fetchProdutos } = require('./services/microvix');
+  const firstBoard = Object.keys(lojas)[0];
+  if (!firstBoard) return {};
+  const cnpj  = lojas[firstBoard].replace(/\D/g, '');
+  const chave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+  try {
+    const rows = await fetchProdutos(cnpj, chave, 0);
+    const map  = {};
+    for (const r of rows) {
+      const cod = String(r.cod_produto || '').trim();
+      if (!cod) continue;
+      map[cod] = {
+        nome:      (r.nome         || '').trim(),
+        setor:     (r.desc_setor   || '').trim(),
+        marca:     (r.desc_marca   || '').trim(),
+        linha:     (r.desc_linha   || '').trim(),
+        desc_cor:  (r.desc_cor     || '').trim(),
+        desc_tam:  (r.desc_tamanho || '').trim(),
+      };
+    }
+    _catalogCache   = map;
+    _catalogCacheAt = Date.now();
+    return map;
+  } catch (e) {
+    console.warn('[Catalog] Erro ao buscar LinxProdutos:', e.message);
+    return _catalogCache || {};
+  }
+}
+
 // Calcula transferências proporcionais ao giro de cada loja.
 // Retorna { transfers, workStocks, ideal } ou null se não há movimento.
 //   - ideal[b]: estoque ideal calculado pelo giro
@@ -2022,11 +2058,14 @@ async function _buildTransResult(boards, lojas, dias) {
 
   const estoqueByBoard = {};
   const giroByBoard    = {};
-  const catalogMov     = {};   // info de produto vinda dos movRows
+  const catalogMov     = {};   // fallback info vinda dos movRows (campos limitados)
   const ultVendaMap    = {};   // última venda por cod_produto (cross-board)
   const ultCompraMap   = {};   // última entrada por cod_produto (cross-board)
 
-  await Promise.all(boards.map(async board => {
+  // Busca catálogo (setor, marca) em paralelo com estoque/movimento
+  const [catalog] = await Promise.all([
+    _getCatalog(lojas),
+    Promise.all(boards.map(async board => {
     const cnpj  = lojas[board].replace(/\D/g, '');
     const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
     const [estRows, movRows] = await Promise.all([
@@ -2074,7 +2113,8 @@ async function _buildTransResult(boards, lojas, dias) {
         setor:        (r.setor        || r.grupo       || '').trim(),
       };
     }
-  }));
+  })),
+  ]);
 
   const allCods = new Set();
   for (const board of boards)
@@ -2097,14 +2137,17 @@ async function _buildTransResult(boards, lojas, dias) {
     if (!calc) continue;
     const { transfers, workStocks, ideal } = calc;
 
+    const cat = catalog[cod] || {};
     const mov = catalogMov[cod] || {};
     sugestoes.push({
       cod_produto:  cod,
       cod_barra,
-      descricao:    mov.descricao    || '—',
-      desc_cor:     mov.desc_cor     || '—',
-      desc_tamanho: mov.desc_tamanho || '—',
-      setor:        mov.setor        || '—',
+      descricao:    cat.nome      || mov.descricao    || '—',
+      desc_cor:     cat.desc_cor  || mov.desc_cor     || '—',
+      desc_tamanho: cat.desc_tam  || mov.desc_tamanho || '—',
+      setor:        cat.setor     || mov.setor        || '—',
+      marca:        cat.marca     || '—',
+      linha:        cat.linha     || '—',
       stocks,
       ideal,
       giro,
@@ -2116,8 +2159,10 @@ async function _buildTransResult(boards, lojas, dias) {
   }
 
   sugestoes.sort((a, b) => {
-    const sc = (a.setor || '').localeCompare(b.setor || '', 'pt-BR');
-    if (sc !== 0) return sc;
+    const ss = (a.setor || '').localeCompare(b.setor || '', 'pt-BR');
+    if (ss !== 0) return ss;
+    const sm = (a.marca || '').localeCompare(b.marca || '', 'pt-BR');
+    if (sm !== 0) return sm;
     return String(a.cod_produto).localeCompare(String(b.cod_produto), 'pt-BR', { numeric: true });
   });
 
@@ -2234,7 +2279,10 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
       }
     }
 
-    // Aplica lógica proporcional ao giro
+    // Enriquece com catálogo Microvix (setor, marca) e aplica lógica proporcional
+    const lojas = (() => { try { return JSON.parse(process.env.MICROVIX_LOJAS || '{}'); } catch { return {}; } })();
+    const catalog = await _getCatalog(lojas).catch(() => ({}));
+
     const sugestoes = [];
 
     for (const [cod, stocks] of Object.entries(stocksMap)) {
@@ -2243,13 +2291,16 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
       if (!calc) continue;
       const { transfers, workStocks, ideal } = calc;
 
+      const cat  = catalog[cod]  || {};
       const info = catalogMap[cod] || {};
       sugestoes.push({
         cod_produto:  cod,
-        descricao:    info.descricao || '—',
-        desc_cor:     '—',
-        desc_tamanho: '—',
-        setor:        info.setor || '—',
+        descricao:    cat.nome     || info.descricao || '—',
+        desc_cor:     cat.desc_cor || '—',
+        desc_tamanho: cat.desc_tam || '—',
+        setor:        cat.setor    || info.setor || '—',
+        marca:        cat.marca    || '—',
+        linha:        cat.linha    || '—',
         stocks,
         ideal,
         giro,
@@ -2261,8 +2312,10 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
     }
 
     sugestoes.sort((a, b) => {
-      const sc = (a.setor || '').localeCompare(b.setor || '', 'pt-BR');
-      if (sc !== 0) return sc;
+      const ss = (a.setor || '').localeCompare(b.setor || '', 'pt-BR');
+      if (ss !== 0) return ss;
+      const sm = (a.marca || '').localeCompare(b.marca || '', 'pt-BR');
+      if (sm !== 0) return sm;
       return String(a.cod_produto).localeCompare(String(b.cod_produto), 'pt-BR', { numeric: true });
     });
 
