@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: gestao-lojas
+    runtime: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: 3000
+      - key: DATA_DIR
+        value: /var/data
+      - key: NODE_ENV
+        value: production
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: MONGODB_URI
+        sync: false
+    disk:
+      name: gestao-lojas-data
+      mountPath: /var/data
+      sizeGB: 1
