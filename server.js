@@ -1438,12 +1438,18 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
     const sangriaByDay = {};
     const errors       = {};
 
-    // Cash sales: soma total_dinheiro de LinxMovimento por dia (exclui cancelados e devoluções)
+    // Cash sales: soma total_dinheiro de LinxMovimento por dia.
+    // total_dinheiro é o total do documento (repetido em cada linha/item),
+    // então deduplica por numero de documento antes de somar.
     try {
       const movRows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
+      const seenDocs = new Set();
       for (const r of movRows) {
         if (r.cancelado === 'S' || r.cancelado === '1') continue;
         if (r.operacao === 'DS') continue; // devolução
+        const doc = String(r.documento || r.num_nota || r.num_documento || '').trim();
+        if (!doc || seenDocs.has(doc)) continue;
+        seenDocs.add(doc);
         const day = extractDay(r.data_documento || r.data_emissao || '');
         if (!day) continue;
         const val = parseBrNum(r.total_dinheiro || '0');
