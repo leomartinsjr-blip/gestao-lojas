@@ -1879,14 +1879,83 @@ function renderTransExcelTab(container) {
         }
       }
 
-      // Passo 3: envia dados extraídos (JSON pequeno) para o servidor calcular
+      // Passo 3: busca catálogo (GET pequeno) e calcula tudo no browser
+      result.innerHTML = '<div class="trans-loading">Buscando catálogo Microvix…</div>';
+      const catalog = await apiFetch('GET', '/api/catalog').catch(() => ({}));
+
       result.innerHTML = '<div class="trans-loading">Calculando sugestões…</div>';
       const boards = companies.map(c => c.board);
-      const data = await apiFetch('POST', '/api/equalizacao-dados', {
-        boards,
-        products: Object.values(products)
+
+      function calcProporcional(boards, stocks, giro) {
+        const totalGiro  = boards.reduce((s, b) => s + (giro[b]   || 0), 0);
+        const totalStock = boards.reduce((s, b) => s + (stocks[b] || 0), 0);
+        if (!totalGiro || !totalStock) return null;
+        const parts = boards.map(b => {
+          const exact = totalStock * (giro[b] || 0) / totalGiro;
+          return { b, floor: Math.floor(exact), rem: exact % 1 };
+        });
+        let assigned = parts.reduce((s, x) => s + x.floor, 0);
+        parts.sort((a, c) => c.rem - a.rem);
+        for (let i = 0; i < totalStock - assigned; i++) parts[i].floor++;
+        const ideal = {};
+        for (const { b, floor } of parts) ideal[b] = floor;
+        const delta = {};
+        for (const b of boards) delta[b] = (stocks[b] || 0) - ideal[b];
+        const donors    = boards.filter(b => delta[b] > 0).sort((a, b) => delta[b] - delta[a]);
+        const receivers = boards.filter(b => delta[b] < 0).sort((a, b) => delta[a] - delta[b]);
+        if (!donors.length || !receivers.length) return null;
+        const workStocks = { ...stocks };
+        const workDelta  = { ...delta };
+        const transfers  = [];
+        for (const rec of receivers) {
+          let needed = -workDelta[rec];
+          for (const don of donors) {
+            if (workDelta[don] <= 0) continue;
+            const qty = Math.min(needed, workDelta[don]);
+            if (qty <= 0) continue;
+            transfers.push({ de: don, para: rec, qty });
+            workStocks[don] -= qty; workStocks[rec] += qty;
+            workDelta[don]  -= qty; workDelta[rec]  += qty;
+            needed -= qty;
+            if (needed <= 0) break;
+          }
+        }
+        if (!transfers.length) return null;
+        return { transfers, workStocks, ideal };
+      }
+
+      const sugestoes = [];
+      for (const p of Object.values(products)) {
+        const calc = calcProporcional(boards, p.stocks, p.giro);
+        if (!calc) continue;
+        const { transfers, workStocks, ideal } = calc;
+        const cat = catalog[p.cod] || {};
+        sugestoes.push({
+          cod_produto:  p.cod,
+          descricao:    cat.nome     || p.descricao || '—',
+          desc_cor:     cat.desc_cor || '—',
+          desc_tamanho: cat.desc_tam || '—',
+          setor:        cat.setor    || p.setor || '—',
+          marca:        cat.marca    || '—',
+          linha:        cat.linha    || '—',
+          stocks:       p.stocks,
+          ideal,
+          giro:         p.giro,
+          transfers,
+          stocksAfter:  workStocks,
+          ultimaVenda:  null,
+          ultimaCompra: p.ultimaCompra || null,
+        });
+      }
+      sugestoes.sort((a, b) => {
+        const ss = (a.setor || '').localeCompare(b.setor || '', 'pt-BR');
+        if (ss !== 0) return ss;
+        const sm = (a.marca || '').localeCompare(b.marca || '', 'pt-BR');
+        if (sm !== 0) return sm;
+        return String(a.cod_produto).localeCompare(String(b.cod_produto), 'pt-BR', { numeric: true });
       });
-      renderTransTable(result, data);
+
+      renderTransTable(result, { boards, dias: null, total: sugestoes.length, sugestoes, source: 'excel' });
     } catch (e) {
       let msg = e.message || e.toString() || 'Erro desconhecido';
       try { const j = JSON.parse(msg); msg = j.error || msg; } catch {}

@@ -2244,6 +2244,17 @@ function _transBoards(reqLojas) {
   return { boards, lojas, firstCnpj, firstChave };
 }
 
+// GET /api/catalog — catálogo de produtos do Microvix (para cálculo client-side)
+app.get('/api/catalog', requireAdmin, async (req, res) => {
+  try {
+    const lojas = (() => { try { return JSON.parse(process.env.MICROVIX_LOJAS || '{}'); } catch { return {}; } })();
+    const catalog = await _getCatalog(lojas).catch(() => ({}));
+    res.json(catalog);
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/equalizacao-dados — equalização com dados pré-extraídos pelo browser (JSON)
 app.post('/api/equalizacao-dados', requireAdmin, async (req, res) => {
   try {
