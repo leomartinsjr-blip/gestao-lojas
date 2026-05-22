@@ -1875,19 +1875,21 @@ body {
 
 /* ── Recebimento de NF ───────────────────────────────────────────────────── */
 .nf-tabs {
-  display: flex; gap: 0; overflow-x: auto; scrollbar-width: none;
-  border-bottom: 1px solid var(--border); background: var(--surface2);
+  display: flex; gap: .35rem; overflow-x: auto; scrollbar-width: none;
+  padding: .5rem .85rem .45rem; flex-wrap: wrap;
 }
 .nf-tabs::-webkit-scrollbar { display: none; }
 .nf-tab {
-  flex: 1; min-width: max-content; padding: .38rem .55rem;
-  background: none; border: none; border-bottom: 2px solid transparent;
-  color: var(--muted); font-size: .7rem; font-weight: 700;
-  text-transform: uppercase; letter-spacing: .05em; cursor: pointer;
-  transition: color .15s, border-color .15s; white-space: nowrap;
+  background: transparent; border: 1px solid var(--border); color: var(--muted);
+  font-size: .8rem; font-weight: 600; padding: .3rem .85rem; border-radius: 999px;
+  cursor: pointer; white-space: nowrap; transition: all .15s; flex-shrink: 0;
 }
-.nf-tab.active { color: var(--nf-tab-color, #58A6FF); border-bottom-color: var(--nf-tab-color, #58A6FF); }
-.nf-tab:hover:not(.active) { color: var(--text); }
+.nf-tab.active {
+  background: var(--nf-tab-color, #58A6FF);
+  border-color: var(--nf-tab-color, #58A6FF);
+  color: #0D1117; font-weight: 700;
+}
+.nf-tab:hover:not(.active) { border-color: var(--nf-tab-color, #58A6FF); color: var(--text); }
 .nf-card-body { max-height: 220px; overflow-y: auto; padding: .5rem .85rem .4rem; }
 .nf-item {
   display: flex; align-items: center; gap: .45rem;
