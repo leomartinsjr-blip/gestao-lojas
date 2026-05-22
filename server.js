@@ -1381,6 +1381,60 @@ app.get('/api/caixa/:year/:month/:board', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/caixa-sangrias/:year/:month — todas as sangrias do mês (admin) ─
+app.get('/api/caixa-sangrias/:year/:month', requireAdmin, async (req, res) => {
+  try {
+    const { year, month } = req.params;
+    const y = parseInt(year), m = parseInt(month);
+    const dtIni   = `${y}-${String(m).padStart(2,'0')}-01`;
+    const lastDay = new Date(y, m, 0).getDate();
+    const dtFin   = `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const { fetchSangrias, parseBrNum } = require('./services/microvix');
+
+    const BOARD_LABELS = { delrey:'Del Rey', minas:'Minas', contagem:'Contagem', estacao:'Estação', tommy:'Tommy', lez:'Lez' };
+
+    function extractDay(s) {
+      const str = String(s || '').trim();
+      const m1 = str.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      if (m1) return { day: parseInt(m1[1]), fmt: `${m1[1]}/${m1[2]}/${m1[3]}` };
+      const m2 = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m2) return { day: parseInt(m2[3]), fmt: `${m2[3]}/${m2[2]}/${m2[1]}` };
+      return { day: 0, fmt: s };
+    }
+
+    const all = [];
+    for (const [board, cnpj] of Object.entries(lojas)) {
+      const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+      const cnpjClean = cnpj.replace(/\D/g, '');
+      try {
+        const rows = await fetchSangrias(cnpj, dtIni, dtFin, chave);
+        for (const r of rows) {
+          if (r.cancelado === 'S' || r.cancelado === '1') continue;
+          const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+          if (rowCnpj && rowCnpj !== cnpjClean) continue;
+          const { day, fmt } = extractDay(r.data || '');
+          if (!day) continue;
+          all.push({
+            board,
+            loja:  BOARD_LABELS[board] || board,
+            data:  fmt,
+            day,
+            desc:  r.desc_historico || r.obs || '',
+            valor: Math.abs(parseBrNum(r.valor || '0')),
+          });
+        }
+      } catch (e) {
+        console.warn(`[caixa-sangrias/${board}] ${e.message}`);
+      }
+    }
+
+    all.sort((a, b) => a.day - b.day || a.loja.localeCompare(b.loja));
+    res.json(all);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── DELETE /api/caixa/:year/:month/:board — zera todos os dados do mês ────
 app.delete('/api/caixa/:year/:month/:board', requireAdmin, async (req, res) => {
   try {

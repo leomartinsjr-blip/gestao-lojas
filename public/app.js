@@ -5300,8 +5300,9 @@ function renderCaixaCard(container) {
   const userBoard = S.user?.board;
   let activeBoard = isAdmin ? NF_STORES[0] : userBoard;
 
-  const syncSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
-  const expandSvg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
+  const syncSvg   = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
+  const expandSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
+  const sangriaSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>`;
 
   function tabsMarkup(activeB) {
     if (!isAdmin) return '';
@@ -5328,6 +5329,7 @@ function renderCaixaCard(container) {
       ${!isAdmin ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
       <div style="display:flex;gap:.3rem;margin-left:auto">
         ${isAdmin ? `<button class="caixa-sync-btn" id="caixaSyncBtn" title="Sincronizar com Microvix">${syncSvg} Microvix</button>` : ''}
+        ${isAdmin ? `<button class="caixa-sync-btn" id="caixaSangriaBtn" title="Ver todas as sangrias">${sangriaSvg} Sangrias</button>` : ''}
         <button class="caixa-expand-btn" id="caixaExpandBtn" title="Expandir">${expandSvg}</button>
       </div>
     </div>
@@ -5353,6 +5355,20 @@ function renderCaixaCard(container) {
       <div class="caixa-ovl-body" id="caixaOvlBody"></div>
     </div>`;
   document.body.appendChild(ovl);
+
+  // ── Sangrias overlay ──────────────────────────────────────────────────────
+  const sgOvl = document.createElement('div');
+  sgOvl.className = 'caixa-overlay';
+  sgOvl.innerHTML = `
+    <div class="caixa-overlay-panel">
+      <div class="caixa-overlay-hdr">
+        ${sangriaSvg.replace('width="12" height="12"','width="15" height="15"').replace('flex-shrink:0','')}
+        <span class="caixa-overlay-title">Sangrias — <span id="sgOvlPeriodo"></span></span>
+        <button class="caixa-ovl-close" id="sgOvlClose">✕</button>
+      </div>
+      <div class="caixa-ovl-body" id="sgOvlBody"></div>
+    </div>`;
+  document.body.appendChild(sgOvl);
 
   const body    = card.querySelector('#caixaCardBody');
   const ovlBody = ovl.querySelector('#caixaOvlBody');
@@ -5503,7 +5519,70 @@ function renderCaixaCard(container) {
   function closeOvl() { ovl.classList.remove('active'); document.body.style.overflow = ''; }
   ovl.querySelector('#caixaOvlClose').addEventListener('click', closeOvl);
   ovl.addEventListener('click', e => { if (e.target === ovl) closeOvl(); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape' && ovl.classList.contains('active')) closeOvl(); });
+
+  // ── Sangrias button ────────────────────────────────────────────────────────
+  if (isAdmin) {
+    const sgBtn = card.querySelector('#caixaSangriaBtn');
+    if (sgBtn) {
+      sgBtn.addEventListener('click', async () => {
+        const sgBody   = sgOvl.querySelector('#sgOvlBody');
+        const sgPeriodo = sgOvl.querySelector('#sgOvlPeriodo');
+        const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+        sgPeriodo.textContent = `${meses[S.month-1]}/${S.year}`;
+        sgBody.innerHTML = '<div style="padding:1rem;color:var(--muted);font-size:.85rem">Carregando…</div>';
+        sgOvl.classList.add('active');
+        document.body.style.overflow = 'hidden';
+
+        try {
+          const rows = await apiFetch('GET', `/api/caixa-sangrias/${S.year}/${S.month}`);
+          if (!rows.length) {
+            sgBody.innerHTML = '<div style="padding:1rem;color:var(--muted);font-size:.85rem">Nenhuma sangria no período.</div>';
+            return;
+          }
+          const fmtCur = v => `R$ ${Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+          const total  = rows.reduce((s, r) => s + r.valor, 0);
+          sgBody.innerHTML = `
+            <div class="caixa-table-wrap" style="max-height:calc(92vh - 110px)">
+              <table class="caixa-table">
+                <thead><tr>
+                  <th style="text-align:left">Loja</th>
+                  <th style="text-align:left">Data</th>
+                  <th style="text-align:left">Descrição</th>
+                  <th>Valor</th>
+                </tr></thead>
+                <tbody>${rows.map(r => `
+                  <tr>
+                    <td style="padding:.38rem .6rem;font-size:.8rem;white-space:nowrap">
+                      <span style="color:${BOARDS[r.board]?.color||'var(--muted)'};font-weight:600">${r.loja}</span>
+                    </td>
+                    <td style="padding:.38rem .6rem;font-size:.8rem;white-space:nowrap;color:var(--muted)">${r.data}</td>
+                    <td style="padding:.38rem .6rem;font-size:.8rem">${r.desc || '—'}</td>
+                    <td class="caixa-td-val" style="color:#F85149;font-weight:600">${fmtCur(r.valor)}</td>
+                  </tr>`).join('')}
+                </tbody>
+                <tfoot><tr class="caixa-total-row">
+                  <td colspan="3">Total</td>
+                  <td style="text-align:right;color:#F85149">${fmtCur(total)}</td>
+                </tr></tfoot>
+              </table>
+            </div>`;
+        } catch(e) {
+          sgBody.innerHTML = `<div style="padding:1rem;color:var(--down);font-size:.85rem">Erro: ${e.message}</div>`;
+        }
+      });
+    }
+
+    function closeSgOvl() { sgOvl.classList.remove('active'); document.body.style.overflow = ''; }
+    sgOvl.querySelector('#sgOvlClose').addEventListener('click', closeSgOvl);
+    sgOvl.addEventListener('click', e => { if (e.target === sgOvl) closeSgOvl(); });
+  }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (ovl.classList.contains('active'))   closeOvl();
+      if (sgOvl.classList.contains('active')) { sgOvl.classList.remove('active'); document.body.style.overflow = ''; }
+    }
+  });
 }
 
 function renderNFCard(container) {
