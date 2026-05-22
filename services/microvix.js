@@ -90,8 +90,20 @@ function parseCsv(csv) {
 }
 
 // Parse BR decimal string "1.234,56" → number
+// Also handles international format "87.5" (single dot = decimal, no comma)
 function parseBrNum(s) {
-  return parseFloat((s || '0').replace(/\./g, '').replace(',', '.')) || 0;
+  const str = (s || '0').trim();
+  if (str.includes(',')) {
+    // Brazilian: dot = thousands separator, comma = decimal
+    return parseFloat(str.replace(/\./g, '').replace(',', '.')) || 0;
+  }
+  const dots = (str.match(/\./g) || []).length;
+  if (dots <= 1) {
+    // No comma + single dot (or no dot): dot is decimal separator
+    return parseFloat(str) || 0;
+  }
+  // Multiple dots, no comma: dots are thousands separators (e.g. "1.234.567")
+  return parseFloat(str.replace(/\./g, '')) || 0;
 }
 
 // Fetch LinxMovimento (daily sales) for a date range YYYY-MM-DD
