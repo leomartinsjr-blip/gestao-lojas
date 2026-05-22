@@ -194,4 +194,34 @@ async function fetchProdutos(cnpj, chave, timestamp = 0, dataMov = null) {
   return allRows;
 }
 
-module.exports = { fetchMovimento, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, parseBrNum, buildRequest, postRequest, parseCsv };
+// Fetch LinxFormasPagamentos → payment method breakdown per sale
+async function fetchFormasPagamentos(cnpj, dtIni, dtFin, chave) {
+  const extra = [
+    { id: 'data_inicial', valor: dtIni },
+    { id: 'data_fim',     valor: dtFin },
+  ];
+  const body = buildRequest('LinxFormasPagamentos', cnpj, extra, chave);
+  const raw  = await postRequest(body);
+  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro desconhecido';
+    throw new Error(`Microvix API (formasPagamentos): ${msg}`);
+  }
+  return parseCsv(raw);
+}
+
+// Fetch LinxSangrias → cash withdrawals from register
+async function fetchSangrias(cnpj, dtIni, dtFin, chave) {
+  const extra = [
+    { id: 'data_inicial', valor: dtIni },
+    { id: 'data_fim',     valor: dtFin },
+  ];
+  const body = buildRequest('LinxSangrias', cnpj, extra, chave);
+  const raw  = await postRequest(body);
+  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro desconhecido';
+    throw new Error(`Microvix API (sangrias): ${msg}`);
+  }
+  return parseCsv(raw);
+}
+
+module.exports = { fetchMovimento, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchFormasPagamentos, fetchSangrias, parseBrNum, buildRequest, postRequest, parseCsv };

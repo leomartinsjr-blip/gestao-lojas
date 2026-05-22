@@ -1388,20 +1388,137 @@ app.put('/api/caixa/:year/:month/:board/:day', requireAuth, async (req, res) => 
     const user    = req.session.user;
     const isAdmin = !user.board || user.board === 'escritorio';
     if (!isAdmin && user.board !== board) return res.status(403).json({ error: 'Sem acesso' });
-    const { caixa, sangria } = req.body;
+    const { caixa, sangria, deposito } = req.body;
     const db  = await readDB();
     if (!db.caixa) db.caixa = {};
     const key = `${year}-${String(month).padStart(2,'0')}-${board}`;
     if (!db.caixa[key]) db.caixa[key] = {};
     const d = parseInt(day);
     db.caixa[key][d] = {
-      caixa:   caixa   !== undefined ? Number(caixa)   : (db.caixa[key][d]?.caixa   ?? 0),
-      sangria: sangria !== undefined ? Number(sangria) : (db.caixa[key][d]?.sangria ?? 0),
+      caixa:    caixa    !== undefined ? Number(caixa)    : (db.caixa[key][d]?.caixa    ?? 0),
+      sangria:  sangria  !== undefined ? Number(sangria)  : (db.caixa[key][d]?.sangria  ?? 0),
+      deposito: deposito !== undefined ? Number(deposito) : (db.caixa[key][d]?.deposito ?? 0),
       updatedAt: new Date().toISOString(),
       updatedBy: user.label || user.username,
     };
     await writeDB(db);
     res.json(db.caixa[key][d]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/caixa-microvix/:board/:year/:month ──────────────────────────
+// Syncs caixa (cash sales) and sangria from Microvix for a full month.
+// Only updates caixa/sangria fields; preserves existing deposito values.
+app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, res) => {
+  try {
+    const { board, year, month } = req.params;
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = lojas[board];
+    if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado em MICROVIX_LOJAS` });
+    const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+
+    const y = parseInt(year), m = parseInt(month);
+    const dtIni   = `${y}-${String(m).padStart(2,'0')}-01`;
+    const lastDay = new Date(y, m, 0).getDate();
+    const dtFin   = `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+
+    const { fetchFormasPagamentos, fetchSangrias, parseBrNum } = require('./services/microvix');
+
+    // "DD/MM/YYYY …" or "YYYY-MM-DD" → day-of-month integer
+    function extractDay(s) {
+      const str = String(s || '').trim();
+      const m1 = str.match(/^(\d{2})\/\d{2}\/\d{4}/);
+      if (m1) return parseInt(m1[1]);
+      const m2 = str.match(/^\d{4}-\d{2}-(\d{2})/);
+      if (m2) return parseInt(m2[1]);
+      return null;
+    }
+
+    const caixaByDay   = {};
+    const sangriaByDay = {};
+    const errors       = {};
+
+    // Cash sales: filter FormasPagamentos rows for "DINHEIRO"
+    try {
+      const fpRows = await fetchFormasPagamentos(cnpj, dtIni, dtFin, chave);
+      for (const r of fpRows) {
+        const desc = (r.desc_forma_pagamento || r.desc_pagamento || r.forma_pagamento || r.pagamento || '').toUpperCase();
+        if (!desc.includes('DINHEIRO')) continue;
+        const dateStr = r.data_emissao || r.data_pagamento || r.data || r.dt_emissao || '';
+        const day     = extractDay(dateStr);
+        if (!day) continue;
+        const val = parseBrNum(r.valor_pagamento || r.valor || '0');
+        caixaByDay[day] = (caixaByDay[day] || 0) + val;
+      }
+    } catch (e) {
+      errors.formasPagamentos = e.message;
+      console.warn(`[caixa-microvix/${board}] FormasPagamentos: ${e.message}`);
+    }
+
+    // Sangrias
+    try {
+      const sgRows = await fetchSangrias(cnpj, dtIni, dtFin, chave);
+      for (const r of sgRows) {
+        const dateStr = r.data_hora || r.data_sangria || r.data || r.dt_sangria || '';
+        const day     = extractDay(dateStr);
+        if (!day) continue;
+        const val = parseBrNum(r.valor || '0');
+        sangriaByDay[day] = (sangriaByDay[day] || 0) + val;
+      }
+    } catch (e) {
+      errors.sangrias = e.message;
+      console.warn(`[caixa-microvix/${board}] Sangrias: ${e.message}`);
+    }
+
+    // Persist — only overwrite caixa/sangria; keep deposito
+    const db = await readDB();
+    if (!db.caixa) db.caixa = {};
+    const key = `${year}-${String(month).padStart(2,'0')}-${board}`;
+    if (!db.caixa[key]) db.caixa[key] = {};
+    for (let d = 1; d <= lastDay; d++) {
+      const prev = db.caixa[key][d] || {};
+      if (caixaByDay[d] !== undefined || sangriaByDay[d] !== undefined) {
+        db.caixa[key][d] = {
+          ...prev,
+          caixa:    caixaByDay[d]   !== undefined ? caixaByDay[d]   : (prev.caixa   ?? 0),
+          sangria:  sangriaByDay[d] !== undefined ? sangriaByDay[d] : (prev.sangria ?? 0),
+          syncedAt: new Date().toISOString(),
+        };
+      }
+    }
+    await writeDB(db);
+
+    res.json({ synced: true, caixaByDay, sangriaByDay, errors: Object.keys(errors).length ? errors : undefined });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/microvix/caixa-probe?board=delrey&ini=YYYY-MM-DD&fin=YYYY-MM-DD ──
+// Debug: shows raw fields and sample rows from FormasPagamentos and Sangrias
+app.get('/api/microvix/caixa-probe', requireAdmin, async (req, res) => {
+  try {
+    const board = req.query.board || 'delrey';
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = lojas[board];
+    if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado` });
+    const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const today = new Date().toISOString().slice(0, 10);
+    const ini   = req.query.ini || new Date(Date.now() - 7 * 86400_000).toISOString().slice(0, 10);
+    const fin   = req.query.fin || today;
+
+    const { fetchFormasPagamentos, fetchSangrias } = require('./services/microvix');
+    const result = {};
+
+    try {
+      const rows = await fetchFormasPagamentos(cnpj, ini, fin, chave);
+      result.formasPagamentos = { total: rows.length, fields: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 5) };
+    } catch (e) { result.formasPagamentos = { error: e.message }; }
+
+    try {
+      const rows = await fetchSangrias(cnpj, ini, fin, chave);
+      result.sangrias = { total: rows.length, fields: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 5) };
+    } catch (e) { result.sangrias = { error: e.message }; }
+
+    res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

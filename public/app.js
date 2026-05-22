@@ -5324,6 +5324,13 @@ function renderCaixaCard(container) {
         Fechamento de Caixa
       </span>
       ${!isAdmin ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
+      ${isAdmin ? `<button class="caixa-sync-btn" id="caixaSyncBtn" title="Sincronizar Caixa e Sangria com Microvix">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+        </svg>
+        Microvix
+      </button>` : ''}
     </div>
     ${tabsHtml}
     <div class="main-card-body caixa-card-body" id="caixaCardBody"></div>
@@ -5347,22 +5354,25 @@ function renderCaixaCard(container) {
     const pad = n => String(n).padStart(2,'0');
     const fmtCur = v => (v === 0 || v === undefined || v === null) ? '—' : `R$ ${Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
 
-    let totalCaixa = 0, totalSangria = 0;
+    let totalCaixa = 0, totalSangria = 0, totalDeposito = 0;
     const rows = [];
     for (let d = 1; d <= daysInMonth; d++) {
-      const dt   = new Date(S.year, S.month - 1, d);
-      const dow  = DAY_NAMES[dt.getDay()];
+      const dt    = new Date(S.year, S.month - 1, d);
+      const dow   = DAY_NAMES[dt.getDay()];
       const entry = data[d] || {};
-      const caixa   = entry.caixa   ?? 0;
-      const sangria = entry.sangria ?? 0;
-      const saldo   = caixa - sangria;
-      totalCaixa   += caixa;
-      totalSangria += sangria;
-      rows.push({ d, dow, caixa, sangria, saldo });
+      const caixa    = entry.caixa    ?? 0;
+      const sangria  = entry.sangria  ?? 0;
+      const deposito = entry.deposito ?? 0;
+      const saldo    = caixa - sangria;
+      totalCaixa    += caixa;
+      totalSangria  += sangria;
+      totalDeposito += deposito;
+      rows.push({ d, dow, caixa, sangria, deposito, saldo });
     }
     const totalSaldo = totalCaixa - totalSangria;
 
     const saldoClass = s => s > 0 ? 'pos' : s < 0 ? 'neg' : 'zero';
+    const hasData = r => r.caixa > 0 || r.sangria > 0 || r.deposito > 0;
 
     body.innerHTML = `
       <div class="caixa-table-wrap">
@@ -5370,8 +5380,9 @@ function renderCaixaCard(container) {
           <thead>
             <tr>
               <th>Data</th>
-              <th>Valor em Caixa</th>
+              <th>Dinheiro</th>
               <th>Sangria</th>
+              <th>Depósito</th>
               <th>Saldo</th>
             </tr>
           </thead>
@@ -5381,7 +5392,8 @@ function renderCaixaCard(container) {
                 <td class="caixa-td-date">${pad(r.d)}/${pad(S.month)} <span style="color:var(--muted);font-size:.72rem">${r.dow}</span></td>
                 <td class="caixa-td-val caixa-caixa-cell" data-field="caixa" data-day="${r.d}">${r.caixa > 0 ? fmtCur(r.caixa) : '<span style="color:var(--muted)">—</span>'}</td>
                 <td class="caixa-td-val caixa-sangria-cell" data-field="sangria" data-day="${r.d}">${r.sangria > 0 ? fmtCur(r.sangria) : '<span style="color:var(--muted)">—</span>'}</td>
-                <td class="caixa-td-saldo ${r.caixa === 0 && r.sangria === 0 ? 'zero' : saldoClass(r.saldo)}">${r.caixa === 0 && r.sangria === 0 ? '<span style="color:var(--muted)">—</span>' : fmtCur(r.saldo)}</td>
+                <td class="caixa-td-val caixa-deposito-cell" data-field="deposito" data-day="${r.d}">${r.deposito > 0 ? fmtCur(r.deposito) : '<span style="color:var(--muted)">—</span>'}</td>
+                <td class="caixa-td-saldo ${!hasData(r) ? 'zero' : saldoClass(r.saldo)}">${!hasData(r) ? '<span style="color:var(--muted)">—</span>' : fmtCur(r.saldo)}</td>
               </tr>`).join('')}
           </tbody>
           <tfoot>
@@ -5389,6 +5401,7 @@ function renderCaixaCard(container) {
               <td>Total</td>
               <td>${fmtCur(totalCaixa)}</td>
               <td>${fmtCur(totalSangria)}</td>
+              <td>${fmtCur(totalDeposito)}</td>
               <td class="caixa-total-saldo ${saldoClass(totalSaldo)}">${fmtCur(totalSaldo)}</td>
             </tr>
           </tfoot>
@@ -5404,8 +5417,13 @@ function renderCaixaCard(container) {
       }, 50);
     }
 
-    // cell editing — click on caixa or sangria cell
+    // cell editing — caixa/sangria for admin; deposito for everyone
     body.querySelectorAll('.caixa-caixa-cell, .caixa-sangria-cell').forEach(cell => {
+      if (!isAdmin) return;
+      cell.style.cursor = 'pointer';
+      cell.addEventListener('click', () => _caixaStartEdit(cell, data, activeBoard, refresh));
+    });
+    body.querySelectorAll('.caixa-deposito-cell').forEach(cell => {
       cell.style.cursor = 'pointer';
       cell.addEventListener('click', () => _caixaStartEdit(cell, data, activeBoard, refresh));
     });
@@ -5446,6 +5464,30 @@ function renderCaixaCard(container) {
         refresh();
       });
     });
+
+    const syncBtn = card.querySelector('#caixaSyncBtn');
+    if (syncBtn) {
+      syncBtn.addEventListener('click', async () => {
+        syncBtn.disabled = true;
+        syncBtn.textContent = 'Sincronizando…';
+        try {
+          const result = await apiFetch('POST', `/api/caixa-microvix/${activeBoard}/${S.year}/${S.month}`);
+          const nDias = Object.keys(result.caixaByDay || {}).length + Object.keys(result.sangriaByDay || {}).length;
+          if (result.errors) {
+            const errs = Object.entries(result.errors).map(([k,v]) => `${k}: ${v}`).join('; ');
+            toast(`Sincronizado com erros — ${errs}`, true);
+          } else {
+            toast(`Microvix sincronizado`);
+          }
+          await refresh();
+        } catch (e) {
+          toast('Erro ao sincronizar: ' + e.message, true);
+        } finally {
+          syncBtn.disabled = false;
+          syncBtn.innerHTML = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Microvix`;
+        }
+      });
+    }
   }
 }
 

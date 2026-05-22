@@ -2085,6 +2085,15 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .caixa-total-row td:first-child { text-align: left; color: var(--muted); text-transform: uppercase; font-size: .7rem; letter-spacing: .05em; }
 .caixa-total-saldo.pos { color: #3FB950; }
 .caixa-total-saldo.neg { color: #F85149; }
+.caixa-sync-btn {
+  display: flex; align-items: center; gap: .35rem;
+  background: transparent; border: 1px solid var(--border2);
+  color: var(--muted); font-size: .72rem; font-weight: 600;
+  padding: .22rem .65rem; border-radius: 999px; cursor: pointer;
+  margin-left: auto; transition: border-color .15s, color .15s;
+}
+.caixa-sync-btn:hover:not(:disabled) { border-color: #58A6FF; color: #58A6FF; }
+.caixa-sync-btn:disabled { opacity: .5; cursor: default; }
 
 /* ── Transferências ─────────────────────────────────────────────────────── */
 .trans-tabs {
