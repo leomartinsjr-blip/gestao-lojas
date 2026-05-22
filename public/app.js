@@ -1658,8 +1658,11 @@ async function loadTransSugestoes(container) {
   try {
     const lojas = TRANS_BOARDS.join(',');
     const r = await fetch(`/api/transferencias?dias=${_transDias}&lojas=${lojas}`);
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '');
+      throw new Error(`HTTP ${r.status}${txt ? ': ' + txt.slice(0, 120) : ''}`);
+    }
     const data = await r.json();
-    if (!r.ok) throw new Error(data.error || 'Erro desconhecido');
     if (data.cacheLoading) {
       let secs = 20;
       container.innerHTML = `<div class="trans-loading">Preparando dados… aguarde <span id="transCountdown">${secs}</span>s</div>`;

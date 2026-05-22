@@ -2011,27 +2011,8 @@ function _warmBaseCache(firstCnpj, firstChave) {
           }
         }
       }
-      _ativosCache = { ativos, ultVenda, ultCompra: {} }; _ativosCacheAt = Date.now();
+      _ativosCache = { ativos, ultVenda }; _ativosCacheAt = Date.now();
       console.log(`[Trans] Ativos 2025 aquecido: ${ativos.size} produtos`);
-
-      // Após ativos prontos, busca última entrada (compra) — 1 loja, 6 meses
-      const sixAgo = new Date(Date.now() - 180 * 86400_000).toISOString().slice(0, 10);
-      fetchMovimento(firstCnpj, sixAgo, today, firstChave, 'E').then(compraRows => {
-        const ultCompra = {};
-        for (const r of compraRows) {
-          if (r.cancelado === 'S' || r.cancelado === '1') continue;
-          const cod = String(r.cod_produto || r.codproduto || '').trim();
-          if (!cod) continue;
-          const raw = (r.data_documento || r.data_lancamento || '').slice(0, 10);
-          if (!raw) continue;
-          const iso = raw.includes('/')
-            ? (() => { const [d,m,y] = raw.split('/'); return `${y}-${m}-${d}`; })()
-            : raw;
-          if (!ultCompra[cod] || iso > ultCompra[cod]) ultCompra[cod] = iso;
-        }
-        if (_ativosCache) _ativosCache.ultCompra = ultCompra;
-        console.log(`[Trans] Última entrada aquecida: ${Object.keys(ultCompra).length} produtos`);
-      }).catch(e => console.warn('[Trans] ultCompra falhou:', e.message));
     }).catch(e => console.warn('[Trans] ativos falhou:', e.message));
   }
 }
@@ -2050,7 +2031,7 @@ async function _buildTransResult(boards, lojas, dias) {
   const estoqueByBoard = {};
   const giroByBoard    = {};
   const catalogMov     = {};
-  const ultCompraMap   = (_ativosCache && _ativosCache.ultCompra) ? _ativosCache.ultCompra : {};
+  const ultCompraMap   = {};
 
   await Promise.all(boards.map(async board => {
     const cnpj  = lojas[board].replace(/\D/g, '');
@@ -2073,9 +2054,26 @@ async function _buildTransResult(boards, lojas, dias) {
     giroByBoard[board] = {};
     for (const r of movRows) {
       if (r.cancelado === 'S' || r.cancelado === '1') continue;
-      if (r.operacao === 'DS') continue;
       const cod = String(r.cod_produto || r.codproduto || '').trim();
       if (!cod) continue;
+
+      // Detectar entrada pelo campo tipo_movimentacao='E' ou operacao típica de entrada
+      const tipoMov = (r.tipo_movimentacao || '').trim().toUpperCase();
+      const operacao = (r.operacao || '').trim().toUpperCase();
+      const isEntrada = tipoMov === 'E' || ['EC','ET','EE','EN','ENT','NF','NFS'].includes(operacao);
+
+      if (isEntrada) {
+        const raw = (r.data_documento || r.data_lancamento || '').slice(0, 10);
+        if (raw) {
+          const iso = raw.includes('/')
+            ? (() => { const [d,m,y] = raw.split('/'); return `${y}-${m}-${d}`; })()
+            : raw;
+          if (!ultCompraMap[cod] || iso > ultCompraMap[cod]) ultCompraMap[cod] = iso;
+        }
+        continue; // entradas não contam no giro de vendas
+      }
+
+      if (operacao === 'DS') continue;
       giroByBoard[board][cod] = (giroByBoard[board][cod] || 0) + (parseInt(r.quantidade || 0) || 1);
       if (!catalogMov[cod]) catalogMov[cod] = {
         descricao:    (r.descricao    || r.des_produto || '').trim(),
@@ -2203,20 +2201,21 @@ app.get('/api/transferencias/preload', requireAdmin, (req, res) => {
 // GET /api/transferencias?dias=30&lojas=delrey,minas,contagem,estacao
 // Nunca faz chamadas Microvix — apenas lê cache ou retorna cacheLoading:true
 app.get('/api/transferencias', requireAdmin, (req, res) => {
-  const dias = Math.max(1, parseInt(req.query.dias || '30'));
-  const { boards, lojas, firstCnpj, firstChave } = _transBoards(req.query.lojas || null);
-  if (!boards.length) return res.status(400).json({ error: 'Nenhuma loja configurada em MICROVIX_LOJAS' });
-
-  // Dispara aquecimento em background (não bloqueia)
-  _warmAllTrans(boards, lojas, dias, firstCnpj, firstChave);
-
-  // Serve do cache se estiver pronto
-  const cached = _transResultCache[String(dias)];
-  if (cached && Date.now() - cached.at < TRANS_RESULT_TTL) {
-    return res.json(cached.result);
+  try {
+    const dias = Math.max(1, parseInt(req.query.dias || '30'));
+    const { boards, lojas, firstCnpj, firstChave } = _transBoards(req.query.lojas || null);
+    if (!boards.length) return res.status(400).json({ error: 'Nenhuma loja configurada em MICROVIX_LOJAS' });
+    _warmAllTrans(boards, lojas, dias, firstCnpj, firstChave).catch(e =>
+      console.warn('[Trans] warm bg error:', e.message)
+    );
+    const cached = _transResultCache[String(dias)];
+    if (cached && Date.now() - cached.at < TRANS_RESULT_TTL)
+      return res.json(cached.result);
+    return res.json({ cacheLoading: true, msg: 'Preparando dados… tente novamente em alguns segundos.' });
+  } catch (e) {
+    console.error('[Trans] endpoint error:', e.message);
+    return res.status(500).json({ error: e.message });
   }
-
-  res.json({ cacheLoading: true, msg: 'Preparando dados… tente novamente em alguns segundos.' });
 });
 
 // ── Start ──────────────────────────────────────────────────────────────────
