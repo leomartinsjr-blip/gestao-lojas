@@ -1251,12 +1251,14 @@ app.post('/api/pendencias', requireAdmin, async (req, res) => {
   try {
     const { text, assignedTo } = req.body;
     if (!text?.trim()) return res.status(400).json({ error: 'Texto obrigatório' });
+    const rawAt = assignedTo;
+    const assignedToArr = Array.isArray(rawAt) ? rawAt : (rawAt ? [rawAt] : ['leonardo','ingrid','escritorio']);
     const db = await readDB();
     if (!db.pendencias) db.pendencias = [];
     const item = {
       id: nextId(db),
       text: text.trim(),
-      assignedTo: assignedTo || 'todos',
+      assignedTo: assignedToArr,
       createdBy: req.session.user.username,
       createdByLabel: req.session.user.label,
       createdAt: new Date().toISOString(),
@@ -1283,7 +1285,10 @@ app.patch('/api/pendencias/:id', requireAdmin, async (req, res) => {
       item.resolvedBy = item.resolved ? (req.session.user.label || req.session.user.username) : null;
     }
     if ('text' in req.body && req.body.text?.trim()) item.text = req.body.text.trim();
-    if ('assignedTo' in req.body) item.assignedTo = req.body.assignedTo;
+    if ('assignedTo' in req.body) {
+      const raw = req.body.assignedTo;
+      item.assignedTo = Array.isArray(raw) ? raw : [raw];
+    }
     await writeDB(db);
     res.json(item);
   } catch (e) { res.status(500).json({ error: e.message }); }

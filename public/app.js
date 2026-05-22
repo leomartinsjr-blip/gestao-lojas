@@ -944,17 +944,17 @@ function renderDashboard() {
   leftCol.appendChild(compCard);
   _loadCompCard(compCard.querySelector('#compCardBody')).catch(e => console.error(e));
 
-  // ── CARD: Boletas de Defeito ─────────────────────────────────────────────
-  renderBoletasCard(midCol);
-
-  // ── CARD: Recebimento de NF Autorizado ───────────────────────────────────
-  renderNFCard(midCol);
+  // ── CARD: Pendências ─────────────────────────────────────────────────────
+  renderPendenciasCard(midCol);
 
   // ── CARD: Reunião Mensal ──────────────────────────────────────────────────
   renderMeetingCard(midCol);
 
-  // ── CARD: Pendências ─────────────────────────────────────────────────────
-  renderPendenciasCard(midCol);
+  // ── CARD: Recebimento de NF Autorizado ───────────────────────────────────
+  renderNFCard(midCol);
+
+  // ── CARD: Boletas de Defeito ─────────────────────────────────────────────
+  renderBoletasCard(midCol);
 
   // ── CARD: Fechamento de Caixa ─────────────────────────────────────────────
   renderCaixaCard(rightCol);
@@ -4630,20 +4630,32 @@ function _fmtNFDate(iso) {
 // ── Pendências ────────────────────────────────────────────────────────────
 
 const PENDENCIA_USERS = [
-  { key: 'todos',      label: 'Todos',      color: '#8B949E' },
   { key: 'leonardo',   label: 'Leonardo',   color: '#58A6FF' },
   { key: 'ingrid',     label: 'Ingrid',     color: '#F78166' },
   { key: 'escritorio', label: 'Escritório', color: '#3FB950' },
 ];
 
-function _pendenciaChip(assignedTo) {
-  const u = PENDENCIA_USERS.find(x => x.key === assignedTo) || PENDENCIA_USERS[0];
-  return `<span class="pend-chip" style="background:${u.color}22;color:${u.color};border:1px solid ${u.color}44">${u.label}</span>`;
+function _pendenciaChips(assignedTo) {
+  // handle legacy string and new array format
+  const arr = Array.isArray(assignedTo) ? assignedTo : (assignedTo === 'todos' ? ['leonardo','ingrid','escritorio'] : [assignedTo]);
+  if (arr.length >= PENDENCIA_USERS.length) {
+    return `<span class="pend-chip" style="background:#8B949E22;color:#8B949E;border:1px solid #8B949E44">Todos</span>`;
+  }
+  return arr.map(key => {
+    const u = PENDENCIA_USERS.find(x => x.key === key);
+    if (!u) return '';
+    return `<span class="pend-chip" style="background:${u.color}22;color:${u.color};border:1px solid ${u.color}44">${u.label}</span>`;
+  }).join('');
+}
+
+function _pendMatchesMine(item, myUsername) {
+  const arr = Array.isArray(item.assignedTo) ? item.assignedTo : (item.assignedTo === 'todos' ? ['leonardo','ingrid','escritorio'] : [item.assignedTo]);
+  return arr.includes(myUsername) || arr.length >= PENDENCIA_USERS.length;
 }
 
 function _renderPendenciasActive(body, filter, myUsername, refresh) {
   let items = (S.pendencias || []).filter(x => !x.resolved);
-  if (filter === 'mine') items = items.filter(x => x.assignedTo === myUsername || x.assignedTo === 'todos');
+  if (filter === 'mine') items = items.filter(x => _pendMatchesMine(x, myUsername));
   items.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
   if (!items.length) {
@@ -4657,7 +4669,7 @@ function _renderPendenciasActive(body, filter, myUsername, refresh) {
         <span class="nf-item-text">${_escHtml(item.text)}</span>
       </label>
       <span class="nf-item-meta" style="display:flex;align-items:center;gap:.35rem">
-        ${_pendenciaChip(item.assignedTo)}
+        ${_pendenciaChips(item.assignedTo)}
         <span class="nf-date-tag">${_escHtml(item.createdByLabel || item.createdBy)} ${_fmtNFDate(item.createdAt)}</span>
       </span>
       <button class="nf-del-btn pend-del" data-id="${item.id}" title="Excluir">&times;</button>
@@ -4704,7 +4716,7 @@ function _renderPendenciasHistory(body, refresh) {
         <div class="nf-hist-item-main">
           <span class="nf-item-text">${_escHtml(item.text)}</span>
           <div class="nf-hist-dates">
-            ${_pendenciaChip(item.assignedTo)}
+            ${_pendenciaChips(item.assignedTo)}
             <span class="nf-date-tag">por ${_escHtml(item.createdByLabel || item.createdBy)}</span>
             <span class="nf-date-sep">·</span>
             <span class="nf-date-tag nf-date-archived">✓ ${_fmtNFDate(item.resolvedAt)} por ${_escHtml(item.resolvedBy || '—')}</span>
@@ -4739,6 +4751,7 @@ function renderPendenciasCard(container) {
   const myUsername = S.user?.username;
   let filter = 'mine';
   let showHistory = false;
+  let selectedRecipients = [myUsername]; // default: só o usuário logado
 
   const card = document.createElement('div');
   card.className = 'main-card';
@@ -4759,22 +4772,38 @@ function renderPendenciasCard(container) {
       </div>
     </div>
     <div class="main-card-body nf-card-body" id="pendCardBody"></div>
-    <div class="nf-add-row" id="pendAddRow">
+    <div class="nf-add-row pend-add-row" id="pendAddRow">
       <input type="text" class="nf-input" id="pendInput" placeholder="Nova pendência…" maxlength="200">
-      <select class="pend-assign-sel" id="pendAssignSel">
-        ${PENDENCIA_USERS.map(u => `<option value="${u.key}"${u.key === myUsername ? ' selected' : ''}>${u.label}</option>`).join('')}
-      </select>
       <button class="nf-add-btn" id="pendAddBtn">+</button>
+      <div class="pend-recipients">
+        <span class="pend-rec-lbl">Para:</span>
+        ${PENDENCIA_USERS.map(u => `<button class="pend-rec-btn${u.key === myUsername ? ' active' : ''}" data-key="${u.key}" style="--prc:${u.color}">${u.label}</button>`).join('')}
+      </div>
     </div>`;
 
   container.appendChild(card);
 
-  const body      = card.querySelector('#pendCardBody');
-  const histBtn   = card.querySelector('#pendHistBtn');
-  const addRow    = card.querySelector('#pendAddRow');
-  const input     = card.querySelector('#pendInput');
-  const assignSel = card.querySelector('#pendAssignSel');
-  const addBtn    = card.querySelector('#pendAddBtn');
+  const body    = card.querySelector('#pendCardBody');
+  const histBtn = card.querySelector('#pendHistBtn');
+  const addRow  = card.querySelector('#pendAddRow');
+  const input   = card.querySelector('#pendInput');
+  const addBtn  = card.querySelector('#pendAddBtn');
+
+  // Toggle recipient buttons
+  card.querySelectorAll('.pend-rec-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const key = btn.dataset.key;
+      if (selectedRecipients.includes(key)) {
+        if (selectedRecipients.length > 1) {
+          selectedRecipients = selectedRecipients.filter(k => k !== key);
+          btn.classList.remove('active');
+        }
+      } else {
+        selectedRecipients.push(key);
+        btn.classList.add('active');
+      }
+    });
+  });
 
   function refresh() {
     const resolved = (S.pendencias || []).filter(x => x.resolved);
@@ -4812,7 +4841,7 @@ function renderPendenciasCard(container) {
     if (!text) return;
     input.value = '';
     try {
-      const item = await apiFetch('POST', '/api/pendencias', { text, assignedTo: assignSel.value });
+      const item = await apiFetch('POST', '/api/pendencias', { text, assignedTo: selectedRecipients });
       S.pendencias = [...S.pendencias, item];
       refresh();
     } catch (e) { toast('Erro ao adicionar pendência', true); }

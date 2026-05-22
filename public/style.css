@@ -2429,4 +2429,10 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .pend-tab { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: .72rem; padding: .2rem .55rem; border-radius: 4px; cursor: pointer; transition: background .15s, color .15s; }
 .pend-tab.active, .pend-tab:hover { background: #58A6FF; color: #0D1117; border-color: #58A6FF; }
 .pend-chip { display: inline-block; padding: .1rem .45rem; border-radius: 999px; font-size: .68rem; font-weight: 600; white-space: nowrap; }
-.pend-assign-sel { background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: .78rem; padding: 4px 8px; border-radius: 6px; cursor: pointer; flex-shrink: 0; }
+.pend-add-row { flex-wrap: wrap; row-gap: .35rem; }
+.pend-add-row .nf-input { flex: 1; min-width: 100px; }
+.pend-recipients { display: flex; align-items: center; gap: .3rem; width: 100%; }
+.pend-rec-lbl { font-size: .72rem; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+.pend-rec-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: .75rem; padding: .25rem .6rem; border-radius: 4px; cursor: pointer; transition: all .15s; white-space: nowrap; font-weight: 500; }
+.pend-rec-btn.active { background: var(--prc, #58A6FF); border-color: var(--prc, #58A6FF); color: #0D1117; font-weight: 700; }
+.pend-rec-btn:not(.active):hover { border-color: var(--prc, #58A6FF); color: var(--text); }
