@@ -2055,14 +2055,14 @@ function renderTransTable(container, data) {
     const compraIso = s.ultimaCompra || '';
 
     const enviarHtml = s.transfers.map(t =>
-      `<span class="trans-sc trans-sc-send">
+      `<span class="trans-sc trans-sc-send" data-de="${t.de}" data-para="${t.para}">
         <span class="trans-sc-name">${boardLabel(t.para)}</span>
         <span class="trans-sc-qty">${t.qty}</span>
       </span>`
     ).join('');
 
     const receberHtml = s.transfers.map(t =>
-      `<span class="trans-sc trans-sc-recv">
+      `<span class="trans-sc trans-sc-recv" data-de="${t.de}" data-para="${t.para}">
         <span class="trans-sc-name">${boardLabel(t.de)}</span>
         <span class="trans-sc-qty">${t.qty}</span>
       </span>`
@@ -2078,8 +2078,8 @@ function renderTransTable(container, data) {
       <td class="trans-td trans-ref">${s.referencia || '—'}</td>
       <td class="trans-td">${s.descricao || '—'}</td>
       <td class="trans-td trans-td-c trans-date">${fmtDate(compraIso)}</td>
-      <td class="trans-td trans-td-chips">${enviarHtml}</td>
-      <td class="trans-td trans-td-chips">${receberHtml}</td>
+      <td class="trans-td trans-td-chips trans-col-send">${enviarHtml}</td>
+      <td class="trans-td trans-td-chips trans-col-recv">${receberHtml}</td>
     </tr>`;
   }).join('');
 
@@ -2114,8 +2114,8 @@ function renderTransTable(container, data) {
         <th class="trans-th">Ref.</th>
         <th class="trans-th">Produto</th>
         <th class="trans-th trans-th-c">Últ. Entrada</th>
-        <th class="trans-th trans-th-send">↑ Enviar</th>
-        <th class="trans-th trans-th-recv">↓ Receber</th>
+        <th class="trans-th trans-th-send trans-col-send">↑ Enviar</th>
+        <th class="trans-th trans-th-recv trans-col-recv">↓ Receber</th>
       </tr></thead>
       <tbody id="transTableBody">${buildRows(sugestoes)}</tbody>
     </table></div>`;
@@ -2165,6 +2165,16 @@ function _exportTransExcel(sugestoes) {
 }
 
 function applyTransFilter(container) {
+  const table = container.querySelector('#transDataTable');
+  const focusSend = _transTipoFilter === 'enviar'  && !!_transLojaFilter;
+  const focusRecv = _transTipoFilter === 'receber' && !!_transLojaFilter;
+
+  // Oculta coluna oposta quando loja + tipo estão selecionados
+  if (table) {
+    table.classList.toggle('trans-hide-recv', focusSend);
+    table.classList.toggle('trans-hide-send', focusRecv);
+  }
+
   container.querySelectorAll('#transTableBody .trans-row').forEach(row => {
     const enviar  = (row.dataset.enviar  || '').split(',');
     const receber = (row.dataset.receber || '').split(',');
@@ -2172,7 +2182,7 @@ function applyTransFilter(container) {
 
     let lojaOk = true;
     if (_transLojaFilter) {
-      if (_transTipoFilter === 'enviar')  lojaOk = enviar.includes(_transLojaFilter);
+      if (_transTipoFilter === 'enviar')   lojaOk = enviar.includes(_transLojaFilter);
       else if (_transTipoFilter === 'receber') lojaOk = receber.includes(_transLojaFilter);
       else lojaOk = enviar.includes(_transLojaFilter) || receber.includes(_transLojaFilter);
     } else if (_transTipoFilter === 'enviar') {
@@ -2182,7 +2192,18 @@ function applyTransFilter(container) {
     }
 
     const compraOk = !_transCompraFrom || compra >= _transCompraFrom;
-    row.style.display = (lojaOk && compraOk) ? '' : 'none';
+    const visible  = lojaOk && compraOk;
+    row.style.display = visible ? '' : 'none';
+
+    if (!visible) return;
+
+    // Filtra chips individuais quando loja+tipo selecionados
+    row.querySelectorAll('.trans-sc-send').forEach(chip => {
+      chip.style.display = focusSend ? (chip.dataset.de === _transLojaFilter ? '' : 'none') : '';
+    });
+    row.querySelectorAll('.trans-sc-recv').forEach(chip => {
+      chip.style.display = focusRecv ? (chip.dataset.para === _transLojaFilter ? '' : 'none') : '';
+    });
   });
 }
 

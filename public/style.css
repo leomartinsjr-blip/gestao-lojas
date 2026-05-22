@@ -2222,6 +2222,8 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 
 .trans-setor { color: var(--muted); font-size: .69rem; white-space: nowrap; }
 .trans-date  { color: var(--muted); font-size: .69rem; white-space: nowrap; }
+.trans-hide-recv .trans-col-recv { display: none; }
+.trans-hide-send .trans-col-send { display: none; }
 
 .trans-export-btn {
   padding: .25rem .75rem; border-radius: 6px; border: 1px solid #3FB950;
