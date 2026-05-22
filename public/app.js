@@ -508,13 +508,12 @@ function renderDashboard() {
   const tbody = document.createElement('tbody');
   table.appendChild(tbody);
 
-  let grandValor=0, grandPecas=0, grandAtend=0, grandMeta=0;
-
-  for (const [bk, bc] of visible) {
+  // Pre-compute rowData and aggregates for all boards (needed for store-group sorting)
+  const _boardRowData = {};
+  const _boardAgg = {};
+  for (const [bk] of visible) {
     const emps = byBoard[bk] || [];
     if (emps.length === 0) continue;
-
-    // Pre-compute KPIs for sorting
     const rowData = emps.map(emp => {
       const vsale  = S.vsales[emp.id] || { meta: { mensal: 0 }, entries: {} };
       const mensal = vsale.meta?.mensal || 0;
@@ -533,6 +532,40 @@ function renderDashboard() {
       const tm        = (valor > 0 && atend > 0) ? valor/atend : null;
       return { emp, valor, pecas, atend, mensal, pctMeta, projecao, pa, tm };
     });
+    _boardRowData[bk] = rowData;
+    let totV=0, totP=0, totA=0, totM=0;
+    for (const d of rowData) { totV+=d.valor; totP+=d.pecas; totA+=d.atend; totM+=d.mensal; }
+    const ma = totM * perfWeightAccum / 100;
+    _boardAgg[bk] = {
+      valor: totV, mensal: totM,
+      pctMeta:  (ma>0 && totV>0) ? totV/ma*100 : null,
+      projecao: (totV>0 && ma>0) ? totV/ma*totM : null,
+      pa: (totP>0 && totA>0) ? totP/totA : null,
+      tm: (totV>0 && totA>0) ? totV/totA : null,
+    };
+  }
+
+  // Sort store groups by aggregate KPI when sort is active
+  let sortedVisible = [...visible];
+  if (DASH_SORT.col) {
+    sortedVisible.sort(([bkA, bcA], [bkB, bcB]) => {
+      const ka = DASH_SORT.col === 'name' ? bcA.label : (_boardAgg[bkA]?.[DASH_SORT.col] ?? null);
+      const kb = DASH_SORT.col === 'name' ? bcB.label : (_boardAgg[bkB]?.[DASH_SORT.col] ?? null);
+      if (ka == null && kb == null) return 0;
+      if (ka == null) return 1;
+      if (kb == null) return -1;
+      if (typeof ka === 'string') return DASH_SORT.dir * ka.localeCompare(kb, 'pt-BR');
+      return DASH_SORT.dir * (ka - kb);
+    });
+  }
+
+  let grandValor=0, grandPecas=0, grandAtend=0, grandMeta=0;
+
+  for (const [bk, bc] of sortedVisible) {
+    const emps = byBoard[bk] || [];
+    if (emps.length === 0) continue;
+
+    const rowData = _boardRowData[bk];
 
     if (DASH_SORT.col) {
       rowData.sort((a, b) => {
