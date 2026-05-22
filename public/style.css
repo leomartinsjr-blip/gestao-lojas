@@ -2405,3 +2405,22 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   .dash-wk-label { font-size: .7rem; }
   .dash-wk-btn { width: 1.4rem; height: 1.4rem; font-size: .8rem; }
 }
+
+/* ── Contratos de Experiência ────────────────────────────────────────────── */
+.contrato-card-body { padding: .5rem .75rem .75rem; }
+.contrato-empty { color: var(--muted); font-size: .82rem; padding: .5rem 0; }
+.contrato-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.contrato-table thead th { padding: .35rem .5rem; color: var(--muted); font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.contrato-table tbody tr:hover { background: var(--hover-bg, rgba(255,255,255,.03)); }
+.contrato-nome { padding: .4rem .5rem; font-weight: 500; white-space: nowrap; }
+.contrato-data { padding: .4rem .5rem; color: var(--muted); white-space: nowrap; }
+.contrato-table tbody td { padding: .4rem .5rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.contrato-table tbody tr:last-child td { border-bottom: none; }
+
+.contrato-chip { display: inline-block; padding: .15rem .55rem; border-radius: 999px; font-size: .74rem; font-weight: 600; white-space: nowrap; }
+.contrato-ok       { background: rgba(46,160,67,.15);  color: #3fb950; }
+.contrato-atencao  { background: rgba(210,153,34,.15); color: #d2993a; }
+.contrato-alerta   { background: rgba(219,109,40,.18); color: #e07b35; }
+.contrato-urgente  { background: rgba(200,60,60,.18);  color: #f07070; }
+.contrato-hoje     { background: rgba(200,60,60,.28);  color: #ff5555; font-weight: 700; }
+.contrato-vencido  { background: rgba(150,30,30,.25);  color: #ff4444; font-weight: 700; }

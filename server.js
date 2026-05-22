@@ -421,7 +421,7 @@ app.get('/api/employees', requireAuth, async (req, res) => {
 // ── POST /api/employees ────────────────────────────────────────────────────
 app.post('/api/employees', requireAuth, async (req, res) => {
   try {
-    const { name, board, cpf, admissao, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento, apelido, microvixCod } = req.body;
+    const { name, board, cpf, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento, apelido, microvixCod } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
     const db = await readDB();
     if (!db.employees) db.employees = [];
@@ -429,7 +429,9 @@ app.post('/api/employees', requireAuth, async (req, res) => {
       id: nextId(db), name: name.trim(), board,
       apelido: apelido || '',
       microvixCod: microvixCod ? String(microvixCod).trim() : '',
-      cpf: cpf || '', admissao: admissao || '', cargo: cargo || '',
+      cpf: cpf || '', admissao: admissao || '',
+      contrato1: parseInt(contrato1) || 0, contrato2: parseInt(contrato2) || 0,
+      cargo: cargo || '',
       salario: salario || 0, comissaoSemMeta: comissaoSemMeta || 0, comissao: comissao || 0,
       comissaoMeta2: comissaoMeta2 || 0, comissaoSuper: comissaoSuper || 0,
       isVendedor: isVendedor !== false,
@@ -446,7 +448,7 @@ app.post('/api/employees', requireAuth, async (req, res) => {
 app.put('/api/employees/:id', requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { name, board, cpf, admissao, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento, apelido, microvixCod } = req.body;
+    const { name, board, cpf, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento, apelido, microvixCod } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
     const db  = await readDB();
     const idx = (db.employees || []).findIndex(e => e.id === id);
@@ -455,7 +457,9 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
       ...db.employees[idx], name: name.trim(), board,
       apelido: apelido || '',
       microvixCod: microvixCod !== undefined ? String(microvixCod).trim() : (db.employees[idx].microvixCod || ''),
-      cpf: cpf || '', admissao: admissao || '', cargo: cargo || '',
+      cpf: cpf || '', admissao: admissao || '',
+      contrato1: parseInt(contrato1) || 0, contrato2: parseInt(contrato2) || 0,
+      cargo: cargo || '',
       salario: salario || 0, comissaoSemMeta: comissaoSemMeta || 0, comissao: comissao || 0,
       comissaoMeta2: comissaoMeta2 || 0, comissaoSuper: comissaoSuper || 0,
       isVendedor: isVendedor !== false,

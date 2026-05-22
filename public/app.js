@@ -954,6 +954,9 @@ function renderDashboard() {
   // ── CARD: Fechamento de Caixa ─────────────────────────────────────────────
   renderCaixaCard(rightCol);
 
+  // ── CARD: Contratos de Experiência ───────────────────────────────────────
+  renderContratoCard(rightCol);
+
 }
 
 
@@ -4052,6 +4055,8 @@ function openFuncForm(id) {
   document.getElementById('funcCPF').value         = emp?.cpf         || '';
   document.getElementById('funcMicrovixCod').value = emp?.microvixCod || '';
   document.getElementById('funcAdmissao').value  = emp?.admissao  || '';
+  document.getElementById('funcContrato1').value = emp?.contrato1 || '';
+  document.getElementById('funcContrato2').value = emp?.contrato2 || '';
   document.getElementById('funcCargo').value     = emp?.cargo     || '';
   document.getElementById('funcSalario').value   = emp?.salario   || '';
   document.getElementById('funcComissaoSemMeta').value = emp?.comissaoSemMeta || '';
@@ -4111,6 +4116,8 @@ async function saveFuncionario() {
   const cpf          = document.getElementById('funcCPF').value.trim();
   const microvixCod  = document.getElementById('funcMicrovixCod').value.trim();
   const admissao  = document.getElementById('funcAdmissao').value;
+  const contrato1 = parseInt(document.getElementById('funcContrato1').value) || 0;
+  const contrato2 = parseInt(document.getElementById('funcContrato2').value) || 0;
   const cargo     = document.getElementById('funcCargo').value.trim();
   const salario   = parseFloat(document.getElementById('funcSalario').value) || 0;
   const comissaoSemMeta = parseFloat(document.getElementById('funcComissaoSemMeta').value) || 0;
@@ -4123,11 +4130,13 @@ async function saveFuncionario() {
   const fotoRemoved  = !FE.newPhotoFile && !FE.currentPhotoUrl && !!FE.editingId;
 
   if (!name || !board) { toast('Nome e loja são obrigatórios', true); return; }
+  if (!admissao) { toast('Data de admissão é obrigatória', true); return; }
+  if (!contrato1) { toast('1º Contrato Experiência é obrigatório', true); return; }
 
   const btn = document.getElementById('funcSaveBtn');
   btn.disabled = true;
   try {
-    const body = { name, apelido, board, cpf, microvixCod, admissao, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento };
+    const body = { name, apelido, board, cpf, microvixCod, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento };
     if (fotoRemoved) body.foto = '';
     let emp;
     if (FE.editingId) {
@@ -4933,6 +4942,127 @@ function _renderNFHistory(body, board, refresh) {
 }
 
 // ── Fechamento de Caixa ───────────────────────────────────────────────────
+function renderContratoCard(container) {
+  const isAdmin   = !S.user?.board || S.user?.board === 'escritorio';
+  const userBoard = S.user?.board;
+  const pad = n => String(n).padStart(2, '0');
+
+  function calcVenc(admissao, dias) {
+    if (!admissao || !dias) return null;
+    const d = new Date(admissao + 'T00:00:00');
+    d.setDate(d.getDate() + dias);
+    return d;
+  }
+
+  function diasRestantes(venc) {
+    if (!venc) return null;
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    return Math.round((venc - hoje) / 86400000);
+  }
+
+  function statusChip(dias) {
+    if (dias === null) return '';
+    if (dias < 0)  return `<span class="contrato-chip contrato-vencido">Vencido há ${Math.abs(dias)} dia${Math.abs(dias)!==1?'s':''}</span>`;
+    if (dias === 0) return `<span class="contrato-chip contrato-hoje">Vence hoje!</span>`;
+    if (dias <= 7)  return `<span class="contrato-chip contrato-urgente">${dias} dia${dias!==1?'s':''}</span>`;
+    if (dias <= 15) return `<span class="contrato-chip contrato-alerta">${dias} dias</span>`;
+    if (dias <= 30) return `<span class="contrato-chip contrato-atencao">${dias} dias</span>`;
+    return `<span class="contrato-chip contrato-ok">${dias} dias</span>`;
+  }
+
+  function fmtDate(d) {
+    return d ? `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}` : '—';
+  }
+
+  function buildRows(board) {
+    const emps = S.employees.filter(e =>
+      e.board === board && !e.inativo && e.admissao && (e.contrato1 || e.contrato2)
+    );
+    if (!emps.length) return '<div class="contrato-empty">Nenhum contrato cadastrado.</div>';
+
+    return `<table class="contrato-table">
+      <thead><tr>
+        <th>Funcionário</th>
+        <th>Admissão</th>
+        <th>1º Contrato</th>
+        <th></th>
+        <th>2º Contrato</th>
+        <th></th>
+      </tr></thead>
+      <tbody>
+        ${emps.map(e => {
+          const venc1 = calcVenc(e.admissao, e.contrato1);
+          const venc2 = e.contrato1 && e.contrato2 ? calcVenc(e.admissao, (e.contrato1 || 0) + (e.contrato2 || 0)) : null;
+          const d1 = diasRestantes(venc1);
+          const d2 = diasRestantes(venc2);
+          return `<tr>
+            <td class="contrato-nome">${e.apelido || e.name}</td>
+            <td class="contrato-data">${e.admissao.split('-').reverse().join('/')}</td>
+            <td class="contrato-data">${venc1 ? fmtDate(venc1) : '—'}</td>
+            <td>${statusChip(d1)}</td>
+            <td class="contrato-data">${venc2 ? fmtDate(venc2) : '—'}</td>
+            <td>${statusChip(d2)}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+  }
+
+  const boardsComContrato = NF_STORES.filter(b =>
+    S.employees.some(e => e.board === b && !e.inativo && e.admissao && (e.contrato1 || e.contrato2))
+  );
+
+  let activeBoard = isAdmin ? (boardsComContrato[0] || NF_STORES[0]) : userBoard;
+
+  const card = document.createElement('div');
+  card.className = 'main-card';
+
+  const tabsHtml = isAdmin ? `
+    <div class="nf-tabs">
+      ${NF_STORES.map(b => `
+        <button class="nf-tab${b === activeBoard ? ' active' : ''}" data-board="${b}"
+          style="--nf-tab-color:${BOARDS[b]?.color || '#8B949E'}">
+          ${BOARDS[b]?.label || b}
+        </button>`).join('')}
+    </div>` : '';
+
+  card.innerHTML = `
+    <div class="main-card-hdr">
+      <span class="main-card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+          <polyline points="14 2 14 8 20 8"/>
+          <line x1="9" y1="13" x2="15" y2="13"/>
+          <line x1="9" y1="17" x2="13" y2="17"/>
+        </svg>
+        Contratos de Experiência
+      </span>
+      ${!isAdmin ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
+    </div>
+    ${tabsHtml}
+    <div class="contrato-card-body" id="contratoCardBody"></div>
+  `;
+  container.appendChild(card);
+
+  const body = card.querySelector('#contratoCardBody');
+
+  function render() {
+    body.innerHTML = buildRows(activeBoard);
+  }
+
+  render();
+
+  if (isAdmin) {
+    card.querySelectorAll('.nf-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        activeBoard = tab.dataset.board;
+        card.querySelectorAll('.nf-tab').forEach(t => t.classList.toggle('active', t === tab));
+        render();
+      });
+    });
+  }
+}
+
 function renderCaixaCard(container) {
   const isAdmin  = !S.user?.board || S.user?.board === 'escritorio';
   const userBoard = S.user?.board;

@@ -381,8 +381,16 @@
               <input type="text" id="funcCargo" placeholder="Vendedor, Gerente…">
             </div>
             <div class="func-field">
-              <label>Data de Admissão</label>
-              <input type="date" id="funcAdmissao">
+              <label>Data de Admissão *</label>
+              <input type="date" id="funcAdmissao" required>
+            </div>
+            <div class="func-field">
+              <label>1º Contrato Exp. (dias) *</label>
+              <input type="number" id="funcContrato1" placeholder="Ex: 45" min="1" max="45" required>
+            </div>
+            <div class="func-field">
+              <label>2º Contrato Exp. (dias)</label>
+              <input type="number" id="funcContrato2" placeholder="Ex: 45" min="0" max="45">
             </div>
             <div class="func-field">
               <label>Cód. Microvix</label>
