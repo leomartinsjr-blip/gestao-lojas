@@ -6157,10 +6157,10 @@ function _renderReqAdminView(body) {
           ${[['pendente','Pendente'],['em-separacao','Em Separação'],['enviado','Enviado'],['recebido','Recebido'],['all','Todas']].map(([s,l]) =>
             `<button class="req-stab${filterStatus===s?' active':''}" data-s="${s}">${l}</button>`).join('')}
         </div>
-        <select class="req-board-sel" id="reqBoardSel">
-          <option value="">Todas as lojas</option>
-          ${STORE_BOARDS.map(b => `<option value="${b}"${b===filterBoard?' selected':''}>${BOARDS[b]?.label||b}</option>`).join('')}
-        </select>
+        <div class="req-board-chips">
+          <button class="req-board-chip${filterBoard===''?' active':''}" data-b="" style="--rbc:#8B949E">Todas</button>
+          ${STORE_BOARDS.map(b => `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'#8B949E'}">${BOARDS[b]?.label||b}</button>`).join('')}
+        </div>
       </div>
       <div class="req-admin-list">
         ${!items.length
@@ -6198,7 +6198,8 @@ function _renderReqAdminView(body) {
 
     body.querySelectorAll('.req-stab').forEach(btn =>
       btn.addEventListener('click', () => { filterStatus = btn.dataset.s; render(); }));
-    body.querySelector('#reqBoardSel')?.addEventListener('change', e => { filterBoard = e.target.value; render(); });
+    body.querySelectorAll('.req-board-chip').forEach(btn =>
+      btn.addEventListener('click', () => { filterBoard = btn.dataset.b; render(); }));
 
     body.querySelectorAll('.req-action-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
