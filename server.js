@@ -2522,7 +2522,8 @@ initMongo()
       console.log('[Microvix/30d] Conferência 30 dias agendada — 1× por dia');
 
       setInterval(doSync, MX_INTERVAL_MS);
-      setInterval(doHoje, MX_INTERVAL_MS);           // hoje: mesma cadência (5 min)
+      // doHoje defasado por metade do intervalo para nunca colidir com doSync
+      setTimeout(() => setInterval(doHoje, MX_INTERVAL_MS), Math.floor(MX_INTERVAL_MS / 2));
       setInterval(do30d,  MX_INTERVAL_30D_MS);       // 30d: 1× por dia
     } else {
       console.log('[Microvix] Credenciais não configuradas — sync desativado');
