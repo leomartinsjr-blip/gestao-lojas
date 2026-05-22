@@ -2421,6 +2421,14 @@ app.get('/api/transferencias', requireAdmin, (req, res) => {
   }
 });
 
+// ── Global error handler (captura erros de multer e outros middlewares) ────
+app.use((err, req, res, next) => {
+  const msg = err?.message || String(err) || 'Erro interno';
+  console.error('[Express Error]', req.method, req.path, err?.code || '', msg);
+  if (res.headersSent) return next(err);
+  res.status(err?.status || err?.statusCode || 500).json({ error: msg });
+});
+
 // ── Start ──────────────────────────────────────────────────────────────────
 initMongo()
   .then(() => {

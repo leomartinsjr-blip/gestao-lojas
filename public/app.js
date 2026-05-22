@@ -1817,10 +1817,10 @@ function renderTransExcelTab(container) {
       const data = await r.json();
       renderTransTable(result, data);
     } catch (e) {
-      let msg = e.message || 'Erro desconhecido';
+      let msg = e.message || e.toString() || 'Erro desconhecido';
       try { const j = JSON.parse(msg); msg = j.error || msg; } catch {}
-      // Escapa HTML para não renderizar tags invisíveis
       msg = msg.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      console.error('[Excel upload]', e);
       result.innerHTML = `<div class="trans-error">Erro: ${msg}</div>`;
     } finally {
       calcBtn.disabled = false;
