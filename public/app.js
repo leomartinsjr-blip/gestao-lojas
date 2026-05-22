@@ -5328,7 +5328,7 @@ function renderCaixaCard(container) {
       </span>
       ${!isAdmin ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
       <div style="display:flex;gap:.3rem;margin-left:auto">
-        ${isAdmin ? `<button class="caixa-sync-btn" id="caixaSyncBtn" title="Sincronizar com Microvix">${syncSvg} Microvix</button>` : ''}
+        <button class="caixa-sync-btn" id="caixaSyncBtn" title="Sincronizar com Microvix">${syncSvg} Microvix</button>
         ${isAdmin ? `<button class="caixa-sync-btn" id="caixaSangriaBtn" title="Ver todas as sangrias">${sangriaSvg} Sangrias</button>` : ''}
         <button class="caixa-expand-btn" id="caixaExpandBtn" title="Expandir">${expandSvg}</button>
       </div>
@@ -5348,7 +5348,7 @@ function renderCaixaCard(container) {
           <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
         </svg>
         <span class="caixa-overlay-title">Fechamento de Caixa${!isAdmin ? ` — ${BOARDS[userBoard]?.label || ''}` : ''}</span>
-        ${isAdmin ? `<button class="caixa-sync-btn" id="caixaSyncBtnOvl" title="Sincronizar com Microvix">${syncSvg} Microvix</button>` : ''}
+        <button class="caixa-sync-btn" id="caixaSyncBtnOvl" title="Sincronizar com Microvix">${syncSvg} Microvix</button>
         <button class="caixa-ovl-close" id="caixaOvlClose" title="Fechar">✕</button>
       </div>
       <div id="caixaOvlTabs"></div>
@@ -5483,6 +5483,9 @@ function renderCaixaCard(container) {
   // ── Card event handlers ────────────────────────────────────────────────────
   refresh();
 
+  const syncBtn = card.querySelector('#caixaSyncBtn');
+  if (syncBtn) syncBtn.addEventListener('click', () => doSync(syncBtn, refresh));
+
   if (isAdmin) {
     card.querySelectorAll('.nf-tab').forEach(tab => {
       tab.addEventListener('click', () => {
@@ -5491,8 +5494,6 @@ function renderCaixaCard(container) {
         refresh();
       });
     });
-    const syncBtn = card.querySelector('#caixaSyncBtn');
-    if (syncBtn) syncBtn.addEventListener('click', () => doSync(syncBtn, refresh));
   }
 
   // ── Expand / overlay handlers ──────────────────────────────────────────────
@@ -5501,6 +5502,9 @@ function renderCaixaCard(container) {
     ovl.classList.add('active');
     document.body.style.overflow = 'hidden';
     refreshOvl();
+
+    const syncOvl = ovl.querySelector('#caixaSyncBtnOvl');
+    if (syncOvl) syncOvl.addEventListener('click', () => doSync(syncOvl, () => { refreshOvl(); refresh(); }));
 
     if (isAdmin) {
       ovlTabs.querySelectorAll('.nf-tab').forEach(tab => {
@@ -5511,8 +5515,6 @@ function renderCaixaCard(container) {
           refreshOvl();
         });
       });
-      const syncOvl = ovl.querySelector('#caixaSyncBtnOvl');
-      if (syncOvl) syncOvl.addEventListener('click', () => doSync(syncOvl, () => { refreshOvl(); refresh(); }));
     }
   });
 

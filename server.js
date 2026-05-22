@@ -1475,9 +1475,17 @@ app.put('/api/caixa/:year/:month/:board/:day', requireAuth, async (req, res) => 
 // ── POST /api/caixa-microvix/:board/:year/:month ──────────────────────────
 // Syncs caixa (cash sales) and sangria from Microvix for a full month.
 // Only updates caixa/sangria fields; preserves existing deposito values.
-app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, res) => {
+// Regra: nunca sincroniza o dia atual — sempre d-1 no máximo.
+app.post('/api/caixa-microvix/:board/:year/:month', requireAuth, async (req, res) => {
   try {
     const { board, year, month } = req.params;
+    // Lojas podem sincronizar apenas o próprio painel
+    const userBoard = req.session.user.board;
+    const isAdminUser = !userBoard || userBoard === 'escritorio';
+    if (!isAdminUser && userBoard !== board) {
+      return res.status(403).json({ error: 'Acesso restrito ao seu próprio painel' });
+    }
+
     const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const cnpj  = lojas[board];
     if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado em MICROVIX_LOJAS` });
@@ -1486,7 +1494,19 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
     const y = parseInt(year), m = parseInt(month);
     const dtIni   = `${y}-${String(m).padStart(2,'0')}-01`;
     const lastDay = new Date(y, m, 0).getDate();
-    const dtFin   = `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`;
+
+    // Nunca sincroniza o dia de hoje — cap em d-1
+    const today = new Date();
+    const todayY = today.getFullYear(), todayM = today.getMonth() + 1, todayD = today.getDate();
+    if (y > todayY || (y === todayY && m > todayM)) {
+      return res.json({ synced: true, caixaByDay: {}, sangriaByDay: {}, skipped: 'mês futuro' });
+    }
+    let capDay = lastDay;
+    if (y === todayY && m === todayM) {
+      capDay = Math.min(lastDay, todayD - 1);
+      if (capDay < 1) return res.json({ synced: true, caixaByDay: {}, sangriaByDay: {}, skipped: 'sem dias anteriores' });
+    }
+    const dtFin = `${y}-${String(m).padStart(2,'0')}-${String(capDay).padStart(2,'0')}`;
 
     const { fetchMovimento, fetchSangrias, parseBrNum } = require('./services/microvix');
 
@@ -1563,7 +1583,7 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
     if (!db.caixa) db.caixa = {};
     const key = `${year}-${String(month).padStart(2,'0')}-${board}`;
     if (!db.caixa[key]) db.caixa[key] = {};
-    for (let d = 1; d <= lastDay; d++) {
+    for (let d = 1; d <= capDay; d++) {
       const prev = db.caixa[key][d] || {};
       if (caixaByDay[d] !== undefined || sangriaByDay[d] !== undefined) {
         db.caixa[key][d] = {
