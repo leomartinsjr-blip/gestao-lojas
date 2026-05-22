@@ -1715,25 +1715,12 @@ function closeTransModal() {
 
 function renderTransView() {
   const body = document.getElementById('transBody');
-  body.innerHTML = `
-    <div class="trans-tabs">
-      <button class="trans-tab-btn${_transTab==='microvix'?' active':''}" data-tab="microvix">Via Microvix</button>
-      <button class="trans-tab-btn${_transTab==='excel'?' active':''}" data-tab="excel">Via Excel</button>
-    </div>
-    <div id="transTabContent"></div>`;
-
-  body.querySelectorAll('.trans-tab-btn').forEach(btn =>
-    btn.addEventListener('click', () => {
-      _transTab = btn.dataset.tab;
-      body.querySelectorAll('.trans-tab-btn').forEach(b => b.classList.toggle('active', b === btn));
-      renderTransTabContent(body.querySelector('#transTabContent'));
-    })
-  );
-  renderTransTabContent(body.querySelector('#transTabContent'));
+  body.innerHTML = `<div id="transTabContent"></div>`;
+  renderTransExcelTab(body.querySelector('#transTabContent'));
 }
 
 function renderTransTabContent(container) {
-  if (_transTab === 'excel') {
+  if (true) {
     renderTransExcelTab(container);
     return;
   }
@@ -1784,6 +1771,10 @@ function renderTransExcelTab(container) {
         <span id="transExcelFileName">Escolher arquivo .xls / .xlsx</span>
         <input type="file" id="transExcelInput" accept=".xls,.xlsx" style="display:none">
       </label>
+      <label class="trans-compra-filter-label">
+        <span>Última entrada a partir de:</span>
+        <input type="date" id="transExcelCompraFrom" class="trans-compra-date-input">
+      </label>
       <button class="trans-calc-btn" id="transExcelCalcBtn" disabled>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
@@ -1793,21 +1784,27 @@ function renderTransExcelTab(container) {
     </div>
     <div id="transExcelResult" style="padding:.5rem 0"></div>`;
 
-  const input   = container.querySelector('#transExcelInput');
-  const nameEl  = container.querySelector('#transExcelFileName');
-  const calcBtn = container.querySelector('#transExcelCalcBtn');
-  const result  = container.querySelector('#transExcelResult');
+  const input     = container.querySelector('#transExcelInput');
+  const nameEl    = container.querySelector('#transExcelFileName');
+  const calcBtn   = container.querySelector('#transExcelCalcBtn');
+  const dateInput = container.querySelector('#transExcelCompraFrom');
+  const result    = container.querySelector('#transExcelResult');
+
+  const updateCalcBtn = () => {
+    calcBtn.disabled = !(input.files[0] && dateInput.value);
+  };
 
   input.addEventListener('change', () => {
-    if (input.files[0]) {
-      nameEl.textContent = input.files[0].name;
-      calcBtn.disabled = false;
-    }
+    if (input.files[0]) nameEl.textContent = input.files[0].name;
+    updateCalcBtn();
   });
 
+  dateInput.addEventListener('change', updateCalcBtn);
+
   calcBtn.addEventListener('click', async () => {
-    if (!input.files[0]) return;
+    if (!input.files[0] || !dateInput.value) return;
     calcBtn.disabled = true;
+    const compraMinDate = dateInput.value; // formato YYYY-MM-DD
     try {
       // Passo 1: lê e parseia o Excel no browser (evita upload de arquivo grande)
       result.innerHTML = '<div class="trans-loading">Lendo arquivo…</div>';
@@ -1884,7 +1881,8 @@ function renderTransExcelTab(container) {
               const [d, m, y] = rawDate.split('/');
               ultimaCompra = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
             }
-            products[cod] = { cod, descricao: String(r[1] || '').trim(), setor: currentSetor, ultimaCompra, stocks: {}, giro: {} };
+            const rawRef = String(r[2] || '').trim().replace(/^="(.+)"$/, '$1');
+            products[cod] = { cod, descricao: String(r[1] || '').trim(), referencia: rawRef, setor: currentSetor, ultimaCompra, stocks: {}, giro: {} };
           }
           for (const c of companies) {
             products[cod].stocks[c.board] = (products[cod].stocks[c.board] || 0) + (parseInt(r[c.saldoCol]) || 0);
@@ -1893,7 +1891,15 @@ function renderTransExcelTab(container) {
         }
       }
 
-      // Passo 3: busca catálogo (GET pequeno) e calcula tudo no browser
+      // Passo 3: filtra produtos sem entrada recente (obrigatório)
+      const totalBruto = Object.keys(products).length;
+      for (const cod of Object.keys(products)) {
+        const p = products[cod];
+        if (!p.ultimaCompra || p.ultimaCompra < compraMinDate) delete products[cod];
+      }
+      const excluidos = totalBruto - Object.keys(products).length;
+
+      // Passo 4: busca catálogo (GET pequeno) e calcula tudo no browser
       result.innerHTML = '<div class="trans-loading">Buscando catálogo Microvix…</div>';
       const catalog = await apiFetch('GET', '/api/catalog').catch(() => ({}));
 
@@ -1956,17 +1962,13 @@ function renderTransExcelTab(container) {
         sugestoes.push({
           cod_produto:  p.cod,
           descricao:    cat.nome     || p.descricao || '—',
-          desc_cor:     cat.desc_cor || '—',
-          desc_tamanho: cat.desc_tam || '—',
           setor:        cat.setor    || p.setor || '—',
-          marca:        cat.marca    || '—',
-          linha:        cat.linha    || '—',
+          referencia:   p.referencia || '—',
           stocks:       p.stocks,
           ideal,
           giro:         p.giro,
           transfers,
           stocksAfter:  workStocks,
-          ultimaVenda:  null,
           ultimaCompra: p.ultimaCompra || null,
         });
       }
@@ -1978,7 +1980,7 @@ function renderTransExcelTab(container) {
         return String(a.cod_produto).localeCompare(String(b.cod_produto), 'pt-BR', { numeric: true });
       });
 
-      renderTransTable(result, { boards, dias: null, total: sugestoes.length, sugestoes, source: 'excel' });
+      renderTransTable(result, { boards, dias: null, total: sugestoes.length, sugestoes, source: 'excel', excluidos, compraMinDate });
     } catch (e) {
       let msg = e.message || e.toString() || 'Erro desconhecido';
       try { const j = JSON.parse(msg); msg = j.error || msg; } catch {}
@@ -2018,7 +2020,7 @@ async function loadTransSugestoes(container) {
 }
 
 function renderTransTable(container, data) {
-  const { boards, dias, total, sugestoes } = data;
+  const { boards, dias, total, sugestoes, excluidos, compraMinDate } = data;
   if (!total) {
     container.innerHTML = `<div class="trans-empty">Nenhuma sugestão de transferência encontrada para os últimos ${dias} dias.<br><span style="color:var(--muted);font-size:.78rem">Todas as lojas já têm estoque mínimo de 1 peça por SKU.</span></div>`;
     return;
@@ -2052,33 +2054,28 @@ function renderTransTable(container, data) {
     const receivers = [...new Set(s.transfers.map(t => t.para))];
     const compraIso = s.ultimaCompra || '';
 
-    const enviarHtml = senders.map(b => {
-      const q     = fN(s.stocks[b]);
-      const after = fN(s.stocksAfter[b]);
-      return `<span class="trans-sc trans-sc-send" style="--bc:${boardColor(b)}">
-        <span class="trans-sc-name">${boardLabel(b)}</span>
-        <span class="trans-sc-qty">${q}→${after}</span>
-      </span>`;
-    }).join('');
+    const enviarHtml = s.transfers.map(t =>
+      `<span class="trans-sc trans-sc-send">
+        <span class="trans-sc-name">${boardLabel(t.para)}</span>
+        <span class="trans-sc-qty">${t.qty}</span>
+      </span>`
+    ).join('');
 
-    const receberHtml = receivers.map(b => {
-      const before = fN(s.stocks[b]);
-      const after  = fN(s.stocksAfter[b]);
-      return `<span class="trans-sc trans-sc-recv" style="--bc:${boardColor(b)}">
-        <span class="trans-sc-name">${boardLabel(b)}</span>
-        <span class="trans-sc-qty">${before}→${after}</span>
-      </span>`;
-    }).join('');
+    const receberHtml = s.transfers.map(t =>
+      `<span class="trans-sc trans-sc-recv">
+        <span class="trans-sc-name">${boardLabel(t.de)}</span>
+        <span class="trans-sc-qty">${t.qty}</span>
+      </span>`
+    ).join('');
 
     return `<tr class="trans-row"
         data-enviar="${senders.join(',')}"
         data-receber="${receivers.join(',')}"
         data-ultima-compra="${compraIso}"
-        data-setor="${s.setor || ''}"
-        data-marca="${s.marca || ''}">
+        data-setor="${s.setor || ''}">
       <td class="trans-td trans-cod">${s.cod_produto}</td>
       <td class="trans-td trans-setor">${s.setor || '—'}</td>
-      <td class="trans-td trans-marca">${s.marca || '—'}</td>
+      <td class="trans-td trans-ref">${s.referencia || '—'}</td>
       <td class="trans-td">${s.descricao || '—'}</td>
       <td class="trans-td trans-td-c trans-date">${fmtDate(compraIso)}</td>
       <td class="trans-td trans-td-chips">${enviarHtml}</td>
@@ -2092,7 +2089,8 @@ function renderTransTable(container, data) {
 
   const html = `
     <div class="trans-summary">
-      <span class="trans-total"><strong>${total}</strong> SKU${total>1?'s':''} com sugestão${dias ? ` · últimos ${dias} dias` : ''}</span>
+      <span class="trans-total"><strong>${total}</strong> SKU${total>1?'s':''} com sugestão${dias ? ` · últimos ${dias} dias` : ''}${compraMinDate ? ` · entrada ≥ ${compraMinDate.split('-').reverse().join('/')}` : ''}${excluidos ? ` <span class="trans-excluidos">(${excluidos} excluídos por data)</span>` : ''}</span>
+      <button id="transExportBtn" class="trans-export-btn">↓ Exportar Excel</button>
       <div class="trans-pairs">${pairSummary}</div>
     </div>
     <div class="trans-filter-bar">
@@ -2113,7 +2111,7 @@ function renderTransTable(container, data) {
       <thead><tr>
         <th class="trans-th">Código</th>
         <th class="trans-th">Setor</th>
-        <th class="trans-th">Marca</th>
+        <th class="trans-th">Ref.</th>
         <th class="trans-th">Produto</th>
         <th class="trans-th trans-th-c">Últ. Entrada</th>
         <th class="trans-th trans-th-send">↑ Enviar</th>
@@ -2124,6 +2122,9 @@ function renderTransTable(container, data) {
 
   container.innerHTML = html;
   applyTransFilter(container);
+
+  const exportBtn = container.querySelector('#transExportBtn');
+  if (exportBtn) exportBtn.addEventListener('click', () => _exportTransExcel(sugestoes));
 
   // Filtro loja
   container.querySelectorAll('.trans-loja-btn').forEach(btn => {
@@ -2142,6 +2143,25 @@ function renderTransTable(container, data) {
       applyTransFilter(container);
     });
   });
+}
+
+function _exportTransExcel(sugestoes) {
+  const XL = window.XLSX;
+  if (!XL) { alert('Biblioteca SheetJS não carregada. Recarregue a página.'); return; }
+  const header = ['Código', 'Setor', 'Referência', 'Produto', 'Últ. Entrada', 'Enviar (destino: qtd)', 'Receber (origem: qtd)'];
+  const rows = sugestoes.map(s => {
+    const enviar  = s.transfers.map(t => `${BOARDS[t.para]?.label || t.para}: ${t.qty}`).join(', ');
+    const receber = s.transfers.map(t => `${BOARDS[t.de]?.label  || t.de }: ${t.qty}`).join(', ');
+    const compra  = s.ultimaCompra ? s.ultimaCompra.slice(0,10).split('-').reverse().join('/') : '—';
+    return [s.cod_produto, s.setor || '—', s.referencia || '—', s.descricao || '—', compra, enviar, receber];
+  });
+  const ws = XL.utils.aoa_to_sheet([header, ...rows]);
+  ws['!cols'] = [{ wch:10 }, { wch:22 }, { wch:14 }, { wch:42 }, { wch:12 }, { wch:30 }, { wch:30 }];
+  ws['!pageSetup'] = { fitToPage: true, fitToWidth: 1, fitToHeight: 0, orientation: 'landscape', paperSize: 9 };
+  ws['!print'] = { area: `A1:G${rows.length + 1}` };
+  const wb = XL.utils.book_new();
+  XL.utils.book_append_sheet(wb, ws, 'Transferências');
+  XL.writeFile(wb, 'transferencias.xlsx');
 }
 
 function applyTransFilter(container) {
