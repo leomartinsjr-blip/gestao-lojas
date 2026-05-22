@@ -138,12 +138,17 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 // ── Auth middleware ────────────────────────────────────────────────────────
 function requireAuth(req, res, next) {
   if (!req.session?.user) return res.status(401).json({ error: 'Não autenticado' });
-  // Invalida sessão se a senha foi trocada após o login
   const users = readUsers();
   const u = users[req.session.user.username];
-  if (u && u.passwordChangedAt && u.passwordChangedAt !== req.session.user.passwordChangedAt) {
-    req.session.destroy(() => {});
-    return res.status(401).json({ error: 'Sessão expirada — senha alterada. Faça login novamente.' });
+  if (u && u.passwordChangedAt) {
+    if (!req.session.user.passwordChangedAt) {
+      // Sessão antiga (criada antes do controle de senha) — sincroniza sem bloquear
+      req.session.user.passwordChangedAt = u.passwordChangedAt;
+    } else if (u.passwordChangedAt !== req.session.user.passwordChangedAt) {
+      // Senha trocada por outra sessão — invalida
+      req.session.destroy(() => {});
+      return res.status(401).json({ error: 'Sessão expirada — senha alterada. Faça login novamente.' });
+    }
   }
   next();
 }
@@ -2302,17 +2307,20 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
     // Lê todas as abas de dados (após o header)
     const stocksMap  = {};  // cod → { board: qty }
     const giroMap    = {};  // cod → { board: qty }
-    const catalogMap = {};  // cod → { descricao, setor }
+    const catalogMap = {};  // cod → { descricao, setor, ultimaCompra }
 
+    // setor persiste entre abas: uma aba tem o label, a(s) seguinte(s) têm os dados
+    let currentSetor = '';
     for (let i = headerSheetIdx + 1; i < wb.SheetNames.length; i++) {
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1 });
-      let setor = '';
       for (const r of rows) {
         if (!r || !r.length) continue;
-        if (typeof r[0] === 'string' && r[0].startsWith('Setor')) {
-          setor = r[0].replace(/^Setor(Setor:?\s*)/i, '').trim();
+        if (typeof r[0] === 'string' && r[0].includes('Setor')) {
+          // "SetorSetor: BERMUDAS (9)" → "BERMUDAS"
+          currentSetor = r[0].replace(/^SetorSetor:\s*/i, '').replace(/\s*\(\d+\)\s*$/, '').trim();
           continue;
         }
+        // Ignora linha de totalização (espaços no primeiro campo)
         if (typeof r[0] !== 'number') continue;
 
         const cod = String(r[0]);
@@ -2325,8 +2333,16 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
           giroMap[cod][c.board]   = (giroMap[cod][c.board]   || 0) + venda;
         }
 
-        if (!catalogMap[cod])
-          catalogMap[cod] = { descricao: String(r[1] || '').trim(), setor };
+        if (!catalogMap[cod]) {
+          // Col 8 = "Data Última compra" em formato DD/MM/YYYY
+          const rawDate = String(r[8] || '').trim();
+          let ultimaCompra = null;
+          if (rawDate && rawDate !== '-' && rawDate.includes('/')) {
+            const [d, m, y] = rawDate.split('/');
+            ultimaCompra = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+          }
+          catalogMap[cod] = { descricao: String(r[1] || '').trim(), setor: currentSetor, ultimaCompra };
+        }
       }
     }
 
@@ -2358,7 +2374,7 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
         transfers,
         stocksAfter:  workStocks,
         ultimaVenda:  null,
-        ultimaCompra: null,
+        ultimaCompra: info.ultimaCompra || null,
       });
     }
 
