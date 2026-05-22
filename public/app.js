@@ -5363,13 +5363,13 @@ function renderCaixaCard(container) {
       const caixa    = entry.caixa    ?? 0;
       const sangria  = entry.sangria  ?? 0;
       const deposito = entry.deposito ?? 0;
-      const saldo    = caixa - sangria;
+      const saldo    = caixa - sangria - deposito;
       totalCaixa    += caixa;
       totalSangria  += sangria;
       totalDeposito += deposito;
       rows.push({ d, dow, caixa, sangria, deposito, saldo });
     }
-    const totalSaldo = totalCaixa - totalSangria;
+    const totalSaldo = totalCaixa - totalSangria - totalDeposito;
 
     const saldoClass = s => s > 0 ? 'pos' : s < 0 ? 'neg' : 'zero';
     const hasData = r => r.caixa > 0 || r.sangria > 0 || r.deposito > 0;
@@ -5417,12 +5417,8 @@ function renderCaixaCard(container) {
       }, 50);
     }
 
-    // cell editing — caixa/sangria for admin; deposito for everyone
-    body.querySelectorAll('.caixa-caixa-cell, .caixa-sangria-cell').forEach(cell => {
-      if (!isAdmin) return;
-      cell.style.cursor = 'pointer';
-      cell.addEventListener('click', () => _caixaStartEdit(cell, data, activeBoard, refresh));
-    });
+    // Dinheiro e Sangria são somente leitura (preenchidos via Microvix sync)
+    // Depósito é editável por todos
     body.querySelectorAll('.caixa-deposito-cell').forEach(cell => {
       cell.style.cursor = 'pointer';
       cell.addEventListener('click', () => _caixaStartEdit(cell, data, activeBoard, refresh));
