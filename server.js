@@ -2011,8 +2011,27 @@ function _warmBaseCache(firstCnpj, firstChave) {
           }
         }
       }
-      _ativosCache = { ativos, ultVenda }; _ativosCacheAt = Date.now();
+      _ativosCache = { ativos, ultVenda, ultCompra: {} }; _ativosCacheAt = Date.now();
       console.log(`[Trans] Ativos 2025 aquecido: ${ativos.size} produtos`);
+
+      // Após ativos prontos, busca última entrada (compra) — 1 loja, 6 meses
+      const sixAgo = new Date(Date.now() - 180 * 86400_000).toISOString().slice(0, 10);
+      fetchMovimento(firstCnpj, sixAgo, today, firstChave, 'E').then(compraRows => {
+        const ultCompra = {};
+        for (const r of compraRows) {
+          if (r.cancelado === 'S' || r.cancelado === '1') continue;
+          const cod = String(r.cod_produto || r.codproduto || '').trim();
+          if (!cod) continue;
+          const raw = (r.data_documento || r.data_lancamento || '').slice(0, 10);
+          if (!raw) continue;
+          const iso = raw.includes('/')
+            ? (() => { const [d,m,y] = raw.split('/'); return `${y}-${m}-${d}`; })()
+            : raw;
+          if (!ultCompra[cod] || iso > ultCompra[cod]) ultCompra[cod] = iso;
+        }
+        if (_ativosCache) _ativosCache.ultCompra = ultCompra;
+        console.log(`[Trans] Última entrada aquecida: ${Object.keys(ultCompra).length} produtos`);
+      }).catch(e => console.warn('[Trans] ultCompra falhou:', e.message));
     }).catch(e => console.warn('[Trans] ativos falhou:', e.message));
   }
 }
@@ -2031,15 +2050,14 @@ async function _buildTransResult(boards, lojas, dias) {
   const estoqueByBoard = {};
   const giroByBoard    = {};
   const catalogMov     = {};
-  const ultCompraMap   = {};
+  const ultCompraMap   = (_ativosCache && _ativosCache.ultCompra) ? _ativosCache.ultCompra : {};
 
   await Promise.all(boards.map(async board => {
     const cnpj  = lojas[board].replace(/\D/g, '');
     const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-    const [estRows, movRows, compraRows] = await Promise.all([
+    const [estRows, movRows] = await Promise.all([
       fetchEstoque(cnpj, chave, today),
       fetchMovimento(cnpj, dtIni, today, chave),
-      fetchMovimento(cnpj, '2024-01-01', today, chave, 'E').catch(() => []),
     ]);
 
     estoqueByBoard[board] = {};
@@ -2067,17 +2085,6 @@ async function _buildTransResult(boards, lojas, dias) {
       };
     }
 
-    for (const r of compraRows) {
-      if (r.cancelado === 'S' || r.cancelado === '1') continue;
-      const cod = String(r.cod_produto || r.codproduto || '').trim();
-      if (!cod) continue;
-      const raw = (r.data_documento || r.data_lancamento || '').slice(0, 10);
-      if (!raw) continue;
-      const iso = raw.includes('/')
-        ? (() => { const [d, m, y] = raw.split('/'); return `${y}-${m}-${d}`; })()
-        : raw;
-      if (!ultCompraMap[cod] || iso > ultCompraMap[cod]) ultCompraMap[cod] = iso;
-    }
   }));
 
   const allCods = new Set();
