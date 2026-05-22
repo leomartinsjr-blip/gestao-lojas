@@ -216,13 +216,23 @@ app.put('/api/users/:username', requireAdmin, (req, res) => {
   if (!users[key]) return res.status(404).json({ error: 'Usuário não encontrado' });
   const { password, label, board } = req.body || {};
   if (password) {
+    const ts = Date.now().toString();
     users[key].password = password;
-    users[key].passwordChangedAt = Date.now().toString();
-    users[key].mustChangePassword = true;
+    users[key].passwordChangedAt = ts;
+    if (key === req.session.user.username) {
+      // Admin alterando a própria senha: atualiza sessão para não invalidar
+      req.session.user.passwordChangedAt = ts;
+      users[key].mustChangePassword = false;
+    } else {
+      users[key].mustChangePassword = true;
+    }
   }
   if (label !== undefined) users[key].label = label;
   if (board !== undefined) users[key].board = board;
   writeUsers(users);
+  if (password && key === req.session.user.username) {
+    return req.session.save(() => res.json({ ok: true }));
+  }
   res.json({ ok: true });
 });
 
