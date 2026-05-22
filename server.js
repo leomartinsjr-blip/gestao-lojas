@@ -163,13 +163,29 @@ app.post('/api/login', (req, res) => {
   const user  = users[key];
   if (!user || user.password !== password)
     return res.status(401).json({ error: 'Usuário ou senha incorretos' });
-  req.session.user = { username: key, board: user.board, label: user.label, passwordChangedAt: user.passwordChangedAt || null };
-  res.json({ username: key, board: user.board, label: user.label });
+  req.session.user = { username: key, board: user.board, label: user.label, passwordChangedAt: user.passwordChangedAt || null, mustChangePassword: !!user.mustChangePassword };
+  res.json({ username: key, board: user.board, label: user.label, mustChangePassword: !!user.mustChangePassword });
 });
 
 // ── POST /api/logout ───────────────────────────────────────────────────────
 app.post('/api/logout', (req, res) => {
   req.session.destroy(() => res.json({ ok: true }));
+});
+
+// ── POST /api/change-password  (próprio usuário) ───────────────────────────
+app.post('/api/change-password', requireAuth, (req, res) => {
+  const { password } = req.body || {};
+  if (!password || password.length < 4) return res.status(400).json({ error: 'Senha muito curta (mínimo 4 caracteres)' });
+  const users = readUsers();
+  const key = req.session.user.username;
+  const ts = Date.now().toString();
+  users[key].password = password;
+  users[key].passwordChangedAt = ts;
+  users[key].mustChangePassword = false;
+  writeUsers(users);
+  req.session.user.passwordChangedAt = ts;
+  req.session.user.mustChangePassword = false;
+  req.session.save(() => res.json({ ok: true }));
 });
 
 // ── GET /api/users  (admin) ────────────────────────────────────────────────
@@ -188,7 +204,7 @@ app.post('/api/users', requireAdmin, (req, res) => {
   const key = username.toLowerCase().trim();
   const users = readUsers();
   if (users[key]) return res.status(409).json({ error: 'Usuário já existe' });
-  users[key] = { password, label: label || key, board: board || 'escritorio' };
+  users[key] = { password, label: label || key, board: board || 'escritorio', mustChangePassword: true };
   writeUsers(users);
   res.json({ ok: true, username: key });
 });
@@ -202,6 +218,7 @@ app.put('/api/users/:username', requireAdmin, (req, res) => {
   if (password) {
     users[key].password = password;
     users[key].passwordChangedAt = Date.now().toString();
+    users[key].mustChangePassword = true;
   }
   if (label !== undefined) users[key].label = label;
   if (board !== undefined) users[key].board = board;

@@ -91,6 +91,7 @@ async function checkAuth() {
     updateLabel();
     loadData();
     initMicrovixSync();
+    if (S.user.mustChangePassword) showChangePasswordModal();
   } catch {
     showLogin();
   }
@@ -174,6 +175,7 @@ function initLoginForm() {
       S._loginJustHappened = true;
       updateLabel();
       loadData();
+      if (S.user.mustChangePassword) showChangePasswordModal();
     } catch (err) {
       let msg = 'Usuário ou senha incorretos';
       try { msg = JSON.parse(err.message).error || msg; } catch {}
@@ -186,6 +188,62 @@ function initLoginForm() {
       btn.textContent = 'Entrar';
     }
   });
+}
+
+function showChangePasswordModal() {
+  const existing = document.getElementById('changePwdModal');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'changePwdModal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:9999';
+
+  overlay.innerHTML = `
+    <div style="background:#1e2433;border:1px solid #2d3654;border-radius:12px;padding:28px 32px;width:340px;max-width:95vw;box-shadow:0 8px 32px #0008">
+      <div style="font-size:1.15rem;font-weight:700;color:#e2e8f0;margin-bottom:6px">Altere sua senha</div>
+      <div style="font-size:.85rem;color:#94a3b8;margin-bottom:20px">Por segurança, crie uma senha pessoal antes de continuar.</div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:.8rem;color:#94a3b8;display:block;margin-bottom:4px">Nova senha</label>
+        <input id="cpNewPass" type="password" autocomplete="new-password" placeholder="Nova senha"
+          style="width:100%;box-sizing:border-box;background:#0f1623;border:1px solid #2d3654;border-radius:7px;padding:9px 12px;color:#e2e8f0;font-size:.95rem;outline:none">
+      </div>
+      <div style="margin-bottom:20px">
+        <label style="font-size:.8rem;color:#94a3b8;display:block;margin-bottom:4px">Confirmar nova senha</label>
+        <input id="cpConfPass" type="password" autocomplete="new-password" placeholder="Confirmar senha"
+          style="width:100%;box-sizing:border-box;background:#0f1623;border:1px solid #2d3654;border-radius:7px;padding:9px 12px;color:#e2e8f0;font-size:.95rem;outline:none">
+      </div>
+      <div id="cpErr" style="font-size:.8rem;color:#f87171;margin-bottom:12px;display:none"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button id="cpSkip" style="background:none;border:1px solid #2d3654;border-radius:7px;padding:8px 16px;color:#94a3b8;cursor:pointer;font-size:.9rem">Agora não</button>
+        <button id="cpSubmit" style="background:#3b82f6;border:none;border-radius:7px;padding:8px 18px;color:#fff;cursor:pointer;font-size:.9rem;font-weight:600">Alterar</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+
+  document.getElementById('cpSkip').onclick = () => overlay.remove();
+  document.getElementById('cpNewPass').focus();
+
+  document.getElementById('cpSubmit').onclick = async () => {
+    const pwd  = document.getElementById('cpNewPass').value;
+    const conf = document.getElementById('cpConfPass').value;
+    const errEl = document.getElementById('cpErr');
+    errEl.style.display = 'none';
+    if (!pwd) { errEl.textContent = 'Informe a nova senha'; errEl.style.display = ''; return; }
+    if (pwd !== conf) { errEl.textContent = 'As senhas não coincidem'; errEl.style.display = ''; return; }
+    const btn = document.getElementById('cpSubmit');
+    btn.disabled = true; btn.textContent = 'Salvando…';
+    try {
+      await apiFetch('POST', '/api/change-password', { password: pwd });
+      S.user.mustChangePassword = false;
+      overlay.remove();
+    } catch (e) {
+      let msg = 'Erro ao salvar';
+      try { msg = JSON.parse(e.message).error || msg; } catch {}
+      errEl.textContent = msg; errEl.style.display = '';
+      btn.disabled = false; btn.textContent = 'Alterar';
+    }
+  };
 }
 
 async function logout() {
