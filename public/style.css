@@ -261,7 +261,7 @@ body {
 .dash-store-collapse:hover td { background: #2d3340 !important; }
 .dash-store-collapse td { text-align: left; }
 .dash-store-dot {
-  display: inline-block; width: 8px; height: 8px;
+  display: none; width: 8px; height: 8px;
   border-radius: 50%; margin-right: .4rem; vertical-align: middle;
 }
 .dash-row { border-bottom: 1px solid var(--border); }
@@ -1323,7 +1323,7 @@ body {
 .dw-store-collapse-row { cursor: pointer; transition: background .12s; }
 .dw-store-collapse-row td { background: #252a33; font-weight: 700; font-size: .78rem; border-top: 2px solid var(--border2); }
 .dw-store-collapse-row:hover td { background: #2d3340 !important; }
-.dw-store-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.dw-store-dot { display: none; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .dw-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
 .dw-thead-tr { background: #292e38; }
 .dw-th {
@@ -2299,9 +2299,6 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   /* Store label: sem dot, só chevron + nome */
   .dia-store-label { gap: .2rem; font-size: .72rem; }
   .dia-chevron { font-size: .58rem; width: .5rem; }
-  .dia-store-label .dash-store-dot,
-  .dash-store-hdr-td .dash-store-dot,
-  .dw-store-hdr .dw-store-dot { display: none; }
 
   /* ── Performance Mensal: esconde Meta Mês (2), TM (7) ── */
   /* Visível: Vendedor · Realizado · % Meta · Projeção · PA */
