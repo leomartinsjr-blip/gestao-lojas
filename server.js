@@ -1954,14 +1954,21 @@ app.get('/api/microvix/movimento-raw', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Cache do catálogo LinxProdutos e do filtro de ativos desde 2025 (TTL 4h)
-let _catalogCache = null;
-let _catalogCacheAt = 0;
-let _ativosCache = null;   // { ativos: Set, ultVenda: {} }
-let _ativosCacheAt = 0;
+// ── Transferências: caches ──────────────────────────────────────────────────
+// catálogo LinxProdutos + ativos2025 (TTL 4h)
+let _catalogCache    = null;
+let _catalogCacheAt  = 0;
+let _ativosCache     = null;   // { ativos: Set, ultVenda: {} }
+let _ativosCacheAt   = 0;
 const CATALOG_TTL = 4 * 3600 * 1000;
 
-function _warmTransCache(firstCnpj, firstChave) {
+// resultado completo por número de dias (TTL 30min)
+let _transResultCache  = {};   // { [dias]: { result, at } }
+let _transWarmRunning  = {};   // { [dias]: true } — guard contra runs simultâneos
+const TRANS_RESULT_TTL = 30 * 60 * 1000;
+
+// Aquece catálogo e ativos em background (fire-and-forget)
+function _warmBaseCache(firstCnpj, firstChave) {
   const { fetchProdutos, fetchMovimento } = require('./services/microvix');
   const today = new Date().toISOString().slice(0, 10);
 
@@ -1982,7 +1989,7 @@ function _warmTransCache(firstCnpj, firstChave) {
       }
       _catalogCache = cat; _catalogCacheAt = Date.now();
       console.log(`[Trans] Catálogo aquecido: ${prodRows.length} produtos`);
-    }).catch(e => console.warn('[Trans] Preload catálogo falhou:', e.message));
+    }).catch(e => console.warn('[Trans] catálogo falhou:', e.message));
   }
 
   if (!_ativosCache || Date.now() - _ativosCacheAt >= CATALOG_TTL) {
@@ -2005,175 +2012,189 @@ function _warmTransCache(firstCnpj, firstChave) {
         }
       }
       _ativosCache = { ativos, ultVenda }; _ativosCacheAt = Date.now();
-      console.log(`[Trans] Ativos 2024 aquecido: ${ativos.size} produtos`);
-    }).catch(e => console.warn('[Trans] Preload ativos falhou:', e.message));
+      console.log(`[Trans] Ativos 2025 aquecido: ${ativos.size} produtos`);
+    }).catch(e => console.warn('[Trans] ativos falhou:', e.message));
   }
 }
 
-// GET /api/transferencias/preload — aquece caches em background, responde imediatamente
-app.get('/api/transferencias/preload', requireAdmin, (req, res) => {
-  const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-  const boards = Object.keys(lojas).filter(b => lojas[b]);
-  if (!boards.length) return res.json({ ok: false, error: 'Sem lojas configuradas' });
-  const firstBoard = boards[0];
-  const firstCnpj  = lojas[firstBoard].replace(/\D/g, '');
-  const firstChave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-  _warmTransCache(firstCnpj, firstChave);
-  res.json({
-    ok: true,
-    cached: { catalog: !!_catalogCache, ativos: !!_ativosCache },
-    msg: 'Aquecimento iniciado em background',
+// Computa o resultado completo (chamado apenas pelo worker, nunca no request path)
+async function _buildTransResult(boards, lojas, dias) {
+  const { fetchEstoque, fetchMovimento } = require('./services/microvix');
+  const todayUTC = new Date();
+  const today = todayUTC.toISOString().slice(0, 10);
+  const dtIni = new Date(todayUTC - dias * 86400_000).toISOString().slice(0, 10);
+
+  const catalog = _catalogCache || {};
+  const { ativos: ativosDesde2025, ultVenda: ultimaVendaMap } =
+    _ativosCache || { ativos: new Set(), ultVenda: {} };
+
+  const estoqueByBoard = {};
+  const giroByBoard    = {};
+  const catalogMov     = {};
+
+  await Promise.all(boards.map(async board => {
+    const cnpj  = lojas[board].replace(/\D/g, '');
+    const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const [estRows, movRows] = await Promise.all([
+      fetchEstoque(cnpj, chave, today),
+      fetchMovimento(cnpj, dtIni, today, chave),
+    ]);
+
+    estoqueByBoard[board] = {};
+    for (const r of estRows) {
+      const cod = String(r.cod_produto || r.codproduto || '').trim();
+      const qty = parseFloat((r.quantidade || '0').replace(',', '.')) || 0;
+      if (!cod || qty <= 0) continue;
+      if (!estoqueByBoard[board][cod])
+        estoqueByBoard[board][cod] = { qty: 0, cod_barra: (r.cod_barra || r.codbarra || '').trim() };
+      estoqueByBoard[board][cod].qty += qty;
+    }
+
+    giroByBoard[board] = {};
+    for (const r of movRows) {
+      if (r.cancelado === 'S' || r.cancelado === '1') continue;
+      if (r.operacao === 'DS') continue;
+      const cod = String(r.cod_produto || r.codproduto || '').trim();
+      if (!cod) continue;
+      giroByBoard[board][cod] = (giroByBoard[board][cod] || 0) + (parseInt(r.quantidade || 0) || 1);
+      if (!catalogMov[cod]) catalogMov[cod] = {
+        descricao:    (r.descricao    || r.des_produto || '').trim(),
+        desc_cor:     (r.desc_cor     || '').trim(),
+        desc_tamanho: (r.desc_tamanho || '').trim(),
+        setor:        (r.setor        || r.grupo || '').trim(),
+      };
+    }
+  }));
+
+  const allCods = new Set();
+  for (const board of boards)
+    for (const cod of Object.keys(estoqueByBoard[board])) allCods.add(cod);
+
+  const sugestoes = [];
+
+  for (const cod of allCods) {
+    const stocks = {};
+    let cod_barra = '';
+    for (const board of boards) {
+      const e = estoqueByBoard[board][cod];
+      stocks[board] = e ? Math.floor(e.qty) : 0;
+      if (e?.cod_barra && !cod_barra) cod_barra = e.cod_barra;
+    }
+    const giro = {};
+    for (const board of boards) giro[board] = giroByBoard[board][cod] || 0;
+
+    if (ativosDesde2025.size > 0 && !ativosDesde2025.has(cod)) continue;
+
+    const donors    = boards.filter(b => stocks[b] >= 2).sort((a, b) => stocks[b] - stocks[a]);
+    const receivers = boards.filter(b => stocks[b] === 0).sort((a, b) => giro[b] - giro[a]);
+    if (!donors.length || !receivers.length) continue;
+
+    const workStocks = { ...stocks };
+    const transfers  = [];
+    for (const rec of receivers) {
+      for (const don of donors) {
+        if (workStocks[don] < 2) continue;
+        transfers.push({ de: don, para: rec, qty: 1 });
+        workStocks[don] -= 1;
+        break;
+      }
+    }
+    if (!transfers.length) continue;
+
+    const cat = catalog[cod_barra] || catalog[`p:${cod}`] || {};
+    const mov = catalogMov[cod] || {};
+    sugestoes.push({
+      cod_produto:  cod,
+      cod_barra,
+      descricao:    cat.descricao    || mov.descricao    || '—',
+      desc_cor:     cat.desc_cor     || mov.desc_cor     || '—',
+      desc_tamanho: cat.desc_tamanho || mov.desc_tamanho || '—',
+      setor:        cat.desc_setor   || mov.setor        || '—',
+      stocks,
+      giro,
+      transfers,
+      stocksAfter:  workStocks,
+      ultimaVenda:  ultimaVendaMap[cod] || '—',
+    });
+  }
+
+  sugestoes.sort((a, b) => {
+    const sc = (a.setor || '').localeCompare(b.setor || '', 'pt-BR');
+    if (sc !== 0) return sc;
+    return String(a.cod_produto).localeCompare(String(b.cod_produto), 'pt-BR', { numeric: true });
   });
+
+  return { boards, dias, total: sugestoes.length, sugestoes };
+}
+
+// Worker: aquece tudo em background para um valor de dias
+async function _warmAllTrans(boards, lojas, dias, firstCnpj, firstChave) {
+  const key = String(dias);
+  if (_transWarmRunning[key]) return;
+  const cached = _transResultCache[key];
+  if (cached && Date.now() - cached.at < TRANS_RESULT_TTL) return;
+
+  _transWarmRunning[key] = true;
+  try {
+    _warmBaseCache(firstCnpj, firstChave);
+
+    // Aguarda catálogo e ativos ficarem prontos (até 120s)
+    const start = Date.now();
+    while (!_catalogCache || !_ativosCache) {
+      if (Date.now() - start > 120_000) throw new Error('Timeout aguardando caches base');
+      await new Promise(r => setTimeout(r, 1500));
+    }
+
+    const result = await _buildTransResult(boards, lojas, dias);
+    _transResultCache[key] = { result, at: Date.now() };
+    console.log(`[Trans] Resultado cacheado (${dias}d): ${result.total} sugestões`);
+  } catch (e) {
+    console.warn(`[Trans] warmAllTrans(${dias}d) falhou:`, e.message);
+  } finally {
+    _transWarmRunning[key] = false;
+  }
+}
+
+// Helper para extrair firstBoard/firstCnpj/firstChave e boards válidos
+function _transBoards(reqLojas) {
+  const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+  const boards = (reqLojas
+    ? reqLojas.split(',')
+    : Object.keys(lojas)
+  ).filter(b => lojas[b]);
+  const firstBoard = boards[0];
+  const firstCnpj  = firstBoard ? lojas[firstBoard].replace(/\D/g, '') : null;
+  const firstChave = firstBoard
+    ? (process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE)
+    : null;
+  return { boards, lojas, firstCnpj, firstChave };
+}
+
+// GET /api/transferencias/preload — dispara aquecimento, responde imediatamente
+app.get('/api/transferencias/preload', requireAdmin, (req, res) => {
+  const { boards, lojas, firstCnpj, firstChave } = _transBoards(null);
+  if (!boards.length) return res.json({ ok: false, error: 'Sem lojas configuradas' });
+  _warmAllTrans(boards, lojas, 30, firstCnpj, firstChave);
+  res.json({ ok: true, msg: 'Aquecimento iniciado em background' });
 });
 
 // GET /api/transferencias?dias=30&lojas=delrey,minas,contagem,estacao
-app.get('/api/transferencias', requireAdmin, async (req, res) => {
-  try {
-    const { fetchEstoque, fetchProdutos, fetchMovimento } = require('./services/microvix');
+// Nunca faz chamadas Microvix — apenas lê cache ou retorna cacheLoading:true
+app.get('/api/transferencias', requireAdmin, (req, res) => {
+  const dias = Math.max(1, parseInt(req.query.dias || '30'));
+  const { boards, lojas, firstCnpj, firstChave } = _transBoards(req.query.lojas || null);
+  if (!boards.length) return res.status(400).json({ error: 'Nenhuma loja configurada em MICROVIX_LOJAS' });
 
-    const dias   = Math.max(1, parseInt(req.query.dias || '30'));
-    const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-    const boards = (req.query.lojas
-      ? req.query.lojas.split(',')
-      : Object.keys(lojas)
-    ).filter(b => lojas[b]);
+  // Dispara aquecimento em background (não bloqueia)
+  _warmAllTrans(boards, lojas, dias, firstCnpj, firstChave);
 
-    if (!boards.length) return res.status(400).json({ error: 'Nenhuma loja configurada em MICROVIX_LOJAS' });
-
-    const todayUTC = new Date();
-    const today = todayUTC.toISOString().slice(0, 10);
-    const dtIni = new Date(todayUTC - dias * 86400_000).toISOString().slice(0, 10);
-
-    const firstBoard = boards[0];
-    const firstCnpj  = lojas[firstBoard].replace(/\D/g, '');
-    const firstChave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-
-    // Aquece caches em background se necessário (não bloqueia)
-    _warmTransCache(firstCnpj, firstChave);
-
-    // Se caches ainda não estão prontos, responde imediatamente para o cliente tentar de novo
-    if (!_catalogCache || !_ativosCache) {
-      return res.json({ cacheLoading: true, msg: 'Preparando dados… tente novamente em alguns segundos.' });
-    }
-
-    const catalog = _catalogCache;
-    const { ativos: ativosDesde2025, ultVenda: ultimaVendaMap } = _ativosCache;
-
-    // ── Estoque + giro por loja em paralelo ──
-    const estoqueByBoard = {};
-    const giroByBoard    = {};
-    const catalogMov     = {};
-
-    await Promise.all(boards.map(async board => {
-      const cnpj  = lojas[board].replace(/\D/g, '');
-      const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-
-      const [estRows, movRows] = await Promise.all([
-        fetchEstoque(cnpj, chave, today),
-        fetchMovimento(cnpj, dtIni, today, chave),
-      ]);
-
-      estoqueByBoard[board] = {};
-      for (const r of estRows) {
-        const cod = String(r.cod_produto || r.codproduto || '').trim();
-        const qty = parseFloat((r.quantidade || '0').replace(',', '.')) || 0;
-        if (!cod || qty <= 0) continue;
-        if (!estoqueByBoard[board][cod])
-          estoqueByBoard[board][cod] = { qty: 0, cod_barra: (r.cod_barra || r.codbarra || '').trim() };
-        estoqueByBoard[board][cod].qty += qty;
-      }
-
-      giroByBoard[board] = {};
-      for (const r of movRows) {
-        if (r.cancelado === 'S' || r.cancelado === '1') continue;
-        if (r.operacao === 'DS') continue;
-        const cod = String(r.cod_produto || r.codproduto || '').trim();
-        if (!cod) continue;
-        giroByBoard[board][cod] = (giroByBoard[board][cod] || 0) + (parseInt(r.quantidade || 0) || 1);
-        if (!catalogMov[cod]) catalogMov[cod] = {
-          descricao:    (r.descricao    || r.des_produto || '').trim(),
-          desc_cor:     (r.desc_cor     || '').trim(),
-          desc_tamanho: (r.desc_tamanho || '').trim(),
-          setor:        (r.setor        || r.grupo || '').trim(),
-        };
-      }
-    }));
-
-
-
-    // ── Todos os cod_produto com estoque em qualquer loja ──
-    const allCods = new Set();
-    for (const board of boards) {
-      for (const cod of Object.keys(estoqueByBoard[board])) allCods.add(cod);
-    }
-
-    const sugestoes = [];
-
-    for (const cod of allCods) {
-      const stocks = {};
-      let cod_barra = '';
-      let invInfo = null; // descrição do próprio inventário
-      for (const board of boards) {
-        const e = estoqueByBoard[board][cod];
-        stocks[board] = e ? Math.floor(e.qty) : 0;
-        if (e?.cod_barra && !cod_barra) cod_barra = e.cod_barra;
-        if (e && !invInfo && (e.descricao || e.desc_cor || e.desc_tamanho)) invInfo = e;
-      }
-
-      const giro = {};
-      for (const board of boards) giro[board] = giroByBoard[board][cod] || 0;
-
-      // Ignora produtos sem movimento desde 2025
-      if (ativosDesde2025.size > 0 && !ativosDesde2025.has(cod)) continue;
-
-      const donors    = boards.filter(b => stocks[b] >= 2).sort((a, b) => stocks[b] - stocks[a]);
-      const receivers = boards.filter(b => stocks[b] === 0).sort((a, b) => giro[b] - giro[a]);
-
-      if (!donors.length || !receivers.length) continue;
-
-      const workStocks = { ...stocks };
-      const transfers  = [];
-
-      for (const rec of receivers) {
-        for (const don of donors) {
-          if (workStocks[don] < 2) continue;
-          transfers.push({ de: don, para: rec, qty: 1 });
-          workStocks[don] -= 1;
-          break;
-        }
-      }
-
-      if (!transfers.length) continue;
-
-      // Prioridade: catálogo LinxProdutos (tem desc_setor) → fallback catalogMov
-      const cat = catalog[cod_barra] || catalog[`p:${cod}`] || {};
-      const mov = catalogMov[cod] || {};
-      sugestoes.push({
-        cod_produto:  cod,
-        cod_barra,
-        descricao:    cat.descricao    || mov.descricao    || '—',
-        desc_cor:     cat.desc_cor     || mov.desc_cor     || '—',
-        desc_tamanho: cat.desc_tamanho || mov.desc_tamanho || '—',
-        setor:        cat.desc_setor   || mov.setor        || '—',
-        stocks,
-        giro,
-        transfers,
-        stocksAfter:  workStocks,
-        ultimaVenda:  ultimaVendaMap[cod] || '—',
-      });
-    }
-
-    sugestoes.sort((a, b) => {
-      const sc = (a.setor || '').localeCompare(b.setor || '', 'pt-BR');
-      if (sc !== 0) return sc;
-      return String(a.cod_produto).localeCompare(String(b.cod_produto), 'pt-BR', { numeric: true });
-    });
-
-    res.json({ boards, dias, total: sugestoes.length, sugestoes });
-  } catch (e) {
-    console.error('[Transferencias]', e.message);
-    res.status(500).json({ error: e.message });
+  // Serve do cache se estiver pronto
+  const cached = _transResultCache[String(dias)];
+  if (cached && Date.now() - cached.at < TRANS_RESULT_TTL) {
+    return res.json(cached.result);
   }
+
+  res.json({ cacheLoading: true, msg: 'Preparando dados… tente novamente em alguns segundos.' });
 });
 
 // ── Start ──────────────────────────────────────────────────────────────────
