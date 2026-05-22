@@ -1817,6 +1817,20 @@ function renderTransExcelTab(container) {
 
       const wb = XLSX_LOCAL.read(buffer, { type: 'array' });
 
+      // Extrai período do Excel (Sheet1: "Período:" → "01/01/2025 à 31/05/2026")
+      let periodDays = 365;
+      try {
+        const s1 = XLSX_LOCAL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+        const periodStr = String(s1[0]?.[1] || '');
+        const [startStr, endStr] = periodStr.split(' à ');
+        if (startStr && endStr) {
+          const [sd, sm, sy] = startStr.trim().split('/');
+          const [ed, em, ey] = endStr.trim().split('/');
+          const diff = new Date(+ey, +em-1, +ed) - new Date(+sy, +sm-1, +sd);
+          if (diff > 0) periodDays = Math.round(diff / 86400000);
+        }
+      } catch {}
+
       function detectBoard(name) {
         const n = name.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
         if (n.includes('CONTAGEM')) return 'contagem';
@@ -1901,8 +1915,14 @@ function renderTransExcelTab(container) {
         for (const { b, floor } of parts) ideal[b] = floor;
         const delta = {};
         for (const b of boards) delta[b] = (stocks[b] || 0) - ideal[b];
-        const donors    = boards.filter(b => delta[b] > 0).sort((a, b) => delta[b] - delta[a]);
-        const receivers = boards.filter(b => delta[b] < 0).sort((a, b) => delta[a] - delta[b]);
+        // Regra 1: doadora só envia se estoque > 1
+        const donors = boards
+          .filter(b => (stocks[b] || 0) > 1 && delta[b] > 0)
+          .sort((a, b) => delta[b] - delta[a]);
+        // Regra 2: receptora só recebe se estoque = 0 e tem vendas históricas
+        const receivers = boards
+          .filter(b => (stocks[b] || 0) === 0 && (giro[b] || 0) > 0)
+          .sort((a, b) => delta[a] - delta[b]);
         if (!donors.length || !receivers.length) return null;
         const workStocks = { ...stocks };
         const workDelta  = { ...delta };
@@ -1911,7 +1931,10 @@ function renderTransExcelTab(container) {
           let needed = -workDelta[rec];
           for (const don of donors) {
             if (workDelta[don] <= 0) continue;
-            const qty = Math.min(needed, workDelta[don]);
+            // Garante que doadora mantém ao menos 1 peça
+            const maxSend = (workStocks[don] || 0) - 1;
+            if (maxSend <= 0) continue;
+            const qty = Math.min(needed, workDelta[don], maxSend);
             if (qty <= 0) continue;
             transfers.push({ de: don, para: rec, qty });
             workStocks[don] -= qty; workStocks[rec] += qty;
@@ -2057,9 +2080,6 @@ function renderTransTable(container, data) {
       <td class="trans-td trans-setor">${s.setor || '—'}</td>
       <td class="trans-td trans-marca">${s.marca || '—'}</td>
       <td class="trans-td">${s.descricao || '—'}</td>
-      <td class="trans-td">${s.desc_cor || '—'}</td>
-      <td class="trans-td trans-td-c">${s.desc_tamanho || '—'}</td>
-      <td class="trans-td trans-td-c trans-date">${fmtDate(s.ultimaVenda)}</td>
       <td class="trans-td trans-td-c trans-date">${fmtDate(compraIso)}</td>
       <td class="trans-td trans-td-chips">${enviarHtml}</td>
       <td class="trans-td trans-td-chips">${receberHtml}</td>
@@ -2095,9 +2115,6 @@ function renderTransTable(container, data) {
         <th class="trans-th">Setor</th>
         <th class="trans-th">Marca</th>
         <th class="trans-th">Produto</th>
-        <th class="trans-th">Cor</th>
-        <th class="trans-th trans-th-c">Tam</th>
-        <th class="trans-th trans-th-c">Últ. Venda</th>
         <th class="trans-th trans-th-c">Últ. Entrada</th>
         <th class="trans-th trans-th-send">↑ Enviar</th>
         <th class="trans-th trans-th-recv">↓ Receber</th>

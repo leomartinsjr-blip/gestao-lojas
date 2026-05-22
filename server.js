@@ -2043,7 +2043,8 @@ async function _getCatalog(lojas) {
 //   - donors: lojas com excesso (stock > ideal), ordenadas por maior excesso
 //   - receivers: lojas com déficit (stock < ideal), ordenadas por maior déficit
 //   - A doadora cede apenas seu excesso → seu giro é respeitado
-function _calcTransfersProporcional(boards, stocks, giro) {
+// periodDays: duração do período do giro (ex: 90 dias para Microvix, ~510 para Excel de 17 meses)
+function _calcTransfersProporcional(boards, stocks, giro, periodDays = 90) {
   const totalGiro  = boards.reduce((s, b) => s + (giro[b] || 0), 0);
   const totalStock = boards.reduce((s, b) => s + (stocks[b] || 0), 0);
   if (totalGiro === 0 || totalStock === 0) return null;
@@ -2059,12 +2060,20 @@ function _calcTransfersProporcional(boards, stocks, giro) {
   const ideal = {};
   for (const { b, floor } of parts) ideal[b] = floor;
 
-  // Delta: positivo = excesso (cede), negativo = déficit (recebe)
   const delta = {};
   for (const b of boards) delta[b] = (stocks[b] || 0) - ideal[b];
 
-  const donors    = boards.filter(b => delta[b] > 0).sort((a, b) => delta[b] - delta[a]);
-  const receivers = boards.filter(b => delta[b] < 0).sort((a, b) => delta[a] - delta[b]);
+  // Regra 1: doadora só envia se tiver estoque > 1 (mantém ao menos 1 peça)
+  const donors = boards
+    .filter(b => (stocks[b] || 0) > 1 && delta[b] > 0)
+    .sort((a, b) => delta[b] - delta[a]);
+
+  // Regra 2: receptora só recebe se estoque = 0 e tem histórico de vendas
+  // (cobertura com stock=0 é sempre 0 meses, portanto regra de cobertura satisfeita automaticamente)
+  const receivers = boards
+    .filter(b => (stocks[b] || 0) === 0 && (giro[b] || 0) > 0)
+    .sort((a, b) => delta[a] - delta[b]);
+
   if (!donors.length || !receivers.length) return null;
 
   const workStocks = { ...stocks };
@@ -2075,7 +2084,10 @@ function _calcTransfersProporcional(boards, stocks, giro) {
     let needed = -workDelta[rec];
     for (const don of donors) {
       if (workDelta[don] <= 0) continue;
-      const qty = Math.min(needed, workDelta[don]);
+      // Garante que a doadora não fique com menos de 1 peça
+      const maxSend = (workStocks[don] || 0) - 1;
+      if (maxSend <= 0) continue;
+      const qty = Math.min(needed, workDelta[don], maxSend);
       if (qty <= 0) continue;
       transfers.push({ de: don, para: rec, qty });
       workStocks[don] -= qty;
@@ -2175,7 +2187,7 @@ async function _buildTransResult(boards, lojas, dias) {
     const giro = {};
     for (const board of boards) giro[board] = giroByBoard[board][cod] || 0;
 
-    const calc = _calcTransfersProporcional(boards, stocks, giro);
+    const calc = _calcTransfersProporcional(boards, stocks, giro, dias);
     if (!calc) continue;
     const { transfers, workStocks, ideal } = calc;
 
