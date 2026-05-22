@@ -2277,4 +2277,37 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   /* ── Folgas: header stack ────────────────────────────────────────────── */
   .folgas-hdr { flex-wrap: wrap; gap: .4rem; }
   .folgas-month-nav { margin-left: 0; }
+
+  /* ── Performance Mensal: esconde Meta Mês (2), Projeção (5), TM (7) ── */
+  .dash-table .dash-th:nth-child(2),
+  .dash-table td:nth-child(2),
+  .dash-table .dash-th:nth-child(5),
+  .dash-table td:nth-child(5),
+  .dash-table .dash-th:nth-child(7),
+  .dash-table td:nth-child(7) { display: none; }
+
+  .dash-th { padding: .3rem .4rem; font-size: .67rem; }
+  .dash-td { padding: .3rem .4rem; font-size: .75rem; }
+  .dash-th:not(:first-child) { min-width: 52px; }
+  .dash-td-name { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dash-store-hdr td { padding: .28rem .4rem; font-size: .68rem; }
+
+  /* ── Meta Semanal: esconde Meta (2), Projeção (5+6), Prêmio (8) ──── */
+  .dw-table .dw-th:nth-child(2),
+  .dw-table td:nth-child(2),
+  .dw-table .dw-th:nth-child(5),
+  .dw-table td:nth-child(5),
+  .dw-table .dw-th:nth-child(6),
+  .dw-table td:nth-child(6),
+  .dw-table .dw-th:nth-child(8),
+  .dw-table td:nth-child(8) { display: none; }
+
+  .dw-th { padding: .3rem .4rem; font-size: .67rem; }
+  .dw-td { padding: .3rem .4rem; font-size: .75rem; }
+  .dw-store-collapse-row td { font-size: .74rem; }
+  .dw-td-name { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Nav de semana: label menor */
+  .dash-wk-label { font-size: .7rem; }
+  .dash-wk-btn { width: 1.4rem; height: 1.4rem; font-size: .8rem; }
 }
