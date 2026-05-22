@@ -6034,12 +6034,16 @@ function _reqFormHtml(board) {
       <button class="req-link-btn" id="reqHistBtn">Ver histórico →</button>
     </div>
     <div class="req-section">
-      <div class="req-sec-hdr">📦 Embalagens — informe a quantidade necessária</div>
-      <div class="req-embal-grid">
+      <div class="req-sec-hdr">📦 Embalagens</div>
+      <div class="req-embal-cards">
         ${EMBALAGENS_ITEMS.map(item => `
-          <div class="req-embal-row">
+          <div class="req-embal-card">
             <span class="req-embal-nome">${_escHtml(item)}</span>
-            <input type="number" class="req-qty" data-item="${_escHtml(item)}" min="0" max="9999" placeholder="0">
+            <div class="req-embal-counter">
+              <button type="button" class="req-cnt-btn req-cnt-minus" data-item="${_escHtml(item)}">−</button>
+              <input type="number" class="req-qty" data-item="${_escHtml(item)}" min="0" max="9999" value="0">
+              <button type="button" class="req-cnt-btn req-cnt-plus" data-item="${_escHtml(item)}">+</button>
+            </div>
           </div>`).join('')}
       </div>
     </div>
@@ -6060,6 +6064,26 @@ function _reqFormHtml(board) {
 }
 
 function _initReqForm(body, board, onSuccess) {
+  body.querySelectorAll('.req-cnt-plus').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const input = body.querySelector(`.req-qty[data-item="${btn.dataset.item}"]`);
+      input.value = (parseInt(input.value) || 0) + 1;
+      input.closest('.req-embal-card').classList.toggle('req-embal-active', parseInt(input.value) > 0);
+    });
+  });
+  body.querySelectorAll('.req-cnt-minus').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const input = body.querySelector(`.req-qty[data-item="${btn.dataset.item}"]`);
+      const v = Math.max(0, (parseInt(input.value) || 0) - 1);
+      input.value = v;
+      input.closest('.req-embal-card').classList.toggle('req-embal-active', v > 0);
+    });
+  });
+  body.querySelectorAll('.req-qty').forEach(input => {
+    input.addEventListener('input', () => {
+      input.closest('.req-embal-card').classList.toggle('req-embal-active', (parseInt(input.value) || 0) > 0);
+    });
+  });
   body.querySelectorAll('.req-mat-btn').forEach(btn =>
     btn.addEventListener('click', () => btn.classList.toggle('active'))
   );

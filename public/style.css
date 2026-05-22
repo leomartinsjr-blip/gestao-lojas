@@ -2446,11 +2446,16 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .req-link-btn:hover { text-decoration: underline; }
 .req-section { margin-bottom: 1.25rem; }
 .req-sec-hdr { font-size: .78rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .6rem; }
-.req-embal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: .4rem .75rem; }
-.req-embal-row { display: flex; align-items: center; gap: .5rem; }
-.req-embal-nome { font-size: .82rem; color: var(--text); flex: 1; }
-.req-qty { width: 70px; background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: .82rem; padding: .25rem .4rem; border-radius: 5px; text-align: center; }
+.req-embal-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(145px, 1fr)); gap: .6rem; }
+.req-embal-card { display: flex; flex-direction: column; align-items: center; gap: .55rem; background: var(--card); border: 2px solid var(--border); border-radius: 10px; padding: .75rem .6rem .65rem; transition: border-color .15s, background .15s; }
+.req-embal-card.req-embal-active { border-color: #58A6FF; background: rgba(88,166,255,.06); }
+.req-embal-nome { font-size: .8rem; font-weight: 600; color: var(--text); text-align: center; line-height: 1.3; }
+.req-embal-counter { display: flex; align-items: center; gap: .3rem; }
+.req-cnt-btn { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--text); font-size: 1.1rem; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background .12s; }
+.req-cnt-btn:hover { background: rgba(88,166,255,.15); border-color: #58A6FF; color: #58A6FF; }
+.req-qty { width: 52px; background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: 1.1rem; font-weight: 700; padding: .2rem; border-radius: 6px; text-align: center; }
 .req-qty:focus { outline: none; border-color: #58A6FF; }
+.req-embal-card.req-embal-active .req-qty { color: #58A6FF; border-color: #58A6FF; }
 .req-mat-grid { display: flex; flex-wrap: wrap; gap: .4rem; }
 .req-mat-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: .78rem; padding: .3rem .65rem; border-radius: 4px; cursor: pointer; transition: all .15s; }
 .req-mat-btn.active { background: #1F3A5F; border-color: #58A6FF; color: #58A6FF; font-weight: 600; }
