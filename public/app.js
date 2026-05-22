@@ -29,6 +29,11 @@ async function apiFetch(method, url, body) {
   }
   const r = await fetch(url, opts);
   const text = await r.text();
+  if (r.status === 401) {
+    // Sessão expirada ou senha trocada — volta para login
+    showLogin();
+    throw new Error('Sessão expirada');
+  }
   if (!r.ok) throw new Error(text);
   try { return JSON.parse(text); } catch { return text; }
 }

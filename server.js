@@ -137,8 +137,15 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 
 // ── Auth middleware ────────────────────────────────────────────────────────
 function requireAuth(req, res, next) {
-  if (req.session?.user) return next();
-  res.status(401).json({ error: 'Não autenticado' });
+  if (!req.session?.user) return res.status(401).json({ error: 'Não autenticado' });
+  // Invalida sessão se a senha foi trocada após o login
+  const users = readUsers();
+  const u = users[req.session.user.username];
+  if (u && u.passwordChangedAt && u.passwordChangedAt !== req.session.user.passwordChangedAt) {
+    req.session.destroy(() => {});
+    return res.status(401).json({ error: 'Sessão expirada — senha alterada. Faça login novamente.' });
+  }
+  next();
 }
 
 function requireAdmin(req, res, next) {
@@ -156,7 +163,7 @@ app.post('/api/login', (req, res) => {
   const user  = users[key];
   if (!user || user.password !== password)
     return res.status(401).json({ error: 'Usuário ou senha incorretos' });
-  req.session.user = { username: key, board: user.board, label: user.label };
+  req.session.user = { username: key, board: user.board, label: user.label, passwordChangedAt: user.passwordChangedAt || null };
   res.json({ username: key, board: user.board, label: user.label });
 });
 
@@ -192,7 +199,10 @@ app.put('/api/users/:username', requireAdmin, (req, res) => {
   const users = readUsers();
   if (!users[key]) return res.status(404).json({ error: 'Usuário não encontrado' });
   const { password, label, board } = req.body || {};
-  if (password) users[key].password = password;
+  if (password) {
+    users[key].password = password;
+    users[key].passwordChangedAt = Date.now().toString();
+  }
   if (label !== undefined) users[key].label = label;
   if (board !== undefined) users[key].board = board;
   writeUsers(users);
