@@ -1450,9 +1450,8 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
     const sangriaByDay = {};
     const errors       = {};
 
-    // Cash sales via LinxMovimento: deduplica por documento para evitar somar
-    // total_dinheiro múltiplas vezes (campo repete em cada item da venda).
-    // Filtra por cnpj_emp para garantir apenas dados desta loja.
+    // Cash sales via LinxMovimento: deduplica por documento.
+    // DS (devolução) subtrai do total em vez de ser ignorado.
     try {
       const cnpjClean = cnpj.replace(/\D/g, '');
       const movRows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
@@ -1461,15 +1460,16 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
         const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
         if (rowCnpj && rowCnpj !== cnpjClean) continue;
         if (r.cancelado === 'S' || r.cancelado === '1') continue;
-        if (r.operacao === 'DS') continue;
         const doc = String(r.documento || '').trim();
         if (!doc || seenDocs.has(doc)) continue;
         seenDocs.add(doc);
         const day = extractDay(r.data_documento || r.data_emissao || '');
         if (!day) continue;
         const val = parseBrNum(r.total_dinheiro || '0');
-        if (val <= 0) continue;
-        caixaByDay[day] = (caixaByDay[day] || 0) + val;
+        if (val === 0) continue;
+        // DS = devolução: cliente recebeu dinheiro de volta → subtrai
+        const sign = r.operacao === 'DS' ? -1 : 1;
+        caixaByDay[day] = (caixaByDay[day] || 0) + sign * val;
       }
     } catch (e) {
       errors.movimento = e.message;
@@ -1477,7 +1477,7 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
     }
 
     // Sangrias via LinxSangriaSuprimentos
-    // Campos confirmados: cnpj_emp, data, valor, cancelado
+    // Valores chegam negativos no campo valor — usa Math.abs
     try {
       const cnpjClean = cnpj.replace(/\D/g, '');
       const sgRows = await fetchSangrias(cnpj, dtIni, dtFin, chave);
@@ -1487,7 +1487,7 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAdmin, async (req, re
         if (r.cancelado === 'S' || r.cancelado === '1') continue;
         const day = extractDay(r.data || '');
         if (!day) continue;
-        const val = parseBrNum(r.valor || '0');
+        const val = Math.abs(parseBrNum(r.valor || '0'));
         if (val <= 0) continue;
         sangriaByDay[day] = (sangriaByDay[day] || 0) + val;
       }
