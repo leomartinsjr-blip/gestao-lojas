@@ -957,7 +957,7 @@ function renderDashboard() {
   // ── CARD: Reunião Mensal ──────────────────────────────────────────────────
   renderMeetingCard(midCol);
 
-  // ── CARD: Recebimento de NF Autorizado ───────────────────────────────────
+  // ── CARD: Recebimento de NF ──────────────────────────────────────────────
   renderNFCard(midCol);
 
   // ── CARD: Boletas de Defeito ─────────────────────────────────────────────
@@ -5695,7 +5695,7 @@ function renderNFCard(container) {
           <polyline points="14 2 14 8 20 8"/>
           <polyline points="9 15 11 17 15 13"/>
         </svg>
-        Recebimento de NF Autorizado
+        Recebimento de NF
       </span>
       ${(!isAdmin && !isEscritorio) ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
       <button class="nf-hist-btn" id="nfHistBtn" style="display:none">Histórico</button>

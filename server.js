@@ -415,7 +415,8 @@ app.get('/api/employees', requireAuth, async (req, res) => {
     const db   = await readDB();
     const emps = db.employees || [];
     const { board } = req.session.user;
-    res.json(board ? emps.filter(e => e.board === board) : emps);
+    const isAdminOrEscritorio = !board || board === 'escritorio';
+    res.json(isAdminOrEscritorio ? emps : emps.filter(e => e.board === board));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -1174,9 +1175,10 @@ app.delete('/api/nf-items/:id', requireAuth, async (req, res) => {
 app.get('/api/meeting-items', requireAuth, async (req, res) => {
   try {
     const db      = await readDB();
-    const isAdmin = !req.session.user.board;
-    const items   = (db.meetingItems || []).filter(x =>
-      isAdmin || (x.board === req.session.user.board && x.visibility === 'loja')
+    const { board } = req.session.user;
+    const isAdminOrEscritorio = !board || board === 'escritorio';
+    const items = (db.meetingItems || []).filter(x =>
+      isAdminOrEscritorio || (x.board === board && x.visibility === 'loja')
     );
     res.json(items);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1187,8 +1189,9 @@ app.post('/api/meeting-items', requireAuth, async (req, res) => {
   try {
     const { text, board, year, month, visibility } = req.body;
     if (!text?.trim()) return res.status(400).json({ error: 'Texto obrigatório' });
-    const isAdmin = !req.session.user.board;
-    const effectiveBoard = isAdmin ? board : req.session.user.board;
+    const { board: userBoard } = req.session.user;
+    const isAdminOrEscritorio = !userBoard || userBoard === 'escritorio';
+    const effectiveBoard = isAdminOrEscritorio ? board : userBoard;
     if (!effectiveBoard || !BOARDS.includes(effectiveBoard)) return res.status(400).json({ error: 'Loja inválida' });
     const db = await readDB();
     if (!db.meetingItems) db.meetingItems = [];
@@ -1196,8 +1199,8 @@ app.post('/api/meeting-items', requireAuth, async (req, res) => {
       id: nextId(db), text: text.trim(), board: effectiveBoard,
       year: parseInt(year) || new Date().getFullYear(),
       month: parseInt(month) || (new Date().getMonth() + 1),
-      visibility: isAdmin ? (visibility === 'loja' ? 'loja' : 'admin') : 'loja',
-      origin: isAdmin ? 'admin' : 'loja',
+      visibility: isAdminOrEscritorio ? (visibility === 'loja' ? 'loja' : 'admin') : 'loja',
+      origin: isAdminOrEscritorio ? 'admin' : 'loja',
       checked: false,
       addedBy: req.session.user.label || req.session.user.username,
       addedAt: new Date().toISOString(),
@@ -1247,8 +1250,11 @@ app.delete('/api/meeting-items/:id', requireAdmin, async (req, res) => {
 });
 
 // ── GET /api/pendencias ────────────────────────────────────────────────────
-app.get('/api/pendencias', requireAdmin, async (req, res) => {
+app.get('/api/pendencias', requireAuth, async (req, res) => {
   try {
+    const { board } = req.session.user;
+    const isAdminOrEscritorio = !board || board === 'escritorio';
+    if (!isAdminOrEscritorio) return res.status(403).json({ error: 'Acesso restrito' });
     const db = await readDB();
     res.json(db.pendencias || []);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1317,9 +1323,10 @@ app.delete('/api/pendencias/:id', requireAdmin, async (req, res) => {
 app.get('/api/requisicoes', requireAuth, async (req, res) => {
   try {
     const db      = await readDB();
-    const isAdmin = !req.session.user.board;
+    const { board } = req.session.user;
+    const isAdminOrEscritorio = !board || board === 'escritorio';
     const items   = (db.requisicoes || []).filter(x =>
-      isAdmin || x.board === req.session.user.board
+      isAdminOrEscritorio || x.board === board
     ).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     res.json(items);
   } catch (e) { res.status(500).json({ error: e.message }); }
