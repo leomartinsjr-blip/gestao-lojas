@@ -274,6 +274,9 @@ function visibleBoards() {
     if (DASH_BOARD_FILTER.size === 0) return all;
     return all.filter(([k]) => DASH_BOARD_FILTER.has(k));
   }
+  if (S.user.board === 'escritorio') {
+    return Object.entries(BOARDS).filter(([k]) => k !== 'admin' && k !== 'escritorio');
+  }
   return Object.entries(BOARDS).filter(([k]) => k === S.user.board);
 }
 
@@ -3728,30 +3731,11 @@ function calcWeekKpis(emp, week, extraData) {
   }
   if (isComplete) projecao = valor;
 
-  // Gerente: substituir dados individuais pelos totais da loja
   const isGerente = !!emp.cargo?.toLowerCase().includes('gerente');
-  if (isGerente) {
-    let sv=0, sp=0, sa=0, sm=0;
-    for (const e2 of S.employees.filter(e => e.board === emp.board && e.isVendedor !== false && !e.inativo)) {
-      const vs2 = S.vsales[e2.id] || {};
-      const m2  = (vs2.meta?.mensal || 0) * weekWeightSum / 100;
-      sm += (wkMetasForWeek[e2.id]?.meta > 0 ? wkMetasForWeek[e2.id].meta : m2);
-      for (const ds of dates) {
-        if (ds > cutoff) break;
-        const mk = ds.slice(0, 7);
-        const en = mk === curKey ? vs2.entries?.[ds] : extraData?.[mk]?.vsales?.[e2.id]?.entries?.[ds];
-        if (en) { sv += en.value||0; sp += en.pecas||0; sa += en.atendimentos||0; }
-      }
-    }
-    valor = sv; pecas = sp; atend = sa; wMeta = sm;
-    pa       = sa > 0 && sp > 0 ? sp/sa : null;
-    pctMeta  = sm > 0 && sv > 0 ? sv/sm*100 : null;
-  }
 
   const hitMeta = wMeta > 0 && valor >= wMeta;
   const hitPA   = pa != null && pa > PA_THRESHOLD;
-  const premioVendasAmt = isGerente ? PREMIO_GERENTE_VENDAS : PREMIO_VENDAS;
-  const pVendas = isComplete ? (hitMeta ? premioVendasAmt : 0) : null;
+  const pVendas = isComplete ? (hitMeta ? PREMIO_VENDAS : 0) : null;
   const pPA     = isComplete ? (hitMeta && hitPA ? PREMIO_PA : 0) : null;
   const pTotal  = pVendas != null ? pVendas + (pPA||0) : null;
 
@@ -3844,15 +3828,35 @@ async function renderWeeklyModal() {
     const section = document.createElement('div');
     section.className = 'wk-section';
 
+    // Passo 1: calcular KPIs e acumular totais da loja
     let totValor=0, totPecas=0, totAtend=0, totMeta=0, totPremio=0, totProjecao2=0, hasProj2=false, hasProj3=false;
-
-    const rows = emps.map(emp => {
-      const k = calcWeekKpis(emp, week, Object.keys(extraData).length ? extraData : null);
+    const kpiCache = new Map();
+    const xData = Object.keys(extraData).length ? extraData : null;
+    for (const emp of emps) {
+      const k = calcWeekKpis(emp, week, xData);
+      kpiCache.set(emp.id, k);
       totValor += k.valor; totPecas += k.pecas; totAtend += k.atend; totMeta += k.wMeta;
-      if (k.pTotal != null) totPremio += k.pTotal;
       if (k.projecao != null) { totProjecao2 += k.projecao; hasProj2 = true; hasProj3 = true; }
+    }
+    // Totais da loja para calcular prêmio do gerente
+    const storeHitMeta = totMeta > 0 && totValor >= totMeta;
+    const storePaVal   = (totPecas > 0 && totAtend > 0) ? totPecas / totAtend : null;
+    const storeHitPA   = storePaVal != null && storePaVal > PA_THRESHOLD;
 
-      if (isCurrent && k.hitMeta && k.wMeta > 0) {
+    // Passo 2: montar linhas com prêmio corrigido para gerentes
+    const rows = emps.map(emp => {
+      const k = kpiCache.get(emp.id);
+
+      // Gerente: prêmio baseado no total da loja, não nos dados individuais
+      const hitMeta   = k.isGerente ? storeHitMeta : k.hitMeta;
+      const hitPA     = k.isGerente ? storeHitPA   : k.hitPA;
+      const premioAmt = k.isGerente ? PREMIO_GERENTE_VENDAS : PREMIO_VENDAS;
+      const pVendas   = k.isComplete ? (hitMeta ? premioAmt : 0) : null;
+      const pPA       = k.isComplete ? (hitMeta && hitPA ? PREMIO_PA : 0) : null;
+      const pTotal    = pVendas != null ? pVendas + (pPA || 0) : null;
+      if (pTotal != null) totPremio += pTotal;
+
+      if (isCurrent && hitMeta && (k.wMeta > 0 || k.isGerente)) {
         const empKey = `wk-emp-${emp.id}-${week.startStr}`;
         if (!META_ACHIEVED.has(empKey)) {
           META_ACHIEVED.add(empKey);
@@ -3864,13 +3868,13 @@ async function renderWeeklyModal() {
       const projCls    = k.projecao == null ? '' : k.projecao >= k.wMeta ? 'kpi-pos' : 'kpi-neg';
       const pctProjCls = k.pctProj  == null ? '' : k.pctProj  >= 100 ? 'kpi-pos' : k.pctProj  >= 80 ? 'kpi-warn' : 'kpi-neg';
 
-      const paEarned2 = k.hitMeta && k.hitPA;
+      const paEarned2 = hitMeta && hitPA;
       const premioHtml = k.isComplete
-        ? `<span class="wk-p ${k.pVendas>0?'wk-p-ok':'wk-p-no'}" title="Meta de vendas">${fBRL(PREMIO_VENDAS)} ${k.hitMeta?'✓':'✗'}</span>
-           <span class="wk-p ${paEarned2?'wk-p-ok':'wk-p-no'}" title="${k.hitPA&&!k.hitMeta?'PA atingido mas meta venda não':'PA > '+PA_THRESHOLD}">+${fBRL(PREMIO_PA)} ${paEarned2?'✓':'✗'}</span>`
+        ? `<span class="wk-p ${pVendas>0?'wk-p-ok':'wk-p-no'}" title="Meta de vendas">${fBRL(premioAmt)} ${hitMeta?'✓':'✗'}</span>
+           <span class="wk-p ${paEarned2?'wk-p-ok':'wk-p-no'}" title="${hitPA&&!hitMeta?'PA atingido mas meta venda não':'PA > '+PA_THRESHOLD}">+${fBRL(PREMIO_PA)} ${paEarned2?'✓':'✗'}</span>`
         : k.isFuture ? '<span class="wk-p-pending">—</span>'
-        : `<span class="wk-p ${k.hitMeta?'wk-p-ok':'wk-p-pend'}" title="Meta">${fBRL(PREMIO_VENDAS)}${k.hitMeta?' ✓':''}</span>
-           <span class="wk-p ${paEarned2?'wk-p-ok':k.hitPA&&!k.hitMeta?'wk-p-no':'wk-p-pend'}" title="${k.hitPA&&!k.hitMeta?'PA atingido mas meta venda não':'PA > '+PA_THRESHOLD}">+${fBRL(PREMIO_PA)}${paEarned2?' ✓':k.hitPA&&!k.hitMeta?' ✗':''}</span>`;
+        : `<span class="wk-p ${hitMeta?'wk-p-ok':'wk-p-pend'}" title="Meta">${fBRL(premioAmt)}${hitMeta?' ✓':''}</span>
+           <span class="wk-p ${paEarned2?'wk-p-ok':hitPA&&!hitMeta?'wk-p-no':'wk-p-pend'}" title="${hitPA&&!hitMeta?'PA atingido mas meta venda não':'PA > '+PA_THRESHOLD}">+${fBRL(PREMIO_PA)}${paEarned2?' ✓':hitPA&&!hitMeta?' ✗':''}</span>`;
 
       const metaCell = isAdmin
         ? `<td class="wk-td wk-td-edit" data-empid="${emp.id}" data-week="${week.startStr}">${fBRL(k.wMeta||null)}</td>`
