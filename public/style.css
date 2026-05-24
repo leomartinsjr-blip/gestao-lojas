@@ -1920,6 +1920,8 @@ body {
   opacity: .5; transition: opacity .12s, color .12s;
 }
 .nf-del-btn:hover { opacity: 1; color: #F85149; }
+.pend-unresolve-btn { background:none; border:1px solid var(--border); border-radius:5px; color:var(--muted); cursor:pointer; font-size:.78rem; padding:.1rem .35rem; flex-shrink:0; }
+.pend-unresolve-btn:hover { color:var(--accent); border-color:var(--accent); }
 .nf-add-row {
   display: flex; gap: .4rem; padding: .5rem .85rem .65rem;
   border-top: 1px solid var(--border);

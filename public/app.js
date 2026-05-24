@@ -4745,12 +4745,12 @@ function _renderPendenciasActive(body, filter, myUsername, refresh) {
     return;
   }
   body.innerHTML = items.map(item => `
-    <div class="nf-item" data-id="${item.id}">
-      <label class="nf-chk-label">
+    <div class="nf-item" data-id="${item.id}" style="flex-wrap:wrap;align-items:flex-start">
+      <label class="nf-chk-label" style="flex:1;min-width:0">
         <input type="checkbox" class="nf-chk pend-chk" data-id="${item.id}">
-        <span class="nf-item-text">${_escHtml(item.text)}</span>
+        <span class="nf-item-text" style="white-space:normal;overflow:visible;text-overflow:unset;word-break:break-word">${_escHtml(item.text)}</span>
       </label>
-      <span class="nf-item-meta" style="display:flex;align-items:center;gap:.35rem">
+      <span class="nf-item-meta" style="display:flex;align-items:center;gap:.35rem;flex-shrink:0">
         ${_pendenciaChips(item.assignedTo)}
         <span class="nf-date-tag">${_escHtml(item.createdByLabel || item.createdBy)} ${_fmtNFDate(item.createdAt)}</span>
       </span>
@@ -4796,7 +4796,7 @@ function _renderPendenciasHistory(body, refresh) {
     ${items.map(item => `
       <div class="nf-item nf-checked nf-hist-item" data-id="${item.id}">
         <div class="nf-hist-item-main">
-          <span class="nf-item-text">${_escHtml(item.text)}</span>
+          <span class="nf-item-text" style="white-space:normal;overflow:visible;text-overflow:unset;word-break:break-word">${_escHtml(item.text)}</span>
           <div class="nf-hist-dates">
             ${_pendenciaChips(item.assignedTo)}
             <span class="nf-date-tag">por ${_escHtml(item.createdByLabel || item.createdBy)}</span>
@@ -4804,8 +4804,20 @@ function _renderPendenciasHistory(body, refresh) {
             <span class="nf-date-tag nf-date-archived">✓ ${_fmtNFDate(item.resolvedAt)} por ${_escHtml(item.resolvedBy || '—')}</span>
           </div>
         </div>
+        <button class="pend-unresolve-btn" data-id="${item.id}" title="Voltar para pendente">↩</button>
         <button class="nf-del-btn pend-hist-del" data-id="${item.id}" title="Excluir">&times;</button>
       </div>`).join('')}`;
+
+  body.querySelectorAll('.pend-unresolve-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = parseInt(btn.dataset.id);
+      const updated = await apiFetch('PATCH', `/api/pendencias/${id}`, { resolved: false }).catch(() => null);
+      const item = S.pendencias.find(x => x.id === id);
+      if (item && updated) Object.assign(item, updated);
+      _renderPendenciasHistory(body, refresh);
+      refresh();
+    });
+  });
 
   body.querySelectorAll('.pend-hist-del').forEach(btn => {
     btn.addEventListener('click', async () => {
