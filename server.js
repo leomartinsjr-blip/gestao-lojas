@@ -1125,7 +1125,7 @@ app.post('/api/nf-items', requireAuth, async (req, res) => {
       id: nextId(db), text: text.trim(), board, checked: false,
       addedBy: req.session.user.label || req.session.user.username,
       addedAt: new Date().toISOString(),
-      ...(board === 'escritorio' ? { status: 'pendente' } : {}),
+      status: 'pendente',
     };
     db.nfItems.push(item);
     await writeDB(db);
@@ -1149,8 +1149,8 @@ app.patch('/api/nf-items/:id', requireAuth, async (req, res) => {
       }
     }
     if ('text' in req.body && req.body.text?.trim()) item.text = req.body.text.trim();
-    if ('status' in req.body && ['autorizado','recusado'].includes(req.body.status)) {
-      if (req.session.user.board) return res.status(403).json({ error: 'Apenas admin pode autorizar/recusar' });
+    if ('status' in req.body && ['autorizado','não receber','pendente'].includes(req.body.status)) {
+      if (req.session.user.board) return res.status(403).json({ error: 'Apenas admin pode alterar status' });
       item.status = req.body.status;
       item.statusBy = req.session.user.label || req.session.user.username;
       item.statusAt = new Date().toISOString();

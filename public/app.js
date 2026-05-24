@@ -5120,38 +5120,36 @@ function renderMeetingCard(container) {
 }
 
 function _nfStatusChip(status) {
-  if (status === 'autorizado') return '<span class="nf-status-chip nf-status-ok">✓ Autorizado</span>';
-  if (status === 'recusado')   return '<span class="nf-status-chip nf-status-no">✗ Recusado</span>';
+  if (status === 'autorizado')   return '<span class="nf-status-chip nf-status-ok">✓ Autorizado</span>';
+  if (status === 'não receber')  return '<span class="nf-status-chip nf-status-no">✗ Não Receber</span>';
   return '<span class="nf-status-chip nf-status-pend">⏳ Pendente</span>';
 }
 
 function _renderNFActive(body, board, refresh) {
-  const isAdmin = !S.user?.board;
-  const isEscritorio = board === 'escritorio';
+  const isAdmin      = !S.user?.board;
+  const isEscritorio = S.user?.board === 'escritorio';
   const items = (S.nfItems || []).filter(x => x.board === board && !x.archived);
   if (!items.length) {
     body.innerHTML = '<div style="padding:.75rem 0;color:var(--muted);font-size:.8rem;text-align:center">Nenhum item ativo</div>';
     return;
   }
   body.innerHTML = items.map(item => {
-    const statusChip = isEscritorio ? _nfStatusChip(item.status) : '';
-    const adminActions = isAdmin && isEscritorio && item.status === 'pendente' ? `
-      <button class="nf-auth-btn" data-id="${item.id}" data-action="autorizado" title="Autorizar">✓</button>
-      <button class="nf-recus-btn" data-id="${item.id}" data-action="recusado" title="Recusar">✗</button>
+    const showChk = isAdmin || item.status === 'autorizado';
+    const adminActions = isAdmin ? `
+      <button class="nf-auth-btn${item.status==='autorizado'?' nf-btn-cur':''}" data-id="${item.id}" data-action="autorizado" title="Autorizar">✓</button>
+      <button class="nf-recus-btn${item.status==='não receber'?' nf-btn-cur':''}" data-id="${item.id}" data-action="não receber" title="Não receber">✗</button>
+      <button class="nf-pend-btn${item.status==='pendente'?' nf-btn-cur':''}" data-id="${item.id}" data-action="pendente" title="Manter pendente">⏳</button>
     ` : '';
-    const showChk = !isEscritorio || (isAdmin && item.status === 'autorizado');
+    const canDelete = isAdmin || (!isEscritorio && !!S.user?.board);
     return `
-    <div class="nf-item${isEscritorio ? ' nf-item-escritorio' : ''}" data-id="${item.id}">
-      <label class="nf-chk-label" style="${!showChk ? 'pointer-events:none;opacity:.5' : ''}">
-        ${showChk ? `<input type="checkbox" class="nf-chk" data-id="${item.id}">` : '<span style="width:16px;display:inline-block"></span>'}
-        <span class="nf-item-text">${_escHtml(item.text)}</span>
+    <div class="nf-item" data-id="${item.id}">
+      <label class="nf-chk-label" style="${!showChk ? 'pointer-events:none;opacity:.35' : ''}">
+        ${showChk ? `<input type="checkbox" class="nf-chk" data-id="${item.id}">` : '<span style="width:14px;flex-shrink:0;display:inline-block"></span>'}
+        <span class="nf-item-text" title="${_escHtml(item.text)}">${_escHtml(item.text)}</span>
       </label>
-      <div class="nf-item-footer">
-        ${statusChip}
-        <span class="nf-item-meta">${_escHtml(item.addedBy)} · <span class="nf-date-tag">Criado ${_fmtNFDate(item.addedAt)}</span>${item.statusBy ? ` · ${_escHtml(item.statusBy)} ${_fmtNFDate(item.statusAt)}` : ''}</span>
-      </div>
+      ${_nfStatusChip(item.status)}
       ${adminActions}
-      ${(!isEscritorio || isAdmin) ? `<button class="nf-del-btn" data-id="${item.id}" title="Arquivar">&times;</button>` : ''}
+      ${canDelete ? `<button class="nf-del-btn" data-id="${item.id}" title="Arquivar">&times;</button>` : ''}
     </div>
   `}).join('');
 
@@ -5679,11 +5677,10 @@ function renderNFCard(container) {
   const card = document.createElement('div');
   card.className = 'main-card';
 
-  const NF_ADMIN_TABS = [...NF_STORES, 'escritorio'];
   const tabsHtml = (isAdmin || isEscritorio) ? `
     <div class="nf-tabs">
-      ${NF_ADMIN_TABS.map(b => {
-        const pending = b === 'escritorio' ? (S.nfItems || []).filter(x => x.board === 'escritorio' && !x.archived && x.status === 'pendente').length : 0;
+      ${NF_STORES.map(b => {
+        const pending = (S.nfItems || []).filter(x => x.board === b && !x.archived && x.status === 'pendente').length;
         return `<button class="nf-tab${b === activeBoard ? ' active' : ''}" data-board="${b}"
           style="--nf-tab-color:${BOARDS[b]?.color || '#8B949E'}">
           ${BOARDS[b]?.label || b}${pending ? ` <span class="nf-tab-badge">${pending}</span>` : ''}
@@ -5733,7 +5730,7 @@ function renderNFCard(container) {
       addRow.style.display = 'none';
     } else {
       _renderNFActive(body, activeBoard, refresh);
-      addRow.style.display = activeBoard === 'escritorio' ? 'none' : '';
+      addRow.style.display = '';
     }
   }
 
