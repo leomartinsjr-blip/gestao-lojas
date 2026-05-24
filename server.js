@@ -1261,7 +1261,9 @@ app.get('/api/pendencias', requireAuth, async (req, res) => {
 });
 
 // ── POST /api/pendencias ───────────────────────────────────────────────────
-app.post('/api/pendencias', requireAdmin, async (req, res) => {
+app.post('/api/pendencias', requireAuth, async (req, res) => {
+  if (req.session.user.board && req.session.user.board !== 'escritorio')
+    return res.status(403).json({ error: 'Acesso restrito' });
   try {
     const { text, assignedTo } = req.body;
     if (!text?.trim()) return res.status(400).json({ error: 'Texto obrigatório' });
@@ -1287,7 +1289,9 @@ app.post('/api/pendencias', requireAdmin, async (req, res) => {
 });
 
 // ── PATCH /api/pendencias/:id ──────────────────────────────────────────────
-app.patch('/api/pendencias/:id', requireAdmin, async (req, res) => {
+app.patch('/api/pendencias/:id', requireAuth, async (req, res) => {
+  if (req.session.user.board && req.session.user.board !== 'escritorio')
+    return res.status(403).json({ error: 'Acesso restrito' });
   try {
     const id   = parseInt(req.params.id);
     const db   = await readDB();

@@ -819,6 +819,8 @@ function renderDashboard() {
     _refreshDashWeek();
   });
 
+  if (S.user?.board === 'escritorio') leftCol.remove();
+
   const midCol = document.createElement('div');
   midCol.className = 'main-mid-col';
   grid.appendChild(midCol);
@@ -4782,7 +4784,8 @@ function _renderPendenciasHistory(body, refresh) {
 
 function renderPendenciasCard(container) {
   const isAdmin = !S.user?.board;
-  if (!isAdmin) return;
+  const isEscritorio = S.user?.board === 'escritorio';
+  if (!isAdmin && !isEscritorio) return;
 
   const myUsername = S.user?.username;
   let filter = 'mine';
