@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Lista da Vez</title>
+<link rel="icon" type="image/jpeg" href="favicon.jpg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="indeva-standalone">
+
+<div id="indeva-sa-hdr">
+  <span class="indeva-sa-title">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:.4rem">
+      <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
+      <line x1="8" y1="18" x2="21" y2="18"/>
+      <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/>
+      <line x1="3" y1="18" x2="3.01" y2="18"/>
+    </svg>Lista da Vez
+  </span>
+  <div id="indevaStoreTabs" class="perf-store-tabs"></div>
+  <div class="indeva-view-tabs">
+    <button class="indeva-view-tab active" data-view="hoje">Hoje</button>
+    <button class="indeva-view-tab" data-view="historico">Histórico</button>
+  </div>
+</div>
+
+<div id="indevaBody" class="indeva-sa-body"></div>
+
+<div id="toast" class="toast hidden"></div>
+<div id="saveIndicator" class="hidden"></div>
+
+<script>window.INDEVA_STANDALONE = true;</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

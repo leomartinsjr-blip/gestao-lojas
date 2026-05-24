@@ -15,7 +15,7 @@ const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
 // ── State ──────────────────────────────────────────────────────────────────
-const S = { year: 2026, month: 5, user: null, employees: [], weights: {}, vsales: {}, weeklyMetas: {}, folgas: [], campaigns: [], nfItems: [], meetingItems: [], pendencias: [], requisicoes: [] };
+const S = { year: 2026, month: 5, user: null, employees: [], weights: {}, vsales: {}, weeklyMetas: {}, folgas: [], campaigns: [], nfItems: [], meetingItems: [], pendencias: [], requisicoes: [], storeFluxo: {} };
 
 let saveTimeout = null;
 
@@ -31,7 +31,7 @@ async function apiFetch(method, url, body) {
   const r = await fetch(url, opts);
   const text = await r.text();
   if (r.status === 401) {
-    // Sessão expirada ou senha trocada — volta para login
+    if (window.INDEVA_STANDALONE) { window.location.href = '/'; return; }
     showLogin();
     throw new Error('Sessão expirada');
   }
@@ -319,6 +319,14 @@ async function loadData() {
     S.weeklyMetas = weeklyMetas || {};
     S.folgas      = folgas || [];
 
+    const fluxoBoards = [...visibleBoards()].map(([k]) => k);
+    const fluxoResults = await Promise.all(
+      fluxoBoards.map(bk =>
+        apiFetch('GET', `/api/storefluxo/${S.year}/${S.month}/${bk}`).catch(() => ({}))
+      )
+    );
+    S.storeFluxo = Object.fromEntries(fluxoBoards.map((bk, i) => [bk, fluxoResults[i]]));
+
     const [campaigns, nfItems, boletas, meetingItems, pendencias, requisicoes] = await Promise.all([
       apiFetch('GET', '/api/campaigns').catch(() => []),
       apiFetch('GET', '/api/nf-items').catch(() => []),
@@ -579,9 +587,10 @@ function renderDashboard() {
     { key:'mensal',   label:'Meta Mês',  cls:'dash-th-r' },
     { key:'valor',    label:'Realizado', cls:'dash-th-r' },
     { key:'pctMeta',  label:'% Meta',    cls:'dash-th-r' },
-    { key:'projecao', label:'Projeção', cls:'dash-th-r' },
+    { key:'projecao', label:'Projeção',  cls:'dash-th-r' },
     { key:'pa',       label:'PA',        cls:'dash-th-r' },
     { key:'tm',       label:'TM',        cls:'dash-th-r' },
+    { key:'conv',     label:'Conv',      cls:'dash-th-r' },
   ];
   const headHtml = DASH_COLS.map(c => {
     const active = DASH_SORT.col === c.key;
@@ -623,12 +632,14 @@ function renderDashboard() {
     let totV=0, totP=0, totA=0, totM=0;
     for (const d of rowData) { totV+=d.valor; totP+=d.pecas; totA+=d.atend; totM+=d.mensal; }
     const ma = totM * perfWeightAccum / 100;
+    const bFluxo = Object.values(S.storeFluxo?.[bk] || {}).reduce((s, v) => s + (v || 0), 0);
     _boardAgg[bk] = {
-      valor: totV, mensal: totM,
+      valor: totV, mensal: totM, fluxo: bFluxo,
       pctMeta:  (ma>0 && totV>0) ? totV/ma*100 : null,
       projecao: (totV>0 && ma>0) ? totV/ma*totM : null,
       pa: (totP>0 && totA>0) ? totP/totA : null,
       tm: (totV>0 && totA>0) ? totV/totA : null,
+      conv: (bFluxo>0 && totA>0) ? totA/bFluxo*100 : null,
     };
   }
 
@@ -646,7 +657,7 @@ function renderDashboard() {
     });
   }
 
-  let grandValor=0, grandPecas=0, grandAtend=0, grandMeta=0;
+  let grandValor=0, grandPecas=0, grandAtend=0, grandMeta=0, grandFluxo=0;
 
   for (const [bk, bc] of sortedVisible) {
     const emps = byBoard[bk] || [];
@@ -674,10 +685,13 @@ function renderDashboard() {
     const totProj = (totValor > 0 && totMetaAccum > 0) ? totValor/totMetaAccum*totMeta : null;
     const totPa   = (totPecas > 0 && totAtend > 0) ? totPecas/totAtend : null;
     const totTm   = (totValor > 0 && totAtend > 0) ? totValor/totAtend : null;
-    const tpCls   = totPct  == null ? '' : totPct  >= 100 ? 'kpi-pos' : totPct  >= 80 ? 'kpi-warn' : 'kpi-neg';
-    const tprCls  = totProj == null ? '' : totProj >= totMeta ? 'kpi-pos' : totProj >= totMeta*0.9 ? 'kpi-warn' : 'kpi-neg';
+    const totFluxo = Object.values(S.storeFluxo?.[bk] || {}).reduce((s, v) => s + (v || 0), 0);
+    const totConv  = (totFluxo > 0 && totAtend > 0) ? totAtend / totFluxo * 100 : null;
+    const tpCls    = totPct  == null ? '' : totPct  >= 100 ? 'kpi-pos' : totPct  >= 80 ? 'kpi-warn' : 'kpi-neg';
+    const tprCls   = totProj == null ? '' : totProj >= totMeta ? 'kpi-pos' : totProj >= totMeta*0.9 ? 'kpi-warn' : 'kpi-neg';
+    const tcCls    = totConv == null ? '' : totConv >= 30 ? 'kpi-pos' : totConv >= 15 ? 'kpi-warn' : 'kpi-neg';
 
-    grandValor += totValor; grandPecas += totPecas; grandAtend += totAtend; grandMeta += totMeta;
+    grandValor += totValor; grandPecas += totPecas; grandAtend += totAtend; grandMeta += totMeta; grandFluxo += totFluxo;
 
     const metaKey = `${bk}-${S.year}-${S.month}`;
     if (totProj != null && totMeta > 0 && totProj >= totMeta && !META_ACHIEVED.has(metaKey)) {
@@ -692,7 +706,7 @@ function renderDashboard() {
     if (isAdmin) {
       storeRow.className = 'dash-store-hdr dash-store-collapse';
       if (isExp) {
-        storeRow.innerHTML = `<td colspan="7" class="dash-store-hdr-td" style="border-left:3px solid ${bc.color};">
+        storeRow.innerHTML = `<td colspan="8" class="dash-store-hdr-td" style="border-left:3px solid ${bc.color};">
           <span class="dia-chevron">▾</span>
           <span class="dash-store-dot" style="background:${bc.color}"></span><strong>${bc.label}</strong>
         </td>`;
@@ -707,7 +721,8 @@ function renderDashboard() {
           <td class="dash-td dash-td-num ${tpCls}">${fPct(totPct)}</td>
           <td class="dash-td dash-td-num ${tprCls}">${fBRL(totProj)}</td>
           <td class="dash-td dash-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
-          <td class="dash-td dash-td-num">${fBRL(totTm)}</td>`;
+          <td class="dash-td dash-td-num">${fBRL(totTm)}</td>
+          <td class="dash-td dash-td-num ${tcCls}">${totConv!=null?totConv.toFixed(1)+'%':'—'}</td>`;
       }
       storeRow.style.cursor = 'pointer';
       storeRow.addEventListener('click', () => {
@@ -716,7 +731,7 @@ function renderDashboard() {
       });
     } else {
       storeRow.className = 'dash-store-hdr';
-      storeRow.innerHTML = `<td colspan="7" class="dash-store-hdr-td" style="border-left:3px solid ${bc.color};">
+      storeRow.innerHTML = `<td colspan="8" class="dash-store-hdr-td" style="border-left:3px solid ${bc.color};">
         <span class="dash-store-dot" style="background:${bc.color}"></span><strong>${bc.label}</strong>
       </td>`;
     }
@@ -737,6 +752,7 @@ function renderDashboard() {
           <td class="dash-td dash-td-num ${projCls}">${fBRL(projecao)}</td>
           <td class="dash-td dash-td-num${pa != null ? (pa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${fDec(pa)}</td>
           <td class="dash-td dash-td-num">${fBRL(tm)}</td>
+          <td class="dash-td dash-td-num">—</td>
         `;
         tbody.appendChild(row);
       }
@@ -751,6 +767,7 @@ function renderDashboard() {
         <td class="dash-td dash-td-num ${tprCls}">${fBRL(totProj)}</td>
         <td class="dash-td dash-td-num${totPa != null ? (totPa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${totPa != null ? totPa.toFixed(2) : '—'}</td>
         <td class="dash-td dash-td-num">${fBRL(totTm)}</td>
+        <td class="dash-td dash-td-num ${tcCls}">${totConv != null ? totConv.toFixed(1) + '%' : '—'}</td>
       `;
       tbody.appendChild(totalRow);
     }
@@ -758,12 +775,14 @@ function renderDashboard() {
 
   if (isAdmin && [...visible].length > 1 && grandValor > 0) {
     const gMetaAccum = grandMeta * perfWeightAccum / 100;
-    const gPct  = (gMetaAccum > 0 && grandValor > 0) ? grandValor / gMetaAccum * 100 : null;
-    const gProj = (grandValor > 0 && gMetaAccum > 0) ? grandValor / gMetaAccum * grandMeta : null;
-    const gPa   = (grandPecas > 0 && grandAtend > 0) ? grandPecas / grandAtend : null;
-    const gTm   = (grandValor > 0 && grandAtend > 0) ? grandValor / grandAtend : null;
-    const gPCls = gPct  == null ? '' : gPct  >= 100 ? 'kpi-pos' : gPct  >= 80 ? 'kpi-warn' : 'kpi-neg';
+    const gPct   = (gMetaAccum > 0 && grandValor > 0) ? grandValor / gMetaAccum * 100 : null;
+    const gProj  = (grandValor > 0 && gMetaAccum > 0) ? grandValor / gMetaAccum * grandMeta : null;
+    const gPa    = (grandPecas > 0 && grandAtend > 0) ? grandPecas / grandAtend : null;
+    const gTm    = (grandValor > 0 && grandAtend > 0) ? grandValor / grandAtend : null;
+    const gConv  = (grandFluxo > 0 && grandAtend > 0) ? grandAtend / grandFluxo * 100 : null;
+    const gPCls  = gPct  == null ? '' : gPct  >= 100 ? 'kpi-pos' : gPct  >= 80 ? 'kpi-warn' : 'kpi-neg';
     const gPrCls = gProj == null ? '' : gProj >= grandMeta ? 'kpi-pos' : gProj >= grandMeta * 0.9 ? 'kpi-warn' : 'kpi-neg';
+    const gCCls  = gConv == null ? '' : gConv >= 30 ? 'kpi-pos' : gConv >= 15 ? 'kpi-warn' : 'kpi-neg';
     const grandRow = document.createElement('tr');
     grandRow.className = 'dash-grand-total';
     grandRow.innerHTML = `
@@ -774,6 +793,7 @@ function renderDashboard() {
       <td class="dash-td dash-td-num ${gPrCls}">${fBRL(gProj)}</td>
       <td class="dash-td dash-td-num${gPa != null ? (gPa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${gPa != null ? gPa.toFixed(2) : '—'}</td>
       <td class="dash-td dash-td-num">${fBRL(gTm)}</td>
+      <td class="dash-td dash-td-num ${gCCls}">${gConv != null ? gConv.toFixed(1) + '%' : '—'}</td>
     `;
     tbody.appendChild(grandRow);
   }
@@ -1082,11 +1102,12 @@ function _renderDayCardBody(body, dateStr) {
       <span>Realizado</span>
       <span>Meta Dia</span>
       <span>PA</span>
+      <span>Conv</span>
       <span>%</span>
     </div>`;
 
   let anyData = false;
-  let grandVal = 0, grandMeta = 0, grandPecas = 0, grandAtend = 0;
+  let grandVal = 0, grandMeta = 0, grandPecas = 0, grandAtend = 0, grandFluxo = 0;
 
   for (const [bk, bc] of visibleBoards()) {
     const emps = (byBoard[bk] || []).filter(e => {
@@ -1121,6 +1142,7 @@ function _renderDayCardBody(body, dateStr) {
           <span class="dia-val">${valor > 0 ? fV(valor) : '—'}</span>
           <span class="dia-meta">${metaDia > 0 ? fV(metaDia) : '—'}</span>
           <span class="dia-pa">${pa != null ? pa.toFixed(2) : '—'}</span>
+          <span class="dia-conv">—</span>
           <span class="dia-pct ${pctCls}">${pct != null ? pct.toFixed(1) + '%' : '—'}</span>
         </div>`);
     }
@@ -1130,9 +1152,13 @@ function _renderDayCardBody(body, dateStr) {
     grandPecas += storeTotalPecas;
     grandAtend += storeTotalAtend;
 
-    const storePa  = storeTotalAtend > 0 ? storeTotalPecas / storeTotalAtend : null;
-    const storePct = storeTotalMeta > 0 ? storeTotalVal / storeTotalMeta * 100 : null;
-    const sPctCls  = storePct == null ? '' : storePct >= 100 ? 'dia-pct-ok' : storePct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
+    const storePa    = storeTotalAtend > 0 ? storeTotalPecas / storeTotalAtend : null;
+    const storePct   = storeTotalMeta > 0 ? storeTotalVal / storeTotalMeta * 100 : null;
+    const storeFluxo = S.storeFluxo?.[bk]?.[dateStr] || 0;
+    const storeConv  = (storeFluxo > 0 && storeTotalAtend > 0) ? storeTotalAtend / storeFluxo * 100 : null;
+    const sPctCls    = storePct == null ? '' : storePct >= 100 ? 'dia-pct-ok' : storePct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
+    const sConvCls   = storeConv == null ? '' : storeConv >= 30 ? 'dia-conv-ok' : storeConv >= 15 ? 'dia-conv-warn' : 'dia-conv-bad';
+    grandFluxo += storeFluxo;
     const isAdmin  = !S.user?.board;
     const isExp    = !isAdmin || _dayCardExpanded.has(bk);
 
@@ -1148,6 +1174,7 @@ function _renderDayCardBody(body, dateStr) {
       <span class="dia-val">${storeTotalVal > 0 ? fV(storeTotalVal) : '—'}</span>
       <span class="dia-meta">${storeTotalMeta > 0 ? fV(storeTotalMeta) : '—'}</span>
       <span class="dia-pa">${storePa != null ? storePa.toFixed(2) : '—'}</span>
+      <span class="dia-conv ${sConvCls}">${storeConv != null ? storeConv.toFixed(1) + '%' : '—'}</span>
       <span class="dia-pct ${sPctCls}">${storePct != null ? storePct.toFixed(1) + '%' : '—'}</span>`;
     if (isAdmin) {
       storeRow.style.cursor = 'pointer';
@@ -1171,15 +1198,18 @@ function _renderDayCardBody(body, dateStr) {
     body.insertAdjacentHTML('beforeend',
       '<div style="padding:.85rem 1rem;font-size:.78rem;color:var(--muted)">Sem lançamentos para este dia.</div>');
   } else {
-    const grandPa  = grandAtend > 0 ? grandPecas / grandAtend : null;
-    const grandPct = grandMeta  > 0 ? grandVal   / grandMeta  * 100 : null;
-    const gPctCls  = grandPct == null ? '' : grandPct >= 100 ? 'dia-pct-ok' : grandPct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
+    const grandPa   = grandAtend > 0 ? grandPecas / grandAtend : null;
+    const grandPct  = grandMeta  > 0 ? grandVal   / grandMeta  * 100 : null;
+    const grandConv = (grandFluxo > 0 && grandAtend > 0) ? grandAtend / grandFluxo * 100 : null;
+    const gPctCls   = grandPct  == null ? '' : grandPct  >= 100 ? 'dia-pct-ok'  : grandPct  >= 70 ? 'dia-pct-warn'  : 'dia-pct-bad';
+    const gConvCls  = grandConv == null ? '' : grandConv >= 30  ? 'dia-conv-ok' : grandConv >= 15 ? 'dia-conv-warn' : 'dia-conv-bad';
     body.insertAdjacentHTML('beforeend', `
       <div class="dia-row dia-grand-total">
         <span class="dia-name">TOTAL GERAL</span>
         <span class="dia-val">${grandVal > 0 ? fV(grandVal) : '—'}</span>
         <span class="dia-meta">${grandMeta > 0 ? fV(grandMeta) : '—'}</span>
         <span class="dia-pa">${grandPa != null ? grandPa.toFixed(2) : '—'}</span>
+        <span class="dia-conv ${gConvCls}">${grandConv != null ? grandConv.toFixed(1) + '%' : '—'}</span>
         <span class="dia-pct ${gPctCls}">${grandPct != null ? grandPct.toFixed(1) + '%' : '—'}</span>
       </div>`);
   }
@@ -6646,6 +6676,7 @@ const INDEVA_MOTIVOS = ['Preço','Tamanho / Modelagem','Não gostou do produto',
   'Sem estoque no tamanho','Só estava olhando','Voltará depois','Concorrência','Outro'];
 
 let _indevaBoard = null;
+let _indevaView  = 'hoje';
 
 function openIndevaModal() {
   const userBoard = S.user?.board;
@@ -6679,9 +6710,15 @@ async function _loadIndeva() {
   const body = document.getElementById('indevaBody');
   body.innerHTML = '<div style="padding:2rem;color:var(--muted);text-align:center">Carregando…</div>';
   try {
-    const r = await fetch(`/api/indeva/${_indevaBoard}`);
-    if (!r.ok) throw new Error(await r.text());
-    _renderIndeva(body, await r.json());
+    if (_indevaView === 'historico') {
+      const r = await fetch(`/api/indeva/${_indevaBoard}/historico`);
+      if (!r.ok) throw new Error(await r.text());
+      _renderIndevaHistorico(body, await r.json());
+    } else {
+      const r = await fetch(`/api/indeva/${_indevaBoard}`);
+      if (!r.ok) throw new Error(await r.text());
+      _renderIndeva(body, await r.json());
+    }
   } catch (e) { body.innerHTML = `<div style="padding:2rem;color:#F85149">${e.message}</div>`; }
 }
 
@@ -6886,8 +6923,6 @@ function _showIndevaGoalsOverlay(emp) {
     return `<div class="ig-bar"><div class="ig-bar-fill" style="width:${pct}%;background:${c}"></div></div>`;
   };
   const g = _indevaGoalsData(emp);
-  const panel = document.querySelector('#indevaOverlay .perf-panel');
-  if (!panel) return;
   const overlay = document.createElement('div');
   overlay.className = 'ig-overlay';
   overlay.innerHTML = `
@@ -6904,7 +6939,6 @@ function _showIndevaGoalsOverlay(emp) {
         <div class="ig-row">
           <span class="ig-lbl">Hoje</span>
           <span class="ig-val">${fBRL(g.todayValor)}</span>
-          <span class="ig-pct"></span>
         </div>
         <div class="ig-row">
           <span class="ig-lbl">Semana</span>
@@ -6924,7 +6958,7 @@ function _showIndevaGoalsOverlay(emp) {
   overlay.querySelector('.ig-close').addEventListener('click', () => overlay.remove());
   overlay.querySelector('.ig-confirm-btn').addEventListener('click', () => overlay.remove());
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
-  panel.appendChild(overlay);
+  document.body.appendChild(overlay);
 }
 
 async function _indevaEntrar(empId) {
@@ -6974,16 +7008,174 @@ async function _indevaAtend(empId, vendeu, motivo) {
   } catch(e) { toast('Erro: '+e.message, true); }
 }
 
+function _renderIndevaHistorico(body, historico) {
+  const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && e.isVendedor!==false && !e.inativo);
+  const empById = Object.fromEntries(emps.map(e => [e.id, e]));
+  const days = Object.values(historico).sort((a,b) => b.date.localeCompare(a.date));
+
+  const fPct = (n,d) => d > 0 ? Math.round(n/d*100)+'%' : '—';
+  const fDate = s => {
+    const [y,m,d] = s.split('-');
+    const dt = new Date(+y,+m-1,+d);
+    return dt.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'});
+  };
+
+  function usabChip(usab) {
+    if (usab === null) return '<span style="color:var(--muted);font-size:.75rem">s/dados MX</span>';
+    const c = usab>=80?'#3FB950':usab>=50?'#D29922':'#F85149';
+    return `<span style="font-weight:700;color:${c}">${Math.round(usab)}%</span>`;
+  }
+
+  function dayCard(day) {
+    const atend = day.atendimentos || [];
+    const total = atend.length;
+    const vendas = atend.filter(a=>a.vendeu).length;
+    const conv = total > 0 ? Math.round(vendas/total*100) : 0;
+
+    // Per-vendor stats
+    const vendorData = {};
+    for (const a of atend) {
+      if (!vendorData[a.empId]) vendorData[a.empId] = { total:0, vendas:0 };
+      vendorData[a.empId].total++;
+      if (a.vendeu) vendorData[a.empId].vendas++;
+    }
+
+    // Store-level Microvix atendimentos
+    let mxTotal = 0;
+    for (const emp of emps) {
+      mxTotal += S.vsales?.[emp.id]?.entries?.[day.date]?.atendimentos || 0;
+    }
+    const usab = mxTotal > 0 ? (total / mxTotal * 100) : null;
+
+    // Motivos breakdown
+    const motivoMap = {};
+    for (const a of atend) { if (!a.vendeu && a.motivo) motivoMap[a.motivo] = (motivoMap[a.motivo]||0)+1; }
+    const motivos = Object.entries(motivoMap).sort((a,b)=>b[1]-a[1]).slice(0,4);
+
+    // Vendor rows
+    const vendorRows = emps.filter(e => vendorData[e.id]).map(e => {
+      const vd = vendorData[e.id];
+      const mxAtend = S.vsales?.[e.id]?.entries?.[day.date]?.atendimentos || 0;
+      const vUsab = mxAtend > 0 ? (vd.total / mxAtend * 100) : null;
+      return `<tr>
+        <td class="ih-td">${e.apelido||e.name}</td>
+        <td class="ih-td ih-num">${vd.total}</td>
+        <td class="ih-td ih-num">${mxAtend||'—'}</td>
+        <td class="ih-td ih-num">${usabChip(vUsab)}</td>
+        <td class="ih-td ih-num" style="color:${vd.total>0?(Math.round(vd.vendas/vd.total*100)>=50?'#3FB950':'#F85149'):'var(--muted)'}">${fPct(vd.vendas,vd.total)}</td>
+      </tr>`;
+    }).join('');
+
+    const convColor = conv>=50?'#3FB950':conv>=30?'#D29922':'#F85149';
+    return `<div class="ih-day-card">
+      <div class="ih-day-hdr">
+        <span class="ih-day-date">${fDate(day.date)}</span>
+        <span class="ih-day-pill">${total} atend.</span>
+        <span class="ih-day-pill" style="color:${convColor}">${conv}% conv.</span>
+        <span class="ih-day-pill">Usab.: ${usabChip(usab)}</span>
+      </div>
+      ${vendorRows.length ? `
+      <table class="ih-table">
+        <thead><tr>
+          <th class="ih-th">Vendedor</th>
+          <th class="ih-th ih-num">Indeva</th>
+          <th class="ih-th ih-num">Microvix</th>
+          <th class="ih-th ih-num">Usab.</th>
+          <th class="ih-th ih-num">Conv.</th>
+        </tr></thead>
+        <tbody>${vendorRows}</tbody>
+      </table>` : ''}
+      ${motivos.length ? `
+      <div class="ih-motivos">
+        ${motivos.map(([m,c])=>`<span class="ih-motivo-tag">${m} <strong>${c}</strong></span>`).join('')}
+      </div>` : ''}
+    </div>`;
+  }
+
+  // Aggregate last 7 days summary
+  const last7 = days.slice(0,7);
+  let aggTotal = 0, aggVendas = 0, aggMx = 0;
+  for (const d of last7) {
+    aggTotal  += (d.atendimentos||[]).length;
+    aggVendas += (d.atendimentos||[]).filter(a=>a.vendeu).length;
+    for (const e of emps) aggMx += S.vsales?.[e.id]?.entries?.[d.date]?.atendimentos || 0;
+  }
+  const aggConv = aggTotal > 0 ? Math.round(aggVendas/aggTotal*100) : 0;
+  const aggUsab = aggMx > 0 ? Math.round(aggTotal/aggMx*100) : null;
+
+  body.innerHTML = `
+    ${last7.length ? `
+    <div class="ih-summary">
+      <div class="ih-summary-lbl">Últimos ${last7.length} dias</div>
+      <div class="ih-summary-pills">
+        <div class="ih-sum-pill"><span class="ih-sum-val">${aggTotal}</span><span class="ih-sum-lbl">atendimentos</span></div>
+        <div class="ih-sum-pill"><span class="ih-sum-val" style="color:${aggConv>=50?'#3FB950':aggConv>=30?'#D29922':'#F85149'}">${aggConv}%</span><span class="ih-sum-lbl">conversão</span></div>
+        ${aggUsab!==null?`<div class="ih-sum-pill"><span class="ih-sum-val" style="color:${aggUsab>=80?'#3FB950':aggUsab>=50?'#D29922':'#F85149'}">${aggUsab}%</span><span class="ih-sum-lbl">usabilidade</span></div>`:''}
+      </div>
+    </div>` : ''}
+    ${days.length === 0
+      ? '<div style="padding:2rem;text-align:center;color:var(--muted)">Nenhum histórico disponível ainda.</div>'
+      : days.map(dayCard).join('')}`;
+}
+
 function initIndevaModal() {
-  document.getElementById('indevaBtn').addEventListener('click', openIndevaModal);
-  document.getElementById('indevaClose').addEventListener('click', closeIndevaModal);
-  document.getElementById('indevaOverlay').addEventListener('click', e => {
-    if (e.target.id === 'indevaOverlay') closeIndevaModal();
+  document.getElementById('indevaBtn').addEventListener('click', () => window.open('/indeva', '_blank'));
+}
+
+async function initStandalone() {
+  try { S.user = await apiFetch('GET', '/api/me'); } catch { return; }
+
+  const now = new Date();
+  S.year  = now.getFullYear();
+  S.month = now.getMonth() + 1;
+
+  const userBoard    = S.user?.board;
+  const isAdmin      = !userBoard;
+  const isEscritorio = userBoard === 'escritorio';
+
+  if (!isAdmin && !isEscritorio && !INDEVA_STORES.includes(userBoard)) {
+    document.getElementById('indevaBody').innerHTML =
+      '<div style="padding:2rem;color:#F85149">Acesso não autorizado</div>';
+    return;
+  }
+
+  _indevaBoard = (isAdmin || isEscritorio) ? INDEVA_STORES[0] : userBoard;
+
+  const allEmps = await apiFetch('GET', '/api/employees');
+  S.employees = allEmps;
+
+  const boardEmps = allEmps.filter(e =>
+    INDEVA_STORES.includes(e.board) && e.isVendedor !== false && !e.inativo
+  );
+  S.vsales = {};
+  await Promise.all(boardEmps.map(async emp => {
+    try {
+      S.vsales[emp.id] = await apiFetch('GET', `/api/vsales/${S.year}/${S.month}/${emp.board}/${emp.id}`);
+    } catch { S.vsales[emp.id] = { meta: { mensal: 0 }, entries: {} }; }
+  }));
+
+  S.weeklyMetas = await apiFetch('GET', `/api/weekly-metas/${S.year}/${S.month}`).catch(() => ({}));
+
+  document.title = `Lista da Vez${isAdmin || isEscritorio ? '' : ' — ' + (BOARDS[_indevaBoard]?.label || _indevaBoard)}`;
+
+  document.querySelectorAll('.indeva-view-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.indeva-view-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _indevaView = btn.dataset.view;
+      _loadIndeva();
+    });
   });
+
+  _buildIndevaTabs();
+  _loadIndeva();
+
+  setInterval(_loadIndeva, 30000);
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────
 function init() {
+  if (window.INDEVA_STANDALONE) { initStandalone(); return; }
   initLoginForm();
   initPerfModal();
   initDailyModal();
@@ -6997,9 +7189,7 @@ function init() {
   initBoletasModal();
   initUsersModal();
   document.getElementById('logoutBtn').addEventListener('click', logout);
-
-
-document.getElementById('btnPrev').addEventListener('click', () => navigate(-1));
+  document.getElementById('btnPrev').addEventListener('click', () => navigate(-1));
   document.getElementById('btnNext').addEventListener('click', () => navigate(1));
   checkAuth();
 }

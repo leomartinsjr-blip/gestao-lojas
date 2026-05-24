@@ -3010,11 +3010,22 @@ function todayBRT() {
 function getIndevaStore(db, board) {
   if (!db.indeva) db.indeva = {};
   const today = todayBRT();
-  if (!db.indeva[board] || db.indeva[board].date !== today) {
-    db.indeva[board] = { fila: [], atendendo: [], atendimentos: [], date: today };
+  if (!db.indeva[board]) {
+    db.indeva[board] = { fila: [], atendendo: [], atendimentos: [], date: today, historico: {} };
+  } else if (db.indeva[board].date !== today) {
+    const s = db.indeva[board];
+    if (!s.historico) s.historico = {};
+    if (s.atendimentos?.length > 0) {
+      s.historico[s.date] = { date: s.date, atendimentos: s.atendimentos };
+    }
+    s.fila = [];
+    s.atendendo = [];
+    s.atendimentos = [];
+    s.date = today;
   }
   const s = db.indeva[board];
   if (!Array.isArray(s.atendendo)) s.atendendo = s.atendendo != null ? [s.atendendo] : [];
+  if (!s.historico) s.historico = {};
   return s;
 }
 
@@ -3067,6 +3078,20 @@ app.post('/api/indeva/:board/sair', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/api/indeva/:board/historico', requireAuth, async (req, res) => {
+  try {
+    const { board } = req.params;
+    if (!INDEVA_STORES.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
+    const user = req.session.user;
+    if (user.board && user.board !== 'escritorio' && user.board !== board)
+      return res.status(403).json({ error: 'Sem acesso' });
+    const db = await readDB();
+    const store = getIndevaStore(db, board);
+    await writeDB(db);
+    res.json(store.historico || {});
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/indeva/:board/atender', requireAuth, async (req, res) => {
   try {
     const { board } = req.params;
@@ -3113,6 +3138,8 @@ app.post('/api/indeva/:board/atendimento', requireAuth, async (req, res) => {
     res.json(store);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+app.get('/indeva', (req, res) => res.sendFile(path.join(__dirname, 'public/indeva.html')));
 
 // ── Start ──────────────────────────────────────────────────────────────────
 initMongo()
