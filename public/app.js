@@ -1232,9 +1232,8 @@ function _renderDashWeekBody(body, week, extraData) {
       const gerentePremio = refIsComplete ? (sHitMeta ? PREMIO_GERENTE_VENDAS : 0) + (sHitMeta && sHitPA ? PREMIO_PA : 0) : 0;
       totPremio += gerentePremio;
 
-      const vendorEmps = allEmps.filter(e => !e.cargo?.toLowerCase()?.includes('gerente'));
       const vendorRows = [];
-      for (const emp of vendorEmps) {
+      for (const emp of allEmps) {
         const k = kpiMap.get(emp.id);
         const paEarned  = k.hitMeta && k.hitPA;
         const pVendas   = k.isComplete ? (k.hitMeta ? PREMIO_VENDAS : 0) : null;
@@ -1362,8 +1361,7 @@ function _renderDashWeekBody(body, week, extraData) {
     const gerentePremio = refIsComplete ? (sHitMeta ? PREMIO_GERENTE_VENDAS : 0) + (sHitMeta && sHitPA ? PREMIO_PA : 0) : 0;
     totPremio += gerentePremio;
 
-    const vendorEmps = allEmps.filter(e => !e.cargo?.toLowerCase()?.includes('gerente'));
-    const rows = vendorEmps.map(emp => {
+    const rows = allEmps.map(emp => {
       const k = kpiMap.get(emp.id);
       const paEarned  = k.hitMeta && k.hitPA;
       const pVendas   = k.isComplete ? (k.hitMeta ? PREMIO_VENDAS : 0) : null;
