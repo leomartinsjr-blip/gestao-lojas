@@ -5364,16 +5364,17 @@ function renderContratoCard(container) {
 }
 
 function renderCaixaCard(container) {
-  const isAdmin  = !S.user?.board;
-  const userBoard = S.user?.board;
-  let activeBoard = isAdmin ? NF_STORES[0] : userBoard;
+  const isAdmin      = !S.user?.board;
+  const isEscritorio = S.user?.board === 'escritorio';
+  const userBoard    = S.user?.board;
+  let activeBoard    = (isAdmin || isEscritorio) ? NF_STORES[0] : userBoard;
 
   const syncSvg   = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
   const expandSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
   const sangriaSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>`;
 
   function tabsMarkup(activeB) {
-    if (!isAdmin) return '';
+    if (!isAdmin && !isEscritorio) return '';
     return `<div class="nf-tabs">${NF_STORES.map(b => `
       <button class="nf-tab${b === activeB ? ' active' : ''}" data-board="${b}"
         style="--nf-tab-color:${BOARDS[b]?.color || '#8B949E'}">${BOARDS[b]?.label || b}
@@ -5394,10 +5395,10 @@ function renderCaixaCard(container) {
         </svg>
         Fechamento de Caixa
       </span>
-      ${!isAdmin ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
+      ${(!isAdmin && !isEscritorio) ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
       <div style="display:flex;gap:.3rem;margin-left:auto">
         <button class="caixa-sync-btn" id="caixaSyncBtn" title="Sincronizar com Microvix">${syncSvg} Microvix</button>
-        ${isAdmin ? `<button class="caixa-sync-btn" id="caixaSangriaBtn" title="Ver todas as sangrias">${sangriaSvg} Sangrias</button>` : ''}
+        ${(isAdmin || isEscritorio) ? `<button class="caixa-sync-btn" id="caixaSangriaBtn" title="Ver todas as sangrias">${sangriaSvg} Sangrias</button>` : ''}
         <button class="caixa-expand-btn" id="caixaExpandBtn" title="Expandir">${expandSvg}</button>
       </div>
     </div>
@@ -5415,7 +5416,7 @@ function renderCaixaCard(container) {
           <rect x="2" y="7" width="20" height="14" rx="2"/>
           <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
         </svg>
-        <span class="caixa-overlay-title">Fechamento de Caixa${!isAdmin ? ` — ${BOARDS[userBoard]?.label || ''}` : ''}</span>
+        <span class="caixa-overlay-title">Fechamento de Caixa${(!isAdmin && !isEscritorio) ? ` — ${BOARDS[userBoard]?.label || ''}` : ''}</span>
         <button class="caixa-sync-btn" id="caixaSyncBtnOvl" title="Sincronizar com Microvix">${syncSvg} Microvix</button>
         <button class="caixa-ovl-close" id="caixaOvlClose" title="Fechar">✕</button>
       </div>
@@ -5567,7 +5568,7 @@ function renderCaixaCard(container) {
   const syncBtn = card.querySelector('#caixaSyncBtn');
   if (syncBtn) syncBtn.addEventListener('click', () => doSync(syncBtn, refresh));
 
-  if (isAdmin) {
+  if (isAdmin || isEscritorio) {
     card.querySelectorAll('.nf-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         activeBoard = tab.dataset.board;
@@ -5587,7 +5588,7 @@ function renderCaixaCard(container) {
     const syncOvl = ovl.querySelector('#caixaSyncBtnOvl');
     if (syncOvl) syncOvl.addEventListener('click', () => doSync(syncOvl, () => { refreshOvl(); refresh(); }));
 
-    if (isAdmin) {
+    if (isAdmin || isEscritorio) {
       ovlTabs.querySelectorAll('.nf-tab').forEach(tab => {
         tab.addEventListener('click', () => {
           activeBoard = tab.dataset.board;
@@ -5604,7 +5605,7 @@ function renderCaixaCard(container) {
   ovl.addEventListener('click', e => { if (e.target === ovl) closeOvl(); });
 
   // ── Sangrias button ────────────────────────────────────────────────────────
-  if (isAdmin) {
+  if (isAdmin || isEscritorio) {
     const sgBtn = card.querySelector('#caixaSangriaBtn');
     if (sgBtn) {
       sgBtn.addEventListener('click', async () => {

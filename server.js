@@ -92,7 +92,12 @@ function readUsers() {
 }
 
 function writeUsers(users) {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+  const data = JSON.stringify(users, null, 2);
+  fs.writeFileSync(USERS_FILE, data);
+  // Mantém seed em sincronia para sobreviver a redeploys
+  if (USERS_FILE !== SEED_USERS) {
+    try { fs.writeFileSync(SEED_USERS, data); } catch (_) {}
+  }
 }
 
 const BOARDS   = ['admin','escritorio','delrey','minas','contagem','estacao','tommy','lez'];
