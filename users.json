@@ -1,11 +1,47 @@
 {
-  "leonardo":   { "password": "leo123",    "board": null,        "label": "Leonardo"      },
-  "ingrid":     { "password": "ing123",    "board": null,        "label": "Ingrid"        },
-  "escritorio": { "password": "esc123",    "board": null,        "label": "Escritório"    },
-  "delrey":     { "password": "delrey123", "board": "delrey",    "label": "Del Rey"       },
-  "minas":      { "password": "minas123",  "board": "minas",     "label": "Minas"         },
-  "contagem":   { "password": "cont123",   "board": "contagem",  "label": "Contagem"      },
-  "estacao":    { "password": "esta123",   "board": "estacao",   "label": "Estação"       },
-  "tommy":      { "password": "tommy123",  "board": "tommy",     "label": "Tommy"         },
-  "lez":        { "password": "lez123",    "board": "lez",       "label": "Lez a Lez"     }
+  "leonardo": {
+    "password": "leo123",
+    "board": null,
+    "label": "Leonardo"
+  },
+  "ingrid": {
+    "password": "ing123",
+    "board": null,
+    "label": "Ingrid"
+  },
+  "escritorio": {
+    "password": "esc123",
+    "board": "escritorio",
+    "label": "Escritório"
+  },
+  "delrey": {
+    "password": "delrey123",
+    "board": "delrey",
+    "label": "Del Rey"
+  },
+  "minas": {
+    "password": "minas123",
+    "board": "minas",
+    "label": "Minas"
+  },
+  "contagem": {
+    "password": "cont123",
+    "board": "contagem",
+    "label": "Contagem"
+  },
+  "estacao": {
+    "password": "esta123",
+    "board": "estacao",
+    "label": "Estação"
+  },
+  "tommy": {
+    "password": "tommy123",
+    "board": "tommy",
+    "label": "Tommy"
+  },
+  "lez": {
+    "password": "lez123",
+    "board": "lez",
+    "label": "Lez a Lez"
+  }
 }

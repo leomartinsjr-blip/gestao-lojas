@@ -1,4 +1,4 @@
-{
+﻿{
   "nextId": 336,
   "months": {
     "2026-05": {
@@ -38,31 +38,31 @@
     }
   },
   "cards": {
-    "2026-05-escritorio-performance": {
+    "2026-05-admin-performance": {
       "id": 2,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-05-escritorio-estoque_marca": {
+    "2026-05-admin-estoque_marca": {
       "id": 3,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-05-escritorio-estoque_grupo": {
+    "2026-05-admin-estoque_grupo": {
       "id": 4,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-05-escritorio-pauta": {
+    "2026-05-admin-pauta": {
       "id": 5,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-05-escritorio-pendencias": {
+    "2026-05-admin-pendencias": {
       "id": 6,
       "content": "",
       "items": [],
@@ -255,31 +255,31 @@
       "items": [],
       "attachments": []
     },
-    "2026-04-escritorio-performance": {
+    "2026-04-admin-performance": {
       "id": 38,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-04-escritorio-estoque_marca": {
+    "2026-04-admin-estoque_marca": {
       "id": 39,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-04-escritorio-estoque_grupo": {
+    "2026-04-admin-estoque_grupo": {
       "id": 40,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-04-escritorio-pauta": {
+    "2026-04-admin-pauta": {
       "id": 41,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-04-escritorio-pendencias": {
+    "2026-04-admin-pendencias": {
       "id": 42,
       "content": "",
       "items": [],
@@ -465,31 +465,31 @@
       "items": [],
       "attachments": []
     },
-    "2026-06-escritorio-performance": {
+    "2026-06-admin-performance": {
       "id": 74,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-06-escritorio-estoque_marca": {
+    "2026-06-admin-estoque_marca": {
       "id": 75,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-06-escritorio-estoque_grupo": {
+    "2026-06-admin-estoque_grupo": {
       "id": 76,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-06-escritorio-pauta": {
+    "2026-06-admin-pauta": {
       "id": 77,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-06-escritorio-pendencias": {
+    "2026-06-admin-pendencias": {
       "id": 78,
       "content": "",
       "items": [],
@@ -675,31 +675,31 @@
       "items": [],
       "attachments": []
     },
-    "2026-07-escritorio-performance": {
+    "2026-07-admin-performance": {
       "id": 110,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-07-escritorio-estoque_marca": {
+    "2026-07-admin-estoque_marca": {
       "id": 111,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-07-escritorio-estoque_grupo": {
+    "2026-07-admin-estoque_grupo": {
       "id": 112,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-07-escritorio-pauta": {
+    "2026-07-admin-pauta": {
       "id": 113,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-07-escritorio-pendencias": {
+    "2026-07-admin-pendencias": {
       "id": 114,
       "content": "",
       "items": [],
@@ -885,31 +885,31 @@
       "items": [],
       "attachments": []
     },
-    "2026-08-escritorio-performance": {
+    "2026-08-admin-performance": {
       "id": 146,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-08-escritorio-estoque_marca": {
+    "2026-08-admin-estoque_marca": {
       "id": 147,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-08-escritorio-estoque_grupo": {
+    "2026-08-admin-estoque_grupo": {
       "id": 148,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-08-escritorio-pauta": {
+    "2026-08-admin-pauta": {
       "id": 149,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-08-escritorio-pendencias": {
+    "2026-08-admin-pendencias": {
       "id": 150,
       "content": "",
       "items": [],
@@ -1095,31 +1095,31 @@
       "items": [],
       "attachments": []
     },
-    "2026-09-escritorio-performance": {
+    "2026-09-admin-performance": {
       "id": 182,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-09-escritorio-estoque_marca": {
+    "2026-09-admin-estoque_marca": {
       "id": 183,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-09-escritorio-estoque_grupo": {
+    "2026-09-admin-estoque_grupo": {
       "id": 184,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-09-escritorio-pauta": {
+    "2026-09-admin-pauta": {
       "id": 185,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-09-escritorio-pendencias": {
+    "2026-09-admin-pendencias": {
       "id": 186,
       "content": "",
       "items": [],
@@ -1305,31 +1305,31 @@
       "items": [],
       "attachments": []
     },
-    "2026-10-escritorio-performance": {
+    "2026-10-admin-performance": {
       "id": 218,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-10-escritorio-estoque_marca": {
+    "2026-10-admin-estoque_marca": {
       "id": 219,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-10-escritorio-estoque_grupo": {
+    "2026-10-admin-estoque_grupo": {
       "id": 220,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-10-escritorio-pauta": {
+    "2026-10-admin-pauta": {
       "id": 221,
       "content": "",
       "items": [],
       "attachments": []
     },
-    "2026-10-escritorio-pendencias": {
+    "2026-10-admin-pendencias": {
       "id": 222,
       "content": "",
       "items": [],
@@ -1519,7 +1519,7 @@
   "employees": [
     {
       "id": 253,
-      "name": "BRUNO PIRES GUIMARÃES",
+      "name": "BRUNO PIRES GUIMARÃƒES",
       "board": "delrey",
       "cpf": "",
       "admissao": "",
@@ -1537,7 +1537,7 @@
     },
     {
       "id": 254,
-      "name": "GUILHERME HENRIQUE FRANÇA DE SOUZA",
+      "name": "GUILHERME HENRIQUE FRANÃ‡A DE SOUZA",
       "board": "delrey",
       "apelido": "GUILHERME",
       "cpf": "",
@@ -1703,7 +1703,7 @@
     },
     {
       "id": 299,
-      "name": "ANDRE LUIZ ANTUNES DE ARAÚJO",
+      "name": "ANDRE LUIZ ANTUNES DE ARAÃšJO",
       "board": "estacao",
       "apelido": "ANDRE",
       "cpf": "",
@@ -2072,7 +2072,7 @@
           "value": 949.8,
           "pecas": 2,
           "atendimentos": 2,
-          "syncedAt": "2026-05-22T14:37:04.626Z"
+          "syncedAt": "2026-05-22T16:49:47.521Z"
         }
       }
     },
@@ -2188,7 +2188,7 @@
           "value": 1543.6,
           "pecas": 7,
           "atendimentos": 4,
-          "syncedAt": "2026-05-22T14:37:04.626Z"
+          "syncedAt": "2026-05-22T16:49:47.520Z"
         }
       }
     },
@@ -2413,13 +2413,13 @@
           "value": 468,
           "pecas": 2,
           "atendimentos": 2,
-          "syncedAt": "2026-05-22T14:37:05.634Z"
+          "syncedAt": "2026-05-22T16:49:48.586Z"
         },
         "2026-05-22": {
           "value": 140,
           "pecas": 1,
           "atendimentos": 1,
-          "syncedAt": "2026-05-22T14:17:08.755Z"
+          "syncedAt": "2026-05-22T16:04:51.247Z"
         }
       }
     },
@@ -2593,7 +2593,7 @@
           "value": 1270,
           "pecas": 2,
           "atendimentos": 2,
-          "syncedAt": "2026-05-22T14:37:05.634Z"
+          "syncedAt": "2026-05-22T16:49:48.586Z"
         }
       }
     },
@@ -2690,7 +2690,7 @@
           "value": 230,
           "pecas": 1,
           "atendimentos": 1,
-          "syncedAt": "2026-05-22T14:37:06.118Z"
+          "syncedAt": "2026-05-22T16:49:49.075Z"
         }
       }
     },
@@ -2805,7 +2805,7 @@
           "value": 2020,
           "pecas": 6,
           "atendimentos": 1,
-          "syncedAt": "2026-05-22T14:37:06.118Z"
+          "syncedAt": "2026-05-22T16:49:49.075Z"
         }
       }
     },
@@ -2896,7 +2896,7 @@
           "value": 2280,
           "pecas": 5,
           "atendimentos": 2,
-          "syncedAt": "2026-05-22T14:37:06.118Z"
+          "syncedAt": "2026-05-22T16:49:49.075Z"
         }
       }
     },
@@ -2999,7 +2999,7 @@
           "value": 130,
           "pecas": 1,
           "atendimentos": 1,
-          "syncedAt": "2026-05-22T14:37:06.695Z"
+          "syncedAt": "2026-05-22T16:49:49.639Z"
         }
       }
     },
@@ -3102,7 +3102,7 @@
           "value": 560,
           "pecas": 1,
           "atendimentos": 1,
-          "syncedAt": "2026-05-22T14:37:06.695Z"
+          "syncedAt": "2026-05-22T16:49:49.639Z"
         }
       }
     },
@@ -3436,7 +3436,7 @@
           "value": 438,
           "pecas": 2,
           "atendimentos": 2,
-          "syncedAt": "2026-05-22T14:37:05.041Z"
+          "syncedAt": "2026-05-22T16:49:47.936Z"
         }
       }
     },
@@ -3539,13 +3539,13 @@
           "value": 299,
           "pecas": 1,
           "atendimentos": 1,
-          "syncedAt": "2026-05-22T14:37:05.041Z"
+          "syncedAt": "2026-05-22T16:49:47.936Z"
         },
         "2026-05-22": {
-          "value": 219,
-          "pecas": 1,
-          "atendimentos": 1,
-          "syncedAt": "2026-05-22T14:17:08.053Z"
+          "value": 1117,
+          "pecas": 3,
+          "atendimentos": 2,
+          "syncedAt": "2026-05-22T16:04:50.673Z"
         }
       }
     },
@@ -4673,7 +4673,7 @@
     },
     {
       "id": 314,
-      "text": "Está faltanto produto X",
+      "text": "EstÃ¡ faltanto produto X",
       "board": "delrey",
       "year": 2026,
       "month": 5,

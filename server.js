@@ -95,7 +95,7 @@ function writeUsers(users) {
   fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
 }
 
-const BOARDS   = ['escritorio','delrey','minas','contagem','estacao','tommy','lez'];
+const BOARDS   = ['admin','escritorio','delrey','minas','contagem','estacao','tommy','lez'];
 const SECTIONS = ['performance','estoque_marca','estoque_grupo','pauta','pendencias'];
 
 function monthKey(y, m) { return `${y}-${String(m).padStart(2,'0')}`; }
@@ -156,7 +156,7 @@ function requireAuth(req, res, next) {
 
 function requireAdmin(req, res, next) {
   if (!req.session?.user) return res.status(401).json({ error: 'Não autenticado' });
-  if (req.session.user.board && req.session.user.board !== 'escritorio')
+  if (req.session.user.board)
     return res.status(403).json({ error: 'Acesso restrito' });
   next();
 }
@@ -198,7 +198,7 @@ app.post('/api/change-password', requireAuth, (req, res) => {
 app.get('/api/users', requireAdmin, (req, res) => {
   const users = readUsers();
   const list = Object.entries(users).map(([username, u]) => ({
-    username, label: u.label || username, board: u.board || 'escritorio'
+    username, label: u.label || username, board: u.board || null
   }));
   res.json(list);
 });
@@ -210,7 +210,7 @@ app.post('/api/users', requireAdmin, (req, res) => {
   const key = username.toLowerCase().trim();
   const users = readUsers();
   if (users[key]) return res.status(409).json({ error: 'Usuário já existe' });
-  users[key] = { password, label: label || key, board: board || 'escritorio', mustChangePassword: true };
+  users[key] = { password, label: label || key, board: board || null, mustChangePassword: true };
   writeUsers(users);
   res.json({ ok: true, username: key });
 });
@@ -1048,7 +1048,7 @@ app.get('/api/campaigns', requireAuth, async (req, res) => {
 app.post('/api/campaigns', requireAuth, async (req, res) => {
   try {
     const { board } = req.session.user;
-    if (board && board !== 'escritorio') return res.status(403).json({ error: 'Sem permissão' });
+    if (board) return res.status(403).json({ error: 'Sem permissão' });
     const { name, kpi, startDate, endDate, stores, scope } = req.body;
     if (!name?.trim() || !kpi || !startDate || !endDate || !Array.isArray(stores) || !stores.length)
       return res.status(400).json({ error: 'Campos obrigatórios: name, kpi, startDate, endDate, stores' });
@@ -1069,7 +1069,7 @@ app.post('/api/campaigns', requireAuth, async (req, res) => {
 app.put('/api/campaigns/:id', requireAuth, async (req, res) => {
   try {
     const { board } = req.session.user;
-    if (board && board !== 'escritorio') return res.status(403).json({ error: 'Sem permissão' });
+    if (board) return res.status(403).json({ error: 'Sem permissão' });
     const id = parseInt(req.params.id);
     const { name, kpi, startDate, endDate, stores, scope } = req.body;
     if (!name?.trim() || !kpi || !startDate || !endDate || !Array.isArray(stores) || !stores.length)
@@ -1090,7 +1090,7 @@ app.put('/api/campaigns/:id', requireAuth, async (req, res) => {
 app.delete('/api/campaigns/:id', requireAuth, async (req, res) => {
   try {
     const { board } = req.session.user;
-    if (board && board !== 'escritorio') return res.status(403).json({ error: 'Sem permissão' });
+    if (board) return res.status(403).json({ error: 'Sem permissão' });
     const id = parseInt(req.params.id);
     const db = await readDB();
     db.campaigns = (db.campaigns || []).filter(c => c.id !== id);
@@ -1167,7 +1167,7 @@ app.delete('/api/nf-items/:id', requireAuth, async (req, res) => {
 app.get('/api/meeting-items', requireAuth, async (req, res) => {
   try {
     const db      = await readDB();
-    const isAdmin = !req.session.user.board || req.session.user.board === 'escritorio';
+    const isAdmin = !req.session.user.board;
     const items   = (db.meetingItems || []).filter(x =>
       isAdmin || (x.board === req.session.user.board && x.visibility === 'loja')
     );
@@ -1180,7 +1180,7 @@ app.post('/api/meeting-items', requireAuth, async (req, res) => {
   try {
     const { text, board, year, month, visibility } = req.body;
     if (!text?.trim()) return res.status(400).json({ error: 'Texto obrigatório' });
-    const isAdmin = !req.session.user.board || req.session.user.board === 'escritorio';
+    const isAdmin = !req.session.user.board;
     const effectiveBoard = isAdmin ? board : req.session.user.board;
     if (!effectiveBoard || !BOARDS.includes(effectiveBoard)) return res.status(400).json({ error: 'Loja inválida' });
     const db = await readDB();
@@ -1208,7 +1208,7 @@ app.patch('/api/meeting-items/:id', requireAuth, async (req, res) => {
     const db   = await readDB();
     const item = (db.meetingItems || []).find(x => x.id === id);
     if (!item) return res.status(404).json({ error: 'Item não encontrado' });
-    const isAdmin = !req.session.user.board || req.session.user.board === 'escritorio';
+    const isAdmin = !req.session.user.board;
     if ('visibility' in req.body && isAdmin) item.visibility = req.body.visibility === 'loja' ? 'loja' : 'admin';
     if ('checked' in req.body) {
       item.checked = !!req.body.checked;
@@ -1374,7 +1374,7 @@ app.get('/api/caixa/:year/:month/:board', requireAuth, async (req, res) => {
   try {
     const { year, month, board } = req.params;
     const user    = req.session.user;
-    const isAdmin = !user.board || user.board === 'escritorio';
+    const isAdmin = !user.board;
     if (!isAdmin && user.board !== board) return res.status(403).json({ error: 'Sem acesso' });
     const db  = await readDB();
     const key = `${year}-${String(month).padStart(2,'0')}-${board}`;
@@ -1453,7 +1453,7 @@ app.put('/api/caixa/:year/:month/:board/:day', requireAuth, async (req, res) => 
   try {
     const { year, month, board, day } = req.params;
     const user    = req.session.user;
-    const isAdmin = !user.board || user.board === 'escritorio';
+    const isAdmin = !user.board;
     if (!isAdmin && user.board !== board) return res.status(403).json({ error: 'Sem acesso' });
     const { caixa, sangria, deposito } = req.body;
     const db  = await readDB();
@@ -1595,7 +1595,7 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAuth, async (req, res
   try {
     const { board, year, month } = req.params;
     const userBoard   = req.session.user.board;
-    const isAdminUser = !userBoard || userBoard === 'escritorio';
+    const isAdminUser = !userBoard;
     if (!isAdminUser && userBoard !== board) {
       return res.status(403).json({ error: 'Acesso restrito ao seu próprio painel' });
     }

@@ -1,12 +1,13 @@
 // ── Config ─────────────────────────────────────────────────────────────────
 const BOARDS = {
-  escritorio: { label: 'ESCRITÓRIO',  color: '#8B949E' },
-  delrey:     { label: 'DEL REY',     color: '#58A6FF' },
-  minas:      { label: 'MINAS',       color: '#3FB950' },
-  contagem:   { label: 'CONTAGEM',    color: '#D29922' },
-  estacao:    { label: 'ESTAÇÃO',     color: '#F85149' },
-  tommy:      { label: 'TOMMY',       color: '#22D3EE' },
-  lez:        { label: 'LEZ A LEZ',   color: '#F472B6' },
+  admin:      { label: 'ADMIN',        color: '#8B949E' },
+  escritorio: { label: 'ESCRITÓRIO',   color: '#64748B' },
+  delrey:     { label: 'DEL REY',      color: '#58A6FF' },
+  minas:      { label: 'MINAS',        color: '#3FB950' },
+  contagem:   { label: 'CONTAGEM',     color: '#D29922' },
+  estacao:    { label: 'ESTAÇÃO',      color: '#F85149' },
+  tommy:      { label: 'TOMMY',        color: '#22D3EE' },
+  lez:        { label: 'LEZ A LEZ',    color: '#F472B6' },
 };
 
 
@@ -78,7 +79,7 @@ async function checkAuth() {
     S.user = await apiFetch('GET', '/api/me');
     hideLogin();
     document.getElementById('userChip').textContent = S.user.label || S.user.username;
-    const isAdmin = !S.user.board || S.user.board === 'escritorio';
+    const isAdmin = !S.user.board;
     document.getElementById('funcBtn').style.display = isAdmin ? '' : 'none';
     document.getElementById('campanhasBtn').style.display = isAdmin ? '' : 'none';
     document.getElementById('usersBtn').style.display = isAdmin ? '' : 'none';
@@ -165,7 +166,7 @@ function initLoginForm() {
       S.user = await apiFetch('POST', '/api/login', { username, password });
       document.getElementById('loginPass').value = '';
       document.getElementById('userChip').textContent = S.user.label || S.user.username;
-      const isAdmin = !S.user.board || S.user.board === 'escritorio';
+      const isAdmin = !S.user.board;
       document.getElementById('funcBtn').style.display = isAdmin ? '' : 'none';
       document.getElementById('campanhasBtn').style.display = isAdmin ? '' : 'none';
       hideLogin();
@@ -392,7 +393,7 @@ function renderDashboard() {
     return;
   }
 
-  const isAdmin = !S.user?.board || S.user.board === 'escritorio';
+  const isAdmin = !S.user?.board;
 
   const daysInMonth = new Date(S.year, S.month, 0).getDate();
   const defW = +(100 / daysInMonth).toFixed(6);
@@ -440,7 +441,7 @@ function renderDashboard() {
 
   // ── FILTRO DE LOJAS ──────────────────────────────────────────────────────
   if (isAdmin) {
-    const storeBoards = Object.entries(BOARDS).filter(([k]) => k !== 'escritorio');
+    const storeBoards = Object.entries(BOARDS).filter(([k]) => k !== 'admin');
     const filterBar = document.createElement('div');
     filterBar.className = 'dash-store-filter';
     const allOn = DASH_BOARD_FILTER.size === 0;
@@ -1112,7 +1113,7 @@ function _renderDayCardBody(body, dateStr) {
     const storePa  = storeTotalAtend > 0 ? storeTotalPecas / storeTotalAtend : null;
     const storePct = storeTotalMeta > 0 ? storeTotalVal / storeTotalMeta * 100 : null;
     const sPctCls  = storePct == null ? '' : storePct >= 100 ? 'dia-pct-ok' : storePct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
-    const isAdmin  = !S.user?.board || S.user.board === 'escritorio';
+    const isAdmin  = !S.user?.board;
     const isExp    = !isAdmin || _dayCardExpanded.has(bk);
 
     // Store row (always visible) — shows totals + chevron, click to expand (admin only)
@@ -1169,7 +1170,7 @@ function _renderDashWeekBody(body, week, extraData) {
   const fPct = v => v == null ? '—' : v.toFixed(1)+'%';
   const fDec = v => v == null ? '—' : v.toFixed(2);
 
-  const isAdmin = !S.user?.board || S.user.board === 'escritorio';
+  const isAdmin = !S.user?.board;
   const vendedores = S.employees.filter(e => e.isVendedor !== false);
   const byBoard = {};
   for (const emp of vendedores) {
@@ -1431,7 +1432,7 @@ async function _loadCompCard(body) {
 
   // Lojas visíveis: login individual vê só a sua
   const ALL_STORE_KEYS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'lez'];
-  const isAdmin = !S.user?.board || S.user.board === 'escritorio';
+  const isAdmin = !S.user?.board;
   const STORE_KEYS = isAdmin ? ALL_STORE_KEYS : ALL_STORE_KEYS.filter(k => k === S.user.board);
   const mi = S.month - 1;
 
@@ -1692,7 +1693,7 @@ function _perfActiveView() {
 
 function openPerfModal() {
   document.getElementById('perfOverlay').classList.remove('hidden');
-  const defaultStore = S.user?.board && S.user.board !== 'escritorio' ? S.user.board : 'delrey';
+  const defaultStore = S.user?.board ? S.user.board : 'delrey';
   PD.board = defaultStore;
   PD.year  = S.year;
   PD.month = S.month;
@@ -2225,7 +2226,7 @@ function applyTransCompraFilter(container) {
 function buildPerfTabs() {
   const tabs = document.getElementById('perfStoreTabs');
   tabs.innerHTML = '';
-  const show = !S.user?.board || S.user.board === 'escritorio' ? ALL_STORES : [S.user.board];
+  const show = !S.user?.board ? ALL_STORES : [S.user.board];
   if (show.length <= 1) return;
   show.forEach(k => {
     const btn = document.createElement('button');
@@ -2490,7 +2491,7 @@ function initPerfModal() {
 // ── Daily modal ────────────────────────────────────────────────────────────
 function openDailyModal() {
   document.getElementById('dailyOverlay').classList.remove('hidden');
-  const defaultStore = S.user?.board && S.user.board !== 'escritorio' ? S.user.board : 'delrey';
+  const defaultStore = S.user?.board ? S.user.board : 'delrey';
   PD.container = document.getElementById('dailyBody');
   PD.year      = S.year;
   PD.month     = S.month;
@@ -2505,7 +2506,7 @@ function closeDailyModal() {
 function buildDailyStoreTabs(activeBoard) {
   const tabs = document.getElementById('dailyStoreTabs');
   tabs.innerHTML = '';
-  const show = !S.user?.board || S.user.board === 'escritorio' ? ALL_STORES : [S.user.board];
+  const show = !S.user?.board ? ALL_STORES : [S.user.board];
   if (show.length <= 1) return;
   show.forEach(k => {
     const btn = document.createElement('button');
@@ -2567,7 +2568,7 @@ async function loadAndRenderDaily(board) {
 
 function renderVendedorSheet() {
   const body    = PD.container;
-  const isAdmin = !S.user?.board || S.user.board === 'escritorio';
+  const isAdmin = !S.user?.board;
   const emps    = PD.employees;
   const color   = BOARDS[PD.board]?.color || '#8B949E';
 
@@ -3753,7 +3754,7 @@ function closeWeeklyModal() {
 
 async function renderWeeklyModal() {
   const week    = getWeekForDate(WK.refDate);
-  const isAdmin = !S.user?.board || S.user.board === 'escritorio';
+  const isAdmin = !S.user?.board;
 
   // Determine which months this week touches
   const startMonth = WK.refDate.slice(0, 7);
@@ -4187,7 +4188,7 @@ async function deleteFuncionario(id) {
 }
 
 function initFuncionariosModal() {
-  const isAdmin = () => !S.user?.board || S.user.board === 'escritorio';
+  const isAdmin = () => !S.user?.board;
 
   document.getElementById('funcBtn').addEventListener('click', () => {
     if (!isAdmin()) return;
@@ -4354,7 +4355,7 @@ async function calcCampaignRanking(campaign) {
 }
 
 function renderCampanhasPanel() {
-  const isAdmin = !S.user?.board || S.user.board === 'escritorio';
+  const isAdmin = !S.user?.board;
   const body = document.getElementById('campanhasBody');
   const today = new Date().toISOString().slice(0, 10);
   const fmt = d => d.split('-').reverse().join('/');
@@ -4490,7 +4491,7 @@ function renderCampaignForm(campaign) {
   const body      = document.getElementById('campanhasBody');
   const today     = new Date().toISOString().slice(0, 10);
   const curScope  = campaign?.scope || 'loja';
-  const ALL_STORE_KEYS = Object.keys(BOARDS).filter(k => k !== 'escritorio');
+  const ALL_STORE_KEYS = Object.keys(BOARDS).filter(k => k !== 'admin');
 
   const storeOpts = ALL_STORE_KEYS.map(k => {
     const v       = BOARDS[k];
@@ -4591,7 +4592,7 @@ function renderCampaignForm(campaign) {
 }
 
 function _updateCampanhasBtn() {
-  const isAdmin  = !S.user?.board || S.user.board === 'escritorio';
+  const isAdmin  = !S.user?.board;
   const board    = S.user?.board;
   const hasCamps = isAdmin || (S.campaigns || []).some(c =>
     c.scope === 'rede' || c.stores.includes(board)
@@ -4983,7 +4984,7 @@ function _renderMeetingHistory(body, board, isAdmin, refresh) {
 }
 
 function renderMeetingCard(container) {
-  const isAdmin = !S.user?.board || S.user?.board === 'escritorio';
+  const isAdmin = !S.user?.board;
   const userBoard = S.user?.board;
   let activeBoard = isAdmin ? NF_STORES[0] : userBoard;
   let showHistory = false;
@@ -5125,7 +5126,7 @@ function _renderNFActive(body, board, refresh) {
 }
 
 function _renderNFHistory(body, board, refresh) {
-  const isAdmin = !S.user?.board || S.user?.board === 'escritorio';
+  const isAdmin = !S.user?.board;
   const items = (S.nfItems || []).filter(x => x.board === board && x.archived)
     .sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''));
 
@@ -5175,7 +5176,7 @@ function _renderNFHistory(body, board, refresh) {
 
 // ── Fechamento de Caixa ───────────────────────────────────────────────────
 function renderContratoCard(container) {
-  const isAdmin   = !S.user?.board || S.user?.board === 'escritorio';
+  const isAdmin   = !S.user?.board;
   const userBoard = S.user?.board;
   const pad = n => String(n).padStart(2, '0');
 
@@ -5296,7 +5297,7 @@ function renderContratoCard(container) {
 }
 
 function renderCaixaCard(container) {
-  const isAdmin  = !S.user?.board || S.user?.board === 'escritorio';
+  const isAdmin  = !S.user?.board;
   const userBoard = S.user?.board;
   let activeBoard = isAdmin ? NF_STORES[0] : userBoard;
 
@@ -5601,7 +5602,7 @@ function renderCaixaCard(container) {
 }
 
 function renderNFCard(container) {
-  const isAdmin = !S.user?.board || S.user?.board === 'escritorio';
+  const isAdmin = !S.user?.board;
   const userBoard = S.user?.board;
   let activeBoard = isAdmin ? NF_STORES[0] : userBoard;
   let showHistory = false;
@@ -5763,7 +5764,7 @@ function _boletaBadge(days) {
 }
 
 function renderBoletasCard(container) {
-  const isAdmin   = !S.user?.board || S.user?.board === 'escritorio';
+  const isAdmin   = !S.user?.board;
   const userBoard = S.user?.board;
   const pending   = (S.boletas || [])
     .filter(b => b.status === 'pendente' && (isAdmin || b.board === userBoard))
@@ -5826,7 +5827,7 @@ function closeBoletasModal() {
 
 function _renderBoletasModal(view, boletaId) {
   const body     = document.getElementById('boletasBody');
-  const isAdmin  = !S.user?.board || S.user?.board === 'escritorio';
+  const isAdmin  = !S.user?.board;
   const userBoard = S.user?.board;
 
   if (view === 'new' || view === 'edit') {
@@ -6394,7 +6395,7 @@ function initBoletasModal() {
 
 // ── Users Management ───────────────────────────────────────────────────────
 const BOARD_LABELS = {
-  escritorio: 'Escritório (admin)', delrey: 'Del Rey', minas: 'Minas',
+  '': 'Admin', escritorio: 'Escritório', delrey: 'Del Rey', minas: 'Minas',
   contagem: 'Contagem', estacao: 'Estação', tommy: 'Tommy', lez: 'Lez a Lez'
 };
 
@@ -6420,7 +6421,7 @@ async function _loadUsersList() {
             <td class="users-td"><input class="users-input users-inline-input" data-field="label" value="${u.label}" placeholder="Nome"></td>
             <td class="users-td">
               <select class="users-input users-select users-inline-input" data-field="board">
-                ${Object.entries(BOARD_LABELS).map(([v,l]) => `<option value="${v}"${u.board===v?' selected':''}>${l}</option>`).join('')}
+                ${Object.entries(BOARD_LABELS).map(([v,l]) => `<option value="${v}"${(u.board==null&&v==='')||u.board===v?' selected':''}>${l}</option>`).join('')}
               </select>
             </td>
             <td class="users-td"><input class="users-input users-inline-input" data-field="password" type="text" placeholder="••••••" autocomplete="off"></td>
@@ -6437,7 +6438,8 @@ async function _loadUsersList() {
         const row = list.querySelector(`tr[data-user="${btn.dataset.user}"]`);
         const body = {};
         row.querySelectorAll('[data-field]').forEach(el => {
-          if (el.value.trim()) body[el.dataset.field] = el.value.trim();
+          if (el.dataset.field === 'board') { body.board = el.value.trim() || null; }
+          else if (el.value.trim()) body[el.dataset.field] = el.value.trim();
         });
         try {
           await apiFetch('PUT', `/api/users/${btn.dataset.user}`, body);
