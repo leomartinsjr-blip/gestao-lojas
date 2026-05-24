@@ -3011,10 +3011,11 @@ function getIndevaStore(db, board) {
   if (!db.indeva) db.indeva = {};
   const today = todayBRT();
   if (!db.indeva[board] || db.indeva[board].date !== today) {
-    db.indeva[board] = { fila: [], atendendo: null, atendimentos: [], date: today };
+    db.indeva[board] = { fila: [], atendendo: [], atendimentos: [], date: today };
   }
-  if (!('atendendo' in db.indeva[board])) db.indeva[board].atendendo = null;
-  return db.indeva[board];
+  const s = db.indeva[board];
+  if (!Array.isArray(s.atendendo)) s.atendendo = s.atendendo != null ? [s.atendendo] : [];
+  return s;
 }
 
 app.get('/api/indeva/:board', requireAuth, async (req, res) => {
@@ -3058,7 +3059,9 @@ app.post('/api/indeva/:board/sair', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'Sem acesso' });
     const db = await readDB();
     const store = getIndevaStore(db, board);
-    store.fila = store.fila.filter(x => x !== parseInt(empId));
+    const rid = parseInt(empId);
+    store.fila = store.fila.filter(x => x !== rid);
+    store.atendendo = store.atendendo.filter(x => x !== rid);
     await writeDB(db);
     res.json(store);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -3075,10 +3078,7 @@ app.post('/api/indeva/:board/atender', requireAuth, async (req, res) => {
     const db = await readDB();
     const store = getIndevaStore(db, board);
     const id = parseInt(empId);
-    if (store.atendendo != null && store.atendendo !== id) {
-      if (!store.fila.includes(store.atendendo)) store.fila.unshift(store.atendendo);
-    }
-    store.atendendo = id;
+    if (!store.atendendo.includes(id)) store.atendendo.push(id);
     store.fila = store.fila.filter(x => x !== id);
     await writeDB(db);
     res.json(store);
@@ -3106,7 +3106,7 @@ app.post('/api/indeva/:board/atendimento', requireAuth, async (req, res) => {
       vendeu: !!vendeu,
       motivo: vendeu ? null : (motivo || null)
     });
-    if (store.atendendo === id) store.atendendo = null;
+    store.atendendo = store.atendendo.filter(x => x !== id);
     store.fila = store.fila.filter(x => x !== id);
     store.fila.push(id);
     await writeDB(db);

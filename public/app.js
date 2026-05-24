@@ -6687,81 +6687,107 @@ async function _loadIndeva() {
 
 function _renderIndeva(body, state) {
   const { fila, atendendo, atendimentos } = state;
+  const atendArr = Array.isArray(atendendo) ? atendendo : (atendendo != null ? [atendendo] : []);
   const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && e.isVendedor!==false && !e.inativo);
   const empById = Object.fromEntries(emps.map(e => [e.id, e]));
-  const atendendoEmp = atendendo != null ? empById[atendendo] : null;
-  const total   = atendimentos.length;
-  const vendas  = atendimentos.filter(a => a.vendeu).length;
-  const conv    = total > 0 ? Math.round(vendas/total*100) : 0;
+  const total  = atendimentos.length;
+  const vendas = atendimentos.filter(a => a.vendeu).length;
+  const conv   = total > 0 ? Math.round(vendas/total*100) : 0;
   const convCls = conv>=50?'conv-ok':conv>=30?'conv-warn':'conv-no';
-  const disponiveis = emps.filter(e => !fila.includes(e.id) && e.id !== atendendo);
+  const disponiveis = emps.filter(e => !fila.includes(e.id) && !atendArr.includes(e.id));
 
-  function vendorCard(emp) {
-    return `<div class="indeva-vendor-card indeva-draggable" draggable="true" data-id="${emp.id}" data-empid="${emp.id}">
-      ${empAvatarHtml(emp, 38)}
-      <span class="indeva-vendor-name">${emp.apelido||emp.name}</span>
+  const vendorStats = {};
+  for (const a of atendimentos) {
+    if (!vendorStats[a.empId]) vendorStats[a.empId] = { total:0, vendas:0 };
+    vendorStats[a.empId].total++;
+    if (a.vendeu) vendorStats[a.empId].vendas++;
+  }
+
+  function motivoChipsHtml(empId) {
+    return INDEVA_MOTIVOS.map(m =>
+      `<button class="indeva-motivo-chip" data-motivo="${m}" data-id="${empId}">${m}</button>`
+    ).join('');
+  }
+
+  function atendCard(emp) {
+    const st = vendorStats[emp.id];
+    const todayCount = st?.total || 0;
+    return `<div class="indeva-atend-card" data-empid="${emp.id}">
+      <div class="indeva-atend-card-top">
+        ${empAvatarHtml(emp, 44)}
+        <div class="indeva-atend-card-info">
+          <div class="indeva-atend-name">${emp.apelido||emp.name}</div>
+          ${todayCount > 0 ? `<div class="indeva-atend-count">${todayCount} atend. hoje</div>` : ''}
+        </div>
+        <button class="indeva-remove-btn indeva-atend-close" data-id="${emp.id}" title="Remover">✕</button>
+      </div>
+      <div class="indeva-action-btns">
+        <button class="indeva-vendeu-btn" data-id="${emp.id}">✓ Vendeu</button>
+        <button class="indeva-naov-btn" data-id="${emp.id}">✗ Não vendeu</button>
+      </div>
+      <div class="indeva-motivos-wrap hidden" data-motivos="${emp.id}">
+        <div class="indeva-motivos-title">Motivo:</div>
+        <div class="indeva-motivo-chips">${motivoChipsHtml(emp.id)}</div>
+      </div>
     </div>`;
   }
 
   body.innerHTML = `
-    <div class="indeva-stats">
-      <span class="indeva-stat"><strong>${total}</strong> atendimento${total!==1?'s':''}</span>
-      <span class="indeva-stat ${convCls}"><strong>${conv}%</strong> conversão</span>
-      <span class="indeva-stat"><strong>${vendas}</strong> venda${vendas!==1?'s':''}</span>
+    <div class="indeva-hdr-stats">
+      <div class="indeva-stat-pill"><span class="indeva-stat-val">${total}</span><span class="indeva-stat-lbl">atend.</span></div>
+      <div class="indeva-stat-pill ${convCls}"><span class="indeva-stat-val">${conv}%</span><span class="indeva-stat-lbl">conversão</span></div>
+      <div class="indeva-stat-pill"><span class="indeva-stat-val">${vendas}</span><span class="indeva-stat-lbl">venda${vendas!==1?'s':''}</span></div>
+      <div class="indeva-stat-pill"><span class="indeva-stat-val">${fila.length}</span><span class="indeva-stat-lbl">na fila</span></div>
     </div>
     <div class="indeva-kanban">
       <div class="indeva-col">
-        <div class="indeva-col-hdr">Disponíveis</div>
+        <div class="indeva-col-hdr">Disponíveis <span class="indeva-col-count">${disponiveis.length}</span></div>
         <div class="indeva-pool" id="indevaPool">
           ${disponiveis.length===0
             ? '<div class="indeva-col-empty">Todos na fila</div>'
-            : disponiveis.map(e => vendorCard(e)).join('')}
+            : disponiveis.map(e => `
+              <div class="indeva-vendor-card indeva-draggable" draggable="true" data-id="${e.id}" data-empid="${e.id}">
+                ${empAvatarHtml(e, 36)}
+                <div class="indeva-vendor-info">
+                  <span class="indeva-vendor-name">${e.apelido||e.name}</span>
+                  ${vendorStats[e.id] ? `<span class="indeva-vendor-sub">${vendorStats[e.id].total} atend.</span>` : ''}
+                </div>
+              </div>`).join('')}
         </div>
       </div>
       <div class="indeva-col">
         <div class="indeva-col-hdr">Em Espera <span class="indeva-col-count">${fila.length}</span></div>
         <div class="indeva-drop-zone" id="indevaEspera" data-zone="espera">
           ${fila.length===0
-            ? '<div class="indeva-drop-hint">Arraste ou clique para entrar na fila</div>'
+            ? '<div class="indeva-drop-hint">Clique em um vendedor para entrar na fila</div>'
             : fila.map((id,i) => {
                 const e = empById[id]; if (!e) return '';
-                return `<div class="indeva-queue-card indeva-draggable" draggable="true" data-id="${e.id}" data-empid="${e.id}">
+                return `<div class="indeva-queue-card indeva-draggable${i===0?' indeva-next-up':''}" draggable="true" data-id="${e.id}" data-empid="${e.id}">
                   <span class="indeva-q-pos">${i+1}</span>
-                  ${empAvatarHtml(e, 34)}
-                  <span class="indeva-vendor-name">${e.apelido||e.name}</span>
+                  ${empAvatarHtml(e, 32)}
+                  <div class="indeva-vendor-info">
+                    <span class="indeva-vendor-name">${e.apelido||e.name}</span>
+                    ${vendorStats[e.id] ? `<span class="indeva-vendor-sub">${vendorStats[e.id].total} atend.</span>` : ''}
+                  </div>
+                  ${i===0 ? '<span class="indeva-next-badge">Próx.</span>' : ''}
                   <button class="indeva-remove-btn" data-id="${e.id}" title="Remover">✕</button>
                 </div>`;
               }).join('')}
         </div>
       </div>
-      <div class="indeva-col">
-        <div class="indeva-col-hdr">Em Atendimento</div>
-        <div class="indeva-drop-zone" id="indevaAtend" data-zone="atendimento">
-          ${atendendoEmp ? `
-            <div class="indeva-atend-card">
-              ${empAvatarHtml(atendendoEmp, 60)}
-              <div class="indeva-atend-name">${atendendoEmp.apelido||atendendoEmp.name}</div>
-              <div class="indeva-atend-count">${atendimentos.filter(a=>a.empId===atendendoEmp.id).length} atend. hoje</div>
-              <div class="indeva-action-btns">
-                <button class="indeva-vendeu-btn" data-id="${atendendoEmp.id}">✓ Vendeu</button>
-                <button class="indeva-naov-btn" data-id="${atendendoEmp.id}">✗ Não vendeu</button>
-              </div>
-              <div class="indeva-motivo-panel hidden" id="indevaMotivoPanel">
-                <select class="indeva-select" id="indevaMotivoSel">
-                  <option value="">— Motivo —</option>
-                  ${INDEVA_MOTIVOS.map(m=>`<option value="${m}">${m}</option>`).join('')}
-                </select>
-                <button class="indeva-naov-confirm-btn" data-id="${atendendoEmp.id}">Confirmar</button>
-              </div>
-              ${_renderIndevaGoals(atendendoEmp)}
-            </div>` : '<div class="indeva-drop-hint">Arraste um vendedor aqui</div>'}
+      <div class="indeva-col indeva-col-atend-wrap">
+        <div class="indeva-col-hdr">Em Atendimento <span class="indeva-col-count">${atendArr.length}</span></div>
+        <div class="indeva-drop-zone indeva-atend-zone" id="indevaAtend" data-zone="atendimento">
+          ${atendArr.length === 0
+            ? '<div class="indeva-drop-hint">Clique ou arraste um vendedor da fila</div>'
+            : atendArr.map(id => { const e = empById[id]; return e ? atendCard(e) : ''; }).join('')}
         </div>
       </div>
     </div>
     <div class="indeva-log-wrap">
       <div class="indeva-section-title">Atendimentos de Hoje</div>
       ${total===0
-        ? '<div class="indeva-log-empty">Nenhum atendimento ainda</div>'
+        ? '<div class="indeva-log-empty">Nenhum atendimento registrado ainda</div>'
         : `<div class="indeva-log">${[...atendimentos].reverse().map(a=>
             `<div class="indeva-log-item ${a.vendeu?'log-venda':'log-naov'}">
               <span class="log-hora">${a.hora}</span>
@@ -6770,9 +6796,8 @@ function _renderIndeva(body, state) {
             </div>`).join('')}</div>`}
     </div>`;
 
-  // Drag and drop
-  const pool    = body.querySelector('#indevaPool');
-  const espera  = body.querySelector('#indevaEspera');
+  const pool     = body.querySelector('#indevaPool');
+  const espera   = body.querySelector('#indevaEspera');
   const atendZone = body.querySelector('#indevaAtend');
   let dragId = null;
 
@@ -6790,8 +6815,7 @@ function _renderIndeva(body, state) {
     zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('indeva-drop-hover'); });
     zone.addEventListener('dragleave', e => { if (!zone.contains(e.relatedTarget)) zone.classList.remove('indeva-drop-hover'); });
     zone.addEventListener('drop', async e => {
-      e.preventDefault();
-      zone.classList.remove('indeva-drop-hover');
+      e.preventDefault(); zone.classList.remove('indeva-drop-hover');
       if (!dragId) return;
       const id = dragId; dragId = null;
       if (zone.dataset.zone === 'espera') await _indevaEntrar(id);
@@ -6799,72 +6823,108 @@ function _renderIndeva(body, state) {
     });
   });
 
-  // Click on disponível card → enter fila
-  pool?.querySelectorAll('.indeva-vendor-card').forEach(card => {
-    card.addEventListener('click', () => _indevaEntrar(parseInt(card.dataset.empid)));
-  });
-
-  // Click on espera card (not remove btn) → move to atendimento
-  espera?.querySelectorAll('.indeva-queue-card').forEach(card => {
+  pool?.querySelectorAll('.indeva-vendor-card').forEach(card =>
+    card.addEventListener('click', () => _indevaEntrar(parseInt(card.dataset.empid)))
+  );
+  espera?.querySelectorAll('.indeva-queue-card').forEach(card =>
     card.addEventListener('click', e => {
       if (e.target.classList.contains('indeva-remove-btn')) return;
       _indevaAtender(parseInt(card.dataset.empid));
-    });
-  });
+    })
+  );
 
   body.querySelectorAll('.indeva-remove-btn').forEach(btn =>
     btn.addEventListener('click', e => { e.stopPropagation(); _indevaSair(parseInt(btn.dataset.id)); })
   );
-  body.querySelector('.indeva-vendeu-btn')?.addEventListener('click', async e => {
-    await _indevaAtend(parseInt(e.currentTarget.dataset.id), true, null);
-  });
-  body.querySelector('.indeva-naov-btn')?.addEventListener('click', () => {
-    body.querySelector('#indevaMotivoPanel')?.classList.toggle('hidden');
-  });
-  body.querySelector('.indeva-naov-confirm-btn')?.addEventListener('click', async e => {
-    const motivo = body.querySelector('#indevaMotivoSel')?.value;
-    if (!motivo) { toast('Selecione um motivo', true); return; }
-    await _indevaAtend(parseInt(e.currentTarget.dataset.id), false, motivo);
-  });
+
+  body.querySelectorAll('.indeva-vendeu-btn').forEach(btn =>
+    btn.addEventListener('click', async e => {
+      await _indevaAtend(parseInt(e.currentTarget.dataset.id), true, null);
+    })
+  );
+  body.querySelectorAll('.indeva-naov-btn').forEach(btn =>
+    btn.addEventListener('click', e => {
+      const id = e.currentTarget.dataset.id;
+      const wrap = body.querySelector(`[data-motivos="${id}"]`);
+      wrap?.classList.toggle('hidden');
+    })
+  );
+  body.querySelectorAll('.indeva-motivo-chip').forEach(chip =>
+    chip.addEventListener('click', async () => {
+      const motivo = chip.dataset.motivo;
+      const id = parseInt(chip.dataset.id);
+      await _indevaAtend(id, false, motivo);
+    })
+  );
 }
 
-function _renderIndevaGoals(emp) {
-  const fBRL = v => !v ? '—' : new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v);
-  const fPct = v => v==null?'—':v.toFixed(1)+'%';
-  const cls  = v => v==null?'':v>=100?'kpi-pos':v>=80?'kpi-warn':'kpi-neg';
-
-  // Weekly
+function _indevaGoalsData(emp) {
   const pad = n => String(n).padStart(2,'0');
-  const t = new Date(); const todayStr=`${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
-  const week = getWeekForDate(todayStr);
-  const k = calcWeekKpis(emp, week);
-
-  // Monthly
+  const t = new Date();
+  const todayStr = `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
   const vsale = S.vsales?.[emp.id] || { meta:{mensal:0}, entries:{} };
+  const todayValor = vsale.entries?.[todayStr]?.value || 0;
   const monthMeta = vsale.meta?.mensal || 0;
-  const curPrefix = `${S.year}-${pad(S.month)}-`;
+  const curPrefix = `${t.getFullYear()}-${pad(t.getMonth()+1)}-`;
   let monthValor = 0;
   for (const [d, entry] of Object.entries(vsale.entries||{})) {
     if (d.startsWith(curPrefix)) monthValor += entry.value||0;
   }
-  const monthPct = monthMeta>0 ? monthValor/monthMeta*100 : null;
+  const monthPct = monthMeta > 0 ? monthValor/monthMeta*100 : null;
+  const week = getWeekForDate(todayStr);
+  const k = calcWeekKpis(emp, week);
+  return { todayValor, monthValor, monthMeta, monthPct, week: k };
+}
 
-  return `<div class="indeva-goals">
-    <div class="indeva-goals-name">${emp.apelido||emp.name}</div>
-    <div class="indeva-goals-cargo">${emp.cargo||''}</div>
-    <div class="indeva-goals-items">
-      <div class="indeva-goal-row">
-        <span class="indeva-goal-label">Semana</span>
-        <span class="indeva-goal-val">${fBRL(k.valor||null)} / ${fBRL(k.wMeta||null)}</span>
-        <span class="indeva-goal-pct ${cls(k.pctMeta)}">${fPct(k.pctMeta)}</span>
+function _showIndevaGoalsOverlay(emp) {
+  const fBRL = v => v > 0 ? 'R$ ' + new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2}).format(v) : '—';
+  const fPct = v => v==null ? '—' : v.toFixed(1)+'%';
+  const clsPct = v => v==null?'':v>=100?'kpi-pos':v>=80?'kpi-warn':'kpi-neg';
+  const bar = p => {
+    const pct = Math.min(p||0, 100);
+    const c = pct>=100?'#3FB950':pct>=80?'#D29922':'#F85149';
+    return `<div class="ig-bar"><div class="ig-bar-fill" style="width:${pct}%;background:${c}"></div></div>`;
+  };
+  const g = _indevaGoalsData(emp);
+  const panel = document.querySelector('#indevaOverlay .perf-panel');
+  if (!panel) return;
+  const overlay = document.createElement('div');
+  overlay.className = 'ig-overlay';
+  overlay.innerHTML = `
+    <div class="ig-modal">
+      <div class="ig-hdr">
+        ${empAvatarHtml(emp, 72)}
+        <div class="ig-hdr-info">
+          <div class="ig-emp-name">${emp.apelido||emp.name}</div>
+          <div class="ig-emp-cargo">${emp.cargo||''}</div>
+        </div>
+        <button class="ig-close">✕</button>
       </div>
-      <div class="indeva-goal-row">
-        <span class="indeva-goal-label">Mês</span>
-        <span class="indeva-goal-val">${fBRL(monthValor||null)} / ${fBRL(monthMeta||null)}</span>
-        <span class="indeva-goal-pct ${cls(monthPct)}">${fPct(monthPct)}</span>
+      <div class="ig-rows">
+        <div class="ig-row">
+          <span class="ig-lbl">Hoje</span>
+          <span class="ig-val">${fBRL(g.todayValor)}</span>
+          <span class="ig-pct"></span>
+        </div>
+        <div class="ig-row">
+          <span class="ig-lbl">Semana</span>
+          <span class="ig-val">${fBRL(g.week.valor||0)} <span class="ig-meta">/ ${fBRL(g.week.wMeta||0)}</span></span>
+          <span class="ig-pct ${clsPct(g.week.pctMeta)}">${fPct(g.week.pctMeta)}</span>
+          ${bar(g.week.pctMeta)}
+        </div>
+        <div class="ig-row">
+          <span class="ig-lbl">Mês</span>
+          <span class="ig-val">${fBRL(g.monthValor)} <span class="ig-meta">/ ${fBRL(g.monthMeta)}</span></span>
+          <span class="ig-pct ${clsPct(g.monthPct)}">${fPct(g.monthPct)}</span>
+          ${bar(g.monthPct)}
+        </div>
       </div>
-    </div>
-  </div>`;
+      <button class="ig-confirm-btn">Entendido</button>
+    </div>`;
+  overlay.querySelector('.ig-close').addEventListener('click', () => overlay.remove());
+  overlay.querySelector('.ig-confirm-btn').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
+  panel.appendChild(overlay);
 }
 
 async function _indevaEntrar(empId) {
@@ -6873,7 +6933,13 @@ async function _indevaEntrar(empId) {
       method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({empId})
     });
     if (!r.ok) throw new Error(await r.text());
-    _renderIndeva(document.getElementById('indevaBody'), await r.json());
+    const state = await r.json();
+    _renderIndeva(document.getElementById('indevaBody'), state);
+    const isFirstEntry = !state.atendimentos.some(a => a.empId === empId);
+    if (isFirstEntry) {
+      const emp = (S.employees||[]).find(e => e.id === empId);
+      if (emp) _showIndevaGoalsOverlay(emp);
+    }
   } catch(e) { toast('Erro: '+e.message, true); }
 }
 
