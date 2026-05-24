@@ -385,8 +385,16 @@
               <select id="funcBoard" class="folgas-filter"></select>
             </div>
             <div class="func-field">
-              <label>Cargo</label>
-              <input type="text" id="funcCargo" placeholder="Vendedor, Gerente…">
+              <label>Cargo <span class="func-req">*</span></label>
+              <select id="funcCargo" class="folgas-filter" required>
+                <option value="">— selecione —</option>
+                <option value="Vendedor">Vendedor</option>
+                <option value="Gerente">Gerente</option>
+                <option value="Gerente Vendedor">Gerente Vendedor</option>
+                <option value="Sub-Gerente">Sub-Gerente</option>
+                <option value="Caixa">Caixa</option>
+                <option value="VR">VR</option>
+              </select>
             </div>
             <div class="func-field">
               <label>Data de Admissão *</label>
@@ -429,17 +437,23 @@
               <label>Super Meta (%)</label>
               <input type="number" id="funcComissaoSuper" placeholder="0,00" min="0" step="0.01">
             </div>
+            <div class="func-field">
+              <label>Comissão VR (%)</label>
+              <input type="number" id="funcComissaoVR" placeholder="0,00" min="0" step="0.01">
+            </div>
+            <div class="func-field">
+              <label>Abertura de Loja (R$)</label>
+              <input type="number" id="funcAberturaLoja" placeholder="0,00" min="0" step="0.01">
+            </div>
+            <div class="func-field">
+              <label>Comissão Gerente (%)</label>
+              <input type="number" id="funcComissaoGerente" placeholder="0,00" min="0" step="0.01">
+            </div>
           </div>
 
           <!-- Seção: Status -->
           <div class="func-section-hdr">Status</div>
           <div class="func-form-grid func-form-grid-status">
-            <div class="func-field func-field-check">
-              <label class="func-check-label">
-                <input type="checkbox" id="funcIsVend" checked>
-                É vendedor
-              </label>
-            </div>
             <div class="func-field func-field-check">
               <label class="func-check-label">
                 <input type="checkbox" id="funcInativo">

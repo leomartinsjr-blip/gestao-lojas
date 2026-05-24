@@ -4092,11 +4092,13 @@ function openFuncForm(id) {
   document.getElementById('funcContrato2').value = emp?.contrato2 || '';
   document.getElementById('funcCargo').value     = emp?.cargo     || '';
   document.getElementById('funcSalario').value   = emp?.salario   || '';
-  document.getElementById('funcComissaoSemMeta').value = emp?.comissaoSemMeta || '';
-  document.getElementById('funcComissao').value        = emp?.comissao        || '';
-  document.getElementById('funcComissaoMeta2').value   = emp?.comissaoMeta2   || '';
-  document.getElementById('funcComissaoSuper').value   = emp?.comissaoSuper   || '';
-  document.getElementById('funcIsVend').checked  = emp ? emp.isVendedor !== false : true;
+  document.getElementById('funcComissaoSemMeta').value  = emp?.comissaoSemMeta  || '';
+  document.getElementById('funcComissao').value         = emp?.comissao         || '';
+  document.getElementById('funcComissaoMeta2').value    = emp?.comissaoMeta2    || '';
+  document.getElementById('funcComissaoSuper').value    = emp?.comissaoSuper    || '';
+  document.getElementById('funcComissaoVR').value       = emp?.comissaoVR       || '';
+  document.getElementById('funcAberturaLoja').value     = emp?.aberturaLoja     || '';
+  document.getElementById('funcComissaoGerente').value  = emp?.comissaoGerente  || '';
   document.getElementById('funcInativo').checked = !!emp?.inativo;
   document.getElementById('funcDesligamento').value = emp?.desligamento || '';
   document.getElementById('funcDesligamentoWrap').style.display = emp?.inativo ? '' : 'none';
@@ -4151,25 +4153,29 @@ async function saveFuncionario() {
   const admissao  = document.getElementById('funcAdmissao').value;
   const contrato1 = parseInt(document.getElementById('funcContrato1').value) || 0;
   const contrato2 = parseInt(document.getElementById('funcContrato2').value) || 0;
-  const cargo     = document.getElementById('funcCargo').value.trim();
+  const cargo     = document.getElementById('funcCargo').value;
   const salario   = parseFloat(document.getElementById('funcSalario').value) || 0;
-  const comissaoSemMeta = parseFloat(document.getElementById('funcComissaoSemMeta').value) || 0;
-  const comissao       = parseFloat(document.getElementById('funcComissao').value)       || 0;
-  const comissaoMeta2  = parseFloat(document.getElementById('funcComissaoMeta2').value)  || 0;
-  const comissaoSuper  = parseFloat(document.getElementById('funcComissaoSuper').value)  || 0;
-  const isVendedor= document.getElementById('funcIsVend').checked;
+  const comissaoSemMeta  = parseFloat(document.getElementById('funcComissaoSemMeta').value)  || 0;
+  const comissao         = parseFloat(document.getElementById('funcComissao').value)          || 0;
+  const comissaoMeta2    = parseFloat(document.getElementById('funcComissaoMeta2').value)     || 0;
+  const comissaoSuper    = parseFloat(document.getElementById('funcComissaoSuper').value)     || 0;
+  const comissaoVR       = parseFloat(document.getElementById('funcComissaoVR').value)        || 0;
+  const aberturaLoja     = parseFloat(document.getElementById('funcAberturaLoja').value)      || 0;
+  const comissaoGerente  = parseFloat(document.getElementById('funcComissaoGerente').value)   || 0;
+  const isVendedor = ['Vendedor', 'Gerente Vendedor'].includes(cargo);
   const inativo   = document.getElementById('funcInativo').checked;
   const desligamento = document.getElementById('funcDesligamento').value;
   const fotoRemoved  = !FE.newPhotoFile && !FE.currentPhotoUrl && !!FE.editingId;
 
   if (!name || !board) { toast('Nome e loja são obrigatórios', true); return; }
+  if (!cargo) { toast('Cargo é obrigatório', true); return; }
   if (!admissao) { toast('Data de admissão é obrigatória', true); return; }
   if (!contrato1) { toast('1º Contrato Experiência é obrigatório', true); return; }
 
   const btn = document.getElementById('funcSaveBtn');
   btn.disabled = true;
   try {
-    const body = { name, apelido, board, cpf, microvixCod, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento };
+    const body = { name, apelido, board, cpf, microvixCod, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, isVendedor, inativo, desligamento };
     if (fotoRemoved) body.foto = '';
     let emp;
     if (FE.editingId) {
