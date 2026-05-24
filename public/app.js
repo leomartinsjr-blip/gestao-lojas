@@ -272,7 +272,7 @@ function visibleBoards() {
   if (!S.user?.board) {
     const all = Object.entries(BOARDS);
     if (DASH_BOARD_FILTER.size === 0) return all;
-    return all.filter(([k]) => k === 'escritorio' || DASH_BOARD_FILTER.has(k));
+    return all.filter(([k]) => DASH_BOARD_FILTER.has(k));
   }
   return Object.entries(BOARDS).filter(([k]) => k === S.user.board);
 }
@@ -388,7 +388,7 @@ function renderDashboard() {
   }
 
   const visible = visibleBoards();
-  if (!visible.some(([bk]) => (byBoard[bk] || []).length > 0)) {
+  if (!visible.some(([bk]) => (byBoard[bk] || []).length > 0) && S.user?.board !== 'escritorio') {
     c.innerHTML = '<div class="loading">Nenhum vendedor cadastrado. Acesse Funcionários para adicionar.</div>';
     return;
   }
@@ -441,7 +441,7 @@ function renderDashboard() {
 
   // ── FILTRO DE LOJAS ──────────────────────────────────────────────────────
   if (isAdmin) {
-    const storeBoards = Object.entries(BOARDS).filter(([k]) => k !== 'admin');
+    const storeBoards = Object.entries(BOARDS).filter(([k]) => k !== 'admin' && k !== 'escritorio');
     const filterBar = document.createElement('div');
     filterBar.className = 'dash-store-filter';
     const allOn = DASH_BOARD_FILTER.size === 0;
