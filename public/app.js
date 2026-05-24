@@ -819,8 +819,6 @@ function renderDashboard() {
     _refreshDashWeek();
   });
 
-  if (S.user?.board === 'escritorio') leftCol.remove();
-
   const midCol = document.createElement('div');
   midCol.className = 'main-mid-col';
   grid.appendChild(midCol);
@@ -5019,14 +5017,15 @@ function _renderMeetingHistory(body, board, isAdmin, refresh) {
 
 function renderMeetingCard(container) {
   const isAdmin = !S.user?.board;
+  const isEscritorio = S.user?.board === 'escritorio';
   const userBoard = S.user?.board;
-  let activeBoard = isAdmin ? NF_STORES[0] : userBoard;
+  let activeBoard = (isAdmin || isEscritorio) ? NF_STORES[0] : userBoard;
   let showHistory = false;
 
   const card = document.createElement('div');
   card.className = 'main-card';
 
-  const tabsHtml = isAdmin ? `
+  const tabsHtml = (isAdmin || isEscritorio) ? `
     <div class="nf-tabs">
       ${NF_STORES.map(b => `
         <button class="nf-tab${b === activeBoard ? ' active' : ''}" data-board="${b}"
@@ -5046,13 +5045,13 @@ function renderMeetingCard(container) {
         </svg>
         Reunião Mensal
       </span>
-      ${!isAdmin ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
+      ${(!isAdmin && !isEscritorio) ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
       <button class="nf-hist-btn" id="mtgHistBtn" style="display:none">Histórico</button>
     </div>
     ${tabsHtml}
     <div class="main-card-body nf-card-body" id="mtgCardBody"></div>
     <div class="nf-add-row" id="mtgAddRow">
-      <input type="text" class="nf-input" id="mtgInput" placeholder="${isAdmin ? 'Adicionar pauta…' : 'Enviar pendência para adm…'}" maxlength="200">
+      <input type="text" class="nf-input" id="mtgInput" placeholder="${(isAdmin || isEscritorio) ? 'Adicionar pauta…' : 'Enviar pendência para adm…'}" maxlength="200">
       <button class="nf-add-btn" id="mtgAddBtn">+</button>
     </div>
   `;
@@ -5088,7 +5087,7 @@ function renderMeetingCard(container) {
 
   histBtn.addEventListener('click', () => { showHistory = !showHistory; refresh(); });
 
-  if (isAdmin) {
+  if (isAdmin || isEscritorio) {
     card.querySelectorAll('.nf-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         activeBoard = tab.dataset.board;
@@ -5106,7 +5105,7 @@ function renderMeetingCard(container) {
     try {
       const item = await apiFetch('POST', '/api/meeting-items', {
         text, board: activeBoard, year: S.year, month: S.month,
-        visibility: isAdmin ? 'admin' : 'loja'
+        visibility: (isAdmin || isEscritorio) ? 'admin' : 'loja'
       });
       S.meetingItems = [...S.meetingItems, item];
       refresh();
@@ -5668,15 +5667,16 @@ function renderCaixaCard(container) {
 
 function renderNFCard(container) {
   const isAdmin = !S.user?.board;
+  const isEscritorio = S.user?.board === 'escritorio';
   const userBoard = S.user?.board;
-  let activeBoard = isAdmin ? NF_STORES[0] : userBoard;
+  let activeBoard = (isAdmin || isEscritorio) ? NF_STORES[0] : userBoard;
   let showHistory = false;
 
   const card = document.createElement('div');
   card.className = 'main-card';
 
   const NF_ADMIN_TABS = [...NF_STORES, 'escritorio'];
-  const tabsHtml = isAdmin ? `
+  const tabsHtml = (isAdmin || isEscritorio) ? `
     <div class="nf-tabs">
       ${NF_ADMIN_TABS.map(b => {
         const pending = b === 'escritorio' ? (S.nfItems || []).filter(x => x.board === 'escritorio' && !x.archived && x.status === 'pendente').length : 0;
@@ -5697,7 +5697,7 @@ function renderNFCard(container) {
         </svg>
         Recebimento de NF Autorizado
       </span>
-      ${!isAdmin ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
+      ${(!isAdmin && !isEscritorio) ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
       <button class="nf-hist-btn" id="nfHistBtn" style="display:none">Histórico</button>
     </div>
     ${tabsHtml}
@@ -5729,7 +5729,7 @@ function renderNFCard(container) {
       addRow.style.display = 'none';
     } else {
       _renderNFActive(body, activeBoard, refresh);
-      addRow.style.display = '';
+      addRow.style.display = activeBoard === 'escritorio' ? 'none' : '';
     }
   }
 
@@ -5740,17 +5740,15 @@ function renderNFCard(container) {
     refresh();
   });
 
-  if (isAdmin) {
+  if (isAdmin || isEscritorio) {
     card.querySelectorAll('.nf-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         activeBoard = tab.dataset.board;
         showHistory = false;
         card.querySelectorAll('.nf-tab').forEach(t => t.classList.toggle('active', t === tab));
-        addRow.style.display = activeBoard === 'escritorio' ? 'none' : '';
         refresh();
       });
     });
-    if (activeBoard === 'escritorio') addRow.style.display = 'none';
   }
 
   async function addNFItem() {
@@ -5834,10 +5832,11 @@ function _boletaBadge(days) {
 }
 
 function renderBoletasCard(container) {
-  const isAdmin   = !S.user?.board;
-  const userBoard = S.user?.board;
+  const isAdmin      = !S.user?.board;
+  const isEscritorio = S.user?.board === 'escritorio';
+  const userBoard    = S.user?.board;
   const pending   = (S.boletas || [])
-    .filter(b => b.status === 'pendente' && (isAdmin || b.board === userBoard))
+    .filter(b => b.status === 'pendente' && (isAdmin || isEscritorio || b.board === userBoard))
     .sort((a, b) => (_boletaDaysLeft(a) ?? 9999) - (_boletaDaysLeft(b) ?? 9999));
 
   const card = document.createElement('div');
@@ -5847,7 +5846,7 @@ function renderBoletasCard(container) {
     ? '<div class="nf-empty">Nenhuma boleta pendente</div>'
     : pending.map(b => {
         const days = _boletaDaysLeft(b);
-        const storeTag = isAdmin ? ` <span style="color:${BOARDS[b.board]?.color || '#8B949E'}">${BOARDS[b.board]?.label || b.board}</span>` : '';
+        const storeTag = (isAdmin || isEscritorio) ? ` <span style="color:${BOARDS[b.board]?.color || '#8B949E'}">${BOARDS[b.board]?.label || b.board}</span>` : '';
         const info = [b.produto, b.tamanho, b.cor].filter(Boolean).join(' · ');
         return `<div class="bol-item" data-id="${b.id}" style="cursor:pointer">
           <div class="bol-item-top">
