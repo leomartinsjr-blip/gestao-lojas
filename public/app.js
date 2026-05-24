@@ -1176,7 +1176,9 @@ function _renderDashWeekBody(body, week, extraData) {
   const fDec = v => v == null ? '—' : v.toFixed(2);
 
   const isAdmin = !S.user?.board;
-  const vendedores = S.employees.filter(e => e.isVendedor !== false);
+  const vendedores = S.employees.filter(e =>
+    e.isVendedor !== false || !!(e.cargo?.toLowerCase()?.includes('gerente'))
+  );
   const byBoard = {};
   for (const emp of vendedores) {
     if (!byBoard[emp.board]) byBoard[emp.board] = [];
@@ -1206,22 +1208,36 @@ function _renderDashWeekBody(body, week, extraData) {
       if (emps.length === 0) continue;
 
       let totValor=0, totPecas=0, totAtend=0, totMeta=0, totPremio=0, totProjecao=0, hasProj=false;
-      const vendorRows = [];
-
+      const kpiCacheAdm = new Map();
       for (const emp of emps) {
         const k = calcWeekKpis(emp, week, extraData);
+        kpiCacheAdm.set(emp.id, k);
         totValor += k.valor; totPecas += k.pecas; totAtend += k.atend; totMeta += k.wMeta;
-        if (k.pTotal != null) totPremio += k.pTotal;
         if (k.projecao != null) { totProjecao += k.projecao; hasProj = true; }
+      }
+      const sHitMeta = totMeta > 0 && totValor >= totMeta;
+      const sPaVal   = totPecas > 0 && totAtend > 0 ? totPecas / totAtend : null;
+      const sHitPA   = sPaVal != null && sPaVal > PA_THRESHOLD;
+
+      const vendorRows = [];
+      for (const emp of emps) {
+        const k = kpiCacheAdm.get(emp.id);
+        const hitMeta   = k.isGerente ? sHitMeta : k.hitMeta;
+        const hitPA     = k.isGerente ? sHitPA   : k.hitPA;
+        const premioAmt = k.isGerente ? PREMIO_GERENTE_VENDAS : PREMIO_VENDAS;
+        const paEarned  = hitMeta && hitPA;
+        const pVendas   = k.isComplete ? (hitMeta ? premioAmt : 0) : null;
+        const pPA       = k.isComplete ? (paEarned ? PREMIO_PA : 0) : null;
+        const pTotal    = pVendas != null ? pVendas + (pPA||0) : null;
+        if (pTotal != null) totPremio += pTotal;
 
         const pctCls     = k.pctMeta  == null ? '' : k.pctMeta  >= 100 ? 'kpi-pos' : k.pctMeta  >= 80 ? 'kpi-warn' : 'kpi-neg';
         const pctProjCls = k.pctProj  == null ? '' : k.pctProj  >= 100 ? 'kpi-pos' : k.pctProj  >= 80 ? 'kpi-warn' : 'kpi-neg';
         const projCls    = k.projecao == null ? '' : k.projecao >= k.wMeta ? 'kpi-pos' : 'kpi-neg';
-        const paEarned = k.hitMeta && k.hitPA;
         const premioHtml = k.isFuture
           ? '<span class="dw-p-pending">—</span>'
-          : `<span class="dw-p ${k.hitMeta?'dw-p-ok':'dw-p-warn'}">${fBRL(PREMIO_VENDAS)}${k.hitMeta?' ✓':''}</span>
-             <span class="dw-p ${paEarned?'dw-p-ok':k.hitPA&&!k.hitMeta?'dw-p-no':'dw-p-warn'}" title="${k.hitPA&&!k.hitMeta?'PA atingido mas meta venda não':''}">+${fBRL(PREMIO_PA)}${paEarned?' ✓':k.hitPA&&!k.hitMeta?' ✗':''}</span>`;
+          : `<span class="dw-p ${hitMeta?'dw-p-ok':'dw-p-warn'}">${fBRL(premioAmt)}${hitMeta?' ✓':''}</span>
+             <span class="dw-p ${paEarned?'dw-p-ok':hitPA&&!hitMeta?'dw-p-no':'dw-p-warn'}" title="${hitPA&&!hitMeta?'PA atingido mas meta venda não':''}">+${fBRL(PREMIO_PA)}${paEarned?' ✓':hitPA&&!hitMeta?' ✗':''}</span>`;
 
         vendorRows.push(`<tr class="dw-row">
           <td class="dw-td dw-td-name" style="padding-left:1.4rem">${emp.apelido || emp.name}</td>
@@ -1321,20 +1337,34 @@ function _renderDashWeekBody(body, week, extraData) {
     if (emps.length === 0) continue;
 
     let totValor=0, totPecas=0, totAtend=0, totMeta=0, totPremio=0, totProjecao=0, hasProj=false;
+    const kpiCacheLoja = new Map();
+    for (const emp of emps) {
+      const k = calcWeekKpis(emp, week, extraData);
+      kpiCacheLoja.set(emp.id, k);
+      totValor += k.valor; totPecas += k.pecas; totAtend += k.atend; totMeta += k.wMeta;
+      if (k.projecao != null) { totProjecao += k.projecao; hasProj = true; }
+    }
+    const sHitMetaL = totMeta > 0 && totValor >= totMeta;
+    const sPaValL   = totPecas > 0 && totAtend > 0 ? totPecas / totAtend : null;
+    const sHitPAL   = sPaValL != null && sPaValL > PA_THRESHOLD;
 
     const rows = emps.map(emp => {
-      const k = calcWeekKpis(emp, week, extraData);
-      totValor += k.valor; totPecas += k.pecas; totAtend += k.atend; totMeta += k.wMeta;
-      if (k.pTotal != null) totPremio += k.pTotal;
-      if (k.projecao != null) { totProjecao += k.projecao; hasProj = true; }
+      const k = kpiCacheLoja.get(emp.id);
+      const hitMeta   = k.isGerente ? sHitMetaL : k.hitMeta;
+      const hitPA     = k.isGerente ? sHitPAL   : k.hitPA;
+      const premioAmt = k.isGerente ? PREMIO_GERENTE_VENDAS : PREMIO_VENDAS;
+      const paEarned  = hitMeta && hitPA;
+      const pVendas   = k.isComplete ? (hitMeta ? premioAmt : 0) : null;
+      const pPA       = k.isComplete ? (paEarned ? PREMIO_PA : 0) : null;
+      const pTotal    = pVendas != null ? pVendas + (pPA||0) : null;
+      if (pTotal != null) totPremio += pTotal;
 
       const pctCls  = k.pctMeta  == null ? '' : k.pctMeta  >= 100 ? 'kpi-pos' : k.pctMeta  >= 80 ? 'kpi-warn' : 'kpi-neg';
       const projCls = k.projecao == null ? '' : k.projecao >= k.wMeta ? 'kpi-pos' : 'kpi-neg';
-      const paEarned = k.hitMeta && k.hitPA;
       const premioHtml = k.isFuture
         ? '<span class="dw-p-pending">—</span>'
-        : `<span class="dw-p ${k.hitMeta?'dw-p-ok':'dw-p-warn'}">${fBRL(PREMIO_VENDAS)}${k.hitMeta?' ✓':''}</span>
-           <span class="dw-p ${paEarned?'dw-p-ok':k.hitPA&&!k.hitMeta?'dw-p-no':'dw-p-warn'}" title="${k.hitPA&&!k.hitMeta?'PA atingido mas meta venda não':''}">+${fBRL(PREMIO_PA)}${paEarned?' ✓':k.hitPA&&!k.hitMeta?' ✗':''}</span>`;
+        : `<span class="dw-p ${hitMeta?'dw-p-ok':'dw-p-warn'}">${fBRL(premioAmt)}${hitMeta?' ✓':''}</span>
+           <span class="dw-p ${paEarned?'dw-p-ok':hitPA&&!hitMeta?'dw-p-no':'dw-p-warn'}" title="${hitPA&&!hitMeta?'PA atingido mas meta venda não':''}">+${fBRL(PREMIO_PA)}${paEarned?' ✓':hitPA&&!hitMeta?' ✗':''}</span>`;
 
       return `<tr class="dw-row">
         <td class="dw-td dw-td-name">${emp.apelido || emp.name}</td>
@@ -3732,7 +3762,7 @@ function calcWeekKpis(emp, week, extraData) {
   }
   if (isComplete) projecao = valor;
 
-  const isGerente = !!emp.cargo?.toLowerCase().includes('gerente');
+  const isGerente = !!(emp.cargo?.toLowerCase()?.includes('gerente'));
 
   const hitMeta = wMeta > 0 && valor >= wMeta;
   const hitPA   = pa != null && pa > PA_THRESHOLD;
