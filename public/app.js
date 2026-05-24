@@ -3036,7 +3036,7 @@ function _checkWeeklyCelebrations() {
   const pending = [];
 
   for (const [bk, bc] of visibleBoards()) {
-    const emps = S.employees.filter(e => e.board === bk && e.isVendedor !== false);
+    const emps = S.employees.filter(e => e.board === bk && (e.isVendedor !== false || e.cargo?.toLowerCase().includes('gerente')) && !e.inativo);
     if (!emps.length) continue;
     let totValor = 0, totMeta = 0;
 
@@ -3505,9 +3505,10 @@ function initFolgasModal() {
 }
 
 // ── Metas Semanais ─────────────────────────────────────────────────────────
-const PREMIO_VENDAS = 80;
-const PREMIO_PA    = 50;
-const PA_THRESHOLD = 1.80;
+const PREMIO_VENDAS         = 80;
+const PREMIO_GERENTE_VENDAS = 250;
+const PREMIO_PA             = 50;
+const PA_THRESHOLD          = 1.80;
 
 let WK = { refDate: null, cache: {} };
 let DASH_WEEK = { refDate: null };
@@ -3727,16 +3728,37 @@ function calcWeekKpis(emp, week, extraData) {
   }
   if (isComplete) projecao = valor;
 
+  // Gerente: substituir dados individuais pelos totais da loja
+  const isGerente = !!emp.cargo?.toLowerCase().includes('gerente');
+  if (isGerente) {
+    let sv=0, sp=0, sa=0, sm=0;
+    for (const e2 of S.employees.filter(e => e.board === emp.board && e.isVendedor !== false && !e.inativo)) {
+      const vs2 = S.vsales[e2.id] || {};
+      const m2  = (vs2.meta?.mensal || 0) * weekWeightSum / 100;
+      sm += (wkMetasForWeek[e2.id]?.meta > 0 ? wkMetasForWeek[e2.id].meta : m2);
+      for (const ds of dates) {
+        if (ds > cutoff) break;
+        const mk = ds.slice(0, 7);
+        const en = mk === curKey ? vs2.entries?.[ds] : extraData?.[mk]?.vsales?.[e2.id]?.entries?.[ds];
+        if (en) { sv += en.value||0; sp += en.pecas||0; sa += en.atendimentos||0; }
+      }
+    }
+    valor = sv; pecas = sp; atend = sa; wMeta = sm;
+    pa       = sa > 0 && sp > 0 ? sp/sa : null;
+    pctMeta  = sm > 0 && sv > 0 ? sv/sm*100 : null;
+  }
+
   const hitMeta = wMeta > 0 && valor >= wMeta;
   const hitPA   = pa != null && pa > PA_THRESHOLD;
-  const pVendas = isComplete ? (hitMeta ? PREMIO_VENDAS : 0) : null;
+  const premioVendasAmt = isGerente ? PREMIO_GERENTE_VENDAS : PREMIO_VENDAS;
+  const pVendas = isComplete ? (hitMeta ? premioVendasAmt : 0) : null;
   const pPA     = isComplete ? (hitMeta && hitPA ? PREMIO_PA : 0) : null;
   const pTotal  = pVendas != null ? pVendas + (pPA||0) : null;
 
   const pctProj = (wMeta > 0 && projecao != null) ? projecao / wMeta * 100 : null;
 
   return { wMeta, valor, pa, pecas, atend, pctMeta, pctProj, projecao,
-           hitMeta, hitPA, pVendas, pPA, pTotal,
+           hitMeta, hitPA, pVendas, pPA, pTotal, isGerente,
            isComplete, isFuture, daysElapsed, totalDays: 7 };
 }
 
@@ -3816,7 +3838,7 @@ async function renderWeeklyModal() {
   const pendingCelebrations = [];
 
   for (const [bk, bc] of visibleBoards()) {
-    const emps = (byBoard[bk] || []).filter(e => e.isVendedor !== false);
+    const emps = S.employees.filter(e => e.board === bk && (e.isVendedor !== false || e.cargo?.toLowerCase().includes('gerente')) && !e.inativo);
     if (emps.length === 0) continue;
 
     const section = document.createElement('div');

@@ -1407,6 +1407,7 @@ body {
 .wk-p-no   { background: rgba(248,81,73,.12); color: #F85149; }
 .wk-p-pend { background: rgba(251,191,36,.1);  color: #FBBF24; }
 .wk-p-pending { color: var(--muted); font-size: .75rem; }
+.wk-gerente-badge { font-size: .58rem; font-weight: 700; background: #8B949E22; color: #8B949E; border-radius: 3px; padding: .05rem .3rem; margin-left: .3rem; vertical-align: middle; letter-spacing: .03em; }
 
 /* ── Funcionários Modal ───────────────────────────────────────────── */
 .func-toolbar {
