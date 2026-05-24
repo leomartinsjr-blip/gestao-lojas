@@ -3672,7 +3672,7 @@ function calcWeekKpis(emp, week, extraData) {
   const wkMetasForWeek = S.weeklyMetas[week.startStr] ||
     (extraData && Object.values(extraData).find(d => d.weeklyMetas?.[week.startStr])?.weeklyMetas?.[week.startStr]) || {};
   const manualMeta = wkMetasForWeek[emp.id]?.meta;
-  const wMeta      = (manualMeta > 0) ? manualMeta : autoMeta;
+  let wMeta        = (manualMeta > 0) ? manualMeta : autoMeta;
 
   // D-1 BRT cutoff for projection (same logic as Performance Mensal)
   const yestBRT = new Date(Date.now() - 3 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000);
@@ -3715,8 +3715,8 @@ function calcWeekKpis(emp, week, extraData) {
     if (projEntry) valorForProj += projEntry.value || 0;
   }
 
-  const pa = (pecas > 0 && atend > 0) ? pecas / atend : null;
-  const pctMeta = (wMeta > 0 && valor > 0) ? valor / wMeta * 100 : null;
+  let pa = (pecas > 0 && atend > 0) ? pecas / atend : null;
+  let pctMeta = (wMeta > 0 && valor > 0) ? valor / wMeta * 100 : null;
 
   const isComplete = week.endStr < todayStr ||
     (week.endStr === todayStr && daysElapsed === 7);
