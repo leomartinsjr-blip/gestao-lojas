@@ -1277,6 +1277,7 @@ function _renderDashWeekBody(body, week, extraData) {
           <span class="dia-chevron">${isExp?'▾':'▸'}</span>
           <span class="dw-store-dot" style="background:${bc.color}"></span>
           <strong>${bc.label}</strong>
+          <span style="margin-left:.5rem">${_gerenteChips(sHitMeta, sHitPA, refIsFuture, refIsComplete)}</span>
         </td>
         <td class="dw-td dw-td-num">${fBRL(totMeta||null)}</td>
         <td class="dw-td dw-td-num">${fBRL(totValor||null)}</td>
@@ -1284,7 +1285,7 @@ function _renderDashWeekBody(body, week, extraData) {
         <td class="dw-td dw-td-num ${tprojCls}">${hasProj?fBRL(totProjecao):'—'}</td>
         <td class="dw-td dw-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
         <td class="dw-td dw-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
-        <td class="dw-td dw-premio">${_gerenteChips(sHitMeta, sHitPA, refIsFuture, refIsComplete)}</td>`;
+        <td class="dw-td dw-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>`;
       storeRow.style.cursor = 'pointer';
       storeRow.addEventListener('click', () => {
         if (_weekExpanded.has(bk)) _weekExpanded.delete(bk); else _weekExpanded.add(bk);
