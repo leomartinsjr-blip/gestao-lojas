@@ -816,6 +816,8 @@ function renderDashboard() {
     _refreshDashWeek();
   });
 
+  if (S.user?.board === 'escritorio') leftCol.remove();
+
   const midCol = document.createElement('div');
   midCol.className = 'main-mid-col';
   grid.appendChild(midCol);
