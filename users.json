@@ -43,5 +43,15 @@
     "password": "lez123",
     "board": "lez",
     "label": "Lez a Lez"
+  },
+  "leila": {
+    "password": "leila123",
+    "board": null,
+    "label": "Leila"
+  },
+  "gustavo": {
+    "password": "gus123",
+    "board": "escritorio",
+    "label": "Gustavo"
   }
 }
