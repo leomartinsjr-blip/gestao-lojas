@@ -5328,58 +5328,65 @@ function renderContratoCard(container) {
     return d ? `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}` : '—';
   }
 
+  function buildRowsAll() {
+    const rows = [];
+    for (const b of NF_STORES) {
+      for (const e of S.employees) {
+        if (e.board !== b || e.inativo || !e.admissao || !(e.contrato1 || e.contrato2)) continue;
+        const venc1 = calcVenc(e.admissao, e.contrato1);
+        const venc2 = e.contrato1 && e.contrato2 ? calcVenc(e.admissao, (e.contrato1||0)+(e.contrato2||0)) : null;
+        const d1 = diasRestantes(venc1), d2 = diasRestantes(venc2);
+        const sortKey = d1 != null && d1 >= 0 ? d1 : (d2 != null && d2 >= 0 ? d2 : (d2 ?? d1 ?? 9999));
+        rows.push({ e, b, venc1, venc2, d1, d2, sortKey });
+      }
+    }
+    if (!rows.length) return '<div class="contrato-empty">Nenhum contrato cadastrado.</div>';
+    rows.sort((a, b) => a.sortKey - b.sortKey);
+    return `<table class="contrato-table">
+      <thead><tr>
+        <th>Loja</th><th>Funcionário</th><th>Admissão</th>
+        <th>1º Contrato</th><th></th><th>2º Contrato</th><th></th>
+      </tr></thead>
+      <tbody>${rows.map(({ e, b, venc1, venc2, d1, d2 }) => {
+        const color = BOARDS[b]?.color || '#8B949E';
+        return `<tr>
+          <td><span class="func-loja-badge" style="border-color:${color};color:${color}">${BOARDS[b]?.label||b}</span></td>
+          <td class="contrato-nome">${e.apelido||e.name}</td>
+          <td class="contrato-data">${e.admissao.split('-').reverse().join('/')}</td>
+          <td class="contrato-data">${venc1?fmtDate(venc1):'—'}</td>
+          <td>${statusChip(d1)}</td>
+          <td class="contrato-data">${venc2?fmtDate(venc2):'—'}</td>
+          <td>${statusChip(d2)}</td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
+  }
+
   function buildRows(board) {
     const emps = S.employees.filter(e =>
       e.board === board && !e.inativo && e.admissao && (e.contrato1 || e.contrato2)
     );
     if (!emps.length) return '<div class="contrato-empty">Nenhum contrato cadastrado.</div>';
-
     return `<table class="contrato-table">
       <thead><tr>
-        <th>Funcionário</th>
-        <th>Admissão</th>
-        <th>1º Contrato</th>
-        <th></th>
-        <th>2º Contrato</th>
-        <th></th>
+        <th>Funcionário</th><th>Admissão</th>
+        <th>1º Contrato</th><th></th><th>2º Contrato</th><th></th>
       </tr></thead>
-      <tbody>
-        ${emps.map(e => {
-          const venc1 = calcVenc(e.admissao, e.contrato1);
-          const venc2 = e.contrato1 && e.contrato2 ? calcVenc(e.admissao, (e.contrato1 || 0) + (e.contrato2 || 0)) : null;
-          const d1 = diasRestantes(venc1);
-          const d2 = diasRestantes(venc2);
-          return `<tr>
-            <td class="contrato-nome">${e.apelido || e.name}</td>
-            <td class="contrato-data">${e.admissao.split('-').reverse().join('/')}</td>
-            <td class="contrato-data">${venc1 ? fmtDate(venc1) : '—'}</td>
-            <td>${statusChip(d1)}</td>
-            <td class="contrato-data">${venc2 ? fmtDate(venc2) : '—'}</td>
-            <td>${statusChip(d2)}</td>
-          </tr>`;
-        }).join('')}
-      </tbody>
-    </table>`;
+      <tbody>${emps.map(e => {
+        const venc1 = calcVenc(e.admissao, e.contrato1);
+        const venc2 = e.contrato1 && e.contrato2 ? calcVenc(e.admissao, (e.contrato1||0)+(e.contrato2||0)) : null;
+        return `<tr>
+          <td class="contrato-nome">${e.apelido||e.name}</td>
+          <td class="contrato-data">${e.admissao.split('-').reverse().join('/')}</td>
+          <td class="contrato-data">${venc1?fmtDate(venc1):'—'}</td>
+          <td>${statusChip(diasRestantes(venc1))}</td>
+          <td class="contrato-data">${venc2?fmtDate(venc2):'—'}</td>
+          <td>${statusChip(diasRestantes(venc2))}</td>
+        </tr>`;
+      }).join('')}</tbody></table>`;
   }
-
-  const boardsComContrato = NF_STORES.filter(b =>
-    S.employees.some(e => e.board === b && !e.inativo && e.admissao && (e.contrato1 || e.contrato2))
-  );
-
-  let activeBoard = isAdmin ? (boardsComContrato[0] || NF_STORES[0]) : userBoard;
 
   const card = document.createElement('div');
   card.className = 'main-card';
-
-  const tabsHtml = isAdmin ? `
-    <div class="nf-tabs">
-      ${NF_STORES.map(b => `
-        <button class="nf-tab${b === activeBoard ? ' active' : ''}" data-board="${b}"
-          style="--nf-tab-color:${BOARDS[b]?.color || '#8B949E'}">
-          ${BOARDS[b]?.label || b}
-        </button>`).join('')}
-    </div>` : '';
-
   card.innerHTML = `
     <div class="main-card-hdr">
       <span class="main-card-title">
@@ -5391,30 +5398,13 @@ function renderContratoCard(container) {
         </svg>
         Contratos de Experiência
       </span>
-      ${!isAdmin ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
+      ${!isAdmin ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label||''}</span>` : ''}
     </div>
-    ${tabsHtml}
-    <div class="contrato-card-body" id="contratoCardBody"></div>
-  `;
+    <div class="contrato-card-body" id="contratoCardBody"></div>`;
   container.appendChild(card);
 
-  const body = card.querySelector('#contratoCardBody');
-
-  function render() {
-    body.innerHTML = buildRows(activeBoard);
-  }
-
-  render();
-
-  if (isAdmin) {
-    card.querySelectorAll('.nf-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        activeBoard = tab.dataset.board;
-        card.querySelectorAll('.nf-tab').forEach(t => t.classList.toggle('active', t === tab));
-        render();
-      });
-    });
-  }
+  card.querySelector('#contratoCardBody').innerHTML =
+    isAdmin ? buildRowsAll() : buildRows(userBoard);
 }
 
 function renderCaixaCard(container) {
