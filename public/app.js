@@ -1176,15 +1176,25 @@ function _renderDashWeekBody(body, week, extraData) {
   const fDec = v => v == null ? '—' : v.toFixed(2);
 
   const isAdmin = !S.user?.board;
-  const vendedores = S.employees.filter(e =>
-    e.isVendedor !== false || !!(e.cargo?.toLowerCase()?.includes('gerente'))
-  );
+  const vendedores = S.employees.filter(e => e.isVendedor !== false);
   const byBoard = {};
   for (const emp of vendedores) {
     if (!byBoard[emp.board]) byBoard[emp.board] = [];
     byBoard[emp.board].push(emp);
   }
   const visible = visibleBoards();
+  const _today0 = new Date();
+  const _pad0 = n => String(n).padStart(2,'0');
+  const todayStr = `${_today0.getFullYear()}-${_pad0(_today0.getMonth()+1)}-${_pad0(_today0.getDate())}`;
+  const refIsFuture = week.startStr > todayStr;
+  const refIsComplete = week.endStr < todayStr;
+
+  function _gerenteChips(sHitMeta, sHitPA, refIsFuture, refIsComplete) {
+    if (refIsFuture) return '<span class="dw-p-pending">—</span>';
+    if (refIsComplete)
+      return `<span class="dw-p ${sHitMeta?'dw-p-ok':'dw-p-no'}">${new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(PREMIO_GERENTE_VENDAS)} ${sHitMeta?'✓':'✗'}</span> <span class="dw-p ${sHitMeta&&sHitPA?'dw-p-ok':'dw-p-no'}">+${new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(PREMIO_PA)} ${sHitMeta&&sHitPA?'✓':'✗'}</span>`;
+    return `<span class="dw-p ${sHitMeta?'dw-p-ok':'dw-p-warn'}">${new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(PREMIO_GERENTE_VENDAS)}${sHitMeta?' ✓':''}</span> <span class="dw-p ${sHitMeta&&sHitPA?'dw-p-ok':sHitPA&&!sHitMeta?'dw-p-no':'dw-p-warn'}">+${new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(PREMIO_PA)}${sHitMeta&&sHitPA?' ✓':sHitPA&&!sHitMeta?' ✗':''}</span>`;
+  }
 
   // Admin: single table with one header row + one collapsible row per store
   if (isAdmin) {
@@ -1204,14 +1214,14 @@ function _renderDashWeekBody(body, week, extraData) {
     let grandTotValor=0, grandTotMeta=0, grandTotPecas=0, grandTotAtend=0, grandTotPremio=0, grandTotProjecao=0, grandHasProj=false;
 
     for (const [bk, bc] of visible) {
-      const emps = byBoard[bk] || [];
-      if (emps.length === 0) continue;
+      const allEmps = byBoard[bk] || [];
+      if (allEmps.length === 0) continue;
 
       let totValor=0, totPecas=0, totAtend=0, totMeta=0, totPremio=0, totProjecao=0, hasProj=false;
-      const kpiCacheAdm = new Map();
-      for (const emp of emps) {
+      const kpiMap = new Map();
+      for (const emp of allEmps) {
         const k = calcWeekKpis(emp, week, extraData);
-        kpiCacheAdm.set(emp.id, k);
+        kpiMap.set(emp.id, k);
         totValor += k.valor; totPecas += k.pecas; totAtend += k.atend; totMeta += k.wMeta;
         if (k.projecao != null) { totProjecao += k.projecao; hasProj = true; }
       }
@@ -1219,14 +1229,15 @@ function _renderDashWeekBody(body, week, extraData) {
       const sPaVal   = totPecas > 0 && totAtend > 0 ? totPecas / totAtend : null;
       const sHitPA   = sPaVal != null && sPaVal > PA_THRESHOLD;
 
+      const gerentePremio = refIsComplete ? (sHitMeta ? PREMIO_GERENTE_VENDAS : 0) + (sHitMeta && sHitPA ? PREMIO_PA : 0) : 0;
+      totPremio += gerentePremio;
+
+      const vendorEmps = allEmps.filter(e => !e.cargo?.toLowerCase()?.includes('gerente'));
       const vendorRows = [];
-      for (const emp of emps) {
-        const k = kpiCacheAdm.get(emp.id);
-        const hitMeta   = k.isGerente ? sHitMeta : k.hitMeta;
-        const hitPA     = k.isGerente ? sHitPA   : k.hitPA;
-        const premioAmt = k.isGerente ? PREMIO_GERENTE_VENDAS : PREMIO_VENDAS;
-        const paEarned  = hitMeta && hitPA;
-        const pVendas   = k.isComplete ? (hitMeta ? premioAmt : 0) : null;
+      for (const emp of vendorEmps) {
+        const k = kpiMap.get(emp.id);
+        const paEarned  = k.hitMeta && k.hitPA;
+        const pVendas   = k.isComplete ? (k.hitMeta ? PREMIO_VENDAS : 0) : null;
         const pPA       = k.isComplete ? (paEarned ? PREMIO_PA : 0) : null;
         const pTotal    = pVendas != null ? pVendas + (pPA||0) : null;
         if (pTotal != null) totPremio += pTotal;
@@ -1236,8 +1247,8 @@ function _renderDashWeekBody(body, week, extraData) {
         const projCls    = k.projecao == null ? '' : k.projecao >= k.wMeta ? 'kpi-pos' : 'kpi-neg';
         const premioHtml = k.isFuture
           ? '<span class="dw-p-pending">—</span>'
-          : `<span class="dw-p ${hitMeta?'dw-p-ok':'dw-p-warn'}">${fBRL(premioAmt)}${hitMeta?' ✓':''}</span>
-             <span class="dw-p ${paEarned?'dw-p-ok':hitPA&&!hitMeta?'dw-p-no':'dw-p-warn'}" title="${hitPA&&!hitMeta?'PA atingido mas meta venda não':''}">+${fBRL(PREMIO_PA)}${paEarned?' ✓':hitPA&&!hitMeta?' ✗':''}</span>`;
+          : `<span class="dw-p ${k.hitMeta?'dw-p-ok':'dw-p-warn'}">${fBRL(PREMIO_VENDAS)}${k.hitMeta?' ✓':''}</span>
+             <span class="dw-p ${paEarned?'dw-p-ok':k.hitPA&&!k.hitMeta?'dw-p-no':'dw-p-warn'}" title="${k.hitPA&&!k.hitMeta?'PA atingido mas meta venda não':''}">+${fBRL(PREMIO_PA)}${paEarned?' ✓':k.hitPA&&!k.hitMeta?' ✗':''}</span>`;
 
         vendorRows.push(`<tr class="dw-row">
           <td class="dw-td dw-td-name" style="padding-left:1.4rem">${emp.apelido || emp.name}</td>
@@ -1259,7 +1270,7 @@ function _renderDashWeekBody(body, week, extraData) {
       const tprojCls   = !hasProj?'': totProjecao>=totMeta?'kpi-pos':'kpi-neg';
       const isExp     = _weekExpanded.has(bk);
 
-      // Store summary row (always visible, clickable)
+      // Store summary row — prize column shows gerente chips
       const storeRow = document.createElement('tr');
       storeRow.className = 'dw-store-collapse-row';
       storeRow.innerHTML = `
@@ -1274,7 +1285,7 @@ function _renderDashWeekBody(body, week, extraData) {
         <td class="dw-td dw-td-num ${tprojCls}">${hasProj?fBRL(totProjecao):'—'}</td>
         <td class="dw-td dw-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
         <td class="dw-td dw-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
-        <td class="dw-td dw-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>`;
+        <td class="dw-td dw-premio">${_gerenteChips(sHitMeta, sHitPA, refIsFuture, refIsComplete)}</td>`;
       storeRow.style.cursor = 'pointer';
       storeRow.addEventListener('click', () => {
         if (_weekExpanded.has(bk)) _weekExpanded.delete(bk); else _weekExpanded.add(bk);
@@ -1331,30 +1342,31 @@ function _renderDashWeekBody(body, week, extraData) {
     return;
   }
 
-  // Non-admin: per-store section with its own table (unchanged)
+  // Non-admin: per-store section with its own table
   for (const [bk, bc] of visible) {
-    const emps = byBoard[bk] || [];
-    if (emps.length === 0) continue;
+    const allEmps = byBoard[bk] || [];
+    if (allEmps.length === 0) continue;
 
     let totValor=0, totPecas=0, totAtend=0, totMeta=0, totPremio=0, totProjecao=0, hasProj=false;
-    const kpiCacheLoja = new Map();
-    for (const emp of emps) {
+    const kpiMap = new Map();
+    for (const emp of allEmps) {
       const k = calcWeekKpis(emp, week, extraData);
-      kpiCacheLoja.set(emp.id, k);
+      kpiMap.set(emp.id, k);
       totValor += k.valor; totPecas += k.pecas; totAtend += k.atend; totMeta += k.wMeta;
       if (k.projecao != null) { totProjecao += k.projecao; hasProj = true; }
     }
-    const sHitMetaL = totMeta > 0 && totValor >= totMeta;
-    const sPaValL   = totPecas > 0 && totAtend > 0 ? totPecas / totAtend : null;
-    const sHitPAL   = sPaValL != null && sPaValL > PA_THRESHOLD;
+    const sHitMeta = totMeta > 0 && totValor >= totMeta;
+    const sPaVal   = totPecas > 0 && totAtend > 0 ? totPecas / totAtend : null;
+    const sHitPA   = sPaVal != null && sPaVal > PA_THRESHOLD;
 
-    const rows = emps.map(emp => {
-      const k = kpiCacheLoja.get(emp.id);
-      const hitMeta   = k.isGerente ? sHitMetaL : k.hitMeta;
-      const hitPA     = k.isGerente ? sHitPAL   : k.hitPA;
-      const premioAmt = k.isGerente ? PREMIO_GERENTE_VENDAS : PREMIO_VENDAS;
-      const paEarned  = hitMeta && hitPA;
-      const pVendas   = k.isComplete ? (hitMeta ? premioAmt : 0) : null;
+    const gerentePremio = refIsComplete ? (sHitMeta ? PREMIO_GERENTE_VENDAS : 0) + (sHitMeta && sHitPA ? PREMIO_PA : 0) : 0;
+    totPremio += gerentePremio;
+
+    const vendorEmps = allEmps.filter(e => !e.cargo?.toLowerCase()?.includes('gerente'));
+    const rows = vendorEmps.map(emp => {
+      const k = kpiMap.get(emp.id);
+      const paEarned  = k.hitMeta && k.hitPA;
+      const pVendas   = k.isComplete ? (k.hitMeta ? PREMIO_VENDAS : 0) : null;
       const pPA       = k.isComplete ? (paEarned ? PREMIO_PA : 0) : null;
       const pTotal    = pVendas != null ? pVendas + (pPA||0) : null;
       if (pTotal != null) totPremio += pTotal;
@@ -1363,8 +1375,8 @@ function _renderDashWeekBody(body, week, extraData) {
       const projCls = k.projecao == null ? '' : k.projecao >= k.wMeta ? 'kpi-pos' : 'kpi-neg';
       const premioHtml = k.isFuture
         ? '<span class="dw-p-pending">—</span>'
-        : `<span class="dw-p ${hitMeta?'dw-p-ok':'dw-p-warn'}">${fBRL(premioAmt)}${hitMeta?' ✓':''}</span>
-           <span class="dw-p ${paEarned?'dw-p-ok':hitPA&&!hitMeta?'dw-p-no':'dw-p-warn'}" title="${hitPA&&!hitMeta?'PA atingido mas meta venda não':''}">+${fBRL(PREMIO_PA)}${paEarned?' ✓':hitPA&&!hitMeta?' ✗':''}</span>`;
+        : `<span class="dw-p ${k.hitMeta?'dw-p-ok':'dw-p-warn'}">${fBRL(PREMIO_VENDAS)}${k.hitMeta?' ✓':''}</span>
+           <span class="dw-p ${paEarned?'dw-p-ok':k.hitPA&&!k.hitMeta?'dw-p-no':'dw-p-warn'}" title="${k.hitPA&&!k.hitMeta?'PA atingido mas meta venda não':''}">+${fBRL(PREMIO_PA)}${paEarned?' ✓':k.hitPA&&!k.hitMeta?' ✗':''}</span>`;
 
       return `<tr class="dw-row">
         <td class="dw-td dw-td-name">${emp.apelido || emp.name}</td>
@@ -1386,6 +1398,7 @@ function _renderDashWeekBody(body, week, extraData) {
     sec.innerHTML = `
       <div class="dw-store-hdr">
         <span class="dw-store-dot" style="background:${bc.color}"></span><strong>${bc.label}</strong>
+        <span style="margin-left:.75rem">${_gerenteChips(sHitMeta, sHitPA, refIsFuture, refIsComplete)}</span>
       </div>
       <table class="dw-table">
         <thead><tr class="dw-thead-tr">
@@ -2195,17 +2208,16 @@ function renderTransTable(container, data) {
 function _exportTransExcel(sugestoes) {
   const XL = window.XLSX;
   if (!XL) { alert('Biblioteca SheetJS não carregada. Recarregue a página.'); return; }
-  const header = ['Código', 'Setor', 'Referência', 'Produto', 'Últ. Entrada', 'Enviar (destino: qtd)', 'Receber (origem: qtd)'];
+  const header = ['Código', 'Setor', 'Referência', 'Produto', 'Últ. Entrada', 'Enviar (destino: qtd)'];
   const rows = sugestoes.map(s => {
-    const enviar  = s.transfers.map(t => `${BOARDS[t.para]?.label || t.para}: ${t.qty}`).join(', ');
-    const receber = s.transfers.map(t => `${BOARDS[t.de]?.label  || t.de }: ${t.qty}`).join(', ');
-    const compra  = s.ultimaCompra ? s.ultimaCompra.slice(0,10).split('-').reverse().join('/') : '—';
-    return [s.cod_produto, s.setor || '—', s.referencia || '—', s.descricao || '—', compra, enviar, receber];
+    const enviar = s.transfers.map(t => `${BOARDS[t.para]?.label || t.para}: ${t.qty}`).join(', ');
+    const compra = s.ultimaCompra ? s.ultimaCompra.slice(0,10).split('-').reverse().join('/') : '—';
+    return [s.cod_produto, s.setor || '—', s.referencia || '—', s.descricao || '—', compra, enviar];
   });
   const ws = XL.utils.aoa_to_sheet([header, ...rows]);
-  ws['!cols'] = [{ wch:10 }, { wch:22 }, { wch:14 }, { wch:42 }, { wch:12 }, { wch:30 }, { wch:30 }];
+  ws['!cols'] = [{ wch:10 }, { wch:22 }, { wch:14 }, { wch:42 }, { wch:12 }, { wch:40 }];
   ws['!pageSetup'] = { fitToPage: true, fitToWidth: 1, fitToHeight: 0, orientation: 'landscape', paperSize: 9 };
-  ws['!print'] = { area: `A1:G${rows.length + 1}` };
+  ws['!print'] = { area: `A1:F${rows.length + 1}` };
   const wb = XL.utils.book_new();
   XL.utils.book_append_sheet(wb, ws, 'Transferências');
   XL.writeFile(wb, 'transferencias.xlsx');
