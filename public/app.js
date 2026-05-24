@@ -2496,7 +2496,8 @@ function initPerfModal() {
 // ── Daily modal ────────────────────────────────────────────────────────────
 function openDailyModal() {
   document.getElementById('dailyOverlay').classList.remove('hidden');
-  const defaultStore = S.user?.board ? S.user.board : 'delrey';
+  const isEscritorioUser = S.user?.board === 'escritorio';
+  const defaultStore = (!S.user?.board || isEscritorioUser) ? 'delrey' : S.user.board;
   PD.container = document.getElementById('dailyBody');
   PD.year      = S.year;
   PD.month     = S.month;
@@ -2511,7 +2512,7 @@ function closeDailyModal() {
 function buildDailyStoreTabs(activeBoard) {
   const tabs = document.getElementById('dailyStoreTabs');
   tabs.innerHTML = '';
-  const show = !S.user?.board ? ALL_STORES : [S.user.board];
+  const show = (!S.user?.board || S.user?.board === 'escritorio') ? ALL_STORES : [S.user.board];
   if (show.length <= 1) return;
   show.forEach(k => {
     const btn = document.createElement('button');
