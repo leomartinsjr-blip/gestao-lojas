@@ -2981,6 +2981,98 @@ app.use((err, req, res, next) => {
   res.status(err?.status || err?.statusCode || 500).json({ error: msg });
 });
 
+// ── Lista da Vez (Indeva) ─────────────────────────────────────────────────
+const INDEVA_STORES = ['delrey','minas','contagem','estacao','tommy'];
+
+function todayBRT() {
+  return new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+    .split('/').reverse().join('-');
+}
+
+function getIndevaStore(db, board) {
+  if (!db.indeva) db.indeva = {};
+  const today = todayBRT();
+  if (!db.indeva[board] || db.indeva[board].date !== today) {
+    db.indeva[board] = { fila: [], atendimentos: [], date: today };
+  }
+  return db.indeva[board];
+}
+
+app.get('/api/indeva/:board', requireAuth, async (req, res) => {
+  try {
+    const { board } = req.params;
+    if (!INDEVA_STORES.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
+    const user = req.session.user;
+    if (user.board && user.board !== 'escritorio' && user.board !== board)
+      return res.status(403).json({ error: 'Sem acesso' });
+    const db = await readDB();
+    const store = getIndevaStore(db, board);
+    await writeDB(db);
+    res.json(store);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/indeva/:board/entrar', requireAuth, async (req, res) => {
+  try {
+    const { board } = req.params;
+    const { empId } = req.body;
+    if (!INDEVA_STORES.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
+    const user = req.session.user;
+    if (user.board && user.board !== 'escritorio' && user.board !== board)
+      return res.status(403).json({ error: 'Sem acesso' });
+    const db = await readDB();
+    const store = getIndevaStore(db, board);
+    const id = parseInt(empId);
+    if (!store.fila.includes(id)) store.fila.push(id);
+    await writeDB(db);
+    res.json(store);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/indeva/:board/sair', requireAuth, async (req, res) => {
+  try {
+    const { board } = req.params;
+    const { empId } = req.body;
+    if (!INDEVA_STORES.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
+    const user = req.session.user;
+    if (user.board && user.board !== 'escritorio' && user.board !== board)
+      return res.status(403).json({ error: 'Sem acesso' });
+    const db = await readDB();
+    const store = getIndevaStore(db, board);
+    store.fila = store.fila.filter(x => x !== parseInt(empId));
+    await writeDB(db);
+    res.json(store);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/indeva/:board/atendimento', requireAuth, async (req, res) => {
+  try {
+    const { board } = req.params;
+    const { empId, vendeu, motivo } = req.body;
+    if (!INDEVA_STORES.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
+    const user = req.session.user;
+    if (user.board && user.board !== 'escritorio' && user.board !== board)
+      return res.status(403).json({ error: 'Sem acesso' });
+    const db = await readDB();
+    const store = getIndevaStore(db, board);
+    const id = parseInt(empId);
+    const emp = (db.employees || []).find(e => e.id === id);
+    const hora = new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+    store.atendimentos.push({
+      id: nextId(db),
+      empId: id,
+      nome: emp?.apelido || emp?.name || '—',
+      hora,
+      vendeu: !!vendeu,
+      motivo: vendeu ? null : (motivo || null)
+    });
+    store.fila = store.fila.filter(x => x !== id);
+    store.fila.push(id);
+    await writeDB(db);
+    res.json(store);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Start ──────────────────────────────────────────────────────────────────
 initMongo()
   .then(() => {

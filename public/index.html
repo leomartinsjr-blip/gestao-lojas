@@ -101,6 +101,15 @@
       </svg>
       Transferências
     </button>
+    <button id="indevaBtn" class="folgas-topbar-btn" title="Lista da Vez">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
+        <line x1="8" y1="18" x2="21" y2="18"/>
+        <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/>
+        <line x1="3" y1="18" x2="3.01" y2="18"/>
+      </svg>
+      Lista da Vez
+    </button>
     <button id="lojaAcaoBtn" class="folgas-topbar-btn" title="Loja em Ação">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
@@ -539,6 +548,26 @@
       <button class="folgas-close-btn" id="boletasClose" title="Fechar">✕</button>
     </div>
     <div class="perf-body" id="boletasBody"></div>
+  </div>
+</div>
+
+<!-- LISTA DA VEZ (INDEVA) MODAL -->
+<div id="indevaOverlay" class="perf-overlay hidden">
+  <div class="perf-panel" style="max-width:1100px">
+    <div class="perf-hdr">
+      <span class="perf-hdr-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
+          <line x1="8" y1="18" x2="21" y2="18"/>
+          <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/>
+          <line x1="3" y1="18" x2="3.01" y2="18"/>
+        </svg>
+        Lista da Vez
+      </span>
+      <div id="indevaStoreTabs" class="perf-store-tabs"></div>
+      <button class="folgas-close-btn" id="indevaClose" title="Fechar">✕</button>
+    </div>
+    <div class="perf-body" id="indevaBody" style="padding:1rem"></div>
   </div>
 </div>
 

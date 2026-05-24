@@ -85,6 +85,8 @@ async function checkAuth() {
     document.getElementById('usersBtn').style.display = isAdmin ? '' : 'none';
     document.getElementById('perfBtn').style.display = isAdmin ? '' : 'none';
     document.getElementById('transBtn').style.display = isAdmin ? '' : 'none';
+    const indevaVisible = isAdmin || S.user?.board === 'escritorio' || INDEVA_STORES.includes(S.user?.board);
+    document.getElementById('indevaBtn').style.display = indevaVisible ? '' : 'none';
     const now = new Date();
     S.year  = now.getFullYear();
     S.month = now.getMonth() + 1;
@@ -6612,6 +6614,233 @@ function initUsersModal() {
   });
 }
 
+// ── Lista da Vez (Indeva) ─────────────────────────────────────────────────
+const INDEVA_STORES = ['delrey','minas','contagem','estacao','tommy'];
+const INDEVA_MOTIVOS = ['Preço','Tamanho / Modelagem','Não gostou do produto',
+  'Sem estoque no tamanho','Só estava olhando','Voltará depois','Concorrência','Outro'];
+
+let _indevaBoard = null;
+
+function openIndevaModal() {
+  const userBoard = S.user?.board;
+  const isAdmin = !userBoard;
+  const isEscritorio = userBoard === 'escritorio';
+  if (!isAdmin && !isEscritorio && !INDEVA_STORES.includes(userBoard)) return;
+  if (!_indevaBoard) _indevaBoard = (isAdmin || isEscritorio) ? INDEVA_STORES[0] : userBoard;
+  document.getElementById('indevaOverlay').classList.remove('hidden');
+  _buildIndevaTabs();
+  _loadIndeva();
+}
+
+function closeIndevaModal() {
+  document.getElementById('indevaOverlay').classList.add('hidden');
+}
+
+function _buildIndevaTabs() {
+  const isAdmin = !S.user?.board;
+  const isEscritorio = S.user?.board === 'escritorio';
+  const tabsEl = document.getElementById('indevaStoreTabs');
+  if (!isAdmin && !isEscritorio) { tabsEl.innerHTML = ''; return; }
+  tabsEl.innerHTML = INDEVA_STORES.map(bk =>
+    `<button class="perf-store-tab${bk===_indevaBoard?' active':''}" data-board="${bk}">${BOARDS[bk]?.label||bk}</button>`
+  ).join('');
+  tabsEl.querySelectorAll('.perf-store-tab').forEach(btn =>
+    btn.addEventListener('click', () => { _indevaBoard = btn.dataset.board; _buildIndevaTabs(); _loadIndeva(); })
+  );
+}
+
+async function _loadIndeva() {
+  const body = document.getElementById('indevaBody');
+  body.innerHTML = '<div style="padding:2rem;color:var(--muted);text-align:center">Carregando…</div>';
+  try {
+    const r = await fetch(`/api/indeva/${_indevaBoard}`);
+    if (!r.ok) throw new Error(await r.text());
+    _renderIndeva(body, await r.json());
+  } catch (e) { body.innerHTML = `<div style="padding:2rem;color:#F85149">${e.message}</div>`; }
+}
+
+function _renderIndeva(body, state) {
+  const { fila, atendimentos } = state;
+  const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && e.isVendedor!==false && !e.inativo);
+  const empById = Object.fromEntries(emps.map(e => [e.id, e]));
+  const currentEmpId = fila[0] ?? null;
+  const currentEmp   = currentEmpId != null ? empById[currentEmpId] : null;
+  const total   = atendimentos.length;
+  const vendas  = atendimentos.filter(a => a.vendeu).length;
+  const conv    = total > 0 ? Math.round(vendas/total*100) : 0;
+  const convCls = conv>=50?'conv-ok':conv>=30?'conv-warn':'conv-no';
+
+  body.innerHTML = `
+    <div class="indeva-layout">
+      <div class="indeva-left">
+        <div class="indeva-section-title">Fila da Vez</div>
+        <div class="indeva-queue" id="indevaQueue">
+          ${fila.length === 0
+            ? '<div class="indeva-queue-empty">Fila vazia</div>'
+            : fila.map((id,i) => {
+                const e = empById[id]; if (!e) return '';
+                return `<div class="indeva-queue-item${i===0?' indeva-current':''}">
+                  <span class="indeva-pos">${i+1}</span>
+                  <span class="indeva-emp-name">${e.apelido||e.name}</span>
+                  ${i===0?'<span class="indeva-vez-badge">VEZ</span>':''}
+                  <button class="indeva-remove-btn" data-id="${id}" title="Remover">✕</button>
+                </div>`;
+              }).join('')}
+        </div>
+        <div class="indeva-enter-wrap">
+          <select id="indevaEmpSel" class="indeva-select">
+            <option value="">— Selecionar vendedor —</option>
+            ${emps.filter(e=>!fila.includes(e.id)).map(e=>`<option value="${e.id}">${e.apelido||e.name}</option>`).join('')}
+          </select>
+          <button class="indeva-enter-btn" id="indevaEnterBtn">+ Entrar na Fila</button>
+        </div>
+      </div>
+
+      <div class="indeva-center">
+        ${currentEmp ? `
+          <div class="indeva-action-panel">
+            <div class="indeva-action-title">
+              <span class="indeva-action-name">${currentEmp.apelido||currentEmp.name}</span>
+              <span class="indeva-action-count">${atendimentos.filter(a=>a.empId===currentEmp.id).length} atend. hoje</span>
+            </div>
+            <div class="indeva-action-btns">
+              <button class="indeva-vendeu-btn" id="indevaVendeuBtn" data-id="${currentEmp.id}">✓ Vendeu</button>
+              <button class="indeva-naov-btn"   id="indevaNaovBtn"   data-id="${currentEmp.id}">✗ Não vendeu</button>
+            </div>
+            <div class="indeva-motivo-panel hidden" id="indevaMotivoPanel">
+              <select class="indeva-select indeva-motivo-sel" id="indevaMotivoSel">
+                <option value="">— Motivo —</option>
+                ${INDEVA_MOTIVOS.map(m=>`<option value="${m}">${m}</option>`).join('')}
+              </select>
+              <button class="indeva-naov-confirm-btn" id="indevaNaovConfirm" data-id="${currentEmp.id}">Confirmar</button>
+            </div>
+          </div>` : '<div class="indeva-empty-queue">Nenhum vendedor na fila</div>'}
+
+        <div class="indeva-stats">
+          <span class="indeva-stat"><strong>${total}</strong> atendimento${total!==1?'s':''}</span>
+          <span class="indeva-stat ${convCls}"><strong>${conv}%</strong> conversão</span>
+          <span class="indeva-stat"><strong>${vendas}</strong> venda${vendas!==1?'s':''}</span>
+        </div>
+
+        <div class="indeva-log-wrap">
+          <div class="indeva-section-title">Atendimentos de Hoje</div>
+          ${total===0
+            ? '<div class="indeva-log-empty">Nenhum atendimento ainda</div>'
+            : `<div class="indeva-log">${[...atendimentos].reverse().map(a=>
+                `<div class="indeva-log-item ${a.vendeu?'log-venda':'log-naov'}">
+                  <span class="log-hora">${a.hora}</span>
+                  <span class="log-nome">${a.nome}</span>
+                  <span class="log-result">${a.vendeu?'✓ Vendeu':'✗ '+(a.motivo||'Não vendeu')}</span>
+                </div>`).join('')}</div>`}
+        </div>
+      </div>
+
+      <div class="indeva-right">
+        ${currentEmp ? _renderIndevaGoals(currentEmp) : ''}
+      </div>
+    </div>`;
+
+  body.getElementById = body.querySelector.bind(body); // helper shorthand
+  body.querySelector('#indevaEnterBtn')?.addEventListener('click', _indevaEnter);
+  body.querySelector('#indevaVendeuBtn')?.addEventListener('click', async e => {
+    await _indevaAtend(parseInt(e.currentTarget.dataset.id), true, null);
+  });
+  body.querySelector('#indevaNaovBtn')?.addEventListener('click', () => {
+    document.getElementById('indevaMotivoPanel')?.classList.toggle('hidden');
+  });
+  body.querySelector('#indevaNaovConfirm')?.addEventListener('click', async e => {
+    const motivo = document.getElementById('indevaMotivoSel')?.value;
+    if (!motivo) { toast('Selecione um motivo', true); return; }
+    await _indevaAtend(parseInt(e.currentTarget.dataset.id), false, motivo);
+  });
+  body.querySelectorAll('.indeva-remove-btn').forEach(btn =>
+    btn.addEventListener('click', async () => {
+      await _indevaSair(parseInt(btn.dataset.id));
+    })
+  );
+}
+
+function _renderIndevaGoals(emp) {
+  const fBRL = v => !v ? '—' : new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v);
+  const fPct = v => v==null?'—':v.toFixed(1)+'%';
+  const cls  = v => v==null?'':v>=100?'kpi-pos':v>=80?'kpi-warn':'kpi-neg';
+
+  // Weekly
+  const pad = n => String(n).padStart(2,'0');
+  const t = new Date(); const todayStr=`${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
+  const week = getWeekForDate(todayStr);
+  const k = calcWeekKpis(emp, week);
+
+  // Monthly
+  const vsale = S.vsales?.[emp.id] || { meta:{mensal:0}, entries:{} };
+  const monthMeta = vsale.meta?.mensal || 0;
+  const curPrefix = `${S.year}-${pad(S.month)}-`;
+  let monthValor = 0;
+  for (const [d, entry] of Object.entries(vsale.entries||{})) {
+    if (d.startsWith(curPrefix)) monthValor += entry.value||0;
+  }
+  const monthPct = monthMeta>0 ? monthValor/monthMeta*100 : null;
+
+  return `<div class="indeva-goals">
+    <div class="indeva-goals-name">${emp.apelido||emp.name}</div>
+    <div class="indeva-goals-cargo">${emp.cargo||''}</div>
+    <div class="indeva-goals-items">
+      <div class="indeva-goal-row">
+        <span class="indeva-goal-label">Semana</span>
+        <span class="indeva-goal-val">${fBRL(k.valor||null)} / ${fBRL(k.wMeta||null)}</span>
+        <span class="indeva-goal-pct ${cls(k.pctMeta)}">${fPct(k.pctMeta)}</span>
+      </div>
+      <div class="indeva-goal-row">
+        <span class="indeva-goal-label">Mês</span>
+        <span class="indeva-goal-val">${fBRL(monthValor||null)} / ${fBRL(monthMeta||null)}</span>
+        <span class="indeva-goal-pct ${cls(monthPct)}">${fPct(monthPct)}</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+async function _indevaEnter() {
+  const sel = document.getElementById('indevaEmpSel');
+  const empId = parseInt(sel?.value);
+  if (!empId) return;
+  try {
+    const r = await fetch(`/api/indeva/${_indevaBoard}/entrar`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({empId})
+    });
+    if (!r.ok) throw new Error(await r.text());
+    _renderIndeva(document.getElementById('indevaBody'), await r.json());
+  } catch(e) { toast('Erro: '+e.message, true); }
+}
+
+async function _indevaSair(empId) {
+  try {
+    const r = await fetch(`/api/indeva/${_indevaBoard}/sair`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({empId})
+    });
+    if (!r.ok) throw new Error(await r.text());
+    _renderIndeva(document.getElementById('indevaBody'), await r.json());
+  } catch(e) { toast('Erro: '+e.message, true); }
+}
+
+async function _indevaAtend(empId, vendeu, motivo) {
+  try {
+    const r = await fetch(`/api/indeva/${_indevaBoard}/atendimento`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({empId, vendeu, motivo})
+    });
+    if (!r.ok) throw new Error(await r.text());
+    _renderIndeva(document.getElementById('indevaBody'), await r.json());
+  } catch(e) { toast('Erro: '+e.message, true); }
+}
+
+function initIndevaModal() {
+  document.getElementById('indevaBtn').addEventListener('click', openIndevaModal);
+  document.getElementById('indevaClose').addEventListener('click', closeIndevaModal);
+  document.getElementById('indevaOverlay').addEventListener('click', e => {
+    if (e.target.id === 'indevaOverlay') closeIndevaModal();
+  });
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
 function init() {
   initLoginForm();
@@ -6622,6 +6851,7 @@ function init() {
   initWeeklyModal();
   initFuncionariosModal();
   initCampanhasModal();
+  initIndevaModal();
   initLojaAcaoModal();
   initBoletasModal();
   initUsersModal();
