@@ -1397,8 +1397,8 @@ app.get('/api/caixa/:year/:month/:board', requireAuth, async (req, res) => {
   try {
     const { year, month, board } = req.params;
     const user    = req.session.user;
-    const isAdmin = !user.board;
-    if (!isAdmin && user.board !== board) return res.status(403).json({ error: 'Sem acesso' });
+    const isAdminOrEscritorio = !user.board || user.board === 'escritorio';
+    if (!isAdminOrEscritorio && user.board !== board) return res.status(403).json({ error: 'Sem acesso' });
     const db  = await readDB();
     const key = `${year}-${String(month).padStart(2,'0')}-${board}`;
     res.json((db.caixa || {})[key] || {});
@@ -1476,8 +1476,8 @@ app.put('/api/caixa/:year/:month/:board/:day', requireAuth, async (req, res) => 
   try {
     const { year, month, board, day } = req.params;
     const user    = req.session.user;
-    const isAdmin = !user.board;
-    if (!isAdmin && user.board !== board) return res.status(403).json({ error: 'Sem acesso' });
+    const isAdminOrEscritorio = !user.board || user.board === 'escritorio';
+    if (!isAdminOrEscritorio && user.board !== board) return res.status(403).json({ error: 'Sem acesso' });
     const { caixa, sangria, deposito } = req.body;
     const db  = await readDB();
     if (!db.caixa) db.caixa = {};
