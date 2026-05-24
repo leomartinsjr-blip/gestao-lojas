@@ -87,6 +87,19 @@ async function checkAuth() {
     document.getElementById('transBtn').style.display = isAdmin ? '' : 'none';
     const indevaVisible = isAdmin || S.user?.board === 'escritorio' || INDEVA_STORES.includes(S.user?.board);
     document.getElementById('indevaBtn').style.display = indevaVisible ? '' : 'none';
+    // Thursday reminder for store users
+    const todayBRTDay = new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', weekday: 'short' });
+    const isStore = S.user?.board && S.user.board !== 'escritorio';
+    const thursdayBanner = document.getElementById('thursdayBanner');
+    if (thursdayBanner) {
+      if (todayBRTDay === 'Thu' && isStore) {
+        thursdayBanner.classList.remove('hidden');
+        document.getElementById('thursdayBannerClose')?.addEventListener('click', () => thursdayBanner.classList.add('hidden'));
+        document.getElementById('thursdayBannerOpen')?.addEventListener('click', () => { thursdayBanner.classList.add('hidden'); openBoletasModal('new'); });
+      } else {
+        thursdayBanner.classList.add('hidden');
+      }
+    }
     const now = new Date();
     S.year  = now.getFullYear();
     S.month = now.getMonth() + 1;
@@ -4735,6 +4748,8 @@ function _pendMatchesMine(item, myUsername) {
   return arr.includes(myUsername) || arr.length >= PENDENCIA_USERS.length;
 }
 
+const _pendRecLabel = r => ({ daily:'Diário', weekly:'Semanal', quinzenal:'Quinzenal', monthly:'Mensal' }[r] || r);
+
 function _renderPendenciasActive(body, filter, myUsername, refresh) {
   let items = (S.pendencias || []).filter(x => !x.resolved);
   if (filter === 'mine') items = items.filter(x => _pendMatchesMine(x, myUsername));
@@ -4749,6 +4764,7 @@ function _renderPendenciasActive(body, filter, myUsername, refresh) {
       <label class="nf-chk-label" style="flex:1;min-width:0">
         <input type="checkbox" class="nf-chk pend-chk" data-id="${item.id}">
         <span class="nf-item-text" style="white-space:normal;overflow:visible;text-overflow:unset;word-break:break-word">${_escHtml(item.text)}</span>
+        ${item.recorrencia ? `<span class="pend-recorr-badge">↺ ${_pendRecLabel(item.recorrencia)}</span>` : ''}
       </label>
       <span class="nf-item-meta" style="display:flex;align-items:center;gap:.35rem;flex-shrink:0">
         ${_pendenciaChips(item.assignedTo)}
@@ -4764,7 +4780,8 @@ function _renderPendenciasActive(body, filter, myUsername, refresh) {
       chk.disabled = true;
       const updated = await apiFetch('PATCH', `/api/pendencias/${id}`, { resolved: true }).catch(() => null);
       const item = S.pendencias.find(x => x.id === id);
-      if (item && updated) Object.assign(item, updated);
+      if (item && updated) Object.assign(item, { ...updated, _next: undefined });
+      if (updated?._next) S.pendencias.push(updated._next);
       _renderPendenciasActive(body, filter, myUsername, refresh);
       refresh();
     });
@@ -4874,6 +4891,16 @@ function renderPendenciasCard(container) {
         <span class="pend-rec-lbl">Para:</span>
         ${PENDENCIA_USERS.map(u => `<button class="pend-rec-btn${u.key === myUsername ? ' active' : ''}" data-key="${u.key}" style="--prc:${u.color}">${u.label}</button>`).join('')}
       </div>
+      <div class="pend-rec-row">
+        <span class="pend-rec-lbl">Repetir:</span>
+        <select id="pendRecorrencia" class="pend-recorr-sel">
+          <option value="">Única vez</option>
+          <option value="daily">Todo dia</option>
+          <option value="weekly">Semanal</option>
+          <option value="quinzenal">Quinzenal</option>
+          <option value="monthly">Mensal</option>
+        </select>
+      </div>
     </div>`;
 
   container.appendChild(card);
@@ -4935,8 +4962,11 @@ function renderPendenciasCard(container) {
     const text = input.value.trim();
     if (!text) return;
     input.value = '';
+    const recSel = card.querySelector('#pendRecorrencia');
+    const recorrencia = recSel?.value || null;
+    if (recSel) recSel.value = '';
     try {
-      const item = await apiFetch('POST', '/api/pendencias', { text, assignedTo: selectedRecipients });
+      const item = await apiFetch('POST', '/api/pendencias', { text, assignedTo: selectedRecipients, recorrencia });
       S.pendencias = [...S.pendencias, item];
       refresh();
     } catch (e) { toast('Erro ao adicionar pendência', true); }
@@ -5336,7 +5366,8 @@ function renderContratoCard(container) {
         const venc1 = calcVenc(e.admissao, e.contrato1);
         const venc2 = e.contrato1 && e.contrato2 ? calcVenc(e.admissao, (e.contrato1||0)+(e.contrato2||0)) : null;
         const d1 = diasRestantes(venc1), d2 = diasRestantes(venc2);
-        const sortKey = d1 != null && d1 >= 0 ? d1 : (d2 != null && d2 >= 0 ? d2 : (d2 ?? d1 ?? 9999));
+        const upcomings = [d1, d2].filter(d => d != null && d >= 0);
+        const sortKey = upcomings.length > 0 ? Math.min(...upcomings) : Math.max(d2 ?? -9999, d1 ?? -9999);
         rows.push({ e, b, venc1, venc2, d1, d2, sortKey });
       }
     }
@@ -5344,19 +5375,16 @@ function renderContratoCard(container) {
     rows.sort((a, b) => a.sortKey - b.sortKey);
     return `<table class="contrato-table">
       <thead><tr>
-        <th>Loja</th><th>Funcionário</th><th>Admissão</th>
-        <th>1º Contrato</th><th></th><th>2º Contrato</th><th></th>
+        <th>Loja</th><th>Funcionário</th>
+        <th>1º Contrato</th><th>2º Contrato</th>
       </tr></thead>
       <tbody>${rows.map(({ e, b, venc1, venc2, d1, d2 }) => {
         const color = BOARDS[b]?.color || '#8B949E';
         return `<tr>
           <td><span class="func-loja-badge" style="border-color:${color};color:${color}">${BOARDS[b]?.label||b}</span></td>
           <td class="contrato-nome">${e.apelido||e.name}</td>
-          <td class="contrato-data">${e.admissao.split('-').reverse().join('/')}</td>
-          <td class="contrato-data">${venc1?fmtDate(venc1):'—'}</td>
-          <td>${statusChip(d1)}</td>
-          <td class="contrato-data">${venc2?fmtDate(venc2):'—'}</td>
-          <td>${statusChip(d2)}</td>
+          <td class="contrato-cell">${venc1?fmtDate(venc1):'—'} ${statusChip(d1)}</td>
+          <td class="contrato-cell">${venc2?fmtDate(venc2):'—'} ${statusChip(d2)}</td>
         </tr>`;
       }).join('')}</tbody></table>`;
   }
@@ -5368,19 +5396,15 @@ function renderContratoCard(container) {
     if (!emps.length) return '<div class="contrato-empty">Nenhum contrato cadastrado.</div>';
     return `<table class="contrato-table">
       <thead><tr>
-        <th>Funcionário</th><th>Admissão</th>
-        <th>1º Contrato</th><th></th><th>2º Contrato</th><th></th>
+        <th>Funcionário</th><th>1º Contrato</th><th>2º Contrato</th>
       </tr></thead>
       <tbody>${emps.map(e => {
         const venc1 = calcVenc(e.admissao, e.contrato1);
         const venc2 = e.contrato1 && e.contrato2 ? calcVenc(e.admissao, (e.contrato1||0)+(e.contrato2||0)) : null;
         return `<tr>
           <td class="contrato-nome">${e.apelido||e.name}</td>
-          <td class="contrato-data">${e.admissao.split('-').reverse().join('/')}</td>
-          <td class="contrato-data">${venc1?fmtDate(venc1):'—'}</td>
-          <td>${statusChip(diasRestantes(venc1))}</td>
-          <td class="contrato-data">${venc2?fmtDate(venc2):'—'}</td>
-          <td>${statusChip(diasRestantes(venc2))}</td>
+          <td class="contrato-cell">${venc1?fmtDate(venc1):'—'} ${statusChip(diasRestantes(venc1))}</td>
+          <td class="contrato-cell">${venc2?fmtDate(venc2):'—'} ${statusChip(diasRestantes(venc2))}</td>
         </tr>`;
       }).join('')}</tbody></table>`;
   }
@@ -6662,104 +6686,146 @@ async function _loadIndeva() {
 }
 
 function _renderIndeva(body, state) {
-  const { fila, atendimentos } = state;
+  const { fila, atendendo, atendimentos } = state;
   const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && e.isVendedor!==false && !e.inativo);
   const empById = Object.fromEntries(emps.map(e => [e.id, e]));
-  const currentEmpId = fila[0] ?? null;
-  const currentEmp   = currentEmpId != null ? empById[currentEmpId] : null;
+  const atendendoEmp = atendendo != null ? empById[atendendo] : null;
   const total   = atendimentos.length;
   const vendas  = atendimentos.filter(a => a.vendeu).length;
   const conv    = total > 0 ? Math.round(vendas/total*100) : 0;
   const convCls = conv>=50?'conv-ok':conv>=30?'conv-warn':'conv-no';
+  const disponiveis = emps.filter(e => !fila.includes(e.id) && e.id !== atendendo);
+
+  function vendorCard(emp) {
+    return `<div class="indeva-vendor-card indeva-draggable" draggable="true" data-id="${emp.id}" data-empid="${emp.id}">
+      ${empAvatarHtml(emp, 38)}
+      <span class="indeva-vendor-name">${emp.apelido||emp.name}</span>
+    </div>`;
+  }
 
   body.innerHTML = `
-    <div class="indeva-layout">
-      <div class="indeva-left">
-        <div class="indeva-section-title">Fila da Vez</div>
-        <div class="indeva-queue" id="indevaQueue">
-          ${fila.length === 0
-            ? '<div class="indeva-queue-empty">Fila vazia</div>'
+    <div class="indeva-stats">
+      <span class="indeva-stat"><strong>${total}</strong> atendimento${total!==1?'s':''}</span>
+      <span class="indeva-stat ${convCls}"><strong>${conv}%</strong> conversão</span>
+      <span class="indeva-stat"><strong>${vendas}</strong> venda${vendas!==1?'s':''}</span>
+    </div>
+    <div class="indeva-kanban">
+      <div class="indeva-col">
+        <div class="indeva-col-hdr">Disponíveis</div>
+        <div class="indeva-pool" id="indevaPool">
+          ${disponiveis.length===0
+            ? '<div class="indeva-col-empty">Todos na fila</div>'
+            : disponiveis.map(e => vendorCard(e)).join('')}
+        </div>
+      </div>
+      <div class="indeva-col">
+        <div class="indeva-col-hdr">Em Espera <span class="indeva-col-count">${fila.length}</span></div>
+        <div class="indeva-drop-zone" id="indevaEspera" data-zone="espera">
+          ${fila.length===0
+            ? '<div class="indeva-drop-hint">Arraste ou clique para entrar na fila</div>'
             : fila.map((id,i) => {
                 const e = empById[id]; if (!e) return '';
-                return `<div class="indeva-queue-item${i===0?' indeva-current':''}">
-                  <span class="indeva-pos">${i+1}</span>
-                  <span class="indeva-emp-name">${e.apelido||e.name}</span>
-                  ${i===0?'<span class="indeva-vez-badge">VEZ</span>':''}
-                  <button class="indeva-remove-btn" data-id="${id}" title="Remover">✕</button>
+                return `<div class="indeva-queue-card indeva-draggable" draggable="true" data-id="${e.id}" data-empid="${e.id}">
+                  <span class="indeva-q-pos">${i+1}</span>
+                  ${empAvatarHtml(e, 34)}
+                  <span class="indeva-vendor-name">${e.apelido||e.name}</span>
+                  <button class="indeva-remove-btn" data-id="${e.id}" title="Remover">✕</button>
                 </div>`;
               }).join('')}
         </div>
-        <div class="indeva-enter-wrap">
-          <select id="indevaEmpSel" class="indeva-select">
-            <option value="">— Selecionar vendedor —</option>
-            ${emps.filter(e=>!fila.includes(e.id)).map(e=>`<option value="${e.id}">${e.apelido||e.name}</option>`).join('')}
-          </select>
-          <button class="indeva-enter-btn" id="indevaEnterBtn">+ Entrar na Fila</button>
+      </div>
+      <div class="indeva-col">
+        <div class="indeva-col-hdr">Em Atendimento</div>
+        <div class="indeva-drop-zone" id="indevaAtend" data-zone="atendimento">
+          ${atendendoEmp ? `
+            <div class="indeva-atend-card">
+              ${empAvatarHtml(atendendoEmp, 60)}
+              <div class="indeva-atend-name">${atendendoEmp.apelido||atendendoEmp.name}</div>
+              <div class="indeva-atend-count">${atendimentos.filter(a=>a.empId===atendendoEmp.id).length} atend. hoje</div>
+              <div class="indeva-action-btns">
+                <button class="indeva-vendeu-btn" data-id="${atendendoEmp.id}">✓ Vendeu</button>
+                <button class="indeva-naov-btn" data-id="${atendendoEmp.id}">✗ Não vendeu</button>
+              </div>
+              <div class="indeva-motivo-panel hidden" id="indevaMotivoPanel">
+                <select class="indeva-select" id="indevaMotivoSel">
+                  <option value="">— Motivo —</option>
+                  ${INDEVA_MOTIVOS.map(m=>`<option value="${m}">${m}</option>`).join('')}
+                </select>
+                <button class="indeva-naov-confirm-btn" data-id="${atendendoEmp.id}">Confirmar</button>
+              </div>
+              ${_renderIndevaGoals(atendendoEmp)}
+            </div>` : '<div class="indeva-drop-hint">Arraste um vendedor aqui</div>'}
         </div>
       </div>
-
-      <div class="indeva-center">
-        ${currentEmp ? `
-          <div class="indeva-action-panel">
-            <div class="indeva-action-title">
-              <span class="indeva-action-name">${currentEmp.apelido||currentEmp.name}</span>
-              <span class="indeva-action-count">${atendimentos.filter(a=>a.empId===currentEmp.id).length} atend. hoje</span>
-            </div>
-            <div class="indeva-action-btns">
-              <button class="indeva-vendeu-btn" id="indevaVendeuBtn" data-id="${currentEmp.id}">✓ Vendeu</button>
-              <button class="indeva-naov-btn"   id="indevaNaovBtn"   data-id="${currentEmp.id}">✗ Não vendeu</button>
-            </div>
-            <div class="indeva-motivo-panel hidden" id="indevaMotivoPanel">
-              <select class="indeva-select indeva-motivo-sel" id="indevaMotivoSel">
-                <option value="">— Motivo —</option>
-                ${INDEVA_MOTIVOS.map(m=>`<option value="${m}">${m}</option>`).join('')}
-              </select>
-              <button class="indeva-naov-confirm-btn" id="indevaNaovConfirm" data-id="${currentEmp.id}">Confirmar</button>
-            </div>
-          </div>` : '<div class="indeva-empty-queue">Nenhum vendedor na fila</div>'}
-
-        <div class="indeva-stats">
-          <span class="indeva-stat"><strong>${total}</strong> atendimento${total!==1?'s':''}</span>
-          <span class="indeva-stat ${convCls}"><strong>${conv}%</strong> conversão</span>
-          <span class="indeva-stat"><strong>${vendas}</strong> venda${vendas!==1?'s':''}</span>
-        </div>
-
-        <div class="indeva-log-wrap">
-          <div class="indeva-section-title">Atendimentos de Hoje</div>
-          ${total===0
-            ? '<div class="indeva-log-empty">Nenhum atendimento ainda</div>'
-            : `<div class="indeva-log">${[...atendimentos].reverse().map(a=>
-                `<div class="indeva-log-item ${a.vendeu?'log-venda':'log-naov'}">
-                  <span class="log-hora">${a.hora}</span>
-                  <span class="log-nome">${a.nome}</span>
-                  <span class="log-result">${a.vendeu?'✓ Vendeu':'✗ '+(a.motivo||'Não vendeu')}</span>
-                </div>`).join('')}</div>`}
-        </div>
-      </div>
-
-      <div class="indeva-right">
-        ${currentEmp ? _renderIndevaGoals(currentEmp) : ''}
-      </div>
+    </div>
+    <div class="indeva-log-wrap">
+      <div class="indeva-section-title">Atendimentos de Hoje</div>
+      ${total===0
+        ? '<div class="indeva-log-empty">Nenhum atendimento ainda</div>'
+        : `<div class="indeva-log">${[...atendimentos].reverse().map(a=>
+            `<div class="indeva-log-item ${a.vendeu?'log-venda':'log-naov'}">
+              <span class="log-hora">${a.hora}</span>
+              <span class="log-nome">${a.nome}</span>
+              <span class="log-result">${a.vendeu?'✓ Vendeu':'✗ '+(a.motivo||'Não vendeu')}</span>
+            </div>`).join('')}</div>`}
     </div>`;
 
-  body.getElementById = body.querySelector.bind(body); // helper shorthand
-  body.querySelector('#indevaEnterBtn')?.addEventListener('click', _indevaEnter);
-  body.querySelector('#indevaVendeuBtn')?.addEventListener('click', async e => {
+  // Drag and drop
+  const pool    = body.querySelector('#indevaPool');
+  const espera  = body.querySelector('#indevaEspera');
+  const atendZone = body.querySelector('#indevaAtend');
+  let dragId = null;
+
+  body.querySelectorAll('.indeva-draggable').forEach(card => {
+    card.addEventListener('dragstart', e => {
+      dragId = parseInt(card.dataset.id);
+      card.classList.add('indeva-dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    card.addEventListener('dragend', () => card.classList.remove('indeva-dragging'));
+  });
+
+  [espera, atendZone].forEach(zone => {
+    if (!zone) return;
+    zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('indeva-drop-hover'); });
+    zone.addEventListener('dragleave', e => { if (!zone.contains(e.relatedTarget)) zone.classList.remove('indeva-drop-hover'); });
+    zone.addEventListener('drop', async e => {
+      e.preventDefault();
+      zone.classList.remove('indeva-drop-hover');
+      if (!dragId) return;
+      const id = dragId; dragId = null;
+      if (zone.dataset.zone === 'espera') await _indevaEntrar(id);
+      else await _indevaAtender(id);
+    });
+  });
+
+  // Click on disponível card → enter fila
+  pool?.querySelectorAll('.indeva-vendor-card').forEach(card => {
+    card.addEventListener('click', () => _indevaEntrar(parseInt(card.dataset.empid)));
+  });
+
+  // Click on espera card (not remove btn) → move to atendimento
+  espera?.querySelectorAll('.indeva-queue-card').forEach(card => {
+    card.addEventListener('click', e => {
+      if (e.target.classList.contains('indeva-remove-btn')) return;
+      _indevaAtender(parseInt(card.dataset.empid));
+    });
+  });
+
+  body.querySelectorAll('.indeva-remove-btn').forEach(btn =>
+    btn.addEventListener('click', e => { e.stopPropagation(); _indevaSair(parseInt(btn.dataset.id)); })
+  );
+  body.querySelector('.indeva-vendeu-btn')?.addEventListener('click', async e => {
     await _indevaAtend(parseInt(e.currentTarget.dataset.id), true, null);
   });
-  body.querySelector('#indevaNaovBtn')?.addEventListener('click', () => {
-    document.getElementById('indevaMotivoPanel')?.classList.toggle('hidden');
+  body.querySelector('.indeva-naov-btn')?.addEventListener('click', () => {
+    body.querySelector('#indevaMotivoPanel')?.classList.toggle('hidden');
   });
-  body.querySelector('#indevaNaovConfirm')?.addEventListener('click', async e => {
-    const motivo = document.getElementById('indevaMotivoSel')?.value;
+  body.querySelector('.indeva-naov-confirm-btn')?.addEventListener('click', async e => {
+    const motivo = body.querySelector('#indevaMotivoSel')?.value;
     if (!motivo) { toast('Selecione um motivo', true); return; }
     await _indevaAtend(parseInt(e.currentTarget.dataset.id), false, motivo);
   });
-  body.querySelectorAll('.indeva-remove-btn').forEach(btn =>
-    btn.addEventListener('click', async () => {
-      await _indevaSair(parseInt(btn.dataset.id));
-    })
-  );
 }
 
 function _renderIndevaGoals(emp) {
@@ -6801,12 +6867,19 @@ function _renderIndevaGoals(emp) {
   </div>`;
 }
 
-async function _indevaEnter() {
-  const sel = document.getElementById('indevaEmpSel');
-  const empId = parseInt(sel?.value);
-  if (!empId) return;
+async function _indevaEntrar(empId) {
   try {
     const r = await fetch(`/api/indeva/${_indevaBoard}/entrar`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({empId})
+    });
+    if (!r.ok) throw new Error(await r.text());
+    _renderIndeva(document.getElementById('indevaBody'), await r.json());
+  } catch(e) { toast('Erro: '+e.message, true); }
+}
+
+async function _indevaAtender(empId) {
+  try {
+    const r = await fetch(`/api/indeva/${_indevaBoard}/atender`, {
       method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({empId})
     });
     if (!r.ok) throw new Error(await r.text());

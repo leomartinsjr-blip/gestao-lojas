@@ -1270,10 +1270,11 @@ app.post('/api/pendencias', requireAuth, async (req, res) => {
   if (req.session.user.board && req.session.user.board !== 'escritorio')
     return res.status(403).json({ error: 'Acesso restrito' });
   try {
-    const { text, assignedTo } = req.body;
+    const { text, assignedTo, recorrencia } = req.body;
     if (!text?.trim()) return res.status(400).json({ error: 'Texto obrigatório' });
     const rawAt = assignedTo;
     const assignedToArr = Array.isArray(rawAt) ? rawAt : (rawAt ? [rawAt] : ['leonardo','ingrid','escritorio']);
+    const validRec = ['daily','weekly','quinzenal','monthly'];
     const db = await readDB();
     if (!db.pendencias) db.pendencias = [];
     const item = {
@@ -1286,6 +1287,7 @@ app.post('/api/pendencias', requireAuth, async (req, res) => {
       resolved: false,
       resolvedAt: null,
       resolvedBy: null,
+      recorrencia: validRec.includes(recorrencia) ? recorrencia : null,
     };
     db.pendencias.push(item);
     await writeDB(db);
@@ -1302,10 +1304,26 @@ app.patch('/api/pendencias/:id', requireAuth, async (req, res) => {
     const db   = await readDB();
     const item = (db.pendencias || []).find(x => x.id === id);
     if (!item) return res.status(404).json({ error: 'Pendência não encontrada' });
+    let nextItem = null;
     if ('resolved' in req.body) {
       item.resolved = !!req.body.resolved;
       item.resolvedAt = item.resolved ? new Date().toISOString() : null;
       item.resolvedBy = item.resolved ? (req.session.user.label || req.session.user.username) : null;
+      if (item.resolved && item.recorrencia) {
+        nextItem = {
+          id: nextId(db),
+          text: item.text,
+          assignedTo: [...item.assignedTo],
+          createdBy: item.createdBy,
+          createdByLabel: item.createdByLabel,
+          createdAt: new Date().toISOString(),
+          resolved: false,
+          resolvedAt: null,
+          resolvedBy: null,
+          recorrencia: item.recorrencia,
+        };
+        db.pendencias.push(nextItem);
+      }
     }
     if ('text' in req.body && req.body.text?.trim()) item.text = req.body.text.trim();
     if ('assignedTo' in req.body) {
@@ -1313,7 +1331,7 @@ app.patch('/api/pendencias/:id', requireAuth, async (req, res) => {
       item.assignedTo = Array.isArray(raw) ? raw : [raw];
     }
     await writeDB(db);
-    res.json(item);
+    res.json(nextItem ? { ...item, _next: nextItem } : item);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2993,8 +3011,9 @@ function getIndevaStore(db, board) {
   if (!db.indeva) db.indeva = {};
   const today = todayBRT();
   if (!db.indeva[board] || db.indeva[board].date !== today) {
-    db.indeva[board] = { fila: [], atendimentos: [], date: today };
+    db.indeva[board] = { fila: [], atendendo: null, atendimentos: [], date: today };
   }
+  if (!('atendendo' in db.indeva[board])) db.indeva[board].atendendo = null;
   return db.indeva[board];
 }
 
@@ -3045,6 +3064,27 @@ app.post('/api/indeva/:board/sair', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/indeva/:board/atender', requireAuth, async (req, res) => {
+  try {
+    const { board } = req.params;
+    const { empId } = req.body;
+    if (!INDEVA_STORES.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
+    const user = req.session.user;
+    if (user.board && user.board !== 'escritorio' && user.board !== board)
+      return res.status(403).json({ error: 'Sem acesso' });
+    const db = await readDB();
+    const store = getIndevaStore(db, board);
+    const id = parseInt(empId);
+    if (store.atendendo != null && store.atendendo !== id) {
+      if (!store.fila.includes(store.atendendo)) store.fila.unshift(store.atendendo);
+    }
+    store.atendendo = id;
+    store.fila = store.fila.filter(x => x !== id);
+    await writeDB(db);
+    res.json(store);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/indeva/:board/atendimento', requireAuth, async (req, res) => {
   try {
     const { board } = req.params;
@@ -3066,6 +3106,7 @@ app.post('/api/indeva/:board/atendimento', requireAuth, async (req, res) => {
       vendeu: !!vendeu,
       motivo: vendeu ? null : (motivo || null)
     });
+    if (store.atendendo === id) store.atendendo = null;
     store.fila = store.fila.filter(x => x !== id);
     store.fila.push(id);
     await writeDB(db);
