@@ -5538,8 +5538,8 @@ function renderCaixaCard(container) {
           <tbody>${rows.map(r => `
             <tr class="${r.d === todayDay ? 'caixa-today' : ''}" data-day="${r.d}">
               <td class="caixa-td-date">${pad(r.d)}/${pad(S.month)} <span style="color:var(--muted);font-size:.72rem">${r.dow}</span></td>
-              <td class="caixa-td-val">${r.caixa > 0 ? fmtCur(r.caixa) : dash}</td>
-              <td class="caixa-td-val">${r.sangria > 0 ? fmtCur(r.sangria) : dash}</td>
+              <td class="caixa-td-val${isAdmin?' caixa-deposito-cell':''}" ${isAdmin?`data-field="caixa" data-day="${r.d}" style="cursor:pointer" title="Clique para editar"`:''}>${r.caixa > 0 ? fmtCur(r.caixa) : dash}</td>
+              <td class="caixa-td-val${isAdmin?' caixa-deposito-cell':''}" ${isAdmin?`data-field="sangria" data-day="${r.d}" style="cursor:pointer" title="Clique para editar"`:''}>${r.sangria > 0 ? fmtCur(r.sangria) : dash}</td>
               <td class="caixa-td-val caixa-deposito-cell" data-field="deposito" data-day="${r.d}" style="cursor:pointer">${r.deposito > 0 ? fmtCur(r.deposito) : dash}</td>
               <td class="caixa-td-saldo ${!hasData(r) ? 'zero' : sc(r.saldo)}">${!hasData(r) ? dash : fmtCur(r.saldo)}</td>
             </tr>`).join('')}</tbody>
