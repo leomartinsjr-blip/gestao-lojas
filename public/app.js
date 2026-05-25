@@ -6818,6 +6818,7 @@ function _renderIndeva(body, state) {
           <div class="indeva-atend-name">${emp.apelido||emp.name}</div>
           ${todayCount > 0 ? `<div class="indeva-atend-count">${todayCount} atend. hoje</div>` : ''}
         </div>
+        <button class="indeva-meta-btn" data-id="${emp.id}" title="Ver metas"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></button>
         <button class="indeva-remove-btn indeva-atend-close" data-id="${emp.id}" title="Remover">✕</button>
       </div>
       <div class="indeva-action-btns">
@@ -6869,6 +6870,7 @@ function _renderIndeva(body, state) {
                     ${vendorStats[e.id] ? `<span class="indeva-vendor-sub">${vendorStats[e.id].total} atend.</span>` : ''}
                   </div>
                   ${i===0 ? '<span class="indeva-next-badge">Próx.</span>' : ''}
+                  <button class="indeva-meta-btn" data-id="${e.id}" title="Ver metas"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></button>
                   <button class="indeva-remove-btn" data-id="${e.id}" title="Remover">✕</button>
                 </div>`;
               }).join('')}
@@ -6936,18 +6938,15 @@ function _renderIndeva(body, state) {
   );
   espera?.querySelectorAll('.indeva-queue-card').forEach(card =>
     card.addEventListener('click', e => {
-      if (e.target.classList.contains('indeva-remove-btn')) return;
-      const emp = (S.employees||[]).find(x => x.id === parseInt(card.dataset.empid));
-      if (e.target.closest('.indeva-vendor-info') && emp) {
-        _showIndevaGoalsOverlay(emp, _indevaLastState); return;
-      }
+      if (e.target.closest('.indeva-remove-btn') || e.target.closest('.indeva-meta-btn')) return;
       _indevaAtender(parseInt(card.dataset.empid));
     })
   );
-  atendZone?.querySelectorAll('.indeva-atend-card').forEach(card =>
-    card.querySelector('.indeva-atend-card-top')?.addEventListener('click', e => {
-      if (e.target.closest('.indeva-remove-btn')) return;
-      const emp = (S.employees||[]).find(x => x.id === parseInt(card.dataset.empid));
+
+  body.querySelectorAll('.indeva-meta-btn').forEach(btn =>
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const emp = (S.employees||[]).find(x => x.id === parseInt(btn.dataset.id));
       if (emp) _showIndevaGoalsOverlay(emp, _indevaLastState);
     })
   );
@@ -7374,8 +7373,6 @@ async function initStandalone() {
 
   _buildIndevaTabs();
   _loadIndeva();
-
-  setInterval(_loadIndeva, 30000);
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────

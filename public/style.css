@@ -2553,6 +2553,8 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .indeva-draggable img,.indeva-draggable .func-avatar-initials { pointer-events:none; }
 .indeva-remove-btn { background:none; border:none; color:var(--muted); cursor:pointer; font-size:.78rem; padding:0 3px; line-height:1; flex-shrink:0; }
 .indeva-remove-btn:hover { color:#F85149; }
+.indeva-meta-btn { background:none; border:none; color:var(--muted); cursor:pointer; padding:0 4px; line-height:1; flex-shrink:0; display:flex; align-items:center; }
+.indeva-meta-btn:hover { color:#58A6FF; }
 /* Atendimento cards (Em Atendimento) */
 .indeva-atend-zone { gap:.55rem; min-height:120px; flex-wrap:wrap; flex-direction:row; }
 .indeva-atend-card { background:var(--card-bg); border:1px solid var(--border); border-radius:10px; padding:.65rem .7rem; display:flex; flex-direction:column; gap:.45rem; flex:1; min-width:180px; }
