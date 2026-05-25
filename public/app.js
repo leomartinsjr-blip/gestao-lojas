@@ -1901,7 +1901,230 @@ function renderTransView() {
 function renderPromocaoView() {
   _gestaoShowBack(true);
   _gestaoSetTitle(`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>`, 'Sugestão de Promoção');
-  document.getElementById('transBody').innerHTML = `<div class="gestao-placeholder"><span>Em breve</span><p>Análise de produtos com baixo giro para sugestão de promoção.</p></div>`;
+
+  const d120 = new Date(); d120.setDate(d120.getDate() - 120);
+  const defaultDate = d120.toISOString().slice(0, 10);
+
+  const body = document.getElementById('transBody');
+  body.innerHTML = `
+    <div class="trans-tab-panel">
+      <div class="trans-upload-row" style="flex-wrap:wrap;gap:.5rem;align-items:flex-end">
+        <label class="trans-upload-label" style="flex:1;min-width:180px">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+          <span id="promFileName">Escolher arquivo .xls / .xlsx</span>
+          <input type="file" id="promInput" accept=".xls,.xlsx" style="display:none">
+        </label>
+        <label class="trans-compra-filter-label">
+          <span>Sem reposição desde:</span>
+          <input type="date" id="promDataCorte" class="trans-compra-date-input" value="${defaultDate}">
+        </label>
+        <label class="trans-compra-filter-label">
+          <span>% vendido &lt;:</span>
+          <input type="number" id="promPct" class="trans-compra-date-input" value="30" min="1" max="99" style="width:65px">
+        </label>
+        <button class="trans-calc-btn" id="promCalcBtn" disabled>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+          </svg>
+          Calcular sugestões
+        </button>
+      </div>
+      <div id="promResult" style="padding:.5rem 0"></div>
+    </div>`;
+
+  const input   = body.querySelector('#promInput');
+  const nameEl  = body.querySelector('#promFileName');
+  const calcBtn = body.querySelector('#promCalcBtn');
+  const result  = body.querySelector('#promResult');
+
+  input.addEventListener('change', () => {
+    nameEl.textContent = input.files[0]?.name || 'Escolher arquivo .xls / .xlsx';
+    calcBtn.disabled = !input.files[0];
+  });
+
+  calcBtn.addEventListener('click', async () => {
+    if (!input.files[0]) return;
+    calcBtn.disabled = true;
+    const dataCorte = body.querySelector('#promDataCorte').value;
+    const pctCorte  = (parseFloat(body.querySelector('#promPct').value) || 30) / 100;
+    try {
+      result.innerHTML = '<div class="trans-loading">Lendo arquivo…</div>';
+      const wb = window.XLSX.read(await input.files[0].arrayBuffer(), { type: 'array' });
+      const XL = window.XLSX;
+
+      const normH = h => String(h||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
+      function detectBd(name) {
+        const n = name.toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+        if (n.includes('CONTAGEM')) return 'contagem';
+        if (n.includes('MINAS'))    return 'minas';
+        if (n.includes('ESTAC'))    return 'estacao';
+        if (n.includes('TOMMY'))    return 'tommy';
+        if (n.includes('LEZ'))      return 'lez';
+        if (n.includes('CONCEPT') || n.includes('DEL')) return 'delrey';
+        return null;
+      }
+      function parseDate(val) {
+        if (!val && val !== 0) return null;
+        if (typeof val === 'number') {
+          try { const d = XL.SSF.parse_date_code(val); if (d?.y > 2000) return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`; } catch {}
+          return null;
+        }
+        const s = String(val).trim();
+        if (!s || s === '-') return null;
+        if (s.includes('/')) { const [d,m,y] = s.split('/'); return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`; }
+        if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+        return null;
+      }
+
+      // Detecta header e lojas
+      let companies = [], hIdx = -1, cCod = 0, cDesc = 1, cRef = 2, cComp = 8;
+      for (let i = 0; i < wb.SheetNames.length; i++) {
+        const rows = XL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1 });
+        const hRow = rows.findIndex(r => Array.isArray(r) && r.some(c => typeof c === 'string' && normH(c) === 'codigo'));
+        if (hRow === -1) continue;
+        hIdx = i;
+        const hr = rows[hRow], cr = hRow > 0 ? rows[hRow - 1] : [];
+        hr.forEach((h, idx) => {
+          const n = normH(h);
+          if (n === 'codigo') cCod = idx;
+          else if (n.includes('descri')) cDesc = idx;
+          else if (n.includes('ref') && idx < 5) cRef = idx;
+          else if (n.includes('compra') || n.includes('entrada') || n.includes('ultima')) cComp = idx;
+        });
+        const sc = hr.findIndex((h, idx) => idx >= 2 && typeof cr[idx] === 'string' && detectBd(cr[idx]));
+        for (let c = (sc !== -1 ? sc : 9); c < hr.length; c += 2) {
+          const b = detectBd(String(cr[c]||'').trim());
+          if (b) companies.push({ board: b, vendaCol: c, saldoCol: c + 1 });
+        }
+        break;
+      }
+      if (!companies.length) throw new Error('Formato não reconhecido — não encontrei colunas de lojas.');
+
+      // Extrai produtos
+      result.innerHTML = '<div class="trans-loading">Extraindo produtos…</div>';
+      const products = {};
+      let setor = '';
+      for (let i = hIdx + 1; i < wb.SheetNames.length; i++) {
+        for (const r of XL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1, raw: true })) {
+          if (!r?.length) continue;
+          if (typeof r[0] === 'string' && r[0].includes('Setor')) { setor = r[0].replace(/^SetorSetor:\s*/i,'').replace(/\s*\(\d+\)\s*$/,'').trim(); continue; }
+          const rawCod = r[cCod];
+          const cod = typeof rawCod === 'number' ? String(rawCod) : (typeof rawCod === 'string' && /^\d+$/.test(rawCod.trim()) ? rawCod.trim() : null);
+          if (!cod) continue;
+          if (!products[cod]) {
+            products[cod] = { cod, descricao: String(r[cDesc]||'').trim(), referencia: String(r[cRef]||'').trim().replace(/^="(.+)"$/, '$1'), setor, ultimaCompra: parseDate(r[cComp]), stocks: {}, giro: {} };
+          }
+          for (const c of companies) {
+            products[cod].stocks[c.board] = (products[cod].stocks[c.board]||0) + (parseInt(r[c.saldoCol])||0);
+            products[cod].giro[c.board]   = (products[cod].giro[c.board]  ||0) + (parseInt(r[c.vendaCol])||0);
+          }
+        }
+      }
+      if (!Object.keys(products).length) throw new Error('Nenhum produto encontrado no Excel.');
+
+      // Agrupa por referência + cor (última palavra da descrição)
+      result.innerHTML = '<div class="trans-loading">Agrupando por referência + cor…</div>';
+      const groups = {};
+      for (const p of Object.values(products)) {
+        const parts = p.descricao.trim().split(/\s+/);
+        const cor   = parts[parts.length - 1] || '';
+        const key   = `${p.referencia}|${cor}`;
+        if (!groups[key]) groups[key] = { referencia: p.referencia, cor, descBase: parts.slice(0, -1).join(' '), setor: p.setor, ultimaCompra: null, totalStock: 0, totalGiro: 0 };
+        const g = groups[key];
+        if (p.ultimaCompra && (!g.ultimaCompra || p.ultimaCompra > g.ultimaCompra)) g.ultimaCompra = p.ultimaCompra;
+        g.totalStock += Object.values(p.stocks).reduce((s, v) => s + v, 0);
+        g.totalGiro  += Object.values(p.giro).reduce((s, v) => s + v, 0);
+      }
+
+      // Filtra: sem reposição desde dataCorte E vendido < pctCorte
+      const sugestoes = Object.values(groups).filter(g => {
+        if (!g.ultimaCompra || g.ultimaCompra >= dataCorte) return false;
+        const total = g.totalGiro + g.totalStock;
+        return total > 0 && (g.totalGiro / total) < pctCorte;
+      }).sort((a, b) => {
+        const ss = (a.setor||'').localeCompare(b.setor||'', 'pt-BR');
+        if (ss !== 0) return ss;
+        const pa = a.totalGiro / (a.totalGiro + a.totalStock);
+        const pb = b.totalGiro / (b.totalGiro + b.totalStock);
+        return pa - pb;
+      });
+
+      if (!sugestoes.length) {
+        const fmtD = iso => iso ? iso.slice(0,10).split('-').reverse().join('/') : '—';
+        result.innerHTML = `<div class="trans-empty">Nenhuma sugestão de promoção encontrada.<br><span style="color:var(--muted);font-size:.78rem">Sem reposição desde ${fmtD(dataCorte)} e vendido &lt; ${Math.round(pctCorte*100)}%.</span></div>`;
+        return;
+      }
+
+      // Renderiza tabela
+      const fmtD = iso => iso ? iso.slice(0,10).split('-').reverse().join('/') : '—';
+      const tableRows = sugestoes.map(g => {
+        const total = g.totalGiro + g.totalStock;
+        const pct   = total > 0 ? g.totalGiro / total : 0;
+        const pctStr = `${Math.round(pct * 100)}%`;
+        const pctColor = pct < 0.10 ? '#F85149' : pct < 0.20 ? '#E3B341' : '#8B949E';
+        return `<tr>
+          <td class="trans-td" style="font-size:.72rem;color:var(--muted)">${_escHtml(g.setor||'—')}</td>
+          <td class="trans-td trans-cod">${_escHtml(g.referencia)}</td>
+          <td class="trans-td" style="font-weight:600">${_escHtml(g.cor)}</td>
+          <td class="trans-td" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_escHtml(g.descBase)}">${_escHtml(g.descBase)}</td>
+          <td class="trans-td trans-td-c">${g.totalGiro}</td>
+          <td class="trans-td trans-td-c">${g.totalStock}</td>
+          <td class="trans-td trans-td-c" style="color:${pctColor};font-weight:700">${pctStr}</td>
+          <td class="trans-td">${fmtD(g.ultimaCompra)}</td>
+        </tr>`;
+      }).join('');
+
+      result.innerHTML = `
+        <div class="trans-summary">
+          <span class="trans-total"><strong>${sugestoes.length}</strong> referência${sugestoes.length>1?'s':''} sugeridas para promoção · sem reposição desde ${fmtD(dataCorte)} · vendido &lt; ${Math.round(pctCorte*100)}%</span>
+          <button id="promExportBtn" class="trans-export-btn">↓ Exportar Excel</button>
+        </div>
+        <div style="overflow-x:auto">
+          <table class="trans-table">
+            <thead><tr>
+              <th class="trans-th">Setor</th><th class="trans-th">Referência</th><th class="trans-th">Cor</th>
+              <th class="trans-th">Descrição</th><th class="trans-th trans-td-c">Giro</th>
+              <th class="trans-th trans-td-c">Estoque</th><th class="trans-th trans-td-c">% Vendido</th>
+              <th class="trans-th">Última Entrada</th>
+            </tr></thead>
+            <tbody>${tableRows}</tbody>
+          </table>
+        </div>`;
+
+      result.querySelector('#promExportBtn').addEventListener('click', () => _exportPromocaoExcel(sugestoes, dataCorte, Math.round(pctCorte*100)));
+
+    } catch (e) {
+      result.innerHTML = `<div class="trans-error">Erro: ${_escHtml(e.message)}</div>`;
+    } finally {
+      calcBtn.disabled = false;
+    }
+  });
+}
+
+function _exportPromocaoExcel(sugestoes, dataCorte, pct) {
+  const XL = window.XLSX;
+  if (!XL) { alert('Biblioteca SheetJS não carregada.'); return; }
+  const fmtD = iso => iso ? iso.slice(0,10).split('-').reverse().join('/') : '—';
+  const header = ['Setor','Referência','Cor','Descrição','Giro','Estoque','% Vendido','Última Entrada'];
+  const rows = sugestoes.map(g => {
+    const total = g.totalGiro + g.totalStock;
+    return [g.setor||'—', g.referencia, g.cor, g.descBase, g.totalGiro, g.totalStock,
+            total > 0 ? `${Math.round(g.totalGiro/total*100)}%` : '—', fmtD(g.ultimaCompra)];
+  });
+  const ws = XL.utils.aoa_to_sheet([header, ...rows]);
+  ws['!cols'] = [{wch:20},{wch:12},{wch:8},{wch:38},{wch:7},{wch:8},{wch:10},{wch:14}];
+  ws['!pageSetup'] = { paperSize: 9, orientation: 'landscape', fitToPage: 1, fitToWidth: 1, fitToHeight: 0 };
+  ws['!sheetPr']   = { pageSetUpPr: { fitToPage: 1 } };
+  ws['!margins']   = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
+  const wb = XL.utils.book_new();
+  XL.utils.book_append_sheet(wb, ws, 'Promoção');
+  if (!wb.Workbook) wb.Workbook = {};
+  if (!wb.Workbook.Names) wb.Workbook.Names = [];
+  wb.Workbook.Names.push({ Name: '_xlnm.Print_Area', Ref: `Promoção!$A$1:$H$${rows.length+1}` });
+  XL.writeFile(wb, 'sugestao-promocao.xlsx');
 }
 
 function renderReposicaoView() {
