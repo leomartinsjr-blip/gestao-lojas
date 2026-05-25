@@ -2536,12 +2536,14 @@ async function _getCatalog(lojas) {
       const cod = String(r.cod_produto || '').trim();
       if (!cod) continue;
       map[cod] = {
-        nome:      (r.nome         || '').trim(),
-        setor:     (r.desc_setor   || '').trim(),
-        marca:     (r.desc_marca   || '').trim(),
-        linha:     (r.desc_linha   || '').trim(),
-        desc_cor:  (r.desc_cor     || '').trim(),
-        desc_tam:  (r.desc_tamanho || '').trim(),
+        nome:        (r.nome         || '').trim(),
+        setor:       (r.desc_setor   || '').trim(),
+        marca:       (r.desc_marca   || '').trim(),
+        linha:       (r.desc_linha   || '').trim(),
+        desc_cor:    (r.desc_cor     || '').trim(),
+        desc_tam:    (r.desc_tamanho || '').trim(),
+        preco_cheio: parseBrNum(r.preco_venda       || r.vlr_venda     || '0'),
+        preco_promo: parseBrNum(r.preco_promocional || r.vlr_promo     || '0'),
       };
     }
     _catalogCache   = map;

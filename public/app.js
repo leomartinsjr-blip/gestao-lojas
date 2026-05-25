@@ -2034,11 +2034,12 @@ function renderPromocaoView() {
         const cor     = parts[parts.length - 1] || '';
         const descBase = parts.slice(0, -2).join(' '); // remove tamanho (penúltimo) e cor (último)
         const key     = `${descBase}|${cor}`;
-        if (!groups[key]) groups[key] = { referencia: p.referencia, cor, descBase, setor: p.setor, ultimaCompra: null, totalStock: 0, totalGiro: 0 };
+        if (!groups[key]) groups[key] = { referencia: p.referencia, cor, descBase, setor: p.setor, ultimaCompra: null, totalStock: 0, totalGiro: 0, cods: [] };
         const g = groups[key];
         if (p.ultimaCompra && (!g.ultimaCompra || p.ultimaCompra > g.ultimaCompra)) g.ultimaCompra = p.ultimaCompra;
         g.totalStock += Object.values(p.stocks).reduce((s, v) => s + v, 0);
         g.totalGiro  += Object.values(p.giro).reduce((s, v) => s + v, 0);
+        if (!g.cods.includes(p.cod)) g.cods.push(p.cod);
       }
 
       // Filtra: sem reposição desde dataCorte E vendido < pctCorte
@@ -2060,6 +2061,22 @@ function renderPromocaoView() {
         return;
       }
 
+      // Enriquece com preços do catálogo Microvix
+      result.innerHTML = '<div class="trans-loading">Buscando preços no Microvix…</div>';
+      const catalog = await apiFetch('GET', '/api/catalog').catch(() => ({}));
+      for (const g of sugestoes) {
+        let precoCheio = 0, precoPromo = 0;
+        for (const cod of g.cods) {
+          const cat = catalog[cod];
+          if (cat) {
+            if (cat.preco_cheio > precoCheio) precoCheio = cat.preco_cheio;
+            if (cat.preco_promo > precoPromo)  precoPromo  = cat.preco_promo;
+          }
+        }
+        g.precoCheio = precoCheio;
+        g.precoPromo = precoPromo;
+      }
+
       // Renderiza tabela
       const fmtD = iso => iso ? iso.slice(0,10).split('-').reverse().join('/') : '—';
       const tableRows = sugestoes.map(g => {
@@ -2067,14 +2084,17 @@ function renderPromocaoView() {
         const pct   = base > 0 ? g.totalGiro / base : 0;
         const pctStr = `${Math.round(pct * 100)}%`;
         const pctColor = pct < 0.10 ? '#F85149' : pct < 0.20 ? '#E3B341' : '#8B949E';
+        const fmtR = v => v > 0 ? `R$ ${v.toFixed(2).replace('.',',')}` : '—';
         return `<tr>
           <td class="trans-td" style="font-size:.72rem;color:var(--muted)">${_escHtml(g.setor||'—')}</td>
           <td class="trans-td trans-cod">${_escHtml(g.referencia)}</td>
           <td class="trans-td" style="font-weight:600">${_escHtml(g.cor)}</td>
-          <td class="trans-td" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_escHtml(g.descBase)}">${_escHtml(g.descBase)}</td>
+          <td class="trans-td" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_escHtml(g.descBase)}">${_escHtml(g.descBase)}</td>
           <td class="trans-td trans-td-c">${g.totalGiro}</td>
           <td class="trans-td trans-td-c" style="color:var(--muted)">${base}</td>
           <td class="trans-td trans-td-c" style="color:${pctColor};font-weight:700">${pctStr}</td>
+          <td class="trans-td trans-td-c">${fmtR(g.precoCheio)}</td>
+          <td class="trans-td trans-td-c" style="color:#3FB950">${fmtR(g.precoPromo)}</td>
           <td class="trans-td">${fmtD(g.ultimaCompra)}</td>
         </tr>`;
       }).join('');
@@ -2092,6 +2112,8 @@ function renderPromocaoView() {
               <th class="trans-th trans-td-c" title="Total de peças vendidas no período">Vendido</th>
               <th class="trans-th trans-td-c" title="Saldo anterior + recebimentos (base do cálculo)">Base</th>
               <th class="trans-th trans-td-c">% Vendido</th>
+              <th class="trans-th trans-td-c">Preço Cheio</th>
+              <th class="trans-th trans-td-c">Preço Promo</th>
               <th class="trans-th">Última Entrada</th>
             </tr></thead>
             <tbody>${tableRows}</tbody>
@@ -2112,14 +2134,16 @@ function _exportPromocaoExcel(sugestoes, dataCorte, pct) {
   const XL = window.XLSX;
   if (!XL) { alert('Biblioteca SheetJS não carregada.'); return; }
   const fmtD = iso => iso ? iso.slice(0,10).split('-').reverse().join('/') : '—';
-  const header = ['Setor','Referência','Cor','Descrição','Vendido','Base (Sal.Ant+Rec.)','% Vendido','Última Entrada'];
+  const header = ['Setor','Referência','Cor','Descrição','Vendido','Base (Sal.Ant+Rec.)','% Vendido','Preço Cheio','Preço Promo','Última Entrada'];
+  const fmtR = v => v > 0 ? v.toFixed(2).replace('.',',') : '—';
   const rows = sugestoes.map(g => {
     const base = g.totalGiro + g.totalStock;
     return [g.setor||'—', g.referencia, g.cor, g.descBase, g.totalGiro, base,
-            base > 0 ? `${Math.round(g.totalGiro/base*100)}%` : '—', fmtD(g.ultimaCompra)];
+            base > 0 ? `${Math.round(g.totalGiro/base*100)}%` : '—',
+            fmtR(g.precoCheio||0), fmtR(g.precoPromo||0), fmtD(g.ultimaCompra)];
   });
   const ws = XL.utils.aoa_to_sheet([header, ...rows]);
-  ws['!cols'] = [{wch:20},{wch:12},{wch:8},{wch:38},{wch:7},{wch:8},{wch:10},{wch:14}];
+  ws['!cols'] = [{wch:20},{wch:12},{wch:8},{wch:36},{wch:7},{wch:8},{wch:10},{wch:12},{wch:12},{wch:14}];
   ws['!pageSetup'] = { paperSize: 9, orientation: 'landscape', fitToPage: 1, fitToWidth: 1, fitToHeight: 0 };
   ws['!sheetPr']   = { pageSetUpPr: { fitToPage: 1 } };
   ws['!margins']   = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
@@ -2127,7 +2151,7 @@ function _exportPromocaoExcel(sugestoes, dataCorte, pct) {
   XL.utils.book_append_sheet(wb, ws, 'Promoção');
   if (!wb.Workbook) wb.Workbook = {};
   if (!wb.Workbook.Names) wb.Workbook.Names = [];
-  wb.Workbook.Names.push({ Name: '_xlnm.Print_Area', Ref: `Promoção!$A$1:$H$${rows.length+1}` });
+  wb.Workbook.Names.push({ Name: '_xlnm.Print_Area', Ref: `Promoção!$A$1:$J$${rows.length+1}` });
   XL.writeFile(wb, 'sugestao-promocao.xlsx');
 }
 
