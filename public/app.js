@@ -5156,9 +5156,11 @@ function initCampanhasModal() {
   });
 }
 
-// Vendedor = isVendedor true, ou cargo sub gerente/gerente (mantém compatibilidade com registros antigos)
+// Vendedor = isVendedor true E não é gerente (sub-gerente é incluído pois também vende)
 function isVend(e) {
-  return e.isVendedor !== false || /gerente/i.test(e.cargo || '');
+  const cargo = (e.cargo || '').toLowerCase().trim();
+  const isGerente = /gerente|g\.?\s*vend/i.test(cargo) && !/^sub/i.test(cargo);
+  return e.isVendedor !== false && !isGerente;
 }
 
 // ── Recebimento de NF ─────────────────────────────────────────────────────

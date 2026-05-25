@@ -13,10 +13,10 @@ const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
 function cargoTipo(cargo) {
-  const c = (cargo || '').toLowerCase();
-  if (/caixa|opcx/.test(c))                      return 'caixa';
-  if (/sub[\s-]gerente|sub gerente/.test(c))      return 'sub';
-  if (/gerente|g\.\s*vend|g\.vend/.test(c))       return 'gerente';
+  const c = (cargo || '').toLowerCase().trim();
+  if (/caixa|opcx/.test(c))                              return 'caixa';
+  if (/^sub.*gerente|sub[\s-]gerente/.test(c))            return 'sub';
+  if (/gerente|g\.?\s*vend/.test(c) && !/^sub/.test(c))  return 'gerente';
   return 'vendedor';
 }
 

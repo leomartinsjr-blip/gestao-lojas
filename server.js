@@ -931,8 +931,12 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
     const storeColor = BOARD_COLORS[board] || 'FF4F8B5A';
     const storeName  = BOARD_NAMES[board]  || board;
 
-    // somente vendedores (exclui gerentes, sub-gerentes, caixas)
-    const isVendedor = e => e.isVendedor !== false && !/gerente|g\.\s*vend/i.test(e.cargo || '');
+    // somente vendedores — exclui gerentes mas mantém sub-gerentes (que também vendem)
+    const isVendedor = e => {
+      const cargo = (e.cargo || '').toLowerCase().trim();
+      const isGerente = /gerente|g\.?\s*vend/i.test(cargo) && !/^sub/i.test(cargo);
+      return e.isVendedor !== false && !isGerente;
+    };
     const emps     = (db.employees || []).filter(e => e.board === board && isVendedor(e));
     const mkKey    = `${y}-${pad(m)}`;
     const dsKey    = `${y}-${pad(m)}-${board}`;
@@ -3594,8 +3598,12 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
     const vsalesAll = db.vsales || {};
 
     // Cada funcionário usa sua própria meta individual (vsales.meta.mensal)
-    // Gerentes são excluídos dos cálculos de meta de vendedor
-    const isVend = e => e.isVendedor !== false && !/gerente|g\.\s*vend/i.test(e.cargo || '');
+    // Gerentes são excluídos; sub-gerentes são mantidos (também vendem)
+    const isVend = e => {
+      const cargo = (e.cargo || '').toLowerCase().trim();
+      const isGerente = /gerente|g\.?\s*vend/i.test(cargo) && !/^sub/i.test(cargo);
+      return e.isVendedor !== false && !isGerente;
+    };
 
     const boards = [...new Set(employees.map(e => e.board))];
     const lojaMetaMap  = {}; // board → soma das metas dos vendedores
