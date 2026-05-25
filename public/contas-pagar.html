@@ -140,14 +140,13 @@
 
 <div id="cp-body">
   <div id="cp-error"></div>
-  <details id="cp-diag">
-    <summary>Diagnóstico Microvix</summary>
-    <pre id="cp-diag-pre">Carregando…</pre>
-  </details>
   <div id="cp-summary"></div>
   <div id="cp-store-totals"></div>
   <div id="cp-table-container">
-    <div id="cp-empty" style="display:none">Nenhum título encontrado para o período.</div>
+    <div id="cp-empty" style="display:none">
+      <div style="margin-bottom:10px">Nenhum título encontrado. Testando API Microvix…</div>
+      <pre id="cp-diag-pre" style="text-align:left;background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:12px;font-size:11px;white-space:pre-wrap;word-break:break-all;max-height:300px;overflow-y:auto;color:var(--text2)">aguardando…</pre>
+    </div>
     <div class="cp-table-wrap" id="cpTableWrap" style="display:none">
       <table>
         <thead>
@@ -204,9 +203,7 @@ async function loadData() {
     _filterBoard = '';
     renderAll();
 
-    if (!_allItems.length && !data.errors?.length) {
-      runDiagnostic();
-    }
+    if (!_allItems.length) runDiagnostic();
   } catch (e) {
     const errEl = document.getElementById('cp-error');
     errEl.style.display = '';
