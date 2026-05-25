@@ -14,9 +14,9 @@ const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
 
 function cargoTipo(cargo) {
   const c = (cargo || '').toLowerCase();
-  if (/caixa|opcx/.test(c))                 return 'caixa';
-  if (/sub[\s-]gerente|sub gerente/.test(c)) return 'sub';
-  if (/gerente/.test(c))                    return 'gerente';
+  if (/caixa|opcx/.test(c))                      return 'caixa';
+  if (/sub[\s-]gerente|sub gerente/.test(c))      return 'sub';
+  if (/gerente|g\.\s*vend|g\.vend/.test(c))       return 'gerente';
   return 'vendedor';
 }
 
@@ -212,7 +212,7 @@ function fpOpenCfg(board) {
 
   const metaRows = emps.map(emp => {
     const vs     = FP.vsales[emp.id] || {};
-    const meta   = r2(vs.meta?.efetiva || vs.meta?.mensal || 0);
+    const meta   = r2(vs.meta?.mensal || 0);
     const meta2  = r2(meta * 1.10);
     const super_ = r2(meta * 1.10 * 1.20);
     const vendas = sumVendas(emp.id);
@@ -343,7 +343,7 @@ function defaultEntry(emp) {
 
   const vendas = sumVendas(emp.id);
   const vs     = FP.vsales[emp.id] || {};
-  const meta   = r2(vs.meta?.efetiva || vs.meta?.mensal || 0);
+  const meta   = r2(vs.meta?.mensal || 0); // meta individual do funcionário (fechamento diário)
 
   // ── Caixa ──
   if (tipo === 'caixa') {

@@ -931,7 +931,9 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
     const storeColor = BOARD_COLORS[board] || 'FF4F8B5A';
     const storeName  = BOARD_NAMES[board]  || board;
 
-    const emps     = (db.employees || []).filter(e => e.board === board && e.isVendedor !== false);
+    // somente vendedores (exclui gerentes, sub-gerentes, caixas)
+    const isVendedor = e => e.isVendedor !== false && !/gerente|g\.\s*vend/i.test(e.cargo || '');
+    const emps     = (db.employees || []).filter(e => e.board === board && isVendedor(e));
     const mkKey    = `${y}-${pad(m)}`;
     const dsKey    = `${y}-${pad(m)}-${board}`;
     const metaLoja = db.dailySales?.[dsKey]?.meta?.mensal || 0;
@@ -3587,76 +3589,41 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
     const year  = parseInt(req.params.year);
     const month = parseInt(req.params.month);
     const mk    = `${year}-${String(month).padStart(2,'0')}`;
-    const pad   = n => String(n).padStart(2,'0');
-    const N     = new Date(year, month, 0).getDate(); // dias no mês
-    const defW  = 100 / N;
     const db    = await readDB();
-    const employees    = (db.employees || []).filter(e => !e.inativo);
-    const vsalesAll    = db.vsales       || {};
-    const dailySales   = db.dailySales   || {};
-    const globalWeights = (db.globalWeights || {})[mk] || {};
+    const employees = (db.employees || []).filter(e => !e.inativo);
+    const vsalesAll = db.vsales || {};
 
-    // Meta efetiva por vendedor — usa lógica do fechamento diário:
-    // se metaLoja > 0, distribui pelos sellers ativos por dia via pesos globais;
-    // caso contrário usa meta individual do vsales
+    // Cada funcionário usa sua própria meta individual (vsales.meta.mensal)
+    // Gerentes são excluídos dos cálculos de meta de vendedor
+    const isVend = e => e.isVendedor !== false && !/gerente|g\.\s*vend/i.test(e.cargo || '');
+
     const boards = [...new Set(employees.map(e => e.board))];
-    const lojaMetaMap  = {}; // board → metaLoja
+    const lojaMetaMap  = {}; // board → soma das metas dos vendedores
     const lojaVendaMap = {}; // board → total vendas loja (mês)
 
     for (const board of boards) {
-      const dsKey    = `${mk}-${board}`;
-      const metaLoja = dailySales[dsKey]?.meta?.mensal || 0;
-      lojaMetaMap[board] = metaLoja;
-
       const bEmps = employees.filter(e => e.board === board);
+      const bVend = bEmps.filter(isVend); // somente vendedores
 
-      // Total vendas loja no mês
+      // Meta loja = soma das metas individuais dos vendedores
+      lojaMetaMap[board] = bVend.reduce((s, e) => {
+        return s + ((vsalesAll[`${mk}-${board}-${e.id}`]?.meta?.mensal) || 0);
+      }, 0);
+
+      // Total vendas loja (todos os funcionários da loja)
       lojaVendaMap[board] = bEmps.reduce((s, e) => {
         const vs = vsalesAll[`${mk}-${board}-${e.id}`] || {};
         return s + Object.entries(vs.entries || {})
           .filter(([d]) => d.startsWith(mk))
           .reduce((a,[,en]) => a + (en.value||0), 0);
       }, 0);
-
-      // Meta efetiva individual
-      if (metaLoja > 0) {
-        for (const emp of bEmps) {
-          const vs  = vsalesAll[`${mk}-${board}-${emp.id}`] || {};
-          const vac = vs.meta?.vacationDays || [];
-          let s = 0;
-          for (let d = 1; d <= N; d++) {
-            const ds      = `${mk}-${pad(d)}`;
-            if (vac.includes(ds)) continue;
-            const w       = globalWeights[ds] ?? defW;
-            const nActive = bEmps.filter(e2 => {
-              const v2 = (vsalesAll[`${mk}-${board}-${e2.id}`]?.meta?.vacationDays || []);
-              return !v2.includes(ds);
-            }).length;
-            s += nActive > 0 ? (metaLoja * w / 100) / nActive : 0;
-          }
-          // armazena na cópia local (não altera o DB)
-          if (!vsalesAll[`${mk}-${board}-${emp.id}`])
-            vsalesAll[`${mk}-${board}-${emp.id}`] = { meta: { mensal: 0 }, entries: {} };
-          vsalesAll[`${mk}-${board}-${emp.id}`].meta._efetiva = Math.round(s * 100) / 100;
-        }
-      }
     }
 
-    // Monta vsales para o cliente com meta.efetiva calculada
+    // Monta vsales — cada funcionário usa sua própria meta individual
     const vsales = {};
     for (const emp of employees) {
       const key = `${mk}-${emp.board}-${emp.id}`;
-      const raw = vsalesAll[key] || { meta: { mensal: 0 }, entries: {} };
-      const metaLoja = lojaMetaMap[emp.board] || 0;
-      vsales[emp.id] = {
-        ...raw,
-        meta: {
-          ...raw.meta,
-          efetiva: metaLoja > 0
-            ? (raw.meta._efetiva || 0)
-            : (raw.meta.mensal  || 0),
-        },
-      };
+      vsales[emp.id] = vsalesAll[key] || { meta: { mensal: 0 }, entries: {} };
     }
 
     res.json({
