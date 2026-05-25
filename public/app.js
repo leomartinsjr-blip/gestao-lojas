@@ -1967,15 +1967,27 @@ function renderTransExcelTab(container) {
       }
 
       // Localiza aba com header de colunas
+      const normH = h => String(h||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
       let companies = [], headerSheetIdx = -1;
+      let colCodigo = 0, colDescricao = 1, colRef = 2, colUltimaCompra = 8;
       for (let i = 0; i < wb.SheetNames.length; i++) {
         const rows = XLSX_LOCAL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1 });
         const colRowIdx = rows.findIndex(r => Array.isArray(r) &&
-          r.some(c => typeof c === 'string' && c.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase() === 'codigo'));
+          r.some(c => typeof c === 'string' && normH(c) === 'codigo'));
         if (colRowIdx === -1) continue;
         headerSheetIdx = i;
         const headerRow  = rows[colRowIdx];
         const companyRow = colRowIdx > 0 ? rows[colRowIdx - 1] : [];
+
+        // Detecta índices de colunas fixas pelo header
+        headerRow.forEach((h, idx) => {
+          const n = normH(h);
+          if (n === 'codigo') colCodigo = idx;
+          else if (n.includes('descri')) colDescricao = idx;
+          else if (n.includes('ref') && idx < 5) colRef = idx;
+          else if (n.includes('compra') || n.includes('entrada') || n.includes('ult.') || n.includes('ultima')) colUltimaCompra = idx;
+        });
+
         const startCol = headerRow.findIndex((h, idx) => idx >= 2 && typeof companyRow[idx] === 'string' && detectBoard(companyRow[idx]));
         for (let c = (startCol !== -1 ? startCol : 9); c < headerRow.length; c += 2) {
           const raw = String(companyRow[c] || '').trim();
@@ -1987,29 +1999,52 @@ function renderTransExcelTab(container) {
       }
       if (!companies.length) throw new Error('Formato não reconhecido — não encontrei colunas de lojas no Excel.');
 
+      function parseExcelDate(val) {
+        if (!val && val !== 0) return null;
+        if (typeof val === 'number') {
+          // Serial date do Excel
+          try {
+            const d = XLSX_LOCAL.SSF.parse_date_code(val);
+            if (d && d.y > 2000) return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+          } catch {}
+          return null;
+        }
+        const s = String(val).trim();
+        if (!s || s === '-') return null;
+        if (s.includes('/')) {
+          const parts = s.split('/');
+          if (parts.length === 3) {
+            const [d, m, y] = parts;
+            return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+          }
+        }
+        // ISO
+        if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+        return null;
+      }
+
       // Passo 2: extrai dados de todas as abas
       result.innerHTML = '<div class="trans-loading">Extraindo produtos…</div>';
       const products = {};
       let currentSetor = '';
       for (let i = headerSheetIdx + 1; i < wb.SheetNames.length; i++) {
-        const rows = XLSX_LOCAL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1 });
+        const rows = XLSX_LOCAL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1, raw: true });
         for (const r of rows) {
           if (!r || !r.length) continue;
           if (typeof r[0] === 'string' && r[0].includes('Setor')) {
             currentSetor = r[0].replace(/^SetorSetor:\s*/i, '').replace(/\s*\(\d+\)\s*$/, '').trim();
             continue;
           }
-          if (typeof r[0] !== 'number') continue;
-          const cod = String(r[0]);
+          // Aceita código como número ou string numérica
+          const rawCod = r[colCodigo];
+          const cod = typeof rawCod === 'number'
+            ? String(rawCod)
+            : (typeof rawCod === 'string' && /^\d+$/.test(rawCod.trim()) ? rawCod.trim() : null);
+          if (!cod) continue;
           if (!products[cod]) {
-            const rawDate = String(r[8] || '').trim();
-            let ultimaCompra = null;
-            if (rawDate && rawDate !== '-' && rawDate.includes('/')) {
-              const [d, m, y] = rawDate.split('/');
-              ultimaCompra = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
-            }
-            const rawRef = String(r[2] || '').trim().replace(/^="(.+)"$/, '$1');
-            products[cod] = { cod, descricao: String(r[1] || '').trim(), referencia: rawRef, setor: currentSetor, ultimaCompra, stocks: {}, giro: {} };
+            const ultimaCompra = parseExcelDate(r[colUltimaCompra]);
+            const rawRef = String(r[colRef] || '').trim().replace(/^="(.+)"$/, '$1');
+            products[cod] = { cod, descricao: String(r[colDescricao] || '').trim(), referencia: rawRef, setor: currentSetor, ultimaCompra, stocks: {}, giro: {} };
           }
           for (const c of companies) {
             products[cod].stocks[c.board] = (products[cod].stocks[c.board] || 0) + (parseInt(r[c.saldoCol]) || 0);
@@ -2020,11 +2055,13 @@ function renderTransExcelTab(container) {
 
       // Passo 3: filtra produtos sem entrada recente (obrigatório)
       const totalBruto = Object.keys(products).length;
+      if (!totalBruto) throw new Error(`Nenhum produto encontrado no Excel. Colunas detectadas: código=${colCodigo}, descrição=${colDescricao}, ref=${colRef}, última compra=${colUltimaCompra}. Verifique se o relatório está no formato correto.`);
       for (const cod of Object.keys(products)) {
         const p = products[cod];
         if (!p.ultimaCompra || p.ultimaCompra < compraMinDate) delete products[cod];
       }
       const excluidos = totalBruto - Object.keys(products).length;
+      if (!Object.keys(products).length) throw new Error(`Todos os ${totalBruto} produtos foram filtrados pela data de entrada (a partir de ${compraMinDate.split('-').reverse().join('/')}). Tente uma data de entrada anterior ou verifique se o relatório tem a coluna "Última Compra" (col. ${colUltimaCompra+1}).`);
 
       // Passo 4: busca catálogo (GET pequeno) e calcula tudo no browser
       result.innerHTML = '<div class="trans-loading">Buscando catálogo Microvix…</div>';
@@ -4804,7 +4841,7 @@ function _pendMatchesMine(item, myUsername) {
 
 const _pendRecLabel = r => ({ daily:'Diário', weekly:'Semanal', quinzenal:'Quinzenal', monthly:'Mensal' }[r] || r);
 
-function _renderPendenciasActive(body, filter, myUsername, refresh) {
+function _renderPendenciasActive(body, filter, myUsername, refresh, isAdmin = false) {
   let items = (S.pendencias || []).filter(x => !x.resolved);
   if (filter === 'mine') items = items.filter(x => _pendMatchesMine(x, myUsername));
   items.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
@@ -4826,13 +4863,13 @@ function _renderPendenciasActive(body, filter, myUsername, refresh) {
         ${_pendenciaChips(item.assignedTo)}
         <span class="nf-date-tag">${_escHtml(item.createdByLabel || item.createdBy)} ${_fmtNFDate(item.createdAt)}</span>
       </span>
-      <button class="pend-edit-btn" data-id="${item.id}" title="Editar destinatário">✎</button>
+      ${isAdmin ? `<button class="pend-edit-btn" data-id="${item.id}" title="Editar destinatário">✎</button>` : ''}
       <button class="nf-del-btn pend-del" data-id="${item.id}" title="Excluir">&times;</button>
-      <div class="pend-inline-edit" data-id="${item.id}" style="display:none">
+      ${isAdmin ? `<div class="pend-inline-edit" data-id="${item.id}" style="display:none">
         <span class="pend-rec-lbl">Para:</span>
         ${PENDENCIA_USERS.map(u => `<button class="pend-rec-btn${assignedArr.includes(u.key) ? ' active' : ''}" data-key="${u.key}" style="--prc:${u.color}">${u.label}</button>`).join('')}
         <button class="pend-edit-save" data-id="${item.id}">✓ Salvar</button>
-      </div>
+      </div>` : ''}
     </div>`;
   }).join('');
 
@@ -4865,7 +4902,7 @@ function _renderPendenciasActive(body, filter, myUsername, refresh) {
       const updated = await apiFetch('PATCH', `/api/pendencias/${id}`, { assignedTo: selected }).catch(() => null);
       const item = S.pendencias.find(x => x.id === id);
       if (item && updated) Object.assign(item, updated);
-      _renderPendenciasActive(body, filter, myUsername, refresh);
+      _renderPendenciasActive(body, filter, myUsername, refresh, isAdmin);
       refresh();
     });
   });
@@ -4879,7 +4916,7 @@ function _renderPendenciasActive(body, filter, myUsername, refresh) {
       const item = S.pendencias.find(x => x.id === id);
       if (item && updated) Object.assign(item, { ...updated, _next: undefined });
       if (updated?._next) S.pendencias.push(updated._next);
-      _renderPendenciasActive(body, filter, myUsername, refresh);
+      _renderPendenciasActive(body, filter, myUsername, refresh, isAdmin);
       refresh();
     });
   });
@@ -4890,7 +4927,7 @@ function _renderPendenciasActive(body, filter, myUsername, refresh) {
       if (!confirm('Excluir esta pendência?')) return;
       await apiFetch('DELETE', `/api/pendencias/${id}`).catch(() => {});
       S.pendencias = S.pendencias.filter(x => x.id !== id);
-      _renderPendenciasActive(body, filter, myUsername, refresh);
+      _renderPendenciasActive(body, filter, myUsername, refresh, isAdmin);
       refresh();
     });
   });
@@ -4976,7 +5013,7 @@ function renderPendenciasCard(container) {
       </span>
       <div style="display:flex;align-items:center;gap:.4rem">
         <button class="pend-tab active" data-filter="mine">Para mim</button>
-        <button class="pend-tab" data-filter="all">Todas</button>
+        ${isAdmin ? `<button class="pend-tab" data-filter="all">Todas</button>` : ''}
         <button class="nf-hist-btn" id="pendHistBtn" style="display:none">Histórico</button>
       </div>
     </div>
@@ -5037,7 +5074,7 @@ function renderPendenciasCard(container) {
       _renderPendenciasHistory(body, refresh);
       addRow.style.display = 'none';
     } else {
-      _renderPendenciasActive(body, filter, myUsername, refresh);
+      _renderPendenciasActive(body, filter, myUsername, refresh, isAdmin);
       addRow.style.display = '';
     }
   }
