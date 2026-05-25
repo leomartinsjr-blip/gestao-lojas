@@ -56,40 +56,38 @@ async function initMongo() {
 }
 
 // ── DB helpers (async) ─────────────────────────────────────────────────────
-// Short-lived cache: valid only while there are no pending writes.
-// Each readDB() after a writeDB() fetches fresh from MongoDB.
-let _dbCache     = null;
-let _dbCacheDirty = false; // true while a writeDB is in-flight
+// Cache de leitura: evita round-trips ao MongoDB quando não houve escrita.
+// writeDB() invalida o cache para garantir dados frescos na próxima leitura.
+let _dbCache      = null;
+let _dbCacheDirty = false;
 
 async function readDB() {
-  if (_dbCache && !_dbCacheDirty) return JSON.parse(JSON.stringify(_dbCache));
+  if (_dbCache && !_dbCacheDirty) return _dbCache;
   if (mongoDb) {
     const doc = await mongoDb.collection('store').findOne({ _id: 'main' });
-    if (!doc) { _dbCache = { nextId: 1, months: {}, cards: {} }; _dbCacheDirty = false; return JSON.parse(JSON.stringify(_dbCache)); }
+    if (!doc) { _dbCache = { nextId: 1, months: {}, cards: {} }; _dbCacheDirty = false; return _dbCache; }
     const { _id, ...data } = doc;
     _dbCache = data;
     _dbCacheDirty = false;
-    return JSON.parse(JSON.stringify(_dbCache));
+    return _dbCache;
   }
-  if (!fs.existsSync(DATA_FILE)) return { nextId: 1, months: {}, cards: {} };
-  try { const d = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); _dbCache = d; return JSON.parse(JSON.stringify(d)); }
-  catch { return { nextId: 1, months: {}, cards: {} }; }
+  if (!fs.existsSync(DATA_FILE)) { _dbCache = { nextId: 1, months: {}, cards: {} }; return _dbCache; }
+  try { _dbCache = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); _dbCacheDirty = false; return _dbCache; }
+  catch { _dbCache = { nextId: 1, months: {}, cards: {} }; return _dbCache; }
 }
 
 async function writeDB(data) {
   _dbCache = data;
-  _dbCacheDirty = true;
+  _dbCacheDirty = false; // já temos o dado atualizado em cache
   if (mongoDb) {
     await mongoDb.collection('store').replaceOne(
       { _id: 'main' },
       { _id: 'main', ...data },
       { upsert: true }
     );
-    _dbCacheDirty = false;
     return;
   }
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
-  _dbCacheDirty = false;
 }
 
 function nextId(db) {
@@ -442,9 +440,10 @@ app.get('/api/init', requireAuth, async (req, res) => {
     const { board } = req.session.user;
     const isAdminOrEscritorio = !board || board === 'escritorio';
 
-    // Employees
+    // Employees — sem foto para reduzir tamanho da resposta (fotos carregam em background)
     const allEmps = db.employees || [];
-    const employees = isAdminOrEscritorio ? allEmps : allEmps.filter(e => e.board === board);
+    const stripFoto = e => { const { foto, ...rest } = e; return rest; };
+    const employees = (isAdminOrEscritorio ? allEmps : allEmps.filter(e => e.board === board)).map(stripFoto);
 
     // VSales for all employees this month
     const vsalesAll = db.vsales || {};
@@ -543,6 +542,15 @@ app.get('/api/employees', requireAuth, async (req, res) => {
     const { board } = req.session.user;
     const isAdminOrEscritorio = !board || board === 'escritorio';
     res.json(isAdminOrEscritorio ? emps : emps.filter(e => e.board === board));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/employees/photos — só id+foto para lazy-load após init ────────
+app.get('/api/employees/photos', requireAuth, async (req, res) => {
+  try {
+    const db   = await readDB();
+    const emps = db.employees || [];
+    res.json(emps.filter(e => e.foto).map(e => ({ id: e.id, foto: e.foto })));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

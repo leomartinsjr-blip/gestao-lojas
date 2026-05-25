@@ -321,6 +321,15 @@ async function loadData() {
 
     renderDashboard();
 
+    // Carrega fotos em background para não bloquear a renderização inicial
+    apiFetch('GET', '/api/employees/photos').then(photos => {
+      if (!photos?.length) return;
+      const byId = Object.fromEntries(photos.map(p => [p.id, p.foto]));
+      for (const emp of S.employees) {
+        if (byId[emp.id]) emp.foto = byId[emp.id];
+      }
+    }).catch(() => {});
+
     if (S._loginJustHappened) {
       S._loginJustHappened = false;
       const now = new Date();
