@@ -5421,6 +5421,25 @@ function renderContratoCard(container) {
     return d ? `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}` : '—';
   }
 
+  function fmtShort(d) {
+    return d ? `${pad(d.getDate())}/${pad(d.getMonth()+1)}` : null;
+  }
+
+  function deadlinePill(label, venc, dias, isDecisao) {
+    if (!venc) return '';
+    const dateStr = fmtShort(venc);
+    if (dias === null) return '';
+    let cls = 'contrato-ok';
+    if (dias < 0)   cls = 'contrato-vencido';
+    else if (dias === 0) cls = 'contrato-hoje';
+    else if (dias <= 7)  cls = 'contrato-urgente';
+    else if (dias <= 15) cls = 'contrato-alerta';
+    else if (dias <= 30) cls = 'contrato-atencao';
+    const decisaoMark = isDecisao ? ' ★' : '';
+    const daysLabel   = dias < 0 ? 'vencido' : dias === 0 ? 'hoje' : `${dias}d`;
+    return `<span class="contrato-pill ${cls}" title="${label}: ${fmtDate(venc)} (${daysLabel})">${label} ${dateStr}<span class="contrato-pill-days">${daysLabel}${decisaoMark}</span></span>`;
+  }
+
   function buildRowsAll() {
     const rows = [];
     for (const b of NF_STORES) {
@@ -5431,49 +5450,52 @@ function renderContratoCard(container) {
         const d1 = diasRestantes(venc1), d2 = diasRestantes(venc2);
         const upcomings = [d1, d2].filter(d => d != null && d >= 0);
         if (upcomings.length === 0) continue;
-        const sortKey = Math.min(...upcomings);
-        rows.push({ e, b, venc1, venc2, d1, d2, sortKey });
+        rows.push({ e, b, venc1, venc2, d1, d2, sortKey: Math.min(...upcomings) });
       }
     }
     if (!rows.length) return '<div class="contrato-empty">Nenhum contrato cadastrado.</div>';
     rows.sort((a, b) => a.sortKey - b.sortKey);
-    return `<table class="contrato-table">
-      <thead><tr>
-        <th>Loja</th><th>Funcionário</th>
-        <th>1º Contrato</th><th>2º Contrato</th>
-      </tr></thead>
-      <tbody>${rows.map(({ e, b, venc1, venc2, d1, d2 }) => {
-        const color = BOARDS[b]?.color || '#8B949E';
-        return `<tr>
-          <td><span class="func-loja-badge" style="border-color:${color};color:${color}">${BOARDS[b]?.label||b}</span></td>
-          <td class="contrato-nome">${e.apelido||e.name}</td>
-          <td class="contrato-cell">${venc1?fmtDate(venc1):'—'} ${statusChip(d1)}</td>
-          <td class="contrato-cell">${cell2(venc2, d2, d1)}</td>
-        </tr>`;
-      }).join('')}</tbody></table>`;
+    return rows.map(({ e, b, venc1, venc2, d1, d2 }) => {
+      const color = BOARDS[b]?.color || '#8B949E';
+      const isDecisao = d1 !== null && d1 < 0 && d2 !== null && d2 >= 0;
+      return `<div class="contrato-row">
+        <div class="contrato-row-name">
+          <span class="func-loja-badge" style="border-color:${color};color:${color};font-size:.65rem;padding:.1rem .4rem">${BOARDS[b]?.label||b}</span>
+          <span class="contrato-nome-txt">${e.apelido||e.name}</span>
+        </div>
+        <div class="contrato-row-pills">
+          ${deadlinePill('1º', venc1, d1, false)}
+          ${deadlinePill('2º', venc2, d2, isDecisao)}
+        </div>
+      </div>`;
+    }).join('');
   }
 
   function buildRows(board) {
-    const emps = S.employees.filter(e => {
-      if (e.board !== board || e.inativo || !e.admissao || !(e.contrato1 || e.contrato2)) return false;
+    const rows = [];
+    for (const e of S.employees) {
+      if (e.board !== board || e.inativo || !e.admissao || !(e.contrato1 || e.contrato2)) continue;
       const venc1 = calcVenc(e.admissao, e.contrato1);
       const venc2 = e.contrato1 && e.contrato2 ? calcVenc(e.admissao, (e.contrato1||0)+(e.contrato2||0)) : null;
-      return [diasRestantes(venc1), diasRestantes(venc2)].some(d => d !== null && d >= 0);
-    });
-    if (!emps.length) return '<div class="contrato-empty">Nenhum contrato cadastrado.</div>';
-    return `<table class="contrato-table">
-      <thead><tr>
-        <th>Funcionário</th><th>1º Contrato</th><th>2º Contrato</th>
-      </tr></thead>
-      <tbody>${emps.map(e => {
-        const venc1 = calcVenc(e.admissao, e.contrato1);
-        const venc2 = e.contrato1 && e.contrato2 ? calcVenc(e.admissao, (e.contrato1||0)+(e.contrato2||0)) : null;
-        return `<tr>
-          <td class="contrato-nome">${e.apelido||e.name}</td>
-          <td class="contrato-cell">${venc1?fmtDate(venc1):'—'} ${statusChip(diasRestantes(venc1))}</td>
-          <td class="contrato-cell">${cell2(venc2, diasRestantes(venc2), diasRestantes(venc1))}</td>
-        </tr>`;
-      }).join('')}</tbody></table>`;
+      const d1 = diasRestantes(venc1), d2 = diasRestantes(venc2);
+      const upcomings = [d1, d2].filter(d => d != null && d >= 0);
+      if (upcomings.length === 0) continue;
+      rows.push({ e, venc1, venc2, d1, d2, sortKey: Math.min(...upcomings) });
+    }
+    if (!rows.length) return '<div class="contrato-empty">Nenhum contrato cadastrado.</div>';
+    rows.sort((a, b) => a.sortKey - b.sortKey);
+    return rows.map(({ e, venc1, venc2, d1, d2 }) => {
+      const isDecisao = d1 !== null && d1 < 0 && d2 !== null && d2 >= 0;
+      return `<div class="contrato-row">
+        <div class="contrato-row-name">
+          <span class="contrato-nome-txt">${e.apelido||e.name}</span>
+        </div>
+        <div class="contrato-row-pills">
+          ${deadlinePill('1º', venc1, d1, false)}
+          ${deadlinePill('2º', venc2, d2, isDecisao)}
+        </div>
+      </div>`;
+    }).join('');
   }
 
   const card = document.createElement('div');

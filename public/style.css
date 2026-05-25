@@ -2504,6 +2504,17 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .contrato-urgente  { background: rgba(200,60,60,.18);  color: #f07070; }
 .contrato-hoje     { background: rgba(200,60,60,.28);  color: #ff5555; font-weight: 700; }
 .contrato-decisao  { background: rgba(88,166,255,.18); color: #58A6FF; font-weight: 700; margin-left:.3rem; }
+.contrato-vencido  { background: rgba(200,60,60,.18);  color: #f07070; }
+
+/* ── Contrato card — layout compacto (pills) ──────────────────────────────── */
+.contrato-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .3rem .5rem; border-bottom: 1px solid var(--border); }
+.contrato-row:last-child { border-bottom: none; }
+.contrato-row:hover { background: var(--hover-bg, rgba(255,255,255,.03)); }
+.contrato-row-name { display: flex; align-items: center; gap: .4rem; flex: 1; min-width: 0; }
+.contrato-nome-txt { font-size: .82rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.contrato-row-pills { display: flex; gap: .3rem; flex-shrink: 0; }
+.contrato-pill { display: inline-flex; align-items: center; gap: .25rem; padding: .15rem .45rem; border-radius: 999px; font-size: .74rem; font-weight: 600; white-space: nowrap; }
+.contrato-pill-days { font-size: .68rem; opacity: .85; }
 
 /* ── Pendências ──────────────────────────────────────────────────────────── */
 .pend-tab { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: .72rem; padding: .2rem .55rem; border-radius: 4px; cursor: pointer; transition: background .15s, color .15s; }
