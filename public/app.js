@@ -2063,8 +2063,8 @@ function renderPromocaoView() {
       // Renderiza tabela
       const fmtD = iso => iso ? iso.slice(0,10).split('-').reverse().join('/') : '—';
       const tableRows = sugestoes.map(g => {
-        const total = g.totalGiro + g.totalStock;
-        const pct   = total > 0 ? g.totalGiro / total : 0;
+        const base  = g.totalGiro + g.totalStock; // saldo anterior + recebimentos
+        const pct   = base > 0 ? g.totalGiro / base : 0;
         const pctStr = `${Math.round(pct * 100)}%`;
         const pctColor = pct < 0.10 ? '#F85149' : pct < 0.20 ? '#E3B341' : '#8B949E';
         return `<tr>
@@ -2073,7 +2073,7 @@ function renderPromocaoView() {
           <td class="trans-td" style="font-weight:600">${_escHtml(g.cor)}</td>
           <td class="trans-td" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_escHtml(g.descBase)}">${_escHtml(g.descBase)}</td>
           <td class="trans-td trans-td-c">${g.totalGiro}</td>
-          <td class="trans-td trans-td-c">${g.totalStock}</td>
+          <td class="trans-td trans-td-c" style="color:var(--muted)">${base}</td>
           <td class="trans-td trans-td-c" style="color:${pctColor};font-weight:700">${pctStr}</td>
           <td class="trans-td">${fmtD(g.ultimaCompra)}</td>
         </tr>`;
@@ -2088,8 +2088,10 @@ function renderPromocaoView() {
           <table class="trans-table">
             <thead><tr>
               <th class="trans-th">Setor</th><th class="trans-th">Referência</th><th class="trans-th">Cor</th>
-              <th class="trans-th">Descrição</th><th class="trans-th trans-td-c">Giro</th>
-              <th class="trans-th trans-td-c">Estoque</th><th class="trans-th trans-td-c">% Vendido</th>
+              <th class="trans-th">Descrição</th>
+              <th class="trans-th trans-td-c" title="Total de peças vendidas no período">Vendido</th>
+              <th class="trans-th trans-td-c" title="Saldo anterior + recebimentos (base do cálculo)">Base</th>
+              <th class="trans-th trans-td-c">% Vendido</th>
               <th class="trans-th">Última Entrada</th>
             </tr></thead>
             <tbody>${tableRows}</tbody>
@@ -2110,11 +2112,11 @@ function _exportPromocaoExcel(sugestoes, dataCorte, pct) {
   const XL = window.XLSX;
   if (!XL) { alert('Biblioteca SheetJS não carregada.'); return; }
   const fmtD = iso => iso ? iso.slice(0,10).split('-').reverse().join('/') : '—';
-  const header = ['Setor','Referência','Cor','Descrição','Giro','Estoque','% Vendido','Última Entrada'];
+  const header = ['Setor','Referência','Cor','Descrição','Vendido','Base (Sal.Ant+Rec.)','% Vendido','Última Entrada'];
   const rows = sugestoes.map(g => {
-    const total = g.totalGiro + g.totalStock;
-    return [g.setor||'—', g.referencia, g.cor, g.descBase, g.totalGiro, g.totalStock,
-            total > 0 ? `${Math.round(g.totalGiro/total*100)}%` : '—', fmtD(g.ultimaCompra)];
+    const base = g.totalGiro + g.totalStock;
+    return [g.setor||'—', g.referencia, g.cor, g.descBase, g.totalGiro, base,
+            base > 0 ? `${Math.round(g.totalGiro/base*100)}%` : '—', fmtD(g.ultimaCompra)];
   });
   const ws = XL.utils.aoa_to_sheet([header, ...rows]);
   ws['!cols'] = [{wch:20},{wch:12},{wch:8},{wch:38},{wch:7},{wch:8},{wch:10},{wch:14}];
