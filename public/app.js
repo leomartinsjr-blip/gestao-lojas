@@ -6986,6 +6986,7 @@ function _showIndevaGoalsOverlay(emp, state) {
   const todayStr  = `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
   const curPrefix = `${t.getFullYear()}-${pad(t.getMonth()+1)}-`;
   const daysInMonth = new Date(t.getFullYear(), t.getMonth()+1, 0).getDate();
+  const defW        = +(100 / daysInMonth).toFixed(6); // igual ao faturamento diário e performance mensal
 
   const vsale       = S.vsales?.[emp.id] || { meta:{mensal:0}, entries:{} };
   const metaMensal  = vsale.meta?.mensal || 0;
@@ -6994,18 +6995,18 @@ function _showIndevaGoalsOverlay(emp, state) {
   const todayAtendMx = todayEntry.atendimentos || 0;
   const todayPecas  = todayEntry.pecas || 0;
 
-  // Meta diária (peso do dia × meta mensal)
-  const todayWeight = S.weights?.[todayStr] ?? (100 / daysInMonth);
+  // Meta diária — mesmo cálculo do faturamento diário
+  const todayWeight = S.weights?.[todayStr] ?? defW;
   const todayMeta   = metaMensal * todayWeight / 100;
   const todayTicket = todayAtendMx > 0 ? todayValor / todayAtendMx : null;
 
-  // Acumulado mensal (valor + peso)
+  // Acumulado mensal — itera todos os dias do mês (igual ao performance mensal)
   let monthValor = 0, monthWeightAccum = 0;
-  for (const [d, e] of Object.entries(vsale.entries||{})) {
-    if (d.startsWith(curPrefix) && d <= todayStr) monthValor += e.value||0;
-  }
-  for (const [d, w] of Object.entries(S.weights||{})) {
-    if (d.startsWith(curPrefix) && d <= todayStr) monthWeightAccum += w;
+  for (let day = 1; day <= daysInMonth; day++) {
+    const ds = `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(day)}`;
+    if (ds > todayStr) break;
+    monthWeightAccum += S.weights?.[ds] ?? defW;
+    monthValor       += vsale.entries?.[ds]?.value || 0;
   }
   const metaAcum = metaMensal * monthWeightAccum / 100;
   const monthPct = metaAcum > 0 ? monthValor / metaAcum * 100 : null;
@@ -7043,7 +7044,9 @@ function _showIndevaGoalsOverlay(emp, state) {
   for (let i = 0; i < 7; i++) {
     const d  = new Date(startDate); d.setDate(d.getDate()+i);
     const ds = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-    const w  = S.weights?.[ds] ?? (100 / daysInMonth);
+    const dayDIM = new Date(d.getFullYear(), d.getMonth()+1, 0).getDate();
+    const dayDefW = +(100 / dayDIM).toFixed(6);
+    const w  = S.weights?.[ds] ?? dayDefW;
     const meta    = metaMensal * w / 100;
     const entry   = vsale.entries?.[ds] || {};
     const vendido = entry.value || 0;
