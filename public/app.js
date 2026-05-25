@@ -5397,7 +5397,8 @@ function renderContratoCard(container) {
         const venc2 = e.contrato1 && e.contrato2 ? calcVenc(e.admissao, (e.contrato1||0)+(e.contrato2||0)) : null;
         const d1 = diasRestantes(venc1), d2 = diasRestantes(venc2);
         const upcomings = [d1, d2].filter(d => d != null && d >= 0);
-        const sortKey = upcomings.length > 0 ? Math.min(...upcomings) : Math.max(d2 ?? -9999, d1 ?? -9999);
+        if (upcomings.length === 0) continue;
+        const sortKey = Math.min(...upcomings);
         rows.push({ e, b, venc1, venc2, d1, d2, sortKey });
       }
     }
@@ -5420,9 +5421,12 @@ function renderContratoCard(container) {
   }
 
   function buildRows(board) {
-    const emps = S.employees.filter(e =>
-      e.board === board && !e.inativo && e.admissao && (e.contrato1 || e.contrato2)
-    );
+    const emps = S.employees.filter(e => {
+      if (e.board !== board || e.inativo || !e.admissao || !(e.contrato1 || e.contrato2)) return false;
+      const venc1 = calcVenc(e.admissao, e.contrato1);
+      const venc2 = e.contrato1 && e.contrato2 ? calcVenc(e.admissao, (e.contrato1||0)+(e.contrato2||0)) : null;
+      return [diasRestantes(venc1), diasRestantes(venc2)].some(d => d !== null && d >= 0);
+    });
     if (!emps.length) return '<div class="contrato-empty">Nenhum contrato cadastrado.</div>';
     return `<table class="contrato-table">
       <thead><tr>
