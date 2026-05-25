@@ -240,14 +240,18 @@ async function fetchSangrias(cnpj, dtIni, dtFin, chave) {
 // Fetch LinxContasPagar → contas a pagar no período
 async function fetchContasPagar(cnpj, dtIni, dtFin, chave) {
   const extra = [
-    { id: 'data_ini', valor: dtIni },
-    { id: 'data_fin', valor: dtFin },
+    { id: 'data_inicial', valor: dtIni },
+    { id: 'data_fim',     valor: dtFin },
   ];
   const body = buildRequest('LinxContasPagar', cnpj, extra, chave);
   const raw  = await postRequest(body, 60_000);
   if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
     const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro desconhecido';
     throw new Error(`Microvix API (contasPagar): ${msg}`);
+  }
+  // Se a resposta não parece CSV (veio XML inesperado), lança com o conteúdo para diagnóstico
+  if (raw.trim().startsWith('<')) {
+    throw new Error(`Microvix retornou XML inesperado: ${raw.slice(0, 300)}`);
   }
   return parseCsv(raw);
 }

@@ -3288,7 +3288,7 @@ app.get('/api/contas-pagar', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/contas-pagar/raw?board=xxx&de=YYYY-MM-DD&ate=YYYY-MM-DD (debug)
+// GET /api/contas-pagar/raw?board=xxx&de=YYYY-MM-DD&ate=YYYY-MM-DD (debug — retorna resposta bruta)
 app.get('/api/contas-pagar/raw', requireAdmin, async (req, res) => {
   try {
     const { board, de, ate } = req.query;
@@ -3296,9 +3296,22 @@ app.get('/api/contas-pagar/raw', requireAdmin, async (req, res) => {
     const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const cnpj  = lojas[board] || Object.values(lojas)[0];
     const chave = process.env[`MICROVIX_CHAVE_${(board||'').toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-    const { fetchContasPagar } = require('./services/microvix');
-    const rows = await fetchContasPagar(cnpj, de || today.slice(0,7)+'-01', ate || today, chave);
-    res.json({ count: rows.length, fields: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 5) });
+    const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
+    const dtIni = de  || today.slice(0,7)+'-01';
+    const dtFin = ate || today;
+    const body  = buildRequest('LinxContasPagar', cnpj, [
+      { id: 'data_inicial', valor: dtIni },
+      { id: 'data_fim',     valor: dtFin },
+    ], chave);
+    const raw  = await postRequest(body, 60_000);
+    const rows = raw.trim().startsWith('<') ? [] : parseCsv(raw);
+    res.json({
+      rawPreview: raw.slice(0, 500),
+      isXml: raw.trim().startsWith('<'),
+      count: rows.length,
+      fields: rows[0] ? Object.keys(rows[0]) : [],
+      sample: rows.slice(0, 3),
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
