@@ -86,6 +86,7 @@ async function checkAuth() {
     document.getElementById('perfBtn').style.display = isAdmin ? '' : 'none';
     document.getElementById('transBtn').style.display = isAdmin ? '' : 'none';
     document.getElementById('contasBtn').style.display = isAdmin ? '' : 'none';
+    document.getElementById('folhaBtn').style.display = isAdmin ? '' : 'none';
     const indevaVisible = isAdmin || S.user?.board === 'escritorio' || INDEVA_STORES.includes(S.user?.board);
     document.getElementById('indevaBtn').style.display = indevaVisible ? '' : 'none';
     // Thursday reminder for store users
@@ -4569,6 +4570,12 @@ function openFuncForm(id) {
   document.getElementById('funcComissaoVR').value       = emp?.comissaoVR       || '';
   document.getElementById('funcAberturaLoja').value     = emp?.aberturaLoja     || '';
   document.getElementById('funcComissaoGerente').value  = emp?.comissaoGerente  || '';
+  document.getElementById('funcInssRate').value      = emp?.inssRate      ?? '';
+  document.getElementById('funcVtRate').value        = emp?.vtRate        ?? '';
+  document.getElementById('funcSalarioFixo').value   = emp?.salarioFixo   || '';
+  document.getElementById('funcQuebraCaixa').value   = emp?.quebraCaixa   || '';
+  document.getElementById('funcBanco').value         = emp?.banco         || '';
+  document.getElementById('funcConta').value         = emp?.conta         || '';
   document.getElementById('funcInativo').checked = !!emp?.inativo;
   document.getElementById('funcDesligamento').value = emp?.desligamento || '';
   document.getElementById('funcDesligamentoWrap').style.display = emp?.inativo ? '' : 'none';
@@ -4632,6 +4639,12 @@ async function saveFuncionario() {
   const comissaoVR       = parseFloat(document.getElementById('funcComissaoVR').value)        || 0;
   const aberturaLoja     = parseFloat(document.getElementById('funcAberturaLoja').value)      || 0;
   const comissaoGerente  = parseFloat(document.getElementById('funcComissaoGerente').value)   || 0;
+  const inssRate     = parseFloat(document.getElementById('funcInssRate').value)     || 0;
+  const vtRate       = parseFloat(document.getElementById('funcVtRate').value)       || 0;
+  const salarioFixo  = parseFloat(document.getElementById('funcSalarioFixo').value)  || 0;
+  const quebraCaixa  = parseFloat(document.getElementById('funcQuebraCaixa').value)  || 0;
+  const banco        = document.getElementById('funcBanco').value.trim();
+  const conta        = document.getElementById('funcConta').value.trim();
   const isVendedor = ['Vendedor', 'Gerente Vendedor', 'Sub Gerente'].includes(cargo);
   const inativo   = document.getElementById('funcInativo').checked;
   const desligamento = document.getElementById('funcDesligamento').value;
@@ -4645,7 +4658,7 @@ async function saveFuncionario() {
   const btn = document.getElementById('funcSaveBtn');
   btn.disabled = true;
   try {
-    const body = { name, apelido, board, cpf, microvixCod, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, isVendedor, inativo, desligamento };
+    const body = { name, apelido, board, cpf, microvixCod, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento };
     if (fotoRemoved) body.foto = '';
     let emp;
     if (FE.editingId) {

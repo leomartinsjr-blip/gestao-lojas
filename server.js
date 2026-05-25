@@ -616,7 +616,7 @@ app.get('/api/employees/photos', requireAuth, async (req, res) => {
 // ── POST /api/employees ────────────────────────────────────────────────────
 app.post('/api/employees', requireAuth, async (req, res) => {
   try {
-    const { name, board, cpf, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento, apelido, microvixCod } = req.body;
+    const { name, board, cpf, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento, apelido, microvixCod } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
     const db = await readDB();
     if (!db.employees) db.employees = [];
@@ -627,8 +627,14 @@ app.post('/api/employees', requireAuth, async (req, res) => {
       cpf: cpf || '', admissao: admissao || '',
       contrato1: parseInt(contrato1) || 0, contrato2: parseInt(contrato2) || 0,
       cargo: cargo || '',
-      salario: salario || 0, comissaoSemMeta: comissaoSemMeta || 0, comissao: comissao || 0,
-      comissaoMeta2: comissaoMeta2 || 0, comissaoSuper: comissaoSuper || 0,
+      salario: parseFloat(salario) || 0,
+      comissaoSemMeta: parseFloat(comissaoSemMeta) || 0, comissao: parseFloat(comissao) || 0,
+      comissaoMeta2: parseFloat(comissaoMeta2) || 0, comissaoSuper: parseFloat(comissaoSuper) || 0,
+      comissaoVR: parseFloat(comissaoVR) || 0, aberturaLoja: parseFloat(aberturaLoja) || 0,
+      comissaoGerente: parseFloat(comissaoGerente) || 0,
+      inssRate: parseFloat(inssRate) || 0, vtRate: parseFloat(vtRate) || 0,
+      salarioFixo: parseFloat(salarioFixo) || 0, quebraCaixa: parseFloat(quebraCaixa) || 0,
+      banco: banco || '', conta: conta || '',
       isVendedor: isVendedor !== false,
       inativo: inativo === true || inativo === 'true',
       desligamento: desligamento || '',
@@ -643,7 +649,7 @@ app.post('/api/employees', requireAuth, async (req, res) => {
 app.put('/api/employees/:id', requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { name, board, cpf, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento, apelido, microvixCod, foto } = req.body;
+    const { name, board, cpf, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento, apelido, microvixCod, foto } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
     const db  = await readDB();
     const idx = (db.employees || []).findIndex(e => e.id === id);
@@ -657,8 +663,14 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
       cpf: cpf || '', admissao: admissao || '',
       contrato1: parseInt(contrato1) || 0, contrato2: parseInt(contrato2) || 0,
       cargo: cargo || '',
-      salario: salario || 0, comissaoSemMeta: comissaoSemMeta || 0, comissao: comissao || 0,
-      comissaoMeta2: comissaoMeta2 || 0, comissaoSuper: comissaoSuper || 0,
+      salario: parseFloat(salario) || 0,
+      comissaoSemMeta: parseFloat(comissaoSemMeta) || 0, comissao: parseFloat(comissao) || 0,
+      comissaoMeta2: parseFloat(comissaoMeta2) || 0, comissaoSuper: parseFloat(comissaoSuper) || 0,
+      comissaoVR: parseFloat(comissaoVR) || 0, aberturaLoja: parseFloat(aberturaLoja) || 0,
+      comissaoGerente: parseFloat(comissaoGerente) || 0,
+      inssRate: parseFloat(inssRate) || 0, vtRate: parseFloat(vtRate) || 0,
+      salarioFixo: parseFloat(salarioFixo) || 0, quebraCaixa: parseFloat(quebraCaixa) || 0,
+      banco: banco || '', conta: conta || '',
       isVendedor: isVendedor !== false,
       inativo: inativo === true || inativo === 'true',
       desligamento: desligamento || '',
@@ -3545,6 +3557,187 @@ app.get('/api/contas-pagar/debug/:file', requireAdmin, (req, res) => {
   const shot  = shots.find(s => s.name === req.params.file);
   if (!shot) return res.status(404).send('não encontrado');
   res.sendFile(shot.path);
+});
+
+// ── Folha de Pagamento ─────────────────────────────────────────────────────
+
+app.get('/folha', (req, res) => res.sendFile(path.join(__dirname, 'public/folha.html')));
+
+// GET /api/folha/config — configurações por loja (faixas de meta, GM, DSR, prêmios)
+app.get('/api/folha/config', requireAuth, async (req, res) => {
+  try {
+    const db = await readDB();
+    res.json(db.folhaConfig || {});
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/folha/config — salva configurações por loja
+app.post('/api/folha/config', requireAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    db.folhaConfig = req.body;
+    await writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/folha/:year/:month — retorna dados completos para a folha do mês
+app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
+  try {
+    const year  = parseInt(req.params.year);
+    const month = parseInt(req.params.month);
+    const mk    = `${year}-${String(month).padStart(2,'0')}`;
+    const db    = await readDB();
+    const employees = (db.employees || []).filter(e => !e.inativo);
+
+    // VSales totais do mês por funcionário
+    const vsalesAll = db.vsales || {};
+    const vsales = {};
+    for (const emp of employees) {
+      const key = `${mk}-${emp.board}-${emp.id}`;
+      vsales[emp.id] = vsalesAll[key] || { meta: { mensal: 0 }, entries: {} };
+    }
+
+    res.json({
+      folha:       (db.folhas || {})[mk] || {},
+      employees,
+      vsales,
+      folhaConfig: db.folhaConfig || {},
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/folha/:year/:month — salva dados da folha do mês
+app.post('/api/folha/:year/:month', requireAuth, async (req, res) => {
+  try {
+    const year  = parseInt(req.params.year);
+    const month = parseInt(req.params.month);
+    const mk    = `${year}-${String(month).padStart(2,'0')}`;
+    const db    = await readDB();
+    if (!db.folhas) db.folhas = {};
+    db.folhas[mk] = req.body;
+    await writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/folha/:year/:month/export — gera Excel da folha
+app.get('/api/folha/:year/:month/export', requireAuth, async (req, res) => {
+  try {
+    const year  = parseInt(req.params.year);
+    const month = parseInt(req.params.month);
+    const mk    = `${year}-${String(month).padStart(2,'0')}`;
+    const board = req.query.board; // loja específica ou todas
+    const db    = await readDB();
+    const folha = (db.folhas || {})[mk] || {};
+    const employees = (db.employees || []).filter(e => !e.inativo);
+
+    const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                       'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const mesLabel = `${MONTHS_PT[month-1]} ${year}`;
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Gestão Lojas';
+
+    const bFmt = v => {
+      if (!v && v !== 0) return '';
+      return Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    };
+
+    // Determina quais lojas exportar
+    const boardsToExport = board ? [board] : Object.keys(folha);
+
+    for (const bk of boardsToExport) {
+      const lojaData = folha[bk];
+      if (!lojaData?.entries) continue;
+
+      const lojaEmps = employees.filter(e => e.board === bk);
+
+      // Sheet TOTAL para a loja
+      const totalSheet = wb.addWorksheet(`TOTAL-${bk.toUpperCase()}`);
+      totalSheet.addRow(['FUNCIONÁRIO', 'BANCO', 'AG', 'CONTA', 'INSS', 'TOTAL LÍQUIDO', 'PROVENTOS']);
+      let totalLiq = 0, totalProv = 0;
+
+      for (const emp of lojaEmps) {
+        const entry = lojaData.entries[emp.id];
+        if (!entry) continue;
+        totalSheet.addRow([
+          emp.apelido || emp.name,
+          emp.banco || '',
+          '',
+          emp.conta || '',
+          bFmt(entry.inss),
+          bFmt(entry.liquido),
+          bFmt(entry.proventos),
+        ]);
+        totalLiq  += (entry.liquido  || 0);
+        totalProv += (entry.proventos || 0);
+      }
+      totalSheet.addRow(['TOTAL', '', '', '', '', bFmt(totalLiq), bFmt(totalProv)]);
+
+      // Sheet por funcionário
+      for (const emp of lojaEmps) {
+        const entry = lojaData.entries[emp.id];
+        if (!entry) continue;
+
+        const sheetName = (emp.apelido || emp.name).substring(0, 31).replace(/[:\\\/\?\*\[\]]/g, '');
+        const ws = wb.addWorksheet(sheetName);
+
+        ws.addRow([emp.name]);
+        ws.addRow(['MÊS', mesLabel, 'CARGO', emp.cargo]);
+        ws.addRow([]);
+
+        ws.addRow(['PROVENTOS', '', 'VALOR']);
+        const addProv = (label, value) => {
+          if (!value && value !== 0) return;
+          if (value === 0 && !['TOTAL PROVENTOS'].includes(label)) return;
+          ws.addRow([label, '', bFmt(value)]);
+        };
+
+        const isCaixa = /caixa|opcx/i.test(emp.cargo || '');
+        if (isCaixa) {
+          addProv('FIXO', entry.fixo);
+          addProv('QUEBRA CAIXA', entry.quebra);
+        } else {
+          addProv('VENDAS', entry.vendas);
+          addProv(`COMISSÃO (${((entry.comissaoPct||0)*100).toFixed(2)}%)`, entry.comissao);
+          if (entry.comissaoExtra) addProv('COMISSÃO LOJA', entry.comissaoExtra);
+          addProv('DSR', entry.dsr);
+          if (entry.gmComplement) addProv('GARANTIA SURFERS', entry.gmComplement);
+        }
+        if (entry.premio) addProv('PREMIAÇÃO', entry.premio);
+        if (entry.feriado) addProv('FERIADO', entry.feriado);
+        for (const ex of (entry.extras || [])) {
+          if (ex.nome && ex.valor) addProv(ex.nome, ex.valor);
+        }
+        ws.addRow(['PROVENTOS', '', bFmt(entry.proventos)]);
+
+        ws.addRow([]);
+        ws.addRow(['DESCONTOS', '', 'VALOR']);
+        const addDesc = (label, value) => {
+          if (!value) return;
+          ws.addRow([label, '', bFmt(value)]);
+        };
+        addDesc('VALE COMPRAS', entry.valeCompras);
+        addDesc('ADIANTAMENTO', entry.adiantamento);
+        addDesc('INSS', entry.inss);
+        addDesc('IR FP', entry.irpf);
+        addDesc('VALE TRANSPORTE', entry.vt);
+        if (entry.arredondamento) ws.addRow(['ARRED.', '', bFmt(entry.arredondamento)]);
+        for (const ex of (entry.extrasDesc || [])) {
+          if (ex.nome && ex.valor) addDesc(ex.nome, ex.valor);
+        }
+        ws.addRow(['TOTAL DESCONTOS', '', bFmt(entry.totalDescontos)]);
+
+        ws.addRow([]);
+        ws.addRow(['LÍQUIDO', '', bFmt(entry.liquido)]);
+      }
+    }
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="folha-${mk}${board?'-'+board:''}.xlsx"`);
+    await wb.xlsx.write(res);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Start ──────────────────────────────────────────────────────────────────
