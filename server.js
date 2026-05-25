@@ -3229,63 +3229,23 @@ app.delete('/api/indeva/:board/atendimento/:id', requireAuth, async (req, res) =
 
 app.get('/indeva', (req, res) => res.sendFile(path.join(__dirname, 'public/indeva.html')));
 
-// ── GET /api/contas-pagar?de=YYYY-MM-DD&ate=YYYY-MM-DD (admin) ───────────────
-app.get('/api/contas-pagar', requireAdmin, async (req, res) => {
-  try {
-    const today = new Date().toISOString().slice(0, 10);
-    const firstOfMonth = today.slice(0, 7) + '-01';
-    const dtIni = req.query.de  || firstOfMonth;
-    const dtFin = req.query.ate || today;
-    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-    const { fetchContasPagar, parseBrNum } = require('./services/microvix');
+// ── GET /api/contas-pagar — serve dados do cache (portal scraping) ────────
+app.get('/api/contas-pagar', requireAdmin, (req, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const cp    = db.contasPagar || {};
+  const rows  = cp.rows || [];
 
-    const BOARD_LABELS = { delrey:'Del Rey', minas:'Minas', contagem:'Contagem', estacao:'Estação', tommy:'Tommy', lez:'Lez' };
+  const dtIni = req.query.de  || cp.dtIni || today.slice(0, 7) + '-01';
+  const dtFin = req.query.ate || cp.dtFin || today;
 
-    function parseDate(s) {
-      if (!s) return null;
-      const m1 = String(s).match(/^(\d{2})\/(\d{2})\/(\d{4})/);
-      if (m1) return `${m1[3]}-${m1[2]}-${m1[1]}`;
-      const m2 = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if (m2) return s.slice(0, 10);
-      return s;
-    }
+  // Filtra por período solicitado
+  const items = rows.filter(r => {
+    if (!r.vencimento) return true;
+    return r.vencimento >= dtIni && r.vencimento <= dtFin;
+  });
 
-    const results = await Promise.allSettled(
-      Object.entries(lojas).map(async ([board, cnpj]) => {
-        const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-        const rows  = await fetchContasPagar(cnpj, dtIni, dtFin, chave);
-        return rows.map(r => {
-          const vencStr = parseDate(r.data_vencimento || r.dt_vencimento || r.vencimento || '');
-          const hoje    = today;
-          const pago    = parseBrNum(r.valor_pago || r.vl_pago || '0') > 0
-                          || String(r.status_titulo || r.status || '').toUpperCase() === 'P';
-          const status  = pago ? 'pago' : (vencStr && vencStr < hoje ? 'vencido' : 'aberto');
-          return {
-            board,
-            loja:          BOARD_LABELS[board] || board,
-            fornecedor:    r.nome_forn || r.nome_fornecedor || r.forn || '',
-            documento:     r.cod_titulo || r.num_documento || r.num_pedido || r.titulo || '',
-            emissao:       parseDate(r.data_emissao || r.dt_emissao || ''),
-            vencimento:    vencStr,
-            historico:     r.historico || r.descricao || '',
-            valor:         parseBrNum(r.valor_titulo || r.valor || r.vl_titulo || '0'),
-            valor_pago:    parseBrNum(r.valor_pago || r.vl_pago || '0'),
-            status,
-          };
-        });
-      })
-    );
-
-    const items = [];
-    const errors = [];
-    results.forEach((r, i) => {
-      if (r.status === 'fulfilled') items.push(...r.value);
-      else errors.push({ board: Object.keys(lojas)[i], error: r.reason?.message });
-    });
-
-    items.sort((a, b) => (a.vencimento || '').localeCompare(b.vencimento || ''));
-    res.json({ items, errors, dtIni, dtFin });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  items.sort((a, b) => (a.vencimento || '').localeCompare(b.vencimento || ''));
+  res.json({ items, errors: [], dtIni, dtFin, syncedAt: cp.syncedAt || null, totalCached: rows.length });
 });
 
 // GET /api/contas-pagar/raw — testa múltiplas combinações de comando/parâmetros
@@ -3333,6 +3293,48 @@ app.get('/api/contas-pagar/raw', requireAdmin, async (req, res) => {
 });
 
 app.get('/contas-pagar', (req, res) => res.sendFile(path.join(__dirname, 'public/contas-pagar.html')));
+
+// ── POST /api/contas-pagar/sync — dispara scraping manual (admin) ─────────
+app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const dtIni = req.body?.de  || today.slice(0, 7) + '-01';
+    const dtFin = req.body?.ate || today;
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+
+    const { scrapeContasPagar } = require('./services/microvixPortal');
+    const result = await scrapeContasPagar(dtIni, dtFin);
+
+    if (!db.contasPagar) db.contasPagar = {};
+    db.contasPagar.rows      = result.rows || [];
+    db.contasPagar.dtIni     = dtIni;
+    db.contasPagar.dtFin     = dtFin;
+    db.contasPagar.syncedAt  = new Date().toISOString();
+    db.contasPagar.logs      = result.logs || [];
+    await writeDB(db);
+
+    res.end(JSON.stringify({ ok: true, count: result.rows.length, syncedAt: db.contasPagar.syncedAt, logs: result.logs, warning: result.warning }));
+  } catch (e) {
+    console.error('[contasPagar/sync]', e.message);
+    res.end(JSON.stringify({ ok: false, error: e.message }));
+  }
+});
+
+// ── GET /api/contas-pagar/status — última sincronização (admin) ───────────
+app.get('/api/contas-pagar/status', requireAdmin, (req, res) => {
+  const cp = db.contasPagar || {};
+  res.json({ syncedAt: cp.syncedAt || null, count: (cp.rows || []).length, dtIni: cp.dtIni, dtFin: cp.dtFin, logs: cp.logs || [] });
+});
+
+// ── GET /api/contas-pagar/debug/:file — serve screenshots de debug ────────
+app.get('/api/contas-pagar/debug/:file', requireAdmin, (req, res) => {
+  const { getDebugScreenshots } = require('./services/microvixPortal');
+  const shots = getDebugScreenshots();
+  const shot  = shots.find(s => s.name === req.params.file);
+  if (!shot) return res.status(404).send('não encontrado');
+  res.sendFile(shot.path);
+});
 
 // ── Start ──────────────────────────────────────────────────────────────────
 initMongo()
@@ -3389,6 +3391,30 @@ initMongo()
       setInterval(do30d,  MX_INTERVAL_30D_MS);       // 30d: 1× por dia
     } else {
       console.log('[Microvix] Credenciais não configuradas — sync desativado');
+    }
+
+    // ── Cron: contas a pagar — scraping diário 07:00 Brasília ─────────────
+    if (process.env.MICROVIX_PORTAL_USER && process.env.MICROVIX_PORTAL_PASS) {
+      cron.schedule('0 7 * * *', async () => {
+        const today = new Date().toISOString().slice(0, 10);
+        const dtIni = today.slice(0, 7) + '-01';
+        console.log(`[ContasPagar] Sync diário ${dtIni} → ${today}`);
+        try {
+          const { scrapeContasPagar } = require('./services/microvixPortal');
+          const result = await scrapeContasPagar(dtIni, today);
+          if (!db.contasPagar) db.contasPagar = {};
+          db.contasPagar.rows     = result.rows || [];
+          db.contasPagar.dtIni    = dtIni;
+          db.contasPagar.dtFin    = today;
+          db.contasPagar.syncedAt = new Date().toISOString();
+          db.contasPagar.logs     = result.logs || [];
+          await writeDB(db);
+          console.log(`[ContasPagar] Sync OK — ${result.rows.length} faturas`);
+        } catch (e) {
+          console.error('[ContasPagar] Sync erro:', e.message);
+        }
+      }, { timezone: 'America/Sao_Paulo' });
+      console.log('[ContasPagar] Cron agendado para 07:00 America/Sao_Paulo');
     }
   })
   .catch(err => {

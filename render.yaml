@@ -15,6 +15,10 @@ services:
         generateValue: true
       - key: MONGODB_URI
         sync: false
+      - key: MICROVIX_PORTAL_USER
+        sync: false
+      - key: MICROVIX_PORTAL_PASS
+        sync: false
     disk:
       name: gestao-lojas-data
       mountPath: /var/data

@@ -130,11 +130,17 @@
     </select>
     <button class="cp-btn" id="cpRefreshBtn">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <polyline points="23 4 23 10 17 10"/>
-        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+        <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
       </svg>
       Atualizar
     </button>
+    <button class="cp-btn" id="cpSyncBtn" style="border-color:#3fb950;color:#3fb950">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+      </svg>
+      Importar do Portal
+    </button>
+    <span id="cpSyncedAt" style="font-size:11px;color:var(--text2)"></span>
   </div>
 </div>
 
@@ -201,6 +207,15 @@ async function loadData() {
 
     _allItems = data.items || [];
     _filterBoard = '';
+
+    if (data.syncedAt) {
+      const d = new Date(data.syncedAt);
+      document.getElementById('cpSyncedAt').textContent =
+        `Última importação: ${d.toLocaleDateString('pt-BR')} ${d.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'})}`;
+    } else {
+      document.getElementById('cpSyncedAt').textContent = 'Nunca importado — clique em "Importar do Portal"';
+    }
+
     renderAll();
 
     if (!_allItems.length) runDiagnostic();
@@ -310,6 +325,31 @@ function renderTable() {
 
   document.getElementById('cpRefreshBtn').addEventListener('click', loadData);
   document.getElementById('cpStatus').addEventListener('change', renderTable);
+
+  document.getElementById('cpSyncBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('cpSyncBtn');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Importando…';
+    document.getElementById('cpSyncedAt').textContent = 'Acessando portal Microvix…';
+    try {
+      const de  = document.getElementById('cpDe').value  || getFirstOfMonth();
+      const ate = document.getElementById('cpAte').value || getToday();
+      const r   = await fetch('/api/contas-pagar/sync', {
+        method: 'POST', credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ de, ate }),
+      });
+      const d = await r.json();
+      if (!d.ok) throw new Error(d.error || 'Erro desconhecido');
+      document.getElementById('cpSyncedAt').textContent = `Importado: ${d.count} faturas`;
+      await loadData();
+    } catch (e) {
+      document.getElementById('cpSyncedAt').textContent = 'Erro: ' + e.message;
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Importar do Portal';
+    }
+  });
 
   document.querySelectorAll('thead th[data-col]').forEach(th => {
     th.addEventListener('click', () => {
