@@ -6822,7 +6822,6 @@ function _renderIndeva(body, state) {
           <div class="indeva-atend-name">${emp.apelido||emp.name}</div>
           ${todayCount > 0 ? `<div class="indeva-atend-count">${todayCount} atend. hoje</div>` : ''}
         </div>
-        <button class="indeva-meta-btn" data-id="${emp.id}" title="Ver metas"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></button>
         <button class="indeva-remove-btn indeva-atend-close" data-id="${emp.id}" title="Remover">✕</button>
       </div>
       <div class="indeva-action-btns">
@@ -6874,7 +6873,6 @@ function _renderIndeva(body, state) {
                     ${vendorStats[e.id] ? `<span class="indeva-vendor-sub">${vendorStats[e.id].total} atend.</span>` : ''}
                   </div>
                   ${i===0 ? '<span class="indeva-next-badge">Próx.</span>' : ''}
-                  <button class="indeva-meta-btn" data-id="${e.id}" title="Ver metas"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg></button>
                   <button class="indeva-remove-btn" data-id="${e.id}" title="Remover">✕</button>
                 </div>`;
               }).join('')}
@@ -6947,13 +6945,6 @@ function _renderIndeva(body, state) {
     })
   );
 
-  body.querySelectorAll('.indeva-meta-btn').forEach(btn =>
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const emp = (S.employees||[]).find(x => x.id === parseInt(btn.dataset.id));
-      if (emp) _showIndevaGoalsOverlay(emp, _indevaLastState);
-    })
-  );
 
   body.querySelectorAll('.indeva-remove-btn').forEach(btn =>
     btn.addEventListener('click', e => { e.stopPropagation(); _indevaSair(parseInt(btn.dataset.id)); })
@@ -7333,6 +7324,145 @@ function initIndevaModal() {
   document.getElementById('indevaBtn').addEventListener('click', () => window.open('/indeva', '_blank'));
 }
 
+function _openIndevaCampanhasOverlay() {
+  const board    = _indevaBoard;
+  const today    = new Date().toISOString().slice(0, 10);
+  const fmt      = d => d.split('-').reverse().join('/');
+  const fBRL     = v => 'R$ ' + new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2}).format(v);
+  const fmtKpi   = (kpi, v) => {
+    if (kpi === 'vendas') return fBRL(v);
+    if (kpi === 'pa')     return v.toFixed(2);
+    return Math.round(v).toString();
+  };
+
+  const activeCamps = (S.campaigns||[]).filter(c =>
+    c.startDate <= today && c.endDate >= today &&
+    (c.scope === 'rede' || (c.stores||[]).includes(board))
+  );
+
+  const overlay = document.createElement('div');
+  overlay.className = 'ig-overlay';
+
+  if (!activeCamps.length) {
+    overlay.innerHTML = `<div class="ig-modal ig-modal-v2">
+      <div class="ig-hdr"><div class="ig-hdr-info"><div class="ig-emp-name">Campanha</div></div><button class="ig-close">✕</button></div>
+      <div class="ig-tab-body"><div style="color:var(--muted);text-align:center;padding:2rem;font-size:.9rem">Nenhuma campanha ativa.</div></div>
+    </div>`;
+  } else {
+    const camp = activeCamps[0];
+    const campEmps = (S.employees||[]).filter(e =>
+      e.isVendedor !== false && !e.inativo &&
+      (camp.scope === 'rede' || (camp.stores||[]).includes(e.board))
+    );
+    const ranking = campEmps.map(emp => {
+      const entries = (S.vsales?.[emp.id]||{}).entries || {};
+      let v = 0, p = 0, a = 0;
+      for (const [d, en] of Object.entries(entries)) {
+        if (d >= camp.startDate && d <= camp.endDate) { v += en.value||0; p += en.pecas||0; a += en.atendimentos||0; }
+      }
+      const kpiValue = camp.kpi==='vendas'?v : camp.kpi==='pecas'?p : camp.kpi==='atendimentos'?a : (a>0?p/a:0);
+      return { emp, kpiValue };
+    }).sort((a,b) => b.kpiValue - a.kpiValue);
+
+    const maxVal  = ranking.length ? Math.max(...ranking.map(r=>r.kpiValue), 0.001) : 0.001;
+    const medals  = ['🥇','🥈','🥉'];
+
+    overlay.innerHTML = `<div class="ig-modal ig-modal-v2">
+      <div class="ig-hdr">
+        <div class="ig-hdr-info">
+          <div class="ig-emp-name">${camp.name}</div>
+          <div class="ig-emp-cargo">${fmt(camp.startDate)} → ${fmt(camp.endDate)} · ${KPI_LABELS[camp.kpi]||camp.kpi}</div>
+        </div>
+        <button class="ig-close">✕</button>
+      </div>
+      <div class="ig-tab-body">
+        <div class="indeva-camp-list">
+          ${ranking.map((r,i) => {
+            const pct   = maxVal > 0 ? r.kpiValue / maxVal * 100 : 0;
+            const color = BOARDS[r.emp.board]?.color || '#8B949E';
+            return `<div class="indeva-camp-row">
+              <div class="indeva-camp-pos">${i<3?medals[i]:'#'+(i+1)}</div>
+              ${empAvatarHtml(r.emp, 36)}
+              <div class="indeva-camp-info">
+                <div class="indeva-camp-name">${r.emp.apelido||r.emp.name}</div>
+                <div class="indeva-camp-bar-wrap">
+                  <div class="indeva-camp-bar" style="width:${pct.toFixed(1)}%;background:${color}"></div>
+                </div>
+              </div>
+              <div class="indeva-camp-val">${fmtKpi(camp.kpi, r.kpiValue)}</div>
+            </div>`;
+          }).join('')}
+        </div>
+      </div>
+    </div>`;
+  }
+
+  overlay.querySelector('.ig-close').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target===overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
+function _openIndevaMetasOverlay() {
+  const board   = _indevaBoard;
+  const emps    = (S.employees||[]).filter(e => e.board===board && e.isVendedor!==false && !e.inativo);
+  const pad     = n => String(n).padStart(2,'0');
+  const t       = new Date();
+  const todayStr = `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
+  const daysInMonth = new Date(t.getFullYear(), t.getMonth()+1, 0).getDate();
+  const defW    = +(100/daysInMonth).toFixed(6);
+  const todayW  = S.weights?.[todayStr] ?? defW;
+  const week    = getWeekForDate(todayStr);
+
+  const fBRL  = v => v > 0 ? 'R$ ' + new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2}).format(v) : '—';
+  const fPct  = v => v==null ? '—' : v.toFixed(1)+'%';
+  const clsPct = v => v==null?'':v>=100?'ig-pos':v>=80?'ig-warn':'ig-neg';
+
+  const rows = emps.map(emp => {
+    const vsale      = S.vsales?.[emp.id] || { meta:{mensal:0}, entries:{} };
+    const mensal     = vsale.meta?.mensal || 0;
+    const todayValor = vsale.entries?.[todayStr]?.value || 0;
+    const todayMeta  = mensal * todayW / 100;
+    const todayPct   = todayMeta > 0 ? todayValor / todayMeta * 100 : null;
+    const k          = calcWeekKpis(emp, week);
+    return { emp, todayValor, todayMeta, todayPct, k };
+  }).sort((a,b) => (b.todayPct||0) - (a.todayPct||0));
+
+  const overlay = document.createElement('div');
+  overlay.className = 'ig-overlay';
+  overlay.innerHTML = `<div class="ig-modal ig-modal-v2">
+    <div class="ig-hdr">
+      <div class="ig-hdr-info"><div class="ig-emp-name">Metas — ${BOARDS[board]?.label||board}</div></div>
+      <button class="ig-close">✕</button>
+    </div>
+    <div class="ig-tab-body" style="padding:.5rem .6rem">
+      <table class="ig-table">
+        <thead><tr>
+          <th>Vendedor</th><th style="text-align:right">Hoje</th><th style="text-align:right">%</th><th style="text-align:right">Sem.</th><th style="text-align:right">%</th>
+        </tr></thead>
+        <tbody>
+          ${rows.map(r => `<tr class="indeva-metas-row" data-empid="${r.emp.id}" style="cursor:pointer">
+            <td><div style="display:flex;align-items:center;gap:.45rem">${empAvatarHtml(r.emp, 26)}<span style="font-size:.82rem;font-weight:600">${r.emp.apelido||r.emp.name}</span></div></td>
+            <td style="text-align:right;font-size:.78rem">${fBRL(r.todayValor)}</td>
+            <td style="text-align:right;font-size:.78rem" class="${clsPct(r.todayPct)}">${fPct(r.todayPct)}</td>
+            <td style="text-align:right;font-size:.78rem">${fBRL(r.k.valor||0)}</td>
+            <td style="text-align:right;font-size:.78rem" class="${clsPct(r.k.pctMeta)}">${fPct(r.k.pctMeta)}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+
+  overlay.querySelectorAll('.indeva-metas-row').forEach(row =>
+    row.addEventListener('click', () => {
+      const emp = (S.employees||[]).find(e => e.id === parseInt(row.dataset.empid));
+      if (emp) { overlay.remove(); _showIndevaGoalsOverlay(emp, _indevaLastState); }
+    })
+  );
+  overlay.querySelector('.ig-close').addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if (e.target===overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+}
+
 async function initStandalone() {
   try { S.user = await apiFetch('GET', '/api/me'); } catch { return; }
 
@@ -7366,17 +7496,26 @@ async function initStandalone() {
   }));
 
   S.weeklyMetas = await apiFetch('GET', `/api/weekly-metas/${S.year}/${S.month}`).catch(() => ({}));
+  S.campaigns   = await apiFetch('GET', '/api/campaigns').catch(() => []);
+  S.weights     = await apiFetch('GET', `/api/weights/${S.year}/${S.month}`).catch(() => ({}));
 
   document.title = `Lista da Vez${isAdmin || isEscritorio ? '' : ' — ' + (BOARDS[_indevaBoard]?.label || _indevaBoard)}`;
 
-  document.querySelectorAll('.indeva-view-tab').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.indeva-view-tab').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      _indevaView = btn.dataset.view;
-      _loadIndeva();
-    });
+  // Botão Histórico — toggle entre hoje e histórico
+  const histPill = document.getElementById('indeva-hist-pill');
+  histPill?.addEventListener('click', () => {
+    if (_indevaView === 'historico') {
+      _indevaView = 'hoje';
+      histPill.classList.remove('active');
+    } else {
+      _indevaView = 'historico';
+      histPill.classList.add('active');
+    }
+    _loadIndeva();
   });
+
+  document.getElementById('indeva-camp-pill')?.addEventListener('click', _openIndevaCampanhasOverlay);
+  document.getElementById('indeva-meta-pill')?.addEventListener('click', _openIndevaMetasOverlay);
 
   _buildIndevaTabs();
   _loadIndeva();

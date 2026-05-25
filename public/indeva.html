@@ -10,18 +10,30 @@
 <body class="indeva-standalone">
 
 <div id="indeva-sa-hdr">
-  <span class="indeva-sa-title">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:.4rem">
-      <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
-      <line x1="8" y1="18" x2="21" y2="18"/>
-      <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/>
-      <line x1="3" y1="18" x2="3.01" y2="18"/>
-    </svg>Lista da Vez
-  </span>
-  <div id="indevaStoreTabs" class="perf-store-tabs"></div>
-  <div class="indeva-view-tabs">
-    <button class="indeva-view-tab active" data-view="hoje">Hoje</button>
-    <button class="indeva-view-tab" data-view="historico">Histórico</button>
+  <div class="indeva-hdr-row1">
+    <span class="indeva-sa-title">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:middle;margin-right:.35rem">
+        <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/>
+        <line x1="8" y1="18" x2="21" y2="18"/>
+        <line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/>
+        <line x1="3" y1="18" x2="3.01" y2="18"/>
+      </svg>Lista da Vez
+    </span>
+    <div id="indevaStoreTabs" class="perf-store-tabs"></div>
+  </div>
+  <div class="indeva-hdr-row2">
+    <button class="indeva-pill indeva-pill-camp" id="indeva-camp-pill">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/></svg>
+      Campanha
+    </button>
+    <button class="indeva-pill indeva-pill-meta" id="indeva-meta-pill">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Metas
+    </button>
+    <button class="indeva-pill indeva-pill-hist" id="indeva-hist-pill">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      Histórico
+    </button>
   </div>
 </div>
 

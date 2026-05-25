@@ -2646,7 +2646,8 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 @media (max-width:900px) { .indeva-kanban { grid-template-columns:1fr 1fr; } .indeva-col-atend-wrap { grid-column:1/-1; } }
 @media (max-width:640px) {
   body.indeva-standalone { height:100dvh; }
-  #indeva-sa-hdr { padding:.4rem .6rem; gap:.35rem; flex-wrap:nowrap; }
+  .indeva-hdr-row1 { padding:.35rem .6rem; gap:.3rem; }
+  .indeva-hdr-row2 { padding:.25rem .6rem .35rem; }
   #indevaStoreTabs { overflow-x:auto; flex-shrink:1; -webkit-overflow-scrolling:touch; flex-wrap:nowrap; }
   .indeva-sa-body { padding:.5rem; overflow:hidden; display:flex; flex-direction:column; gap:.4rem; }
 
@@ -2708,9 +2709,27 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 
 /* ── Indeva Standalone ───────────────────────────────────────────────────── */
 body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; overflow:hidden; background:var(--bg); }
-#indeva-sa-hdr { display:flex; align-items:center; gap:.75rem; padding:.55rem 1rem; background:var(--card); border-bottom:1px solid var(--border); flex-shrink:0; flex-wrap:wrap; }
-.indeva-sa-title { font-weight:700; font-size:.95rem; color:var(--text); white-space:nowrap; margin-right:.25rem; }
+#indeva-sa-hdr { display:flex; flex-direction:column; background:var(--card); border-bottom:1px solid var(--border); flex-shrink:0; }
+.indeva-hdr-row1 { display:flex; align-items:center; gap:.6rem; padding:.45rem .85rem; flex-wrap:wrap; }
+.indeva-hdr-row2 { display:flex; align-items:center; gap:.4rem; padding:.3rem .85rem .45rem; border-top:1px solid var(--border); overflow-x:auto; -webkit-overflow-scrolling:touch; }
+.indeva-sa-title { font-weight:700; font-size:.9rem; color:var(--text); white-space:nowrap; }
 .indeva-sa-body { flex:1; overflow-y:auto; padding:1rem; }
+/* Pill action buttons */
+.indeva-pill { display:inline-flex; align-items:center; gap:.3rem; border:none; border-radius:5px; font-size:.72rem; font-weight:700; padding:.3rem .75rem; cursor:pointer; white-space:nowrap; transition:opacity .15s; }
+.indeva-pill:hover { opacity:.85; }
+.indeva-pill-camp { background:#E08A00; color:#fff; }
+.indeva-pill-meta { background:#2563EB; color:#fff; }
+.indeva-pill-hist { background:var(--input-bg); color:var(--muted); border:1px solid var(--border); }
+.indeva-pill-hist.active { background:#3FB950; color:#0D1117; border-color:#3FB950; }
+/* Campaign overlay */
+.indeva-camp-list { display:flex; flex-direction:column; gap:.5rem; }
+.indeva-camp-row { display:flex; align-items:center; gap:.55rem; }
+.indeva-camp-pos { font-size:.95rem; min-width:28px; text-align:center; flex-shrink:0; }
+.indeva-camp-info { flex:1; min-width:0; }
+.indeva-camp-name { font-size:.82rem; font-weight:600; margin-bottom:.2rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.indeva-camp-bar-wrap { height:5px; background:var(--border); border-radius:999px; overflow:hidden; }
+.indeva-camp-bar { height:100%; border-radius:999px; }
+.indeva-camp-val { font-size:.8rem; font-weight:700; flex-shrink:0; min-width:60px; text-align:right; }
 
 /* ── Loja em Ação ────────────────────────────────────────────────────────── */
 .req-badge { display:inline-flex;align-items:center;justify-content:center;background:#F85149;color:#fff;font-size:.65rem;font-weight:700;min-width:16px;height:16px;border-radius:999px;padding:0 4px;margin-left:4px;vertical-align:middle; }
