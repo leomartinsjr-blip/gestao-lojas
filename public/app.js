@@ -4813,7 +4813,9 @@ function _renderPendenciasActive(body, filter, myUsername, refresh) {
     body.innerHTML = '<div style="padding:.75rem 0;color:var(--muted);font-size:.8rem;text-align:center">Nenhuma pendência</div>';
     return;
   }
-  body.innerHTML = items.map(item => `
+  body.innerHTML = items.map(item => {
+    const assignedArr = Array.isArray(item.assignedTo) ? item.assignedTo : [item.assignedTo];
+    return `
     <div class="nf-item" data-id="${item.id}" style="flex-wrap:wrap;align-items:flex-start">
       <label class="nf-chk-label" style="flex:1;min-width:0">
         <input type="checkbox" class="nf-chk pend-chk" data-id="${item.id}">
@@ -4824,8 +4826,46 @@ function _renderPendenciasActive(body, filter, myUsername, refresh) {
         ${_pendenciaChips(item.assignedTo)}
         <span class="nf-date-tag">${_escHtml(item.createdByLabel || item.createdBy)} ${_fmtNFDate(item.createdAt)}</span>
       </span>
+      <button class="pend-edit-btn" data-id="${item.id}" title="Editar destinatário">✎</button>
       <button class="nf-del-btn pend-del" data-id="${item.id}" title="Excluir">&times;</button>
-    </div>`).join('');
+      <div class="pend-inline-edit" data-id="${item.id}" style="display:none">
+        <span class="pend-rec-lbl">Para:</span>
+        ${PENDENCIA_USERS.map(u => `<button class="pend-rec-btn${assignedArr.includes(u.key) ? ' active' : ''}" data-key="${u.key}" style="--prc:${u.color}">${u.label}</button>`).join('')}
+        <button class="pend-edit-save" data-id="${item.id}">✓ Salvar</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  body.querySelectorAll('.pend-edit-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.id;
+      const row = body.querySelector(`.pend-inline-edit[data-id="${id}"]`);
+      const open = row.style.display !== 'none';
+      body.querySelectorAll('.pend-inline-edit').forEach(r => r.style.display = 'none');
+      if (!open) row.style.display = 'flex';
+    });
+  });
+
+  body.querySelectorAll('.pend-inline-edit').forEach(row => {
+    row.querySelectorAll('.pend-rec-btn').forEach(btn => {
+      btn.addEventListener('click', () => btn.classList.toggle('active'));
+    });
+  });
+
+  body.querySelectorAll('.pend-edit-save').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = parseInt(btn.dataset.id);
+      const row = body.querySelector(`.pend-inline-edit[data-id="${id}"]`);
+      const selected = [...row.querySelectorAll('.pend-rec-btn.active')].map(b => b.dataset.key);
+      if (!selected.length) return;
+      btn.disabled = true;
+      const updated = await apiFetch('PATCH', `/api/pendencias/${id}`, { assignedTo: selected }).catch(() => null);
+      const item = S.pendencias.find(x => x.id === id);
+      if (item && updated) Object.assign(item, updated);
+      _renderPendenciasActive(body, filter, myUsername, refresh);
+      refresh();
+    });
+  });
 
   body.querySelectorAll('.pend-chk').forEach(chk => {
     chk.addEventListener('change', async () => {

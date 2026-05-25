@@ -2530,6 +2530,11 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .pend-rec-btn:not(.active):hover { border-color: var(--prc, #58A6FF); color: var(--text); }
 .pend-recorr-sel { padding: .2rem .4rem; font-size: .75rem; background: var(--input-bg); border: 1px solid var(--border); border-radius: 5px; color: var(--text); }
 .pend-recorr-badge { display: inline-block; margin-left: .35rem; padding: .05rem .4rem; border-radius: 999px; font-size: .65rem; font-weight: 600; background: rgba(88,166,255,.15); color: #58A6FF; vertical-align: middle; }
+.pend-edit-btn { background: transparent; border: none; color: var(--muted); font-size: .9rem; cursor: pointer; padding: .1rem .3rem; border-radius: 4px; line-height: 1; transition: color .15s, background .15s; }
+.pend-edit-btn:hover { color: var(--text); background: var(--hover-bg, rgba(255,255,255,.06)); }
+.pend-inline-edit { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; width: 100%; padding: .35rem .5rem .4rem; background: var(--card-bg, #161B22); border-top: 1px solid var(--border); }
+.pend-edit-save { background: #238636; border: none; color: #fff; font-size: .73rem; padding: .25rem .65rem; border-radius: 4px; cursor: pointer; font-weight: 600; transition: background .15s; }
+.pend-edit-save:hover { background: #2ea043; }
 /* ── Thursday Banner ─────────────────────────────────────────────────────── */
 .thursday-banner { display: flex; align-items: center; gap: .75rem; padding: .6rem 1rem; background: #D2992240; border-bottom: 1px solid #D2992260; color: var(--text); font-size: .85rem; }
 .thursday-banner strong { color: #D29922; }
