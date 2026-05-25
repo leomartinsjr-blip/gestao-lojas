@@ -5397,13 +5397,23 @@ function renderContratoCard(container) {
   }
 
   function statusChip(dias) {
-    if (dias === null) return '';
-    if (dias < 0)  return `<span class="contrato-chip contrato-vencido">Vencido há ${Math.abs(dias)} dia${Math.abs(dias)!==1?'s':''}</span>`;
+    if (dias === null || dias < 0) return '';
     if (dias === 0) return `<span class="contrato-chip contrato-hoje">Vence hoje!</span>`;
     if (dias <= 7)  return `<span class="contrato-chip contrato-urgente">${dias} dia${dias!==1?'s':''}</span>`;
     if (dias <= 15) return `<span class="contrato-chip contrato-alerta">${dias} dias</span>`;
     if (dias <= 30) return `<span class="contrato-chip contrato-atencao">${dias} dias</span>`;
     return `<span class="contrato-chip contrato-ok">${dias} dias</span>`;
+  }
+
+  function cell2(venc2, d2, d1) {
+    if (!venc2) return '<span style="color:var(--muted)">—</span>';
+    const isDecisao = d1 !== null && d1 < 0 && d2 !== null && d2 >= 0;
+    const chip = statusChip(d2);
+    const dateTxt = `<span style="${d2 < 0 ? 'color:var(--muted)' : ''}">${fmtDate(venc2)}</span>`;
+    const decisaoTag = isDecisao
+      ? `<span class="contrato-chip contrato-decisao">Efetivar?</span>`
+      : '';
+    return `${dateTxt} ${chip}${decisaoTag}`;
   }
 
   function fmtDate(d) {
@@ -5437,7 +5447,7 @@ function renderContratoCard(container) {
           <td><span class="func-loja-badge" style="border-color:${color};color:${color}">${BOARDS[b]?.label||b}</span></td>
           <td class="contrato-nome">${e.apelido||e.name}</td>
           <td class="contrato-cell">${venc1?fmtDate(venc1):'—'} ${statusChip(d1)}</td>
-          <td class="contrato-cell">${venc2?fmtDate(venc2):'—'} ${statusChip(d2)}</td>
+          <td class="contrato-cell">${cell2(venc2, d2, d1)}</td>
         </tr>`;
       }).join('')}</tbody></table>`;
   }
@@ -5460,7 +5470,7 @@ function renderContratoCard(container) {
         return `<tr>
           <td class="contrato-nome">${e.apelido||e.name}</td>
           <td class="contrato-cell">${venc1?fmtDate(venc1):'—'} ${statusChip(diasRestantes(venc1))}</td>
-          <td class="contrato-cell">${venc2?fmtDate(venc2):'—'} ${statusChip(diasRestantes(venc2))}</td>
+          <td class="contrato-cell">${cell2(venc2, diasRestantes(venc2), diasRestantes(venc1))}</td>
         </tr>`;
       }).join('')}</tbody></table>`;
   }

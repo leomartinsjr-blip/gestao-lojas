@@ -2493,7 +2493,7 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .contrato-alerta   { background: rgba(219,109,40,.18); color: #e07b35; }
 .contrato-urgente  { background: rgba(200,60,60,.18);  color: #f07070; }
 .contrato-hoje     { background: rgba(200,60,60,.28);  color: #ff5555; font-weight: 700; }
-.contrato-vencido  { background: rgba(150,30,30,.25);  color: #ff4444; font-weight: 700; }
+.contrato-decisao  { background: rgba(88,166,255,.18); color: #58A6FF; font-weight: 700; margin-left:.3rem; }
 
 /* ── Pendências ──────────────────────────────────────────────────────────── */
 .pend-tab { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: .72rem; padding: .2rem .55rem; border-radius: 4px; cursor: pointer; transition: background .15s, color .15s; }
