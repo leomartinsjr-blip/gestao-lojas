@@ -428,6 +428,113 @@ app.delete('/api/attachments/:year/:month/:board/:section/:attId', requireAuth, 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/init — carregamento inicial em 1 chamada ────────────────────────
+// Substitui ~50 chamadas individuais por 1 única leitura do MongoDB
+app.get('/api/init', requireAuth, async (req, res) => {
+  try {
+    const { year: yStr, month: mStr } = req.query;
+    const year  = parseInt(yStr)  || new Date().getFullYear();
+    const month = parseInt(mStr)  || (new Date().getMonth() + 1);
+    const mk    = monthKey(year, month);
+    const prefix = `${mk}-`;
+
+    const db = await readDB();
+    const { board } = req.session.user;
+    const isAdminOrEscritorio = !board || board === 'escritorio';
+
+    // Employees
+    const allEmps = db.employees || [];
+    const employees = isAdminOrEscritorio ? allEmps : allEmps.filter(e => e.board === board);
+
+    // VSales for all employees this month
+    const vsalesAll = db.vsales || {};
+    const vsales = {};
+    for (const emp of allEmps) {
+      const key = `${mk}-${emp.board}-${emp.id}`;
+      vsales[emp.id] = vsalesAll[key] || { meta: { mensal: 0 }, entries: {} };
+    }
+
+    // StoreFluxo for all boards
+    const sfAll = db.storeFluxo || {};
+    const storeFluxo = {};
+    for (const [k, v] of Object.entries(sfAll)) {
+      if (k.startsWith(prefix)) storeFluxo[k.slice(prefix.length)] = v;
+    }
+
+    // Campaigns filtered by board
+    const allCamps = db.campaigns || [];
+    const campaigns = board ? allCamps.filter(c => c.scope === 'rede' || c.stores.includes(board)) : allCamps;
+
+    // Meeting items filtered by board
+    const allMeeting = db.meetingItems || [];
+    const meetingItems = allMeeting.filter(x =>
+      isAdminOrEscritorio || (x.board === board && x.visibility === 'loja')
+    );
+
+    // Requisições filtered by board
+    const allReq = db.requisicoes || [];
+    const requisicoes = allReq
+      .filter(x => isAdminOrEscritorio || x.board === board)
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
+    // Pendências — admin/escritorio only
+    const pendencias = isAdminOrEscritorio ? (db.pendencias || []) : [];
+
+    // Indeva stats for this month
+    const indevaResult = {};
+    const today = todayBRT();
+    for (const brd of INDEVA_STORES) {
+      const store = db.indeva?.[brd];
+      if (!store) continue;
+      const daily = {};
+      for (const [date, dayData] of Object.entries(store.historico || {})) {
+        if (!date.startsWith(prefix)) continue;
+        if (!daily[date]) daily[date] = {};
+        for (const a of (dayData.atendimentos || [])) {
+          const key = String(a.empId);
+          if (!daily[date][key]) daily[date][key] = { total: 0, conv: 0 };
+          daily[date][key].total++;
+          if (a.vendeu) daily[date][key].conv++;
+        }
+      }
+      if (store.date?.startsWith(prefix)) {
+        if (!daily[store.date]) daily[store.date] = {};
+        for (const a of (store.atendimentos || [])) {
+          const key = String(a.empId);
+          if (!daily[store.date][key]) daily[store.date][key] = { total: 0, conv: 0 };
+          daily[store.date][key].total++;
+          if (a.vendeu) daily[store.date][key].conv++;
+        }
+      }
+      const monthly = {};
+      for (const dayStats of Object.values(daily)) {
+        for (const [key, s] of Object.entries(dayStats)) {
+          if (!monthly[key]) monthly[key] = { total: 0, conv: 0 };
+          monthly[key].total += s.total;
+          monthly[key].conv  += s.conv;
+        }
+      }
+      indevaResult[brd] = { daily, monthly };
+    }
+
+    res.json({
+      employees,
+      weights:      (db.globalWeights || {})[mk] || {},
+      vsales,
+      weeklyMetas:  (db.weeklyMetas   || {})[mk] || {},
+      folgas:       (db.folgas || []).filter(f => f.date.startsWith(prefix)),
+      storeFluxo,
+      campaigns,
+      nfItems:      db.nfItems      || [],
+      boletas:      db.boletas      || [],
+      meetingItems,
+      pendencias,
+      requisicoes,
+      indevaStats:  indevaResult,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/employees ─────────────────────────────────────────────────────
 app.get('/api/employees', requireAuth, async (req, res) => {
   try {

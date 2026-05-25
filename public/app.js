@@ -300,50 +300,22 @@ async function loadData() {
   const c = document.getElementById('boardContainer');
   c.innerHTML = '<div class="loading"><div class="spinner"></div> Carregando…</div>';
   try {
-    const [emps, weights] = await Promise.all([
-      apiFetch('GET', '/api/employees'),
-      apiFetch('GET', `/api/weights/${S.year}/${S.month}`),
-    ]);
-    S.employees = emps.filter(e => !e.inativo);
-    S.weights   = weights || {};
+    const init = await apiFetch('GET', `/api/init?year=${S.year}&month=${S.month}`);
 
-    const [vsalesArr, weeklyMetas, folgas] = await Promise.all([
-      Promise.all(emps.map(emp =>
-        apiFetch('GET', `/api/vsales/${S.year}/${S.month}/${emp.board}/${emp.id}`)
-          .then(d => [emp.id, d])
-          .catch(() => [emp.id, { meta: { mensal: 0 }, entries: {} }])
-      )),
-      apiFetch('GET', `/api/weekly-metas/${S.year}/${S.month}`).catch(() => ({})),
-      apiFetch('GET', `/api/folgas/${S.year}/${S.month}`).catch(() => []),
-    ]);
-    S.vsales      = Object.fromEntries(vsalesArr);
-    S.weeklyMetas = weeklyMetas || {};
-    S.folgas      = folgas || [];
-
-    const fluxoBoards = [...visibleBoards()].map(([k]) => k);
-    const fluxoResults = await Promise.all(
-      fluxoBoards.map(bk =>
-        apiFetch('GET', `/api/storefluxo/${S.year}/${S.month}/${bk}`).catch(() => ({}))
-      )
-    );
-    S.storeFluxo = Object.fromEntries(fluxoBoards.map((bk, i) => [bk, fluxoResults[i]]));
-
-    const [campaigns, nfItems, boletas, meetingItems, pendencias, requisicoes, indevaStats] = await Promise.all([
-      apiFetch('GET', '/api/campaigns').catch(() => []),
-      apiFetch('GET', '/api/nf-items').catch(() => []),
-      apiFetch('GET', '/api/boletas').catch(() => []),
-      apiFetch('GET', '/api/meeting-items').catch(() => []),
-      apiFetch('GET', '/api/pendencias').catch(() => []),
-      apiFetch('GET', '/api/requisicoes').catch(() => []),
-      apiFetch('GET', `/api/indeva-stats/${S.year}/${S.month}`).catch(() => ({})),
-    ]);
-    S.campaigns    = campaigns    || [];
-    S.nfItems      = nfItems      || [];
-    S.boletas      = boletas      || [];
-    S.meetingItems = meetingItems || [];
-    S.pendencias   = pendencias   || [];
-    S.requisicoes  = requisicoes  || [];
-    S.indevaStats  = indevaStats  || {};
+    const emps     = init.employees || [];
+    S.employees    = emps.filter(e => !e.inativo);
+    S.weights      = init.weights      || {};
+    S.vsales       = init.vsales       || {};
+    S.weeklyMetas  = init.weeklyMetas  || {};
+    S.folgas       = init.folgas       || [];
+    S.storeFluxo   = init.storeFluxo   || {};
+    S.campaigns    = init.campaigns    || [];
+    S.nfItems      = init.nfItems      || [];
+    S.boletas      = init.boletas      || [];
+    S.meetingItems = init.meetingItems || [];
+    S.pendencias   = init.pendencias   || [];
+    S.requisicoes  = init.requisicoes  || [];
+    S.indevaStats  = init.indevaStats  || {};
     _updateCampanhasBtn();
     _updateLojaAcaoBadge();
 
