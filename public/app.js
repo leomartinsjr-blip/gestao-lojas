@@ -2288,7 +2288,7 @@ function renderTransTable(container, data) {
   applyTransFilter(container);
 
   const exportBtn = container.querySelector('#transExportBtn');
-  if (exportBtn) exportBtn.addEventListener('click', () => _exportTransExcel(sugestoes));
+  if (exportBtn) exportBtn.addEventListener('click', () => _exportTransExcel(sugestoes, _transLojaFilter, _transTipoFilter));
 
   // Filtro loja
   container.querySelectorAll('.trans-loja-btn').forEach(btn => {
@@ -2309,15 +2309,33 @@ function renderTransTable(container, data) {
   });
 }
 
-function _exportTransExcel(sugestoes) {
+function _exportTransExcel(sugestoes, lojaFilter = '', tipoFilter = '') {
   const XL = window.XLSX;
   if (!XL) { alert('Biblioteca SheetJS não carregada. Recarregue a página.'); return; }
-  const header = ['Código', 'Setor', 'Referência', 'Produto', 'Últ. Entrada', 'Enviar (destino: qtd)'];
+
+  const isSendFocus = lojaFilter && tipoFilter === 'enviar';
+  const isRecvFocus = lojaFilter && tipoFilter === 'receber';
+
+  const header = isSendFocus
+    ? ['Código', 'Setor', 'Referência', 'Produto', 'Últ. Entrada', `Enviar de ${BOARDS[lojaFilter]?.label||lojaFilter} para`]
+    : isRecvFocus
+    ? ['Código', 'Setor', 'Referência', 'Produto', 'Últ. Entrada', `Receber em ${BOARDS[lojaFilter]?.label||lojaFilter} de`]
+    : ['Código', 'Setor', 'Referência', 'Produto', 'Últ. Entrada', 'Enviar (destino: qtd)'];
+
   const rows = sugestoes.map(s => {
-    const enviar = s.transfers.map(t => `${BOARDS[t.para]?.label || t.para}: ${t.qty}`).join(', ');
+    let transfers = s.transfers;
+    if (isSendFocus) transfers = transfers.filter(t => t.de === lojaFilter);
+    else if (isRecvFocus) transfers = transfers.filter(t => t.para === lojaFilter);
+    else if (lojaFilter) transfers = transfers.filter(t => t.de === lojaFilter || t.para === lojaFilter);
+    if (!transfers.length) return null;
+    const enviar = isSendFocus
+      ? transfers.map(t => `${BOARDS[t.para]?.label || t.para}: ${t.qty}`).join(', ')
+      : isRecvFocus
+      ? transfers.map(t => `${BOARDS[t.de]?.label || t.de}: ${t.qty}`).join(', ')
+      : transfers.map(t => `${BOARDS[t.de]?.label||t.de}→${BOARDS[t.para]?.label||t.para}: ${t.qty}`).join(', ');
     const compra = s.ultimaCompra ? s.ultimaCompra.slice(0,10).split('-').reverse().join('/') : '—';
     return [s.cod_produto, s.setor || '—', s.referencia || '—', s.descricao || '—', compra, enviar];
-  });
+  }).filter(Boolean);
   const ws = XL.utils.aoa_to_sheet([header, ...rows]);
   ws['!cols'] = [{ wch:10 }, { wch:22 }, { wch:14 }, { wch:42 }, { wch:12 }, { wch:40 }];
   ws['!pageSetup'] = { fitToPage: true, fitToWidth: 1, fitToHeight: 0, orientation: 'landscape', paperSize: 9 };
