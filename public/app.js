@@ -6896,7 +6896,7 @@ function _renderIndeva(body, state) {
                 const e = empById[id]; if (!e) return '';
                 return `<div class="indeva-queue-card indeva-draggable${i===0?' indeva-next-up':''}" draggable="true" data-id="${e.id}" data-empid="${e.id}">
                   <span class="indeva-q-pos">${i+1}</span>
-                  ${empAvatarHtml(e, 32)}
+                  ${empAvatarHtml(e, 36)}
                   <div class="indeva-vendor-info">
                     <span class="indeva-vendor-name">${e.apelido||e.name}</span>
                     ${vendorStats[e.id] ? `<span class="indeva-vendor-sub">${vendorStats[e.id].total} atend.</span>` : ''}

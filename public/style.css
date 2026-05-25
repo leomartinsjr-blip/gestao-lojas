@@ -2532,8 +2532,8 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .indeva-col-count { background:var(--input-bg); color:var(--text); font-size:.65rem; border-radius:999px; padding:1px 7px; font-weight:700; }
 .indeva-col-empty { color:var(--muted); font-size:.76rem; padding:.4rem 0; text-align:center; }
 /* Pool (Disponíveis) */
-.indeva-pool { display:flex; flex-direction:column; gap:.3rem; }
-.indeva-vendor-card { display:flex; align-items:center; gap:.45rem; padding:.35rem .45rem; border-radius:8px; background:var(--card-bg); border:1px solid var(--border); cursor:pointer; transition:border-color .12s,transform .1s; user-select:none; }
+.indeva-pool { display:flex; flex-direction:column; gap:.35rem; }
+.indeva-vendor-card { display:flex; align-items:center; gap:.5rem; padding:.4rem .5rem; border-radius:8px; background:var(--card-bg); border:1px solid var(--border); cursor:pointer; transition:border-color .12s,transform .1s; user-select:none; min-height:48px; box-sizing:border-box; }
 .indeva-vendor-card:hover { border-color:var(--accent); transform:translateX(2px); }
 .indeva-vendor-info { flex:1; min-width:0; }
 .indeva-vendor-name { font-size:.82rem; font-weight:600; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -2543,7 +2543,7 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .indeva-drop-zone.indeva-drop-hover { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 7%,transparent); }
 .indeva-drop-hint { color:var(--muted); font-size:.74rem; text-align:center; flex:1; display:flex; align-items:center; justify-content:center; padding:.75rem; line-height:1.5; }
 /* Queue cards (Em Espera) */
-.indeva-queue-card { display:flex; align-items:center; gap:.45rem; padding:.4rem .5rem; border-radius:8px; background:var(--card-bg); border:1px solid var(--border); cursor:pointer; user-select:none; transition:border-color .12s; }
+.indeva-queue-card { display:flex; align-items:center; gap:.5rem; padding:.4rem .5rem; border-radius:8px; background:var(--card-bg); border:1px solid var(--border); cursor:pointer; user-select:none; transition:border-color .12s; min-height:48px; box-sizing:border-box; }
 .indeva-queue-card:hover { border-color:var(--accent); }
 .indeva-queue-card.indeva-next-up { border-color:var(--accent); background:color-mix(in srgb,var(--accent) 8%,transparent); }
 .indeva-q-pos { color:var(--muted); font-size:.7rem; min-width:14px; font-weight:700; text-align:center; flex-shrink:0; }
@@ -2563,10 +2563,10 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .indeva-atend-name { font-size:.9rem; font-weight:700; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .indeva-atend-count { font-size:.7rem; color:var(--muted); }
 .indeva-atend-close { margin-left:auto; }
-.indeva-action-btns { display:flex; gap:.4rem; }
-.indeva-vendeu-btn { flex:1; padding:.5rem .3rem; background:#22863A18; border:1px solid #22863A50; color:#3FB950; border-radius:7px; font-size:.82rem; font-weight:700; cursor:pointer; transition:background .12s; white-space:nowrap; }
+.indeva-action-btns { display:grid; grid-template-columns:1fr 1fr; gap:.4rem; }
+.indeva-vendeu-btn { padding:.45rem .25rem; background:#22863A18; border:1px solid #22863A50; color:#3FB950; border-radius:7px; font-size:.78rem; font-weight:700; cursor:pointer; transition:background .12s; text-align:center; line-height:1.25; word-break:keep-all; }
 .indeva-vendeu-btn:hover { background:#22863A35; }
-.indeva-naov-btn { flex:1; padding:.5rem .3rem; background:#F8514918; border:1px solid #F8514950; color:#F85149; border-radius:7px; font-size:.82rem; font-weight:700; cursor:pointer; transition:background .12s; white-space:nowrap; }
+.indeva-naov-btn { padding:.45rem .25rem; background:#F8514918; border:1px solid #F8514950; color:#F85149; border-radius:7px; font-size:.78rem; font-weight:700; cursor:pointer; transition:background .12s; text-align:center; line-height:1.25; word-break:keep-all; }
 .indeva-naov-btn:hover,.indeva-naov-btn.active { background:#F8514935; }
 /* Motivo chips */
 .indeva-motivos-wrap { border-top:1px solid var(--border); padding-top:.4rem; }
@@ -2676,17 +2676,17 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   /* Disponíveis: horizontal tray with avatar + name chips */
   .indeva-col:first-child .indeva-col-hdr { font-size:.6rem; margin-bottom:.2rem; }
   .indeva-col:first-child .indeva-pool { flex-direction:row; flex-wrap:nowrap; overflow-x:auto; -webkit-overflow-scrolling:touch; gap:.55rem; padding:.2rem 0 .35rem; }
-  .indeva-col:first-child .indeva-vendor-card { flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:.2rem; padding:.35rem .4rem; flex-shrink:0; min-width:62px; max-width:72px; border:1px solid var(--border); border-radius:12px; background:var(--card-bg); }
+  .indeva-col:first-child .indeva-vendor-card { flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:.2rem; padding:.4rem .35rem; flex-shrink:0; width:68px; min-width:68px; max-width:68px; min-height:unset; border:1px solid var(--border); border-radius:12px; background:var(--card-bg); }
   .indeva-col:first-child .indeva-vendor-name { font-size:.64rem; white-space:normal; text-align:center; line-height:1.2; }
   .indeva-col:first-child .indeva-vendor-sub { display:none; }
   .indeva-col:first-child .indeva-vendor-card:hover { transform:translateY(-2px); border-color:var(--accent); }
 
   /* Em Espera e Em Atendimento */
   .indeva-drop-zone { flex:1; overflow-y:auto; -webkit-overflow-scrolling:touch; min-height:80px; }
-  .indeva-queue-card { min-height:48px; padding:.55rem .6rem; }
+  .indeva-queue-card { min-height:52px; padding:.45rem .5rem; }
   .indeva-atend-zone { flex-direction:column; flex-wrap:nowrap; }
   .indeva-atend-card { min-width:0; }
-  .indeva-action-btns button { min-height:44px; font-size:.88rem; }
+  .indeva-action-btns button { min-height:42px; font-size:.82rem; }
   .indeva-log-wrap { max-height:110px; flex-shrink:0; }
 }
 /* View tabs (Hoje / Histórico) */
