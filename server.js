@@ -43,6 +43,7 @@ async function initMongo() {
   });
   await client.connect();
   mongoDb = client.db('gestao_lojas');
+
   // one-time migration from data.json if MongoDB collection is empty
   const existing = await mongoDb.collection('store').findOne({ _id: 'main' });
   if (!existing && fs.existsSync(DATA_FILE)) {
@@ -52,6 +53,35 @@ async function initMongo() {
       console.log('✅  Dados migrados de data.json para MongoDB');
     } catch (e) { console.warn('Migração data.json falhou:', e.message); }
   }
+
+  // Migração única: move fotos dos funcionários para documento separado
+  // Isso reduz o documento principal de ~10MB para ~2MB
+  try {
+    const photosDoc = await mongoDb.collection('store').findOne({ _id: 'photos' });
+    if (!photosDoc) {
+      const mainDoc = await mongoDb.collection('store').findOne({ _id: 'main' });
+      const emps = mainDoc?.employees || [];
+      const photoData = {};
+      for (const emp of emps) {
+        if (emp.foto) photoData[String(emp.id)] = emp.foto;
+      }
+      await mongoDb.collection('store').insertOne({ _id: 'photos', data: photoData });
+      if (Object.keys(photoData).length > 0) {
+        // Remove fotos do documento principal
+        await mongoDb.collection('store').updateOne(
+          { _id: 'main' },
+          { $set: { employees: emps.map(({ foto, ...e }) => e) } }
+        );
+        _photoCache = photoData;
+        console.log(`✅  ${Object.keys(photoData).length} fotos migradas para documento separado`);
+      } else {
+        _photoCache = {};
+      }
+    } else {
+      _photoCache = photosDoc.data || {};
+    }
+  } catch (e) { console.warn('Migração de fotos falhou:', e.message); _photoCache = {}; }
+
   console.log('✅  MongoDB conectado');
 }
 
@@ -60,6 +90,35 @@ async function initMongo() {
 // writeDB() invalida o cache para garantir dados frescos na próxima leitura.
 let _dbCache      = null;
 let _dbCacheDirty = false;
+
+// Fotos armazenadas em documento separado { _id:'photos', data:{ empId: base64 } }
+// Isso mantém o documento principal pequeno (<2MB) para leitura rápida
+let _photoCache = null; // { empId: foto }
+
+async function readPhotos() {
+  if (_photoCache) return _photoCache;
+  if (mongoDb) {
+    const doc = await mongoDb.collection('store').findOne({ _id: 'photos' });
+    _photoCache = doc?.data || {};
+  } else {
+    _photoCache = {};
+  }
+  return _photoCache;
+}
+
+async function writePhoto(empId, foto) {
+  if (!_photoCache) await readPhotos();
+  const key = String(empId);
+  if (foto) _photoCache[key] = foto;
+  else delete _photoCache[key];
+  if (mongoDb) {
+    await mongoDb.collection('store').replaceOne(
+      { _id: 'photos' },
+      { _id: 'photos', data: _photoCache },
+      { upsert: true }
+    );
+  }
+}
 
 async function readDB() {
   if (_dbCache && !_dbCacheDirty) return _dbCache;
@@ -537,8 +596,9 @@ app.get('/api/init', requireAuth, async (req, res) => {
 // ── GET /api/employees ─────────────────────────────────────────────────────
 app.get('/api/employees', requireAuth, async (req, res) => {
   try {
-    const db   = await readDB();
-    const emps = db.employees || [];
+    const db     = await readDB();
+    const photos = await readPhotos();
+    const emps   = (db.employees || []).map(e => photos[e.id] ? { ...e, foto: photos[e.id] } : e);
     const { board } = req.session.user;
     const isAdminOrEscritorio = !board || board === 'escritorio';
     res.json(isAdminOrEscritorio ? emps : emps.filter(e => e.board === board));
@@ -548,9 +608,8 @@ app.get('/api/employees', requireAuth, async (req, res) => {
 // ── GET /api/employees/photos — só id+foto para lazy-load após init ────────
 app.get('/api/employees/photos', requireAuth, async (req, res) => {
   try {
-    const db   = await readDB();
-    const emps = db.employees || [];
-    res.json(emps.filter(e => e.foto).map(e => ({ id: e.id, foto: e.foto })));
+    const photos = await readPhotos();
+    res.json(Object.entries(photos).map(([id, foto]) => ({ id: parseInt(id), foto })));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -584,11 +643,13 @@ app.post('/api/employees', requireAuth, async (req, res) => {
 app.put('/api/employees/:id', requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { name, board, cpf, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento, apelido, microvixCod } = req.body;
+    const { name, board, cpf, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, isVendedor, inativo, desligamento, apelido, microvixCod, foto } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
     const db  = await readDB();
     const idx = (db.employees || []).findIndex(e => e.id === id);
     if (idx === -1) return res.status(404).json({ error: 'not found' });
+    // Se foto === '' → remover; se foto !== undefined → atualizar; se undefined → não mudar
+    if (foto === '') await writePhoto(id, null);
     db.employees[idx] = {
       ...db.employees[idx], name: name.trim(), board,
       apelido: apelido || '',
@@ -614,13 +675,14 @@ app.delete('/api/employees/:id', requireAuth, async (req, res) => {
     const db = await readDB();
     db.employees = (db.employees || []).filter(e => e.id !== id);
     db.folgas    = (db.folgas    || []).filter(f => f.employeeId !== id);
+    await writePhoto(id, null); // remove foto do documento separado
     await writeDB(db);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── POST /api/employees/:id/photo ──────────────────────────────────────────
-// Stores photo as base64 data URL in the DB (survives deploys/restarts)
+// Armazena foto no documento separado 'photos' (não polui o documento principal)
 app.post('/api/employees/:id/photo', requireAuth, upload.single('photo'), async (req, res) => {
   try {
     const id = parseInt(req.params.id);
@@ -629,7 +691,6 @@ app.post('/api/employees/:id/photo', requireAuth, upload.single('photo'), async 
     const idx = (db.employees || []).findIndex(e => e.id === id);
     if (idx === -1) return res.status(404).json({ error: 'not found' });
 
-    // Convert to base64 data URL so it persists in the database regardless of filesystem
     let fileData;
     if (req.file.path) {
       fileData = fs.readFileSync(req.file.path);
@@ -640,14 +701,7 @@ app.post('/api/employees/:id/photo', requireAuth, upload.single('photo'), async 
     const mime = req.file.mimetype || 'image/jpeg';
     const dataUrl = `data:${mime};base64,${fileData.toString('base64')}`;
 
-    // Clean up old disk file if it was a path-based URL
-    const old = db.employees[idx].foto;
-    if (old && old.startsWith('/uploads/')) {
-      try { fs.unlinkSync(path.join(UPLOADS_DIR, path.basename(old))); } catch {}
-    }
-
-    db.employees[idx].foto = dataUrl;
-    await writeDB(db);
+    await writePhoto(id, dataUrl);
     res.json({ url: dataUrl });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -2441,14 +2495,9 @@ app.post('/api/microvix/sync-photos', requireAdmin, async (req, res) => {
           const fileData = fs.readFileSync(tmpFile);
           try { fs.unlinkSync(tmpFile); } catch {}
           const dataUrl = `data:image/jpeg;base64,${fileData.toString('base64')}`;
-          // Remove old disk file if any
-          const old = emp.foto;
-          if (old && old.startsWith('/uploads/')) {
-            try { fs.unlinkSync(path.join(UPLOADS_DIR, path.basename(old))); } catch {}
-          }
-          emp.foto = dataUrl;
+          await writePhoto(emp.id, dataUrl);
           result.updated++;
-          console.log(`[Microvix/${board}] Foto salva (base64): ${emp.name}`);
+          console.log(`[Microvix/${board}] Foto salva: ${emp.name}`);
         } catch (e) {
           result.errors.push(`${emp.name}: ${e.message}`);
           console.error(`[Microvix/${board}] Erro ao baixar foto de ${emp.name}:`, e.message);
