@@ -6763,12 +6763,19 @@ function _buildIndevaTabs() {
   const isEscritorio = S.user?.board === 'escritorio';
   const tabsEl = document.getElementById('indevaStoreTabs');
   if (!isAdmin && !isEscritorio) { tabsEl.innerHTML = ''; return; }
-  tabsEl.innerHTML = INDEVA_STORES.map(bk =>
-    `<button class="perf-store-tab${bk===_indevaBoard?' active':''}" data-board="${bk}">${BOARDS[bk]?.label||bk}</button>`
-  ).join('');
-  tabsEl.querySelectorAll('.perf-store-tab').forEach(btn =>
-    btn.addEventListener('click', () => { _indevaBoard = btn.dataset.board; _buildIndevaTabs(); _loadIndeva(); })
-  );
+  tabsEl.innerHTML = '';
+  INDEVA_STORES.forEach(bk => {
+    const btn = document.createElement('button');
+    btn.className = 'perf-tab-btn';
+    btn.dataset.board = bk;
+    btn.textContent = BOARDS[bk]?.label || bk;
+    const color = BOARDS[bk]?.color || '#8B949E';
+    btn.style.borderColor = color;
+    btn.style.background  = bk === _indevaBoard ? color : 'transparent';
+    btn.style.color       = bk === _indevaBoard ? '#0D1117' : color;
+    btn.addEventListener('click', () => { _indevaBoard = bk; _buildIndevaTabs(); _loadIndeva(); });
+    tabsEl.appendChild(btn);
+  });
 }
 
 async function _loadIndeva() {
@@ -7059,6 +7066,10 @@ function _showIndevaGoalsOverlay(emp, state) {
   };
   const todayBarPct   = todayMeta > 0 ? Math.min(todayValor / todayMeta * 100, 100) : 0;
   const todayBarColor = todayBarPct>=100?'#3FB950':todayBarPct>=80?'#D29922':'#F85149';
+  const todayPctNum   = todayMeta > 0 ? todayValor / todayMeta * 100 : null;
+  const weekVendido   = weekRows.filter(r => !r.future).reduce((s, r) => s + r.vendido, 0);
+  const weekPct       = k.wMeta > 0 ? weekVendido / k.wMeta * 100 : null;
+  const weekDiff      = weekVendido - k.wMeta;
 
   const overlay = document.createElement('div');
   overlay.className = 'ig-overlay';
@@ -7103,9 +7114,18 @@ function _showIndevaGoalsOverlay(emp, state) {
 
         <div class="ig-section">
           <div class="ig-section-lbl">Vendas de hoje</div>
-          <div class="ig-today-val">${fBRL(todayValor)}</div>
+          <div class="ig-today-row">
+            <div class="ig-today-block">
+              <div class="ig-today-sub">Vendido</div>
+              <div class="ig-today-val" style="color:${todayBarColor}">${fBRL(todayValor)}</div>
+            </div>
+            <div class="ig-today-pct ${clsPct(todayPctNum)}">${fPct(todayPctNum)}</div>
+            <div class="ig-today-block ig-today-block-meta">
+              <div class="ig-today-sub">Meta do Dia</div>
+              <div class="ig-today-meta-val">${fBRL(todayMeta)}</div>
+            </div>
+          </div>
           <div class="ig-bar-track"><div class="ig-bar-fill2" style="width:${todayBarPct}%;background:${todayBarColor}"></div></div>
-          <div class="ig-bar-ref">Meta: ${fBRL(todayMeta)}</div>
         </div>
 
         <div class="ig-section">
@@ -7141,9 +7161,9 @@ function _showIndevaGoalsOverlay(emp, state) {
             <tfoot><tr>
               <td><strong>Total</strong></td>
               <td>${fBRL(k.wMeta)}</td>
-              <td><strong>${fBRL(k.valor||0)}</strong></td>
-              <td class="${clsPct(k.pctMeta)}"><strong>${fPct(k.pctMeta)}</strong></td>
-              <td class="${(k.valor||0)-k.wMeta>=0?'ig-pos':'ig-neg'}"><strong>${((k.valor||0)-k.wMeta>=0?'+':'')+fBRL(Math.abs((k.valor||0)-k.wMeta))}</strong></td>
+              <td><strong>${fBRL(weekVendido)}</strong></td>
+              <td class="${clsPct(weekPct)}"><strong>${fPct(weekPct)}</strong></td>
+              <td class="${weekDiff>=0?'ig-pos':'ig-neg'}"><strong>${(weekDiff>=0?'+':'')+fBRL(Math.abs(weekDiff))}</strong></td>
             </tr></tfoot>
           </table>
         </div>
