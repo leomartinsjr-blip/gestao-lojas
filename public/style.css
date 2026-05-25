@@ -2618,7 +2618,7 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .ig-today-block-meta { align-items:flex-end; }
 .ig-today-sub { font-size:.6rem; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
 .ig-today-val { font-size:1.45rem; font-weight:800; line-height:1.1; }
-.ig-today-meta-val { font-size:1.1rem; font-weight:700; color:var(--muted); line-height:1.1; }
+.ig-today-meta-val { font-size:1.1rem; font-weight:800; color:#FBBF24; line-height:1.1; }
 .ig-today-pct { font-size:1.55rem; font-weight:800; line-height:1; letter-spacing:-.02em; }
 .ig-bar-track { height:8px; background:var(--border); border-radius:999px; overflow:hidden; }
 .ig-bar-fill2 { height:100%; border-radius:999px; transition:width .5s; }

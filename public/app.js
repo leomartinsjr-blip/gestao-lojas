@@ -7056,7 +7056,7 @@ function _showIndevaGoalsOverlay(emp, state) {
   }
 
   // Helpers de formatação
-  const fBRL  = v => v > 0 ? 'R$ ' + new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2}).format(v) : '—';
+  const fBRL  = v => v > 0 ? 'R$ ' + new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v) : '—';
   const fPct  = v => v == null ? '—' : v.toFixed(1) + '%';
   const fDec  = v => v == null ? '—' : v.toFixed(2);
   const clsPct = v => v==null?'':v>=100?'ig-pos':v>=80?'ig-warn':'ig-neg';
@@ -7107,7 +7107,7 @@ function _showIndevaGoalsOverlay(emp, state) {
           </div>
           <div class="ig-kpi-card">
             <div class="ig-kpi-lbl">Usabilidade</div>
-            <div class="ig-kpi-val">${fPct(usabilidade)}</div>
+            <div class="ig-kpi-val ${usabilidade==null?'':usabilidade>=80?'ig-pos':'ig-neg'}">${fPct(usabilidade)}</div>
             <div class="ig-kpi-ref">${indevaConv} Indeva / ${todayAtendMx} Microvix</div>
           </div>
         </div>
@@ -7348,7 +7348,7 @@ function _openIndevaCampanhasOverlay() {
   const board    = _indevaBoard;
   const today    = new Date().toISOString().slice(0, 10);
   const fmt      = d => d.split('-').reverse().join('/');
-  const fBRL     = v => 'R$ ' + new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2}).format(v);
+  const fBRL     = v => 'R$ ' + new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v);
   const fmtKpi   = (kpi, v) => {
     if (kpi === 'vendas') return fBRL(v);
     if (kpi === 'pa')     return v.toFixed(2);
@@ -7433,7 +7433,7 @@ function _openIndevaMetasOverlay() {
   const todayW  = S.weights?.[todayStr] ?? defW;
   const week    = getWeekForDate(todayStr);
 
-  const fBRL  = v => v > 0 ? 'R$ ' + new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2}).format(v) : '—';
+  const fBRL  = v => v > 0 ? 'R$ ' + new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v) : '—';
   const fPct  = v => v==null ? '—' : v.toFixed(1)+'%';
   const clsPct = v => v==null?'':v>=100?'ig-pos':v>=80?'ig-warn':'ig-neg';
 
