@@ -330,11 +330,19 @@ async function runDiagnostic() {
   const preEl  = document.getElementById('cp-diag-pre');
   diagEl.style.display = '';
   diagEl.open = true;
-  preEl.textContent = 'Consultando Microvix…';
+  preEl.textContent = 'Testando comandos Microvix…';
   try {
     const r = await fetch('/api/contas-pagar/raw', { credentials: 'include' });
     const d = await r.json();
-    preEl.textContent = JSON.stringify(d, null, 2);
+    if (d.error) { preEl.textContent = 'Erro: ' + d.error; return; }
+    const lines = d.results.map(r => {
+      if (r.error)  return `❌ ${r.cmd} → ERRO: ${r.error}`;
+      if (r.isErr)  return `❌ ${r.cmd} → ${r.errMsg || 'API retornou erro'}`;
+      if (r.isXml)  return `⚠️  ${r.cmd} → XML inesperado`;
+      if (r.rowCount === 0) return `⚠️  ${r.cmd} → OK mas 0 linhas (período sem dados?)`;
+      return `✅ ${r.cmd} → ${r.rowCount} linhas | campos: ${r.fields.join(', ')}`;
+    });
+    preEl.textContent = `Loja: ${d.board} | Período: ${d.dtIni} → ${d.dtFin}\n\n` + lines.join('\n');
   } catch (e) {
     preEl.textContent = 'Erro: ' + e.message;
   }

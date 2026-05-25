@@ -3288,7 +3288,7 @@ app.get('/api/contas-pagar', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/contas-pagar/raw?board=xxx&de=YYYY-MM-DD&ate=YYYY-MM-DD (debug — retorna resposta bruta)
+// GET /api/contas-pagar/raw — testa múltiplos nomes de comando até achar o correto
 app.get('/api/contas-pagar/raw', requireAdmin, async (req, res) => {
   try {
     const { board, de, ate } = req.query;
@@ -3299,19 +3299,31 @@ app.get('/api/contas-pagar/raw', requireAdmin, async (req, res) => {
     const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
     const dtIni = de  || today.slice(0,7)+'-01';
     const dtFin = ate || today;
-    const body  = buildRequest('LinxContasPagar', cnpj, [
-      { id: 'data_inicial', valor: dtIni },
-      { id: 'data_fim',     valor: dtFin },
-    ], chave);
-    const raw  = await postRequest(body, 60_000);
-    const rows = raw.trim().startsWith('<') ? [] : parseCsv(raw);
-    res.json({
-      rawPreview: raw.slice(0, 500),
-      isXml: raw.trim().startsWith('<'),
-      count: rows.length,
-      fields: rows[0] ? Object.keys(rows[0]) : [],
-      sample: rows.slice(0, 3),
-    });
+
+    const CANDIDATES = [
+      { cmd: 'LinxContasPagar',           params: [{ id:'data_inicial', valor:dtIni },{ id:'data_fim', valor:dtFin }] },
+      { cmd: 'LinxContasPagar',           params: [{ id:'data_ini',     valor:dtIni },{ id:'data_fin', valor:dtFin }] },
+      { cmd: 'LinxContasAPagar',          params: [{ id:'data_inicial', valor:dtIni },{ id:'data_fim', valor:dtFin }] },
+      { cmd: 'LinxContasFinanceiro',      params: [{ id:'data_inicial', valor:dtIni },{ id:'data_fim', valor:dtFin }] },
+      { cmd: 'LinxLancamentosFinanceiros',params: [{ id:'data_inicial', valor:dtIni },{ id:'data_fim', valor:dtFin }] },
+    ];
+
+    const results = [];
+    for (const c of CANDIDATES) {
+      try {
+        const body = buildRequest(c.cmd, cnpj, c.params, chave);
+        const raw  = await postRequest(body, 20_000);
+        const isXml = raw.trim().startsWith('<');
+        const isErr = raw.includes('<ResponseSuccess>False</ResponseSuccess>');
+        const errMsg = isErr ? (raw.match(/<Message>([^<]+)<\/Message>/)||[])[1] : null;
+        const rows = (!isXml && !isErr) ? parseCsv(raw) : [];
+        results.push({ cmd: c.cmd, params: c.params.map(p=>p.id), isXml, isErr, errMsg, rowCount: rows.length, fields: rows[0] ? Object.keys(rows[0]) : [], preview: raw.slice(0,200) });
+        if (!isErr && !isXml && rows.length > 0) break; // achou
+      } catch (e) {
+        results.push({ cmd: c.cmd, error: e.message });
+      }
+    }
+    res.json({ board: board || Object.keys(lojas)[0], dtIni, dtFin, results });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
