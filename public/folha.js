@@ -398,11 +398,16 @@ function defaultEntry(emp) {
   const comissaoTotal = r2(vendas * comissaoPct / 100);
 
   // Split para contabilidade: Total = comissaoContab + DSR + Prêmio
-  // DSR CLT = Comissão × (domingos+feriados) ÷ dias úteis trabalhados
+  // DSR é calculado SOBRE a comissão contábil (a base): DSR = comissaoContab × df/du
+  // Resolvendo a equação circular:
+  //   comissaoContab = (comissaoTotal - prêmio) × du / (du + df)
+  //   DSR            = comissaoContab × df / du
   const premio = r2((tipo === 'gerente' || tipo === 'sub')
     ? (cfg.premioGerente || 0) : (cfg.premioVendedor || 0));
-  const dsr    = du > 0 ? r2(comissaoTotal * df / du) : 0;
-  const comissaoContab = r2(comissaoTotal - dsr - premio);
+  const comissaoContab = (du + df) > 0
+    ? r2((comissaoTotal - premio) * du / (du + df))
+    : r2(comissaoTotal - premio);
+  const dsr = du > 0 ? r2(comissaoContab * df / du) : 0;
 
   // GM: complemento se abaixo da garantia mínima
   const gm           = r2(cfg.garantiaMinima || 0);
@@ -489,7 +494,7 @@ function buildEmpForm(emp, entry) {
         </div>
         <div class="fp-field fp-split-row">
           <label>DSR (R$)</label>${inp(`fp-dsr-${emp.id}`, e.dsr)}
-          <span class="fp-split-hint">= comissão × ${df} ÷ ${du}</span>
+          <span class="fp-split-hint">= contab × ${df} ÷ ${du}</span>
         </div>
         <div class="fp-field fp-split-row">
           <label>Prêmio (R$)</label>${inp(`fp-premio-${emp.id}`, e.premio)}
