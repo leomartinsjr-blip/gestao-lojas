@@ -215,7 +215,7 @@ function fpOpenCfg(board) {
     return `<table style="width:100%;border-collapse:collapse;font-size:.82rem;margin-top:.5rem">
       <thead><tr>
         <th style="text-align:left;padding:.3rem .5rem;color:#8b949e;border-bottom:1px solid #30363d;width:120px">Faixa</th>
-        <th style="text-align:center;padding:.3rem .5rem;color:#8b949e;border-bottom:1px solid #30363d">Meta Mínima (%)</th>
+        <th style="text-align:center;padding:.3rem .5rem;color:#8b949e;border-bottom:1px solid #30363d">Atingimento mín. (%)</th>
         <th style="text-align:center;padding:.3rem .5rem;color:#8b949e;border-bottom:1px solid #30363d">Comissão (%)</th>
       </tr></thead>
       <tbody>${faixas.map((f,i) => `
