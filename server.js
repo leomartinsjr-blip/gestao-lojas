@@ -3700,12 +3700,14 @@ app.get('/api/folha/:year/:month/export', requireAuth, async (req, res) => {
           addProv('QUEBRA CAIXA', entry.quebra);
         } else {
           addProv('VENDAS', entry.vendas);
-          addProv(`COMISSÃO (${((entry.comissaoPct||0)*100).toFixed(2)}%)`, entry.comissao);
-          if (entry.comissaoExtra) addProv('COMISSÃO LOJA', entry.comissaoExtra);
+          addProv(`COMISSÃO CONTAB (${(entry.comissaoPct||0).toFixed(2)}%)`, entry.comissaoContab);
           addProv('DSR', entry.dsr);
+          addProv('PRÊMIO', entry.premio);
+          if (entry.fixo) addProv('SALÁRIO FIXO', entry.fixo);
+          if (entry.comissaoLoja) addProv('COMISSÃO LOJA', entry.comissaoLoja);
           if (entry.gmComplement) addProv('GARANTIA SURFERS', entry.gmComplement);
         }
-        if (entry.premio) addProv('PREMIAÇÃO', entry.premio);
+        if (entry.feriado) addProv('FERIADO', entry.feriado);
         if (entry.feriado) addProv('FERIADO', entry.feriado);
         for (const ex of (entry.extras || [])) {
           if (ex.nome && ex.valor) addProv(ex.nome, ex.valor);
@@ -3738,6 +3740,114 @@ app.get('/api/folha/:year/:month/export', requireAuth, async (req, res) => {
     res.setHeader('Content-Disposition', `attachment; filename="folha-${mk}${board?'-'+board:''}.xlsx"`);
     await wb.xlsx.write(res);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/folha/:year/:month/contabilidade — planilha contabilidade (1 sheet por loja)
+app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) => {
+  try {
+    const year  = parseInt(req.params.year);
+    const month = parseInt(req.params.month);
+    const mk    = `${year}-${String(month).padStart(2,'0')}`;
+    const board = req.query.board;
+    const db    = await readDB();
+    const folha = (db.folhas || {})[mk] || {};
+    const employees = (db.employees || []).filter(e => !e.inativo);
+
+    const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                       'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const mesLabel = `${MONTHS_PT[month-1]} ${year}`;
+
+    const BOARDS_LABEL = {
+      delrey:'DEL REY', minas:'MINAS', contagem:'CONTAGEM',
+      estacao:'ESTAÇÃO', tommy:'TOMMY', lez:'LEZ A LEZ',
+    };
+
+    const r2 = v => Math.round((parseFloat(v)||0)*100)/100;
+    const f2 = v => r2(v) === 0 ? '' : r2(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Gestão Lojas';
+
+    const boardsToExport = board ? [board] : Object.keys(BOARDS_LABEL);
+
+    for (const bk of boardsToExport) {
+      const lojaData = folha[bk];
+      if (!lojaData?.entries) continue;
+
+      const lojaEmps = employees.filter(e => e.board === bk);
+      const shName = (BOARDS_LABEL[bk] || bk.toUpperCase()).substring(0,31);
+      const ws = wb.addWorksheet(shName);
+
+      // Title
+      ws.addRow([`CONTABILIDADE — ${BOARDS_LABEL[bk]||bk.toUpperCase()} — ${mesLabel}`]);
+      ws.getRow(1).font = { bold: true, size: 12 };
+      ws.addRow([]);
+
+      // Header
+      const headers = ['NOME','CARGO','FIXO','Q.CX','COMISSÕES','DSR','PRÊMIO','GM','FERIADO','PREM.EXTRA','T+PREM','VERIFICAÇÃO','OK','AD','VALE','DESC','OBSERVAÇÕES'];
+      ws.addRow(headers);
+      const hRow = ws.getRow(3);
+      hRow.font = { bold: true };
+      hRow.fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FF21262D'} };
+      hRow.eachCell(c => { c.border = { bottom:{style:'thin',color:{argb:'FF30363D'}} }; });
+
+      // Set column widths
+      ws.getColumn(1).width = 20;  // NOME
+      ws.getColumn(2).width = 14;  // CARGO
+      [3,4,5,6,7,8,9,10,11,12,14,15,16].forEach(i => ws.getColumn(i).width = 13);
+
+      let sumFixo=0, sumQcx=0, sumCom=0, sumDsr=0, sumPremio=0, sumGm=0,
+          sumFer=0, sumPremExtra=0, sumTotal=0, sumAd=0, sumVale=0, sumDesc=0;
+
+      for (const emp of lojaEmps) {
+        const entry = lojaData.entries[emp.id];
+        if (!entry) continue;
+
+        const isCaixa = /caixa|opcx/i.test(emp.cargo||'');
+
+        const fixo       = r2(entry.fixo       || 0);
+        const qcx        = r2(entry.quebra      || 0);
+        const comissoes  = r2(entry.comissaoContab || 0);
+        const dsr        = r2(entry.dsr         || 0);
+        const premio     = r2(entry.premio      || 0);
+        const gm         = r2(entry.gmComplement|| 0);
+        const feriado    = r2(entry.feriado     || 0);
+        const premExtra  = r2((entry.extras||[]).reduce((s,ex)=>s+r2(ex.valor),0));
+        const tTotal     = r2(entry.proventos   || 0);
+        const verif      = r2(fixo + qcx + comissoes + dsr + premio + gm + feriado + premExtra);
+        const ok         = Math.abs(tTotal - verif) < 0.02 ? 'OK' : '⚠';
+        const ad         = r2(entry.adiantamento|| 0);
+        const vale       = r2(entry.valeCompras || 0);
+        const desc       = r2(entry.totalDescontos || 0);
+
+        ws.addRow([
+          emp.apelido || emp.name,
+          emp.cargo,
+          f2(fixo), f2(qcx), f2(comissoes), f2(dsr), f2(premio), f2(gm),
+          f2(feriado), f2(premExtra), f2(tTotal), f2(verif), ok,
+          f2(ad), f2(vale), f2(desc), '',
+        ]);
+
+        sumFixo+=fixo; sumQcx+=qcx; sumCom+=comissoes; sumDsr+=dsr;
+        sumPremio+=premio; sumGm+=gm; sumFer+=feriado; sumPremExtra+=premExtra;
+        sumTotal+=tTotal; sumAd+=ad; sumVale+=vale; sumDesc+=desc;
+      }
+
+      // Totals row
+      const totRow = ws.addRow([
+        'TOTAL','',
+        f2(sumFixo), f2(sumQcx), f2(sumCom), f2(sumDsr), f2(sumPremio), f2(sumGm),
+        f2(sumFer), f2(sumPremExtra), f2(sumTotal), f2(r2(sumTotal)), '',
+        f2(sumAd), f2(sumVale), f2(sumDesc), '',
+      ]);
+      totRow.font = { bold: true };
+      totRow.eachCell(c => { c.border = { top:{style:'thin',color:{argb:'FF30363D'}} }; });
+    }
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="contabilidade-${mk}${board?'-'+board:''}.xlsx"`);
+    await wb.xlsx.write(res);
+  } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
 // ── Start ──────────────────────────────────────────────────────────────────
