@@ -237,4 +237,19 @@ async function fetchSangrias(cnpj, dtIni, dtFin, chave) {
   return parseCsv(raw);
 }
 
-module.exports = { fetchMovimento, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchSangrias, parseBrNum, buildRequest, postRequest, parseCsv };
+// Fetch LinxContasPagar → contas a pagar no período
+async function fetchContasPagar(cnpj, dtIni, dtFin, chave) {
+  const extra = [
+    { id: 'data_ini', valor: dtIni },
+    { id: 'data_fin', valor: dtFin },
+  ];
+  const body = buildRequest('LinxContasPagar', cnpj, extra, chave);
+  const raw  = await postRequest(body, 60_000);
+  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro desconhecido';
+    throw new Error(`Microvix API (contasPagar): ${msg}`);
+  }
+  return parseCsv(raw);
+}
+
+module.exports = { fetchMovimento, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchSangrias, fetchContasPagar, parseBrNum, buildRequest, postRequest, parseCsv };

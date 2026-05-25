@@ -85,6 +85,7 @@ async function checkAuth() {
     document.getElementById('usersBtn').style.display = isAdmin ? '' : 'none';
     document.getElementById('perfBtn').style.display = isAdmin ? '' : 'none';
     document.getElementById('transBtn').style.display = isAdmin ? '' : 'none';
+    document.getElementById('contasBtn').style.display = isAdmin ? '' : 'none';
     const indevaVisible = isAdmin || S.user?.board === 'escritorio' || INDEVA_STORES.includes(S.user?.board);
     document.getElementById('indevaBtn').style.display = indevaVisible ? '' : 'none';
     // Thursday reminder for store users
@@ -7387,6 +7388,7 @@ function _renderIndevaHistorico(body, historico) {
 
 function initIndevaModal() {
   document.getElementById('indevaBtn').addEventListener('click', () => window.open('/indeva', '_blank'));
+  document.getElementById('contasBtn').addEventListener('click', () => window.open('/contas-pagar', '_blank'));
 }
 
 function _openIndevaCampanhasOverlay() {

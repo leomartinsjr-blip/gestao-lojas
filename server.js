@@ -3229,6 +3229,81 @@ app.delete('/api/indeva/:board/atendimento/:id', requireAuth, async (req, res) =
 
 app.get('/indeva', (req, res) => res.sendFile(path.join(__dirname, 'public/indeva.html')));
 
+// ── GET /api/contas-pagar?de=YYYY-MM-DD&ate=YYYY-MM-DD (admin) ───────────────
+app.get('/api/contas-pagar', requireAdmin, async (req, res) => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const firstOfMonth = today.slice(0, 7) + '-01';
+    const dtIni = req.query.de  || firstOfMonth;
+    const dtFin = req.query.ate || today;
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const { fetchContasPagar, parseBrNum } = require('./services/microvix');
+
+    const BOARD_LABELS = { delrey:'Del Rey', minas:'Minas', contagem:'Contagem', estacao:'Estação', tommy:'Tommy', lez:'Lez' };
+
+    function parseDate(s) {
+      if (!s) return null;
+      const m1 = String(s).match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      if (m1) return `${m1[3]}-${m1[2]}-${m1[1]}`;
+      const m2 = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (m2) return s.slice(0, 10);
+      return s;
+    }
+
+    const results = await Promise.allSettled(
+      Object.entries(lojas).map(async ([board, cnpj]) => {
+        const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+        const rows  = await fetchContasPagar(cnpj, dtIni, dtFin, chave);
+        return rows.map(r => {
+          const vencStr = parseDate(r.data_vencimento || r.dt_vencimento || r.vencimento || '');
+          const hoje    = today;
+          const pago    = parseBrNum(r.valor_pago || r.vl_pago || '0') > 0
+                          || String(r.status_titulo || r.status || '').toUpperCase() === 'P';
+          const status  = pago ? 'pago' : (vencStr && vencStr < hoje ? 'vencido' : 'aberto');
+          return {
+            board,
+            loja:          BOARD_LABELS[board] || board,
+            fornecedor:    r.nome_forn || r.nome_fornecedor || r.forn || '',
+            documento:     r.cod_titulo || r.num_documento || r.num_pedido || r.titulo || '',
+            emissao:       parseDate(r.data_emissao || r.dt_emissao || ''),
+            vencimento:    vencStr,
+            historico:     r.historico || r.descricao || '',
+            valor:         parseBrNum(r.valor_titulo || r.valor || r.vl_titulo || '0'),
+            valor_pago:    parseBrNum(r.valor_pago || r.vl_pago || '0'),
+            status,
+          };
+        });
+      })
+    );
+
+    const items = [];
+    const errors = [];
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') items.push(...r.value);
+      else errors.push({ board: Object.keys(lojas)[i], error: r.reason?.message });
+    });
+
+    items.sort((a, b) => (a.vencimento || '').localeCompare(b.vencimento || ''));
+    res.json({ items, errors, dtIni, dtFin });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/contas-pagar/raw?board=xxx&de=YYYY-MM-DD&ate=YYYY-MM-DD (debug)
+app.get('/api/contas-pagar/raw', requireAdmin, async (req, res) => {
+  try {
+    const { board, de, ate } = req.query;
+    const today = new Date().toISOString().slice(0, 10);
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = lojas[board] || Object.values(lojas)[0];
+    const chave = process.env[`MICROVIX_CHAVE_${(board||'').toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const { fetchContasPagar } = require('./services/microvix');
+    const rows = await fetchContasPagar(cnpj, de || today.slice(0,7)+'-01', ate || today, chave);
+    res.json({ count: rows.length, fields: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 5) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/contas-pagar', (req, res) => res.sendFile(path.join(__dirname, 'public/contas-pagar.html')));
+
 // ── Start ──────────────────────────────────────────────────────────────────
 initMongo()
   .then(() => {

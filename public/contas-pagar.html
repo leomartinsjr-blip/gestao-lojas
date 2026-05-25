@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Contas a Pagar</title>
+<link rel="icon" type="image/jpeg" href="favicon.jpg">
+<style>
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #1c2128; --border: #30363d; --border2: #444c56;
+    --text: #e6edf3; --text2: #8b949e; --green: #3fb950; --red: #f85149; --yellow: #fbbf24;
+    --blue: #58a6ff; --topbar-h: 52px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; min-height: 100vh; }
+
+  #cp-topbar {
+    position: fixed; top: 0; left: 0; right: 0; height: var(--topbar-h);
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; padding: 0 16px; z-index: 100;
+  }
+  .cp-title { font-size: 14px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .cp-back-btn {
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text2); cursor: pointer; padding: 4px 8px; font-size: 12px; display: flex; align-items: center; gap: 4px;
+  }
+  .cp-back-btn:hover { color: var(--text); border-color: var(--border2); }
+  .cp-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+  .cp-filters label { color: var(--text2); font-size: 11px; }
+  .cp-filters input[type=date], .cp-filters select {
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); padding: 4px 8px; font-size: 12px; cursor: pointer;
+  }
+  .cp-filters input[type=date]:focus, .cp-filters select:focus { outline: none; border-color: var(--blue); }
+  .cp-btn {
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text2); cursor: pointer; padding: 4px 10px; font-size: 12px; display: flex; align-items: center; gap: 5px;
+  }
+  .cp-btn:hover { color: var(--blue); border-color: var(--blue); }
+  .cp-btn.loading { opacity: .6; pointer-events: none; }
+
+  #cp-body { margin-top: var(--topbar-h); padding: 16px; }
+
+  /* Summary cards */
+  #cp-summary { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; }
+  .cp-card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 12px 16px; min-width: 140px; flex: 1;
+  }
+  .cp-card-label { color: var(--text2); font-size: 11px; margin-bottom: 4px; }
+  .cp-card-value { font-size: 16px; font-weight: 700; }
+  .cp-card-value.red { color: var(--red); }
+  .cp-card-value.yellow { color: var(--yellow); }
+  .cp-card-value.green { color: var(--green); }
+
+  /* Store totals */
+  #cp-store-totals { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+  .cp-store-badge {
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+    padding: 5px 10px; cursor: pointer; font-size: 11px; white-space: nowrap;
+    transition: border-color .15s;
+  }
+  .cp-store-badge.active, .cp-store-badge:hover { border-color: var(--blue); color: var(--blue); }
+  .cp-store-badge span { color: var(--text2); margin-left: 4px; }
+
+  /* Table */
+  .cp-table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid var(--border); }
+  table { width: 100%; border-collapse: collapse; }
+  thead th { background: var(--bg3); color: var(--text2); font-size: 11px; font-weight: 600; padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); cursor: pointer; user-select: none; white-space: nowrap; }
+  thead th:hover { color: var(--text); }
+  thead th .sort-arrow { margin-left: 4px; opacity: .5; }
+  thead th.sorted .sort-arrow { opacity: 1; color: var(--blue); }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: var(--bg3); }
+  td { padding: 8px 12px; vertical-align: middle; }
+  .td-loja { font-weight: 600; white-space: nowrap; }
+  .td-fornecedor { color: var(--text); max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .td-doc { color: var(--text2); font-size: 11px; font-family: monospace; }
+  .td-date { color: var(--text2); white-space: nowrap; font-size: 12px; }
+  .td-valor { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+  .td-historico { color: var(--text2); font-size: 11px; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; text-transform: uppercase; white-space: nowrap; }
+  .badge-aberto  { background: rgba(88,166,255,.15); color: var(--blue); }
+  .badge-vencido { background: rgba(248,81,73,.15);  color: var(--red); }
+  .badge-pago    { background: rgba(63,185,80,.15);  color: var(--green); }
+
+  #cp-empty { text-align: center; color: var(--text2); padding: 48px 16px; font-size: 13px; }
+  #cp-error { background: rgba(248,81,73,.1); border: 1px solid var(--red); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; color: var(--red); font-size: 12px; display: none; }
+
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 600px) {
+    #cp-topbar { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 6px; }
+    #cp-body { margin-top: 100px; }
+    .cp-filters { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+
+<div id="cp-topbar">
+  <button class="cp-back-btn" onclick="window.location.href='/'">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <polyline points="15 18 9 12 15 6"/>
+    </svg>
+    Voltar
+  </button>
+  <div class="cp-title">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="2" y="5" width="20" height="14" rx="2"/>
+      <line x1="2" y1="10" x2="22" y2="10"/>
+    </svg>
+    Contas a Pagar
+  </div>
+  <div class="cp-filters">
+    <label>De</label>
+    <input type="date" id="cpDe">
+    <label>Até</label>
+    <input type="date" id="cpAte">
+    <select id="cpStatus">
+      <option value="">Todos</option>
+      <option value="aberto">Aberto</option>
+      <option value="vencido">Vencido</option>
+      <option value="pago">Pago</option>
+    </select>
+    <button class="cp-btn" id="cpRefreshBtn">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="23 4 23 10 17 10"/>
+        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+      </svg>
+      Atualizar
+    </button>
+  </div>
+</div>
+
+<div id="cp-body">
+  <div id="cp-error"></div>
+  <div id="cp-summary"></div>
+  <div id="cp-store-totals"></div>
+  <div id="cp-table-container">
+    <div id="cp-empty" style="display:none">Nenhum título encontrado para o período.</div>
+    <div class="cp-table-wrap" id="cpTableWrap" style="display:none">
+      <table>
+        <thead>
+          <tr>
+            <th data-col="loja">Loja <span class="sort-arrow">↕</span></th>
+            <th data-col="fornecedor">Fornecedor <span class="sort-arrow">↕</span></th>
+            <th data-col="documento">Documento <span class="sort-arrow">↕</span></th>
+            <th data-col="vencimento">Vencimento <span class="sort-arrow">↕</span></th>
+            <th data-col="valor" style="text-align:right">Valor <span class="sort-arrow">↕</span></th>
+            <th data-col="status">Status <span class="sort-arrow">↕</span></th>
+            <th data-col="historico">Histórico <span class="sort-arrow">↕</span></th>
+          </tr>
+        </thead>
+        <tbody id="cpTbody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+const fmtBRL = v => 'R$ ' + (v||0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const fmtDate = s => { if (!s) return '—'; const [y,m,d] = s.split('-'); return `${d}/${m}/${y}`; };
+
+let _allItems = [];
+let _sortCol = 'vencimento', _sortAsc = true;
+let _filterBoard = '';
+
+function getToday() { return new Date().toISOString().slice(0,10); }
+function getFirstOfMonth() { return getToday().slice(0,7) + '-01'; }
+
+async function loadData() {
+  const de  = document.getElementById('cpDe').value  || getFirstOfMonth();
+  const ate = document.getElementById('cpAte').value || getToday();
+  const btn = document.getElementById('cpRefreshBtn');
+  btn.classList.add('loading');
+  btn.innerHTML = '<span class="spinner"></span> Carregando…';
+
+  document.getElementById('cp-error').style.display = 'none';
+
+  try {
+    const r = await fetch(`/api/contas-pagar?de=${de}&ate=${ate}`, { credentials: 'include' });
+    if (r.status === 401 || r.status === 403) { window.location.href = '/'; return; }
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+
+    if (data.errors?.length) {
+      const errEl = document.getElementById('cp-error');
+      errEl.style.display = '';
+      errEl.textContent = 'Erros em algumas lojas: ' + data.errors.map(e => `${e.board}: ${e.error}`).join(' | ');
+    }
+
+    _allItems = data.items || [];
+    _filterBoard = '';
+    renderAll();
+  } catch (e) {
+    const errEl = document.getElementById('cp-error');
+    errEl.style.display = '';
+    errEl.textContent = 'Erro ao carregar: ' + e.message;
+  } finally {
+    btn.classList.remove('loading');
+    btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg> Atualizar';
+  }
+}
+
+function renderAll() {
+  renderSummary();
+  renderStoreTotals();
+  renderTable();
+}
+
+function getFiltered() {
+  const status = document.getElementById('cpStatus').value;
+  return _allItems.filter(it => {
+    if (_filterBoard && it.board !== _filterBoard) return false;
+    if (status && it.status !== status) return false;
+    return true;
+  });
+}
+
+function renderSummary() {
+  const items = _allItems;
+  const aberto  = items.filter(i => i.status === 'aberto').reduce((s,i) => s + i.valor, 0);
+  const vencido = items.filter(i => i.status === 'vencido').reduce((s,i) => s + i.valor, 0);
+  const pago    = items.filter(i => i.status === 'pago').reduce((s,i) => s + i.valor, 0);
+  const total   = aberto + vencido + pago;
+
+  document.getElementById('cp-summary').innerHTML = `
+    <div class="cp-card"><div class="cp-card-label">Total Geral</div><div class="cp-card-value">${fmtBRL(total)}</div></div>
+    <div class="cp-card"><div class="cp-card-label">Em Aberto</div><div class="cp-card-value" style="color:var(--blue)">${fmtBRL(aberto)}</div></div>
+    <div class="cp-card"><div class="cp-card-label">Vencido</div><div class="cp-card-value red">${fmtBRL(vencido)}</div></div>
+    <div class="cp-card"><div class="cp-card-label">Pago</div><div class="cp-card-value green">${fmtBRL(pago)}</div></div>
+    <div class="cp-card"><div class="cp-card-label">Títulos</div><div class="cp-card-value">${items.length}</div></div>
+  `;
+}
+
+function renderStoreTotals() {
+  const byBoard = {};
+  _allItems.forEach(it => {
+    if (!byBoard[it.board]) byBoard[it.board] = { loja: it.loja, total: 0 };
+    byBoard[it.board].total += it.valor;
+  });
+  const el = document.getElementById('cp-store-totals');
+  if (!Object.keys(byBoard).length) { el.innerHTML = ''; return; }
+
+  const allBtn = `<div class="cp-store-badge ${!_filterBoard ? 'active' : ''}" data-board="">Todas as lojas</div>`;
+  const storeBtns = Object.entries(byBoard).map(([board, d]) =>
+    `<div class="cp-store-badge ${_filterBoard === board ? 'active' : ''}" data-board="${board}">${d.loja} <span>${fmtBRL(d.total)}</span></div>`
+  ).join('');
+
+  el.innerHTML = allBtn + storeBtns;
+  el.querySelectorAll('.cp-store-badge').forEach(b => {
+    b.addEventListener('click', () => { _filterBoard = b.dataset.board; renderAll(); });
+  });
+}
+
+function renderTable() {
+  let items = getFiltered();
+  const mult = _sortAsc ? 1 : -1;
+  items = [...items].sort((a, b) => {
+    const va = a[_sortCol] ?? '', vb = b[_sortCol] ?? '';
+    if (typeof va === 'number') return mult * (va - vb);
+    return mult * String(va).localeCompare(String(vb));
+  });
+
+  // update sort arrows
+  document.querySelectorAll('thead th').forEach(th => {
+    th.classList.toggle('sorted', th.dataset.col === _sortCol);
+    const arrow = th.querySelector('.sort-arrow');
+    if (th.dataset.col === _sortCol) arrow.textContent = _sortAsc ? '↑' : '↓';
+    else arrow.textContent = '↕';
+  });
+
+  const empty = document.getElementById('cp-empty');
+  const wrap  = document.getElementById('cpTableWrap');
+  const tbody = document.getElementById('cpTbody');
+
+  if (!items.length) { empty.style.display = ''; wrap.style.display = 'none'; return; }
+  empty.style.display = 'none'; wrap.style.display = '';
+
+  tbody.innerHTML = items.map(it => `
+    <tr>
+      <td class="td-loja">${it.loja}</td>
+      <td class="td-fornecedor" title="${it.fornecedor}">${it.fornecedor || '—'}</td>
+      <td class="td-doc">${it.documento || '—'}</td>
+      <td class="td-date">${fmtDate(it.vencimento)}</td>
+      <td class="td-valor">${fmtBRL(it.valor)}</td>
+      <td><span class="badge badge-${it.status}">${it.status}</span></td>
+      <td class="td-historico" title="${it.historico}">${it.historico || '—'}</td>
+    </tr>
+  `).join('');
+}
+
+// Init
+(function init() {
+  const today = getToday();
+  document.getElementById('cpDe').value  = getFirstOfMonth();
+  document.getElementById('cpAte').value = today;
+
+  document.getElementById('cpRefreshBtn').addEventListener('click', loadData);
+  document.getElementById('cpStatus').addEventListener('change', renderTable);
+
+  document.querySelectorAll('thead th[data-col]').forEach(th => {
+    th.addEventListener('click', () => {
+      if (_sortCol === th.dataset.col) _sortAsc = !_sortAsc;
+      else { _sortCol = th.dataset.col; _sortAsc = true; }
+      renderTable();
+    });
+  });
+
+  loadData();
+})();
+</script>
+</body>
+</html>
