@@ -2,7 +2,7 @@ services:
   - type: web
     name: gestao-lojas
     runtime: node
-    buildCommand: npm install
+    buildCommand: npm install && npx puppeteer browsers install chrome
     startCommand: npm start
     envVars:
       - key: PORT
