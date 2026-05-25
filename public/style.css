@@ -692,22 +692,25 @@ body {
 .logout-btn:hover { color: var(--down); border-color: var(--down); }
 
 .folgas-topbar-btn {
-  display: flex; align-items: center; gap: .35rem;
+  display: flex; align-items: center; gap: 0;
   background: var(--surface2); border: 1px solid var(--border);
   color: var(--muted); cursor: pointer; border-radius: .375rem;
-  font-size: .78rem; padding: .3rem .65rem;
-  font-family: inherit; transition: all .15s; white-space: nowrap;
+  font-size: 0; padding: .32rem .42rem;
+  font-family: inherit; transition: all .15s; white-space: nowrap; flex-shrink: 0;
 }
+.folgas-topbar-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
 .folgas-topbar-btn:hover { color: #58A6FF; border-color: #58A6FF; }
 
 /* ── Microvix sync button ────────────────────────────────────────── */
 .mx-sync-btn {
-  display: flex; align-items: center; gap: .35rem;
+  display: flex; align-items: center; gap: 0;
   background: var(--surface2); border: 1px solid var(--border);
   color: var(--muted); cursor: pointer; border-radius: .375rem;
-  font-size: .78rem; padding: .3rem .65rem;
-  font-family: inherit; transition: all .15s; white-space: nowrap;
+  font-size: 0; padding: .32rem .42rem;
+  font-family: inherit; transition: all .15s; white-space: nowrap; flex-shrink: 0;
 }
+.mx-sync-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+#mxSyncLabel { display: none; }
 .mx-sync-btn:hover { color: #58A6FF; border-color: #58A6FF; }
 .mx-sync-btn.syncing { color: var(--warn); border-color: var(--warn); pointer-events: none; }
 .mx-sync-btn.syncing #mxSyncIcon { animation: mxSpin .9s linear infinite; }
@@ -2326,14 +2329,7 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   .topbar-right::-webkit-scrollbar { display: none; }
 
   .folgas-topbar-btn,
-  .mx-sync-btn {
-    font-size: 0;
-    padding: .32rem .38rem;
-    gap: 0;
-    flex-shrink: 0;
-  }
-  .folgas-topbar-btn svg,
-  .mx-sync-btn svg { width: 16px; height: 16px; }
+  .mx-sync-btn { padding: .28rem .35rem; }
 
   /* Chip do usuário: oculto no mobile */
   .user-chip { display: none; }

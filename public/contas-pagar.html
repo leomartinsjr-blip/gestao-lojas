@@ -86,7 +86,10 @@
   .badge-pago    { background: rgba(63,185,80,.15);  color: var(--green); }
 
   #cp-empty { text-align: center; color: var(--text2); padding: 48px 16px; font-size: 13px; }
-  #cp-error { background: rgba(248,81,73,.1); border: 1px solid var(--red); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; color: var(--red); font-size: 12px; display: none; }
+  #cp-error { background: rgba(248,81,73,.1); border: 1px solid var(--red); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; color: var(--red); font-size: 12px; display: none; line-height: 1.6; }
+  #cp-diag { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; font-size: 12px; display: none; }
+  #cp-diag summary { cursor: pointer; color: var(--text2); font-weight: 600; margin-bottom: 6px; }
+  #cp-diag pre { color: var(--text2); font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; margin-top: 6px; }
 
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
@@ -137,6 +140,10 @@
 
 <div id="cp-body">
   <div id="cp-error"></div>
+  <details id="cp-diag">
+    <summary>Diagnóstico Microvix</summary>
+    <pre id="cp-diag-pre">Carregando…</pre>
+  </details>
   <div id="cp-summary"></div>
   <div id="cp-store-totals"></div>
   <div id="cp-table-container">
@@ -189,12 +196,17 @@ async function loadData() {
     if (data.errors?.length) {
       const errEl = document.getElementById('cp-error');
       errEl.style.display = '';
-      errEl.textContent = 'Erros em algumas lojas: ' + data.errors.map(e => `${e.board}: ${e.error}`).join(' | ');
+      errEl.innerHTML = '<strong>Erros em algumas lojas:</strong><br>' +
+        data.errors.map(e => `<span style="font-family:monospace">${e.board}: ${e.error}</span>`).join('<br>');
     }
 
     _allItems = data.items || [];
     _filterBoard = '';
     renderAll();
+
+    if (!_allItems.length && !data.errors?.length) {
+      runDiagnostic();
+    }
   } catch (e) {
     const errEl = document.getElementById('cp-error');
     errEl.style.display = '';
@@ -312,6 +324,21 @@ function renderTable() {
 
   loadData();
 })();
+
+async function runDiagnostic() {
+  const diagEl = document.getElementById('cp-diag');
+  const preEl  = document.getElementById('cp-diag-pre');
+  diagEl.style.display = '';
+  diagEl.open = true;
+  preEl.textContent = 'Consultando Microvix…';
+  try {
+    const r = await fetch('/api/contas-pagar/raw', { credentials: 'include' });
+    const d = await r.json();
+    preEl.textContent = JSON.stringify(d, null, 2);
+  } catch (e) {
+    preEl.textContent = 'Erro: ' + e.message;
+  }
+}
 </script>
 </body>
 </html>
