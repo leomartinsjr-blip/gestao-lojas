@@ -398,9 +398,10 @@ function defaultEntry(emp) {
   const comissaoTotal = r2(vendas * comissaoPct / 100);
 
   // Split para contabilidade: Total = comissaoContab + DSR + Prêmio
+  // DSR CLT = Comissão × (domingos+feriados) ÷ dias úteis trabalhados
   const premio = r2((tipo === 'gerente' || tipo === 'sub')
     ? (cfg.premioGerente || 0) : (cfg.premioVendedor || 0));
-  const dsr    = tot > 0 ? r2(comissaoTotal * df / tot) : 0;
+  const dsr    = du > 0 ? r2(comissaoTotal * df / du) : 0;
   const comissaoContab = r2(comissaoTotal - dsr - premio);
 
   // GM: complemento se abaixo da garantia mínima
@@ -488,7 +489,7 @@ function buildEmpForm(emp, entry) {
         </div>
         <div class="fp-field fp-split-row">
           <label>DSR (R$)</label>${inp(`fp-dsr-${emp.id}`, e.dsr)}
-          <span class="fp-split-hint">auto: ×${df}÷${du+df}</span>
+          <span class="fp-split-hint">= comissão × ${df} ÷ ${du}</span>
         </div>
         <div class="fp-field fp-split-row">
           <label>Prêmio (R$)</label>${inp(`fp-premio-${emp.id}`, e.premio)}
