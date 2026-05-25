@@ -56,35 +56,40 @@ async function initMongo() {
 }
 
 // ── DB helpers (async) ─────────────────────────────────────────────────────
-// In-memory cache: eliminates repeated MongoDB round-trips within the same request cycle.
-// Cache is invalidated on every writeDB call to keep data consistent.
-let _dbCache = null;
+// Short-lived cache: valid only while there are no pending writes.
+// Each readDB() after a writeDB() fetches fresh from MongoDB.
+let _dbCache     = null;
+let _dbCacheDirty = false; // true while a writeDB is in-flight
 
 async function readDB() {
-  if (_dbCache) return _dbCache;
+  if (_dbCache && !_dbCacheDirty) return JSON.parse(JSON.stringify(_dbCache));
   if (mongoDb) {
     const doc = await mongoDb.collection('store').findOne({ _id: 'main' });
-    if (!doc) { _dbCache = { nextId: 1, months: {}, cards: {} }; return _dbCache; }
+    if (!doc) { _dbCache = { nextId: 1, months: {}, cards: {} }; _dbCacheDirty = false; return JSON.parse(JSON.stringify(_dbCache)); }
     const { _id, ...data } = doc;
     _dbCache = data;
-    return _dbCache;
+    _dbCacheDirty = false;
+    return JSON.parse(JSON.stringify(_dbCache));
   }
-  if (!fs.existsSync(DATA_FILE)) { _dbCache = { nextId: 1, months: {}, cards: {} }; return _dbCache; }
-  try { _dbCache = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); return _dbCache; }
-  catch { _dbCache = { nextId: 1, months: {}, cards: {} }; return _dbCache; }
+  if (!fs.existsSync(DATA_FILE)) return { nextId: 1, months: {}, cards: {} };
+  try { const d = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); _dbCache = d; return JSON.parse(JSON.stringify(d)); }
+  catch { return { nextId: 1, months: {}, cards: {} }; }
 }
 
 async function writeDB(data) {
-  _dbCache = data; // update cache first so subsequent reads within same tick see new data
+  _dbCache = data;
+  _dbCacheDirty = true;
   if (mongoDb) {
     await mongoDb.collection('store').replaceOne(
       { _id: 'main' },
       { _id: 'main', ...data },
       { upsert: true }
     );
+    _dbCacheDirty = false;
     return;
   }
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
+  _dbCacheDirty = false;
 }
 
 function nextId(db) {
