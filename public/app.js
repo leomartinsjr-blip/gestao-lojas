@@ -4780,6 +4780,7 @@ function _fmtNFDate(iso) {
 const PENDENCIA_USERS = [
   { key: 'leonardo',   label: 'Leonardo',   color: '#58A6FF' },
   { key: 'ingrid',     label: 'Ingrid',     color: '#F78166' },
+  { key: 'gustavo',    label: 'Gustavo',    color: '#E3B341' },
   { key: 'escritorio', label: 'Escritório', color: '#3FB950' },
 ];
 
