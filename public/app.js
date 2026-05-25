@@ -6671,12 +6671,73 @@ function initUsersModal() {
 }
 
 // ── Lista da Vez (Indeva) ─────────────────────────────────────────────────
+
+function _attachIndevaTouchDrag(cards, zones, onDrop) {
+  cards.forEach(card => {
+    let startX, startY, ghost = null, dragging = false, activeZone = null;
+
+    card.addEventListener('touchstart', e => {
+      const t = e.touches[0];
+      startX = t.clientX; startY = t.clientY;
+      dragging = false; ghost = null; activeZone = null;
+    }, { passive: true });
+
+    card.addEventListener('touchmove', e => {
+      const t = e.touches[0];
+      const dx = t.clientX - startX, dy = t.clientY - startY;
+
+      if (!dragging && Math.hypot(dx, dy) > 8) {
+        dragging = true;
+        const rect = card.getBoundingClientRect();
+        ghost = card.cloneNode(true);
+        Object.assign(ghost.style, {
+          position: 'fixed', zIndex: '9999',
+          left: rect.left + 'px', top: rect.top + 'px',
+          width: rect.width + 'px',
+          opacity: '0.88', pointerEvents: 'none',
+          transform: 'scale(1.05) rotate(1.5deg)',
+          boxShadow: '0 10px 32px rgba(0,0,0,.5)',
+          transition: 'none', borderRadius: '10px',
+        });
+        document.body.appendChild(ghost);
+        card.style.opacity = '0.2';
+      }
+
+      if (!dragging) return;
+      e.preventDefault();
+
+      const rect = card.getBoundingClientRect();
+      ghost.style.left = (t.clientX - rect.width / 2) + 'px';
+      ghost.style.top  = (t.clientY - rect.height / 2) + 'px';
+
+      ghost.style.display = 'none';
+      const el = document.elementFromPoint(t.clientX, t.clientY);
+      ghost.style.display = '';
+      const zone = el?.closest('.indeva-drop-zone');
+      if (zone !== activeZone) {
+        zones.forEach(z => z.classList.remove('indeva-drop-hover'));
+        if (zone) zone.classList.add('indeva-drop-hover');
+        activeZone = zone;
+      }
+    }, { passive: false });
+
+    card.addEventListener('touchend', () => {
+      if (!ghost) return;
+      ghost.remove(); ghost = null;
+      card.style.opacity = '';
+      zones.forEach(z => z.classList.remove('indeva-drop-hover'));
+      if (activeZone) onDrop(activeZone, parseInt(card.dataset.id));
+      dragging = false; activeZone = null;
+    });
+  });
+}
 const INDEVA_STORES = ['delrey','minas','contagem','estacao','tommy'];
 const INDEVA_MOTIVOS = ['Preço','Tamanho / Modelagem','Não gostou do produto',
   'Sem estoque no tamanho','Só estava olhando','Voltará depois','Concorrência','Outro'];
 
-let _indevaBoard = null;
-let _indevaView  = 'hoje';
+let _indevaBoard     = null;
+let _indevaView      = 'hoje';
+let _indevaLastState = null;
 
 function openIndevaModal() {
   const userBoard = S.user?.board;
@@ -6723,6 +6784,7 @@ async function _loadIndeva() {
 }
 
 function _renderIndeva(body, state) {
+  _indevaLastState = state;
   const { fila, atendendo, atendimentos } = state;
   const atendArr = Array.isArray(atendendo) ? atendendo : (atendendo != null ? [atendendo] : []);
   const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && e.isVendedor!==false && !e.inativo);
@@ -6860,13 +6922,33 @@ function _renderIndeva(body, state) {
     });
   });
 
+  _attachIndevaTouchDrag(
+    [...body.querySelectorAll('.indeva-draggable')],
+    [espera, atendZone].filter(Boolean),
+    (zone, id) => {
+      if (zone.dataset.zone === 'espera') _indevaEntrar(id);
+      else _indevaAtender(id);
+    }
+  );
+
   pool?.querySelectorAll('.indeva-vendor-card').forEach(card =>
     card.addEventListener('click', () => _indevaEntrar(parseInt(card.dataset.empid)))
   );
   espera?.querySelectorAll('.indeva-queue-card').forEach(card =>
     card.addEventListener('click', e => {
       if (e.target.classList.contains('indeva-remove-btn')) return;
+      const emp = (S.employees||[]).find(x => x.id === parseInt(card.dataset.empid));
+      if (e.target.closest('.indeva-vendor-info') && emp) {
+        _showIndevaGoalsOverlay(emp, _indevaLastState); return;
+      }
       _indevaAtender(parseInt(card.dataset.empid));
+    })
+  );
+  atendZone?.querySelectorAll('.indeva-atend-card').forEach(card =>
+    card.querySelector('.indeva-atend-card-top')?.addEventListener('click', e => {
+      if (e.target.closest('.indeva-remove-btn')) return;
+      const emp = (S.employees||[]).find(x => x.id === parseInt(card.dataset.empid));
+      if (emp) _showIndevaGoalsOverlay(emp, _indevaLastState);
     })
   );
 
@@ -6895,68 +6977,191 @@ function _renderIndeva(body, state) {
   );
 }
 
-function _indevaGoalsData(emp) {
+function _showIndevaGoalsOverlay(emp, state) {
   const pad = n => String(n).padStart(2,'0');
-  const t = new Date();
-  const todayStr = `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
-  const vsale = S.vsales?.[emp.id] || { meta:{mensal:0}, entries:{} };
-  const todayValor = vsale.entries?.[todayStr]?.value || 0;
-  const monthMeta = vsale.meta?.mensal || 0;
+  const t   = new Date();
+  const todayStr  = `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
   const curPrefix = `${t.getFullYear()}-${pad(t.getMonth()+1)}-`;
-  let monthValor = 0;
-  for (const [d, entry] of Object.entries(vsale.entries||{})) {
-    if (d.startsWith(curPrefix)) monthValor += entry.value||0;
-  }
-  const monthPct = monthMeta > 0 ? monthValor/monthMeta*100 : null;
-  const week = getWeekForDate(todayStr);
-  const k = calcWeekKpis(emp, week);
-  return { todayValor, monthValor, monthMeta, monthPct, week: k };
-}
+  const daysInMonth = new Date(t.getFullYear(), t.getMonth()+1, 0).getDate();
 
-function _showIndevaGoalsOverlay(emp) {
-  const fBRL = v => v > 0 ? 'R$ ' + new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2}).format(v) : '—';
-  const fPct = v => v==null ? '—' : v.toFixed(1)+'%';
-  const clsPct = v => v==null?'':v>=100?'kpi-pos':v>=80?'kpi-warn':'kpi-neg';
-  const bar = p => {
-    const pct = Math.min(p||0, 100);
-    const c = pct>=100?'#3FB950':pct>=80?'#D29922':'#F85149';
-    return `<div class="ig-bar"><div class="ig-bar-fill" style="width:${pct}%;background:${c}"></div></div>`;
+  const vsale       = S.vsales?.[emp.id] || { meta:{mensal:0}, entries:{} };
+  const metaMensal  = vsale.meta?.mensal || 0;
+  const todayEntry  = vsale.entries?.[todayStr] || {};
+  const todayValor  = todayEntry.value || 0;
+  const todayAtendMx = todayEntry.atendimentos || 0;
+  const todayPecas  = todayEntry.pecas || 0;
+
+  // Meta diária (peso do dia × meta mensal)
+  const todayWeight = S.weights?.[todayStr] ?? (100 / daysInMonth);
+  const todayMeta   = metaMensal * todayWeight / 100;
+  const todayTicket = todayAtendMx > 0 ? todayValor / todayAtendMx : null;
+
+  // Acumulado mensal (valor + peso)
+  let monthValor = 0, monthWeightAccum = 0;
+  for (const [d, e] of Object.entries(vsale.entries||{})) {
+    if (d.startsWith(curPrefix) && d <= todayStr) monthValor += e.value||0;
+  }
+  for (const [d, w] of Object.entries(S.weights||{})) {
+    if (d.startsWith(curPrefix) && d <= todayStr) monthWeightAccum += w;
+  }
+  const metaAcum = metaMensal * monthWeightAccum / 100;
+  const monthPct = metaAcum > 0 ? monthValor / metaAcum * 100 : null;
+
+  // Semana
+  const week = getWeekForDate(todayStr);
+  const k    = calcWeekKpis(emp, week);
+
+  // Indeva — atendimentos do dia deste vendedor
+  const allAtend  = (state?.atendimentos || []);
+  const empAtend  = allAtend.filter(a => a.empId === emp.id);
+  const indevaTotal = empAtend.length;
+  const indevaConv  = empAtend.filter(a => a.vendeu).length;
+  const indevaConvPct = indevaTotal > 0 ? indevaConv / indevaTotal * 100 : null;
+
+  // Usabilidade = Indeva convertidos / vendas Microvix hoje
+  const usabilidade = todayAtendMx > 0 ? Math.min(indevaConv / todayAtendMx * 100, 100) : null;
+
+  // Médias da loja (para comparativo)
+  const boardEmps = (S.employees||[]).filter(e => e.board===emp.board && e.isVendedor!==false && !e.inativo);
+  const lojaConvPct = allAtend.length > 0 ? allAtend.filter(a=>a.vendeu).length / allAtend.length * 100 : null;
+  let lojaPASum = 0, lojaPACnt = 0, lojaVSum = 0, lojaASum = 0;
+  for (const e of boardEmps) {
+    const kk = calcWeekKpis(e, week);
+    if (kk.pa != null) { lojaPASum += kk.pa; lojaPACnt++; }
+    const en = S.vsales?.[e.id]?.entries?.[todayStr] || {};
+    lojaVSum += en.value||0; lojaASum += en.atendimentos||0;
+  }
+  const lojaPA     = lojaPACnt > 0 ? lojaPASum / lojaPACnt : null;
+  const lojaTicket = lojaASum  > 0 ? lojaVSum  / lojaASum  : null;
+
+  // Detalhamento semanal (tab 2)
+  const startDate = new Date(week.startStr + 'T00:00:00');
+  const weekRows = [];
+  for (let i = 0; i < 7; i++) {
+    const d  = new Date(startDate); d.setDate(d.getDate()+i);
+    const ds = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    const w  = S.weights?.[ds] ?? (100 / daysInMonth);
+    const meta    = metaMensal * w / 100;
+    const entry   = vsale.entries?.[ds] || {};
+    const vendido = entry.value || 0;
+    const pct     = meta > 0 ? vendido / meta * 100 : null;
+    const diff    = vendido - meta;
+    const days    = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+    const dt      = new Date(ds + 'T12:00:00');
+    weekRows.push({ ds, meta, vendido, pct, diff, future: ds > todayStr, lbl: `${days[dt.getDay()]} ${ds.slice(8)}/${ds.slice(5,7)}` });
+  }
+
+  // Helpers de formatação
+  const fBRL  = v => v > 0 ? 'R$ ' + new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2}).format(v) : '—';
+  const fPct  = v => v == null ? '—' : v.toFixed(1) + '%';
+  const fDec  = v => v == null ? '—' : v.toFixed(2);
+  const clsPct = v => v==null?'':v>=100?'ig-pos':v>=80?'ig-warn':'ig-neg';
+  const arrow  = (val, ref) => {
+    if (val==null || ref==null) return '';
+    return val >= ref ? '<span class="ig-arrow ig-up">▲</span>' : '<span class="ig-arrow ig-dn">▼</span>';
   };
-  const g = _indevaGoalsData(emp);
+  const todayBarPct   = todayMeta > 0 ? Math.min(todayValor / todayMeta * 100, 100) : 0;
+  const todayBarColor = todayBarPct>=100?'#3FB950':todayBarPct>=80?'#D29922':'#F85149';
+
   const overlay = document.createElement('div');
   overlay.className = 'ig-overlay';
   overlay.innerHTML = `
-    <div class="ig-modal">
+    <div class="ig-modal ig-modal-v2">
       <div class="ig-hdr">
-        ${empAvatarHtml(emp, 72)}
+        ${empAvatarHtml(emp, 52)}
         <div class="ig-hdr-info">
           <div class="ig-emp-name">${emp.apelido||emp.name}</div>
           <div class="ig-emp-cargo">${emp.cargo||''}</div>
         </div>
         <button class="ig-close">✕</button>
       </div>
-      <div class="ig-rows">
-        <div class="ig-row">
-          <span class="ig-lbl">Hoje</span>
-          <span class="ig-val">${fBRL(g.todayValor)}</span>
+      <div class="ig-tabs">
+        <button class="ig-tab active" data-tab="indicadores">Indicadores</button>
+        <button class="ig-tab" data-tab="semana">Semana</button>
+      </div>
+
+      <div class="ig-tab-body" data-tab="indicadores">
+        <div class="ig-kpi-grid">
+          <div class="ig-kpi-card">
+            <div class="ig-kpi-lbl">Taxa de conversão</div>
+            <div class="ig-kpi-val">${fPct(indevaConvPct)} ${arrow(indevaConvPct, lojaConvPct)}</div>
+            <div class="ig-kpi-ref">Loja: ${fPct(lojaConvPct)}</div>
+          </div>
+          <div class="ig-kpi-card">
+            <div class="ig-kpi-lbl">PA (peças/atend.)</div>
+            <div class="ig-kpi-val">${fDec(k.pa)} ${arrow(k.pa, lojaPA)}</div>
+            <div class="ig-kpi-ref">Loja: ${fDec(lojaPA)}</div>
+          </div>
+          <div class="ig-kpi-card">
+            <div class="ig-kpi-lbl">Ticket médio</div>
+            <div class="ig-kpi-val">${fBRL(todayTicket)} ${arrow(todayTicket, lojaTicket)}</div>
+            <div class="ig-kpi-ref">Loja: ${fBRL(lojaTicket)}</div>
+          </div>
+          <div class="ig-kpi-card">
+            <div class="ig-kpi-lbl">Usabilidade</div>
+            <div class="ig-kpi-val">${fPct(usabilidade)}</div>
+            <div class="ig-kpi-ref">${indevaConv} Indeva / ${todayAtendMx} Microvix</div>
+          </div>
         </div>
-        <div class="ig-row">
-          <span class="ig-lbl">Semana</span>
-          <span class="ig-val">${fBRL(g.week.valor||0)} <span class="ig-meta">/ ${fBRL(g.week.wMeta||0)}</span></span>
-          <span class="ig-pct ${clsPct(g.week.pctMeta)}">${fPct(g.week.pctMeta)}</span>
-          ${bar(g.week.pctMeta)}
+
+        <div class="ig-section">
+          <div class="ig-section-lbl">Vendas de hoje</div>
+          <div class="ig-today-val">${fBRL(todayValor)}</div>
+          <div class="ig-bar-track"><div class="ig-bar-fill2" style="width:${todayBarPct}%;background:${todayBarColor}"></div></div>
+          <div class="ig-bar-ref">Meta: ${fBRL(todayMeta)}</div>
         </div>
-        <div class="ig-row">
-          <span class="ig-lbl">Mês</span>
-          <span class="ig-val">${fBRL(g.monthValor)} <span class="ig-meta">/ ${fBRL(g.monthMeta)}</span></span>
-          <span class="ig-pct ${clsPct(g.monthPct)}">${fPct(g.monthPct)}</span>
-          ${bar(g.monthPct)}
+
+        <div class="ig-section">
+          <div class="ig-section-lbl">Meta do Mês</div>
+          <table class="ig-table">
+            <thead><tr><th>Meta Acum.</th><th>Vendido AC</th><th>%</th></tr></thead>
+            <tbody><tr>
+              <td>${fBRL(metaAcum)}</td>
+              <td>${fBRL(monthValor)}</td>
+              <td class="${clsPct(monthPct)}">${fPct(monthPct)}</td>
+            </tr></tbody>
+          </table>
         </div>
       </div>
-      <button class="ig-confirm-btn">Entendido</button>
+
+      <div class="ig-tab-body hidden" data-tab="semana">
+        <div class="ig-section">
+          <div class="ig-period-hdr">
+            <span class="ig-period-dates">${week.startStr.slice(8)}/${week.startStr.slice(5,7)} — ${week.endStr.slice(8)}/${week.endStr.slice(5,7)}</span>
+            <span class="ig-period-meta">Meta: ${fBRL(k.wMeta)}</span>
+          </div>
+          <table class="ig-table">
+            <thead><tr><th>Dia</th><th>Meta</th><th>Vendido</th><th>%</th><th>Dif.</th></tr></thead>
+            <tbody>
+              ${weekRows.map(r => `<tr class="${r.future?'ig-tr-future':''}">
+                <td>${r.lbl}</td>
+                <td>${fBRL(r.meta)}</td>
+                <td>${r.future?'—':fBRL(r.vendido)}</td>
+                <td class="${r.future?'':clsPct(r.pct)}">${r.future?'—':fPct(r.pct)}</td>
+                <td class="${r.future?'':(r.diff>=0?'ig-pos':'ig-neg')}">${r.future?'—':(r.diff>=0?'+':'')+fBRL(Math.abs(r.diff))}</td>
+              </tr>`).join('')}
+            </tbody>
+            <tfoot><tr>
+              <td><strong>Total</strong></td>
+              <td>${fBRL(k.wMeta)}</td>
+              <td><strong>${fBRL(k.valor||0)}</strong></td>
+              <td class="${clsPct(k.pctMeta)}"><strong>${fPct(k.pctMeta)}</strong></td>
+              <td class="${(k.valor||0)-k.wMeta>=0?'ig-pos':'ig-neg'}"><strong>${((k.valor||0)-k.wMeta>=0?'+':'')+fBRL(Math.abs((k.valor||0)-k.wMeta))}</strong></td>
+            </tr></tfoot>
+          </table>
+        </div>
+      </div>
     </div>`;
+
+  overlay.querySelectorAll('.ig-tab').forEach(btn =>
+    btn.addEventListener('click', () => {
+      overlay.querySelectorAll('.ig-tab').forEach(b => b.classList.remove('active'));
+      overlay.querySelectorAll('.ig-tab-body').forEach(b => b.classList.add('hidden'));
+      btn.classList.add('active');
+      overlay.querySelector(`.ig-tab-body[data-tab="${btn.dataset.tab}"]`).classList.remove('hidden');
+    })
+  );
   overlay.querySelector('.ig-close').addEventListener('click', () => overlay.remove());
-  overlay.querySelector('.ig-confirm-btn').addEventListener('click', () => overlay.remove());
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.remove(); });
   document.body.appendChild(overlay);
 }
@@ -6972,7 +7177,7 @@ async function _indevaEntrar(empId) {
     const isFirstEntry = !state.atendimentos.some(a => a.empId === empId);
     if (isFirstEntry) {
       const emp = (S.employees||[]).find(e => e.id === empId);
-      if (emp) _showIndevaGoalsOverlay(emp);
+      if (emp) _showIndevaGoalsOverlay(emp, state);
     }
   } catch(e) { toast('Erro: '+e.message, true); }
 }
