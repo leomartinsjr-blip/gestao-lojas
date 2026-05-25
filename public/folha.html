@@ -121,7 +121,6 @@ a{color:inherit;text-decoration:none}
   <div class="fp-period">
     <select id="fpMonth"></select>
     <select id="fpYear"></select>
-    <button class="fp-btn" onclick="fpOpenConfig()">Configurar Lojas</button>
   </div>
 </div>
 
@@ -135,12 +134,11 @@ a{color:inherit;text-decoration:none}
 <!-- Config Modal -->
 <div class="fp-modal-overlay" id="fpConfigModal">
   <div class="fp-modal">
-    <h3>Configuração por Loja</h3>
-    <div class="fp-modal-tabs" id="fpConfigTabs"></div>
+    <h3 id="fpConfigTabs">Configuração</h3>
     <div id="fpConfigContents"></div>
     <div class="fp-modal-actions">
       <button class="fp-btn" onclick="fpCloseConfig()">Cancelar</button>
-      <button class="fp-btn primary" onclick="fpSaveConfig()">Salvar Configuração</button>
+      <button class="fp-btn primary" onclick="fpSaveConfig()">Salvar</button>
     </div>
   </div>
 </div>
