@@ -5136,7 +5136,7 @@ function initCampanhasModal() {
 
 // Vendedor = isVendedor true, ou cargo sub gerente/gerente (mantém compatibilidade com registros antigos)
 function isVend(e) {
-  return isVend(e) || /gerente/i.test(e.cargo || '');
+  return e.isVendedor !== false || /gerente/i.test(e.cargo || '');
 }
 
 // ── Recebimento de NF ─────────────────────────────────────────────────────
