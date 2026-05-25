@@ -6935,6 +6935,7 @@ function _renderIndeva(body, state) {
               <span class="log-hora">${a.hora}</span>
               <span class="log-nome">${a.nome}</span>
               <span class="log-result">${a.vendeu?'✓ Vendeu':'✗ '+(a.motivo||'Não vendeu')}</span>
+              <button class="log-del-btn" data-atid="${a.id}" title="Apagar atendimento">✕</button>
             </div>`).join('')}</div>`}
     </div>`;
 
@@ -7006,6 +7007,18 @@ function _renderIndeva(body, state) {
       const motivo = chip.dataset.motivo;
       const id = parseInt(chip.dataset.id);
       await _indevaAtend(id, false, motivo);
+    })
+  );
+  body.querySelectorAll('.log-del-btn').forEach(btn =>
+    btn.addEventListener('click', async e => {
+      e.stopPropagation();
+      const atId = btn.dataset.atid;
+      try {
+        const r = await fetch(`/api/indeva/${_indevaBoard}/atendimento/${atId}`, { method: 'DELETE' });
+        if (!r.ok) throw new Error(await r.text());
+        const state = await r.json();
+        _renderIndeva(document.getElementById('indevaBody'), state);
+      } catch(err) { toast('Erro: ' + err.message, true); }
     })
   );
 }

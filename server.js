@@ -3209,6 +3209,24 @@ app.get('/api/indeva-stats/:year/:month', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.delete('/api/indeva/:board/atendimento/:id', requireAuth, async (req, res) => {
+  try {
+    const { board, id } = req.params;
+    if (!INDEVA_STORES.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
+    const user = req.session.user;
+    if (user.board && user.board !== 'escritorio' && user.board !== board)
+      return res.status(403).json({ error: 'Sem acesso' });
+    const db = await readDB();
+    const store = getIndevaStore(db, board);
+    const atId = parseInt(id);
+    const before = store.atendimentos.length;
+    store.atendimentos = store.atendimentos.filter(a => a.id !== atId);
+    if (store.atendimentos.length === before) return res.status(404).json({ error: 'Atendimento não encontrado' });
+    await writeDB(db);
+    res.json(store);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/indeva', (req, res) => res.sendFile(path.join(__dirname, 'public/indeva.html')));
 
 // ── Start ──────────────────────────────────────────────────────────────────
