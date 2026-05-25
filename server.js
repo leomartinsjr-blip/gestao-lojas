@@ -491,6 +491,7 @@ app.delete('/api/employees/:id', requireAuth, async (req, res) => {
 });
 
 // ── POST /api/employees/:id/photo ──────────────────────────────────────────
+// Stores photo as base64 data URL in the DB (survives deploys/restarts)
 app.post('/api/employees/:id/photo', requireAuth, upload.single('photo'), async (req, res) => {
   try {
     const id = parseInt(req.params.id);
@@ -498,12 +499,27 @@ app.post('/api/employees/:id/photo', requireAuth, upload.single('photo'), async 
     const db  = await readDB();
     const idx = (db.employees || []).findIndex(e => e.id === id);
     if (idx === -1) return res.status(404).json({ error: 'not found' });
+
+    // Convert to base64 data URL so it persists in the database regardless of filesystem
+    let fileData;
+    if (req.file.path) {
+      fileData = fs.readFileSync(req.file.path);
+      try { fs.unlinkSync(req.file.path); } catch {}
+    } else {
+      fileData = req.file.buffer;
+    }
+    const mime = req.file.mimetype || 'image/jpeg';
+    const dataUrl = `data:${mime};base64,${fileData.toString('base64')}`;
+
+    // Clean up old disk file if it was a path-based URL
     const old = db.employees[idx].foto;
-    if (old) try { fs.unlinkSync(path.join(UPLOADS_DIR, path.basename(old))); } catch {}
-    const url = '/uploads/' + req.file.filename;
-    db.employees[idx].foto = url;
+    if (old && old.startsWith('/uploads/')) {
+      try { fs.unlinkSync(path.join(UPLOADS_DIR, path.basename(old))); } catch {}
+    }
+
+    db.employees[idx].foto = dataUrl;
     await writeDB(db);
-    res.json({ url });
+    res.json({ url: dataUrl });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2289,19 +2305,21 @@ app.post('/api/microvix/sync-photos', requireAdmin, async (req, res) => {
           continue;
         }
 
-        const filename = `emp-mx-${emp.id}.jpg`;
-        const dest     = path.join(UPLOADS_DIR, filename);
+        const tmpFile  = path.join(UPLOADS_DIR, `emp-mx-${emp.id}-tmp.jpg`);
 
         try {
-          await downloadUrl(fotoUrl, dest);
-          // Remove old photo file if it was a different file
+          await downloadUrl(fotoUrl, tmpFile);
+          const fileData = fs.readFileSync(tmpFile);
+          try { fs.unlinkSync(tmpFile); } catch {}
+          const dataUrl = `data:image/jpeg;base64,${fileData.toString('base64')}`;
+          // Remove old disk file if any
           const old = emp.foto;
-          if (old && path.basename(old) !== filename) {
+          if (old && old.startsWith('/uploads/')) {
             try { fs.unlinkSync(path.join(UPLOADS_DIR, path.basename(old))); } catch {}
           }
-          emp.foto = `/uploads/${filename}`;
+          emp.foto = dataUrl;
           result.updated++;
-          console.log(`[Microvix/${board}] Foto salva: ${emp.name} → ${filename}`);
+          console.log(`[Microvix/${board}] Foto salva (base64): ${emp.name}`);
         } catch (e) {
           result.errors.push(`${emp.name}: ${e.message}`);
           console.error(`[Microvix/${board}] Erro ao baixar foto de ${emp.name}:`, e.message);
