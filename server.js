@@ -1,5 +1,6 @@
 require('dotenv').config();
 const express    = require('express');
+const compress   = require('compression');
 const session    = require('express-session');
 const { MongoStore } = require('connect-mongo');
 const multer     = require('multer');
@@ -55,19 +56,26 @@ async function initMongo() {
 }
 
 // ── DB helpers (async) ─────────────────────────────────────────────────────
+// In-memory cache: eliminates repeated MongoDB round-trips within the same request cycle.
+// Cache is invalidated on every writeDB call to keep data consistent.
+let _dbCache = null;
+
 async function readDB() {
+  if (_dbCache) return _dbCache;
   if (mongoDb) {
     const doc = await mongoDb.collection('store').findOne({ _id: 'main' });
-    if (!doc) return { nextId: 1, months: {}, cards: {} };
+    if (!doc) { _dbCache = { nextId: 1, months: {}, cards: {} }; return _dbCache; }
     const { _id, ...data } = doc;
-    return data;
+    _dbCache = data;
+    return _dbCache;
   }
-  if (!fs.existsSync(DATA_FILE)) return { nextId: 1, months: {}, cards: {} };
-  try { return JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); }
-  catch { return { nextId: 1, months: {}, cards: {} }; }
+  if (!fs.existsSync(DATA_FILE)) { _dbCache = { nextId: 1, months: {}, cards: {} }; return _dbCache; }
+  try { _dbCache = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); return _dbCache; }
+  catch { _dbCache = { nextId: 1, months: {}, cards: {} }; return _dbCache; }
 }
 
 async function writeDB(data) {
+  _dbCache = data; // update cache first so subsequent reads within same tick see new data
   if (mongoDb) {
     await mongoDb.collection('store').replaceOne(
       { _id: 'main' },
@@ -136,6 +144,7 @@ if (MONGODB_URI) {
   sessionOpts.store = MongoStore.create({ mongoUrl: MONGODB_URI, dbName: 'gestao_lojas', ttl: 8 * 3600 });
 }
 
+app.use(compress());
 app.use(express.json({ limit: '50mb' }));
 app.use(session(sessionOpts));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -2531,6 +2540,22 @@ async function _getCatalog(lojas) {
   const chave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
   try {
     const rows = await fetchProdutos(cnpj, chave, 0);
+    if (rows.length > 0) {
+      // Log de diagnóstico — mostra campos disponíveis no primeiro registro
+      const allKeys = Object.keys(rows[0]);
+      const priceKeys = allKeys.filter(k => /preco|price|valor|vlr/i.test(k));
+      console.log('[Catalog] Campos do LinxProdutos:', allKeys.join(', '));
+      console.log('[Catalog] Campos de preço:', priceKeys.join(', ') || '(nenhum)');
+    }
+    // Busca case-insensitive para campos de preço — nomes variam por conta Microvix
+    const findField = (r, ...terms) => {
+      const keys = Object.keys(r);
+      for (const term of terms) {
+        const k = keys.find(k => k.toLowerCase().replace(/_/g,'') === term.toLowerCase().replace(/_/g,''));
+        if (k && r[k] && r[k] !== '0' && r[k] !== '') return r[k];
+      }
+      return '0';
+    };
     const map  = {};
     for (const r of rows) {
       const cod = String(r.cod_produto || '').trim();
@@ -2542,8 +2567,8 @@ async function _getCatalog(lojas) {
         linha:       (r.desc_linha   || '').trim(),
         desc_cor:    (r.desc_cor     || '').trim(),
         desc_tam:    (r.desc_tamanho || '').trim(),
-        preco_cheio: parseBrNum(r.preco_venda       || r.vlr_venda     || '0'),
-        preco_promo: parseBrNum(r.preco_promocional || r.vlr_promo     || '0'),
+        preco_cheio: parseBrNum(findField(r, 'preco_venda', 'precovenda', 'vlr_venda', 'vlrvenda', 'preco', 'valor_venda')),
+        preco_promo: parseBrNum(findField(r, 'preco_promocional', 'precopromocional', 'vlr_promo', 'vlrpromo', 'preco_promo', 'precopromocao')),
       };
     }
     _catalogCache   = map;
@@ -2775,9 +2800,24 @@ function _transBoards(reqLojas) {
 }
 
 // GET /api/catalog — catálogo de produtos do Microvix (para cálculo client-side)
+// ?debug=1 → retorna amostra com campos brutos para diagnóstico de preços
 app.get('/api/catalog', requireAdmin, async (req, res) => {
   try {
     const lojas = (() => { try { return JSON.parse(process.env.MICROVIX_LOJAS || '{}'); } catch { return {}; } })();
+    // Debug: mostra campos brutos do LinxProdutos para diagnosticar nomes de campos de preço
+    if (req.query.debug === '1') {
+      const { fetchProdutos } = require('./services/microvix');
+      const firstBoard = Object.keys(lojas)[0];
+      if (!firstBoard) return res.json({ error: 'Nenhuma loja configurada' });
+      const cnpj  = lojas[firstBoard].replace(/\D/g, '');
+      const chave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+      const rows  = await fetchProdutos(cnpj, chave, 0);
+      const sample = rows.slice(0, 3);
+      const priceFields = sample.length > 0
+        ? Object.keys(sample[0]).filter(k => /preco|price|valor|vlr/i.test(k))
+        : [];
+      return res.json({ total: rows.length, fields: sample[0] ? Object.keys(sample[0]) : [], priceFields, sample });
+    }
     const catalog = await _getCatalog(lojas).catch(() => ({}));
     res.json(catalog);
   } catch (e) {
