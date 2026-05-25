@@ -3288,7 +3288,7 @@ app.get('/api/contas-pagar', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/contas-pagar/raw — testa múltiplos nomes de comando até achar o correto
+// GET /api/contas-pagar/raw — testa múltiplas combinações de comando/parâmetros
 app.get('/api/contas-pagar/raw', requireAdmin, async (req, res) => {
   try {
     const { board, de, ate } = req.query;
@@ -3300,12 +3300,17 @@ app.get('/api/contas-pagar/raw', requireAdmin, async (req, res) => {
     const dtIni = de  || today.slice(0,7)+'-01';
     const dtFin = ate || today;
 
+    // Converte YYYY-MM-DD → DD/MM/YYYY
+    const toBR = s => s.split('-').reverse().join('/');
+
     const CANDIDATES = [
-      { cmd: 'LinxContasPagar',           params: [{ id:'data_inicial', valor:dtIni },{ id:'data_fim', valor:dtFin }] },
-      { cmd: 'LinxContasPagar',           params: [{ id:'data_ini',     valor:dtIni },{ id:'data_fin', valor:dtFin }] },
-      { cmd: 'LinxContasAPagar',          params: [{ id:'data_inicial', valor:dtIni },{ id:'data_fim', valor:dtFin }] },
-      { cmd: 'LinxContasFinanceiro',      params: [{ id:'data_inicial', valor:dtIni },{ id:'data_fim', valor:dtFin }] },
-      { cmd: 'LinxLancamentosFinanceiros',params: [{ id:'data_inicial', valor:dtIni },{ id:'data_fim', valor:dtFin }] },
+      { label:'LinxContasPagar + data_inicial YYYY',    cmd:'LinxContasPagar',  params:[{id:'data_inicial',valor:dtIni},{id:'data_fim',valor:dtFin}] },
+      { label:'LinxContasPagar + data_inicial DD/MM',   cmd:'LinxContasPagar',  params:[{id:'data_inicial',valor:toBR(dtIni)},{id:'data_fim',valor:toBR(dtFin)}] },
+      { label:'LinxContasPagar sem datas',              cmd:'LinxContasPagar',  params:[] },
+      { label:'LinxContasAPagar + data_inicial YYYY',   cmd:'LinxContasAPagar', params:[{id:'data_inicial',valor:dtIni},{id:'data_fim',valor:dtFin}] },
+      { label:'LinxContasAPagar sem datas',             cmd:'LinxContasAPagar', params:[] },
+      { label:'LinxTitulosPagar + data_inicial YYYY',   cmd:'LinxTitulosPagar', params:[{id:'data_inicial',valor:dtIni},{id:'data_fim',valor:dtFin}] },
+      { label:'LinxTitulosPagar sem datas',             cmd:'LinxTitulosPagar', params:[] },
     ];
 
     const results = [];
@@ -3317,13 +3322,13 @@ app.get('/api/contas-pagar/raw', requireAdmin, async (req, res) => {
         const isErr = raw.includes('<ResponseSuccess>False</ResponseSuccess>');
         const errMsg = isErr ? (raw.match(/<Message>([^<]+)<\/Message>/)||[])[1] : null;
         const rows = (!isXml && !isErr) ? parseCsv(raw) : [];
-        results.push({ cmd: c.cmd, params: c.params.map(p=>p.id), isXml, isErr, errMsg, rowCount: rows.length, fields: rows[0] ? Object.keys(rows[0]) : [], preview: raw.slice(0,200) });
-        if (!isErr && !isXml && rows.length > 0) break; // achou
+        results.push({ label:c.label, isErr, errMsg, rowCount:rows.length, fields:rows[0]?Object.keys(rows[0]):[], rawSnippet:raw.slice(0,300) });
+        if (!isErr && !isXml && rows.length > 0) break;
       } catch (e) {
-        results.push({ cmd: c.cmd, error: e.message });
+        results.push({ label: c.label, error: e.message });
       }
     }
-    res.json({ board: board || Object.keys(lojas)[0], dtIni, dtFin, results });
+    res.json({ board: board || Object.keys(lojas)[0], cnpj: cnpj?.replace(/\d(?=\d{3})/g,'*'), dtIni, dtFin, results });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

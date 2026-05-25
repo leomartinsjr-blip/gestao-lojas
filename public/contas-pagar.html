@@ -331,13 +331,12 @@ async function runDiagnostic() {
     const d = await r.json();
     if (d.error) { preEl.textContent = 'Erro: ' + d.error; return; }
     const lines = d.results.map(r => {
-      if (r.error)      return `❌ ${r.cmd} → ERRO: ${r.error}`;
-      if (r.isErr)      return `❌ ${r.cmd} → ${r.errMsg || 'API retornou erro'}`;
-      if (r.isXml)      return `⚠️  ${r.cmd} → XML inesperado: ${r.preview}`;
-      if (r.rowCount === 0) return `⚠️  ${r.cmd} → OK mas 0 linhas`;
-      return `✅ ${r.cmd} → ${r.rowCount} linhas | campos: ${r.fields.join(', ')}`;
+      if (r.error)          return `❌ ${r.label}\n   ERRO: ${r.error}`;
+      if (r.isErr)          return `❌ ${r.label}\n   Microvix: ${r.errMsg}\n   Raw: ${r.rawSnippet}`;
+      if (r.rowCount === 0) return `⚠️  ${r.label}\n   OK mas 0 linhas`;
+      return `✅ ${r.label}\n   ${r.rowCount} linhas | campos: ${r.fields.join(', ')}`;
     });
-    preEl.textContent = `Loja: ${d.board} | ${d.dtIni} → ${d.dtFin}\n\n` + lines.join('\n');
+    preEl.textContent = `Loja: ${d.board} | ${d.dtIni} → ${d.dtFin}\n\n` + lines.join('\n\n');
   } catch (e) {
     preEl.textContent = 'Erro: ' + e.message;
   }
