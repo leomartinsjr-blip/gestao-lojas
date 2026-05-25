@@ -191,8 +191,9 @@ function buildEmpForm(emp, entry, lojaData) {
       <div class="fp-field"><label>Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}</div>
       <div class="fp-field"><label>Quebra Caixa (R$)</label>${inp(`fp-quebra-${emp.id}`, e.quebra)}</div>`;
   } else {
-    const pctMeta = (FP.vsales[emp.id]?.meta?.mensal || 0) > 0
-      ? ((e.vendas || 0) / (FP.vsales[emp.id]?.meta?.mensal || 1) * 100).toFixed(1)
+    const metaMensal = FP.vsales[emp.id]?.meta?.mensal || 0;
+    const pctMeta = metaMensal > 0
+      ? ((e.vendas || 0) / metaMensal * 100).toFixed(1)
       : '—';
     const faixaNome = e.faixaNome || '—';
     provHtml = `
@@ -272,8 +273,8 @@ function buildExtras(empId, extras, type) {
 function defaultEntry(emp, lojaData) {
   const isCaixa = /caixa|opcx/i.test(emp.cargo || '');
   const vs      = FP.vsales[emp.id] || { meta: { mensal: 0 }, entries: {} };
-  const vendas  = Object.values(vs.entries || {}).reduce((s, e) => s + (e.vendas || 0), 0);
-  const meta    = vs.meta?.mensal || emp.vendaMeta || 0;
+  const vendas  = Object.values(vs.entries || {}).reduce((s, e) => s + (e.value || 0), 0);
+  const meta    = vs.meta?.mensal || 0; // meta do fechamento diário
   const cfg     = FP.folhaConfig[FP.board] || {};
   const diasUteis       = lojaData.diasUteis       || cfg.diasUteis       || 24;
   const domingosFeriados = lojaData.domingosFeriados || cfg.domingosFeriados || 5;
