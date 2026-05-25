@@ -20,25 +20,21 @@ function cargoTipo(cargo) {
   return 'vendedor';
 }
 
-// ── Faixas helpers ─────────────────────────────────────────────────────────
-const FAIXA_LABELS = ['SEM META', 'META 1', 'META 2', 'SUPER META'];
+// ── Faixa por vendas vs metas do funcionário ───────────────────────────────
+// Thresholds idênticos ao fechamento diário: meta1=meta, meta2=meta×1.10, super=meta×1.10×1.20
+function calcFaixa(emp, vendas, meta) {
+  const meta1  = r2(meta);
+  const meta2  = r2(meta * 1.10);
+  const super_ = r2(meta * 1.10 * 1.20);
 
-function defaultFaixas(type) {
-  const D = {
-    vendedor: [{label:'SEM META',threshold:0,comPct:3},{label:'META 1',threshold:80,comPct:4},{label:'META 2',threshold:100,comPct:4.5},{label:'SUPER META',threshold:120,comPct:5.5}],
-    gerente:  [{label:'SEM META',threshold:0,comPct:0.5},{label:'META 1',threshold:80,comPct:1},{label:'META 2',threshold:100,comPct:1.25},{label:'SUPER META',threshold:120,comPct:1.5}],
-    sub:      [{label:'SEM META',threshold:0,comPct:2},{label:'META 1',threshold:80,comPct:3},{label:'META 2',threshold:100,comPct:3.5},{label:'SUPER META',threshold:120,comPct:4.5}],
-    vr:       [{label:'SEM META',threshold:0,comPct:0.25},{label:'META 1',threshold:80,comPct:0.5},{label:'META 2',threshold:100,comPct:0.75},{label:'SUPER META',threshold:120,comPct:1}],
-  };
-  return D[type] || D.vendedor;
-}
-
-function getFaixa(faixas, pctMeta) {
-  if (!faixas?.length) return { label: 'SEM META', threshold: 0, comPct: 0 };
-  if (!pctMeta || pctMeta <= 0) return faixas[0];
-  let best = faixas[0];
-  for (const f of faixas) if ((f.threshold || 0) <= pctMeta) best = f;
-  return best;
+  if (meta > 0 && vendas >= super_)
+    return { label: 'SUPER META', comPct: r2(emp.comissaoSuper || emp.comissao || 0), meta1, meta2, super: super_ };
+  if (meta > 0 && vendas >= meta2)
+    return { label: 'META 2',     comPct: r2(emp.comissaoMeta2 || emp.comissao || 0), meta1, meta2, super: super_ };
+  if (meta > 0 && vendas >= meta1)
+    return { label: 'META 1',     comPct: r2(emp.comissao      || 0),                meta1, meta2, super: super_ };
+  return       { label: meta > 0 ? 'SEM META' : '—',
+                 comPct: r2(emp.comissaoSemMeta || emp.comissao || 0),                meta1, meta2, super: super_ };
 }
 
 // ── State ──────────────────────────────────────────────────────────────────
@@ -103,7 +99,7 @@ async function loadPeriod() {
   }
 }
 
-// ── Barra de config mensal (fora das lojas) ────────────────────────────────
+// ── Barra de config mensal ─────────────────────────────────────────────────
 function renderMensalBar() {
   document.getElementById('fpMensalBar').innerHTML = `
     <span style="font-size:.8rem;color:#8b949e">Dias úteis:</span>
@@ -119,8 +115,8 @@ function renderMensalBar() {
 
 let _mensalTimer;
 function saveMensal() {
-  const du = parseInt(document.getElementById('fpDiasUteis')?.value) || 22;
-  const df = parseInt(document.getElementById('fpDomingosFeriados')?.value) || 4;
+  const du = parseInt(document.getElementById('fpDiasUteis')?.value)          || 22;
+  const df = parseInt(document.getElementById('fpDomingosFeriados')?.value)   || 4;
   FP.mensal = { diasUteis: du, domingosFeriados: df };
   clearTimeout(_mensalTimer);
   _mensalTimer = setTimeout(async () => {
@@ -206,35 +202,35 @@ function selectEmp(empId) {
 
 // ── Config ─────────────────────────────────────────────────────────────────
 function fpOpenCfg(board) {
-  const cfg = FP.folhaConfig[board] || {};
-  const f2  = v => (parseFloat(v)||0).toFixed(2);
+  const cfg  = FP.folhaConfig[board] || {};
+  const f2   = v => (parseFloat(v)||0).toFixed(2);
+  const emps = boardEmps(board);
 
-  const faixaTable = (type) => {
-    const faixas = cfg[`faixas${type.charAt(0).toUpperCase()+type.slice(1)}`]
-                   || defaultFaixas(type);
-    return `<table style="width:100%;border-collapse:collapse;font-size:.82rem;margin-top:.5rem">
-      <thead><tr>
-        <th style="text-align:left;padding:.3rem .5rem;color:#8b949e;border-bottom:1px solid #30363d;width:120px">Faixa</th>
-        <th style="text-align:center;padding:.3rem .5rem;color:#8b949e;border-bottom:1px solid #30363d">Atingimento mín. (%)</th>
-        <th style="text-align:center;padding:.3rem .5rem;color:#8b949e;border-bottom:1px solid #30363d">Comissão (%)</th>
-      </tr></thead>
-      <tbody>${faixas.map((f,i) => `
-        <tr>
-          <td style="padding:.3rem .5rem;color:#e6edf3;font-weight:600">${f.label}</td>
-          <td style="padding:.2rem .5rem;text-align:center">
-            ${i===0
-              ? '<span style="color:#8b949e;font-size:.78rem">base (sempre)</span>'
-              : `<input type="number" step="1" min="1" id="cfg-${type}-t${i}" value="${f.threshold||0}"
-                   style="width:80px;text-align:center;background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:.22rem .4rem;border-radius:4px;font-size:.82rem">`}
-          </td>
-          <td style="padding:.2rem .5rem;text-align:center">
-            <input type="number" step="0.01" min="0" id="cfg-${type}-c${i}" value="${f2(f.comPct)}"
-              style="width:80px;text-align:center;background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:.22rem .4rem;border-radius:4px;font-size:.82rem">
-          </td>
-        </tr>`).join('')}
-      </tbody>
-    </table>`;
-  };
+  // Tabela de metas por funcionário (somente leitura, para conferência)
+  const metaLoja  = r2(FP.lojaMetaMap[board]  || 0);
+  const vendaLoja = r2(FP.lojaVendaMap[board] || 0);
+
+  const metaRows = emps.map(emp => {
+    const vs     = FP.vsales[emp.id] || {};
+    const meta   = r2(vs.meta?.efetiva || vs.meta?.mensal || 0);
+    const meta2  = r2(meta * 1.10);
+    const super_ = r2(meta * 1.10 * 1.20);
+    const vendas = sumVendas(emp.id);
+    const faixa  = calcFaixa(emp, vendas, meta);
+    const faixaColor = {'SEM META':'#8b949e','META 1':'#d29922','META 2':'#3fb950','SUPER META':'#22d3ee','—':'#484f58'};
+    const fc = faixaColor[faixa.label] || '#8b949e';
+    return `<tr>
+      <td style="padding:.3rem .5rem;color:#e6edf3">${emp.apelido || emp.name.split(' ')[0]}</td>
+      <td style="padding:.3rem .5rem;color:#8b949e;font-size:.78rem">${emp.cargo}</td>
+      <td style="padding:.3rem .5rem;text-align:right;color:#e6edf3">${brl(meta)}</td>
+      <td style="padding:.3rem .5rem;text-align:right;color:#d29922">${meta > 0 ? brl(meta2) : '—'}</td>
+      <td style="padding:.3rem .5rem;text-align:right;color:#22d3ee">${meta > 0 ? brl(super_) : '—'}</td>
+      <td style="padding:.3rem .5rem;text-align:right;color:#58a6ff">${brl(vendas)}</td>
+      <td style="padding:.3rem .4rem;text-align:center">
+        <span style="font-size:.72rem;padding:.1rem .35rem;border-radius:4px;background:${fc}22;color:${fc};border:1px solid ${fc}44">${faixa.label}</span>
+      </td>
+    </tr>`;
+  }).join('');
 
   document.getElementById('fpConfigModal').classList.add('open');
   document.getElementById('fpConfigModal').dataset.board = board;
@@ -243,10 +239,7 @@ function fpOpenCfg(board) {
   document.getElementById('fpConfigContents').innerHTML = `
     <div class="fp-modal-tabs" id="fpCfgTabBtns">
       <button class="fp-modal-tab active" onclick="fpCfgTabSwitch('geral')">Geral</button>
-      <button class="fp-modal-tab" onclick="fpCfgTabSwitch('vendedor')">Vendedor</button>
-      <button class="fp-modal-tab" onclick="fpCfgTabSwitch('gerente')">Gerente</button>
-      <button class="fp-modal-tab" onclick="fpCfgTabSwitch('sub')">Sub-Gerente</button>
-      <button class="fp-modal-tab" onclick="fpCfgTabSwitch('vr')">VR (Loja)</button>
+      <button class="fp-modal-tab" onclick="fpCfgTabSwitch('metas')">Metas / Faixas</button>
     </div>
 
     <div class="fp-modal-content active" id="cfg-tab-geral">
@@ -260,6 +253,12 @@ function fpOpenCfg(board) {
         <div class="fp-cfg-field"><label>Quebra de Caixa (R$)</label>
           <input type="number" step="0.01" id="cfg-quebraCaixa" value="${f2(cfg.quebraCaixa)}">
         </div>
+        <div class="fp-cfg-field"><label>Salário Fixo Gerente (R$)</label>
+          <input type="number" step="0.01" id="cfg-fixoGerente" value="${f2(cfg.salarioFixoGerente)}">
+        </div>
+        <div class="fp-cfg-field"><label>Garantia Mínima Gerente (R$)</label>
+          <input type="number" step="0.01" id="cfg-gmGerente" value="${f2(cfg.garantiaMinimaGerente)}">
+        </div>
         <div class="fp-cfg-field"><label>Prêmio Vendedor (R$)</label>
           <input type="number" step="0.01" id="cfg-premioVendedor" value="${f2(cfg.premioVendedor)}">
         </div>
@@ -269,21 +268,24 @@ function fpOpenCfg(board) {
       </div>
     </div>
 
-    <div class="fp-modal-content" id="cfg-tab-vendedor">
-      <p style="font-size:.8rem;color:#8b949e;margin:.6rem 0 .25rem">Comissão sobre vendas próprias do vendedor · base = meta atingida (%)</p>
-      ${faixaTable('vendedor')}
-    </div>
-    <div class="fp-modal-content" id="cfg-tab-gerente">
-      <p style="font-size:.8rem;color:#8b949e;margin:.6rem 0 .25rem">Comissão sobre vendas próprias do gerente</p>
-      ${faixaTable('gerente')}
-    </div>
-    <div class="fp-modal-content" id="cfg-tab-sub">
-      <p style="font-size:.8rem;color:#8b949e;margin:.6rem 0 .25rem">Comissão sobre vendas próprias do sub-gerente</p>
-      ${faixaTable('sub')}
-    </div>
-    <div class="fp-modal-content" id="cfg-tab-vr">
-      <p style="font-size:.8rem;color:#8b949e;margin:.6rem 0 .25rem">Comissão VR sobre total de vendas da loja (gerente e sub-gerente) · base = % meta loja</p>
-      ${faixaTable('vr')}
+    <div class="fp-modal-content" id="cfg-tab-metas">
+      <div style="margin:.6rem 0 .4rem;display:flex;gap:1.5rem;flex-wrap:wrap">
+        <span style="font-size:.8rem;color:#8b949e">Meta loja: <strong style="color:#e6edf3">${brl(metaLoja)}</strong></span>
+        <span style="font-size:.8rem;color:#8b949e">Vendas loja: <strong style="color:#58a6ff">${brl(vendaLoja)}</strong></span>
+        <span style="font-size:.75rem;color:#484f58">META 2 = meta × 1,10 · SUPER META = meta × 1,10 × 1,20</span>
+      </div>
+      <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+        <thead><tr style="border-bottom:1px solid #30363d">
+          <th style="text-align:left;padding:.3rem .5rem;color:#8b949e">Funcionário</th>
+          <th style="text-align:left;padding:.3rem .5rem;color:#8b949e">Cargo</th>
+          <th style="text-align:right;padding:.3rem .5rem;color:#8b949e">META 1</th>
+          <th style="text-align:right;padding:.3rem .5rem;color:#d29922">META 2</th>
+          <th style="text-align:right;padding:.3rem .5rem;color:#22d3ee">SUPER META</th>
+          <th style="text-align:right;padding:.3rem .5rem;color:#58a6ff">Vendas</th>
+          <th style="text-align:center;padding:.3rem .5rem;color:#8b949e">Faixa</th>
+        </tr></thead>
+        <tbody>${metaRows}</tbody>
+      </table>
     </div>`;
 }
 
@@ -292,10 +294,8 @@ function fpCfgTabSwitch(tab) {
     .forEach(el => el.classList.remove('active'));
   document.getElementById(`cfg-tab-${tab}`)?.classList.add('active');
   document.querySelectorAll('#fpCfgTabBtns .fp-modal-tab')
-    .forEach(el => el.classList.remove('active'));
-  document.querySelectorAll('#fpCfgTabBtns .fp-modal-tab').forEach(btn => {
-    if (btn.getAttribute('onclick')?.includes(`'${tab}'`)) btn.classList.add('active');
-  });
+    .forEach(btn => btn.classList.toggle('active',
+      btn.getAttribute('onclick')?.includes(`'${tab}'`)));
 }
 
 function fpCloseConfig() {
@@ -303,32 +303,18 @@ function fpCloseConfig() {
 }
 
 async function fpSaveConfig() {
-  const g = id => parseFloat(document.getElementById(id)?.value) || 0;
+  const g     = id => parseFloat(document.getElementById(id)?.value) || 0;
   const board = document.getElementById('fpConfigModal').dataset.board;
   if (!board) return;
-
-  const readFaixas = (type) => {
-    const base = (FP.folhaConfig[board] || {})[`faixas${type.charAt(0).toUpperCase()+type.slice(1)}`]
-                 || defaultFaixas(type);
-    return base.map((def, i) => ({
-      label:     def.label,
-      threshold: i === 0 ? 0 : (g(`cfg-${type}-t${i}`) || def.threshold || 0),
-      comPct:    g(`cfg-${type}-c${i}`),
-    }));
-  };
-
   FP.folhaConfig[board] = {
-    garantiaMinima:   g('cfg-gm'),
-    salarioFixoCaixa: g('cfg-fixoCaixa'),
-    quebraCaixa:      g('cfg-quebraCaixa'),
-    premioVendedor:   g('cfg-premioVendedor'),
-    premioGerente:    g('cfg-premioGerente'),
-    faixasVendedor:   readFaixas('vendedor'),
-    faixasGerente:    readFaixas('gerente'),
-    faixasSub:        readFaixas('sub'),
-    faixasVR:         readFaixas('vr'),
+    garantiaMinima:        g('cfg-gm'),
+    salarioFixoCaixa:      g('cfg-fixoCaixa'),
+    quebraCaixa:           g('cfg-quebraCaixa'),
+    salarioFixoGerente:    g('cfg-fixoGerente'),
+    garantiaMinimaGerente: g('cfg-gmGerente'),
+    premioVendedor:        g('cfg-premioVendedor'),
+    premioGerente:         g('cfg-premioGerente'),
   };
-
   try {
     await apiFetch('/api/folha/config', 'POST', FP.folhaConfig);
     fpCloseConfig();
@@ -342,8 +328,8 @@ function monthKey() {
 }
 
 function sumVendas(empId) {
-  const mk  = monthKey();
-  const vs  = FP.vsales[empId] || {};
+  const mk = monthKey();
+  const vs = FP.vsales[empId] || {};
   return r2(Object.entries(vs.entries||{})
     .filter(([d]) => d.startsWith(mk))
     .reduce((s,[,e]) => s + (e.value||0), 0));
@@ -354,18 +340,10 @@ function defaultEntry(emp) {
   const tipo = cargoTipo(emp.cargo);
   const du   = FP.mensal.diasUteis        || 22;
   const df   = FP.mensal.domingosFeriados || 4;
-  const tot  = du + df;
 
-  const vendas  = sumVendas(emp.id);
-  const vs      = FP.vsales[emp.id] || {};
-  // usa meta efetiva (calculada no servidor usando lógica do fechamento diário)
-  const meta    = vs.meta?.efetiva || vs.meta?.mensal || 0;
-  const pctMeta = meta > 0 ? r2(vendas / meta * 100) : 0;
-
-  // Vendas e meta da loja (para VR / gerente) — vêm direto do servidor
-  const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);
-  const metaLoja  = r2(FP.lojaMetaMap[FP.board]  || 0);
-  const pctLoja   = metaLoja > 0 ? r2(vendaLoja / metaLoja * 100) : 0;
+  const vendas = sumVendas(emp.id);
+  const vs     = FP.vsales[emp.id] || {};
+  const meta   = r2(vs.meta?.efetiva || vs.meta?.mensal || 0);
 
   // ── Caixa ──
   if (tipo === 'caixa') {
@@ -383,23 +361,15 @@ function defaultEntry(emp) {
     };
   }
 
-  // ── Comissão própria via faixas ──
-  let faixas, faixa;
-  if (tipo === 'gerente') {
-    faixas = cfg.faixasGerente || defaultFaixas('gerente');
-  } else if (tipo === 'sub') {
-    faixas = cfg.faixasSub || defaultFaixas('sub');
-  } else {
-    faixas = cfg.faixasVendedor || defaultFaixas('vendedor');
-  }
-  faixa = getFaixa(faixas, pctMeta);
-  const faixaLabel   = faixa.label;
-  const comissaoPct  = r2(faixa.comPct);
+  // ── Comissão por faixa (campos do funcionário) ──
+  const faixa       = calcFaixa(emp, vendas, meta);
+  const faixaLabel  = faixa.label;
+  const comissaoPct = faixa.comPct;
+  const pctMeta     = meta > 0 ? r2(vendas / meta * 100) : 0;
+
   const comissaoTotal = r2(vendas * comissaoPct / 100);
 
-  // Split para contabilidade: Total = comissaoContab + DSR + Prêmio
-  // DSR é calculado SOBRE a comissão contábil (a base): DSR = comissaoContab × df/du
-  // Resolvendo a equação circular:
+  // DSR calculado sobre a comissão contábil (base):
   //   comissaoContab = (comissaoTotal - prêmio) × du / (du + df)
   //   DSR            = comissaoContab × df / du
   const premio = r2((tipo === 'gerente' || tipo === 'sub')
@@ -409,21 +379,22 @@ function defaultEntry(emp) {
     : r2(comissaoTotal - premio);
   const dsr = du > 0 ? r2(comissaoContab * df / du) : 0;
 
-  // GM: complemento se abaixo da garantia mínima
-  const gm           = r2(cfg.garantiaMinima || 0);
+  // GM: complemento se abaixo da garantia mínima (gerente tem GM própria)
+  const gm = (tipo === 'gerente' || tipo === 'sub')
+    ? r2(cfg.garantiaMinimaGerente || cfg.garantiaMinima || 0)
+    : r2(cfg.garantiaMinima || 0);
   const gmComplement = r2(Math.max(0, gm - comissaoTotal));
 
-  // Comissão VR sobre vendas da loja
-  let comissaoLoja = 0, faixaVRLabel = '';
-  if (tipo === 'gerente' || tipo === 'sub') {
-    const faixasVR = cfg.faixasVR || defaultFaixas('vr');
-    const fVR      = getFaixa(faixasVR, pctLoja);
-    faixaVRLabel   = fVR.label;
-    comissaoLoja   = r2(vendaLoja * fVR.comPct / 100);
-  }
+  // Comissão loja (gerente % ou VR %)
+  const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);
+  let comissaoLoja = 0;
+  if (tipo === 'gerente') comissaoLoja = r2(vendaLoja * (emp.comissaoGerente || 0) / 100);
+  else if (tipo === 'sub') comissaoLoja = r2(vendaLoja * (emp.comissaoVR || 0) / 100);
 
-  // Fixo para gerentes
-  const fixo = (tipo === 'gerente' && emp.salarioFixo) ? r2(emp.salarioFixo) : 0;
+  // Fixo para gerentes (loja config tem prioridade sobre cadastro individual)
+  const fixo = (tipo === 'gerente' || tipo === 'sub')
+    ? r2(cfg.salarioFixoGerente || emp.salarioFixo || 0)
+    : 0;
 
   const proventos = r2(fixo + comissaoTotal + comissaoLoja + gmComplement);
   const inss = r2(proventos * (emp.inssRate || 0) / 100);
@@ -432,8 +403,7 @@ function defaultEntry(emp) {
   return {
     tipo, vendas, meta, pctMeta, faixaLabel, comissaoPct,
     comissaoTotal, comissaoContab, dsr, premio,
-    comissaoLoja, faixaVRLabel, vendaLoja,
-    fixo, gm, gmComplement,
+    comissaoLoja, vendaLoja, fixo, gm, gmComplement,
     feriado: 0, extras: [],
     proventos,
     valeCompras: 0, adiantamento: 0, inss, irpf: 0, vt,
@@ -455,11 +425,11 @@ function buildEmpForm(emp, entry) {
   const inpRO = (id, v) =>
     `<input type="number" step="0.01" id="${id}" value="${r2(v).toFixed(2)}" readonly class="fp-readonly" tabindex="-1">`;
 
-  // Faixa badge colors
-  const faixaColor = { 'SEM META':'#8b949e', 'META 1':'#d29922', 'META 2':'#3fb950', 'SUPER META':'#22d3ee' };
-  const faixaBadge = (label) => label
-    ? `<span style="font-size:.7rem;padding:.1rem .4rem;border-radius:4px;background:${faixaColor[label]||'#8b949e'}22;color:${faixaColor[label]||'#8b949e'};border:1px solid ${faixaColor[label]||'#8b949e'}44;white-space:nowrap">${label}</span>`
-    : '';
+  const faixaColor = {'SEM META':'#8b949e','META 1':'#d29922','META 2':'#3fb950','SUPER META':'#22d3ee','—':'#484f58'};
+  const faixaBadge = label => {
+    const c = faixaColor[label] || '#8b949e';
+    return `<span style="font-size:.7rem;padding:.1rem .4rem;border-radius:4px;background:${c}22;color:${c};border:1px solid ${c}44;white-space:nowrap">${label}</span>`;
+  };
 
   let provRows = '';
 
@@ -470,18 +440,17 @@ function buildEmpForm(emp, entry) {
   } else {
     const pctDisplay = e.pctMeta > 0 ? `${r2(e.pctMeta).toFixed(1)}% da meta` : 'sem meta';
 
-    if (tipo === 'gerente' && (e.fixo||0) > 0) {
+    if (tipo === 'gerente' && (e.fixo||0) > 0)
       provRows += `<div class="fp-field"><label>Salário Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}</div>`;
-    }
 
-    // Vendas × % = Total (com faixa badge)
     provRows += `
       <div class="fp-field fp-field-inline">
         <label>Vendas (R$)</label>${inp(`fp-vendas-${emp.id}`, e.vendas)}
         <span class="fp-times">×</span>
-        <input type="number" step="0.01" id="fp-comPct-${emp.id}" value="${r2(e.comissaoPct).toFixed(2)}" style="width:72px" onchange="onFieldChange(${emp.id})">
+        <input type="number" step="0.01" id="fp-comPct-${emp.id}" value="${r2(e.comissaoPct).toFixed(2)}"
+          style="width:72px" onchange="onFieldChange(${emp.id})">
         <span class="fp-label-pct">%</span>
-        ${faixaBadge(e.faixaLabel)}
+        ${faixaBadge(e.faixaLabel || '—')}
         <span class="fp-equals">=</span>
         <span class="fp-total-inline" id="fp-totalCom-${emp.id}">${brl(e.comissaoTotal)}</span>
         <span style="font-size:.7rem;color:#8b949e;margin-left:.3rem">${pctDisplay}</span>
@@ -503,21 +472,16 @@ function buildEmpForm(emp, entry) {
       </div>`;
 
     if (tipo === 'gerente' || tipo === 'sub') {
-      const faixasVR = cfg.faixasVR || defaultFaixas('vr');
-      const metaL    = r2(FP.lojaMetaMap[FP.board]  || 0);
-      const vendaL   = r2(FP.lojaVendaMap[FP.board] || 0);
-      const pctL     = metaL > 0 ? r2(vendaL/metaL*100) : 0;
-      const vrPct    = getFaixa(faixasVR, pctL).comPct;
-      const lbl = tipo==='gerente'
-        ? `Comissão Loja — ${faixaBadge(e.faixaVRLabel)} ${r2(vrPct).toFixed(2)}% vendas loja`
-        : `Comissão VR — ${faixaBadge(e.faixaVRLabel)} ${r2(vrPct).toFixed(2)}% vendas loja`;
+      const pctVR  = tipo === 'gerente' ? (emp.comissaoGerente||0) : (emp.comissaoVR||0);
+      const lbl    = tipo === 'gerente'
+        ? `Comissão Loja (${r2(pctVR).toFixed(2)}% vendas loja)`
+        : `Comissão VR (${r2(pctVR).toFixed(2)}% vendas loja)`;
       provRows += `<div class="fp-field"><label>${lbl}</label>${inp(`fp-comLoja-${emp.id}`, e.comissaoLoja)}</div>`;
     }
 
-    if ((cfg.garantiaMinima||0) > 0) {
+    if ((cfg.garantiaMinima||0) > 0)
       provRows += `<div class="fp-field"><label>GM (R$)</label>${inp(`fp-gm-${emp.id}`, e.gmComplement)}
         <span style="font-size:.72rem;color:#8b949e">mín: ${brl(cfg.garantiaMinima||0)}</span></div>`;
-    }
   }
 
   provRows += `
@@ -587,11 +551,9 @@ function recalc(empId) {
   const g     = id => { const el=document.getElementById(id); return el?r2(parseFloat(el.value)||0):0; };
   const emp   = FP.employees.find(e=>e.id===empId);
   const tipo  = cargoTipo(emp?.cargo);
-  const cfg   = FP.folhaConfig[FP.board] || {};
   const entry = FP.folha[FP.board]?.entries?.[empId] || {};
   const du    = FP.mensal.diasUteis        || 22;
   const df    = FP.mensal.domingosFeriados || 4;
-  const tot   = du + df;
 
   let proventos = 0;
 
@@ -601,16 +563,6 @@ function recalc(empId) {
     const vendas   = g(`fp-vendas-${empId}`);
     const comPct   = g(`fp-comPct-${empId}`);
     const comTotal = r2(vendas * comPct / 100);
-
-    // Recalculate faixa badge based on current vendas/meta
-    const meta     = entry.meta || 0;
-    const pctMeta  = meta > 0 ? r2(vendas/meta*100) : 0;
-    const tipo2    = tipo==='gerente' ? 'gerente' : tipo==='sub' ? 'sub' : 'vendedor';
-    const faixas   = cfg[`faixas${tipo2.charAt(0).toUpperCase()+tipo2.slice(1)}`] || defaultFaixas(tipo2);
-    const faixa    = getFaixa(faixas, pctMeta);
-    const faixaColor = {'SEM META':'#8b949e','META 1':'#d29922','META 2':'#3fb950','SUPER META':'#22d3ee'};
-    // Update % field to faixa's value only if unchanged from auto calc; skip if user overrode
-    // (We leave comPct field as-is — user can freely edit)
 
     const totEl = document.getElementById(`fp-totalCom-${empId}`);
     if (totEl) totEl.textContent = brl(comTotal);
@@ -625,16 +577,13 @@ function recalc(empId) {
     const checkEl = document.getElementById(`fp-splitCheck-${empId}`);
     if (checkEl) {
       const soma = r2(comContab + dsrVal + premioVal);
-      const ok   = Math.abs(soma - comTotal) < 0.01;
+      const ok   = Math.abs(soma - comTotal) < 0.02;
       checkEl.innerHTML = ok
         ? `<span style="color:#3fb950;font-size:.75rem">✓ ${brl(comContab)} + ${brl(dsrVal)} + ${brl(premioVal)} = ${brl(comTotal)}</span>`
         : `<span style="color:#f85149;font-size:.75rem">⚠ soma ${brl(soma)} ≠ ${brl(comTotal)}</span>`;
     }
 
-    const fixo    = g(`fp-fixo-${empId}`);
-    const comLoja = g(`fp-comLoja-${empId}`);
-    const gmComp  = g(`fp-gm-${empId}`);
-    proventos = r2(fixo + comTotal + comLoja + gmComp);
+    proventos = r2(g(`fp-fixo-${empId}`) + comTotal + g(`fp-comLoja-${empId}`) + g(`fp-gm-${empId}`));
   }
 
   proventos = r2(proventos + g(`fp-feriado-${empId}`)
@@ -683,8 +632,8 @@ function saveEntryFromForm(empId) {
     proventos = r2(g(`fp-fixo-${empId}`) + g(`fp-quebra-${empId}`)
       + g(`fp-feriado-${empId}`) + extProv);
   } else {
-    const vendas   = g(`fp-vendas-${empId}`);
-    const comPct   = g(`fp-comPct-${empId}`);
+    const vendas  = g(`fp-vendas-${empId}`);
+    const comPct  = g(`fp-comPct-${empId}`);
     comissaoTotal  = r2(vendas * comPct / 100);
     dsr            = g(`fp-dsr-${empId}`);
     premio         = g(`fp-premio-${empId}`);
@@ -707,7 +656,6 @@ function saveEntryFromForm(empId) {
     faixaLabel:     prev.faixaLabel,
     comissaoTotal, comissaoContab, dsr, premio,
     comissaoLoja:   g(`fp-comLoja-${empId}`),
-    faixaVRLabel:   prev.faixaVRLabel,
     gmComplement:   g(`fp-gm-${empId}`),
     feriado:        g(`fp-feriado-${empId}`),
     proventos,
@@ -762,10 +710,7 @@ function refreshExtras(empId, type) {
 // ── Gerar ──────────────────────────────────────────────────────────────────
 function fpGerar() {
   const board = FP.board;
-  const cfg   = FP.folhaConfig[board] || {};
   if (!FP.folha[board]) FP.folha[board] = {};
-  FP.folha[board].diasUteis        = cfg.diasUteis        || 24;
-  FP.folha[board].domingosFeriados = cfg.domingosFeriados || 5;
   if (!FP.folha[board].entries) FP.folha[board].entries = {};
   for (const emp of boardEmps(board))
     FP.folha[board].entries[emp.id] = defaultEntry(emp);
