@@ -4811,6 +4811,7 @@ function initFuncionariosModal() {
 // ── Campanhas ─────────────────────────────────────────────────────────────
 const KPI_LABELS = {
   vendas:       'Vendas (R$)',
+  pct_meta:     '% sobre Meta',
   pa:           'PA (peças/ticket)',
   atendimentos: 'Atendimentos',
   pecas:        'Peças',
@@ -4818,8 +4819,9 @@ const KPI_LABELS = {
 
 function formatKpiValue(kpi, val) {
   if (val === null || val === undefined) return '—';
-  if (kpi === 'vendas') return 'R$ ' + val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  if (kpi === 'pa')     return val.toFixed(2);
+  if (kpi === 'vendas')    return 'R$ ' + val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (kpi === 'pa')        return val.toFixed(2);
+  if (kpi === 'pct_meta')  return val.toFixed(1) + '%';
   return Math.round(val).toLocaleString('pt-BR');
 }
 
@@ -4843,12 +4845,16 @@ async function calcCampaignRanking(campaign) {
   const months = _campMonthsInRange(campaign.startDate, campaign.endDate);
 
   const empVsales = {};
+  const empMetas  = {}; // { empId: { 'YYYY-MM': mensal } }
   await Promise.all(emps.map(async emp => {
     empVsales[emp.id] = {};
+    empMetas[emp.id]  = {};
     await Promise.all(months.map(async ({ year, month }) => {
       const data = await apiFetch('GET', `/api/vsales/${year}/${month}/${emp.board}/${emp.id}`)
-        .catch(() => ({ entries: {} }));
+        .catch(() => ({ entries: {}, meta: {} }));
       Object.assign(empVsales[emp.id], data.entries || {});
+      const key = `${year}-${String(month).padStart(2,'0')}`;
+      empMetas[emp.id][key] = data.meta?.mensal || 0;
     }));
   }));
 
@@ -4862,12 +4868,32 @@ async function calcCampaignRanking(campaign) {
         totalAtend  += entry.atendimentos || 0;
       }
     }
+
     let kpiValue = 0;
     switch (campaign.kpi) {
       case 'vendas':       kpiValue = totalVendas; break;
       case 'pecas':        kpiValue = totalPecas; break;
       case 'atendimentos': kpiValue = totalAtend; break;
       case 'pa': kpiValue = totalAtend > 0 ? totalPecas / totalAtend : 0; break;
+      case 'pct_meta': {
+        // Meta proporcional: para cada mês no período, prorate pelo nº de dias da campanha naquele mês
+        let metaTotal = 0;
+        for (const { year, month } of months) {
+          const key      = `${year}-${String(month).padStart(2,'0')}`;
+          const mensal   = empMetas[emp.id][key] || 0;
+          if (!mensal) continue;
+          const daysInMon = new Date(year, month, 0).getDate();
+          const campStart = campaign.startDate > `${key}-01` ? campaign.startDate : `${key}-01`;
+          const lastDay   = String(daysInMon).padStart(2,'0');
+          const campEnd   = campaign.endDate < `${key}-${lastDay}` ? campaign.endDate : `${key}-${lastDay}`;
+          const dStart    = new Date(campStart + 'T00:00:00');
+          const dEnd      = new Date(campEnd   + 'T00:00:00');
+          const campDays  = Math.max(0, Math.round((dEnd - dStart) / 86400000) + 1);
+          metaTotal += mensal * (campDays / daysInMon);
+        }
+        kpiValue = metaTotal > 0 ? (totalVendas / metaTotal) * 100 : 0;
+        break;
+      }
     }
     return { emp, kpiValue };
   }).sort((a, b) => b.kpiValue - a.kpiValue);
