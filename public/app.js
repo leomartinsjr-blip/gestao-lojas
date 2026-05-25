@@ -327,13 +327,14 @@ async function loadData() {
     );
     S.storeFluxo = Object.fromEntries(fluxoBoards.map((bk, i) => [bk, fluxoResults[i]]));
 
-    const [campaigns, nfItems, boletas, meetingItems, pendencias, requisicoes] = await Promise.all([
+    const [campaigns, nfItems, boletas, meetingItems, pendencias, requisicoes, indevaStats] = await Promise.all([
       apiFetch('GET', '/api/campaigns').catch(() => []),
       apiFetch('GET', '/api/nf-items').catch(() => []),
       apiFetch('GET', '/api/boletas').catch(() => []),
       apiFetch('GET', '/api/meeting-items').catch(() => []),
       apiFetch('GET', '/api/pendencias').catch(() => []),
       apiFetch('GET', '/api/requisicoes').catch(() => []),
+      apiFetch('GET', `/api/indeva-stats/${S.year}/${S.month}`).catch(() => ({})),
     ]);
     S.campaigns    = campaigns    || [];
     S.nfItems      = nfItems      || [];
@@ -341,6 +342,7 @@ async function loadData() {
     S.meetingItems = meetingItems || [];
     S.pendencias   = pendencias   || [];
     S.requisicoes  = requisicoes  || [];
+    S.indevaStats  = indevaStats  || {};
     _updateCampanhasBtn();
     _updateLojaAcaoBadge();
 
@@ -626,20 +628,26 @@ function renderDashboard() {
       const projecao  = (valor > 0 && metaAccum > 0) ? valor/metaAccum*mensal : null;
       const pa        = (pecas > 0 && atend > 0) ? pecas/atend : null;
       const tm        = (valor > 0 && atend > 0) ? valor/atend : null;
-      return { emp, valor, pecas, atend, mensal, pctMeta, projecao, pa, tm };
+      const iStats    = S.indevaStats?.[emp.board]?.monthly?.[String(emp.id)];
+      const conv      = iStats?.total > 0 ? iStats.conv / iStats.total * 100 : null;
+      return { emp, valor, pecas, atend, mensal, pctMeta, projecao, pa, tm, conv };
     });
     _boardRowData[bk] = rowData;
     let totV=0, totP=0, totA=0, totM=0;
     for (const d of rowData) { totV+=d.valor; totP+=d.pecas; totA+=d.atend; totM+=d.mensal; }
     const ma = totM * perfWeightAccum / 100;
     const bFluxo = Object.values(S.storeFluxo?.[bk] || {}).reduce((s, v) => s + (v || 0), 0);
+    const bIndevaM = S.indevaStats?.[bk]?.monthly || {};
+    let biTotal = 0, biConv = 0;
+    for (const s of Object.values(bIndevaM)) { biTotal += s.total; biConv += s.conv; }
+    const bIndevaConv = biTotal > 0 ? biConv / biTotal * 100 : (bFluxo > 0 && totA > 0 ? totA / bFluxo * 100 : null);
     _boardAgg[bk] = {
       valor: totV, mensal: totM, fluxo: bFluxo,
       pctMeta:  (ma>0 && totV>0) ? totV/ma*100 : null,
       projecao: (totV>0 && ma>0) ? totV/ma*totM : null,
       pa: (totP>0 && totA>0) ? totP/totA : null,
       tm: (totV>0 && totA>0) ? totV/totA : null,
-      conv: (bFluxo>0 && totA>0) ? totA/bFluxo*100 : null,
+      conv: bIndevaConv,
     };
   }
 
@@ -686,7 +694,10 @@ function renderDashboard() {
     const totPa   = (totPecas > 0 && totAtend > 0) ? totPecas/totAtend : null;
     const totTm   = (totValor > 0 && totAtend > 0) ? totValor/totAtend : null;
     const totFluxo = Object.values(S.storeFluxo?.[bk] || {}).reduce((s, v) => s + (v || 0), 0);
-    const totConv  = (totFluxo > 0 && totAtend > 0) ? totAtend / totFluxo * 100 : null;
+    const totIndevaM = S.indevaStats?.[bk]?.monthly || {};
+    let tiTotal = 0, tiConv = 0;
+    for (const s of Object.values(totIndevaM)) { tiTotal += s.total; tiConv += s.conv; }
+    const totConv = tiTotal > 0 ? tiConv / tiTotal * 100 : (totFluxo > 0 && totAtend > 0 ? totAtend / totFluxo * 100 : null);
     const tpCls    = totPct  == null ? '' : totPct  >= 100 ? 'kpi-pos' : totPct  >= 80 ? 'kpi-warn' : 'kpi-neg';
     const tprCls   = totProj == null ? '' : totProj >= totMeta ? 'kpi-pos' : totProj >= totMeta*0.9 ? 'kpi-warn' : 'kpi-neg';
     const tcCls    = totConv == null ? '' : totConv >= 30 ? 'kpi-pos' : totConv >= 15 ? 'kpi-warn' : 'kpi-neg';
@@ -739,9 +750,10 @@ function renderDashboard() {
 
     // Vendor rows + total (only when expanded or non-admin)
     if (!isAdmin || isExp) {
-      for (const { emp, valor, pecas, atend, mensal, pctMeta, projecao, pa, tm } of rowData) {
+      for (const { emp, valor, pecas, atend, mensal, pctMeta, projecao, pa, tm, conv } of rowData) {
         const pctCls  = pctMeta  == null ? '' : pctMeta  >= 100 ? 'kpi-pos' : pctMeta  >= 80 ? 'kpi-warn' : 'kpi-neg';
         const projCls = projecao == null ? '' : projecao >= mensal ? 'kpi-pos' : projecao >= mensal*0.9 ? 'kpi-warn' : 'kpi-neg';
+        const convCls = conv == null ? '' : conv >= 50 ? 'kpi-pos' : conv >= 30 ? 'kpi-warn' : 'kpi-neg';
         const row = document.createElement('tr');
         row.className = 'dash-row';
         row.innerHTML = `
@@ -752,7 +764,7 @@ function renderDashboard() {
           <td class="dash-td dash-td-num ${projCls}">${fBRL(projecao)}</td>
           <td class="dash-td dash-td-num${pa != null ? (pa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${fDec(pa)}</td>
           <td class="dash-td dash-td-num">${fBRL(tm)}</td>
-          <td class="dash-td dash-td-num">—</td>
+          <td class="dash-td dash-td-num ${convCls}">${conv != null ? conv.toFixed(1) + '%' : '—'}</td>
         `;
         tbody.appendChild(row);
       }
@@ -779,7 +791,11 @@ function renderDashboard() {
     const gProj  = (grandValor > 0 && gMetaAccum > 0) ? grandValor / gMetaAccum * grandMeta : null;
     const gPa    = (grandPecas > 0 && grandAtend > 0) ? grandPecas / grandAtend : null;
     const gTm    = (grandValor > 0 && grandAtend > 0) ? grandValor / grandAtend : null;
-    const gConv  = (grandFluxo > 0 && grandAtend > 0) ? grandAtend / grandFluxo * 100 : null;
+    let grandITotal = 0, grandIConv = 0;
+    for (const board of Object.keys(S.indevaStats || {})) {
+      for (const s of Object.values(S.indevaStats[board]?.monthly || {})) { grandITotal += s.total; grandIConv += s.conv; }
+    }
+    const gConv = grandITotal > 0 ? grandIConv / grandITotal * 100 : (grandFluxo > 0 && grandAtend > 0 ? grandAtend / grandFluxo * 100 : null);
     const gPCls  = gPct  == null ? '' : gPct  >= 100 ? 'kpi-pos' : gPct  >= 80 ? 'kpi-warn' : 'kpi-neg';
     const gPrCls = gProj == null ? '' : gProj >= grandMeta ? 'kpi-pos' : gProj >= grandMeta * 0.9 ? 'kpi-warn' : 'kpi-neg';
     const gCCls  = gConv == null ? '' : gConv >= 30 ? 'kpi-pos' : gConv >= 15 ? 'kpi-warn' : 'kpi-neg';
@@ -1135,14 +1151,17 @@ function _renderDayCardBody(body, dateStr) {
       storeTotalPecas += pecas;
       storeTotalAtend += atend;
 
-      const pctCls = pct == null ? '' : pct >= 100 ? 'dia-pct-ok' : pct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
+      const iDay   = S.indevaStats?.[emp.board]?.daily?.[dateStr]?.[String(emp.id)];
+      const empConv = iDay?.total > 0 ? iDay.conv / iDay.total * 100 : null;
+      const pctCls  = pct == null ? '' : pct >= 100 ? 'dia-pct-ok' : pct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
+      const cCls    = empConv == null ? '' : empConv >= 50 ? 'dia-conv-ok' : empConv >= 30 ? 'dia-conv-warn' : 'dia-conv-bad';
       vendorRowsHtml.push(`
         <div class="dia-row dia-vendor-row">
           <span class="dia-name">${emp.apelido || emp.name.split(' ')[0]}</span>
           <span class="dia-val">${valor > 0 ? fV(valor) : '—'}</span>
           <span class="dia-meta">${metaDia > 0 ? fV(metaDia) : '—'}</span>
           <span class="dia-pa">${pa != null ? pa.toFixed(2) : '—'}</span>
-          <span class="dia-conv">—</span>
+          <span class="dia-conv ${cCls}">${empConv != null ? empConv.toFixed(1) + '%' : '—'}</span>
           <span class="dia-pct ${pctCls}">${pct != null ? pct.toFixed(1) + '%' : '—'}</span>
         </div>`);
     }
@@ -1155,7 +1174,10 @@ function _renderDayCardBody(body, dateStr) {
     const storePa    = storeTotalAtend > 0 ? storeTotalPecas / storeTotalAtend : null;
     const storePct   = storeTotalMeta > 0 ? storeTotalVal / storeTotalMeta * 100 : null;
     const storeFluxo = S.storeFluxo?.[bk]?.[dateStr] || 0;
-    const storeConv  = (storeFluxo > 0 && storeTotalAtend > 0) ? storeTotalAtend / storeFluxo * 100 : null;
+    const sDayIndeva = S.indevaStats?.[bk]?.daily?.[dateStr] || {};
+    let sdTotal = 0, sdConv = 0;
+    for (const s of Object.values(sDayIndeva)) { sdTotal += s.total; sdConv += s.conv; }
+    const storeConv = sdTotal > 0 ? sdConv / sdTotal * 100 : (storeFluxo > 0 && storeTotalAtend > 0 ? storeTotalAtend / storeFluxo * 100 : null);
     const sPctCls    = storePct == null ? '' : storePct >= 100 ? 'dia-pct-ok' : storePct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
     const sConvCls   = storeConv == null ? '' : storeConv >= 30 ? 'dia-conv-ok' : storeConv >= 15 ? 'dia-conv-warn' : 'dia-conv-bad';
     grandFluxo += storeFluxo;

@@ -3139,6 +3139,58 @@ app.post('/api/indeva/:board/atendimento', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.get('/api/indeva-stats/:year/:month', requireAuth, async (req, res) => {
+  try {
+    const { year, month } = req.params;
+    const prefix = `${year}-${String(month).padStart(2,'0')}-`;
+    const db = await readDB();
+    const result = {};
+    const today = todayBRT();
+
+    for (const board of INDEVA_STORES) {
+      const store = db.indeva?.[board];
+      if (!store) continue;
+      const daily = {};
+
+      // Historical days in this month
+      for (const [date, dayData] of Object.entries(store.historico || {})) {
+        if (!date.startsWith(prefix)) continue;
+        if (!daily[date]) daily[date] = {};
+        for (const a of (dayData.atendimentos || [])) {
+          const key = String(a.empId);
+          if (!daily[date][key]) daily[date][key] = { total: 0, conv: 0 };
+          daily[date][key].total++;
+          if (a.vendeu) daily[date][key].conv++;
+        }
+      }
+
+      // Today (if in this month)
+      if (store.date?.startsWith(prefix)) {
+        if (!daily[store.date]) daily[store.date] = {};
+        for (const a of (store.atendimentos || [])) {
+          const key = String(a.empId);
+          if (!daily[store.date][key]) daily[store.date][key] = { total: 0, conv: 0 };
+          daily[store.date][key].total++;
+          if (a.vendeu) daily[store.date][key].conv++;
+        }
+      }
+
+      // Aggregate monthly
+      const monthly = {};
+      for (const dayStats of Object.values(daily)) {
+        for (const [key, s] of Object.entries(dayStats)) {
+          if (!monthly[key]) monthly[key] = { total: 0, conv: 0 };
+          monthly[key].total += s.total;
+          monthly[key].conv  += s.conv;
+        }
+      }
+
+      result[board] = { daily, monthly };
+    }
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/indeva', (req, res) => res.sendFile(path.join(__dirname, 'public/indeva.html')));
 
 // ── Start ──────────────────────────────────────────────────────────────────
