@@ -7284,7 +7284,7 @@ function _renderIndeva(body, state) {
   _indevaLastState = state;
   const { fila, atendendo, atendimentos } = state;
   const atendArr = Array.isArray(atendendo) ? atendendo : (atendendo != null ? [atendendo] : []);
-  const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && isVend(e) && !e.inativo);
+  const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && e.isVendedor !== false && !/gerente/i.test(e.cargo || '') && !e.inativo);
   const empById = Object.fromEntries(emps.map(e => [e.id, e]));
   const total  = atendimentos.length;
   const vendas = atendimentos.filter(a => a.vendeu).length;
@@ -7730,7 +7730,7 @@ async function _indevaAtend(empId, vendeu, motivo) {
 }
 
 function _renderIndevaHistorico(body, historico) {
-  const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && isVend(e) && !e.inativo);
+  const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && e.isVendedor !== false && !/gerente/i.test(e.cargo || '') && !e.inativo);
   const empById = Object.fromEntries(emps.map(e => [e.id, e]));
   const days = Object.values(historico).sort((a,b) => b.date.localeCompare(a.date));
 
