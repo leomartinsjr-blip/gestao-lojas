@@ -163,23 +163,25 @@ async function scrapeContasPagar(dtIni, dtFin) {
 
     // ── 1. Login ───────────────────────────────────────────────────────────
     log('Abrindo portal…');
-    await page.goto(PORTAL_URL, { waitUntil: 'domcontentloaded', timeout: 60000 });
-    await new Promise(r => setTimeout(r, 2000));
+    // Ignora timeout de navegação — portais ASP ficam em polling e nunca "terminam"
+    page.goto(PORTAL_URL).catch(() => {});
+    // Aguarda campo de login aparecer (até 45s)
+    const userSel = 'input[name="login"], input[name="usuario"], input[name="username"], input[type="text"]:not([type="hidden"])';
+    const passSel = 'input[name="senha"], input[name="password"], input[type="password"]';
+    try {
+      await page.waitForSelector(userSel, { timeout: 45000 });
+    } catch (e) {
+      await screenshot(page, '01-timeout');
+      throw new Error(`Portal não carregou campo de login em 45s. URL atual: ${page.url()}`);
+    }
     await screenshot(page, '01-login-page');
 
-    const userSel = 'input[name="login"], input[name="usuario"], input[name="username"], input[type="text"]:not([name="senha"])';
-    const passSel = 'input[name="senha"], input[name="password"], input[type="password"]';
-
-    await page.waitForSelector(userSel, { timeout: 20000 });
     await fillField(page, userSel, user);
     await fillField(page, passSel, pass);
     log('Credenciais preenchidas, fazendo login…');
 
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {}),
-      page.keyboard.press('Enter'),
-    ]);
-    await new Promise(r => setTimeout(r, 3000));
+    page.keyboard.press('Enter').catch(() => {});
+    await new Promise(r => setTimeout(r, 5000));
     await screenshot(page, '02-after-login');
 
     // ── 2. Navegar até Faturas a Pagar ─────────────────────────────────────
