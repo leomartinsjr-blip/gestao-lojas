@@ -4842,7 +4842,10 @@ function _renderPendenciasActive(body, filter, myUsername, refresh) {
       const row = body.querySelector(`.pend-inline-edit[data-id="${id}"]`);
       const open = row.style.display !== 'none';
       body.querySelectorAll('.pend-inline-edit').forEach(r => r.style.display = 'none');
-      if (!open) row.style.display = 'flex';
+      if (!open) {
+        row.style.display = 'flex';
+        setTimeout(() => row.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 30);
+      }
     });
   });
 
