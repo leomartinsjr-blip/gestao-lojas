@@ -683,23 +683,35 @@ body {
 }
 
 .logout-btn {
-  display: flex; align-items: center; gap: .35rem;
+  display: flex; align-items: center; gap: 0;
   background: var(--surface2); border: 1px solid var(--border);
   color: var(--muted); cursor: pointer; border-radius: .375rem;
-  font-size: .78rem; padding: .3rem .65rem;
-  font-family: inherit; transition: all .15s; white-space: nowrap;
+  font-size: 0; padding: .32rem .42rem;
+  font-family: inherit; transition: border-color .15s, color .15s, padding .2s ease; white-space: nowrap; flex-shrink: 0; overflow: hidden;
 }
-.logout-btn:hover { color: var(--down); border-color: var(--down); }
+.logout-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
+.logout-btn:hover { color: var(--down); border-color: var(--down); padding: .32rem .55rem; }
+.logout-btn:hover .btn-label { max-width: 40px; opacity: 1; margin-left: .38rem; }
 
 .folgas-topbar-btn {
   display: flex; align-items: center; gap: 0;
   background: var(--surface2); border: 1px solid var(--border);
   color: var(--muted); cursor: pointer; border-radius: .375rem;
   font-size: 0; padding: .32rem .42rem;
-  font-family: inherit; transition: all .15s; white-space: nowrap; flex-shrink: 0;
+  font-family: inherit; transition: border-color .15s, color .15s, padding .2s ease; white-space: nowrap; flex-shrink: 0;
+  overflow: hidden;
 }
 .folgas-topbar-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
-.folgas-topbar-btn:hover { color: #58A6FF; border-color: #58A6FF; }
+.folgas-topbar-btn:hover { color: #58A6FF; border-color: #58A6FF; padding: .32rem .55rem; }
+.btn-label {
+  display: inline-block; overflow: hidden; white-space: nowrap;
+  max-width: 0; opacity: 0; margin-left: 0;
+  font-size: .75rem; font-weight: 500;
+  transition: max-width .22s ease, opacity .18s ease, margin-left .22s ease;
+}
+.folgas-topbar-btn:hover .btn-label {
+  max-width: 160px; opacity: 1; margin-left: .38rem;
+}
 
 /* ── Microvix sync button ────────────────────────────────────────── */
 .mx-sync-btn {
@@ -707,10 +719,13 @@ body {
   background: var(--surface2); border: 1px solid var(--border);
   color: var(--muted); cursor: pointer; border-radius: .375rem;
   font-size: 0; padding: .32rem .42rem;
-  font-family: inherit; transition: all .15s; white-space: nowrap; flex-shrink: 0;
+  font-family: inherit; transition: border-color .15s, color .15s, padding .2s ease;
+  white-space: nowrap; flex-shrink: 0; overflow: hidden;
 }
 .mx-sync-btn svg { width: 15px; height: 15px; flex-shrink: 0; }
-#mxSyncLabel { display: none; }
+.mx-sync-btn:hover { padding: .32rem .55rem; }
+#mxSyncLabel { display: inline-block; overflow: hidden; white-space: nowrap; max-width: 0; opacity: 0; margin-left: 0; font-size: .75rem; font-weight: 500; transition: max-width .22s ease, opacity .18s ease, margin-left .22s ease; }
+.mx-sync-btn:hover #mxSyncLabel { max-width: 80px; opacity: 1; margin-left: .38rem; }
 .mx-sync-btn:hover { color: #58A6FF; border-color: #58A6FF; }
 .mx-sync-btn.syncing { color: var(--warn); border-color: var(--warn); pointer-events: none; }
 .mx-sync-btn.syncing #mxSyncIcon { animation: mxSpin .9s linear infinite; }
@@ -2335,8 +2350,7 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   .user-chip { display: none; }
 
   .topbar-user { gap: .25rem; padding-left: .3rem; }
-  .logout-btn { font-size: 0; padding: .32rem .38rem; gap: 0; flex-shrink: 0; }
-  .logout-btn svg { width: 15px; height: 15px; }
+  .logout-btn { padding: .28rem .35rem; }
 
   /* ── Board container ──────────────────────────────────────────────────── */
   #boardContainer { padding: .4rem .35rem 1.5rem; }
