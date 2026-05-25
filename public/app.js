@@ -1833,17 +1833,81 @@ let _transTab       = 'microvix'; // 'microvix' | 'excel'
 
 function openTransModal() {
   document.getElementById('transOverlay').classList.remove('hidden');
-  fetch('/api/transferencias/preload').catch(() => {});
-  renderTransView();
+  renderGestaoHub();
 }
 function closeTransModal() {
   document.getElementById('transOverlay').classList.add('hidden');
 }
 
+function _gestaoSetTitle(icon, text) {
+  document.getElementById('transHdrTitle').innerHTML = `${icon} ${text}`;
+}
+function _gestaoShowBack(show) {
+  document.getElementById('transBackBtn').classList.toggle('hidden', !show);
+}
+
+function renderGestaoHub() {
+  _gestaoShowBack(false);
+  _gestaoSetTitle(`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`, 'Gestão de Produtos');
+  const body = document.getElementById('transBody');
+  body.innerHTML = `
+    <div class="gestao-hub">
+      <button class="gestao-hub-card" id="hubTransferencia">
+        <span class="gestao-hub-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+            <polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+            <polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+          </svg>
+        </span>
+        <span class="gestao-hub-label">Sugestão de Transferência</span>
+        <span class="gestao-hub-desc">Redistribuição de estoque entre lojas</span>
+      </button>
+      <button class="gestao-hub-card" id="hubPromocao">
+        <span class="gestao-hub-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+            <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/>
+            <line x1="7" y1="7" x2="7.01" y2="7"/>
+          </svg>
+        </span>
+        <span class="gestao-hub-label">Sugestão de Promoção</span>
+        <span class="gestao-hub-desc">Produtos com baixo giro para promover</span>
+      </button>
+      <button class="gestao-hub-card" id="hubReposicao">
+        <span class="gestao-hub-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+            <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/>
+            <line x1="3" y1="6" x2="21" y2="6"/>
+            <path d="M16 10a4 4 0 0 1-8 0"/>
+          </svg>
+        </span>
+        <span class="gestao-hub-label">Sugestão de Reposição</span>
+        <span class="gestao-hub-desc">SKUs com ruptura de estoque para repor</span>
+      </button>
+    </div>`;
+  body.querySelector('#hubTransferencia').addEventListener('click', renderTransView);
+  body.querySelector('#hubPromocao').addEventListener('click', renderPromocaoView);
+  body.querySelector('#hubReposicao').addEventListener('click', renderReposicaoView);
+}
+
 function renderTransView() {
+  fetch('/api/transferencias/preload').catch(() => {});
+  _gestaoShowBack(true);
+  _gestaoSetTitle(`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>`, 'Sugestão de Transferência');
   const body = document.getElementById('transBody');
   body.innerHTML = `<div id="transTabContent"></div>`;
   renderTransExcelTab(body.querySelector('#transTabContent'));
+}
+
+function renderPromocaoView() {
+  _gestaoShowBack(true);
+  _gestaoSetTitle(`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>`, 'Sugestão de Promoção');
+  document.getElementById('transBody').innerHTML = `<div class="gestao-placeholder"><span>Em breve</span><p>Análise de produtos com baixo giro para sugestão de promoção.</p></div>`;
+}
+
+function renderReposicaoView() {
+  _gestaoShowBack(true);
+  _gestaoSetTitle(`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>`, 'Sugestão de Reposição');
+  document.getElementById('transBody').innerHTML = `<div class="gestao-placeholder"><span>Em breve</span><p>Análise de SKUs com ruptura de estoque para sugestão de reposição.</p></div>`;
 }
 
 function renderTransTabContent(container) {
@@ -2656,6 +2720,7 @@ function initPerfModal() {
   });
   document.getElementById('transBtn').addEventListener('click', openTransModal);
   document.getElementById('transClose').addEventListener('click', closeTransModal);
+  document.getElementById('transBackBtn').addEventListener('click', renderGestaoHub);
   document.getElementById('transOverlay').addEventListener('click', e => {
     if (e.target.id === 'transOverlay') closeTransModal();
   });

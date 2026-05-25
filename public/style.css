@@ -2226,6 +2226,18 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   cursor: pointer; transition: background .15s; margin-left: auto;
 }
 .trans-calc-btn:hover { background: #388bfd; }
+.trans-back-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: .75rem; padding: .25rem .7rem; border-radius: 5px; cursor: pointer; font-weight: 500; transition: all .15s; }
+.trans-back-btn:hover { border-color: #58A6FF; color: #58A6FF; }
+.trans-back-btn.hidden { display: none; }
+.gestao-hub { display: flex; gap: 1rem; padding: 1.5rem; flex-wrap: wrap; justify-content: center; align-items: stretch; }
+.gestao-hub-card { display: flex; flex-direction: column; align-items: center; gap: .6rem; background: var(--card-bg, #161B22); border: 1px solid var(--border); border-radius: .75rem; padding: 1.75rem 1.5rem; cursor: pointer; transition: border-color .18s, background .18s, transform .15s; min-width: 170px; flex: 1; max-width: 220px; font-family: inherit; color: var(--text); }
+.gestao-hub-card:hover { border-color: #58A6FF; background: rgba(88,166,255,.07); transform: translateY(-2px); }
+.gestao-hub-icon { color: #58A6FF; opacity: .85; }
+.gestao-hub-label { font-size: .88rem; font-weight: 600; text-align: center; }
+.gestao-hub-desc { font-size: .73rem; color: var(--muted); text-align: center; line-height: 1.4; }
+.gestao-placeholder { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .75rem; padding: 4rem 2rem; color: var(--muted); }
+.gestao-placeholder span { font-size: 1.1rem; font-weight: 600; color: var(--text); opacity: .4; }
+.gestao-placeholder p { font-size: .82rem; text-align: center; max-width: 320px; line-height: 1.5; }
 .trans-loading, .trans-empty, .trans-error {
   padding: 2rem; text-align: center; font-size: .82rem; color: var(--muted);
 }
