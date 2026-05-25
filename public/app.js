@@ -409,7 +409,7 @@ function renderDashboard() {
   const fPct = v => v == null ? '—' : v.toFixed(1)+'%';
   const fDec = v => v == null ? '—' : v.toFixed(2);
 
-  const vendedores = S.employees.filter(e => e.isVendedor !== false);
+  const vendedores = S.employees.filter(e => isVend(e));
   const byBoard = {};
   for (const emp of vendedores) {
     if (!byBoard[emp.board]) byBoard[emp.board] = [];
@@ -891,7 +891,7 @@ function renderDashboard() {
   if (activeCampaigns.length > 0) {
     const camp = activeCampaigns[0];
     const campEmps = S.employees.filter(e =>
-      e.isVendedor !== false && !e.inativo &&
+      isVend(e) && !e.inativo &&
       (camp.scope === 'rede' || camp.stores.includes(e.board))
     );
     const campRanking = campEmps.map(emp => {
@@ -1106,7 +1106,7 @@ function _renderDayCardBody(body, dateStr) {
   const defW = +(100 / daysInMonth).toFixed(6);
   const dayWeight = S.weights[dateStr] ?? defW;
 
-  const vendedores = S.employees.filter(e => e.isVendedor !== false && !e.inativo);
+  const vendedores = S.employees.filter(e => isVend(e) && !e.inativo);
   const byBoard = {};
   for (const emp of vendedores) {
     if (!byBoard[emp.board]) byBoard[emp.board] = [];
@@ -1244,7 +1244,7 @@ function _renderDashWeekBody(body, week, extraData) {
   const fDec = v => v == null ? '—' : v.toFixed(2);
 
   const isAdmin = !S.user?.board;
-  const vendedores = S.employees.filter(e => e.isVendedor !== false);
+  const vendedores = S.employees.filter(e => isVend(e));
   const byBoard = {};
   for (const emp of vendedores) {
     if (!byBoard[emp.board]) byBoard[emp.board] = [];
@@ -1579,7 +1579,7 @@ async function _loadCompCard(body) {
 
   // Realizado por loja até o último dia preenchido
   const realized = Object.fromEntries(STORE_KEYS.map(k => [k, 0]));
-  for (const emp of S.employees.filter(e => e.isVendedor !== false)) {
+  for (const emp of S.employees.filter(e => isVend(e))) {
     if (!STORE_KEYS.includes(emp.board)) continue;
     const entries = (S.vsales[emp.id] || {}).entries || {};
     for (let d = 1; d <= daysInCur; d++) {
@@ -1761,7 +1761,7 @@ function computeCurMonthProj(board) {
   if (wAccum === 0) return null;
   let realized = 0;
   for (const emp of S.employees) {
-    if (emp.board !== board || emp.isVendedor === false) continue;
+    if (emp.board !== board || !isVend(emp)) continue;
     const entries = (S.vsales[emp.id] || {}).entries || {};
     for (let d = 1; d <= daysInMonth; d++) {
       const ds = `${S.year}-${pad(S.month)}-${pad(d)}`;
@@ -3038,7 +3038,7 @@ async function loadAndRenderDaily(board) {
   body.innerHTML = '<div style="text-align:center;padding:2.5rem;color:var(--muted)">Carregando…</div>';
   try {
     const allEmps = await apiFetch('GET', '/api/employees');
-    PD.employees  = allEmps.filter(e => e.board === board && e.isVendedor !== false);
+    PD.employees  = allEmps.filter(e => e.board === board && isVend(e));
     PD.weights       = await apiFetch('GET', `/api/weights/${PD.year}/${PD.month}`);
     PD.fluxo         = await apiFetch('GET', `/api/storefluxo/${PD.year}/${PD.month}/${board}`);
     PD.boardSettings = await apiFetch('GET', '/api/board-settings');
@@ -3524,7 +3524,7 @@ function _checkWeeklyCelebrations() {
   const pending = [];
 
   for (const [bk, bc] of visibleBoards()) {
-    const emps = S.employees.filter(e => e.board === bk && (e.isVendedor !== false || e.cargo?.toLowerCase().includes('gerente')) && !e.inativo);
+    const emps = S.employees.filter(e => e.board === bk && (isVend(e) || e.cargo?.toLowerCase().includes('gerente')) && !e.inativo);
     if (!emps.length) continue;
     let totValor = 0, totMeta = 0;
 
@@ -4307,7 +4307,7 @@ async function renderWeeklyModal() {
   const pendingCelebrations = [];
 
   for (const [bk, bc] of visibleBoards()) {
-    const emps = S.employees.filter(e => e.board === bk && (e.isVendedor !== false || e.cargo?.toLowerCase().includes('gerente')) && !e.inativo);
+    const emps = S.employees.filter(e => e.board === bk && (isVend(e) || e.cargo?.toLowerCase().includes('gerente')) && !e.inativo);
     if (emps.length === 0) continue;
 
     const section = document.createElement('div');
@@ -4651,7 +4651,7 @@ async function saveFuncionario() {
   const comissaoVR       = parseFloat(document.getElementById('funcComissaoVR').value)        || 0;
   const aberturaLoja     = parseFloat(document.getElementById('funcAberturaLoja').value)      || 0;
   const comissaoGerente  = parseFloat(document.getElementById('funcComissaoGerente').value)   || 0;
-  const isVendedor = ['Vendedor', 'Gerente Vendedor'].includes(cargo);
+  const isVendedor = ['Vendedor', 'Gerente Vendedor', 'Sub Gerente'].includes(cargo);
   const inativo   = document.getElementById('funcInativo').checked;
   const desligamento = document.getElementById('funcDesligamento').value;
   const fotoRemoved  = !FE.newPhotoFile && !FE.currentPhotoUrl && !!FE.editingId;
@@ -4839,7 +4839,7 @@ function _campMonthsInRange(startDate, endDate) {
 
 async function calcCampaignRanking(campaign) {
   const emps = S.employees.filter(e =>
-    e.isVendedor !== false &&
+    isVend(e) &&
     (campaign.scope === 'rede' || campaign.stores.includes(e.board))
   );
   const months = _campMonthsInRange(campaign.startDate, campaign.endDate);
@@ -5160,6 +5160,11 @@ function initCampanhasModal() {
   document.getElementById('campanhasOverlay').addEventListener('click', e => {
     if (e.target === document.getElementById('campanhasOverlay')) closeCampanhasModal();
   });
+}
+
+// Vendedor = isVendedor true, ou cargo sub gerente/gerente (mantém compatibilidade com registros antigos)
+function isVend(e) {
+  return isVend(e) || /gerente/i.test(e.cargo || '');
 }
 
 // ── Recebimento de NF ─────────────────────────────────────────────────────
@@ -7298,7 +7303,7 @@ function _renderIndeva(body, state) {
   _indevaLastState = state;
   const { fila, atendendo, atendimentos } = state;
   const atendArr = Array.isArray(atendendo) ? atendendo : (atendendo != null ? [atendendo] : []);
-  const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && e.isVendedor!==false && !e.inativo);
+  const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && isVend(e) && !e.inativo);
   const empById = Object.fromEntries(emps.map(e => [e.id, e]));
   const total  = atendimentos.length;
   const vendas = atendimentos.filter(a => a.vendeu).length;
@@ -7537,7 +7542,7 @@ function _showIndevaGoalsOverlay(emp, state) {
   const usabilidade = todayAtendMx > 0 ? Math.min(indevaConv / todayAtendMx * 100, 100) : null;
 
   // Médias da loja (para comparativo)
-  const boardEmps = (S.employees||[]).filter(e => e.board===emp.board && e.isVendedor!==false && !e.inativo);
+  const boardEmps = (S.employees||[]).filter(e => e.board===emp.board && isVend(e) && !e.inativo);
   const lojaConvPct = allAtend.length > 0 ? allAtend.filter(a=>a.vendeu).length / allAtend.length * 100 : null;
   let lojaPASum = 0, lojaPACnt = 0, lojaVSum = 0, lojaASum = 0;
   for (const e of boardEmps) {
@@ -7744,7 +7749,7 @@ async function _indevaAtend(empId, vendeu, motivo) {
 }
 
 function _renderIndevaHistorico(body, historico) {
-  const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && e.isVendedor!==false && !e.inativo);
+  const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && isVend(e) && !e.inativo);
   const empById = Object.fromEntries(emps.map(e => [e.id, e]));
   const days = Object.values(historico).sort((a,b) => b.date.localeCompare(a.date));
 
@@ -7885,7 +7890,7 @@ function _openIndevaCampanhasOverlay() {
   } else {
     const camp = activeCamps[0];
     const campEmps = (S.employees||[]).filter(e =>
-      e.isVendedor !== false && !e.inativo &&
+      isVend(e) && !e.inativo &&
       (camp.scope === 'rede' || (camp.stores||[]).includes(e.board))
     );
     const ranking = campEmps.map(emp => {
@@ -7938,7 +7943,7 @@ function _openIndevaCampanhasOverlay() {
 
 function _openIndevaMetasOverlay() {
   const board   = _indevaBoard;
-  const emps    = (S.employees||[]).filter(e => e.board===board && e.isVendedor!==false && !e.inativo);
+  const emps    = (S.employees||[]).filter(e => e.board===board && isVend(e) && !e.inativo);
   const pad     = n => String(n).padStart(2,'0');
   const t       = new Date();
   const todayStr = `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
@@ -8023,7 +8028,7 @@ async function initStandalone() {
   S.employees = allEmps;
 
   const boardEmps = allEmps.filter(e =>
-    INDEVA_STORES.includes(e.board) && e.isVendedor !== false && !e.inativo
+    INDEVA_STORES.includes(e.board) && isVend(e) && !e.inativo
   );
   S.vsales = {};
   await Promise.all(boardEmps.map(async emp => {
