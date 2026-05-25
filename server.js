@@ -3587,22 +3587,85 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
     const year  = parseInt(req.params.year);
     const month = parseInt(req.params.month);
     const mk    = `${year}-${String(month).padStart(2,'0')}`;
+    const pad   = n => String(n).padStart(2,'0');
+    const N     = new Date(year, month, 0).getDate(); // dias no mês
+    const defW  = 100 / N;
     const db    = await readDB();
-    const employees = (db.employees || []).filter(e => !e.inativo);
+    const employees    = (db.employees || []).filter(e => !e.inativo);
+    const vsalesAll    = db.vsales       || {};
+    const dailySales   = db.dailySales   || {};
+    const globalWeights = (db.globalWeights || {})[mk] || {};
 
-    // VSales totais do mês por funcionário
-    const vsalesAll = db.vsales || {};
+    // Meta efetiva por vendedor — usa lógica do fechamento diário:
+    // se metaLoja > 0, distribui pelos sellers ativos por dia via pesos globais;
+    // caso contrário usa meta individual do vsales
+    const boards = [...new Set(employees.map(e => e.board))];
+    const lojaMetaMap  = {}; // board → metaLoja
+    const lojaVendaMap = {}; // board → total vendas loja (mês)
+
+    for (const board of boards) {
+      const dsKey    = `${mk}-${board}`;
+      const metaLoja = dailySales[dsKey]?.meta?.mensal || 0;
+      lojaMetaMap[board] = metaLoja;
+
+      const bEmps = employees.filter(e => e.board === board);
+
+      // Total vendas loja no mês
+      lojaVendaMap[board] = bEmps.reduce((s, e) => {
+        const vs = vsalesAll[`${mk}-${board}-${e.id}`] || {};
+        return s + Object.entries(vs.entries || {})
+          .filter(([d]) => d.startsWith(mk))
+          .reduce((a,[,en]) => a + (en.value||0), 0);
+      }, 0);
+
+      // Meta efetiva individual
+      if (metaLoja > 0) {
+        for (const emp of bEmps) {
+          const vs  = vsalesAll[`${mk}-${board}-${emp.id}`] || {};
+          const vac = vs.meta?.vacationDays || [];
+          let s = 0;
+          for (let d = 1; d <= N; d++) {
+            const ds      = `${mk}-${pad(d)}`;
+            if (vac.includes(ds)) continue;
+            const w       = globalWeights[ds] ?? defW;
+            const nActive = bEmps.filter(e2 => {
+              const v2 = (vsalesAll[`${mk}-${board}-${e2.id}`]?.meta?.vacationDays || []);
+              return !v2.includes(ds);
+            }).length;
+            s += nActive > 0 ? (metaLoja * w / 100) / nActive : 0;
+          }
+          // armazena na cópia local (não altera o DB)
+          if (!vsalesAll[`${mk}-${board}-${emp.id}`])
+            vsalesAll[`${mk}-${board}-${emp.id}`] = { meta: { mensal: 0 }, entries: {} };
+          vsalesAll[`${mk}-${board}-${emp.id}`].meta._efetiva = Math.round(s * 100) / 100;
+        }
+      }
+    }
+
+    // Monta vsales para o cliente com meta.efetiva calculada
     const vsales = {};
     for (const emp of employees) {
       const key = `${mk}-${emp.board}-${emp.id}`;
-      vsales[emp.id] = vsalesAll[key] || { meta: { mensal: 0 }, entries: {} };
+      const raw = vsalesAll[key] || { meta: { mensal: 0 }, entries: {} };
+      const metaLoja = lojaMetaMap[emp.board] || 0;
+      vsales[emp.id] = {
+        ...raw,
+        meta: {
+          ...raw.meta,
+          efetiva: metaLoja > 0
+            ? (raw.meta._efetiva || 0)
+            : (raw.meta.mensal  || 0),
+        },
+      };
     }
 
     res.json({
-      folha:       (db.folhas || {})[mk] || {},
+      folha:        (db.folhas || {})[mk] || {},
       employees,
       vsales,
-      folhaConfig: db.folhaConfig || {},
+      folhaConfig:  db.folhaConfig || {},
+      lojaMetaMap,   // metaLoja por board (para VR faixa)
+      lojaVendaMap,  // total vendas loja por board
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

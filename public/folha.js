@@ -46,6 +46,7 @@ let FP = {
   year: 0, month: 0, board: '',
   employees: [], vsales: {},
   folha: {}, folhaConfig: {},
+  lojaMetaMap: {}, lojaVendaMap: {},
   activeEmpId: null, dirty: false,
 };
 
@@ -81,10 +82,12 @@ async function loadPeriod() {
   document.getElementById('fpPanel').innerHTML = '<div class="fp-empty">Carregando…</div>';
   try {
     const d = await apiFetch(`/api/folha/${FP.year}/${FP.month}`);
-    FP.employees   = d.employees   || [];
-    FP.vsales      = d.vsales      || {};
-    FP.folha       = d.folha       || {};
-    FP.folhaConfig = d.folhaConfig || {};
+    FP.employees    = d.employees    || [];
+    FP.vsales       = d.vsales       || {};
+    FP.folha        = d.folha        || {};
+    FP.folhaConfig  = d.folhaConfig  || {};
+    FP.lojaMetaMap  = d.lojaMetaMap  || {};
+    FP.lojaVendaMap = d.lojaVendaMap || {};
     renderStoreButtons('');
     document.getElementById('fpPanel').innerHTML =
       '<div class="fp-empty">Selecione uma loja para ver a folha.</div>';
@@ -327,15 +330,15 @@ function defaultEntry(emp) {
   const df   = cfg.domingosFeriados || 5;
   const tot  = du + df;
 
-  const vendas = sumVendas(emp.id);
-  const vs     = FP.vsales[emp.id] || {};
-  const meta   = vs.meta?.mensal || 0;
+  const vendas  = sumVendas(emp.id);
+  const vs      = FP.vsales[emp.id] || {};
+  // usa meta efetiva (calculada no servidor usando lógica do fechamento diário)
+  const meta    = vs.meta?.efetiva || vs.meta?.mensal || 0;
   const pctMeta = meta > 0 ? r2(vendas / meta * 100) : 0;
 
-  // Vendas e meta totais da loja (para VR / gerente)
-  const lojaEmps  = boardEmps(FP.board);
-  const vendaLoja = r2(lojaEmps.reduce((s, e2) => s + sumVendas(e2.id), 0));
-  const metaLoja  = r2(lojaEmps.reduce((s, e2) => s + ((FP.vsales[e2.id]?.meta?.mensal)||0), 0));
+  // Vendas e meta da loja (para VR / gerente) — vêm direto do servidor
+  const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);
+  const metaLoja  = r2(FP.lojaMetaMap[FP.board]  || 0);
   const pctLoja   = metaLoja > 0 ? r2(vendaLoja / metaLoja * 100) : 0;
 
   // ── Caixa ──
@@ -466,13 +469,11 @@ function buildEmpForm(emp, entry) {
       </div>`;
 
     if (tipo === 'gerente' || tipo === 'sub') {
-      const vrPct = (() => {
-        const faixasVR = cfg.faixasVR || defaultFaixas('vr');
-        const pctLoja  = (e.vendaLoja||0) > 0 && (e.meta||0) === 0 ? 0
-          : r2((e.vendaLoja||0) / (boardEmps(FP.board).reduce((s,e2)=>{
-              return s+((FP.vsales[e2.id]?.meta?.mensal)||0);},0)||1)*100);
-        return getFaixa(faixasVR, pctLoja).comPct;
-      })();
+      const faixasVR = cfg.faixasVR || defaultFaixas('vr');
+      const metaL    = r2(FP.lojaMetaMap[FP.board]  || 0);
+      const vendaL   = r2(FP.lojaVendaMap[FP.board] || 0);
+      const pctL     = metaL > 0 ? r2(vendaL/metaL*100) : 0;
+      const vrPct    = getFaixa(faixasVR, pctL).comPct;
       const lbl = tipo==='gerente'
         ? `Comissão Loja — ${faixaBadge(e.faixaVRLabel)} ${r2(vrPct).toFixed(2)}% vendas loja`
         : `Comissão VR — ${faixaBadge(e.faixaVRLabel)} ${r2(vrPct).toFixed(2)}% vendas loja`;
