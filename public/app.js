@@ -2025,14 +2025,16 @@ function renderPromocaoView() {
       }
       if (!Object.keys(products).length) throw new Error('Nenhum produto encontrado no Excel.');
 
-      // Agrupa por referência + cor (última palavra da descrição)
-      result.innerHTML = '<div class="trans-loading">Agrupando por referência + cor…</div>';
+      // Agrupa por nome-base + cor, independente de tamanho
+      // Formato Microvix: "NOME ... TAMANHO COR" → cor = última palavra, tamanho = penúltima
+      result.innerHTML = '<div class="trans-loading">Agrupando por produto + cor…</div>';
       const groups = {};
       for (const p of Object.values(products)) {
-        const parts = p.descricao.trim().split(/\s+/);
-        const cor   = parts[parts.length - 1] || '';
-        const key   = `${p.referencia}|${cor}`;
-        if (!groups[key]) groups[key] = { referencia: p.referencia, cor, descBase: parts.slice(0, -1).join(' '), setor: p.setor, ultimaCompra: null, totalStock: 0, totalGiro: 0 };
+        const parts   = p.descricao.trim().split(/\s+/);
+        const cor     = parts[parts.length - 1] || '';
+        const descBase = parts.slice(0, -2).join(' '); // remove tamanho (penúltimo) e cor (último)
+        const key     = `${descBase}|${cor}`;
+        if (!groups[key]) groups[key] = { referencia: p.referencia, cor, descBase, setor: p.setor, ultimaCompra: null, totalStock: 0, totalGiro: 0 };
         const g = groups[key];
         if (p.ultimaCompra && (!g.ultimaCompra || p.ultimaCompra > g.ultimaCompra)) g.ultimaCompra = p.ultimaCompra;
         g.totalStock += Object.values(p.stocks).reduce((s, v) => s + v, 0);
