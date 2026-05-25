@@ -7502,18 +7502,21 @@ function _openIndevaMetasOverlay() {
     <div class="ig-tab-body" style="padding:.5rem .6rem">
       <table class="ig-table">
         <thead><tr>
-          <th>Vendedor</th><th style="text-align:right">Hoje</th><th style="text-align:right">%</th><th style="text-align:right">Sem.</th><th style="text-align:right">%</th>
+          <th>Vendedor</th>
+          <th style="text-align:right">Meta Dia</th>
+          <th style="text-align:right">Vendido</th>
+          <th style="text-align:right">%</th>
         </tr></thead>
         <tbody>
           ${rows.map(r => `<tr class="indeva-metas-row" data-empid="${r.emp.id}" style="cursor:pointer">
             <td><div style="display:flex;align-items:center;gap:.45rem">${empAvatarHtml(r.emp, 26)}<span style="font-size:.82rem;font-weight:600">${r.emp.apelido||r.emp.name}</span></div></td>
-            <td style="text-align:right;font-size:.78rem">${fBRL(r.todayValor)}</td>
-            <td style="text-align:right;font-size:.78rem" class="${clsPct(r.todayPct)}">${fPct(r.todayPct)}</td>
-            <td style="text-align:right;font-size:.78rem">${fBRL(r.k.valor||0)}</td>
-            <td style="text-align:right;font-size:.78rem" class="${clsPct(r.k.pctMeta)}">${fPct(r.k.pctMeta)}</td>
+            <td style="text-align:right;font-size:.78rem;color:var(--muted)">${fBRL(r.todayMeta)}</td>
+            <td style="text-align:right;font-size:.82rem;font-weight:700">${fBRL(r.todayValor)}</td>
+            <td style="text-align:right;font-size:.82rem;font-weight:700" class="${clsPct(r.todayPct)}">${fPct(r.todayPct)}</td>
           </tr>`).join('')}
         </tbody>
       </table>
+      <div style="font-size:.65rem;color:var(--muted);text-align:center;padding-top:.5rem">Toque no vendedor para ver detalhes</div>
     </div>
   </div>`;
 
