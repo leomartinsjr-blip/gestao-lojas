@@ -1,5 +1,6 @@
 // Puppeteer scraper — portal Linx Microvix → Faturas a Pagar
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
+const chromium  = require('@sparticuz/chromium');
 const path      = require('path');
 const fs        = require('fs');
 
@@ -145,7 +146,14 @@ async function scrapeContasPagar(dtIni, dtFin) {
   if (!user || !pass) throw new Error('Variáveis MICROVIX_PORTAL_USER e MICROVIX_PORTAL_PASS não configuradas no Render');
 
   const today = new Date().toISOString().slice(0, 10);
-  const browser = await puppeteer.launch({ headless: true, args: LAUNCH_ARGS, timeout: 60000 });
+  chromium.setGraphicsMode = false;
+  const execPath = await chromium.executablePath();
+  const browser  = await puppeteer.launch({
+    headless: chromium.headless,
+    executablePath: execPath,
+    args: [...chromium.args, ...LAUNCH_ARGS],
+    timeout: 60000,
+  });
 
   try {
     const page = await browser.newPage();
