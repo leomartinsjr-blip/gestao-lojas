@@ -46,6 +46,7 @@ let FP = {
   year: 0, month: 0, board: '',
   employees: [], vsales: {},
   folha: {}, folhaConfig: {},
+  mensal: { diasUteis: 22, domingosFeriados: 4 },
   lojaMetaMap: {}, lojaVendaMap: {},
   activeEmpId: null, dirty: false,
 };
@@ -88,6 +89,11 @@ async function loadPeriod() {
     FP.folhaConfig  = d.folhaConfig  || {};
     FP.lojaMetaMap  = d.lojaMetaMap  || {};
     FP.lojaVendaMap = d.lojaVendaMap || {};
+    FP.mensal = {
+      diasUteis:        d.folhaMensal?.diasUteis        || 22,
+      domingosFeriados: d.folhaMensal?.domingosFeriados || 4,
+    };
+    renderMensalBar();
     renderStoreButtons('');
     document.getElementById('fpPanel').innerHTML =
       '<div class="fp-empty">Selecione uma loja para ver a folha.</div>';
@@ -95,6 +101,34 @@ async function loadPeriod() {
     document.getElementById('fpPanel').innerHTML =
       `<div class="fp-empty" style="color:#f85149">${e.message}</div>`;
   }
+}
+
+// ── Barra de config mensal (fora das lojas) ────────────────────────────────
+function renderMensalBar() {
+  document.getElementById('fpMensalBar').innerHTML = `
+    <span style="font-size:.8rem;color:#8b949e">Dias úteis:</span>
+    <input type="number" id="fpDiasUteis" value="${FP.mensal.diasUteis}" min="1" max="31"
+      style="width:52px;background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:.25rem .4rem;border-radius:5px;font-size:.85rem;text-align:center"
+      onchange="saveMensal()">
+    <span style="font-size:.8rem;color:#8b949e;margin-left:.75rem">Dom./Feriados:</span>
+    <input type="number" id="fpDomingosFeriados" value="${FP.mensal.domingosFeriados}" min="0" max="15"
+      style="width:52px;background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:.25rem .4rem;border-radius:5px;font-size:.85rem;text-align:center"
+      onchange="saveMensal()">
+    <span style="font-size:.72rem;color:#484f58;margin-left:.5rem">aplica a todas as lojas do mês</span>`;
+}
+
+let _mensalTimer;
+function saveMensal() {
+  const du = parseInt(document.getElementById('fpDiasUteis')?.value) || 22;
+  const df = parseInt(document.getElementById('fpDomingosFeriados')?.value) || 4;
+  FP.mensal = { diasUteis: du, domingosFeriados: df };
+  clearTimeout(_mensalTimer);
+  _mensalTimer = setTimeout(async () => {
+    try {
+      await apiFetch(`/api/folha/${FP.year}/${FP.month}/mensal`, 'POST', FP.mensal);
+      toast('Config mensal salva.');
+    } catch(e) { toast('Erro: '+e.message, true); }
+  }, 800);
 }
 
 function renderStoreButtons(active) {
@@ -226,12 +260,6 @@ function fpOpenCfg(board) {
         <div class="fp-cfg-field"><label>Quebra de Caixa (R$)</label>
           <input type="number" step="0.01" id="cfg-quebraCaixa" value="${f2(cfg.quebraCaixa)}">
         </div>
-        <div class="fp-cfg-field"><label>Dias Úteis</label>
-          <input type="number" id="cfg-diasUteis" value="${cfg.diasUteis||24}">
-        </div>
-        <div class="fp-cfg-field"><label>Domingos / Feriados</label>
-          <input type="number" id="cfg-domingosFeriados" value="${cfg.domingosFeriados||5}">
-        </div>
         <div class="fp-cfg-field"><label>Prêmio Vendedor (R$)</label>
           <input type="number" step="0.01" id="cfg-premioVendedor" value="${f2(cfg.premioVendedor)}">
         </div>
@@ -293,8 +321,6 @@ async function fpSaveConfig() {
     garantiaMinima:   g('cfg-gm'),
     salarioFixoCaixa: g('cfg-fixoCaixa'),
     quebraCaixa:      g('cfg-quebraCaixa'),
-    diasUteis:        g('cfg-diasUteis') || 24,
-    domingosFeriados: g('cfg-domingosFeriados') || 5,
     premioVendedor:   g('cfg-premioVendedor'),
     premioGerente:    g('cfg-premioGerente'),
     faixasVendedor:   readFaixas('vendedor'),
@@ -326,8 +352,8 @@ function sumVendas(empId) {
 function defaultEntry(emp) {
   const cfg  = FP.folhaConfig[FP.board] || {};
   const tipo = cargoTipo(emp.cargo);
-  const du   = cfg.diasUteis        || 24;
-  const df   = cfg.domingosFeriados || 5;
+  const du   = FP.mensal.diasUteis        || 22;
+  const df   = FP.mensal.domingosFeriados || 4;
   const tot  = du + df;
 
   const vendas  = sumVendas(emp.id);
@@ -415,6 +441,8 @@ function buildEmpForm(emp, entry) {
   const e    = entry;
   const tipo = e.tipo || cargoTipo(emp.cargo);
   const cfg  = FP.folhaConfig[FP.board] || {};
+  const du   = FP.mensal.diasUteis        || 22;
+  const df   = FP.mensal.domingosFeriados || 4;
 
   const inp = (id, v, extra='') =>
     `<input type="number" step="0.01" id="${id}" value="${r2(v).toFixed(2)}" ${extra} onchange="onFieldChange(${emp.id})">`;
@@ -460,7 +488,7 @@ function buildEmpForm(emp, entry) {
         </div>
         <div class="fp-field fp-split-row">
           <label>DSR (R$)</label>${inp(`fp-dsr-${emp.id}`, e.dsr)}
-          <span class="fp-split-hint">auto: ×${cfg.domingosFeriados||5}÷${(cfg.diasUteis||24)+(cfg.domingosFeriados||5)}</span>
+          <span class="fp-split-hint">auto: ×${df}÷${du+df}</span>
         </div>
         <div class="fp-field fp-split-row">
           <label>Prêmio (R$)</label>${inp(`fp-premio-${emp.id}`, e.premio)}
@@ -555,8 +583,8 @@ function recalc(empId) {
   const tipo  = cargoTipo(emp?.cargo);
   const cfg   = FP.folhaConfig[FP.board] || {};
   const entry = FP.folha[FP.board]?.entries?.[empId] || {};
-  const du    = cfg.diasUteis        || 24;
-  const df    = cfg.domingosFeriados || 5;
+  const du    = FP.mensal.diasUteis        || 22;
+  const df    = FP.mensal.domingosFeriados || 4;
   const tot   = du + df;
 
   let proventos = 0;

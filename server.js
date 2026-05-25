@@ -3664,9 +3664,27 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       employees,
       vsales,
       folhaConfig:  db.folhaConfig || {},
-      lojaMetaMap,   // metaLoja por board (para VR faixa)
-      lojaVendaMap,  // total vendas loja por board
+      folhaMensal:  (db.folhaConfigMensal || {})[mk] || {},
+      lojaMetaMap,
+      lojaVendaMap,
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/folha/:year/:month/mensal — salva config mensal (dias úteis, dom/feriados)
+app.post('/api/folha/:year/:month/mensal', requireAuth, async (req, res) => {
+  try {
+    const year  = parseInt(req.params.year);
+    const month = parseInt(req.params.month);
+    const mk    = `${year}-${String(month).padStart(2,'0')}`;
+    const db    = await readDB();
+    if (!db.folhaConfigMensal) db.folhaConfigMensal = {};
+    db.folhaConfigMensal[mk] = {
+      diasUteis:        parseInt(req.body.diasUteis)        || 22,
+      domingosFeriados: parseInt(req.body.domingosFeriados) || 4,
+    };
+    await writeDB(db);
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
