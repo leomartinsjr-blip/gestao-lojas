@@ -2338,10 +2338,14 @@ function _exportTransExcel(sugestoes, lojaFilter = '', tipoFilter = '') {
   }).filter(Boolean);
   const ws = XL.utils.aoa_to_sheet([header, ...rows]);
   ws['!cols'] = [{ wch:10 }, { wch:22 }, { wch:14 }, { wch:42 }, { wch:12 }, { wch:40 }];
-  ws['!pageSetup'] = { fitToPage: true, fitToWidth: 1, fitToHeight: 0, orientation: 'landscape', paperSize: 9 };
-  ws['!print'] = { area: `A1:F${rows.length + 1}` };
+  ws['!pageSetup'] = { paperSize: 9, orientation: 'landscape', fitToPage: 1, fitToWidth: 1, fitToHeight: 0 };
+  ws['!sheetPr']   = { pageSetUpPr: { fitToPage: 1 } };
+  ws['!margins']   = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
   const wb = XL.utils.book_new();
   XL.utils.book_append_sheet(wb, ws, 'Transferências');
+  if (!wb.Workbook) wb.Workbook = {};
+  if (!wb.Workbook.Names) wb.Workbook.Names = [];
+  wb.Workbook.Names.push({ Name: '_xlnm.Print_Area', Ref: `Transferências!$A$1:$F$${rows.length + 1}` });
   XL.writeFile(wb, 'transferencias.xlsx');
 }
 
