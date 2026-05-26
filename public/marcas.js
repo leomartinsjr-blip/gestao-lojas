@@ -92,7 +92,11 @@ async function fetchData() {
     const params = new URLSearchParams({ dtIni, dtFin });
     if (board) params.set('board', board);
     const res = await fetch('/api/relatorio-marcas?' + params);
-    if (!res.ok) { showError((await res.json()).error || 'Erro na API'); return; }
+    if (!res.ok) {
+      let msg = `Erro ${res.status}`;
+      try { msg = (await res.json()).error || msg; } catch {}
+      showError(msg); return;
+    }
     apiData = await res.json();
     render();
   } catch (e) {

@@ -2898,41 +2898,44 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
 
     const byMarca = {};
 
-    for (const b of targetBoards) {
-      const cnpj  = (lojas[b] || '').replace(/\D/g, '');
-      if (!cnpj) continue;
-      const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-      let rows;
-      try {
-        rows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
-      } catch (e) {
-        console.error(`[relatorioMarcas/${b}] ${e.message}`);
-        continue;
-      }
-      console.log(`[relatorioMarcas/${b}] ${rows.length} linhas brutas`);
+    // Busca todas as lojas em paralelo para não estourar o timeout do servidor
+    const boardResults = await Promise.all(
+      targetBoards.map(async b => {
+        const cnpj = (lojas[b] || '').replace(/\D/g, '');
+        if (!cnpj) return [];
+        const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+        try {
+          const rows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
+          console.log(`[relatorioMarcas/${b}] ${rows.length} linhas brutas`);
+          return rows;
+        } catch (e) {
+          console.error(`[relatorioMarcas/${b}] ${e.message}`);
+          return [];
+        }
+      })
+    );
 
+    for (const rows of boardResults) {
       for (const row of rows) {
-        // Filtros: cancelado, excluído, fora de relatório, devoluções
         if (row.cancelado === 'S' || row.cancelado === '1') continue;
         if (row.excluido  === 'S') continue;
         if (row.soma_relatorio === 'N') continue;
         const op = (row.operacao || '').toUpperCase();
-        // S = Saída (venda), DS = Devolução (desconta), qualquer outro ignora
         if (op !== 'S' && op !== 'DS') continue;
         const sign = op === 'DS' ? -1 : 1;
 
         const cod      = String(row.cod_produto || '').trim();
         const prodInfo = catalog[cod] || {};
         const marca    = prodInfo.marca || '(sem marca)';
-        const qtd      = sign * parseBrNum(row.quantidade  || '0');
-        const valor    = sign * parseBrNum(row.valor_total  || '0');
+        const qtd      = sign * parseBrNum(row.quantidade || '0');
+        const valor    = sign * parseBrNum(row.valor_total || '0');
 
         const key = marca.toUpperCase();
         if (!byMarca[key]) byMarca[key] = { marca, qtd: 0, valor: 0, produtos: {} };
         byMarca[key].qtd   += qtd;
         byMarca[key].valor += valor;
 
-        const nomeProd = (prodInfo.nome || cod || '?');
+        const nomeProd = prodInfo.nome || cod || '?';
         const tipo     = prodInfo.tipo || 'produto';
         if (!byMarca[key].produtos[cod]) byMarca[key].produtos[cod] = { cod, nome: nomeProd, tipo, qtd: 0, valor: 0 };
         byMarca[key].produtos[cod].qtd   += qtd;
@@ -2966,7 +2969,7 @@ const CATALOG_TTL = 6 * 60 * 60 * 1000;
 
 async function _getCatalog(lojas) {
   if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
-  const { fetchProdutos, fetchServicos } = require('./services/microvix');
+  const { fetchProdutos, fetchServicos, parseBrNum } = require('./services/microvix');
   const firstBoard = Object.keys(lojas)[0];
   if (!firstBoard) return {};
   const cnpj  = lojas[firstBoard].replace(/\D/g, '');
