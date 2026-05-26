@@ -14,9 +14,10 @@ const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
 
 function cargoTipo(cargo) {
   const c = (cargo || '').toLowerCase().trim();
-  if (/caixa|opcx/.test(c))                              return 'caixa';
-  if (/^sub.*gerente|sub[\s-]gerente/.test(c))            return 'sub';
-  if (/gerente|g\.?\s*vend/.test(c) && !/^sub/.test(c))  return 'gerente';
+  if (/caixa|opcx/.test(c))                    return 'caixa';
+  if (/^sub.*gerente|sub[\s-]gerente/.test(c)) return 'sub';
+  if (/g\.?\s*vend/.test(c))                   return 'gvend';
+  if (/gerente/.test(c))                       return 'gerente';
   return 'vendedor';
 }
 
@@ -153,9 +154,10 @@ function renderStoreButtons(active) {
     .filter(b => FP.employees.some(e => e.board === b))
     .map(b => {
       const saved = !!(FP.folha[b]?.entries && Object.keys(FP.folha[b].entries).length);
+      const enc   = !!(FP.folha[b]?.encerrada);
       return `<button class="fp-store-btn${b===active?' active':''}"
         style="--c:${BOARDS_INFO[b].color}" onclick="selectBoard('${b}')">
-        ${BOARDS_INFO[b].label}${saved?' ✓':''}
+        ${BOARDS_INFO[b].label}${enc?' ⊠':saved?' ✓':''}
       </button>`;
     }).join('');
 }
@@ -171,18 +173,25 @@ async function selectBoard(board) {
 function renderPanel() {
   const board = FP.board;
   const info  = BOARDS_INFO[board];
+  const enc   = !!(FP.folha[board]?.encerrada);
+
+  const actionBtns = enc
+    ? `<button class="fp-btn success" onclick="fpExportar()">Exportar Excel</button>
+       <button class="fp-btn" onclick="fpExportarContabilidade()">Contabilidade</button>
+       <button class="fp-btn reabrir" onclick="fpEncerrar()">Reabrir Folha</button>`
+    : `<button class="fp-btn" onclick="fpOpenCfg('${board}')">Configurar</button>
+       <button class="fp-btn" onclick="fpGerar()">Gerar Folha</button>
+       <button class="fp-btn warning" onclick="fpSalvar()">Salvar</button>
+       <button class="fp-btn success" onclick="fpExportar()">Exportar Excel</button>
+       <button class="fp-btn" onclick="fpExportarContabilidade()">Contabilidade</button>
+       <button class="fp-btn encerrar" onclick="fpEncerrar()">Encerrar Folha</button>`;
+
   document.getElementById('fpPanel').innerHTML = `
-    <div class="fp-panel">
+    <div class="fp-panel${enc ? ' fp-panel-encerrada' : ''}">
       <div class="fp-panel-header">
         <span class="fp-panel-title" style="color:${info.color}">${info.label}</span>
-        <div style="font-size:.72rem;color:#8b949e;margin-left:.4rem">vendas: Microvix</div>
-        <div class="fp-panel-actions">
-          <button class="fp-btn" onclick="fpOpenCfg('${board}')">Configurar</button>
-          <button class="fp-btn" onclick="fpGerar()">Gerar Folha</button>
-          <button class="fp-btn warning" onclick="fpSalvar()">Salvar</button>
-          <button class="fp-btn success" onclick="fpExportar()">Exportar Excel</button>
-          <button class="fp-btn" onclick="fpExportarContabilidade()">Contabilidade</button>
-        </div>
+        ${enc ? '<span style="font-size:.72rem;color:#3fb950;margin-left:.5rem">● Encerrada</span>' : '<div style="font-size:.72rem;color:#8b949e;margin-left:.4rem">vendas: Microvix</div>'}
+        <div class="fp-panel-actions">${actionBtns}</div>
       </div>
       <div class="fp-emp-tabs" id="fpEmpTabs"></div>
       <div id="fpEmpForms"></div>
@@ -280,14 +289,18 @@ function fpOpenCfg(board) {
           <input type="number" step="0.01" id="cfg-premioGerente" value="${f2(cfg.premioGerente)}">
         </div>
       </div>
-      <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid #30363d;display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+      <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid #30363d;display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem">
         <div class="fp-cfg-field" style="margin-bottom:0">
-          <label>Garantia Mínima — Vendedor (R$)</label>
+          <label>GM Vendedor (R$)</label>
           <input type="number" step="0.01" id="cfg-gm" value="${f2(cfg.garantiaMinima)}">
         </div>
         <div class="fp-cfg-field" style="margin-bottom:0">
-          <label>Garantia Mínima — Gerente (R$)</label>
+          <label>GM Gerente (R$)</label>
           <input type="number" step="0.01" id="cfg-gmGerente" value="${f2(cfg.garantiaMinimaGerente)}">
+        </div>
+        <div class="fp-cfg-field" style="margin-bottom:0">
+          <label>GM Sub / G.Vend (R$)</label>
+          <input type="number" step="0.01" id="cfg-gmSub" value="${f2(cfg.garantiaMinimaSubGerente)}">
         </div>
         <span style="font-size:.72rem;color:#484f58;grid-column:1/-1">fixo + comissão ≥ garantia mínima</span>
       </div>
@@ -332,12 +345,13 @@ async function fpSaveConfig() {
   const board = document.getElementById('fpConfigModal').dataset.board;
   if (!board) return;
   FP.folhaConfig[board] = {
-    garantiaMinima:        g('cfg-gm'),
-    garantiaMinimaGerente: g('cfg-gmGerente'),
-    salarioFixoCaixa:      g('cfg-fixoCaixa'),
-    quebraCaixa:           g('cfg-quebraCaixa'),
-    premioVendedor:        g('cfg-premioVendedor'),
-    premioGerente:         g('cfg-premioGerente'),
+    garantiaMinima:           g('cfg-gm'),
+    garantiaMinimaGerente:    g('cfg-gmGerente'),
+    garantiaMinimaSubGerente: g('cfg-gmSub'),
+    salarioFixoCaixa:         g('cfg-fixoCaixa'),
+    quebraCaixa:              g('cfg-quebraCaixa'),
+    premioVendedor:           g('cfg-premioVendedor'),
+    premioGerente:            g('cfg-premioGerente'),
   };
   try {
     await apiFetch('/api/folha/config', 'POST', FP.folhaConfig);
@@ -400,25 +414,27 @@ function defaultEntry(emp) {
   // DSR calculado sobre a comissão contábil (base):
   //   comissaoContab = (comissaoTotal - prêmio) × du / (du + df)
   //   DSR            = comissaoContab × df / du
-  const premio = r2((tipo === 'gerente' || tipo === 'sub')
+  const premio = r2((tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
     ? (cfg.premioGerente || 0) : (cfg.premioVendedor || 0));
   const comissaoContab = (du + df) > 0
     ? r2((comissaoTotal - premio) * du / (du + df))
     : r2(comissaoTotal - premio);
   const dsr = du > 0 ? r2(comissaoContab * df / du) : 0;
 
-  const fixo = (tipo === 'gerente' || tipo === 'sub')
+  const fixo = (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
     ? r2(ecfg.salarioFixo || 0)
     : 0;
 
   const gm = tipo === 'gerente'
-    ? r2(cfg.garantiaMinimaGerente || cfg.garantiaMinima || 0)
-    : r2(cfg.garantiaMinima || 0);
+    ? r2(cfg.garantiaMinimaGerente    || cfg.garantiaMinima || 0)
+    : (tipo === 'sub' || tipo === 'gvend')
+      ? r2(cfg.garantiaMinimaSubGerente || cfg.garantiaMinima || 0)
+      : r2(cfg.garantiaMinima || 0);
   const gmComplement = r2(Math.max(0, gm - (fixo + comissaoTotal)));
 
   const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);
   let comissaoLoja = 0;
-  if (tipo === 'sub') comissaoLoja = r2(vendaLoja * (ecfg.comissaoVR || 0) / 100);
+  if (tipo === 'sub' || tipo === 'gvend') comissaoLoja = r2(vendaLoja * (ecfg.comissaoVR || 0) / 100);
 
   const premiacao        = r2(FP.premiacaoSemanal[emp.id] || 0);
   const premiacaoBalanco = 0;
@@ -469,7 +485,7 @@ function buildEmpForm(emp, entry) {
   } else {
     const pctDisplay = e.pctMeta > 0 ? `${r2(e.pctMeta).toFixed(1)}% da meta` : 'sem meta';
 
-    if (tipo === 'gerente' || tipo === 'sub')
+    if (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
       provRows += `<div class="fp-field"><label>Salário Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}</div>`;
 
     provRows += `
@@ -500,21 +516,24 @@ function buildEmpForm(emp, entry) {
         <div class="fp-split-check" id="fp-splitCheck-${emp.id}"></div>
       </div>`;
 
-    if (tipo === 'sub') {
+    if (tipo === 'sub' || tipo === 'gvend') {
       const pctVR = ecfg.comissaoVR || 0;
-      provRows += `<div class="fp-field"><label>Comissão VR (${r2(pctVR).toFixed(2)}% vendas loja)</label>${inp(`fp-comLoja-${emp.id}`, e.comissaoLoja)}</div>`;
+      const lbl   = tipo === 'gvend' ? 'Comissão Loja' : 'Comissão VR';
+      provRows += `<div class="fp-field"><label>${lbl} (${r2(pctVR).toFixed(2)}% vendas loja)</label>${inp(`fp-comLoja-${emp.id}`, e.comissaoLoja)}</div>`;
     }
 
     const gmMin = tipo === 'gerente'
-      ? (cfg.garantiaMinimaGerente || cfg.garantiaMinima || 0)
-      : (cfg.garantiaMinima || 0);
+      ? (cfg.garantiaMinimaGerente    || cfg.garantiaMinima || 0)
+      : (tipo === 'sub' || tipo === 'gvend')
+        ? (cfg.garantiaMinimaSubGerente || cfg.garantiaMinima || 0)
+        : (cfg.garantiaMinima || 0);
     if (gmMin > 0)
       provRows += `<div class="fp-field"><label>GM (R$)</label>${inp(`fp-gm-${emp.id}`, e.gmComplement)}
         <span style="font-size:.72rem;color:#8b949e">mín: ${brl(gmMin)}</span></div>`;
 
     provRows += `<div class="fp-field"><label>Premiação (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
       <span style="font-size:.72rem;color:#484f58">semanal</span></div>`;
-    if (tipo === 'gerente')
+    if (tipo === 'gerente' || tipo === 'gvend')
       provRows += `<div class="fp-field"><label>Premiação Balanço (R$)</label>${inp(`fp-premiacaoBalanco-${emp.id}`, e.premiacaoBalanco || 0)}</div>`;
   }
 
@@ -605,8 +624,8 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
       row('Com. Meta 1 (%)',    `ec-comissao-${emp.id}`,        ecfg.comissao) +
       row('Com. Meta 2 (%)',    `ec-comissaoMeta2-${emp.id}`,   ecfg.comissaoMeta2) +
       row('Com. Super Meta (%)',`ec-comissaoSuper-${emp.id}`,   ecfg.comissaoSuper) +
-      (tipo === 'sub' ? row('Comissão VR (%)',   `ec-comissaoVR-${emp.id}`,    ecfg.comissaoVR)    : '') +
-      (tipo === 'sub' ? row('Salário Fixo (R$)', `ec-salarioFixo-${emp.id}`,  ecfg.salarioFixo)  : '') +
+      (tipo === 'sub' || tipo === 'gvend' ? row('Comissão VR (%)',   `ec-comissaoVR-${emp.id}`,   ecfg.comissaoVR)   : '') +
+      (tipo === 'sub' || tipo === 'gvend' ? row('Salário Fixo (R$)', `ec-salarioFixo-${emp.id}`, ecfg.salarioFixo) : '') +
       row('INSS (%)',           `ec-inssRate-${emp.id}`,        ecfg.inssRate) +
       row('VT (%)',             `ec-vtRate-${emp.id}`,          ecfg.vtRate);
   }
@@ -657,8 +676,8 @@ async function fpSaveEmpCfg(empId) {
     cfg.comissao        = g(`ec-comissao-${empId}`);
     cfg.comissaoMeta2   = g(`ec-comissaoMeta2-${empId}`);
     cfg.comissaoSuper   = g(`ec-comissaoSuper-${empId}`);
-    if (tipo === 'sub') cfg.comissaoVR    = g(`ec-comissaoVR-${empId}`);
-    if (tipo === 'sub') cfg.salarioFixo  = g(`ec-salarioFixo-${empId}`);
+    if (tipo === 'sub' || tipo === 'gvend') cfg.comissaoVR   = g(`ec-comissaoVR-${empId}`);
+    if (tipo === 'sub' || tipo === 'gvend') cfg.salarioFixo  = g(`ec-salarioFixo-${empId}`);
   }
 
   try {
@@ -875,12 +894,31 @@ function fpGerar() {
 // ── Salvar / Exportar ──────────────────────────────────────────────────────
 async function fpSalvar() {
   if (!FP.board) return;
-  for (const emp of boardEmps(FP.board)) saveEntryFromForm(emp.id);
+  if (FP.activeEmpId) saveEntryFromForm(FP.activeEmpId);
   try {
     await apiFetch(`/api/folha/${FP.year}/${FP.month}`, 'POST', FP.folha);
     FP.dirty = false;
     renderStoreButtons(FP.board);
     toast('Salvo.');
+  } catch(e) { toast('Erro: '+e.message, true); }
+}
+
+async function fpEncerrar() {
+  const board = FP.board;
+  if (!FP.folha[board]) FP.folha[board] = { entries: {} };
+  const enc = FP.folha[board].encerrada;
+  if (!enc && FP.activeEmpId) saveEntryFromForm(FP.activeEmpId);
+  FP.folha[board].encerrada = !enc;
+  try {
+    await apiFetch(`/api/folha/${FP.year}/${FP.month}`, 'POST', FP.folha);
+    FP.dirty = false;
+    renderStoreButtons(board);
+    renderPanel();
+    if (FP.activeEmpId) {
+      const emp = FP.employees.find(e => e.id === FP.activeEmpId);
+      if (emp) selectEmp(emp.id);
+    }
+    toast(enc ? 'Folha reaberta.' : 'Folha encerrada ✓');
   } catch(e) { toast('Erro: '+e.message, true); }
 }
 

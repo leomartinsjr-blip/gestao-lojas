@@ -3693,7 +3693,7 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
 
         for (const emp of bEmps) {
           const tipo = (emp.cargo||'').toLowerCase();
-          const isGer = /gerente/.test(tipo) && !/^sub/.test(tipo);
+          const isGer = (/gerente/.test(tipo) || /g\.?\s*vend/.test(tipo)) && !/^sub/.test(tipo);
           if (isGer) {
             if (storeHitMeta) premiacaoSemanal[emp.id] += PREMIO_GER_W;
             if (storeHitMeta && storeHitPA) premiacaoSemanal[emp.id] += PREMIO_PA_W;
@@ -3761,6 +3761,7 @@ app.post('/api/folha/:year/:month', requireAuth, async (req, res) => {
         if (!db.folhas[mk][board].entries) db.folhas[mk][board].entries = {};
         Object.assign(db.folhas[mk][board].entries, boardData.entries);
       }
+      if ('encerrada' in boardData) db.folhas[mk][board].encerrada = boardData.encerrada;
     }
     await writeDB(db);
     res.json({ ok: true });

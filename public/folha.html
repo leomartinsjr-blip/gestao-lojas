@@ -138,6 +138,14 @@ a{color:inherit;text-decoration:none}
 /* ── Empty state ── */
 .fp-empty{padding:3rem;text-align:center;color:#8b949e;font-size:.9rem}
 
+/* ── Encerrada ── */
+.fp-panel-encerrada .fp-emp-form input:not([type=button]){pointer-events:none;opacity:.55;background:#0d1117!important}
+.fp-panel-encerrada .fp-add-extra{display:none}
+.fp-btn.encerrar{border-color:#f85149;color:#f85149}
+.fp-btn.encerrar:hover{background:rgba(248,81,73,.1)}
+.fp-btn.reabrir{background:#1a7f37;border-color:#2ea043;color:#fff}
+.fp-btn.reabrir:hover{background:#2ea043}
+
 /* ── Toast ── */
 #fpToast{position:fixed;bottom:1.5rem;right:1.5rem;background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:.6rem 1.1rem;border-radius:8px;font-size:.85rem;z-index:999;display:none;animation:fadeIn .2s}
 @keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
