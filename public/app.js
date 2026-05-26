@@ -74,21 +74,24 @@ function hideLogin() {
   document.getElementById('topbar').classList.remove('hidden');
 }
 
+function applyUserPermissions(user) {
+  document.getElementById('userChip').textContent = user.label || user.username;
+  const isAdmin = !user.board;
+  const ids = ['funcBtn','campanhasBtn','usersBtn','perfBtn','transBtn','contasBtn','folhaBtn'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = isAdmin ? '' : 'none';
+  });
+  const indevaVisible = isAdmin || user.board === 'escritorio' || INDEVA_STORES.includes(user.board);
+  const indevaEl = document.getElementById('indevaBtn');
+  if (indevaEl) indevaEl.style.display = indevaVisible ? '' : 'none';
+}
+
 async function checkAuth() {
   try {
     S.user = await apiFetch('GET', '/api/me');
     hideLogin();
-    document.getElementById('userChip').textContent = S.user.label || S.user.username;
-    const isAdmin = !S.user.board;
-    document.getElementById('funcBtn').style.display = isAdmin ? '' : 'none';
-    document.getElementById('campanhasBtn').style.display = isAdmin ? '' : 'none';
-    document.getElementById('usersBtn').style.display = isAdmin ? '' : 'none';
-    document.getElementById('perfBtn').style.display = isAdmin ? '' : 'none';
-    document.getElementById('transBtn').style.display = isAdmin ? '' : 'none';
-    document.getElementById('contasBtn').style.display = isAdmin ? '' : 'none';
-    document.getElementById('folhaBtn').style.display = isAdmin ? '' : 'none';
-    const indevaVisible = isAdmin || S.user?.board === 'escritorio' || INDEVA_STORES.includes(S.user?.board);
-    document.getElementById('indevaBtn').style.display = indevaVisible ? '' : 'none';
+    applyUserPermissions(S.user);
     // Thursday reminder for store users
     const todayBRTDay = new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', weekday: 'short' });
     const isStore = S.user?.board && S.user.board !== 'escritorio';
@@ -182,10 +185,7 @@ function initLoginForm() {
     try {
       S.user = await apiFetch('POST', '/api/login', { username, password });
       document.getElementById('loginPass').value = '';
-      document.getElementById('userChip').textContent = S.user.label || S.user.username;
-      const isAdmin = !S.user.board;
-      document.getElementById('funcBtn').style.display = isAdmin ? '' : 'none';
-      document.getElementById('campanhasBtn').style.display = isAdmin ? '' : 'none';
+      applyUserPermissions(S.user);
       hideLogin();
       const now = new Date();
       S.year  = now.getFullYear();

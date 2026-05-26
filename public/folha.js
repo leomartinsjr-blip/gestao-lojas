@@ -176,12 +176,14 @@ function renderPanel() {
   const enc   = !!(FP.folha[board]?.encerrada);
 
   const actionBtns = enc
-    ? `<button class="fp-btn success" onclick="fpExportar()">Exportar Excel</button>
+    ? `<button class="fp-btn" onclick="fpImprimirRecibos()">Recibos</button>
+       <button class="fp-btn success" onclick="fpExportar()">Exportar Excel</button>
        <button class="fp-btn" onclick="fpExportarContabilidade()">Contabilidade</button>
        <button class="fp-btn reabrir" onclick="fpEncerrar()">Reabrir Folha</button>`
     : `<button class="fp-btn" onclick="fpOpenCfg('${board}')">Configurar</button>
        <button class="fp-btn" onclick="fpGerar()">Gerar Folha</button>
        <button class="fp-btn warning" onclick="fpSalvar()">Salvar</button>
+       <button class="fp-btn" onclick="fpImprimirRecibos()">Recibos</button>
        <button class="fp-btn success" onclick="fpExportar()">Exportar Excel</button>
        <button class="fp-btn" onclick="fpExportarContabilidade()">Contabilidade</button>
        <button class="fp-btn encerrar" onclick="fpEncerrar()">Encerrar Folha</button>`;
@@ -930,6 +932,175 @@ async function fpExportar() {
 async function fpExportarContabilidade() {
   await fpSalvar();
   window.location.href = `/api/folha/${FP.year}/${FP.month}/contabilidade?board=${FP.board}`;
+}
+
+async function fpLogout() {
+  try { await apiFetch('/api/logout', 'POST'); } catch {}
+  location.href = '/';
+}
+
+// ── Recibos (impressão) ────────────────────────────────────────────────────
+function fpImprimirRecibos() {
+  if (!FP.board) { toast('Selecione uma loja.', true); return; }
+  if (FP.activeEmpId) saveEntryFromForm(FP.activeEmpId);
+  const emps = boardEmps(FP.board).filter(e => FP.folha[FP.board]?.entries?.[e.id]);
+  if (!emps.length) { toast('Gere a folha antes de imprimir.', true); return; }
+  const mes    = MONTHS_PT[FP.month - 1].substring(0, 3) + '/' + String(FP.year).substring(2);
+  const origin = window.location.origin;
+  const pages  = emps.map((e, i) =>
+    buildRecibo(e, FP.folha[FP.board].entries[e.id], mes, origin) +
+    (i < emps.length - 1 ? '<div style="page-break-after:always"></div>' : '')
+  ).join('');
+  const win = window.open('', '_blank', 'width=820,height=900');
+  if (!win) { toast('Permita popups para imprimir.', true); return; }
+  win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head>
+<meta charset="UTF-8">
+<title>Recibos — ${BOARDS_INFO[FP.board]?.label} — ${mes}</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#000;background:#fff}
+@media print{@page{size:A4 portrait;margin:8mm 10mm}}
+@media screen{.recibo{max-width:720px;margin:20px auto;padding:12px;border:1px solid #ccc;border-radius:4px}}
+</style>
+</head><body>${pages}</body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(() => { try { win.print(); } catch(_) {} }, 600);
+}
+
+function buildRecibo(emp, entry, mes, origin) {
+  const ecfg = getEmpCfg(emp);
+  const tipo = entry.tipo || cargoTipo(emp.cargo);
+  const cfg  = FP.folhaConfig[emp.board] || {};
+  const loja = BOARDS_INFO[emp.board]?.label || emp.board.toUpperCase();
+  const adm  = emp.admissao ? `ADM. ${emp.admissao}` : '';
+
+  const num   = v => Math.round((parseFloat(v)||0)*100)/100;
+  const fmt   = v => num(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const money = v => { const n=num(v); return n===0 ? 'R$&nbsp;-' : `R$&nbsp;${fmt(n)}`; };
+
+  const tr = (label, val, base='', pct='', bold=false, bg='') =>
+    `<tr${bg ? ` style="background:${bg}"` : ''}>` +
+    `<td style="padding:2px 5px;${bold?'font-weight:700;':''}">${label}</td>` +
+    `<td style="padding:2px 5px;text-align:right">${base !== '' && num(base) !== 0 ? `<strong>${fmt(num(base))}</strong>` : ''}</td>` +
+    `<td style="padding:2px 5px;text-align:center;font-size:9pt">${pct}</td>` +
+    `<td style="padding:2px 5px;text-align:right;white-space:nowrap">${money(val)}</td>` +
+    `</tr>`;
+
+  const gap = `<tr><td colspan="4" style="height:5px"></td></tr>`;
+  const cols = `<colgroup><col style="width:54%"><col style="width:16%"><col style="width:11%"><col style="width:19%"></colgroup>`;
+  const tbl  = `border-collapse:collapse;width:100%;border:1px solid #000;font-size:10pt;`;
+
+  // ── Proventos ──
+  let prov = '';
+  if (tipo === 'caixa') {
+    prov += tr('SALÁRIO FIXO',    entry.fixo   || 0, entry.fixo);
+    prov += tr('QUEBRA DE CAIXA', entry.quebra || 0, entry.quebra);
+  } else {
+    if (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
+      prov += tr('SALÁRIO FIXO', entry.fixo || 0, entry.fixo);
+    prov += tr(tipo === 'gerente' ? 'VENDAS LOJA' : 'VENDAS',
+      entry.comissaoTotal || 0, entry.vendas,
+      entry.comissaoPct ? fmt(entry.comissaoPct) + '%' : '');
+    const gm = tipo === 'gerente'
+      ? r2(cfg.garantiaMinimaGerente || cfg.garantiaMinima || 0)
+      : (tipo === 'sub' || tipo === 'gvend')
+        ? r2(cfg.garantiaMinimaSubGerente || cfg.garantiaMinima || 0)
+        : r2(cfg.garantiaMinima || 0);
+    if (num(entry.gmComplement) > 0)
+      prov += tr('GARANTIA SURFERS', entry.gmComplement, gm, '', false, '#fef9c3');
+    if ((tipo === 'sub' || tipo === 'gvend') && num(entry.comissaoLoja) > 0)
+      prov += tr('COMISSÃO LOJA', entry.comissaoLoja, entry.vendaLoja,
+        ecfg.comissaoVR ? fmt(ecfg.comissaoVR) + '%' : '');
+    if (num(entry.premiacao) > 0)
+      prov += tr('PREMIAÇÃO', entry.premiacao);
+    if (num(entry.premiacaoBalanco) > 0)
+      prov += tr('PREMIAÇÃO BALANÇO', entry.premiacaoBalanco);
+  }
+  if (num(entry.feriado) > 0)
+    prov += tr('FERIADO', entry.feriado);
+  (entry.extras || []).forEach(ex => {
+    if (num(ex.valor) !== 0)
+      prov += tr((ex.nome || 'OUTROS').toUpperCase(), ex.valor, ex.valor);
+  });
+
+  // ── Descontos ──
+  let desc = '';
+  desc += tr('VALE COMPRAS',  entry.valeCompras  || 0);
+  desc += tr('ADIANTAMENTO',  entry.adiantamento || 0);
+  (entry.extrasDesc || []).forEach(ex => {
+    if (num(ex.valor) !== 0)
+      desc += tr((ex.nome || 'DESCONTO').toUpperCase(), ex.valor);
+  });
+  desc += tr('INSS',           entry.inss  || 0, '', ecfg.inssRate ? fmt(ecfg.inssRate) + '%' : '');
+  desc += tr('IR FP',          entry.irpf  || 0);
+  desc += tr('VALE TRANSPORTE',entry.vt    || 0, '', ecfg.vtRate   ? fmt(ecfg.vtRate)   + '%' : '');
+  if (num(entry.arredondamento) !== 0)
+    desc += tr('arred.', entry.arredondamento);
+
+  const totRow = (lbl, val, bg) =>
+    `<tfoot><tr style="background:${bg};border-top:1px solid #000">` +
+    `<td colspan="3" style="padding:3px 5px;font-weight:700">${lbl}</td>` +
+    `<td style="padding:3px 5px;text-align:right;font-weight:700;white-space:nowrap">R$&nbsp;${fmt(num(val))}</td>` +
+    `</tr></tfoot>`;
+
+  return `
+<div class="recibo">
+<table style="${tbl}border-bottom:none">
+  <tr>
+    <td style="width:105px;padding:6px 8px;border-right:1px solid #000;vertical-align:middle">
+      <img src="${origin}/logosurfers.webp" alt="Surfer's" style="height:36px;width:auto;display:block">
+    </td>
+    <td style="padding:5px 8px;border-right:1px solid #000;vertical-align:middle;text-align:center">
+      <div style="display:inline-block;border:1px solid #000;padding:3px 12px;font-weight:700;font-size:11pt;letter-spacing:.4px">${emp.name.toUpperCase()}</div>
+      <div style="margin-top:3px;font-size:9pt"><u>Mês</u>&nbsp;${mes}&nbsp;&nbsp;&nbsp;<u>${emp.cargo.toUpperCase()}</u></div>
+    </td>
+    <td style="width:105px;padding:5px 8px;text-align:center;vertical-align:middle">
+      <div style="font-weight:700;font-size:10pt">${loja}</div>
+      <div style="font-size:8pt;margin-top:2px;color:#444">${adm}</div>
+    </td>
+  </tr>
+  <tr><td colspan="3" style="text-align:center;padding:5px;border-top:1px solid #000;font-style:italic;font-size:9pt">"Um time, um objetivo, uma conquista."</td></tr>
+</table>
+
+<table style="${tbl}border-top:none;border-bottom:none;margin-top:-1px">
+  ${cols}
+  <tbody>${gap}${prov}${gap}</tbody>
+  ${totRow('PROVENTOS', entry.proventos, '#d3d3d3')}
+</table>
+
+<table style="${tbl}border-top:none;border-bottom:none;margin-top:-1px">
+  ${cols}
+  <tbody>${gap}${desc}${gap}</tbody>
+  ${totRow('TOTAL DESCONTOS', entry.totalDescontos, '#d3d3d3')}
+</table>
+
+<table style="${tbl}border-top:none;border-bottom:none;margin-top:-1px">
+  ${cols}
+  <tbody>
+    <tr style="background:#bdbdbd">
+      <td colspan="3" style="padding:5px 5px;font-weight:700;font-size:11pt">LÍQUIDO</td>
+      <td style="padding:5px;text-align:right;font-weight:700;font-size:11pt;white-space:nowrap">R$&nbsp;${fmt(num(entry.liquido))}</td>
+    </tr>
+  </tbody>
+</table>
+
+<table style="${tbl}border-top:none;margin-top:-1px">
+  <tr>
+    <td style="width:90px;padding:8px;border-right:1px solid #000;vertical-align:bottom;text-align:center">
+      <img src="${origin}/logosurfers.webp" alt="" style="height:42px;width:auto;display:block;margin:0 auto">
+    </td>
+    <td style="padding:8px 14px;vertical-align:top">
+      <p style="font-size:8pt;line-height:1.45;margin-bottom:14px">Recebi a importância líquida constante no presente recibo individual de pagamento, dando, por este, plena e geral quitação, para nada mais reclamar com relação a salários vencidos e outros proventos do trabalho, inclusive por serviço extraordinário, até a presente data.</p>
+      <div style="text-align:center">
+        <div style="border-bottom:1px solid #000;width:55%;margin:0 auto"></div>
+        <div style="font-style:italic;font-size:9pt;margin-top:3px">Assinatura do colaborador</div>
+        <div style="font-size:9pt">___/___/${FP.year}</div>
+      </div>
+    </td>
+  </tr>
+</table>
+</div>`;
 }
 
 // ── Utils ──────────────────────────────────────────────────────────────────
