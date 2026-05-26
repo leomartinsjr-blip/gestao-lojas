@@ -3780,6 +3780,21 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       }
     }
 
+    // Extras do mês anterior como sugestão para novos lançamentos
+    const prevMonth = month === 1 ? 12 : month - 1;
+    const prevYear  = month === 1 ? year - 1 : year;
+    const prevMk    = `${prevYear}-${String(prevMonth).padStart(2,'0')}`;
+    const prevFolha = (db.folhas || {})[prevMk] || {};
+    const prevExtras = {};
+    for (const boardData of Object.values(prevFolha)) {
+      for (const [empId, entry] of Object.entries(boardData.entries || {})) {
+        const extras     = (entry.extras     || []).filter(x => x.nome && x.valor);
+        const extrasDesc = (entry.extrasDesc || []).filter(x => x.nome && x.valor);
+        if (extras.length || extrasDesc.length)
+          prevExtras[empId] = { extras, extrasDesc };
+      }
+    }
+
     res.json({
       folha:             (db.folhas || {})[mk] || {},
       employees,
@@ -3791,6 +3806,7 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       lojaVendaMap,
       premiacaoSemanal,
       premiacaoSemanalDetalhe,
+      prevExtras,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

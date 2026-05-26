@@ -63,7 +63,7 @@ let FP = {
   folha: {}, folhaConfig: {}, empConfig: {},
   mensal: { diasUteis: 22, domingosFeriados: 4 },
   lojaMetaMap: {}, lojaVendaMap: {},
-  premiacaoSemanal: {}, premiacaoSemanalDetalhe: {},
+  premiacaoSemanal: {}, premiacaoSemanalDetalhe: {}, prevExtras: {},
   activeEmpId: null, dirty: false,
 };
 
@@ -108,6 +108,7 @@ async function loadPeriod() {
     FP.lojaVendaMap      = d.lojaVendaMap      || {};
     FP.premiacaoSemanal        = d.premiacaoSemanal        || {};
     FP.premiacaoSemanalDetalhe = d.premiacaoSemanalDetalhe || {};
+    FP.prevExtras              = d.prevExtras              || {};
     FP.mensal = {
       diasUteis:        d.folhaMensal?.diasUteis        || 22,
       domingosFeriados: d.folhaMensal?.domingosFeriados || 4,
@@ -442,9 +443,7 @@ function defaultEntry(emp) {
   let comissaoLoja = 0;
   if (tipo === 'sub' || tipo === 'gvend') comissaoLoja = r2(vendaLoja * (ecfg.comissaoVR || 0) / 100);
 
-  const baseGm = (tipo === 'gvend' || tipo === 'sub')
-    ? fixo + comissaoTotal + comissaoLoja
-    : fixo + comissaoTotal;
+  const baseGm = fixo + comissaoTotal;
   const gmComplement = r2(Math.max(0, gm - baseGm));
 
   const premiacao        = r2(FP.premiacaoSemanal[emp.id] || 0);
@@ -459,10 +458,12 @@ function defaultEntry(emp) {
     comissaoTotal, comissaoContab, dsr, premio,
     comissaoLoja, vendaLoja, fixo, gm, gmComplement,
     premiacao, premiacaoBalanco,
-    feriado: 0, extras: [],
+    feriado: 0,
+    extras:     (FP.prevExtras[emp.id]?.extras     || []).map(x => ({ ...x, _prev: true })),
     proventos,
     valeCompras: 0, adiantamento: 0, inss, irpf: 0, vt,
-    arredondamento: 0, extrasDesc: [],
+    arredondamento: 0,
+    extrasDesc: (FP.prevExtras[emp.id]?.extrasDesc || []).map(x => ({ ...x, _prev: true })),
     totalDescontos: r2(inss+vt), liquido: r2(proventos-inss-vt),
   };
 }
@@ -540,7 +541,7 @@ function buildEmpForm(emp, entry) {
         : (cfg.garantiaMinima || 0);
     if (gmMin > 0) {
       const gmNote = (tipo === 'gvend' || tipo === 'sub')
-        ? 'mín inclui fixo + comissão própria + comissão loja'
+        ? `mín: ${brl(gmMin)} (fixo + comissão própria)`
         : `mín: ${brl(gmMin)}`;
       provRows += `<div class="fp-field"><label>GM (R$)</label>${inp(`fp-gm-${emp.id}`, e.gmComplement)}
         <span style="font-size:.72rem;color:#8b949e">${gmNote}</span></div>`;
@@ -723,15 +724,21 @@ async function fpClearEmpCfg(empId) {
 }
 
 function buildExtraRows(empId, extras, type) {
-  return extras.map((ex,i) =>
-    `<div class="fp-extra-row">
+  return extras.map((ex,i) => {
+    const isPrev = !!ex._prev;
+    const rowStyle = isPrev ? 'border-left:2px solid #d29922;padding-left:.4rem;' : '';
+    const hint = isPrev
+      ? `<span title="Sugestão do mês anterior" style="font-size:.68rem;color:#d29922;white-space:nowrap">↩ mês ant.</span>`
+      : '';
+    return `<div class="fp-extra-row" style="${rowStyle}">
+      ${hint}
       <input type="text" placeholder="Descrição" value="${ex.nome||''}"
         onchange="onExtraChange(${empId},'${type}',${i},'nome',this.value)">
       <input type="number" step="0.01" placeholder="0.00" value="${r2(ex.valor).toFixed(2)}"
         onchange="onExtraChange(${empId},'${type}',${i},'valor',this.value);onFieldChange(${empId})">
       <button class="fp-extra-btn" onclick="removeExtra(${empId},'${type}',${i})">×</button>
-    </div>`
-  ).join('');
+    </div>`;
+  }).join('');
 }
 
 // ── Recalc ─────────────────────────────────────────────────────────────────
@@ -888,7 +895,10 @@ function removeExtra(empId, type, idx) {
 function onExtraChange(empId, type, idx, field, value) {
   const key = type==='prov'?'extras':'extrasDesc';
   const arr = FP.folha[FP.board]?.entries?.[empId]?.[key];
-  if (arr?.[idx]) arr[idx][field] = field==='valor'?r2(parseFloat(value)||0):value;
+  if (arr?.[idx]) {
+    arr[idx][field] = field==='valor'?r2(parseFloat(value)||0):value;
+    delete arr[idx]._prev; // user edited it — no longer a suggestion
+  }
   FP.dirty = true;
 }
 
