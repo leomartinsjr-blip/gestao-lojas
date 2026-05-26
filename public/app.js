@@ -7311,7 +7311,7 @@ function _renderRetiradaAdminView(body) {
       btn.disabled = true;
       try {
         const updated = await apiFetch('PATCH', `/api/retiradas/${btn.dataset.id}/status`, { status: btn.dataset.status });
-        const idx = (S.retiradas||[]).findIndex(x => x.id === btn.dataset.id);
+        const idx = (S.retiradas||[]).findIndex(x => x.id === parseInt(btn.dataset.id));
         if (idx >= 0) S.retiradas[idx] = updated;
         render();
       } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
