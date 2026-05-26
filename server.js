@@ -209,7 +209,16 @@ if (MONGODB_URI) {
 app.use(compress());
 app.use(express.json({ limit: '50mb' }));
 app.use(session(sessionOpts));
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve JS/CSS sem cache para garantir que deploys chegam ao navegador
+app.use(express.static(path.join(__dirname, 'public'), {
+  etag: false,
+  lastModified: false,
+  setHeaders(res, filePath) {
+    if (/\.(js|css)$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'no-store');
+    }
+  }
+}));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
 // ── Auth middleware ────────────────────────────────────────────────────────
@@ -327,6 +336,14 @@ app.delete('/api/users/:username', requireAdmin, (req, res) => {
   delete users[key];
   writeUsers(users);
   res.json({ ok: true });
+});
+
+// ── GET /api/version — retorna commit hash atual (útil para verificar deploy) ──
+app.get('/api/version', (req, res) => {
+  const { execSync } = require('child_process');
+  let commit = 'unknown';
+  try { commit = execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim(); } catch {}
+  res.json({ commit, deployedAt: new Date().toISOString() });
 });
 
 // ── GET /api/backup  (admin — exporta dump completo do banco) ─────────────
