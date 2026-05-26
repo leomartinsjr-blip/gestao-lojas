@@ -357,9 +357,13 @@ function defaultEntry(emp) {
   const du   = FP.mensal.diasUteis        || 22;
   const df   = FP.mensal.domingosFeriados || 4;
 
-  const vendas = sumVendas(emp.id);
   const vs     = FP.vsales[emp.id] || {};
-  const meta   = r2(vs.meta?.mensal || 0);
+  const vendas = tipo === 'gerente'
+    ? r2(FP.lojaVendaMap[FP.board] || 0)
+    : sumVendas(emp.id);
+  const meta = tipo === 'gerente'
+    ? r2(FP.lojaMetaMap[FP.board] || 0)
+    : r2(vs.meta?.mensal || 0);
 
   // ── Caixa ──
   if (tipo === 'caixa') {
@@ -403,8 +407,7 @@ function defaultEntry(emp) {
 
   const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);
   let comissaoLoja = 0;
-  if (tipo === 'gerente') comissaoLoja = r2(vendaLoja * (ecfg.comissaoGerente || 0) / 100);
-  else if (tipo === 'sub') comissaoLoja = r2(vendaLoja * (ecfg.comissaoVR || 0) / 100);
+  if (tipo === 'sub') comissaoLoja = r2(vendaLoja * (ecfg.comissaoVR || 0) / 100);
 
   const proventos = r2(fixo + comissaoTotal + comissaoLoja + gmComplement);
   const inss = r2(proventos * (ecfg.inssRate || 0) / 100);
@@ -456,7 +459,7 @@ function buildEmpForm(emp, entry) {
 
     provRows += `
       <div class="fp-field fp-field-inline">
-        <label>Vendas (R$)</label>${inp(`fp-vendas-${emp.id}`, e.vendas)}
+        <label>${tipo === 'gerente' ? 'Vendas Loja (R$)' : 'Vendas (R$)'}</label>${inp(`fp-vendas-${emp.id}`, e.vendas)}
         <span class="fp-times">×</span>
         <input type="number" step="0.01" id="fp-comPct-${emp.id}" value="${r2(e.comissaoPct).toFixed(2)}"
           style="width:72px" onchange="onFieldChange(${emp.id})">
@@ -482,12 +485,9 @@ function buildEmpForm(emp, entry) {
         <div class="fp-split-check" id="fp-splitCheck-${emp.id}"></div>
       </div>`;
 
-    if (tipo === 'gerente' || tipo === 'sub') {
-      const pctVR  = tipo === 'gerente' ? (ecfg.comissaoGerente||0) : (ecfg.comissaoVR||0);
-      const lbl    = tipo === 'gerente'
-        ? `Comissão Loja (${r2(pctVR).toFixed(2)}% vendas loja)`
-        : `Comissão VR (${r2(pctVR).toFixed(2)}% vendas loja)`;
-      provRows += `<div class="fp-field"><label>${lbl}</label>${inp(`fp-comLoja-${emp.id}`, e.comissaoLoja)}</div>`;
+    if (tipo === 'sub') {
+      const pctVR = ecfg.comissaoVR || 0;
+      provRows += `<div class="fp-field"><label>Comissão VR (${r2(pctVR).toFixed(2)}% vendas loja)</label>${inp(`fp-comLoja-${emp.id}`, e.comissaoLoja)}</div>`;
     }
 
     if ((cfg.garantiaMinima||0) > 0)
@@ -569,10 +569,13 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
       row('VT (%)',             `ec-vtRate-${emp.id}`,       ecfg.vtRate);
   } else if (tipo === 'gerente') {
     fields =
-      row('Comissão Loja (%)',  `ec-comissaoGerente-${emp.id}`, ecfg.comissaoGerente) +
-      row('Salário Fixo (R$)',  `ec-salarioFixo-${emp.id}`,     ecfg.salarioFixo) +
-      row('INSS (%)',           `ec-inssRate-${emp.id}`,        ecfg.inssRate) +
-      row('VT (%)',             `ec-vtRate-${emp.id}`,          ecfg.vtRate);
+      row('Com. Sem Meta (%)',   `ec-comissaoSemMeta-${emp.id}`, ecfg.comissaoSemMeta) +
+      row('Com. Meta 1 (%)',     `ec-comissao-${emp.id}`,        ecfg.comissao) +
+      row('Com. Meta 2 (%)',     `ec-comissaoMeta2-${emp.id}`,   ecfg.comissaoMeta2) +
+      row('Com. Super Meta (%)', `ec-comissaoSuper-${emp.id}`,   ecfg.comissaoSuper) +
+      row('Salário Fixo (R$)',   `ec-salarioFixo-${emp.id}`,     ecfg.salarioFixo) +
+      row('INSS (%)',            `ec-inssRate-${emp.id}`,        ecfg.inssRate) +
+      row('VT (%)',              `ec-vtRate-${emp.id}`,          ecfg.vtRate);
   } else {
     fields =
       row('Com. Sem Meta (%)',  `ec-comissaoSemMeta-${emp.id}`, ecfg.comissaoSemMeta) +
@@ -621,7 +624,10 @@ async function fpSaveEmpCfg(empId) {
     cfg.salarioFixo = g(`ec-salarioFixo-${empId}`);
     cfg.quebraCaixa = g(`ec-quebraCaixa-${empId}`);
   } else if (tipo === 'gerente') {
-    cfg.comissaoGerente = g(`ec-comissaoGerente-${empId}`);
+    cfg.comissaoSemMeta = g(`ec-comissaoSemMeta-${empId}`);
+    cfg.comissao        = g(`ec-comissao-${empId}`);
+    cfg.comissaoMeta2   = g(`ec-comissaoMeta2-${empId}`);
+    cfg.comissaoSuper   = g(`ec-comissaoSuper-${empId}`);
     cfg.salarioFixo     = g(`ec-salarioFixo-${empId}`);
   } else {
     cfg.comissaoSemMeta = g(`ec-comissaoSemMeta-${empId}`);
