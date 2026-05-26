@@ -4092,6 +4092,7 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
         const verif     = r2(fixo + qcx + comissoes + dsr + premio + gm + feriado + prem);
         const ok        = Math.abs(tTotal - verif) < 0.02 ? 'OK' : '⚠';
         const sf        = gm > 0 ? 'GM' : '';
+        const fc        = folhaEmpCfg[emp.id] || {};
 
         const ad        = r2(entry.adiantamento || 0);
         const vale      = r2(entry.valeCompras  || 0);
