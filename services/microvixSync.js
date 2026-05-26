@@ -148,9 +148,10 @@ async function runSync(readDB, writeDB) {
       }
     }
 
-    await writeDB(db);
     lastSync  = { at: new Date().toISOString(), updated: totalUpdated, date };
     lastError = null;
+    db.microvixLastSync = lastSync;
+    await writeDB(db);
     console.log(`[Microvix] Sync OK — ${totalUpdated} vendedores atualizados`);
     return lastSync;
 
@@ -282,4 +283,8 @@ function getStatus() {
   return { lastSync, lastError, running, lastSync30d, runningHoje, running30d };
 }
 
-module.exports = { runSync, runSyncHoje, runSync30Dias, runSyncRetroativo, getStatus };
+function setLastSync(val) {
+  if (val && val.at) lastSync = val;
+}
+
+module.exports = { runSync, runSyncHoje, runSync30Dias, runSyncRetroativo, getStatus, setLastSync };

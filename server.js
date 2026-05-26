@@ -10,7 +10,7 @@ const XLSX       = require('xlsx');
 const ExcelJS    = require('exceljs');
 const { MongoClient } = require('mongodb');
 const cron       = require('node-cron');
-const { runSync, runSyncHoje, runSync30Dias, runSyncRetroativo, getStatus } = require('./services/microvixSync');
+const { runSync, runSyncHoje, runSync30Dias, runSyncRetroativo, getStatus, setLastSync } = require('./services/microvixSync');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -4051,6 +4051,9 @@ initMongo()
       }, { timezone: 'America/Sao_Paulo' });
       console.log('[caixa-cron] Agendado para 08:00 America/Sao_Paulo');
     }
+
+    // Restaura lastSync do banco para o botão mostrar verde imediatamente após deploy
+    readDB().then(db => { if (db.microvixLastSync) setLastSync(db.microvixLastSync); }).catch(() => {});
 
     // Auto-sync Microvix if credentials are set
     if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
