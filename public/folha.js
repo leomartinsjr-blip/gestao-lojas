@@ -1009,18 +1009,19 @@ function buildRecibo(emp, entry, mes, origin) {
     const faixaClr   = faixaColors[faixaLbl] || '#888';
     const pctMeta    = num(entry.pctMeta) ||
       (num(entry.meta) > 0 ? Math.round(num(entry.vendas) / num(entry.meta) * 10) / 10 : 0);
-    const pctCell    =
-      `<td style="padding:2px 5px;text-align:center;font-size:9pt;line-height:1.5">` +
-      `${entry.comissaoPct ? fmt(entry.comissaoPct) + '%' : ''}` +
-      (pctMeta > 0 ? `<br><span style="font-size:7.5pt;color:#555">${fmt(pctMeta)}% da meta</span>` : '') +
-      `<br><span style="font-size:7.5pt;font-weight:700;color:${faixaClr}">${faixaLbl}</span>` +
-      `</td>`;
+    const infoParts  = [
+      entry.comissaoPct ? fmt(entry.comissaoPct) + '% comissão' : '',
+      pctMeta > 0       ? fmt(pctMeta) + '% da meta'            : '',
+      faixaLbl !== '—'  ? faixaLbl                               : '',
+    ].filter(Boolean).join('  ·  ');
+    if (infoParts)
+      prov += `<tr><td colspan="4" style="padding:1px 5px 0;font-size:8pt;color:${faixaClr};font-style:italic">${infoParts}</td></tr>`;
     prov +=
       `<tr>` +
-      `<td style="padding:2px 5px">${tipo === 'gerente' ? 'VENDAS LOJA' : 'VENDAS'}</td>` +
-      `<td style="padding:2px 5px;text-align:right">${num(entry.vendas) ? `<strong>${fmt(num(entry.vendas))}</strong>` : ''}</td>` +
-      pctCell +
-      `<td style="padding:2px 5px;text-align:right;white-space:nowrap">${money(entry.comissaoTotal)}</td>` +
+      `<td style="padding:1px 5px 2px">${tipo === 'gerente' ? 'VENDAS LOJA' : 'VENDAS'}</td>` +
+      `<td style="padding:1px 5px 2px;text-align:right">${num(entry.vendas) ? `<strong>${fmt(num(entry.vendas))}</strong>` : ''}</td>` +
+      `<td></td>` +
+      `<td style="padding:1px 5px 2px;text-align:right;white-space:nowrap">${money(entry.comissaoTotal)}</td>` +
       `</tr>`;
     const gm = tipo === 'gerente'
       ? r2(cfg.garantiaMinimaGerente || cfg.garantiaMinima || 0)
