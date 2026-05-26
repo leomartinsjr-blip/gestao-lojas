@@ -317,6 +317,7 @@ async function loadData() {
     S.meetingItems = init.meetingItems || [];
     S.pendencias   = init.pendencias   || [];
     S.requisicoes  = init.requisicoes  || [];
+    S.retiradas    = init.retiradas    || [];
     S.indevaStats  = init.indevaStats  || {};
     _updateCampanhasBtn();
     _updateLojaAcaoBadge();
@@ -6833,10 +6834,34 @@ function openLojaAcaoModal() {
 function closeLojaAcaoModal() {
   document.getElementById('lojaAcaoOverlay').classList.add('hidden');
 }
+let _lojaAcaoTab = 'req';
+
 function _renderLojaAcaoModal() {
   const body = document.getElementById('lojaAcaoBody');
-  if (!S.user?.board) _renderReqAdminView(body);
-  else _renderReqLojaView(body);
+  body.innerHTML = `
+    <div class="la-tabs">
+      <button class="la-tab${_lojaAcaoTab==='req'?' active':''}" data-tab="req">📦 Requisição</button>
+      <button class="la-tab${_lojaAcaoTab==='retirada'?' active':''}" data-tab="retirada">💰 Retirada Colaborador</button>
+    </div>
+    <div id="la-tab-body"></div>`;
+  body.querySelectorAll('.la-tab').forEach(btn => btn.addEventListener('click', () => {
+    _lojaAcaoTab = btn.dataset.tab;
+    body.querySelectorAll('.la-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === _lojaAcaoTab));
+    _renderLojaAcaoTab();
+  }));
+  _renderLojaAcaoTab();
+}
+
+function _renderLojaAcaoTab() {
+  const body = document.getElementById('la-tab-body');
+  if (!body) return;
+  if (_lojaAcaoTab === 'req') {
+    if (!S.user?.board) _renderReqAdminView(body);
+    else _renderReqLojaView(body);
+  } else {
+    if (!S.user?.board) _renderRetiradaAdminView(body);
+    else _renderRetiradaLojaView(body);
+  }
 }
 
 function _renderReqLojaView(body) {
@@ -7048,6 +7073,186 @@ function _renderReqAdminView(body) {
         _updateLojaAcaoBadge(); render();
       });
     });
+  }
+  render();
+}
+
+// ── Retirada Colaborador ──────────────────────────────────────────────────────
+
+const RET_STATUS = {
+  pendente:  { label: 'Pendente',  cls: 'ret-status-pend'  },
+  aprovada:  { label: 'Aprovada',  cls: 'ret-status-aprov' },
+  recusada:  { label: 'Recusada',  cls: 'ret-status-recus' },
+  paga:      { label: 'Paga',      cls: 'ret-status-paga'  },
+};
+
+function _retBadge(status) {
+  const s = RET_STATUS[status] || RET_STATUS.pendente;
+  return `<span class="ret-status-badge ${s.cls}">${s.label}</span>`;
+}
+
+function _renderRetiradaLojaView(body) {
+  const board = S.user.board;
+  let showForm = true;
+  function render() {
+    if (showForm) {
+      const boardEmps = (S.employees||[]).filter(e => e.board === board && !e.inativo);
+      body.innerHTML = `<div class="ret-form-wrap">
+        <div class="req-form-top">
+          <h3 class="req-form-title">Retirada Colaborador — ${BOARDS[board]?.label || board}</h3>
+          <button class="req-link-btn" id="retHistBtn">Ver histórico →</button>
+        </div>
+        <div class="ret-field">
+          <label>Colaborador</label>
+          <select id="retColab">
+            <option value="">— selecione —</option>
+            ${boardEmps.map(e => `<option value="${_escHtml(e.apelido||e.name.split(' ')[0])}">${_escHtml(e.apelido||e.name)}</option>`).join('')}
+            <option value="__outro">Outro (digitar)</option>
+          </select>
+        </div>
+        <div class="ret-field" id="retColabOutroWrap" style="display:none">
+          <label>Nome do colaborador</label>
+          <input type="text" id="retColabOutro" placeholder="Digite o nome">
+        </div>
+        <div class="ret-field">
+          <label>Valor (R$)</label>
+          <input type="number" id="retValor" step="0.01" min="0.01" placeholder="0,00">
+        </div>
+        <div class="ret-field">
+          <label>Motivo</label>
+          <select id="retMotivo">
+            <option value="">— selecione —</option>
+            <option>Adiantamento salarial</option>
+            <option>Vale</option>
+            <option>Reembolso despesa</option>
+            <option>Outro</option>
+          </select>
+        </div>
+        <div class="ret-field">
+          <label>Observação (opcional)</label>
+          <textarea id="retObs" rows="2" maxlength="400" placeholder="Detalhes adicionais…"></textarea>
+        </div>
+        <button class="ret-submit-btn" id="retSubmitBtn">Enviar Solicitação</button>
+      </div>`;
+      body.querySelector('#retHistBtn').addEventListener('click', () => { showForm = false; render(); });
+      body.querySelector('#retColab').addEventListener('change', function() {
+        body.querySelector('#retColabOutroWrap').style.display = this.value === '__outro' ? '' : 'none';
+      });
+      body.querySelector('#retSubmitBtn').addEventListener('click', async () => {
+        const selColab = body.querySelector('#retColab').value;
+        const colaborador = selColab === '__outro'
+          ? body.querySelector('#retColabOutro').value.trim()
+          : selColab;
+        const valor   = parseFloat(body.querySelector('#retValor').value) || 0;
+        const motivo  = body.querySelector('#retMotivo').value;
+        const obs     = body.querySelector('#retObs').value.trim();
+        if (!colaborador) { toast('Selecione o colaborador', true); return; }
+        if (valor <= 0)   { toast('Informe o valor', true); return; }
+        if (!motivo)      { toast('Selecione o motivo', true); return; }
+        const btn = body.querySelector('#retSubmitBtn');
+        btn.disabled = true;
+        try {
+          const ret = await apiFetch('POST', '/api/retiradas', { colaborador, valor, motivo, observacao: obs });
+          S.retiradas = [...(S.retiradas||[]), ret];
+          toast('Solicitação enviada ✓');
+          showForm = false; render();
+        } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
+      });
+    } else {
+      const items = (S.retiradas||[]).filter(x => x.board === board)
+        .sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+      body.innerHTML = `<div class="ret-form-wrap">
+        <div class="req-form-top">
+          <h3 class="req-form-title">Histórico de Retiradas</h3>
+          <button class="req-link-btn" id="retBackBtn">← Nova solicitação</button>
+        </div>
+        ${!items.length
+          ? '<div class="req-empty">Nenhuma solicitação enviada ainda</div>'
+          : items.map(r => `
+            <div class="ret-hist-card">
+              <div class="ret-hist-top">
+                <span class="ret-colab">${_escHtml(r.colaborador)}</span>
+                <span class="ret-valor">R$ ${(r.valor||0).toFixed(2).replace('.',',')}</span>
+                ${_retBadge(r.status)}
+                <span class="ret-date">${new Date(r.createdAt).toLocaleDateString('pt-BR')}</span>
+              </div>
+              <div class="ret-motivo">${_escHtml(r.motivo)}</div>
+              ${r.observacao ? `<div class="ret-obs">"${_escHtml(r.observacao)}"</div>` : ''}
+            </div>`).join('')}
+      </div>`;
+      body.querySelector('#retBackBtn').addEventListener('click', () => { showForm = true; render(); });
+    }
+  }
+  render();
+}
+
+function _renderRetiradaAdminView(body) {
+  let filterStatus = 'pendente';
+  let filterBoard  = '';
+  const NEXT_RET = {
+    pendente: [['aprovada','Aprovar'],['recusada','Recusar']],
+    aprovada: [['paga','Marcar Paga']],
+    recusada: [],
+    paga:     [],
+  };
+
+  function render() {
+    let items = (S.retiradas||[]);
+    if (filterStatus !== 'all') items = items.filter(x => x.status === filterStatus);
+    if (filterBoard) items = items.filter(x => x.board === filterBoard);
+    items = [...items].sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+
+    body.innerHTML = `<div class="req-admin-wrap">
+      <div class="req-admin-filters">
+        <div class="req-status-tabs">
+          ${[['pendente','Pendente'],['aprovada','Aprovada'],['recusada','Recusada'],['paga','Paga'],['all','Todas']].map(([s,l]) =>
+            `<button class="req-stab${filterStatus===s?' active':''}" data-s="${s}">${l}</button>`).join('')}
+        </div>
+        <div class="req-board-chips">
+          <button class="req-board-chip${filterBoard===''?' active':''}" data-b="" style="--rbc:#8B949E">Todas</button>
+          ${Object.keys(BOARDS).filter(b=>b!=='escritorio').map(b =>
+            `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'#8B949E'}">${BOARDS[b]?.label||b}</button>`).join('')}
+        </div>
+      </div>
+      <div class="req-admin-list">
+        ${!items.length ? '<div class="req-empty">Nenhuma solicitação encontrada</div>'
+          : items.map(r => {
+              const sc = BOARDS[r.board]?.color||'#8B949E';
+              const sl = BOARDS[r.board]?.label||r.board;
+              const dt = new Date(r.createdAt).toLocaleDateString('pt-BR');
+              const actions = (NEXT_RET[r.status]||[]).map(([s,l]) =>
+                `<button class="req-action-btn${s==='recusada'?' req-del-btn':''}" data-id="${r.id}" data-status="${s}">${l}</button>`).join('');
+              return `<div class="req-admin-item">
+                <div class="req-admin-item-hdr">
+                  <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+                    <span style="font-size:.8rem;font-weight:700;color:${sc}">${sl}</span>
+                    <span class="ret-colab">${_escHtml(r.colaborador)}</span>
+                    <span class="ret-valor">R$ ${(r.valor||0).toFixed(2).replace('.',',')}</span>
+                    ${_retBadge(r.status)}
+                  </div>
+                  <div style="display:flex;gap:.4rem;align-items:center">
+                    <span class="req-admin-upd">${dt}</span>
+                    ${actions}
+                  </div>
+                </div>
+                <div class="ret-motivo">${_escHtml(r.motivo)}</div>
+                ${r.observacao ? `<div class="ret-obs">"${_escHtml(r.observacao)}"</div>` : ''}
+              </div>`;
+            }).join('')}
+      </div>
+    </div>`;
+
+    body.querySelectorAll('.req-stab').forEach(b => b.addEventListener('click', () => { filterStatus = b.dataset.s; render(); }));
+    body.querySelectorAll('.req-board-chip').forEach(b => b.addEventListener('click', () => { filterBoard = b.dataset.b; render(); }));
+    body.querySelectorAll('.req-action-btn[data-id]').forEach(btn => btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        const updated = await apiFetch('PATCH', `/api/retiradas/${btn.dataset.id}/status`, { status: btn.dataset.status });
+        const idx = (S.retiradas||[]).findIndex(x => x.id === btn.dataset.id);
+        if (idx >= 0) S.retiradas[idx] = updated;
+        render();
+      } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
+    }));
   }
   render();
 }

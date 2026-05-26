@@ -552,6 +552,11 @@ app.get('/api/init', requireAuth, async (req, res) => {
       .filter(x => isAdminOrEscritorio || x.board === board)
       .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
+    // Retiradas filtered by board
+    const retiradas = (db.retiradas || [])
+      .filter(x => isAdminOrEscritorio || x.board === board)
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
     // Pendências — admin/escritorio only
     const pendencias = isAdminOrEscritorio ? (db.pendencias || []) : [];
 
@@ -605,6 +610,7 @@ app.get('/api/init', requireAuth, async (req, res) => {
       meetingItems,
       pendencias,
       requisicoes,
+      retiradas,
       indevaStats:  indevaResult,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1636,6 +1642,65 @@ app.delete('/api/requisicoes/:id', requireAdmin, async (req, res) => {
     db.requisicoes = (db.requisicoes || []).filter(x => x.id !== id);
     await writeDB(db);
     res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/retiradas ────────────────────────────────────────────────────
+app.get('/api/retiradas', requireAuth, async (req, res) => {
+  try {
+    const db  = await readDB();
+    const { board } = req.session.user;
+    const isAdm = !board || board === 'escritorio';
+    const items = (db.retiradas || [])
+      .filter(x => isAdm || x.board === board)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    res.json(items);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/retiradas ───────────────────────────────────────────────────
+app.post('/api/retiradas', requireAuth, async (req, res) => {
+  try {
+    const board = req.session.user.board;
+    if (!board) return res.status(400).json({ error: 'Apenas lojas podem criar solicitações' });
+    const { colaborador, valor, motivo, observacao } = req.body;
+    if (!colaborador || !colaborador.trim()) return res.status(400).json({ error: 'Colaborador obrigatório' });
+    if (!valor || parseFloat(valor) <= 0)   return res.status(400).json({ error: 'Valor inválido' });
+    const db = await readDB();
+    if (!db.retiradas) db.retiradas = [];
+    const item = {
+      id:          nextId(db),
+      board,
+      colaborador: colaborador.trim(),
+      valor:       parseFloat(valor),
+      motivo:      (motivo || '').trim(),
+      observacao:  (observacao || '').trim(),
+      status:      'pendente',
+      createdAt:   new Date().toISOString(),
+      createdBy:   req.session.user.label || req.session.user.username,
+      updatedAt:   null,
+      updatedBy:   null,
+    };
+    db.retiradas.push(item);
+    await writeDB(db);
+    res.json(item);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── PATCH /api/retiradas/:id/status ──────────────────────────────────────
+app.patch('/api/retiradas/:id/status', requireAdmin, async (req, res) => {
+  try {
+    const id   = parseInt(req.params.id);
+    const db   = await readDB();
+    const item = (db.retiradas || []).find(x => x.id === id);
+    if (!item) return res.status(404).json({ error: 'Solicitação não encontrada' });
+    const VALID = ['aprovada','recusada','paga'];
+    if (!VALID.includes(req.body.status)) return res.status(400).json({ error: 'Status inválido' });
+    item.status    = req.body.status;
+    item.updatedAt = new Date().toISOString();
+    item.updatedBy = req.session.user.label || req.session.user.username;
+    await writeDB(db);
+    res.json(item);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

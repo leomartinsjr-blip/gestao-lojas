@@ -2829,3 +2829,30 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .req-action-btn:disabled { opacity: .5; cursor: default; }
 .req-del-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: .8rem; padding: .2rem .5rem; border-radius: 4px; cursor: pointer; }
 .req-del-btn:hover { border-color: #F85149; color: #F85149; }
+/* ── Loja em Ação — tabs ── */
+.la-tabs { display: flex; gap: .35rem; padding: .75rem 1.25rem .5rem; border-bottom: 1px solid var(--border); }
+.la-tab { padding: .35rem .9rem; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: .82rem; cursor: pointer; transition: all .15s; }
+.la-tab:hover { background: var(--hover-bg, rgba(255,255,255,.04)); color: var(--text); }
+.la-tab.active { background: rgba(88,166,255,.12); color: #58A6FF; border-color: rgba(88,166,255,.4); font-weight: 600; }
+/* ── Retirada Colaborador ── */
+.ret-form-wrap { padding: 1rem 1.25rem 1.5rem; max-height: calc(100vh - 160px); overflow-y: auto; }
+.ret-field { margin-bottom: .85rem; }
+.ret-field label { display: block; font-size: .78rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: .3rem; }
+.ret-field input, .ret-field select, .ret-field textarea { width: 100%; background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: .85rem; padding: .45rem .6rem; border-radius: 6px; font-family: inherit; box-sizing: border-box; }
+.ret-field input:focus, .ret-field select:focus, .ret-field textarea:focus { outline: none; border-color: #58A6FF; }
+.ret-field select option { background: #161b22; }
+.ret-submit-btn { background: #1f6feb; border: 1px solid #388bfd; color: #fff; font-size: .85rem; font-weight: 600; padding: .5rem 1.25rem; border-radius: 6px; cursor: pointer; width: 100%; }
+.ret-submit-btn:hover { background: #388bfd; }
+.ret-submit-btn:disabled { opacity: .5; cursor: default; }
+.ret-hist-card { background: var(--hover-bg, rgba(255,255,255,.03)); border: 1px solid var(--border); border-radius: 7px; padding: .75rem 1rem; margin-bottom: .6rem; }
+.ret-hist-top { display: flex; align-items: center; gap: .6rem; margin-bottom: .35rem; flex-wrap: wrap; }
+.ret-valor { font-size: 1rem; font-weight: 700; color: #58A6FF; }
+.ret-colab { font-size: .88rem; font-weight: 600; color: var(--text); }
+.ret-date { font-size: .75rem; color: var(--muted); }
+.ret-motivo { font-size: .8rem; color: var(--muted); margin-bottom: .2rem; }
+.ret-obs { font-size: .78rem; color: var(--muted); font-style: italic; }
+.ret-status-pend  { background:#8B949E22;color:#8B949E;border:1px solid #8B949E44; }
+.ret-status-aprov { background:#3FB95022;color:#3FB950;border:1px solid #3FB95044; }
+.ret-status-recus { background:#F8514922;color:#F85149;border:1px solid #F8514944; }
+.ret-status-paga  { background:#58A6FF22;color:#58A6FF;border:1px solid #58A6FF44; }
+.ret-status-badge { font-size:.72rem;padding:.1rem .45rem;border-radius:4px;white-space:nowrap; }
