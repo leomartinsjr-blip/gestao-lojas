@@ -3747,7 +3747,8 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
     };
 
     // Generate all Sunday-based weeks overlapping the month + any manual-meta weeks
-    const allWeekStarts = new Set(Object.keys(weeklyMetasMonth));
+    // Somente semanas domingo-a-sábado, igual à view Meta Semanal
+    const allWeekStarts = new Set();
     const msDate = new Date(monthStart + 'T12:00:00');
     const firstSunday = new Date(msDate);
     firstSunday.setDate(msDate.getDate() - msDate.getDay()); // rewind to Sunday
