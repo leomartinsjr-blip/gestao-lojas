@@ -227,7 +227,11 @@ function selectEmp(empId) {
     document.getElementById(`tab-${e.id}`)?.classList.toggle('active', e.id === empId);
   });
   const emp   = FP.employees.find(e => e.id === empId);
-  const entry = FP.folha[FP.board]?.entries?.[empId] || defaultEntry(emp);
+  let entry = FP.folha[FP.board]?.entries?.[empId] || defaultEntry(emp);
+  // Auto-preenche premiação calculada se entrada salva ainda tem zero
+  if (!entry.premiacao && FP.premiacaoSemanal[empId]) {
+    entry = { ...entry, premiacao: r2(FP.premiacaoSemanal[empId]) };
+  }
   document.getElementById('fpEmpForms').innerHTML = buildEmpForm(emp, entry);
   attachFormListeners(empId);
   recalc(empId);
@@ -433,14 +437,14 @@ function defaultEntry(emp) {
     : (tipo === 'sub' || tipo === 'gvend')
       ? r2(cfg.garantiaMinimaSubGerente || cfg.garantiaMinima || 0)
       : r2(cfg.garantiaMinima || 0);
-  const baseGm = tipo === 'gvend'
-    ? fixo + comissaoTotal + comissaoLoja
-    : fixo + comissaoTotal;
-  const gmComplement = r2(Math.max(0, gm - baseGm));
-
   const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);
   let comissaoLoja = 0;
   if (tipo === 'sub' || tipo === 'gvend') comissaoLoja = r2(vendaLoja * (ecfg.comissaoVR || 0) / 100);
+
+  const baseGm = (tipo === 'gvend' || tipo === 'sub')
+    ? fixo + comissaoTotal + comissaoLoja
+    : fixo + comissaoTotal;
+  const gmComplement = r2(Math.max(0, gm - baseGm));
 
   const premiacao        = r2(FP.premiacaoSemanal[emp.id] || 0);
   const premiacaoBalanco = 0;
@@ -496,7 +500,7 @@ function buildEmpForm(emp, entry) {
 
     provRows += `
       <div class="fp-field fp-field-inline">
-        <label>${tipo === 'gerente' ? 'Vendas Loja (R$)' : tipo === 'gvend' ? 'Vendas Próprias (R$)' : 'Vendas (R$)'}</label>${inp(`fp-vendas-${emp.id}`, e.vendas)}
+        <label>${tipo === 'gerente' ? 'Vendas Loja (R$)' : (tipo === 'gvend' || tipo === 'sub') ? 'Vendas Próprias (R$)' : 'Vendas (R$)'}</label>${inp(`fp-vendas-${emp.id}`, e.vendas)}
         <span class="fp-times">×</span>
         <input type="number" step="0.01" id="fp-comPct-${emp.id}" value="${r2(e.comissaoPct).toFixed(2)}"
           style="width:72px" onchange="onFieldChange(${emp.id})">
@@ -524,7 +528,7 @@ function buildEmpForm(emp, entry) {
 
     if (tipo === 'sub' || tipo === 'gvend') {
       const pctVR = ecfg.comissaoVR || 0;
-      const lbl   = tipo === 'gvend' ? 'Vendas da Loja' : 'Comissão VR';
+      const lbl   = (tipo === 'gvend' || tipo === 'sub') ? 'Vendas da Loja' : 'Comissão VR';
       provRows += `<div class="fp-field"><label>${lbl} (${r2(pctVR).toFixed(2)}% vendas loja)</label>${inp(`fp-comLoja-${emp.id}`, e.comissaoLoja)}</div>`;
     }
 
@@ -534,7 +538,7 @@ function buildEmpForm(emp, entry) {
         ? (cfg.garantiaMinimaSubGerente || cfg.garantiaMinima || 0)
         : (cfg.garantiaMinima || 0);
     if (gmMin > 0) {
-      const gmNote = tipo === 'gvend'
+      const gmNote = (tipo === 'gvend' || tipo === 'sub')
         ? 'mín inclui fixo + comissão própria + comissão loja'
         : `mín: ${brl(gmMin)}`;
       provRows += `<div class="fp-field"><label>GM (R$)</label>${inp(`fp-gm-${emp.id}`, e.gmComplement)}
@@ -638,7 +642,7 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
       row('Com. Meta 1 (%)',    `ec-comissao-${emp.id}`,        ecfg.comissao) +
       row('Com. Meta 2 (%)',    `ec-comissaoMeta2-${emp.id}`,   ecfg.comissaoMeta2) +
       row('Com. Super Meta (%)',`ec-comissaoSuper-${emp.id}`,   ecfg.comissaoSuper) +
-      (tipo === 'sub' || tipo === 'gvend' ? row(tipo === 'gvend' ? 'Comissão Loja (%)' : 'Comissão VR (%)', `ec-comissaoVR-${emp.id}`, ecfg.comissaoVR) : '') +
+      (tipo === 'sub' || tipo === 'gvend' ? row('Comissão Loja (%)', `ec-comissaoVR-${emp.id}`, ecfg.comissaoVR) : '') +
       (tipo === 'sub' || tipo === 'gvend' ? row('Salário Fixo (R$)', `ec-salarioFixo-${emp.id}`, ecfg.salarioFixo) : '') +
       row('INSS (%)',           `ec-inssRate-${emp.id}`,        ecfg.inssRate) +
       row('VT (%)',             `ec-vtRate-${emp.id}`,          ecfg.vtRate);
@@ -1025,7 +1029,7 @@ function buildRecibo(emp, entry, mes, origin) {
       prov += `<tr><td colspan="4" style="padding:1px 5px 0;font-size:8pt;color:${faixaClr};font-style:italic">${infoParts}</td></tr>`;
     prov +=
       `<tr>` +
-      `<td style="padding:1px 5px 2px">${tipo === 'gerente' ? 'VENDAS LOJA' : tipo === 'gvend' ? 'VENDAS PRÓPRIAS' : 'VENDAS'}</td>` +
+      `<td style="padding:1px 5px 2px">${tipo === 'gerente' ? 'VENDAS LOJA' : (tipo === 'gvend' || tipo === 'sub') ? 'VENDAS PRÓPRIAS' : 'VENDAS'}</td>` +
       `<td style="padding:1px 5px 2px;text-align:right">${num(entry.vendas) ? `<strong>${fmt(num(entry.vendas))}</strong>` : ''}</td>` +
       `<td></td>` +
       `<td style="padding:1px 5px 2px;text-align:right;white-space:nowrap">${money(entry.comissaoTotal)}</td>` +
@@ -1038,7 +1042,7 @@ function buildRecibo(emp, entry, mes, origin) {
     if (num(entry.gmComplement) > 0)
       prov += tr('GARANTIA SURFERS', entry.gmComplement, gm, '', false, '#fef9c3');
     if ((tipo === 'sub' || tipo === 'gvend') && num(entry.comissaoLoja) > 0)
-      prov += tr(tipo === 'gvend' ? 'VENDAS DA LOJA' : 'COMISSÃO LOJA', entry.comissaoLoja, entry.vendaLoja,
+      prov += tr((tipo === 'gvend' || tipo === 'sub') ? 'VENDAS DA LOJA' : 'COMISSÃO LOJA', entry.comissaoLoja, entry.vendaLoja,
         ecfg.comissaoVR ? fmt(ecfg.comissaoVR) + '%' : '');
     const semDet = FP.premiacaoSemanalDetalhe[emp.id] || [];
     const semSum = semDet.reduce((s, x) => s + num(x.valor), 0);
