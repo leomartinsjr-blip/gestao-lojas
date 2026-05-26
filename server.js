@@ -3716,7 +3716,7 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
 
         for (const emp of bEmps) {
           const tipo = (emp.cargo||'').toLowerCase();
-          const isGer = (/gerente/.test(tipo) || /g\.?\s*vend/.test(tipo)) && !/^sub/.test(tipo);
+          const isGer = (/gerente/.test(tipo) || /g\.?\s*vend/.test(tipo) || /gerente\s+vend/.test(tipo)) && !/^sub/.test(tipo);
           if (isGer) {
             let val = 0;
             if (storeHitMeta) val += PREMIO_GER_W;

@@ -16,7 +16,7 @@ function cargoTipo(cargo) {
   const c = (cargo || '').toLowerCase().trim();
   if (/caixa|opcx/.test(c))                    return 'caixa';
   if (/^sub.*gerente|sub[\s-]gerente/.test(c)) return 'sub';
-  if (/g\.?\s*vend/.test(c))                   return 'gvend';
+  if (/g\.?\s*vend|gerente\s+vend/.test(c))    return 'gvend';
   if (/gerente/.test(c))                       return 'gerente';
   return 'vendedor';
 }
