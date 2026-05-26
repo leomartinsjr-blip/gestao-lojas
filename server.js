@@ -2851,6 +2851,127 @@ app.get('/api/microvix/movimento-raw', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/mx-probe — descobre colunas de qualquer comando Microvix ────────
+// ?command=LinxMovimentoItens&board=delrey&dtIni=2026-05-01&dtFin=2026-05-26
+app.get('/api/mx-probe', requireAdmin, async (req, res) => {
+  try {
+    const { command, board, dtIni, dtFin } = req.query;
+    if (!command) return res.status(400).json({ error: 'Parâmetro "command" obrigatório' });
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const targetBoard = board || Object.keys(lojas)[0];
+    const cnpj = (lojas[targetBoard] || '').replace(/\D/g, '');
+    if (!cnpj) return res.status(400).json({ error: `Board "${targetBoard}" não mapeado em MICROVIX_LOJAS` });
+    const chave = process.env[`MICROVIX_CHAVE_${targetBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
+    const extra = [];
+    if (dtIni) extra.push({ id: 'data_inicial', valor: dtIni });
+    extra.push({ id: 'data_fim', valor: dtFin || dtIni || new Date().toISOString().slice(0,10) });
+    const body = buildRequest(command, cnpj, extra, chave);
+    const raw  = await postRequest(body, 120_000);
+    if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+      const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro';
+      return res.status(400).json({ error: msg, rawHead: raw.slice(0, 500) });
+    }
+    const rows = parseCsv(raw);
+    const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+    res.json({ command, board: targetBoard, headers, sample: rows.slice(0, 5), total: rows.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/relatorio-marcas ─────────────────────────────────────────────
+// ?dtIni=2026-05-01&dtFin=2026-05-26&board=delrey   (board opcional — sem ele = todas as lojas)
+// Retorna vendas por marca (LinxMovimentoItens × catálogo LinxProdutos)
+app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
+  try {
+    const { dtIni, dtFin, board } = req.query;
+    if (!dtIni || !dtFin) return res.status(400).json({ error: 'dtIni e dtFin obrigatórios (YYYY-MM-DD)' });
+    const { board: userBoard } = req.session.user;
+    const isAdm = !userBoard || userBoard === 'escritorio';
+
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    // Admin pode escolher loja ou todas; loja só vê a própria
+    const targetBoards = isAdm
+      ? (board ? [board] : Object.keys(lojas))
+      : [userBoard];
+
+    const { fetchMovimentoItens, parseBrNum } = require('./services/microvix');
+    const catalog = await _getCatalog(lojas);
+
+    // Agrega: marcaKey → { marca, qtd, valor, pecas, itens_raw }
+    const byMarca = {};
+
+    for (const b of targetBoards) {
+      const cnpj  = (lojas[b] || '').replace(/\D/g, '');
+      if (!cnpj) continue;
+      const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+      let rows;
+      try {
+        rows = await fetchMovimentoItens(cnpj, dtIni, dtFin, chave);
+      } catch (e) {
+        console.error(`[relatorioMarcas/${b}] ${e.message}`);
+        continue;
+      }
+      console.log(`[relatorioMarcas/${b}] ${rows.length} itens — colunas: ${rows[0] ? Object.keys(rows[0]).join(',') : '(vazio)'}`);
+
+      for (const row of rows) {
+        // Ignorar cancelados e devoluções
+        if (row.cancelado === 'S' || row.cancelado === '1') continue;
+        const op = (row.operacao || row.tipo_operacao || '').toUpperCase();
+        if (op === 'DS') continue; // devolução
+
+        const cod = String(row.cod_produto || '').trim();
+
+        // Marca: preferir campo direto no item; fallback no catálogo
+        const marcaDireta = (row.desc_marca || row.marca || row.nome_marca || '').trim();
+        const prodInfo    = catalog[cod] || {};
+        const marca = marcaDireta || prodInfo.marca || '(sem marca)';
+
+        const qtd   = parseBrNum(row.quantidade   || '0');
+        const valor = parseBrNum(row.valor_total   || row.valor_venda || row.valor || '0');
+
+        const key = marca.toUpperCase();
+        if (!byMarca[key]) byMarca[key] = { marca, qtd: 0, valor: 0, produtos: {} };
+        byMarca[key].qtd   += qtd;
+        byMarca[key].valor += valor;
+
+        // Agrega por produto dentro da marca
+        const nomeProd = (row.descricao || row.desc_produto || prodInfo.nome || cod || '?').trim();
+        if (!byMarca[key].produtos[cod]) byMarca[key].produtos[cod] = { cod, nome: nomeProd, qtd: 0, valor: 0 };
+        byMarca[key].produtos[cod].qtd   += qtd;
+        byMarca[key].produtos[cod].valor += valor;
+      }
+    }
+
+    const result = Object.values(byMarca)
+      .map(m => ({
+        ...m,
+        valor: parseFloat(m.valor.toFixed(2)),
+        produtos: Object.values(m.produtos)
+          .sort((a, b) => b.valor - a.valor)
+          .map(p => ({ ...p, valor: parseFloat(p.valor.toFixed(2)) })),
+      }))
+      .sort((a, b) => b.valor - a.valor);
+
+    // Campos descobertos — útil para diagnóstico na 1ª chamada
+    const sampleFields = [];
+    if (Object.keys(byMarca).length === 0) {
+      // Tenta buscar só para expor os campos
+      const firstBoard = targetBoards[0];
+      if (firstBoard) {
+        try {
+          const cnpj2  = (lojas[firstBoard] || '').replace(/\D/g, '');
+          const chave2 = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+          const { fetchMovimentoItens: fmi } = require('./services/microvix');
+          const probe = await fmi(cnpj2, dtIni, dtIni, chave2);
+          sampleFields.push(...(probe[0] ? Object.keys(probe[0]) : []));
+        } catch (_) {}
+      }
+    }
+
+    res.json({ dtIni, dtFin, boards: targetBoards, total: result.length, marcas: result, sampleFields });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Transferências: cache de resultado (TTL 30min) ─────────────────────────
 let _transResultCache = {};
 let _transWarmRunning = {};

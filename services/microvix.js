@@ -237,6 +237,23 @@ async function fetchSangrias(cnpj, dtIni, dtFin, chave) {
   return parseCsv(raw);
 }
 
+// Fetch LinxMovimentoItens → one row per product per sale document
+// Returns product-level detail: cod_produto, descricao, quantidade, valor_total, etc.
+// Note: 'marca' may or may not be in this response — use fetchProdutos to enrich if absent.
+async function fetchMovimentoItens(cnpj, dtIni, dtFin, chave) {
+  const extra = [
+    { id: 'data_inicial', valor: dtIni },
+    { id: 'data_fim',     valor: dtFin },
+  ];
+  const body = buildRequest('LinxMovimentoItens', cnpj, extra, chave);
+  const raw  = await postRequest(body, 120_000);
+  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro desconhecido';
+    throw new Error(`Microvix API (movimentoItens): ${msg}`);
+  }
+  return parseCsv(raw);
+}
+
 // Fetch LinxContasPagar → contas a pagar no período
 async function fetchContasPagar(cnpj, dtIni, dtFin, chave) {
   const extra = [
@@ -256,4 +273,4 @@ async function fetchContasPagar(cnpj, dtIni, dtFin, chave) {
   return parseCsv(raw);
 }
 
-module.exports = { fetchMovimento, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchSangrias, fetchContasPagar, parseBrNum, buildRequest, postRequest, parseCsv };
+module.exports = { fetchMovimento, fetchMovimentoItens, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchSangrias, fetchContasPagar, parseBrNum, buildRequest, postRequest, parseCsv };
