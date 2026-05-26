@@ -694,24 +694,15 @@ body {
 .logout-btn:hover .btn-label { max-width: 40px; opacity: 1; margin-left: .38rem; }
 
 .folgas-topbar-btn {
-  display: flex; align-items: center; gap: 0;
+  display: flex; align-items: center; gap: .3rem;
   background: var(--surface2); border: 1px solid var(--border);
   color: var(--muted); cursor: pointer; border-radius: .375rem;
-  font-size: 0; padding: .32rem .42rem;
-  font-family: inherit; transition: border-color .15s, color .15s, padding .2s ease; white-space: nowrap; flex-shrink: 0;
-  overflow: hidden;
+  font-size: .75rem; font-weight: 500; padding: .3rem .55rem;
+  font-family: inherit; transition: border-color .15s, color .15s; white-space: nowrap; flex-shrink: 0;
 }
-.folgas-topbar-btn svg { width: 16px; height: 16px; flex-shrink: 0; }
-.folgas-topbar-btn:hover { color: #58A6FF; border-color: #58A6FF; padding: .32rem .55rem; }
-.btn-label {
-  display: inline-block; overflow: hidden; white-space: nowrap;
-  max-width: 0; opacity: 0; margin-left: 0;
-  font-size: .75rem; font-weight: 500;
-  transition: max-width .22s ease, opacity .18s ease, margin-left .22s ease;
-}
-.folgas-topbar-btn:hover .btn-label {
-  max-width: 160px; opacity: 1; margin-left: .38rem;
-}
+.folgas-topbar-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+.folgas-topbar-btn:hover { color: #58A6FF; border-color: #58A6FF; }
+.btn-label { font-size: .75rem; font-weight: 500; }
 
 /* ── Microvix sync button ────────────────────────────────────────── */
 .mx-sync-btn {

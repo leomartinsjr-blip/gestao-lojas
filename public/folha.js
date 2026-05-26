@@ -20,28 +20,46 @@ function cargoTipo(cargo) {
   return 'vendedor';
 }
 
+// ── Config efetiva do funcionário (folha prevalece sobre cadastro) ─────────
+function getEmpCfg(emp) {
+  const fc = FP.empConfig[emp.id] || {};
+  const v  = (a, b) => a != null ? a : b;
+  return {
+    comissaoSemMeta: v(fc.comissaoSemMeta, emp.comissaoSemMeta || 0),
+    comissao:        v(fc.comissao,        emp.comissao        || 0),
+    comissaoMeta2:   v(fc.comissaoMeta2,   emp.comissaoMeta2   || 0),
+    comissaoSuper:   v(fc.comissaoSuper,   emp.comissaoSuper   || 0),
+    comissaoGerente: v(fc.comissaoGerente, emp.comissaoGerente || 0),
+    comissaoVR:      v(fc.comissaoVR,      emp.comissaoVR      || 0),
+    salarioFixo:     v(fc.salarioFixo,     emp.salarioFixo     || 0),
+    quebraCaixa:     v(fc.quebraCaixa,     emp.quebraCaixa     || 0),
+    inssRate:        v(fc.inssRate,        emp.inssRate        || 0),
+    vtRate:          v(fc.vtRate,          emp.vtRate          || 0),
+  };
+}
+
 // ── Faixa por vendas vs metas do funcionário ───────────────────────────────
 // Thresholds idênticos ao fechamento diário: meta1=meta, meta2=meta×1.10, super=meta×1.10×1.20
-function calcFaixa(emp, vendas, meta) {
+function calcFaixa(ecfg, vendas, meta) {
   const meta1  = r2(meta);
   const meta2  = r2(meta * 1.10);
   const super_ = r2(meta * 1.10 * 1.20);
 
   if (meta > 0 && vendas >= super_)
-    return { label: 'SUPER META', comPct: r2(emp.comissaoSuper || emp.comissao || 0), meta1, meta2, super: super_ };
+    return { label: 'SUPER META', comPct: r2(ecfg.comissaoSuper || ecfg.comissao || 0), meta1, meta2, super: super_ };
   if (meta > 0 && vendas >= meta2)
-    return { label: 'META 2',     comPct: r2(emp.comissaoMeta2 || emp.comissao || 0), meta1, meta2, super: super_ };
+    return { label: 'META 2',     comPct: r2(ecfg.comissaoMeta2 || ecfg.comissao || 0), meta1, meta2, super: super_ };
   if (meta > 0 && vendas >= meta1)
-    return { label: 'META 1',     comPct: r2(emp.comissao      || 0),                meta1, meta2, super: super_ };
+    return { label: 'META 1',     comPct: r2(ecfg.comissao      || 0),                meta1, meta2, super: super_ };
   return       { label: meta > 0 ? 'SEM META' : '—',
-                 comPct: r2(emp.comissaoSemMeta || emp.comissao || 0),                meta1, meta2, super: super_ };
+                 comPct: r2(ecfg.comissaoSemMeta || ecfg.comissao || 0),                meta1, meta2, super: super_ };
 }
 
 // ── State ──────────────────────────────────────────────────────────────────
 let FP = {
   year: 0, month: 0, board: '',
   employees: [], vsales: {},
-  folha: {}, folhaConfig: {},
+  folha: {}, folhaConfig: {}, empConfig: {},
   mensal: { diasUteis: 22, domingosFeriados: 4 },
   lojaMetaMap: {}, lojaVendaMap: {},
   activeEmpId: null, dirty: false,
@@ -83,6 +101,7 @@ async function loadPeriod() {
     FP.vsales       = d.vsales       || {};
     FP.folha        = d.folha        || {};
     FP.folhaConfig  = d.folhaConfig  || {};
+    FP.empConfig    = d.empConfig    || {};
     FP.lojaMetaMap  = d.lojaMetaMap  || {};
     FP.lojaVendaMap = d.lojaVendaMap || {};
     FP.mensal = {
@@ -337,21 +356,22 @@ function sumVendas(empId) {
 
 function defaultEntry(emp) {
   const cfg  = FP.folhaConfig[FP.board] || {};
+  const ecfg = getEmpCfg(emp);
   const tipo = cargoTipo(emp.cargo);
   const du   = FP.mensal.diasUteis        || 22;
   const df   = FP.mensal.domingosFeriados || 4;
 
   const vendas = sumVendas(emp.id);
   const vs     = FP.vsales[emp.id] || {};
-  const meta   = r2(vs.meta?.mensal || 0); // meta individual do funcionário (fechamento diário)
+  const meta   = r2(vs.meta?.mensal || 0);
 
   // ── Caixa ──
   if (tipo === 'caixa') {
-    const fixo   = r2(cfg.salarioFixoCaixa || emp.salarioFixo || 0);
-    const quebra = r2(cfg.quebraCaixa      || emp.quebraCaixa  || 0);
+    const fixo   = r2(cfg.salarioFixoCaixa || ecfg.salarioFixo || 0);
+    const quebra = r2(cfg.quebraCaixa      || ecfg.quebraCaixa  || 0);
     const prov   = r2(fixo + quebra);
-    const inss   = r2(prov * (emp.inssRate || 0) / 100);
-    const vt     = r2(prov * (emp.vtRate   || 0) / 100);
+    const inss   = r2(prov * (ecfg.inssRate || 0) / 100);
+    const vt     = r2(prov * (ecfg.vtRate   || 0) / 100);
     return {
       tipo, fixo, quebra, feriado: 0, extras: [],
       proventos: prov,
@@ -361,8 +381,7 @@ function defaultEntry(emp) {
     };
   }
 
-  // ── Comissão por faixa (campos do funcionário) ──
-  const faixa       = calcFaixa(emp, vendas, meta);
+  const faixa       = calcFaixa(ecfg, vendas, meta);
   const faixaLabel  = faixa.label;
   const comissaoPct = faixa.comPct;
   const pctMeta     = meta > 0 ? r2(vendas / meta * 100) : 0;
@@ -379,26 +398,23 @@ function defaultEntry(emp) {
     : r2(comissaoTotal - premio);
   const dsr = du > 0 ? r2(comissaoContab * df / du) : 0;
 
-  // GM: complemento se abaixo da garantia mínima (gerente tem GM própria)
   const gm = (tipo === 'gerente' || tipo === 'sub')
     ? r2(cfg.garantiaMinimaGerente || cfg.garantiaMinima || 0)
     : r2(cfg.garantiaMinima || 0);
   const gmComplement = r2(Math.max(0, gm - comissaoTotal));
 
-  // Comissão loja (gerente % ou VR %)
   const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);
   let comissaoLoja = 0;
-  if (tipo === 'gerente') comissaoLoja = r2(vendaLoja * (emp.comissaoGerente || 0) / 100);
-  else if (tipo === 'sub') comissaoLoja = r2(vendaLoja * (emp.comissaoVR || 0) / 100);
+  if (tipo === 'gerente') comissaoLoja = r2(vendaLoja * (ecfg.comissaoGerente || 0) / 100);
+  else if (tipo === 'sub') comissaoLoja = r2(vendaLoja * (ecfg.comissaoVR || 0) / 100);
 
-  // Fixo para gerentes (loja config tem prioridade sobre cadastro individual)
   const fixo = (tipo === 'gerente' || tipo === 'sub')
-    ? r2(cfg.salarioFixoGerente || emp.salarioFixo || 0)
+    ? r2(cfg.salarioFixoGerente || ecfg.salarioFixo || 0)
     : 0;
 
   const proventos = r2(fixo + comissaoTotal + comissaoLoja + gmComplement);
-  const inss = r2(proventos * (emp.inssRate || 0) / 100);
-  const vt   = r2(proventos * (emp.vtRate   || 0) / 100);
+  const inss = r2(proventos * (ecfg.inssRate || 0) / 100);
+  const vt   = r2(proventos * (ecfg.vtRate   || 0) / 100);
 
   return {
     tipo, vendas, meta, pctMeta, faixaLabel, comissaoPct,
@@ -417,6 +433,7 @@ function buildEmpForm(emp, entry) {
   const e    = entry;
   const tipo = e.tipo || cargoTipo(emp.cargo);
   const cfg  = FP.folhaConfig[FP.board] || {};
+  const ecfg = getEmpCfg(emp);
   const du   = FP.mensal.diasUteis        || 22;
   const df   = FP.mensal.domingosFeriados || 4;
 
@@ -472,7 +489,7 @@ function buildEmpForm(emp, entry) {
       </div>`;
 
     if (tipo === 'gerente' || tipo === 'sub') {
-      const pctVR  = tipo === 'gerente' ? (emp.comissaoGerente||0) : (emp.comissaoVR||0);
+      const pctVR  = tipo === 'gerente' ? (ecfg.comissaoGerente||0) : (ecfg.comissaoVR||0);
       const lbl    = tipo === 'gerente'
         ? `Comissão Loja (${r2(pctVR).toFixed(2)}% vendas loja)`
         : `Comissão VR (${r2(pctVR).toFixed(2)}% vendas loja)`;
@@ -503,7 +520,7 @@ function buildEmpForm(emp, entry) {
   <div class="fp-emp-form active" id="empform-${emp.id}">
     <div style="font-size:.75rem;color:#8b949e;margin-bottom:.75rem">
       ${emp.name} · ${emp.cargo}
-      ${emp.inssRate ? ` · INSS ${emp.inssRate}%` : ''}${emp.vtRate ? ` · VT ${emp.vtRate}%` : ''}
+      ${ecfg.inssRate ? ` · INSS ${ecfg.inssRate}%` : ''}${ecfg.vtRate ? ` · VT ${ecfg.vtRate}%` : ''}
       ${emp.banco ? ` · Banco ${emp.banco} / Cta ${emp.conta||'—'}` : ''}
     </div>
     <div class="fp-form-grid">
@@ -531,7 +548,114 @@ function buildEmpForm(emp, entry) {
       </div>
       <span class="fp-liquido-val" id="val-liquido-${emp.id}">${brl(e.liquido)}</span>
     </div>
+    ${buildEmpCfgSection(emp, ecfg, tipo)}
   </div>`;
+}
+
+function buildEmpCfgSection(emp, ecfg, tipo) {
+  const hasFolha = Object.keys(FP.empConfig[emp.id] || {}).length > 0;
+  const src = hasFolha
+    ? '<span style="color:#3fb950">● valores da folha</span>'
+    : '<span style="color:#484f58">valores do cadastro</span>';
+
+  const inp = (id, v) =>
+    `<input type="number" step="0.01" id="${id}" value="${r2(v).toFixed(2)}"
+      style="width:88px;background:#21262d;border:1px solid #30363d;color:#e6edf3;
+             padding:.2rem .4rem;border-radius:5px;font-size:.82rem;text-align:right">`;
+
+  const row = (lbl, id, v) =>
+    `<div class="fp-emp-cfg-row"><label>${lbl}</label>${inp(id, v)}</div>`;
+
+  let fields = '';
+  if (tipo === 'caixa') {
+    fields =
+      row('Salário Fixo (R$)',  `ec-salarioFixo-${emp.id}`,  ecfg.salarioFixo) +
+      row('Quebra Caixa (R$)',  `ec-quebraCaixa-${emp.id}`,  ecfg.quebraCaixa) +
+      row('INSS (%)',           `ec-inssRate-${emp.id}`,     ecfg.inssRate) +
+      row('VT (%)',             `ec-vtRate-${emp.id}`,       ecfg.vtRate);
+  } else if (tipo === 'gerente') {
+    fields =
+      row('Comissão Loja (%)',  `ec-comissaoGerente-${emp.id}`, ecfg.comissaoGerente) +
+      row('Salário Fixo (R$)',  `ec-salarioFixo-${emp.id}`,     ecfg.salarioFixo) +
+      row('INSS (%)',           `ec-inssRate-${emp.id}`,        ecfg.inssRate) +
+      row('VT (%)',             `ec-vtRate-${emp.id}`,          ecfg.vtRate);
+  } else {
+    fields =
+      row('Com. Sem Meta (%)',  `ec-comissaoSemMeta-${emp.id}`, ecfg.comissaoSemMeta) +
+      row('Com. Meta 1 (%)',    `ec-comissao-${emp.id}`,        ecfg.comissao) +
+      row('Com. Meta 2 (%)',    `ec-comissaoMeta2-${emp.id}`,   ecfg.comissaoMeta2) +
+      row('Com. Super Meta (%)',`ec-comissaoSuper-${emp.id}`,   ecfg.comissaoSuper) +
+      (tipo === 'sub' ? row('Comissão VR (%)', `ec-comissaoVR-${emp.id}`, ecfg.comissaoVR) : '') +
+      row('INSS (%)',           `ec-inssRate-${emp.id}`,        ecfg.inssRate) +
+      row('VT (%)',             `ec-vtRate-${emp.id}`,          ecfg.vtRate);
+  }
+
+  return `
+  <div class="fp-emp-cfg-wrap">
+    <div class="fp-emp-cfg-toggle" onclick="fpToggleEmpCfg(${emp.id})">
+      <span>⚙ Configuração</span>
+      <span style="font-size:.72rem;font-weight:400">${src}</span>
+      <span id="empCfgArrow-${emp.id}" style="margin-left:auto;font-size:.75rem">▼</span>
+    </div>
+    <div class="fp-emp-cfg" id="empCfg-${emp.id}">
+      <div class="fp-emp-cfg-grid">${fields}</div>
+      <div class="fp-emp-cfg-actions">
+        <button class="fp-btn primary" onclick="fpSaveEmpCfg(${emp.id})">Salvar</button>
+        ${hasFolha ? `<button class="fp-btn" onclick="fpClearEmpCfg(${emp.id})">Resetar para cadastro</button>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+function fpToggleEmpCfg(empId) {
+  const el    = document.getElementById(`empCfg-${empId}`);
+  const arrow = document.getElementById(`empCfgArrow-${empId}`);
+  const wrap  = el?.closest('.fp-emp-cfg-wrap');
+  const open  = wrap?.classList.toggle('open');
+  if (arrow) arrow.textContent = open ? '▲' : '▼';
+}
+
+async function fpSaveEmpCfg(empId) {
+  const g   = id => { const el = document.getElementById(id); return el != null ? r2(parseFloat(el.value)||0) : null; };
+  const emp = FP.employees.find(e => e.id === empId);
+  if (!emp) return;
+  const tipo = cargoTipo(emp.cargo);
+
+  let cfg = { inssRate: g(`ec-inssRate-${empId}`), vtRate: g(`ec-vtRate-${empId}`) };
+  if (tipo === 'caixa') {
+    cfg.salarioFixo = g(`ec-salarioFixo-${empId}`);
+    cfg.quebraCaixa = g(`ec-quebraCaixa-${empId}`);
+  } else if (tipo === 'gerente') {
+    cfg.comissaoGerente = g(`ec-comissaoGerente-${empId}`);
+    cfg.salarioFixo     = g(`ec-salarioFixo-${empId}`);
+  } else {
+    cfg.comissaoSemMeta = g(`ec-comissaoSemMeta-${empId}`);
+    cfg.comissao        = g(`ec-comissao-${empId}`);
+    cfg.comissaoMeta2   = g(`ec-comissaoMeta2-${empId}`);
+    cfg.comissaoSuper   = g(`ec-comissaoSuper-${empId}`);
+    if (tipo === 'sub') cfg.comissaoVR = g(`ec-comissaoVR-${empId}`);
+  }
+
+  try {
+    await apiFetch(`/api/folha/empconfig/${empId}`, 'POST', cfg);
+    FP.empConfig[empId] = cfg;
+    const entry = FP.folha[FP.board]?.entries?.[empId] || defaultEntry(emp);
+    document.getElementById('fpEmpForms').innerHTML = buildEmpForm(emp, entry);
+    attachFormListeners(empId);
+    toast('Configuração salva ✓');
+  } catch (e) { toast('Erro: ' + e.message, true); }
+}
+
+async function fpClearEmpCfg(empId) {
+  try {
+    await apiFetch(`/api/folha/empconfig/${empId}`, 'POST', {});
+    delete FP.empConfig[empId];
+    const emp   = FP.employees.find(e => e.id === empId);
+    const entry = FP.folha[FP.board]?.entries?.[empId] || defaultEntry(emp);
+    document.getElementById('fpEmpForms').innerHTML = buildEmpForm(emp, entry);
+    attachFormListeners(empId);
+    toast('Resetado para valores do cadastro.');
+  } catch (e) { toast('Erro: ' + e.message, true); }
 }
 
 function buildExtraRows(empId, extras, type) {

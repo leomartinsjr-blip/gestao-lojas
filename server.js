@@ -3582,6 +3582,30 @@ app.post('/api/folha/config', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/folha/empconfig — configuração individual por funcionário (comissões, fixo, descontos)
+app.get('/api/folha/empconfig', requireAuth, async (req, res) => {
+  try {
+    const db = await readDB();
+    res.json(db.folhaEmpConfig || {});
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/folha/empconfig/:empId — salva configuração individual do funcionário
+app.post('/api/folha/empconfig/:empId', requireAuth, async (req, res) => {
+  try {
+    const empId = parseInt(req.params.empId);
+    const db = await readDB();
+    if (!db.folhaEmpConfig) db.folhaEmpConfig = {};
+    if (Object.keys(req.body).length === 0) {
+      delete db.folhaEmpConfig[empId];
+    } else {
+      db.folhaEmpConfig[empId] = req.body;
+    }
+    await writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/folha/:year/:month — retorna dados completos para a folha do mês
 app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
   try {
@@ -3627,7 +3651,8 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       folha:        (db.folhas || {})[mk] || {},
       employees,
       vsales,
-      folhaConfig:  db.folhaConfig || {},
+      folhaConfig:  db.folhaConfig    || {},
+      empConfig:    db.folhaEmpConfig || {},
       folhaMensal:  (db.folhaConfigMensal || {})[mk] || {},
       lojaMetaMap,
       lojaVendaMap,
