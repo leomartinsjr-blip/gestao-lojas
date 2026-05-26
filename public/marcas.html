@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Vendas por Marca</title>
+<link rel="icon" type="image/jpeg" href="favicon.jpg">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+
+/* ── Header ── */
+.mx-header{background:#161b22;border-bottom:1px solid #30363d;padding:0 1.25rem;display:flex;align-items:center;gap:.75rem;height:52px;position:sticky;top:0;z-index:100;flex-wrap:wrap}
+.mx-back{font-size:.8rem;color:#8b949e;padding:.28rem .6rem;border-radius:6px;border:1px solid #30363d;background:transparent;cursor:pointer;white-space:nowrap}
+.mx-back:hover{background:#21262d;color:#e6edf3}
+.mx-title{font-weight:700;font-size:.95rem;color:#58a6ff;white-space:nowrap;margin-right:.25rem}
+.mx-controls{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-left:auto}
+.mx-inp{background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:.3rem .5rem;border-radius:6px;font-size:.82rem}
+.mx-inp:focus{outline:none;border-color:#388bfd}
+.mx-sel{background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:.3rem .5rem;border-radius:6px;font-size:.82rem;cursor:pointer}
+.mx-shortcut{font-size:.75rem;color:#8b949e;padding:.25rem .5rem;border-radius:5px;border:1px solid #30363d;background:transparent;cursor:pointer;white-space:nowrap}
+.mx-shortcut:hover{background:#21262d;color:#e6edf3}
+.mx-search-btn{background:#1f6feb;border:1px solid #388bfd;color:#fff;font-size:.82rem;font-weight:600;padding:.32rem .85rem;border-radius:6px;cursor:pointer;white-space:nowrap}
+.mx-search-btn:hover{background:#388bfd}
+.mx-search-btn:disabled{opacity:.5;cursor:default}
+
+/* ── Tipo filter ── */
+.mx-tipo{display:flex;gap:.3rem}
+.mx-tipo label{display:flex;align-items:center;gap:.3rem;font-size:.78rem;color:#8b949e;cursor:pointer;padding:.22rem .5rem;border-radius:5px;border:1px solid #30363d;user-select:none}
+.mx-tipo label:has(input:checked){border-color:#388bfd;color:#58a6ff;background:#1f6feb18}
+.mx-tipo input{display:none}
+
+/* ── Body ── */
+.mx-body{max-width:960px;margin:0 auto;padding:1.25rem 1rem}
+
+/* ── Summary strip ── */
+.mx-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1.25rem}
+@media(max-width:640px){.mx-summary{grid-template-columns:repeat(2,1fr)}}
+.mx-sum-card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:.65rem .9rem}
+.mx-sum-label{font-size:.72rem;color:#8b949e;margin-bottom:.2rem}
+.mx-sum-val{font-size:1.15rem;font-weight:700;color:#e6edf3}
+.mx-sum-val.blue{color:#58a6ff}
+
+/* ── Loading / empty ── */
+.mx-state{text-align:center;padding:3rem 1rem;color:#8b949e;font-size:.88rem}
+.mx-spinner{display:inline-block;width:22px;height:22px;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:spin .7s linear infinite;margin-bottom:.5rem}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── Brand list ── */
+.mx-brand-card{background:#161b22;border:1px solid #30363d;border-radius:8px;margin-bottom:.6rem;overflow:hidden}
+.mx-brand-hdr{display:flex;align-items:center;gap:.75rem;padding:.65rem .9rem;cursor:pointer;transition:background .12s}
+.mx-brand-hdr:hover{background:#1c2128}
+.mx-brand-rank{font-size:.78rem;font-weight:700;color:#8b949e;min-width:1.6rem;text-align:right}
+.mx-brand-name{font-size:.9rem;font-weight:700;color:#e6edf3;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.mx-brand-right{display:flex;align-items:center;gap:.75rem;flex-shrink:0}
+.mx-brand-val{font-size:.9rem;font-weight:700;color:#58a6ff;white-space:nowrap}
+.mx-brand-pecas{font-size:.78rem;color:#8b949e;white-space:nowrap}
+.mx-brand-chevron{color:#8b949e;font-size:.85rem;transition:transform .2s;line-height:1}
+.mx-brand-card.open .mx-brand-chevron{transform:rotate(180deg)}
+
+/* ── Bar ── */
+.mx-bar-wrap{padding:.1rem .9rem .55rem;padding-left:calc(.9rem + 1.6rem + .75rem)}
+.mx-bar-row{display:flex;align-items:center;gap:.6rem}
+.mx-bar-track{flex:1;height:6px;background:#21262d;border-radius:3px;overflow:hidden}
+.mx-bar-fill{height:100%;border-radius:3px;transition:width .4s ease;background:#1f6feb}
+.mx-bar-pct{font-size:.74rem;color:#8b949e;white-space:nowrap;min-width:3rem;text-align:right}
+
+/* ── Product table ── */
+.mx-prod-wrap{border-top:1px solid #21262d;overflow:hidden;max-height:0;transition:max-height .25s ease}
+.mx-brand-card.open .mx-prod-wrap{max-height:1200px}
+.mx-prod-tbl{width:100%;border-collapse:collapse;font-size:.8rem}
+.mx-prod-tbl th{background:#0d1117;color:#8b949e;font-weight:600;text-align:left;padding:.45rem .6rem;border-bottom:1px solid #21262d}
+.mx-prod-tbl th:last-child,.mx-prod-tbl td:last-child{text-align:right}
+.mx-prod-tbl th:nth-child(4),.mx-prod-tbl td:nth-child(4){text-align:right}
+.mx-prod-tbl td{padding:.4rem .6rem;border-bottom:1px solid #1a1f26;color:#e6edf3}
+.mx-prod-tbl tr:last-child td{border-bottom:none}
+.mx-prod-tbl tr:hover td{background:#1c2128}
+.mx-tipo-badge{font-size:.67rem;padding:.1rem .35rem;border-radius:3px;font-weight:600}
+.mx-tipo-badge.prod{background:#1f6feb22;color:#58a6ff}
+.mx-tipo-badge.svc{background:#3fb95022;color:#3fb950}
+
+/* ── Error ── */
+.mx-error{background:#f8514915;border:1px solid #f8514944;border-radius:8px;padding:.75rem 1rem;color:#f85149;font-size:.83rem;margin-bottom:1rem}
+</style>
+</head>
+<body>
+
+<header class="mx-header">
+  <button class="mx-back" onclick="history.back()">← Voltar</button>
+  <span class="mx-title">Vendas por Marca</span>
+
+  <div class="mx-controls">
+    <div style="display:flex;gap:.3rem;align-items:center">
+      <input type="date" id="dtIni" class="mx-inp">
+      <span style="color:#8b949e;font-size:.8rem">até</span>
+      <input type="date" id="dtFin" class="mx-inp">
+    </div>
+
+    <button class="mx-shortcut" data-s="mes">Este mês</button>
+    <button class="mx-shortcut" data-s="mesant">Mês ant.</button>
+    <button class="mx-shortcut" data-s="30d">30 dias</button>
+    <button class="mx-shortcut" data-s="3m">3 meses</button>
+
+    <select id="boardSel" class="mx-sel" style="display:none"></select>
+
+    <div class="mx-tipo">
+      <label><input type="radio" name="tipo" value="todos" checked> Todos</label>
+      <label><input type="radio" name="tipo" value="produto"> Produtos</label>
+      <label><input type="radio" name="tipo" value="servico"> Serviços</label>
+    </div>
+
+    <button class="mx-search-btn" id="searchBtn">Buscar</button>
+  </div>
+</header>
+
+<div class="mx-body">
+  <div id="summaryStrip" class="mx-summary" style="display:none">
+    <div class="mx-sum-card">
+      <div class="mx-sum-label">Total Faturado</div>
+      <div class="mx-sum-val blue" id="sumValor">—</div>
+    </div>
+    <div class="mx-sum-card">
+      <div class="mx-sum-label">Total Peças</div>
+      <div class="mx-sum-val" id="sumPecas">—</div>
+    </div>
+    <div class="mx-sum-card">
+      <div class="mx-sum-label">Marcas</div>
+      <div class="mx-sum-val" id="sumMarcas">—</div>
+    </div>
+    <div class="mx-sum-card">
+      <div class="mx-sum-label">Período</div>
+      <div class="mx-sum-val" style="font-size:.82rem;padding-top:.1rem" id="sumPeriodo">—</div>
+    </div>
+  </div>
+
+  <div id="errorBox" class="mx-error" style="display:none"></div>
+  <div id="stateBox" class="mx-state">
+    Selecione o período e clique em <strong>Buscar</strong>.
+  </div>
+  <div id="brandList"></div>
+</div>
+
+<script src="marcas.js"></script>
+</body>
+</html>

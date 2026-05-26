@@ -3831,7 +3831,8 @@ app.get('/api/contas-pagar/debug/:file', requireAdmin, (req, res) => {
 
 // ── Folha de Pagamento ─────────────────────────────────────────────────────
 
-app.get('/folha', (req, res) => res.sendFile(path.join(__dirname, 'public/folha.html')));
+app.get('/folha',  (req, res) => res.sendFile(path.join(__dirname, 'public/folha.html')));
+app.get('/marcas', (req, res) => res.sendFile(path.join(__dirname, 'public/marcas.html')));
 
 // GET /api/folha/config — configurações por loja (faixas de meta, GM, DSR, prêmios)
 app.get('/api/folha/config', requireAuth, async (req, res) => {
