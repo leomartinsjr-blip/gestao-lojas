@@ -3755,7 +3755,7 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
     for (let d = new Date(firstSunday); ; d.setDate(d.getDate() + 7)) {
       const ws = `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
       if (ws > lastDayStr) break;
-      allWeekStarts.add(ws);
+      if (ws >= monthStart) allWeekStarts.add(ws); // ignora semanas que começam antes do mês
     }
 
     for (const weekStart of allWeekStarts) {
