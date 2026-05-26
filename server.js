@@ -3944,21 +3944,24 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
       ws.addRow([]);
 
       // Header
-      const headers = ['NOME','CARGO','FIXO','Q.CX','COMISSÕES','DSR','PRÊMIO','GM','FERIADO','PREM.EXTRA','T+PREM','VERIFICAÇÃO','OK','AD','VALE','DESC','OBSERVAÇÕES'];
+      const headers = ['NOME','CARGO','FIXO','Q.CX','COMISSÕES','DSR','PRÊMIO','GM','FERIADO','PREM.EXTRA','T+PREM','VERIFICAÇÃO','OK','AD','VT','DESC','OBSERVAÇÕES'];
       ws.addRow(headers);
       const hRow = ws.getRow(3);
       hRow.font = { bold: true, color: { argb: 'FFE6EDF3' } };
       hRow.fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FF21262D'} };
       hRow.eachCell(c => { c.border = { bottom:{style:'thin',color:{argb:'FF30363D'}} }; });
 
-      // Set column widths e formato numérico
+      // Set column widths e formato numérico (col 15 = VT é texto)
       ws.getColumn(1).width = 20;  // NOME
       ws.getColumn(2).width = 14;  // CARGO
-      const numCols = [3,4,5,6,7,8,9,10,11,12,14,15,16];
+      ws.getColumn(15).width = 8;  // VT (SIM/NÃO)
+      const numCols = [3,4,5,6,7,8,9,10,11,12,14,16];
       numCols.forEach(i => { ws.getColumn(i).width = 13; ws.getColumn(i).numFmt = '#,##0.00'; });
 
+      const folhaEmpCfg = db.folhaEmpConfig || {};
+
       let sumFixo=0, sumQcx=0, sumCom=0, sumDsr=0, sumPremio=0, sumGm=0,
-          sumFer=0, sumPremExtra=0, sumTotal=0, sumAd=0, sumVale=0, sumDesc=0;
+          sumFer=0, sumPremExtra=0, sumTotal=0, sumAd=0, sumDesc=0;
 
       for (const emp of lojaEmps) {
         const entry = lojaData.entries[emp.id];
@@ -3978,20 +3981,22 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
         const verif      = r2(fixo + qcx + comissoes + dsr + premio + gm + feriado + premExtra);
         const ok         = Math.abs(tTotal - verif) < 0.02 ? 'OK' : '⚠';
         const ad         = r2(entry.adiantamento|| 0);
-        const vale       = r2(entry.valeCompras || 0);
         const desc       = r2(entry.totalDescontos || 0);
+        const fc         = folhaEmpCfg[emp.id] || {};
+        const vtRate     = fc.vtRate != null ? r2(fc.vtRate) : r2(emp.vtRate || 0);
+        const vtSimNao   = vtRate > 0 ? 'SIM' : 'NÃO';
 
         ws.addRow([
           emp.apelido || emp.name,
           emp.cargo,
           n2(fixo), n2(qcx), n2(comissoes), n2(dsr), n2(premio), n2(gm),
           n2(feriado), n2(premExtra), n2(tTotal), n2(verif), ok,
-          n2(ad), n2(vale), n2(desc), '',
+          n2(ad), vtSimNao, n2(desc), '',
         ]);
 
         sumFixo+=fixo; sumQcx+=qcx; sumCom+=comissoes; sumDsr+=dsr;
         sumPremio+=premio; sumGm+=gm; sumFer+=feriado; sumPremExtra+=premExtra;
-        sumTotal+=tTotal; sumAd+=ad; sumVale+=vale; sumDesc+=desc;
+        sumTotal+=tTotal; sumAd+=ad; sumDesc+=desc;
       }
 
       // Totals row
@@ -3999,7 +4004,7 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
         'TOTAL','',
         r2(sumFixo), r2(sumQcx), r2(sumCom), r2(sumDsr), r2(sumPremio), r2(sumGm),
         r2(sumFer), r2(sumPremExtra), r2(sumTotal), r2(sumTotal), '',
-        r2(sumAd), r2(sumVale), r2(sumDesc), '',
+        r2(sumAd), '', r2(sumDesc), '',
       ]);
       totRow.font = { bold: true };
       totRow.eachCell(c => { c.border = { top:{style:'thin',color:{argb:'FF30363D'}} }; });
