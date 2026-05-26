@@ -611,7 +611,6 @@ app.get('/api/init', requireAuth, async (req, res) => {
       pendencias,
       requisicoes,
       retiradas,
-      controleDefeitos: (db.controleDefeitos || []).filter(c => isAdminOrEscritorio || c.board === board),
       indevaStats:  indevaResult,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -2167,6 +2166,18 @@ app.patch('/api/boletas/:id', requireAuth, async (req, res) => {
         b.resolvedBy = null;
       }
     }
+    // Pipeline de devolução
+    const by = req.session.user.label || req.session.user.username;
+    if (req.body.etapa === 'ressarcimento') {
+      if (!req.body.data) return res.status(400).json({ error: 'Data obrigatória' });
+      b.ressarcimento = { data: req.body.data, tipo: req.body.tipo || '', obs: req.body.obs || '', by, at: new Date().toISOString() };
+    } else if (req.body.etapa === 'envioFabrica') {
+      if (!req.body.data) return res.status(400).json({ error: 'Data obrigatória' });
+      b.envioFabrica = { data: req.body.data, obs: req.body.obs || '', by, at: new Date().toISOString() };
+    } else if (req.body.etapa === 'creditoFornecedor') {
+      if (!req.body.data) return res.status(400).json({ error: 'Data obrigatória' });
+      b.creditoFornecedor = { data: req.body.data, valor: parseFloat(req.body.valor) || 0, obs: req.body.obs || '', by, at: new Date().toISOString() };
+    }
     await writeDB(db);
     res.json(b);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -2178,93 +2189,6 @@ app.delete('/api/boletas/:id', requireAuth, async (req, res) => {
     const id = parseInt(req.params.id);
     const db = await readDB();
     db.boletas = (db.boletas || []).filter(x => x.id !== id);
-    await writeDB(db);
-    res.json({ ok: true });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── GET /api/controle-defeitos ────────────────────────────────────────────
-app.get('/api/controle-defeitos', requireAuth, async (req, res) => {
-  try {
-    const db  = await readDB();
-    const { board } = req.session.user;
-    const isAdm = !board || board === 'escritorio';
-    const items = (db.controleDefeitos || [])
-      .filter(c => isAdm || c.board === board)
-      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    res.json(items);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── POST /api/controle-defeitos ───────────────────────────────────────────
-app.post('/api/controle-defeitos', requireAuth, async (req, res) => {
-  try {
-    const { board: userBoard } = req.session.user;
-    const isAdm = !userBoard || userBoard === 'escritorio';
-    const { cliente, marca, grupo, referencia, cor, tamanho, valor, dataEntrada, defeitoDesc, observacao, board } = req.body;
-    if (!cliente?.trim())    return res.status(400).json({ error: 'Cliente obrigatório' });
-    if (!defeitoDesc?.trim()) return res.status(400).json({ error: 'Descrição do defeito obrigatória' });
-    if (!dataEntrada)        return res.status(400).json({ error: 'Data de entrada obrigatória' });
-    const targetBoard = isAdm ? board : userBoard;
-    if (!targetBoard) return res.status(400).json({ error: 'Loja não identificada' });
-    const db = await readDB();
-    if (!db.controleDefeitos) db.controleDefeitos = [];
-    const item = {
-      id: nextId(db), board: targetBoard,
-      cliente: cliente.trim(), marca: (marca||'').trim(), grupo: (grupo||'').trim(),
-      referencia: (referencia||'').trim(), cor: (cor||'').trim(), tamanho: (tamanho||'').trim(),
-      valor: parseFloat(valor) || 0, dataEntrada, defeitoDesc: defeitoDesc.trim(),
-      observacao: (observacao||'').trim(),
-      ressarcimento: null, envioFabrica: null, creditoFornecedor: null,
-      createdAt: new Date().toISOString(),
-      createdBy: req.session.user.label || req.session.user.username,
-    };
-    db.controleDefeitos.push(item);
-    await writeDB(db);
-    res.json(item);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── PATCH /api/controle-defeitos/:id ─────────────────────────────────────
-app.patch('/api/controle-defeitos/:id', requireAuth, async (req, res) => {
-  try {
-    const id   = parseInt(req.params.id);
-    const db   = await readDB();
-    const item = (db.controleDefeitos || []).find(c => c.id === id);
-    if (!item) return res.status(404).json({ error: 'Registro não encontrado' });
-    const { board: userBoard } = req.session.user;
-    const isAdm = !userBoard || userBoard === 'escritorio';
-    if (!isAdm && item.board !== userBoard) return res.status(403).json({ error: 'Sem acesso' });
-    const by = req.session.user.label || req.session.user.username;
-    const { etapa, data, tipo, obs, valor } = req.body;
-    if (etapa === 'ressarcimento') {
-      if (!data) return res.status(400).json({ error: 'Data obrigatória' });
-      item.ressarcimento = { data, tipo: tipo||'', obs: obs||'', by, at: new Date().toISOString() };
-    } else if (etapa === 'envioFabrica') {
-      if (!data) return res.status(400).json({ error: 'Data obrigatória' });
-      item.envioFabrica = { data, obs: obs||'', by, at: new Date().toISOString() };
-    } else if (etapa === 'creditoFornecedor') {
-      if (!data) return res.status(400).json({ error: 'Data obrigatória' });
-      item.creditoFornecedor = { data, valor: parseFloat(valor)||0, obs: obs||'', by, at: new Date().toISOString() };
-    } else {
-      return res.status(400).json({ error: 'Etapa inválida' });
-    }
-    await writeDB(db);
-    res.json(item);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-// ── DELETE /api/controle-defeitos/:id ────────────────────────────────────
-app.delete('/api/controle-defeitos/:id', requireAuth, async (req, res) => {
-  try {
-    const id   = parseInt(req.params.id);
-    const db   = await readDB();
-    const item = (db.controleDefeitos || []).find(c => c.id === id);
-    if (!item) return res.status(404).json({ error: 'Registro não encontrado' });
-    const { board: userBoard } = req.session.user;
-    const isAdm = !userBoard || userBoard === 'escritorio';
-    if (!isAdm && item.board !== userBoard) return res.status(403).json({ error: 'Sem acesso' });
-    db.controleDefeitos = db.controleDefeitos.filter(c => c.id !== id);
     await writeDB(db);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
