@@ -80,7 +80,7 @@ function applyUserPermissions(user) {
   const ids = ['funcBtn','campanhasBtn','usersBtn','perfBtn','transBtn','marcasBtn','folhaBtn'];
   ids.forEach(id => {
     const el = document.getElementById(id);
-    if (el) el.style.display = isAdmin ? '' : 'none';
+    if (el) el.style.display = isAdmin ? 'flex' : 'none';
   });
   const indevaVisible = isAdmin || user.board === 'escritorio' || INDEVA_STORES.includes(user.board);
   const indevaEl = document.getElementById('indevaBtn');
