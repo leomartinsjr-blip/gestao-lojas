@@ -1391,9 +1391,13 @@ app.patch('/api/nf-items/:id', requireAuth, async (req, res) => {
       item.statusAt = new Date().toISOString();
     }
     if (req.body.archived === true && !item.archived) {
+      const isAdmin = !req.session.user.board || req.session.user.board === 'escritorio';
+      const currentUser = req.session.user.label || req.session.user.username;
+      if (!isAdmin && item.addedBy !== currentUser)
+        return res.status(403).json({ error: 'Apenas quem criou o item pode excluí-lo' });
       item.archived = true;
       item.archivedAt = new Date().toISOString();
-      item.archivedBy = req.session.user.label || req.session.user.username;
+      item.archivedBy = currentUser;
     }
     await writeDB(db);
     res.json(item);
@@ -1663,17 +1667,26 @@ app.post('/api/retiradas', requireAuth, async (req, res) => {
   try {
     const board = req.session.user.board;
     if (!board) return res.status(400).json({ error: 'Apenas lojas podem criar solicitações' });
-    const { colaborador, valor, motivo, observacao } = req.body;
+    const { colaborador, grupo, marca, referencia, cor, tamanho, quantidade, precoCheio, observacao } = req.body;
     if (!colaborador || !colaborador.trim()) return res.status(400).json({ error: 'Colaborador obrigatório' });
-    if (!valor || parseFloat(valor) <= 0)   return res.status(400).json({ error: 'Valor inválido' });
+    const pc = parseFloat(precoCheio);
+    if (!pc || pc <= 0) return res.status(400).json({ error: 'Preço cheio inválido' });
+    const qt  = parseInt(quantidade, 10) || 1;
+    const valorComDesconto = parseFloat((pc * 0.70 * qt).toFixed(2));
     const db = await readDB();
     if (!db.retiradas) db.retiradas = [];
     const item = {
       id:          nextId(db),
       board,
       colaborador: colaborador.trim(),
-      valor:       parseFloat(valor),
-      motivo:      (motivo || '').trim(),
+      grupo:       (grupo || '').trim(),
+      marca:       (marca || '').trim(),
+      referencia:  (referencia || '').trim(),
+      cor:         (cor || '').trim(),
+      tamanho:     (tamanho || '').trim(),
+      quantidade:  qt,
+      precoCheio:  pc,
+      valor:       valorComDesconto,
       observacao:  (observacao || '').trim(),
       status:      'pendente',
       createdAt:   new Date().toISOString(),
@@ -1694,7 +1707,7 @@ app.patch('/api/retiradas/:id/status', requireAdmin, async (req, res) => {
     const db   = await readDB();
     const item = (db.retiradas || []).find(x => x.id === id);
     if (!item) return res.status(404).json({ error: 'Solicitação não encontrada' });
-    const VALID = ['aprovada','recusada','paga'];
+    const VALID = ['aprovada','recusada','retirada'];
     if (!VALID.includes(req.body.status)) return res.status(400).json({ error: 'Status inválido' });
     item.status    = req.body.status;
     item.updatedAt = new Date().toISOString();

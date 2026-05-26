@@ -2856,3 +2856,7 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .ret-status-recus { background:#F8514922;color:#F85149;border:1px solid #F8514944; }
 .ret-status-paga  { background:#58A6FF22;color:#58A6FF;border:1px solid #58A6FF44; }
 .ret-status-badge { font-size:.72rem;padding:.1rem .45rem;border-radius:4px;white-space:nowrap; }
+.ret-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:.75rem .9rem; }
+.ret-prod-grid { display:flex; flex-wrap:wrap; gap:.3rem .8rem; font-size:.8rem; margin-top:.25rem; color:var(--muted); }
+.ret-prod-grid span { white-space:nowrap; }
+.ret-prod-grid span b { color:var(--text); font-weight:600; }

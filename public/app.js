@@ -5726,7 +5726,8 @@ function _renderNFActive(body, board, refresh) {
       <button class="nf-recus-btn${item.status==='não receber'?' nf-btn-cur':''}" data-id="${item.id}" data-action="não receber" title="Não receber">✗</button>
       <button class="nf-pend-btn${item.status==='pendente'?' nf-btn-cur':''}" data-id="${item.id}" data-action="pendente" title="Manter pendente">⏳</button>
     ` : '';
-    const canDelete = isAdmin || (!isEscritorio && !!S.user?.board);
+    const currentUser = S.user?.label || S.user?.username;
+    const canDelete = isAdmin || (!!S.user?.board && item.addedBy === currentUser);
     return `
     <div class="nf-item" data-id="${item.id}">
       <label class="nf-chk-label" style="${!showChk ? 'pointer-events:none;opacity:.35' : ''}">
@@ -7083,17 +7084,53 @@ const RET_STATUS = {
   pendente:  { label: 'Pendente',  cls: 'ret-status-pend'  },
   aprovada:  { label: 'Aprovada',  cls: 'ret-status-aprov' },
   recusada:  { label: 'Recusada',  cls: 'ret-status-recus' },
-  paga:      { label: 'Paga',      cls: 'ret-status-paga'  },
+  retirada:  { label: 'Retirada',  cls: 'ret-status-paga'  },
 };
+
+const RET_DESCONTO = 0.30; // 30% desconto funcionário
 
 function _retBadge(status) {
   const s = RET_STATUS[status] || RET_STATUS.pendente;
   return `<span class="ret-status-badge ${s.cls}">${s.label}</span>`;
 }
 
+function _retBrl(v) { return 'R$ ' + (v||0).toFixed(2).replace('.',','); }
+
+function _retCardHtml(r) {
+  const precoDesc = (r.precoCheio||0) * (1 - RET_DESCONTO);
+  const totalDesc = precoDesc * (r.quantidade||1);
+  return `<div class="ret-hist-card">
+    <div class="ret-hist-top">
+      <span class="ret-colab">${_escHtml(r.colaborador)}</span>
+      ${_retBadge(r.status)}
+      <span class="ret-date">${new Date(r.createdAt).toLocaleDateString('pt-BR')}</span>
+    </div>
+    <div class="ret-prod-grid">
+      ${r.grupo    ? `<span><b>Grupo:</b> ${_escHtml(r.grupo)}</span>`    : ''}
+      ${r.marca    ? `<span><b>Marca:</b> ${_escHtml(r.marca)}</span>`    : ''}
+      ${r.referencia ? `<span><b>Ref.:</b> ${_escHtml(r.referencia)}</span>` : ''}
+      ${r.cor      ? `<span><b>Cor:</b> ${_escHtml(r.cor)}</span>`        : ''}
+      ${r.tamanho  ? `<span><b>Tam.:</b> ${_escHtml(r.tamanho)}</span>`   : ''}
+      <span><b>Qtd.:</b> ${r.quantidade||1}</span>
+      <span><b>Preço cheio:</b> ${_retBrl(r.precoCheio)}</span>
+      <span><b>c/ 30% desc.:</b> <span style="color:#3fb950;font-weight:700">${_retBrl(totalDesc)}</span></span>
+    </div>
+    ${r.observacao ? `<div class="ret-obs">"${_escHtml(r.observacao)}"</div>` : ''}
+  </div>`;
+}
+
 function _renderRetiradaLojaView(body) {
   const board = S.user.board;
   let showForm = true;
+
+  function calcDesc() {
+    const preco = parseFloat(body.querySelector('#retPreco')?.value) || 0;
+    const qtd   = parseInt(body.querySelector('#retQtd')?.value)     || 1;
+    const desc  = preco * (1 - RET_DESCONTO) * qtd;
+    const el = body.querySelector('#retDescCalc');
+    if (el) el.textContent = desc > 0 ? `→ com desconto: ${_retBrl(desc)}` : '';
+  }
+
   function render() {
     if (showForm) {
       const boardEmps = (S.employees||[]).filter(e => e.board === board && !e.inativo);
@@ -7102,57 +7139,69 @@ function _renderRetiradaLojaView(body) {
           <h3 class="req-form-title">Retirada Colaborador — ${BOARDS[board]?.label || board}</h3>
           <button class="req-link-btn" id="retHistBtn">Ver histórico →</button>
         </div>
-        <div class="ret-field">
-          <label>Colaborador</label>
-          <select id="retColab">
-            <option value="">— selecione —</option>
-            ${boardEmps.map(e => `<option value="${_escHtml(e.apelido||e.name.split(' ')[0])}">${_escHtml(e.apelido||e.name)}</option>`).join('')}
-            <option value="__outro">Outro (digitar)</option>
-          </select>
+        <div class="ret-form-grid">
+          <div class="ret-field">
+            <label>Colaborador</label>
+            <select id="retColab">
+              <option value="">— selecione —</option>
+              ${boardEmps.map(e => `<option value="${_escHtml(e.apelido||e.name)}">${_escHtml(e.apelido||e.name)}</option>`).join('')}
+              <option value="__outro">Outro (digitar)</option>
+            </select>
+          </div>
+          <div class="ret-field" id="retColabOutroWrap" style="display:none">
+            <label>Nome do colaborador</label>
+            <input type="text" id="retColabOutro" placeholder="Digite o nome">
+          </div>
+          <div class="ret-field"><label>Grupo</label><input type="text" id="retGrupo" placeholder="Ex: Calçados, Roupas…"></div>
+          <div class="ret-field"><label>Marca</label><input type="text" id="retMarca" placeholder="Ex: Nike, Adidas…"></div>
+          <div class="ret-field"><label>Referência</label><input type="text" id="retRef" placeholder="Cód. do produto"></div>
+          <div class="ret-field"><label>Cor</label><input type="text" id="retCor" placeholder="Ex: Preto, Azul…"></div>
+          <div class="ret-field"><label>Tamanho</label><input type="text" id="retTam" placeholder="Ex: M, 38, G…"></div>
+          <div class="ret-field"><label>Quantidade</label><input type="number" id="retQtd" min="1" value="1"></div>
+          <div class="ret-field">
+            <label>Preço Cheio (R$)</label>
+            <input type="number" id="retPreco" step="0.01" min="0.01" placeholder="0,00">
+            <span id="retDescCalc" style="font-size:.8rem;color:#3fb950;margin-top:.25rem;display:block"></span>
+          </div>
+          <div class="ret-field" style="grid-column:1/-1">
+            <label>Observação (opcional)</label>
+            <textarea id="retObs" rows="2" maxlength="400" placeholder="Detalhes adicionais…"></textarea>
+          </div>
         </div>
-        <div class="ret-field" id="retColabOutroWrap" style="display:none">
-          <label>Nome do colaborador</label>
-          <input type="text" id="retColabOutro" placeholder="Digite o nome">
-        </div>
-        <div class="ret-field">
-          <label>Valor (R$)</label>
-          <input type="number" id="retValor" step="0.01" min="0.01" placeholder="0,00">
-        </div>
-        <div class="ret-field">
-          <label>Motivo</label>
-          <select id="retMotivo">
-            <option value="">— selecione —</option>
-            <option>Adiantamento salarial</option>
-            <option>Vale</option>
-            <option>Reembolso despesa</option>
-            <option>Outro</option>
-          </select>
-        </div>
-        <div class="ret-field">
-          <label>Observação (opcional)</label>
-          <textarea id="retObs" rows="2" maxlength="400" placeholder="Detalhes adicionais…"></textarea>
+        <div style="background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.25);border-radius:8px;padding:.6rem .9rem;margin-bottom:.9rem;font-size:.85rem;color:#58a6ff">
+          <b>Desconto funcionário: 30%</b> — o valor final com desconto será calculado automaticamente.
         </div>
         <button class="ret-submit-btn" id="retSubmitBtn">Enviar Solicitação</button>
       </div>`;
+
       body.querySelector('#retHistBtn').addEventListener('click', () => { showForm = false; render(); });
       body.querySelector('#retColab').addEventListener('change', function() {
         body.querySelector('#retColabOutroWrap').style.display = this.value === '__outro' ? '' : 'none';
       });
+      body.querySelector('#retPreco').addEventListener('input', calcDesc);
+      body.querySelector('#retQtd').addEventListener('input', calcDesc);
+
       body.querySelector('#retSubmitBtn').addEventListener('click', async () => {
-        const selColab = body.querySelector('#retColab').value;
+        const selColab    = body.querySelector('#retColab').value;
         const colaborador = selColab === '__outro'
-          ? body.querySelector('#retColabOutro').value.trim()
-          : selColab;
-        const valor   = parseFloat(body.querySelector('#retValor').value) || 0;
-        const motivo  = body.querySelector('#retMotivo').value;
-        const obs     = body.querySelector('#retObs').value.trim();
+          ? body.querySelector('#retColabOutro').value.trim() : selColab;
+        const grupo      = body.querySelector('#retGrupo').value.trim();
+        const marca      = body.querySelector('#retMarca').value.trim();
+        const referencia = body.querySelector('#retRef').value.trim();
+        const cor        = body.querySelector('#retCor').value.trim();
+        const tamanho    = body.querySelector('#retTam').value.trim();
+        const quantidade = parseInt(body.querySelector('#retQtd').value) || 1;
+        const precoCheio = parseFloat(body.querySelector('#retPreco').value) || 0;
+        const observacao = body.querySelector('#retObs').value.trim();
+
         if (!colaborador) { toast('Selecione o colaborador', true); return; }
-        if (valor <= 0)   { toast('Informe o valor', true); return; }
-        if (!motivo)      { toast('Selecione o motivo', true); return; }
+        if (precoCheio <= 0) { toast('Informe o preço cheio', true); return; }
+
         const btn = body.querySelector('#retSubmitBtn');
         btn.disabled = true;
         try {
-          const ret = await apiFetch('POST', '/api/retiradas', { colaborador, valor, motivo, observacao: obs });
+          const ret = await apiFetch('POST', '/api/retiradas',
+            { colaborador, grupo, marca, referencia, cor, tamanho, quantidade, precoCheio, observacao });
           S.retiradas = [...(S.retiradas||[]), ret];
           toast('Solicitação enviada ✓');
           showForm = false; render();
@@ -7166,19 +7215,8 @@ function _renderRetiradaLojaView(body) {
           <h3 class="req-form-title">Histórico de Retiradas</h3>
           <button class="req-link-btn" id="retBackBtn">← Nova solicitação</button>
         </div>
-        ${!items.length
-          ? '<div class="req-empty">Nenhuma solicitação enviada ainda</div>'
-          : items.map(r => `
-            <div class="ret-hist-card">
-              <div class="ret-hist-top">
-                <span class="ret-colab">${_escHtml(r.colaborador)}</span>
-                <span class="ret-valor">R$ ${(r.valor||0).toFixed(2).replace('.',',')}</span>
-                ${_retBadge(r.status)}
-                <span class="ret-date">${new Date(r.createdAt).toLocaleDateString('pt-BR')}</span>
-              </div>
-              <div class="ret-motivo">${_escHtml(r.motivo)}</div>
-              ${r.observacao ? `<div class="ret-obs">"${_escHtml(r.observacao)}"</div>` : ''}
-            </div>`).join('')}
+        ${!items.length ? '<div class="req-empty">Nenhuma solicitação enviada ainda</div>'
+          : items.map(_retCardHtml).join('')}
       </div>`;
       body.querySelector('#retBackBtn').addEventListener('click', () => { showForm = true; render(); });
     }
@@ -7191,9 +7229,9 @@ function _renderRetiradaAdminView(body) {
   let filterBoard  = '';
   const NEXT_RET = {
     pendente: [['aprovada','Aprovar'],['recusada','Recusar']],
-    aprovada: [['paga','Marcar Paga']],
+    aprovada: [['retirada','Marcar Retirada']],
     recusada: [],
-    paga:     [],
+    retirada: [],
   };
 
   function render() {
@@ -7205,7 +7243,7 @@ function _renderRetiradaAdminView(body) {
     body.innerHTML = `<div class="req-admin-wrap">
       <div class="req-admin-filters">
         <div class="req-status-tabs">
-          ${[['pendente','Pendente'],['aprovada','Aprovada'],['recusada','Recusada'],['paga','Paga'],['all','Todas']].map(([s,l]) =>
+          ${[['pendente','Pendente'],['aprovada','Aprovada'],['recusada','Recusada'],['retirada','Retirada'],['all','Todas']].map(([s,l]) =>
             `<button class="req-stab${filterStatus===s?' active':''}" data-s="${s}">${l}</button>`).join('')}
         </div>
         <div class="req-board-chips">
@@ -7219,7 +7257,7 @@ function _renderRetiradaAdminView(body) {
           : items.map(r => {
               const sc = BOARDS[r.board]?.color||'#8B949E';
               const sl = BOARDS[r.board]?.label||r.board;
-              const dt = new Date(r.createdAt).toLocaleDateString('pt-BR');
+              const precoDesc = (r.precoCheio||0) * (1 - RET_DESCONTO) * (r.quantidade||1);
               const actions = (NEXT_RET[r.status]||[]).map(([s,l]) =>
                 `<button class="req-action-btn${s==='recusada'?' req-del-btn':''}" data-id="${r.id}" data-status="${s}">${l}</button>`).join('');
               return `<div class="req-admin-item">
@@ -7227,15 +7265,21 @@ function _renderRetiradaAdminView(body) {
                   <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
                     <span style="font-size:.8rem;font-weight:700;color:${sc}">${sl}</span>
                     <span class="ret-colab">${_escHtml(r.colaborador)}</span>
-                    <span class="ret-valor">R$ ${(r.valor||0).toFixed(2).replace('.',',')}</span>
+                    <span class="ret-valor">${_retBrl(precoDesc)}</span>
                     ${_retBadge(r.status)}
+                    <span class="req-admin-upd">${new Date(r.createdAt).toLocaleDateString('pt-BR')}</span>
                   </div>
-                  <div style="display:flex;gap:.4rem;align-items:center">
-                    <span class="req-admin-upd">${dt}</span>
-                    ${actions}
-                  </div>
+                  <div style="display:flex;gap:.4rem">${actions}</div>
                 </div>
-                <div class="ret-motivo">${_escHtml(r.motivo)}</div>
+                <div class="ret-prod-grid" style="margin-top:.35rem">
+                  ${r.grupo ? `<span><b>Grupo:</b> ${_escHtml(r.grupo)}</span>` : ''}
+                  ${r.marca ? `<span><b>Marca:</b> ${_escHtml(r.marca)}</span>` : ''}
+                  ${r.referencia ? `<span><b>Ref.:</b> ${_escHtml(r.referencia)}</span>` : ''}
+                  ${r.cor ? `<span><b>Cor:</b> ${_escHtml(r.cor)}</span>` : ''}
+                  ${r.tamanho ? `<span><b>Tam.:</b> ${_escHtml(r.tamanho)}</span>` : ''}
+                  <span><b>Qtd.:</b> ${r.quantidade||1}</span>
+                  <span><b>Cheio:</b> ${_retBrl(r.precoCheio)}</span>
+                </div>
                 ${r.observacao ? `<div class="ret-obs">"${_escHtml(r.observacao)}"</div>` : ''}
               </div>`;
             }).join('')}
