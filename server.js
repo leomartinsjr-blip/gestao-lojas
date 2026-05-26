@@ -4059,17 +4059,17 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
       hRow.fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FF21262D'} };
       hRow.eachCell(c => { c.border = { bottom:{style:'thin',color:{argb:'FF30363D'}} }; });
 
-      // Column widths — text cols: 15(OK), 16(AD), 17(V.COMPRAS), 18(VT)
+      // Column widths — text cols: 15(OK), 18(VT), 19(OBS)
       ws.getColumn(1).width = 22;
       ws.getColumn(2).width = 16;
-      [15,16,17,18].forEach(i => { ws.getColumn(i).width = 9; });
-      const numCols = [3,4,5,6,7,8,9,10,11,12,13,14];
+      [15,18].forEach(i => { ws.getColumn(i).width = 6; });
+      const numCols = [3,4,5,6,7,8,9,10,11,12,13,14,16,17];
       numCols.forEach(i => { ws.getColumn(i).width = 12; ws.getColumn(i).numFmt = '#,##0.00'; });
 
       const folhaEmpCfg = db.folhaEmpConfig || {};
 
       let sumFixo=0, sumQcx=0, sumCom=0, sumDsr=0, sumPremio=0, sumPremSem=0,
-          sumComLoja=0, sumGm=0, sumFer=0, sumExtras=0, sumTotal=0;
+          sumComLoja=0, sumGm=0, sumFer=0, sumExtras=0, sumTotal=0, sumAd=0, sumVc=0;
 
       for (const emp of lojaEmps) {
         const entry = lojaData.entries[emp.id];
@@ -4092,9 +4092,9 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
         const fc        = folhaEmpCfg[emp.id] || {};
         const vtRate    = fc.vtRate != null ? r2(fc.vtRate) : r2(emp.vtRate || 0);
 
-        const adSimNao  = r2(entry.adiantamento || 0) > 0 ? 'SIM' : 'NÃO';
-        const vcSimNao  = r2(entry.valeCompras  || 0) > 0 ? 'SIM' : 'NÃO';
-        const vtSimNao  = vtRate > 0 ? 'SIM' : 'NÃO';
+        const ad       = r2(entry.adiantamento || 0);
+        const vc       = r2(entry.valeCompras  || 0);
+        const vtSimNao = vtRate > 0 ? 'SIM' : 'NÃO';
 
         const empRow = ws.addRow([
           emp.apelido || emp.name, emp.cargo,
@@ -4102,7 +4102,7 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
           n2(premSem)||null, n2(comLoja)||null,
           n2(gm)||null, n2(feriado)||null, n2(extrasSum)||null,
           n2(tTotal), n2(verif), ok,
-          adSimNao, vcSimNao, vtSimNao, '',
+          n2(ad)||null, n2(vc)||null, vtSimNao, '',
         ]);
         empRow.getCell(15).font = { bold: true, color: { argb: ok==='OK'?'FF3FB950':'FFF85149' } };
 
@@ -4118,7 +4118,7 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
 
         sumFixo+=fixo; sumQcx+=qcx; sumCom+=comissoes; sumDsr+=dsr;
         sumPremio+=premio; sumPremSem+=premSem; sumComLoja+=comLoja;
-        sumGm+=gm; sumFer+=feriado; sumExtras+=extrasSum; sumTotal+=tTotal;
+        sumGm+=gm; sumFer+=feriado; sumExtras+=extrasSum; sumTotal+=tTotal; sumAd+=ad; sumVc+=vc;
       }
 
       // Totals row
@@ -4128,7 +4128,7 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
         r2(sumPremSem)||null, r2(sumComLoja)||null,
         r2(sumGm)||null, r2(sumFer)||null, r2(sumExtras)||null,
         r2(sumTotal), r2(sumTotal), '',
-        '', '', '', '',
+        r2(sumAd)||null, r2(sumVc)||null, '', '',
       ]);
       totRow.font = { bold: true };
       totRow.eachCell(c => { c.border = { top:{style:'thin',color:{argb:'FF30363D'}} }; });
