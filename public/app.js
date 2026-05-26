@@ -77,7 +77,7 @@ function hideLogin() {
 function applyUserPermissions(user) {
   document.getElementById('userChip').textContent = user.label || user.username;
   const isAdmin = !user.board;
-  const ids = ['funcBtn','campanhasBtn','usersBtn','perfBtn','transBtn','folhaBtn'];
+  const ids = ['funcBtn','campanhasBtn','usersBtn','perfBtn','transBtn','marcasBtn','folhaBtn'];
   ids.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = isAdmin ? '' : 'none';
