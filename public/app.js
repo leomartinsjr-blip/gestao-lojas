@@ -317,7 +317,8 @@ async function loadData() {
     S.meetingItems = init.meetingItems || [];
     S.pendencias   = init.pendencias   || [];
     S.requisicoes  = init.requisicoes  || [];
-    S.retiradas    = init.retiradas    || [];
+    S.retiradas         = init.retiradas         || [];
+    S.controleDefeitos  = init.controleDefeitos  || [];
     S.indevaStats  = init.indevaStats  || {};
     _updateCampanhasBtn();
     _updateLojaAcaoBadge();
@@ -6703,24 +6704,369 @@ function closeBoletasModal() {
   document.getElementById('boletasOverlay').classList.add('hidden');
 }
 
+let _boletasTab = 'boletas';
+
 function _renderBoletasModal(view, boletaId) {
-  const body     = document.getElementById('boletasBody');
-  const isAdmin  = !S.user?.board;
+  const body      = document.getElementById('boletasBody');
+  const isAdmin   = !S.user?.board;
   const userBoard = S.user?.board;
 
+  // Detail/form views — no tabs
   if (view === 'new' || view === 'edit') {
     const boleta = boletaId ? (S.boletas||[]).find(b=>b.id===boletaId) : null;
     body.innerHTML = _boletaFormHtml(boleta, isAdmin, userBoard);
     _initBoletaForm(body, boleta, isAdmin, userBoard);
-  } else if (view === 'view') {
+    return;
+  }
+  if (view === 'view') {
     const boleta = (S.boletas||[]).find(b=>b.id===boletaId);
     if (!boleta) { _renderBoletasModal('list', null); return; }
     body.innerHTML = _boletaDetailHtml(boleta, isAdmin);
     _initBoletaDetail(body, boleta, isAdmin);
-  } else {
-    body.innerHTML = _boletasListHtml(isAdmin, userBoard);
-    _initBoletasList(body, isAdmin, userBoard);
+    return;
   }
+  if (view === 'controle-new') {
+    body.innerHTML = _cdFormHtml(isAdmin, userBoard);
+    _initCdForm(body, isAdmin, userBoard);
+    return;
+  }
+  if (view === 'controle-view') {
+    const item = (S.controleDefeitos||[]).find(c => c.id === boletaId);
+    if (!item) { _renderBoletasModal('list', null); return; }
+    body.innerHTML = _cdDetailHtml(item, isAdmin);
+    _initCdDetail(body, item, isAdmin);
+    return;
+  }
+
+  // List view — show tabs
+  body.innerHTML = `
+    <div class="bol-modal-tabs">
+      <button class="bol-mtab${_boletasTab==='boletas'?' active':''}" data-t="boletas">Boletas</button>
+      <button class="bol-mtab${_boletasTab==='controle'?' active':''}" data-t="controle">Controle de Devolução</button>
+    </div>
+    <div id="bolTabContent" style="flex:1;overflow:auto;min-height:0"></div>
+  `;
+  const tabContent = body.querySelector('#bolTabContent');
+
+  function activateTab(t) {
+    _boletasTab = t;
+    body.querySelectorAll('.bol-mtab').forEach(b => b.classList.toggle('active', b.dataset.t === t));
+    if (t === 'boletas') {
+      tabContent.innerHTML = _boletasListHtml(isAdmin, userBoard);
+      _initBoletasList(tabContent, isAdmin, userBoard);
+    } else {
+      _renderControleList(tabContent, isAdmin, userBoard);
+    }
+  }
+  body.querySelectorAll('.bol-mtab').forEach(tab => tab.addEventListener('click', () => activateTab(tab.dataset.t)));
+  activateTab(_boletasTab);
+}
+
+// ── Controle de Devolução ──────────────────────────────────────────────────
+function _cdStatus(item) {
+  if (item.creditoFornecedor) return 'credito';
+  if (item.envioFabrica)      return 'enviado';
+  if (item.ressarcimento)     return 'ressarcido';
+  return 'recebido';
+}
+
+function _cdPipelineHtml(item) {
+  const steps = [
+    { label: 'Recebido',     done: true },
+    { label: 'Ressarcido',   done: !!item.ressarcimento },
+    { label: 'Env. Fábrica', done: !!item.envioFabrica },
+    { label: 'Crédito',      done: !!item.creditoFornecedor },
+  ];
+  return steps.map((s, i) =>
+    (i > 0 ? '<span class="cd-pipe-arrow">→</span>' : '') +
+    `<span class="cd-pipe-step ${s.done ? 'done' : 'pending'}">${s.done ? '✓' : '○'} ${s.label}</span>`
+  ).join('');
+}
+
+function _renderControleList(container, isAdmin, userBoard) {
+  let filterStatus = 'all';
+  let filterBoard  = '';
+
+  function renderList() {
+    const brl = v => v ? 'R$ ' + Number(v).toFixed(2).replace('.', ',') : '';
+    const fDate = d => d ? new Date(d + 'T12:00:00').toLocaleDateString('pt-BR') : '';
+    const items = (S.controleDefeitos || []).filter(c => {
+      if (!isAdmin && c.board !== userBoard) return false;
+      if (filterBoard && c.board !== filterBoard) return false;
+      if (filterStatus !== 'all' && _cdStatus(c) !== filterStatus) return false;
+      return true;
+    }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+    container.innerHTML = `<div class="cd-list-wrap">
+      <div class="cd-filters">
+        ${[['all','Todos'],['recebido','Na Loja'],['ressarcido','Ressarcido'],['enviado','Env. Fábrica'],['credito','Crédito']].map(([s,l]) =>
+          `<button class="cd-filter-tab${filterStatus===s?' active':''}" data-s="${s}">${l}</button>`).join('')}
+        ${isAdmin ? `<select class="bol-input" id="cdBoardSel" style="margin-left:auto;width:auto;padding:.28rem .55rem">
+          <option value="">Todas as lojas</option>
+          ${Object.keys(BOARDS).filter(b=>b!=='escritorio').map(b=>`<option value="${b}"${filterBoard===b?' selected':''}>${BOARDS[b]?.label||b}</option>`).join('')}
+        </select>` : ''}
+        <button class="bol-btn-primary" id="cdNewBtn"${!isAdmin?' style="margin-left:auto"':''}>+ Novo Defeito</button>
+      </div>
+      ${!items.length
+        ? '<div class="nf-empty" style="padding:2rem;text-align:center">Nenhum defeito registrado</div>'
+        : items.map(c => {
+            const sc = BOARDS[c.board]?.color||'#8B949E';
+            const sl = BOARDS[c.board]?.label||c.board;
+            const info = [c.grupo, c.marca, c.referencia, c.cor, c.tamanho].filter(Boolean).join(' · ');
+            return `<div class="cd-card" data-id="${c.id}">
+              <div class="cd-card-top">
+                <div>
+                  <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+                    ${isAdmin?`<span style="font-size:.78rem;font-weight:700;color:${sc}">${sl}</span>`:''}
+                    <span class="cd-cliente">${_escHtml(c.cliente)}</span>
+                    <span style="font-size:.74rem;color:var(--muted)">${fDate(c.dataEntrada)}</span>
+                  </div>
+                  ${info?`<div class="cd-produto">${_escHtml(info)}</div>`:''}
+                  ${c.defeitoDesc?`<div class="cd-produto" style="font-style:italic">${_escHtml(c.defeitoDesc)}</div>`:''}
+                </div>
+                ${c.valor?`<span class="cd-valor">${brl(c.valor)}</span>`:''}
+              </div>
+              <div class="cd-pipeline">${_cdPipelineHtml(c)}</div>
+            </div>`;
+          }).join('')}
+    </div>`;
+
+    container.querySelectorAll('.cd-filter-tab').forEach(btn =>
+      btn.addEventListener('click', () => { filterStatus = btn.dataset.s; renderList(); }));
+    const boardSel = container.querySelector('#cdBoardSel');
+    if (boardSel) boardSel.addEventListener('change', () => { filterBoard = boardSel.value; renderList(); });
+    container.querySelector('#cdNewBtn').addEventListener('click', () => _renderBoletasModal('controle-new', null));
+    container.querySelectorAll('.cd-card').forEach(card =>
+      card.addEventListener('click', () => _renderBoletasModal('controle-view', parseInt(card.dataset.id))));
+  }
+  renderList();
+}
+
+function _cdFormHtml(isAdmin, userBoard) {
+  const today = new Date().toISOString().slice(0, 10);
+  const boards = Object.keys(BOARDS).filter(b => b !== 'escritorio')
+    .map(b => `<option value="${b}">${BOARDS[b]?.label||b}</option>`).join('');
+  return `<div class="cd-form">
+    <div style="display:flex;align-items:center;gap:.75rem;margin-bottom:1rem;flex-shrink:0">
+      <button class="bol-btn-secondary" id="cdFormBack">← Voltar</button>
+      <span style="font-size:.95rem;font-weight:700">Registrar Defeito</span>
+    </div>
+    <div class="cd-form-grid">
+      <div class="cd-form-field span2"><label>Cliente *</label><input type="text" name="cliente" class="cd-inp" placeholder="Nome do cliente"></div>
+      <div class="cd-form-field"><label>Grupo</label><input type="text" name="grupo" class="cd-inp" placeholder="Ex: Calçados"></div>
+      <div class="cd-form-field"><label>Marca</label><input type="text" name="marca" class="cd-inp" placeholder="Ex: Nike"></div>
+      <div class="cd-form-field"><label>Referência</label><input type="text" name="referencia" class="cd-inp" placeholder="Cód. produto"></div>
+      <div class="cd-form-field"><label>Cor</label><input type="text" name="cor" class="cd-inp"></div>
+      <div class="cd-form-field"><label>Tamanho</label><input type="text" name="tamanho" class="cd-inp"></div>
+      <div class="cd-form-field"><label>Valor (R$)</label><input type="number" name="valor" class="cd-inp" step="0.01" min="0" placeholder="0,00"></div>
+      <div class="cd-form-field"><label>Data de Entrada *</label><input type="date" name="dataEntrada" class="cd-inp" value="${today}"></div>
+      ${isAdmin
+        ? `<div class="cd-form-field"><label>Loja *</label><select name="board" class="cd-inp">${boards}</select></div>`
+        : `<input type="hidden" name="board" value="${userBoard}">`}
+      <div class="cd-form-field span2"><label>Descrição do Defeito *</label><textarea name="defeitoDesc" class="cd-inp" rows="3" placeholder="Descreva o defeito…"></textarea></div>
+      <div class="cd-form-field span2"><label>Observação</label><input type="text" name="observacao" class="cd-inp" placeholder="Informações adicionais…"></div>
+    </div>
+    <div style="display:flex;gap:.6rem;margin-top:1rem;flex-shrink:0">
+      <button class="bol-btn-secondary" id="cdFormCancel">Cancelar</button>
+      <button class="bol-btn-primary" id="cdFormSave">Registrar Defeito</button>
+    </div>
+  </div>`;
+}
+
+function _initCdForm(body, isAdmin, userBoard) {
+  const back = () => _renderBoletasModal('list', null);
+  body.querySelector('#cdFormBack').addEventListener('click', back);
+  body.querySelector('#cdFormCancel').addEventListener('click', back);
+  body.querySelector('#cdFormSave').addEventListener('click', async () => {
+    const data = {};
+    body.querySelectorAll('[name]').forEach(el => { data[el.name] = el.value.trim(); });
+    if (!data.cliente)     { toast('Cliente obrigatório', true); return; }
+    if (!data.defeitoDesc) { toast('Descrição do defeito obrigatória', true); return; }
+    if (!data.dataEntrada) { toast('Data de entrada obrigatória', true); return; }
+    if (!data.board) data.board = userBoard;
+    const btn = body.querySelector('#cdFormSave');
+    btn.disabled = true;
+    try {
+      const created = await apiFetch('POST', '/api/controle-defeitos', data);
+      S.controleDefeitos = [...(S.controleDefeitos||[]), created];
+      _renderBoletasModal('controle-view', created.id);
+      toast('Defeito registrado ✓');
+    } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
+  });
+}
+
+function _cdDetailHtml(item, isAdmin) {
+  const fDate = d => d ? new Date(d+'T12:00:00').toLocaleDateString('pt-BR') : '—';
+  const brl   = v => v ? 'R$ '+Number(v).toFixed(2).replace('.',',') : '';
+  const sc = BOARDS[item.board]?.color||'#8B949E';
+  const sl = BOARDS[item.board]?.label||item.board;
+  const info = [item.grupo, item.marca, item.referencia, item.cor, item.tamanho].filter(Boolean).join(' · ');
+
+  function stageDone(title, lines) {
+    return `<div class="cd-stage">
+      <div class="cd-stage-hdr">
+        <span class="cd-stage-title cd-stage-done">✓ ${title}</span>
+        <span class="cd-stage-done-badge">Concluído</span>
+      </div>
+      <div class="cd-stage-info">${lines.filter(Boolean).join(' &nbsp;·&nbsp; ')}</div>
+    </div>`;
+  }
+  function stagePending(title, btnId, formId) {
+    return `<div class="cd-stage">
+      <div class="cd-stage-hdr">
+        <span class="cd-stage-title cd-stage-pending">${title}</span>
+        <button class="cd-action-btn" id="${btnId}">Registrar</button>
+      </div>
+      <div id="${formId}" class="cd-stage-form hidden"></div>
+    </div>`;
+  }
+  function stageLocked(title) {
+    return `<div class="cd-stage" style="opacity:.4">
+      <div class="cd-stage-hdr">
+        <span class="cd-stage-title cd-stage-pending">${title}</span>
+        <span style="font-size:.75rem;color:var(--muted)">Aguardando envio à fábrica</span>
+      </div>
+    </div>`;
+  }
+
+  return `<div class="cd-detail">
+    <div class="cd-detail-hdr">
+      <div>
+        <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
+          <span style="font-weight:700;color:${sc};font-size:.85rem">${sl}</span>
+          <span style="font-size:1rem;font-weight:700">${_escHtml(item.cliente)}</span>
+          ${item.valor?`<span class="cd-valor">${brl(item.valor)}</span>`:''}
+        </div>
+        ${info?`<div style="color:var(--muted);font-size:.8rem;margin-top:.2rem">${_escHtml(info)}</div>`:''}
+        ${item.defeitoDesc?`<div style="font-size:.83rem;margin-top:.35rem">${_escHtml(item.defeitoDesc)}</div>`:''}
+        <div style="font-size:.75rem;color:var(--muted);margin-top:.25rem">Registrado em ${fDate(item.dataEntrada)} por ${_escHtml(item.createdBy||'—')}</div>
+      </div>
+      <div style="display:flex;gap:.4rem;flex-shrink:0">
+        ${isAdmin?`<button class="bol-btn-secondary" id="cdDelBtn">Excluir</button>`:''}
+        <button class="bol-btn-secondary" id="cdBackBtn">← Voltar</button>
+      </div>
+    </div>
+
+    <div class="cd-pipeline" style="margin:.25rem 0">${_cdPipelineHtml(item)}</div>
+
+    ${stageDone('Cliente → Loja (Recebido)', [
+      'Entrada: ' + fDate(item.dataEntrada),
+      item.observacao || null,
+    ])}
+
+    ${item.ressarcimento
+      ? stageDone('Loja → Cliente (Ressarcimento)', [
+          fDate(item.ressarcimento.data),
+          item.ressarcimento.tipo ? 'Tipo: ' + item.ressarcimento.tipo : null,
+          item.ressarcimento.obs || null,
+        ])
+      : stagePending('Loja → Cliente (Ressarcimento)', 'cdRessBtn', 'cdRessForm')}
+
+    ${item.envioFabrica
+      ? stageDone('Loja → Fornecedor (Envio Fábrica)', [
+          fDate(item.envioFabrica.data),
+          item.envioFabrica.obs || null,
+        ])
+      : stagePending('Loja → Fornecedor (Envio Fábrica)', 'cdEnvioBtn', 'cdEnvioForm')}
+
+    ${item.creditoFornecedor
+      ? stageDone('Fornecedor → Loja (Crédito)', [
+          fDate(item.creditoFornecedor.data),
+          item.creditoFornecedor.valor ? brl(item.creditoFornecedor.valor) : null,
+          item.creditoFornecedor.obs || null,
+        ])
+      : item.envioFabrica
+        ? stagePending('Fornecedor → Loja (Crédito)', 'cdCreditoBtn', 'cdCreditoForm')
+        : stageLocked('Fornecedor → Loja (Crédito)')}
+  </div>`;
+}
+
+function _initCdDetail(body, item, isAdmin) {
+  const today = new Date().toISOString().slice(0,10);
+  body.querySelector('#cdBackBtn').addEventListener('click', () => _renderBoletasModal('list', null));
+  body.querySelector('#cdDelBtn')?.addEventListener('click', async () => {
+    if (!confirm('Excluir este registro de defeito?')) return;
+    try {
+      await apiFetch('DELETE', `/api/controle-defeitos/${item.id}`);
+      S.controleDefeitos = (S.controleDefeitos||[]).filter(c => c.id !== item.id);
+      _renderBoletasModal('list', null);
+      toast('Registro excluído');
+    } catch(e) { toast('Erro: '+e.message, true); }
+  });
+
+  function wireStageBtn(btnId, formId, formHtml, etapa, getPayload) {
+    const btn  = body.querySelector('#' + btnId);
+    const form = body.querySelector('#' + formId);
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      form.classList.toggle('hidden');
+      if (!form.classList.contains('hidden') && !form.children.length) {
+        form.innerHTML = formHtml + `<div style="display:flex;gap:.5rem;margin-top:.4rem">
+          <button class="cd-action-btn" id="${btnId}Submit">Salvar</button>
+          <button class="bol-btn-secondary" id="${btnId}Cancel">Cancelar</button>
+        </div>`;
+        form.querySelector('#' + btnId + 'Cancel').addEventListener('click', () => form.classList.add('hidden'));
+        form.querySelector('#' + btnId + 'Submit').addEventListener('click', async () => {
+          const payload = getPayload(form);
+          if (!payload) return;
+          try {
+            const updated = await apiFetch('PATCH', `/api/controle-defeitos/${item.id}`, { etapa, ...payload });
+            const idx = (S.controleDefeitos||[]).findIndex(c => c.id === item.id);
+            if (idx >= 0) S.controleDefeitos[idx] = updated;
+            _renderBoletasModal('controle-view', item.id);
+            toast('Registrado ✓');
+          } catch(e) { toast('Erro: '+e.message, true); }
+        });
+      }
+    });
+  }
+
+  wireStageBtn('cdRessBtn', 'cdRessForm',
+    `<div class="cd-stage-form-grid">
+      <div><label style="font-size:.75rem;color:var(--muted)">Data *</label><input type="date" class="cd-inp" id="ressData" value="${today}"></div>
+      <div><label style="font-size:.75rem;color:var(--muted)">Tipo</label><select class="cd-inp" id="ressTipo">
+        <option value="">—</option><option value="troca">Troca</option>
+        <option value="reembolso">Reembolso</option><option value="voucher">Voucher</option>
+      </select></div>
+      <div style="grid-column:1/-1"><label style="font-size:.75rem;color:var(--muted)">Observação</label>
+        <input type="text" class="cd-inp" id="ressObs" placeholder="Opcional…"></div>
+    </div>`,
+    'ressarcimento',
+    form => {
+      const data = form.querySelector('#ressData').value;
+      if (!data) { toast('Informe a data', true); return null; }
+      return { data, tipo: form.querySelector('#ressTipo').value, obs: form.querySelector('#ressObs').value.trim() };
+    }
+  );
+
+  wireStageBtn('cdEnvioBtn', 'cdEnvioForm',
+    `<div class="cd-stage-form-grid">
+      <div><label style="font-size:.75rem;color:var(--muted)">Data de Envio *</label><input type="date" class="cd-inp" id="envioData" value="${today}"></div>
+      <div style="grid-column:1/-1"><label style="font-size:.75rem;color:var(--muted)">Observação</label>
+        <input type="text" class="cd-inp" id="envioObs" placeholder="Nº NF, transportadora…"></div>
+    </div>`,
+    'envioFabrica',
+    form => {
+      const data = form.querySelector('#envioData').value;
+      if (!data) { toast('Informe a data', true); return null; }
+      return { data, obs: form.querySelector('#envioObs').value.trim() };
+    }
+  );
+
+  wireStageBtn('cdCreditoBtn', 'cdCreditoForm',
+    `<div class="cd-stage-form-grid">
+      <div><label style="font-size:.75rem;color:var(--muted)">Data do Crédito *</label><input type="date" class="cd-inp" id="creditoData" value="${today}"></div>
+      <div><label style="font-size:.75rem;color:var(--muted)">Valor (R$)</label><input type="number" class="cd-inp" id="creditoValor" step="0.01" min="0" placeholder="0,00"></div>
+      <div style="grid-column:1/-1"><label style="font-size:.75rem;color:var(--muted)">Observação</label>
+        <input type="text" class="cd-inp" id="creditoObs" placeholder="Nº NF de crédito…"></div>
+    </div>`,
+    'creditoFornecedor',
+    form => {
+      const data = form.querySelector('#creditoData').value;
+      if (!data) { toast('Informe a data', true); return null; }
+      return { data, valor: form.querySelector('#creditoValor').value, obs: form.querySelector('#creditoObs').value.trim() };
+    }
+  );
 }
 
 function _boletasListHtml(isAdmin, userBoard) {

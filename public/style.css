@@ -2036,7 +2036,7 @@ body {
   border-radius: 999px; min-width: 18px; height: 18px; padding: 0 5px; margin-left: .3rem; }
 
 /* Modal list */
-.bol-list-wrap { display: flex; flex-direction: column; gap: .75rem; }
+.bol-list-wrap { display: flex; flex-direction: column; gap: .75rem; padding: 1rem; }
 .bol-list-header { display: flex; justify-content: space-between; align-items: center;
   flex-wrap: wrap; gap: .5rem; padding-bottom: .5rem; border-bottom: 1px solid var(--border); }
 .bol-filter-tabs { display: flex; gap: .25rem; }
@@ -2057,7 +2057,7 @@ body {
 .bol-resolved-tag { font-size: .75rem; color: #3FB950; font-weight: 600; }
 
 /* Form */
-.bol-form { display: flex; flex-direction: column; gap: 1.25rem; }
+.bol-form { display: flex; flex-direction: column; gap: 1.25rem; padding: 1.25rem; overflow-y: auto; }
 .bol-form-section { display: flex; flex-direction: column; gap: .6rem; }
 .bol-form-section-title { font-size: .75rem; font-weight: 700; text-transform: uppercase;
   letter-spacing: .08em; color: var(--muted); border-bottom: 1px solid var(--border); padding-bottom: .35rem; }
@@ -2092,7 +2092,7 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .bol-btn-reopen:hover { border-color: #58A6FF; color: #58A6FF; }
 
 /* Detail */
-.bol-detail { display: flex; flex-direction: column; gap: 1rem; }
+.bol-detail { display: flex; flex-direction: column; gap: 1rem; padding: 1.25rem; overflow-y: auto; }
 .bol-detail-hdr { display: flex; justify-content: space-between; align-items: flex-start;
   flex-wrap: wrap; gap: .75rem; padding-bottom: .75rem; border-bottom: 1px solid var(--border); }
 .bol-detail-body { display: grid; grid-template-columns: repeat(3,1fr); gap: 1rem; }
@@ -2106,6 +2106,50 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 @media (max-width: 700px) { .bol-form-grid { grid-template-columns: repeat(2,1fr); }
   .bol-span3, .bol-span4 { grid-column: span 2; } }
 
+/* ── Boletas modal tabs ── */
+.bol-modal-tabs { display:flex; gap:0; border-bottom:1px solid var(--border); padding:0 1rem; flex-shrink:0; }
+.bol-mtab { background:none; border:none; border-bottom:2px solid transparent; color:var(--muted); cursor:pointer; font-size:.85rem; font-weight:500; padding:.6rem .9rem; font-family:inherit; transition:all .15s; }
+.bol-mtab:hover { color:var(--text); }
+.bol-mtab.active { color:#58A6FF; border-bottom-color:#58A6FF; font-weight:600; }
+/* ── Controle de Devolução ── */
+.cd-list-wrap { padding:1rem; display:flex; flex-direction:column; gap:.6rem; }
+.cd-filters { display:flex; gap:.4rem; flex-wrap:wrap; align-items:center; margin-bottom:.25rem; }
+.cd-filter-tab { background:none; border:1px solid var(--border); color:var(--muted); border-radius:5px; font-size:.78rem; padding:.22rem .6rem; cursor:pointer; font-family:inherit; transition:all .15s; }
+.cd-filter-tab.active { background:rgba(88,166,255,.12); color:#58A6FF; border-color:rgba(88,166,255,.4); }
+.cd-card { background:var(--surface2); border:1px solid var(--border); border-radius:.55rem; padding:.8rem 1rem; cursor:pointer; transition:border-color .15s; }
+.cd-card:hover { border-color:rgba(88,166,255,.4); }
+.cd-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:.5rem; margin-bottom:.45rem; }
+.cd-cliente { font-size:.88rem; font-weight:700; color:var(--text); }
+.cd-produto { font-size:.78rem; color:var(--muted); margin-top:.1rem; }
+.cd-valor { font-size:.92rem; font-weight:700; color:#58A6FF; white-space:nowrap; flex-shrink:0; }
+.cd-pipeline { display:flex; align-items:center; flex-wrap:wrap; gap:.2rem; font-size:.71rem; }
+.cd-pipe-step { padding:.15rem .42rem; border-radius:4px; border:1px solid; white-space:nowrap; }
+.cd-pipe-step.done { background:rgba(63,185,80,.12); color:#3fb950; border-color:rgba(63,185,80,.3); }
+.cd-pipe-step.pending { background:transparent; color:var(--muted); border-color:var(--border); }
+.cd-pipe-arrow { color:var(--border); margin:0 .05rem; }
+/* Controle detail */
+.cd-detail { padding:1.25rem; overflow-y:auto; display:flex; flex-direction:column; gap:.85rem; }
+.cd-detail-hdr { display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:.5rem; }
+.cd-stage { background:var(--surface2); border:1px solid var(--border); border-radius:.5rem; padding:.75rem .9rem; }
+.cd-stage-hdr { display:flex; align-items:center; justify-content:space-between; gap:.5rem; }
+.cd-stage-title { font-size:.8rem; font-weight:700; letter-spacing:.02em; }
+.cd-stage-done { color:#3fb950; }
+.cd-stage-pending { color:var(--muted); }
+.cd-stage-done-badge { font-size:.7rem; background:rgba(63,185,80,.14); color:#3fb950; border:1px solid rgba(63,185,80,.3); border-radius:4px; padding:.08rem .35rem; }
+.cd-stage-info { font-size:.8rem; color:var(--muted); margin-top:.35rem; }
+.cd-action-btn { background:#1f6feb; border:1px solid #388bfd; color:#fff; font-size:.78rem; font-weight:600; padding:.28rem .7rem; border-radius:5px; cursor:pointer; flex-shrink:0; }
+.cd-action-btn:hover { background:#388bfd; }
+.cd-stage-form { display:flex; flex-direction:column; gap:.45rem; margin-top:.6rem; padding-top:.6rem; border-top:1px solid var(--border); }
+.cd-stage-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:.5rem; }
+.cd-inp { background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:.35rem; padding:.32rem .5rem; font-size:.83rem; font-family:inherit; width:100%; box-sizing:border-box; }
+.cd-inp:focus { outline:none; border-color:var(--accent); }
+.cd-inp option { background:#161b22; }
+/* Controle form */
+.cd-form { padding:1.25rem; overflow-y:auto; display:flex; flex-direction:column; gap:.6rem; }
+.cd-form-grid { display:grid; grid-template-columns:1fr 1fr; gap:.55rem .9rem; }
+.cd-form-field { display:flex; flex-direction:column; gap:.25rem; }
+.cd-form-field label { font-size:.74rem; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; }
+.cd-form-field.span2 { grid-column:span 2; }
 /* ── Fechamento de Caixa ─────────────────────────────────────────────────── */
 .caixa-card-body { padding: 0; }
 .caixa-table-wrap { max-height: 280px; overflow-y: auto; }
