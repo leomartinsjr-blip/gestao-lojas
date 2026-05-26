@@ -228,9 +228,10 @@ function selectEmp(empId) {
   });
   const emp   = FP.employees.find(e => e.id === empId);
   let entry = FP.folha[FP.board]?.entries?.[empId] || defaultEntry(emp);
-  // Auto-preenche premiação calculada se entrada salva ainda tem zero
-  if (!entry.premiacao && FP.premiacaoSemanal[empId]) {
-    entry = { ...entry, premiacao: r2(FP.premiacaoSemanal[empId]) };
+  // Sempre aplica o valor calculado pelo servidor para premiação semanal
+  const calcPrem = r2(FP.premiacaoSemanal[empId] || 0);
+  if (calcPrem !== r2(entry.premiacao || 0)) {
+    entry = { ...entry, premiacao: calcPrem };
   }
   document.getElementById('fpEmpForms').innerHTML = buildEmpForm(emp, entry);
   attachFormListeners(empId);
@@ -546,9 +547,10 @@ function buildEmpForm(emp, entry) {
     }
 
     const semDetalhe = FP.premiacaoSemanalDetalhe[emp.id] || [];
+    const semCalc    = r2(FP.premiacaoSemanal[emp.id] || 0);
     const semHint = semDetalhe.length
       ? semDetalhe.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
-      : 'semanal';
+      : semCalc > 0 ? `calculado: ${brl(semCalc)}` : 'nenhuma meta semanal encontrada';
     provRows += `<div class="fp-field"><label>Premiação (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
       <span style="font-size:.7rem;color:#484f58">${semHint}</span></div>`;
     if (tipo === 'gerente' || tipo === 'gvend')

@@ -3607,6 +3607,43 @@ app.get('/api/folha/empconfig', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/folha/debug-premiacao/:year/:month — diagnóstico de premiação semanal
+app.get('/api/folha/debug-premiacao/:year/:month', requireAdmin, async (req, res) => {
+  try {
+    const year  = parseInt(req.params.year);
+    const month = parseInt(req.params.month);
+    const mk    = `${year}-${String(month).padStart(2,'0')}`;
+    const db    = await readDB();
+    const weeklyMetasMonth = (db.weeklyMetas || {})[mk] || {};
+    const employees = (db.employees || []).filter(e => !e.inativo);
+    const vsalesAll = db.vsales || {};
+    const todayStr   = new Date().toISOString().slice(0, 10);
+    const lastDay    = new Date(year, month, 0);
+    const padD       = n => String(n).padStart(2,'0');
+    const lastDayStr = `${year}-${padD(month)}-${padD(lastDay.getDate())}`;
+
+    const semanas = [];
+    for (const [weekStart, weekData] of Object.entries(weeklyMetasMonth)) {
+      const ws = new Date(weekStart + 'T12:00:00');
+      const we = new Date(ws); we.setDate(we.getDate() + 6);
+      const weStr = `${we.getFullYear()}-${padD(we.getMonth()+1)}-${padD(we.getDate())}`;
+      const skipped = weStr > lastDayStr || weStr >= todayStr;
+      semanas.push({
+        weekStart, weStr, skipped,
+        empMetas: Object.keys(weekData).length,
+        empIds: Object.keys(weekData),
+      });
+    }
+    res.json({
+      mk, todayStr, lastDayStr,
+      semanasComMeta: semanas.length,
+      semanas,
+      empIds: employees.map(e => ({ id: e.id, name: e.name, board: e.board })),
+      vsalesKeys: Object.keys(vsalesAll).filter(k => k.startsWith(mk)),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // POST /api/folha/empconfig/:empId — salva configuração individual do funcionário
 app.post('/api/folha/empconfig/:empId', requireAuth, async (req, res) => {
   try {
