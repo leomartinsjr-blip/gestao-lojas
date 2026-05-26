@@ -4198,7 +4198,7 @@ function calcWeekKpis(emp, week, extraData) {
   }
   if (isComplete) projecao = valor;
 
-  const isGerente = !!(emp.cargo?.toLowerCase()?.includes('gerente'));
+  const isGerente = emp.isVendedor === false;
 
   const hitMeta = wMeta > 0 && valor >= wMeta;
   const hitPA   = pa != null && pa > PA_THRESHOLD;
@@ -4576,6 +4576,7 @@ function openFuncForm(id) {
   document.getElementById('funcQuebraCaixa').value   = emp?.quebraCaixa   || '';
   document.getElementById('funcBanco').value         = emp?.banco         || '';
   document.getElementById('funcConta').value         = emp?.conta         || '';
+  document.getElementById('funcIsVendedor').checked = emp ? emp.isVendedor !== false : true;
   document.getElementById('funcInativo').checked = !!emp?.inativo;
   document.getElementById('funcDesligamento').value = emp?.desligamento || '';
   document.getElementById('funcDesligamentoWrap').style.display = emp?.inativo ? '' : 'none';
@@ -4645,7 +4646,7 @@ async function saveFuncionario() {
   const quebraCaixa  = parseFloat(document.getElementById('funcQuebraCaixa').value)  || 0;
   const banco        = document.getElementById('funcBanco').value.trim();
   const conta        = document.getElementById('funcConta').value.trim();
-  const isVendedor = ['Vendedor', 'Gerente Vendedor', 'Sub Gerente'].includes(cargo);
+  const isVendedor = document.getElementById('funcIsVendedor').checked;
   const inativo   = document.getElementById('funcInativo').checked;
   const desligamento = document.getElementById('funcDesligamento').value;
   const fotoRemoved  = !FE.newPhotoFile && !FE.currentPhotoUrl && !!FE.editingId;
@@ -5156,11 +5157,9 @@ function initCampanhasModal() {
   });
 }
 
-// Vendedor = isVendedor true E não é gerente (sub-gerente é incluído pois também vende)
+// Vendedor = campo isVendedor marcado no cadastro do colaborador
 function isVend(e) {
-  const cargo = (e.cargo || '').toLowerCase().trim();
-  const isGerente = /gerente|g\.?\s*vend/i.test(cargo) && !/^sub/i.test(cargo);
-  return e.isVendedor !== false && !isGerente;
+  return e.isVendedor !== false;
 }
 
 // ── Recebimento de NF ─────────────────────────────────────────────────────
@@ -7299,7 +7298,7 @@ function _renderIndeva(body, state) {
   _indevaLastState = state;
   const { fila, atendendo, atendimentos } = state;
   const atendArr = Array.isArray(atendendo) ? atendendo : (atendendo != null ? [atendendo] : []);
-  const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && e.isVendedor !== false && !/gerente/i.test(e.cargo || '') && !e.inativo);
+  const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && isVend(e) && !e.inativo);
   const empById = Object.fromEntries(emps.map(e => [e.id, e]));
   const total  = atendimentos.length;
   const vendas = atendimentos.filter(a => a.vendeu).length;
@@ -7745,7 +7744,7 @@ async function _indevaAtend(empId, vendeu, motivo) {
 }
 
 function _renderIndevaHistorico(body, historico) {
-  const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && e.isVendedor !== false && !/gerente/i.test(e.cargo || '') && !e.inativo);
+  const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && isVend(e) && !e.inativo);
   const empById = Object.fromEntries(emps.map(e => [e.id, e]));
   const days = Object.values(historico).sort((a,b) => b.date.localeCompare(a.date));
 

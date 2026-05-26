@@ -127,7 +127,7 @@
         <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
       </svg><span class="btn-label">Contas a Pagar</span>
     </button>
-    <a href="/folha" id="folhaBtn" class="folgas-topbar-btn" style="display:none" title="Folha de Pagamento">
+    <a href="/folha" target="_blank" id="folhaBtn" class="folgas-topbar-btn" style="display:none" title="Folha de Pagamento">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"/>
         <path d="M12 6v6l4 2"/>
@@ -488,6 +488,12 @@
           <!-- Seção: Status -->
           <div class="func-section-hdr">Status</div>
           <div class="func-form-grid func-form-grid-status">
+            <div class="func-field func-field-check">
+              <label class="func-check-label">
+                <input type="checkbox" id="funcIsVendedor">
+                Vendedor (distribui metas / aparece nos relatórios)
+              </label>
+            </div>
             <div class="func-field func-field-check">
               <label class="func-check-label">
                 <input type="checkbox" id="funcInativo">
