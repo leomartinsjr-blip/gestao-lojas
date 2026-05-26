@@ -263,20 +263,11 @@ function fpOpenCfg(board) {
 
     <div class="fp-modal-content active" id="cfg-tab-geral">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem;margin-top:.5rem">
-        <div class="fp-cfg-field"><label>Garantia Mínima (R$)</label>
-          <input type="number" step="0.01" id="cfg-gm" value="${f2(cfg.garantiaMinima)}">
-        </div>
         <div class="fp-cfg-field"><label>Salário Fixo Caixa (R$)</label>
           <input type="number" step="0.01" id="cfg-fixoCaixa" value="${f2(cfg.salarioFixoCaixa)}">
         </div>
         <div class="fp-cfg-field"><label>Quebra de Caixa (R$)</label>
           <input type="number" step="0.01" id="cfg-quebraCaixa" value="${f2(cfg.quebraCaixa)}">
-        </div>
-        <div class="fp-cfg-field"><label>Salário Fixo Gerente (R$)</label>
-          <input type="number" step="0.01" id="cfg-fixoGerente" value="${f2(cfg.salarioFixoGerente)}">
-        </div>
-        <div class="fp-cfg-field"><label>Garantia Mínima Gerente (R$)</label>
-          <input type="number" step="0.01" id="cfg-gmGerente" value="${f2(cfg.garantiaMinimaGerente)}">
         </div>
         <div class="fp-cfg-field"><label>Prêmio Vendedor (R$)</label>
           <input type="number" step="0.01" id="cfg-premioVendedor" value="${f2(cfg.premioVendedor)}">
@@ -284,6 +275,13 @@ function fpOpenCfg(board) {
         <div class="fp-cfg-field"><label>Prêmio Gerente (R$)</label>
           <input type="number" step="0.01" id="cfg-premioGerente" value="${f2(cfg.premioGerente)}">
         </div>
+      </div>
+      <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid #30363d;display:flex;align-items:center;gap:.75rem">
+        <div class="fp-cfg-field" style="margin-bottom:0">
+          <label>Garantia Mínima (R$)</label>
+          <input type="number" step="0.01" id="cfg-gm" value="${f2(cfg.garantiaMinima)}">
+        </div>
+        <span style="font-size:.72rem;color:#484f58">fixo + comissão ≥ garantia</span>
       </div>
     </div>
 
@@ -326,13 +324,11 @@ async function fpSaveConfig() {
   const board = document.getElementById('fpConfigModal').dataset.board;
   if (!board) return;
   FP.folhaConfig[board] = {
-    garantiaMinima:        g('cfg-gm'),
-    salarioFixoCaixa:      g('cfg-fixoCaixa'),
-    quebraCaixa:           g('cfg-quebraCaixa'),
-    salarioFixoGerente:    g('cfg-fixoGerente'),
-    garantiaMinimaGerente: g('cfg-gmGerente'),
-    premioVendedor:        g('cfg-premioVendedor'),
-    premioGerente:         g('cfg-premioGerente'),
+    garantiaMinima:   g('cfg-gm'),
+    salarioFixoCaixa: g('cfg-fixoCaixa'),
+    quebraCaixa:      g('cfg-quebraCaixa'),
+    premioVendedor:   g('cfg-premioVendedor'),
+    premioGerente:    g('cfg-premioGerente'),
   };
   try {
     await apiFetch('/api/folha/config', 'POST', FP.folhaConfig);
@@ -398,19 +394,17 @@ function defaultEntry(emp) {
     : r2(comissaoTotal - premio);
   const dsr = du > 0 ? r2(comissaoContab * df / du) : 0;
 
-  const gm = (tipo === 'gerente' || tipo === 'sub')
-    ? r2(cfg.garantiaMinimaGerente || cfg.garantiaMinima || 0)
-    : r2(cfg.garantiaMinima || 0);
-  const gmComplement = r2(Math.max(0, gm - comissaoTotal));
+  const fixo = (tipo === 'gerente' || tipo === 'sub')
+    ? r2(ecfg.salarioFixo || 0)
+    : 0;
+
+  const gm = r2(cfg.garantiaMinima || 0);
+  const gmComplement = r2(Math.max(0, gm - (fixo + comissaoTotal)));
 
   const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);
   let comissaoLoja = 0;
   if (tipo === 'gerente') comissaoLoja = r2(vendaLoja * (ecfg.comissaoGerente || 0) / 100);
   else if (tipo === 'sub') comissaoLoja = r2(vendaLoja * (ecfg.comissaoVR || 0) / 100);
-
-  const fixo = (tipo === 'gerente' || tipo === 'sub')
-    ? r2(cfg.salarioFixoGerente || ecfg.salarioFixo || 0)
-    : 0;
 
   const proventos = r2(fixo + comissaoTotal + comissaoLoja + gmComplement);
   const inss = r2(proventos * (ecfg.inssRate || 0) / 100);
@@ -457,7 +451,7 @@ function buildEmpForm(emp, entry) {
   } else {
     const pctDisplay = e.pctMeta > 0 ? `${r2(e.pctMeta).toFixed(1)}% da meta` : 'sem meta';
 
-    if (tipo === 'gerente' && (e.fixo||0) > 0)
+    if (tipo === 'gerente' || tipo === 'sub')
       provRows += `<div class="fp-field"><label>Salário Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}</div>`;
 
     provRows += `
@@ -585,7 +579,8 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
       row('Com. Meta 1 (%)',    `ec-comissao-${emp.id}`,        ecfg.comissao) +
       row('Com. Meta 2 (%)',    `ec-comissaoMeta2-${emp.id}`,   ecfg.comissaoMeta2) +
       row('Com. Super Meta (%)',`ec-comissaoSuper-${emp.id}`,   ecfg.comissaoSuper) +
-      (tipo === 'sub' ? row('Comissão VR (%)', `ec-comissaoVR-${emp.id}`, ecfg.comissaoVR) : '') +
+      (tipo === 'sub' ? row('Comissão VR (%)',   `ec-comissaoVR-${emp.id}`,    ecfg.comissaoVR)    : '') +
+      (tipo === 'sub' ? row('Salário Fixo (R$)', `ec-salarioFixo-${emp.id}`,  ecfg.salarioFixo)  : '') +
       row('INSS (%)',           `ec-inssRate-${emp.id}`,        ecfg.inssRate) +
       row('VT (%)',             `ec-vtRate-${emp.id}`,          ecfg.vtRate);
   }
@@ -633,7 +628,8 @@ async function fpSaveEmpCfg(empId) {
     cfg.comissao        = g(`ec-comissao-${empId}`);
     cfg.comissaoMeta2   = g(`ec-comissaoMeta2-${empId}`);
     cfg.comissaoSuper   = g(`ec-comissaoSuper-${empId}`);
-    if (tipo === 'sub') cfg.comissaoVR = g(`ec-comissaoVR-${empId}`);
+    if (tipo === 'sub') cfg.comissaoVR    = g(`ec-comissaoVR-${empId}`);
+    if (tipo === 'sub') cfg.salarioFixo  = g(`ec-salarioFixo-${empId}`);
   }
 
   try {
