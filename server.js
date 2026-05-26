@@ -1399,6 +1399,16 @@ app.patch('/api/nf-items/:id', requireAuth, async (req, res) => {
       item.archivedAt = new Date().toISOString();
       item.archivedBy = currentUser;
     }
+    if (req.body.archived === false && item.archived) {
+      const isAdmin = !req.session.user.board || req.session.user.board === 'escritorio';
+      const currentUser = req.session.user.label || req.session.user.username;
+      if (!isAdmin && item.addedBy !== currentUser)
+        return res.status(403).json({ error: 'Apenas quem criou o item pode restaurá-lo' });
+      item.archived   = false;
+      item.archivedAt = null;
+      item.archivedBy = null;
+      item.checked    = false;
+    }
     await writeDB(db);
     res.json(item);
   } catch (e) { res.status(500).json({ error: e.message }); }

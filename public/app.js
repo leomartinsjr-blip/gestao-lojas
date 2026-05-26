@@ -5779,6 +5779,7 @@ function _renderNFActive(body, board, refresh) {
 
 function _renderNFHistory(body, board, refresh) {
   const isAdmin = !S.user?.board;
+  const currentUser = S.user?.label || S.user?.username;
   const items = (S.nfItems || []).filter(x => x.board === board && x.archived)
     .sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''));
 
@@ -5789,7 +5790,9 @@ function _renderNFHistory(body, board, refresh) {
 
   body.innerHTML = `
     ${isAdmin ? `<div class="nf-hist-header"><button class="nf-clear-btn" id="nfClearAll">Limpar tudo</button></div>` : ''}
-    ${items.map(item => `
+    ${items.map(item => {
+      const canRestore = isAdmin || item.addedBy === currentUser;
+      return `
       <div class="nf-item nf-checked nf-hist-item" data-id="${item.id}">
         <div class="nf-hist-item-main">
           <span class="nf-item-text">${_escHtml(item.text)}</span>
@@ -5799,10 +5802,26 @@ function _renderNFHistory(body, board, refresh) {
             <span class="nf-date-tag nf-date-archived">✓ Arquivado ${_fmtNFDate(item.archivedAt)} por ${_escHtml(item.archivedBy || item.addedBy)}</span>
           </div>
         </div>
-        ${isAdmin ? `<button class="nf-del-btn" data-id="${item.id}" title="Excluir">&times;</button>` : ''}
+        <div style="display:flex;gap:.3rem;align-items:center;flex-shrink:0">
+          ${canRestore ? `<button class="nf-restore-btn" data-id="${item.id}" title="Voltar para pendente">↩</button>` : ''}
+          ${isAdmin ? `<button class="nf-del-btn" data-id="${item.id}" title="Excluir">&times;</button>` : ''}
+        </div>
       </div>
-    `).join('')}
+    `}).join('')}
   `;
+
+  body.querySelectorAll('.nf-restore-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = parseInt(btn.dataset.id);
+      btn.disabled = true;
+      const updated = await apiFetch('PATCH', `/api/nf-items/${id}`, { archived: false }).catch(e => { toast('Erro: ' + e.message, true); return null; });
+      if (!updated) { btn.disabled = false; return; }
+      const item = S.nfItems.find(x => x.id === id);
+      if (item) Object.assign(item, updated);
+      _renderNFHistory(body, board, refresh);
+      refresh();
+    });
+  });
 
   body.querySelectorAll('.nf-del-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
