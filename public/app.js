@@ -127,19 +127,20 @@ function initMicrovixSync() {
   async function pollStatus() {
     try {
       const s = await apiFetch('GET', '/api/microvix/status');
-      if (s.lastSync) {
+      btn.classList.remove('ok', 'err', 'syncing');
+      if (s.running) {
+        btn.classList.add('syncing');
+        label.textContent = 'Sincronizando…';
+      } else if (s.lastError && !s.lastSync) {
+        label.textContent = 'Microvix ✗';
+        btn.title = s.lastError;
+        btn.classList.add('err');
+      } else if (s.lastSync) {
         const t = new Date(s.lastSync.at);
         const hm = t.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
         label.textContent = `Microvix ${hm}`;
         btn.title = `Última sync: ${hm} — ${s.lastSync.updated} vendedores`;
-        btn.classList.remove('err');
         btn.classList.add('ok');
-      }
-      if (s.lastError) {
-        label.textContent = 'Microvix ✗';
-        btn.title = s.lastError;
-        btn.classList.remove('ok');
-        btn.classList.add('err');
       }
     } catch {}
   }
