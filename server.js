@@ -2880,7 +2880,7 @@ app.get('/api/mx-probe', requireAdmin, async (req, res) => {
 
 // ── GET /api/relatorio-marcas ─────────────────────────────────────────────
 // ?dtIni=2026-05-01&dtFin=2026-05-26&board=delrey   (board opcional — sem ele = todas as lojas)
-// Retorna vendas por marca (LinxMovimentoItens × catálogo LinxProdutos)
+// Usa LinxMovimento (item-level: 1 linha = 1 produto por NF) × catálogo LinxProdutos para marca
 app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
   try {
     const { dtIni, dtFin, board } = req.query;
@@ -2889,15 +2889,13 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
     const isAdm = !userBoard || userBoard === 'escritorio';
 
     const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-    // Admin pode escolher loja ou todas; loja só vê a própria
     const targetBoards = isAdm
       ? (board ? [board] : Object.keys(lojas))
       : [userBoard];
 
-    const { fetchMovimentoItens, parseBrNum } = require('./services/microvix');
+    const { fetchMovimento, parseBrNum } = require('./services/microvix');
     const catalog = await _getCatalog(lojas);
 
-    // Agrega: marcaKey → { marca, qtd, valor, pecas, itens_raw }
     const byMarca = {};
 
     for (const b of targetBoards) {
@@ -2906,36 +2904,35 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
       const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
       let rows;
       try {
-        rows = await fetchMovimentoItens(cnpj, dtIni, dtFin, chave);
+        rows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
       } catch (e) {
         console.error(`[relatorioMarcas/${b}] ${e.message}`);
         continue;
       }
-      console.log(`[relatorioMarcas/${b}] ${rows.length} itens — colunas: ${rows[0] ? Object.keys(rows[0]).join(',') : '(vazio)'}`);
+      console.log(`[relatorioMarcas/${b}] ${rows.length} linhas brutas`);
 
       for (const row of rows) {
-        // Ignorar cancelados e devoluções
+        // Filtros: cancelado, excluído, fora de relatório, devoluções
         if (row.cancelado === 'S' || row.cancelado === '1') continue;
-        const op = (row.operacao || row.tipo_operacao || '').toUpperCase();
-        if (op === 'DS') continue; // devolução
+        if (row.excluido  === 'S') continue;
+        if (row.soma_relatorio === 'N') continue;
+        const op = (row.operacao || '').toUpperCase();
+        // S = Saída (venda), DS = Devolução (desconta), qualquer outro ignora
+        if (op !== 'S' && op !== 'DS') continue;
+        const sign = op === 'DS' ? -1 : 1;
 
-        const cod = String(row.cod_produto || '').trim();
-
-        // Marca: preferir campo direto no item; fallback no catálogo
-        const marcaDireta = (row.desc_marca || row.marca || row.nome_marca || '').trim();
-        const prodInfo    = catalog[cod] || {};
-        const marca = marcaDireta || prodInfo.marca || '(sem marca)';
-
-        const qtd   = parseBrNum(row.quantidade   || '0');
-        const valor = parseBrNum(row.valor_total   || row.valor_venda || row.valor || '0');
+        const cod      = String(row.cod_produto || '').trim();
+        const prodInfo = catalog[cod] || {};
+        const marca    = prodInfo.marca || '(sem marca)';
+        const qtd      = sign * parseBrNum(row.quantidade  || '0');
+        const valor    = sign * parseBrNum(row.valor_total  || '0');
 
         const key = marca.toUpperCase();
         if (!byMarca[key]) byMarca[key] = { marca, qtd: 0, valor: 0, produtos: {} };
         byMarca[key].qtd   += qtd;
         byMarca[key].valor += valor;
 
-        // Agrega por produto dentro da marca
-        const nomeProd = (row.descricao || row.desc_produto || prodInfo.nome || cod || '?').trim();
+        const nomeProd = (prodInfo.nome || cod || '?');
         if (!byMarca[key].produtos[cod]) byMarca[key].produtos[cod] = { cod, nome: nomeProd, qtd: 0, valor: 0 };
         byMarca[key].produtos[cod].qtd   += qtd;
         byMarca[key].produtos[cod].valor += valor;
@@ -2952,23 +2949,7 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
       }))
       .sort((a, b) => b.valor - a.valor);
 
-    // Campos descobertos — útil para diagnóstico na 1ª chamada
-    const sampleFields = [];
-    if (Object.keys(byMarca).length === 0) {
-      // Tenta buscar só para expor os campos
-      const firstBoard = targetBoards[0];
-      if (firstBoard) {
-        try {
-          const cnpj2  = (lojas[firstBoard] || '').replace(/\D/g, '');
-          const chave2 = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-          const { fetchMovimentoItens: fmi } = require('./services/microvix');
-          const probe = await fmi(cnpj2, dtIni, dtIni, chave2);
-          sampleFields.push(...(probe[0] ? Object.keys(probe[0]) : []));
-        } catch (_) {}
-      }
-    }
-
-    res.json({ dtIni, dtFin, boards: targetBoards, total: result.length, marcas: result, sampleFields });
+    res.json({ dtIni, dtFin, boards: targetBoards, total: result.length, marcas: result });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
