@@ -2894,11 +2894,16 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
       : [userBoard];
 
     const { fetchMovimento, parseBrNum } = require('./services/microvix');
-    const catalog = await _getCatalog(lojas);
+
+    // Usa catálogo do cache se disponível; dispara warm em background sem bloquear
+    const catalog = (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) ? _catalogCache : {};
+    if (!_catalogCache || Date.now() - _catalogCacheAt >= CATALOG_TTL) {
+      _getCatalog(lojas).catch(e => console.warn('[Catalog bg]', e.message));
+    }
 
     const byMarca = {};
 
-    // Busca todas as lojas em paralelo para não estourar o timeout do servidor
+    // Busca todas as lojas em paralelo
     const boardResults = await Promise.all(
       targetBoards.map(async b => {
         const cnpj = (lojas[b] || '').replace(/\D/g, '');
@@ -2906,7 +2911,7 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
         const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
         try {
           const rows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
-          console.log(`[relatorioMarcas/${b}] ${rows.length} linhas brutas`);
+          console.log(`[relatorioMarcas/${b}] ${rows.length} linhas`);
           return rows;
         } catch (e) {
           console.error(`[relatorioMarcas/${b}] ${e.message}`);
@@ -2926,8 +2931,9 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
 
         const cod      = String(row.cod_produto || '').trim();
         const prodInfo = catalog[cod] || {};
-        const marca    = prodInfo.marca || '(sem marca)';
-        const qtd      = sign * parseBrNum(row.quantidade || '0');
+        // Usa catálogo enriquecido se disponível; fallback nos campos do próprio LinxMovimento
+        const marca    = (prodInfo.marca || row.desc_marca || row.marca || '(sem marca)').trim();
+        const qtd      = sign * parseBrNum(row.quantidade  || '0');
         const valor    = sign * parseBrNum(row.valor_total || '0');
 
         const key = marca.toUpperCase();
@@ -2935,7 +2941,7 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
         byMarca[key].qtd   += qtd;
         byMarca[key].valor += valor;
 
-        const nomeProd = prodInfo.nome || cod || '?';
+        const nomeProd = (prodInfo.nome || row.nome_produto || row.nome || row.descricao || cod || '?').trim();
         const tipo     = prodInfo.tipo || 'produto';
         if (!byMarca[key].produtos[cod]) byMarca[key].produtos[cod] = { cod, nome: nomeProd, tipo, qtd: 0, valor: 0 };
         byMarca[key].produtos[cod].qtd   += qtd;
