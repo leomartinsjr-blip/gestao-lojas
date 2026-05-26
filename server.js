@@ -4050,26 +4050,30 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
       ws.getRow(1).font = { bold: true, size: 12 };
       ws.addRow([]);
 
-      // Header
-      // Cols: NOME CARGO FIXO Q.CX COMISSÃO DSR PRÊMIO PREM.SEM COM.LOJA GM FERIADO EXTRAS TOTAL VERIF. OK AD V.COMPRAS VT OBS
-      const headers = ['NOME','CARGO','FIXO','Q.CX','COMISSÃO','DSR','PRÊMIO','PREM.SEM.','COM.LOJA','GM','FERIADO','EXTRAS','TOTAL','VERIF.','OK','AD','V.COMPRAS','VT','OBSERVAÇÕES'];
+      // Header — estrutura idêntica à planilha de referência
+      // A    B      C     D     E    F          G    H       I   J        K      L       M            N   O   P     Q      R        S       T     U
+      // NOME CARGO  FIXO  Q.CX  S.F  COMISSÕES  DSR  PRÊMIO  GM  FERIADO  PREM.  T+PREM  VERIFICAÇÃO  OK  AD  VALE  DESC.  MAX.VT  FALTAS  P.S  OBS
+      const headers = ['NOME','CARGO','FIXO','Q.CX','S.F','COMISSÕES','DSR','PRÊMIO','GM','FERIADO','PREM.','T+PREM','VERIFICAÇÃO','OK','AD','VALE','DESC.','MAX. VT','FALTAS','P.S','OBSERVAÇÕES'];
       ws.addRow(headers);
       const hRow = ws.getRow(3);
       hRow.font = { bold: true, color: { argb: 'FFE6EDF3' } };
       hRow.fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FF21262D'} };
       hRow.eachCell(c => { c.border = { bottom:{style:'thin',color:{argb:'FF30363D'}} }; });
 
-      // Column widths — text cols: 15(OK), 18(VT), 19(OBS)
+      // Widths: text cols = 5(S.F) 14(OK) 19(FALTAS) 20(P.S) 21(OBS)
       ws.getColumn(1).width = 22;
-      ws.getColumn(2).width = 16;
-      [15,18].forEach(i => { ws.getColumn(i).width = 6; });
-      const numCols = [3,4,5,6,7,8,9,10,11,12,13,14,16,17];
+      ws.getColumn(2).width = 14;
+      ws.getColumn(5).width = 5;
+      ws.getColumn(14).width = 5;
+      ws.getColumn(21).width = 22;
+      const numCols = [3,4,6,7,8,9,10,11,12,13,15,16,17,18];
       numCols.forEach(i => { ws.getColumn(i).width = 12; ws.getColumn(i).numFmt = '#,##0.00'; });
 
       const folhaEmpCfg = db.folhaEmpConfig || {};
 
-      let sumFixo=0, sumQcx=0, sumCom=0, sumDsr=0, sumPremio=0, sumPremSem=0,
-          sumComLoja=0, sumGm=0, sumFer=0, sumExtras=0, sumTotal=0, sumAd=0, sumVc=0;
+      let sumFixo=0, sumQcx=0, sumCom=0, sumDsr=0, sumPremio=0,
+          sumGm=0, sumFer=0, sumPrem=0, sumTotal=0,
+          sumAd=0, sumVc=0, sumDesc=0, sumVt=0;
 
       for (const emp of lojaEmps) {
         const entry = lojaData.entries[emp.id];
@@ -4080,55 +4084,46 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
         const comissoes = r2(entry.comissaoContab || 0);
         const dsr       = r2(entry.dsr            || 0);
         const premio    = r2(entry.premio         || 0);
-        const premSem   = r2(entry.premiacao      || 0);
-        const comLoja   = r2(entry.comissaoLoja   || 0);
         const gm        = r2(entry.gmComplement   || 0);
         const feriado   = r2(entry.feriado        || 0);
-        const extrasArr = (entry.extras||[]).filter(ex => r2(ex.valor) > 0);
-        const extrasSum = r2(extrasArr.reduce((s,ex)=>s+r2(ex.valor),0));
         const tTotal    = r2(entry.proventos      || 0);
-        const verif     = r2(fixo+qcx+comissoes+dsr+premio+premSem+comLoja+gm+feriado+extrasSum);
+        // PREM. = tudo além das colunas fixas (premiação semanal + comissão loja + extras)
+        const prem      = r2(tTotal - fixo - qcx - comissoes - dsr - premio - gm - feriado);
+        const verif     = r2(fixo + qcx + comissoes + dsr + premio + gm + feriado + prem);
         const ok        = Math.abs(tTotal - verif) < 0.02 ? 'OK' : '⚠';
-        const fc        = folhaEmpCfg[emp.id] || {};
-        const vtRate    = fc.vtRate != null ? r2(fc.vtRate) : r2(emp.vtRate || 0);
+        const sf        = gm > 0 ? 'GM' : '';
 
-        const ad       = r2(entry.adiantamento || 0);
-        const vc       = r2(entry.valeCompras  || 0);
-        const vtSimNao = vtRate > 0 ? 'SIM' : 'NÃO';
+        const ad        = r2(entry.adiantamento || 0);
+        const vale      = r2(entry.valeCompras  || 0);
+        const vtVal     = r2(entry.vt           || 0);
+        const desc      = r2((entry.totalDescontos || 0) - vtVal);
 
         const empRow = ws.addRow([
           emp.apelido || emp.name, emp.cargo,
-          n2(fixo), n2(qcx), n2(comissoes), n2(dsr), n2(premio),
-          n2(premSem)||null, n2(comLoja)||null,
-          n2(gm)||null, n2(feriado)||null, n2(extrasSum)||null,
+          n2(fixo), n2(qcx), sf||null,
+          n2(comissoes), n2(dsr), n2(premio),
+          n2(gm)||null, n2(feriado)||null, n2(prem)||null,
           n2(tTotal), n2(verif), ok,
-          n2(ad)||null, n2(vc)||null, vtSimNao, '',
+          n2(ad)||null, n2(vale)||null, n2(desc)||null, n2(vtVal)||null,
+          null, null, '',
         ]);
-        empRow.getCell(15).font = { bold: true, color: { argb: ok==='OK'?'FF3FB950':'FFF85149' } };
-
-        // Sub-linhas para cada provento extra com valor > 0
-        for (const ex of extrasArr) {
-          const subRow = ws.addRow([
-            `  ↳ ${ex.nome}`, '', '', '', '', '', '', '', '', '', '', n2(ex.valor),
-            '', '', '', '', '', '', '',
-          ]);
-          subRow.getCell(1).font  = { italic: true, color: { argb: 'FF8B949E' } };
-          subRow.getCell(12).font = { color: { argb: 'FF8B949E' } };
-        }
+        empRow.getCell(14).font = { bold: true, color: { argb: ok==='OK'?'FF3FB950':'FFF85149' } };
+        if (sf) empRow.getCell(5).font = { bold: true, color: { argb: 'FFD29922' } };
 
         sumFixo+=fixo; sumQcx+=qcx; sumCom+=comissoes; sumDsr+=dsr;
-        sumPremio+=premio; sumPremSem+=premSem; sumComLoja+=comLoja;
-        sumGm+=gm; sumFer+=feriado; sumExtras+=extrasSum; sumTotal+=tTotal; sumAd+=ad; sumVc+=vc;
+        sumPremio+=premio; sumGm+=gm; sumFer+=feriado; sumPrem+=prem;
+        sumTotal+=tTotal; sumAd+=ad; sumVc+=vale; sumDesc+=desc; sumVt+=vtVal;
       }
 
       // Totals row
       const totRow = ws.addRow([
         'TOTAL','',
-        r2(sumFixo), r2(sumQcx), r2(sumCom), r2(sumDsr), r2(sumPremio),
-        r2(sumPremSem)||null, r2(sumComLoja)||null,
-        r2(sumGm)||null, r2(sumFer)||null, r2(sumExtras)||null,
+        r2(sumFixo), r2(sumQcx), '',
+        r2(sumCom), r2(sumDsr), r2(sumPremio),
+        r2(sumGm)||null, r2(sumFer)||null, r2(sumPrem)||null,
         r2(sumTotal), r2(sumTotal), '',
-        r2(sumAd)||null, r2(sumVc)||null, '', '',
+        r2(sumAd)||null, r2(sumVc)||null, r2(sumDesc)||null, r2(sumVt)||null,
+        null, null, '',
       ]);
       totRow.font = { bold: true };
       totRow.eachCell(c => { c.border = { top:{style:'thin',color:{argb:'FF30363D'}} }; });
