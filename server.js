@@ -639,15 +639,16 @@ app.get('/api/employees/photos', requireAuth, async (req, res) => {
 // ── POST /api/employees ────────────────────────────────────────────────────
 app.post('/api/employees', requireAuth, async (req, res) => {
   try {
-    const { name, board, cpf, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento, apelido, microvixCod } = req.body;
+    const { name, board, cpf, nascimento, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento, apelido, microvixCod } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
+    if (!nascimento) return res.status(400).json({ error: 'Data de nascimento obrigatória' });
     const db = await readDB();
     if (!db.employees) db.employees = [];
     const emp = {
       id: nextId(db), name: name.trim(), board,
       apelido: apelido || '',
       microvixCod: microvixCod ? String(microvixCod).trim() : '',
-      cpf: cpf || '', admissao: admissao || '',
+      cpf: cpf || '', nascimento: nascimento || '', admissao: admissao || '',
       contrato1: parseInt(contrato1) || 0, contrato2: parseInt(contrato2) || 0,
       cargo: cargo || '',
       salario: parseFloat(salario) || 0,
@@ -672,8 +673,9 @@ app.post('/api/employees', requireAuth, async (req, res) => {
 app.put('/api/employees/:id', requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { name, board, cpf, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento, apelido, microvixCod, foto } = req.body;
+    const { name, board, cpf, nascimento, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento, apelido, microvixCod, foto } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
+    if (!nascimento) return res.status(400).json({ error: 'Data de nascimento obrigatória' });
     const db  = await readDB();
     const idx = (db.employees || []).findIndex(e => e.id === id);
     if (idx === -1) return res.status(404).json({ error: 'not found' });
@@ -683,7 +685,7 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
       ...db.employees[idx], name: name.trim(), board,
       apelido: apelido || '',
       microvixCod: microvixCod !== undefined ? String(microvixCod).trim() : (db.employees[idx].microvixCod || ''),
-      cpf: cpf || '', admissao: admissao || '',
+      cpf: cpf || '', nascimento: nascimento || '', admissao: admissao || '',
       contrato1: parseInt(contrato1) || 0, contrato2: parseInt(contrato2) || 0,
       cargo: cargo || '',
       salario: parseFloat(salario) || 0,

@@ -2934,3 +2934,14 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .ret-prod-grid { display:flex; flex-wrap:wrap; gap:.3rem .8rem; font-size:.8rem; margin-top:.25rem; color:var(--muted); }
 .ret-prod-grid span { white-space:nowrap; }
 .ret-prod-grid span b { color:var(--text); font-weight:600; }
+
+/* ── Aniversariantes Card ──────────────────────────────────────────────── */
+.aniv-item { display:flex; align-items:center; gap:.65rem; padding:.5rem .75rem; border-bottom:1px solid var(--border); }
+.aniv-item:last-child { border-bottom:none; }
+.aniv-item--today { background:rgba(88,166,255,.07); border-radius:6px; border-color:transparent; }
+.aniv-day { font-size:1.05rem; font-weight:700; color:#58A6FF; min-width:2rem; text-align:center; }
+.aniv-item--today .aniv-day { color:#f0c040; }
+.aniv-info { flex:1; min-width:0; }
+.aniv-name { display:block; font-size:.88rem; font-weight:600; color:var(--text); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.aniv-meta { font-size:.75rem; font-weight:600; }
+.aniv-age { font-size:.78rem; color:var(--muted); white-space:nowrap; flex-shrink:0; }

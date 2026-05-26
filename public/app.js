@@ -1007,8 +1007,70 @@ function renderDashboard() {
   // ── CARD: Contratos de Experiência ───────────────────────────────────────
   renderContratoCard(rightCol);
 
+  // ── CARD: Aniversariantes do Mês ─────────────────────────────────────────
+  renderAniversariantesCard(rightCol);
+
 }
 
+
+function renderAniversariantesCard(col) {
+  const pad = n => String(n).padStart(2, '0');
+  const today = new Date();
+  const todayDay   = today.getDate();
+  const todayMonth = today.getMonth() + 1;
+  const isCurrentMonth = S.year === today.getFullYear() && S.month === today.getMonth() + 1;
+
+  const monthPad = pad(S.month);
+  const aniversariantes = S.employees
+    .filter(e => !e.inativo && e.nascimento && e.nascimento.slice(5, 7) === monthPad)
+    .sort((a, b) => parseInt(a.nascimento.slice(8, 10)) - parseInt(b.nascimento.slice(8, 10)));
+
+  const card = document.createElement('div');
+  card.className = 'main-card';
+  card.dataset.cardId = 'card-aniversariantes';
+  card.innerHTML = `
+    <div class="main-card-hdr">
+      <span class="main-card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M12 2c0 0-4 4-4 8a4 4 0 0 0 8 0c0-4-4-8-4-8z"/>
+          <rect x="4" y="14" width="16" height="8" rx="1"/>
+          <line x1="8" y1="14" x2="8" y2="22"/>
+          <line x1="12" y1="14" x2="12" y2="22"/>
+          <line x1="16" y1="14" x2="16" y2="22"/>
+        </svg>
+        Aniversariantes
+      </span>
+      <span class="main-card-sub">${MONTHS_PT[S.month-1]} ${S.year}</span>
+    </div>
+    <div class="main-card-body" id="anivCardBody"></div>
+  `;
+  col.appendChild(card);
+
+  const body = card.querySelector('#anivCardBody');
+
+  if (!aniversariantes.length) {
+    body.innerHTML = '<div class="folga-mini-empty">Nenhum aniversariante este mês</div>';
+    return;
+  }
+
+  body.innerHTML = aniversariantes.map(e => {
+    const day = parseInt(e.nascimento.slice(8, 10));
+    const isToday = isCurrentMonth && day === todayDay && S.month === todayMonth;
+    const storeColor = BOARDS[e.board]?.color || '#8B949E';
+    const storeLabel = BOARDS[e.board]?.label || e.board;
+    const displayName = e.apelido || e.name;
+    const age = S.year - parseInt(e.nascimento.slice(0, 4));
+
+    return `<div class="aniv-item${isToday ? ' aniv-item--today' : ''}">
+      <span class="aniv-day">${pad(day)}</span>
+      <div class="aniv-info">
+        <span class="aniv-name">${_escHtml(displayName)}${isToday ? ' 🎂' : ''}</span>
+        <span class="aniv-meta" style="color:${storeColor}">${storeLabel}</span>
+      </div>
+      <span class="aniv-age">${age} anos</span>
+    </div>`;
+  }).join('');
+}
 
 function _renderDashFolgas(body) {
   const pad = n => String(n).padStart(2,'0');
@@ -4740,8 +4802,9 @@ function openFuncForm(id) {
 
   document.getElementById('funcNome').value      = emp?.name      || '';
   document.getElementById('funcApelido').value   = emp?.apelido   || '';
-  document.getElementById('funcCPF').value         = emp?.cpf         || '';
-  document.getElementById('funcMicrovixCod').value = emp?.microvixCod || '';
+  document.getElementById('funcCPF').value          = emp?.cpf          || '';
+  document.getElementById('funcNascimento').value   = emp?.nascimento   || '';
+  document.getElementById('funcMicrovixCod').value  = emp?.microvixCod  || '';
   document.getElementById('funcAdmissao').value  = emp?.admissao  || '';
   document.getElementById('funcContrato1').value = emp?.contrato1 || '';
   document.getElementById('funcContrato2').value = emp?.contrato2 || '';
@@ -4811,6 +4874,7 @@ async function saveFuncionario() {
   const board     = document.getElementById('funcBoard').value;
   const apelido   = document.getElementById('funcApelido').value.trim();
   const cpf          = document.getElementById('funcCPF').value.trim();
+  const nascimento   = document.getElementById('funcNascimento').value;
   const microvixCod  = document.getElementById('funcMicrovixCod').value.trim();
   const admissao  = document.getElementById('funcAdmissao').value;
   const contrato1 = parseInt(document.getElementById('funcContrato1').value) || 0;
@@ -4837,13 +4901,14 @@ async function saveFuncionario() {
 
   if (!name || !board) { toast('Nome e loja são obrigatórios', true); return; }
   if (!cargo) { toast('Cargo é obrigatório', true); return; }
+  if (!nascimento) { toast('Data de nascimento é obrigatória', true); return; }
   if (!admissao) { toast('Data de admissão é obrigatória', true); return; }
   if (!contrato1) { toast('1º Contrato Experiência é obrigatório', true); return; }
 
   const btn = document.getElementById('funcSaveBtn');
   btn.disabled = true;
   try {
-    const body = { name, apelido, board, cpf, microvixCod, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento };
+    const body = { name, apelido, board, cpf, nascimento, microvixCod, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento };
     if (fotoRemoved) body.foto = '';
     let emp;
     if (FE.editingId) {
