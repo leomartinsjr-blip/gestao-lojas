@@ -63,7 +63,7 @@ let FP = {
   folha: {}, folhaConfig: {}, empConfig: {},
   mensal: { diasUteis: 22, domingosFeriados: 4 },
   lojaMetaMap: {}, lojaVendaMap: {},
-  premiacaoSemanal: {},
+  premiacaoSemanal: {}, premiacaoSemanalDetalhe: {},
   activeEmpId: null, dirty: false,
 };
 
@@ -106,7 +106,8 @@ async function loadPeriod() {
     FP.empConfig    = d.empConfig    || {};
     FP.lojaMetaMap       = d.lojaMetaMap       || {};
     FP.lojaVendaMap      = d.lojaVendaMap      || {};
-    FP.premiacaoSemanal  = d.premiacaoSemanal  || {};
+    FP.premiacaoSemanal        = d.premiacaoSemanal        || {};
+    FP.premiacaoSemanalDetalhe = d.premiacaoSemanalDetalhe || {};
     FP.mensal = {
       diasUteis:        d.folhaMensal?.diasUteis        || 22,
       domingosFeriados: d.folhaMensal?.domingosFeriados || 4,
@@ -533,8 +534,12 @@ function buildEmpForm(emp, entry) {
       provRows += `<div class="fp-field"><label>GM (R$)</label>${inp(`fp-gm-${emp.id}`, e.gmComplement)}
         <span style="font-size:.72rem;color:#8b949e">mín: ${brl(gmMin)}</span></div>`;
 
+    const semDetalhe = FP.premiacaoSemanalDetalhe[emp.id] || [];
+    const semHint = semDetalhe.length
+      ? semDetalhe.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
+      : 'semanal';
     provRows += `<div class="fp-field"><label>Premiação (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
-      <span style="font-size:.72rem;color:#484f58">semanal</span></div>`;
+      <span style="font-size:.7rem;color:#484f58">${semHint}</span></div>`;
     if (tipo === 'gerente' || tipo === 'gvend')
       provRows += `<div class="fp-field"><label>Premiação Balanço (R$)</label>${inp(`fp-premiacaoBalanco-${emp.id}`, e.premiacaoBalanco || 0)}</div>`;
   }
@@ -1027,8 +1032,16 @@ function buildRecibo(emp, entry, mes, origin) {
     if ((tipo === 'sub' || tipo === 'gvend') && num(entry.comissaoLoja) > 0)
       prov += tr('COMISSÃO LOJA', entry.comissaoLoja, entry.vendaLoja,
         ecfg.comissaoVR ? fmt(ecfg.comissaoVR) + '%' : '');
-    if (num(entry.premiacao) > 0)
-      prov += tr('PREMIAÇÃO', entry.premiacao);
+    const semDet = FP.premiacaoSemanalDetalhe[emp.id] || [];
+    const semSum = semDet.reduce((s, x) => s + num(x.valor), 0);
+    const premTotal = num(entry.premiacao);
+    if (premTotal > 0) {
+      if (semDet.length && Math.abs(semSum - premTotal) < 0.02) {
+        semDet.forEach(s => prov += tr(`PREM. SEM. ${s.label}`, s.valor));
+      } else {
+        prov += tr('PREMIAÇÃO', entry.premiacao);
+      }
+    }
     if (num(entry.premiacaoBalanco) > 0)
       prov += tr('PREMIAÇÃO BALANÇO', entry.premiacaoBalanco);
   }

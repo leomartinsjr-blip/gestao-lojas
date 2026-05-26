@@ -65,7 +65,7 @@ body {
 .nav-btn:hover { color: var(--text); border-color: var(--border2); }
 
 .current-month {
-  font-size: 1rem; font-weight: 700; min-width: 140px;
+  font-size: 1rem; font-weight: 700; min-width: 105px;
   text-align: center; letter-spacing: -.01em;
 }
 
@@ -696,7 +696,7 @@ body {
 .folgas-topbar-btn {
   display: flex; align-items: center; gap: .3rem;
   background: var(--surface2); border: 1px solid var(--border);
-  color: var(--muted); cursor: pointer; border-radius: .375rem;
+  color: var(--muted); cursor: pointer; border-radius: .375rem; text-decoration: none;
   font-size: .75rem; font-weight: 500; padding: .3rem .55rem;
   font-family: inherit; transition: border-color .15s, color .15s; white-space: nowrap; flex-shrink: 0;
 }

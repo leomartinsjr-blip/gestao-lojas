@@ -3654,14 +3654,19 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       vsales[emp.id] = vsalesAll[key] || { meta: { mensal: 0 }, entries: {} };
     }
 
-    // ── Premiação semanal — calcula para semanas completas que terminaram no mês ──
+    // ── Premiação semanal — calcula para semanas cujo último dia está dentro do mês ──
     const PREMIO_VEND_W = 80, PREMIO_GER_W = 250, PREMIO_PA_W = 50, PA_THR = 1.80;
     const weeklyMetasMonth = (db.weeklyMetas || {})[mk] || {};
-    const todayStr  = new Date().toISOString().slice(0, 10);
-    const lastDay   = new Date(year, month, 0);
-    const lastDayStr = `${year}-${String(month).padStart(2,'0')}-${String(lastDay.getDate()).padStart(2,'0')}`;
-    const premiacaoSemanal = {};
-    for (const emp of employees) premiacaoSemanal[emp.id] = 0;
+    const todayStr   = new Date().toISOString().slice(0, 10);
+    const lastDay    = new Date(year, month, 0);
+    const padD       = n => String(n).padStart(2,'0');
+    const lastDayStr = `${year}-${padD(month)}-${padD(lastDay.getDate())}`;
+    const premiacaoSemanal        = {};
+    const premiacaoSemanalDetalhe = {};
+    for (const emp of employees) {
+      premiacaoSemanal[emp.id]        = 0;
+      premiacaoSemanalDetalhe[emp.id] = [];
+    }
 
     const boardEmpsMap = {};
     for (const emp of employees) {
@@ -3670,10 +3675,11 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
     }
 
     for (const [weekStart, weekData] of Object.entries(weeklyMetasMonth)) {
-      if (!weekStart.startsWith(mk)) continue;
       const ws = new Date(weekStart + 'T12:00:00');
       const we = new Date(ws); we.setDate(we.getDate() + 6);
-      const weStr = `${we.getFullYear()}-${String(we.getMonth()+1).padStart(2,'0')}-${String(we.getDate()).padStart(2,'0')}`;
+      const weStr   = `${we.getFullYear()}-${padD(we.getMonth()+1)}-${padD(we.getDate())}`;
+      const semLabel = `${padD(ws.getDate())}/${padD(ws.getMonth()+1)} – ${padD(we.getDate())}/${padD(we.getMonth()+1)}`;
+      // inclui semana apenas se o último dia está dentro do mês e a semana já terminou
       if (weStr > lastDayStr || weStr >= todayStr) continue;
 
       for (const board of Object.keys(boardEmpsMap)) {
@@ -3695,8 +3701,13 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
           const tipo = (emp.cargo||'').toLowerCase();
           const isGer = (/gerente/.test(tipo) || /g\.?\s*vend/.test(tipo)) && !/^sub/.test(tipo);
           if (isGer) {
-            if (storeHitMeta) premiacaoSemanal[emp.id] += PREMIO_GER_W;
-            if (storeHitMeta && storeHitPA) premiacaoSemanal[emp.id] += PREMIO_PA_W;
+            let val = 0;
+            if (storeHitMeta) val += PREMIO_GER_W;
+            if (storeHitMeta && storeHitPA) val += PREMIO_PA_W;
+            if (val > 0) {
+              premiacaoSemanal[emp.id] += val;
+              premiacaoSemanalDetalhe[emp.id].push({ label: semLabel, valor: val });
+            }
           } else if (isVend(emp)) {
             const vs = vsalesAll[`${mk}-${board}-${emp.id}`] || {};
             const we2 = Object.entries(vs.entries||{}).filter(([d]) => d>=weekStart && d<=weStr);
@@ -3705,9 +3716,10 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
             const empAtend = we2.reduce((s,[,e]) => s+(e.atendimentos||0), 0);
             const empMeta  = weekData[emp.id]?.meta || 0;
             if (empMeta > 0 && empSales >= empMeta) {
-              premiacaoSemanal[emp.id] += PREMIO_VEND_W;
-              if (empAtend > 0 && (empPecas/empAtend) >= PA_THR)
-                premiacaoSemanal[emp.id] += PREMIO_PA_W;
+              let val = PREMIO_VEND_W;
+              if (empAtend > 0 && (empPecas/empAtend) >= PA_THR) val += PREMIO_PA_W;
+              premiacaoSemanal[emp.id] += val;
+              premiacaoSemanalDetalhe[emp.id].push({ label: semLabel, valor: val });
             }
           }
         }
@@ -3724,6 +3736,7 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       lojaMetaMap,
       lojaVendaMap,
       premiacaoSemanal,
+      premiacaoSemanalDetalhe,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -3910,7 +3923,7 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
     };
 
     const r2 = v => Math.round((parseFloat(v)||0)*100)/100;
-    const f2 = v => r2(v) === 0 ? '' : r2(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+    const n2 = v => r2(v) || null;  // número real (null = célula em branco)
 
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Gestão Lojas';
@@ -3934,14 +3947,15 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
       const headers = ['NOME','CARGO','FIXO','Q.CX','COMISSÕES','DSR','PRÊMIO','GM','FERIADO','PREM.EXTRA','T+PREM','VERIFICAÇÃO','OK','AD','VALE','DESC','OBSERVAÇÕES'];
       ws.addRow(headers);
       const hRow = ws.getRow(3);
-      hRow.font = { bold: true };
+      hRow.font = { bold: true, color: { argb: 'FFE6EDF3' } };
       hRow.fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FF21262D'} };
       hRow.eachCell(c => { c.border = { bottom:{style:'thin',color:{argb:'FF30363D'}} }; });
 
-      // Set column widths
+      // Set column widths e formato numérico
       ws.getColumn(1).width = 20;  // NOME
       ws.getColumn(2).width = 14;  // CARGO
-      [3,4,5,6,7,8,9,10,11,12,14,15,16].forEach(i => ws.getColumn(i).width = 13);
+      const numCols = [3,4,5,6,7,8,9,10,11,12,14,15,16];
+      numCols.forEach(i => { ws.getColumn(i).width = 13; ws.getColumn(i).numFmt = '#,##0.00'; });
 
       let sumFixo=0, sumQcx=0, sumCom=0, sumDsr=0, sumPremio=0, sumGm=0,
           sumFer=0, sumPremExtra=0, sumTotal=0, sumAd=0, sumVale=0, sumDesc=0;
@@ -3970,9 +3984,9 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
         ws.addRow([
           emp.apelido || emp.name,
           emp.cargo,
-          f2(fixo), f2(qcx), f2(comissoes), f2(dsr), f2(premio), f2(gm),
-          f2(feriado), f2(premExtra), f2(tTotal), f2(verif), ok,
-          f2(ad), f2(vale), f2(desc), '',
+          n2(fixo), n2(qcx), n2(comissoes), n2(dsr), n2(premio), n2(gm),
+          n2(feriado), n2(premExtra), n2(tTotal), n2(verif), ok,
+          n2(ad), n2(vale), n2(desc), '',
         ]);
 
         sumFixo+=fixo; sumQcx+=qcx; sumCom+=comissoes; sumDsr+=dsr;
@@ -3983,9 +3997,9 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
       // Totals row
       const totRow = ws.addRow([
         'TOTAL','',
-        f2(sumFixo), f2(sumQcx), f2(sumCom), f2(sumDsr), f2(sumPremio), f2(sumGm),
-        f2(sumFer), f2(sumPremExtra), f2(sumTotal), f2(r2(sumTotal)), '',
-        f2(sumAd), f2(sumVale), f2(sumDesc), '',
+        r2(sumFixo), r2(sumQcx), r2(sumCom), r2(sumDsr), r2(sumPremio), r2(sumGm),
+        r2(sumFer), r2(sumPremExtra), r2(sumTotal), r2(sumTotal), '',
+        r2(sumAd), r2(sumVale), r2(sumDesc), '',
       ]);
       totRow.font = { bold: true };
       totRow.eachCell(c => { c.border = { top:{style:'thin',color:{argb:'FF30363D'}} }; });
