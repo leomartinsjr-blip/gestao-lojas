@@ -513,19 +513,24 @@ function buildEmpForm(emp, entry) {
         <span style="font-size:.7rem;color:#8b949e;margin-left:.3rem">${pctDisplay}</span>
       </div>
       <div class="fp-split-box">
-        <div class="fp-split-title">divisão para contabilidade — soma deve = total acima</div>
-        <div class="fp-field fp-split-row">
-          <label>Comissão (contab)</label>${inpRO(`fp-comissao-${emp.id}`, e.comissaoContab)}
-          <span class="fp-split-hint">= Total − DSR − Prêmio</span>
+        <div class="fp-split-title" style="cursor:pointer;user-select:none"
+          onclick="(function(el){const c=el.nextElementSibling;const open=c.style.display!=='none';c.style.display=open?'none':'block';el.querySelector('.fp-split-arrow').textContent=open?'▶':'▼';})(this)">
+          <span class="fp-split-arrow">▶</span> divisão para contabilidade
         </div>
-        <div class="fp-field fp-split-row">
-          <label>DSR (R$)</label>${inp(`fp-dsr-${emp.id}`, e.dsr)}
-          <span class="fp-split-hint">= contab × ${df} ÷ ${du}</span>
+        <div style="display:none">
+          <div class="fp-field fp-split-row">
+            <label>Comissão (contab)</label>${inpRO(`fp-comissao-${emp.id}`, e.comissaoContab)}
+            <span class="fp-split-hint">= Total − DSR − Prêmio</span>
+          </div>
+          <div class="fp-field fp-split-row">
+            <label>DSR (R$)</label>${inp(`fp-dsr-${emp.id}`, e.dsr)}
+            <span class="fp-split-hint">= contab × ${df} ÷ ${du}</span>
+          </div>
+          <div class="fp-field fp-split-row">
+            <label>Prêmio (R$)</label>${inp(`fp-premio-${emp.id}`, e.premio)}
+          </div>
+          <div class="fp-split-check" id="fp-splitCheck-${emp.id}"></div>
         </div>
-        <div class="fp-field fp-split-row">
-          <label>Prêmio (R$)</label>${inp(`fp-premio-${emp.id}`, e.premio)}
-        </div>
-        <div class="fp-split-check" id="fp-splitCheck-${emp.id}"></div>
       </div>`;
 
     if (tipo === 'sub' || tipo === 'gvend') {
