@@ -777,6 +777,35 @@ app.delete('/api/folgas/:id', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/dados-folha/:year/:month/:board ──────────────────────────────
+app.get('/api/dados-folha/:year/:month/:board', requireAuth, async (req, res) => {
+  try {
+    const { year, month, board } = req.params;
+    const user = req.session.user;
+    const isAdmin = !user.board || user.board === 'escritorio';
+    if (!isAdmin && user.board !== board) return res.status(403).json({ error: 'Sem acesso' });
+    const db  = await readDB();
+    const key = `${year}-${String(month).padStart(2,'0')}-${board}`;
+    res.json((db.dadosFolha || {})[key] || { feriados: [], faltas: [], vr: '', abertura: '', instagram: '' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/dados-folha/:year/:month/:board ─────────────────────────────
+app.post('/api/dados-folha/:year/:month/:board', requireAuth, async (req, res) => {
+  try {
+    const { year, month, board } = req.params;
+    const user = req.session.user;
+    const isAdmin = !user.board || user.board === 'escritorio';
+    if (!isAdmin && user.board !== board) return res.status(403).json({ error: 'Sem acesso' });
+    const db  = await readDB();
+    if (!db.dadosFolha) db.dadosFolha = {};
+    const key = `${year}-${String(month).padStart(2,'0')}-${board}`;
+    db.dadosFolha[key] = req.body;
+    await writeDB(db);
+    res.json(db.dadosFolha[key]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/dailysales/:year/:month/:board ────────────────────────────────
 app.get('/api/dailysales/:year/:month/:board', requireAuth, async (req, res) => {
   try {

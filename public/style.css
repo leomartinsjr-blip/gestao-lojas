@@ -816,11 +816,39 @@ body {
 .folgas-cancel-btn:hover { color: var(--down); border-color: var(--down); }
 
 .folgas-body {
-  flex: 1; overflow: auto;
+  flex: 1; overflow: auto; display: flex; flex-direction: column;
 }
 .folgas-table-wrap {
-  min-width: 100%;
+  min-width: 100%; flex: 1;
 }
+/* ── Dados para Folha ── */
+.df-wrap { padding: 1.25rem; display: flex; flex-direction: column; gap: 1.25rem; }
+.df-title { font-size: .9rem; font-weight: 700; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: .5rem; }
+.df-section { background: var(--surface2); border: 1px solid var(--border); border-radius: .6rem; padding: .9rem 1rem; display: flex; flex-direction: column; gap: .65rem; }
+.df-sec-hdr { display: flex; align-items: center; justify-content: space-between; font-size: .82rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.df-add-btn { background: transparent; border: 1px solid var(--border); color: var(--accent); border-radius: 5px; font-size: .78rem; padding: .2rem .55rem; cursor: pointer; }
+.df-add-btn:hover { background: rgba(88,166,255,.1); }
+.df-entry { background: var(--surface); border: 1px solid var(--border); border-radius: .45rem; padding: .6rem .75rem; display: flex; flex-direction: column; gap: .45rem; }
+.df-entry-top { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.df-entry-label { font-size: .75rem; font-weight: 600; color: var(--muted); }
+.df-falta-row { flex-direction: row; align-items: center; flex-wrap: wrap; }
+.df-date { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: .35rem; padding: .3rem .5rem; font-size: .83rem; font-family: inherit; cursor: pointer; }
+.df-date:focus { outline: none; border-color: var(--accent); }
+.df-emp-sel { background: var(--surface2); border: 1px solid var(--border); color: var(--text); border-radius: .35rem; padding: .3rem .5rem; font-size: .83rem; font-family: inherit; cursor: pointer; flex: 1; min-width: 120px; }
+.df-emp-sel:focus { outline: none; border-color: var(--accent); }
+.df-emp-sel option { background: #161b22; }
+.df-emp-checks { display: flex; flex-wrap: wrap; gap: .3rem .9rem; }
+.df-chk-label { display: flex; align-items: center; gap: .3rem; font-size: .82rem; cursor: pointer; }
+.df-chk-label input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+.df-remove-btn { background: none; border: none; color: var(--muted); cursor: pointer; font-size: .9rem; padding: 0 .2rem; line-height: 1; opacity: .6; transition: opacity .12s, color .12s; flex-shrink: 0; margin-left: auto; }
+.df-remove-btn:hover { opacity: 1; color: #f85149; }
+.df-resp-grid { display: flex; flex-direction: column; gap: .55rem; }
+.df-resp-row { display: flex; align-items: center; gap: .75rem; }
+.df-resp-label { font-size: .82rem; color: var(--muted); white-space: nowrap; min-width: 130px; }
+.df-save-btn { background: var(--accent); border: none; color: #fff; font-size: .88rem; font-weight: 600; padding: .55rem 1.5rem; border-radius: .45rem; cursor: pointer; align-self: flex-start; }
+.df-save-btn:hover { filter: brightness(1.1); }
+.df-save-btn:disabled { opacity: .5; cursor: default; }
+.df-empty { font-size: .8rem; color: var(--muted); font-style: italic; }
 
 /* Table */
 .folgas-table {

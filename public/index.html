@@ -222,6 +222,7 @@
     <div class="folgas-toolbar">
       <select id="folgasBoardFilter" class="folgas-filter"></select>
       <button class="add-item-btn" id="folgasAddEmpBtn">+ Funcionário</button>
+      <button class="add-item-btn" id="dadosFolhaBtn" style="margin-left:auto">📋 Dados p/ Folha</button>
       <div id="folgasAddForm" class="folgas-add-inline hidden">
         <input type="text" id="folgasEmpName" class="add-item-input" placeholder="Nome do funcionário…" style="width:180px">
         <select id="folgasEmpBoard" class="folgas-filter"></select>
@@ -231,9 +232,10 @@
     </div>
 
     <div class="folgas-body">
-      <div class="folgas-table-wrap">
+      <div class="folgas-table-wrap" id="folgasTableWrap">
         <table class="folgas-table" id="folgasTable"></table>
       </div>
+      <div id="dadosFolhaBody" class="hidden" style="overflow-y:auto;flex:1;min-height:0"></div>
     </div>
   </div>
 </div>

@@ -3764,7 +3764,7 @@ function initWeightsModal() {
 }
 
 // ── Folgas calendar ────────────────────────────────────────────────────────
-const FC = { year: null, month: null, employees: [], folgas: [], filterBoard: null };
+const FC = { year: null, month: null, employees: [], folgas: [], filterBoard: null, dadosView: false };
 const DAY_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 
 async function openFolgas() {
@@ -3787,7 +3787,11 @@ async function loadFolgasData() {
     FC.folgas    = folgas;
     updateFolgasLabel();
     updateFolgasFilterAndForm();
-    renderFolgasTable();
+    if (FC.dadosView) {
+      _openDadosFolhaView(document.getElementById('dadosFolhaBody'));
+    } else {
+      renderFolgasTable();
+    }
   } catch (e) { toast('Erro ao carregar folgas: ' + e.message, true); }
 }
 
@@ -3924,6 +3928,164 @@ async function deleteEmployee(id) {
   } catch (e) { toast('Erro: ' + e.message, true); }
 }
 
+// ── Dados para Folha ───────────────────────────────────────────────────────
+function _openDadosFolhaView(body) {
+  const board = S.user?.board || FC.filterBoard;
+  if (!board) {
+    body.innerHTML = '<div style="padding:1.5rem;color:var(--muted);font-size:.875rem;text-align:center">Selecione uma loja no filtro acima para ver os dados para folha.</div>';
+    return;
+  }
+  _renderDadosFolha(body, board, FC.year, FC.month);
+}
+
+async function _renderDadosFolha(body, board, year, month) {
+  body.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:1.5rem">Carregando…</div>';
+  let data;
+  try {
+    data = await apiFetch('GET', `/api/dados-folha/${year}/${month}/${board}`);
+  } catch(e) {
+    body.innerHTML = `<div style="color:#f85149;padding:1rem">Erro: ${e.message}</div>`;
+    return;
+  }
+
+  let feriados  = (data.feriados  || []).map(f => ({ ...f }));
+  let faltas    = (data.faltas    || []).map(f => ({ ...f }));
+  let vr        = data.vr        || '';
+  let abertura  = data.abertura  || '';
+  let instagram = data.instagram || '';
+
+  const boardEmps = FC.employees.filter(e => e.board === board && !e.inativo);
+  const boardLabel = BOARDS[board]?.label || board;
+  const monthLabel = `${MONTHS_PT[month-1]} ${year}`;
+
+  function _empOpts(selected) {
+    return `<option value="">— nenhum —</option>` +
+      boardEmps.map(e => {
+        const n = e.apelido || e.name;
+        return `<option value="${_escHtml(n)}"${selected === n ? ' selected' : ''}>${_escHtml(n)}</option>`;
+      }).join('');
+  }
+
+  function _feriadoHtml(f, i) {
+    const checked = new Set(f.colaboradores || []);
+    return `<div class="df-entry" data-feriado="${i}">
+      <div class="df-entry-top">
+        <label class="df-resp-label" style="white-space:nowrap">Data:</label>
+        <input type="date" class="df-date df-feriado-date" value="${f.date||''}" data-idx="${i}">
+        <button class="df-remove-btn" data-feriado-rm="${i}" title="Remover">✕</button>
+      </div>
+      <div class="df-entry-label">Quem trabalhou:</div>
+      <div class="df-emp-checks">
+        ${boardEmps.length ? boardEmps.map(e => {
+          const n = e.apelido || e.name;
+          return `<label class="df-chk-label">
+            <input type="checkbox" class="df-feriado-chk" data-feriado-idx="${i}" data-name="${_escHtml(n)}"${checked.has(n) ? ' checked' : ''}>
+            <span>${_escHtml(n)}</span>
+          </label>`;
+        }).join('') : '<span style="color:var(--muted);font-size:.8rem">Nenhum funcionário cadastrado</span>'}
+      </div>
+    </div>`;
+  }
+
+  function _faltaHtml(f, i) {
+    return `<div class="df-entry df-falta-row" data-falta="${i}">
+      <input type="date" class="df-date df-falta-date" value="${f.date||''}" data-idx="${i}">
+      <select class="df-emp-sel df-falta-emp" data-idx="${i}">${_empOpts(f.colaborador)}</select>
+      <button class="df-remove-btn" data-falta-rm="${i}" title="Remover">✕</button>
+    </div>`;
+  }
+
+  function render() {
+    body.innerHTML = `<div class="df-wrap">
+      <div class="df-title">${boardLabel} — ${monthLabel}</div>
+
+      <div class="df-section">
+        <div class="df-sec-hdr">
+          <span>Feriados</span>
+          <button class="df-add-btn" id="dfAddFeriado">+ Feriado</button>
+        </div>
+        <div id="dfFeriadoList">
+          ${feriados.length ? feriados.map(_feriadoHtml).join('') : '<div class="df-empty">Nenhum feriado informado</div>'}
+        </div>
+      </div>
+
+      <div class="df-section">
+        <div class="df-sec-hdr">
+          <span>Faltas</span>
+          <button class="df-add-btn" id="dfAddFalta">+ Falta</button>
+        </div>
+        <div id="dfFaltaList">
+          ${faltas.length ? faltas.map(_faltaHtml).join('') : '<div class="df-empty">Nenhuma falta informada</div>'}
+        </div>
+      </div>
+
+      <div class="df-section">
+        <div class="df-sec-hdr"><span>Responsáveis da Loja</span></div>
+        <div class="df-resp-grid">
+          <div class="df-resp-row"><label class="df-resp-label">VR da loja</label><select class="df-emp-sel" id="dfVr">${_empOpts(vr)}</select></div>
+          <div class="df-resp-row"><label class="df-resp-label">Abertura da loja</label><select class="df-emp-sel" id="dfAbertura">${_empOpts(abertura)}</select></div>
+          <div class="df-resp-row"><label class="df-resp-label">Instagram da loja</label><select class="df-emp-sel" id="dfInstagram">${_empOpts(instagram)}</select></div>
+        </div>
+      </div>
+
+      <button class="df-save-btn" id="dfSaveBtn">Salvar</button>
+    </div>`;
+
+    body.querySelector('#dfAddFeriado').addEventListener('click', () => {
+      feriados.push({ date: '', colaboradores: [] });
+      render();
+    });
+    body.querySelector('#dfAddFalta').addEventListener('click', () => {
+      faltas.push({ date: '', colaborador: '' });
+      render();
+    });
+    body.querySelectorAll('[data-feriado-rm]').forEach(btn => {
+      btn.addEventListener('click', () => { feriados.splice(parseInt(btn.dataset.feriadoRm), 1); render(); });
+    });
+    body.querySelectorAll('[data-falta-rm]').forEach(btn => {
+      btn.addEventListener('click', () => { faltas.splice(parseInt(btn.dataset.faltaRm), 1); render(); });
+    });
+    body.querySelectorAll('.df-feriado-date').forEach(inp => {
+      inp.addEventListener('change', () => { feriados[parseInt(inp.dataset.idx)].date = inp.value; });
+    });
+    body.querySelectorAll('.df-feriado-chk').forEach(chk => {
+      chk.addEventListener('change', () => {
+        const f = feriados[parseInt(chk.dataset.feriadoIdx)];
+        if (!f) return;
+        if (!f.colaboradores) f.colaboradores = [];
+        if (chk.checked) { if (!f.colaboradores.includes(chk.dataset.name)) f.colaboradores.push(chk.dataset.name); }
+        else { f.colaboradores = f.colaboradores.filter(n => n !== chk.dataset.name); }
+      });
+    });
+    body.querySelectorAll('.df-falta-date').forEach(inp => {
+      inp.addEventListener('change', () => { faltas[parseInt(inp.dataset.idx)].date = inp.value; });
+    });
+    body.querySelectorAll('.df-falta-emp').forEach(sel => {
+      sel.addEventListener('change', () => { faltas[parseInt(sel.dataset.idx)].colaborador = sel.value; });
+    });
+    body.querySelector('#dfVr').addEventListener('change', e => { vr = e.target.value; });
+    body.querySelector('#dfAbertura').addEventListener('change', e => { abertura = e.target.value; });
+    body.querySelector('#dfInstagram').addEventListener('change', e => { instagram = e.target.value; });
+
+    body.querySelector('#dfSaveBtn').addEventListener('click', async () => {
+      const btn = body.querySelector('#dfSaveBtn');
+      btn.disabled = true;
+      try {
+        const payload = {
+          feriados:  feriados.filter(f => f.date),
+          faltas:    faltas.filter(f => f.date && f.colaborador),
+          vr, abertura, instagram,
+        };
+        await apiFetch('POST', `/api/dados-folha/${year}/${month}/${board}`, payload);
+        toast('Dados salvos ✓');
+      } catch(e) { toast('Erro: ' + e.message, true); }
+      finally { btn.disabled = false; }
+    });
+  }
+
+  render();
+}
+
 function initFolgasModal() {
   document.getElementById('folgasBtn').addEventListener('click', openFolgas);
   document.getElementById('folgasClose').addEventListener('click', closeFolgas);
@@ -3940,7 +4102,27 @@ function initFolgasModal() {
   });
   document.getElementById('folgasBoardFilter').addEventListener('change', e => {
     FC.filterBoard = e.target.value || null;
-    renderFolgasTable();
+    if (FC.dadosView) _openDadosFolhaView(document.getElementById('dadosFolhaBody'));
+    else renderFolgasTable();
+  });
+
+  // Dados para Folha toggle
+  const dadosFolhaBtn  = document.getElementById('dadosFolhaBtn');
+  const dadosFolhaBody = document.getElementById('dadosFolhaBody');
+  const tableWrap      = document.getElementById('folgasTableWrap');
+  dadosFolhaBtn.addEventListener('click', () => {
+    FC.dadosView = !FC.dadosView;
+    if (FC.dadosView) {
+      tableWrap.classList.add('hidden');
+      dadosFolhaBody.classList.remove('hidden');
+      dadosFolhaBtn.textContent = '← Calendário';
+      _openDadosFolhaView(dadosFolhaBody);
+    } else {
+      tableWrap.classList.remove('hidden');
+      dadosFolhaBody.classList.add('hidden');
+      dadosFolhaBtn.textContent = '📋 Dados p/ Folha';
+      renderFolgasTable();
+    }
   });
 
   // Add employee form
