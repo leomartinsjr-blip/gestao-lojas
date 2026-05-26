@@ -4051,67 +4051,84 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
       ws.addRow([]);
 
       // Header
-      const headers = ['NOME','CARGO','FIXO','Q.CX','COMISSÕES','DSR','PRÊMIO','GM','FERIADO','PREM.EXTRA','T+PREM','VERIFICAÇÃO','OK','AD','VT','DESC','OBSERVAÇÕES'];
+      // Cols: NOME CARGO FIXO Q.CX COMISSÃO DSR PRÊMIO PREM.SEM COM.LOJA GM FERIADO EXTRAS TOTAL VERIF. OK AD V.COMPRAS VT OBS
+      const headers = ['NOME','CARGO','FIXO','Q.CX','COMISSÃO','DSR','PRÊMIO','PREM.SEM.','COM.LOJA','GM','FERIADO','EXTRAS','TOTAL','VERIF.','OK','AD','V.COMPRAS','VT','OBSERVAÇÕES'];
       ws.addRow(headers);
       const hRow = ws.getRow(3);
       hRow.font = { bold: true, color: { argb: 'FFE6EDF3' } };
       hRow.fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FF21262D'} };
       hRow.eachCell(c => { c.border = { bottom:{style:'thin',color:{argb:'FF30363D'}} }; });
 
-      // Set column widths e formato numérico (col 15 = VT é texto)
-      ws.getColumn(1).width = 20;  // NOME
-      ws.getColumn(2).width = 14;  // CARGO
-      ws.getColumn(15).width = 8;  // VT (SIM/NÃO)
-      const numCols = [3,4,5,6,7,8,9,10,11,12,14,16];
-      numCols.forEach(i => { ws.getColumn(i).width = 13; ws.getColumn(i).numFmt = '#,##0.00'; });
+      // Column widths — text cols: 15(OK), 16(AD), 17(V.COMPRAS), 18(VT)
+      ws.getColumn(1).width = 22;
+      ws.getColumn(2).width = 16;
+      [15,16,17,18].forEach(i => { ws.getColumn(i).width = 9; });
+      const numCols = [3,4,5,6,7,8,9,10,11,12,13,14];
+      numCols.forEach(i => { ws.getColumn(i).width = 12; ws.getColumn(i).numFmt = '#,##0.00'; });
 
       const folhaEmpCfg = db.folhaEmpConfig || {};
 
-      let sumFixo=0, sumQcx=0, sumCom=0, sumDsr=0, sumPremio=0, sumGm=0,
-          sumFer=0, sumPremExtra=0, sumTotal=0, sumAd=0, sumDesc=0;
+      let sumFixo=0, sumQcx=0, sumCom=0, sumDsr=0, sumPremio=0, sumPremSem=0,
+          sumComLoja=0, sumGm=0, sumFer=0, sumExtras=0, sumTotal=0;
 
       for (const emp of lojaEmps) {
         const entry = lojaData.entries[emp.id];
         if (!entry) continue;
 
-        const isCaixa = /caixa|opcx/i.test(emp.cargo||'');
+        const fixo      = r2(entry.fixo          || 0);
+        const qcx       = r2(entry.quebra         || 0);
+        const comissoes = r2(entry.comissaoContab || 0);
+        const dsr       = r2(entry.dsr            || 0);
+        const premio    = r2(entry.premio         || 0);
+        const premSem   = r2(entry.premiacao      || 0);
+        const comLoja   = r2(entry.comissaoLoja   || 0);
+        const gm        = r2(entry.gmComplement   || 0);
+        const feriado   = r2(entry.feriado        || 0);
+        const extrasArr = (entry.extras||[]).filter(ex => r2(ex.valor) > 0);
+        const extrasSum = r2(extrasArr.reduce((s,ex)=>s+r2(ex.valor),0));
+        const tTotal    = r2(entry.proventos      || 0);
+        const verif     = r2(fixo+qcx+comissoes+dsr+premio+premSem+comLoja+gm+feriado+extrasSum);
+        const ok        = Math.abs(tTotal - verif) < 0.02 ? 'OK' : '⚠';
+        const fc        = folhaEmpCfg[emp.id] || {};
+        const vtRate    = fc.vtRate != null ? r2(fc.vtRate) : r2(emp.vtRate || 0);
 
-        const fixo       = r2(entry.fixo       || 0);
-        const qcx        = r2(entry.quebra      || 0);
-        const comissoes  = r2(entry.comissaoContab || 0);
-        const dsr        = r2(entry.dsr         || 0);
-        const premio     = r2(entry.premio      || 0);
-        const gm         = r2(entry.gmComplement|| 0);
-        const feriado    = r2(entry.feriado     || 0);
-        const premExtra  = r2((entry.extras||[]).reduce((s,ex)=>s+r2(ex.valor),0));
-        const tTotal     = r2(entry.proventos   || 0);
-        const verif      = r2(fixo + qcx + comissoes + dsr + premio + gm + feriado + premExtra);
-        const ok         = Math.abs(tTotal - verif) < 0.02 ? 'OK' : '⚠';
-        const ad         = r2(entry.adiantamento|| 0);
-        const desc       = r2(entry.totalDescontos || 0);
-        const fc         = folhaEmpCfg[emp.id] || {};
-        const vtRate     = fc.vtRate != null ? r2(fc.vtRate) : r2(emp.vtRate || 0);
-        const vtSimNao   = vtRate > 0 ? 'SIM' : 'NÃO';
+        const adSimNao  = r2(entry.adiantamento || 0) > 0 ? 'SIM' : 'NÃO';
+        const vcSimNao  = r2(entry.valeCompras  || 0) > 0 ? 'SIM' : 'NÃO';
+        const vtSimNao  = vtRate > 0 ? 'SIM' : 'NÃO';
 
-        ws.addRow([
-          emp.apelido || emp.name,
-          emp.cargo,
-          n2(fixo), n2(qcx), n2(comissoes), n2(dsr), n2(premio), n2(gm),
-          n2(feriado), n2(premExtra), n2(tTotal), n2(verif), ok,
-          n2(ad), vtSimNao, n2(desc), '',
+        const empRow = ws.addRow([
+          emp.apelido || emp.name, emp.cargo,
+          n2(fixo), n2(qcx), n2(comissoes), n2(dsr), n2(premio),
+          n2(premSem)||null, n2(comLoja)||null,
+          n2(gm)||null, n2(feriado)||null, n2(extrasSum)||null,
+          n2(tTotal), n2(verif), ok,
+          adSimNao, vcSimNao, vtSimNao, '',
         ]);
+        empRow.getCell(15).font = { bold: true, color: { argb: ok==='OK'?'FF3FB950':'FFF85149' } };
+
+        // Sub-linhas para cada provento extra com valor > 0
+        for (const ex of extrasArr) {
+          const subRow = ws.addRow([
+            `  ↳ ${ex.nome}`, '', '', '', '', '', '', '', '', '', '', n2(ex.valor),
+            '', '', '', '', '', '', '',
+          ]);
+          subRow.getCell(1).font  = { italic: true, color: { argb: 'FF8B949E' } };
+          subRow.getCell(12).font = { color: { argb: 'FF8B949E' } };
+        }
 
         sumFixo+=fixo; sumQcx+=qcx; sumCom+=comissoes; sumDsr+=dsr;
-        sumPremio+=premio; sumGm+=gm; sumFer+=feriado; sumPremExtra+=premExtra;
-        sumTotal+=tTotal; sumAd+=ad; sumDesc+=desc;
+        sumPremio+=premio; sumPremSem+=premSem; sumComLoja+=comLoja;
+        sumGm+=gm; sumFer+=feriado; sumExtras+=extrasSum; sumTotal+=tTotal;
       }
 
       // Totals row
       const totRow = ws.addRow([
         'TOTAL','',
-        r2(sumFixo), r2(sumQcx), r2(sumCom), r2(sumDsr), r2(sumPremio), r2(sumGm),
-        r2(sumFer), r2(sumPremExtra), r2(sumTotal), r2(sumTotal), '',
-        r2(sumAd), '', r2(sumDesc), '',
+        r2(sumFixo), r2(sumQcx), r2(sumCom), r2(sumDsr), r2(sumPremio),
+        r2(sumPremSem)||null, r2(sumComLoja)||null,
+        r2(sumGm)||null, r2(sumFer)||null, r2(sumExtras)||null,
+        r2(sumTotal), r2(sumTotal), '',
+        '', '', '', '',
       ]);
       totRow.font = { bold: true };
       totRow.eachCell(c => { c.border = { top:{style:'thin',color:{argb:'FF30363D'}} }; });
