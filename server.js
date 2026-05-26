@@ -3613,7 +3613,14 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
     const month = parseInt(req.params.month);
     const mk    = `${year}-${String(month).padStart(2,'0')}`;
     const db    = await readDB();
-    const employees = (db.employees || []).filter(e => !e.inativo);
+
+    // Inclui funcionários inativos que têm folha salva neste mês
+    const savedFolha  = (db.folhas || {})[mk] || {};
+    const savedEmpIds = new Set();
+    for (const boardData of Object.values(savedFolha))
+      for (const id of Object.keys(boardData.entries || {})) savedEmpIds.add(parseInt(id));
+    const employees = (db.employees || []).filter(e => !e.inativo || savedEmpIds.has(e.id));
+
     const vsalesAll = db.vsales || {};
 
     const isVend = e => e.isVendedor !== false;
@@ -3647,15 +3654,76 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       vsales[emp.id] = vsalesAll[key] || { meta: { mensal: 0 }, entries: {} };
     }
 
+    // ── Premiação semanal — calcula para semanas completas que terminaram no mês ──
+    const PREMIO_VEND_W = 80, PREMIO_GER_W = 250, PREMIO_PA_W = 50, PA_THR = 1.80;
+    const weeklyMetasMonth = (db.weeklyMetas || {})[mk] || {};
+    const todayStr  = new Date().toISOString().slice(0, 10);
+    const lastDay   = new Date(year, month, 0);
+    const lastDayStr = `${year}-${String(month).padStart(2,'0')}-${String(lastDay.getDate()).padStart(2,'0')}`;
+    const premiacaoSemanal = {};
+    for (const emp of employees) premiacaoSemanal[emp.id] = 0;
+
+    const boardEmpsMap = {};
+    for (const emp of employees) {
+      if (!boardEmpsMap[emp.board]) boardEmpsMap[emp.board] = [];
+      boardEmpsMap[emp.board].push(emp);
+    }
+
+    for (const [weekStart, weekData] of Object.entries(weeklyMetasMonth)) {
+      if (!weekStart.startsWith(mk)) continue;
+      const ws = new Date(weekStart + 'T12:00:00');
+      const we = new Date(ws); we.setDate(we.getDate() + 6);
+      const weStr = `${we.getFullYear()}-${String(we.getMonth()+1).padStart(2,'0')}-${String(we.getDate()).padStart(2,'0')}`;
+      if (weStr > lastDayStr || weStr >= todayStr) continue;
+
+      for (const board of Object.keys(boardEmpsMap)) {
+        const bEmps = boardEmpsMap[board];
+        let storeSales = 0, storePecas = 0, storeAtend = 0, storeMeta = 0;
+        for (const emp of bEmps) {
+          if (!isVend(emp)) continue;
+          const vs = vsalesAll[`${mk}-${board}-${emp.id}`] || {};
+          const we2 = Object.entries(vs.entries||{}).filter(([d]) => d>=weekStart && d<=weStr);
+          storeSales += we2.reduce((s,[,e]) => s+(e.value||0), 0);
+          storePecas += we2.reduce((s,[,e]) => s+(e.pecas||0), 0);
+          storeAtend += we2.reduce((s,[,e]) => s+(e.atendimentos||0), 0);
+          storeMeta  += weekData[emp.id]?.meta || 0;
+        }
+        const storeHitMeta = storeMeta > 0 && storeSales >= storeMeta;
+        const storeHitPA   = storeAtend > 0 && (storePecas/storeAtend) >= PA_THR;
+
+        for (const emp of bEmps) {
+          const tipo = (emp.cargo||'').toLowerCase();
+          const isGer = /gerente/.test(tipo) && !/^sub/.test(tipo);
+          if (isGer) {
+            if (storeHitMeta) premiacaoSemanal[emp.id] += PREMIO_GER_W;
+            if (storeHitMeta && storeHitPA) premiacaoSemanal[emp.id] += PREMIO_PA_W;
+          } else if (isVend(emp)) {
+            const vs = vsalesAll[`${mk}-${board}-${emp.id}`] || {};
+            const we2 = Object.entries(vs.entries||{}).filter(([d]) => d>=weekStart && d<=weStr);
+            const empSales = we2.reduce((s,[,e]) => s+(e.value||0), 0);
+            const empPecas = we2.reduce((s,[,e]) => s+(e.pecas||0), 0);
+            const empAtend = we2.reduce((s,[,e]) => s+(e.atendimentos||0), 0);
+            const empMeta  = weekData[emp.id]?.meta || 0;
+            if (empMeta > 0 && empSales >= empMeta) {
+              premiacaoSemanal[emp.id] += PREMIO_VEND_W;
+              if (empAtend > 0 && (empPecas/empAtend) >= PA_THR)
+                premiacaoSemanal[emp.id] += PREMIO_PA_W;
+            }
+          }
+        }
+      }
+    }
+
     res.json({
-      folha:        (db.folhas || {})[mk] || {},
+      folha:             (db.folhas || {})[mk] || {},
       employees,
       vsales,
-      folhaConfig:  db.folhaConfig    || {},
-      empConfig:    db.folhaEmpConfig || {},
-      folhaMensal:  (db.folhaConfigMensal || {})[mk] || {},
+      folhaConfig:       db.folhaConfig    || {},
+      empConfig:         db.folhaEmpConfig || {},
+      folhaMensal:       (db.folhaConfigMensal || {})[mk] || {},
       lojaMetaMap,
       lojaVendaMap,
+      premiacaoSemanal,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -3685,7 +3753,15 @@ app.post('/api/folha/:year/:month', requireAuth, async (req, res) => {
     const mk    = `${year}-${String(month).padStart(2,'0')}`;
     const db    = await readDB();
     if (!db.folhas) db.folhas = {};
-    db.folhas[mk] = req.body;
+    if (!db.folhas[mk]) db.folhas[mk] = {};
+    for (const [board, boardData] of Object.entries(req.body || {})) {
+      if (!boardData) continue;
+      if (!db.folhas[mk][board]) db.folhas[mk][board] = {};
+      if (boardData.entries) {
+        if (!db.folhas[mk][board].entries) db.folhas[mk][board].entries = {};
+        Object.assign(db.folhas[mk][board].entries, boardData.entries);
+      }
+    }
     await writeDB(db);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }

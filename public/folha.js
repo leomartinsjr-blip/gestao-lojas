@@ -62,6 +62,7 @@ let FP = {
   folha: {}, folhaConfig: {}, empConfig: {},
   mensal: { diasUteis: 22, domingosFeriados: 4 },
   lojaMetaMap: {}, lojaVendaMap: {},
+  premiacaoSemanal: {},
   activeEmpId: null, dirty: false,
 };
 
@@ -102,8 +103,9 @@ async function loadPeriod() {
     FP.folha        = d.folha        || {};
     FP.folhaConfig  = d.folhaConfig  || {};
     FP.empConfig    = d.empConfig    || {};
-    FP.lojaMetaMap  = d.lojaMetaMap  || {};
-    FP.lojaVendaMap = d.lojaVendaMap || {};
+    FP.lojaMetaMap       = d.lojaMetaMap       || {};
+    FP.lojaVendaMap      = d.lojaVendaMap      || {};
+    FP.premiacaoSemanal  = d.premiacaoSemanal  || {};
     FP.mensal = {
       diasUteis:        d.folhaMensal?.diasUteis        || 22,
       domingosFeriados: d.folhaMensal?.domingosFeriados || 4,
@@ -418,7 +420,10 @@ function defaultEntry(emp) {
   let comissaoLoja = 0;
   if (tipo === 'sub') comissaoLoja = r2(vendaLoja * (ecfg.comissaoVR || 0) / 100);
 
-  const proventos = r2(fixo + comissaoTotal + comissaoLoja + gmComplement);
+  const premiacao        = r2(FP.premiacaoSemanal[emp.id] || 0);
+  const premiacaoBalanco = 0;
+
+  const proventos = r2(fixo + comissaoTotal + comissaoLoja + gmComplement + premiacao + premiacaoBalanco);
   const inss = r2(proventos * (ecfg.inssRate || 0) / 100);
   const vt   = r2(proventos * (ecfg.vtRate   || 0) / 100);
 
@@ -426,6 +431,7 @@ function defaultEntry(emp) {
     tipo, vendas, meta, pctMeta, faixaLabel, comissaoPct,
     comissaoTotal, comissaoContab, dsr, premio,
     comissaoLoja, vendaLoja, fixo, gm, gmComplement,
+    premiacao, premiacaoBalanco,
     feriado: 0, extras: [],
     proventos,
     valeCompras: 0, adiantamento: 0, inss, irpf: 0, vt,
@@ -505,6 +511,11 @@ function buildEmpForm(emp, entry) {
     if (gmMin > 0)
       provRows += `<div class="fp-field"><label>GM (R$)</label>${inp(`fp-gm-${emp.id}`, e.gmComplement)}
         <span style="font-size:.72rem;color:#8b949e">mín: ${brl(gmMin)}</span></div>`;
+
+    provRows += `<div class="fp-field"><label>Premiação (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
+      <span style="font-size:.72rem;color:#484f58">semanal</span></div>`;
+    if (tipo === 'gerente')
+      provRows += `<div class="fp-field"><label>Premiação Balanço (R$)</label>${inp(`fp-premiacaoBalanco-${emp.id}`, e.premiacaoBalanco || 0)}</div>`;
   }
 
   provRows += `
@@ -721,7 +732,8 @@ function recalc(empId) {
         : `<span style="color:#f85149;font-size:.75rem">⚠ soma ${brl(soma)} ≠ ${brl(comTotal)}</span>`;
     }
 
-    proventos = r2(g(`fp-fixo-${empId}`) + comTotal + g(`fp-comLoja-${empId}`) + g(`fp-gm-${empId}`));
+    proventos = r2(g(`fp-fixo-${empId}`) + comTotal + g(`fp-comLoja-${empId}`) + g(`fp-gm-${empId}`)
+      + g(`fp-premiacao-${empId}`) + g(`fp-premiacaoBalanco-${empId}`));
   }
 
   proventos = r2(proventos + g(`fp-feriado-${empId}`)
@@ -778,6 +790,7 @@ function saveEntryFromForm(empId) {
     comissaoContab = r2(comissaoTotal - dsr - premio);
     proventos = r2(g(`fp-fixo-${empId}`) + comissaoTotal
       + g(`fp-comLoja-${empId}`) + g(`fp-gm-${empId}`)
+      + g(`fp-premiacao-${empId}`) + g(`fp-premiacaoBalanco-${empId}`)
       + g(`fp-feriado-${empId}`) + extProv);
   }
 
@@ -793,9 +806,11 @@ function saveEntryFromForm(empId) {
     comissaoPct:    g(`fp-comPct-${empId}`),
     faixaLabel:     prev.faixaLabel,
     comissaoTotal, comissaoContab, dsr, premio,
-    comissaoLoja:   g(`fp-comLoja-${empId}`),
-    gmComplement:   g(`fp-gm-${empId}`),
-    feriado:        g(`fp-feriado-${empId}`),
+    comissaoLoja:      g(`fp-comLoja-${empId}`),
+    gmComplement:      g(`fp-gm-${empId}`),
+    premiacao:         g(`fp-premiacao-${empId}`),
+    premiacaoBalanco:  g(`fp-premiacaoBalanco-${empId}`),
+    feriado:           g(`fp-feriado-${empId}`),
     proventos,
     valeCompras:    g(`fp-valeCompras-${empId}`),
     adiantamento:   g(`fp-adiantamento-${empId}`),
