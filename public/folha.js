@@ -176,17 +176,17 @@ function renderPanel() {
   const enc   = !!(FP.folha[board]?.encerrada);
 
   const actionBtns = enc
-    ? `<button class="fp-btn" onclick="fpImprimirRecibos()">Recibos</button>
-       <button class="fp-btn success" onclick="fpExportar()">Exportar Excel</button>
+    ? `<button class="fp-btn success" onclick="fpExportar()">Exportar Excel</button>
        <button class="fp-btn" onclick="fpExportarContabilidade()">Contabilidade</button>
-       <button class="fp-btn reabrir" onclick="fpEncerrar()">Reabrir Folha</button>`
+       <button class="fp-btn reabrir" onclick="fpEncerrar()">Reabrir Folha</button>
+       <button class="fp-btn" onclick="fpImprimirRecibos()">Recibos</button>`
     : `<button class="fp-btn" onclick="fpOpenCfg('${board}')">Configurar</button>
        <button class="fp-btn" onclick="fpGerar()">Gerar Folha</button>
        <button class="fp-btn warning" onclick="fpSalvar()">Salvar</button>
-       <button class="fp-btn" onclick="fpImprimirRecibos()">Recibos</button>
        <button class="fp-btn success" onclick="fpExportar()">Exportar Excel</button>
        <button class="fp-btn" onclick="fpExportarContabilidade()">Contabilidade</button>
-       <button class="fp-btn encerrar" onclick="fpEncerrar()">Encerrar Folha</button>`;
+       <button class="fp-btn encerrar" onclick="fpEncerrar()">Encerrar Folha</button>
+       <button class="fp-btn" disabled style="opacity:.35;cursor:not-allowed" title="Encerre a folha para imprimir recibos">Recibos</button>`;
 
   document.getElementById('fpPanel').innerHTML = `
     <div class="fp-panel${enc ? ' fp-panel-encerrada' : ''}">
