@@ -2933,7 +2933,8 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
         byMarca[key].valor += valor;
 
         const nomeProd = (prodInfo.nome || cod || '?');
-        if (!byMarca[key].produtos[cod]) byMarca[key].produtos[cod] = { cod, nome: nomeProd, qtd: 0, valor: 0 };
+        const tipo     = prodInfo.tipo || 'produto';
+        if (!byMarca[key].produtos[cod]) byMarca[key].produtos[cod] = { cod, nome: nomeProd, tipo, qtd: 0, valor: 0 };
         byMarca[key].produtos[cod].qtd   += qtd;
         byMarca[key].produtos[cod].valor += valor;
       }
@@ -2965,20 +2966,19 @@ const CATALOG_TTL = 6 * 60 * 60 * 1000;
 
 async function _getCatalog(lojas) {
   if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
-  const { fetchProdutos } = require('./services/microvix');
+  const { fetchProdutos, fetchServicos } = require('./services/microvix');
   const firstBoard = Object.keys(lojas)[0];
   if (!firstBoard) return {};
   const cnpj  = lojas[firstBoard].replace(/\D/g, '');
   const chave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
   try {
-    const rows = await fetchProdutos(cnpj, chave, 0);
-    if (rows.length > 0) {
-      // Log de diagnóstico — mostra campos disponíveis no primeiro registro
-      const allKeys = Object.keys(rows[0]);
-      const priceKeys = allKeys.filter(k => /preco|price|valor|vlr/i.test(k));
-      console.log('[Catalog] Campos do LinxProdutos:', allKeys.join(', '));
-      console.log('[Catalog] Campos de preço:', priceKeys.join(', ') || '(nenhum)');
-    }
+    // Busca produtos e serviços em paralelo
+    const [prodRows, svcRows] = await Promise.all([
+      fetchProdutos(cnpj, chave, 0).catch(e => { console.warn('[Catalog] produtos:', e.message); return []; }),
+      fetchServicos(cnpj, chave, 0).catch(e => { console.warn('[Catalog] servicos:', e.message); return []; }),
+    ]);
+    console.log(`[Catalog] ${prodRows.length} produtos + ${svcRows.length} serviços`);
+
     // Busca case-insensitive para campos de preço — nomes variam por conta Microvix
     const findField = (r, ...terms) => {
       const keys = Object.keys(r);
@@ -2988,11 +2988,15 @@ async function _getCatalog(lojas) {
       }
       return '0';
     };
-    const map  = {};
-    for (const r of rows) {
+
+    const map = {};
+
+    // Produtos
+    for (const r of prodRows) {
       const cod = String(r.cod_produto || '').trim();
       if (!cod) continue;
       map[cod] = {
+        tipo:        'produto',
         nome:        (r.nome         || '').trim(),
         setor:       (r.desc_setor   || '').trim(),
         marca:       (r.desc_marca   || '').trim(),
@@ -3003,11 +3007,26 @@ async function _getCatalog(lojas) {
         preco_promo: parseBrNum(findField(r, 'preco_promocional', 'precopromocional', 'vlr_promo', 'vlrpromo', 'preco_promo', 'precopromocao')),
       };
     }
+
+    // Serviços — cod_servico mapeia no mesmo campo cod_produto do LinxMovimento
+    for (const r of svcRows) {
+      const cod = String(r.cod_servico || '').trim();
+      if (!cod) continue;
+      map[cod] = {
+        tipo:  'servico',
+        nome:  (r.nome       || '').trim(),
+        setor: (r.desc_setor || '').trim(),
+        marca: (r.desc_marca || '').trim(),
+        linha: (r.desc_linha || '').trim(),
+        desc_cor: '', desc_tam: '', preco_cheio: 0, preco_promo: 0,
+      };
+    }
+
     _catalogCache   = map;
     _catalogCacheAt = Date.now();
     return map;
   } catch (e) {
-    console.warn('[Catalog] Erro ao buscar LinxProdutos:', e.message);
+    console.warn('[Catalog] Erro:', e.message);
     return _catalogCache || {};
   }
 }

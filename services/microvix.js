@@ -254,6 +254,33 @@ async function fetchMovimentoItens(cnpj, dtIni, dtFin, chave) {
   return parseCsv(raw);
 }
 
+// Fetch LinxServicos → service catalog with desc_marca, desc_setor, desc_linha
+// Pagina em blocos de 5000 como LinxProdutos
+async function fetchServicos(cnpj, chave, timestamp = 0) {
+  const today   = new Date().toISOString().slice(0, 10);
+  const allRows = [];
+  let ts = timestamp;
+  for (let page = 0; page < 10; page++) {
+    const body = buildRequest('LinxServicos', cnpj, [
+      { id: 'timestamp',       valor: String(ts) },
+      { id: 'dt_update_inicio', valor: '2000-01-01' },
+      { id: 'dt_update_fim',    valor: today },
+    ], chave);
+    const raw = await postRequest(body, 60_000);
+    if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+      const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro';
+      throw new Error(`Microvix API (servicos): ${msg}`);
+    }
+    const rows = parseCsv(raw);
+    allRows.push(...rows);
+    if (rows.length < 5000) break;
+    const maxTs = Math.max(...rows.map(r => parseInt(r.timestamp) || 0));
+    if (maxTs <= ts) break;
+    ts = maxTs;
+  }
+  return allRows;
+}
+
 // Fetch LinxContasPagar → contas a pagar no período
 async function fetchContasPagar(cnpj, dtIni, dtFin, chave) {
   const extra = [
@@ -273,4 +300,4 @@ async function fetchContasPagar(cnpj, dtIni, dtFin, chave) {
   return parseCsv(raw);
 }
 
-module.exports = { fetchMovimento, fetchMovimentoItens, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchSangrias, fetchContasPagar, parseBrNum, buildRequest, postRequest, parseCsv };
+module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchSangrias, fetchContasPagar, parseBrNum, buildRequest, postRequest, parseCsv };
