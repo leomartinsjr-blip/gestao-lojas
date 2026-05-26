@@ -7856,7 +7856,6 @@ function _renderIndevaHistorico(body, historico) {
 
 function initIndevaModal() {
   document.getElementById('indevaBtn').addEventListener('click', () => window.open('/indeva', '_blank'));
-  document.getElementById('contasBtn').addEventListener('click', () => window.open('/contas-pagar', '_blank'));
 }
 
 function _openIndevaCampanhasOverlay() {
