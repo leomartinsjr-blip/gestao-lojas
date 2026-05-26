@@ -3711,10 +3711,13 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
     // ── Premiação semanal — calcula para semanas cujo último dia está dentro do mês ──
     const PREMIO_VEND_W = 80, PREMIO_GER_W = 250, PREMIO_PA_W = 50, PA_THR = 1.80;
     const weeklyMetasMonth = (db.weeklyMetas || {})[mk] || {};
+    const globalWeights    = (db.globalWeights || {})[mk] || {};
+    const daysInMonth      = new Date(year, month, 0).getDate();
     const todayStr   = new Date().toISOString().slice(0, 10);
     const lastDay    = new Date(year, month, 0);
     const padD       = n => String(n).padStart(2,'0');
     const lastDayStr = `${year}-${padD(month)}-${padD(lastDay.getDate())}`;
+    const monthStart = `${year}-${padD(month)}-01`;
     const premiacaoSemanal        = {};
     const premiacaoSemanalDetalhe = {};
     for (const emp of employees) {
@@ -3728,13 +3731,42 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       boardEmpsMap[emp.board].push(emp);
     }
 
-    for (const [weekStart, weekData] of Object.entries(weeklyMetasMonth)) {
-      const ws = new Date(weekStart + 'T12:00:00');
-      const we = new Date(ws); we.setDate(we.getDate() + 6);
-      const weStr   = `${we.getFullYear()}-${padD(we.getMonth()+1)}-${padD(we.getDate())}`;
-      const semLabel = `${padD(ws.getDate())}/${padD(ws.getMonth()+1)} – ${padD(we.getDate())}/${padD(we.getMonth()+1)}`;
+    // Sum of day-weights for a week interval (only days within the month)
+    const calcWeekWeightSum = (ws, we) => {
+      const defaultW = 100 / daysInMonth;
+      let sum = 0;
+      const d = new Date(ws + 'T12:00:00');
+      const end = new Date(we + 'T12:00:00');
+      while (d <= end) {
+        const ds = `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
+        if (ds >= monthStart && ds <= lastDayStr)
+          sum += globalWeights[ds] !== undefined ? globalWeights[ds] : defaultW;
+        d.setDate(d.getDate() + 1);
+      }
+      return sum;
+    };
+
+    // Generate all Sunday-based weeks overlapping the month + any manual-meta weeks
+    const allWeekStarts = new Set(Object.keys(weeklyMetasMonth));
+    const msDate = new Date(monthStart + 'T12:00:00');
+    const firstSunday = new Date(msDate);
+    firstSunday.setDate(msDate.getDate() - msDate.getDay()); // rewind to Sunday
+    for (let d = new Date(firstSunday); ; d.setDate(d.getDate() + 7)) {
+      const ws = `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
+      if (ws > lastDayStr) break;
+      allWeekStarts.add(ws);
+    }
+
+    for (const weekStart of allWeekStarts) {
+      const wsDate = new Date(weekStart + 'T12:00:00');
+      const weDate = new Date(wsDate); weDate.setDate(weDate.getDate() + 6);
+      const weStr   = `${weDate.getFullYear()}-${padD(weDate.getMonth()+1)}-${padD(weDate.getDate())}`;
+      const semLabel = `${padD(wsDate.getDate())}/${padD(wsDate.getMonth()+1)} – ${padD(weDate.getDate())}/${padD(weDate.getMonth()+1)}`;
       // inclui semana apenas se o último dia está dentro do mês e a semana já terminou
       if (weStr > lastDayStr || weStr >= todayStr) continue;
+
+      const weekData = weeklyMetasMonth[weekStart] || {};
+      const wws = calcWeekWeightSum(weekStart, weStr);
 
       for (const board of Object.keys(boardEmpsMap)) {
         const bEmps = boardEmpsMap[board];
@@ -3746,7 +3778,9 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
           storeSales += we2.reduce((s,[,e]) => s+(e.value||0), 0);
           storePecas += we2.reduce((s,[,e]) => s+(e.pecas||0), 0);
           storeAtend += we2.reduce((s,[,e]) => s+(e.atendimentos||0), 0);
-          storeMeta  += weekData[emp.id]?.meta || 0;
+          const mMeta = weekData[emp.id]?.meta || 0;
+          const mMensal = vs.meta?.mensal || 0;
+          storeMeta += mMeta > 0 ? mMeta : (wws > 0 ? mMensal * wws / 100 : 0);
         }
         const storeHitMeta = storeMeta > 0 && storeSales >= storeMeta;
         const storeHitPA   = storeAtend > 0 && (storePecas/storeAtend) >= PA_THR;
@@ -3768,7 +3802,9 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
             const empSales = we2.reduce((s,[,e]) => s+(e.value||0), 0);
             const empPecas = we2.reduce((s,[,e]) => s+(e.pecas||0), 0);
             const empAtend = we2.reduce((s,[,e]) => s+(e.atendimentos||0), 0);
-            const empMeta  = weekData[emp.id]?.meta || 0;
+            const mMeta   = weekData[emp.id]?.meta || 0;
+            const mMensal = vs.meta?.mensal || 0;
+            const empMeta = mMeta > 0 ? mMeta : (wws > 0 ? mMensal * wws / 100 : 0);
             if (empMeta > 0 && empSales >= empMeta) {
               let val = PREMIO_VEND_W;
               if (empAtend > 0 && (empPecas/empAtend) >= PA_THR) val += PREMIO_PA_W;
