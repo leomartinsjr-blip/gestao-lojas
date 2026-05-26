@@ -4095,8 +4095,8 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
 
         const ad        = r2(entry.adiantamento || 0);
         const vale      = r2(entry.valeCompras  || 0);
-        const vtVal     = r2(entry.vt           || 0);
-        const desc      = r2((entry.totalDescontos || 0) - vtVal);
+        const vtVal     = r2(fc.maxVT           || 0);
+        const desc      = r2(entry.totalDescontos || 0);
 
         const empRow = ws.addRow([
           emp.apelido || emp.name, emp.cargo,

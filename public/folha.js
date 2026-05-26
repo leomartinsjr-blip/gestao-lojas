@@ -36,6 +36,7 @@ function getEmpCfg(emp) {
     quebraCaixa:     v(fc.quebraCaixa,     emp.quebraCaixa     || 0),
     inssRate:        v(fc.inssRate,        emp.inssRate        || 0),
     vtRate:          v(fc.vtRate,          emp.vtRate          || 0),
+    maxVT:           v(fc.maxVT,           emp.maxVT           || 0),
   };
 }
 
@@ -634,7 +635,8 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
       row('Salário Fixo (R$)',  `ec-salarioFixo-${emp.id}`,  ecfg.salarioFixo) +
       row('Quebra Caixa (R$)',  `ec-quebraCaixa-${emp.id}`,  ecfg.quebraCaixa) +
       row('INSS (%)',           `ec-inssRate-${emp.id}`,     ecfg.inssRate) +
-      row('VT (%)',             `ec-vtRate-${emp.id}`,       ecfg.vtRate);
+      row('VT (%)',             `ec-vtRate-${emp.id}`,       ecfg.vtRate) +
+      row('MAX. VT (R$)',       `ec-maxVT-${emp.id}`,        ecfg.maxVT);
   } else if (tipo === 'gerente') {
     fields =
       row('Com. Sem Meta (%)',   `ec-comissaoSemMeta-${emp.id}`, ecfg.comissaoSemMeta) +
@@ -643,7 +645,8 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
       row('Com. Super Meta (%)', `ec-comissaoSuper-${emp.id}`,   ecfg.comissaoSuper) +
       row('Salário Fixo (R$)',   `ec-salarioFixo-${emp.id}`,     ecfg.salarioFixo) +
       row('INSS (%)',            `ec-inssRate-${emp.id}`,        ecfg.inssRate) +
-      row('VT (%)',              `ec-vtRate-${emp.id}`,          ecfg.vtRate);
+      row('VT (%)',              `ec-vtRate-${emp.id}`,          ecfg.vtRate) +
+      row('MAX. VT (R$)',        `ec-maxVT-${emp.id}`,           ecfg.maxVT);
   } else {
     fields =
       row('Com. Sem Meta (%)',  `ec-comissaoSemMeta-${emp.id}`, ecfg.comissaoSemMeta) +
@@ -653,7 +656,8 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
       (tipo === 'sub' || tipo === 'gvend' ? row('Comissão Loja (%)', `ec-comissaoVR-${emp.id}`, ecfg.comissaoVR) : '') +
       (tipo === 'sub' || tipo === 'gvend' ? row('Salário Fixo (R$)', `ec-salarioFixo-${emp.id}`, ecfg.salarioFixo) : '') +
       row('INSS (%)',           `ec-inssRate-${emp.id}`,        ecfg.inssRate) +
-      row('VT (%)',             `ec-vtRate-${emp.id}`,          ecfg.vtRate);
+      row('VT (%)',             `ec-vtRate-${emp.id}`,          ecfg.vtRate) +
+      row('MAX. VT (R$)',       `ec-maxVT-${emp.id}`,           ecfg.maxVT);
   }
 
   return `
@@ -687,7 +691,7 @@ async function fpSaveEmpCfg(empId) {
   if (!emp) return;
   const tipo = cargoTipo(emp.cargo);
 
-  let cfg = { inssRate: g(`ec-inssRate-${empId}`), vtRate: g(`ec-vtRate-${empId}`) };
+  let cfg = { inssRate: g(`ec-inssRate-${empId}`), vtRate: g(`ec-vtRate-${empId}`), maxVT: g(`ec-maxVT-${empId}`) };
   if (tipo === 'caixa') {
     cfg.salarioFixo = g(`ec-salarioFixo-${empId}`);
     cfg.quebraCaixa = g(`ec-quebraCaixa-${empId}`);
