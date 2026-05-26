@@ -999,9 +999,24 @@ function buildRecibo(emp, entry, mes, origin) {
   } else {
     if (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
       prov += tr('SALÁRIO FIXO', entry.fixo || 0, entry.fixo);
-    prov += tr(tipo === 'gerente' ? 'VENDAS LOJA' : 'VENDAS',
-      entry.comissaoTotal || 0, entry.vendas,
-      entry.comissaoPct ? fmt(entry.comissaoPct) + '%' : '');
+    const faixaColors = {'SEM META':'#888','META 1':'#b8860b','META 2':'#2e7d32','SUPER META':'#00838f'};
+    const faixaLbl   = entry.faixaLabel || '—';
+    const faixaClr   = faixaColors[faixaLbl] || '#888';
+    const pctMeta    = num(entry.pctMeta) ||
+      (num(entry.meta) > 0 ? Math.round(num(entry.vendas) / num(entry.meta) * 10) / 10 : 0);
+    const pctCell    =
+      `<td style="padding:2px 5px;text-align:center;font-size:9pt;line-height:1.5">` +
+      `${entry.comissaoPct ? fmt(entry.comissaoPct) + '%' : ''}` +
+      (pctMeta > 0 ? `<br><span style="font-size:7.5pt;color:#555">${fmt(pctMeta)}% da meta</span>` : '') +
+      `<br><span style="font-size:7.5pt;font-weight:700;color:${faixaClr}">${faixaLbl}</span>` +
+      `</td>`;
+    prov +=
+      `<tr>` +
+      `<td style="padding:2px 5px">${tipo === 'gerente' ? 'VENDAS LOJA' : 'VENDAS'}</td>` +
+      `<td style="padding:2px 5px;text-align:right">${num(entry.vendas) ? `<strong>${fmt(num(entry.vendas))}</strong>` : ''}</td>` +
+      pctCell +
+      `<td style="padding:2px 5px;text-align:right;white-space:nowrap">${money(entry.comissaoTotal)}</td>` +
+      `</tr>`;
     const gm = tipo === 'gerente'
       ? r2(cfg.garantiaMinimaGerente || cfg.garantiaMinima || 0)
       : (tipo === 'sub' || tipo === 'gvend')
