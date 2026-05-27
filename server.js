@@ -3537,12 +3537,12 @@ function _transBoards(reqLojas) {
   return { boards, lojas, firstCnpj, firstChave };
 }
 
-// GET /api/catalog — catálogo de produtos do Microvix (para cálculo client-side)
-// ?debug=1 → retorna amostra com campos brutos para diagnóstico de preços
+// GET /api/catalog — retorna apenas status; NÃO serializa o catálogo completo (OOM).
+// Para buscar entradas específicas use POST /api/catalog-codes.
+// ?debug=1 → amostra bruta de LinxProdutos para diagnosticar campos de preço.
 app.get('/api/catalog', requireAdmin, async (req, res) => {
   try {
     const lojas = (() => { try { return JSON.parse(process.env.MICROVIX_LOJAS || '{}'); } catch { return {}; } })();
-    // Debug: mostra campos brutos do LinxProdutos para diagnosticar nomes de campos de preço
     if (req.query.debug === '1') {
       const { fetchProdutos } = require('./services/microvix');
       const firstBoard = Object.keys(lojas)[0];
@@ -3551,16 +3551,31 @@ app.get('/api/catalog', requireAdmin, async (req, res) => {
       const chave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
       const rows  = await fetchProdutos(cnpj, chave, 0);
       const sample = rows.slice(0, 3);
-      const priceFields = sample.length > 0
-        ? Object.keys(sample[0]).filter(k => /preco|price|valor|vlr/i.test(k))
-        : [];
-      return res.json({ total: rows.length, fields: sample[0] ? Object.keys(sample[0]) : [], priceFields, sample });
+      return res.json({ total: rows.length, fields: sample[0] ? Object.keys(sample[0]) : [], sample });
     }
     const catalog = await _getCatalog(lojas).catch(() => ({}));
-    res.json(catalog);
+    const size = Object.keys(catalog).length;
+    // Nunca serializar o catálogo completo — pode ter 600k+ entradas e causa OOM.
+    res.json({ _info: 'Use POST /api/catalog-codes com array de códigos', size });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+// POST /api/catalog-codes — lookup pontual: aceita array de códigos, devolve só essas entradas
+app.post('/api/catalog-codes', requireAdmin, async (req, res) => {
+  try {
+    const codes = req.body?.codes;
+    if (!Array.isArray(codes) || !codes.length) return res.json({});
+    const lojas = (() => { try { return JSON.parse(process.env.MICROVIX_LOJAS || '{}'); } catch { return {}; } })();
+    const catalog = await _getCatalog(lojas).catch(() => ({}));
+    const result = {};
+    for (const c of codes) {
+      const k = String(c).replace(/\.0+$/, '').trim();
+      if (k && catalog[k]) result[k] = catalog[k];
+    }
+    res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // POST /api/equalizacao-dados — equalização com dados pré-extraídos pelo browser (JSON)

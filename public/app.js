@@ -2123,20 +2123,21 @@ function renderPromocaoView() {
         return;
       }
 
-      // Enriquece com preços do catálogo Microvix
+      // Enriquece com preços do catálogo Microvix (busca apenas os códigos necessários)
       result.innerHTML = '<div class="trans-loading">Buscando preços no Microvix…</div>';
-      const catalog = await apiFetch('GET', '/api/catalog').catch(() => ({}));
+      const promCodes = [...new Set(sugestoes.flatMap(g => g.cods))];
+      const catalog = promCodes.length
+        ? await apiFetch('POST', '/api/catalog-codes', { codes: promCodes }).catch(() => ({}))
+        : {};
       for (const g of sugestoes) {
-        let precoCheio = 0, precoPromo = 0;
+        let precoCheio = 0;
         for (const cod of g.cods) {
           const cat = catalog[cod];
-          if (cat) {
-            if (cat.preco_cheio > precoCheio) precoCheio = cat.preco_cheio;
-            if (cat.preco_promo > precoPromo)  precoPromo  = cat.preco_promo;
-          }
+          if (cat && (cat.preco_venda || cat.preco_cheio) > precoCheio)
+            precoCheio = cat.preco_venda || cat.preco_cheio;
         }
         g.precoCheio = precoCheio;
-        g.precoPromo = precoPromo;
+        g.precoPromo = 0;
       }
 
       // Renderiza tabela
@@ -2440,9 +2441,12 @@ function renderTransExcelTab(container) {
       const excluidos = totalBruto - Object.keys(products).length;
       if (!Object.keys(products).length) throw new Error(`Todos os ${totalBruto} produtos foram filtrados pela data de entrada (a partir de ${compraMinDate.split('-').reverse().join('/')}). Tente uma data de entrada anterior ou verifique se o relatório tem a coluna "Última Compra" (col. ${colUltimaCompra+1}).`);
 
-      // Passo 4: busca catálogo (GET pequeno) e calcula tudo no browser
+      // Passo 4: busca entradas do catálogo apenas para os produtos do Excel
       result.innerHTML = '<div class="trans-loading">Buscando catálogo Microvix…</div>';
-      const catalog = await apiFetch('GET', '/api/catalog').catch(() => ({}));
+      const transCodes = Object.keys(products);
+      const catalog = transCodes.length
+        ? await apiFetch('POST', '/api/catalog-codes', { codes: transCodes }).catch(() => ({}))
+        : {};
 
       result.innerHTML = '<div class="trans-loading">Calculando sugestões…</div>';
       const boards = companies.map(c => c.board);
