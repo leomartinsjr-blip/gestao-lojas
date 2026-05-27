@@ -28,8 +28,7 @@ async function init() {
   if (isAdmin) {
     boardSel.style.display = '';
     boardSel.innerHTML =
-      '<option value="">Todas as lojas</option>' +
-      '<option value="surfers">— Total Surfers —</option>' +
+      '<option value="surfers">Total Surfers</option>' +
       Object.entries(STORE_BOARDS).map(([k,v]) =>
         `<option value="${k}">${v.label}</option>`).join('');
   }
