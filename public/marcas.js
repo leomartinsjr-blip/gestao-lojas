@@ -15,6 +15,8 @@ const pad = n => String(n).padStart(2, '0');
 
 let me = null;
 let apiData = null;
+let stockData = null;
+let stockMap = {};   // marca.toUpperCase() → estoque entry
 let viewMode = 'marca'; // 'marca' | 'setor'
 const expanded = new Set();
 
@@ -94,13 +96,24 @@ async function fetchData() {
     const params = new URLSearchParams({ dtIni, dtFin });
     if (board === 'surfers') params.set('boards', 'surfers');
     else if (board) params.set('board', board);
-    const res = await fetch('/api/relatorio-marcas?' + params);
-    if (!res.ok) {
-      let msg = `Erro ${res.status}`;
-      try { msg = (await res.json()).error || msg; } catch {}
+
+    // Fetch vendas e estoque em paralelo
+    const [salesRes, stockRes] = await Promise.all([
+      fetch('/api/relatorio-marcas?' + params),
+      fetch('/api/estoque-marcas?' + params),
+    ]);
+
+    if (!salesRes.ok) {
+      let msg = `Erro ${salesRes.status}`;
+      try { msg = (await salesRes.json()).error || msg; } catch {}
       showError(msg); return;
     }
-    apiData = await res.json();
+    apiData    = await salesRes.json();
+    stockData  = stockRes.ok ? await stockRes.json() : null;
+    stockMap   = {};
+    if (stockData && stockData.estoque) {
+      for (const e of stockData.estoque) stockMap[e.marca.toUpperCase()] = e;
+    }
     expanded.clear();
     render();
   } catch (e) {
@@ -197,24 +210,30 @@ function renderPorMarca(marcas, totalValor) {
         </div>`;
     }).join('');
 
+    const stockHtml = stockBoxHtml(m.marca);
     return `
       <div class="mx-brand-card${isOpen ? ' open' : ''}" data-marca="${_esc(m.marca)}">
-        <div class="mx-brand-hdr">
-          <span class="mx-brand-rank">#${i + 1}</span>
-          <span class="mx-brand-name" title="${_esc(m.marca)}">${_esc(m.marca)}</span>
-          <div class="mx-brand-right">
-            <span class="mx-brand-val">${fBRL(m.valor)}</span>
-            <span class="mx-brand-pecas">${fNum(m.qtd)} pcs</span>
-            <span class="mx-brand-chevron">▼</span>
+        <div class="mx-brand-layout">
+          <div class="mx-brand-sales">
+            <div class="mx-brand-hdr">
+              <span class="mx-brand-rank">#${i + 1}</span>
+              <span class="mx-brand-name" title="${_esc(m.marca)}">${_esc(m.marca)}</span>
+              <div class="mx-brand-right">
+                <span class="mx-brand-val">${fBRL(m.valor)}</span>
+                <span class="mx-brand-pecas">${fNum(m.qtd)} pcs</span>
+                <span class="mx-brand-chevron">▼</span>
+              </div>
+            </div>
+            <div class="mx-bar-wrap">
+              <div class="mx-bar-row">
+                <div class="mx-bar-track"><div class="mx-bar-fill" style="width:${barPct}%"></div></div>
+                <span class="mx-bar-pct">${pct}%</span>
+              </div>
+            </div>
+            <div class="mx-prod-wrap">${setoresHtml}</div>
           </div>
+          ${stockHtml}
         </div>
-        <div class="mx-bar-wrap">
-          <div class="mx-bar-row">
-            <div class="mx-bar-track"><div class="mx-bar-fill" style="width:${barPct}%"></div></div>
-            <span class="mx-bar-pct">${pct}%</span>
-          </div>
-        </div>
-        <div class="mx-prod-wrap">${setoresHtml}</div>
       </div>`;
   }).join('');
 
@@ -275,6 +294,54 @@ function renderPorSetor(marcas, totalValor) {
   wireEvents(list);
 }
 
+// ── Stock box ─────────────────────────────────────────────────────────────────
+function fK(v) {
+  if (!v) return '—';
+  if (v >= 1000) return 'R$ ' + (v / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'k';
+  return fBRL(v);
+}
+
+function stockBoxHtml(marca) {
+  if (!stockData) return '<div class="mx-stock-box"><div class="mx-stock-loading">carregando…</div></div>';
+  const e = stockMap[marca.toUpperCase()];
+  if (!e) return '<div class="mx-stock-box"><div class="mx-stock-loading" style="color:#30363d">—</div></div>';
+
+  const hasValor = e.totalValor > 0;
+  const lojaRows = e.lojas.map(l => `
+    <div class="mx-stock-loja">
+      <span class="mx-stock-dot" style="color:${l.color}">●</span>
+      <span class="mx-stock-loja-name">${_esc(l.label)}</span>
+      <span class="mx-stock-loja-qty">${fNum(l.qtd)}</span>
+      ${hasValor ? `<span class="mx-stock-loja-val">${fK(l.valor)}</span>` : ''}
+    </div>`).join('');
+
+  const hasSetores = e.setores && e.setores.length > 1;
+  const setoresRows = (e.setores || []).map(s => {
+    const sLojaRows = s.lojas.map(l => `
+      <div class="mx-stock-loja" style="padding-left:.5rem">
+        <span class="mx-stock-dot" style="color:${l.color}">●</span>
+        <span class="mx-stock-loja-name">${_esc(l.label)}</span>
+        <span class="mx-stock-loja-qty">${fNum(l.qtd)}</span>
+        ${hasValor ? `<span class="mx-stock-loja-val">${fK(l.valor)}</span>` : ''}
+      </div>`).join('');
+    return `<div class="mx-stock-setor-name">${_esc(s.setor)}</div>${sLojaRows}`;
+  }).join('');
+
+  const toggleHtml = hasSetores ? `
+    <div class="mx-stock-setor-toggle">
+      <span class="mx-stock-setor-chevron">▶</span> Por setor
+    </div>
+    <div class="mx-stock-setores">${setoresRows}</div>` : '';
+
+  return `<div class="mx-stock-box">
+    <div class="mx-stock-title">Estoque atual</div>
+    <div class="mx-stock-total">${fNum(e.totalQtd)} pcs</div>
+    ${hasValor ? `<div class="mx-stock-total-val">${fK(e.totalValor)}</div>` : ''}
+    ${lojaRows}
+    ${toggleHtml}
+  </div>`;
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function prodTable(produtos) {
   const rows = (produtos || []).map((p, i) => {
@@ -327,6 +394,18 @@ function wireEvents(list) {
       const isOpen = row.classList.toggle('open');
       row.closest('table').querySelectorAll(`.mx-cor-row[data-rkey="${rkey}"]`)
         .forEach(r => r.style.display = isOpen ? 'table-row' : 'none');
+    });
+  });
+
+  list.querySelectorAll('.mx-stock-setor-toggle').forEach(toggle => {
+    toggle.addEventListener('click', e => {
+      e.stopPropagation();
+      const box      = toggle.closest('.mx-stock-box');
+      const setoresEl = box.querySelector('.mx-stock-setores');
+      const chevron   = toggle.querySelector('.mx-stock-setor-chevron');
+      const isOpen    = setoresEl.style.display !== 'none';
+      setoresEl.style.display  = isOpen ? 'none' : 'block';
+      chevron.style.transform  = isOpen ? '' : 'rotate(90deg)';
     });
   });
 }

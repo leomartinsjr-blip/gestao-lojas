@@ -3076,6 +3076,110 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/estoque-marcas ───────────────────────────────────────────────
+// Estoque atual por marca/setor/loja com valor em preço de venda.
+// Usa LinxProdutosInventario + catálogo (preco_venda).
+// Aceita os mesmos parâmetros de board que /api/relatorio-marcas.
+app.get('/api/estoque-marcas', requireAuth, async (req, res) => {
+  try {
+    const { board, boards } = req.query;
+    const { board: userBoard } = req.session.user;
+    const isAdm = !userBoard || userBoard === 'escritorio';
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const SURFERS = ['delrey', 'minas', 'contagem', 'estacao'];
+
+    const targetBoards = !isAdm ? [userBoard]
+      : boards === 'surfers'   ? SURFERS.filter(b => lojas[b])
+      : boards                 ? boards.split(',').map(b => b.trim()).filter(b => lojas[b])
+      : board                  ? [board]
+      : Object.keys(lojas);
+
+    const { fetchEstoque, parseBrNum } = require('./services/microvix');
+    const today   = new Date().toISOString().slice(0, 10);
+    const catalog = await _getCatalog(lojas).catch(() => ({}));
+
+    const stockByBoard = {};
+    await Promise.all(targetBoards.map(async b => {
+      const cnpj  = (lojas[b] || '').replace(/\D/g, '');
+      if (!cnpj) return;
+      const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+      try {
+        stockByBoard[b] = await fetchEstoque(cnpj, chave, today);
+      } catch (e) {
+        console.warn(`[estoqueMarcas/${b}] ${e.message}`);
+        stockByBoard[b] = [];
+      }
+    }));
+
+    const STORE_LABELS = { delrey: 'DEL REY', minas: 'MINAS', contagem: 'CONTAGEM', estacao: 'ESTAÇÃO', tommy: 'TOMMY', lez: 'LEZ A LEZ' };
+    const STORE_COLORS = { delrey: '#58A6FF', minas: '#3FB950', contagem: '#D29922', estacao: '#F85149', tommy: '#22D3EE', lez: '#F472B6' };
+
+    const byMarca = {};
+
+    for (const b of targetBoards) {
+      for (const r of (stockByBoard[b] || [])) {
+        const cod   = String(r.cod_produto || r.codproduto || '').replace(/\.0+$/, '').trim();
+        const barra = String(r.cod_barra   || r.codbarra   || '').replace(/\.0+$/, '').trim();
+        if (!cod) continue;
+
+        const qty = parseBrNum(r.quantidade || '0');
+        if (qty <= 0) continue;
+
+        const prodInfo  = catalog[cod] || catalog[barra] || {};
+        const marca     = (prodInfo.marca || '(sem marca)').trim();
+        const setor     = (prodInfo.setor || '(sem setor)').trim();
+        const preco     = parseBrNum(r.preco_venda || r.preco || '0') || (prodInfo.preco_venda || 0);
+        const valor     = qty * preco;
+
+        const mKey = marca.toUpperCase();
+        if (!byMarca[mKey]) byMarca[mKey] = { marca, totalQtd: 0, totalValor: 0, lojas: {}, setores: {} };
+        byMarca[mKey].totalQtd   += qty;
+        byMarca[mKey].totalValor += valor;
+        if (!byMarca[mKey].lojas[b]) byMarca[mKey].lojas[b] = { qtd: 0, valor: 0 };
+        byMarca[mKey].lojas[b].qtd   += qty;
+        byMarca[mKey].lojas[b].valor += valor;
+
+        const sKey = setor.toUpperCase();
+        if (!byMarca[mKey].setores[sKey]) byMarca[mKey].setores[sKey] = { setor, lojas: {} };
+        if (!byMarca[mKey].setores[sKey].lojas[b]) byMarca[mKey].setores[sKey].lojas[b] = { qtd: 0, valor: 0 };
+        byMarca[mKey].setores[sKey].lojas[b].qtd   += qty;
+        byMarca[mKey].setores[sKey].lojas[b].valor += valor;
+      }
+    }
+
+    function lojasList(lojasMap) {
+      return targetBoards
+        .filter(b => lojasMap[b])
+        .map(b => ({
+          board: b,
+          label: STORE_LABELS[b] || b.toUpperCase(),
+          color: STORE_COLORS[b] || '#8b949e',
+          qtd:   lojasMap[b].qtd,
+          valor: parseFloat(lojasMap[b].valor.toFixed(2)),
+        }));
+    }
+
+    const result = Object.values(byMarca)
+      .map(m => ({
+        marca:      m.marca,
+        totalQtd:   m.totalQtd,
+        totalValor: parseFloat(m.totalValor.toFixed(2)),
+        lojas:      lojasList(m.lojas),
+        setores:    Object.values(m.setores)
+          .map(s => ({
+            setor:      s.setor,
+            totalQtd:   targetBoards.reduce((sum, b) => sum + (s.lojas[b]?.qtd   || 0), 0),
+            totalValor: parseFloat(targetBoards.reduce((sum, b) => sum + (s.lojas[b]?.valor || 0), 0).toFixed(2)),
+            lojas:      lojasList(s.lojas),
+          }))
+          .sort((a, b) => b.totalValor - a.totalValor),
+      }))
+      .sort((a, b) => b.totalValor - a.totalValor);
+
+    res.json({ boards: targetBoards, estoque: result });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Transferências: cache de resultado (TTL 30min) ─────────────────────────
 let _transResultCache = {};
 let _transWarmRunning = {};
@@ -3105,7 +3209,7 @@ async function _getCatalog(lojas) {
 }
 
 async function _buildCatalog(lojas) {
-  const { fetchServicos, buildRequest, postRequest, parseCsv } = require('./services/microvix');
+  const { fetchServicos, buildRequest, postRequest, parseCsv, parseBrNum } = require('./services/microvix');
   const boards = Object.keys(lojas);
   if (!boards.length) return {};
   try {
@@ -3149,14 +3253,15 @@ async function _buildCatalog(lojas) {
             linha:    (r.desc_linha  || '').trim(),
             desc_cor: (r.desc_cor    || '').trim(),
             desc_tam: (r.desc_tamanho || '').trim(),
-            preco_cheio: 0, preco_promo: 0,
+            preco_venda: parseBrNum(r.preco_venda || r.preco || r.preco_cheio || '0'),
           };
           const mergeEntry = (key) => {
             if (!map[key]) { map[key] = entry; return; }
-            if (!map[key].marca && entry.marca) map[key].marca = entry.marca;
-            if (!map[key].setor && entry.setor) map[key].setor = entry.setor;
-            if (!map[key].nome  && entry.nome)  map[key].nome  = entry.nome;
-            if (!map[key].linha && entry.linha) map[key].linha = entry.linha;
+            if (!map[key].marca       && entry.marca)       map[key].marca       = entry.marca;
+            if (!map[key].setor       && entry.setor)       map[key].setor       = entry.setor;
+            if (!map[key].nome        && entry.nome)        map[key].nome        = entry.nome;
+            if (!map[key].linha       && entry.linha)       map[key].linha       = entry.linha;
+            if (!map[key].preco_venda && entry.preco_venda) map[key].preco_venda = entry.preco_venda;
           };
           if (cod)                                      mergeEntry(cod);
           if (ref   && ref   !== cod)                   mergeEntry(ref);
