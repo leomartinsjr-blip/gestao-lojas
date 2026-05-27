@@ -3041,7 +3041,7 @@ async function _getCatalog(lojas) {
 }
 
 async function _buildCatalog(lojas) {
-  const { fetchServicos, buildRequest, postRequest, parseCsv } = require('./services/microvix');
+  const { fetchServicos, fetchMarcas, fetchSetores, buildRequest, postRequest, parseCsv } = require('./services/microvix');
   const boards = Object.keys(lojas);
   if (!boards.length) return {};
   try {
@@ -3054,6 +3054,27 @@ async function _buildCatalog(lojas) {
       const cnpj  = (lojas[board] || '').replace(/\D/g, '');
       const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
       if (!cnpj) continue;
+
+      // Busca tabelas mestras de marcas e setores para fazer join pelo id
+      const [marcasRows, setoresRows] = await Promise.all([
+        fetchMarcas(cnpj, chave).catch(() => []),
+        fetchSetores(cnpj, chave).catch(() => []),
+      ]);
+      if (marcasRows.length) console.log(`[Catalog/${board}] ${marcasRows.length} marcas | campos:`, Object.keys(marcasRows[0]).join(', '));
+      if (setoresRows.length) console.log(`[Catalog/${board}] ${setoresRows.length} setores | campos:`, Object.keys(setoresRows[0]).join(', '));
+
+      // id_marca → nome da marca
+      const marcasMap = {};
+      for (const m of marcasRows) {
+        const id = String(m.id_marca || m.codigo || '').replace(/\.0+$/, '').trim();
+        if (id) marcasMap[id] = (m.nome_marca || m.nome || m.descricao || '').trim();
+      }
+      // id_setor → nome do setor
+      const setoresMap = {};
+      for (const s of setoresRows) {
+        const id = String(s.id_setor || s.codigo || '').replace(/\.0+$/, '').trim();
+        if (id) setoresMap[id] = (s.nome_setor || s.nome || s.descricao || '').trim();
+      }
 
       let ts = 0, boardCount = 0;
       for (let page = 0; page < 20; page++) {
@@ -3075,13 +3096,15 @@ async function _buildCatalog(lojas) {
           const cod   = String(r.cod_produto || '').replace(/\.0+$/, '').trim();
           const barra = String(r.cod_barra   || '').replace(/\.0+$/, '').trim();
           if (!cod) continue;
+          const idMarca = String(r.id_marca || '').replace(/\.0+$/, '').trim();
+          const idSetor = String(r.id_setor || '').replace(/\.0+$/, '').trim();
           const entry = {
             tipo:     'produto',
-            nome:     (r.nome         || '').trim(),
-            setor:    (r.desc_setor   || '').trim(),
-            marca:    (r.desc_marca   || '').trim(),
-            linha:    (r.desc_linha   || '').trim(),
-            desc_cor: (r.desc_cor     || '').trim(),
+            nome:     (r.nome || '').trim(),
+            setor:    (r.desc_setor  || setoresMap[idSetor] || r.setor  || '').trim(),
+            marca:    (r.desc_marca  || marcasMap[idMarca]  || r.marca  || '').trim(),
+            linha:    (r.desc_linha  || '').trim(),
+            desc_cor: (r.desc_cor    || '').trim(),
             desc_tam: (r.desc_tamanho || '').trim(),
             preco_cheio: 0, preco_promo: 0,
           };
@@ -3101,7 +3124,9 @@ async function _buildCatalog(lojas) {
       for (const r of svcRows) {
         const cod = String(r.cod_servico || '').replace(/\.0+$/, '').trim();
         if (!cod || map[cod]) continue;
-        map[cod] = { tipo: 'servico', nome: (r.nome || '').trim(), setor: (r.desc_setor || '').trim(), marca: (r.desc_marca || '').trim(), linha: (r.desc_linha || '').trim(), desc_cor: '', desc_tam: '', preco_cheio: 0, preco_promo: 0 };
+        const idMarca = String(r.id_marca || '').replace(/\.0+$/, '').trim();
+        const idSetor = String(r.id_setor || '').replace(/\.0+$/, '').trim();
+        map[cod] = { tipo: 'servico', nome: (r.nome || '').trim(), setor: (r.desc_setor || setoresMap[idSetor] || '').trim(), marca: (r.desc_marca || marcasMap[idMarca] || '').trim(), linha: (r.desc_linha || '').trim(), desc_cor: '', desc_tam: '', preco_cheio: 0, preco_promo: 0 };
       }
     }
 

@@ -303,4 +303,22 @@ async function fetchContasPagar(cnpj, dtIni, dtFin, chave) {
   return parseCsv(raw);
 }
 
-module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchSangrias, fetchContasPagar, parseBrNum, buildRequest, postRequest, parseCsv };
+// Fetch LinxMarcas → tabela mestra de marcas: id_marca, nome/descricao
+async function fetchMarcas(cnpj, chave) {
+  const body = buildRequest('LinxMarcas', cnpj, [], chave);
+  const raw  = await postRequest(body, 30_000);
+  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) return [];
+  if (raw.trim().startsWith('<')) return [];
+  return parseCsv(raw);
+}
+
+// Fetch LinxSetores → tabela mestra de setores: id_setor, nome/descricao
+async function fetchSetores(cnpj, chave) {
+  const body = buildRequest('LinxSetores', cnpj, [], chave);
+  const raw  = await postRequest(body, 30_000);
+  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) return [];
+  if (raw.trim().startsWith('<')) return [];
+  return parseCsv(raw);
+}
+
+module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, parseBrNum, buildRequest, postRequest, parseCsv };
