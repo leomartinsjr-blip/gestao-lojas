@@ -127,8 +127,10 @@ function render() {
     const isOpen = expanded.has(m.marca);
 
     const setoresHtml = (m.setores || []).map(s => {
-      const sKey  = m.marca + '\x00' + s.setor;
-      const sOpen = expanded.has(sKey);
+      const sKey      = m.marca + '\x00' + s.setor;
+      const sOpen     = expanded.has(sKey);
+      const pctMarca  = m.valor  > 0 ? ((s.valor / m.valor)    * 100).toFixed(1) : '0.0';
+      const pctTotal  = totalValor > 0 ? ((s.valor / totalValor) * 100).toFixed(1) : '0.0';
       return `
         <div class="mx-setor-row${sOpen ? ' open' : ''}" data-skey="${_esc(sKey)}">
           <div class="mx-setor-hdr">
@@ -136,6 +138,8 @@ function render() {
             <span class="mx-setor-name">${_esc(s.setor)}</span>
             <span class="mx-setor-val">${fBRL(s.valor)}</span>
             <span class="mx-setor-pecas">${fNum(s.qtd)} pcs</span>
+            <span class="mx-setor-pct" title="% da marca">${pctMarca}%</span>
+            <span class="mx-setor-pct-total" title="% do total faturado">${pctTotal}% total</span>
           </div>
           <div class="mx-setor-prods">
             <table class="mx-prod-tbl">
