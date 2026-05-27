@@ -28,6 +28,7 @@ async function init() {
     boardSel.style.display = '';
     boardSel.innerHTML =
       '<option value="">Todas as lojas</option>' +
+      '<option value="surfers">— Total Surfers —</option>' +
       Object.entries(STORE_BOARDS).map(([k,v]) =>
         `<option value="${k}">${v.label}</option>`).join('');
   }
@@ -81,7 +82,8 @@ async function fetchData() {
 
   try {
     const params = new URLSearchParams({ dtIni, dtFin });
-    if (board) params.set('board', board);
+    if (board === 'surfers') params.set('boards', 'surfers');
+    else if (board) params.set('board', board);
     const res = await fetch('/api/relatorio-marcas?' + params);
     if (!res.ok) {
       let msg = `Erro ${res.status}`;
@@ -106,8 +108,11 @@ function render() {
 
   document.getElementById('sumValor').textContent   = fBRL(totalValor);
   document.getElementById('sumPecas').textContent   = fNum(totalPecas) + ' pcs';
+  const boardsLabel = apiData.boards && apiData.boards.length < 6
+    ? (apiData.boards.length === 4 && apiData.boards.includes('delrey') ? 'Total Surfers' : apiData.boards.map(b => (STORE_BOARDS[b]||{label:b}).label).join(', '))
+    : 'Todas as lojas';
   document.getElementById('sumMarcas').textContent  = marcas.length;
-  document.getElementById('sumPeriodo').textContent = fDate(apiData.dtIni) + ' → ' + fDate(apiData.dtFin);
+  document.getElementById('sumPeriodo').textContent = fDate(apiData.dtIni) + ' → ' + fDate(apiData.dtFin) + ' · ' + boardsLabel;
   document.getElementById('summaryStrip').style.display = '';
 
   const state = document.getElementById('stateBox');

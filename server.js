@@ -2936,19 +2936,22 @@ app.get('/api/catalog-warm', requireAdmin, async (req, res) => {
 });
 
 // ── GET /api/relatorio-marcas ─────────────────────────────────────────────
-// ?dtIni=2026-05-01&dtFin=2026-05-26&board=delrey   (board opcional)
-// Usa LinxMovimento × catálogo LinxProdutos (aguardado com await, não background)
+// ?dtIni=2026-05-01&dtFin=2026-05-26&board=delrey  ou  &boards=delrey,minas,contagem,estacao
+// Grupo especial: &boards=surfers → delrey,minas,contagem,estacao
 app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
   try {
-    const { dtIni, dtFin, board } = req.query;
+    const { dtIni, dtFin, board, boards } = req.query;
     if (!dtIni || !dtFin) return res.status(400).json({ error: 'dtIni e dtFin obrigatórios (YYYY-MM-DD)' });
     const { board: userBoard } = req.session.user;
     const isAdm = !userBoard || userBoard === 'escritorio';
 
     const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-    const targetBoards = isAdm
-      ? (board ? [board] : Object.keys(lojas))
-      : [userBoard];
+    const SURFERS = ['delrey', 'minas', 'contagem', 'estacao'];
+    const targetBoards = !isAdm ? [userBoard]
+      : boards === 'surfers'         ? SURFERS.filter(b => lojas[b])
+      : boards                       ? boards.split(',').map(b => b.trim()).filter(b => lojas[b])
+      : board                        ? [board]
+      : Object.keys(lojas);
 
     const { fetchMovimento, parseBrNum } = require('./services/microvix');
 
