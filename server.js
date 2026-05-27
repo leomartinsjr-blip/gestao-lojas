@@ -2924,8 +2924,8 @@ app.get('/api/catalog-warm', requireAdmin, async (req, res) => {
 });
 
 // ── GET /api/relatorio-marcas ─────────────────────────────────────────────
-// ?dtIni=2026-05-01&dtFin=2026-05-26&board=delrey   (board opcional — sem ele = todas as lojas)
-// Usa LinxMovimento (item-level: 1 linha = 1 produto por NF) × catálogo LinxProdutos para marca
+// ?dtIni=2026-05-01&dtFin=2026-05-26&board=delrey   (board opcional)
+// Usa LinxMovimentoItens — desc_marca e desc_setor direto no row, sem catálogo separado
 app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
   try {
     const { dtIni, dtFin, board } = req.query;
@@ -2938,25 +2938,19 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
       ? (board ? [board] : Object.keys(lojas))
       : [userBoard];
 
-    const { fetchMovimento, parseBrNum } = require('./services/microvix');
-
-    // Usa catálogo do cache se disponível; dispara warm em background sem bloquear
-    const catalog = (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) ? _catalogCache : {};
-    if (!_catalogCache || Date.now() - _catalogCacheAt >= CATALOG_TTL) {
-        _getCatalog(lojas).catch(e => console.warn('[Catalog bg]', e.message));
-    }
+    const { fetchMovimentoItens, parseBrNum } = require('./services/microvix');
 
     const byMarca = {};
 
-    // Busca todas as lojas em paralelo
     const boardResults = await Promise.all(
       targetBoards.map(async b => {
         const cnpj = (lojas[b] || '').replace(/\D/g, '');
         if (!cnpj) return [];
         const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
         try {
-          const rows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
-          console.log(`[relatorioMarcas/${b}] ${rows.length} linhas`);
+          const rows = await fetchMovimentoItens(cnpj, dtIni, dtFin, chave);
+          console.log(`[relatorioMarcas/${b}] ${rows.length} itens`);
+          if (rows.length) console.log(`[relatorioMarcas/${b}] campos:`, Object.keys(rows[0]).join(', '));
           return rows;
         } catch (e) {
           console.error(`[relatorioMarcas/${b}] ${e.message}`);
@@ -2971,37 +2965,51 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
         if (row.excluido  === 'S') continue;
         if (row.soma_relatorio === 'N') continue;
         const op = (row.operacao || '').toUpperCase();
-        if (op !== 'S' && op !== 'DS') continue;
+        // Se o campo operacao existir e não for venda/devolução, pula
+        if (op && op !== 'S' && op !== 'DS') continue;
         const sign = op === 'DS' ? -1 : 1;
 
-        const cod      = String(row.cod_produto || '').replace(/\.0+$/, '').trim();
-        const barra    = String(row.cod_barra   || '').replace(/\.0+$/, '').trim();
-        const prodInfo = catalog[cod] || catalog[barra] || {};
-        // Usa catálogo enriquecido se disponível; fallback nos campos do próprio LinxMovimento
-        const marca    = (prodInfo.marca || row.desc_marca || row.marca || '(sem marca)').trim();
-        const qtd      = sign * parseBrNum(row.quantidade  || '0');
-        const valor    = sign * parseBrNum(row.valor_total || '0');
+        const cod   = String(row.cod_produto || '').replace(/\.0+$/, '').trim();
+        if (!cod) continue;
 
-        const key = marca.toUpperCase();
-        if (!byMarca[key]) byMarca[key] = { marca, qtd: 0, valor: 0, produtos: {} };
-        byMarca[key].qtd   += qtd;
-        byMarca[key].valor += valor;
+        const marca = ((row.desc_marca || row.marca || '').trim()) || '(sem marca)';
+        const setor = ((row.desc_setor || row.setor || '').trim()) || '(sem setor)';
+        const nome  = (row.nome_produto || row.descricao || row.nome || cod).trim();
+        const qtd   = sign * parseBrNum(row.quantidade  || '0');
+        const valor = sign * parseBrNum(row.valor_total || '0');
 
-        const nomeProd = (prodInfo.nome || row.nome_produto || row.nome || row.descricao || cod || '?').trim();
-        const tipo     = prodInfo.tipo || 'produto';
-        if (!byMarca[key].produtos[cod]) byMarca[key].produtos[cod] = { cod, nome: nomeProd, tipo, qtd: 0, valor: 0 };
-        byMarca[key].produtos[cod].qtd   += qtd;
-        byMarca[key].produtos[cod].valor += valor;
+        const mKey = marca.toUpperCase();
+        if (!byMarca[mKey]) byMarca[mKey] = { marca, qtd: 0, valor: 0, setores: {} };
+        byMarca[mKey].qtd   += qtd;
+        byMarca[mKey].valor += valor;
+
+        const sKey = setor.toUpperCase();
+        if (!byMarca[mKey].setores[sKey]) byMarca[mKey].setores[sKey] = { setor, qtd: 0, valor: 0, produtos: {} };
+        byMarca[mKey].setores[sKey].qtd   += qtd;
+        byMarca[mKey].setores[sKey].valor += valor;
+
+        if (!byMarca[mKey].setores[sKey].produtos[cod])
+          byMarca[mKey].setores[sKey].produtos[cod] = { cod, nome, qtd: 0, valor: 0 };
+        byMarca[mKey].setores[sKey].produtos[cod].qtd   += qtd;
+        byMarca[mKey].setores[sKey].produtos[cod].valor += valor;
       }
     }
 
     const result = Object.values(byMarca)
       .map(m => ({
-        ...m,
-        valor: parseFloat(m.valor.toFixed(2)),
-        produtos: Object.values(m.produtos)
-          .sort((a, b) => b.valor - a.valor)
-          .map(p => ({ ...p, valor: parseFloat(p.valor.toFixed(2)) })),
+        marca:  m.marca,
+        qtd:    m.qtd,
+        valor:  parseFloat(m.valor.toFixed(2)),
+        setores: Object.values(m.setores)
+          .map(s => ({
+            setor:   s.setor,
+            qtd:     s.qtd,
+            valor:   parseFloat(s.valor.toFixed(2)),
+            produtos: Object.values(s.produtos)
+              .sort((a, b) => b.valor - a.valor)
+              .map(p => ({ ...p, valor: parseFloat(p.valor.toFixed(2)) })),
+          }))
+          .sort((a, b) => b.valor - a.valor),
       }))
       .sort((a, b) => b.valor - a.valor);
 

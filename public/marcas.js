@@ -15,14 +15,13 @@ const pad = n => String(n).padStart(2, '0');
 
 let me = null;
 let apiData = null;
-const expanded = new Set();
+const expanded = new Set(); // marca keys e "marca|setor" keys
 
 async function init() {
   const r = await fetch('/api/me');
   if (!r.ok) { window.location.href = '/'; return; }
   me = await r.json();
 
-  // Store selector — only for admin/escritorio
   const isAdmin = !me.board || me.board === 'escritorio';
   const boardSel = document.getElementById('boardSel');
   if (isAdmin) {
@@ -33,17 +32,13 @@ async function init() {
         `<option value="${k}">${v.label}</option>`).join('');
   }
 
-  // Default date: this month
   setShortcut('mes');
 
-  // Shortcut buttons
   document.querySelectorAll('[data-s]').forEach(btn =>
     btn.addEventListener('click', () => setShortcut(btn.dataset.s)));
 
-  // Search
   document.getElementById('searchBtn').addEventListener('click', fetchData);
 
-  // Enter key on date inputs
   document.querySelectorAll('.mx-inp').forEach(inp =>
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') fetchData(); }));
 }
@@ -109,14 +104,12 @@ function render() {
   const totalPecas = marcas.reduce((s, m) => s + m.qtd,   0);
   const maxValor   = marcas.length ? marcas[0].valor : 1;
 
-  // Summary strip
   document.getElementById('sumValor').textContent   = fBRL(totalValor);
   document.getElementById('sumPecas').textContent   = fNum(totalPecas) + ' pcs';
   document.getElementById('sumMarcas').textContent  = marcas.length;
   document.getElementById('sumPeriodo').textContent = fDate(apiData.dtIni) + ' → ' + fDate(apiData.dtFin);
   document.getElementById('summaryStrip').style.display = '';
 
-  // State box
   const state = document.getElementById('stateBox');
   if (!marcas.length) {
     state.innerHTML = 'Nenhuma venda encontrada para o período.';
@@ -127,12 +120,42 @@ function render() {
   state.style.display = 'none';
   document.getElementById('errorBox').style.display = 'none';
 
-  // Brand cards
   const list = document.getElementById('brandList');
   list.innerHTML = marcas.map((m, i) => {
     const pct    = totalValor > 0 ? ((m.valor / totalValor) * 100).toFixed(1) : '0.0';
     const barPct = totalValor > 0 ? ((m.valor / maxValor)   * 100).toFixed(1) : '0';
     const isOpen = expanded.has(m.marca);
+
+    const setoresHtml = (m.setores || []).map(s => {
+      const sKey  = m.marca + '\x00' + s.setor;
+      const sOpen = expanded.has(sKey);
+      return `
+        <div class="mx-setor-row${sOpen ? ' open' : ''}" data-skey="${_esc(sKey)}">
+          <div class="mx-setor-hdr">
+            <span class="mx-setor-chevron">▶</span>
+            <span class="mx-setor-name">${_esc(s.setor)}</span>
+            <span class="mx-setor-val">${fBRL(s.valor)}</span>
+            <span class="mx-setor-pecas">${fNum(s.qtd)} pcs</span>
+          </div>
+          <div class="mx-setor-prods">
+            <table class="mx-prod-tbl">
+              <thead><tr>
+                <th>Código</th><th>Nome</th><th>Peças</th><th>R$ Valor</th>
+              </tr></thead>
+              <tbody>
+                ${s.produtos.map(p => `
+                  <tr>
+                    <td style="color:#8b949e">${_esc(p.cod)}</td>
+                    <td>${_esc(p.nome)}</td>
+                    <td>${fNum(p.qtd)}</td>
+                    <td>${fBRL(p.valor)}</td>
+                  </tr>`).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>`;
+    }).join('');
+
     return `
       <div class="mx-brand-card${isOpen ? ' open' : ''}" data-marca="${_esc(m.marca)}">
         <div class="mx-brand-hdr">
@@ -151,32 +174,29 @@ function render() {
           </div>
         </div>
         <div class="mx-prod-wrap">
-          <table class="mx-prod-tbl">
-            <thead><tr>
-              <th>Código</th><th>Nome</th><th>Tipo</th><th>Peças</th><th>R$ Valor</th>
-            </tr></thead>
-            <tbody>
-              ${m.produtos.map(p => `
-                <tr>
-                  <td style="color:#8b949e">${_esc(p.cod)}</td>
-                  <td>${_esc(p.nome)}</td>
-                  <td><span class="mx-tipo-badge ${p.tipo === 'servico' ? 'svc' : 'prod'}">${p.tipo === 'servico' ? 'Serviço' : 'Produto'}</span></td>
-                  <td>${fNum(p.qtd)}</td>
-                  <td>${fBRL(p.valor)}</td>
-                </tr>`).join('')}
-            </tbody>
-          </table>
+          ${setoresHtml}
         </div>
       </div>`;
   }).join('');
 
-  // Wire expand/collapse
+  // Expand/collapse marcas
   list.querySelectorAll('.mx-brand-hdr').forEach(hdr => {
     hdr.addEventListener('click', () => {
       const card  = hdr.closest('.mx-brand-card');
       const marca = card.dataset.marca;
       if (expanded.has(marca)) { expanded.delete(marca); card.classList.remove('open'); }
       else                     { expanded.add(marca);    card.classList.add('open'); }
+    });
+  });
+
+  // Expand/collapse setores
+  list.querySelectorAll('.mx-setor-hdr').forEach(hdr => {
+    hdr.addEventListener('click', e => {
+      e.stopPropagation();
+      const row  = hdr.closest('.mx-setor-row');
+      const sKey = row.dataset.skey;
+      if (expanded.has(sKey)) { expanded.delete(sKey); row.classList.remove('open'); }
+      else                    { expanded.add(sKey);    row.classList.add('open'); }
     });
   });
 }
