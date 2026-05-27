@@ -3028,23 +3028,28 @@ const TRANS_RESULT_TTL = 30 * 60 * 1000;
 // Cache do catálogo de produtos (LinxProdutos) — válido por 6 horas
 let _catalogCache = null;
 let _catalogCacheAt = 0;
-let _catalogWarming = false;
+let _catalogWarmPromise = null;  // Promise compartilhada — callers concorrentes aguardam a mesma
 const CATALOG_TTL = 6 * 60 * 60 * 1000;
 
 async function _getCatalog(lojas) {
   if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
-  if (_catalogWarming) return _catalogCache || {};
-  _catalogWarming = true;
+  // Se já está aquecendo, espera a mesma Promise em vez de retornar {} vazio
+  if (_catalogWarmPromise) return _catalogWarmPromise;
+
+  _catalogWarmPromise = _buildCatalog(lojas).finally(() => { _catalogWarmPromise = null; });
+  return _catalogWarmPromise;
+}
+
+async function _buildCatalog(lojas) {
   const { fetchServicos, buildRequest, postRequest, parseCsv } = require('./services/microvix');
   const boards = Object.keys(lojas);
-  if (!boards.length) { _catalogWarming = false; return {}; }
+  if (!boards.length) return {};
   try {
     const map = {};
     const today = new Date().toISOString().slice(0, 10);
     let totalProd = 0;
+    let sampleLogged = false;
 
-    // Busca produtos de TODAS as lojas (cada uma pode ter catálogo próprio: Tommy, Lez a Lez, etc.)
-    // Processa uma página por vez para evitar OOM
     for (const board of boards) {
       const cnpj  = (lojas[board] || '').replace(/\D/g, '');
       const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
@@ -3061,6 +3066,11 @@ async function _getCatalog(lojas) {
         try { raw = await postRequest(body, 60_000); } catch (e) { console.warn(`[Catalog/${board}] pág`, page, e.message); break; }
         if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) break;
         const rows = parseCsv(raw);
+        if (!sampleLogged && rows.length) {
+          console.log(`[Catalog] campos LinxProdutos:`, Object.keys(rows[0]).join(', '));
+          console.log(`[Catalog] amostra produto:`, JSON.stringify(rows[0]));
+          sampleLogged = true;
+        }
         for (const r of rows) {
           const cod   = String(r.cod_produto || '').replace(/\.0+$/, '').trim();
           const barra = String(r.cod_barra   || '').replace(/\.0+$/, '').trim();
@@ -3087,7 +3097,6 @@ async function _getCatalog(lojas) {
       console.log(`[Catalog/${board}] ${boardCount} produtos`);
       totalProd += boardCount;
 
-      // Serviços desta loja
       const svcRows = await fetchServicos(cnpj, chave, 0).catch(e => { console.warn(`[Catalog/${board}] servicos:`, e.message); return []; });
       for (const r of svcRows) {
         const cod = String(r.cod_servico || '').replace(/\.0+$/, '').trim();
@@ -3099,11 +3108,9 @@ async function _getCatalog(lojas) {
     console.log(`[Catalog] ${totalProd} produtos total → ${Object.keys(map).length} entradas (${boards.length} lojas)`);
     _catalogCache   = map;
     _catalogCacheAt = Date.now();
-    _catalogWarming = false;
     return map;
   } catch (e) {
     console.warn('[Catalog] Erro:', e.message);
-    _catalogWarming = false;
     return _catalogCache || {};
   }
 }
