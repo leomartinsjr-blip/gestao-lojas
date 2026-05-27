@@ -2992,9 +2992,15 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
 
         const marca = ((prodInfo.marca || row.desc_marca || row.marca || '').trim()) || '(sem marca)';
         const setor = ((prodInfo.setor || row.desc_setor || row.setor || '').trim()) || '(sem setor)';
-        const nome  = (prodInfo.nome || row.nome_produto || row.nome || row.descricao || cod).trim();
+        const nomeRaw = (prodInfo.nome || row.nome_produto || row.nome || row.descricao || '').trim();
         const qtd   = sign * parseBrNum(row.quantidade  || '0');
         const valor = sign * parseBrNum(row.valor_total || '0');
+
+        // Pula ajustes de arredondamento/complemento gerados pelo Microvix: sem nome no catálogo e valor < R$ 1
+        if (!nomeRaw && Math.abs(valor) < 1) continue;
+
+        // Para produtos reais sem entrada no catálogo, usa o código como nome
+        const nome = nomeRaw || cod;
 
         const mKey = marca.toUpperCase();
         if (!byMarca[mKey]) byMarca[mKey] = { marca, qtd: 0, valor: 0, setores: {} };
@@ -3064,9 +3070,9 @@ async function _buildCatalog(lojas) {
   try {
     const map = {};
     const today = new Date().toISOString().slice(0, 10);
-    // Busca apenas produtos modificados nos últimos 2 anos — ativos/recentes têm timestamps maiores.
-    // Usar '2000-01-01' trazia 150k+ por loja (mais antigos primeiro) e truncava os ativos.
-    const dtIniCatalog = new Date(Date.now() - 730 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    // Busca produtos modificados nos últimos 5 anos para cobrir SKUs antigos ainda ativos.
+    // Não usar '2000-01-01': traria 150k+ por loja (ordem ASC timestamp) truncando os recentes.
+    const dtIniCatalog = new Date(Date.now() - 1825 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     let totalProd = 0;
     let sampleLogged = false;
 
