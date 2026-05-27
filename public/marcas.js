@@ -212,23 +212,27 @@ function renderPorMarca(marcas, totalValor) {
 
     return `
       <div class="mx-brand-card${isOpen ? ' open' : ''}" data-marca="${_esc(m.marca)}">
-        <div class="mx-brand-hdr">
-          <span class="mx-brand-rank">#${i + 1}</span>
-          <span class="mx-brand-name" title="${_esc(m.marca)}">${_esc(m.marca)}</span>
-          <div class="mx-brand-right">
-            <span class="mx-brand-val">${fBRL(m.valor)}</span>
-            <span class="mx-brand-pecas">${fNum(m.qtd)} pcs</span>
-            ${stockColsHtml(m.marca)}
-            <span class="mx-brand-chevron">▼</span>
+        <div class="mx-brand-layout">
+          <div class="mx-brand-sales">
+            <div class="mx-brand-hdr">
+              <span class="mx-brand-rank">#${i + 1}</span>
+              <span class="mx-brand-name" title="${_esc(m.marca)}">${_esc(m.marca)}</span>
+              <div class="mx-brand-right">
+                <span class="mx-brand-val">${fBRL(m.valor)}</span>
+                <span class="mx-brand-pecas">${fNum(m.qtd)} pcs</span>
+                <span class="mx-brand-chevron">▼</span>
+              </div>
+            </div>
+            <div class="mx-bar-wrap">
+              <div class="mx-bar-row">
+                <div class="mx-bar-track"><div class="mx-bar-fill" style="width:${barPct}%"></div></div>
+                <span class="mx-bar-pct">${pct}%</span>
+              </div>
+            </div>
+            <div class="mx-prod-wrap">${setoresHtml}</div>
           </div>
+          ${stockBoxHtml(m.marca)}
         </div>
-        <div class="mx-bar-wrap">
-          <div class="mx-bar-row">
-            <div class="mx-bar-track"><div class="mx-bar-fill" style="width:${barPct}%"></div></div>
-            <span class="mx-bar-pct">${pct}%</span>
-          </div>
-        </div>
-        <div class="mx-prod-wrap">${setoresHtml}</div>
       </div>`;
   }).join('');
 
@@ -289,25 +293,85 @@ function renderPorSetor(marcas, totalValor) {
   wireEvents(list);
 }
 
-// ── Per-store stock columns ───────────────────────────────────────────────────
+// ── Stock side box ────────────────────────────────────────────────────────────
 function fK(v) {
   if (!v) return '—';
-  if (v >= 1000) return 'R$ ' + (v / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'k';
+  if (v >= 1000) return 'R$ ' + (v / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'k';
   return fBRL(v);
 }
 
-function stockColsHtml(marca) {
-  if (!stockData) return '';
+const STORE_ABBR = { 'DEL REY': 'DR', 'MINAS': 'MNS', 'CONTAGEM': 'CTG', 'ESTAÇÃO': 'EST', 'TOMMY': 'TMY', 'LEZ A LEZ': 'LEZ' };
+function abbr(label) { return STORE_ABBR[label] || label.slice(0, 3); }
+
+function stockBoxHtml(marca) {
+  const empty = '<div class="mx-stock-box" style="display:flex;align-items:center;justify-content:center"><span style="color:#21262d;font-size:.7rem">—</span></div>';
+  if (!stockData) return empty;
   const e = stockMap[marca.toUpperCase()];
-  if (!e || !e.lojas.length) return '';
+  if (!e || !e.lojas.length) return empty;
+
   const hasValor = e.totalValor > 0;
-  const cols = e.lojas.map(l => `
-    <div class="mx-bsc-col">
-      <span class="mx-bsc-name" style="color:${l.color}">${_esc(l.label)}</span>
-      <span class="mx-bsc-qty">${fNum(l.qtd)}</span>
-      ${hasValor ? `<span class="mx-bsc-val">${fK(l.valor)}</span>` : ''}
+
+  // per-store mini cards
+  const lojasCols = e.lojas.map(l => `
+    <div class="mx-sbox-loja">
+      <span class="mx-sbox-loja-name" style="color:${l.color}">${_esc(l.label)}</span>
+      <span class="mx-sbox-loja-qty">${fNum(l.qtd)}</span>
+      ${hasValor ? `<span class="mx-sbox-loja-val">${fK(l.valor)}</span>` : ''}
     </div>`).join('');
-  return `<div class="mx-bsc-wrap">${cols}</div>`;
+
+  // setores + refs
+  const grupos = (e.setores || []).map((s, si) => {
+    // chips: DR:30 · MNS:20
+    const chips = s.lojas.map(l =>
+      `<span class="mx-sbox-chip" style="color:${l.color}">${abbr(l.label)}:${fNum(l.qtd)}</span>`
+    ).join('');
+
+    // ref table — build header from boards present in any ref
+    const refBoardOrder = e.lojas.map(l => l.board);
+    const refHead = refBoardOrder.map(b => {
+      const lj = e.lojas.find(x => x.board === b);
+      return `<th style="color:${lj?.color||'#8b949e'}">${abbr(lj?.label||b)}</th>`;
+    }).join('');
+
+    const refRows = (s.refs || []).map(r => {
+      const tdCells = refBoardOrder.map(b => {
+        const found = r.lojas.find(x => x.board === b);
+        return `<td>${found ? fNum(found.qtd) : '—'}</td>`;
+      }).join('');
+      return `<tr>
+        <td>${_esc(r.ref)}</td>
+        <td title="${_esc(r.nome)}">${_esc(r.nome)}</td>
+        ${tdCells}
+      </tr>`;
+    }).join('');
+
+    const hasRefs = s.refs && s.refs.length > 0;
+    return `
+      <div class="mx-sbox-grp" data-si="${si}">
+        <div class="mx-sbox-grp-hdr">
+          <span class="mx-sbox-schev">▶</span>
+          <span class="mx-sbox-grp-name">${_esc(s.setor)}</span>
+          <div class="mx-sbox-grp-chips">${chips}</div>
+        </div>
+        ${hasRefs ? `<div class="mx-sbox-refs">
+          <table class="mx-sbox-reftbl">
+            <thead><tr><th>Ref</th><th>Nome</th>${refHead}</tr></thead>
+            <tbody>${refRows}</tbody>
+          </table>
+        </div>` : ''}
+      </div>`;
+  }).join('');
+
+  const hasGrupos = e.setores && e.setores.length > 0;
+
+  return `<div class="mx-stock-box">
+    <div class="mx-sbox-title">Estoque</div>
+    <div class="mx-sbox-lojas">${lojasCols}</div>
+    ${hasGrupos ? `
+      <div class="mx-sbox-gtoggle"><span class="mx-sbox-gchev">▶</span> Por grupo</div>
+      <div class="mx-sbox-grupos">${grupos}</div>
+    ` : ''}
+  </div>`;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -365,6 +429,26 @@ function wireEvents(list) {
     });
   });
 
+  // Stock box: "por grupo" toggle
+  list.querySelectorAll('.mx-sbox-gtoggle').forEach(toggle => {
+    toggle.addEventListener('click', e => {
+      e.stopPropagation();
+      const box    = toggle.closest('.mx-stock-box');
+      const grupos = box.querySelector('.mx-sbox-grupos');
+      const chev   = toggle.querySelector('.mx-sbox-gchev');
+      const open   = grupos.style.display !== 'none';
+      grupos.style.display = open ? 'none' : 'block';
+      chev.style.transform = open ? '' : 'rotate(90deg)';
+    });
+  });
+
+  // Stock box: setor group toggle (shows ref table)
+  list.querySelectorAll('.mx-sbox-grp-hdr').forEach(hdr => {
+    hdr.addEventListener('click', e => {
+      e.stopPropagation();
+      hdr.closest('.mx-sbox-grp').classList.toggle('open');
+    });
+  });
 }
 
 function showLoading() {

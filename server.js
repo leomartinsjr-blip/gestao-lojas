@@ -3140,10 +3140,19 @@ app.get('/api/estoque-marcas', requireAuth, async (req, res) => {
         byMarca[mKey].lojas[b].valor += valor;
 
         const sKey = setor.toUpperCase();
-        if (!byMarca[mKey].setores[sKey]) byMarca[mKey].setores[sKey] = { setor, lojas: {} };
+        if (!byMarca[mKey].setores[sKey]) byMarca[mKey].setores[sKey] = { setor, lojas: {}, refs: {} };
         if (!byMarca[mKey].setores[sKey].lojas[b]) byMarca[mKey].setores[sKey].lojas[b] = { qtd: 0, valor: 0 };
         byMarca[mKey].setores[sKey].lojas[b].qtd   += qty;
         byMarca[mKey].setores[sKey].lojas[b].valor += valor;
+
+        const rKey = (prodInfo.referencia || cod).toUpperCase();
+        const ref  = prodInfo.referencia || cod;
+        const nome = prodInfo.nomeBase || prodInfo.nome || '';
+        if (!byMarca[mKey].setores[sKey].refs[rKey])
+          byMarca[mKey].setores[sKey].refs[rKey] = { ref, nome, lojas: {} };
+        if (!byMarca[mKey].setores[sKey].refs[rKey].lojas[b])
+          byMarca[mKey].setores[sKey].refs[rKey].lojas[b] = { qtd: 0 };
+        byMarca[mKey].setores[sKey].refs[rKey].lojas[b].qtd += qty;
       }
     }
 
@@ -3158,6 +3167,9 @@ app.get('/api/estoque-marcas', requireAuth, async (req, res) => {
           valor: parseFloat(lojasMap[b].valor.toFixed(2)),
         }));
     }
+    function lojasQtd(lojasMap) {
+      return targetBoards.filter(b => lojasMap[b]).map(b => ({ board: b, qtd: lojasMap[b].qtd }));
+    }
 
     const result = Object.values(byMarca)
       .map(m => ({
@@ -3171,6 +3183,15 @@ app.get('/api/estoque-marcas', requireAuth, async (req, res) => {
             totalQtd:   targetBoards.reduce((sum, b) => sum + (s.lojas[b]?.qtd   || 0), 0),
             totalValor: parseFloat(targetBoards.reduce((sum, b) => sum + (s.lojas[b]?.valor || 0), 0).toFixed(2)),
             lojas:      lojasList(s.lojas),
+            refs:       Object.values(s.refs)
+              .map(r => ({
+                ref:      r.ref,
+                nome:     r.nome,
+                totalQtd: targetBoards.reduce((sum, b) => sum + (r.lojas[b]?.qtd || 0), 0),
+                lojas:    lojasQtd(r.lojas),
+              }))
+              .sort((a, b) => b.totalQtd - a.totalQtd)
+              .slice(0, 60),
           }))
           .sort((a, b) => b.totalValor - a.totalValor),
       }))
