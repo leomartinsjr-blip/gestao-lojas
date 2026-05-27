@@ -2880,12 +2880,17 @@ app.get('/api/mx-probe', requireAdmin, async (req, res) => {
 
 // ── GET /api/catalog-status — diagnóstico do cache de catálogo ───────────
 app.get('/api/catalog-status', requireAdmin, async (req, res) => {
-  const size      = _catalogCache ? Object.keys(_catalogCache).length : 0;
-  const ageMin    = _catalogCacheAt ? Math.round((Date.now() - _catalogCacheAt) / 60000) : null;
-  const keys      = _catalogCache ? Object.keys(_catalogCache).slice(0, 20) : [];
-  const sample    = _catalogCache ? Object.values(_catalogCache).slice(0, 3) : [];
-  const fields    = sample[0] ? Object.keys(sample[0]) : [];
-  res.json({ cached: !!_catalogCache, size, ageMin, fields, sampleKeys: keys, sample });
+  const size   = _catalogCache ? Object.keys(_catalogCache).length : 0;
+  const ageMin = _catalogCacheAt ? Math.round((Date.now() - _catalogCacheAt) / 60000) : null;
+  const entries = _catalogCache ? Object.entries(_catalogCache) : [];
+  const withMarca    = entries.filter(([,v]) => v.marca).length;
+  const withSetor    = entries.filter(([,v]) => v.setor).length;
+  const sampleWith   = entries.filter(([,v]) => v.marca).slice(0, 2).map(([k,v]) => ({ key: k, ...v }));
+  const sampleWithout= entries.filter(([,v]) => !v.marca).slice(0, 2).map(([k,v]) => ({ key: k, ...v }));
+  const fields = entries[0] ? Object.keys(entries[0][1]) : [];
+  res.json({ cached: !!_catalogCache, size, ageMin, withMarca, withSetor,
+             pctMarca: size ? ((withMarca/size)*100).toFixed(1)+'%' : '0%',
+             fields, sampleWith, sampleWithout });
 });
 
 // ── GET /api/catalog-lookup?codes=880204,884901 — checa códigos no catálogo ──
