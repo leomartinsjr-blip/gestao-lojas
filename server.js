@@ -3019,16 +3019,15 @@ async function _getCatalog(lojas) {
   const chave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
   try {
     const map = {};
-    const today   = new Date().toISOString().slice(0, 10);
-    // Busca 3 anos para cobrir produtos criados/atualizados recentemente
-    const dtIni3y = new Date(Date.now() - 3 * 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const today = new Date().toISOString().slice(0, 10);
 
     // Produtos — página por página para controlar memória (nunca acumula tudo de uma vez)
+    // Sem filtro de data para cobrir todo o catálogo histórico
     let ts = 0, prodCount = 0;
-    for (let page = 0; page < 10; page++) {
+    for (let page = 0; page < 20; page++) {
       const body = buildRequest('LinxProdutos', cnpj, [
         { id: 'timestamp',        valor: String(ts) },
-        { id: 'dt_update_inicio', valor: dtIni3y },
+        { id: 'dt_update_inicio', valor: '2000-01-01' },
         { id: 'dt_update_fim',    valor: today },
       ], chave);
       let raw;
