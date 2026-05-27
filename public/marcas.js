@@ -210,30 +210,25 @@ function renderPorMarca(marcas, totalValor) {
         </div>`;
     }).join('');
 
-    const stockHtml = stockBoxHtml(m.marca);
     return `
       <div class="mx-brand-card${isOpen ? ' open' : ''}" data-marca="${_esc(m.marca)}">
-        <div class="mx-brand-layout">
-          <div class="mx-brand-sales">
-            <div class="mx-brand-hdr">
-              <span class="mx-brand-rank">#${i + 1}</span>
-              <span class="mx-brand-name" title="${_esc(m.marca)}">${_esc(m.marca)}</span>
-              <div class="mx-brand-right">
-                <span class="mx-brand-val">${fBRL(m.valor)}</span>
-                <span class="mx-brand-pecas">${fNum(m.qtd)} pcs</span>
-                <span class="mx-brand-chevron">▼</span>
-              </div>
-            </div>
-            <div class="mx-bar-wrap">
-              <div class="mx-bar-row">
-                <div class="mx-bar-track"><div class="mx-bar-fill" style="width:${barPct}%"></div></div>
-                <span class="mx-bar-pct">${pct}%</span>
-              </div>
-            </div>
-            <div class="mx-prod-wrap">${setoresHtml}</div>
+        <div class="mx-brand-hdr">
+          <span class="mx-brand-rank">#${i + 1}</span>
+          <span class="mx-brand-name" title="${_esc(m.marca)}">${_esc(m.marca)}</span>
+          <div class="mx-brand-right">
+            <span class="mx-brand-val">${fBRL(m.valor)}</span>
+            <span class="mx-brand-pecas">${fNum(m.qtd)} pcs</span>
+            ${stockColsHtml(m.marca)}
+            <span class="mx-brand-chevron">▼</span>
           </div>
-          ${stockHtml}
         </div>
+        <div class="mx-bar-wrap">
+          <div class="mx-bar-row">
+            <div class="mx-bar-track"><div class="mx-bar-fill" style="width:${barPct}%"></div></div>
+            <span class="mx-bar-pct">${pct}%</span>
+          </div>
+        </div>
+        <div class="mx-prod-wrap">${setoresHtml}</div>
       </div>`;
   }).join('');
 
@@ -294,52 +289,25 @@ function renderPorSetor(marcas, totalValor) {
   wireEvents(list);
 }
 
-// ── Stock box ─────────────────────────────────────────────────────────────────
+// ── Per-store stock columns ───────────────────────────────────────────────────
 function fK(v) {
   if (!v) return '—';
   if (v >= 1000) return 'R$ ' + (v / 1000).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + 'k';
   return fBRL(v);
 }
 
-function stockBoxHtml(marca) {
-  if (!stockData) return '<div class="mx-stock-box"><div class="mx-stock-loading">carregando…</div></div>';
+function stockColsHtml(marca) {
+  if (!stockData) return '';
   const e = stockMap[marca.toUpperCase()];
-  if (!e) return '<div class="mx-stock-box"><div class="mx-stock-loading" style="color:#30363d">—</div></div>';
-
+  if (!e || !e.lojas.length) return '';
   const hasValor = e.totalValor > 0;
-  const lojaRows = e.lojas.map(l => `
-    <div class="mx-stock-loja">
-      <span class="mx-stock-dot" style="color:${l.color}">●</span>
-      <span class="mx-stock-loja-name">${_esc(l.label)}</span>
-      <span class="mx-stock-loja-qty">${fNum(l.qtd)}</span>
-      ${hasValor ? `<span class="mx-stock-loja-val">${fK(l.valor)}</span>` : ''}
+  const cols = e.lojas.map(l => `
+    <div class="mx-bsc-col">
+      <span class="mx-bsc-name" style="color:${l.color}">${_esc(l.label)}</span>
+      <span class="mx-bsc-qty">${fNum(l.qtd)}</span>
+      ${hasValor ? `<span class="mx-bsc-val">${fK(l.valor)}</span>` : ''}
     </div>`).join('');
-
-  const hasSetores = e.setores && e.setores.length > 1;
-  const setoresRows = (e.setores || []).map(s => {
-    const sLojaRows = s.lojas.map(l => `
-      <div class="mx-stock-loja" style="padding-left:.5rem">
-        <span class="mx-stock-dot" style="color:${l.color}">●</span>
-        <span class="mx-stock-loja-name">${_esc(l.label)}</span>
-        <span class="mx-stock-loja-qty">${fNum(l.qtd)}</span>
-        ${hasValor ? `<span class="mx-stock-loja-val">${fK(l.valor)}</span>` : ''}
-      </div>`).join('');
-    return `<div class="mx-stock-setor-name">${_esc(s.setor)}</div>${sLojaRows}`;
-  }).join('');
-
-  const toggleHtml = hasSetores ? `
-    <div class="mx-stock-setor-toggle">
-      <span class="mx-stock-setor-chevron">▶</span> Por setor
-    </div>
-    <div class="mx-stock-setores">${setoresRows}</div>` : '';
-
-  return `<div class="mx-stock-box">
-    <div class="mx-stock-title">Estoque atual</div>
-    <div class="mx-stock-total">${fNum(e.totalQtd)} pcs</div>
-    ${hasValor ? `<div class="mx-stock-total-val">${fK(e.totalValor)}</div>` : ''}
-    ${lojaRows}
-    ${toggleHtml}
-  </div>`;
+  return `<div class="mx-bsc-wrap">${cols}</div>`;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -397,17 +365,6 @@ function wireEvents(list) {
     });
   });
 
-  list.querySelectorAll('.mx-stock-setor-toggle').forEach(toggle => {
-    toggle.addEventListener('click', e => {
-      e.stopPropagation();
-      const box      = toggle.closest('.mx-stock-box');
-      const setoresEl = box.querySelector('.mx-stock-setores');
-      const chevron   = toggle.querySelector('.mx-stock-setor-chevron');
-      const isOpen    = setoresEl.style.display !== 'none';
-      setoresEl.style.display  = isOpen ? 'none' : 'block';
-      chevron.style.transform  = isOpen ? '' : 'rotate(90deg)';
-    });
-  });
 }
 
 function showLoading() {
