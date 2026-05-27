@@ -1,4 +1,4 @@
-// ── Vendas por Marca ────────────────────────────────────────────────────────
+// ── Vendas por Marca / Setor ─────────────────────────────────────────────────
 const STORE_BOARDS = {
   delrey:   { label: 'DEL REY',   color: '#58A6FF' },
   minas:    { label: 'MINAS',     color: '#3FB950' },
@@ -15,7 +15,8 @@ const pad = n => String(n).padStart(2, '0');
 
 let me = null;
 let apiData = null;
-const expanded = new Set(); // marca keys e "marca|setor" keys
+let viewMode = 'marca'; // 'marca' | 'setor'
+const expanded = new Set();
 
 async function init() {
   const r = await fetch('/api/me');
@@ -42,6 +43,16 @@ async function init() {
 
   document.querySelectorAll('.mx-inp').forEach(inp =>
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') fetchData(); }));
+
+  // Toggle Por Marca / Por Setor
+  document.querySelectorAll('.mx-view-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      viewMode = btn.dataset.view;
+      document.querySelectorAll('.mx-view-btn').forEach(b => b.classList.toggle('active', b.dataset.view === viewMode));
+      expanded.clear();
+      if (apiData) render();
+    });
+  });
 }
 
 function setShortcut(s) {
@@ -91,6 +102,7 @@ async function fetchData() {
       showError(msg); return;
     }
     apiData = await res.json();
+    expanded.clear();
     render();
   } catch (e) {
     showError(e.message);
@@ -99,19 +111,47 @@ async function fetchData() {
   }
 }
 
+// ── Inverte a hierarquia: setor → marcas → produtos ──────────────────────────
+function buildSetorView(marcas) {
+  const bySetor = {};
+  for (const m of marcas) {
+    for (const s of (m.setores || [])) {
+      const sKey = s.setor.toUpperCase();
+      if (!bySetor[sKey]) bySetor[sKey] = { setor: s.setor, qtd: 0, valor: 0, marcas: {} };
+      bySetor[sKey].qtd   += s.qtd;
+      bySetor[sKey].valor += s.valor;
+      const mKey = m.marca.toUpperCase();
+      if (!bySetor[sKey].marcas[mKey])
+        bySetor[sKey].marcas[mKey] = { marca: m.marca, qtd: 0, valor: 0, produtos: [] };
+      bySetor[sKey].marcas[mKey].qtd   += s.qtd;
+      bySetor[sKey].marcas[mKey].valor += s.valor;
+      bySetor[sKey].marcas[mKey].produtos.push(...s.produtos);
+    }
+  }
+  return Object.values(bySetor)
+    .map(s => ({
+      ...s,
+      valor: parseFloat(s.valor.toFixed(2)),
+      marcas: Object.values(s.marcas)
+        .map(m => ({ ...m, valor: parseFloat(m.valor.toFixed(2)) }))
+        .sort((a, b) => b.valor - a.valor),
+    }))
+    .sort((a, b) => b.valor - a.valor);
+}
+
 function render() {
   const marcas = (apiData.marcas || []).sort((a, b) => b.valor - a.valor);
-
   const totalValor = marcas.reduce((s, m) => s + m.valor, 0);
   const totalPecas = marcas.reduce((s, m) => s + m.qtd,   0);
-  const maxValor   = marcas.length ? marcas[0].valor : 1;
 
-  document.getElementById('sumValor').textContent   = fBRL(totalValor);
-  document.getElementById('sumPecas').textContent   = fNum(totalPecas) + ' pcs';
   const boardsLabel = apiData.boards && apiData.boards.length < 6
     ? (apiData.boards.length === 4 && apiData.boards.includes('delrey') ? 'Total Surfers' : apiData.boards.map(b => (STORE_BOARDS[b]||{label:b}).label).join(', '))
     : 'Todas as lojas';
-  document.getElementById('sumMarcas').textContent  = marcas.length;
+
+  document.getElementById('sumValor').textContent   = fBRL(totalValor);
+  document.getElementById('sumPecas').textContent   = fNum(totalPecas) + ' pcs';
+  document.getElementById('sumMarcas').textContent  = viewMode === 'marca' ? marcas.length : buildSetorView(marcas).length;
+  document.getElementById('sumMarcasLabel').textContent = viewMode === 'marca' ? 'Marcas' : 'Setores';
   document.getElementById('sumPeriodo').textContent = fDate(apiData.dtIni) + ' → ' + fDate(apiData.dtFin) + ' · ' + boardsLabel;
   document.getElementById('summaryStrip').style.display = '';
 
@@ -125,17 +165,25 @@ function render() {
   state.style.display = 'none';
   document.getElementById('errorBox').style.display = 'none';
 
+  if (viewMode === 'setor') renderPorSetor(marcas, totalValor);
+  else                      renderPorMarca(marcas, totalValor);
+}
+
+// ── Render Por Marca ──────────────────────────────────────────────────────────
+function renderPorMarca(marcas, totalValor) {
+  const maxValor = marcas.length ? marcas[0].valor : 1;
   const list = document.getElementById('brandList');
+
   list.innerHTML = marcas.map((m, i) => {
     const pct    = totalValor > 0 ? ((m.valor / totalValor) * 100).toFixed(1) : '0.0';
     const barPct = totalValor > 0 ? ((m.valor / maxValor)   * 100).toFixed(1) : '0';
     const isOpen = expanded.has(m.marca);
 
     const setoresHtml = (m.setores || []).map(s => {
-      const sKey      = m.marca + '\x00' + s.setor;
-      const sOpen     = expanded.has(sKey);
-      const pctMarca  = m.valor  > 0 ? ((s.valor / m.valor)    * 100).toFixed(1) : '0.0';
-      const pctTotal  = totalValor > 0 ? ((s.valor / totalValor) * 100).toFixed(1) : '0.0';
+      const sKey     = m.marca + '\x00' + s.setor;
+      const sOpen    = expanded.has(sKey);
+      const pctMarca = m.valor   > 0 ? ((s.valor / m.valor)    * 100).toFixed(1) : '0.0';
+      const pctTotal = totalValor > 0 ? ((s.valor / totalValor) * 100).toFixed(1) : '0.0';
       return `
         <div class="mx-setor-row${sOpen ? ' open' : ''}" data-skey="${_esc(sKey)}">
           <div class="mx-setor-hdr">
@@ -146,22 +194,7 @@ function render() {
             <span class="mx-setor-pct" title="% da marca">${pctMarca}%</span>
             <span class="mx-setor-pct-total" title="% do total faturado">${pctTotal}% total</span>
           </div>
-          <div class="mx-setor-prods">
-            <table class="mx-prod-tbl">
-              <thead><tr>
-                <th>Código</th><th>Nome</th><th>Peças</th><th>R$ Valor</th>
-              </tr></thead>
-              <tbody>
-                ${s.produtos.map(p => `
-                  <tr>
-                    <td style="color:#8b949e">${_esc(p.cod)}</td>
-                    <td>${_esc(p.nome)}</td>
-                    <td>${fNum(p.qtd)}</td>
-                    <td>${fBRL(p.valor)}</td>
-                  </tr>`).join('')}
-              </tbody>
-            </table>
-          </div>
+          <div class="mx-setor-prods">${prodTable(s.produtos)}</div>
         </div>`;
     }).join('');
 
@@ -182,23 +215,92 @@ function render() {
             <span class="mx-bar-pct">${pct}%</span>
           </div>
         </div>
-        <div class="mx-prod-wrap">
-          ${setoresHtml}
-        </div>
+        <div class="mx-prod-wrap">${setoresHtml}</div>
       </div>`;
   }).join('');
 
-  // Expand/collapse marcas
+  wireEvents(list);
+}
+
+// ── Render Por Setor ──────────────────────────────────────────────────────────
+function renderPorSetor(marcas, totalValor) {
+  const setores  = buildSetorView(marcas);
+  const maxValor = setores.length ? setores[0].valor : 1;
+  const list     = document.getElementById('brandList');
+
+  list.innerHTML = setores.map((s, i) => {
+    const pct    = totalValor > 0 ? ((s.valor / totalValor) * 100).toFixed(1) : '0.0';
+    const barPct = totalValor > 0 ? ((s.valor / maxValor)   * 100).toFixed(1) : '0';
+    const isOpen = expanded.has(s.setor);
+
+    const marcasHtml = s.marcas.map(m => {
+      const mKey     = s.setor + '\x00' + m.marca;
+      const mOpen    = expanded.has(mKey);
+      const pctSetor = s.valor    > 0 ? ((m.valor / s.valor)    * 100).toFixed(1) : '0.0';
+      const pctTotal = totalValor > 0 ? ((m.valor / totalValor) * 100).toFixed(1) : '0.0';
+      return `
+        <div class="mx-setor-row${mOpen ? ' open' : ''}" data-skey="${_esc(mKey)}">
+          <div class="mx-setor-hdr">
+            <span class="mx-setor-chevron">▶</span>
+            <span class="mx-setor-name">${_esc(m.marca)}</span>
+            <span class="mx-setor-val">${fBRL(m.valor)}</span>
+            <span class="mx-setor-pecas">${fNum(m.qtd)} pcs</span>
+            <span class="mx-setor-pct" title="% do setor">${pctSetor}%</span>
+            <span class="mx-setor-pct-total" title="% do total faturado">${pctTotal}% total</span>
+          </div>
+          <div class="mx-setor-prods">${prodTable(m.produtos)}</div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="mx-brand-card${isOpen ? ' open' : ''}" data-marca="${_esc(s.setor)}">
+        <div class="mx-brand-hdr">
+          <span class="mx-brand-rank">#${i + 1}</span>
+          <span class="mx-brand-name" title="${_esc(s.setor)}">${_esc(s.setor)}</span>
+          <div class="mx-brand-right">
+            <span class="mx-brand-val">${fBRL(s.valor)}</span>
+            <span class="mx-brand-pecas">${fNum(s.qtd)} pcs</span>
+            <span class="mx-brand-chevron">▼</span>
+          </div>
+        </div>
+        <div class="mx-bar-wrap">
+          <div class="mx-bar-row">
+            <div class="mx-bar-track"><div class="mx-bar-fill" style="width:${barPct}%"></div></div>
+            <span class="mx-bar-pct">${pct}%</span>
+          </div>
+        </div>
+        <div class="mx-prod-wrap">${marcasHtml}</div>
+      </div>`;
+  }).join('');
+
+  wireEvents(list);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function prodTable(produtos) {
+  return `<table class="mx-prod-tbl">
+    <thead><tr><th>Código</th><th>Nome</th><th>Peças</th><th>R$ Valor</th></tr></thead>
+    <tbody>
+      ${(produtos || []).map(p => `
+        <tr>
+          <td style="color:#8b949e">${_esc(p.cod)}</td>
+          <td>${_esc(p.nome)}</td>
+          <td>${fNum(p.qtd)}</td>
+          <td>${fBRL(p.valor)}</td>
+        </tr>`).join('')}
+    </tbody>
+  </table>`;
+}
+
+function wireEvents(list) {
   list.querySelectorAll('.mx-brand-hdr').forEach(hdr => {
     hdr.addEventListener('click', () => {
       const card  = hdr.closest('.mx-brand-card');
-      const marca = card.dataset.marca;
-      if (expanded.has(marca)) { expanded.delete(marca); card.classList.remove('open'); }
-      else                     { expanded.add(marca);    card.classList.add('open'); }
+      const key   = card.dataset.marca;
+      if (expanded.has(key)) { expanded.delete(key); card.classList.remove('open'); }
+      else                   { expanded.add(key);    card.classList.add('open'); }
     });
   });
-
-  // Expand/collapse setores
   list.querySelectorAll('.mx-setor-hdr').forEach(hdr => {
     hdr.addEventListener('click', e => {
       e.stopPropagation();

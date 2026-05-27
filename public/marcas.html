@@ -87,6 +87,12 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
 .mx-setor-prods{max-height:0;overflow:hidden;transition:max-height .22s ease}
 .mx-setor-row.open .mx-setor-prods{max-height:3000px}
 
+/* ── View toggle ── */
+.mx-view-toggle{display:flex;gap:0;background:#21262d;border:1px solid #30363d;border-radius:6px;padding:2px;flex-shrink:0}
+.mx-view-btn{background:transparent;border:none;color:#8b949e;font-size:.78rem;font-weight:600;padding:.28rem .75rem;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background .12s,color .12s}
+.mx-view-btn:hover{color:#e6edf3}
+.mx-view-btn.active{background:#388bfd;color:#fff}
+
 /* ── Error ── */
 .mx-error{background:#f8514915;border:1px solid #f8514944;border-radius:8px;padding:.75rem 1rem;color:#f85149;font-size:.83rem;margin-bottom:1rem}
 </style>
@@ -111,6 +117,11 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
 
     <select id="boardSel" class="mx-sel" style="display:none"></select>
 
+    <div class="mx-view-toggle">
+      <button class="mx-view-btn active" data-view="marca">Por Marca</button>
+      <button class="mx-view-btn" data-view="setor">Por Setor</button>
+    </div>
+
     <button class="mx-search-btn" id="searchBtn">Buscar</button>
   </div>
 </header>
@@ -126,7 +137,7 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
       <div class="mx-sum-val" id="sumPecas">—</div>
     </div>
     <div class="mx-sum-card">
-      <div class="mx-sum-label">Marcas</div>
+      <div class="mx-sum-label" id="sumMarcasLabel">Marcas</div>
       <div class="mx-sum-val" id="sumMarcas">—</div>
     </div>
     <div class="mx-sum-card">
