@@ -3102,9 +3102,16 @@ async function _buildCatalog(lojas) {
             desc_tam: (r.desc_tamanho || '').trim(),
             preco_cheio: 0, preco_promo: 0,
           };
-          if (cod)                                      map[cod]   = entry;
-          if (ref   && ref   !== cod)                   map[ref]   = entry;
-          if (barra && barra !== cod && barra !== ref)  map[barra] = entry;
+          const mergeEntry = (key) => {
+            if (!map[key]) { map[key] = entry; return; }
+            if (!map[key].marca && entry.marca) map[key].marca = entry.marca;
+            if (!map[key].setor && entry.setor) map[key].setor = entry.setor;
+            if (!map[key].nome  && entry.nome)  map[key].nome  = entry.nome;
+            if (!map[key].linha && entry.linha) map[key].linha = entry.linha;
+          };
+          if (cod)                                      mergeEntry(cod);
+          if (ref   && ref   !== cod)                   mergeEntry(ref);
+          if (barra && barra !== cod && barra !== ref)  mergeEntry(barra);
         }
         boardCount += rows.length;
         if (rows.length < 5000) break;
