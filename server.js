@@ -2925,7 +2925,7 @@ app.get('/api/catalog-warm', requireAdmin, async (req, res) => {
 
 // ── GET /api/relatorio-marcas ─────────────────────────────────────────────
 // ?dtIni=2026-05-01&dtFin=2026-05-26&board=delrey   (board opcional)
-// Usa LinxMovimentoItens — desc_marca e desc_setor direto no row, sem catálogo separado
+// Usa LinxMovimento × catálogo LinxProdutos (aguardado com await, não background)
 app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
   try {
     const { dtIni, dtFin, board } = req.query;
@@ -2938,7 +2938,10 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
       ? (board ? [board] : Object.keys(lojas))
       : [userBoard];
 
-    const { fetchMovimentoItens, parseBrNum } = require('./services/microvix');
+    const { fetchMovimento, parseBrNum } = require('./services/microvix');
+
+    // Aguarda catálogo — se já em cache retorna imediato; se não, constrói agora
+    const catalog = await _getCatalog(lojas).catch(() => ({}));
 
     const byMarca = {};
 
@@ -2948,9 +2951,8 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
         if (!cnpj) return [];
         const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
         try {
-          const rows = await fetchMovimentoItens(cnpj, dtIni, dtFin, chave);
-          console.log(`[relatorioMarcas/${b}] ${rows.length} itens`);
-          if (rows.length) console.log(`[relatorioMarcas/${b}] campos:`, Object.keys(rows[0]).join(', '));
+          const rows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
+          console.log(`[relatorioMarcas/${b}] ${rows.length} linhas`);
           return rows;
         } catch (e) {
           console.error(`[relatorioMarcas/${b}] ${e.message}`);
@@ -2965,16 +2967,17 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
         if (row.excluido  === 'S') continue;
         if (row.soma_relatorio === 'N') continue;
         const op = (row.operacao || '').toUpperCase();
-        // Se o campo operacao existir e não for venda/devolução, pula
-        if (op && op !== 'S' && op !== 'DS') continue;
+        if (op !== 'S' && op !== 'DS') continue;
         const sign = op === 'DS' ? -1 : 1;
 
-        const cod   = String(row.cod_produto || '').replace(/\.0+$/, '').trim();
+        const cod      = String(row.cod_produto || '').replace(/\.0+$/, '').trim();
+        const barra    = String(row.cod_barra   || '').replace(/\.0+$/, '').trim();
         if (!cod) continue;
+        const prodInfo = catalog[cod] || catalog[barra] || {};
 
-        const marca = ((row.desc_marca || row.marca || '').trim()) || '(sem marca)';
-        const setor = ((row.desc_setor || row.setor || '').trim()) || '(sem setor)';
-        const nome  = (row.nome_produto || row.descricao || row.nome || cod).trim();
+        const marca = ((prodInfo.marca || row.desc_marca || row.marca || '').trim()) || '(sem marca)';
+        const setor = ((prodInfo.setor || row.desc_setor || row.setor || '').trim()) || '(sem setor)';
+        const nome  = (prodInfo.nome || row.nome_produto || row.nome || row.descricao || cod).trim();
         const qtd   = sign * parseBrNum(row.quantidade  || '0');
         const valor = sign * parseBrNum(row.valor_total || '0');
 
