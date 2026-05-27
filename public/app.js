@@ -2381,6 +2381,14 @@ function renderTransExcelTab(container) {
 
       function parseExcelDate(val) {
         if (!val && val !== 0) return null;
+        // XLSX 0.20+ pode retornar Date objects mesmo com raw:true em arquivos .xls
+        if (val instanceof Date) {
+          if (isNaN(val.getTime())) return null;
+          const y = val.getFullYear();
+          const m = String(val.getMonth() + 1).padStart(2, '0');
+          const d = String(val.getDate()).padStart(2, '0');
+          return `${y}-${m}-${d}`;
+        }
         if (typeof val === 'number') {
           // Serial date do Excel — arredonda para evitar decimais de horário (ex: 46146.999… = 05/05)
           try {
@@ -2446,6 +2454,9 @@ function renderTransExcelTab(container) {
 
       // Passo 3: filtra produtos sem entrada recente (obrigatório)
       const totalBruto = Object.keys(products).length;
+      // Diagnóstico: log para comparar entre versões do XLSX
+      const p884 = products['884901'];
+      console.log(`[TransDiag] XLSX ${XLSX_LOCAL.version} | sheets=${wb.SheetNames.length} | headerSheet=${headerSheetIdx} | totalProdutos=${totalBruto} | 884901=${p884 ? `ultimaCompra=${p884.ultimaCompra} stocks=${JSON.stringify(p884.stocks)} giro=${JSON.stringify(p884.giro)}` : 'NÃO ENCONTRADO'}`);
       if (!totalBruto) throw new Error(`Nenhum produto encontrado no Excel. Colunas detectadas: código=${colCodigo}, descrição=${colDescricao}, ref=${colRef}, última compra=${colUltimaCompra}. Verifique se o relatório está no formato correto.`);
       for (const cod of Object.keys(products)) {
         const p = products[cod];
