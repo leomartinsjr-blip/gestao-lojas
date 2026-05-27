@@ -2652,9 +2652,23 @@ function renderTransTable(container, data) {
     </tr>`;
   }).join('');
 
-  const lojasBtns = boards.map(b =>
-    `<button class="trans-filter-btn trans-loja-btn${_transLojaFilter===b?' active':''}" data-loja="${b}" style="--fc:${boardColor(b)}">${boardLabel(b)}</button>`
-  ).join('');
+  // Totais de peças por loja (enviar + receber)
+  const boardTotals = {};
+  for (const b of boards) boardTotals[b] = { envia: 0, recebe: 0 };
+  for (const s of sugestoes)
+    for (const t of s.transfers) {
+      if (boardTotals[t.de])   boardTotals[t.de].envia   += t.qty;
+      if (boardTotals[t.para]) boardTotals[t.para].recebe += t.qty;
+    }
+
+  const lojasBtns = boards.map(b => {
+    const { envia, recebe } = boardTotals[b] || {};
+    const parts = [];
+    if (envia)  parts.push(`<span class="trans-btn-send">↑${envia}</span>`);
+    if (recebe) parts.push(`<span class="trans-btn-recv">↓${recebe}</span>`);
+    const cnt = parts.length ? ` <span class="trans-btn-cnt">${parts.join('')}</span>` : '';
+    return `<button class="trans-filter-btn trans-loja-btn${_transLojaFilter===b?' active':''}" data-loja="${b}" style="--fc:${boardColor(b)}">${boardLabel(b)}${cnt}</button>`;
+  }).join('');
 
   const html = `
     <div class="trans-summary">

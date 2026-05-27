@@ -2357,6 +2357,12 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 }
 .trans-loja-btn       { border-color: var(--fc, var(--border2)); }
 .trans-loja-btn.active { background: var(--fc, var(--accent)); border-color: var(--fc, var(--accent)); color: #fff; }
+.trans-btn-cnt  { font-size: .65rem; opacity: .75; margin-left: .2rem; }
+.trans-btn-send { color: #3FB950; }
+.trans-btn-recv { color: #F85149; }
+.trans-loja-btn.active .trans-btn-cnt { opacity: .9; }
+.trans-loja-btn.active .trans-btn-send,
+.trans-loja-btn.active .trans-btn-recv { color: #fff; }
 .trans-filter-btn:not(.trans-loja-btn).active { background: var(--accent); border-color: var(--accent); color: #fff; }
 .trans-tipo-btn       { padding: .2rem .7rem; border-radius: 20px; border: 1px solid var(--border2);
   background: var(--surface2); color: var(--text); font-size: .73rem; cursor: pointer;
