@@ -3091,10 +3091,16 @@ const CATALOG_TTL = 6 * 60 * 60 * 1000;
 
 async function _getCatalog(lojas) {
   if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
-  // Se já está aquecendo, espera a mesma Promise em vez de retornar {} vazio
-  if (_catalogWarmPromise) return _catalogWarmPromise;
 
-  _catalogWarmPromise = _buildCatalog(lojas).finally(() => { _catalogWarmPromise = null; });
+  // Inicia rebuild em background se ainda não está rodando
+  if (!_catalogWarmPromise) {
+    _catalogWarmPromise = _buildCatalog(lojas).finally(() => { _catalogWarmPromise = null; });
+  }
+
+  // Cache expirado mas existe: devolve imediatamente sem bloquear (rebuild acontece em background)
+  if (_catalogCache) return _catalogCache;
+
+  // Cold start (sem cache): aguarda o build terminar uma única vez
   return _catalogWarmPromise;
 }
 
