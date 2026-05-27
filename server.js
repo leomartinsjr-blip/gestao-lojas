@@ -3061,6 +3061,9 @@ async function _buildCatalog(lojas) {
   try {
     const map = {};
     const today = new Date().toISOString().slice(0, 10);
+    // Busca apenas produtos modificados nos últimos 2 anos — ativos/recentes têm timestamps maiores.
+    // Usar '2000-01-01' trazia 150k+ por loja (mais antigos primeiro) e truncava os ativos.
+    const dtIniCatalog = new Date(Date.now() - 730 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     let totalProd = 0;
     let sampleLogged = false;
 
@@ -3073,7 +3076,7 @@ async function _buildCatalog(lojas) {
       for (let page = 0; page < 20; page++) {
         const body = buildRequest('LinxProdutos', cnpj, [
           { id: 'timestamp',        valor: String(ts) },
-          { id: 'dt_update_inicio', valor: '2000-01-01' },
+          { id: 'dt_update_inicio', valor: dtIniCatalog },
           { id: 'dt_update_fim',    valor: today },
         ], chave);
         let raw;
