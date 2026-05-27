@@ -2382,9 +2382,9 @@ function renderTransExcelTab(container) {
       function parseExcelDate(val) {
         if (!val && val !== 0) return null;
         if (typeof val === 'number') {
-          // Serial date do Excel
+          // Serial date do Excel — arredonda para evitar decimais de horário (ex: 46146.999… = 05/05)
           try {
-            const d = XLSX_LOCAL.SSF.parse_date_code(val);
+            const d = XLSX_LOCAL.SSF.parse_date_code(Math.round(val));
             if (d && d.y > 2000) return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
           } catch {}
           return null;
