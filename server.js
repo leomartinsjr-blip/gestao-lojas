@@ -2896,11 +2896,10 @@ app.get('/api/catalog-warm', requireAdmin, async (req, res) => {
   if (!firstBoard) return res.status(400).json({ error: 'Nenhuma loja configurada' });
   const cnpj  = lojas[firstBoard].replace(/\D/g, '');
   const chave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-  const dataMov = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   try {
     const t0 = Date.now();
     const [prodRows, svcRows] = await Promise.all([
-      fetchProdutos(cnpj, chave, 0, dataMov).catch(e => ({ error: e.message })),
+      fetchProdutos(cnpj, chave, 0).catch(e => ({ error: e.message })),
       fetchServicos(cnpj, chave, 0).catch(e => ({ error: e.message })),
     ]);
     const prodError = Array.isArray(prodRows) ? null : prodRows.error;
@@ -2933,9 +2932,7 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
     // Usa catálogo do cache se disponível; dispara warm em background sem bloquear
     const catalog = (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) ? _catalogCache : {};
     if (!_catalogCache || Date.now() - _catalogCacheAt >= CATALOG_TTL) {
-      // dataMov = 1 ano atrás para limitar o catálogo a produtos com movimento recente
-      const dataMov1y = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-      _getCatalog(lojas, dataMov1y).catch(e => console.warn('[Catalog bg]', e.message));
+        _getCatalog(lojas).catch(e => console.warn('[Catalog bg]', e.message));
     }
 
     const byMarca = {};
@@ -3010,7 +3007,7 @@ let _catalogCache = null;
 let _catalogCacheAt = 0;
 const CATALOG_TTL = 6 * 60 * 60 * 1000;
 
-async function _getCatalog(lojas, dataMov = null) {
+async function _getCatalog(lojas) {
   if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
   const { fetchProdutos, fetchServicos, parseBrNum } = require('./services/microvix');
   const firstBoard = Object.keys(lojas)[0];
@@ -3020,7 +3017,7 @@ async function _getCatalog(lojas, dataMov = null) {
   try {
     // Busca produtos e serviços em paralelo; dataMov limita aos produtos com movimento recente
     const [prodRows, svcRows] = await Promise.all([
-      fetchProdutos(cnpj, chave, 0, dataMov).catch(e => { console.warn('[Catalog] produtos:', e.message); return []; }),
+      fetchProdutos(cnpj, chave, 0).catch(e => { console.warn('[Catalog] produtos:', e.message); return []; }),
       fetchServicos(cnpj, chave, 0).catch(e => { console.warn('[Catalog] servicos:', e.message); return []; }),
     ]);
     console.log(`[Catalog] ${prodRows.length} produtos + ${svcRows.length} serviços`);

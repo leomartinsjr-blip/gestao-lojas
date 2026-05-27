@@ -172,20 +172,16 @@ async function fetchEstoque(cnpj, chave, data) {
 // Requires dt_update_ini + dt_update_fim; timestamp=0 returns all
 // Pagina automaticamente em blocos de 5000 até esgotar o catálogo.
 // dataMov: filtra apenas produtos com movimento desde essa data (ex: '2024-01-01')
-async function fetchProdutos(cnpj, chave, timestamp = 0, dataMov = null) {
+async function fetchProdutos(cnpj, chave, timestamp = 0) {
   const today = new Date().toISOString().slice(0, 10);
   const allRows = [];
   let ts = timestamp;
-  const extraParams = [
-    { id: 'dt_update_inicio', valor: '2000-01-01' },
-    { id: 'dt_update_fim',    valor: today },
-  ];
-  if (dataMov) extraParams.push({ id: 'data_mov_ini', valor: dataMov });
 
   for (let page = 0; page < 20; page++) {
     const body = buildRequest('LinxProdutos', cnpj, [
-      { id: 'timestamp', valor: String(ts) },
-      ...extraParams,
+      { id: 'timestamp',        valor: String(ts) },
+      { id: 'dt_update_inicio', valor: '2000-01-01' },
+      { id: 'dt_update_fim',    valor: today },
     ], chave);
     const raw = await postRequest(body, 120_000);
 
