@@ -8,6 +8,7 @@ const BOARDS = {
   estacao:    { label: 'ESTAÇÃO',      color: '#F85149' },
   tommy:      { label: 'TOMMY',        color: '#22D3EE' },
   lez:        { label: 'LEZ A LEZ',    color: '#F472B6' },
+  surfers:    { label: 'TOTAL SURFERS', color: '#F97316' },
 };
 
 
@@ -1730,7 +1731,8 @@ function openImg(url) {
 
 // ── Performance dashboard data ─────────────────────────────────────────────
 const PERF_MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-const PERF_AVAIL  = new Set(['delrey','minas','contagem','estacao','tommy','lez']);
+const PERF_AVAIL  = new Set(['surfers','delrey','minas','contagem','estacao','tommy','lez']);
+const SURFERS_STORES = ['delrey','minas','contagem','estacao'];
 const PERF_CUR    = 4;         // Mai = em andamento
 const PERF_LAST3  = [PERF_CUR-2, PERF_CUR-1, PERF_CUR];  // Mar, Abr, Mai
 
@@ -1759,6 +1761,12 @@ const PERF_HIST = {
     2024:[109284,122665,133511,143844,188523,180783,158848,160592,130708,146317,155069,381802],
     2025:[116994, 92631, 95410,132345,134779,146808,116226,110715,104962,121011,117370,302912],
   },
+  surfers: {
+    2022:[413316,542163,592658,710421,832768,951536,816886,809255,820982,856971,730344,2134458],
+    2023:[566312,521055,691108,767465,706370,1050010,797470,693643,758502,784943,826339,2260864],
+    2024:[524749,550187,617362,598888,804128,938818,757509,737354,635656,713939,754571,1862725],
+    2025:[442063,436379,484887,554238,634607,668774,525825,515442,447228,509314,578379,1445466],
+  },
   tommy: {
     2022:[null,null,null,null,null,null,null,null,null,null,null,null],
     2023:[null,null,null,null,null,null,null,null,null,null,null,null],
@@ -1773,6 +1781,7 @@ const PERF_HIST = {
   },
 };
 const PERF_2026 = {
+  surfers:  [377906,343155,408044,386276,null,null,null,null,null,null,null,null],
   delrey:   [134642,119759,128296,128061,null,null,null,null,null,null,null,null],
   minas:    [ 90962, 65116, 90731, 68912,null,null,null,null,null,null,null,null],
   contagem: [ 79523, 81210, 93198,110985,null,null,null,null,null,null,null,null],
@@ -1805,9 +1814,10 @@ function computeCurMonthProj(board) {
     wAccum += (S.weights[ds] ?? defW);
   }
   if (wAccum === 0) return null;
+  const boards = board === 'surfers' ? SURFERS_STORES : [board];
   let realized = 0;
   for (const emp of S.employees) {
-    if (emp.board !== board || !isVend(emp)) continue;
+    if (!boards.includes(emp.board) || !isVend(emp)) continue;
     const entries = (S.vsales[emp.id] || {}).entries || {};
     for (let d = 1; d <= daysInMonth; d++) {
       const ds = `${S.year}-${pad(S.month)}-${pad(d)}`;
@@ -1854,7 +1864,7 @@ function _perfActiveView() {
 
 function openPerfModal() {
   document.getElementById('perfOverlay').classList.remove('hidden');
-  const defaultStore = S.user?.board ? S.user.board : 'delrey';
+  const defaultStore = S.user?.board ? S.user.board : 'surfers';
   PD.board = defaultStore;
   PD.year  = S.year;
   PD.month = S.month;
@@ -2760,7 +2770,8 @@ function applyTransCompraFilter(container) {
 function buildPerfTabs() {
   const tabs = document.getElementById('perfStoreTabs');
   tabs.innerHTML = '';
-  const show = !S.user?.board ? ALL_STORES : [S.user.board];
+  const isAdmin = !S.user?.board;
+  const show = isAdmin ? ['surfers', ...ALL_STORES] : [S.user.board];
   if (show.length <= 1) return;
   show.forEach(k => {
     const btn = document.createElement('button');

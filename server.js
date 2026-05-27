@@ -3012,62 +3012,59 @@ async function _getCatalog(lojas) {
   if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
   if (_catalogWarming) return _catalogCache || {};
   _catalogWarming = true;
-  const { fetchProdutos, fetchServicos, parseBrNum } = require('./services/microvix');
+  const { fetchServicos, parseBrNum, buildRequest, postRequest, parseCsv } = require('./services/microvix');
   const firstBoard = Object.keys(lojas)[0];
-  if (!firstBoard) return {};
+  if (!firstBoard) { _catalogWarming = false; return {}; }
   const cnpj  = lojas[firstBoard].replace(/\D/g, '');
   const chave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
   try {
-    // Busca produtos e serviços em paralelo; dataMov limita aos produtos com movimento recente
-    const [prodRows, svcRows] = await Promise.all([
-      fetchProdutos(cnpj, chave, 0).catch(e => { console.warn('[Catalog] produtos:', e.message); return []; }),
-      fetchServicos(cnpj, chave, 0).catch(e => { console.warn('[Catalog] servicos:', e.message); return []; }),
-    ]);
-    console.log(`[Catalog] ${prodRows.length} produtos + ${svcRows.length} serviços`);
-
-    // Busca case-insensitive para campos de preço — nomes variam por conta Microvix
-    const findField = (r, ...terms) => {
-      const keys = Object.keys(r);
-      for (const term of terms) {
-        const k = keys.find(k => k.toLowerCase().replace(/_/g,'') === term.toLowerCase().replace(/_/g,''));
-        if (k && r[k] && r[k] !== '0' && r[k] !== '') return r[k];
-      }
-      return '0';
-    };
-
     const map = {};
+    const today   = new Date().toISOString().slice(0, 10);
+    // Busca 3 anos para cobrir produtos criados/atualizados recentemente
+    const dtIni3y = new Date(Date.now() - 3 * 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-    // Produtos
-    for (const r of prodRows) {
-      const cod = String(r.cod_produto || '').trim();
-      if (!cod) continue;
-      map[cod] = {
-        tipo:        'produto',
-        nome:        (r.nome         || '').trim(),
-        setor:       (r.desc_setor   || '').trim(),
-        marca:       (r.desc_marca   || '').trim(),
-        linha:       (r.desc_linha   || '').trim(),
-        desc_cor:    (r.desc_cor     || '').trim(),
-        desc_tam:    (r.desc_tamanho || '').trim(),
-        preco_cheio: parseBrNum(findField(r, 'preco_venda', 'precovenda', 'vlr_venda', 'vlrvenda', 'preco', 'valor_venda')),
-        preco_promo: parseBrNum(findField(r, 'preco_promocional', 'precopromocional', 'vlr_promo', 'vlrpromo', 'preco_promo', 'precopromocao')),
-      };
+    // Produtos — página por página para controlar memória (nunca acumula tudo de uma vez)
+    let ts = 0, prodCount = 0;
+    for (let page = 0; page < 10; page++) {
+      const body = buildRequest('LinxProdutos', cnpj, [
+        { id: 'timestamp',        valor: String(ts) },
+        { id: 'dt_update_inicio', valor: dtIni3y },
+        { id: 'dt_update_fim',    valor: today },
+      ], chave);
+      let raw;
+      try { raw = await postRequest(body, 60_000); } catch (e) { console.warn('[Catalog] pág', page, e.message); break; }
+      if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) break;
+      const rows = parseCsv(raw);
+      for (const r of rows) {
+        const cod = String(r.cod_produto || '').trim();
+        if (!cod) continue;
+        map[cod] = {
+          tipo:     'produto',
+          nome:     (r.nome      || '').trim(),
+          setor:    (r.desc_setor || '').trim(),
+          marca:    (r.desc_marca || '').trim(),
+          linha:    (r.desc_linha || '').trim(),
+          desc_cor: (r.desc_cor  || '').trim(),
+          desc_tam: (r.desc_tamanho || '').trim(),
+          preco_cheio: 0, preco_promo: 0,
+        };
+      }
+      prodCount += rows.length;
+      if (rows.length < 5000) break;
+      const maxTs = Math.max(...rows.map(r => parseInt(r.timestamp) || 0));
+      if (maxTs <= ts) break;
+      ts = maxTs;
     }
 
-    // Serviços — cod_servico mapeia no mesmo campo cod_produto do LinxMovimento
+    // Serviços
+    const svcRows = await fetchServicos(cnpj, chave, 0).catch(e => { console.warn('[Catalog] servicos:', e.message); return []; });
     for (const r of svcRows) {
       const cod = String(r.cod_servico || '').trim();
       if (!cod) continue;
-      map[cod] = {
-        tipo:  'servico',
-        nome:  (r.nome       || '').trim(),
-        setor: (r.desc_setor || '').trim(),
-        marca: (r.desc_marca || '').trim(),
-        linha: (r.desc_linha || '').trim(),
-        desc_cor: '', desc_tam: '', preco_cheio: 0, preco_promo: 0,
-      };
+      map[cod] = { tipo: 'servico', nome: (r.nome || '').trim(), setor: (r.desc_setor || '').trim(), marca: (r.desc_marca || '').trim(), linha: (r.desc_linha || '').trim(), desc_cor: '', desc_tam: '', preco_cheio: 0, preco_promo: 0 };
     }
 
+    console.log(`[Catalog] ${prodCount} produtos + ${svcRows.length} serviços → ${Object.keys(map).length} entradas`);
     _catalogCache   = map;
     _catalogCacheAt = Date.now();
     _catalogWarming = false;
