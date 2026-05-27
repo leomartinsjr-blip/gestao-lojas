@@ -82,6 +82,22 @@ async function initMongo() {
     }
   } catch (e) { console.warn('Migração de fotos falhou:', e.message); _photoCache = {}; }
 
+  // Migração única: users.json → MongoDB (senhas sobrevivem a redeploys)
+  const usersDoc = await mongoDb.collection('users').findOne({ _id: 'main' });
+  if (!usersDoc) {
+    try {
+      const f = fs.existsSync(USERS_FILE) ? USERS_FILE : SEED_USERS;
+      const seed = JSON.parse(fs.readFileSync(f, 'utf8'));
+      await mongoDb.collection('users').insertOne({ _id: 'main', ...seed });
+      _usersCache = seed;
+      console.log('✅  Usuários migrados de users.json para MongoDB');
+    } catch (e) { console.warn('Migração users.json falhou:', e.message); }
+  } else {
+    const { _id, ...users } = usersDoc;
+    _usersCache = users;
+    console.log(`✅  Usuários carregados do MongoDB (${Object.keys(users).length})`);
+  }
+
   console.log('✅  MongoDB conectado');
 }
 
@@ -155,19 +171,25 @@ function nextId(db) {
   return id;
 }
 
+let _usersCache = null;
+
 function readUsers() {
+  if (_usersCache) return _usersCache;
   const f = fs.existsSync(USERS_FILE) ? USERS_FILE : SEED_USERS;
   try { return JSON.parse(fs.readFileSync(f, 'utf8')); }
   catch { return {}; }
 }
 
 function writeUsers(users) {
-  const data = JSON.stringify(users, null, 2);
-  fs.writeFileSync(USERS_FILE, data);
-  // Mantém seed em sincronia para sobreviver a redeploys
-  if (USERS_FILE !== SEED_USERS) {
-    try { fs.writeFileSync(SEED_USERS, data); } catch (_) {}
+  _usersCache = users;
+  // Persiste no MongoDB — sobrevive a redeploys
+  if (mongoDb) {
+    mongoDb.collection('users').replaceOne(
+      { _id: 'main' }, { _id: 'main', ...users }, { upsert: true }
+    ).catch(e => console.warn('[Users] MongoDB write failed:', e.message));
   }
+  // Fallback local (sem garantia em redeploy)
+  try { fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2)); } catch (_) {}
 }
 
 const BOARDS   = ['admin','escritorio','delrey','minas','contagem','estacao','tommy','lez'];
@@ -2976,6 +2998,7 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
       })
     );
 
+    let _diagTotal = 0, _diagMiss = 0, _diagLogged = false;
     for (const rows of boardResults) {
       for (const row of rows) {
         if (row.cancelado === 'S' || row.cancelado === '1') continue;
@@ -2989,6 +3012,11 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
         const barra    = String(row.cod_barra   || '').replace(/\.0+$/, '').trim();
         if (!cod) continue;
         const prodInfo = catalog[cod] || catalog[barra] || {};
+        _diagTotal++;
+        if (!prodInfo.marca) {
+          _diagMiss++;
+          if (!_diagLogged) { console.log(`[relatorioMarcas] miss sample — cod:${cod} barra:${barra} row_marca:${row.desc_marca||''}`); _diagLogged = true; }
+        }
 
         const marca = ((prodInfo.marca || row.desc_marca || row.marca || '').trim()) || '(sem marca)';
         const setor = ((prodInfo.setor || row.desc_setor || row.setor || '').trim()) || '(sem setor)';
@@ -3031,6 +3059,7 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
       }))
       .sort((a, b) => b.valor - a.valor);
 
+    console.log(`[relatorioMarcas] linhas:${_diagTotal} sem_marca:${_diagMiss} (${_diagTotal ? ((_diagMiss/_diagTotal)*100).toFixed(1) : 0}%) catalogSize:${Object.keys(catalog).length}`);
     res.json({ dtIni, dtFin, boards: targetBoards, total: result.length, marcas: result });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
