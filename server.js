@@ -3024,61 +3024,68 @@ async function _getCatalog(lojas) {
   if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
   if (_catalogWarming) return _catalogCache || {};
   _catalogWarming = true;
-  const { fetchServicos, parseBrNum, buildRequest, postRequest, parseCsv } = require('./services/microvix');
-  const firstBoard = Object.keys(lojas)[0];
-  if (!firstBoard) { _catalogWarming = false; return {}; }
-  const cnpj  = lojas[firstBoard].replace(/\D/g, '');
-  const chave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+  const { fetchServicos, buildRequest, postRequest, parseCsv } = require('./services/microvix');
+  const boards = Object.keys(lojas);
+  if (!boards.length) { _catalogWarming = false; return {}; }
   try {
     const map = {};
     const today = new Date().toISOString().slice(0, 10);
+    let totalProd = 0;
 
-    // Produtos — página por página para controlar memória (nunca acumula tudo de uma vez)
-    // Sem filtro de data para cobrir todo o catálogo histórico
-    let ts = 0, prodCount = 0;
-    for (let page = 0; page < 20; page++) {
-      const body = buildRequest('LinxProdutos', cnpj, [
-        { id: 'timestamp',        valor: String(ts) },
-        { id: 'dt_update_inicio', valor: '2000-01-01' },
-        { id: 'dt_update_fim',    valor: today },
-      ], chave);
-      let raw;
-      try { raw = await postRequest(body, 60_000); } catch (e) { console.warn('[Catalog] pág', page, e.message); break; }
-      if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) break;
-      const rows = parseCsv(raw);
-      for (const r of rows) {
-        const cod   = String(r.cod_produto || '').replace(/\.0+$/, '').trim();
-        const barra = String(r.cod_barra   || '').replace(/\.0+$/, '').trim();
-        if (!cod) continue;
-        const entry = {
-          tipo:     'produto',
-          nome:     (r.nome       || '').trim(),
-          setor:    (r.desc_setor || '').trim(),
-          marca:    (r.desc_marca || '').trim(),
-          linha:    (r.desc_linha || '').trim(),
-          desc_cor: (r.desc_cor   || '').trim(),
-          desc_tam: (r.desc_tamanho || '').trim(),
-          preco_cheio: 0, preco_promo: 0,
-        };
-        map[cod] = entry;
-        if (barra && barra !== cod) map[barra] = entry;
+    // Busca produtos de TODAS as lojas (cada uma pode ter catálogo próprio: Tommy, Lez a Lez, etc.)
+    // Processa uma página por vez para evitar OOM
+    for (const board of boards) {
+      const cnpj  = (lojas[board] || '').replace(/\D/g, '');
+      const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+      if (!cnpj) continue;
+
+      let ts = 0, boardCount = 0;
+      for (let page = 0; page < 20; page++) {
+        const body = buildRequest('LinxProdutos', cnpj, [
+          { id: 'timestamp',        valor: String(ts) },
+          { id: 'dt_update_inicio', valor: '2000-01-01' },
+          { id: 'dt_update_fim',    valor: today },
+        ], chave);
+        let raw;
+        try { raw = await postRequest(body, 60_000); } catch (e) { console.warn(`[Catalog/${board}] pág`, page, e.message); break; }
+        if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) break;
+        const rows = parseCsv(raw);
+        for (const r of rows) {
+          const cod   = String(r.cod_produto || '').replace(/\.0+$/, '').trim();
+          const barra = String(r.cod_barra   || '').replace(/\.0+$/, '').trim();
+          if (!cod) continue;
+          const entry = {
+            tipo:     'produto',
+            nome:     (r.nome         || '').trim(),
+            setor:    (r.desc_setor   || '').trim(),
+            marca:    (r.desc_marca   || '').trim(),
+            linha:    (r.desc_linha   || '').trim(),
+            desc_cor: (r.desc_cor     || '').trim(),
+            desc_tam: (r.desc_tamanho || '').trim(),
+            preco_cheio: 0, preco_promo: 0,
+          };
+          map[cod] = entry;
+          if (barra && barra !== cod) map[barra] = entry;
+        }
+        boardCount += rows.length;
+        if (rows.length < 5000) break;
+        const maxTs = Math.max(...rows.map(r => parseInt(r.timestamp) || 0));
+        if (maxTs <= ts) break;
+        ts = maxTs;
       }
-      prodCount += rows.length;
-      if (rows.length < 5000) break;
-      const maxTs = Math.max(...rows.map(r => parseInt(r.timestamp) || 0));
-      if (maxTs <= ts) break;
-      ts = maxTs;
+      console.log(`[Catalog/${board}] ${boardCount} produtos`);
+      totalProd += boardCount;
+
+      // Serviços desta loja
+      const svcRows = await fetchServicos(cnpj, chave, 0).catch(e => { console.warn(`[Catalog/${board}] servicos:`, e.message); return []; });
+      for (const r of svcRows) {
+        const cod = String(r.cod_servico || '').replace(/\.0+$/, '').trim();
+        if (!cod || map[cod]) continue;
+        map[cod] = { tipo: 'servico', nome: (r.nome || '').trim(), setor: (r.desc_setor || '').trim(), marca: (r.desc_marca || '').trim(), linha: (r.desc_linha || '').trim(), desc_cor: '', desc_tam: '', preco_cheio: 0, preco_promo: 0 };
+      }
     }
 
-    // Serviços
-    const svcRows = await fetchServicos(cnpj, chave, 0).catch(e => { console.warn('[Catalog] servicos:', e.message); return []; });
-    for (const r of svcRows) {
-      const cod = String(r.cod_servico || '').trim();
-      if (!cod) continue;
-      map[cod] = { tipo: 'servico', nome: (r.nome || '').trim(), setor: (r.desc_setor || '').trim(), marca: (r.desc_marca || '').trim(), linha: (r.desc_linha || '').trim(), desc_cor: '', desc_tam: '', preco_cheio: 0, preco_promo: 0 };
-    }
-
-    console.log(`[Catalog] ${prodCount} produtos + ${svcRows.length} serviços → ${Object.keys(map).length} entradas`);
+    console.log(`[Catalog] ${totalProd} produtos total → ${Object.keys(map).length} entradas (${boards.length} lojas)`);
     _catalogCache   = map;
     _catalogCacheAt = Date.now();
     _catalogWarming = false;

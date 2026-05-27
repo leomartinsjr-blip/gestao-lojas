@@ -574,8 +574,9 @@ function renderDashboard() {
     { key:'name',     label:'Vendedor',  cls:'' },
     { key:'mensal',   label:'Meta Mês',  cls:'dash-th-r' },
     { key:'valor',    label:'Realizado', cls:'dash-th-r' },
-    { key:'pctMeta',  label:'% Projeção', cls:'dash-th-r' },
+    { key:'pctMeta',  label:'% Meta',    cls:'dash-th-r' },
     { key:'projecao', label:'Projeção',  cls:'dash-th-r' },
+    { key:'pctProj',  label:'% Projeção',cls:'dash-th-r' },
     { key:'pa',       label:'PA',        cls:'dash-th-r' },
     { key:'tm',       label:'TM',        cls:'dash-th-r' },
     { key:'conv',     label:'Conv',      cls:'dash-th-r' },
@@ -610,13 +611,14 @@ function renderDashboard() {
         if (e) { valor += e.value||0; pecas += e.pecas||0; atend += e.atendimentos||0; }
       }
       const metaAccum = mensal * perfWeightAccum / 100;
-      const pctMeta   = (metaAccum > 0 && valor > 0) ? valor/metaAccum*100 : null;
+      const pctMeta   = mensal > 0 ? valor / mensal * 100 : null;
       const projecao  = (valor > 0 && metaAccum > 0) ? valor/metaAccum*mensal : null;
+      const pctProj   = projecao != null && mensal > 0 ? projecao / mensal * 100 : null;
       const pa        = (pecas > 0 && atend > 0) ? pecas/atend : null;
       const tm        = (valor > 0 && atend > 0) ? valor/atend : null;
       const iStats    = S.indevaStats?.[emp.board]?.monthly?.[String(emp.id)];
       const conv      = iStats?.total > 0 ? iStats.conv / iStats.total * 100 : null;
-      return { emp, valor, pecas, atend, mensal, pctMeta, projecao, pa, tm, conv };
+      return { emp, valor, pecas, atend, mensal, pctMeta, projecao, pctProj, pa, tm, conv };
     });
     _boardRowData[bk] = rowData;
     let totV=0, totP=0, totA=0, totM=0;
@@ -627,10 +629,12 @@ function renderDashboard() {
     let biTotal = 0, biConv = 0;
     for (const s of Object.values(bIndevaM)) { biTotal += s.total; biConv += s.conv; }
     const bIndevaConv = biTotal > 0 ? biConv / biTotal * 100 : (bFluxo > 0 && totA > 0 ? totA / bFluxo * 100 : null);
+    const bProj = (totV>0 && ma>0) ? totV/ma*totM : null;
     _boardAgg[bk] = {
       valor: totV, mensal: totM, fluxo: bFluxo,
-      pctMeta:  (ma>0 && totV>0) ? totV/ma*100 : null,
-      projecao: (totV>0 && ma>0) ? totV/ma*totM : null,
+      pctMeta:  totM > 0 ? totV/totM*100 : null,
+      projecao: bProj,
+      pctProj:  bProj != null && totM > 0 ? bProj/totM*100 : null,
       pa: (totP>0 && totA>0) ? totP/totA : null,
       tm: (totV>0 && totA>0) ? totV/totA : null,
       conv: bIndevaConv,
@@ -675,8 +679,9 @@ function renderDashboard() {
     let totValor=0, totPecas=0, totAtend=0, totMeta=0;
     for (const d of rowData) { totValor += d.valor; totPecas += d.pecas; totAtend += d.atend; totMeta += d.mensal; }
     const totMetaAccum = totMeta * perfWeightAccum / 100;
-    const totPct  = (totMetaAccum > 0 && totValor > 0) ? totValor/totMetaAccum*100 : null;
-    const totProj = (totValor > 0 && totMetaAccum > 0) ? totValor/totMetaAccum*totMeta : null;
+    const totPctMeta = totMeta > 0 ? totValor/totMeta*100 : null;
+    const totProj  = (totValor > 0 && totMetaAccum > 0) ? totValor/totMetaAccum*totMeta : null;
+    const totPctProj = totProj != null && totMeta > 0 ? totProj/totMeta*100 : null;
     const totPa   = (totPecas > 0 && totAtend > 0) ? totPecas/totAtend : null;
     const totTm   = (totValor > 0 && totAtend > 0) ? totValor/totAtend : null;
     const totFluxo = Object.values(S.storeFluxo?.[bk] || {}).reduce((s, v) => s + (v || 0), 0);
@@ -684,9 +689,7 @@ function renderDashboard() {
     let tiTotal = 0, tiConv = 0;
     for (const s of Object.values(totIndevaM)) { tiTotal += s.total; tiConv += s.conv; }
     const totConv = tiTotal > 0 ? tiConv / tiTotal * 100 : (totFluxo > 0 && totAtend > 0 ? totAtend / totFluxo * 100 : null);
-    const tpCls    = totPct  == null ? '' : totPct  >= 100 ? 'kpi-pos' : totPct  >= 80 ? 'kpi-warn' : 'kpi-neg';
-    const tprCls   = totProj == null ? '' : totProj >= totMeta ? 'kpi-pos' : totProj >= totMeta*0.9 ? 'kpi-warn' : 'kpi-neg';
-    const tcCls    = totConv == null ? '' : totConv >= 30 ? 'kpi-pos' : totConv >= 15 ? 'kpi-warn' : 'kpi-neg';
+    const tpProjCls = totPctProj == null ? '' : totPctProj >= 100 ? 'kpi-pos' : totPctProj >= 80 ? 'kpi-warn' : 'kpi-neg';
 
     grandValor += totValor; grandPecas += totPecas; grandAtend += totAtend; grandMeta += totMeta; grandFluxo += totFluxo;
 
@@ -703,7 +706,7 @@ function renderDashboard() {
     if (isAdmin) {
       storeRow.className = 'dash-store-hdr dash-store-collapse';
       if (isExp) {
-        storeRow.innerHTML = `<td colspan="8" class="dash-store-hdr-td" style="border-left:3px solid ${bc.color};">
+        storeRow.innerHTML = `<td colspan="9" class="dash-store-hdr-td" style="border-left:3px solid ${bc.color};">
           <span class="dia-chevron">▾</span>
           <span class="dash-store-dot" style="background:${bc.color}"></span><strong>${bc.label}</strong>
         </td>`;
@@ -715,8 +718,9 @@ function renderDashboard() {
           </td>
           <td class="dash-td dash-td-num">${fBRL(totMeta||null)}</td>
           <td class="dash-td dash-td-num">${fBRL(totValor||null)}</td>
-          <td class="dash-td dash-td-num ${tpCls}">${fPct(totPct)}</td>
+          <td class="dash-td dash-td-num">${fPct(totPctMeta)}</td>
           <td class="dash-td dash-td-num">${fBRL(totProj)}</td>
+          <td class="dash-td dash-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
           <td class="dash-td dash-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
           <td class="dash-td dash-td-num">${fBRL(totTm)}</td>
           <td class="dash-td dash-td-num">${totConv!=null?totConv.toFixed(1)+'%':'—'}</td>`;
@@ -728,7 +732,7 @@ function renderDashboard() {
       });
     } else {
       storeRow.className = 'dash-store-hdr';
-      storeRow.innerHTML = `<td colspan="8" class="dash-store-hdr-td" style="border-left:3px solid ${bc.color};">
+      storeRow.innerHTML = `<td colspan="9" class="dash-store-hdr-td" style="border-left:3px solid ${bc.color};">
         <span class="dash-store-dot" style="background:${bc.color}"></span><strong>${bc.label}</strong>
       </td>`;
     }
@@ -736,18 +740,17 @@ function renderDashboard() {
 
     // Vendor rows + total (only when expanded or non-admin)
     if (!isAdmin || isExp) {
-      for (const { emp, valor, pecas, atend, mensal, pctMeta, projecao, pa, tm, conv } of rowData) {
-        const pctCls  = pctMeta  == null ? '' : pctMeta  >= 100 ? 'kpi-pos' : pctMeta  >= 80 ? 'kpi-warn' : 'kpi-neg';
-        const projCls = projecao == null ? '' : projecao >= mensal ? 'kpi-pos' : projecao >= mensal*0.9 ? 'kpi-warn' : 'kpi-neg';
-        const convCls = conv == null ? '' : conv >= 50 ? 'kpi-pos' : conv >= 30 ? 'kpi-warn' : 'kpi-neg';
+      for (const { emp, valor, pecas, atend, mensal, pctMeta, projecao, pctProj, pa, tm, conv } of rowData) {
+        const pctProjCls = pctProj == null ? '' : pctProj >= 100 ? 'kpi-pos' : pctProj >= 80 ? 'kpi-warn' : 'kpi-neg';
         const row = document.createElement('tr');
         row.className = 'dash-row';
         row.innerHTML = `
           <td class="dash-td dash-td-name">${emp.apelido || emp.name}</td>
           <td class="dash-td dash-td-num">${fBRL(mensal || null)}</td>
           <td class="dash-td dash-td-num">${fBRL(valor || null)}</td>
-          <td class="dash-td dash-td-num ${pctCls}">${fPct(pctMeta)}</td>
+          <td class="dash-td dash-td-num">${fPct(pctMeta)}</td>
           <td class="dash-td dash-td-num">${fBRL(projecao)}</td>
+          <td class="dash-td dash-td-num ${pctProjCls}">${fPct(pctProj)}</td>
           <td class="dash-td dash-td-num${pa != null ? (pa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${fDec(pa)}</td>
           <td class="dash-td dash-td-num">${fBRL(tm)}</td>
           <td class="dash-td dash-td-num">${conv != null ? conv.toFixed(1) + '%' : '—'}</td>
@@ -761,8 +764,9 @@ function renderDashboard() {
         <td class="dash-td">Total <strong>${bc.label}</strong></td>
         <td class="dash-td dash-td-num">${fBRL(totMeta || null)}</td>
         <td class="dash-td dash-td-num">${fBRL(totValor || null)}</td>
-        <td class="dash-td dash-td-num ${tpCls}">${fPct(totPct)}</td>
+        <td class="dash-td dash-td-num">${fPct(totPctMeta)}</td>
         <td class="dash-td dash-td-num">${fBRL(totProj)}</td>
+        <td class="dash-td dash-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
         <td class="dash-td dash-td-num${totPa != null ? (totPa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${totPa != null ? totPa.toFixed(2) : '—'}</td>
         <td class="dash-td dash-td-num">${fBRL(totTm)}</td>
         <td class="dash-td dash-td-num">${totConv != null ? totConv.toFixed(1) + '%' : '—'}</td>
@@ -773,8 +777,9 @@ function renderDashboard() {
 
   if (isAdmin && [...visible].length > 1 && grandValor > 0) {
     const gMetaAccum = grandMeta * perfWeightAccum / 100;
-    const gPct   = (gMetaAccum > 0 && grandValor > 0) ? grandValor / gMetaAccum * 100 : null;
+    const gPctMeta = grandMeta > 0 ? grandValor / grandMeta * 100 : null;
     const gProj  = (grandValor > 0 && gMetaAccum > 0) ? grandValor / gMetaAccum * grandMeta : null;
+    const gPctProj = gProj != null && grandMeta > 0 ? gProj / grandMeta * 100 : null;
     const gPa    = (grandPecas > 0 && grandAtend > 0) ? grandPecas / grandAtend : null;
     const gTm    = (grandValor > 0 && grandAtend > 0) ? grandValor / grandAtend : null;
     let grandITotal = 0, grandIConv = 0;
@@ -782,17 +787,16 @@ function renderDashboard() {
       for (const s of Object.values(S.indevaStats[board]?.monthly || {})) { grandITotal += s.total; grandIConv += s.conv; }
     }
     const gConv = grandITotal > 0 ? grandIConv / grandITotal * 100 : (grandFluxo > 0 && grandAtend > 0 ? grandAtend / grandFluxo * 100 : null);
-    const gPCls  = gPct  == null ? '' : gPct  >= 100 ? 'kpi-pos' : gPct  >= 80 ? 'kpi-warn' : 'kpi-neg';
-    const gPrCls = gProj == null ? '' : gProj >= grandMeta ? 'kpi-pos' : gProj >= grandMeta * 0.9 ? 'kpi-warn' : 'kpi-neg';
-    const gCCls  = gConv == null ? '' : gConv >= 30 ? 'kpi-pos' : gConv >= 15 ? 'kpi-warn' : 'kpi-neg';
+    const gProjCls = gPctProj == null ? '' : gPctProj >= 100 ? 'kpi-pos' : gPctProj >= 80 ? 'kpi-warn' : 'kpi-neg';
     const grandRow = document.createElement('tr');
     grandRow.className = 'dash-grand-total';
     grandRow.innerHTML = `
       <td class="dash-td"><strong>Total Geral</strong></td>
       <td class="dash-td dash-td-num">${fBRL(grandMeta || null)}</td>
       <td class="dash-td dash-td-num">${fBRL(grandValor || null)}</td>
-      <td class="dash-td dash-td-num ${gPCls}">${fPct(gPct)}</td>
+      <td class="dash-td dash-td-num">${fPct(gPctMeta)}</td>
       <td class="dash-td dash-td-num">${fBRL(gProj)}</td>
+      <td class="dash-td dash-td-num ${gProjCls}">${fPct(gPctProj)}</td>
       <td class="dash-td dash-td-num${gPa != null ? (gPa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${gPa != null ? gPa.toFixed(2) : '—'}</td>
       <td class="dash-td dash-td-num">${fBRL(gTm)}</td>
       <td class="dash-td dash-td-num">${gConv != null ? gConv.toFixed(1) + '%' : '—'}</td>
