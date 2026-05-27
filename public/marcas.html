@@ -24,12 +24,6 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
 .mx-search-btn:hover{background:#388bfd}
 .mx-search-btn:disabled{opacity:.5;cursor:default}
 
-/* ── Tipo filter ── */
-.mx-tipo{display:flex;gap:.3rem}
-.mx-tipo label{display:flex;align-items:center;gap:.3rem;font-size:.78rem;color:#8b949e;cursor:pointer;padding:.22rem .5rem;border-radius:5px;border:1px solid #30363d;user-select:none}
-.mx-tipo label:has(input:checked){border-color:#388bfd;color:#58a6ff;background:#1f6feb18}
-.mx-tipo input{display:none}
-
 /* ── Body ── */
 .mx-body{max-width:960px;margin:0 auto;padding:1.25rem 1rem}
 
@@ -102,12 +96,6 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
     <button class="mx-shortcut" data-s="3m">3 meses</button>
 
     <select id="boardSel" class="mx-sel" style="display:none"></select>
-
-    <div class="mx-tipo">
-      <label><input type="radio" name="tipo" value="todos" checked> Todos</label>
-      <label><input type="radio" name="tipo" value="produto"> Produtos</label>
-      <label><input type="radio" name="tipo" value="servico"> Serviços</label>
-    </div>
 
     <button class="mx-search-btn" id="searchBtn">Buscar</button>
   </div>

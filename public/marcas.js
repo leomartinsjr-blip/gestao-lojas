@@ -43,10 +43,6 @@ async function init() {
   // Search
   document.getElementById('searchBtn').addEventListener('click', fetchData);
 
-  // Tipo filter → re-render without new fetch
-  document.querySelectorAll('[name="tipo"]').forEach(r =>
-    r.addEventListener('change', () => { if (apiData) render(); }));
-
   // Enter key on date inputs
   document.querySelectorAll('.mx-inp').forEach(inp =>
     inp.addEventListener('keydown', e => { if (e.key === 'Enter') fetchData(); }));
@@ -106,29 +102,8 @@ async function fetchData() {
   }
 }
 
-function getTipoFilter() {
-  return document.querySelector('[name="tipo"]:checked')?.value || 'todos';
-}
-
-function applyTipoFilter(marcas, tipo) {
-  if (tipo === 'todos') return marcas;
-  return marcas
-    .map(m => ({
-      ...m,
-      produtos: m.produtos.filter(p => p.tipo === tipo || (!p.tipo && tipo === 'produto')),
-    }))
-    .filter(m => m.produtos.length > 0)
-    .map(m => ({
-      ...m,
-      qtd:   m.produtos.reduce((s, p) => s + p.qtd,   0),
-      valor: parseFloat(m.produtos.reduce((s, p) => s + p.valor, 0).toFixed(2)),
-    }));
-}
-
 function render() {
-  const tipo   = getTipoFilter();
-  const marcas = applyTipoFilter(apiData.marcas || [], tipo)
-    .sort((a, b) => b.valor - a.valor);
+  const marcas = (apiData.marcas || []).sort((a, b) => b.valor - a.valor);
 
   const totalValor = marcas.reduce((s, m) => s + m.valor, 0);
   const totalPecas = marcas.reduce((s, m) => s + m.qtd,   0);
