@@ -261,16 +261,47 @@ function renderPorSetor(marcas, totalValor) {
   const maxValor = setores.length ? setores[0].valor : 1;
   const list     = document.getElementById('brandList');
 
+  // Agrega estoque por setor × loja a partir do stockMap
+  const refLojas = stockData ? (Object.values(stockMap)[0]?.lojas || []) : [];
+  const setorStock = {};
+  if (stockData) {
+    Object.entries(stockMap).forEach(([marcaUp, entry]) => {
+      (entry.setores || []).forEach(ss => {
+        const sk = ss.setor.toUpperCase();
+        if (!setorStock[sk]) setorStock[sk] = { totals: {}, byMarca: {} };
+        const se = setorStock[sk];
+        (ss.lojas || []).forEach(l => { se.totals[l.board] = (se.totals[l.board] || 0) + (l.qtd || 0); });
+        const bMap = {};
+        (ss.lojas || []).forEach(l => { bMap[l.board] = l.qtd; });
+        se.byMarca[marcaUp] = bMap;
+      });
+    });
+  }
+
+  const n       = refLojas.length;
+  const colW    = n <= 3 ? 38 : n <= 4 ? 34 : n <= 5 ? 30 : 27;
+  const colAttr = n ? ` style="--sb-col-w:${colW}px"` : '';
+  const stCols  = bMap => refLojas.map(l =>
+    `<span class="mx-st-col">${bMap && bMap[l.board] != null ? fNum(bMap[l.board]) : '—'}</span>`
+  ).join('');
+
   list.innerHTML = setores.map((s, i) => {
     const pct    = totalValor > 0 ? ((s.valor / totalValor) * 100).toFixed(1) : '0.0';
     const barPct = totalValor > 0 ? ((s.valor / maxValor)   * 100).toFixed(1) : '0';
     const isOpen = expanded.has(s.setor);
+    const se     = setorStock[s.setor.toUpperCase()];
+
+    const stBlock = n ? `
+      <div class="mx-st-block">
+        <div class="mx-st-lbl-row">${refLojas.map(l => `<span class="mx-st-col" style="color:${l.color}">${abbr(l.label)}</span>`).join('')}</div>
+        <div class="mx-st-tot-row">${stCols(se?.totals)}</div>
+      </div>` : '';
 
     const marcasHtml = s.marcas.map(m => {
       const mKey     = s.setor + '\x00' + m.marca;
       const mOpen    = expanded.has(mKey);
-      const pctSetor = s.valor    > 0 ? ((m.valor / s.valor)    * 100).toFixed(1) : '0.0';
-      const pctTotal = totalValor > 0 ? ((m.valor / totalValor) * 100).toFixed(1) : '0.0';
+      const pctSetor = s.valor > 0 ? ((m.valor / s.valor) * 100).toFixed(1) : '0.0';
+      const stSetor  = n ? `<div class="mx-st-setor">${stCols(se?.byMarca[m.marca.toUpperCase()])}</div>` : '';
       return `
         <div class="mx-setor-row${mOpen ? ' open' : ''}" data-skey="${_esc(mKey)}">
           <div class="mx-setor-hdr">
@@ -279,14 +310,14 @@ function renderPorSetor(marcas, totalValor) {
             <span class="mx-setor-val">${fBRL(m.valor)}</span>
             <span class="mx-setor-pecas">${fNum(m.qtd)} pcs</span>
             <span class="mx-setor-pct" title="% do setor">${pctSetor}%</span>
-            <span class="mx-setor-pct-total" title="% do total faturado">${pctTotal}% total</span>
+            ${stSetor}
           </div>
           <div class="mx-setor-prods">${prodTable(m.produtos)}</div>
         </div>`;
     }).join('');
 
     return `
-      <div class="mx-brand-card${isOpen ? ' open' : ''}" data-marca="${_esc(s.setor)}">
+      <div class="mx-brand-card${isOpen ? ' open' : ''}" data-marca="${_esc(s.setor)}"${colAttr}>
         <div class="mx-brand-hdr">
           <span class="mx-brand-rank">#${i + 1}</span>
           <span class="mx-brand-name" title="${_esc(s.setor)}">${_esc(s.setor)}</span>
@@ -295,6 +326,7 @@ function renderPorSetor(marcas, totalValor) {
             <span class="mx-brand-pecas">${fNum(s.qtd)} pcs</span>
             <span class="mx-brand-chevron">▼</span>
           </div>
+          ${stBlock}
         </div>
         <div class="mx-bar-wrap">
           <div class="mx-bar-row">
