@@ -574,7 +574,7 @@ function renderDashboard() {
     { key:'name',     label:'Vendedor',  cls:'' },
     { key:'mensal',   label:'Meta Mês',  cls:'dash-th-r' },
     { key:'valor',    label:'Realizado', cls:'dash-th-r' },
-    { key:'pctMeta',  label:'% Meta',    cls:'dash-th-r' },
+    { key:'pctMeta',  label:'% Projeção', cls:'dash-th-r' },
     { key:'projecao', label:'Projeção',  cls:'dash-th-r' },
     { key:'pa',       label:'PA',        cls:'dash-th-r' },
     { key:'tm',       label:'TM',        cls:'dash-th-r' },
@@ -716,10 +716,10 @@ function renderDashboard() {
           <td class="dash-td dash-td-num">${fBRL(totMeta||null)}</td>
           <td class="dash-td dash-td-num">${fBRL(totValor||null)}</td>
           <td class="dash-td dash-td-num ${tpCls}">${fPct(totPct)}</td>
-          <td class="dash-td dash-td-num ${tprCls}">${fBRL(totProj)}</td>
+          <td class="dash-td dash-td-num">${fBRL(totProj)}</td>
           <td class="dash-td dash-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
           <td class="dash-td dash-td-num">${fBRL(totTm)}</td>
-          <td class="dash-td dash-td-num ${tcCls}">${totConv!=null?totConv.toFixed(1)+'%':'—'}</td>`;
+          <td class="dash-td dash-td-num">${totConv!=null?totConv.toFixed(1)+'%':'—'}</td>`;
       }
       storeRow.style.cursor = 'pointer';
       storeRow.addEventListener('click', () => {
@@ -747,10 +747,10 @@ function renderDashboard() {
           <td class="dash-td dash-td-num">${fBRL(mensal || null)}</td>
           <td class="dash-td dash-td-num">${fBRL(valor || null)}</td>
           <td class="dash-td dash-td-num ${pctCls}">${fPct(pctMeta)}</td>
-          <td class="dash-td dash-td-num ${projCls}">${fBRL(projecao)}</td>
+          <td class="dash-td dash-td-num">${fBRL(projecao)}</td>
           <td class="dash-td dash-td-num${pa != null ? (pa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${fDec(pa)}</td>
           <td class="dash-td dash-td-num">${fBRL(tm)}</td>
-          <td class="dash-td dash-td-num ${convCls}">${conv != null ? conv.toFixed(1) + '%' : '—'}</td>
+          <td class="dash-td dash-td-num">${conv != null ? conv.toFixed(1) + '%' : '—'}</td>
         `;
         tbody.appendChild(row);
       }
@@ -762,10 +762,10 @@ function renderDashboard() {
         <td class="dash-td dash-td-num">${fBRL(totMeta || null)}</td>
         <td class="dash-td dash-td-num">${fBRL(totValor || null)}</td>
         <td class="dash-td dash-td-num ${tpCls}">${fPct(totPct)}</td>
-        <td class="dash-td dash-td-num ${tprCls}">${fBRL(totProj)}</td>
+        <td class="dash-td dash-td-num">${fBRL(totProj)}</td>
         <td class="dash-td dash-td-num${totPa != null ? (totPa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${totPa != null ? totPa.toFixed(2) : '—'}</td>
         <td class="dash-td dash-td-num">${fBRL(totTm)}</td>
-        <td class="dash-td dash-td-num ${tcCls}">${totConv != null ? totConv.toFixed(1) + '%' : '—'}</td>
+        <td class="dash-td dash-td-num">${totConv != null ? totConv.toFixed(1) + '%' : '—'}</td>
       `;
       tbody.appendChild(totalRow);
     }
@@ -792,10 +792,10 @@ function renderDashboard() {
       <td class="dash-td dash-td-num">${fBRL(grandMeta || null)}</td>
       <td class="dash-td dash-td-num">${fBRL(grandValor || null)}</td>
       <td class="dash-td dash-td-num ${gPCls}">${fPct(gPct)}</td>
-      <td class="dash-td dash-td-num ${gPrCls}">${fBRL(gProj)}</td>
+      <td class="dash-td dash-td-num">${fBRL(gProj)}</td>
       <td class="dash-td dash-td-num${gPa != null ? (gPa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${gPa != null ? gPa.toFixed(2) : '—'}</td>
       <td class="dash-td dash-td-num">${fBRL(gTm)}</td>
-      <td class="dash-td dash-td-num ${gCCls}">${gConv != null ? gConv.toFixed(1) + '%' : '—'}</td>
+      <td class="dash-td dash-td-num">${gConv != null ? gConv.toFixed(1) + '%' : '—'}</td>
     `;
     tbody.appendChild(grandRow);
   }
@@ -838,7 +838,7 @@ function renderDashboard() {
     </div>
     <div class="main-card-body" id="dashWeekBody"></div>
   `;
-  leftCol.insertBefore(rightCard, leftCard);
+  leftCol.appendChild(rightCard);
   _renderDashWeekBody(rightCard.querySelector('#dashWeekBody'), week);
 
   document.getElementById('dashWkPrev').addEventListener('click', () => {
@@ -1368,8 +1368,8 @@ function _renderDashWeekBody(body, week, extraData) {
           <td class="dw-td dw-td-name" style="padding-left:1.4rem">${emp.apelido || emp.name}</td>
           <td class="dw-td dw-td-num">${fBRL(k.wMeta||null)}</td>
           <td class="dw-td dw-td-num">${fBRL(k.valor||null)}</td>
-          <td class="dw-td dw-td-num ${pctCls}">${fPct(k.pctMeta)}</td>
-          <td class="dw-td dw-td-num ${projCls}">${fBRL(k.projecao)}</td>
+          <td class="dw-td dw-td-num">${fPct(k.pctMeta)}</td>
+          <td class="dw-td dw-td-num">${fBRL(k.projecao)}</td>
           <td class="dw-td dw-td-num ${pctProjCls}">${fPct(k.pctProj)}</td>
           <td class="dw-td dw-td-num${k.pa!=null?(k.pa>=1.8?' pa-ok':' pa-low'):''}">${fDec(k.pa)}</td>
           <td class="dw-td dw-premio">${premioHtml}</td>
@@ -1396,8 +1396,8 @@ function _renderDashWeekBody(body, week, extraData) {
         </td>
         <td class="dw-td dw-td-num">${fBRL(totMeta||null)}</td>
         <td class="dw-td dw-td-num">${fBRL(totValor||null)}</td>
-        <td class="dw-td dw-td-num ${tpCls}">${fPct(totPct)}</td>
-        <td class="dw-td dw-td-num ${tprojCls}">${hasProj?fBRL(totProjecao):'—'}</td>
+        <td class="dw-td dw-td-num">${fPct(totPct)}</td>
+        <td class="dw-td dw-td-num">${hasProj?fBRL(totProjecao):'—'}</td>
         <td class="dw-td dw-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
         <td class="dw-td dw-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
         <td class="dw-td dw-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>`;
@@ -1415,8 +1415,8 @@ function _renderDashWeekBody(body, week, extraData) {
           <td class="dw-td">Total</td>
           <td class="dw-td dw-td-num">${fBRL(totMeta||null)}</td>
           <td class="dw-td dw-td-num">${fBRL(totValor||null)}</td>
-          <td class="dw-td dw-td-num ${tpCls}">${fPct(totPct)}</td>
-          <td class="dw-td dw-td-num ${tprojCls}">${hasProj?fBRL(totProjecao):'—'}</td>
+          <td class="dw-td dw-td-num">${fPct(totPct)}</td>
+          <td class="dw-td dw-td-num">${hasProj?fBRL(totProjecao):'—'}</td>
           <td class="dw-td dw-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
           <td class="dw-td dw-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
           <td class="dw-td dw-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
@@ -1444,8 +1444,8 @@ function _renderDashWeekBody(body, week, extraData) {
         <td class="dw-td">Total Geral</td>
         <td class="dw-td dw-td-num">${fBRL(grandTotMeta||null)}</td>
         <td class="dw-td dw-td-num">${fBRL(grandTotValor||null)}</td>
-        <td class="dw-td dw-td-num ${gpCls}">${fPct(gPct)}</td>
-        <td class="dw-td dw-td-num ${gprojCls}">${grandHasProj?fBRL(grandTotProjecao):'—'}</td>
+        <td class="dw-td dw-td-num">${fPct(gPct)}</td>
+        <td class="dw-td dw-td-num">${grandHasProj?fBRL(grandTotProjecao):'—'}</td>
         <td class="dw-td dw-td-num ${gpProjCls}">${fPct(gPctProj)}</td>
         <td class="dw-td dw-td-num${gPa!=null?(gPa>=1.8?' pa-ok':' pa-low'):''}">${gPa!=null?gPa.toFixed(2):'—'}</td>
         <td class="dw-td dw-td-num">R$ ${grandTotPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
@@ -1496,8 +1496,8 @@ function _renderDashWeekBody(body, week, extraData) {
         <td class="dw-td dw-td-name">${emp.apelido || emp.name}</td>
         <td class="dw-td dw-td-num">${fBRL(k.wMeta||null)}</td>
         <td class="dw-td dw-td-num">${fBRL(k.valor||null)}</td>
-        <td class="dw-td dw-td-num ${pctCls}">${fPct(k.pctMeta)}</td>
-        <td class="dw-td dw-td-num ${projCls}">${fBRL(k.projecao)}</td>
+        <td class="dw-td dw-td-num">${fPct(k.pctMeta)}</td>
+        <td class="dw-td dw-td-num">${fBRL(k.projecao)}</td>
         <td class="dw-td dw-td-num${k.pa != null ? (k.pa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${fDec(k.pa)}</td>
         <td class="dw-td dw-premio">${premioHtml}</td>
       </tr>`;
@@ -1529,8 +1529,8 @@ function _renderDashWeekBody(body, week, extraData) {
           <td class="dw-td">Total</td>
           <td class="dw-td dw-td-num">${fBRL(totMeta||null)}</td>
           <td class="dw-td dw-td-num">${fBRL(totValor||null)}</td>
-          <td class="dw-td dw-td-num ${tpCls}">${fPct(totPct)}</td>
-          <td class="dw-td dw-td-num ${tprojCls}">${hasProj ? fBRL(totProjecao) : '—'}</td>
+          <td class="dw-td dw-td-num">${fPct(totPct)}</td>
+          <td class="dw-td dw-td-num">${hasProj ? fBRL(totProjecao) : '—'}</td>
           <td class="dw-td dw-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
           <td class="dw-td dw-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
         </tr></tfoot>

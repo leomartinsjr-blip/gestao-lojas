@@ -2887,6 +2887,16 @@ app.get('/api/catalog-status', requireAdmin, async (req, res) => {
   res.json({ cached: !!_catalogCache, size, ageMin, fields, sample });
 });
 
+// ── GET /api/catalog-lookup?codes=880204,884901 — checa códigos no catálogo ──
+app.get('/api/catalog-lookup', requireAdmin, (req, res) => {
+  const codes = String(req.query.codes || '').split(',').map(c => c.replace(/\.0+$/, '').trim()).filter(Boolean);
+  const result = {};
+  for (const code of codes) {
+    result[code] = _catalogCache ? (_catalogCache[code] || null) : 'cache_vazio';
+  }
+  res.json({ cacheSize: _catalogCache ? Object.keys(_catalogCache).length : 0, result });
+});
+
 // ── GET /api/catalog-warm — força construção do catálogo e reporta resultado ─
 app.get('/api/catalog-warm', requireAdmin, async (req, res) => {
   _catalogCache = null; _catalogCacheAt = 0;
@@ -2963,8 +2973,9 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
         if (op !== 'S' && op !== 'DS') continue;
         const sign = op === 'DS' ? -1 : 1;
 
-        const cod      = String(row.cod_produto || '').trim();
-        const prodInfo = catalog[cod] || {};
+        const cod      = String(row.cod_produto || '').replace(/\.0+$/, '').trim();
+        const barra    = String(row.cod_barra   || '').replace(/\.0+$/, '').trim();
+        const prodInfo = catalog[cod] || catalog[barra] || {};
         // Usa catálogo enriquecido se disponível; fallback nos campos do próprio LinxMovimento
         const marca    = (prodInfo.marca || row.desc_marca || row.marca || '(sem marca)').trim();
         const qtd      = sign * parseBrNum(row.quantidade  || '0');
@@ -3035,18 +3046,21 @@ async function _getCatalog(lojas) {
       if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) break;
       const rows = parseCsv(raw);
       for (const r of rows) {
-        const cod = String(r.cod_produto || '').trim();
+        const cod   = String(r.cod_produto || '').replace(/\.0+$/, '').trim();
+        const barra = String(r.cod_barra   || '').replace(/\.0+$/, '').trim();
         if (!cod) continue;
-        map[cod] = {
+        const entry = {
           tipo:     'produto',
-          nome:     (r.nome      || '').trim(),
+          nome:     (r.nome       || '').trim(),
           setor:    (r.desc_setor || '').trim(),
           marca:    (r.desc_marca || '').trim(),
           linha:    (r.desc_linha || '').trim(),
-          desc_cor: (r.desc_cor  || '').trim(),
+          desc_cor: (r.desc_cor   || '').trim(),
           desc_tam: (r.desc_tamanho || '').trim(),
           preco_cheio: 0, preco_promo: 0,
         };
+        map[cod] = entry;
+        if (barra && barra !== cod) map[barra] = entry;
       }
       prodCount += rows.length;
       if (rows.length < 5000) break;
