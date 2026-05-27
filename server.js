@@ -2878,6 +2878,15 @@ app.get('/api/mx-probe', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/catalog-status — diagnóstico do cache de catálogo ───────────
+app.get('/api/catalog-status', requireAdmin, async (req, res) => {
+  const size   = _catalogCache ? Object.keys(_catalogCache).length : 0;
+  const ageMin = _catalogCacheAt ? Math.round((Date.now() - _catalogCacheAt) / 60000) : null;
+  const sample = _catalogCache ? Object.values(_catalogCache).slice(0, 3) : [];
+  const fields = sample[0] ? Object.keys(sample[0]) : [];
+  res.json({ cached: !!_catalogCache, size, ageMin, fields, sample });
+});
+
 // ── GET /api/relatorio-marcas ─────────────────────────────────────────────
 // ?dtIni=2026-05-01&dtFin=2026-05-26&board=delrey   (board opcional — sem ele = todas as lojas)
 // Usa LinxMovimento (item-level: 1 linha = 1 produto por NF) × catálogo LinxProdutos para marca
