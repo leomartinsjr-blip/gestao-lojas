@@ -2323,7 +2323,8 @@ function renderTransExcelTab(container) {
       let periodDays = 365;
       try {
         const s1 = XLSX_LOCAL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
-        const periodStr = String(s1[0]?.[1] || '');
+        const periodRow = s1.find(r => Array.isArray(r) && String(r[0]||'').includes('ríodo'));
+        const periodStr = String(periodRow?.[1] || '');
         const [startStr, endStr] = periodStr.split(' à ');
         if (startStr && endStr) {
           const [sd, sm, sy] = startStr.trim().split('/');
@@ -2346,7 +2347,7 @@ function renderTransExcelTab(container) {
 
       // Localiza aba com header de colunas
       const normH = h => String(h||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
-      let companies = [], headerSheetIdx = -1;
+      let companies = [], headerSheetIdx = -1, headerColRowIdx = -1;
       let colCodigo = 0, colDescricao = 1, colRef = 2, colUltimaCompra = 8;
       for (let i = 0; i < wb.SheetNames.length; i++) {
         const rows = XLSX_LOCAL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1 });
@@ -2354,6 +2355,7 @@ function renderTransExcelTab(container) {
           r.some(c => typeof c === 'string' && normH(c) === 'codigo'));
         if (colRowIdx === -1) continue;
         headerSheetIdx = i;
+        headerColRowIdx = colRowIdx;
         const headerRow  = rows[colRowIdx];
         const companyRow = colRowIdx > 0 ? rows[colRowIdx - 1] : [];
 
@@ -2401,19 +2403,20 @@ function renderTransExcelTab(container) {
         return null;
       }
 
-      // Passo 2: extrai dados de todas as abas
+      // Passo 2: extrai dados — suporta aba única (dados na mesma aba do header) e multi-aba
       result.innerHTML = '<div class="trans-loading">Extraindo produtos…</div>';
       const products = {};
       let currentSetor = '';
-      for (let i = headerSheetIdx + 1; i < wb.SheetNames.length; i++) {
-        const rows = XLSX_LOCAL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1, raw: true });
-        for (const r of rows) {
+
+      function processDataRows(rows, startIdx) {
+        for (let ri = startIdx; ri < rows.length; ri++) {
+          const r = rows[ri];
           if (!r || !r.length) continue;
-          if (typeof r[0] === 'string' && r[0].includes('Setor')) {
-            currentSetor = r[0].replace(/^SetorSetor:\s*/i, '').replace(/\s*\(\d+\)\s*$/, '').trim();
+          if (typeof r[0] === 'string' && /^Setor/i.test(r[0])) {
+            const raw = r[0].replace(/^Setor:\s*/i, '').replace(/\s*\(\d+\)\s*$/, '').trim();
+            if (raw && normH(raw) !== 'setor') currentSetor = raw;
             continue;
           }
-          // Aceita código como número ou string numérica
           const rawCod = r[colCodigo];
           const cod = typeof rawCod === 'number'
             ? String(rawCod)
@@ -2429,6 +2432,16 @@ function renderTransExcelTab(container) {
             products[cod].giro[c.board]   = (products[cod].giro[c.board]   || 0) + (parseInt(r[c.vendaCol]) || 0);
           }
         }
+      }
+
+      // Aba do header — aba única ou primeira aba com dados (lê com raw:true para datas seriais)
+      const headerSheetRowsRaw = XLSX_LOCAL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[headerSheetIdx]], { header: 1, raw: true });
+      processDataRows(headerSheetRowsRaw, headerColRowIdx + 1);
+
+      // Abas seguintes (formato multi-aba legado)
+      for (let i = headerSheetIdx + 1; i < wb.SheetNames.length; i++) {
+        const rows = XLSX_LOCAL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1, raw: true });
+        processDataRows(rows, 0);
       }
 
       // Passo 3: filtra produtos sem entrada recente (obrigatório)
