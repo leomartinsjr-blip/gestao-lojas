@@ -262,9 +262,12 @@ async function fetchServicos(cnpj, chave, timestamp = 0) {
   let ts = timestamp;
   for (let page = 0; page < 10; page++) {
     const body = buildRequest('LinxServicos', cnpj, [
-      { id: 'timestamp',       valor: String(ts) },
+      { id: 'timestamp',        valor: String(ts) },
       { id: 'dt_update_inicio', valor: '2000-01-01' },
       { id: 'dt_update_fim',    valor: today },
+      { id: 'id_linha',         valor: '0' },
+      { id: 'id_marca',         valor: '0' },
+      { id: 'id_setor',         valor: '0' },
     ], chave);
     const raw = await postRequest(body, 60_000);
     if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
