@@ -3005,10 +3005,13 @@ const TRANS_RESULT_TTL = 30 * 60 * 1000;
 // Cache do catálogo de produtos (LinxProdutos) — válido por 6 horas
 let _catalogCache = null;
 let _catalogCacheAt = 0;
+let _catalogWarming = false;
 const CATALOG_TTL = 6 * 60 * 60 * 1000;
 
 async function _getCatalog(lojas) {
   if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
+  if (_catalogWarming) return _catalogCache || {};
+  _catalogWarming = true;
   const { fetchProdutos, fetchServicos, parseBrNum } = require('./services/microvix');
   const firstBoard = Object.keys(lojas)[0];
   if (!firstBoard) return {};
@@ -3067,9 +3070,11 @@ async function _getCatalog(lojas) {
 
     _catalogCache   = map;
     _catalogCacheAt = Date.now();
+    _catalogWarming = false;
     return map;
   } catch (e) {
     console.warn('[Catalog] Erro:', e.message);
+    _catalogWarming = false;
     return _catalogCache || {};
   }
 }
@@ -4437,6 +4442,11 @@ initMongo()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`\n✅  Gestão de Lojas → http://localhost:${PORT}\n`);
+      // Warm do catálogo de marcas em background após startup
+      if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
+        const _lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+        setTimeout(() => _getCatalog(_lojas).catch(e => console.warn('[Catalog startup]', e.message)), 5000);
+      }
     });
 
     // ── Cron: fechamento de caixa — diário 08:00 Brasília, sincroniza d-1 ──
