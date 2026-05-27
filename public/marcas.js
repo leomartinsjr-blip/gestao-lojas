@@ -329,21 +329,11 @@ function stockBoxHtml(marca) {
       ${lojas.map(l => `<span class="mx-sb-qty">${fK(l.valor)}</span>`).join('')}
     </div>` : '';
 
-  const gruposHtml = (e.setores || []).map((s, si) => {
-    const refRows = (s.refs || []).map(r => `
-      <div class="mx-sb-row mx-sb-ref-row">
-        <span class="mx-sb-name"><span class="mx-sb-ref-code">${_esc(r.ref)}</span><span class="mx-sb-ref-desc"> ${_esc(r.nome)}</span></span>
-        ${qtyCells(r.lojas)}
-      </div>`).join('');
-    return `
-      <div class="mx-sb-grp" data-si="${si}">
-        <div class="mx-sb-row mx-sb-grp-row">
-          <span class="mx-sb-name"><span class="mx-sb-chev">►</span>${_esc(s.setor)}</span>
-          ${qtyCells(s.lojas)}
-        </div>
-        ${s.refs && s.refs.length ? `<div class="mx-sb-refs">${refRows}</div>` : ''}
-      </div>`;
-  }).join('');
+  const setorRows = (e.setores || []).map(s => `
+    <div class="mx-sb-row mx-sb-setor-row">
+      <span class="mx-sb-name">${_esc(s.setor)}</span>
+      ${qtyCells(s.lojas)}
+    </div>`).join('');
 
   return `<div class="mx-stock-box" style="--sb-col-w:${colW}px">
     <div class="mx-sb-row mx-sb-hdr-row">
@@ -353,10 +343,7 @@ function stockBoxHtml(marca) {
       <span class="mx-sb-name">Total</span>${totalCols}
     </div>
     ${valRow}
-    ${e.setores && e.setores.length ? `
-      <div class="mx-sbox-gtoggle"><span class="mx-sbox-gchev">►</span> Por grupo</div>
-      <div class="mx-sbox-grupos">${gruposHtml}</div>
-    ` : ''}
+    ${setorRows ? `<div class="mx-sb-setores">${setorRows}</div>` : ''}
   </div>`;
 }
 
@@ -415,26 +402,6 @@ function wireEvents(list) {
     });
   });
 
-  // Stock box: "por grupo" toggle
-  list.querySelectorAll('.mx-sbox-gtoggle').forEach(toggle => {
-    toggle.addEventListener('click', e => {
-      e.stopPropagation();
-      const box    = toggle.closest('.mx-stock-box');
-      const grupos = box.querySelector('.mx-sbox-grupos');
-      const chev   = toggle.querySelector('.mx-sbox-gchev');
-      const open   = grupos.style.display !== 'none';
-      grupos.style.display = open ? 'none' : 'block';
-      chev.style.transform = open ? '' : 'rotate(90deg)';
-    });
-  });
-
-  // Stock box: setor row toggle (shows refs)
-  list.querySelectorAll('.mx-sb-grp-row').forEach(row => {
-    row.addEventListener('click', e => {
-      e.stopPropagation();
-      row.closest('.mx-sb-grp').classList.toggle('open');
-    });
-  });
 }
 
 function showLoading() {
