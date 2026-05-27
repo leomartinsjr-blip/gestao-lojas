@@ -2887,6 +2887,32 @@ app.get('/api/catalog-status', requireAdmin, async (req, res) => {
   res.json({ cached: !!_catalogCache, size, ageMin, fields, sample });
 });
 
+// ── GET /api/catalog-warm — força construção do catálogo e reporta resultado ─
+app.get('/api/catalog-warm', requireAdmin, async (req, res) => {
+  _catalogCache = null; _catalogCacheAt = 0;
+  const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+  const { fetchProdutos, fetchServicos, parseBrNum } = require('./services/microvix');
+  const firstBoard = Object.keys(lojas)[0];
+  if (!firstBoard) return res.status(400).json({ error: 'Nenhuma loja configurada' });
+  const cnpj  = lojas[firstBoard].replace(/\D/g, '');
+  const chave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+  const dataMov = new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  try {
+    const t0 = Date.now();
+    const [prodRows, svcRows] = await Promise.all([
+      fetchProdutos(cnpj, chave, 0, dataMov).catch(e => ({ error: e.message })),
+      fetchServicos(cnpj, chave, 0).catch(e => ({ error: e.message })),
+    ]);
+    const prodError = Array.isArray(prodRows) ? null : prodRows.error;
+    const svcError  = Array.isArray(svcRows)  ? null : svcRows.error;
+    const prodCount = Array.isArray(prodRows) ? prodRows.length : 0;
+    const svcCount  = Array.isArray(svcRows)  ? svcRows.length  : 0;
+    const sampleProd = Array.isArray(prodRows) && prodRows[0] ? Object.keys(prodRows[0]) : [];
+    const ms = Date.now() - t0;
+    res.json({ ms, prodCount, svcCount, prodError, svcError, prodFields: sampleProd, sampleProd: (Array.isArray(prodRows) ? prodRows.slice(0,2) : []) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/relatorio-marcas ─────────────────────────────────────────────
 // ?dtIni=2026-05-01&dtFin=2026-05-26&board=delrey   (board opcional — sem ele = todas as lojas)
 // Usa LinxMovimento (item-level: 1 linha = 1 produto por NF) × catálogo LinxProdutos para marca
