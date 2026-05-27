@@ -3064,17 +3064,14 @@ async function _buildCatalog(lojas) {
   try {
     const map = {};
     const today = new Date().toISOString().slice(0, 10);
-    // Busca apenas produtos modificados nos últimos 2 anos — ativos/recentes têm timestamps maiores.
-    // Usar '2000-01-01' trazia 150k+ por loja (mais antigos primeiro) e truncava os ativos.
-    const dtIniCatalog = new Date(Date.now() - 730 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    let totalProd = 0;
-    let sampleLogged = false;
+    // 3 anos: cobre produtos com cadastro estável (sem modificação recente) mas ainda ativos.
+    // Não usar '2000-01-01': traz 150k+ por loja em ordem ASC truncando os recentes no limite de 20 páginas.
+    const dtIniCatalog = new Date(Date.now() - 1095 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
-    for (const board of boards) {
+    async function fetchBoard(board) {
       const cnpj  = (lojas[board] || '').replace(/\D/g, '');
       const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-      if (!cnpj) continue;
-
+      if (!cnpj) return 0;
       let ts = 0, boardCount = 0;
       for (let page = 0; page < 20; page++) {
         const body = buildRequest('LinxProdutos', cnpj, [
@@ -3086,10 +3083,9 @@ async function _buildCatalog(lojas) {
         try { raw = await postRequest(body, 60_000); } catch (e) { console.warn(`[Catalog/${board}] pág`, page, e.message); break; }
         if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) break;
         const rows = parseCsv(raw);
-        if (!sampleLogged && rows.length) {
+        if (!_catalogRawFields.length && rows.length) {
           _catalogRawFields = Object.keys(rows[0]);
           _catalogRawSample = rows[0];
-          sampleLogged = true;
         }
         for (const r of rows) {
           const cod   = String(r.cod_produto || '').replace(/\.0+$/, '').trim();
@@ -3116,16 +3112,19 @@ async function _buildCatalog(lojas) {
         if (maxTs <= ts) break;
         ts = maxTs;
       }
-      console.log(`[Catalog/${board}] ${boardCount} produtos`);
-      totalProd += boardCount;
-
       const svcRows = await fetchServicos(cnpj, chave, 0).catch(e => { console.warn(`[Catalog/${board}] servicos:`, e.message); return []; });
       for (const r of svcRows) {
         const cod = String(r.cod_servico || '').replace(/\.0+$/, '').trim();
         if (!cod || map[cod]) continue;
         map[cod] = { tipo: 'servico', nome: (r.nome || '').trim(), setor: (r.desc_setor || '').trim(), marca: (r.desc_marca || '').trim(), linha: (r.desc_linha || '').trim(), desc_cor: '', desc_tam: '', preco_cheio: 0, preco_promo: 0 };
       }
+      console.log(`[Catalog/${board}] ${boardCount} produtos`);
+      return boardCount;
     }
+
+    // Todas as lojas em paralelo — tempo de build = tempo da loja mais lenta, não soma de todas
+    const counts = await Promise.all(boards.map(b => fetchBoard(b).catch(e => { console.warn(`[Catalog/${b}] erro:`, e.message); return 0; })));
+    const totalProd = counts.reduce((s, c) => s + c, 0);
 
     console.log(`[Catalog] ${totalProd} produtos total → ${Object.keys(map).length} entradas (${boards.length} lojas)`);
     _catalogCache   = map;
