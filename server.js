@@ -2887,10 +2887,17 @@ app.get('/api/catalog-status', requireAdmin, async (req, res) => {
   const withSetor    = entries.filter(([,v]) => v.setor).length;
   const sampleWith   = entries.filter(([,v]) => v.marca).slice(0, 2).map(([k,v]) => ({ key: k, ...v }));
   const sampleWithout= entries.filter(([,v]) => !v.marca).slice(0, 2).map(([k,v]) => ({ key: k, ...v }));
-  const fields = entries[0] ? Object.keys(entries[0][1]) : [];
+  // Amostras de keys para verificar formato (curtas vs longas)
+  const allKeys = entries.map(([k]) => k);
+  const keysSample = {
+    short: allKeys.filter(k => k.length <= 3).slice(0, 5),
+    mid:   allKeys.filter(k => k.length >= 4 && k.length <= 7).slice(0, 5),
+    long:  allKeys.filter(k => k.length >= 8).slice(0, 5),
+  };
   res.json({ cached: !!_catalogCache, size, ageMin, withMarca, withSetor,
              pctMarca: size ? ((withMarca/size)*100).toFixed(1)+'%' : '0%',
-             fields, sampleWith, sampleWithout });
+             rawFields: _catalogRawFields, rawSample: _catalogRawSample,
+             keysSample, sampleWith, sampleWithout });
 });
 
 // ── GET /api/catalog-lookup?codes=880204,884901 — checa códigos no catálogo ──
@@ -3034,6 +3041,8 @@ const TRANS_RESULT_TTL = 30 * 60 * 1000;
 let _catalogCache = null;
 let _catalogCacheAt = 0;
 let _catalogWarmPromise = null;  // Promise compartilhada — callers concorrentes aguardam a mesma
+let _catalogRawFields = [];      // campos brutos do LinxProdutos (para diagnóstico)
+let _catalogRawSample = null;    // amostra bruta (1 produto)
 const CATALOG_TTL = 6 * 60 * 60 * 1000;
 
 async function _getCatalog(lojas) {
@@ -3093,14 +3102,17 @@ async function _buildCatalog(lojas) {
         if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) break;
         const rows = parseCsv(raw);
         if (!sampleLogged && rows.length) {
-          console.log(`[Catalog] campos LinxProdutos:`, Object.keys(rows[0]).join(', '));
+          _catalogRawFields = Object.keys(rows[0]);
+          _catalogRawSample = rows[0];
+          console.log(`[Catalog] campos LinxProdutos:`, _catalogRawFields.join(', '));
           console.log(`[Catalog] amostra produto:`, JSON.stringify(rows[0]));
           sampleLogged = true;
         }
         for (const r of rows) {
-          const cod   = String(r.cod_produto || '').replace(/\.0+$/, '').trim();
+          const cod  = String(r.cod_produto  || '').replace(/\.0+$/, '').trim();
+          const ref  = String(r.referencia   || r.cod_referencia || r.referencia_produto || '').replace(/\.0+$/, '').trim();
           const barra = String(r.cod_barra   || '').replace(/\.0+$/, '').trim();
-          if (!cod) continue;
+          if (!cod && !ref) continue;
           const idMarca = String(r.id_marca || '').replace(/\.0+$/, '').trim();
           const idSetor = String(r.id_setor || '').replace(/\.0+$/, '').trim();
           const entry = {
@@ -3113,8 +3125,9 @@ async function _buildCatalog(lojas) {
             desc_tam: (r.desc_tamanho || '').trim(),
             preco_cheio: 0, preco_promo: 0,
           };
-          map[cod] = entry;
-          if (barra && barra !== cod) map[barra] = entry;
+          if (cod)   map[cod]   = entry;
+          if (ref  && ref  !== cod)   map[ref]   = entry;
+          if (barra && barra !== cod && barra !== ref) map[barra] = entry;
         }
         boardCount += rows.length;
         if (rows.length < 5000) break;
