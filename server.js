@@ -3034,10 +3034,18 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
         byMarca[mKey].setores[sKey].qtd   += qtd;
         byMarca[mKey].setores[sKey].valor += valor;
 
-        if (!byMarca[mKey].setores[sKey].produtos[cod])
-          byMarca[mKey].setores[sKey].produtos[cod] = { cod, nome, qtd: 0, valor: 0 };
-        byMarca[mKey].setores[sKey].produtos[cod].qtd   += qtd;
-        byMarca[mKey].setores[sKey].produtos[cod].valor += valor;
+        const rKey = (prodInfo.referencia || cod).toUpperCase();
+        const cor  = prodInfo.desc_cor || '';
+        const produtos = byMarca[mKey].setores[sKey].produtos;
+        if (!produtos[rKey])
+          produtos[rKey] = { ref: prodInfo.referencia || cod, nome: prodInfo.nomeBase || nome, qtd: 0, valor: 0, cores: {} };
+        produtos[rKey].qtd   += qtd;
+        produtos[rKey].valor += valor;
+        const cKey = cor.toUpperCase() || '__SEM_COR__';
+        if (!produtos[rKey].cores[cKey])
+          produtos[rKey].cores[cKey] = { cor: cor || '—', qtd: 0, valor: 0 };
+        produtos[rKey].cores[cKey].qtd   += qtd;
+        produtos[rKey].cores[cKey].valor += valor;
       }
     }
 
@@ -3053,7 +3061,11 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
             valor:   parseFloat(s.valor.toFixed(2)),
             produtos: Object.values(s.produtos)
               .sort((a, b) => b.valor - a.valor)
-              .map(p => ({ ...p, valor: parseFloat(p.valor.toFixed(2)) })),
+              .map(p => ({
+                ref: p.ref, nome: p.nome, qtd: p.qtd, valor: parseFloat(p.valor.toFixed(2)),
+                cores: Object.values(p.cores).sort((a, b) => b.valor - a.valor)
+                  .map(c => ({ ...c, valor: parseFloat(c.valor.toFixed(2)) })),
+              })),
           }))
           .sort((a, b) => b.valor - a.valor),
       }))
@@ -3124,6 +3136,8 @@ async function _buildCatalog(lojas) {
           const entry = {
             tipo:     'produto',
             nome:     (r.nome        || '').trim(),
+            nomeBase: (r.descricao_basica || r.nome || '').trim(),
+            referencia: ref,
             setor:    (r.desc_setor  || '').trim(),
             marca:    (r.desc_marca  || '').trim(),
             linha:    (r.desc_linha  || '').trim(),

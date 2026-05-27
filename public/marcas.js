@@ -278,17 +278,27 @@ function renderPorSetor(marcas, totalValor) {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function prodTable(produtos) {
+  const rows = (produtos || []).map((p, i) => {
+    const rkey = `r${i}`;
+    const corRows = (p.cores || []).map(c => `
+      <tr class="mx-cor-row" data-rkey="${rkey}">
+        <td>${_esc(c.cor)}</td>
+        <td></td>
+        <td>${fNum(c.qtd)}</td>
+        <td>${fBRL(c.valor)}</td>
+      </tr>`).join('');
+    const hasCores = p.cores && p.cores.length > 0;
+    return `
+      <tr class="mx-ref-row${hasCores ? '' : ' no-cores'}" data-rkey="${rkey}">
+        <td><span class="mx-ref-chevron">${hasCores ? '▶' : ''}</span>${_esc(p.ref)}</td>
+        <td>${_esc(p.nome)}</td>
+        <td>${fNum(p.qtd)}</td>
+        <td>${fBRL(p.valor)}</td>
+      </tr>${corRows}`;
+  }).join('');
   return `<table class="mx-prod-tbl">
-    <thead><tr><th>Código</th><th>Nome</th><th>Peças</th><th>R$ Valor</th></tr></thead>
-    <tbody>
-      ${(produtos || []).map(p => `
-        <tr>
-          <td style="color:#8b949e">${_esc(p.cod)}</td>
-          <td>${_esc(p.nome)}</td>
-          <td>${fNum(p.qtd)}</td>
-          <td>${fBRL(p.valor)}</td>
-        </tr>`).join('')}
-    </tbody>
+    <thead><tr><th>Referência</th><th>Nome</th><th>Peças</th><th>R$ Valor</th></tr></thead>
+    <tbody>${rows}</tbody>
   </table>`;
 }
 
@@ -308,6 +318,16 @@ function wireEvents(list) {
       const sKey = row.dataset.skey;
       if (expanded.has(sKey)) { expanded.delete(sKey); row.classList.remove('open'); }
       else                    { expanded.add(sKey);    row.classList.add('open'); }
+    });
+  });
+  list.querySelectorAll('.mx-ref-row').forEach(row => {
+    if (row.classList.contains('no-cores')) return;
+    row.querySelector('td').addEventListener('click', e => {
+      e.stopPropagation();
+      const rkey = row.dataset.rkey;
+      const isOpen = row.classList.toggle('open');
+      row.closest('table').querySelectorAll(`.mx-cor-row[data-rkey="${rkey}"]`)
+        .forEach(r => r.style.display = isOpen ? 'table-row' : 'none');
     });
   });
 }

@@ -93,6 +93,15 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
 .mx-view-btn:hover{color:#e6edf3}
 .mx-view-btn.active{background:#388bfd;color:#fff}
 
+/* ── Ref / Cor rows ── */
+.mx-ref-row td:first-child{cursor:pointer;user-select:none}
+.mx-ref-chevron{display:inline-block;font-size:.65rem;color:#8b949e;transition:transform .15s;margin-right:.35rem}
+.mx-ref-row.open .mx-ref-chevron{transform:rotate(90deg)}
+.mx-cor-row{display:none}
+.mx-ref-row.open ~ .mx-cor-row{display:table-row}
+.mx-cor-row td{background:#0a0e14;color:#8b949e;font-size:.75rem;padding:.3rem .6rem .3rem 1.8rem;border-bottom:1px solid #1a1f26}
+.mx-cor-row td:first-child{color:#6e7681;font-style:italic}
+
 /* ── Error ── */
 .mx-error{background:#f8514915;border:1px solid #f8514944;border-radius:8px;padding:.75rem 1rem;color:#f85149;font-size:.83rem;margin-bottom:1rem}
 </style>
