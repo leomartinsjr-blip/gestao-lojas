@@ -191,11 +191,31 @@ function renderPorMarca(marcas, totalValor) {
     const barPct = totalValor > 0 ? ((m.valor / maxValor)   * 100).toFixed(1) : '0';
     const isOpen = expanded.has(m.marca);
 
+    // Dados de estoque desta marca
+    const se      = stockData ? stockMap[m.marca.toUpperCase()] : null;
+    const lojas   = se ? se.lojas : [];
+    const ssMap   = {};
+    if (se) (se.setores || []).forEach(x => { ssMap[x.setor.toUpperCase()] = x.lojas; });
+    const n       = lojas.length;
+    const colW    = n <= 3 ? 38 : n <= 4 ? 34 : n <= 5 ? 30 : 27;
+    const colAttr = n ? ` style="--sb-col-w:${colW}px"` : '';
+
+    const stCols = (arr) => {
+      const m2 = {}; (arr || []).forEach(x => { m2[x.board] = x.qtd; });
+      return lojas.map(l => `<span class="mx-st-col">${m2[l.board] != null ? fNum(m2[l.board]) : '—'}</span>`).join('');
+    };
+
+    const stBlock = n ? `
+      <div class="mx-st-block">
+        <div class="mx-st-lbl-row">${lojas.map(l => `<span class="mx-st-col" style="color:${l.color}">${abbr(l.label)}</span>`).join('')}</div>
+        <div class="mx-st-tot-row">${lojas.map(l => `<span class="mx-st-col">${fNum(l.qtd)}</span>`).join('')}</div>
+      </div>` : '';
+
     const setoresHtml = (m.setores || []).map(s => {
       const sKey     = m.marca + '\x00' + s.setor;
       const sOpen    = expanded.has(sKey);
-      const pctMarca = m.valor   > 0 ? ((s.valor / m.valor)    * 100).toFixed(1) : '0.0';
-      const pctTotal = totalValor > 0 ? ((s.valor / totalValor) * 100).toFixed(1) : '0.0';
+      const pctMarca = m.valor > 0 ? ((s.valor / m.valor) * 100).toFixed(1) : '0.0';
+      const stSetor  = n ? `<div class="mx-st-setor">${stCols(ssMap[s.setor.toUpperCase()])}</div>` : '';
       return `
         <div class="mx-setor-row${sOpen ? ' open' : ''}" data-skey="${_esc(sKey)}">
           <div class="mx-setor-hdr">
@@ -204,35 +224,31 @@ function renderPorMarca(marcas, totalValor) {
             <span class="mx-setor-val">${fBRL(s.valor)}</span>
             <span class="mx-setor-pecas">${fNum(s.qtd)} pcs</span>
             <span class="mx-setor-pct" title="% da marca">${pctMarca}%</span>
-            <span class="mx-setor-pct-total" title="% do total faturado">${pctTotal}% total</span>
+            ${stSetor}
           </div>
           <div class="mx-setor-prods">${prodTable(s.produtos)}</div>
         </div>`;
     }).join('');
 
     return `
-      <div class="mx-brand-card${isOpen ? ' open' : ''}" data-marca="${_esc(m.marca)}">
-        <div class="mx-brand-layout">
-          <div class="mx-brand-sales">
-            <div class="mx-brand-hdr">
-              <span class="mx-brand-rank">#${i + 1}</span>
-              <span class="mx-brand-name" title="${_esc(m.marca)}">${_esc(m.marca)}</span>
-              <div class="mx-brand-right">
-                <span class="mx-brand-val">${fBRL(m.valor)}</span>
-                <span class="mx-brand-pecas">${fNum(m.qtd)} pcs</span>
-                <span class="mx-brand-chevron">▼</span>
-              </div>
-            </div>
-            <div class="mx-bar-wrap">
-              <div class="mx-bar-row">
-                <div class="mx-bar-track"><div class="mx-bar-fill" style="width:${barPct}%"></div></div>
-                <span class="mx-bar-pct">${pct}%</span>
-              </div>
-            </div>
-            <div class="mx-prod-wrap">${setoresHtml}</div>
+      <div class="mx-brand-card${isOpen ? ' open' : ''}" data-marca="${_esc(m.marca)}"${colAttr}>
+        <div class="mx-brand-hdr">
+          <span class="mx-brand-rank">#${i + 1}</span>
+          <span class="mx-brand-name" title="${_esc(m.marca)}">${_esc(m.marca)}</span>
+          <div class="mx-brand-right">
+            <span class="mx-brand-val">${fBRL(m.valor)}</span>
+            <span class="mx-brand-pecas">${fNum(m.qtd)} pcs</span>
+            <span class="mx-brand-chevron">▼</span>
           </div>
-          ${stockBoxHtml(m.marca)}
+          ${stBlock}
         </div>
+        <div class="mx-bar-wrap">
+          <div class="mx-bar-row">
+            <div class="mx-bar-track"><div class="mx-bar-fill" style="width:${barPct}%"></div></div>
+            <span class="mx-bar-pct">${pct}%</span>
+          </div>
+        </div>
+        <div class="mx-prod-wrap">${setoresHtml}</div>
       </div>`;
   }).join('');
 
