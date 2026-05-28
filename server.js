@@ -3932,28 +3932,44 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
     const lojas   = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const catalog = await _getCatalog(lojas).catch(() => ({}));
 
-    // Índice composto ref|cor|tam de todas as entradas do catálogo
     const norm = s => (s || '').toString().trim().toUpperCase();
-    const skuSet = new Set();
-    const barraSet = new Set();
+    // skuSet: chave composta ref|cor|tam (para detectar variante nova)
+    // refSet: só referencia (para produtos sem cor/tam mapeados)
+    // allKeysNorm: todas as chaves do catálogo normalizadas (cod_produto, barra, ref)
+    const skuSet      = new Set();
+    const refSet      = new Set();
+    const allKeysNorm = new Set(Object.keys(catalog).map(norm));
     for (const entry of Object.values(catalog)) {
       if (entry.referencia) {
-        const key = `${norm(entry.referencia)}|${norm(entry.desc_cor)}|${norm(entry.desc_tam)}`;
-        skuSet.add(key);
+        skuSet.add(`${norm(entry.referencia)}|${norm(entry.desc_cor)}|${norm(entry.desc_tam)}`);
+        refSet.add(norm(entry.referencia));
       }
-      // cod_barra como chave direta (para produtos que vieram só com barra)
-    }
-    // Barras diretas do catálogo (chaves de 8+ dígitos numéricos)
-    for (const k of Object.keys(catalog)) {
-      if (/^\d{8,}$/.test(k)) barraSet.add(k);
     }
 
     const result = rows.map(r => {
+      const ref   = norm(r.referencia);
       const barra = norm(r.cod_barra);
-      if (barra && barraSet.has(barra)) return { ...r, _status: 'existing' };
+      const hasCor = !!(r.desc_cor     || '').trim();
+      const hasTam = !!(r.desc_tamanho || '').trim();
 
-      const key = `${norm(r.referencia)}|${norm(r.desc_cor)}|${norm(r.desc_tamanho)}`;
-      return { ...r, _status: skuSet.has(key) ? 'existing' : 'new' };
+      // 1. Barcode da planilha bate diretamente com chave do catálogo
+      if (barra && allKeysNorm.has(barra)) return { ...r, _status: 'existing' };
+      // 2. Referência bate diretamente com qualquer chave do catálogo (cod_produto, barra, ref)
+      if (ref && allKeysNorm.has(ref)) {
+        // Se cor/tam estão mapeados → exige chave composta para diferenciar variante nova
+        if (hasCor || hasTam) {
+          const key = `${ref}|${norm(r.desc_cor)}|${norm(r.desc_tamanho)}`;
+          return { ...r, _status: skuSet.has(key) ? 'existing' : 'new' };
+        }
+        return { ...r, _status: 'existing' };
+      }
+      // 3. Chave composta ref|cor|tam
+      if (hasCor || hasTam) {
+        const key = `${ref}|${norm(r.desc_cor)}|${norm(r.desc_tamanho)}`;
+        return { ...r, _status: skuSet.has(key) ? 'existing' : 'new' };
+      }
+      // 4. Sem cor/tam: qualquer variante da referência já existe → existing
+      return { ...r, _status: refSet.has(ref) ? 'existing' : 'new' };
     });
 
     res.json({ result, newCount: result.filter(r => r._status === 'new').length, existingCount: result.filter(r => r._status === 'existing').length });
