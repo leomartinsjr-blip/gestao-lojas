@@ -3973,8 +3973,8 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
       // 1. Referencia nao cadastrada -> novo
       if (!ref || !refIndex[ref]) return { ...r, _status: 'new' };
 
-      // 2. Sem cor e sem tamanho -> cadastrar
-      if (!cor && !tam) return { ...r, _status: 'new' };
+      // 2. Sem cor e sem tamanho -> referencia ja existe, nao precisa cadastrar
+      if (!cor && !tam) return { ...r, _status: 'existing' };
 
       const corsDisponiveis = Object.keys(refIndex[ref]).filter(c => c !== '').sort();
 
