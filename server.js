@@ -4296,10 +4296,9 @@ app.get('/indeva', (req, res) => res.sendFile(path.join(__dirname, 'public/indev
 // Busca todas as faturas de uma loja via LinxFaturas (máx 5000/chamada)
 async function _fetchFaturas(cnpj, chave, dtIni, dtFin) {
   const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
-  const toBR = s => s.split('-').reverse().join('/');
   const params = [
-    { id: 'data_inicial', valor: toBR(dtIni) },
-    { id: 'data_fim',     valor: toBR(dtFin)  },
+    { id: 'data_inicial', valor: dtIni },
+    { id: 'data_fim',     valor: dtFin  },
   ];
   const body = buildRequest('LinxFaturas', cnpj, params, chave);
   const raw  = await postRequest(body, 30_000);
@@ -4415,7 +4414,7 @@ app.get('/api/contas-pagar/raw', requireAdmin, async (req, res) => {
         board: board || Object.keys(lojas)[0],
         cnpj: cnpj?.replace(/\d(?=\d{3})/g, '*'),
         dtIni, dtFin,
-        results: [{ label: 'LinxFaturas', isErr: true, errMsg: e.message, rowCount: 0, fields: [] }],
+        results: [{ label: 'LinxFaturas', isErr: true, errMsg: e.message, rawSnippet: e.message, rowCount: 0, fields: [] }],
       });
     }
   } catch (e) { res.status(500).json({ error: e.message }); }
