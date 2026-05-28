@@ -141,7 +141,7 @@ async function readDB() {
   if (mongoDb) {
     const doc = await mongoDb.collection('store').findOne({ _id: 'main' });
     if (!doc) { _dbCache = { nextId: 1, months: {}, cards: {} }; _dbCacheDirty = false; return _dbCache; }
-    const { _id, ...data } = doc;
+    const { _id, contasPagar: _cp, ...data } = doc; // exclui contasPagar (migrado para cpFaturas)
     _dbCache = data;
     _dbCacheDirty = false;
     return _dbCache;
@@ -5167,6 +5167,12 @@ initMongo()
       }, { timezone: 'America/Sao_Paulo' });
       console.log('[caixa-cron] Agendado para 08:00 America/Sao_Paulo');
     }
+
+    // Remove contasPagar do documento store (migrado para coleção cpFaturas)
+    mongoDb.collection('store').updateOne(
+      { _id: 'main', contasPagar: { $exists: true } },
+      { $unset: { contasPagar: '' } }
+    ).then(r => { if (r.modifiedCount) console.log('[migrate] contasPagar removido do store'); }).catch(() => {});
 
     // Restaura lastSync do banco para o botão mostrar verde imediatamente após deploy
     readDB().then(db => { if (db.microvixLastSync) setLastSync(db.microvixLastSync); }).catch(() => {});
