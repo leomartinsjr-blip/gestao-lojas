@@ -336,7 +336,7 @@ function renderGroups() {
 
   // Agrupar por loja (board)
   const LOJA_LABEL = { delrey:'DEL REY', minas:'MINAS', contagem:'CONTAGEM', tommy:'TOMMY', estacao:'ESTAÇÃO', lez:'LEZ A LEZ', escritorio:'ESCRITÓRIO' };
-  const LOJA_ORDER = ['delrey','minas','contagem','tommy','estacao','lez','escritorio'];
+  const LOJA_ORDER = ['delrey','escritorio','minas','contagem','tommy','estacao','lez'];
   const groups = {};
   items.forEach(it => {
     const key = it.board || 'outros';
