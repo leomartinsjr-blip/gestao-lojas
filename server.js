@@ -4311,38 +4311,47 @@ async function _fetchFaturas(cnpj, chave, dtIni, dtFin) {
 }
 
 // Normaliza linha do LinxFaturas para formato interno
+// Campos confirmados: receber_pagar, nome_cliente, data_vencimento, data_emissao,
+//   data_baixa, valor_fatura, valor_pago, documento, codigo_fatura, observacao,
+//   excluido, cancelado, forma_pgto, centrocusto
 function _normalizeFatura(r, loja, board, hoje) {
-  // Detecta campos — a API usa nomes variados dependendo da versão
-  const get = (...keys) => { for (const k of keys) if (r[k] !== undefined && r[k] !== '') return String(r[k]).trim(); return ''; };
+  const get = k => String(r[k] ?? '').trim();
 
-  const tipo      = get('tipo_titulo', 'tipo', 'tp_titulo').toUpperCase();
-  const isPagar   = tipo === 'P' || tipo === 'PAGAR' || tipo === 'CP' || tipo === 'A PAGAR';
+  if (get('excluido') === '1' || get('cancelado') === '1') return null;
 
-  const vencStr   = _parseMxDate(get('dt_vencimento', 'data_vencimento', 'vencimento', 'dt_venc'));
-  const emissStr  = _parseMxDate(get('dt_emissao',    'data_emissao',    'emissao',    'dt_emis'));
-  const valorBruto = parseFloat(get('vlr_titulo', 'valor_titulo', 'valor', 'vlr').replace(/\./g,'').replace(',','.')) || 0;
-  const valorPago  = parseFloat(get('vlr_pago',   'valor_pago',   'vlr_baixado').replace(/\./g,'').replace(',','.')) || 0;
-  const saldo      = parseFloat(get('vlr_saldo',  'saldo',        'vlr_aberto').replace(/\./g,'').replace(',','.')) || (valorBruto - valorPago);
+  const receber_pagar = get('receber_pagar').toUpperCase();
+  const isPagar       = receber_pagar === 'P';
+
+  const vencimento = _parseMxDate(get('data_vencimento'));
+  const emissao    = _parseMxDate(get('data_emissao'));
+  const baixa      = _parseMxDate(get('data_baixa'));
+
+  const parseBRL = s => parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0;
+  const valorFatura = parseBRL(get('valor_fatura'));
+  const valorPago   = parseBRL(get('valor_pago'));
+  const saldo       = Math.max(0, valorFatura - valorPago);
 
   let status = 'aberto';
-  if (valorPago >= valorBruto && valorBruto > 0) status = 'pago';
-  else if (saldo <= 0 && valorBruto > 0) status = 'pago';
-  else if (vencStr && vencStr < hoje) status = 'vencido';
+  if (baixa && valorPago >= valorFatura && valorFatura > 0) status = 'pago';
+  else if (valorPago >= valorFatura && valorFatura > 0) status = 'pago';
+  else if (vencimento && vencimento < hoje) status = 'vencido';
 
   return {
     board, loja,
-    fornecedor:  get('nome_fornecedor', 'fornecedor', 'nome_empresa', 'razao_social', 'nome'),
-    documento:   get('nr_titulo', 'numero_titulo', 'documento', 'nr_doc', 'nf'),
-    historico:   get('historico', 'descricao', 'obs'),
-    emissao:     emissStr,
-    vencimento:  vencStr,
-    valor:       valorBruto,
+    fornecedor:  get('nome_cliente'),
+    documento:   get('documento') || get('codigo_fatura'),
+    historico:   get('observacao'),
+    emissao,
+    vencimento,
+    baixa,
+    valor:       valorFatura,
     valorPago,
-    saldo:       Math.max(0, saldo),
+    saldo,
     status,
-    tipo,
+    receber_pagar,
     isPagar,
-    _raw: r,
+    forma_pgto:  get('forma_pgto'),
+    centrocusto: get('centrocusto'),
   };
 }
 
@@ -4391,8 +4400,8 @@ app.get('/api/contas-pagar/raw', requireAdmin, async (req, res) => {
 
     try {
       const rows = await _fetchFaturas(cnpj, chave, dtIni, dtFin);
-      const pagar   = rows.filter(r => { const t = String(r.tipo_titulo||r.tipo||r.tp_titulo||'').toUpperCase(); return t==='P'||t==='PAGAR'||t==='CP'||t==='A PAGAR'; });
-      const receber = rows.filter(r => { const t = String(r.tipo_titulo||r.tipo||r.tp_titulo||'').toUpperCase(); return t==='R'||t==='RECEBER'||t==='CR'||t==='A RECEBER'; });
+      const pagar   = rows.filter(r => String(r.receber_pagar || '').toUpperCase() === 'P');
+      const receber = rows.filter(r => String(r.receber_pagar || '').toUpperCase() === 'R');
       const fields  = rows[0] ? Object.keys(rows[0]) : [];
       const sample  = rows.slice(0, 2);
       res.json({
@@ -4442,7 +4451,7 @@ app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
         const rows = await _fetchFaturas(cnpj, chave, dtIni, dtFin);
         for (const r of rows) {
           const fat = _normalizeFatura(r, loja, board, today);
-          if (fat.isPagar) allRows.push(fat);
+          if (fat && fat.isPagar) allRows.push(fat);
         }
       } catch (e) {
         errors.push({ board, error: e.message });
@@ -5115,7 +5124,7 @@ initMongo()
             const rows = await _fetchFaturas(cnpj, chave, dtIni, today);
             for (const r of rows) {
               const fat = _normalizeFatura(r, board, board, today);
-              if (fat.isPagar) allRows.push(fat);
+              if (fat && fat.isPagar) allRows.push(fat);
             }
           } catch (e) { console.error(`[ContasPagar] ${board}:`, e.message); }
         }
