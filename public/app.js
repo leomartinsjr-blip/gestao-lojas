@@ -2270,6 +2270,31 @@ function _cadExtractCor(text) {
   return CORES_CAD.find(c => c.split(' ').every(p => new RegExp('\\b' + p + '\\b').test(up))) || '';
 }
 
+// Retorna TODAS as cores encontradas no texto
+function _cadExtractAllCors(text) {
+  const up = text.toUpperCase();
+  return CORES_CAD.filter(c => c.split(' ').every(p => new RegExp('\\b' + p + '\\b').test(up)));
+}
+
+// Divide valor por separadores comuns e filtra tamanhos válidos
+function _cadSplitTams(val) {
+  if (!val) return [];
+  const parts = val.toUpperCase().split(/[\/,;\s|+]+/).map(s => s.trim()).filter(Boolean);
+  return parts.filter(p => TAMS_LETRA.includes(p) || TAMS_NUM.includes(p));
+}
+
+// Divide valor por separadores comuns e filtra cores válidas
+function _cadSplitCors(val) {
+  if (!val) return [];
+  const up = val.toUpperCase();
+  // Tenta split por separadores
+  const parts = up.split(/[\/,;|+]+/).map(s => s.trim()).filter(Boolean);
+  const found = parts.filter(p => CORES_CAD.includes(p));
+  if (found.length) return found;
+  // Fallback: extrai todas do texto completo
+  return _cadExtractAllCors(val);
+}
+
 function _cadExtractTam(text) {
   const up = text.toUpperCase().replace(/[^A-Z0-9\/]/g, ' ');
   for (const sz of TAMS_LETRA) {
@@ -2281,7 +2306,8 @@ function _cadExtractTam(text) {
 
 function _cadSuggestSetor(texts) {
   const t = texts.join(' ').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-  if (/camiseta|t-shirt|tshirt|regata/.test(t)) return 'TS Basica';
+  if (/\bregata\b/.test(t)) return 'Regata';
+  if (/camiseta|t-shirt|tshirt/.test(t)) return 'TS Basica';
   if (/feminino|fem\b|woman|blusa|saia|vestido/.test(t)) return 'Moda Feminina';
   if (/masculino|masc\b|\bman\b/.test(t)) return 'Moda Masculina';
   if (/infantil|kids|bebe|crianca/.test(t)) return 'Infantil';
@@ -2350,26 +2376,40 @@ function _cadAutoMatch(headers) {
 }
 
 function _cadBuildProducts() {
-  return _cad.rawRows.map(row => {
+  return _cad.rawRows.flatMap(row => {
     const p = {};
     for (const [mxField, supCol] of Object.entries(_cad.mapping)) {
       const idx = _cad.headers.indexOf(supCol);
       if (idx >= 0) p[mxField] = String(row[idx] ?? '').trim();
     }
-    if (!p.referencia && !p.nome) return null;
-    const txt = (p.referencia || '') + ' ' + (p.nome || '');
-    const cor   = p.desc_cor    || _cadExtractCor(txt);
-    const tam   = p.desc_tamanho || _cadExtractTam(txt) || 'Único';
-    const setor = p.desc_setor  || _cadSuggestSetor([txt]);
+    if (!p.referencia && !p.nome) return [];
+    const txt   = (p.referencia || '') + ' ' + (p.nome || '');
+    const setor = p.desc_setor || _cadSuggestSetor([txt]);
     const custo = p.preco_custo || '';
-    const precoAuto = (p.preco_venda && _cad.priceMode === 'auto') ? p.preco_venda : _cadCalcPreco(custo);
-    return {
-      ...p, desc_cor: cor, desc_tamanho: tam, desc_setor: setor,
-      _ref_final:  _cadApplyTemplate(_cad.modeloRef,  { ...p, desc_cor: cor, desc_tamanho: tam }),
-      _desc_final: _cadApplyTemplate(_cad.modeloDesc, { ...p, desc_cor: cor, desc_tamanho: tam }),
-      _custo: custo, _preco: precoAuto, _ncm: _cad.ncm,
-    };
-  }).filter(Boolean);
+
+    // Detecta TODAS as cores e tamanhos — expande em múltiplas linhas
+    const cors = _cadSplitCors(p.desc_cor  || '') .length ? _cadSplitCors(p.desc_cor)
+               : _cadExtractAllCors(txt).length    ? _cadExtractAllCors(txt)
+               : [''];
+    const tams = _cadSplitTams(p.desc_tamanho || '').length ? _cadSplitTams(p.desc_tamanho)
+               : _cadExtractTam(txt)                         ? [_cadExtractTam(txt)]
+               : ['Único'];
+
+    // Produto cartesiano: uma linha por combinação cor × tamanho
+    const rows = [];
+    for (const cor of cors) {
+      for (const tam of tams) {
+        const precoAuto = (p.preco_venda && _cad.priceMode === 'auto') ? p.preco_venda : _cadCalcPreco(custo);
+        rows.push({
+          ...p, desc_cor: cor, desc_tamanho: tam, desc_setor: setor,
+          _ref_final:  _cadApplyTemplate(_cad.modeloRef,  { ...p, desc_cor: cor, desc_tamanho: tam }),
+          _desc_final: _cadApplyTemplate(_cad.modeloDesc, { ...p, desc_cor: cor, desc_tamanho: tam }),
+          _custo: custo, _preco: precoAuto, _ncm: _cad.ncm,
+        });
+      }
+    }
+    return rows;
+  });
 }
 
 async function renderCadastroProdView() {
