@@ -3932,7 +3932,7 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
     const lojas   = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const catalog = await Promise.race([
       _getCatalog(lojas),
-      new Promise(r => setTimeout(() => r(null), 15_000)),
+      new Promise(r => setTimeout(() => r(null), 90_000)),
     ]).catch(() => null);
     if (!catalog) {
       return res.json({
@@ -3971,7 +3971,17 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
       const tam = norm(r.desc_tamanho || '');
 
       // 1. Referencia nao cadastrada -> novo
-      if (!ref || !refIndex[ref]) return { ...r, _status: 'new' };
+      if (!ref) return { ...r, _status: 'new' };
+
+      // 1b. Se ref não está no refIndex, tenta fallback direto no catálogo
+      //     (cobre casos onde o campo 'referencia' vem vazio no LinxProdutos
+      //      mas o cod_produto ou cod_barra bate com a referencia da planilha)
+      if (!refIndex[ref]) {
+        const barra = norm(r.cod_barra || '');
+        const directHit = catalog[ref] || (barra && catalog[barra]);
+        if (!directHit) return { ...r, _status: 'new' };
+        return { ...r, _status: 'existing' };
+      }
 
       // 2. Sem cor e sem tamanho -> referencia ja existe, nao precisa cadastrar
       if (!cor && !tam) return { ...r, _status: 'existing' };
