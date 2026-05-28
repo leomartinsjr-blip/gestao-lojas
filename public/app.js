@@ -2281,6 +2281,7 @@ function _cadExtractTam(text) {
 
 function _cadSuggestSetor(texts) {
   const t = texts.join(' ').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+  if (/camiseta|t-shirt|tshirt|regata/.test(t)) return 'TS Basica';
   if (/feminino|fem\b|woman|blusa|saia|vestido/.test(t)) return 'Moda Feminina';
   if (/masculino|masc\b|\bman\b/.test(t)) return 'Moda Masculina';
   if (/infantil|kids|bebe|crianca/.test(t)) return 'Infantil';
