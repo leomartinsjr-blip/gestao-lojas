@@ -4281,7 +4281,74 @@ app.delete('/api/indeva/:board/atendimento/:id', requireAuth, async (req, res) =
 
 app.get('/indeva', (req, res) => res.sendFile(path.join(__dirname, 'public/indeva.html')));
 
-// ── GET /api/contas-pagar — serve dados do cache (portal scraping) ────────
+// ── Contas a Pagar — LinxFaturas ──────────────────────────────────────────
+
+// Busca todas as faturas de uma loja via LinxFaturas (máx 5000/chamada)
+async function _fetchFaturas(cnpj, chave, dtIni, dtFin) {
+  const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
+  const toBR = s => s.split('-').reverse().join('/');
+  const params = [
+    { id: 'data_inicial', valor: toBR(dtIni) },
+    { id: 'data_fim',     valor: toBR(dtFin)  },
+  ];
+  const body = buildRequest('LinxFaturas', cnpj, params, chave);
+  const raw  = await postRequest(body, 30_000);
+  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro Microvix';
+    throw new Error(msg);
+  }
+  if (raw.trim().startsWith('<')) throw new Error('Resposta XML inesperada: ' + raw.slice(0, 200));
+  return parseCsv(raw);
+}
+
+// Normaliza linha do LinxFaturas para formato interno
+function _normalizeFatura(r, loja, board, hoje) {
+  // Detecta campos — a API usa nomes variados dependendo da versão
+  const get = (...keys) => { for (const k of keys) if (r[k] !== undefined && r[k] !== '') return String(r[k]).trim(); return ''; };
+
+  const tipo      = get('tipo_titulo', 'tipo', 'tp_titulo').toUpperCase();
+  const isPagar   = tipo === 'P' || tipo === 'PAGAR' || tipo === 'CP' || tipo === 'A PAGAR';
+
+  const vencStr   = _parseMxDate(get('dt_vencimento', 'data_vencimento', 'vencimento', 'dt_venc'));
+  const emissStr  = _parseMxDate(get('dt_emissao',    'data_emissao',    'emissao',    'dt_emis'));
+  const valorBruto = parseFloat(get('vlr_titulo', 'valor_titulo', 'valor', 'vlr').replace(/\./g,'').replace(',','.')) || 0;
+  const valorPago  = parseFloat(get('vlr_pago',   'valor_pago',   'vlr_baixado').replace(/\./g,'').replace(',','.')) || 0;
+  const saldo      = parseFloat(get('vlr_saldo',  'saldo',        'vlr_aberto').replace(/\./g,'').replace(',','.')) || (valorBruto - valorPago);
+
+  let status = 'aberto';
+  if (valorPago >= valorBruto && valorBruto > 0) status = 'pago';
+  else if (saldo <= 0 && valorBruto > 0) status = 'pago';
+  else if (vencStr && vencStr < hoje) status = 'vencido';
+
+  return {
+    board, loja,
+    fornecedor:  get('nome_fornecedor', 'fornecedor', 'nome_empresa', 'razao_social', 'nome'),
+    documento:   get('nr_titulo', 'numero_titulo', 'documento', 'nr_doc', 'nf'),
+    historico:   get('historico', 'descricao', 'obs'),
+    emissao:     emissStr,
+    vencimento:  vencStr,
+    valor:       valorBruto,
+    valorPago,
+    saldo:       Math.max(0, saldo),
+    status,
+    tipo,
+    isPagar,
+    _raw: r,
+  };
+}
+
+function _parseMxDate(s) {
+  if (!s) return '';
+  // DD/MM/YYYY
+  let m = String(s).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  // YYYY-MM-DD
+  m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  return '';
+}
+
+// ── GET /api/contas-pagar — serve dados do cache ──────────────────────────
 app.get('/api/contas-pagar', requireAdmin, (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
   const cp    = db.contasPagar || {};
@@ -4290,7 +4357,6 @@ app.get('/api/contas-pagar', requireAdmin, (req, res) => {
   const dtIni = req.query.de  || cp.dtIni || today.slice(0, 7) + '-01';
   const dtFin = req.query.ate || cp.dtFin || today;
 
-  // Filtra por período solicitado
   const items = rows.filter(r => {
     if (!r.vencimento) return true;
     return r.vencimento >= dtIni && r.vencimento <= dtFin;
@@ -4300,7 +4366,7 @@ app.get('/api/contas-pagar', requireAdmin, (req, res) => {
   res.json({ items, errors: [], dtIni, dtFin, syncedAt: cp.syncedAt || null, totalCached: rows.length });
 });
 
-// GET /api/contas-pagar/raw — testa múltiplas combinações de comando/parâmetros
+// GET /api/contas-pagar/raw — diagnóstico LinxFaturas (mostra campos retornados)
 app.get('/api/contas-pagar/raw', requireAdmin, async (req, res) => {
   try {
     const { board, de, ate } = req.query;
@@ -4308,84 +4374,89 @@ app.get('/api/contas-pagar/raw', requireAdmin, async (req, res) => {
     const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const cnpj  = lojas[board] || Object.values(lojas)[0];
     const chave = process.env[`MICROVIX_CHAVE_${(board||'').toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-    const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
-    const dtIni = de  || today.slice(0,7)+'-01';
+    const dtIni = de  || today.slice(0, 7) + '-01';
     const dtFin = ate || today;
 
-    // Converte YYYY-MM-DD → DD/MM/YYYY
-    const toBR = s => s.split('-').reverse().join('/');
-
-    const CANDIDATES = [
-      { label:'LinxContasPagar + data_inicial YYYY',    cmd:'LinxContasPagar',  params:[{id:'data_inicial',valor:dtIni},{id:'data_fim',valor:dtFin}] },
-      { label:'LinxContasPagar + data_inicial DD/MM',   cmd:'LinxContasPagar',  params:[{id:'data_inicial',valor:toBR(dtIni)},{id:'data_fim',valor:toBR(dtFin)}] },
-      { label:'LinxContasPagar sem datas',              cmd:'LinxContasPagar',  params:[] },
-      { label:'LinxContasAPagar + data_inicial YYYY',   cmd:'LinxContasAPagar', params:[{id:'data_inicial',valor:dtIni},{id:'data_fim',valor:dtFin}] },
-      { label:'LinxContasAPagar sem datas',             cmd:'LinxContasAPagar', params:[] },
-      { label:'LinxTitulosPagar + data_inicial YYYY',   cmd:'LinxTitulosPagar', params:[{id:'data_inicial',valor:dtIni},{id:'data_fim',valor:dtFin}] },
-      { label:'LinxTitulosPagar sem datas',             cmd:'LinxTitulosPagar', params:[] },
-    ];
-
-    const results = [];
-    for (const c of CANDIDATES) {
-      try {
-        const body = buildRequest(c.cmd, cnpj, c.params, chave);
-        const raw  = await postRequest(body, 20_000);
-        const isXml = raw.trim().startsWith('<');
-        const isErr = raw.includes('<ResponseSuccess>False</ResponseSuccess>');
-        const errMsg = isErr ? (raw.match(/<Message>([^<]+)<\/Message>/)||[])[1] : null;
-        const rows = (!isXml && !isErr) ? parseCsv(raw) : [];
-        results.push({ label:c.label, isErr, errMsg, rowCount:rows.length, fields:rows[0]?Object.keys(rows[0]):[], rawSnippet:raw.slice(0,300) });
-        if (!isErr && !isXml && rows.length > 0) break;
-      } catch (e) {
-        results.push({ label: c.label, error: e.message });
-      }
+    try {
+      const rows = await _fetchFaturas(cnpj, chave, dtIni, dtFin);
+      const pagar   = rows.filter(r => { const t = String(r.tipo_titulo||r.tipo||r.tp_titulo||'').toUpperCase(); return t==='P'||t==='PAGAR'||t==='CP'||t==='A PAGAR'; });
+      const receber = rows.filter(r => { const t = String(r.tipo_titulo||r.tipo||r.tp_titulo||'').toUpperCase(); return t==='R'||t==='RECEBER'||t==='CR'||t==='A RECEBER'; });
+      const fields  = rows[0] ? Object.keys(rows[0]) : [];
+      const sample  = rows.slice(0, 2);
+      res.json({
+        board: board || Object.keys(lojas)[0],
+        cnpj: cnpj?.replace(/\d(?=\d{3})/g, '*'),
+        dtIni, dtFin,
+        results: [{
+          label: 'LinxFaturas',
+          rowCount: rows.length,
+          pagarCount: pagar.length,
+          receberCount: receber.length,
+          fields,
+          sample,
+          isErr: false,
+        }],
+      });
+    } catch (e) {
+      res.json({
+        board: board || Object.keys(lojas)[0],
+        cnpj: cnpj?.replace(/\d(?=\d{3})/g, '*'),
+        dtIni, dtFin,
+        results: [{ label: 'LinxFaturas', isErr: true, errMsg: e.message, rowCount: 0, fields: [] }],
+      });
     }
-    res.json({ board: board || Object.keys(lojas)[0], cnpj: cnpj?.replace(/\d(?=\d{3})/g,'*'), dtIni, dtFin, results });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.get('/contas-pagar', (req, res) => res.sendFile(path.join(__dirname, 'public/contas-pagar.html')));
 
-// ── POST /api/contas-pagar/sync — dispara scraping manual (admin) ─────────
+// ── POST /api/contas-pagar/sync — busca faturas via LinxFaturas ───────────
 app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
   try {
     const today = new Date().toISOString().slice(0, 10);
     const dtIni = req.body?.de  || today.slice(0, 7) + '-01';
     const dtFin = req.body?.ate || today;
 
-    res.writeHead(200, { 'Content-Type': 'application/json' });
+    const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const boards  = Object.entries(lojas);
 
-    const { scrapeContasPagar } = require('./services/microvixPortal');
-    const result = await scrapeContasPagar(dtIni, dtFin);
+    const allRows = [];
+    const errors  = [];
+
+    for (const [board, cnpj] of boards) {
+      const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+      const loja  = board;
+      try {
+        const rows = await _fetchFaturas(cnpj, chave, dtIni, dtFin);
+        for (const r of rows) {
+          const fat = _normalizeFatura(r, loja, board, today);
+          if (fat.isPagar) allRows.push(fat);
+        }
+      } catch (e) {
+        errors.push({ board, error: e.message });
+        console.warn(`[contasPagar/sync] ${board}: ${e.message}`);
+      }
+    }
 
     if (!db.contasPagar) db.contasPagar = {};
-    db.contasPagar.rows      = result.rows || [];
-    db.contasPagar.dtIni     = dtIni;
-    db.contasPagar.dtFin     = dtFin;
-    db.contasPagar.syncedAt  = new Date().toISOString();
-    db.contasPagar.logs      = result.logs || [];
+    db.contasPagar.rows     = allRows;
+    db.contasPagar.dtIni    = dtIni;
+    db.contasPagar.dtFin    = dtFin;
+    db.contasPagar.syncedAt = new Date().toISOString();
+    db.contasPagar.errors   = errors;
     await writeDB(db);
 
-    res.end(JSON.stringify({ ok: true, count: result.rows.length, syncedAt: db.contasPagar.syncedAt, logs: result.logs, warning: result.warning }));
+    res.json({ ok: true, count: allRows.length, syncedAt: db.contasPagar.syncedAt, errors });
   } catch (e) {
     console.error('[contasPagar/sync]', e.message);
-    res.end(JSON.stringify({ ok: false, error: e.message }));
+    res.status(500).json({ ok: false, error: e.message });
   }
 });
 
-// ── GET /api/contas-pagar/status — última sincronização (admin) ───────────
+// ── GET /api/contas-pagar/status ──────────────────────────────────────────
 app.get('/api/contas-pagar/status', requireAdmin, (req, res) => {
   const cp = db.contasPagar || {};
-  res.json({ syncedAt: cp.syncedAt || null, count: (cp.rows || []).length, dtIni: cp.dtIni, dtFin: cp.dtFin, logs: cp.logs || [] });
-});
-
-// ── GET /api/contas-pagar/debug/:file — serve screenshots de debug ────────
-app.get('/api/contas-pagar/debug/:file', requireAdmin, (req, res) => {
-  const { getDebugScreenshots } = require('./services/microvixPortal');
-  const shots = getDebugScreenshots();
-  const shot  = shots.find(s => s.name === req.params.file);
-  if (!shot) return res.status(404).send('não encontrado');
-  res.sendFile(shot.path);
+  res.json({ syncedAt: cp.syncedAt || null, count: (cp.rows || []).length, dtIni: cp.dtIni, dtFin: cp.dtFin, errors: cp.errors || [] });
 });
 
 // ── Folha de Pagamento ─────────────────────────────────────────────────────
@@ -5013,26 +5084,32 @@ initMongo()
       console.log('[Microvix] Credenciais não configuradas — sync desativado');
     }
 
-    // ── Cron: contas a pagar — scraping diário 07:00 Brasília ─────────────
-    if (process.env.MICROVIX_PORTAL_USER && process.env.MICROVIX_PORTAL_PASS) {
+    // ── Cron: contas a pagar — LinxFaturas diário 07:00 Brasília ─────────
+    if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
       cron.schedule('0 7 * * *', async () => {
-        const today = new Date().toISOString().slice(0, 10);
-        const dtIni = today.slice(0, 7) + '-01';
-        console.log(`[ContasPagar] Sync diário ${dtIni} → ${today}`);
-        try {
-          const { scrapeContasPagar } = require('./services/microvixPortal');
-          const result = await scrapeContasPagar(dtIni, today);
-          if (!db.contasPagar) db.contasPagar = {};
-          db.contasPagar.rows     = result.rows || [];
-          db.contasPagar.dtIni    = dtIni;
-          db.contasPagar.dtFin    = today;
-          db.contasPagar.syncedAt = new Date().toISOString();
-          db.contasPagar.logs     = result.logs || [];
-          await writeDB(db);
-          console.log(`[ContasPagar] Sync OK — ${result.rows.length} faturas`);
-        } catch (e) {
-          console.error('[ContasPagar] Sync erro:', e.message);
+        const today  = new Date().toISOString().slice(0, 10);
+        const dtIni  = today.slice(0, 7) + '-01';
+        const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+        const boards = Object.entries(lojas);
+        console.log(`[ContasPagar] Sync diário ${dtIni} → ${today} (${boards.length} loja(s))`);
+        const allRows = [];
+        for (const [board, cnpj] of boards) {
+          const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+          try {
+            const rows = await _fetchFaturas(cnpj, chave, dtIni, today);
+            for (const r of rows) {
+              const fat = _normalizeFatura(r, board, board, today);
+              if (fat.isPagar) allRows.push(fat);
+            }
+          } catch (e) { console.error(`[ContasPagar] ${board}:`, e.message); }
         }
+        if (!db.contasPagar) db.contasPagar = {};
+        db.contasPagar.rows     = allRows;
+        db.contasPagar.dtIni    = dtIni;
+        db.contasPagar.dtFin    = today;
+        db.contasPagar.syncedAt = new Date().toISOString();
+        await writeDB(db);
+        console.log(`[ContasPagar] Sync OK — ${allRows.length} faturas a pagar`);
       }, { timezone: 'America/Sao_Paulo' });
       console.log('[ContasPagar] Cron agendado para 07:00 America/Sao_Paulo');
     }
