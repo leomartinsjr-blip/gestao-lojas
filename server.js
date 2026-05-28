@@ -3806,6 +3806,15 @@ app.get('/api/transferencias', requireAdmin, (req, res) => {
 
 // ── CADASTRO DE PRODUTO ─────────────────────────────────────────────────
 
+// Helper: extrai {cod, nome} de uma linha CSV tentando todos os campos conhecidos.
+// Se nenhum campo conhecido bater, usa os dois primeiros campos da linha.
+function _mxPickCodNome(r, codKeys, nomeKeys) {
+  const vals = Object.values(r);
+  const cod  = codKeys.map(k => (r[k] || '').toString().trim()).find(v => v) || (vals[0] || '').toString().trim();
+  const nome = nomeKeys.map(k => (r[k] || '').toString().trim()).find(v => v) || (vals[1] || '').toString().trim();
+  return { cod, nome };
+}
+
 app.get('/api/cadastro-produto/fornecedores-microvix', requireAdmin, async (req, res) => {
   try {
     const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
@@ -3815,12 +3824,16 @@ app.get('/api/cadastro-produto/fornecedores-microvix', requireAdmin, async (req,
     const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
     const body = buildRequest('LinxFornecedores', cnpj, [], chave);
     const raw  = await postRequest(body, 30_000);
-    if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) return res.json([]);
+    if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+      console.warn('[CadastroProduto/fornecedores-microvix] API retornou False — rawHead:', raw.slice(0,300));
+      return res.json([]);
+    }
     const rows = parseCsv(raw);
-    const list = rows.map(r => ({
-      cod:  String(r.cod_fornecedor || r.codigo || r.cod || '').trim(),
-      nome: String(r.nome_fornecedor || r.nome || r.razao_social || r.fantasia || '').trim(),
-    })).filter(f => f.cod && f.nome);
+    if (rows.length) console.log('[CadastroProduto/fornecedores-microvix] campos:', Object.keys(rows[0]));
+    const list = rows.map(r => _mxPickCodNome(r,
+      ['cod_fornecedor','id_fornecedor','codigo','cod','id'],
+      ['razao_social','nome_fornecedor','fantasia','nome','descricao']
+    )).filter(f => f.cod && f.nome);
     res.json(list);
   } catch (e) {
     console.warn('[CadastroProduto/fornecedores-microvix]', e.message);
@@ -3834,15 +3847,13 @@ app.get('/api/cadastro-produto/marcas-microvix', requireAdmin, async (req, res) 
     const cnpj  = Object.values(lojas)[0] || '';
     const chave = process.env.MICROVIX_CHAVE;
     if (!cnpj) return res.json([]);
-    const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
-    const body = buildRequest('LinxMarcas', cnpj, [], chave);
-    const raw  = await postRequest(body, 30_000);
-    if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) return res.json([]);
-    const rows = parseCsv(raw);
-    const list = rows.map(r => ({
-      cod:  String(r.cod_marca  || r.codigo    || r.cod  || '').trim(),
-      nome: String(r.desc_marca || r.descricao || r.nome || r.marca || '').trim(),
-    })).filter(f => f.cod && f.nome);
+    const { fetchMarcas } = require('./services/microvix');
+    const rows = await fetchMarcas(cnpj, chave);
+    if (rows.length) console.log('[CadastroProduto/marcas-microvix] campos:', Object.keys(rows[0]));
+    const list = rows.map(r => _mxPickCodNome(r,
+      ['id_marca','cod_marca','codigo','cod','id'],
+      ['desc_marca','nome','descricao','marca']
+    )).filter(f => f.nome);
     res.json(list);
   } catch (e) {
     console.warn('[CadastroProduto/marcas-microvix]', e.message);
@@ -3857,14 +3868,20 @@ app.get('/api/cadastro-produto/colecoes-microvix', requireAdmin, async (req, res
     const chave = process.env.MICROVIX_CHAVE;
     if (!cnpj) return res.json([]);
     const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
-    const body = buildRequest('LinxColecao', cnpj, [], chave);
-    const raw  = await postRequest(body, 30_000);
-    if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) return res.json([]);
-    const rows = parseCsv(raw);
-    const list = rows.map(r => ({
-      cod:  String(r.cod_colecao  || r.codigo    || r.cod  || '').trim(),
-      nome: String(r.desc_colecao || r.descricao || r.nome || r.colecao || '').trim(),
-    })).filter(f => f.cod && f.nome);
+    // Tenta dois nomes de comando
+    let rows = [];
+    for (const cmd of ['LinxColecao', 'LinxColecoes', 'LinxColecaoVenda']) {
+      try {
+        const raw = await postRequest(buildRequest(cmd, cnpj, [], chave), 20_000);
+        if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) continue;
+        rows = parseCsv(raw);
+        if (rows.length) { console.log(`[CadastroProduto/colecoes-microvix] cmd=${cmd} campos:`, Object.keys(rows[0])); break; }
+      } catch { continue; }
+    }
+    const list = rows.map(r => _mxPickCodNome(r,
+      ['cod_colecao','id_colecao','codigo','cod','id'],
+      ['desc_colecao','nome','descricao','colecao']
+    )).filter(f => f.nome);
     res.json(list);
   } catch (e) {
     console.warn('[CadastroProduto/colecoes-microvix]', e.message);

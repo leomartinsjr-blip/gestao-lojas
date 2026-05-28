@@ -2259,9 +2259,9 @@ const TAMS_NUM   = ['33','34','35','36','37','38','39','40','41','42','43','44',
 
 const _cad = {
   file: null, headers: [], rawRows: [], mapping: {},
-  fornecedoresMx: [], fornecedor: null,
-  marcasMx: [], marca: null,
-  colecoesMx: [], colecao: '',
+  fornecedoresMx: null, fornecedor: null,   // null=carregando, []=vazio, [...]= ok
+  marcasMx: null,       marca: null,
+  colecoesMx: null,     colecao: '',
   setor: '', modeloRef: '{REF}', modeloDesc: '{NOME}',
   priceMode: 'markup', markup: 100, manualPrice: '',
   ncm: '', products: [], checkResult: [],
@@ -2381,23 +2381,17 @@ async function renderCadastroProdView() {
   );
   const body = document.getElementById('transBody');
   apiFetch('GET', '/api/cadastro-produto/fornecedores-microvix')
-    .then(list => {
-      _cad.fornecedoresMx = list || [];
-      const sel = body.querySelector('#cadFornSelect');
-      if (sel) _cadPopulateFornSel(sel);
-    }).catch(() => { _cad.fornecedoresMx = []; });
+    .then(list => { _cad.fornecedoresMx = list || []; })
+    .catch(() => { _cad.fornecedoresMx = []; })
+    .finally(() => { const s = body.querySelector('#cadFornSelect'); if (s) _cadPopulateFornSel(s); });
   apiFetch('GET', '/api/cadastro-produto/marcas-microvix')
-    .then(list => {
-      _cad.marcasMx = list || [];
-      const sel = body.querySelector('#cadMarcaSelect');
-      if (sel) _cadPopulateMarcaSel(sel);
-    }).catch(() => { _cad.marcasMx = []; });
+    .then(list => { _cad.marcasMx = list || []; })
+    .catch(() => { _cad.marcasMx = []; })
+    .finally(() => { const s = body.querySelector('#cadMarcaSelect'); if (s) _cadPopulateMarcaSel(s); });
   apiFetch('GET', '/api/cadastro-produto/colecoes-microvix')
-    .then(list => {
-      _cad.colecoesMx = list || [];
-      const sel = body.querySelector('#cadColecaoSelect');
-      if (sel) _cadPopulateColecaoSel(sel);
-    }).catch(() => { _cad.colecoesMx = []; });
+    .then(list => { _cad.colecoesMx = list || []; })
+    .catch(() => { _cad.colecoesMx = []; })
+    .finally(() => { const s = body.querySelector('#cadColecaoSelect'); if (s) _cadPopulateColecaoSel(s); });
   _cadRenderUpload(body);
 }
 
@@ -2463,35 +2457,35 @@ function _cadRenderUpload(body) {
 
 function _cadPopulateFornSel(sel) {
   if (!sel) return;
+  const list = _cad.fornecedoresMx;
+  if (list === null) { sel.innerHTML = `<option value="">Carregando…</option>`; return; }
+  if (!list.length)  { sel.innerHTML = `<option value="">Sem fornecedores no Microvix</option>`; return; }
   const cur = _cad.fornecedor?.cod || '';
-  if (!_cad.fornecedoresMx.length) {
-    sel.innerHTML = `<option value="">— carregando fornecedores… —</option>`;
-    return;
-  }
   sel.innerHTML = `<option value="">— selecionar fornecedor —</option>` +
-    _cad.fornecedoresMx.map(f => `<option value="${_escHtml(f.cod)}"${f.cod === cur ? ' selected' : ''}>${_escHtml(f.nome)}</option>`).join('');
+    list.map(f => `<option value="${_escHtml(f.cod)}"${f.cod === cur ? ' selected' : ''}>${_escHtml(f.nome)}</option>`).join('');
+  if (cur) sel.value = cur;
 }
 
 function _cadPopulateMarcaSel(sel) {
   if (!sel) return;
+  const list = _cad.marcasMx;
+  if (list === null) { sel.innerHTML = `<option value="">Carregando…</option>`; return; }
+  if (!list.length)  { sel.innerHTML = `<option value="">Sem marcas no Microvix</option>`; return; }
   const cur = _cad.marca?.cod || '';
-  if (!_cad.marcasMx.length) {
-    sel.innerHTML = `<option value="">— carregando marcas… —</option>`;
-    return;
-  }
   sel.innerHTML = `<option value="">— selecionar marca —</option>` +
-    _cad.marcasMx.map(f => `<option value="${_escHtml(f.cod)}"${f.cod === cur ? ' selected' : ''}>${_escHtml(f.nome)}</option>`).join('');
+    list.map(f => `<option value="${_escHtml(f.cod)}"${f.cod === cur ? ' selected' : ''}>${_escHtml(f.nome)}</option>`).join('');
+  if (cur) sel.value = cur;
 }
 
 function _cadPopulateColecaoSel(sel) {
   if (!sel) return;
+  const list = _cad.colecoesMx;
+  if (list === null) { sel.innerHTML = `<option value="">Carregando…</option>`; return; }
+  if (!list.length)  { sel.innerHTML = `<option value="">Sem coleções no Microvix</option>`; return; }
   const cur = _cad.colecao || '';
-  if (!_cad.colecoesMx.length) {
-    sel.innerHTML = `<option value="">— carregando coleções… —</option>`;
-    return;
-  }
   sel.innerHTML = `<option value="">— selecionar coleção —</option>` +
-    _cad.colecoesMx.map(f => `<option value="${_escHtml(f.nome)}"${f.nome === cur ? ' selected' : ''}>${_escHtml(f.nome)}</option>`).join('');
+    list.map(f => `<option value="${_escHtml(f.nome)}"${f.nome === cur ? ' selected' : ''}>${_escHtml(f.nome)}</option>`).join('');
+  if (cur) sel.value = cur;
 }
 
 async function _cadParseFile(body) {
