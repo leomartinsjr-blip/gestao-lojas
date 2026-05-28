@@ -165,6 +165,31 @@ async function writeDB(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
 }
 
+async function readContasPagar() {
+  if (mongoDb) {
+    const doc = await mongoDb.collection('contasPagar').findOne({ _id: 'main' });
+    if (!doc) return { rows: [], syncedAt: null, dtIni: null, dtFin: null, errors: [] };
+    const { _id, ...data } = doc;
+    return data;
+  }
+  const db = await readDB();
+  return db.contasPagar || { rows: [], syncedAt: null, dtIni: null, dtFin: null, errors: [] };
+}
+
+async function writeContasPagar(data) {
+  if (mongoDb) {
+    await mongoDb.collection('contasPagar').replaceOne(
+      { _id: 'main' },
+      { _id: 'main', ...data },
+      { upsert: true }
+    );
+    return;
+  }
+  const db = await readDB();
+  db.contasPagar = data;
+  await writeDB(db);
+}
+
 function nextId(db) {
   const id = db.nextId;
   db.nextId = (db.nextId || 1) + 1;
@@ -4396,8 +4421,7 @@ function _parseMxDate(s) {
 app.get('/api/contas-pagar', requireAdmin, async (req, res) => {
   try {
     const today = new Date().toISOString().slice(0, 10);
-    const db    = await readDB();
-    const cp    = db.contasPagar || {};
+    const cp    = await readContasPagar();
     const rows  = cp.rows || [];
 
     const dtIni = req.query.de  || cp.dtIni || today.slice(0, 7) + '-01';
@@ -4486,16 +4510,16 @@ app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
       }
     }
 
-    const db = await readDB();
-    if (!db.contasPagar) db.contasPagar = {};
-    db.contasPagar.rows     = allRows;
-    db.contasPagar.dtIni    = req.body?.de  || today.slice(0, 7) + '-01'; // vencimento UI
-    db.contasPagar.dtFin    = dtFin;
-    db.contasPagar.syncedAt = new Date().toISOString();
-    db.contasPagar.errors   = errors;
-    await writeDB(db);
+    const syncedAt = new Date().toISOString();
+    await writeContasPagar({
+      rows:     allRows,
+      dtIni:    req.body?.de  || today.slice(0, 7) + '-01',
+      dtFin,
+      syncedAt,
+      errors,
+    });
 
-    res.json({ ok: true, count: allRows.length, syncedAt: db.contasPagar.syncedAt, errors });
+    res.json({ ok: true, count: allRows.length, syncedAt, errors });
   } catch (e) {
     console.error('[contasPagar/sync]', e.message);
     res.status(500).json({ ok: false, error: e.message });
@@ -4505,8 +4529,7 @@ app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
 // ── GET /api/contas-pagar/status ──────────────────────────────────────────
 app.get('/api/contas-pagar/status', requireAdmin, async (req, res) => {
   try {
-    const db = await readDB();
-    const cp = db.contasPagar || {};
+    const cp = await readContasPagar();
     res.json({ syncedAt: cp.syncedAt || null, count: (cp.rows || []).length, dtIni: cp.dtIni, dtFin: cp.dtFin, errors: cp.errors || [] });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -5155,13 +5178,13 @@ initMongo()
             }
           } catch (e) { console.error(`[ContasPagar] ${board}:`, e.message); }
         }
-        const db = await readDB();
-        if (!db.contasPagar) db.contasPagar = {};
-        db.contasPagar.rows     = allRows;
-        db.contasPagar.dtIni    = dtIni;
-        db.contasPagar.dtFin    = today;
-        db.contasPagar.syncedAt = new Date().toISOString();
-        await writeDB(db);
+        await writeContasPagar({
+          rows:     allRows,
+          dtIni,
+          dtFin:    today,
+          syncedAt: new Date().toISOString(),
+          errors:   [],
+        });
         console.log(`[ContasPagar] Sync OK — ${allRows.length} faturas a pagar`);
       }, { timezone: 'America/Sao_Paulo' });
       console.log('[ContasPagar] Cron agendado para 07:00 America/Sao_Paulo');
