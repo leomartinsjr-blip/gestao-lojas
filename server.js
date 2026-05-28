@@ -3828,6 +3828,50 @@ app.get('/api/cadastro-produto/fornecedores-microvix', requireAdmin, async (req,
   }
 });
 
+app.get('/api/cadastro-produto/marcas-microvix', requireAdmin, async (req, res) => {
+  try {
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = Object.values(lojas)[0] || '';
+    const chave = process.env.MICROVIX_CHAVE;
+    if (!cnpj) return res.json([]);
+    const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
+    const body = buildRequest('LinxMarcas', cnpj, [], chave);
+    const raw  = await postRequest(body, 30_000);
+    if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) return res.json([]);
+    const rows = parseCsv(raw);
+    const list = rows.map(r => ({
+      cod:  String(r.cod_marca  || r.codigo    || r.cod  || '').trim(),
+      nome: String(r.desc_marca || r.descricao || r.nome || r.marca || '').trim(),
+    })).filter(f => f.cod && f.nome);
+    res.json(list);
+  } catch (e) {
+    console.warn('[CadastroProduto/marcas-microvix]', e.message);
+    res.json([]);
+  }
+});
+
+app.get('/api/cadastro-produto/colecoes-microvix', requireAdmin, async (req, res) => {
+  try {
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = Object.values(lojas)[0] || '';
+    const chave = process.env.MICROVIX_CHAVE;
+    if (!cnpj) return res.json([]);
+    const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
+    const body = buildRequest('LinxColecao', cnpj, [], chave);
+    const raw  = await postRequest(body, 30_000);
+    if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) return res.json([]);
+    const rows = parseCsv(raw);
+    const list = rows.map(r => ({
+      cod:  String(r.cod_colecao  || r.codigo    || r.cod  || '').trim(),
+      nome: String(r.desc_colecao || r.descricao || r.nome || r.colecao || '').trim(),
+    })).filter(f => f.cod && f.nome);
+    res.json(list);
+  } catch (e) {
+    console.warn('[CadastroProduto/colecoes-microvix]', e.message);
+    res.json([]);
+  }
+});
+
 app.get('/api/cadastro-produto/fornecedores', requireAdmin, async (req, res) => {
   try { res.json(await mongoDb.collection('supplier_profiles').find({}).sort({ name: 1 }).toArray()); }
   catch (e) { res.status(500).json({ error: e.message }); }
