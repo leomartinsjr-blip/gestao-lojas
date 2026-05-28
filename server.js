@@ -4311,9 +4311,6 @@ async function _fetchFaturas(cnpj, chave, dtIni, dtFin) {
 }
 
 // Normaliza linha do LinxFaturas para formato interno
-// Campos confirmados: receber_pagar, nome_cliente, data_vencimento, data_emissao,
-//   data_baixa, valor_fatura, valor_pago, documento, codigo_fatura, observacao,
-//   excluido, cancelado, forma_pgto, centrocusto
 function _normalizeFatura(r, loja, board, hoje) {
   const get = k => String(r[k] ?? '').trim();
 
@@ -4326,32 +4323,47 @@ function _normalizeFatura(r, loja, board, hoje) {
   const emissao    = _parseMxDate(get('data_emissao'));
   const baixa      = _parseMxDate(get('data_baixa'));
 
-  const parseBRL = s => parseFloat(s.replace(/\./g, '').replace(',', '.')) || 0;
-  const valorFatura = parseBRL(get('valor_fatura'));
-  const valorPago   = parseBRL(get('valor_pago'));
-  const saldo       = Math.max(0, valorFatura - valorPago);
+  const parseBRL = s => parseFloat(String(s).replace(/\./g, '').replace(',', '.')) || 0;
+  const valorFatura    = parseBRL(get('valor_fatura'));
+  const valorPago      = parseBRL(get('valor_pago'));
+  const valorDesconto  = parseBRL(get('valor_desconto'));
+  const valorJuros     = parseBRL(get('valor_juros'));
+  const valorAbatimento= parseBRL(get('valor_abatimento'));
+  const valorMulta     = parseBRL(get('valor_multa'));
+  const valorLiquido   = Math.max(0, valorFatura - valorDesconto - valorAbatimento + valorJuros + valorMulta);
 
   let status = 'aberto';
   if (baixa) status = 'pago';
   else if (valorPago > 0 && valorPago >= valorFatura) status = 'pago';
   else if (vencimento && vencimento < hoje) status = 'vencido';
 
+  const ordemParcela = get('ordem_parcela');
+  const qtdeParcelas = get('qtde_parcelas');
+  const parcela      = ordemParcela && qtdeParcelas ? `${ordemParcela}/${qtdeParcelas}` : (ordemParcela || '');
+
   return {
     board, loja,
-    fornecedor:  get('nome_cliente'),
-    documento:   get('documento') || get('codigo_fatura'),
-    historico:   get('observacao'),
+    fornecedor:    get('nome_cliente'),
+    codigo_fatura: get('codigo_fatura'),
+    documento:     get('documento'),
+    serie:         get('serie'),
+    nosso_numero:  get('nsu_host') || get('banco_autorizacao_garantidora') || get('NSU'),
+    parcela,
+    historico:     get('observacao'),
     emissao,
     vencimento,
     baixa,
-    valor:       valorFatura,
+    valor:         valorFatura,
+    valorLiquido,
     valorPago,
-    saldo,
+    valorDesconto,
+    valorJuros,
+    valorAbatimento,
+    valorMulta,
     status,
-    receber_pagar,
     isPagar,
-    forma_pgto:  get('forma_pgto'),
-    centrocusto: get('centrocusto'),
+    forma_pgto:    get('forma_pgto'),
+    centrocusto:   get('centrocusto'),
   };
 }
 
