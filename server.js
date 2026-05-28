@@ -3872,6 +3872,21 @@ app.get('/api/cadastro-produto/colecoes-microvix', requireAdmin, async (req, res
   }
 });
 
+app.get('/api/cadastro-produto/debug-mx', requireAdmin, async (req, res) => {
+  try {
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = Object.values(lojas)[0] || '';
+    const chave = process.env.MICROVIX_CHAVE;
+    if (!cnpj) return res.json({ error: 'MICROVIX_LOJAS não configurado' });
+    const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
+    const cmd = req.query.cmd || 'LinxFornecedores';
+    const body = buildRequest(cmd, cnpj, [], chave);
+    const raw  = await postRequest(body, 30_000);
+    const rows = parseCsv(raw);
+    res.json({ cmd, rawHead: raw.slice(0, 500), fields: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 5) });
+  } catch (e) { res.json({ error: e.message }); }
+});
+
 app.get('/api/cadastro-produto/fornecedores', requireAdmin, async (req, res) => {
   try { res.json(await mongoDb.collection('supplier_profiles').find({}).sort({ name: 1 }).toArray()); }
   catch (e) { res.status(500).json({ error: e.message }); }
