@@ -143,6 +143,7 @@
   <div class="cp-filters">
     <div style="display:flex;gap:4px">
       <button class="cp-quick-btn" id="qHoje">Hoje</button>
+      <button class="cp-quick-btn" id="qAmanha">Amanhã</button>
       <button class="cp-quick-btn" id="qSemana">Semana</button>
       <button class="cp-quick-btn" id="qProxSemana">Próx. Semana</button>
     </div>
@@ -432,6 +433,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   document.getElementById('qHoje').addEventListener('click', function() {
     const t = getToday();
+    setDates(t, t);
+    document.querySelectorAll('.cp-quick-btn').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    loadData();
+  });
+
+  document.getElementById('qAmanha').addEventListener('click', function() {
+    const d = new Date(); d.setDate(d.getDate() + 1);
+    const t = d.toISOString().slice(0, 10);
     setDates(t, t);
     document.querySelectorAll('.cp-quick-btn').forEach(b => b.classList.remove('active'));
     this.classList.add('active');
