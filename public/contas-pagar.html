@@ -111,6 +111,12 @@
   #cp-diag-wrap { background: var(--bg3); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin-bottom: 12px; font-size: 12px; }
   #cp-diag-wrap pre { color: var(--text2); font-family: monospace; font-size: 11px; white-space: pre-wrap; word-break: break-all; max-height: 200px; overflow-y: auto; margin-top: 6px; }
 
+  .cp-quick-btn {
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text2); cursor: pointer; padding: 4px 9px; font-size: 11px; white-space: nowrap;
+  }
+  .cp-quick-btn:hover, .cp-quick-btn.active { border-color: var(--blue); color: var(--blue); background: rgba(88,166,255,.08); }
+
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -135,6 +141,11 @@
     Contas a Pagar
   </div>
   <div class="cp-filters">
+    <div style="display:flex;gap:4px">
+      <button class="cp-quick-btn" id="qHoje">Hoje</button>
+      <button class="cp-quick-btn" id="qSemana">Semana</button>
+      <button class="cp-quick-btn" id="qProxSemana">Próx. Semana</button>
+    </div>
     <label>De</label>
     <input type="date" id="cpDe">
     <label>Até</label>
@@ -296,6 +307,25 @@ function renderStatusFilter() {
   });
 }
 
+// Semana sábado→sexta
+function getWeekRange(offsetWeeks = 0) {
+  const today = new Date();
+  const day   = today.getDay(); // 0=Dom … 6=Sáb
+  const diffToSat = day === 6 ? 0 : -(day + 1);
+  const sat = new Date(today);
+  sat.setDate(today.getDate() + diffToSat + offsetWeeks * 7);
+  const fri = new Date(sat);
+  fri.setDate(sat.getDate() + 6);
+  const iso = d => d.toISOString().slice(0, 10);
+  return { de: iso(sat), ate: iso(fri) };
+}
+
+function setDates(de, ate) {
+  document.getElementById('cpDe').value  = de;
+  document.getElementById('cpAte').value = ate;
+  document.querySelectorAll('.cp-quick-btn').forEach(b => b.classList.remove('active'));
+}
+
 function renderGroups() {
   const items = getFiltered();
   const el    = document.getElementById('cp-groups');
@@ -304,17 +334,16 @@ function renderGroups() {
   if (!items.length) { el.innerHTML = ''; empty.style.display = ''; return; }
   empty.style.display = 'none';
 
-  // Agrupar por fornecedor
+  // Agrupar por loja (board)
+  const LOJA_LABEL = { delrey:'Del Rey', minas:'Minas', contagem:'Contagem', estacao:'Estação', tommy:'Tommy', lez:'Lez a Lez', escritorio:'Escritório' };
   const groups = {};
   items.forEach(it => {
-    const key = it.fornecedor || '(sem nome)';
-    if (!groups[key]) groups[key] = { fornecedor: key, items: [], total: 0, totalLiq: 0 };
+    const key = it.board || 'outros';
+    if (!groups[key]) groups[key] = { board: key, loja: LOJA_LABEL[key] || key.toUpperCase(), items: [], total: 0 };
     groups[key].items.push(it);
-    groups[key].total    += it.valor;
-    groups[key].totalLiq += it.valorLiquido ?? it.valor;
+    groups[key].total += it.valor;
   });
 
-  // Ordenar grupos por total desc
   const sorted = Object.values(groups).sort((a, b) => b.total - a.total);
 
   el.innerHTML = sorted.map((g, gi) => {
@@ -334,12 +363,13 @@ function renderGroups() {
         const liqDiff  = it.valorLiquido !== undefined && Math.abs((it.valorLiquido ?? it.valor) - it.valor) > 0.01;
         return `
         <tr>
+          <td class="td-num" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${it.fornecedor}">${it.fornecedor || '—'}</td>
           <td class="td-num">${it.codigo_fatura || '—'}</td>
           <td style="white-space:nowrap">${fmtDate(it.vencimento)}</td>
           <td class="td-num" style="text-align:center">${it.parcela || '—'}</td>
           <td class="td-num">${docSerie}</td>
           <td class="td-val">${fmtBRL(it.valor)}</td>
-          <td class="td-val-liq" title="${liqDiff ? 'desc/abat/juros/multa aplicados' : ''}">${fmtBRL(it.valorLiquido ?? it.valor)}${liqDiff ? ' *' : ''}</td>
+          <td class="td-val-liq" title="${liqDiff ? 'desc/abat/juros/multa' : ''}">${fmtBRL(it.valorLiquido ?? it.valor)}${liqDiff ? ' *' : ''}</td>
           <td><span class="badge badge-${it.status}">${it.status}</span></td>
         </tr>`;
       }).join('');
@@ -348,7 +378,7 @@ function renderGroups() {
     <div class="cp-group" id="grp-${gi}">
       <div class="cp-group-header" data-gi="${gi}">
         <svg class="cp-group-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-        <span class="cp-group-name" title="${g.fornecedor}">${g.fornecedor}</span>
+        <span class="cp-group-name">${g.loja}</span>
         <div class="cp-group-meta">
           <div class="cp-group-badges">${badges}</div>
           <span class="cp-group-count">${g.items.length} título${g.items.length !== 1 ? 's' : ''}</span>
@@ -359,6 +389,7 @@ function renderGroups() {
         <table class="cp-inner-table">
           <thead>
             <tr>
+              <th>Fornecedor</th>
               <th>Nº Fatura</th>
               <th>Vencimento</th>
               <th style="text-align:center">Parcela</th>
@@ -374,7 +405,6 @@ function renderGroups() {
     </div>`;
   }).join('');
 
-  // Toggle accordion
   el.querySelectorAll('.cp-group-header').forEach(hdr => {
     hdr.addEventListener('click', () => {
       const gi   = hdr.dataset.gi;
@@ -389,8 +419,32 @@ function renderGroups() {
 // ── Sync ──────────────────────────────────────────────────────────────────
 document.addEventListener('DOMContentLoaded', () => {
   const today = getToday();
-  document.getElementById('cpDe').value  = getFirstOfMonth();
+  document.getElementById('cpDe').value  = today;
   document.getElementById('cpAte').value = today;
+
+  document.getElementById('qHoje').addEventListener('click', function() {
+    const t = getToday();
+    setDates(t, t);
+    document.querySelectorAll('.cp-quick-btn').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    loadData();
+  });
+
+  document.getElementById('qSemana').addEventListener('click', function() {
+    const { de, ate } = getWeekRange(0);
+    setDates(de, ate);
+    document.querySelectorAll('.cp-quick-btn').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    loadData();
+  });
+
+  document.getElementById('qProxSemana').addEventListener('click', function() {
+    const { de, ate } = getWeekRange(1);
+    setDates(de, ate);
+    document.querySelectorAll('.cp-quick-btn').forEach(b => b.classList.remove('active'));
+    this.classList.add('active');
+    loadData();
+  });
 
   document.getElementById('cpRefreshBtn').addEventListener('click', loadData);
 
