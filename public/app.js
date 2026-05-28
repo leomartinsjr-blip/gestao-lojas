@@ -2738,8 +2738,12 @@ async function _cadCheckAndExport(sec) {
       ncm:          p._ncm        || _cad.ncm,
       markup:       _cad.priceMode === 'markup' ? String(_cad.markup) : '',
     }));
-    const { result } = await apiFetch('POST', '/api/cadastro-produto/check', { rows });
+    const _checkRes = await apiFetch('POST', '/api/cadastro-produto/check', { rows });
+    const result = _checkRes.result;
     _cad.checkResult = result;
+    if (_checkRes._catalogNotReady) {
+      toast('Catálogo Microvix ainda carregando — todos marcados como NOVO. Aguarde 1 min e verifique novamente.', true);
+    }
 
     sec.querySelectorAll('tbody tr').forEach((tr, i) => {
       const res = result[i] || {};
@@ -2838,15 +2842,22 @@ function _cadUpdateExportActions(sec) {
         <span class="cad-summary-num">${pendingCount}</span><span class="cad-summary-lbl">mapear</span>
       </div>` : ''}
     </div>
-    ${newCount > 0
-      ? `<button class="trans-calc-btn" id="cadExportBtn">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 16 12 21 17 16"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
-          Baixar cadastro Microvix (${newCount} produtos)
-        </button>`
-      : `<span style="color:#3FB950;font-size:.8rem">✓ Todos já estão no Microvix</span>`}`;
+    <div style="display:flex;gap:.4rem;align-items:center">
+      <button class="trans-calc-btn" id="cadRecheckBtn" style="background:transparent;border:1px solid rgba(88,166,255,.3);color:var(--muted);padding:.28rem .6rem">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
+      ${newCount > 0
+        ? `<button class="trans-calc-btn" id="cadExportBtn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 16 12 21 17 16"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+            Baixar cadastro Microvix (${newCount} produtos)
+          </button>`
+        : `<span style="color:#3FB950;font-size:.8rem">✓ Todos já estão no Microvix</span>`}
+    </div>`;
 
   const eb = actEl.querySelector('#cadExportBtn');
   if (eb) eb.addEventListener('click', () => _cadExport(eb, exportRows));
+  const rb = actEl.querySelector('#cadRecheckBtn');
+  if (rb) rb.addEventListener('click', () => _cadCheckAndExport(sec));
 }
 
 async function _cadExport(btn, rows) {

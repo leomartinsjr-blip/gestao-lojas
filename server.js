@@ -3930,7 +3930,17 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
     const { rows } = req.body;
     if (!Array.isArray(rows)) return res.status(400).json({ error: 'rows deve ser array' });
     const lojas   = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-    const catalog = await _getCatalog(lojas).catch(() => ({}));
+    const catalog = await Promise.race([
+      _getCatalog(lojas),
+      new Promise(r => setTimeout(() => r(null), 15_000)),
+    ]).catch(() => null);
+    if (!catalog) {
+      return res.json({
+        result: rows.map(r => ({ ...r, _status: 'new' })),
+        newCount: rows.length, existingCount: 0, needsMappingCount: 0,
+        _catalogNotReady: true,
+      });
+    }
 
     const norm = s => (s || '').toString().trim().toUpperCase();
 
