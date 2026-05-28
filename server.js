@@ -4346,10 +4346,12 @@ app.get('/indeva', (req, res) => res.sendFile(path.join(__dirname, 'public/indev
 // ── Contas a Pagar — LinxFaturas ──────────────────────────────────────────
 
 // Busca todas as faturas de uma loja via LinxFaturas com paginação por timestamp
-// (máx 5000/chamada — itera até receber página incompleta)
-async function _fetchFaturas(cnpj, chave, dtIni, dtFin) {
+// Busca faturas do LinxFaturas normalizando página a página para não acumular linhas brutas.
+// onRow(rawRow) é chamado por cada linha — permite filtrar antes de acumular.
+async function _fetchFaturas(cnpj, chave, dtIni, dtFin, onRow) {
   const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
-  const all = [];
+  const useCallback = typeof onRow === 'function';
+  const all = useCallback ? null : [];
   let ts = 0;
   for (let page = 0; page < 20; page++) {
     const params = [
@@ -4366,13 +4368,19 @@ async function _fetchFaturas(cnpj, chave, dtIni, dtFin) {
     if (raw.trim().startsWith('<')) throw new Error('Resposta XML inesperada: ' + raw.slice(0, 200));
     const rows = parseCsv(raw);
     if (!rows.length) break;
-    all.push(...rows);
+    let maxTs = 0;
+    for (const r of rows) {
+      const rts = parseInt(r.timestamp) || 0;
+      if (rts > maxTs) maxTs = rts;
+      if (useCallback) onRow(r);
+      else all.push(r);
+    }
     if (rows.length < 5000) break;
-    const maxTs = Math.max(...rows.map(r => parseInt(r.timestamp) || 0));
     if (maxTs <= ts) break;
     ts = maxTs;
+    // rows sai de escopo aqui — GC pode coletar as linhas brutas desta página
   }
-  return all;
+  return all; // null quando useCallback=true
 }
 
 // Normaliza linha do LinxFaturas para formato interno
@@ -4515,12 +4523,12 @@ app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
     for (const [board, cnpj] of boards) {
       const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
       try {
-        const raw  = await _fetchFaturas(cnpj, chave, dtIni, dtFin);
         const rows = [];
-        for (const r of raw) {
+        // Callback normaliza na hora — linhas brutas nunca acumulam em memória
+        await _fetchFaturas(cnpj, chave, dtIni, dtFin, r => {
           const fat = _normalizeFatura(r, board, board, today);
           if (fat && fat.isPagar) rows.push(fat);
-        }
+        });
         total += rows.length;
         if (mongoDb) {
           await writeContasPagarBoard(board, rows);
@@ -5211,12 +5219,11 @@ initMongo()
         for (const [board, cnpj] of boards) {
           const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
           try {
-            const raw  = await _fetchFaturas(cnpj, chave, dtIni, today);
             const rows = [];
-            for (const r of raw) {
+            await _fetchFaturas(cnpj, chave, dtIni, today, r => {
               const fat = _normalizeFatura(r, board, board, today);
               if (fat && fat.isPagar) rows.push(fat);
-            }
+            });
             await writeContasPagarBoard(board, rows);
             total += rows.length;
             console.log(`[ContasPagar] ${board}: ${rows.length} faturas`);
