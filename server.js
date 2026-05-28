@@ -4332,8 +4332,8 @@ function _normalizeFatura(r, loja, board, hoje) {
   const saldo       = Math.max(0, valorFatura - valorPago);
 
   let status = 'aberto';
-  if (baixa && valorPago >= valorFatura && valorFatura > 0) status = 'pago';
-  else if (valorPago >= valorFatura && valorFatura > 0) status = 'pago';
+  if (baixa) status = 'pago';
+  else if (valorPago > 0 && valorPago >= valorFatura) status = 'pago';
   else if (vencimento && vencimento < hoje) status = 'vencido';
 
   return {
@@ -4357,11 +4357,12 @@ function _normalizeFatura(r, loja, board, hoje) {
 
 function _parseMxDate(s) {
   if (!s) return '';
-  // DD/MM/YYYY
-  let m = String(s).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  const str = String(s).trim();
+  // DD/MM/YYYY (com ou sem horário: "28/05/2026 00:00:00")
+  let m = str.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
   if (m) return `${m[3]}-${m[2]}-${m[1]}`;
-  // YYYY-MM-DD
-  m = String(s).match(/^(\d{4})-(\d{2})-(\d{2})/);
+  // YYYY-MM-DD (com ou sem horário ISO)
+  m = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if (m) return `${m[1]}-${m[2]}-${m[3]}`;
   return '';
 }
