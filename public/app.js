@@ -116,6 +116,7 @@ async function checkAuth() {
     loadData();
     initMicrovixSync();
     if (S.user.mustChangePassword) showChangePasswordModal();
+    if (new URLSearchParams(location.search).get('gestao') === '1') openTransModal();
   } catch {
     showLogin();
   }
@@ -3074,7 +3075,7 @@ function initPerfModal() {
   document.getElementById('perfOverlay').addEventListener('click', e => {
     if (e.target.id === 'perfOverlay') closePerfModal();
   });
-  document.getElementById('transBtn').addEventListener('click', openTransModal);
+  document.getElementById('transBtn').addEventListener('click', () => window.open('/?gestao=1', '_blank'));
   document.getElementById('transClose').addEventListener('click', closeTransModal);
   document.getElementById('transBackBtn').addEventListener('click', renderGestaoHub);
   document.getElementById('transOverlay').addEventListener('click', e => {
