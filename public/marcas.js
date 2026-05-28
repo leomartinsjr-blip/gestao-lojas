@@ -35,7 +35,7 @@ async function init() {
         `<option value="${k}">${v.label}</option>`).join('');
   }
 
-  setShortcut('mes');
+  setShortcut('30d');
 
   document.querySelectorAll('[data-s]').forEach(btn =>
     btn.addEventListener('click', () => setShortcut(btn.dataset.s)));
