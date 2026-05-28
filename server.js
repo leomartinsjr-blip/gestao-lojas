@@ -3933,46 +3933,64 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
     const catalog = await _getCatalog(lojas).catch(() => ({}));
 
     const norm = s => (s || '').toString().trim().toUpperCase();
-    // skuSet: chave composta ref|cor|tam (para detectar variante nova)
-    // refSet: só referencia (para produtos sem cor/tam mapeados)
-    // allKeysNorm: todas as chaves do catálogo normalizadas (cod_produto, barra, ref)
-    const skuSet      = new Set();
-    const refSet      = new Set();
-    const allKeysNorm = new Set(Object.keys(catalog).map(norm));
-    for (const entry of Object.values(catalog)) {
-      if (entry.referencia) {
-        skuSet.add(`${norm(entry.referencia)}|${norm(entry.desc_cor)}|${norm(entry.desc_tam)}`);
-        refSet.add(norm(entry.referencia));
-      }
+
+    // refIndex: ref -> cor -> Set<tam>
+    const refIndex = {};
+    const keyToRef = {};
+    for (const [k, entry] of Object.entries(catalog)) {
+      if (entry.referencia) keyToRef[norm(k)] = norm(entry.referencia);
+      if (!entry.referencia) continue;
+      const ref = norm(entry.referencia);
+      if (!refIndex[ref]) refIndex[ref] = {};
+      const cor = norm(entry.desc_cor || '');
+      if (!refIndex[ref][cor]) refIndex[ref][cor] = new Set();
+      refIndex[ref][cor].add(norm(entry.desc_tam || ''));
     }
 
-    const result = rows.map(r => {
-      const ref   = norm(r.referencia);
+    const resolveRef = r => {
       const barra = norm(r.cod_barra);
-      const hasCor = !!(r.desc_cor     || '').trim();
-      const hasTam = !!(r.desc_tamanho || '').trim();
+      let   ref   = norm(r.referencia);
+      if (barra && keyToRef[barra])               return keyToRef[barra];
+      if (ref && !refIndex[ref] && keyToRef[ref]) return keyToRef[ref];
+      return ref;
+    };
 
-      // 1. Barcode da planilha bate diretamente com chave do catálogo
-      if (barra && allKeysNorm.has(barra)) return { ...r, _status: 'existing' };
-      // 2. Referência bate diretamente com qualquer chave do catálogo (cod_produto, barra, ref)
-      if (ref && allKeysNorm.has(ref)) {
-        // Se cor/tam estão mapeados → exige chave composta para diferenciar variante nova
-        if (hasCor || hasTam) {
-          const key = `${ref}|${norm(r.desc_cor)}|${norm(r.desc_tamanho)}`;
-          return { ...r, _status: skuSet.has(key) ? 'existing' : 'new' };
-        }
-        return { ...r, _status: 'existing' };
+    const result = rows.map(r => {
+      const ref = resolveRef(r);
+      const cor = norm(r.desc_cor     || '');
+      const tam = norm(r.desc_tamanho || '');
+
+      // 1. Referencia nao cadastrada -> novo
+      if (!ref || !refIndex[ref]) return { ...r, _status: 'new' };
+
+      // 2. Sem cor e sem tamanho -> cadastrar
+      if (!cor && !tam) return { ...r, _status: 'new' };
+
+      const corsDisponiveis = Object.keys(refIndex[ref]).filter(c => c !== '').sort();
+
+      // 3. Cor nao encontrada -> seletor de mapeamento
+      if (cor && !refIndex[ref][cor]) {
+        return { ...r, _status: 'needs_cor', _corsDisponiveis: corsDisponiveis };
       }
-      // 3. Chave composta ref|cor|tam
-      if (hasCor || hasTam) {
-        const key = `${ref}|${norm(r.desc_cor)}|${norm(r.desc_tamanho)}`;
-        return { ...r, _status: skuSet.has(key) ? 'existing' : 'new' };
+
+      // 4. Cor ok, checar tamanho
+      const tamsSet         = refIndex[ref][cor] || new Set();
+      const tamsDisponiveis = [...tamsSet].filter(t => t !== '').sort();
+
+      if (tam && !tamsSet.has(tam)) {
+        return { ...r, _status: 'needs_tam', _corMatch: cor, _tamsDisponiveis: tamsDisponiveis };
       }
-      // 4. Sem cor/tam: qualquer variante da referência já existe → existing
-      return { ...r, _status: refSet.has(ref) ? 'existing' : 'new' };
+
+      // 5. Tudo encontrado
+      return { ...r, _status: 'existing' };
     });
 
-    res.json({ result, newCount: result.filter(r => r._status === 'new').length, existingCount: result.filter(r => r._status === 'existing').length });
+    res.json({
+      result,
+      newCount:          result.filter(r => r._status === 'new').length,
+      existingCount:     result.filter(r => r._status === 'existing').length,
+      needsMappingCount: result.filter(r => r._status === 'needs_cor' || r._status === 'needs_tam').length,
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -2995,6 +2995,12 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .cad-badge { font-size: .62rem; font-weight: 700; padding: .15rem .35rem; border-radius: .25rem; letter-spacing: .03em; }
 .cad-badge-new { background: rgba(63,185,80,.18); color: #3FB950; }
 .cad-badge-existing { background: rgba(139,148,158,.15); color: #8B949E; }
+.cad-badge-warn { background: rgba(210,153,34,.18); color: #D29922; }
+.cad-summary-warn { border-color: rgba(210,153,34,.4); background: rgba(210,153,34,.06); }
+.cad-summary-warn .cad-summary-num { color: #D29922; }
+.cad-sku-sel { background: var(--card-bg,#161B22); border: 1px solid rgba(210,153,34,.5); color: var(--text); border-radius: .3rem; padding: .18rem .35rem; font-size: .7rem; font-family: inherit; width: 100%; cursor: pointer; }
+.cad-sku-sel:focus { outline: none; border-color: #D29922; }
+.cad-sku-map-hint { font-size: .6rem; color: var(--muted); margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
 
 /* ── CAD redesign — config grid, form, templates, products ── */
 .cad-config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin-top: .75rem; }

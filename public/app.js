@@ -2738,41 +2738,115 @@ async function _cadCheckAndExport(sec) {
       ncm:          p._ncm        || _cad.ncm,
       markup:       _cad.priceMode === 'markup' ? String(_cad.markup) : '',
     }));
-    const { result, newCount, existingCount } = await apiFetch('POST', '/api/cadastro-produto/check', { rows });
+    const { result } = await apiFetch('POST', '/api/cadastro-produto/check', { rows });
     _cad.checkResult = result;
 
     sec.querySelectorAll('tbody tr').forEach((tr, i) => {
-      const st = result[i]?._status || 'new';
+      const res = result[i] || {};
+      const st  = res._status || 'new';
       tr.style.opacity = st === 'existing' ? '.4' : '1';
+
       const td1 = tr.querySelector('td');
-      if (td1) td1.innerHTML = `<span class="cad-badge cad-badge-${st}">${st === 'new' ? 'NOVO' : '✓'}</span>`;
+      const isWarn = st === 'needs_cor' || st === 'needs_tam';
+      const label  = st === 'existing' ? '✓' : isWarn ? '?' : 'NOVO';
+      if (td1) td1.innerHTML = `<span class="cad-badge ${isWarn ? 'cad-badge-warn' : 'cad-badge-' + st}">${label}</span>`;
+
+      const tds = tr.querySelectorAll('td');
+
+      if (st === 'needs_cor' && res._corsDisponiveis?.length) {
+        const tdCor = tds[4];
+        if (tdCor) {
+          const orig = _cad.products[i]?.desc_cor || '';
+          tdCor.innerHTML = `<div class="cad-sku-map-hint">"${_escHtml(orig)}"</div>
+            <select class="cad-sku-sel" data-i="${i}" data-field="desc_cor">
+              <option value="">— cadastrar —</option>
+              ${res._corsDisponiveis.map(c => `<option value="${_escHtml(c)}">${_escHtml(c)}</option>`).join('')}
+            </select>`;
+        }
+      }
+
+      if (st === 'needs_tam' && res._tamsDisponiveis?.length) {
+        const tdTam = tds[5];
+        if (tdTam) {
+          const orig = _cad.products[i]?.desc_tamanho || '';
+          tdTam.innerHTML = `<div class="cad-sku-map-hint">"${_escHtml(orig)}"</div>
+            <select class="cad-sku-sel" data-i="${i}" data-field="desc_tamanho">
+              <option value="">— cadastrar —</option>
+              ${res._tamsDisponiveis.map(t => `<option value="${_escHtml(t)}">${_escHtml(t)}</option>`).join('')}
+            </select>`;
+        }
+      }
     });
 
-    const newRows = rows.filter((_, i) => result[i]?._status === 'new');
-    const actEl = sec.querySelector('.cad-prod-actions');
-    actEl.innerHTML = `
-      <div class="cad-summary-row" style="margin:0;flex:1">
-        <div class="cad-summary-card cad-summary-new" style="padding:.4rem .8rem;min-width:70px">
-          <span class="cad-summary-num">${newCount}</span><span class="cad-summary-lbl">novos</span>
-        </div>
-        <div class="cad-summary-card cad-summary-exists" style="padding:.4rem .8rem;min-width:70px">
-          <span class="cad-summary-num">${existingCount}</span><span class="cad-summary-lbl">já no Microvix</span>
-        </div>
-      </div>
-      ${newCount > 0
-        ? `<button class="trans-calc-btn" id="cadExportBtn">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 16 12 21 17 16"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
-            Baixar cadastro Microvix (${newCount} produtos)
-          </button>`
-        : `<span style="color:#3FB950;font-size:.8rem">✓ Todos já estão no Microvix</span>`}`;
+    sec.querySelectorAll('.cad-sku-sel').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const i   = +sel.dataset.i;
+        const fld = sel.dataset.field;
+        const val = sel.value;
+        if (_cad.products[i]) _cad.products[i][fld] = val;
+        const newSt = val ? 'existing' : 'new';
+        if (_cad.checkResult[i]) _cad.checkResult[i]._status = newSt;
+        const tr = sec.querySelector(`tr[data-idx="${i}"]`);
+        if (tr) {
+          tr.style.opacity = newSt === 'existing' ? '.4' : '1';
+          const td1 = tr.querySelector('td');
+          if (td1) td1.innerHTML = `<span class="cad-badge cad-badge-${newSt}">${newSt === 'new' ? 'NOVO' : '✓'}</span>`;
+        }
+        _cadUpdateExportActions(sec);
+      });
+    });
 
-    const eb = actEl.querySelector('#cadExportBtn');
-    if (eb) eb.addEventListener('click', () => _cadExport(eb, newRows));
+    _cadUpdateExportActions(sec);
   } catch (e) {
     toast('Erro: ' + e.message, true);
     btn.disabled = false;
     btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Verificar no Microvix`;
   }
+}
+
+function _cadUpdateExportActions(sec) {
+  const cr            = _cad.checkResult;
+  const newCount      = cr.filter(r => r?._status === 'new').length;
+  const existingCount = cr.filter(r => r?._status === 'existing').length;
+  const pendingCount  = cr.filter(r => r?._status === 'needs_cor' || r?._status === 'needs_tam').length;
+
+  const exportRows = _cad.products
+    .filter((_, i) => cr[i]?._status === 'new')
+    .map(p => ({
+      referencia:   p._ref_final  || p.referencia || '',
+      nome:         p._desc_final || p.nome       || '',
+      cod_barra:    p.cod_barra   || '',
+      desc_setor:   p.desc_setor  || '',
+      desc_cor:     p.desc_cor    || '',
+      desc_tamanho: p.desc_tamanho || '',
+      preco_custo:  p._custo      || '',
+      preco_venda:  p._preco      || '',
+      ncm:          p._ncm        || _cad.ncm,
+      markup:       _cad.priceMode === 'markup' ? String(_cad.markup) : '',
+    }));
+
+  const actEl = sec.querySelector('.cad-prod-actions');
+  actEl.innerHTML = `
+    <div class="cad-summary-row" style="margin:0;flex:1">
+      <div class="cad-summary-card cad-summary-new" style="padding:.4rem .8rem;min-width:70px">
+        <span class="cad-summary-num">${newCount}</span><span class="cad-summary-lbl">novos</span>
+      </div>
+      <div class="cad-summary-card cad-summary-exists" style="padding:.4rem .8rem;min-width:70px">
+        <span class="cad-summary-num">${existingCount}</span><span class="cad-summary-lbl">já no Microvix</span>
+      </div>
+      ${pendingCount > 0 ? `<div class="cad-summary-card cad-summary-warn" style="padding:.4rem .8rem;min-width:70px">
+        <span class="cad-summary-num">${pendingCount}</span><span class="cad-summary-lbl">mapear</span>
+      </div>` : ''}
+    </div>
+    ${newCount > 0
+      ? `<button class="trans-calc-btn" id="cadExportBtn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 16 12 21 17 16"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+          Baixar cadastro Microvix (${newCount} produtos)
+        </button>`
+      : `<span style="color:#3FB950;font-size:.8rem">✓ Todos já estão no Microvix</span>`}`;
+
+  const eb = actEl.querySelector('#cadExportBtn');
+  if (eb) eb.addEventListener('click', () => _cadExport(eb, exportRows));
 }
 
 async function _cadExport(btn, rows) {
