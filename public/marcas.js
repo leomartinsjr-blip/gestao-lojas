@@ -177,12 +177,15 @@ function render() {
   state.style.display = 'none';
   document.getElementById('errorBox').style.display = 'none';
 
-  if (viewMode === 'setor') renderPorSetor(marcas, totalValor);
-  else                      renderPorMarca(marcas, totalValor);
+  const [y1,mo1,d1] = (apiData.dtIni||'').split('-').map(Number);
+  const [y2,mo2,d2] = (apiData.dtFin||'').split('-').map(Number);
+  const periodDias  = (y1&&y2) ? Math.max(1, Math.round((new Date(y2,mo2-1,d2)-new Date(y1,mo1-1,d1))/86400000)+1) : 30;
+  if (viewMode === 'setor') renderPorSetor(marcas, totalValor, periodDias);
+  else                      renderPorMarca(marcas, totalValor, periodDias);
 }
 
 // ── Render Por Marca ──────────────────────────────────────────────────────────
-function renderPorMarca(marcas, totalValor) {
+function renderPorMarca(marcas, totalValor, periodDias) {
   const maxValor = marcas.length ? marcas[0].valor : 1;
   const list = document.getElementById('brandList');
 
@@ -200,15 +203,20 @@ function renderPorMarca(marcas, totalValor) {
     const colW    = n <= 3 ? 38 : n <= 4 ? 34 : n <= 5 ? 30 : 27;
     const colAttr = n ? ` style="--sb-col-w:${colW}px"` : '';
 
-    const stCols = (arr) => {
+    const stCols = (arr, clr) => {
       const m2 = {}; (arr || []).forEach(x => { m2[x.board] = x.qtd; });
-      return lojas.map(l => `<span class="mx-st-col">${m2[l.board] != null ? fNum(m2[l.board]) : '—'}</span>`).join('');
+      return lojas.map(l => `<span class="mx-st-col"${clr ? ` style="color:${clr}"` : ''}>${m2[l.board] != null ? fNum(m2[l.board]) : '—'}</span>`).join('');
     };
+
+    const stockTotal = lojas.reduce((s2, l) => s2 + l.qtd, 0);
+    const giro30m    = m.qtd * 30 / periodDias;
+    const cobM       = giro30m > 0 ? stockTotal / giro30m : null;
+    const cobClrM    = cobColor(cobM);
 
     const stBlock = n ? `
       <div class="mx-st-block">
-        <div class="mx-st-lbl-row">${lojas.map(l => `<span class="mx-st-col" style="color:${l.color}">${abbr(l.label)}</span>`).join('')}</div>
-        <div class="mx-st-tot-row">${lojas.map(l => `<span class="mx-st-col">${fNum(l.qtd)}</span>`).join('')}</div>
+        <div class="mx-st-lbl-row">${lojas.map(l => `<span class="mx-st-col" style="color:${l.color}">${abbr(l.label)}</span>`).join('')}<span class="mx-cob-lbl">cob</span></div>
+        <div class="mx-st-tot-row">${lojas.map(l => `<span class="mx-st-col"${cobClrM ? ` style="color:${cobClrM}"` : ''}>${fNum(l.qtd)}</span>`).join('')}${cobBadge(cobM)}</div>
       </div>` : '';
 
     // Refs de estoque por setor
@@ -216,10 +224,15 @@ function renderPorMarca(marcas, totalValor) {
     if (se) (se.setores || []).forEach(ss => { refsMap[ss.setor.toUpperCase()] = ss.refs; });
 
     const setoresHtml = (m.setores || []).map(s => {
-      const sKey     = m.marca + '\x00' + s.setor;
-      const sOpen    = expanded.has(sKey);
-      const pctMarca = m.valor > 0 ? ((s.valor / m.valor) * 100).toFixed(1) : '0.0';
-      const stSetor  = n ? `<div class="mx-st-setor">${stCols(ssMap[s.setor.toUpperCase()])}</div>` : '';
+      const sKey        = m.marca + '\x00' + s.setor;
+      const sOpen       = expanded.has(sKey);
+      const pctMarca    = m.valor > 0 ? ((s.valor / m.valor) * 100).toFixed(1) : '0.0';
+      const setorLojas  = ssMap[s.setor.toUpperCase()] || [];
+      const stockS      = setorLojas.reduce((sum, sl) => sum + (sl.qtd || 0), 0);
+      const giro30s     = s.qtd * 30 / periodDias;
+      const cobS        = giro30s > 0 ? stockS / giro30s : null;
+      const cobClrS     = cobColor(cobS);
+      const stSetor     = n ? `<div class="mx-st-setor">${stCols(setorLojas, cobClrS)}${cobBadge(cobS)}</div>` : '';
       return `
         <div class="mx-setor-row${sOpen ? ' open' : ''}" data-skey="${_esc(sKey)}">
           <div class="mx-setor-hdr">
@@ -230,7 +243,7 @@ function renderPorMarca(marcas, totalValor) {
             <span class="mx-setor-pct" title="% da marca">${pctMarca}%</span>
             ${stSetor}
           </div>
-          <div class="mx-setor-prods">${prodTable(s.produtos, refsMap[s.setor.toUpperCase()], lojas)}</div>
+          <div class="mx-setor-prods">${prodTable(s.produtos, refsMap[s.setor.toUpperCase()], lojas, periodDias)}</div>
         </div>`;
     }).join('');
 
@@ -260,7 +273,7 @@ function renderPorMarca(marcas, totalValor) {
 }
 
 // ── Render Por Setor ──────────────────────────────────────────────────────────
-function renderPorSetor(marcas, totalValor) {
+function renderPorSetor(marcas, totalValor, periodDias) {
   const setores  = buildSetorView(marcas);
   const maxValor = setores.length ? setores[0].valor : 1;
   const list     = document.getElementById('brandList');
@@ -285,8 +298,8 @@ function renderPorSetor(marcas, totalValor) {
   const n       = refLojas.length;
   const colW    = n <= 3 ? 38 : n <= 4 ? 34 : n <= 5 ? 30 : 27;
   const colAttr = n ? ` style="--sb-col-w:${colW}px"` : '';
-  const stCols  = bMap => refLojas.map(l =>
-    `<span class="mx-st-col">${bMap && bMap[l.board] != null ? fNum(bMap[l.board]) : '—'}</span>`
+  const stCols  = (bMap, clr) => refLojas.map(l =>
+    `<span class="mx-st-col"${clr ? ` style="color:${clr}"` : ''}>${bMap && bMap[l.board] != null ? fNum(bMap[l.board]) : '—'}</span>`
   ).join('');
 
   list.innerHTML = setores.map((s, i) => {
@@ -295,17 +308,27 @@ function renderPorSetor(marcas, totalValor) {
     const isOpen = expanded.has(s.setor);
     const se     = setorStock[s.setor.toUpperCase()];
 
+    const stockSTotal = se ? Object.values(se.totals).reduce((a, b) => a + b, 0) : 0;
+    const giro30s     = s.qtd * 30 / periodDias;
+    const cobS        = giro30s > 0 ? stockSTotal / giro30s : null;
+    const cobClrS     = cobColor(cobS);
+
     const stBlock = n ? `
       <div class="mx-st-block">
-        <div class="mx-st-lbl-row">${refLojas.map(l => `<span class="mx-st-col" style="color:${l.color}">${abbr(l.label)}</span>`).join('')}</div>
-        <div class="mx-st-tot-row">${stCols(se?.totals)}</div>
+        <div class="mx-st-lbl-row">${refLojas.map(l => `<span class="mx-st-col" style="color:${l.color}">${abbr(l.label)}</span>`).join('')}<span class="mx-cob-lbl">cob</span></div>
+        <div class="mx-st-tot-row">${stCols(se?.totals, cobClrS)}${cobBadge(cobS)}</div>
       </div>` : '';
 
     const marcasHtml = s.marcas.map(m => {
-      const mKey     = s.setor + '\x00' + m.marca;
-      const mOpen    = expanded.has(mKey);
-      const pctSetor = s.valor > 0 ? ((m.valor / s.valor) * 100).toFixed(1) : '0.0';
-      const stSetor  = n ? `<div class="mx-st-setor">${stCols(se?.byMarca[m.marca.toUpperCase()])}</div>` : '';
+      const mKey       = s.setor + '\x00' + m.marca;
+      const mOpen      = expanded.has(mKey);
+      const pctSetor   = s.valor > 0 ? ((m.valor / s.valor) * 100).toFixed(1) : '0.0';
+      const bMap       = se?.byMarca[m.marca.toUpperCase()];
+      const stockM     = bMap ? Object.values(bMap).reduce((a, b) => a + b, 0) : 0;
+      const giro30m    = m.qtd * 30 / periodDias;
+      const cobM       = giro30m > 0 ? stockM / giro30m : null;
+      const cobClrM    = cobColor(cobM);
+      const stSetor    = n ? `<div class="mx-st-setor">${stCols(bMap, cobClrM)}${cobBadge(cobM)}</div>` : '';
       const marcaEntry = stockData ? stockMap[m.marca.toUpperCase()] : null;
       const setorEntry = marcaEntry ? (marcaEntry.setores || []).find(ss => ss.setor.toUpperCase() === s.setor.toUpperCase()) : null;
       const stockRefs  = setorEntry ? setorEntry.refs : null;
@@ -319,7 +342,7 @@ function renderPorSetor(marcas, totalValor) {
             <span class="mx-setor-pct" title="% do setor">${pctSetor}%</span>
             ${stSetor}
           </div>
-          <div class="mx-setor-prods">${prodTable(m.produtos, stockRefs, refLojas)}</div>
+          <div class="mx-setor-prods">${prodTable(m.produtos, stockRefs, refLojas, periodDias)}</div>
         </div>`;
     }).join('');
 
@@ -356,6 +379,15 @@ function fK(v) {
 }
 const STORE_ABBR = { 'DEL REY': 'DR', 'MINAS': 'MNS', 'CONTAGEM': 'CTG', 'ESTAÇÃO': 'EST', 'TOMMY': 'TMY', 'LEZ A LEZ': 'LEZ' };
 function abbr(label) { return STORE_ABBR[label] || label.slice(0, 3).toUpperCase(); }
+function cobColor(cob) {
+  if (cob === null || cob === undefined || !isFinite(cob) || cob < 0) return null;
+  return cob < 4 ? '#f85149' : cob < 6 ? '#f97316' : '#3fb950';
+}
+function cobBadge(cob) {
+  const clr = cobColor(cob);
+  if (!clr) return '';
+  return `<span class="mx-cob" style="color:${clr}">${cob.toFixed(1)}m</span>`;
+}
 
 function stockBoxHtml(marca) {
   const empty = '<div class="mx-stock-box" style="display:flex;align-items:center;justify-content:center;min-height:60px"><span style="color:#21262d;font-size:.7rem">—</span></div>';
@@ -403,34 +435,39 @@ function stockBoxHtml(marca) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function prodTable(produtos, stockRefs, lojas) {
-  // stockRefs: [{ref, lojas:[{board,qtd}]}] — estoque por ref por loja
-  // lojas: [{board, label, color}] — colunas de loja a exibir
+function prodTable(produtos, stockRefs, lojas, periodDias) {
   const refStockMap = {};
   if (stockRefs) stockRefs.forEach(r => {
     const m = {};
     (r.lojas || []).forEach(l => { m[l.board] = l.qtd; });
-    refStockMap[r.ref.toUpperCase()] = m;
+    refStockMap[r.ref.toUpperCase()] = { bMap: m, total: r.totalQtd || Object.values(m).reduce((a,b)=>a+b,0) };
   });
   const hasStock = lojas && lojas.length > 0;
   const stHdr = hasStock
-    ? lojas.map(l => `<th class="mx-prod-tbl-st" style="color:${l.color}" title="${l.label}">${abbr(l.label)}</th>`).join('')
+    ? lojas.map(l => `<th class="mx-prod-tbl-st" style="color:${l.color}" title="${l.label}">${abbr(l.label)}</th>`).join('') + '<th class="mx-prod-tbl-st mx-cob-lbl">cob</th>'
     : '';
-  const stCells = (refKey) => {
-    if (!hasStock) return '';
-    const m = refStockMap[refKey] || {};
-    return lojas.map(l => `<td class="mx-prod-tbl-st">${m[l.board] != null ? fNum(m[l.board]) : '—'}</td>`).join('');
-  };
 
   const rows = (produtos || []).map((p, i) => {
-    const rkey = `r${i}`;
+    const rkey    = `r${i}`;
+    const rs      = refStockMap[p.ref.toUpperCase()];
+    const giro30r = periodDias ? p.qtd * 30 / periodDias : 0;
+    const cobR    = (rs && giro30r > 0) ? rs.total / giro30r : null;
+    const cobClrR = cobColor(cobR);
+
+    const stCells = hasStock ? (
+      lojas.map(l => {
+        const qty = rs ? (rs.bMap[l.board] ?? null) : null;
+        return `<td class="mx-prod-tbl-st"${cobClrR ? ` style="color:${cobClrR}"` : ''}>${qty != null ? fNum(qty) : '—'}</td>`;
+      }).join('') + `<td class="mx-prod-tbl-st">${cobR !== null ? `<span style="color:${cobClrR};font-weight:700">${cobR.toFixed(1)}m</span>` : '—'}</td>`
+    ) : '';
+
     const corRows = (p.cores || []).map(c => `
       <tr class="mx-cor-row" data-rkey="${rkey}">
         <td>${_esc(c.cor)}</td>
         <td></td>
         <td>${fNum(c.qtd)}</td>
         <td>${fBRL(c.valor)}</td>
-        ${hasStock ? lojas.map(() => '<td class="mx-prod-tbl-st">—</td>').join('') : ''}
+        ${hasStock ? lojas.map(() => '<td class="mx-prod-tbl-st">—</td>').join('') + '<td class="mx-prod-tbl-st">—</td>' : ''}
       </tr>`).join('');
     const hasCores = p.cores && p.cores.length > 0;
     return `
@@ -439,7 +476,7 @@ function prodTable(produtos, stockRefs, lojas) {
         <td>${_esc(p.nome)}</td>
         <td>${fNum(p.qtd)}</td>
         <td>${fBRL(p.valor)}</td>
-        ${stCells(p.ref.toUpperCase())}
+        ${stCells}
       </tr>${corRows}`;
   }).join('');
   return `<table class="mx-prod-tbl">
