@@ -2388,10 +2388,7 @@ async function renderCadastroProdView() {
     .then(list => { _cad.marcasMx = list || []; })
     .catch(() => { _cad.marcasMx = []; })
     .finally(() => { const s = body.querySelector('#cadMarcaSelect'); if (s) _cadPopulateMarcaSel(s); });
-  apiFetch('GET', '/api/cadastro-produto/colecoes-microvix')
-    .then(list => { _cad.colecoesMx = list || []; })
-    .catch(() => { _cad.colecoesMx = []; })
-    .finally(() => { const s = body.querySelector('#cadColecaoSelect'); if (s) _cadPopulateColecaoSel(s); });
+  _cad.colecoesMx = [];
   _cadRenderUpload(body);
 }
 
@@ -2477,16 +2474,6 @@ function _cadPopulateMarcaSel(sel) {
   if (cur) sel.value = cur;
 }
 
-function _cadPopulateColecaoSel(sel) {
-  if (!sel) return;
-  const list = _cad.colecoesMx;
-  if (list === null) { sel.innerHTML = `<option value="">Carregando…</option>`; return; }
-  if (!list.length)  { sel.innerHTML = `<option value="">Sem coleções no Microvix</option>`; return; }
-  const cur = _cad.colecao || '';
-  sel.innerHTML = `<option value="">— selecionar coleção —</option>` +
-    list.map(f => `<option value="${_escHtml(f.nome)}"${f.nome === cur ? ' selected' : ''}>${_escHtml(f.nome)}</option>`).join('');
-  if (cur) sel.value = cur;
-}
 
 async function _cadParseFile(body) {
   const content = body.querySelector('#cadContent');
@@ -2582,9 +2569,7 @@ function _cadRenderConfigAndMapping(content) {
           <div class="cad-form-row">
             <div class="cad-form-field">
               <label class="cad-field-label">Coleção <span class="cad-required">*</span></label>
-              <select id="cadColecaoSelect" class="cad-input" style="cursor:pointer">
-                <option value="">— carregando coleções… —</option>
-              </select>
+              <input type="text" id="cadColecao" class="cad-input" placeholder="Ex: Verão 2026" value="${_escHtml(_cad.colecao)}">
             </div>
             <div class="cad-form-field">
               <label class="cad-field-label">Setor</label>
@@ -2674,12 +2659,7 @@ function _cadRenderConfigAndMapping(content) {
     });
   });
 
-  // Populate coleção select (may already be loaded, or still loading)
-  const colSel = content.querySelector('#cadColecaoSelect');
-  _cadPopulateColecaoSel(colSel);
-  colSel.addEventListener('change', () => { _cad.colecao = colSel.value; });
-
-  const binds = { cadSetor:'setor', cadModeloRef:'modeloRef',
+  const binds = { cadColecao:'colecao', cadSetor:'setor', cadModeloRef:'modeloRef',
                   cadModeloDesc:'modeloDesc', cadNcm:'ncm', cadMarkup:'markup', cadManualPrice:'manualPrice' };
   Object.entries(binds).forEach(([id, key]) => {
     const el = content.querySelector('#' + id);
@@ -2699,8 +2679,7 @@ function _cadRenderConfigAndMapping(content) {
     _cad.mapping = {};
     content.querySelectorAll('.cad-map-select').forEach(sel => { if (sel.value) _cad.mapping[sel.dataset.mx] = sel.value; });
     if (!_cad.mapping.referencia && !_cad.mapping.nome) { toast('Mapeie pelo menos Referência ou Nome', true); return; }
-    _cad.colecao = (content.querySelector('#cadColecaoSelect')?.value || _cad.colecao || '').trim();
-    if (!_cad.colecao) { toast('Selecione uma Coleção', true); return; }
+    if (!_cad.colecao.trim()) { toast('Campo Coleção é obrigatório', true); return; }
     _cad.products = _cadBuildProducts();
     if (!_cad.products.length) { toast('Nenhum produto encontrado com o mapeamento atual', true); return; }
     const sec = content.nextElementSibling;
