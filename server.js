@@ -3931,12 +3931,31 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
     if (!Array.isArray(rows)) return res.status(400).json({ error: 'rows deve ser array' });
     const lojas   = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const catalog = await _getCatalog(lojas).catch(() => ({}));
-    const result  = rows.map(r => {
-      const ref   = (r.referencia || '').trim().toUpperCase();
-      const barra = (r.cod_barra  || '').trim();
-      const found = catalog[ref] || catalog[r.referencia] || (barra ? catalog[barra] : null);
-      return { ...r, _status: found ? 'existing' : 'new' };
+
+    // Índice composto ref|cor|tam de todas as entradas do catálogo
+    const norm = s => (s || '').toString().trim().toUpperCase();
+    const skuSet = new Set();
+    const barraSet = new Set();
+    for (const entry of Object.values(catalog)) {
+      if (entry.referencia) {
+        const key = `${norm(entry.referencia)}|${norm(entry.desc_cor)}|${norm(entry.desc_tam)}`;
+        skuSet.add(key);
+      }
+      // cod_barra como chave direta (para produtos que vieram só com barra)
+    }
+    // Barras diretas do catálogo (chaves de 8+ dígitos numéricos)
+    for (const k of Object.keys(catalog)) {
+      if (/^\d{8,}$/.test(k)) barraSet.add(k);
+    }
+
+    const result = rows.map(r => {
+      const barra = norm(r.cod_barra);
+      if (barra && barraSet.has(barra)) return { ...r, _status: 'existing' };
+
+      const key = `${norm(r.referencia)}|${norm(r.desc_cor)}|${norm(r.desc_tamanho)}`;
+      return { ...r, _status: skuSet.has(key) ? 'existing' : 'new' };
     });
+
     res.json({ result, newCount: result.filter(r => r._status === 'new').length, existingCount: result.filter(r => r._status === 'existing').length });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
