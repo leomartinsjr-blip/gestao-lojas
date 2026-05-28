@@ -211,6 +211,10 @@ function renderPorMarca(marcas, totalValor) {
         <div class="mx-st-tot-row">${lojas.map(l => `<span class="mx-st-col">${fNum(l.qtd)}</span>`).join('')}</div>
       </div>` : '';
 
+    // Refs de estoque por setor
+    const refsMap = {};
+    if (se) (se.setores || []).forEach(ss => { refsMap[ss.setor.toUpperCase()] = ss.refs; });
+
     const setoresHtml = (m.setores || []).map(s => {
       const sKey     = m.marca + '\x00' + s.setor;
       const sOpen    = expanded.has(sKey);
@@ -226,7 +230,7 @@ function renderPorMarca(marcas, totalValor) {
             <span class="mx-setor-pct" title="% da marca">${pctMarca}%</span>
             ${stSetor}
           </div>
-          <div class="mx-setor-prods">${prodTable(s.produtos)}</div>
+          <div class="mx-setor-prods">${prodTable(s.produtos, refsMap[s.setor.toUpperCase()], lojas)}</div>
         </div>`;
     }).join('');
 
@@ -302,6 +306,9 @@ function renderPorSetor(marcas, totalValor) {
       const mOpen    = expanded.has(mKey);
       const pctSetor = s.valor > 0 ? ((m.valor / s.valor) * 100).toFixed(1) : '0.0';
       const stSetor  = n ? `<div class="mx-st-setor">${stCols(se?.byMarca[m.marca.toUpperCase()])}</div>` : '';
+      const marcaEntry = stockData ? stockMap[m.marca.toUpperCase()] : null;
+      const setorEntry = marcaEntry ? (marcaEntry.setores || []).find(ss => ss.setor.toUpperCase() === s.setor.toUpperCase()) : null;
+      const stockRefs  = setorEntry ? setorEntry.refs : null;
       return `
         <div class="mx-setor-row${mOpen ? ' open' : ''}" data-skey="${_esc(mKey)}">
           <div class="mx-setor-hdr">
@@ -312,7 +319,7 @@ function renderPorSetor(marcas, totalValor) {
             <span class="mx-setor-pct" title="% do setor">${pctSetor}%</span>
             ${stSetor}
           </div>
-          <div class="mx-setor-prods">${prodTable(m.produtos)}</div>
+          <div class="mx-setor-prods">${prodTable(m.produtos, stockRefs, refLojas)}</div>
         </div>`;
     }).join('');
 
@@ -396,7 +403,25 @@ function stockBoxHtml(marca) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-function prodTable(produtos) {
+function prodTable(produtos, stockRefs, lojas) {
+  // stockRefs: [{ref, lojas:[{board,qtd}]}] — estoque por ref por loja
+  // lojas: [{board, label, color}] — colunas de loja a exibir
+  const refStockMap = {};
+  if (stockRefs) stockRefs.forEach(r => {
+    const m = {};
+    (r.lojas || []).forEach(l => { m[l.board] = l.qtd; });
+    refStockMap[r.ref.toUpperCase()] = m;
+  });
+  const hasStock = lojas && lojas.length > 0;
+  const stHdr = hasStock
+    ? lojas.map(l => `<th class="mx-prod-tbl-st" style="color:${l.color}" title="${l.label}">${abbr(l.label)}</th>`).join('')
+    : '';
+  const stCells = (refKey) => {
+    if (!hasStock) return '';
+    const m = refStockMap[refKey] || {};
+    return lojas.map(l => `<td class="mx-prod-tbl-st">${m[l.board] != null ? fNum(m[l.board]) : '—'}</td>`).join('');
+  };
+
   const rows = (produtos || []).map((p, i) => {
     const rkey = `r${i}`;
     const corRows = (p.cores || []).map(c => `
@@ -405,6 +430,7 @@ function prodTable(produtos) {
         <td></td>
         <td>${fNum(c.qtd)}</td>
         <td>${fBRL(c.valor)}</td>
+        ${hasStock ? lojas.map(() => '<td class="mx-prod-tbl-st">—</td>').join('') : ''}
       </tr>`).join('');
     const hasCores = p.cores && p.cores.length > 0;
     return `
@@ -413,10 +439,11 @@ function prodTable(produtos) {
         <td>${_esc(p.nome)}</td>
         <td>${fNum(p.qtd)}</td>
         <td>${fBRL(p.valor)}</td>
+        ${stCells(p.ref.toUpperCase())}
       </tr>${corRows}`;
   }).join('');
   return `<table class="mx-prod-tbl">
-    <thead><tr><th>Referência</th><th>Nome</th><th>Peças</th><th>R$ Valor</th></tr></thead>
+    <thead><tr><th>Referência</th><th>Nome</th><th>Peças</th><th>R$ Valor</th>${stHdr}</tr></thead>
     <tbody>${rows}</tbody>
   </table>`;
 }
