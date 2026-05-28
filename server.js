@@ -4293,21 +4293,34 @@ app.get('/indeva', (req, res) => res.sendFile(path.join(__dirname, 'public/indev
 
 // ── Contas a Pagar — LinxFaturas ──────────────────────────────────────────
 
-// Busca todas as faturas de uma loja via LinxFaturas (máx 5000/chamada)
+// Busca todas as faturas de uma loja via LinxFaturas com paginação por timestamp
+// (máx 5000/chamada — itera até receber página incompleta)
 async function _fetchFaturas(cnpj, chave, dtIni, dtFin) {
   const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
-  const params = [
-    { id: 'data_inicial', valor: dtIni },
-    { id: 'data_fim',     valor: dtFin  },
-  ];
-  const body = buildRequest('LinxFaturas', cnpj, params, chave);
-  const raw  = await postRequest(body, 30_000);
-  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
-    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro Microvix';
-    throw new Error(msg);
+  const all = [];
+  let ts = 0;
+  for (let page = 0; page < 20; page++) {
+    const params = [
+      { id: 'data_inicial', valor: dtIni },
+      { id: 'data_fim',     valor: dtFin },
+      { id: 'timestamp',    valor: String(ts) },
+    ];
+    const body = buildRequest('LinxFaturas', cnpj, params, chave);
+    const raw  = await postRequest(body, 60_000);
+    if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+      const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro Microvix';
+      throw new Error(msg);
+    }
+    if (raw.trim().startsWith('<')) throw new Error('Resposta XML inesperada: ' + raw.slice(0, 200));
+    const rows = parseCsv(raw);
+    if (!rows.length) break;
+    all.push(...rows);
+    if (rows.length < 5000) break;
+    const maxTs = Math.max(...rows.map(r => parseInt(r.timestamp) || 0));
+    if (maxTs <= ts) break;
+    ts = maxTs;
   }
-  if (raw.trim().startsWith('<')) throw new Error('Resposta XML inesperada: ' + raw.slice(0, 200));
-  return parseCsv(raw);
+  return all;
 }
 
 // Normaliza linha do LinxFaturas para formato interno
@@ -4448,9 +4461,8 @@ app.get('/contas-pagar', (req, res) => res.sendFile(path.join(__dirname, 'public
 app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
   try {
     const today = new Date().toISOString().slice(0, 10);
-    // Busca sempre desde 01/01 do ano atual para capturar faturas emitidas
-    // em meses anteriores mas com vencimento no período selecionado
-    const dtIni = `${today.slice(0, 4)}-01-01`;
+    // Busca desde 2020 para capturar parcelamentos longos (ex: Simples Nacional 111x)
+    const dtIni = '2020-01-01';
     const dtFin = req.body?.ate || today;
 
     const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
@@ -5128,7 +5140,7 @@ initMongo()
     if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
       cron.schedule('0 7 * * *', async () => {
         const today  = new Date().toISOString().slice(0, 10);
-        const dtIni  = `${today.slice(0, 4)}-01-01`;
+        const dtIni  = '2020-01-01';
         const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
         const boards = Object.entries(lojas);
         console.log(`[ContasPagar] Sync diário ${dtIni} → ${today} (${boards.length} loja(s))`);
