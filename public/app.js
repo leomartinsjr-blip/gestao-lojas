@@ -2259,9 +2259,6 @@ const TAMS_NUM   = ['33','34','35','36','37','38','39','40','41','42','43','44',
 
 const _cad = {
   file: null, headers: [], rawRows: [], mapping: {},
-  fornecedoresMx: null, fornecedor: null,   // null=carregando, []=vazio, [...]= ok
-  marcasMx: null,       marca: null,
-  colecoesMx: null,     colecao: '',
   setor: '', modeloRef: '{REF}', modeloDesc: '{NOME}',
   priceMode: 'markup', markup: 100, manualPrice: '',
   ncm: '', products: [], checkResult: [],
@@ -2361,13 +2358,12 @@ function _cadBuildProducts() {
     const txt = (p.referencia || '') + ' ' + (p.nome || '');
     const cor = p.desc_cor || _cadExtractCor(txt);
     const tam = p.desc_tamanho || _cadExtractTam(txt) || 'Único';
-    const marca = p.desc_marca || _cad.marca?.nome || '';
     const custo = p.preco_custo || '';
     const precoAuto = (p.preco_venda && _cad.priceMode === 'auto') ? p.preco_venda : _cadCalcPreco(custo);
     return {
-      ...p, desc_cor: cor, desc_tamanho: tam, desc_marca: marca,
-      _ref_final:  _cadApplyTemplate(_cad.modeloRef,  { ...p, desc_cor: cor, desc_tamanho: tam, desc_marca: marca }),
-      _desc_final: _cadApplyTemplate(_cad.modeloDesc, { ...p, desc_cor: cor, desc_tamanho: tam, desc_marca: marca }),
+      ...p, desc_cor: cor, desc_tamanho: tam,
+      _ref_final:  _cadApplyTemplate(_cad.modeloRef,  { ...p, desc_cor: cor, desc_tamanho: tam }),
+      _desc_final: _cadApplyTemplate(_cad.modeloDesc, { ...p, desc_cor: cor, desc_tamanho: tam }),
       _custo: custo, _preco: precoAuto, _ncm: _cad.ncm,
     };
   }).filter(Boolean);
@@ -2380,15 +2376,6 @@ async function renderCadastroProdView() {
     'Cadastro de Produto'
   );
   const body = document.getElementById('transBody');
-  apiFetch('GET', '/api/cadastro-produto/fornecedores-microvix')
-    .then(list => { _cad.fornecedoresMx = list || []; })
-    .catch(() => { _cad.fornecedoresMx = []; })
-    .finally(() => { const s = body.querySelector('#cadFornSelect'); if (s) _cadPopulateFornSel(s); });
-  apiFetch('GET', '/api/cadastro-produto/marcas-microvix')
-    .then(list => { _cad.marcasMx = list || []; })
-    .catch(() => { _cad.marcasMx = []; })
-    .finally(() => { const s = body.querySelector('#cadMarcaSelect'); if (s) _cadPopulateMarcaSel(s); });
-  _cad.colecoesMx = [];
   _cadRenderUpload(body);
 }
 
@@ -2398,50 +2385,21 @@ function _cadRenderUpload(body) {
     <div class="cad-panel">
       <div class="cad-top-row">
         <div class="cad-field-group">
-          <label class="cad-field-label">Fornecedor (Microvix)</label>
-          <select id="cadFornSelect" class="cad-select" style="min-width:200px">
-            <option value="">Carregando…</option>
-          </select>
-        </div>
-        <div class="cad-field-group">
-          <label class="cad-field-label">Marca (Microvix)</label>
-          <select id="cadMarcaSelect" class="cad-select" style="min-width:160px">
-            <option value="">Carregando…</option>
-          </select>
-        </div>
-        <div class="cad-field-group">
-          <label class="cad-field-label">Arquivo do pedido (.xls, .xlsx, .pdf)</label>
-          <label class="trans-excel-upload-btn" style="min-width:200px">
+          <label class="cad-field-label">Arquivo do pedido do fornecedor (.xls, .xlsx, .pdf)</label>
+          <label class="trans-excel-upload-btn" style="min-width:280px">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             <span id="cadFileName">${fname}</span>
             <input type="file" id="cadFileInput" accept=".xls,.xlsx,.pdf" style="display:none">
           </label>
         </div>
-        <button class="trans-calc-btn" id="cadAnalyzeBtn" ${_cad.file ? '' : 'disabled'}>
+        <button class="trans-calc-btn" id="cadAnalyzeBtn" ${_cad.file ? '' : 'disabled'} style="align-self:flex-end">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          Analisar
+          Analisar arquivo
         </button>
       </div>
+      <div class="cad-hint" style="margin-top:.5rem;color:var(--muted)">Fornecedor, marca, coleção e formato de código de barras são informados diretamente na tela de importação do Microvix.</div>
       <div id="cadContent" style="margin-top:1.25rem"></div>
     </div>`;
-
-  const fornSel = body.querySelector('#cadFornSelect');
-  _cadPopulateFornSel(fornSel);
-  fornSel.addEventListener('change', () => {
-    const cod = fornSel.value;
-    _cad.fornecedor = _cad.fornecedoresMx.find(f => f.cod === cod) ||
-      (cod ? { cod, nome: fornSel.options[fornSel.selectedIndex]?.text || cod } : null);
-  });
-  if (_cad.fornecedor) fornSel.value = _cad.fornecedor.cod;
-
-  const marcaSel = body.querySelector('#cadMarcaSelect');
-  _cadPopulateMarcaSel(marcaSel);
-  marcaSel.addEventListener('change', () => {
-    const cod = marcaSel.value;
-    _cad.marca = _cad.marcasMx.find(f => f.cod === cod) ||
-      (cod ? { cod, nome: marcaSel.options[marcaSel.selectedIndex]?.text || cod } : null);
-  });
-  if (_cad.marca) marcaSel.value = _cad.marca.cod;
 
   const fi = body.querySelector('#cadFileInput');
   fi.addEventListener('change', () => {
@@ -2450,28 +2408,6 @@ function _cadRenderUpload(body) {
     body.querySelector('#cadAnalyzeBtn').disabled = !_cad.file;
   });
   body.querySelector('#cadAnalyzeBtn').addEventListener('click', () => _cadParseFile(body));
-}
-
-function _cadPopulateFornSel(sel) {
-  if (!sel) return;
-  const list = _cad.fornecedoresMx;
-  if (list === null) { sel.innerHTML = `<option value="">Carregando…</option>`; return; }
-  if (!list.length)  { sel.innerHTML = `<option value="">Sem fornecedores no Microvix</option>`; return; }
-  const cur = _cad.fornecedor?.cod || '';
-  sel.innerHTML = `<option value="">— selecionar fornecedor —</option>` +
-    list.map(f => `<option value="${_escHtml(f.cod)}"${f.cod === cur ? ' selected' : ''}>${_escHtml(f.nome)}</option>`).join('');
-  if (cur) sel.value = cur;
-}
-
-function _cadPopulateMarcaSel(sel) {
-  if (!sel) return;
-  const list = _cad.marcasMx;
-  if (list === null) { sel.innerHTML = `<option value="">Carregando…</option>`; return; }
-  if (!list.length)  { sel.innerHTML = `<option value="">Sem marcas no Microvix</option>`; return; }
-  const cur = _cad.marca?.cod || '';
-  sel.innerHTML = `<option value="">— selecionar marca —</option>` +
-    list.map(f => `<option value="${_escHtml(f.cod)}"${f.cod === cur ? ' selected' : ''}>${_escHtml(f.nome)}</option>`).join('');
-  if (cur) sel.value = cur;
 }
 
 
@@ -2567,16 +2503,9 @@ function _cadRenderConfigAndMapping(content) {
         </div>
         <div class="cad-config-form">
           <div class="cad-form-row">
-            <div class="cad-form-field">
-              <label class="cad-field-label">Coleção <span class="cad-required">*</span></label>
-              <input type="text" id="cadColecao" class="cad-input" placeholder="Ex: Verão 2026" value="${_escHtml(_cad.colecao)}">
-            </div>
-            <div class="cad-form-field">
-              <label class="cad-field-label">Setor</label>
-              <div style="display:flex;align-items:center;gap:.5rem">
-                <span class="cad-badge cad-badge-new" style="font-size:.7rem;padding:.2rem .5rem">auto</span>
-                <input type="text" id="cadSetor" class="cad-input" value="${_escHtml(_cad.setor)}" placeholder="Ex: Moda Masculina">
-              </div>
+            <div class="cad-form-field cad-form-wide">
+              <label class="cad-field-label">Setor <span style="color:var(--muted);font-weight:400">(detectado automaticamente)</span></label>
+              <input type="text" id="cadSetor" class="cad-input" value="${_escHtml(_cad.setor)}" placeholder="Ex: Moda Masculina">
             </div>
           </div>
 
@@ -2659,7 +2588,7 @@ function _cadRenderConfigAndMapping(content) {
     });
   });
 
-  const binds = { cadColecao:'colecao', cadSetor:'setor', cadModeloRef:'modeloRef',
+  const binds = { cadSetor:'setor', cadModeloRef:'modeloRef',
                   cadModeloDesc:'modeloDesc', cadNcm:'ncm', cadMarkup:'markup', cadManualPrice:'manualPrice' };
   Object.entries(binds).forEach(([id, key]) => {
     const el = content.querySelector('#' + id);
@@ -2679,7 +2608,6 @@ function _cadRenderConfigAndMapping(content) {
     _cad.mapping = {};
     content.querySelectorAll('.cad-map-select').forEach(sel => { if (sel.value) _cad.mapping[sel.dataset.mx] = sel.value; });
     if (!_cad.mapping.referencia && !_cad.mapping.nome) { toast('Mapeie pelo menos Referência ou Nome', true); return; }
-    if (!_cad.colecao.trim()) { toast('Campo Coleção é obrigatório', true); return; }
     _cad.products = _cadBuildProducts();
     if (!_cad.products.length) { toast('Nenhum produto encontrado com o mapeamento atual', true); return; }
     const sec = content.nextElementSibling;
@@ -2716,7 +2644,7 @@ function _cadRenderProdSection(sec) {
     <div class="cad-section-header" style="margin-bottom:.75rem">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
       Produtos extraídos
-      <span class="cad-section-sub">${prods.length} itens · Coleção: ${_escHtml(_cad.colecao)} · Setor: ${_escHtml(_cad.setor)} · Marca: ${_escHtml(_cad.marca?.nome || '—')}</span>
+      <span class="cad-section-sub">${prods.length} itens · Setor: ${_escHtml(_cad.setor || '—')}</span>
     </div>
     <div style="overflow-x:auto">
       <table class="trans-table">
@@ -2724,7 +2652,6 @@ function _cadRenderProdSection(sec) {
           <th class="trans-th" style="width:28px">#</th>
           <th class="trans-th">Referência</th>
           <th class="trans-th">Descrição (Microvix)</th>
-          <th class="trans-th">Marca</th>
           <th class="trans-th">Cor</th>
           <th class="trans-th">Tam.</th>
           <th class="trans-th">Custo c/ICMS</th>
@@ -2737,7 +2664,6 @@ function _cadRenderProdSection(sec) {
             <td class="trans-td" style="color:var(--muted);font-size:.7rem">${i+1}</td>
             <td class="trans-td"><input class="cad-ci" data-f="_ref_final"  data-i="${i}" value="${_escHtml(p._ref_final)}"></td>
             <td class="trans-td"><input class="cad-ci" data-f="_desc_final" data-i="${i}" value="${_escHtml(p._desc_final)}" style="min-width:180px"></td>
-            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_marca"   data-i="${i}" value="${_escHtml(p.desc_marca)}" style="width:100px"></td>
             <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_cor"     data-i="${i}" value="${_escHtml(p.desc_cor)}"></td>
             <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_tamanho" data-i="${i}" value="${_escHtml(p.desc_tamanho)}"></td>
             <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="_custo"        data-i="${i}" value="${_escHtml(p._custo)}"></td>
@@ -2771,18 +2697,15 @@ async function _cadCheckAndExport(sec) {
   sec.querySelectorAll('.cad-ci').forEach(inp => { if (_cad.products[+inp.dataset.i]) _cad.products[+inp.dataset.i][inp.dataset.f] = inp.value; });
   try {
     const rows = _cad.products.map(p => ({
-      referencia:  p._ref_final  || p.referencia || '',
-      nome:        p._desc_final || p.nome       || '',
-      cod_barra:   p.cod_barra   || '',
-      desc_marca:  p.desc_marca  || '',
-      desc_setor:  _cad.setor,
-      desc_cor:    p.desc_cor    || '',
+      referencia:   p._ref_final  || p.referencia || '',
+      nome:         p._desc_final || p.nome       || '',
+      cod_barra:    p.cod_barra   || '',
+      desc_setor:   _cad.setor    || '',
+      desc_cor:     p.desc_cor    || '',
       desc_tamanho: p.desc_tamanho || '',
-      preco_custo:  p._custo     || '',
-      preco_venda:  p._preco     || '',
-      ncm:          p._ncm       || _cad.ncm,
-      colecao:      _cad.colecao,
-      fornecedor:   _cad.fornecedor?.nome || '',
+      preco_custo:  p._custo      || '',
+      preco_venda:  p._preco      || '',
+      ncm:          p._ncm        || _cad.ncm,
       markup:       _cad.priceMode === 'markup' ? String(_cad.markup) : '',
     }));
     const { result, newCount, existingCount } = await apiFetch('POST', '/api/cadastro-produto/check', { rows });
@@ -2825,7 +2748,7 @@ async function _cadCheckAndExport(sec) {
 async function _cadExport(btn, rows) {
   btn.disabled = true; btn.textContent = 'Gerando…';
   try {
-    const payload = rows.map(r => ({ ...r, colecao: _cad.colecao, fornecedor: _cad.fornecedor?.nome || r.fornecedor || '' }));
+    const payload = rows;
     const res = await fetch('/api/cadastro-produto/export', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ rows: payload }),

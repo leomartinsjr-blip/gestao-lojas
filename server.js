@@ -3949,23 +3949,20 @@ app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Produtos');
     ws.columns = [
-      { header: 'Descrição',                    key: 'descricao',   width: 45 },
-      { header: 'Referência',                   key: 'referencia',  width: 20 },
-      { header: 'Fornecedor',                   key: 'fornecedor',  width: 30 },
+      { header: 'Descrição',                    key: 'descricao',   width: 50 },
+      { header: 'Referência',                   key: 'referencia',  width: 22 },
       { header: 'Contabiliza saldo em estoque', key: 'contabiliza', width: 28 },
-      { header: 'Setor',                        key: 'setor',       width: 20 },
+      { header: 'Setor',                        key: 'setor',       width: 22 },
       { header: 'Linha',                        key: 'linha',       width: 12 },
-      { header: 'Marca',                        key: 'marca',       width: 20 },
-      { header: 'Coleção',                      key: 'colecao',     width: 18 },
       { header: 'Tamanho',                      key: 'tamanho',     width: 12 },
-      { header: 'Cores',                        key: 'cores',       width: 15 },
+      { header: 'Cores',                        key: 'cores',       width: 16 },
       { header: 'Unidade de venda',             key: 'unidade',     width: 15 },
       { header: 'Custo com ICMS (R$)',           key: 'custo_icms',  width: 18 },
       { header: 'Mark-up (%)',                  key: 'markup',      width: 12 },
       { header: 'Preço de venda R$',            key: 'preco_venda', width: 16 },
       { header: 'NCM',                          key: 'ncm',         width: 14 },
       { header: 'Tipo de item',                 key: 'tipo_item',   width: 25 },
-      { header: 'Código de barras',             key: 'cod_barra',   width: 20 },
+      { header: 'Código de barras',             key: 'cod_barra',   width: 22 },
     ];
     ws.getRow(1).eachCell(cell => {
       cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0D1117' } };
@@ -3977,12 +3974,9 @@ app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
     rows.forEach(r => ws.addRow({
       descricao:   r.nome         || '',
       referencia:  r.referencia   || '',
-      fornecedor:  r.fornecedor   || '',
       contabiliza: 'Sim',
       setor:       r.desc_setor   || '',
       linha:       'Unisex',
-      marca:       r.desc_marca   || '',
-      colecao:     r.colecao      || '',
       tamanho:     r.desc_tamanho || '',
       cores:       r.desc_cor     || '',
       unidade:     'UN',
