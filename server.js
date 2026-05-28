@@ -165,28 +165,55 @@ async function writeDB(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
 }
 
-async function readContasPagar() {
+// Cada fatura = documento individual em cpFaturas; meta em cpMeta.
+// Isso evita acumular tudo em memória e mantém o store principal leve.
+async function readContasPagar(dtIni, dtFin) {
   if (mongoDb) {
-    const doc = await mongoDb.collection('contasPagar').findOne({ _id: 'main' });
-    if (!doc) return { rows: [], syncedAt: null, dtIni: null, dtFin: null, errors: [] };
-    const { _id, ...data } = doc;
-    return data;
+    const query = {};
+    if (dtIni || dtFin) {
+      query.vencimento = {};
+      if (dtIni) query.vencimento.$gte = dtIni;
+      if (dtFin) query.vencimento.$lte = dtFin;
+    }
+    const [rows, meta] = await Promise.all([
+      mongoDb.collection('cpFaturas').find(query).toArray(),
+      mongoDb.collection('cpMeta').findOne({ _id: 'main' }),
+    ]);
+    const { _id, ...m } = meta || {};
+    return { rows, syncedAt: m.syncedAt || null, dtIni: m.dtIni, dtFin: m.dtFin, errors: m.errors || [] };
   }
   const db = await readDB();
-  return db.contasPagar || { rows: [], syncedAt: null, dtIni: null, dtFin: null, errors: [] };
+  const cp = db.contasPagar || { rows: [], syncedAt: null };
+  const rows = (cp.rows || []).filter(r => {
+    if (!dtIni && !dtFin) return true;
+    if (!r.vencimento) return true;
+    if (dtIni && r.vencimento < dtIni) return false;
+    if (dtFin && r.vencimento > dtFin) return false;
+    return true;
+  });
+  return { ...cp, rows };
 }
 
-async function writeContasPagar(data) {
+async function writeContasPagarBoard(board, rows) {
   if (mongoDb) {
-    await mongoDb.collection('contasPagar').replaceOne(
+    await mongoDb.collection('cpFaturas').deleteMany({ board });
+    if (rows.length) await mongoDb.collection('cpFaturas').insertMany(rows);
+    return;
+  }
+  // sem MongoDB: acumula no chamador para write único no JSON
+}
+
+async function writeContasPagarMeta(meta) {
+  if (mongoDb) {
+    await mongoDb.collection('cpMeta').replaceOne(
       { _id: 'main' },
-      { _id: 'main', ...data },
+      { _id: 'main', ...meta },
       { upsert: true }
     );
     return;
   }
   const db = await readDB();
-  db.contasPagar = data;
+  db.contasPagar = { ...(db.contasPagar || {}), ...meta };
   await writeDB(db);
 }
 
@@ -4421,19 +4448,11 @@ function _parseMxDate(s) {
 app.get('/api/contas-pagar', requireAdmin, async (req, res) => {
   try {
     const today = new Date().toISOString().slice(0, 10);
-    const cp    = await readContasPagar();
-    const rows  = cp.rows || [];
-
-    const dtIni = req.query.de  || cp.dtIni || today.slice(0, 7) + '-01';
-    const dtFin = req.query.ate || cp.dtFin || today;
-
-    const items = rows.filter(r => {
-      if (!r.vencimento) return true;
-      return r.vencimento >= dtIni && r.vencimento <= dtFin;
-    });
-
-    items.sort((a, b) => (a.vencimento || '').localeCompare(b.vencimento || ''));
-    res.json({ items, errors: [], dtIni, dtFin, syncedAt: cp.syncedAt || null, totalCached: rows.length });
+    const dtIni = req.query.de  || today;
+    const dtFin = req.query.ate || today;
+    const cp    = await readContasPagar(dtIni, dtFin);
+    const items = (cp.rows || []).sort((a, b) => (a.vencimento || '').localeCompare(b.vencimento || ''));
+    res.json({ items, errors: [], dtIni, dtFin, syncedAt: cp.syncedAt || null });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -4484,26 +4503,31 @@ app.get('/contas-pagar', (req, res) => res.sendFile(path.join(__dirname, 'public
 // ── POST /api/contas-pagar/sync — busca faturas via LinxFaturas ───────────
 app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
   try {
-    const today = new Date().toISOString().slice(0, 10);
-    // Busca desde 2020 para capturar parcelamentos longos (ex: Simples Nacional 111x)
-    const dtIni = '2020-01-01';
-    const dtFin = req.body?.ate || today;
-
+    const today  = new Date().toISOString().slice(0, 10);
+    const dtIni  = '2020-01-01'; // cobre parcelamentos longos (ex: Simples Nacional 111x)
+    const dtFin  = req.body?.ate || today;
     const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-    const boards  = Object.entries(lojas);
-
-    const allRows = [];
-    const errors  = [];
+    const boards = Object.entries(lojas);
+    const errors = [];
+    let   total  = 0;
+    const fallbackRows = []; // usado só sem MongoDB
 
     for (const [board, cnpj] of boards) {
       const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-      const loja  = board;
       try {
-        const rows = await _fetchFaturas(cnpj, chave, dtIni, dtFin);
-        for (const r of rows) {
-          const fat = _normalizeFatura(r, loja, board, today);
-          if (fat && fat.isPagar) allRows.push(fat);
+        const raw  = await _fetchFaturas(cnpj, chave, dtIni, dtFin);
+        const rows = [];
+        for (const r of raw) {
+          const fat = _normalizeFatura(r, board, board, today);
+          if (fat && fat.isPagar) rows.push(fat);
         }
+        total += rows.length;
+        if (mongoDb) {
+          await writeContasPagarBoard(board, rows);
+        } else {
+          fallbackRows.push(...rows);
+        }
+        console.log(`[contasPagar/sync] ${board}: ${rows.length} faturas`);
       } catch (e) {
         errors.push({ board, error: e.message });
         console.warn(`[contasPagar/sync] ${board}: ${e.message}`);
@@ -4511,15 +4535,15 @@ app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
     }
 
     const syncedAt = new Date().toISOString();
-    await writeContasPagar({
-      rows:     allRows,
-      dtIni:    req.body?.de  || today.slice(0, 7) + '-01',
-      dtFin,
-      syncedAt,
-      errors,
-    });
+    await writeContasPagarMeta({ syncedAt, dtIni, dtFin, errors });
 
-    res.json({ ok: true, count: allRows.length, syncedAt, errors });
+    if (!mongoDb) {
+      const db = await readDB();
+      db.contasPagar = { rows: fallbackRows, syncedAt, dtIni, dtFin, errors };
+      await writeDB(db);
+    }
+
+    res.json({ ok: true, count: total, syncedAt, errors });
   } catch (e) {
     console.error('[contasPagar/sync]', e.message);
     res.status(500).json({ ok: false, error: e.message });
@@ -4529,8 +4553,17 @@ app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
 // ── GET /api/contas-pagar/status ──────────────────────────────────────────
 app.get('/api/contas-pagar/status', requireAdmin, async (req, res) => {
   try {
-    const cp = await readContasPagar();
-    res.json({ syncedAt: cp.syncedAt || null, count: (cp.rows || []).length, dtIni: cp.dtIni, dtFin: cp.dtFin, errors: cp.errors || [] });
+    if (mongoDb) {
+      const [meta, count] = await Promise.all([
+        mongoDb.collection('cpMeta').findOne({ _id: 'main' }),
+        mongoDb.collection('cpFaturas').countDocuments(),
+      ]);
+      const { _id, ...m } = meta || {};
+      res.json({ syncedAt: m.syncedAt || null, count, dtIni: m.dtIni, dtFin: m.dtFin, errors: m.errors || [] });
+    } else {
+      const cp = await readContasPagar();
+      res.json({ syncedAt: cp.syncedAt || null, count: (cp.rows || []).length, dtIni: cp.dtIni, dtFin: cp.dtFin, errors: cp.errors || [] });
+    }
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -5167,25 +5200,27 @@ initMongo()
         const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
         const boards = Object.entries(lojas);
         console.log(`[ContasPagar] Sync diário ${dtIni} → ${today} (${boards.length} loja(s))`);
-        const allRows = [];
+        let total = 0;
+        const errors = [];
         for (const [board, cnpj] of boards) {
           const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
           try {
-            const rows = await _fetchFaturas(cnpj, chave, dtIni, today);
-            for (const r of rows) {
+            const raw  = await _fetchFaturas(cnpj, chave, dtIni, today);
+            const rows = [];
+            for (const r of raw) {
               const fat = _normalizeFatura(r, board, board, today);
-              if (fat && fat.isPagar) allRows.push(fat);
+              if (fat && fat.isPagar) rows.push(fat);
             }
-          } catch (e) { console.error(`[ContasPagar] ${board}:`, e.message); }
+            await writeContasPagarBoard(board, rows);
+            total += rows.length;
+            console.log(`[ContasPagar] ${board}: ${rows.length} faturas`);
+          } catch (e) {
+            errors.push({ board, error: e.message });
+            console.error(`[ContasPagar] ${board}:`, e.message);
+          }
         }
-        await writeContasPagar({
-          rows:     allRows,
-          dtIni,
-          dtFin:    today,
-          syncedAt: new Date().toISOString(),
-          errors:   [],
-        });
-        console.log(`[ContasPagar] Sync OK — ${allRows.length} faturas a pagar`);
+        await writeContasPagarMeta({ syncedAt: new Date().toISOString(), dtIni, dtFin: today, errors });
+        console.log(`[ContasPagar] Sync OK — ${total} faturas a pagar`);
       }, { timezone: 'America/Sao_Paulo' });
       console.log('[ContasPagar] Cron agendado para 07:00 America/Sao_Paulo');
     }
