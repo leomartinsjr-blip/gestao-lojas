@@ -2244,6 +2244,7 @@ const CAMPOS_MX = [
   { key: 'referencia',   label: 'Referência',     required: true },
   { key: 'nome',         label: 'Nome/Descrição',  required: true },
   { key: 'cod_barra',    label: 'Cód. de Barras' },
+  { key: 'desc_setor',   label: 'Setor' },
   { key: 'desc_cor',     label: 'Cor' },
   { key: 'desc_tamanho', label: 'Tamanho' },
   { key: 'preco_custo',  label: 'Custo c/ICMS' },
@@ -2259,7 +2260,7 @@ const TAMS_NUM   = ['33','34','35','36','37','38','39','40','41','42','43','44',
 
 const _cad = {
   file: null, headers: [], rawRows: [], mapping: {},
-  setor: '', modeloRef: '{REF}', modeloDesc: '{NOME}',
+  modeloRef: '{REF}', modeloDesc: '{NOME}',
   priceMode: 'markup', markup: 100, manualPrice: '',
   ncm: '', products: [], checkResult: [],
 };
@@ -2356,12 +2357,13 @@ function _cadBuildProducts() {
     }
     if (!p.referencia && !p.nome) return null;
     const txt = (p.referencia || '') + ' ' + (p.nome || '');
-    const cor = p.desc_cor || _cadExtractCor(txt);
-    const tam = p.desc_tamanho || _cadExtractTam(txt) || 'Único';
+    const cor   = p.desc_cor    || _cadExtractCor(txt);
+    const tam   = p.desc_tamanho || _cadExtractTam(txt) || 'Único';
+    const setor = p.desc_setor  || _cadSuggestSetor([txt]);
     const custo = p.preco_custo || '';
     const precoAuto = (p.preco_venda && _cad.priceMode === 'auto') ? p.preco_venda : _cadCalcPreco(custo);
     return {
-      ...p, desc_cor: cor, desc_tamanho: tam,
+      ...p, desc_cor: cor, desc_tamanho: tam, desc_setor: setor,
       _ref_final:  _cadApplyTemplate(_cad.modeloRef,  { ...p, desc_cor: cor, desc_tamanho: tam }),
       _desc_final: _cadApplyTemplate(_cad.modeloDesc, { ...p, desc_cor: cor, desc_tamanho: tam }),
       _custo: custo, _preco: precoAuto, _ncm: _cad.ncm,
@@ -2421,7 +2423,8 @@ async function _cadParseFile(body) {
       const fd = new FormData(); fd.append('file', file);
       const d = await fetch('/api/cadastro-produto/parse-pdf', { method: 'POST', body: fd }).then(r => r.json());
       if (d.error) throw new Error(d.error);
-      _cad.headers = d.headers || []; _cad.rawRows = d.rows || [];
+      _cad.headers = ['nome']; // PDF é texto livre — mapeia direto para nome
+      _cad.rawRows = (d.rows || []).map(r => [String(r[0] || '').trim()]).filter(r => r[0].length > 2);
     } else {
       if (!window.XLSX) throw new Error('Biblioteca Excel não carregada. Recarregue a página.');
       const buf = await file.arrayBuffer();
@@ -2445,20 +2448,10 @@ function _cadRenderConfigAndMapping(content) {
     const n = h.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');
     return ['descricao','nome','produto','item','desc'].some(k => n.includes(k));
   });
-  // Detect setor from a dedicated column first, then fall back to text analysis
-  const setorColIdx = _cad.headers.findIndex(h => {
-    const n = h.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');
-    return ['setor','departamento','categoria','grupo','depto'].some(k => n.includes(k));
-  });
-  const sampleTexts = _cad.rawRows.slice(0, 30).map(r => String(r[descIdx] ?? '')).filter(Boolean);
-  if (!_cad.setor) {
-    if (setorColIdx >= 0) {
-      _cad.setor = String(_cad.rawRows.find(r => r[setorColIdx])?.[setorColIdx] ?? '').trim() || _cadSuggestSetor(sampleTexts);
-    } else {
-      _cad.setor = _cadSuggestSetor(sampleTexts);
-    }
-  }
-  if (!_cad.ncm) _cad.ncm = _cadSuggestNcm(_cad.setor, sampleTexts);
+  // Sample texts: prefer desc column, fall back to first column of every row
+  const sampleTexts = _cad.rawRows.slice(0, 40)
+    .map(r => String(r[descIdx >= 0 ? descIdx : 0] ?? '')).filter(Boolean);
+  if (!_cad.ncm) _cad.ncm = _cadSuggestNcm(_cadSuggestSetor(sampleTexts), sampleTexts);
 
   const tokBtns = target => ['REF','NOME','COR','TAM','MARCA']
     .map(t => `<button class="cad-token" data-token="{${t}}" data-target="${target}">{${t}}</button>`).join('');
@@ -2502,12 +2495,6 @@ function _cadRenderConfigAndMapping(content) {
           Configurações do Pedido
         </div>
         <div class="cad-config-form">
-          <div class="cad-form-row">
-            <div class="cad-form-field cad-form-wide">
-              <label class="cad-field-label">Setor <span style="color:var(--muted);font-weight:400">(detectado automaticamente)</span></label>
-              <input type="text" id="cadSetor" class="cad-input" value="${_escHtml(_cad.setor)}" placeholder="Ex: Moda Masculina">
-            </div>
-          </div>
 
           <div class="cad-form-row">
             <div class="cad-form-field cad-form-wide">
@@ -2588,7 +2575,7 @@ function _cadRenderConfigAndMapping(content) {
     });
   });
 
-  const binds = { cadSetor:'setor', cadModeloRef:'modeloRef',
+  const binds = { cadModeloRef:'modeloRef',
                   cadModeloDesc:'modeloDesc', cadNcm:'ncm', cadMarkup:'markup', cadManualPrice:'manualPrice' };
   Object.entries(binds).forEach(([id, key]) => {
     const el = content.querySelector('#' + id);
@@ -2610,7 +2597,7 @@ function _cadRenderConfigAndMapping(content) {
     if (!_cad.mapping.referencia && !_cad.mapping.nome) { toast('Mapeie pelo menos Referência ou Nome', true); return; }
     _cad.products = _cadBuildProducts();
     if (!_cad.products.length) { toast('Nenhum produto encontrado com o mapeamento atual', true); return; }
-    const sec = content.nextElementSibling;
+    const sec = content.querySelector('#cadProdSection');
     _cadRenderProdSection(sec);
     sec.style.display = '';
     sec.scrollIntoView({ behavior:'smooth', block:'start' });
@@ -2644,7 +2631,7 @@ function _cadRenderProdSection(sec) {
     <div class="cad-section-header" style="margin-bottom:.75rem">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
       Produtos extraídos
-      <span class="cad-section-sub">${prods.length} itens · Setor: ${_escHtml(_cad.setor || '—')}</span>
+      <span class="cad-section-sub">${prods.length} itens · setor detectado por produto</span>
     </div>
     <div style="overflow-x:auto">
       <table class="trans-table">
@@ -2652,6 +2639,7 @@ function _cadRenderProdSection(sec) {
           <th class="trans-th" style="width:28px">#</th>
           <th class="trans-th">Referência</th>
           <th class="trans-th">Descrição (Microvix)</th>
+          <th class="trans-th">Setor</th>
           <th class="trans-th">Cor</th>
           <th class="trans-th">Tam.</th>
           <th class="trans-th">Custo c/ICMS</th>
@@ -2664,7 +2652,8 @@ function _cadRenderProdSection(sec) {
             <td class="trans-td" style="color:var(--muted);font-size:.7rem">${i+1}</td>
             <td class="trans-td"><input class="cad-ci" data-f="_ref_final"  data-i="${i}" value="${_escHtml(p._ref_final)}"></td>
             <td class="trans-td"><input class="cad-ci" data-f="_desc_final" data-i="${i}" value="${_escHtml(p._desc_final)}" style="min-width:180px"></td>
-            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_cor"     data-i="${i}" value="${_escHtml(p.desc_cor)}"></td>
+            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_setor"  data-i="${i}" value="${_escHtml(p.desc_setor)}" style="width:110px"></td>
+            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_cor"    data-i="${i}" value="${_escHtml(p.desc_cor)}"></td>
             <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_tamanho" data-i="${i}" value="${_escHtml(p.desc_tamanho)}"></td>
             <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="_custo"        data-i="${i}" value="${_escHtml(p._custo)}"></td>
             <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="_preco"        data-i="${i}" value="${_escHtml(p._preco)}"></td>
@@ -2700,7 +2689,7 @@ async function _cadCheckAndExport(sec) {
       referencia:   p._ref_final  || p.referencia || '',
       nome:         p._desc_final || p.nome       || '',
       cod_barra:    p.cod_barra   || '',
-      desc_setor:   _cad.setor    || '',
+      desc_setor:   p.desc_setor  || '',
       desc_cor:     p.desc_cor    || '',
       desc_tamanho: p.desc_tamanho || '',
       preco_custo:  p._custo      || '',
