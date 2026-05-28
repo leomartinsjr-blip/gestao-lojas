@@ -1946,10 +1946,23 @@ function renderGestaoHub() {
         <span class="gestao-hub-label">Sugestão de Reposição</span>
         <span class="gestao-hub-desc">SKUs com ruptura de estoque para repor</span>
       </button>
+      <button class="gestao-hub-card" id="hubCadastro">
+        <span class="gestao-hub-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="12" y1="18" x2="12" y2="12"/>
+            <line x1="9" y1="15" x2="15" y2="15"/>
+          </svg>
+        </span>
+        <span class="gestao-hub-label">Cadastro de Produto</span>
+        <span class="gestao-hub-desc">Importar planilha de fornecedor e cadastrar no Microvix</span>
+      </button>
     </div>`;
   body.querySelector('#hubTransferencia').addEventListener('click', renderTransView);
   body.querySelector('#hubPromocao').addEventListener('click', renderPromocaoView);
   body.querySelector('#hubReposicao').addEventListener('click', renderReposicaoView);
+  body.querySelector('#hubCadastro').addEventListener('click', renderCadastroProdView);
 }
 
 function renderTransView() {
@@ -2224,6 +2237,380 @@ function renderReposicaoView() {
   _gestaoSetTitle(`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>`, 'Sugestão de Reposição');
   document.getElementById('transBody').innerHTML = `<div class="gestao-placeholder"><span>Em breve</span><p>Análise de SKUs com ruptura de estoque para sugestão de reposição.</p></div>`;
 }
+
+// ── CADASTRO DE PRODUTO ───────────────────────────────────────────────────
+
+const CAMPOS_MICROVIX = [
+  { key: 'referencia',   label: 'Referência',     required: true },
+  { key: 'nome',         label: 'Nome',           required: true },
+  { key: 'cod_barra',    label: 'Cód. Barras' },
+  { key: 'desc_marca',   label: 'Marca' },
+  { key: 'desc_setor',   label: 'Setor' },
+  { key: 'desc_linha',   label: 'Linha' },
+  { key: 'desc_cor',     label: 'Cor' },
+  { key: 'desc_tamanho', label: 'Tamanho' },
+  { key: 'preco_venda',  label: 'Preço Venda' },
+  { key: 'preco_custo',  label: 'Preço Custo' },
+  { key: 'ncm',          label: 'NCM' },
+];
+
+const _cad = {
+  fornecedores: [],
+  selectedForn: null,
+  file: null,
+  headers: [],
+  rawRows: [],
+  mapping: {},
+  checkResult: [],
+};
+
+async function renderCadastroProdView() {
+  _gestaoShowBack(true);
+  _gestaoSetTitle(
+    `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>`,
+    'Cadastro de Produto'
+  );
+  const body = document.getElementById('transBody');
+  body.innerHTML = '<div class="trans-loading">Carregando fornecedores…</div>';
+  try {
+    _cad.fornecedores = await apiFetch('GET', '/api/cadastro-produto/fornecedores');
+  } catch { _cad.fornecedores = []; }
+  _cadRenderUpload(body);
+}
+
+function _cadRenderUpload(body) {
+  const fList = _cad.fornecedores;
+  const selId = _cad.selectedForn ? String(_cad.selectedForn._id) : '';
+  body.innerHTML = `
+    <div class="cad-panel">
+      <div class="cad-top-row">
+        <div class="cad-field-group">
+          <label class="cad-field-label">Fornecedor</label>
+          <div class="cad-forn-row">
+            <select id="cadFornSelect" class="cad-select">
+              <option value="">— selecionar —</option>
+              ${fList.map(f => `<option value="${_escHtml(String(f._id))}"${String(f._id) === selId ? ' selected' : ''}>${_escHtml(f.name)}</option>`).join('')}
+            </select>
+            <button class="cad-btn-sm" id="cadNewFornBtn">+ Novo</button>
+            ${selId ? `<button class="cad-btn-sm cad-btn-danger" id="cadDelFornBtn" title="Excluir fornecedor">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+            </button>` : ''}
+          </div>
+        </div>
+        <div class="cad-field-group">
+          <label class="cad-field-label">Planilha do fornecedor</label>
+          <label class="trans-excel-upload-btn" style="min-width:210px">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span id="cadFileName">${_cad.file ? _escHtml(_cad.file.name) : 'Escolher .xls / .xlsx'}</span>
+            <input type="file" id="cadFileInput" accept=".xls,.xlsx" style="display:none">
+          </label>
+        </div>
+        <button class="trans-calc-btn" id="cadAnalyzeBtn" ${_cad.file ? '' : 'disabled'}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          Analisar
+        </button>
+      </div>
+      <div id="cadContent" style="margin-top:1.25rem"></div>
+    </div>`;
+
+  const select = body.querySelector('#cadFornSelect');
+  select.addEventListener('change', () => {
+    _cad.selectedForn = _cad.fornecedores.find(f => String(f._id) === select.value) || null;
+    _cadRenderUpload(body);
+  });
+  body.querySelector('#cadNewFornBtn').addEventListener('click', () => _cadNewFornDialog(body));
+  const delBtn = body.querySelector('#cadDelFornBtn');
+  if (delBtn) delBtn.addEventListener('click', () => _cadDeleteForn(body));
+  const fileInput = body.querySelector('#cadFileInput');
+  fileInput.addEventListener('change', () => {
+    _cad.file = fileInput.files[0] || null;
+    body.querySelector('#cadFileName').textContent = _cad.file ? _cad.file.name : 'Escolher .xls / .xlsx';
+    body.querySelector('#cadAnalyzeBtn').disabled = !_cad.file;
+  });
+  body.querySelector('#cadAnalyzeBtn').addEventListener('click', () => _cadAnalyze(body));
+}
+
+function _cadNewFornDialog(body) {
+  const name = prompt('Nome do fornecedor:');
+  if (!name || !name.trim()) return;
+  apiFetch('POST', '/api/cadastro-produto/fornecedores', { name: name.trim(), mapping: {}, defaults: {} })
+    .then(doc => {
+      _cad.fornecedores.push(doc);
+      _cad.selectedForn = doc;
+      _cadRenderUpload(body);
+      toast(`Fornecedor "${doc.name}" criado`);
+    })
+    .catch(e => toast('Erro: ' + e.message, true));
+}
+
+async function _cadDeleteForn(body) {
+  const f = _cad.selectedForn;
+  if (!f || !confirm(`Excluir fornecedor "${f.name}"?`)) return;
+  try {
+    await apiFetch('DELETE', `/api/cadastro-produto/fornecedores/${f._id}`);
+    _cad.fornecedores = _cad.fornecedores.filter(x => String(x._id) !== String(f._id));
+    _cad.selectedForn = null;
+    _cadRenderUpload(body);
+    toast('Fornecedor excluído');
+  } catch (e) { toast('Erro: ' + e.message, true); }
+}
+
+async function _cadAnalyze(body) {
+  if (!_cad.file) return;
+  const content = body.querySelector('#cadContent');
+  content.innerHTML = '<div class="trans-loading">Lendo arquivo…</div>';
+  try {
+    const buffer = await _cad.file.arrayBuffer();
+    if (!window.XLSX) throw new Error('Biblioteca Excel não carregada. Recarregue a página.');
+    const wb = window.XLSX.read(buffer, { type: 'array' });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const data = window.XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+    if (data.length < 2) throw new Error('Planilha vazia ou sem dados');
+    _cad.headers = data[0].map(h => String(h ?? '').trim()).filter(h => h);
+    _cad.rawRows = data.slice(1).filter(r => r.some(c => c != null && c !== ''));
+    if (_cad.selectedForn && Object.keys(_cad.selectedForn.mapping || {}).length > 0) {
+      _cad.mapping = { ..._cad.selectedForn.mapping };
+      await _cadCrossReference(content);
+    } else {
+      _cadRenderMapping(content);
+    }
+  } catch (e) {
+    content.innerHTML = `<div class="trans-error">Erro: ${_escHtml(e.message)}</div>`;
+  }
+}
+
+function _cadAutoMatch(headers) {
+  const norm = s => s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '');
+  const aliases = {
+    referencia:   ['ref','referencia','codigo','cod','sku','codprod','codproduto','codigoproduto'],
+    nome:         ['nome','descricao','descricaoproduto','produto','descricaobasica','desc','descbasica'],
+    cod_barra:    ['codbarra','ean','barra','barcode','gtin','codbarras','ean13'],
+    desc_marca:   ['marca','brand','fabricante'],
+    desc_setor:   ['setor','departamento','dept','categoria','secao','grupo'],
+    desc_linha:   ['linha','line','colecao','colecao','subgrupo'],
+    desc_cor:     ['cor','color','colour','descricaocor','descCor'],
+    desc_tamanho: ['tamanho','tam','size','grade','descricaotamanho'],
+    preco_venda:  ['precovenda','preco','pvenda','valorvenda','price','precocheio','vlvenda'],
+    preco_custo:  ['precocusto','custo','pcusto','custoproduto','vlcusto','precoemissao'],
+    ncm:          ['ncm','codigoncm'],
+  };
+  const mapping = {};
+  for (const [mxField, words] of Object.entries(aliases)) {
+    for (const h of headers) {
+      const hn = norm(h);
+      if (words.some(w => hn === w || hn.includes(w) || w.includes(hn))) {
+        if (!mapping[mxField]) mapping[mxField] = h;
+        break;
+      }
+    }
+  }
+  return mapping;
+}
+
+function _cadRenderMapping(content) {
+  const autoMap = _cadAutoMatch(_cad.headers);
+  content.innerHTML = `
+    <div class="cad-section">
+      <div class="cad-section-header">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+        Mapeamento de Colunas
+        <span class="cad-section-sub">${_escHtml(_cad.file.name)} · ${_cad.rawRows.length} linhas · ${_cad.headers.length} colunas</span>
+      </div>
+      <p class="cad-hint">Associe cada campo Microvix à coluna correspondente na planilha. Campos sem seleção são ignorados.</p>
+      <table class="cad-map-table">
+        <thead><tr><th>Campo Microvix</th><th>Coluna do fornecedor</th><th>Exemplo (1ª linha)</th></tr></thead>
+        <tbody>
+          ${CAMPOS_MICROVIX.map(f => {
+            const auto = autoMap[f.key] || '';
+            const previewVal = auto ? String(_cad.rawRows[0]?.[_cad.headers.indexOf(auto)] ?? '') : '';
+            return `<tr>
+              <td class="cad-map-field">${_escHtml(f.label)}${f.required ? '<span class="cad-required"> *</span>' : ''}</td>
+              <td>
+                <select class="cad-map-select" data-mx="${f.key}">
+                  <option value="">— não usar —</option>
+                  ${_cad.headers.map(h => `<option value="${_escHtml(h)}"${h === auto ? ' selected' : ''}>${_escHtml(h)}</option>`).join('')}
+                </select>
+              </td>
+              <td class="cad-map-preview" id="cadPrev_${f.key}">${_escHtml(String(previewVal).slice(0, 60))}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+      <div class="cad-map-actions">
+        ${_cad.selectedForn
+          ? `<label class="cad-save-chk"><input type="checkbox" id="cadSaveMapping" checked> Salvar mapeamento para <strong>${_escHtml(_cad.selectedForn.name)}</strong></label>`
+          : `<span class="cad-hint-sm">Selecione um fornecedor acima para salvar o mapeamento automaticamente</span>`}
+        <button class="trans-calc-btn" id="cadApplyBtn">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+          Verificar no Microvix
+        </button>
+      </div>
+    </div>`;
+
+  content.querySelectorAll('.cad-map-select').forEach(sel => {
+    sel.addEventListener('change', () => {
+      const idx = _cad.headers.indexOf(sel.value);
+      const val = idx >= 0 ? String(_cad.rawRows[0]?.[idx] ?? '') : '';
+      const prev = content.querySelector(`#cadPrev_${sel.dataset.mx}`);
+      if (prev) prev.textContent = val.slice(0, 60);
+    });
+  });
+
+  content.querySelector('#cadApplyBtn').addEventListener('click', async () => {
+    _cad.mapping = {};
+    content.querySelectorAll('.cad-map-select').forEach(sel => {
+      if (sel.value) _cad.mapping[sel.dataset.mx] = sel.value;
+    });
+    if (!_cad.mapping.referencia && !_cad.mapping.nome) {
+      toast('Mapeie pelo menos Referência ou Nome para continuar', true); return;
+    }
+    const saveChk = content.querySelector('#cadSaveMapping');
+    if (_cad.selectedForn && saveChk?.checked) {
+      try {
+        const updated = await apiFetch('POST', '/api/cadastro-produto/fornecedores', {
+          _id: String(_cad.selectedForn._id),
+          name: _cad.selectedForn.name,
+          mapping: _cad.mapping,
+          defaults: _cad.selectedForn.defaults || {},
+        });
+        _cad.selectedForn = updated;
+        const idx = _cad.fornecedores.findIndex(f => String(f._id) === String(updated._id));
+        if (idx >= 0) _cad.fornecedores[idx] = updated;
+        toast('Mapeamento salvo');
+      } catch (e) { toast('Erro ao salvar: ' + e.message, true); }
+    }
+    await _cadCrossReference(content);
+  });
+}
+
+function _cadApplyMapping(rawRows, headers, mapping) {
+  return rawRows.map(row => {
+    const obj = {};
+    for (const [mxField, supplierCol] of Object.entries(mapping)) {
+      const idx = headers.indexOf(supplierCol);
+      if (idx >= 0) obj[mxField] = String(row[idx] ?? '').trim();
+    }
+    return obj;
+  }).filter(r => r.referencia || r.nome);
+}
+
+async function _cadCrossReference(content) {
+  content.innerHTML = '<div class="trans-loading">Verificando no catálogo Microvix…</div>';
+  try {
+    const normalized = _cadApplyMapping(_cad.rawRows, _cad.headers, _cad.mapping);
+    if (!normalized.length) throw new Error('Nenhum produto válido encontrado com o mapeamento atual');
+    const { result, newCount, existingCount } = await apiFetch('POST', '/api/cadastro-produto/check', { rows: normalized });
+    _cad.checkResult = result;
+    _cadRenderPreview(content, result, newCount, existingCount);
+  } catch (e) {
+    content.innerHTML = `<div class="trans-error">Erro: ${_escHtml(e.message)}</div>`;
+  }
+}
+
+function _cadRenderPreview(content, result, newCount, existingCount) {
+  const newProducts = result.filter(r => r._status === 'new');
+  content.innerHTML = `
+    <div class="cad-section">
+      <div class="cad-summary-row">
+        <div class="cad-summary-card cad-summary-new">
+          <span class="cad-summary-num">${newCount}</span>
+          <span class="cad-summary-lbl">novos para cadastrar</span>
+        </div>
+        <div class="cad-summary-card cad-summary-exists">
+          <span class="cad-summary-num">${existingCount}</span>
+          <span class="cad-summary-lbl">já no Microvix</span>
+        </div>
+        <div class="cad-summary-card">
+          <span class="cad-summary-num">${result.length}</span>
+          <span class="cad-summary-lbl">total na planilha</span>
+        </div>
+      </div>
+      <div class="cad-preview-toolbar">
+        <div class="cad-filter-btns">
+          <button class="cad-filter-btn active" data-filter="all">Todos</button>
+          <button class="cad-filter-btn" data-filter="new">Só novos (${newCount})</button>
+          <button class="cad-filter-btn" data-filter="existing">Já cadastrados (${existingCount})</button>
+        </div>
+        ${newCount > 0
+          ? `<button class="trans-calc-btn" id="cadExportBtn">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 16 12 21 17 16"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+              Gerar arquivo Microvix (${newCount} produtos)
+            </button>`
+          : `<span class="cad-hint" style="color:#3FB950">✓ Todos os produtos já estão cadastrados no Microvix.</span>`}
+      </div>
+      <div class="trans-tab-panel" style="padding:0;margin-top:.75rem;overflow-x:auto">
+        <table class="trans-table">
+          <thead>
+            <tr>
+              <th class="trans-th" style="width:36px"></th>
+              <th class="trans-th">Referência</th>
+              <th class="trans-th">Nome</th>
+              <th class="trans-th">Marca</th>
+              <th class="trans-th">Cor</th>
+              <th class="trans-th">Tam.</th>
+              <th class="trans-th">Preço Venda</th>
+            </tr>
+          </thead>
+          <tbody id="cadPreviewBody">
+            ${result.map(r => `
+              <tr data-status="${r._status}">
+                <td class="trans-td" style="text-align:center">
+                  <span class="cad-badge cad-badge-${r._status}">${r._status === 'new' ? 'NOVO' : '✓'}</span>
+                </td>
+                <td class="trans-td trans-cod">${_escHtml(r.referencia || '—')}</td>
+                <td class="trans-td" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${_escHtml(r.nome || '')}">${_escHtml(r.nome || '—')}</td>
+                <td class="trans-td">${_escHtml(r.desc_marca || '—')}</td>
+                <td class="trans-td">${_escHtml(r.desc_cor || '—')}</td>
+                <td class="trans-td">${_escHtml(r.desc_tamanho || '—')}</td>
+                <td class="trans-td">${_escHtml(r.preco_venda || '—')}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    </div>`;
+
+  content.querySelectorAll('.cad-filter-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      content.querySelectorAll('.cad-filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const filter = btn.dataset.filter;
+      content.querySelectorAll('#cadPreviewBody tr').forEach(tr => {
+        tr.style.display = filter === 'all' || tr.dataset.status === filter ? '' : 'none';
+      });
+    });
+  });
+
+  const exportBtn = content.querySelector('#cadExportBtn');
+  if (exportBtn) exportBtn.addEventListener('click', () => _cadExport(exportBtn, newProducts));
+}
+
+async function _cadExport(btn, newProducts) {
+  btn.disabled = true;
+  btn.textContent = 'Gerando…';
+  try {
+    const res = await fetch('/api/cadastro-produto/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows: newProducts }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    const date = new Date().toISOString().slice(0, 10);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `cadastro_microvix_${date}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast(`Arquivo gerado com ${newProducts.length} produto(s)`);
+  } catch (e) {
+    toast('Erro ao gerar arquivo: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 16 12 21 17 16"/><line x1="12" y1="3" x2="12" y2="21"/></svg> Gerar arquivo Microvix (${newProducts.length} produtos)`;
+  }
+}
+
+// ── fim CADASTRO DE PRODUTO ───────────────────────────────────────────────
 
 function renderTransTabContent(container) {
   if (true) {

@@ -3804,6 +3804,111 @@ app.get('/api/transferencias', requireAdmin, (req, res) => {
   }
 });
 
+// ── CADASTRO DE PRODUTO ───────────────────────────────────────────────────
+
+app.get('/api/cadastro-produto/fornecedores', requireAdmin, async (req, res) => {
+  try {
+    const docs = await mongoDb.collection('supplier_profiles').find({}).sort({ name: 1 }).toArray();
+    res.json(docs);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/cadastro-produto/fornecedores', requireAdmin, async (req, res) => {
+  try {
+    const { _id, name, mapping, defaults } = req.body;
+    if (!name) return res.status(400).json({ error: 'Nome do fornecedor é obrigatório' });
+    const col = mongoDb.collection('supplier_profiles');
+    if (_id) {
+      const { ObjectId } = require('mongodb');
+      const oid = new ObjectId(_id);
+      await col.updateOne({ _id: oid }, { $set: { name, mapping: mapping || {}, defaults: defaults || {}, updatedAt: new Date() } });
+      res.json(await col.findOne({ _id: oid }));
+    } else {
+      const doc = { name, mapping: mapping || {}, defaults: defaults || {}, createdAt: new Date() };
+      const r = await col.insertOne(doc);
+      res.json({ ...doc, _id: r.insertedId });
+    }
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/cadastro-produto/fornecedores/:id', requireAdmin, async (req, res) => {
+  try {
+    const { ObjectId } = require('mongodb');
+    await mongoDb.collection('supplier_profiles').deleteOne({ _id: new ObjectId(req.params.id) });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
+  try {
+    const { rows } = req.body;
+    if (!Array.isArray(rows)) return res.status(400).json({ error: 'rows deve ser array' });
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const catalog = await _getCatalog(lojas).catch(() => ({}));
+    const result = rows.map(r => {
+      const ref   = (r.referencia || '').trim().toUpperCase();
+      const barra = (r.cod_barra  || '').trim();
+      const found = catalog[ref] || catalog[r.referencia] || (barra ? catalog[barra] : null);
+      return { ...r, _status: found ? 'existing' : 'new', _catalogEntry: found || null };
+    });
+    const newCount      = result.filter(r => r._status === 'new').length;
+    const existingCount = result.filter(r => r._status === 'existing').length;
+    res.json({ result, newCount, existingCount });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
+  try {
+    const { rows } = req.body;
+    if (!Array.isArray(rows) || !rows.length)
+      return res.status(400).json({ error: 'Nenhum produto para exportar' });
+    const ExcelJS = require('exceljs');
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Produtos');
+    ws.columns = [
+      { key: 'referencia',   header: 'Referencia',  width: 18 },
+      { key: 'cod_barra',    header: 'CodBarra',     width: 18 },
+      { key: 'nome',         header: 'Nome',         width: 45 },
+      { key: 'desc_marca',   header: 'Marca',        width: 20 },
+      { key: 'desc_setor',   header: 'Setor',        width: 20 },
+      { key: 'desc_linha',   header: 'Linha',        width: 20 },
+      { key: 'desc_cor',     header: 'Cor',          width: 15 },
+      { key: 'desc_tamanho', header: 'Tamanho',      width: 12 },
+      { key: 'preco_venda',  header: 'PrecoVenda',   width: 14 },
+      { key: 'preco_custo',  header: 'PrecoCusto',   width: 14 },
+      { key: 'ncm',          header: 'NCM',          width: 12 },
+      { key: 'ativo',        header: 'Ativo',        width: 8  },
+    ];
+    ws.getRow(1).eachCell(cell => {
+      cell.fill   = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF21262D' } };
+      cell.font   = { bold: true, color: { argb: 'FF58A6FF' } };
+      cell.alignment = { horizontal: 'center' };
+    });
+    rows.forEach(r => ws.addRow({
+      referencia:   r.referencia   || '',
+      cod_barra:    r.cod_barra    || '',
+      nome:         r.nome         || '',
+      desc_marca:   r.desc_marca   || '',
+      desc_setor:   r.desc_setor   || '',
+      desc_linha:   r.desc_linha   || '',
+      desc_cor:     r.desc_cor     || '',
+      desc_tamanho: r.desc_tamanho || '',
+      preco_venda:  r.preco_venda  || '',
+      preco_custo:  r.preco_custo  || '',
+      ncm:          r.ncm          || '',
+      ativo:        'S',
+    }));
+    const date = new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=cadastro_microvix_${date}.xlsx`);
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) {
+    console.error('[CadastroProduto/export]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Global error handler (captura erros de multer e outros middlewares) ────
 app.use((err, req, res, next) => {
   const msg = err?.message || String(err) || 'Erro interno';
