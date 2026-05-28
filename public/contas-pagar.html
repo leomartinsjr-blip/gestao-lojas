@@ -335,7 +335,8 @@ function renderGroups() {
   empty.style.display = 'none';
 
   // Agrupar por loja (board)
-  const LOJA_LABEL = { delrey:'Del Rey', minas:'Minas', contagem:'Contagem', estacao:'Estação', tommy:'Tommy', lez:'Lez a Lez', escritorio:'Escritório' };
+  const LOJA_LABEL = { delrey:'DEL REY', minas:'MINAS', contagem:'CONTAGEM', tommy:'TOMMY', estacao:'ESTAÇÃO', lez:'LEZ A LEZ', escritorio:'ESCRITÓRIO' };
+  const LOJA_ORDER = ['delrey','minas','contagem','tommy','estacao','lez','escritorio'];
   const groups = {};
   items.forEach(it => {
     const key = it.board || 'outros';
@@ -344,7 +345,14 @@ function renderGroups() {
     groups[key].total += it.valor;
   });
 
-  const sorted = Object.values(groups).sort((a, b) => b.total - a.total);
+  const sorted = Object.values(groups).sort((a, b) => {
+    const ia = LOJA_ORDER.indexOf(a.board);
+    const ib = LOJA_ORDER.indexOf(b.board);
+    if (ia === -1 && ib === -1) return a.loja.localeCompare(b.loja);
+    if (ia === -1) return 1;
+    if (ib === -1) return -1;
+    return ia - ib;
+  });
 
   el.innerHTML = sorted.map((g, gi) => {
     const byStatus = { aberto: 0, vencido: 0, pago: 0 };
