@@ -4448,7 +4448,9 @@ app.get('/contas-pagar', (req, res) => res.sendFile(path.join(__dirname, 'public
 app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
   try {
     const today = new Date().toISOString().slice(0, 10);
-    const dtIni = req.body?.de  || today.slice(0, 7) + '-01';
+    // Busca sempre desde 01/01 do ano atual para capturar faturas emitidas
+    // em meses anteriores mas com vencimento no período selecionado
+    const dtIni = `${today.slice(0, 4)}-01-01`;
     const dtFin = req.body?.ate || today;
 
     const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
@@ -4475,7 +4477,7 @@ app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
     const db = await readDB();
     if (!db.contasPagar) db.contasPagar = {};
     db.contasPagar.rows     = allRows;
-    db.contasPagar.dtIni    = dtIni;
+    db.contasPagar.dtIni    = req.body?.de  || today.slice(0, 7) + '-01'; // vencimento UI
     db.contasPagar.dtFin    = dtFin;
     db.contasPagar.syncedAt = new Date().toISOString();
     db.contasPagar.errors   = errors;
@@ -5126,7 +5128,7 @@ initMongo()
     if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
       cron.schedule('0 7 * * *', async () => {
         const today  = new Date().toISOString().slice(0, 10);
-        const dtIni  = today.slice(0, 7) + '-01';
+        const dtIni  = `${today.slice(0, 4)}-01-01`;
         const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
         const boards = Object.entries(lojas);
         console.log(`[ContasPagar] Sync diário ${dtIni} → ${today} (${boards.length} loja(s))`);
