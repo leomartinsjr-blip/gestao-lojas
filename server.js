@@ -4359,21 +4359,24 @@ function _parseMxDate(s) {
 }
 
 // ── GET /api/contas-pagar — serve dados do cache ──────────────────────────
-app.get('/api/contas-pagar', requireAdmin, (req, res) => {
-  const today = new Date().toISOString().slice(0, 10);
-  const cp    = db.contasPagar || {};
-  const rows  = cp.rows || [];
+app.get('/api/contas-pagar', requireAdmin, async (req, res) => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const db    = await readDB();
+    const cp    = db.contasPagar || {};
+    const rows  = cp.rows || [];
 
-  const dtIni = req.query.de  || cp.dtIni || today.slice(0, 7) + '-01';
-  const dtFin = req.query.ate || cp.dtFin || today;
+    const dtIni = req.query.de  || cp.dtIni || today.slice(0, 7) + '-01';
+    const dtFin = req.query.ate || cp.dtFin || today;
 
-  const items = rows.filter(r => {
-    if (!r.vencimento) return true;
-    return r.vencimento >= dtIni && r.vencimento <= dtFin;
-  });
+    const items = rows.filter(r => {
+      if (!r.vencimento) return true;
+      return r.vencimento >= dtIni && r.vencimento <= dtFin;
+    });
 
-  items.sort((a, b) => (a.vencimento || '').localeCompare(b.vencimento || ''));
-  res.json({ items, errors: [], dtIni, dtFin, syncedAt: cp.syncedAt || null, totalCached: rows.length });
+    items.sort((a, b) => (a.vencimento || '').localeCompare(b.vencimento || ''));
+    res.json({ items, errors: [], dtIni, dtFin, syncedAt: cp.syncedAt || null, totalCached: rows.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // GET /api/contas-pagar/raw — diagnóstico LinxFaturas (mostra campos retornados)
@@ -4448,6 +4451,7 @@ app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
       }
     }
 
+    const db = await readDB();
     if (!db.contasPagar) db.contasPagar = {};
     db.contasPagar.rows     = allRows;
     db.contasPagar.dtIni    = dtIni;
@@ -4464,9 +4468,12 @@ app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
 });
 
 // ── GET /api/contas-pagar/status ──────────────────────────────────────────
-app.get('/api/contas-pagar/status', requireAdmin, (req, res) => {
-  const cp = db.contasPagar || {};
-  res.json({ syncedAt: cp.syncedAt || null, count: (cp.rows || []).length, dtIni: cp.dtIni, dtFin: cp.dtFin, errors: cp.errors || [] });
+app.get('/api/contas-pagar/status', requireAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const cp = db.contasPagar || {};
+    res.json({ syncedAt: cp.syncedAt || null, count: (cp.rows || []).length, dtIni: cp.dtIni, dtFin: cp.dtFin, errors: cp.errors || [] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── Folha de Pagamento ─────────────────────────────────────────────────────
@@ -5113,6 +5120,7 @@ initMongo()
             }
           } catch (e) { console.error(`[ContasPagar] ${board}:`, e.message); }
         }
+        const db = await readDB();
         if (!db.contasPagar) db.contasPagar = {};
         db.contasPagar.rows     = allRows;
         db.contasPagar.dtIni    = dtIni;
