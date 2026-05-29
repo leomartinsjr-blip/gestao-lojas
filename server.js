@@ -4672,14 +4672,21 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
     const mk    = `${year}-${String(month).padStart(2,'0')}`;
     const db    = await readDB();
 
-    // Inclui funcionários inativos que têm folha salva neste mês
+    // Inclui funcionários inativos que têm folha salva OU vsales registradas neste mês
     const savedFolha  = (db.folhas || {})[mk] || {};
+    const vsalesAll   = db.vsales || {};
     const savedEmpIds = new Set();
     for (const boardData of Object.values(savedFolha))
       for (const id of Object.keys(boardData.entries || {})) savedEmpIds.add(parseInt(id));
+    // Garante que inativos com vendas no mês nunca desaparecem do histórico
+    for (const [key, vs] of Object.entries(vsalesAll)) {
+      if (!key.startsWith(mk + '-')) continue;
+      const hasEntries = Object.keys(vs.entries || {}).some(d => d.startsWith(mk));
+      if (!hasEntries) continue;
+      const empId = parseInt(key.split('-').at(-1));
+      if (empId) savedEmpIds.add(empId);
+    }
     const employees = (db.employees || []).filter(e => !e.inativo || savedEmpIds.has(e.id));
-
-    const vsalesAll = db.vsales || {};
 
     const isVend = e => e.isVendedor !== false;
 
