@@ -1772,10 +1772,10 @@ const PERF_HIST = {
     2025:[116994, 92631, 95410,132345,134779,146808,116226,110715,104962,121011,117370,302912],
   },
   surfers: {
-    2022:[413316,542163,592658,710421,832768,951536,816886,809255,820982,856971,730344,2134458],
-    2023:[566312,521055,691108,767465,706370,1050010,797470,693643,758502,784943,826339,2260864],
-    2024:[524749,550187,617362,598888,804128,938818,757509,737354,635656,713939,754571,1862725],
-    2025:[442063,436379,484887,554238,634607,668774,525825,515442,447228,509314,578379,1445466],
+    2022:[458987,654226,655252,755422,933482,1072388,891175,917337,910954,881084,733117,2150188],
+    2023:[601218,573490,765679,810330,756129,1104006,830086,716896,785838,820049,853268,2263303],
+    2024:[569838,571629,639746,613434,829548, 972858,779656,756652,645706,726565,766957,1878674],
+    2025:[449313,444543,491107,571260,643380, 673244,529848,522194,451746,515961,585649,1455828],
   },
   tommy: {
     2022:[null,null,null,null,null,null,null,null,null,null,null,null],
@@ -1790,21 +1790,21 @@ const PERF_HIST = {
     2025:[null,null,null,null,null,null,null,77550,68753,83603,123697,207733],
   },
   site: {
-    2022:[null,null,null,null,null,null,null,null,null,null,null,null],
-    2023:[null,null,null,null,null,null,null,null,null,null,null,null],
-    2024:[null,null,null,null,null,null,null,null,null,null,null,null],
-    2025:[null,null,null,null,null,null,null,null,null,null,null,null],
+    2022:[ 45671,112063, 62594, 45001,100714,120852, 74289,108082, 89972, 24113,  2773, 15730],
+    2023:[ 34906, 52435, 74571, 42865, 49759, 53996, 32616, 23253, 27336, 35106, 26929,  2439],
+    2024:[ 45089, 21442, 22384, 14546, 25420, 34040, 22147, 19298, 10050, 12626, 12386, 15949],
+    2025:[  7250,  8164,  6220, 17022,  8773,  4470,  4023,  6752,  4518,  6647,  7270, 10362],
   },
 };
 const PERF_2026 = {
-  surfers:  [377906,343155,408044,386276,null,null,null,null,null,null,null,null],
+  surfers:  [383139,345885,413975,396776,null,null,null,null,null,null,null,null],
   delrey:   [134642,119759,128296,128061,null,null,null,null,null,null,null,null],
   minas:    [ 90962, 65116, 90731, 68912,null,null,null,null,null,null,null,null],
   contagem: [ 79523, 81210, 93198,110985,null,null,null,null,null,null,null,null],
   estacao:  [ 72779, 77070, 95819, 78318,null,null,null,null,null,null,null,null],
   tommy:    [ 52889, 64108, 77176, 83443,null,null,null,null,null,null,null,null],
   lez:      [112699, 57373, 49583, 81151,null,null,null,null,null,null,null,null],
-  site:     [  null,  null,  null,  null,null,null,null,null,null,null,null,null],
+  site:     [  5233,  2730,  5931, 10500,null,null,null,null,null,null,null,null],
 };
 
 function fmtBRL(n)  { if (n === null || n === undefined) return '—'; return 'R$ ' + Math.round(n).toLocaleString('pt-BR'); }
