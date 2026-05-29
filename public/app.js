@@ -8,6 +8,7 @@ const BOARDS = {
   estacao:    { label: 'ESTAÇÃO',      color: '#F85149' },
   tommy:      { label: 'TOMMY',        color: '#22D3EE' },
   lez:        { label: 'LEZ A LEZ',    color: '#F472B6' },
+  site:       { label: 'SITE',         color: '#A78BFA' },
   surfers:    { label: 'TOTAL SURFERS', color: '#F97316' },
 };
 
@@ -1600,7 +1601,7 @@ async function _loadCompCard(body) {
   const prefix    = `${S.year}-${pad(S.month)}-`;
 
   // Lojas visíveis: login individual vê só a sua
-  const ALL_STORE_KEYS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'lez'];
+  const ALL_STORE_KEYS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'lez', 'site'];
   const isAdmin = !S.user?.board;
   const STORE_KEYS = isAdmin ? ALL_STORE_KEYS : ALL_STORE_KEYS.filter(k => k === S.user.board);
   const mi = S.month - 1;
@@ -1738,7 +1739,7 @@ function openImg(url) {
 
 // ── Performance dashboard data ─────────────────────────────────────────────
 const PERF_MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-const PERF_AVAIL  = new Set(['surfers','delrey','minas','contagem','estacao','tommy','lez']);
+const PERF_AVAIL  = new Set(['surfers','delrey','minas','contagem','estacao','tommy','lez','site']);
 const SURFERS_STORES = ['delrey','minas','contagem','estacao'];
 const PERF_CUR    = 4;         // Mai = em andamento
 const PERF_LAST3  = [PERF_CUR-2, PERF_CUR-1, PERF_CUR];  // Mar, Abr, Mai
@@ -1786,6 +1787,12 @@ const PERF_HIST = {
     2024:[null,null,null,null,null,null,null,null,null,null,null,null],
     2025:[null,null,null,null,null,null,null,77550,68753,83603,123697,207733],
   },
+  site: {
+    2022:[null,null,null,null,null,null,null,null,null,null,null,null],
+    2023:[null,null,null,null,null,null,null,null,null,null,null,null],
+    2024:[null,null,null,null,null,null,null,null,null,null,null,null],
+    2025:[null,null,null,null,null,null,null,null,null,null,null,null],
+  },
 };
 const PERF_2026 = {
   surfers:  [377906,343155,408044,386276,null,null,null,null,null,null,null,null],
@@ -1795,6 +1802,7 @@ const PERF_2026 = {
   estacao:  [ 72779, 77070, 95819, 78318,null,null,null,null,null,null,null,null],
   tommy:    [ 52889, 64108, 77176, 83443,null,null,null,null,null,null,null,null],
   lez:      [112699, 57373, 49583, 81151,null,null,null,null,null,null,null,null],
+  site:     [  null,  null,  null,  null,null,null,null,null,null,null,null,null],
 };
 
 function fmtBRL(n)  { if (n === null || n === undefined) return '—'; return 'R$ ' + Math.round(n).toLocaleString('pt-BR'); }
@@ -1858,7 +1866,7 @@ function calcPerfMetrics(k, curMonthOverride = null) {
 
 let perfChart = null, perfAnnualChart = null;
 
-const ALL_STORES = ['delrey','minas','contagem','estacao','tommy','lez'];
+const ALL_STORES = ['delrey','minas','contagem','estacao','tommy','lez','site'];
 const PD = {
   board: null, year: null, month: null, data: null, metaLoja: 0,
   activeEmpId: null, employees: [], allVsales: {}, weights: {}, fluxo: {},
@@ -6133,7 +6141,7 @@ function _escHtml(str) {
   return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-const NF_STORES = ['delrey','minas','contagem','estacao','tommy','lez'];
+const NF_STORES = ['delrey','minas','contagem','estacao','tommy','lez','site'];
 
 function _fmtNFDate(iso) {
   if (!iso) return '';
@@ -7403,7 +7411,7 @@ function triggerMetaCelebration(label, color) {
 }
 
 // ── Boletas de Defeito ─────────────────────────────────────────────────────
-const NF_STORES_BOL = ['delrey','minas','contagem','estacao','tommy','lez'];
+const NF_STORES_BOL = ['delrey','minas','contagem','estacao','tommy','lez','site'];
 
 function _boletaDaysLeft(b) {
   if (!b.dataEntregue) return null;
@@ -8130,7 +8138,7 @@ function _renderReqLojaHistory(body, board, onBack) {
 function _renderReqAdminView(body) {
   let filterStatus = 'pendente';
   let filterBoard  = '';
-  const STORE_BOARDS = ['delrey','minas','contagem','estacao','tommy','lez'];
+  const STORE_BOARDS = ['delrey','minas','contagem','estacao','tommy','lez','site'];
   const NEXT_STATUS = {
     'pendente':     [['em-separacao','Em Separação'],['enviado','Enviado']],
     'em-separacao': [['enviado','Enviado']],
@@ -8460,7 +8468,7 @@ function initBoletasModal() {
 // ── Users Management ───────────────────────────────────────────────────────
 const BOARD_LABELS = {
   '': 'Admin', escritorio: 'Escritório', delrey: 'Del Rey', minas: 'Minas',
-  contagem: 'Contagem', estacao: 'Estação', tommy: 'Tommy', lez: 'Lez a Lez'
+  contagem: 'Contagem', estacao: 'Estação', tommy: 'Tommy', lez: 'Lez a Lez', site: 'Site'
 };
 
 async function _loadUsersList() {

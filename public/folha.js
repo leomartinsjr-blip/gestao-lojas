@@ -7,6 +7,7 @@ const BOARDS_INFO = {
   estacao:  { label: 'ESTAÇÃO',   color: '#F85149' },
   tommy:    { label: 'TOMMY',     color: '#22D3EE' },
   lez:      { label: 'LEZ A LEZ', color: '#F472B6' },
+  site:     { label: 'SITE',      color: '#A78BFA' },
 };
 const STORE_BOARDS = Object.keys(BOARDS_INFO);
 const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',

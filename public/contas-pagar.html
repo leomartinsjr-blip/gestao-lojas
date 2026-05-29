@@ -336,8 +336,8 @@ function renderGroups() {
   empty.style.display = 'none';
 
   // Agrupar por loja (board)
-  const LOJA_LABEL = { delrey:'DEL REY', minas:'MINAS', contagem:'CONTAGEM', tommy:'TOMMY', estacao:'ESTAÇÃO', lez:'LEZ A LEZ', escritorio:'ESCRITÓRIO' };
-  const LOJA_ORDER = ['delrey','escritorio','minas','contagem','tommy','estacao','lez'];
+  const LOJA_LABEL = { delrey:'DEL REY', minas:'MINAS', contagem:'CONTAGEM', tommy:'TOMMY', estacao:'ESTAÇÃO', lez:'LEZ A LEZ', escritorio:'ESCRITÓRIO', site:'SITE' };
+  const LOJA_ORDER = ['delrey','escritorio','site','minas','contagem','tommy','estacao','lez'];
   const groups = {};
   items.forEach(it => {
     const key = it.board || 'outros';

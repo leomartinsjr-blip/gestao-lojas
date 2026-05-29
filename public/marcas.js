@@ -6,6 +6,7 @@ const STORE_BOARDS = {
   estacao:  { label: 'ESTAÇÃO',   color: '#F85149' },
   tommy:    { label: 'TOMMY',     color: '#22D3EE' },
   lez:      { label: 'LEZ A LEZ', color: '#F472B6' },
+  site:     { label: 'SITE',      color: '#A78BFA' },
 };
 
 const fBRL = v => 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
