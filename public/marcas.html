@@ -136,11 +136,21 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
   .mx-setor-pct-total{display:none}
   /* Bar: reduzir indent */
   .mx-bar-wrap{padding-left:calc(.6rem + 1.2rem + .5rem)}
-  /* Brand header */
-  .mx-brand-hdr{padding:.6rem .75rem;gap:.5rem}
-  .mx-brand-rank{min-width:1.2rem}
-  .mx-brand-right{gap:.5rem}
+  /* Brand header: nome na 1ª linha, valor na 2ª */
+  .mx-brand-hdr{padding:.6rem .75rem;gap:.4rem;flex-wrap:wrap}
+  .mx-brand-rank{min-width:1.2rem;flex-shrink:0}
+  .mx-brand-name{white-space:normal;font-size:.85rem;width:0;flex-basis:0;flex-grow:1}
+  .mx-brand-right{width:100%;padding-left:calc(1.2rem + .4rem);justify-content:space-between}
   .mx-brand-pecas{display:none}
+  .mx-brand-val{font-size:.85rem}
+  /* Setor header: nome visível */
+  .mx-setor-name{white-space:normal;font-size:.75rem}
+  .mx-setor-hdr{padding:.4rem .6rem .4rem calc(.6rem + 1.2rem + .4rem);gap:.35rem;flex-wrap:wrap}
+  .mx-setor-val{font-size:.75rem}
+  .mx-setor-pecas{display:none}
+  .mx-setor-pct-total{display:none}
+  /* Bar: reduzir indent */
+  .mx-bar-wrap{padding-left:calc(.6rem + 1.2rem + .5rem)}
   /* Summary cards: 2 colunas */
   .mx-summary{grid-template-columns:repeat(2,1fr);gap:.5rem;margin-bottom:.75rem}
 }
