@@ -1267,9 +1267,9 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
     const wb = new ExcelJS.Workbook();
     wb.creator = 'Gestão Lojas'; wb.created = new Date();
     wb.calcProperties = { fullCalcOnLoad: true };
+    await buildSheet(wb, 'TOTAL', 'total');
     for (const emp of emps)
       await buildSheet(wb, (emp.apelido || emp.name).slice(0, 31), emp.id);
-    await buildSheet(wb, 'TOTAL', 'total');
 
     res.setHeader('Content-Disposition', `attachment; filename="fechamento-${board}-${pad(m)}-${y}.xlsx"`);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -4908,7 +4908,10 @@ app.get('/api/folha/:year/:month/export', requireAuth, async (req, res) => {
     const board = req.query.board; // loja específica ou todas
     const db    = await readDB();
     const folha = (db.folhas || {})[mk] || {};
-    const employees = (db.employees || []).filter(e => !e.inativo);
+    const savedFolhaEmpIds = new Set(
+      Object.values(folha).flatMap(bd => Object.keys(bd.entries || {}).map(Number))
+    );
+    const employees = (db.employees || []).filter(e => !e.inativo || savedFolhaEmpIds.has(e.id));
 
     const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                        'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -5029,7 +5032,10 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
     const board = req.query.board;
     const db    = await readDB();
     const folha = (db.folhas || {})[mk] || {};
-    const employees = (db.employees || []).filter(e => !e.inativo);
+    const savedFolhaEmpIds2 = new Set(
+      Object.values(folha).flatMap(bd => Object.keys(bd.entries || {}).map(Number))
+    );
+    const employees = (db.employees || []).filter(e => !e.inativo || savedFolhaEmpIds2.has(e.id));
 
     const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                        'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
