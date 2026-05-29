@@ -4178,13 +4178,15 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
         return { ...r, _status: corMatch ? 'existing' : 'needs_cor', _corsDisponiveis: corsDisponiveis, _corMatch: corMatch };
       }
 
-      // Ref não encontrada e sem cor separada → tenta split por prefixo
+      // Ref não encontrada diretamente → tenta split por prefixo
       // (ex: "VN00066XY28CASA" → ref="VN00066XY", cor candidata="28CASA")
-      if (ref && !cor) {
+      // (ex: "911545-014" com cor="014" → ref="911545", usa cor da coluna separada)
+      if (ref) {
         const parsed = parseCombined(ref);
         if (parsed) {
           const corsDisponiveis = idx[parsed.ref];
-          const corMatch = matchColor(parsed.extractedCor, corsDisponiveis);
+          const corToMatch = cor || parsed.extractedCor;
+          const corMatch = matchColor(corToMatch, corsDisponiveis);
           return {
             ...r,
             _status:          corMatch ? 'existing' : 'needs_cor',
@@ -4223,45 +4225,174 @@ app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
     const ExcelJS = require('exceljs');
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Produtos');
-    ws.columns = [
-      { header: 'Descrição',                    key: 'descricao',   width: 50 },
-      { header: 'Referência',                   key: 'referencia',  width: 22 },
-      { header: 'Contabiliza saldo em estoque', key: 'contabiliza', width: 28 },
-      { header: 'Setor',                        key: 'setor',       width: 22 },
-      { header: 'Linha',                        key: 'linha',       width: 12 },
-      { header: 'Tamanho',                      key: 'tamanho',     width: 12 },
-      { header: 'Cores',                        key: 'cores',       width: 16 },
-      { header: 'Unidade de venda',             key: 'unidade',     width: 15 },
-      { header: 'Custo com ICMS (R$)',           key: 'custo_icms',  width: 18 },
-      { header: 'Mark-up (%)',                  key: 'markup',      width: 12 },
-      { header: 'Preço de venda R$',            key: 'preco_venda', width: 16 },
-      { header: 'NCM',                          key: 'ncm',         width: 14 },
-      { header: 'Tipo de item',                 key: 'tipo_item',   width: 25 },
-      { header: 'Código de barras',             key: 'cod_barra',   width: 22 },
+
+    // Colunas na ordem exata do template de importação do Microvix
+    const COLS = [
+      { header: 'Código',                                   key: 'codigo',         width: 12 },
+      { header: 'Descrição',                                key: 'descricao',      width: 50 },
+      { header: 'Referência',                               key: 'referencia',     width: 22 },
+      { header: 'Cód. Auxiliar',                            key: 'cod_auxiliar',   width: 18 },
+      { header: 'Fornecedor',                               key: 'fornecedor',     width: 22 },
+      { header: 'Fornecedor exclusivo',                     key: 'forn_excl',      width: 20 },
+      { header: 'Comprador',                                key: 'comprador',      width: 16 },
+      { header: 'Empresa',                                  key: 'empresa',        width: 16 },
+      { header: 'Contabiliza saldo em estoque',             key: 'contabiliza',    width: 28 },
+      { header: 'Indisponível para venda',                  key: 'indisponivel',   width: 24 },
+      { header: 'Setor',                                    key: 'setor',          width: 22 },
+      { header: 'Linha',                                    key: 'linha',          width: 14 },
+      { header: 'Marca',                                    key: 'marca',          width: 18 },
+      { header: 'Coleção',                                  key: 'colecao',        width: 14 },
+      { header: 'Espessura',                                key: 'espessura',      width: 12 },
+      { header: 'Classificação',                            key: 'classificacao',  width: 16 },
+      { header: 'Tamanho',                                  key: 'tamanho',        width: 14 },
+      { header: 'Cores',                                    key: 'cores',          width: 18 },
+      { header: 'Unidade de venda',                         key: 'unidade',        width: 16 },
+      { header: 'Múltiplo de venda',                        key: 'multiplo',       width: 16 },
+      { header: 'Moeda',                                    key: 'moeda',          width: 10 },
+      { header: 'Custo com ICMS (R$)',                      key: 'custo_icms',     width: 18 },
+      { header: 'Desconto (%)',                             key: 'desconto',       width: 14 },
+      { header: 'Acréscimo (%)',                            key: 'acrescimo',      width: 14 },
+      { header: 'IPI (%)',                                  key: 'ipi',            width: 10 },
+      { header: 'Frete (R$)',                               key: 'frete',          width: 12 },
+      { header: 'Despesas acessórias (R$)',                 key: 'desp_acess',     width: 22 },
+      { header: 'Substituição tributária (R$)',             key: 'subst_trib',     width: 24 },
+      { header: 'Diferencial ICMS (R$)',                    key: 'dif_icms',       width: 20 },
+      { header: 'Mark-up (%)',                              key: 'markup',         width: 12 },
+      { header: 'Preço de venda R$',                        key: 'preco_venda',    width: 16 },
+      { header: 'Permite desconto',                         key: 'perm_desc',      width: 16 },
+      { header: 'Comissão %',                               key: 'comissao',       width: 12 },
+      { header: 'Configuração tributária',                  key: 'conf_trib',      width: 22 },
+      { header: 'NCM',                                      key: 'ncm',            width: 14 },
+      { header: 'CEST',                                     key: 'cest',           width: 10 },
+      { header: 'Produto supérfluo',                        key: 'superfluo',      width: 18 },
+      { header: 'Tipo de item',                             key: 'tipo_item',      width: 26 },
+      { header: 'Origem da mercadoria',                     key: 'origem',         width: 20 },
+      { header: 'Regime de Incidência PIS e COFINS',        key: 'pis_cofins',     width: 32 },
+      { header: 'Produto é brinde',                         key: 'brinde',         width: 16 },
+      { header: 'Produto de catálogo',                      key: 'catalogo',       width: 18 },
+      { header: 'Descrição de catálogo',                    key: 'desc_catalogo',  width: 22 },
+      { header: 'Disponível na loja virtual',               key: 'loja_virtual',   width: 24 },
+      { header: 'Exige controle',                           key: 'exige_ctrl',     width: 16 },
+      { header: 'Tipo de controle',                         key: 'tipo_ctrl',      width: 22 },
+      { header: 'Tamanho controle',                         key: 'tam_ctrl',       width: 18 },
+      { header: 'Peso bruto (kg)',                          key: 'peso_bruto',     width: 14 },
+      { header: 'Peso líquido (kg)',                        key: 'peso_liq',       width: 14 },
+      { header: 'Descrição complementar?',                  key: 'desc_compl',     width: 22 },
+      { header: 'Altura (frete)',                           key: 'alt_frete',      width: 14 },
+      { header: 'Largura (frete)',                          key: 'larg_frete',     width: 14 },
+      { header: 'Comprimento (frete)',                      key: 'comp_frete',     width: 18 },
+      { header: 'Altura',                                   key: 'altura',         width: 10 },
+      { header: 'Largura',                                  key: 'largura',        width: 10 },
+      { header: 'Comprimento',                              key: 'comprimento',    width: 14 },
+      { header: 'Importado por balança',                    key: 'balanca_imp',    width: 20 },
+      { header: 'Produto vendido por (balança)',            key: 'balanca_vnd',    width: 26 },
+      { header: 'Quantidade mínima',                        key: 'qtd_min',        width: 16 },
+      { header: 'Quantidade máxima',                        key: 'qtd_max',        width: 16 },
+      { header: 'Quantidade compra',                        key: 'qtd_compra',     width: 16 },
+      { header: 'Localização',                              key: 'localizacao',    width: 14 },
+      { header: 'Observação',                               key: 'observacao',     width: 16 },
+      { header: 'Código de barras',                         key: 'cod_barra',      width: 22 },
+      { header: 'Características',                          key: 'caracterist',    width: 18 },
+      { header: 'Status',                                   key: 'status',         width: 10 },
+      { header: 'Descricao Completa (B2C)',                 key: 'b2c_desc',       width: 22 },
+      { header: 'Descricao Garantia (B2C)',                 key: 'b2c_garantia',   width: 22 },
+      { header: 'Tags (B2C)',                               key: 'b2c_tags',       width: 14 },
+      { header: 'Flags (B2C)',                              key: 'b2c_flags',      width: 14 },
+      { header: 'Palavras Chave (B2C)',                     key: 'b2c_kw',         width: 18 },
+      { header: 'Canais (B2C)',                             key: 'b2c_canais',     width: 14 },
+      { header: 'Url Vídeo (B2C)',                          key: 'b2c_video',      width: 16 },
+      { header: 'Código Integracao OMS',                    key: 'oms',            width: 22 },
+      { header: 'Produto Desativado',                       key: 'desativado',     width: 18 },
     ];
+
+    ws.columns = COLS;
     ws.getRow(1).eachCell(cell => {
-      cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0D1117' } };
-      cell.font      = { bold: true, color: { argb: 'FF58A6FF' } };
+      cell.fill      = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1D4ED8' } };
+      cell.font      = { bold: true, color: { argb: 'FFFFFFFF' } };
       cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
-      cell.border    = { bottom: { style: 'thin', color: { argb: 'FF58A6FF' } } };
     });
     ws.getRow(1).height = 30;
-    rows.forEach(r => ws.addRow({
-      descricao:   r.nome         || '',
-      referencia:  r.referencia   || '',
-      contabiliza: 'Sim',
-      setor:       r.desc_setor   || '',
-      linha:       'Unisex',
-      tamanho:     r.desc_tamanho || '',
-      cores:       r.desc_cor     || '',
-      unidade:     'UN',
-      custo_icms:  r.preco_custo  || '',
-      markup:      r.markup       || '',
-      preco_venda: r.preco_venda  || '',
-      ncm:         r.ncm          || '',
-      tipo_item:   'Mercadoria para Revenda',
-      cod_barra:   r.cod_barra    || '',
-    }));
+
+    rows.forEach(r => {
+      ws.addRow({
+        codigo:        '',
+        descricao:     r.nome        || '',
+        referencia:    r.referencia  || '',
+        cod_auxiliar:  '',
+        fornecedor:    r.fornecedor  || '',
+        forn_excl:     '',
+        comprador:     '',
+        empresa:       '',
+        contabiliza:   'Sim',
+        indisponivel:  'Não',
+        setor:         r.desc_setor  || '',
+        linha:         r.linha       || '',
+        marca:         r.desc_marca  || '',
+        colecao:       r.colecao     || '',
+        espessura:     '',
+        classificacao: '',
+        tamanho:       r.desc_tamanho || '',
+        cores:         r.desc_cor    || '',
+        unidade:       'UN',
+        multiplo:      '1',
+        moeda:         '',
+        custo_icms:    r.preco_custo || '',
+        desconto:      '',
+        acrescimo:     '',
+        ipi:           '',
+        frete:         '',
+        desp_acess:    '',
+        subst_trib:    '',
+        dif_icms:      '',
+        markup:        r.markup      || '',
+        preco_venda:   r.preco_venda || '',
+        perm_desc:     'Sim',
+        comissao:      '',
+        conf_trib:     '',
+        ncm:           r.ncm         || '',
+        cest:          '',
+        superfluo:     'Não',
+        tipo_item:     'Mercadoria para Revenda',
+        origem:        '',
+        pis_cofins:    '',
+        brinde:        'Não',
+        catalogo:      '',
+        desc_catalogo: '',
+        loja_virtual:  '',
+        exige_ctrl:    'Sim',
+        tipo_ctrl:     'Por Cor e Tamanho',
+        tam_ctrl:      '',
+        peso_bruto:    '',
+        peso_liq:      '',
+        desc_compl:    '',
+        alt_frete:     '',
+        larg_frete:    '',
+        comp_frete:    '',
+        altura:        '',
+        largura:       '',
+        comprimento:   '',
+        balanca_imp:   '',
+        balanca_vnd:   '',
+        qtd_min:       '',
+        qtd_max:       '',
+        qtd_compra:    '',
+        localizacao:   '',
+        observacao:    '',
+        cod_barra:     r.cod_barra   || '',
+        caracterist:   '',
+        status:        'Ativo',
+        b2c_desc:      '',
+        b2c_garantia:  '',
+        b2c_tags:      '',
+        b2c_flags:     '',
+        b2c_kw:        '',
+        b2c_canais:    '',
+        b2c_video:     '',
+        oms:           '',
+        desativado:    '',
+      });
+    });
+
     const date = new Date().toISOString().slice(0, 10);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
     res.setHeader('Content-Disposition', `attachment; filename=cadastro_microvix_${date}.xlsx`);
