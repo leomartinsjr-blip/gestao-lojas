@@ -4135,23 +4135,30 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
 
     const norm = s => (s || '').toString().replace(/\.0+$/, '').trim().toUpperCase();
 
-    // Dado um string de cor candidata e a lista de cores conhecidas,
-    // retorna a cor conhecida mais longa que seja prefixo do candidato.
-    // Ex: candidato="28CASA", cores=["28","XY28"] → "28"
-    //     candidato="Y28LOJA", cores=["Y28","28"] → "Y28" (mais longa primeiro)
+    // Retorna a cor conhecida mais longa que seja prefixo do candidato.
+    // Strip de separadores iniciais: "-014" → "014"; "28CASA" → match "28".
     const matchColor = (candidate, corsDisponiveis) => {
       if (!candidate || !corsDisponiveis.length) return null;
-      if (corsDisponiveis.includes(candidate)) return candidate;
+      const c = candidate.replace(/^[-_\s\.\/]+/, '');
+      if (!c) return null;
+      if (corsDisponiveis.includes(c)) return c;
       const byLen = [...corsDisponiveis].sort((a, b) => b.length - a.length);
-      for (const c of byLen) {
-        if (c.length >= 2 && candidate.startsWith(c)) return c;
+      for (const col of byLen) {
+        if (col.length >= 2 && c.startsWith(col)) return col;
       }
       return null;
     };
 
-    // Testa prefixos do código combinado para encontrar ref no índice.
-    // O sufixo restante é o candidato de cor (pode ter lixo no final).
+    // Encontra ref+cor num código combinado.
+    // 1. Tenta corte no separador explícito: "911545-014" → ref="911545", cor="014"
+    // 2. Prefixo sem separador: "VN00066XY28CASA" → ref="VN00066XY", cor="28CASA"
     const parseCombined = (fullStr) => {
+      const sepPositions = [...fullStr.matchAll(/[-_\/\s]/g)].map(m => m.index);
+      for (const pos of sepPositions) {
+        const refPart = fullStr.slice(0, pos);
+        if (refPart.length >= 3 && idx[refPart])
+          return { ref: refPart, extractedCor: fullStr.slice(pos + 1) };
+      }
       for (let len = fullStr.length - 1; len >= 3; len--) {
         const candidate = fullStr.slice(0, len);
         if (idx[candidate]) return { ref: candidate, extractedCor: fullStr.slice(len) };

@@ -2406,7 +2406,8 @@ function _cadBuildProducts() {
     // Se a coluna foi mapeada diretamente, usa o valor bruto (01K, Y28, 7.0, etc.)
     // sem filtrar pela lista interna de cores/tamanhos conhecidos.
     // O filtro é só para extração de texto livre onde o valor pode conter ruído.
-    const splitRaw = v => v.split(/[\/,;\s|+]+/).map(s => s.trim()).filter(Boolean);
+    // "/" não é separador: S/M é um tamanho único, não dois. Usa só ,;|+ e espaço.
+    const splitRaw = v => v.split(/[,;\s|+]+/).map(s => s.trim()).filter(Boolean);
     const hasMappedCor = !!(p.desc_cor      && _cad.mapping.desc_cor);
     const hasMappedTam = !!(p.desc_tamanho  && _cad.mapping.desc_tamanho);
 
