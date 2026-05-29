@@ -4135,9 +4135,22 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
 
     const norm = s => (s || '').toString().replace(/\.0+$/, '').trim().toUpperCase();
 
-    // Tenta encontrar ref e cor num código combinado (ex: "VN00066XY28CASA")
-    // Testa prefixos do mais longo para o mais curto até achar um ref no índice.
-    // O sufixo restante é a cor extraída (o que sobra após a ref).
+    // Dado um string de cor candidata e a lista de cores conhecidas,
+    // retorna a cor conhecida mais longa que seja prefixo do candidato.
+    // Ex: candidato="28CASA", cores=["28","XY28"] → "28"
+    //     candidato="Y28LOJA", cores=["Y28","28"] → "Y28" (mais longa primeiro)
+    const matchColor = (candidate, corsDisponiveis) => {
+      if (!candidate || !corsDisponiveis.length) return null;
+      if (corsDisponiveis.includes(candidate)) return candidate;
+      const byLen = [...corsDisponiveis].sort((a, b) => b.length - a.length);
+      for (const c of byLen) {
+        if (c.length >= 2 && candidate.startsWith(c)) return c;
+      }
+      return null;
+    };
+
+    // Testa prefixos do código combinado para encontrar ref no índice.
+    // O sufixo restante é o candidato de cor (pode ter lixo no final).
     const parseCombined = (fullStr) => {
       for (let len = fullStr.length - 1; len >= 3; len--) {
         const candidate = fullStr.slice(0, len);
@@ -4150,21 +4163,21 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
       const ref = norm(r.referencia || '');
       const cor = norm(r.desc_cor   || '');
 
-      // Lookup direto
+      // Lookup direto de ref
       if (ref && idx[ref]) {
         const corsDisponiveis = idx[ref];
         if (!cor) return { ...r, _status: 'existing', _corsDisponiveis: corsDisponiveis, _corMatch: null };
-        const corMatch = corsDisponiveis.includes(cor) ? cor : null;
+        const corMatch = matchColor(cor, corsDisponiveis);
         return { ...r, _status: corMatch ? 'existing' : 'needs_cor', _corsDisponiveis: corsDisponiveis, _corMatch: corMatch };
       }
 
-      // Sem cor separada e ref não encontrada — tenta split por prefixo
-      // (cobre códigos como "VN00066XY28CASA" onde ref e cor vêm concatenados)
+      // Ref não encontrada e sem cor separada → tenta split por prefixo
+      // (ex: "VN00066XY28CASA" → ref="VN00066XY", cor candidata="28CASA")
       if (ref && !cor) {
         const parsed = parseCombined(ref);
         if (parsed) {
           const corsDisponiveis = idx[parsed.ref];
-          const corMatch = corsDisponiveis.includes(parsed.extractedCor) ? parsed.extractedCor : null;
+          const corMatch = matchColor(parsed.extractedCor, corsDisponiveis);
           return {
             ...r,
             _status:          corMatch ? 'existing' : 'needs_cor',
