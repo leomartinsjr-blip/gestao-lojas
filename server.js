@@ -1121,6 +1121,12 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
         { key:'pa',    width:7  },
       ];
       const isTotal = empId === 'total';
+      const empSheetNames = isTotal ? emps.map(e => (e.apelido || e.name).slice(0, 31)) : [];
+      const crossSum = (col, row) => {
+        if (!empSheetNames.length) return null;
+        const refs = empSheetNames.map(n => `'${n.replace(/'/g, "''")}'!${col}${row}`);
+        return refs.length === 1 ? refs[0] : `SUM(${refs.join(',')})`;
+      };
       const mensal  = isTotal
         ? emps.reduce((s,e) => s + sellerMensal(e.id), 0)
         : sellerMensal(empId);
@@ -1225,13 +1231,20 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
             fmtPct, isWE ? C.WE_BG : C.CALC_BG);
         set(6, { formula:`IF(D${cRow}>0,SUM(G4:G${cRow})-D${cRow},"")`, result: desvio ?? '' },
             fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
-        set(7, valor > 0 ? +valor.toFixed(2) : null, fmtBRL);
+        if (isTotal) {
+          const fG = crossSum('G', cRow), fJ = crossSum('J', cRow), fK = crossSum('K', cRow);
+          set(7,  { formula: fG, result: valor > 0 ? +valor.toFixed(2) : 0 }, fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
+          set(10, { formula: fJ, result: pecas  || 0 }, fmtInt, isWE ? C.WE_BG : C.CALC_BG);
+          set(11, { formula: fK, result: atend  || 0 }, fmtInt, isWE ? C.WE_BG : C.CALC_BG);
+        } else {
+          set(7,  valor > 0 ? +valor.toFixed(2) : null, fmtBRL);
+          set(10, pecas > 0 ? pecas : null, fmtInt);
+          set(11, atend > 0 ? atend : null, fmtInt);
+        }
         set(8, { formula:`IF(SUM(G4:G${cRow})>0,SUM(G4:G${cRow})/${wAcum},"")`, result: proj ?? '' },
             fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
         set(9, { formula:`IF(H${cRow}>0,H${cRow}/${mensal}*100,"")`, result: projPct ?? '' },
             fmtPct, isWE ? C.WE_BG : C.CALC_BG);
-        set(10, pecas > 0 ? pecas : null, fmtInt);
-        set(11, atend > 0 ? atend : null, fmtInt);
         set(12, { formula:`IF(K${cRow}>0,J${cRow}/K${cRow},"")`, result: pa ?? '' },
             fmtDec, isWE ? C.WE_BG : C.CALC_BG);
       }

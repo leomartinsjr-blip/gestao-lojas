@@ -204,16 +204,62 @@ function renderPanel() {
     </div>`;
   const emps = boardEmps(board);
   renderEmpTabs(emps);
-  if (emps.length) selectEmp(emps[0].id);
+  selectTotal();
 }
 
 function boardEmps(board) {
   return FP.employees.filter(e => e.board === board);
 }
 
+function buildTotalForm(emps) {
+  if (!emps.length) return '<div style="padding:2rem;color:#8b949e;text-align:center">Nenhum funcionário nesta loja.</div>';
+  let totalProv = 0, totalDesc = 0, totalLiq = 0;
+  const rows = emps.map(emp => {
+    let entry = FP.folha[FP.board]?.entries?.[emp.id] || defaultEntry(emp);
+    const calcPrem = r2(FP.premiacaoSemanal[emp.id] || 0);
+    if (calcPrem !== r2(entry.premiacao || 0)) entry = { ...entry, premiacao: calcPrem };
+    totalProv += entry.proventos     || 0;
+    totalDesc += entry.totalDescontos || 0;
+    totalLiq  += entry.liquido        || 0;
+    return `<tr style="border-bottom:1px solid #21262d">
+      <td style="padding:.4rem .5rem;color:#e6edf3">${emp.apelido || emp.name.split(' ')[0]}</td>
+      <td style="padding:.4rem .5rem;color:#8b949e;font-size:.78rem">${emp.cargo}</td>
+      <td style="padding:.4rem .5rem;text-align:right;color:#e6edf3">${brl(entry.proventos||0)}</td>
+      <td style="padding:.4rem .5rem;text-align:right;color:#f85149">${brl(entry.totalDescontos||0)}</td>
+      <td style="padding:.4rem .5rem;text-align:right;color:#3fb950;font-weight:600">${brl(entry.liquido||0)}</td>
+    </tr>`;
+  }).join('');
+  return `
+  <div class="fp-emp-form active" id="empform-total" style="padding:.75rem 0">
+    <table style="width:100%;border-collapse:collapse;font-size:.85rem">
+      <thead>
+        <tr style="border-bottom:2px solid #30363d">
+          <th style="text-align:left;padding:.35rem .5rem;color:#8b949e;font-size:.73rem;text-transform:uppercase;font-weight:600">Funcionário</th>
+          <th style="text-align:left;padding:.35rem .5rem;color:#8b949e;font-size:.73rem;text-transform:uppercase;font-weight:600">Cargo</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;font-size:.73rem;text-transform:uppercase;font-weight:600">Proventos</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;font-size:.73rem;text-transform:uppercase;font-weight:600">Descontos</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;font-size:.73rem;text-transform:uppercase;font-weight:600">Líquido</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+      <tfoot>
+        <tr style="border-top:2px solid #30363d">
+          <td colspan="2" style="padding:.5rem .5rem;color:#8b949e;font-size:.75rem;text-transform:uppercase;font-weight:700">TOTAL DA LOJA</td>
+          <td style="padding:.5rem .5rem;text-align:right;color:#e6edf3;font-weight:700">${brl(r2(totalProv))}</td>
+          <td style="padding:.5rem .5rem;text-align:right;color:#f85149;font-weight:700">${brl(r2(totalDesc))}</td>
+          <td style="padding:.5rem .5rem;text-align:right;color:#3fb950;font-weight:700">${brl(r2(totalLiq))}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>`;
+}
+
 function renderEmpTabs(emps) {
   const lojaData = FP.folha[FP.board] || {};
-  document.getElementById('fpEmpTabs').innerHTML = emps.map(e => {
+  const totalBtn = `<button id="tab-total" class="fp-emp-tab" onclick="selectTotal()">
+    TOTAL <span style="font-size:.68rem;opacity:.6;margin-left:.2rem">loja</span>
+  </button>`;
+  document.getElementById('fpEmpTabs').innerHTML = totalBtn + emps.map(e => {
     const has = !!(lojaData.entries?.[e.id]);
     return `<button id="tab-${e.id}"
       class="fp-emp-tab${has?' has-data':''}${e.id===FP.activeEmpId?' active':''}"
@@ -224,8 +270,16 @@ function renderEmpTabs(emps) {
   }).join('');
 }
 
+function selectTotal() {
+  FP.activeEmpId = null;
+  boardEmps(FP.board).forEach(e => document.getElementById(`tab-${e.id}`)?.classList.remove('active'));
+  document.getElementById('tab-total')?.classList.add('active');
+  document.getElementById('fpEmpForms').innerHTML = buildTotalForm(boardEmps(FP.board));
+}
+
 function selectEmp(empId) {
   FP.activeEmpId = empId;
+  document.getElementById('tab-total')?.classList.remove('active');
   boardEmps(FP.board).forEach(e => {
     document.getElementById(`tab-${e.id}`)?.classList.toggle('active', e.id === empId);
   });
