@@ -1337,6 +1337,7 @@ function _renderDashWeekBody(body, week, extraData) {
     let grandTotValor=0, grandTotMeta=0, grandTotPecas=0, grandTotAtend=0, grandTotPremio=0, grandTotProjecao=0, grandHasProj=false;
 
     for (const [bk, bc] of visible) {
+      if (bk === 'site') continue;
       const allEmps = byBoard[bk] || [];
       if (allEmps.length === 0) continue;
 
@@ -1467,6 +1468,7 @@ function _renderDashWeekBody(body, week, extraData) {
 
   // Non-admin: per-store section with its own table
   for (const [bk, bc] of visible) {
+    if (bk === 'site') continue;
     const allEmps = byBoard[bk] || [];
     if (allEmps.length === 0) continue;
 
