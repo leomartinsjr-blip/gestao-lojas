@@ -2403,11 +2403,19 @@ function _cadBuildProducts() {
     const setor = p.desc_setor || _cadSuggestSetor([txt]);
     const custo = p.preco_custo || '';
 
-    // Detecta TODAS as cores e tamanhos — expande em múltiplas linhas
-    const cors = _cadSplitCors(p.desc_cor  || '') .length ? _cadSplitCors(p.desc_cor)
-               : _cadExtractAllCors(txt).length    ? _cadExtractAllCors(txt)
+    // Se a coluna foi mapeada diretamente, usa o valor bruto (01K, Y28, 7.0, etc.)
+    // sem filtrar pela lista interna de cores/tamanhos conhecidos.
+    // O filtro é só para extração de texto livre onde o valor pode conter ruído.
+    const splitRaw = v => v.split(/[\/,;\s|+]+/).map(s => s.trim()).filter(Boolean);
+    const hasMappedCor = !!(p.desc_cor      && _cad.mapping.desc_cor);
+    const hasMappedTam = !!(p.desc_tamanho  && _cad.mapping.desc_tamanho);
+
+    const cors = hasMappedCor  ? splitRaw(p.desc_cor)
+               : _cadSplitCors(p.desc_cor  || '').length ? _cadSplitCors(p.desc_cor)
+               : _cadExtractAllCors(txt).length           ? _cadExtractAllCors(txt)
                : [''];
-    const tams = _cadSplitTams(p.desc_tamanho || '').length ? _cadSplitTams(p.desc_tamanho)
+    const tams = hasMappedTam  ? splitRaw(p.desc_tamanho)
+               : _cadSplitTams(p.desc_tamanho || '').length ? _cadSplitTams(p.desc_tamanho)
                : _cadExtractTam(txt)                         ? [_cadExtractTam(txt)]
                : ['Único'];
 
