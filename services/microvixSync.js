@@ -55,8 +55,11 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
     }
     const rows = await fetchMovimento(cnpjClean, dtIni, dtFin, chave);
     console.log(`[Microvix/site] ${rows.length} linhas de movimento (${dtIni} → ${dtFin})`);
+    // Filtra pelo cod_vendedor do funcionário site (microvixCod), se configurado
+    const siteCod = siteEmp.microvixCod ? String(siteEmp.microvixCod).trim() : null;
     const dayAgg = {};
     for (const row of rows) {
+      if (siteCod && String(row.cod_vendedor || '').trim() !== siteCod) continue;
       if (row.cancelado === 'S' || row.cancelado === '1') continue;
       const dateStr = parseDate(row.data_documento);
       if (!dateStr) continue;
