@@ -3324,8 +3324,8 @@ async function _buildCatalog(lojas) {
   // 'site' usa os mesmos códigos de produto das lojas físicas — excluir evita duplicação de memória
   const boards = Object.keys(lojas).filter(b => b !== 'site');
   if (!boards.length) return {};
-  // Libera cache antigo antes de construir o novo — evita pico duplo de memória (~254 MB → ~127 MB)
-  const _prevCache = _catalogCache;
+  // Descarta cache antigo ANTES de construir — sem referência _prevCache para não manter o objeto
+  // vivo durante o build (evita pico duplo de ~254 MB → só ~127 MB durante a construção)
   _catalogCache = null;
   try {
     const map = {};
@@ -3398,9 +3398,12 @@ async function _buildCatalog(lojas) {
       return boardCount;
     }
 
-    // Todas as lojas em paralelo — tempo de build = tempo da loja mais lenta, não soma de todas
-    const counts = await Promise.all(boards.map(b => fetchBoard(b).catch(e => { console.warn(`[Catalog/${b}] erro:`, e.message); return 0; })));
-    const totalProd = counts.reduce((s, c) => s + c, 0);
+    // Lojas sequencialmente — evita múltiplos buffers HTTP em memória ao mesmo tempo
+    let totalProd = 0;
+    for (const b of boards) {
+      const n = await fetchBoard(b).catch(e => { console.warn(`[Catalog/${b}] erro:`, e.message); return 0; });
+      totalProd += n;
+    }
 
     console.log(`[Catalog] ${totalProd} produtos total → ${Object.keys(map).length} entradas (${boards.length} lojas)`);
     _catalogCache   = map;
@@ -3408,8 +3411,7 @@ async function _buildCatalog(lojas) {
     return map;
   } catch (e) {
     console.warn('[Catalog] Erro:', e.message);
-    if (_prevCache) _catalogCache = _prevCache;
-    return _prevCache || {};
+    return {};
   }
 }
 
