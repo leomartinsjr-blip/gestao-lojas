@@ -116,6 +116,34 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
 /* ── Badge de cobertura ── */
 .mx-cob{font-size:.72rem;font-weight:700;width:36px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}
 .mx-cob-lbl{font-size:.6rem;font-weight:700;color:#8b949e;width:36px;text-align:right;flex-shrink:0;letter-spacing:.03em}
+
+/* ── Mobile ── */
+@media(max-width:600px){
+  .mx-header{height:auto;padding:.5rem .75rem;gap:.4rem}
+  .mx-controls{margin-left:0;width:100%;flex-direction:column;align-items:stretch;gap:.4rem}
+  .mx-controls > div:first-child{display:flex;gap:.3rem}
+  .mx-controls > div:first-child input{flex:1;min-width:0}
+  .mx-shortcuts-row{display:flex;gap:.3rem;flex-wrap:wrap}
+  .mx-search-btn{width:100%;padding:.45rem;font-size:.85rem}
+  .mx-view-toggle{align-self:stretch}
+  .mx-view-btn{flex:1}
+  .mx-body{padding:.75rem .5rem;margin-top:0}
+  /* Tabela de produtos: scroll horizontal */
+  .mx-prod-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .mx-prod-tbl{min-width:480px}
+  /* Setor header: compactar */
+  .mx-setor-hdr{padding:.4rem .6rem .4rem calc(.6rem + 1.2rem + .5rem);gap:.4rem}
+  .mx-setor-pct-total{display:none}
+  /* Bar: reduzir indent */
+  .mx-bar-wrap{padding-left:calc(.6rem + 1.2rem + .5rem)}
+  /* Brand header */
+  .mx-brand-hdr{padding:.6rem .75rem;gap:.5rem}
+  .mx-brand-rank{min-width:1.2rem}
+  .mx-brand-right{gap:.5rem}
+  .mx-brand-pecas{display:none}
+  /* Summary cards: 2 colunas */
+  .mx-summary{grid-template-columns:repeat(2,1fr);gap:.5rem;margin-bottom:.75rem}
+}
 </style>
 </head>
 <body>
@@ -131,16 +159,16 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
       <input type="date" id="dtFin" class="mx-inp">
     </div>
 
-    <button class="mx-shortcut" data-s="mes">Este mês</button>
-    <button class="mx-shortcut" data-s="mesant">Mês ant.</button>
-    <button class="mx-shortcut" data-s="30d">30 dias</button>
-    <button class="mx-shortcut" data-s="3m">3 meses</button>
-
-    <select id="boardSel" class="mx-sel" style="display:none"></select>
-
-    <div class="mx-view-toggle">
-      <button class="mx-view-btn active" data-view="marca">Por Marca</button>
-      <button class="mx-view-btn" data-view="setor">Por Setor</button>
+    <div class="mx-shortcuts-row">
+      <button class="mx-shortcut" data-s="mes">Este mês</button>
+      <button class="mx-shortcut" data-s="mesant">Mês ant.</button>
+      <button class="mx-shortcut" data-s="30d">30 dias</button>
+      <button class="mx-shortcut" data-s="3m">3 meses</button>
+      <select id="boardSel" class="mx-sel" style="display:none"></select>
+      <div class="mx-view-toggle">
+        <button class="mx-view-btn active" data-view="marca">Por Marca</button>
+        <button class="mx-view-btn" data-view="setor">Por Setor</button>
+      </div>
     </div>
 
     <button class="mx-search-btn" id="searchBtn">Buscar</button>
