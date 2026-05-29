@@ -2260,6 +2260,7 @@ const CAMPOS_MX = [
   { key: 'referencia',   label: 'Referência',     required: true },
   { key: 'nome',         label: 'Nome/Descrição',  required: true },
   { key: 'cod_barra',    label: 'Cód. de Barras' },
+  { key: 'desc_marca',   label: 'Marca' },
   { key: 'desc_setor',   label: 'Setor' },
   { key: 'desc_cor',     label: 'Cor' },
   { key: 'desc_tamanho', label: 'Tamanho' },
@@ -2273,6 +2274,23 @@ const CORES_CAD = ['PRETO','BRANCO','AZUL','VERMELHO','VERDE','AMARELO','LARANJA
   'BLACK','WHITE','BLUE','RED','GREEN','YELLOW','ORANGE','PINK','PURPLE','GREY','GRAY','BROWN','BEIGE'];
 const TAMS_LETRA = ['GGG','GG','XS/S','S/M','M/L','L/XL','PP','XS','S','M','L','XL','XXL','XXXL','P','G','U'];
 const TAMS_NUM   = ['33','34','35','36','37','38','39','40','41','42','43','44','45','46'];
+
+const SETOR_OPTS = ['Moda Masculina','Moda Feminina','Infantil','Calçados','Acessórios','TS Basica','Regata','Moda'];
+const LINHA_OPTS = ['Unisex','Masculino','Feminino','Infantil'];
+const NCM_OPTS = [
+  { v:'6109.10.00', l:'Camiseta / Regata' },
+  { v:'6205.20.00', l:'Camisa' },
+  { v:'6103.41.00', l:'Calça / Short' },
+  { v:'6104.43.00', l:'Vestido' },
+  { v:'6106.10.00', l:'Blusa' },
+  { v:'6110.20.10', l:'Moletom / Agasalho' },
+  { v:'6201.92.00', l:'Jaqueta / Casaco' },
+  { v:'6104.53.00', l:'Saia' },
+  { v:'6402.99.90', l:'Calçados' },
+  { v:'6505.00.29', l:'Bone / Cap' },
+  { v:'4202.12.20', l:'Bolsa / Mochila' },
+  { v:'6211.33.00', l:'Vestuário Geral' },
+];
 
 const _cad = {
   file: null, headers: [], rawRows: [], mapping: {},
@@ -2392,7 +2410,7 @@ function _cadAutoMatch(headers) {
 }
 
 function _cadBuildProducts() {
-  return _cad.rawRows.flatMap(row => {
+  const all = _cad.rawRows.flatMap(row => {
     const p = {};
     for (const [mxField, supCol] of Object.entries(_cad.mapping)) {
       const idx = _cad.headers.indexOf(supCol);
@@ -2429,11 +2447,20 @@ function _cadBuildProducts() {
           ...p, desc_cor: cor, desc_tamanho: tam, desc_setor: setor,
           _ref_final:  _cadApplyTemplate(_cad.modeloRef,  { ...p, desc_cor: cor, desc_tamanho: tam }),
           _desc_final: _cadApplyTemplate(_cad.modeloDesc, { ...p, desc_cor: cor, desc_tamanho: tam }),
-          _custo: custo, _preco: precoAuto, _ncm: _cad.ncm,
+          _custo: custo, _preco: precoAuto, _ncm: p._ncm || _cadSuggestNcm(setor, [txt]),
+          linha: p.linha || '',
         });
       }
     }
     return rows;
+  });
+  // Remove duplicatas com mesma referência + cor + tamanho
+  const seen = new Set();
+  return all.filter(p => {
+    const key = `${(p._ref_final||p.referencia||'').toUpperCase()}|${(p.desc_cor||'').toUpperCase()}|${(p.desc_tamanho||'').toUpperCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
   });
 }
 
@@ -2691,21 +2718,43 @@ function _cadRefreshPrev(content) {
   if (dp) dp.textContent = _cadApplyTemplate(md, p) || '(aguardando mapeamento)';
 }
 
+function _cadMkSetorSel(val, i) {
+  const opts = ['', ...SETOR_OPTS].map(s =>
+    `<option value="${s}"${val === s ? ' selected' : ''}>${s || '— setor —'}</option>`).join('');
+  return `<select class="cad-ci cad-ci-sel" data-f="desc_setor" data-i="${i}">${opts}</select>`;
+}
+function _cadMkLinhaSel(val, i) {
+  const opts = ['', ...LINHA_OPTS].map(l =>
+    `<option value="${l}"${(val||'') === l ? ' selected' : ''}>${l || '— linha —'}</option>`).join('');
+  return `<select class="cad-ci cad-ci-sel" data-f="linha" data-i="${i}">${opts}</select>`;
+}
+function _cadMkNcmSel(val, i) {
+  const known = NCM_OPTS.find(n => n.v === val);
+  const extra = val && !known ? `<option value="${_escHtml(val)}" selected>${_escHtml(val)}</option>` : '';
+  const opts = NCM_OPTS.map(n =>
+    `<option value="${n.v}"${val === n.v ? ' selected' : ''}>${n.v} — ${n.l}</option>`).join('');
+  return `<select class="cad-ci cad-ci-sel" data-f="_ncm" data-i="${i}" style="min-width:200px">
+    <option value="">— NCM —</option>${extra}${opts}</select>`;
+}
+
 function _cadRenderProdSection(sec) {
   const prods = _cad.products;
   sec.innerHTML = `
     <div class="cad-section-header" style="margin-bottom:.75rem">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
       Produtos extraídos
-      <span class="cad-section-sub">${prods.length} itens · setor detectado por produto</span>
+      <span class="cad-section-sub">${prods.length} itens · edite os campos antes de exportar</span>
     </div>
     <div style="overflow-x:auto">
       <table class="trans-table">
         <thead><tr>
           <th class="trans-th" style="width:28px">#</th>
+          <th class="trans-th">Status</th>
           <th class="trans-th">Referência</th>
           <th class="trans-th">Descrição (Microvix)</th>
+          <th class="trans-th">Marca</th>
           <th class="trans-th">Setor</th>
+          <th class="trans-th">Linha</th>
           <th class="trans-th">Cor</th>
           <th class="trans-th">Tam.</th>
           <th class="trans-th">Custo c/ICMS</th>
@@ -2716,21 +2765,24 @@ function _cadRenderProdSection(sec) {
         <tbody>
           ${prods.map((p, i) => `<tr data-idx="${i}">
             <td class="trans-td" style="color:var(--muted);font-size:.7rem">${i+1}</td>
+            <td class="trans-td"><span class="cad-badge cad-badge-new" style="font-size:.65rem">NOVO</span></td>
             <td class="trans-td"><input class="cad-ci" data-f="_ref_final"  data-i="${i}" value="${_escHtml(p._ref_final)}"></td>
             <td class="trans-td"><input class="cad-ci" data-f="_desc_final" data-i="${i}" value="${_escHtml(p._desc_final)}" style="min-width:180px"></td>
-            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_setor"  data-i="${i}" value="${_escHtml(p.desc_setor)}" style="width:110px"></td>
-            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_cor"    data-i="${i}" value="${_escHtml(p.desc_cor)}"></td>
-            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_tamanho" data-i="${i}" value="${_escHtml(p.desc_tamanho)}"></td>
-            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="_custo"        data-i="${i}" value="${_escHtml(p._custo)}"></td>
-            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="_preco"        data-i="${i}" value="${_escHtml(p._preco)}"></td>
-            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="_ncm"          data-i="${i}" value="${_escHtml(p._ncm)}"></td>
+            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_marca"    data-i="${i}" value="${_escHtml(p.desc_marca||'')}" placeholder="Marca" style="width:90px"></td>
+            <td class="trans-td">${_cadMkSetorSel(p.desc_setor, i)}</td>
+            <td class="trans-td">${_cadMkLinhaSel(p.linha, i)}</td>
+            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_cor"      data-i="${i}" value="${_escHtml(p.desc_cor)}" style="width:80px"></td>
+            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_tamanho"  data-i="${i}" value="${_escHtml(p.desc_tamanho)}" style="width:65px"></td>
+            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="_custo"        data-i="${i}" value="${_escHtml(p._custo)}" style="width:75px"></td>
+            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="_preco"        data-i="${i}" value="${_escHtml(p._preco)}" style="width:75px"></td>
+            <td class="trans-td">${_cadMkNcmSel(p._ncm, i)}</td>
             <td class="trans-td"><button class="cad-del-btn" data-i="${i}" title="Remover">×</button></td>
           </tr>`).join('')}
         </tbody>
       </table>
     </div>
     <div class="cad-prod-actions">
-      <span class="cad-hint-sm">${prods.length} produtos · Linha: Unisex · UN · Mercadoria para Revenda · Contabiliza: Sim</span>
+      <span class="cad-hint-sm">${prods.length} produtos · UN · Mercadoria para Revenda · Contabiliza: Sim · Exige controle: Sim</span>
       <button class="trans-calc-btn" id="cadCheckBtn">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         Verificar no Microvix
@@ -2782,26 +2834,25 @@ async function _cadCheckAndExport(sec) {
       // Referência existe + sem match → ? (com dropdown vazio, usuário escolhe)
       tr.style.opacity = (!isNew && corMatch) ? '.45' : '1';
 
-      const td1      = tr.querySelector('td');
+      // td[0]=# td[1]=status td[2]=ref td[3]=desc td[4]=marca td[5]=setor td[6]=linha td[7]=cor
+      const tds      = tr.querySelectorAll('td');
       const label    = isNew ? 'NOVO' : (corMatch ? '✓' : '?');
       const badgeCls = isNew ? 'cad-badge-new' : (corMatch ? 'cad-badge-existing' : 'cad-badge-warn');
-      if (td1) td1.innerHTML = `<span class="cad-badge ${badgeCls}">${label}</span>`;
+      if (tds[1]) tds[1].innerHTML = `<span class="cad-badge ${badgeCls}">${label}</span>`;
 
       // Código combinado (ex: "VN00066XY28CASA"): atualiza ref e cor na tabela
       if (res._parsedRef && _cad.products[i]) {
         _cad.products[i]._ref_final = res._parsedRef;
         _cad.products[i].desc_cor   = res._parsedCor || '';
-        const tdRef = tr.querySelectorAll('td')[1];
-        if (tdRef) { const inp = tdRef.querySelector('input'); if (inp) inp.value = res._parsedRef; }
+        if (tds[2]) { const inp = tds[2].querySelector('input'); if (inp) inp.value = res._parsedRef; }
       }
 
       if (!isNew && hasColors) {
-        const tdCor = tr.querySelectorAll('td')[4];
-        if (tdCor) {
+        if (tds[7]) {
           const orig = res._parsedRef
             ? `${res._parsedRef} + ${_escHtml(res._parsedCor || '')} (extraído)`
             : _escHtml(_cad.products[i]?.desc_cor || '');
-          tdCor.innerHTML = `<div class="cad-sku-map-hint" style="font-size:.68rem;color:var(--muted);margin-bottom:.15rem">${orig}</div>
+          tds[7].innerHTML = `<div class="cad-sku-map-hint" style="font-size:.68rem;color:var(--muted);margin-bottom:.15rem">${orig}</div>
             <select class="cad-sku-sel" data-i="${i}" data-field="desc_cor">
               <option value="">— cadastrar —</option>
               ${res._corsDisponiveis.map(c => `<option value="${_escHtml(c)}"${c === corMatch ? ' selected' : ''}>${_escHtml(c)}</option>`).join('')}
@@ -2820,8 +2871,8 @@ async function _cadCheckAndExport(sec) {
         const tr = sec.querySelector(`tr[data-idx="${i}"]`);
         if (tr) {
           tr.style.opacity = newSt === 'existing' ? '.45' : '1';
-          const td1 = tr.querySelector('td');
-          if (td1) td1.innerHTML = `<span class="cad-badge cad-badge-${newSt}">${newSt === 'new' ? 'NOVO' : '✓'}</span>`;
+          const tds2 = tr.querySelectorAll('td');
+          if (tds2[1]) tds2[1].innerHTML = `<span class="cad-badge cad-badge-${newSt}">${newSt === 'new' ? 'NOVO' : '✓'}</span>`;
         }
         _cadUpdateExportActions(sec);
       });
@@ -2847,12 +2898,14 @@ function _cadUpdateExportActions(sec) {
       referencia:   p._ref_final  || p.referencia || '',
       nome:         p._desc_final || p.nome       || '',
       cod_barra:    p.cod_barra   || '',
+      desc_marca:   p.desc_marca  || '',
       desc_setor:   p.desc_setor  || '',
+      linha:        p.linha       || '',
       desc_cor:     p.desc_cor    || '',
       desc_tamanho: p.desc_tamanho || '',
       preco_custo:  p._custo      || '',
       preco_venda:  p._preco      || '',
-      ncm:          p._ncm        || _cad.ncm,
+      ncm:          p._ncm        || '',
       markup:       _cad.priceMode === 'markup' ? String(_cad.markup) : '',
     }));
 

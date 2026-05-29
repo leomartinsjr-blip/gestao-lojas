@@ -3029,5 +3029,6 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .cad-ci { background: #0D1117; border: 1px solid #30363D; border-radius: .35rem; color: #E6EDF3; font-size: .78rem; padding: .25rem .4rem; width: 100%; box-sizing: border-box; }
 .cad-ci:focus { outline: none; border-color: #58A6FF; }
 .cad-ci-sm { width: 70px; }
+.cad-ci-sel { appearance: none; -webkit-appearance: none; background: #0D1117 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238B949E'/%3E%3C/svg%3E") no-repeat right .45rem center; padding-right: 1.4rem; cursor: pointer; width: auto; }
 .cad-del-btn { background: none; border: none; color: #F85149; cursor: pointer; font-size: 1rem; padding: .1rem .3rem; border-radius: .3rem; }
 .cad-del-btn:hover { background: rgba(248,81,73,.15); }
