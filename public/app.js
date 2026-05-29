@@ -3827,8 +3827,8 @@ async function loadAndRenderDaily(board) {
     await Promise.all(PD.employees.map(async emp => {
       PD.allVsales[emp.id] = await apiFetch('GET', `/api/vsales/${PD.year}/${PD.month}/${board}/${emp.id}`);
     }));
-    if (!PD.activeEmpId || !PD.employees.find(e => e.id === PD.activeEmpId))
-      PD.activeEmpId = PD.employees.length ? PD.employees[0].id : 'total';
+    if (!PD.activeEmpId || (!PD.employees.find(e => e.id === PD.activeEmpId) && PD.activeEmpId !== 'total'))
+      PD.activeEmpId = 'total';
     renderVendedorSheet();
   } catch(e) {
     PD.container.innerHTML = `<div class="perf-no-data">Erro ao carregar: ${e.message}</div>`;
@@ -3841,15 +3841,14 @@ function renderVendedorSheet() {
   const emps    = PD.employees;
   const color   = BOARDS[PD.board]?.color || '#8B949E';
 
-  let tabs = '';
+  const totActive = PD.activeEmpId === 'total';
+  let tabs = `<button class="ds-vtab ds-vtab-total${totActive ? ' ds-vtab-active' : ''}" data-empid="total">TOTAL</button>`;
   for (const emp of emps) {
     const active = PD.activeEmpId === emp.id;
     tabs += `<button class="ds-vtab${active ? ' ds-vtab-active' : ''}" data-empid="${emp.id}"
       style="${active ? `background:${color};border-color:${color};color:#0D1117` : `border-color:${color};color:${color}`}"
     >${emp.apelido || emp.name}</button>`;
   }
-  const totActive = PD.activeEmpId === 'total';
-  tabs += `<button class="ds-vtab ds-vtab-total${totActive ? ' ds-vtab-active' : ''}" data-empid="total">TOTAL</button>`;
   const syncActive = PD.boardSettings?.[PD.board]?.microvixSync === true;
   const adminBar = isAdmin
     ? `<div class="ds-admin-bar">
