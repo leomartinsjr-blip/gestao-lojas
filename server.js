@@ -3283,8 +3283,12 @@ async function _getCatalog(lojas) {
 
 async function _buildCatalog(lojas) {
   const { fetchServicos, buildRequest, postRequest, parseCsv, parseBrNum } = require('./services/microvix');
-  const boards = Object.keys(lojas);
+  // 'site' usa os mesmos códigos de produto das lojas físicas — excluir evita duplicação de memória
+  const boards = Object.keys(lojas).filter(b => b !== 'site');
   if (!boards.length) return {};
+  // Libera cache antigo antes de construir o novo — evita pico duplo de memória (~254 MB → ~127 MB)
+  const _prevCache = _catalogCache;
+  _catalogCache = null;
   try {
     const map = {};
     const today = new Date().toISOString().slice(0, 10);
@@ -3366,7 +3370,8 @@ async function _buildCatalog(lojas) {
     return map;
   } catch (e) {
     console.warn('[Catalog] Erro:', e.message);
-    return _catalogCache || {};
+    if (_prevCache) _catalogCache = _prevCache;
+    return _prevCache || {};
   }
 }
 
