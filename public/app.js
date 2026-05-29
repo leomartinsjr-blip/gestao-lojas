@@ -1740,7 +1740,7 @@ function openImg(url) {
 // ── Performance dashboard data ─────────────────────────────────────────────
 const PERF_MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 const PERF_AVAIL  = new Set(['surfers','delrey','minas','contagem','estacao','tommy','lez','site']);
-const SURFERS_STORES = ['delrey','minas','contagem','estacao'];
+const SURFERS_STORES = ['delrey','minas','contagem','estacao','site'];
 const PERF_CUR    = 4;         // Mai = em andamento
 const PERF_LAST3  = [PERF_CUR-2, PERF_CUR-1, PERF_CUR];  // Mar, Abr, Mai
 

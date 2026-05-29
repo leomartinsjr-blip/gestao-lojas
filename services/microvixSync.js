@@ -46,6 +46,45 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
   // Allow per-board chave: MICROVIX_CHAVE_DELREY, MICROVIX_CHAVE_MINAS, etc.
   const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
 
+  // Board "site": agrega todas as vendas do dia sob o único funcionário do board
+  if (board === 'site') {
+    const siteEmp = employees.find(e => e.board === 'site' && !e.inativo);
+    if (!siteEmp) {
+      console.warn('[Microvix/site] Nenhum funcionário cadastrado no board "site" — cadastre um com board=site');
+      return 0;
+    }
+    const rows = await fetchMovimento(cnpjClean, dtIni, dtFin, chave);
+    console.log(`[Microvix/site] ${rows.length} linhas de movimento (${dtIni} → ${dtFin})`);
+    const dayAgg = {};
+    for (const row of rows) {
+      if (row.cancelado === 'S' || row.cancelado === '1') continue;
+      const dateStr = parseDate(row.data_documento);
+      if (!dateStr) continue;
+      const sign = row.operacao === 'DS' ? -1 : 1;
+      if (!dayAgg[dateStr]) dayAgg[dateStr] = { value: 0, pecas: 0, docs: new Set(), retDocs: new Set() };
+      dayAgg[dateStr].value += sign * parseBrNum(row.valor_total);
+      dayAgg[dateStr].pecas += sign * (parseInt(row.quantidade || 0, 10) || 0);
+      if (sign > 0) dayAgg[dateStr].docs.add(row.documento);
+      else dayAgg[dateStr].retDocs.add(row.documento);
+    }
+    if (!db.vsales) db.vsales = {};
+    let updated = 0;
+    for (const [dateStr, agg] of Object.entries(dayAgg)) {
+      const year  = parseInt(dateStr.slice(0, 4));
+      const month = parseInt(dateStr.slice(5, 7));
+      const vsKey = `${year}-${pad(month)}-site-${siteEmp.id}`;
+      if (!db.vsales[vsKey]) db.vsales[vsKey] = { meta: { mensal: 0 }, entries: {} };
+      db.vsales[vsKey].entries[dateStr] = {
+        value:        parseFloat(agg.value.toFixed(2)),
+        pecas:        agg.pecas,
+        atendimentos: agg.docs.size - agg.retDocs.size,
+        syncedAt:     new Date().toISOString(),
+      };
+      updated++;
+    }
+    return updated;
+  }
+
   // 1. Vendor map: cod_vendedor → normalized name
   const vendRows = await fetchVendedores(cnpjClean, chave);
   const vendMap  = {};
