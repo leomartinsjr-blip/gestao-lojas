@@ -310,7 +310,13 @@ async function loadData() {
     const init = await apiFetch('GET', `/api/init?year=${S.year}&month=${S.month}`);
 
     const emps     = init.employees || [];
-    S.employees    = emps.filter(e => !e.inativo);
+    const _mk = `${S.year}-${String(S.month).padStart(2,'0')}`;
+    S.employees    = emps.filter(e => {
+      if (!e.inativo) return true;
+      // Inativo com vendas no mês visualizado: preserva no histórico
+      const vs = (init.vsales || {})[e.id];
+      return vs && Object.keys(vs.entries || {}).some(d => d.startsWith(_mk));
+    });
     S.weights      = init.weights      || {};
     S.vsales       = init.vsales       || {};
     S.weeklyMetas  = init.weeklyMetas  || {};
@@ -1161,7 +1167,7 @@ function _renderDayCardBody(body, dateStr) {
   const defW = +(100 / daysInMonth).toFixed(6);
   const dayWeight = S.weights[dateStr] ?? defW;
 
-  const vendedores = S.employees.filter(e => isVend(e) && !e.inativo);
+  const vendedores = S.employees.filter(e => isVend(e));
   const byBoard = {};
   for (const emp of vendedores) {
     if (!byBoard[emp.board]) byBoard[emp.board] = [];
@@ -5262,7 +5268,7 @@ async function renderWeeklyModal() {
   const pendingCelebrations = [];
 
   for (const [bk, bc] of visibleBoards()) {
-    const emps = S.employees.filter(e => e.board === bk && (isVend(e) || e.cargo?.toLowerCase().includes('gerente')) && !e.inativo);
+    const emps = S.employees.filter(e => e.board === bk && (isVend(e) || e.cargo?.toLowerCase().includes('gerente')));
     if (emps.length === 0) continue;
 
     const section = document.createElement('div');
