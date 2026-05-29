@@ -4135,22 +4135,48 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
 
     const norm = s => (s || '').toString().replace(/\.0+$/, '').trim().toUpperCase();
 
+    // Tenta encontrar ref e cor num código combinado (ex: "VN00066XY28CASA")
+    // Testa prefixos do mais longo para o mais curto até achar um ref no índice.
+    // O sufixo restante é a cor extraída (o que sobra após a ref).
+    const parseCombined = (fullStr) => {
+      for (let len = fullStr.length - 1; len >= 3; len--) {
+        const candidate = fullStr.slice(0, len);
+        if (idx[candidate]) return { ref: candidate, extractedCor: fullStr.slice(len) };
+      }
+      return null;
+    };
+
     const result = rows.map(r => {
       const ref = norm(r.referencia || '');
       const cor = norm(r.desc_cor   || '');
 
-      if (!ref || !idx[ref]) return { ...r, _status: 'new' };
+      // Lookup direto
+      if (ref && idx[ref]) {
+        const corsDisponiveis = idx[ref];
+        if (!cor) return { ...r, _status: 'existing', _corsDisponiveis: corsDisponiveis, _corMatch: null };
+        const corMatch = corsDisponiveis.includes(cor) ? cor : null;
+        return { ...r, _status: corMatch ? 'existing' : 'needs_cor', _corsDisponiveis: corsDisponiveis, _corMatch: corMatch };
+      }
 
-      const corsDisponiveis = idx[ref] || [];
-      if (!cor) return { ...r, _status: 'existing', _corsDisponiveis: corsDisponiveis, _corMatch: null };
+      // Sem cor separada e ref não encontrada — tenta split por prefixo
+      // (cobre códigos como "VN00066XY28CASA" onde ref e cor vêm concatenados)
+      if (ref && !cor) {
+        const parsed = parseCombined(ref);
+        if (parsed) {
+          const corsDisponiveis = idx[parsed.ref];
+          const corMatch = corsDisponiveis.includes(parsed.extractedCor) ? parsed.extractedCor : null;
+          return {
+            ...r,
+            _status:          corMatch ? 'existing' : 'needs_cor',
+            _corsDisponiveis: corsDisponiveis,
+            _corMatch:        corMatch,
+            _parsedRef:       parsed.ref,
+            _parsedCor:       parsed.extractedCor,
+          };
+        }
+      }
 
-      const corMatch = corsDisponiveis.includes(cor) ? cor : null;
-      return {
-        ...r,
-        _status:          corMatch ? 'existing' : 'needs_cor',
-        _corsDisponiveis: corsDisponiveis,
-        _corMatch:        corMatch,
-      };
+      return { ...r, _status: 'new' };
     });
 
     res.json({

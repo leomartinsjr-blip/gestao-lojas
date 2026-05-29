@@ -2778,11 +2778,21 @@ async function _cadCheckAndExport(sec) {
       const badgeCls = isNew ? 'cad-badge-new' : (corMatch ? 'cad-badge-existing' : 'cad-badge-warn');
       if (td1) td1.innerHTML = `<span class="cad-badge ${badgeCls}">${label}</span>`;
 
+      // Código combinado (ex: "VN00066XY28CASA"): atualiza ref e cor na tabela
+      if (res._parsedRef && _cad.products[i]) {
+        _cad.products[i]._ref_final = res._parsedRef;
+        _cad.products[i].desc_cor   = res._parsedCor || '';
+        const tdRef = tr.querySelectorAll('td')[1];
+        if (tdRef) { const inp = tdRef.querySelector('input'); if (inp) inp.value = res._parsedRef; }
+      }
+
       if (!isNew && hasColors) {
         const tdCor = tr.querySelectorAll('td')[4];
         if (tdCor) {
-          const orig = _cad.products[i]?.desc_cor || '';
-          tdCor.innerHTML = `<div class="cad-sku-map-hint" style="font-size:.68rem;color:var(--muted);margin-bottom:.15rem">${_escHtml(orig)}</div>
+          const orig = res._parsedRef
+            ? `${res._parsedRef} + ${_escHtml(res._parsedCor || '')} (extraído)`
+            : _escHtml(_cad.products[i]?.desc_cor || '');
+          tdCor.innerHTML = `<div class="cad-sku-map-hint" style="font-size:.68rem;color:var(--muted);margin-bottom:.15rem">${orig}</div>
             <select class="cad-sku-sel" data-i="${i}" data-field="desc_cor">
               <option value="">— cadastrar —</option>
               ${res._corsDisponiveis.map(c => `<option value="${_escHtml(c)}"${c === corMatch ? ' selected' : ''}>${_escHtml(c)}</option>`).join('')}
