@@ -3304,6 +3304,100 @@ let _catalogRawFields = [];      // campos brutos do LinxProdutos (para diagnós
 let _catalogRawSample = null;    // amostra bruta (1 produto)
 const CATALOG_TTL = 6 * 60 * 60 * 1000;
 
+// ── Índice compacto ref→cores (para /api/cadastro-produto/check) ────────────
+// Persiste no MongoDB → sobrevive a restarts; muito menor que o catálogo completo
+let _refColorIndex    = null;   // { "REF123": ["AZUL","PRETO"], ... }
+let _refColorIdxAt    = 0;
+let _refColorIdxPromise = null;
+const REFCOLOR_TTL = 6 * 60 * 60 * 1000;
+
+async function _getRefColorIndex() {
+  if (_refColorIndex && Date.now() - _refColorIdxAt < REFCOLOR_TTL) return _refColorIndex;
+
+  if (!_refColorIdxPromise)
+    _refColorIdxPromise = _buildRefColorIndex().finally(() => { _refColorIdxPromise = null; });
+
+  // Cache em memória existe mas expirou → devolve imediatamente (rebuild roda em background)
+  if (_refColorIndex) return _refColorIndex;
+
+  // Cold start: tenta carregar do MongoDB antes de aguardar o build
+  if (mongoDb) {
+    try {
+      const doc = await mongoDb.collection('catalog').findOne({ _id: 'refColor' });
+      if (doc?.data && Object.keys(doc.data).length > 0) {
+        _refColorIndex = doc.data;
+        _refColorIdxAt = doc.updatedAt ? new Date(doc.updatedAt).getTime() : 0;
+        console.log(`[RefColor] Carregado do MongoDB: ${Object.keys(_refColorIndex).length} refs`);
+        return _refColorIndex;
+      }
+    } catch(e) { console.warn('[RefColor] MongoDB load:', e.message); }
+  }
+
+  return _refColorIdxPromise;
+}
+
+async function _buildRefColorIndex() {
+  const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
+  const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+  const boards = Object.keys(lojas).filter(b => b !== 'site');
+  if (!boards.length) return {};
+
+  const board = boards[0]; // catálogo é único para todas as lojas Surfers
+  const cnpj  = (lojas[board] || '').replace(/\D/g, '');
+  const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+  if (!cnpj) return {};
+
+  const normStr   = s => (s || '').toString().replace(/\.0+$/, '').trim().toUpperCase();
+  const refColMap = {};  // ref → Set<cor>
+  const today     = new Date().toISOString().slice(0, 10);
+  const dtIni     = new Date(Date.now() - 1095 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  let ts = 0, total = 0;
+  console.log(`[RefColor] Build iniciado via ${board}…`);
+  for (let page = 0; page < 40; page++) {
+    const body = buildRequest('LinxProdutos', cnpj, [
+      { id: 'timestamp',        valor: String(ts) },
+      { id: 'dt_update_inicio', valor: dtIni },
+      { id: 'dt_update_fim',    valor: today },
+    ], chave);
+    let raw;
+    try { raw = await postRequest(body, 60_000); } catch(e) { console.warn(`[RefColor] pág ${page}:`, e.message); break; }
+    if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) break;
+    const rows = parseCsv(raw);
+    for (const r of rows) {
+      const ref = normStr(r.referencia || r.cod_produto || '');
+      if (!ref) continue;
+      const cor = normStr(r.desc_cor || '');
+      if (!refColMap[ref]) refColMap[ref] = new Set();
+      if (cor) refColMap[ref].add(cor);
+    }
+    total += rows.length;
+    if (rows.length < 5000) break;
+    const maxTs = Math.max(...rows.map(r => parseInt(r.timestamp) || 0));
+    if (maxTs <= ts) break;
+    ts = maxTs;
+  }
+
+  const data = {};
+  for (const [ref, cors] of Object.entries(refColMap)) data[ref] = [...cors].sort();
+  console.log(`[RefColor] ${total} SKUs → ${Object.keys(data).length} refs únicas`);
+
+  if (mongoDb && Object.keys(data).length > 0) {
+    try {
+      await mongoDb.collection('catalog').replaceOne(
+        { _id: 'refColor' },
+        { _id: 'refColor', data, updatedAt: new Date() },
+        { upsert: true }
+      );
+      console.log('[RefColor] Índice salvo no MongoDB');
+    } catch(e) { console.warn('[RefColor] Erro ao salvar:', e.message); }
+  }
+
+  _refColorIndex = data;
+  _refColorIdxAt = Date.now();
+  return data;
+}
+
 async function _getCatalog(lojas) {
   if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
 
@@ -4023,12 +4117,15 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
   try {
     const { rows } = req.body;
     if (!Array.isArray(rows)) return res.status(400).json({ error: 'rows deve ser array' });
-    const lojas   = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-    const catalog = await Promise.race([
-      _getCatalog(lojas),
-      new Promise(r => setTimeout(() => r(null), 90_000)),
+
+    // Índice compacto ref→cores — carrega do MongoDB se disponível (instantâneo),
+    // ou aguarda até 15s pelo build inicial
+    const idx = await Promise.race([
+      _getRefColorIndex(),
+      new Promise(r => setTimeout(() => r(null), 15_000)),
     ]).catch(() => null);
-    if (!catalog) {
+
+    if (!idx || !Object.keys(idx).length) {
       return res.json({
         result: rows.map(r => ({ ...r, _status: 'new' })),
         newCount: rows.length, existingCount: 0, needsMappingCount: 0,
@@ -4036,52 +4133,18 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
       });
     }
 
-    const norm = s => (s || '').toString().trim().toUpperCase();
-
-    // refIndex: ref -> cor -> Set<tam>
-    const refIndex = {};
-    const keyToRef = {};
-    for (const [k, entry] of Object.entries(catalog)) {
-      if (entry.referencia) keyToRef[norm(k)] = norm(entry.referencia);
-      if (!entry.referencia) continue;
-      const ref = norm(entry.referencia);
-      if (!refIndex[ref]) refIndex[ref] = {};
-      const cor = norm(entry.desc_cor || '');
-      if (!refIndex[ref][cor]) refIndex[ref][cor] = new Set();
-      refIndex[ref][cor].add(norm(entry.desc_tam || ''));
-    }
-
-    const resolveRef = r => {
-      const barra = norm(r.cod_barra);
-      let   ref   = norm(r.referencia);
-      if (barra && keyToRef[barra])               return keyToRef[barra];
-      if (ref && !refIndex[ref] && keyToRef[ref]) return keyToRef[ref];
-      return ref;
-    };
+    const norm = s => (s || '').toString().replace(/\.0+$/, '').trim().toUpperCase();
 
     const result = rows.map(r => {
-      const ref = resolveRef(r);
-      const cor = norm(r.desc_cor || '');
+      const ref = norm(r.referencia || '');
+      const cor = norm(r.desc_cor   || '');
 
-      // 1. Referência não cadastrada → NOVO direto
-      if (!ref) return { ...r, _status: 'new' };
+      if (!ref || !idx[ref]) return { ...r, _status: 'new' };
 
-      // 1b. Fallback: ref não no índice, tenta catálogo direto
-      if (!refIndex[ref]) {
-        const barra     = norm(r.cod_barra || '');
-        const directHit = catalog[ref] || (barra && catalog[barra]);
-        if (!directHit) return { ...r, _status: 'new' };
-        return { ...r, _status: 'existing', _corsDisponiveis: [] };
-      }
-
-      // 2. Referência existe → busca cores disponíveis no Microvix
-      const corsDisponiveis = Object.keys(refIndex[ref]).filter(c => c !== '').sort();
-
-      // Sem cor no pedido → match por referência é suficiente
+      const corsDisponiveis = idx[ref] || [];
       if (!cor) return { ...r, _status: 'existing', _corsDisponiveis: corsDisponiveis, _corMatch: null };
 
-      // Tenta match exato de cor; se não achar, deixa para o usuário escolher
-      const corMatch = refIndex[ref][cor] ? cor : null;
+      const corMatch = corsDisponiveis.includes(cor) ? cor : null;
       return {
         ...r,
         _status:          corMatch ? 'existing' : 'needs_cor',
@@ -4095,8 +4158,16 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
       newCount:          result.filter(r => r._status === 'new').length,
       existingCount:     result.filter(r => r._status === 'existing').length,
       needsMappingCount: result.filter(r => r._status === 'needs_cor').length,
+      _idxRefs:          Object.keys(idx).length,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Força rebuild do índice ref→cores
+app.post('/api/catalog/rebuild-refcolor', requireAdmin, async (req, res) => {
+  _refColorIndex = null; _refColorIdxAt = 0; _refColorIdxPromise = null;
+  _buildRefColorIndex().catch(e => console.warn('[RefColor rebuild]', e.message));
+  res.json({ ok: true, message: 'Rebuild iniciado em background' });
 });
 
 app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
@@ -5186,10 +5257,11 @@ initMongo()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`\n✅  Gestão de Lojas → http://localhost:${PORT}\n`);
-      // Warm do catálogo de marcas em background após startup
+      // Warm do catálogo de marcas e índice ref→cores em background após startup
       if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
         const _lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
         setTimeout(() => _getCatalog(_lojas).catch(e => console.warn('[Catalog startup]', e.message)), 5000);
+        setTimeout(() => _getRefColorIndex().catch(e => console.warn('[RefColor startup]', e.message)), 8000);
       }
     });
 
