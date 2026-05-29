@@ -2762,37 +2762,30 @@ async function _cadCheckAndExport(sec) {
     }
 
     sec.querySelectorAll('tbody tr').forEach((tr, i) => {
-      const res = result[i] || {};
-      const st  = res._status || 'new';
-      tr.style.opacity = st === 'existing' ? '.4' : '1';
+      const res       = result[i] || {};
+      const st        = res._status || 'new';
+      const isNew     = st === 'new';
+      const hasColors = Array.isArray(res._corsDisponiveis) && res._corsDisponiveis.length > 0;
+      const corMatch  = res._corMatch || '';
 
-      const td1 = tr.querySelector('td');
-      const isWarn = st === 'needs_cor' || st === 'needs_tam';
-      const label  = st === 'existing' ? '✓' : isWarn ? '?' : 'NOVO';
-      if (td1) td1.innerHTML = `<span class="cad-badge ${isWarn ? 'cad-badge-warn' : 'cad-badge-' + st}">${label}</span>`;
+      // Referência não existe → NOVO (sem dropdown)
+      // Referência existe + cor match → ✓ dimmed (com dropdown pré-selecionado)
+      // Referência existe + sem match → ? (com dropdown vazio, usuário escolhe)
+      tr.style.opacity = (!isNew && corMatch) ? '.45' : '1';
 
-      const tds = tr.querySelectorAll('td');
+      const td1      = tr.querySelector('td');
+      const label    = isNew ? 'NOVO' : (corMatch ? '✓' : '?');
+      const badgeCls = isNew ? 'cad-badge-new' : (corMatch ? 'cad-badge-existing' : 'cad-badge-warn');
+      if (td1) td1.innerHTML = `<span class="cad-badge ${badgeCls}">${label}</span>`;
 
-      if (st === 'needs_cor' && res._corsDisponiveis?.length) {
-        const tdCor = tds[4];
+      if (!isNew && hasColors) {
+        const tdCor = tr.querySelectorAll('td')[4];
         if (tdCor) {
           const orig = _cad.products[i]?.desc_cor || '';
-          tdCor.innerHTML = `<div class="cad-sku-map-hint">"${_escHtml(orig)}"</div>
+          tdCor.innerHTML = `<div class="cad-sku-map-hint" style="font-size:.68rem;color:var(--muted);margin-bottom:.15rem">${_escHtml(orig)}</div>
             <select class="cad-sku-sel" data-i="${i}" data-field="desc_cor">
               <option value="">— cadastrar —</option>
-              ${res._corsDisponiveis.map(c => `<option value="${_escHtml(c)}">${_escHtml(c)}</option>`).join('')}
-            </select>`;
-        }
-      }
-
-      if (st === 'needs_tam' && res._tamsDisponiveis?.length) {
-        const tdTam = tds[5];
-        if (tdTam) {
-          const orig = _cad.products[i]?.desc_tamanho || '';
-          tdTam.innerHTML = `<div class="cad-sku-map-hint">"${_escHtml(orig)}"</div>
-            <select class="cad-sku-sel" data-i="${i}" data-field="desc_tamanho">
-              <option value="">— cadastrar —</option>
-              ${res._tamsDisponiveis.map(t => `<option value="${_escHtml(t)}">${_escHtml(t)}</option>`).join('')}
+              ${res._corsDisponiveis.map(c => `<option value="${_escHtml(c)}"${c === corMatch ? ' selected' : ''}>${_escHtml(c)}</option>`).join('')}
             </select>`;
         }
       }
@@ -2801,14 +2794,13 @@ async function _cadCheckAndExport(sec) {
     sec.querySelectorAll('.cad-sku-sel').forEach(sel => {
       sel.addEventListener('change', () => {
         const i   = +sel.dataset.i;
-        const fld = sel.dataset.field;
         const val = sel.value;
-        if (_cad.products[i]) _cad.products[i][fld] = val;
+        if (_cad.products[i]) _cad.products[i][sel.dataset.field] = val;
         const newSt = val ? 'existing' : 'new';
         if (_cad.checkResult[i]) _cad.checkResult[i]._status = newSt;
         const tr = sec.querySelector(`tr[data-idx="${i}"]`);
         if (tr) {
-          tr.style.opacity = newSt === 'existing' ? '.4' : '1';
+          tr.style.opacity = newSt === 'existing' ? '.45' : '1';
           const td1 = tr.querySelector('td');
           if (td1) td1.innerHTML = `<span class="cad-badge cad-badge-${newSt}">${newSt === 'new' ? 'NOVO' : '✓'}</span>`;
         }
@@ -2855,7 +2847,7 @@ function _cadUpdateExportActions(sec) {
         <span class="cad-summary-num">${existingCount}</span><span class="cad-summary-lbl">já no Microvix</span>
       </div>
       ${pendingCount > 0 ? `<div class="cad-summary-card cad-summary-warn" style="padding:.4rem .8rem;min-width:70px">
-        <span class="cad-summary-num">${pendingCount}</span><span class="cad-summary-lbl">mapear</span>
+        <span class="cad-summary-num">${pendingCount}</span><span class="cad-summary-lbl">escolher cor</span>
       </div>` : ''}
     </div>
     <div style="display:flex;gap:.4rem;align-items:center">

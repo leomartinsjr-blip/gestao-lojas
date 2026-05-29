@@ -4061,49 +4061,40 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
 
     const result = rows.map(r => {
       const ref = resolveRef(r);
-      const cor = norm(r.desc_cor     || '');
-      const tam = norm(r.desc_tamanho || '');
+      const cor = norm(r.desc_cor || '');
 
-      // 1. Referencia nao cadastrada -> novo
+      // 1. Referência não cadastrada → NOVO direto
       if (!ref) return { ...r, _status: 'new' };
 
-      // 1b. Se ref não está no refIndex, tenta fallback direto no catálogo
-      //     (cobre casos onde o campo 'referencia' vem vazio no LinxProdutos
-      //      mas o cod_produto ou cod_barra bate com a referencia da planilha)
+      // 1b. Fallback: ref não no índice, tenta catálogo direto
       if (!refIndex[ref]) {
-        const barra = norm(r.cod_barra || '');
+        const barra     = norm(r.cod_barra || '');
         const directHit = catalog[ref] || (barra && catalog[barra]);
         if (!directHit) return { ...r, _status: 'new' };
-        return { ...r, _status: 'existing' };
+        return { ...r, _status: 'existing', _corsDisponiveis: [] };
       }
 
-      // 2. Sem cor e sem tamanho -> referencia ja existe, nao precisa cadastrar
-      if (!cor && !tam) return { ...r, _status: 'existing' };
-
+      // 2. Referência existe → busca cores disponíveis no Microvix
       const corsDisponiveis = Object.keys(refIndex[ref]).filter(c => c !== '').sort();
 
-      // 3. Cor nao encontrada -> seletor de mapeamento
-      if (cor && !refIndex[ref][cor]) {
-        return { ...r, _status: 'needs_cor', _corsDisponiveis: corsDisponiveis };
-      }
+      // Sem cor no pedido → match por referência é suficiente
+      if (!cor) return { ...r, _status: 'existing', _corsDisponiveis: corsDisponiveis, _corMatch: null };
 
-      // 4. Cor ok, checar tamanho
-      const tamsSet         = refIndex[ref][cor] || new Set();
-      const tamsDisponiveis = [...tamsSet].filter(t => t !== '').sort();
-
-      if (tam && !tamsSet.has(tam)) {
-        return { ...r, _status: 'needs_tam', _corMatch: cor, _tamsDisponiveis: tamsDisponiveis };
-      }
-
-      // 5. Tudo encontrado
-      return { ...r, _status: 'existing' };
+      // Tenta match exato de cor; se não achar, deixa para o usuário escolher
+      const corMatch = refIndex[ref][cor] ? cor : null;
+      return {
+        ...r,
+        _status:          corMatch ? 'existing' : 'needs_cor',
+        _corsDisponiveis: corsDisponiveis,
+        _corMatch:        corMatch,
+      };
     });
 
     res.json({
       result,
       newCount:          result.filter(r => r._status === 'new').length,
       existingCount:     result.filter(r => r._status === 'existing').length,
-      needsMappingCount: result.filter(r => r._status === 'needs_cor' || r._status === 'needs_tam').length,
+      needsMappingCount: result.filter(r => r._status === 'needs_cor').length,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
