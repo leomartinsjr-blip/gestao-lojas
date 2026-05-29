@@ -1116,6 +1116,7 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
         { key:'metad', width:15 }, { key:'metaa', width:16 },
         { key:'pct',   width:10 }, { key:'dev',   width:14 },
         { key:'real',  width:16 }, { key:'proj',  width:14 },
+        { key:'ppct',  width:10 },
         { key:'pcs',   width:7  }, { key:'atd',   width:8  },
         { key:'pa',    width:7  },
       ];
@@ -1124,7 +1125,7 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
         ? emps.reduce((s,e) => s + sellerMensal(e.id), 0)
         : sellerMensal(empId);
 
-      ws.mergeCells('A1:K1');
+      ws.mergeCells('A1:L1');
       const titleCell = ws.getCell('A1');
       const empObj    = emps.find(e => e.id === empId);
       const subtitle  = isTotal ? 'TOTAL DA LOJA' : (empObj ? (empObj.apelido || empObj.name) : sheetName);
@@ -1134,7 +1135,7 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
       titleCell.alignment = { horizontal:'center', vertical:'middle' };
       ws.getRow(1).height = 22;
 
-      ws.mergeCells('A2:K2');
+      ws.mergeCells('A2:L2');
       const subCell = ws.getCell('A2');
       subCell.value = `Meta Mensal: R$ ${mensal.toLocaleString('pt-BR',{minimumFractionDigits:2})}`;
       subCell.fill  = { type:'pattern', pattern:'solid', fgColor:{ argb:'FF252E3D' } };
@@ -1142,7 +1143,7 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
       subCell.alignment = { horizontal:'center', vertical:'middle' };
       ws.getRow(2).height = 16;
 
-      const HEADS = ['DATA','DIA','META DIÁRIA','META ACUMULADA','% ATING','DESVIO','VALOR REALIZADO','PROJEÇÃO','PÇ','ATEND','PA'];
+      const HEADS = ['DATA','DIA','META DIÁRIA','META ACUMULADA','% ATING','DESVIO','VALOR REALIZADO','PROJEÇÃO','% PROJ','PÇ','ATEND','PA'];
       const hrow = ws.getRow(3);
       hrow.height = 18;
       HEADS.forEach((h, i) => {
@@ -1200,7 +1201,8 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
         const proj     = wAcum > 0 && valorAcum > 0 ? valorAcum / wAcum : null;
         const pa       = atend > 0 ? pecas / atend : null;
 
-        const EDITABLE = new Set([7, 9, 10]);
+        // Aba TOTAL: totalmente bloqueada (sem edição manual); demais: G, J, K editáveis
+        const EDITABLE = isTotal ? new Set() : new Set([7, 10, 11]);
         const set = (col, val, fmt, bg, fg) => {
           const cell = row.getCell(col);
           cell.value = val;
@@ -1211,6 +1213,8 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
           cell.alignment = { horizontal: col <= 2 ? 'center' : 'right', vertical:'middle' };
           cell.protection = { locked: !EDITABLE.has(col) };
         };
+
+        const projPct = mensal > 0 && proj != null ? proj / mensal * 100 : null;
 
         set(1, `${pad(d)}/${pad(m)}`, '@');
         set(2, DAY_PT[dow], '@');
@@ -1224,27 +1228,31 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
         set(7, valor > 0 ? +valor.toFixed(2) : null, fmtBRL);
         set(8, { formula:`IF(SUM(G4:G${cRow})>0,SUM(G4:G${cRow})/${wAcum},"")`, result: proj ?? '' },
             fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
-        set(9,  pecas > 0 ? pecas : null, fmtInt);
-        set(10, atend > 0 ? atend : null, fmtInt);
-        set(11, { formula:`IF(J${cRow}>0,I${cRow}/J${cRow},"")`, result: pa ?? '' },
+        set(9, { formula:`IF(H${cRow}>0,H${cRow}/${mensal}*100,"")`, result: projPct ?? '' },
+            fmtPct, isWE ? C.WE_BG : C.CALC_BG);
+        set(10, pecas > 0 ? pecas : null, fmtInt);
+        set(11, atend > 0 ? atend : null, fmtInt);
+        set(12, { formula:`IF(K${cRow}>0,J${cRow}/K${cRow},"")`, result: pa ?? '' },
             fmtDec, isWE ? C.WE_BG : C.CALC_BG);
       }
 
       const totRow = ws.getRow(N + 4);
       totRow.height = 18;
       const d1 = 4, dLast = N + 3;
+      const tR = N + 4;
       [
         ['TOTAL', '@'],
         ['', '@'],
         [{ formula:`SUM(C${d1}:C${dLast})` }, fmtBRL],
         [{ formula:`D${dLast}` },              fmtBRL],
-        [{ formula:`IF(D${N+4}>0,G${N+4}/D${N+4}*100,"")` }, fmtPct],
-        [{ formula:`IF(D${N+4}>0,G${N+4}-D${N+4},"")` },     fmtBRL],
+        [{ formula:`IF(D${tR}>0,G${tR}/D${tR}*100,"")` },   fmtPct],
+        [{ formula:`IF(D${tR}>0,G${tR}-D${tR},"")` },       fmtBRL],
         [{ formula:`SUM(G${d1}:G${dLast})` }, fmtBRL],
-        [{ formula:`IF(G${N+4}>0,G${N+4}/${weightAcumByDay[N]},"")` }, fmtBRL],
-        [{ formula:`SUM(I${d1}:I${dLast})` }, fmtInt],
+        [{ formula:`IF(G${tR}>0,G${tR}/${weightAcumByDay[N]},"")` }, fmtBRL],
+        [{ formula:`IF(H${tR}>0,H${tR}/${mensal}*100,"")` }, fmtPct],
         [{ formula:`SUM(J${d1}:J${dLast})` }, fmtInt],
-        [{ formula:`IF(J${N+4}>0,I${N+4}/J${N+4},"")` }, fmtDec],
+        [{ formula:`SUM(K${d1}:K${dLast})` }, fmtInt],
+        [{ formula:`IF(K${tR}>0,J${tR}/K${tR},"")` }, fmtDec],
       ].forEach(([val, fmt], i) => {
         const cell = totRow.getCell(i + 1);
         cell.value = val; if (fmt && fmt !== '@') cell.numFmt = fmt;
@@ -1252,6 +1260,23 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
         cell.border = thinBorder;
         cell.alignment = { horizontal: i < 2 ? 'center' : 'right', vertical:'middle' };
         cell.protection = { locked: true };
+      });
+
+      // Formatação condicional: % PROJ (coluna I) — verde ≥100%, amarelo ≥80%, vermelho <80%
+      const cfRef = `I4:I${N + 4}`;
+      ws.addConditionalFormatting({
+        ref: cfRef,
+        rules: [
+          { type:'cellIs', operator:'greaterThanOrEqual', formulae:[100], priority:1,
+            style:{ fill:{ type:'pattern', pattern:'solid', bgColor:{ argb:'C6EFCE' } },
+                    font:{ color:{ argb:'276749' }, bold:true } } },
+          { type:'cellIs', operator:'greaterThanOrEqual', formulae:[80],  priority:2,
+            style:{ fill:{ type:'pattern', pattern:'solid', bgColor:{ argb:'FFEB9C' } },
+                    font:{ color:{ argb:'9C5700' }, bold:true } } },
+          { type:'cellIs', operator:'lessThan',           formulae:[80],  priority:3,
+            style:{ fill:{ type:'pattern', pattern:'solid', bgColor:{ argb:'FFC7CE' } },
+                    font:{ color:{ argb:'9B2335' }, bold:true } } },
+        ],
       });
 
       for (let r = 1; r <= 3; r++)
