@@ -5230,8 +5230,8 @@ function calcWeekKpis(emp, week, extraData) {
   let pa = (pecas > 0 && atend > 0) ? pecas / atend : null;
   let pctMeta = (wMeta > 0 && valor > 0) ? valor / wMeta * 100 : null;
 
-  const isComplete = week.endStr < todayStr ||
-    (week.endStr === todayStr && daysElapsed === 7);
+  // Semana completa só quando o endStr já passou (hoje ainda em andamento = não completo)
+  const isComplete = week.endStr < todayStr;
   const isFuture   = week.startStr > todayStr;
 
   let projecao = null;
