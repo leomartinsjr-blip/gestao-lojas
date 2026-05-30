@@ -2547,9 +2547,7 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   .dash-td-name { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .dash-store-hdr td { padding: .28rem .4rem; font-size: .68rem; }
 
-  /* ── Meta Semanal: esconde Meta (2), % Meta (4), Projeção (5), Prêmio (8) ── */
-  .dw-table .dw-th:nth-child(2),
-  .dw-table td:nth-child(2),
+  /* ── Meta Semanal: esconde % Meta (4), Projeção (5), Prêmio (8) — Meta (2) fica visível ── */
   .dw-table .dw-th:nth-child(4),
   .dw-table td:nth-child(4),
   .dw-table .dw-th:nth-child(5),
@@ -2557,10 +2555,12 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   .dw-table .dw-th:nth-child(8),
   .dw-table td:nth-child(8) { display: none; }
 
+  #dashWeekCard .main-card-body { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
   .dw-th { padding: .3rem .4rem; font-size: .67rem; }
   .dw-td { padding: .3rem .4rem; font-size: .75rem; }
   .dw-store-collapse-row td { font-size: .74rem; }
-  .dw-td-name { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dw-td-name { max-width: 80px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   /* Nav de semana: label menor */
   .dash-wk-label { font-size: .7rem; }
