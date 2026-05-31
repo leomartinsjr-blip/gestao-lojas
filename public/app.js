@@ -5195,9 +5195,10 @@ function calcWeekKpis(emp, week, extraData) {
   let valorForProj = 0, weekWeightAccum = 0;
 
   for (const ds of dates) {
-    if (ds > cutoff) break;
-    daysElapsed++;
     const monthKey = ds.slice(0, 7);
+    const dayCutoff = (monthKey === curKey) ? cutoff : todayStr;
+    if (ds > dayCutoff) break;
+    daysElapsed++;
     let entry;
     if (monthKey === curKey) {
       entry = vsale.entries?.[ds];
