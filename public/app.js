@@ -433,10 +433,7 @@ function renderDashboard() {
   const isCurrentMonth = S.year === today.getFullYear() && S.month === today.getMonth() + 1;
   const cutoff = isCurrentMonth ? todayStr : (lastFilledDay || todayStr);
 
-  // Performance Mensal usa D-1 (dados sempre completos)
-  const _yBRT = new Date(Date.now() - 3 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000);
-  const yesterdayStr = `${_yBRT.getUTCFullYear()}-${pad(_yBRT.getUTCMonth()+1)}-${pad(_yBRT.getUTCDate())}`;
-  const perfCutoff = isCurrentMonth ? yesterdayStr : (lastFilledDay || yesterdayStr);
+  const perfCutoff = isCurrentMonth ? cutoff : (lastFilledDay || todayStr);
   const perfCutoffLabel = `dados até ${perfCutoff.slice(8)}/${perfCutoff.slice(5,7)}`;
 
   let weightAccum = 0;
@@ -1627,8 +1624,7 @@ async function _loadCompCard(body) {
       if (date.startsWith(prefix) && (lastDay === null || date > lastDay)) lastDay = date;
     }
   }
-  // Mês atual: usa D-1 BRT como cutoff (igual ao Performance Mensal)
-  const cutoff = isCurrentMonth ? yesterdayBRTStr : lastDay;
+  const cutoff = isCurrentMonth ? todayBRTStr : lastDay;
 
   const defW = +(100 / daysInCur).toFixed(6);
   let wAccum = 0;
@@ -1826,8 +1822,7 @@ function computeCurMonthProj(board) {
   const pad = n => String(n).padStart(2, '0');
   const todayBRT = new Date(Date.now() - 3 * 60 * 60 * 1000);
   if (S.year !== todayBRT.getUTCFullYear() || S.month !== todayBRT.getUTCMonth() + 1) return null;
-  const yestBRT = new Date(Date.now() - 3 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000);
-  const perfCutoff = `${yestBRT.getUTCFullYear()}-${pad(yestBRT.getUTCMonth()+1)}-${pad(yestBRT.getUTCDate())}`;
+  const perfCutoff = `${todayBRT.getUTCFullYear()}-${pad(todayBRT.getUTCMonth()+1)}-${pad(todayBRT.getUTCDate())}`;
   const daysInMonth = new Date(S.year, S.month, 0).getDate();
   const defW = 100 / daysInMonth;
   let wAccum = 0;
