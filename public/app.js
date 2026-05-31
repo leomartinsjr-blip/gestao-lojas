@@ -853,7 +853,7 @@ function renderDashboard() {
     <div class="main-card-body" id="dashWeekBody"></div>
   `;
   leftCol.appendChild(rightCard);
-  _renderDashWeekBody(rightCard.querySelector('#dashWeekBody'), week);
+  _refreshDashWeek();
 
   document.getElementById('dashWkPrev').addEventListener('click', () => {
     const _p = n => String(n).padStart(2,'0');
