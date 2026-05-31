@@ -5165,21 +5165,26 @@ function calcWeekKpis(emp, week, extraData) {
     dates.push(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`);
   }
 
-  // Weight sum for the week (uses current month weights + extraData for other months)
+  // Weight sum + autoMeta: cada dia usa o peso e a meta do seu próprio mês
   let weekWeightSum = 0;
+  let autoMeta = 0;
   for (const ds of dates) {
     const monthKey = ds.slice(0, 7);
+    let dayWeight = 0;
+    let dayMensal = 0;
     if (monthKey === curKey) {
       const daysInMonth = new Date(S.year, S.month, 0).getDate();
-      weekWeightSum += (S.weights[ds] ?? +(100 / daysInMonth).toFixed(6));
-    } else if (extraData?.[monthKey]?.weights) {
+      dayWeight  = S.weights[ds] ?? +(100 / daysInMonth).toFixed(6);
+      dayMensal  = mensal;
+    } else if (extraData?.[monthKey]) {
       const [y, m] = monthKey.split('-').map(Number);
-      const dim = new Date(y, m, 0).getDate();
-      weekWeightSum += (extraData[monthKey].weights[ds] ?? +(100 / dim).toFixed(6));
+      const dim  = new Date(y, m, 0).getDate();
+      dayWeight  = extraData[monthKey].weights?.[ds] ?? +(100 / dim).toFixed(6);
+      dayMensal  = extraData[monthKey].vsales?.[emp.id]?.meta?.mensal || 0;
     }
+    weekWeightSum += dayWeight;
+    autoMeta      += dayMensal * dayWeight / 100;
   }
-
-  const autoMeta   = mensal * weekWeightSum / 100;
   // check manual meta override from current AND extra months
   const wkMetasForWeek = S.weeklyMetas[week.startStr] ||
     (extraData && Object.values(extraData).find(d => d.weeklyMetas?.[week.startStr])?.weeklyMetas?.[week.startStr]) || {};
