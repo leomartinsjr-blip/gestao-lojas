@@ -5068,7 +5068,9 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       if (ws > lastDayStr) break;
       const weEndD = new Date(d); weEndD.setDate(weEndD.getDate() + 6);
       const weEnd = `${weEndD.getFullYear()}-${padD(weEndD.getMonth()+1)}-${padD(weEndD.getDate())}`;
-      if (weEnd >= monthStart) allWeekStarts.add(ws); // inclui semanas cross-month
+      // inclui semana se: começa no mês OU tem meta manual definida neste mês (ex.: semana cross-month com meta explicita)
+      const hasMeta = weeklyMetasMonth[ws] && Object.keys(weeklyMetasMonth[ws]).length > 0;
+      if (ws >= monthStart || hasMeta) allWeekStarts.add(ws);
     }
 
     for (const weekStart of allWeekStarts) {
