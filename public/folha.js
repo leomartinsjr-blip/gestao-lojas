@@ -223,7 +223,7 @@ function buildTotalForm(emps) {
     const calcPrem = _ct === 'gerente'
       ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
       : r2(FP.premiacaoSemanal[emp.id] || 0);
-    const calcPremGer = _ct === 'gvend' ? r2(FP.premiacaoSemanalGer[emp.id] || 0) : 0;
+    const calcPremGer = (_ct === 'gvend' || _ct === 'sub') ? r2(FP.premiacaoSemanalGer[emp.id] || 0) : 0;
     if (calcPrem !== r2(entry.premiacao || 0)) entry = { ...entry, premiacao: calcPrem };
     if (calcPremGer !== r2(entry.premiacaoBalanco || 0)) entry = { ...entry, premiacaoBalanco: calcPremGer };
     totalProv += entry.proventos     || 0;
@@ -298,7 +298,7 @@ function selectEmp(empId) {
   const calcPrem = _ct2 === 'gerente'
     ? r2(FP.premiacaoSemanalGer[empId] || 0)
     : r2(FP.premiacaoSemanal[empId] || 0);
-  const calcPremGer2 = _ct2 === 'gvend' ? r2(FP.premiacaoSemanalGer[empId] || 0) : 0;
+  const calcPremGer2 = (_ct2 === 'gvend' || _ct2 === 'sub') ? r2(FP.premiacaoSemanalGer[empId] || 0) : 0;
   if (calcPrem !== r2(entry.premiacao || 0)) {
     entry = { ...entry, premiacao: calcPrem };
   }
@@ -523,7 +523,7 @@ function defaultEntry(emp) {
   const premiacao = _tipo === 'gerente'
     ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
     : r2(FP.premiacaoSemanal[emp.id] || 0);
-  const premiacaoBalanco = _tipo === 'gvend'
+  const premiacaoBalanco = (_tipo === 'gvend' || _tipo === 'sub')
     ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
     : 0;
 
