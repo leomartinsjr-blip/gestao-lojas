@@ -5005,11 +5005,15 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
     const padD       = n => String(n).padStart(2,'0');
     const lastDayStr = `${year}-${padD(month)}-${padD(lastDay.getDate())}`;
     const monthStart = `${year}-${padD(month)}-01`;
-    const premiacaoSemanal        = {};
-    const premiacaoSemanalDetalhe = {};
+    const premiacaoSemanal           = {};
+    const premiacaoSemanalDetalhe    = {};
+    const premiacaoSemanalGer        = {};
+    const premiacaoSemanalGerDetalhe = {};
     for (const emp of employees) {
-      premiacaoSemanal[emp.id]        = 0;
-      premiacaoSemanalDetalhe[emp.id] = [];
+      premiacaoSemanal[emp.id]           = 0;
+      premiacaoSemanalDetalhe[emp.id]    = [];
+      premiacaoSemanalGer[emp.id]        = 0;
+      premiacaoSemanalGerDetalhe[emp.id] = [];
     }
 
     const boardEmpsMap = {};
@@ -5042,7 +5046,9 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
     for (let d = new Date(firstSunday); ; d.setDate(d.getDate() + 7)) {
       const ws = `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
       if (ws > lastDayStr) break;
-      if (ws >= monthStart) allWeekStarts.add(ws); // ignora semanas que começam antes do mês
+      const weEndD = new Date(d); weEndD.setDate(weEndD.getDate() + 6);
+      const weEnd = `${weEndD.getFullYear()}-${padD(weEndD.getMonth()+1)}-${padD(weEndD.getDate())}`;
+      if (weEnd >= monthStart) allWeekStarts.add(ws); // inclui semanas cross-month
     }
 
     for (const weekStart of allWeekStarts) {
@@ -5074,17 +5080,23 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
         const storeHitPA   = storeAtend > 0 && (storePecas/storeAtend) >= PA_THR;
 
         for (const emp of bEmps) {
-          const tipo = (emp.cargo||'').toLowerCase();
-          const isGer = (/gerente/.test(tipo) || /g\.?\s*vend/.test(tipo) || /gerente\s+vend/.test(tipo)) && !/^sub/.test(tipo);
-          if (isGer) {
+          const tipo  = (emp.cargo||'').toLowerCase();
+          const isGer   = /gerente/.test(tipo) && !/^sub/.test(tipo) && !/g\.?\s*vend/.test(tipo) && !/gerente\s+vend/.test(tipo);
+          const isGVend = (/g\.?\s*vend/.test(tipo) || /gerente\s+vend/.test(tipo)) && !/^sub/.test(tipo);
+
+          // Prêmio de loja para gerente puro e gerente vendedor
+          if (isGer || isGVend) {
             let val = 0;
             if (storeHitMeta) val += PREMIO_GER_W;
             if (storeHitMeta && storeHitPA) val += PREMIO_PA_W;
             if (val > 0) {
-              premiacaoSemanal[emp.id] += val;
-              premiacaoSemanalDetalhe[emp.id].push({ label: semLabel, valor: val });
+              premiacaoSemanalGer[emp.id] += val;
+              premiacaoSemanalGerDetalhe[emp.id].push({ label: semLabel, valor: val });
             }
-          } else if (isVend(emp)) {
+          }
+
+          // Prêmio individual para vendedor e gerente vendedor
+          if (isGVend || (!isGer && isVend(emp))) {
             const vs = vsalesAll[`${mk}-${board}-${emp.id}`] || {};
             const we2 = Object.entries(vs.entries||{}).filter(([d]) => d>=weekStart && d<=weStr);
             const empSales = we2.reduce((s,[,e]) => s+(e.value||0), 0);
@@ -5130,6 +5142,8 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       lojaVendaMap,
       premiacaoSemanal,
       premiacaoSemanalDetalhe,
+      premiacaoSemanalGer,
+      premiacaoSemanalGerDetalhe,
       prevExtras,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }

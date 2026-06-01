@@ -65,7 +65,8 @@ let FP = {
   folha: {}, folhaConfig: {}, empConfig: {},
   mensal: { diasUteis: 22, domingosFeriados: 4 },
   lojaMetaMap: {}, lojaVendaMap: {},
-  premiacaoSemanal: {}, premiacaoSemanalDetalhe: {}, prevExtras: {},
+  premiacaoSemanal: {}, premiacaoSemanalDetalhe: {},
+  premiacaoSemanalGer: {}, premiacaoSemanalGerDetalhe: {}, prevExtras: {},
   activeEmpId: null, dirty: false,
 };
 
@@ -108,8 +109,10 @@ async function loadPeriod() {
     FP.empConfig    = d.empConfig    || {};
     FP.lojaMetaMap       = d.lojaMetaMap       || {};
     FP.lojaVendaMap      = d.lojaVendaMap      || {};
-    FP.premiacaoSemanal        = d.premiacaoSemanal        || {};
-    FP.premiacaoSemanalDetalhe = d.premiacaoSemanalDetalhe || {};
+    FP.premiacaoSemanal           = d.premiacaoSemanal           || {};
+    FP.premiacaoSemanalDetalhe    = d.premiacaoSemanalDetalhe    || {};
+    FP.premiacaoSemanalGer        = d.premiacaoSemanalGer        || {};
+    FP.premiacaoSemanalGerDetalhe = d.premiacaoSemanalGerDetalhe || {};
     FP.prevExtras              = d.prevExtras              || {};
     FP.mensal = {
       diasUteis:        d.folhaMensal?.diasUteis        || 22,
@@ -216,8 +219,13 @@ function buildTotalForm(emps) {
   let totalProv = 0, totalDesc = 0, totalLiq = 0;
   const rows = emps.map(emp => {
     let entry = FP.folha[FP.board]?.entries?.[emp.id] || defaultEntry(emp);
-    const calcPrem = r2(FP.premiacaoSemanal[emp.id] || 0);
+    const _ct = cargoTipo(emp.cargo);
+    const calcPrem = _ct === 'gerente'
+      ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
+      : r2(FP.premiacaoSemanal[emp.id] || 0);
+    const calcPremGer = _ct === 'gvend' ? r2(FP.premiacaoSemanalGer[emp.id] || 0) : 0;
     if (calcPrem !== r2(entry.premiacao || 0)) entry = { ...entry, premiacao: calcPrem };
+    if (calcPremGer !== r2(entry.premiacaoBalanco || 0)) entry = { ...entry, premiacaoBalanco: calcPremGer };
     totalProv += entry.proventos     || 0;
     totalDesc += entry.totalDescontos || 0;
     totalLiq  += entry.liquido        || 0;
@@ -286,9 +294,16 @@ function selectEmp(empId) {
   const emp   = FP.employees.find(e => e.id === empId);
   let entry = FP.folha[FP.board]?.entries?.[empId] || defaultEntry(emp);
   // Sempre aplica o valor calculado pelo servidor para premiação semanal
-  const calcPrem = r2(FP.premiacaoSemanal[empId] || 0);
+  const _ct2 = cargoTipo(emp.cargo);
+  const calcPrem = _ct2 === 'gerente'
+    ? r2(FP.premiacaoSemanalGer[empId] || 0)
+    : r2(FP.premiacaoSemanal[empId] || 0);
+  const calcPremGer2 = _ct2 === 'gvend' ? r2(FP.premiacaoSemanalGer[empId] || 0) : 0;
   if (calcPrem !== r2(entry.premiacao || 0)) {
     entry = { ...entry, premiacao: calcPrem };
+  }
+  if (calcPremGer2 !== r2(entry.premiacaoBalanco || 0)) {
+    entry = { ...entry, premiacaoBalanco: calcPremGer2 };
   }
   document.getElementById('fpEmpForms').innerHTML = buildEmpForm(emp, entry);
   attachFormListeners(empId);
@@ -504,8 +519,13 @@ function defaultEntry(emp) {
   const baseGm = fixo + comissaoTotal;
   const gmComplement = r2(Math.max(0, gm - baseGm));
 
-  const premiacao        = r2(FP.premiacaoSemanal[emp.id] || 0);
-  const premiacaoBalanco = 0;
+  const _tipo = cargoTipo(emp.cargo);
+  const premiacao = _tipo === 'gerente'
+    ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
+    : r2(FP.premiacaoSemanal[emp.id] || 0);
+  const premiacaoBalanco = _tipo === 'gvend'
+    ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
+    : 0;
 
   const proventos = r2(fixo + comissaoTotal + comissaoLoja + gmComplement + premiacao + premiacaoBalanco);
   const inss = r2(proventos * (ecfg.inssRate || 0) / 100);
@@ -612,15 +632,38 @@ function buildEmpForm(emp, entry) {
         <span style="font-size:.72rem;color:#8b949e">${gmNote}</span></div>`;
     }
 
-    const semDetalhe = FP.premiacaoSemanalDetalhe[emp.id] || [];
-    const semCalc    = r2(FP.premiacaoSemanal[emp.id] || 0);
-    const semHint = semDetalhe.length
-      ? semDetalhe.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
-      : semCalc > 0 ? `calculado: ${brl(semCalc)}` : 'nenhuma meta semanal encontrada';
-    provRows += `<div class="fp-field"><label>Premiação (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
-      <span style="font-size:.7rem;color:#484f58">${semHint}</span></div>`;
-    if (tipo === 'gerente' || tipo === 'gvend')
-      provRows += `<div class="fp-field"><label>Premiação Balanço (R$)</label>${inp(`fp-premiacaoBalanco-${emp.id}`, e.premiacaoBalanco || 0)}</div>`;
+    if (tipo === 'gerente') {
+      const semGerDet  = FP.premiacaoSemanalGerDetalhe[emp.id] || [];
+      const semGerCalc = r2(FP.premiacaoSemanalGer[emp.id] || 0);
+      const semGerHint = semGerDet.length
+        ? semGerDet.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
+        : semGerCalc > 0 ? `calculado: ${brl(semGerCalc)}` : 'nenhuma meta semanal encontrada';
+      provRows += `<div class="fp-field"><label>Premiação Gerente (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
+        <span style="font-size:.7rem;color:#484f58">${semGerHint}</span></div>`;
+    } else if (tipo === 'gvend') {
+      const semVendDet  = FP.premiacaoSemanalDetalhe[emp.id] || [];
+      const semVendCalc = r2(FP.premiacaoSemanal[emp.id] || 0);
+      const semVendHint = semVendDet.length
+        ? semVendDet.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
+        : semVendCalc > 0 ? `calculado: ${brl(semVendCalc)}` : 'nenhuma meta semanal encontrada';
+      provRows += `<div class="fp-field"><label>Premiação Vendedor (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
+        <span style="font-size:.7rem;color:#484f58">${semVendHint}</span></div>`;
+      const semGerDet2  = FP.premiacaoSemanalGerDetalhe[emp.id] || [];
+      const semGerCalc2 = r2(FP.premiacaoSemanalGer[emp.id] || 0);
+      const semGerHint2 = semGerDet2.length
+        ? semGerDet2.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
+        : semGerCalc2 > 0 ? `calculado: ${brl(semGerCalc2)}` : 'nenhuma meta semanal encontrada';
+      provRows += `<div class="fp-field"><label>Premiação Gerente (R$)</label>${inp(`fp-premiacaoBalanco-${emp.id}`, e.premiacaoBalanco || 0)}
+        <span style="font-size:.7rem;color:#484f58">${semGerHint2}</span></div>`;
+    } else {
+      const semDetalhe = FP.premiacaoSemanalDetalhe[emp.id] || [];
+      const semCalc    = r2(FP.premiacaoSemanal[emp.id] || 0);
+      const semHint = semDetalhe.length
+        ? semDetalhe.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
+        : semCalc > 0 ? `calculado: ${brl(semCalc)}` : 'nenhuma meta semanal encontrada';
+      provRows += `<div class="fp-field"><label>Premiação (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
+        <span style="font-size:.7rem;color:#484f58">${semHint}</span></div>`;
+    }
   }
 
   provRows += `
@@ -1125,21 +1168,33 @@ function buildRecibo(emp, entry, mes, origin) {
         : r2(cfg.garantiaMinima || 0);
     if (num(entry.gmComplement) > 0)
       prov += tr('GARANTIA SURFERS', entry.gmComplement, gm, '', false, '#fef9c3');
-    if ((tipo === 'sub' || tipo === 'gvend') && num(entry.comissaoLoja) > 0)
+    if (num(entry.comissaoLoja) > 0)
       prov += tr((tipo === 'gvend' || tipo === 'sub') ? 'VENDAS DA LOJA' : 'COMISSÃO LOJA', entry.comissaoLoja, entry.vendaLoja,
         ecfg.comissaoVR ? fmt(ecfg.comissaoVR) + '%' : '');
-    const semDet = FP.premiacaoSemanalDetalhe[emp.id] || [];
-    const semSum = semDet.reduce((s, x) => s + num(x.valor), 0);
+    // Premiação: vendedor usa detalhe individual; gerente usa detalhe gerente; gvend ambos
+    const _pTipo = tipo;
+    const semDetVend = (_pTipo !== 'gerente') ? (FP.premiacaoSemanalDetalhe[emp.id] || []) : [];
+    const semDetGer  = (_pTipo === 'gerente' || _pTipo === 'gvend') ? (FP.premiacaoSemanalGerDetalhe[emp.id] || []) : [];
     const premTotal = num(entry.premiacao);
     if (premTotal > 0) {
-      if (semDet.length && Math.abs(semSum - premTotal) < 0.02) {
-        semDet.forEach(s => prov += tr(`PREM. SEM. ${s.label}`, s.valor));
+      const semSumVend = semDetVend.reduce((s, x) => s + num(x.valor), 0);
+      const useDetVend = semDetVend.length && Math.abs(semSumVend - premTotal) < 0.02;
+      if (useDetVend) {
+        const label = _pTipo === 'gvend' ? 'PREM. VEND.' : 'PREM.';
+        semDetVend.forEach(s => prov += tr(`${label} SEM. ${s.label}`, s.valor));
       } else {
-        prov += tr('PREMIAÇÃO', entry.premiacao);
+        prov += tr(_pTipo === 'gerente' ? 'PREM. GERENTE' : _pTipo === 'gvend' ? 'PREM. VENDEDOR' : 'PREMIAÇÃO', entry.premiacao);
       }
     }
-    if (num(entry.premiacaoBalanco) > 0)
-      prov += tr('PREMIAÇÃO BALANÇO', entry.premiacaoBalanco);
+    if (num(entry.premiacaoBalanco) > 0) {
+      const semSumGer = semDetGer.reduce((s, x) => s + num(x.valor), 0);
+      const useDetGer = semDetGer.length && Math.abs(semSumGer - num(entry.premiacaoBalanco)) < 0.02;
+      if (useDetGer) {
+        semDetGer.forEach(s => prov += tr(`PREM. GER. SEM. ${s.label}`, s.valor));
+      } else {
+        prov += tr('PREM. GERENTE', entry.premiacaoBalanco);
+      }
+    }
   }
   if (num(entry.feriado) > 0)
     prov += tr('FERIADO', entry.feriado);
