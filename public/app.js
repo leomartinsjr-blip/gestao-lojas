@@ -79,7 +79,7 @@ function hideLogin() {
 function applyUserPermissions(user) {
   document.getElementById('userChip').textContent = user.label || user.username;
   const isAdmin = !user.board;
-  const ids = ['funcBtn','campanhasBtn','usersBtn','perfBtn','transBtn','folhaBtn','contasPagarBtn'];
+  const ids = ['funcBtn','campanhasBtn','usersBtn','perfBtn','transBtn','folhaBtn'];
   ids.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = isAdmin ? 'flex' : 'none';
@@ -701,7 +701,7 @@ function renderDashboard() {
     grandValor += totValor; grandPecas += totPecas; grandAtend += totAtend; grandMeta += totMeta; grandFluxo += totFluxo;
 
     const metaKey = `${bk}-${S.year}-${S.month}`;
-    if (isCurrentMonth && totProj != null && totMeta > 0 && totProj >= totMeta && !META_ACHIEVED.has(metaKey)) {
+    if (isCurrentMonth && perfWeightAccum >= 30 && totProj != null && totMeta > 0 && totProj >= totMeta && !META_ACHIEVED.has(metaKey)) {
       META_ACHIEVED.add(metaKey);
       setTimeout(() => triggerMetaCelebration(bc.label, bc.color), 350);
     }
