@@ -856,7 +856,10 @@ async function fpSaveEmpCfg(empId) {
   try {
     await apiFetch(`/api/folha/empconfig/${empId}`, 'POST', cfg);
     FP.empConfig[empId] = cfg;
-    const entry = FP.folha[FP.board]?.entries?.[empId] || defaultEntry(emp);
+    // Sempre recalcula via defaultEntry após mudança de config — garante
+    // que premiacaoBalanco, comissão e demais derivados reflitam o novo config
+    const entry = defaultEntry(emp);
+    if (FP.folha[FP.board]?.entries?.[empId]) FP.folha[FP.board].entries[empId] = entry;
     document.getElementById('fpEmpForms').innerHTML = buildEmpForm(emp, entry);
     attachFormListeners(empId);
     toast('Configuração salva ✓');
