@@ -5036,6 +5036,8 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       premiacaoSemanalGerDetalhe[emp.id] = [];
     }
 
+    const folhaEmpCfgMap = db.folhaEmpConfig || {};
+
     const boardEmpsMap = {};
     for (const emp of employees) {
       if (!boardEmpsMap[emp.board]) boardEmpsMap[emp.board] = [];
@@ -5106,11 +5108,14 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
           const isGer    = /gerente/.test(tipo) && !/^sub/.test(tipo) && !/g\.?\s*vend/.test(tipo) && !/gerente\s+vend/.test(tipo);
           const isGVend  = (/g\.?\s*vend/.test(tipo) || /gerente\s+vend/.test(tipo)) && !/^sub/.test(tipo);
           const isSubGer = /^sub/.test(tipo) && /gerente/.test(tipo);
+          const empCfg   = folhaEmpCfgMap[emp.id] || {};
+          const useStorePremio = isGer || isGVend || isSubGer || empCfg.recebePremiaoLoja;
+          const storePremioVal = empCfg.premioLojaValor > 0 ? empCfg.premioLojaValor : PREMIO_GER_W;
 
-          // Prêmio de loja para gerente puro, gerente vendedor e sub-gerente
-          if (isGer || isGVend || isSubGer) {
+          // Prêmio de loja para gerente, sub-gerente e funcionários com flag no config
+          if (useStorePremio) {
             let val = 0;
-            if (storeHitMeta) val += PREMIO_GER_W;
+            if (storeHitMeta) val += storePremioVal;
             if (storeHitMeta && storeHitPA) val += PREMIO_PA_W;
             if (val > 0) {
               premiacaoSemanalGer[emp.id] += val;

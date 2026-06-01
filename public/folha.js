@@ -35,9 +35,11 @@ function getEmpCfg(emp) {
     comissaoVR:      v(fc.comissaoVR,      emp.comissaoVR      || 0),
     salarioFixo:     v(fc.salarioFixo,     emp.salarioFixo     || 0),
     quebraCaixa:     v(fc.quebraCaixa,     emp.quebraCaixa     || 0),
-    inssRate:        v(fc.inssRate,        emp.inssRate        || 0),
-    vtRate:          v(fc.vtRate,          emp.vtRate          || 0),
-    maxVT:           v(fc.maxVT,           emp.maxVT           || 0),
+    inssRate:           v(fc.inssRate,           emp.inssRate           || 0),
+    vtRate:             v(fc.vtRate,             emp.vtRate             || 0),
+    maxVT:              v(fc.maxVT,              emp.maxVT              || 0),
+    recebePremiaoLoja:  fc.recebePremiaoLoja  || false,
+    premioLojaValor:    v(fc.premioLojaValor,    0),
   };
 }
 
@@ -220,10 +222,11 @@ function buildTotalForm(emps) {
   const rows = emps.map(emp => {
     let entry = FP.folha[FP.board]?.entries?.[emp.id] || defaultEntry(emp);
     const _ct = cargoTipo(emp.cargo);
+    const _ecfg = getEmpCfg(emp);
     const calcPrem = _ct === 'gerente'
       ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
       : r2(FP.premiacaoSemanal[emp.id] || 0);
-    const calcPremGer = (_ct === 'gvend' || _ct === 'sub') ? r2(FP.premiacaoSemanalGer[emp.id] || 0) : 0;
+    const calcPremGer = (_ct === 'gvend' || _ct === 'sub' || _ecfg.recebePremiaoLoja) ? r2(FP.premiacaoSemanalGer[emp.id] || 0) : 0;
     if (calcPrem !== r2(entry.premiacao || 0) || calcPremGer !== r2(entry.premiacaoBalanco || 0)) {
       entry = defaultEntry(emp);
     }
@@ -295,11 +298,12 @@ function selectEmp(empId) {
   const emp   = FP.employees.find(e => e.id === empId);
   let entry = FP.folha[FP.board]?.entries?.[empId] || defaultEntry(emp);
   // Sempre aplica o valor calculado pelo servidor para premiação semanal
-  const _ct2 = cargoTipo(emp.cargo);
+  const _ct2   = cargoTipo(emp.cargo);
+  const _ecfg2 = getEmpCfg(emp);
   const calcPrem = _ct2 === 'gerente'
     ? r2(FP.premiacaoSemanalGer[empId] || 0)
     : r2(FP.premiacaoSemanal[empId] || 0);
-  const calcPremGer2 = (_ct2 === 'gvend' || _ct2 === 'sub') ? r2(FP.premiacaoSemanalGer[empId] || 0) : 0;
+  const calcPremGer2 = (_ct2 === 'gvend' || _ct2 === 'sub' || _ecfg2.recebePremiaoLoja) ? r2(FP.premiacaoSemanalGer[empId] || 0) : 0;
   if (calcPrem !== r2(entry.premiacao || 0)) {
     entry = { ...entry, premiacao: calcPrem };
   }
@@ -524,7 +528,7 @@ function defaultEntry(emp) {
   const premiacao = _tipo === 'gerente'
     ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
     : r2(FP.premiacaoSemanal[emp.id] || 0);
-  const premiacaoBalanco = (_tipo === 'gvend' || _tipo === 'sub')
+  const premiacaoBalanco = (_tipo === 'gvend' || _tipo === 'sub' || ecfg.recebePremiaoLoja)
     ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
     : 0;
 
@@ -641,20 +645,22 @@ function buildEmpForm(emp, entry) {
         : semGerCalc > 0 ? `calculado: ${brl(semGerCalc)}` : 'nenhuma meta semanal encontrada';
       provRows += `<div class="fp-field"><label>Premiação Gerente (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
         <span style="font-size:.7rem;color:#484f58">${semGerHint}</span></div>`;
-    } else if (tipo === 'gvend' || tipo === 'sub') {
+    } else if (tipo === 'gvend' || tipo === 'sub' || ecfg.recebePremiaoLoja) {
       const semVendDet  = FP.premiacaoSemanalDetalhe[emp.id] || [];
       const semVendCalc = r2(FP.premiacaoSemanal[emp.id] || 0);
       const semVendHint = semVendDet.length
         ? semVendDet.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
         : semVendCalc > 0 ? `calculado: ${brl(semVendCalc)}` : 'nenhuma meta semanal encontrada';
-      provRows += `<div class="fp-field"><label>Premiação Vendedor (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
-        <span style="font-size:.7rem;color:#484f58">${semVendHint}</span></div>`;
+      if (tipo !== 'caixa') {
+        provRows += `<div class="fp-field"><label>Premiação Vendedor (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
+          <span style="font-size:.7rem;color:#484f58">${semVendHint}</span></div>`;
+      }
       const semGerDet2  = FP.premiacaoSemanalGerDetalhe[emp.id] || [];
       const semGerCalc2 = r2(FP.premiacaoSemanalGer[emp.id] || 0);
       const semGerHint2 = semGerDet2.length
         ? semGerDet2.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
         : semGerCalc2 > 0 ? `calculado: ${brl(semGerCalc2)}` : 'nenhuma meta semanal encontrada';
-      provRows += `<div class="fp-field"><label>Premiação Gerente (R$)</label>${inp(`fp-premiacaoBalanco-${emp.id}`, e.premiacaoBalanco || 0)}
+      provRows += `<div class="fp-field"><label>Premiação da Loja (R$)</label>${inp(`fp-premiacaoBalanco-${emp.id}`, e.premiacaoBalanco || 0)}
         <span style="font-size:.7rem;color:#484f58">${semGerHint2}</span></div>`;
     } else {
       const semDetalhe = FP.premiacaoSemanalDetalhe[emp.id] || [];
@@ -765,6 +771,12 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
       row('MAX. VT (R$)',       `ec-maxVT-${emp.id}`,           ecfg.maxVT);
   }
 
+  const chkPremiaoLoja = `<div class="fp-emp-cfg-row fp-emp-cfg-row--check">
+    <label>Prêmio da loja?</label>
+    <input type="checkbox" id="ec-recebePremiaoLoja-${emp.id}"${ecfg.recebePremiaoLoja ? ' checked' : ''}
+      style="width:16px;height:16px;accent-color:#3fb950;cursor:pointer">
+  </div>` + row('Valor prêm. loja/sem. (R$)', `ec-premioLojaValor-${emp.id}`, ecfg.premioLojaValor);
+
   return `
   <div class="fp-emp-cfg-wrap">
     <div class="fp-emp-cfg-toggle" onclick="fpToggleEmpCfg(${emp.id})">
@@ -773,7 +785,7 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
       <span id="empCfgArrow-${emp.id}" style="margin-left:auto;font-size:.75rem">▼</span>
     </div>
     <div class="fp-emp-cfg" id="empCfg-${emp.id}">
-      <div class="fp-emp-cfg-grid">${fields}</div>
+      <div class="fp-emp-cfg-grid">${fields}${chkPremiaoLoja}</div>
       <div class="fp-emp-cfg-actions">
         <button class="fp-btn primary" onclick="fpSaveEmpCfg(${emp.id})">Salvar</button>
         ${hasFolha ? `<button class="fp-btn" onclick="fpClearEmpCfg(${emp.id})">Resetar para cadastro</button>` : ''}
@@ -816,6 +828,8 @@ async function fpSaveEmpCfg(empId) {
     cfg.comissaoVR      = g(`ec-comissaoVR-${empId}`);
     if (tipo === 'sub' || tipo === 'gvend') cfg.salarioFixo  = g(`ec-salarioFixo-${empId}`);
   }
+  cfg.recebePremiaoLoja = document.getElementById(`ec-recebePremiaoLoja-${empId}`)?.checked || false;
+  cfg.premioLojaValor   = g(`ec-premioLojaValor-${empId}`);
 
   try {
     await apiFetch(`/api/folha/empconfig/${empId}`, 'POST', cfg);
