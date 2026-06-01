@@ -1745,8 +1745,9 @@ function openImg(url) {
 const PERF_MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 const PERF_AVAIL  = new Set(['surfers','delrey','minas','contagem','estacao','tommy','lez','site']);
 const SURFERS_STORES = ['delrey','minas','contagem','estacao','site'];
-const PERF_CUR    = 4;         // Mai = em andamento
-const PERF_LAST3  = [PERF_CUR-2, PERF_CUR-1, PERF_CUR];  // Mar, Abr, Mai
+const _brtNow     = new Date(Date.now() - 3 * 60 * 60 * 1000);
+const PERF_CUR    = _brtNow.getUTCMonth(); // mês corrente BRT (0=Jan … 11=Dez)
+const PERF_LAST3  = [PERF_CUR-3, PERF_CUR-2, PERF_CUR-1]; // últimos 3 meses completos
 
 const PERF_HIST = {
   delrey: {
@@ -1880,7 +1881,22 @@ function _perfActiveView() {
   return document.querySelector('.perf-view-tab.active')?.dataset.view || 'analise';
 }
 
-function openPerfModal() {
+const _perfFetched = {};
+async function fetchMissingPerfData(board) {
+  if (!PERF_2026[board]) return;
+  for (let i = 0; i < PERF_CUR; i++) {
+    if (PERF_2026[board][i] !== null) continue;
+    const ck = board + '-' + i;
+    if (_perfFetched[ck]) continue;
+    try {
+      const r = await apiFetch('GET', '/api/perf-monthly-total/' + board + '/2026/' + (i + 1));
+      if (r.total > 0) PERF_2026[board][i] = r.total;
+      _perfFetched[ck] = true;
+    } catch { /* silently skip */ }
+  }
+}
+
+async function openPerfModal() {
   document.getElementById('perfOverlay').classList.remove('hidden');
   const defaultStore = S.user?.board ? S.user.board : 'surfers';
   PD.board = defaultStore;
@@ -1888,6 +1904,7 @@ function openPerfModal() {
   PD.month = S.month;
   buildPerfTabs();
   document.querySelectorAll('.perf-view-tab').forEach(b => b.classList.toggle('active', b.dataset.view === 'analise'));
+  await fetchMissingPerfData(defaultStore);
   renderPerfStore(defaultStore);
 }
 
@@ -3563,7 +3580,7 @@ function buildPerfTabs() {
     btn.style.color = BOARDS[k]?.color || '#8B949E';
     btn.addEventListener('click', () => {
       PD.board = k;
-      renderPerfStore(k);
+      fetchMissingPerfData(k).then(() => renderPerfStore(k));
     });
     tabs.appendChild(btn);
   });
@@ -3602,7 +3619,7 @@ function renderPerfStore(k) {
         <div class="perf-kpi-sub">referência</div>
       </div>
       <div class="perf-kpi">
-        <div class="perf-kpi-label">Acumulado Jan–Abr/26</div>
+        <div class="perf-kpi-label">Acumulado Jan–${PERF_MONTHS[PERF_CUR-1]}/26</div>
         <div class="perf-kpi-value">${fmtBRLk(m.realAcum)}</div>
         <div class="perf-kpi-sub">dados reais</div>
       </div>
@@ -3694,7 +3711,7 @@ function renderPerfStore(k) {
     </div>
     <div class="perf-chart-box">
       <div class="perf-chart-title">${BOARDS[k]?.label} — 2026 vs 2025 (mensal)</div>
-      <div class="perf-chart-sub">Barras: faturamento real (Jan–Abr) e projetado (Mai–Dez) · Linha: variação % vs 2025 · Pontos âmbar = base da projeção</div>
+      <div class="perf-chart-sub">Barras: faturamento real (Jan–${PERF_MONTHS[PERF_CUR-1]}) e projetado (${PERF_MONTHS[PERF_CUR]}–Dez) · Linha: variação % vs 2025 · Pontos âmbar = base da projeção</div>
       <div class="perf-chart-wrap"><canvas id="perfChartCanvas"></canvas></div>
     </div>`;
 

@@ -1041,6 +1041,26 @@ app.delete('/api/vsales/:year/:month/:board/:empId/:date', requireAuth, async (r
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/perf-monthly-total/:board/:year/:month ─────────────────────────
+app.get('/api/perf-monthly-total/:board/:year/:month', requireAuth, async (req, res) => {
+  try {
+    const { board, year, month } = req.params;
+    const y = parseInt(year), m = parseInt(month);
+    const mk = y + '-' + String(m).padStart(2, '0');
+    const db  = await readDB();
+    const boards = board === 'surfers' ? ['delrey','minas','contagem','estacao','site'] : [board];
+    const emps  = (db.employees || []).filter(e => boards.includes(e.board) && e.isVendedor !== false);
+    let total = 0;
+    for (const emp of emps) {
+      const key = mk + '-' + emp.board + '-' + emp.id;
+      const vsData = db.vsales?.[key];
+      if (!vsData?.entries) continue;
+      for (const v of Object.values(vsData.entries)) total += (v.value || 0);
+    }
+    res.json({ board, year: y, month: m, total: Math.round(total) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/excel/:year/:month/:board — download fechamento ──────────────
 app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
   try {
