@@ -5103,11 +5103,12 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
 
         for (const emp of bEmps) {
           const tipo  = (emp.cargo||'').toLowerCase();
-          const isGer   = /gerente/.test(tipo) && !/^sub/.test(tipo) && !/g\.?\s*vend/.test(tipo) && !/gerente\s+vend/.test(tipo);
-          const isGVend = (/g\.?\s*vend/.test(tipo) || /gerente\s+vend/.test(tipo)) && !/^sub/.test(tipo);
+          const isGer    = /gerente/.test(tipo) && !/^sub/.test(tipo) && !/g\.?\s*vend/.test(tipo) && !/gerente\s+vend/.test(tipo);
+          const isGVend  = (/g\.?\s*vend/.test(tipo) || /gerente\s+vend/.test(tipo)) && !/^sub/.test(tipo);
+          const isSubGer = /^sub/.test(tipo) && /gerente/.test(tipo);
 
-          // Prêmio de loja para gerente puro e gerente vendedor
-          if (isGer || isGVend) {
+          // Prêmio de loja para gerente puro, gerente vendedor e sub-gerente
+          if (isGer || isGVend || isSubGer) {
             let val = 0;
             if (storeHitMeta) val += PREMIO_GER_W;
             if (storeHitMeta && storeHitPA) val += PREMIO_PA_W;
@@ -5117,8 +5118,8 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
             }
           }
 
-          // Prêmio individual para vendedor e gerente vendedor
-          if (isGVend || (!isGer && isVend(emp))) {
+          // Prêmio individual para vendedor, gerente vendedor e sub-gerente
+          if (isGVend || isSubGer || (!isGer && isVend(emp))) {
             const vs = vsalesAll[`${mk}-${board}-${emp.id}`] || {};
             const we2 = Object.entries(vs.entries||{}).filter(([d]) => d>=weekStart && d<=weStr);
             const empSales = we2.reduce((s,[,e]) => s+(e.value||0), 0);

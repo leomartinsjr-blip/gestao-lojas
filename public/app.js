@@ -1806,7 +1806,7 @@ const PERF_2026 = {
   contagem: [ 79523, 81210, 93198,110985,null,null,null,null,null,null,null,null],
   estacao:  [ 72779, 77070, 95819, 78318,null,null,null,null,null,null,null,null],
   tommy:    [ 52889, 64108, 77176, 83443,null,null,null,null,null,null,null,null],
-  lez:      [112699, 57373, 49583, 81151,null,null,null,null,null,null,null,null],
+  lez:      [112699, 57373, 49583, 81151,70185,null,null,null,null,null,null,null],
   site:     [  5233,  2730,  5931, 10500,null,null,null,null,null,null,null,null],
 };
 
