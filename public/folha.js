@@ -38,8 +38,11 @@ function getEmpCfg(emp) {
     inssRate:           v(fc.inssRate,           emp.inssRate           || 0),
     vtRate:             v(fc.vtRate,             emp.vtRate             || 0),
     maxVT:              v(fc.maxVT,              emp.maxVT              || 0),
-    recebePremiaoLoja:  fc.recebePremiaoLoja  || false,
-    premioLojaValor:    v(fc.premioLojaValor,    0),
+    recebePremiaoLoja:   fc.recebePremiaoLoja  || false,
+    premioLojaValor:     v(fc.premioLojaValor,     0),
+    comissaoVRSemMeta:   v(fc.comissaoVRSemMeta,   0),
+    comissaoVRMeta2:     v(fc.comissaoVRMeta2,     0),
+    comissaoVRSuper:     v(fc.comissaoVRSuper,     0),
   };
 }
 
@@ -519,7 +522,21 @@ function defaultEntry(emp) {
       : r2(cfg.garantiaMinima || 0);
   const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);
   let comissaoLoja = 0;
-  if (ecfg.comissaoVR > 0) comissaoLoja = r2(vendaLoja * ecfg.comissaoVR / 100);
+  if (ecfg.comissaoVR > 0 || (tipo === 'sub' && (ecfg.comissaoVRSemMeta || ecfg.comissaoVRMeta2 || ecfg.comissaoVRSuper))) {
+    if (tipo === 'sub') {
+      const lojaEcfg = {
+        comissaoSemMeta: ecfg.comissaoVRSemMeta || ecfg.comissaoVR || 0,
+        comissao:        ecfg.comissaoVR        || 0,
+        comissaoMeta2:   ecfg.comissaoVRMeta2   || ecfg.comissaoVR || 0,
+        comissaoSuper:   ecfg.comissaoVRSuper   || ecfg.comissaoVR || 0,
+      };
+      const metaLoja = r2(FP.lojaMetaMap[FP.board] || 0);
+      const lojaFaixa = calcFaixa(lojaEcfg, vendaLoja, metaLoja);
+      comissaoLoja = r2(vendaLoja * lojaFaixa.comPct / 100);
+    } else {
+      comissaoLoja = r2(vendaLoja * ecfg.comissaoVR / 100);
+    }
+  }
 
   const baseGm = fixo + comissaoTotal;
   const gmComplement = r2(Math.max(0, gm - baseGm));
@@ -575,13 +592,19 @@ function buildEmpForm(emp, entry) {
     const pctVR    = r2(ecfg.comissaoVR);
     const vLoja    = r2(e.vendaLoja || FP.lojaVendaMap[FP.board] || 0);
     const mLoja    = r2(FP.lojaMetaMap[FP.board] || 0);
-    const storeFaixa = calcFaixa(ecfg, vLoja, mLoja);
+    const lojaEcfgForFaixa = tipo === 'sub' ? {
+      comissaoSemMeta: ecfg.comissaoVRSemMeta || ecfg.comissaoVR || 0,
+      comissao:        ecfg.comissaoVR        || 0,
+      comissaoMeta2:   ecfg.comissaoVRMeta2   || ecfg.comissaoVR || 0,
+      comissaoSuper:   ecfg.comissaoVRSuper   || ecfg.comissaoVR || 0,
+    } : { comissao: ecfg.comissaoVR || 0, comissaoSemMeta: ecfg.comissaoVR || 0 };
+    const storeFaixa = calcFaixa(lojaEcfgForFaixa, vLoja, mLoja);
     const pctStr   = mLoja > 0 ? `${(vLoja / mLoja * 100).toFixed(1)}% da meta da loja` : 'sem meta da loja';
     return `<div class="fp-field fp-field-inline">
       <label>Comissão Loja</label>
       ${inpRO(`fp-vendaLoja-${emp.id}`, vLoja)}
       <span class="fp-times">×</span>
-      <span style="font-size:.85rem;color:#8b949e;padding:.15rem .2rem">${pctVR.toFixed(2)}%</span>
+      <span style="font-size:.85rem;color:#8b949e;padding:.15rem .2rem">${storeFaixa.comPct.toFixed(2)}%</span>
       ${faixaBadge(storeFaixa.label)}
       <span class="fp-equals">=</span>
       ${inp(`fp-comLoja-${emp.id}`, e.comissaoLoja || 0)}
@@ -786,7 +809,12 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
       row('Com. Meta 1 (%)',    `ec-comissao-${emp.id}`,        ecfg.comissao) +
       row('Com. Meta 2 (%)',    `ec-comissaoMeta2-${emp.id}`,   ecfg.comissaoMeta2) +
       row('Com. Super Meta (%)',`ec-comissaoSuper-${emp.id}`,   ecfg.comissaoSuper) +
-      row('Comissão Loja (%)',  `ec-comissaoVR-${emp.id}`,      ecfg.comissaoVR) +
+      row('Com. Loja Meta 1 (%)', `ec-comissaoVR-${emp.id}`,          ecfg.comissaoVR) +
+      (tipo === 'sub' ?
+        row('Com. Loja S/Meta (%)', `ec-comissaoVRSemMeta-${emp.id}`, ecfg.comissaoVRSemMeta) +
+        row('Com. Loja Meta 2 (%)', `ec-comissaoVRMeta2-${emp.id}`,   ecfg.comissaoVRMeta2) +
+        row('Com. Loja S.Meta (%)', `ec-comissaoVRSuper-${emp.id}`,   ecfg.comissaoVRSuper)
+      : '') +
       (tipo === 'sub' || tipo === 'gvend' ? row('Salário Fixo (R$)', `ec-salarioFixo-${emp.id}`, ecfg.salarioFixo) : '') +
       row('INSS (%)',           `ec-inssRate-${emp.id}`,        ecfg.inssRate) +
       row('VT (%)',             `ec-vtRate-${emp.id}`,          ecfg.vtRate) +
@@ -848,6 +876,11 @@ async function fpSaveEmpCfg(empId) {
     cfg.comissaoMeta2   = g(`ec-comissaoMeta2-${empId}`);
     cfg.comissaoSuper   = g(`ec-comissaoSuper-${empId}`);
     cfg.comissaoVR      = g(`ec-comissaoVR-${empId}`);
+    if (tipo === 'sub') {
+      cfg.comissaoVRSemMeta = g(`ec-comissaoVRSemMeta-${empId}`);
+      cfg.comissaoVRMeta2   = g(`ec-comissaoVRMeta2-${empId}`);
+      cfg.comissaoVRSuper   = g(`ec-comissaoVRSuper-${empId}`);
+    }
     if (tipo === 'sub' || tipo === 'gvend') cfg.salarioFixo  = g(`ec-salarioFixo-${empId}`);
   }
   cfg.recebePremiaoLoja = document.getElementById(`ec-recebePremiaoLoja-${empId}`)?.checked || false;
