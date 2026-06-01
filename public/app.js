@@ -333,6 +333,40 @@ async function loadData() {
     _updateCampanhasBtn();
     _updateLojaAcaoBadge();
 
+    // Pre-fetch last 3 months for projection average (used when day <= 15)
+    {
+      const nowLocal = new Date();
+      const isCurMonth = S.year === nowLocal.getFullYear() && S.month === nowLocal.getMonth() + 1;
+      if (isCurMonth && nowLocal.getDate() <= 15) {
+        const prevMonths = [];
+        for (let i = 1; i <= 3; i++) {
+          let y = S.year, m = S.month - i;
+          while (m <= 0) { m += 12; y--; }
+          prevMonths.push({ y, m });
+        }
+        const prevData = await Promise.all(prevMonths.map(({ y, m }) => loadMonthData(y, m)));
+        const byEmpVals = {}, byBoardVals = {};
+        for (let i = 0; i < 3; i++) {
+          const { vsales } = prevData[i];
+          for (const emp of S.employees) {
+            if (!isVend(emp)) continue;
+            const entries = (vsales[emp.id] || {}).entries || {};
+            const total = Object.values(entries).reduce((s, e) => s + (e.value || 0), 0);
+            if (!byEmpVals[emp.id]) byEmpVals[emp.id] = [];
+            byEmpVals[emp.id].push(total);
+            if (!byBoardVals[emp.board]) byBoardVals[emp.board] = [0, 0, 0];
+            byBoardVals[emp.board][i] += total;
+          }
+        }
+        S.hist3Avg = {
+          byEmp: Object.fromEntries(Object.entries(byEmpVals).map(([id, v]) => [id, v.reduce((a,b)=>a+b,0)/v.length])),
+          byBoard: Object.fromEntries(Object.entries(byBoardVals).map(([bk, v]) => [bk, v.reduce((a,b)=>a+b,0)/v.length])),
+        };
+      } else {
+        S.hist3Avg = null;
+      }
+    }
+
     renderDashboard();
 
     // Carrega fotos em background para não bloquear a renderização inicial
@@ -450,6 +484,7 @@ function renderDashboard() {
     perfWeightAccum += (S.weights[ds] ?? defW);
   }
 
+  const useHistAvg = isCurrentMonth && today.getDate() <= 15 && S.hist3Avg != null;
 
   // ── Layout: left column (half width) + right free ───────────────────────
   const grid = document.createElement('div');
@@ -619,7 +654,9 @@ function renderDashboard() {
       }
       const metaAccum = mensal * perfWeightAccum / 100;
       const pctMeta   = mensal > 0 ? valor / mensal * 100 : null;
-      const projecao  = (valor > 0 && metaAccum > 0) ? valor/metaAccum*mensal : null;
+      const projecao  = useHistAvg
+        ? (S.hist3Avg.byEmp[emp.id] ?? null)
+        : ((valor > 0 && metaAccum > 0) ? valor/metaAccum*mensal : null);
       const pctProj   = projecao != null && mensal > 0 ? projecao / mensal * 100 : null;
       const pa        = (pecas > 0 && atend > 0) ? pecas/atend : null;
       const tm        = (valor > 0 && atend > 0) ? valor/atend : null;
@@ -636,7 +673,9 @@ function renderDashboard() {
     let biTotal = 0, biConv = 0;
     for (const s of Object.values(bIndevaM)) { biTotal += s.total; biConv += s.conv; }
     const bIndevaConv = biTotal > 0 ? biConv / biTotal * 100 : (bFluxo > 0 && totA > 0 ? totA / bFluxo * 100 : null);
-    const bProj = (totV>0 && ma>0) ? totV/ma*totM : null;
+    const bProj = useHistAvg
+      ? (S.hist3Avg.byBoard[bk] ?? null)
+      : ((totV>0 && ma>0) ? totV/ma*totM : null);
     _boardAgg[bk] = {
       valor: totV, mensal: totM, fluxo: bFluxo,
       pctMeta:  totM > 0 ? totV/totM*100 : null,
@@ -687,7 +726,9 @@ function renderDashboard() {
     for (const d of rowData) { totValor += d.valor; totPecas += d.pecas; totAtend += d.atend; totMeta += d.mensal; }
     const totMetaAccum = totMeta * perfWeightAccum / 100;
     const totPctMeta = totMeta > 0 ? totValor/totMeta*100 : null;
-    const totProj  = (totValor > 0 && totMetaAccum > 0) ? totValor/totMetaAccum*totMeta : null;
+    const totProj  = useHistAvg
+      ? (S.hist3Avg.byBoard[bk] ?? null)
+      : ((totValor > 0 && totMetaAccum > 0) ? totValor/totMetaAccum*totMeta : null);
     const totPctProj = totProj != null && totMeta > 0 ? totProj/totMeta*100 : null;
     const totPa   = (totPecas > 0 && totAtend > 0) ? totPecas/totAtend : null;
     const totTm   = (totValor > 0 && totAtend > 0) ? totValor/totAtend : null;
