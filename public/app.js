@@ -1824,12 +1824,8 @@ function computeCurMonthProj(board) {
   const todayBRT = new Date(Date.now() - 3 * 60 * 60 * 1000);
   if (S.year !== todayBRT.getUTCFullYear() || S.month !== todayBRT.getUTCMonth() + 1) return null;
 
-  // Até o dia 15: projeção = média dos 3 meses anteriores completos
-  if (todayBRT.getUTCDate() <= 15) {
-    const vals = PERF_LAST3.map(i => PERF_2026[board]?.[i]).filter(v => v != null);
-    if (vals.length === 0) return null;
-    return Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
-  }
+  // Até o dia 15: retorna null → calcPerfMetrics projeta com a média YoY dos 3 meses (avgD)
+  if (todayBRT.getUTCDate() <= 15) return null;
 
   // Após o dia 15: projeção por ritmo (realizado / peso acumulado × 100)
   const perfCutoff = `${todayBRT.getUTCFullYear()}-${pad(todayBRT.getUTCMonth()+1)}-${pad(todayBRT.getUTCDate())}`;
