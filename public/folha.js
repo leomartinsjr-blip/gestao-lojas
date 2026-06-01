@@ -580,6 +580,15 @@ function buildEmpForm(emp, entry) {
     if ((ecfg.comissaoVR || 0) > 0) {
       provRows += `<div class="fp-field"><label>Comissão Loja (${r2(ecfg.comissaoVR).toFixed(2)}% vendas loja)</label>${inp(`fp-comLoja-${emp.id}`, e.comissaoLoja || 0)}</div>`;
     }
+    if (ecfg.recebePremiaoLoja) {
+      const semGerDetC  = FP.premiacaoSemanalGerDetalhe[emp.id] || [];
+      const semGerCalcC = r2(FP.premiacaoSemanalGer[emp.id] || 0);
+      const semGerHintC = semGerDetC.length
+        ? semGerDetC.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
+        : semGerCalcC > 0 ? `calculado: ${brl(semGerCalcC)}` : 'nenhuma meta semanal encontrada';
+      provRows += `<div class="fp-field"><label>Premiação da Loja (R$)</label>${inp(`fp-premiacaoBalanco-${emp.id}`, e.premiacaoBalanco || 0)}
+        <span style="font-size:.7rem;color:#484f58">${semGerHintC}</span></div>`;
+    }
   } else {
     const pctDisplay = e.pctMeta > 0 ? `${r2(e.pctMeta).toFixed(1)}% da meta` : 'sem meta';
 
