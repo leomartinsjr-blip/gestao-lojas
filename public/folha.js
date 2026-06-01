@@ -224,8 +224,9 @@ function buildTotalForm(emps) {
       ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
       : r2(FP.premiacaoSemanal[emp.id] || 0);
     const calcPremGer = (_ct === 'gvend' || _ct === 'sub') ? r2(FP.premiacaoSemanalGer[emp.id] || 0) : 0;
-    if (calcPrem !== r2(entry.premiacao || 0)) entry = { ...entry, premiacao: calcPrem };
-    if (calcPremGer !== r2(entry.premiacaoBalanco || 0)) entry = { ...entry, premiacaoBalanco: calcPremGer };
+    if (calcPrem !== r2(entry.premiacao || 0) || calcPremGer !== r2(entry.premiacaoBalanco || 0)) {
+      entry = defaultEntry(emp);
+    }
     totalProv += entry.proventos     || 0;
     totalDesc += entry.totalDescontos || 0;
     totalLiq  += entry.liquido        || 0;
@@ -640,7 +641,7 @@ function buildEmpForm(emp, entry) {
         : semGerCalc > 0 ? `calculado: ${brl(semGerCalc)}` : 'nenhuma meta semanal encontrada';
       provRows += `<div class="fp-field"><label>Premiação Gerente (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
         <span style="font-size:.7rem;color:#484f58">${semGerHint}</span></div>`;
-    } else if (tipo === 'gvend') {
+    } else if (tipo === 'gvend' || tipo === 'sub') {
       const semVendDet  = FP.premiacaoSemanalDetalhe[emp.id] || [];
       const semVendCalc = r2(FP.premiacaoSemanal[emp.id] || 0);
       const semVendHint = semVendDet.length
