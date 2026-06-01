@@ -571,15 +571,31 @@ function buildEmpForm(emp, entry) {
     return `<span style="font-size:.7rem;padding:.1rem .4rem;border-radius:4px;background:${c}22;color:${c};border:1px solid ${c}44;white-space:nowrap">${label}</span>`;
   };
 
+  const _comLojaRow = () => {
+    const pctVR    = r2(ecfg.comissaoVR);
+    const vLoja    = r2(e.vendaLoja || FP.lojaVendaMap[FP.board] || 0);
+    const mLoja    = r2(FP.lojaMetaMap[FP.board] || 0);
+    const storeFaixa = calcFaixa(ecfg, vLoja, mLoja);
+    const pctStr   = mLoja > 0 ? `${(vLoja / mLoja * 100).toFixed(1)}% da meta da loja` : 'sem meta da loja';
+    return `<div class="fp-field fp-field-inline">
+      <label>Comissão Loja</label>
+      ${inpRO(`fp-vendaLoja-${emp.id}`, vLoja)}
+      <span class="fp-times">×</span>
+      <span style="font-size:.85rem;color:#8b949e;padding:.15rem .2rem">${pctVR.toFixed(2)}%</span>
+      ${faixaBadge(storeFaixa.label)}
+      <span class="fp-equals">=</span>
+      ${inp(`fp-comLoja-${emp.id}`, e.comissaoLoja || 0)}
+      <span style="font-size:.7rem;color:#8b949e;margin-left:.3rem">${pctStr}</span>
+    </div>`;
+  };
+
   let provRows = '';
 
   if (tipo === 'caixa') {
     provRows = `
       <div class="fp-field"><label>Salário Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}</div>
       <div class="fp-field"><label>Quebra de Caixa (R$)</label>${inp(`fp-quebra-${emp.id}`, e.quebra)}</div>`;
-    if ((ecfg.comissaoVR || 0) > 0) {
-      provRows += `<div class="fp-field"><label>Comissão Loja (${r2(ecfg.comissaoVR).toFixed(2)}% vendas loja)</label>${inp(`fp-comLoja-${emp.id}`, e.comissaoLoja || 0)}</div>`;
-    }
+    if ((ecfg.comissaoVR || 0) > 0) provRows += _comLojaRow();
     if (ecfg.recebePremiaoLoja) {
       const semGerDetC  = FP.premiacaoSemanalGerDetalhe[emp.id] || [];
       const semGerCalcC = r2(FP.premiacaoSemanalGer[emp.id] || 0);
@@ -628,10 +644,7 @@ function buildEmpForm(emp, entry) {
         </div>
       </div>`;
 
-    if ((ecfg.comissaoVR || 0) > 0) {
-      const pctVR = ecfg.comissaoVR || 0;
-      provRows += `<div class="fp-field"><label>Comissão Loja (${r2(pctVR).toFixed(2)}% vendas loja)</label>${inp(`fp-comLoja-${emp.id}`, e.comissaoLoja)}</div>`;
-    }
+    if ((ecfg.comissaoVR || 0) > 0) provRows += _comLojaRow();
 
     const gmMin = tipo === 'gerente'
       ? (cfg.garantiaMinimaGerente    || cfg.garantiaMinima || 0)
@@ -892,7 +905,7 @@ function recalc(empId) {
   let proventos = 0;
 
   if (tipo === 'caixa') {
-    proventos = g(`fp-fixo-${empId}`) + g(`fp-quebra-${empId}`) + g(`fp-comLoja-${empId}`);
+    proventos = g(`fp-fixo-${empId}`) + g(`fp-quebra-${empId}`) + g(`fp-comLoja-${empId}`) + g(`fp-premiacaoBalanco-${empId}`);
   } else {
     const vendas   = g(`fp-vendas-${empId}`);
     const comPct   = g(`fp-comPct-${empId}`);
@@ -965,7 +978,7 @@ function saveEntryFromForm(empId) {
 
   if (tipo === 'caixa') {
     proventos = r2(g(`fp-fixo-${empId}`) + g(`fp-quebra-${empId}`)
-      + g(`fp-comLoja-${empId}`) + g(`fp-feriado-${empId}`) + extProv);
+      + g(`fp-comLoja-${empId}`) + g(`fp-premiacaoBalanco-${empId}`) + g(`fp-feriado-${empId}`) + extProv);
   } else {
     const vendas  = g(`fp-vendas-${empId}`);
     const comPct  = g(`fp-comPct-${empId}`);
@@ -1198,7 +1211,7 @@ function buildRecibo(emp, entry, mes, origin) {
     // Premiação: vendedor usa detalhe individual; gerente usa detalhe gerente; gvend ambos
     const _pTipo = tipo;
     const semDetVend = (_pTipo !== 'gerente') ? (FP.premiacaoSemanalDetalhe[emp.id] || []) : [];
-    const semDetGer  = (_pTipo === 'gerente' || _pTipo === 'gvend') ? (FP.premiacaoSemanalGerDetalhe[emp.id] || []) : [];
+    const semDetGer  = (_pTipo === 'gerente' || _pTipo === 'gvend' || _pTipo === 'sub' || ecfg.recebePremiaoLoja) ? (FP.premiacaoSemanalGerDetalhe[emp.id] || []) : [];
     const premTotal = num(entry.premiacao);
     if (premTotal > 0) {
       const semSumVend = semDetVend.reduce((s, x) => s + num(x.valor), 0);
