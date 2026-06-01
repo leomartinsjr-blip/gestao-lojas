@@ -701,7 +701,7 @@ function renderDashboard() {
     grandValor += totValor; grandPecas += totPecas; grandAtend += totAtend; grandMeta += totMeta; grandFluxo += totFluxo;
 
     const metaKey = `${bk}-${S.year}-${S.month}`;
-    if (totProj != null && totMeta > 0 && totProj >= totMeta && !META_ACHIEVED.has(metaKey)) {
+    if (isCurrentMonth && totProj != null && totMeta > 0 && totProj >= totMeta && !META_ACHIEVED.has(metaKey)) {
       META_ACHIEVED.add(metaKey);
       setTimeout(() => triggerMetaCelebration(bc.label, bc.color), 350);
     }
@@ -4368,12 +4368,28 @@ function _syncPDToS() {
   _checkWeeklyCelebrations();
 }
 
-function _checkWeeklyCelebrations() {
+async function _checkWeeklyCelebrations() {
   const today = new Date();
   const pad = n => String(n).padStart(2,'0');
   const todayStr = `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
   const week = getWeekForDate(todayStr);
   if (week.startStr > todayStr || week.endStr < todayStr) return;
+
+  // Load extra month data if the week spans two months
+  const curKey = `${S.year}-${pad(S.month)}`;
+  const extraData = {};
+  const startDate = new Date(week.startStr + 'T00:00:00');
+  const toLoad = new Set();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(startDate); d.setDate(d.getDate() + i);
+    const mk = `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
+    if (mk !== curKey) toLoad.add(mk);
+  }
+  for (const mk of toLoad) {
+    const [y, m] = mk.split('-').map(Number);
+    extraData[mk] = await loadMonthData(y, m);
+  }
+  const extra = Object.keys(extraData).length ? extraData : null;
 
   const pending = [];
 
@@ -4383,7 +4399,7 @@ function _checkWeeklyCelebrations() {
     let totValor = 0, totMeta = 0;
 
     for (const emp of emps) {
-      const k = calcWeekKpis(emp, week, null);
+      const k = calcWeekKpis(emp, week, extra);
       totValor += k.valor;
       totMeta  += k.wMeta;
 
