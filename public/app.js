@@ -701,7 +701,7 @@ function renderDashboard() {
     grandValor += totValor; grandPecas += totPecas; grandAtend += totAtend; grandMeta += totMeta; grandFluxo += totFluxo;
 
     const metaKey = `${bk}-${S.year}-${S.month}`;
-    if (isCurrentMonth && perfWeightAccum >= 30 && totProj != null && totMeta > 0 && totProj >= totMeta && !META_ACHIEVED.has(metaKey)) {
+    if (totMeta > 0 && totValor >= totMeta && !META_ACHIEVED.has(metaKey)) {
       META_ACHIEVED.add(metaKey);
       setTimeout(() => triggerMetaCelebration(bc.label, bc.color), 350);
     }
