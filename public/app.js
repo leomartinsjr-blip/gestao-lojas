@@ -1000,11 +1000,35 @@ function renderDashboard() {
   let campDashCard = null;
   if (activeCampaigns.length > 0) {
     const camp = activeCampaigns[0];
+    const campFmt = d => d.split('-').reverse().join('/');
+    const curMonthPrefix = `${String(S.year)}-${String(S.month).padStart(2,'0')}`;
+    const singleMonth = camp.startDate.slice(0,7) === curMonthPrefix &&
+                        camp.endDate.slice(0,7)   === curMonthPrefix;
+
+    function _buildCampCard(ranking) {
+      const top5     = ranking.slice(0, 5);
+      const maxVal   = top5.length ? Math.max(...top5.map(r => r.kpiValue), 0.001) : 0.001;
+      const medals   = ['🥇','🥈','🥉'];
+      const rowsHtml = top5.map((r, i) => {
+        const pct   = maxVal > 0 ? (r.kpiValue / maxVal * 100) : 0;
+        const color = BOARDS[r.emp.board]?.color || '#8B949E';
+        const name  = r.emp.apelido || r.emp.name.split(' ')[0];
+        return `<div class="camp-dash-row">
+          <span class="camp-dash-pos">${i < 3 ? medals[i] : `#${i+1}`}</span>
+          <span class="camp-dash-name">${name}</span>
+          <div class="camp-dash-bar-wrap"><div class="camp-dash-bar" style="width:${pct.toFixed(1)}%;background:${color}"></div></div>
+          <span class="camp-dash-val">${formatKpiValue(camp.kpi, r.kpiValue)}</span>
+        </div>`;
+      }).join('');
+      return `<div class="camp-dash-kpi-lbl">${KPI_LABELS[camp.kpi] || camp.kpi}</div>
+        ${rowsHtml || '<div style="color:var(--muted);font-size:.8rem;padding:.5rem 0">Sem dados no período</div>'}`;
+    }
+
+    // Ranking inicial: só S.vsales (rápido, sempre disponível)
     const campEmps = S.employees.filter(e =>
-      isVend(e) && !e.inativo &&
-      (camp.scope === 'rede' || camp.stores.includes(e.board))
+      isVend(e) && !e.inativo && (camp.scope === 'rede' || camp.stores.includes(e.board))
     );
-    const campRanking = campEmps.map(emp => {
+    const quickRanking = campEmps.map(emp => {
       const entries = (S.vsales[emp.id] || {}).entries || {};
       let totalVendas = 0, totalPecas = 0, totalAtend = 0;
       for (const [date, entry] of Object.entries(entries)) {
@@ -1022,28 +1046,11 @@ function renderDashboard() {
         case 'pa': kpiValue = totalAtend > 0 ? totalPecas / totalAtend : 0; break;
       }
       return { emp, kpiValue };
-    }).sort((a, b) => b.kpiValue - a.kpiValue).slice(0, 5);
-
-    const campMaxVal = campRanking.length ? Math.max(...campRanking.map(r => r.kpiValue), 0.001) : 0.001;
-    const campMedals = ['🥇','🥈','🥉'];
-    const campFmt = d => d.split('-').reverse().join('/');
-
-    const campRowsHtml = campRanking.map((r, i) => {
-      const pct   = campMaxVal > 0 ? (r.kpiValue / campMaxVal * 100) : 0;
-      const medal = i < 3 ? campMedals[i] : `#${i+1}`;
-      const color = BOARDS[r.emp.board]?.color || '#8B949E';
-      const name  = r.emp.apelido || r.emp.name.split(' ')[0];
-      return `
-        <div class="camp-dash-row">
-          <span class="camp-dash-pos">${medal}</span>
-          <span class="camp-dash-name">${name}</span>
-          <div class="camp-dash-bar-wrap"><div class="camp-dash-bar" style="width:${pct.toFixed(1)}%;background:${color}"></div></div>
-          <span class="camp-dash-val">${formatKpiValue(camp.kpi, r.kpiValue)}</span>
-        </div>`;
-    }).join('');
+    }).sort((a, b) => b.kpiValue - a.kpiValue);
 
     campDashCard = document.createElement('div');
     campDashCard.className = 'main-card camp-dash-card';
+    campDashCard.dataset.cardId = 'card-camp';
     campDashCard.innerHTML = `
       <div class="main-card-hdr">
         <span class="main-card-title">
@@ -1058,16 +1065,20 @@ function renderDashboard() {
         </span>
         <span class="main-card-sub">${campFmt(camp.startDate)} → ${campFmt(camp.endDate)}</span>
       </div>
-      <div class="main-card-body">
-        <div class="camp-dash-kpi-lbl">${KPI_LABELS[camp.kpi] || camp.kpi}</div>
-        ${campRowsHtml || '<div style="color:var(--muted);font-size:.8rem;padding:.5rem 0">Sem dados no período</div>'}
-      </div>
+      <div class="main-card-body" id="campDashBody">${_buildCampCard(quickRanking)}</div>
     `;
     campDashCard.addEventListener('click', () => {
       openCampanhasModal();
       setTimeout(() => renderCampaignRanking(camp), 60);
     });
-    campDashCard.dataset.cardId = 'card-camp';
+
+    // Se a campanha span mais de 1 mês, busca dados completos em background
+    if (!singleMonth) {
+      calcCampaignRanking(camp).then(fullRanking => {
+        const bodyEl = campDashCard.querySelector('#campDashBody');
+        if (bodyEl) bodyEl.innerHTML = _buildCampCard(fullRanking);
+      }).catch(() => {});
+    }
   }
 
   // ── CARD: Folgas → coluna direita ────────────────────────────────────────
