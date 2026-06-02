@@ -5838,10 +5838,12 @@ initMongo()
     }
 
     // Remove contasPagar do documento store (migrado para coleção cpFaturas)
-    mongoDb.collection('store').updateOne(
-      { _id: 'main', contasPagar: { $exists: true } },
-      { $unset: { contasPagar: '' } }
-    ).then(r => { if (r.modifiedCount) console.log('[migrate] contasPagar removido do store'); }).catch(() => {});
+    if (mongoDb) {
+      mongoDb.collection('store').updateOne(
+        { _id: 'main', contasPagar: { $exists: true } },
+        { $unset: { contasPagar: '' } }
+      ).then(r => { if (r.modifiedCount) console.log('[migrate] contasPagar removido do store'); }).catch(() => {});
+    }
 
     // Restaura lastSync do banco para o botão mostrar verde imediatamente após deploy
     readDB().then(db => { if (db.microvixLastSync) setLastSync(db.microvixLastSync); }).catch(() => {});
