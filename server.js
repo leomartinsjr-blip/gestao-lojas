@@ -3530,18 +3530,9 @@ async function _getCatalog(lojas) {
 
 async function _buildCatalog(lojas) {
   const { fetchServicos, buildRequest, postRequest, parseCsv, parseBrNum } = require('./services/microvix');
-  // Surfers (delrey/minas/contagem/estacao) compartilham o mesmo catálogo Microvix — basta um.
-  // TOMMY e LEZ têm CNPJs próprios → precisam ser buscados separadamente.
-  // Estratégia: um representante por CNPJ único.
-  const allBoards = Object.keys(lojas).filter(b => b !== 'site');
-  if (!allBoards.length) return {};
-  const seenCnpj = new Set();
-  const boards = allBoards.filter(b => {
-    const cnpj = (lojas[b] || '').replace(/\D/g, '');
-    if (!cnpj || seenCnpj.has(cnpj)) return false;
-    seenCnpj.add(cnpj);
-    return true;
-  });
+  // 'site' usa os mesmos códigos de produto das lojas físicas — excluir evita duplicação de memória
+  const boards = Object.keys(lojas).filter(b => b !== 'site');
+  if (!boards.length) return {};
   // Descarta cache antigo ANTES de construir — sem referência _prevCache para não manter o objeto
   // vivo durante o build (evita pico duplo de ~254 MB → só ~127 MB durante a construção)
   _catalogCache = null;
@@ -3622,7 +3613,6 @@ async function _buildCatalog(lojas) {
       const n = await fetchBoard(b).catch(e => { console.warn(`[Catalog/${b}] erro:`, e.message); return 0; });
       totalProd += n;
     }
-
     console.log(`[Catalog] ${totalProd} produtos total → ${Object.keys(map).length} entradas (${boards.length} lojas)`);
     _catalogCache   = map;
     _catalogCacheAt = Date.now();
