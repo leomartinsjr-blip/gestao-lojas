@@ -543,7 +543,10 @@ function renderDashboard() {
   const isCurrentMonth = S.year === today.getFullYear() && S.month === today.getMonth() + 1;
   const cutoff = isCurrentMonth ? todayStr : (lastFilledDay || todayStr);
 
-  const perfCutoff = isCurrentMonth ? cutoff : (lastFilledDay || todayStr);
+  // Performance Mensal usa D-1 (dados sempre completos)
+  const _yBRT = new Date(Date.now() - 3 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000);
+  const yesterdayStr = `${_yBRT.getUTCFullYear()}-${pad(_yBRT.getUTCMonth()+1)}-${pad(_yBRT.getUTCDate())}`;
+  const perfCutoff = isCurrentMonth ? yesterdayStr : (lastFilledDay || yesterdayStr);
   const perfCutoffLabel = `dados até ${perfCutoff.slice(8)}/${perfCutoff.slice(5,7)}`;
 
   let weightAccum = 0;
@@ -1734,7 +1737,8 @@ async function _loadCompCard(body) {
       if (date.startsWith(prefix) && (lastDay === null || date > lastDay)) lastDay = date;
     }
   }
-  const cutoff = isCurrentMonth ? todayBRTStr : lastDay;
+  // Mês atual: usa D-1 BRT como cutoff (igual ao Performance Mensal)
+  const cutoff = isCurrentMonth ? yesterdayBRTStr : lastDay;
 
   const defW = +(100 / daysInCur).toFixed(6);
   let wAccum = 0;
@@ -1938,7 +1942,8 @@ function computeCurMonthProj(board) {
   if (todayBRT.getUTCDate() <= 15) return null;
 
   // Após o dia 15: projeção por ritmo (realizado / peso acumulado × 100)
-  const perfCutoff = `${todayBRT.getUTCFullYear()}-${pad(todayBRT.getUTCMonth()+1)}-${pad(todayBRT.getUTCDate())}`;
+  const yestBRT = new Date(Date.now() - 3 * 60 * 60 * 1000 - 24 * 60 * 60 * 1000);
+  const perfCutoff = `${yestBRT.getUTCFullYear()}-${pad(yestBRT.getUTCMonth()+1)}-${pad(yestBRT.getUTCDate())}`;
   const daysInMonth = new Date(S.year, S.month, 0).getDate();
   const defW = 100 / daysInMonth;
   let wAccum = 0;
