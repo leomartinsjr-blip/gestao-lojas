@@ -3549,7 +3549,7 @@ async function _buildCatalog(lojas) {
       const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
       if (!cnpj) return 0;
       let ts = 0, boardCount = 0;
-      for (let page = 0; page < 40; page++) {
+      for (let page = 0; page < 10; page++) {
         const body = buildRequest('LinxProdutos', cnpj, [
           { id: 'timestamp',        valor: String(ts) },
           { id: 'dt_update_inicio', valor: dtIniCatalog },
