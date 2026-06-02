@@ -8774,26 +8774,7 @@ function _renderAdiantamentoLojaView(body) {
 }
 
 function _renderAdiantamentoAdminView(body) {
-  let adminSubTab = 'lancar';
-
-  function render() {
-    body.innerHTML = `<div class="adi-admin-wrap">
-      <div class="adi-sub-tabs">
-        <button class="adi-sub-tab${adminSubTab==='lancar'?' active':''}" data-t="lancar">📝 Lançar</button>
-        <button class="adi-sub-tab${adminSubTab==='gerenciar'?' active':''}" data-t="gerenciar">⚙️ Gerenciar</button>
-      </div>
-      <div id="adi-admin-content"></div>
-    </div>`;
-
-    body.querySelectorAll('.adi-sub-tab').forEach(b => b.addEventListener('click', () => {
-      adminSubTab = b.dataset.t; render();
-    }));
-
-    const content = body.querySelector('#adi-admin-content');
-    if (adminSubTab === 'lancar') _renderAdiAdminLancar(content, render);
-    else _renderAdiAdminGerenciar(content);
-  }
-  render();
+  _renderAdiAdminGerenciar(body);
 }
 
 function _renderAdiAdminLancar(content, onSuccess) {
