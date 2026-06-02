@@ -5024,6 +5024,27 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
     </div>`;
   }
 
+  function _extensaoHtml(f, i) {
+    const checked = new Set(f.colaboradores || []);
+    return `<div class="df-entry" data-extensao="${i}">
+      <div class="df-entry-top">
+        <label class="df-resp-label" style="white-space:nowrap">Data:</label>
+        <input type="date" class="df-date df-ext-date" value="${f.date||''}" data-idx="${i}">
+        <button class="df-remove-btn" data-ext-rm="${i}" title="Remover">✕</button>
+      </div>
+      <div class="df-entry-label">Quem ficou:</div>
+      <div class="df-emp-checks">
+        ${boardEmps.length ? boardEmps.map(e => {
+          const n = e.apelido || e.name;
+          return `<label class="df-chk-label">
+            <input type="checkbox" class="df-ext-chk" data-ext-idx="${i}" data-name="${_escHtml(n)}"${checked.has(n) ? ' checked' : ''}>
+            <span>${_escHtml(n)}</span>
+          </label>`;
+        }).join('') : '<span style="color:var(--muted);font-size:.8rem">Nenhum funcionário cadastrado</span>'}
+      </div>
+    </div>`;
+  }
+
   function render() {
     body.innerHTML = `<div class="df-wrap">
       <div class="df-title">${boardLabel} — ${monthLabel}</div>
@@ -5035,6 +5056,16 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
         </div>
         <div id="dfFeriadoList">
           ${feriados.length ? feriados.map(_feriadoHtml).join('') : '<div class="df-empty">Nenhum feriado informado</div>'}
+        </div>
+      </div>
+
+      <div class="df-section">
+        <div class="df-sec-hdr">
+          <span>Extensão de Horário</span>
+          <button class="df-add-btn" id="dfAddExtensao">+ Extensão</button>
+        </div>
+        <div id="dfExtensaoList">
+          ${extensoes.length ? extensoes.map(_extensaoHtml).join('') : '<div class="df-empty">Nenhuma extensão informada</div>'}
         </div>
       </div>
 
@@ -5064,12 +5095,19 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
       feriados.push({ date: '', colaboradores: [] });
       render();
     });
+    body.querySelector('#dfAddExtensao').addEventListener('click', () => {
+      extensoes.push({ date: '', colaboradores: [] });
+      render();
+    });
     body.querySelector('#dfAddFalta').addEventListener('click', () => {
       faltas.push({ date: '', colaborador: '' });
       render();
     });
     body.querySelectorAll('[data-feriado-rm]').forEach(btn => {
       btn.addEventListener('click', () => { feriados.splice(parseInt(btn.dataset.feriadoRm), 1); render(); });
+    });
+    body.querySelectorAll('[data-ext-rm]').forEach(btn => {
+      btn.addEventListener('click', () => { extensoes.splice(parseInt(btn.dataset.extRm), 1); render(); });
     });
     body.querySelectorAll('[data-falta-rm]').forEach(btn => {
       btn.addEventListener('click', () => { faltas.splice(parseInt(btn.dataset.faltaRm), 1); render(); });
@@ -5080,6 +5118,18 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
     body.querySelectorAll('.df-feriado-chk').forEach(chk => {
       chk.addEventListener('change', () => {
         const f = feriados[parseInt(chk.dataset.feriadoIdx)];
+        if (!f) return;
+        if (!f.colaboradores) f.colaboradores = [];
+        if (chk.checked) { if (!f.colaboradores.includes(chk.dataset.name)) f.colaboradores.push(chk.dataset.name); }
+        else { f.colaboradores = f.colaboradores.filter(n => n !== chk.dataset.name); }
+      });
+    });
+    body.querySelectorAll('.df-ext-date').forEach(inp => {
+      inp.addEventListener('change', () => { extensoes[parseInt(inp.dataset.idx)].date = inp.value; });
+    });
+    body.querySelectorAll('.df-ext-chk').forEach(chk => {
+      chk.addEventListener('change', () => {
+        const f = extensoes[parseInt(chk.dataset.extIdx)];
         if (!f) return;
         if (!f.colaboradores) f.colaboradores = [];
         if (chk.checked) { if (!f.colaboradores.includes(chk.dataset.name)) f.colaboradores.push(chk.dataset.name); }
@@ -5102,6 +5152,7 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
       try {
         const payload = {
           feriados:  feriados.filter(f => f.date),
+          extensoes: extensoes.filter(f => f.date),
           faltas:    faltas.filter(f => f.date && f.colaborador),
           vr, abertura, instagram,
         };

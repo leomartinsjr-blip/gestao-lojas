@@ -1021,7 +1021,7 @@ app.get('/api/dados-folha/:year/:month/:board', requireAuth, async (req, res) =>
     if (!isAdmin && user.board !== board) return res.status(403).json({ error: 'Sem acesso' });
     const db  = await readDB();
     const key = `${year}-${String(month).padStart(2,'0')}-${board}`;
-    res.json((db.dadosFolha || {})[key] || { feriados: [], faltas: [], vr: '', abertura: '', instagram: '' });
+    res.json((db.dadosFolha || {})[key] || { feriados: [], extensoes: [], faltas: [], vr: '', abertura: '', instagram: '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
