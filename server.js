@@ -5977,6 +5977,55 @@ initMongo()
       }, { timezone: 'America/Sao_Paulo' });
       console.log('[ContasPagar] Cron agendado para 07:00 America/Sao_Paulo');
     }
+
+    // ── Cron: pendência de adiantamento — todo dia 17 às 08:00 Brasília ──
+    {
+      const ADI_STORES = ['delrey', 'estacao', 'contagem', 'minas', 'tommy'];
+      const ADI_TAG    = 'adiantamento-mensal';
+      const ADI_TEXT   = 'Adiantamento de funcionários';
+
+      async function ensureAdiantamentoReminders() {
+        const brt   = new Date(Date.now() - 3 * 60 * 60 * 1000);
+        const year  = brt.getUTCFullYear();
+        const month = brt.getUTCMonth() + 1;
+        const day   = brt.getUTCDate();
+        if (day < 17) return;
+        const db = await readDB();
+        if (!db.meetingItems) db.meetingItems = [];
+        let changed = false;
+        for (const board of ADI_STORES) {
+          const exists = db.meetingItems.some(x =>
+            x.board === board && x.year === year && x.month === month && x.autoTag === ADI_TAG
+          );
+          if (!exists) {
+            db.meetingItems.push({
+              id:         nextId(db),
+              text:       ADI_TEXT,
+              board,
+              year,
+              month,
+              visibility: 'loja',
+              origin:     'auto',
+              autoTag:    ADI_TAG,
+              checked:    false,
+              archived:   false,
+              addedBy:    'Sistema',
+              addedAt:    new Date().toISOString(),
+            });
+            changed = true;
+          }
+        }
+        if (changed) await writeDB(db);
+      }
+
+      cron.schedule('0 8 17 * *', () => {
+        ensureAdiantamentoReminders().catch(e => console.error('[adi-cron]', e.message));
+      }, { timezone: 'America/Sao_Paulo' });
+      console.log('[adi-cron] Agendado para dia 17 de cada mês às 08:00 America/Sao_Paulo');
+
+      // Garante criação ao iniciar (para meses onde o server reiniciou após o dia 17)
+      ensureAdiantamentoReminders().catch(e => console.error('[adi-startup]', e.message));
+    }
   })
   .catch(err => {
     console.error('Falha ao conectar MongoDB:', err.message);
