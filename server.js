@@ -4666,7 +4666,7 @@ function getIndevaStore(db, board) {
   if (!db.indeva) db.indeva = {};
   const today = todayBRT();
   if (!db.indeva[board]) {
-    db.indeva[board] = { fila: [], atendendo: [], atendimentos: [], date: today, historico: {} };
+    db.indeva[board] = { fila: [], atendendo: [], atendimentos: [], multiAtend: {}, date: today, historico: {} };
   } else if (db.indeva[board].date !== today) {
     const s = db.indeva[board];
     if (!s.historico) s.historico = {};
@@ -4676,11 +4676,13 @@ function getIndevaStore(db, board) {
     s.fila = [];
     s.atendendo = [];
     s.atendimentos = [];
+    s.multiAtend = {};
     s.date = today;
   }
   const s = db.indeva[board];
   if (!Array.isArray(s.atendendo)) s.atendendo = s.atendendo != null ? [s.atendendo] : [];
   if (!s.historico) s.historico = {};
+  if (!s.multiAtend) s.multiAtend = {};
   return s;
 }
 
@@ -4765,6 +4767,24 @@ app.post('/api/indeva/:board/atender', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+app.post('/api/indeva/:board/mais-um', requireAuth, async (req, res) => {
+  try {
+    const { board } = req.params;
+    const { empId } = req.body;
+    if (!INDEVA_STORES.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
+    const user = req.session.user;
+    if (user.board && user.board !== 'escritorio' && user.board !== board)
+      return res.status(403).json({ error: 'Sem acesso' });
+    const db = await readDB();
+    const store = getIndevaStore(db, board);
+    const id = parseInt(empId);
+    if (!store.atendendo.includes(id)) return res.status(400).json({ error: 'Vendedor não está em atendimento' });
+    store.multiAtend[id] = (store.multiAtend[id] || 1) + 1;
+    await writeDB(db);
+    res.json(store);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/indeva/:board/atendimento', requireAuth, async (req, res) => {
   try {
     const { board } = req.params;
@@ -4786,9 +4806,15 @@ app.post('/api/indeva/:board/atendimento', requireAuth, async (req, res) => {
       vendeu: !!vendeu,
       motivo: vendeu ? null : (motivo || null)
     });
-    store.atendendo = store.atendendo.filter(x => x !== id);
-    store.fila = store.fila.filter(x => x !== id);
-    store.fila.push(id);
+    const multiCur = store.multiAtend[id] || 1;
+    if (multiCur > 1) {
+      store.multiAtend[id] = multiCur - 1;
+    } else {
+      delete store.multiAtend[id];
+      store.atendendo = store.atendendo.filter(x => x !== id);
+      store.fila = store.fila.filter(x => x !== id);
+      store.fila.push(id);
+    }
     await writeDB(db);
     res.json(store);
   } catch (e) { res.status(500).json({ error: e.message }); }

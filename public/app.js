@@ -9400,6 +9400,7 @@ async function _loadIndeva() {
 function _renderIndeva(body, state) {
   _indevaLastState = state;
   const { fila, atendendo, atendimentos } = state;
+  const multiAtend = state.multiAtend || {};
   const atendArr = Array.isArray(atendendo) ? atendendo : (atendendo != null ? [atendendo] : []);
   const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && isVend(e) && !e.inativo);
   const empById = Object.fromEntries(emps.map(e => [e.id, e]));
@@ -9425,13 +9426,16 @@ function _renderIndeva(body, state) {
   function atendCard(emp) {
     const st = vendorStats[emp.id];
     const todayCount = st?.total || 0;
+    const multiCount = multiAtend[emp.id] || 1;
     return `<div class="indeva-atend-card" data-empid="${emp.id}">
       <div class="indeva-atend-card-top">
         ${empAvatarHtml(emp, 44)}
         <div class="indeva-atend-card-info">
           <div class="indeva-atend-name">${emp.apelido||emp.name}</div>
+          ${multiCount > 1 ? `<div class="indeva-multi-badge">${multiCount} clientes</div>` : ''}
           ${todayCount > 0 ? `<div class="indeva-atend-count">${todayCount} atend. hoje</div>` : ''}
         </div>
+        <button class="indeva-mais-um-btn" data-id="${emp.id}" title="Mais um cliente">+1</button>
         <button class="indeva-remove-btn indeva-atend-close" data-id="${emp.id}" title="Remover">✕</button>
       </div>
       <div class="indeva-action-btns">
@@ -9556,6 +9560,10 @@ function _renderIndeva(body, state) {
     })
   );
 
+
+  body.querySelectorAll('.indeva-mais-um-btn').forEach(btn =>
+    btn.addEventListener('click', e => { e.stopPropagation(); _indevaMaisUm(parseInt(btn.dataset.id)); })
+  );
 
   body.querySelectorAll('.indeva-remove-btn').forEach(btn =>
     btn.addEventListener('click', e => { e.stopPropagation(); _indevaSair(parseInt(btn.dataset.id)); })
@@ -9833,6 +9841,19 @@ async function _indevaSair(empId) {
     if (!r.ok) throw new Error(await r.text());
     _renderIndeva(document.getElementById('indevaBody'), await r.json());
   } catch(e) { toast('Erro: '+e.message, true); }
+}
+
+async function _indevaMaisUm(empId) {
+  try {
+    const r = await fetch(`/api/indeva/${_indevaBoard}/mais-um`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ empId })
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const state = await r.json();
+    _renderIndeva(document.getElementById('indevaBody'), state);
+  } catch(e) { toast('Erro: ' + e.message, true); }
 }
 
 async function _indevaAtend(empId, vendeu, motivo) {

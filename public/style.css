@@ -2702,6 +2702,9 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .indeva-atend-card-info { flex:1; min-width:0; }
 .indeva-atend-name { font-size:.9rem; font-weight:700; display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .indeva-atend-count { font-size:.7rem; color:var(--muted); }
+.indeva-multi-badge { font-size:.7rem; font-weight:700; color:#F0883E; }
+.indeva-mais-um-btn { background:#F0883E22; border:1px solid #F0883E; color:#F0883E; cursor:pointer; font-size:.72rem; font-weight:700; border-radius:6px; padding:2px 7px; flex-shrink:0; line-height:1.4; }
+.indeva-mais-um-btn:hover { background:#F0883E44; }
 .indeva-atend-close { margin-left:auto; }
 .indeva-action-btns { display:grid; grid-template-columns:1fr 1fr; gap:.4rem; }
 .indeva-vendeu-btn { padding:.45rem .25rem; background:#22863A18; border:1px solid #22863A50; color:#3FB950; border-radius:7px; font-size:.78rem; font-weight:700; cursor:pointer; transition:background .12s; text-align:center; line-height:1.25; word-break:keep-all; }

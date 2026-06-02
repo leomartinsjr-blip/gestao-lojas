@@ -2,5 +2,52 @@
   "nextId": 1,
   "months": {},
   "cards": {},
-  "vsales": {}
+  "vsales": {},
+  "microvixLastSync": {
+    "at": "2026-06-02T14:32:29.202Z",
+    "updated": 0,
+    "date": "2026-06-01"
+  },
+  "indeva": {
+    "delrey": {
+      "fila": [],
+      "atendendo": [],
+      "atendimentos": [],
+      "multiAtend": {},
+      "date": "2026-06-02",
+      "historico": {}
+    },
+    "minas": {
+      "fila": [],
+      "atendendo": [],
+      "atendimentos": [],
+      "multiAtend": {},
+      "date": "2026-06-02",
+      "historico": {}
+    },
+    "contagem": {
+      "fila": [],
+      "atendendo": [],
+      "atendimentos": [],
+      "multiAtend": {},
+      "date": "2026-06-02",
+      "historico": {}
+    },
+    "estacao": {
+      "fila": [],
+      "atendendo": [],
+      "atendimentos": [],
+      "multiAtend": {},
+      "date": "2026-06-02",
+      "historico": {}
+    },
+    "tommy": {
+      "fila": [],
+      "atendendo": [],
+      "atendimentos": [],
+      "multiAtend": {},
+      "date": "2026-06-02",
+      "historico": {}
+    }
+  }
 }
