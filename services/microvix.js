@@ -322,19 +322,39 @@ async function fetchSetores(cnpj, chave) {
 }
 
 // Fetch LinxClientes → customer master data
+// Tenta progressivamente: sem params → timestamp=0 → com datas
 async function fetchClientes(cnpj, chave, dtIni, dtFim) {
   const today = new Date().toISOString().slice(0, 10);
-  const body = buildRequest('LinxClientes', cnpj, [
+
+  async function attempt(extraParams) {
+    const body = buildRequest('LinxClientes', cnpj, extraParams, chave);
+    const raw  = await postRequest(body, 90_000);
+    if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+      const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro desconhecido';
+      return { error: msg, raw };
+    }
+    if (raw.trim().startsWith('<')) return { error: 'XML inesperado', raw };
+    const rows = parseCsv(raw);
+    return { rows };
+  }
+
+  // 1) Sem parâmetros extras
+  let r = await attempt([]);
+  if (r.rows) return r.rows;
+
+  // 2) timestamp=0 (paginação Linx)
+  r = await attempt([{ id: 'timestamp', valor: '0' }]);
+  if (r.rows) return r.rows;
+
+  // 3) Com datas (alguns endpoints exigem)
+  r = await attempt([
     { id: 'dt_update_inicio', valor: dtIni || '2000-01-01' },
     { id: 'dt_update_fim',    valor: dtFim || today },
-  ], chave);
-  const raw = await postRequest(body, 90_000);
-  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
-    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro desconhecido';
-    throw new Error(`Microvix API (clientes): ${msg}`);
-  }
-  if (raw.trim().startsWith('<')) return [];
-  return parseCsv(raw);
+  ]);
+  if (r.rows) return r.rows;
+
+  // Nenhuma tentativa funcionou — lança o último erro com resposta raw para diagnóstico
+  throw new Error(`LinxClientes: ${r.error} | raw: ${(r.raw || '').slice(0, 300)}`);
 }
 
 module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, fetchClientes, parseBrNum, buildRequest, postRequest, parseCsv };

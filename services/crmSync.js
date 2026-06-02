@@ -60,20 +60,28 @@ async function syncCustomers(mongoDb) {
     try {
       const rows = await fetchClientes(cnpj.replace(/\D/g, ''), chave);
       for (const row of rows) {
-        const phone = (row.celular || row.fone1 || row.fone || '').replace(/\D/g, '');
-        const cpf   = (row.cpf || '').replace(/\D/g, '');
-        const id    = cpf || phone;
-        if (!id || !(row.nome_cliente || '').trim()) continue;
+        // Normaliza campo nome (vários nomes possíveis no Microvix)
+        const nome = (row.nome_cliente || row.nome || row.NOME_CLIENTE || row.NOME || '').trim();
+        // Normaliza telefone
+        const phone = (row.celular || row.fone_celular || row.CELULAR ||
+                       row.fone1   || row.FONE1        || row.fone    || row.FONE || '').replace(/\D/g, '');
+        // Normaliza CPF
+        const cpf = (row.cpf || row.CPF || row.nr_cpf || row.NR_CPF || '').replace(/\D/g, '');
+        const id  = cpf || phone;
+        if (!id || !nome) continue;
 
-        const dtNasc = parseBirthDay(row.dt_nasc || row.data_nascimento || row.dt_nascimento || '');
+        const dtNasc = parseBirthDay(
+          row.dt_nasc || row.DT_NASC || row.data_nascimento ||
+          row.DATA_NASCIMENTO || row.dt_nascimento || ''
+        );
 
         await col.updateOne(
           { _id: id },
           {
             $set: {
-              nome:       (row.nome_cliente || '').trim(),
+              nome:       nome,
               celular:    phone,
-              email:      (row.email || '').trim(),
+              email:      (row.email || row.EMAIL || row.e_mail || '').trim(),
               dtNasc,
               dtNascFull: row.dt_nasc || row.data_nascimento || row.dt_nascimento || '',
               cpf:        cpf || '',

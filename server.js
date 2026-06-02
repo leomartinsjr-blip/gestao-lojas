@@ -5573,17 +5573,36 @@ const { ObjectId } = require('mongodb');
 app.get('/crm', requireAdmin, (req, res) =>
   res.sendFile(path.join(__dirname, 'public', 'crm.html')));
 
-// Probe Microvix LinxClientes fields
+// Probe Microvix LinxClientes — testa cada variação de parâmetro e retorna raw
 app.get('/api/crm/clientes-raw', requireAdmin, async (req, res) => {
   const lojas = (() => { try { return JSON.parse(process.env.MICROVIX_LOJAS || '{}'); } catch { return {}; } })();
   const [board, cnpj] = Object.entries(lojas)[0] || [];
   if (!board) return res.status(400).json({ error: 'MICROVIX_LOJAS não configurado' });
   const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-  const { fetchClientes } = require('./services/microvix');
-  try {
-    const rows = await fetchClientes(cnpj, chave);
-    res.json({ fields: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 3), total: rows.length });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
+  const cnpjClean = cnpj.replace(/\D/g, '');
+  const today = new Date().toISOString().slice(0, 10);
+  const attempts = [
+    { label: 'sem parâmetros', params: [] },
+    { label: 'timestamp=0',    params: [{ id: 'timestamp', valor: '0' }] },
+    { label: 'datas 2000→hoje', params: [{ id: 'dt_update_inicio', valor: '2000-01-01' }, { id: 'dt_update_fim', valor: today }] },
+  ];
+  const results = [];
+  for (const a of attempts) {
+    const body = buildRequest('LinxClientes', cnpjClean, a.params, chave);
+    const raw  = await postRequest(body, 30_000).catch(e => `ERRO: ${e.message}`);
+    const isXml = typeof raw === 'string' && raw.trim().startsWith('<');
+    const rows  = isXml ? [] : (() => { try { return parseCsv(raw); } catch { return []; } })();
+    results.push({
+      tentativa: a.label,
+      status:    isXml ? 'xml/erro' : `${rows.length} linhas`,
+      campos:    rows[0] ? Object.keys(rows[0]) : [],
+      exemplo:   rows[0] || null,
+      raw_inicio: (raw || '').slice(0, 400),
+    });
+    if (rows.length > 0) break; // encontrou — para
+  }
+  res.json(results);
 });
 
 // Sync customers from Microvix
