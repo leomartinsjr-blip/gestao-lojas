@@ -321,40 +321,46 @@ async function fetchSetores(cnpj, chave) {
   return parseCsv(raw);
 }
 
-// Fetch LinxClientes → customer master data
-// Tenta progressivamente: sem params → timestamp=0 → com datas
+// Fetch LinxClientesFornec → clientes/fornecedores cadastrados no portal
+// Limita 5000 por chamada — pagina via timestamp para buscar todos
 async function fetchClientes(cnpj, chave, dtIni, dtFim) {
   const today = new Date().toISOString().slice(0, 10);
+  const di = dtIni || '2000-01-01';
+  const df = dtFim || today;
+  const allRows = [];
+  let ts = 0;
 
-  async function attempt(extraParams) {
-    const body = buildRequest('LinxClientes', cnpj, extraParams, chave);
-    const raw  = await postRequest(body, 90_000);
+  for (let page = 0; page < 50; page++) {
+    const body = buildRequest('LinxClientesFornec', cnpj, [
+      { id: 'data_inicial', valor: di },
+      { id: 'data_fim',     valor: df },
+      { id: 'timestamp',    valor: String(ts) },
+    ], chave);
+
+    const raw = await postRequest(body, 90_000);
+
     if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
       const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro desconhecido';
-      return { error: msg, raw };
+      throw new Error(`LinxClientesFornec: ${msg}`);
     }
-    if (raw.trim().startsWith('<')) return { error: 'XML inesperado', raw };
+    if (raw.trim().startsWith('<') || raw.startsWith('﻿<')) {
+      throw new Error(`LinxClientesFornec retornou XML inesperado: ${raw.slice(0, 200)}`);
+    }
+
     const rows = parseCsv(raw);
-    return { rows };
+    if (!rows.length) break;
+    allRows.push(...rows);
+
+    // Paginação por timestamp — pega o maior timestamp da página
+    const lastTs = rows.reduce((max, r) => {
+      const v = parseInt(r.timestamp || r.TIMESTAMP || '0', 10);
+      return v > max ? v : max;
+    }, ts);
+    if (lastTs === ts || rows.length < 5000) break;
+    ts = lastTs;
   }
 
-  // 1) Sem parâmetros extras
-  let r = await attempt([]);
-  if (r.rows) return r.rows;
-
-  // 2) timestamp=0 (paginação Linx)
-  r = await attempt([{ id: 'timestamp', valor: '0' }]);
-  if (r.rows) return r.rows;
-
-  // 3) Com datas (alguns endpoints exigem)
-  r = await attempt([
-    { id: 'dt_update_inicio', valor: dtIni || '2000-01-01' },
-    { id: 'dt_update_fim',    valor: dtFim || today },
-  ]);
-  if (r.rows) return r.rows;
-
-  // Nenhuma tentativa funcionou — lança o último erro com resposta raw para diagnóstico
-  throw new Error(`LinxClientes: ${r.error} | raw: ${(r.raw || '').slice(0, 300)}`);
+  return allRows;
 }
 
 module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, fetchClientes, parseBrNum, buildRequest, postRequest, parseCsv };

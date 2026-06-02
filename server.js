@@ -5582,10 +5582,13 @@ app.get('/api/crm/clientes-raw', requireAdmin, async (req, res) => {
   const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
   const cnpjClean = cnpj.replace(/\D/g, '');
   const today = new Date().toISOString().slice(0, 10);
-  const commands = ['LinxClientes','LinxPessoas','LinxCadastroPessoas','LinxClientesCadastro','LinxClientesPortal'];
+  const commands = ['LinxClientesFornec','LinxClientes','LinxPessoas','LinxClientesPortal'];
   const results = [];
   for (const cmd of commands) {
-    const body = buildRequest(cmd, cnpjClean, [], chave);
+    const params = cmd === 'LinxClientesFornec'
+      ? [{ id: 'data_inicial', valor: '2020-01-01' }, { id: 'data_fim', valor: today }, { id: 'timestamp', valor: '0' }]
+      : [];
+    const body = buildRequest(cmd, cnpjClean, params, chave);
     const raw  = await postRequest(body, 20_000).catch(e => `ERRO: ${e.message}`);
     const isXml = typeof raw === 'string' && (raw.trim().startsWith('<') || raw.startsWith('﻿<'));
     const rows  = isXml ? [] : (() => { try { return parseCsv(raw); } catch { return []; } })();
