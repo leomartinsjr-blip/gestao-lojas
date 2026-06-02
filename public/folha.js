@@ -35,9 +35,14 @@ function getEmpCfg(emp) {
     comissaoVR:      v(fc.comissaoVR,      emp.comissaoVR      || 0),
     salarioFixo:     v(fc.salarioFixo,     emp.salarioFixo     || 0),
     quebraCaixa:     v(fc.quebraCaixa,     emp.quebraCaixa     || 0),
-    inssRate:        v(fc.inssRate,        emp.inssRate        || 0),
-    vtRate:          v(fc.vtRate,          emp.vtRate          || 0),
-    maxVT:           v(fc.maxVT,           emp.maxVT           || 0),
+    inssRate:           v(fc.inssRate,           emp.inssRate           || 0),
+    vtRate:             v(fc.vtRate,             emp.vtRate             || 0),
+    maxVT:              v(fc.maxVT,              emp.maxVT              || 0),
+    recebePremiaoLoja:   fc.recebePremiaoLoja  || false,
+    premioLojaValor:     v(fc.premioLojaValor,     0),
+    comissaoVRSemMeta:   v(fc.comissaoVRSemMeta,   0),
+    comissaoVRMeta2:     v(fc.comissaoVRMeta2,     0),
+    comissaoVRSuper:     v(fc.comissaoVRSuper,     0),
   };
 }
 
@@ -220,12 +225,14 @@ function buildTotalForm(emps) {
   const rows = emps.map(emp => {
     let entry = FP.folha[FP.board]?.entries?.[emp.id] || defaultEntry(emp);
     const _ct = cargoTipo(emp.cargo);
+    const _ecfg = getEmpCfg(emp);
     const calcPrem = _ct === 'gerente'
       ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
       : r2(FP.premiacaoSemanal[emp.id] || 0);
-    const calcPremGer = _ct === 'gvend' ? r2(FP.premiacaoSemanalGer[emp.id] || 0) : 0;
-    if (calcPrem !== r2(entry.premiacao || 0)) entry = { ...entry, premiacao: calcPrem };
-    if (calcPremGer !== r2(entry.premiacaoBalanco || 0)) entry = { ...entry, premiacaoBalanco: calcPremGer };
+    const calcPremGer = (_ct === 'gvend' || _ct === 'sub' || _ecfg.recebePremiaoLoja) ? r2(FP.premiacaoSemanalGer[emp.id] || 0) : 0;
+    if (calcPrem !== r2(entry.premiacao || 0) || calcPremGer !== r2(entry.premiacaoBalanco || 0)) {
+      entry = defaultEntry(emp);
+    }
     totalProv += entry.proventos     || 0;
     totalDesc += entry.totalDescontos || 0;
     totalLiq  += entry.liquido        || 0;
@@ -294,11 +301,12 @@ function selectEmp(empId) {
   const emp   = FP.employees.find(e => e.id === empId);
   let entry = FP.folha[FP.board]?.entries?.[empId] || defaultEntry(emp);
   // Sempre aplica o valor calculado pelo servidor para premiação semanal
-  const _ct2 = cargoTipo(emp.cargo);
+  const _ct2   = cargoTipo(emp.cargo);
+  const _ecfg2 = getEmpCfg(emp);
   const calcPrem = _ct2 === 'gerente'
     ? r2(FP.premiacaoSemanalGer[empId] || 0)
     : r2(FP.premiacaoSemanal[empId] || 0);
-  const calcPremGer2 = _ct2 === 'gvend' ? r2(FP.premiacaoSemanalGer[empId] || 0) : 0;
+  const calcPremGer2 = (_ct2 === 'gvend' || _ct2 === 'sub' || _ecfg2.recebePremiaoLoja) ? r2(FP.premiacaoSemanalGer[empId] || 0) : 0;
   if (calcPrem !== r2(entry.premiacao || 0)) {
     entry = { ...entry, premiacao: calcPrem };
   }
@@ -493,15 +501,11 @@ function defaultEntry(emp) {
 
   const comissaoTotal = r2(vendas * comissaoPct / 100);
 
-  // DSR calculado sobre a comissão contábil (base):
-  //   comissaoContab = (comissaoTotal - prêmio) × du / (du + df)
-  //   DSR            = comissaoContab × df / du
+  // DSR = (comissaoContab + prêmio) / du × df  →  equivale a comissaoTotal × df / (du + df)
   const premio = r2((tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
     ? (cfg.premioGerente || 0) : (cfg.premioVendedor || 0));
-  const comissaoContab = (du + df) > 0
-    ? r2((comissaoTotal - premio) * du / (du + df))
-    : r2(comissaoTotal - premio);
-  const dsr = du > 0 ? r2(comissaoContab * df / du) : 0;
+  const dsr = (du + df) > 0 ? r2(comissaoTotal * df / (du + df)) : 0;
+  const comissaoContab = r2(comissaoTotal - dsr - premio);
 
   const fixo = (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
     ? r2(ecfg.salarioFixo || 0)
@@ -514,7 +518,21 @@ function defaultEntry(emp) {
       : r2(cfg.garantiaMinima || 0);
   const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);
   let comissaoLoja = 0;
-  if (ecfg.comissaoVR > 0) comissaoLoja = r2(vendaLoja * ecfg.comissaoVR / 100);
+  if (ecfg.comissaoVR > 0 || (tipo === 'sub' && (ecfg.comissaoVRSemMeta || ecfg.comissaoVRMeta2 || ecfg.comissaoVRSuper))) {
+    if (tipo === 'sub') {
+      const lojaEcfg = {
+        comissaoSemMeta: ecfg.comissaoVRSemMeta || ecfg.comissaoVR || 0,
+        comissao:        ecfg.comissaoVR        || 0,
+        comissaoMeta2:   ecfg.comissaoVRMeta2   || ecfg.comissaoVR || 0,
+        comissaoSuper:   ecfg.comissaoVRSuper   || ecfg.comissaoVR || 0,
+      };
+      const metaLoja = r2(FP.lojaMetaMap[FP.board] || 0);
+      const lojaFaixa = calcFaixa(lojaEcfg, vendaLoja, metaLoja);
+      comissaoLoja = r2(vendaLoja * lojaFaixa.comPct / 100);
+    } else {
+      comissaoLoja = r2(vendaLoja * ecfg.comissaoVR / 100);
+    }
+  }
 
   const baseGm = fixo + comissaoTotal;
   const gmComplement = r2(Math.max(0, gm - baseGm));
@@ -523,7 +541,7 @@ function defaultEntry(emp) {
   const premiacao = _tipo === 'gerente'
     ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
     : r2(FP.premiacaoSemanal[emp.id] || 0);
-  const premiacaoBalanco = _tipo === 'gvend'
+  const premiacaoBalanco = (_tipo === 'gvend' || _tipo === 'sub' || ecfg.recebePremiaoLoja)
     ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
     : 0;
 
@@ -566,14 +584,45 @@ function buildEmpForm(emp, entry) {
     return `<span style="font-size:.7rem;padding:.1rem .4rem;border-radius:4px;background:${c}22;color:${c};border:1px solid ${c}44;white-space:nowrap">${label}</span>`;
   };
 
+  const _comLojaRow = () => {
+    const pctVR    = r2(ecfg.comissaoVR);
+    const vLoja    = r2(e.vendaLoja || FP.lojaVendaMap[FP.board] || 0);
+    const mLoja    = r2(FP.lojaMetaMap[FP.board] || 0);
+    const lojaEcfgForFaixa = tipo === 'sub' ? {
+      comissaoSemMeta: ecfg.comissaoVRSemMeta || ecfg.comissaoVR || 0,
+      comissao:        ecfg.comissaoVR        || 0,
+      comissaoMeta2:   ecfg.comissaoVRMeta2   || ecfg.comissaoVR || 0,
+      comissaoSuper:   ecfg.comissaoVRSuper   || ecfg.comissaoVR || 0,
+    } : { comissao: ecfg.comissaoVR || 0, comissaoSemMeta: ecfg.comissaoVR || 0 };
+    const storeFaixa = calcFaixa(lojaEcfgForFaixa, vLoja, mLoja);
+    const pctStr   = mLoja > 0 ? `${(vLoja / mLoja * 100).toFixed(1)}% da meta da loja` : 'sem meta da loja';
+    return `<div class="fp-field fp-field-inline">
+      <label>Comissão Loja</label>
+      ${inpRO(`fp-vendaLoja-${emp.id}`, vLoja)}
+      <span class="fp-times">×</span>
+      <span style="font-size:.85rem;color:#8b949e;padding:.15rem .2rem">${storeFaixa.comPct.toFixed(2)}%</span>
+      ${faixaBadge(storeFaixa.label)}
+      <span class="fp-equals">=</span>
+      ${inp(`fp-comLoja-${emp.id}`, e.comissaoLoja || 0)}
+      <span style="font-size:.7rem;color:#8b949e;margin-left:.3rem">${pctStr}</span>
+    </div>`;
+  };
+
   let provRows = '';
 
   if (tipo === 'caixa') {
     provRows = `
       <div class="fp-field"><label>Salário Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}</div>
       <div class="fp-field"><label>Quebra de Caixa (R$)</label>${inp(`fp-quebra-${emp.id}`, e.quebra)}</div>`;
-    if ((ecfg.comissaoVR || 0) > 0) {
-      provRows += `<div class="fp-field"><label>Comissão Loja (${r2(ecfg.comissaoVR).toFixed(2)}% vendas loja)</label>${inp(`fp-comLoja-${emp.id}`, e.comissaoLoja || 0)}</div>`;
+    if ((ecfg.comissaoVR || 0) > 0) provRows += _comLojaRow();
+    if (ecfg.recebePremiaoLoja) {
+      const semGerDetC  = FP.premiacaoSemanalGerDetalhe[emp.id] || [];
+      const semGerCalcC = r2(FP.premiacaoSemanalGer[emp.id] || 0);
+      const semGerHintC = semGerDetC.length
+        ? semGerDetC.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
+        : semGerCalcC > 0 ? `calculado: ${brl(semGerCalcC)}` : 'nenhuma meta semanal encontrada';
+      provRows += `<div class="fp-field"><label>Premiação da Loja (R$)</label>${inp(`fp-premiacaoBalanco-${emp.id}`, e.premiacaoBalanco || 0)}
+        <span style="font-size:.7rem;color:#484f58">${semGerHintC}</span></div>`;
     }
   } else {
     const pctDisplay = e.pctMeta > 0 ? `${r2(e.pctMeta).toFixed(1)}% da meta` : 'sem meta';
@@ -605,7 +654,7 @@ function buildEmpForm(emp, entry) {
           </div>
           <div class="fp-field fp-split-row">
             <label>DSR (R$)</label>${inp(`fp-dsr-${emp.id}`, e.dsr)}
-            <span class="fp-split-hint">= contab × ${df} ÷ ${du}</span>
+            <span class="fp-split-hint">= total × ${df} ÷ ${du + df}</span>
           </div>
           <div class="fp-field fp-split-row">
             <label>Prêmio (R$)</label>${inp(`fp-premio-${emp.id}`, e.premio)}
@@ -614,10 +663,7 @@ function buildEmpForm(emp, entry) {
         </div>
       </div>`;
 
-    if ((ecfg.comissaoVR || 0) > 0) {
-      const pctVR = ecfg.comissaoVR || 0;
-      provRows += `<div class="fp-field"><label>Comissão Loja (${r2(pctVR).toFixed(2)}% vendas loja)</label>${inp(`fp-comLoja-${emp.id}`, e.comissaoLoja)}</div>`;
-    }
+    if ((ecfg.comissaoVR || 0) > 0) provRows += _comLojaRow();
 
     const gmMin = tipo === 'gerente'
       ? (cfg.garantiaMinimaGerente    || cfg.garantiaMinima || 0)
@@ -640,20 +686,22 @@ function buildEmpForm(emp, entry) {
         : semGerCalc > 0 ? `calculado: ${brl(semGerCalc)}` : 'nenhuma meta semanal encontrada';
       provRows += `<div class="fp-field"><label>Premiação Gerente (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
         <span style="font-size:.7rem;color:#484f58">${semGerHint}</span></div>`;
-    } else if (tipo === 'gvend') {
+    } else if (tipo === 'gvend' || tipo === 'sub' || ecfg.recebePremiaoLoja) {
       const semVendDet  = FP.premiacaoSemanalDetalhe[emp.id] || [];
       const semVendCalc = r2(FP.premiacaoSemanal[emp.id] || 0);
       const semVendHint = semVendDet.length
         ? semVendDet.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
         : semVendCalc > 0 ? `calculado: ${brl(semVendCalc)}` : 'nenhuma meta semanal encontrada';
-      provRows += `<div class="fp-field"><label>Premiação Vendedor (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
-        <span style="font-size:.7rem;color:#484f58">${semVendHint}</span></div>`;
+      if (tipo !== 'caixa') {
+        provRows += `<div class="fp-field"><label>Premiação Vendedor (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
+          <span style="font-size:.7rem;color:#484f58">${semVendHint}</span></div>`;
+      }
       const semGerDet2  = FP.premiacaoSemanalGerDetalhe[emp.id] || [];
       const semGerCalc2 = r2(FP.premiacaoSemanalGer[emp.id] || 0);
       const semGerHint2 = semGerDet2.length
         ? semGerDet2.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
         : semGerCalc2 > 0 ? `calculado: ${brl(semGerCalc2)}` : 'nenhuma meta semanal encontrada';
-      provRows += `<div class="fp-field"><label>Premiação Gerente (R$)</label>${inp(`fp-premiacaoBalanco-${emp.id}`, e.premiacaoBalanco || 0)}
+      provRows += `<div class="fp-field"><label>Premiação da Loja (R$)</label>${inp(`fp-premiacaoBalanco-${emp.id}`, e.premiacaoBalanco || 0)}
         <span style="font-size:.7rem;color:#484f58">${semGerHint2}</span></div>`;
     } else {
       const semDetalhe = FP.premiacaoSemanalDetalhe[emp.id] || [];
@@ -757,12 +805,23 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
       row('Com. Meta 1 (%)',    `ec-comissao-${emp.id}`,        ecfg.comissao) +
       row('Com. Meta 2 (%)',    `ec-comissaoMeta2-${emp.id}`,   ecfg.comissaoMeta2) +
       row('Com. Super Meta (%)',`ec-comissaoSuper-${emp.id}`,   ecfg.comissaoSuper) +
-      row('Comissão Loja (%)',  `ec-comissaoVR-${emp.id}`,      ecfg.comissaoVR) +
+      row('Com. Loja Meta 1 (%)', `ec-comissaoVR-${emp.id}`,          ecfg.comissaoVR) +
+      (tipo === 'sub' ?
+        row('Com. Loja S/Meta (%)', `ec-comissaoVRSemMeta-${emp.id}`, ecfg.comissaoVRSemMeta) +
+        row('Com. Loja Meta 2 (%)', `ec-comissaoVRMeta2-${emp.id}`,   ecfg.comissaoVRMeta2) +
+        row('Com. Loja S.Meta (%)', `ec-comissaoVRSuper-${emp.id}`,   ecfg.comissaoVRSuper)
+      : '') +
       (tipo === 'sub' || tipo === 'gvend' ? row('Salário Fixo (R$)', `ec-salarioFixo-${emp.id}`, ecfg.salarioFixo) : '') +
       row('INSS (%)',           `ec-inssRate-${emp.id}`,        ecfg.inssRate) +
       row('VT (%)',             `ec-vtRate-${emp.id}`,          ecfg.vtRate) +
       row('MAX. VT (R$)',       `ec-maxVT-${emp.id}`,           ecfg.maxVT);
   }
+
+  const chkPremiaoLoja = `<div class="fp-emp-cfg-row fp-emp-cfg-row--check">
+    <label>Prêmio da loja?</label>
+    <input type="checkbox" id="ec-recebePremiaoLoja-${emp.id}"${ecfg.recebePremiaoLoja ? ' checked' : ''}
+      style="width:16px;height:16px;accent-color:#3fb950;cursor:pointer">
+  </div>` + row('Valor prêm. loja/sem. (R$)', `ec-premioLojaValor-${emp.id}`, ecfg.premioLojaValor);
 
   return `
   <div class="fp-emp-cfg-wrap">
@@ -772,7 +831,7 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
       <span id="empCfgArrow-${emp.id}" style="margin-left:auto;font-size:.75rem">▼</span>
     </div>
     <div class="fp-emp-cfg" id="empCfg-${emp.id}">
-      <div class="fp-emp-cfg-grid">${fields}</div>
+      <div class="fp-emp-cfg-grid">${fields}${chkPremiaoLoja}</div>
       <div class="fp-emp-cfg-actions">
         <button class="fp-btn primary" onclick="fpSaveEmpCfg(${emp.id})">Salvar</button>
         ${hasFolha ? `<button class="fp-btn" onclick="fpClearEmpCfg(${emp.id})">Resetar para cadastro</button>` : ''}
@@ -813,13 +872,23 @@ async function fpSaveEmpCfg(empId) {
     cfg.comissaoMeta2   = g(`ec-comissaoMeta2-${empId}`);
     cfg.comissaoSuper   = g(`ec-comissaoSuper-${empId}`);
     cfg.comissaoVR      = g(`ec-comissaoVR-${empId}`);
+    if (tipo === 'sub') {
+      cfg.comissaoVRSemMeta = g(`ec-comissaoVRSemMeta-${empId}`);
+      cfg.comissaoVRMeta2   = g(`ec-comissaoVRMeta2-${empId}`);
+      cfg.comissaoVRSuper   = g(`ec-comissaoVRSuper-${empId}`);
+    }
     if (tipo === 'sub' || tipo === 'gvend') cfg.salarioFixo  = g(`ec-salarioFixo-${empId}`);
   }
+  cfg.recebePremiaoLoja = document.getElementById(`ec-recebePremiaoLoja-${empId}`)?.checked || false;
+  cfg.premioLojaValor   = g(`ec-premioLojaValor-${empId}`);
 
   try {
     await apiFetch(`/api/folha/empconfig/${empId}`, 'POST', cfg);
     FP.empConfig[empId] = cfg;
-    const entry = FP.folha[FP.board]?.entries?.[empId] || defaultEntry(emp);
+    // Sempre recalcula via defaultEntry após mudança de config — garante
+    // que premiacaoBalanco, comissão e demais derivados reflitam o novo config
+    const entry = defaultEntry(emp);
+    if (FP.folha[FP.board]?.entries?.[empId]) FP.folha[FP.board].entries[empId] = entry;
     document.getElementById('fpEmpForms').innerHTML = buildEmpForm(emp, entry);
     attachFormListeners(empId);
     toast('Configuração salva ✓');
@@ -868,7 +937,7 @@ function recalc(empId) {
   let proventos = 0;
 
   if (tipo === 'caixa') {
-    proventos = g(`fp-fixo-${empId}`) + g(`fp-quebra-${empId}`) + g(`fp-comLoja-${empId}`);
+    proventos = g(`fp-fixo-${empId}`) + g(`fp-quebra-${empId}`) + g(`fp-comLoja-${empId}`) + g(`fp-premiacaoBalanco-${empId}`);
   } else {
     const vendas   = g(`fp-vendas-${empId}`);
     const comPct   = g(`fp-comPct-${empId}`);
@@ -941,7 +1010,7 @@ function saveEntryFromForm(empId) {
 
   if (tipo === 'caixa') {
     proventos = r2(g(`fp-fixo-${empId}`) + g(`fp-quebra-${empId}`)
-      + g(`fp-comLoja-${empId}`) + g(`fp-feriado-${empId}`) + extProv);
+      + g(`fp-comLoja-${empId}`) + g(`fp-premiacaoBalanco-${empId}`) + g(`fp-feriado-${empId}`) + extProv);
   } else {
     const vendas  = g(`fp-vendas-${empId}`);
     const comPct  = g(`fp-comPct-${empId}`);
@@ -1174,7 +1243,7 @@ function buildRecibo(emp, entry, mes, origin) {
     // Premiação: vendedor usa detalhe individual; gerente usa detalhe gerente; gvend ambos
     const _pTipo = tipo;
     const semDetVend = (_pTipo !== 'gerente') ? (FP.premiacaoSemanalDetalhe[emp.id] || []) : [];
-    const semDetGer  = (_pTipo === 'gerente' || _pTipo === 'gvend') ? (FP.premiacaoSemanalGerDetalhe[emp.id] || []) : [];
+    const semDetGer  = (_pTipo === 'gerente' || _pTipo === 'gvend' || _pTipo === 'sub' || ecfg.recebePremiaoLoja) ? (FP.premiacaoSemanalGerDetalhe[emp.id] || []) : [];
     const premTotal = num(entry.premiacao);
     if (premTotal > 0) {
       const semSumVend = semDetVend.reduce((s, x) => s + num(x.valor), 0);

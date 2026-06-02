@@ -1116,6 +1116,26 @@ app.delete('/api/vsales/:year/:month/:board/:empId/:date', requireAuth, async (r
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/perf-monthly-total/:board/:year/:month ─────────────────────────
+app.get('/api/perf-monthly-total/:board/:year/:month', requireAuth, async (req, res) => {
+  try {
+    const { board, year, month } = req.params;
+    const y = parseInt(year), m = parseInt(month);
+    const mk = y + '-' + String(m).padStart(2, '0');
+    const db  = await readDB();
+    const boards = board === 'surfers' ? ['delrey','minas','contagem','estacao','site'] : [board];
+    const emps  = (db.employees || []).filter(e => boards.includes(e.board) && e.isVendedor !== false);
+    let total = 0;
+    for (const emp of emps) {
+      const key = mk + '-' + emp.board + '-' + emp.id;
+      const vsData = db.vsales?.[key];
+      if (!vsData?.entries) continue;
+      for (const v of Object.values(vsData.entries)) total += (v.value || 0);
+    }
+    res.json({ board, year: y, month: m, total: Math.round(total) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/excel/:year/:month/:board — download fechamento ──────────────
 app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
   try {
@@ -5091,6 +5111,8 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       premiacaoSemanalGerDetalhe[emp.id] = [];
     }
 
+    const folhaEmpCfgMap = db.folhaEmpConfig || {};
+
     const boardEmpsMap = {};
     for (const emp of employees) {
       if (!boardEmpsMap[emp.board]) boardEmpsMap[emp.board] = [];
@@ -5123,7 +5145,9 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       if (ws > lastDayStr) break;
       const weEndD = new Date(d); weEndD.setDate(weEndD.getDate() + 6);
       const weEnd = `${weEndD.getFullYear()}-${padD(weEndD.getMonth()+1)}-${padD(weEndD.getDate())}`;
-      if (weEnd >= monthStart) allWeekStarts.add(ws); // inclui semanas cross-month
+      // inclui semana se: começa no mês OU tem meta manual definida neste mês (ex.: semana cross-month com meta explicita)
+      const hasMeta = weeklyMetasMonth[ws] && Object.keys(weeklyMetasMonth[ws]).length > 0;
+      if (ws >= monthStart || hasMeta) allWeekStarts.add(ws);
     }
 
     for (const weekStart of allWeekStarts) {
@@ -5156,13 +5180,17 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
 
         for (const emp of bEmps) {
           const tipo  = (emp.cargo||'').toLowerCase();
-          const isGer   = /gerente/.test(tipo) && !/^sub/.test(tipo) && !/g\.?\s*vend/.test(tipo) && !/gerente\s+vend/.test(tipo);
-          const isGVend = (/g\.?\s*vend/.test(tipo) || /gerente\s+vend/.test(tipo)) && !/^sub/.test(tipo);
+          const isGer    = /gerente/.test(tipo) && !/^sub/.test(tipo) && !/g\.?\s*vend/.test(tipo) && !/gerente\s+vend/.test(tipo);
+          const isGVend  = (/g\.?\s*vend/.test(tipo) || /gerente\s+vend/.test(tipo)) && !/^sub/.test(tipo);
+          const isSubGer = /^sub/.test(tipo) && /gerente/.test(tipo);
+          const empCfg   = folhaEmpCfgMap[emp.id] || {};
+          const useStorePremio = isGer || isGVend || isSubGer || empCfg.recebePremiaoLoja;
+          const storePremioVal = empCfg.premioLojaValor > 0 ? empCfg.premioLojaValor : PREMIO_GER_W;
 
-          // Prêmio de loja para gerente puro e gerente vendedor
-          if (isGer || isGVend) {
+          // Prêmio de loja para gerente, sub-gerente e funcionários com flag no config
+          if (useStorePremio) {
             let val = 0;
-            if (storeHitMeta) val += PREMIO_GER_W;
+            if (storeHitMeta) val += storePremioVal;
             if (storeHitMeta && storeHitPA) val += PREMIO_PA_W;
             if (val > 0) {
               premiacaoSemanalGer[emp.id] += val;
@@ -5170,8 +5198,8 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
             }
           }
 
-          // Prêmio individual para vendedor e gerente vendedor
-          if (isGVend || (!isGer && isVend(emp))) {
+          // Prêmio individual para vendedor, gerente vendedor e sub-gerente
+          if (isGVend || isSubGer || (!isGer && isVend(emp))) {
             const vs = vsalesAll[`${mk}-${board}-${emp.id}`] || {};
             const we2 = Object.entries(vs.entries||{}).filter(([d]) => d>=weekStart && d<=weStr);
             const empSales = we2.reduce((s,[,e]) => s+(e.value||0), 0);
@@ -5479,7 +5507,8 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
         const ad        = r2(entry.adiantamento || 0);
         const vale      = r2(entry.valeCompras  || 0);
         const vtVal     = r2(fc.maxVT           || 0);
-        const desc      = r2(entry.totalDescontos || 0);
+        const vtDesc    = r2(entry.vt           || 0);
+        const desc      = r2((entry.totalDescontos || 0) - vtDesc);
 
         const empRow = ws.addRow([
           emp.apelido || emp.name, emp.cargo,

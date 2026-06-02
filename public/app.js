@@ -79,7 +79,7 @@ function hideLogin() {
 function applyUserPermissions(user) {
   document.getElementById('userChip').textContent = user.label || user.username;
   const isAdmin = !user.board;
-  const ids = ['funcBtn','campanhasBtn','usersBtn','perfBtn','transBtn','folhaBtn','contasPagarBtn'];
+  const ids = ['funcBtn','campanhasBtn','usersBtn','perfBtn','transBtn','folhaBtn'];
   ids.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = isAdmin ? 'flex' : 'none';
@@ -811,7 +811,7 @@ function renderDashboard() {
     grandValor += totValor; grandPecas += totPecas; grandAtend += totAtend; grandMeta += totMeta; grandFluxo += totFluxo;
 
     const metaKey = `${bk}-${S.year}-${S.month}`;
-    if (totProj != null && totMeta > 0 && totProj >= totMeta && !META_ACHIEVED.has(metaKey)) {
+    if (totMeta > 0 && totValor >= totMeta && !META_ACHIEVED.has(metaKey)) {
       META_ACHIEVED.add(metaKey);
       setTimeout(() => triggerMetaCelebration(bc.label, bc.color), 350);
     }
@@ -1855,8 +1855,9 @@ function openImg(url) {
 const PERF_MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
 const PERF_AVAIL  = new Set(['surfers','delrey','minas','contagem','estacao','tommy','lez','site']);
 const SURFERS_STORES = ['delrey','minas','contagem','estacao','site'];
-const PERF_CUR    = 4;         // Mai = em andamento
-const PERF_LAST3  = [PERF_CUR-2, PERF_CUR-1, PERF_CUR];  // Mar, Abr, Mai
+const _brtNow     = new Date(Date.now() - 3 * 60 * 60 * 1000);
+const PERF_CUR    = _brtNow.getUTCMonth(); // mês corrente BRT (0=Jan … 11=Dez)
+const PERF_LAST3  = [PERF_CUR-3, PERF_CUR-2, PERF_CUR-1]; // últimos 3 meses completos
 
 const PERF_HIST = {
   delrey: {
@@ -1915,7 +1916,7 @@ const PERF_2026 = {
   contagem: [ 79523, 81210, 93198,110985,null,null,null,null,null,null,null,null],
   estacao:  [ 72779, 77070, 95819, 78318,null,null,null,null,null,null,null,null],
   tommy:    [ 52889, 64108, 77176, 83443,null,null,null,null,null,null,null,null],
-  lez:      [112699, 57373, 49583, 81151,null,null,null,null,null,null,null,null],
+  lez:      [112699, 57373, 49583, 81151,70185,null,null,null,null,null,null,null],
   site:     [  5233,  2730,  5931, 10500,null,null,null,null,null,null,null,null],
 };
 
@@ -1932,6 +1933,11 @@ function computeCurMonthProj(board) {
   const pad = n => String(n).padStart(2, '0');
   const todayBRT = new Date(Date.now() - 3 * 60 * 60 * 1000);
   if (S.year !== todayBRT.getUTCFullYear() || S.month !== todayBRT.getUTCMonth() + 1) return null;
+
+  // Até o dia 15: retorna null → calcPerfMetrics projeta com a média YoY dos 3 meses (avgD)
+  if (todayBRT.getUTCDate() <= 15) return null;
+
+  // Após o dia 15: projeção por ritmo (realizado / peso acumulado × 100)
   const perfCutoff = `${todayBRT.getUTCFullYear()}-${pad(todayBRT.getUTCMonth()+1)}-${pad(todayBRT.getUTCDate())}`;
   const daysInMonth = new Date(S.year, S.month, 0).getDate();
   const defW = 100 / daysInMonth;
@@ -1990,7 +1996,22 @@ function _perfActiveView() {
   return document.querySelector('.perf-view-tab.active')?.dataset.view || 'analise';
 }
 
-function openPerfModal() {
+const _perfFetched = {};
+async function fetchMissingPerfData(board) {
+  if (!PERF_2026[board]) return;
+  for (let i = 0; i < PERF_CUR; i++) {
+    if (PERF_2026[board][i] !== null) continue;
+    const ck = board + '-' + i;
+    if (_perfFetched[ck]) continue;
+    try {
+      const r = await apiFetch('GET', '/api/perf-monthly-total/' + board + '/2026/' + (i + 1));
+      if (r.total > 0) PERF_2026[board][i] = r.total;
+      _perfFetched[ck] = true;
+    } catch { /* silently skip */ }
+  }
+}
+
+async function openPerfModal() {
   document.getElementById('perfOverlay').classList.remove('hidden');
   const defaultStore = S.user?.board ? S.user.board : 'surfers';
   PD.board = defaultStore;
@@ -1998,6 +2019,7 @@ function openPerfModal() {
   PD.month = S.month;
   buildPerfTabs();
   document.querySelectorAll('.perf-view-tab').forEach(b => b.classList.toggle('active', b.dataset.view === 'analise'));
+  await fetchMissingPerfData(defaultStore);
   renderPerfStore(defaultStore);
 }
 
@@ -3673,7 +3695,7 @@ function buildPerfTabs() {
     btn.style.color = BOARDS[k]?.color || '#8B949E';
     btn.addEventListener('click', () => {
       PD.board = k;
-      renderPerfStore(k);
+      fetchMissingPerfData(k).then(() => renderPerfStore(k));
     });
     tabs.appendChild(btn);
   });
@@ -3712,7 +3734,7 @@ function renderPerfStore(k) {
         <div class="perf-kpi-sub">referência</div>
       </div>
       <div class="perf-kpi">
-        <div class="perf-kpi-label">Acumulado Jan–Abr/26</div>
+        <div class="perf-kpi-label">Acumulado Jan–${PERF_MONTHS[PERF_CUR-1]}/26</div>
         <div class="perf-kpi-value">${fmtBRLk(m.realAcum)}</div>
         <div class="perf-kpi-sub">dados reais</div>
       </div>
@@ -3804,7 +3826,7 @@ function renderPerfStore(k) {
     </div>
     <div class="perf-chart-box">
       <div class="perf-chart-title">${BOARDS[k]?.label} — 2026 vs 2025 (mensal)</div>
-      <div class="perf-chart-sub">Barras: faturamento real (Jan–Abr) e projetado (Mai–Dez) · Linha: variação % vs 2025 · Pontos âmbar = base da projeção</div>
+      <div class="perf-chart-sub">Barras: faturamento real (Jan–${PERF_MONTHS[PERF_CUR-1]}) e projetado (${PERF_MONTHS[PERF_CUR]}–Dez) · Linha: variação % vs 2025 · Pontos âmbar = base da projeção</div>
       <div class="perf-chart-wrap"><canvas id="perfChartCanvas"></canvas></div>
     </div>`;
 
@@ -4461,12 +4483,28 @@ function _syncPDToS() {
   _checkWeeklyCelebrations();
 }
 
-function _checkWeeklyCelebrations() {
+async function _checkWeeklyCelebrations() {
   const today = new Date();
   const pad = n => String(n).padStart(2,'0');
   const todayStr = `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
   const week = getWeekForDate(todayStr);
   if (week.startStr > todayStr || week.endStr < todayStr) return;
+
+  // Load extra month data if the week spans two months
+  const curKey = `${S.year}-${pad(S.month)}`;
+  const extraData = {};
+  const startDate = new Date(week.startStr + 'T00:00:00');
+  const toLoad = new Set();
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(startDate); d.setDate(d.getDate() + i);
+    const mk = `${d.getFullYear()}-${pad(d.getMonth()+1)}`;
+    if (mk !== curKey) toLoad.add(mk);
+  }
+  for (const mk of toLoad) {
+    const [y, m] = mk.split('-').map(Number);
+    extraData[mk] = await loadMonthData(y, m);
+  }
+  const extra = Object.keys(extraData).length ? extraData : null;
 
   const pending = [];
 
@@ -4476,7 +4514,7 @@ function _checkWeeklyCelebrations() {
     let totValor = 0, totMeta = 0;
 
     for (const emp of emps) {
-      const k = calcWeekKpis(emp, week, null);
+      const k = calcWeekKpis(emp, week, extra);
       totValor += k.valor;
       totMeta  += k.wMeta;
 
