@@ -52,47 +52,47 @@ async function syncCustomers(mongoDb) {
   const entries = Object.entries(lojas);
   if (!entries.length) throw new Error('MICROVIX_LOJAS não configurado');
 
-  const col = mongoDb.collection('crm_customers');
+  // Cadastro de clientes é único para toda a rede — uma só chamada.
+  // MICROVIX_CRM_BOARD define qual loja usar como referência (padrão: primeira da lista).
+  const crmBoard = process.env.MICROVIX_CRM_BOARD || entries[0][0];
+  const crmCnpj  = lojas[crmBoard];
+  if (!crmCnpj) throw new Error(`MICROVIX_CRM_BOARD inválido: "${crmBoard}"`);
+
+  const chave = process.env[`MICROVIX_CHAVE_${crmBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+  const col   = mongoDb.collection('crm_customers');
+
+  const rows = await fetchClientes(crmCnpj.replace(/\D/g, ''), chave);
   let total = 0;
 
-  for (const [board, cnpj] of entries) {
-    const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-    try {
-      const rows = await fetchClientes(cnpj.replace(/\D/g, ''), chave);
-      for (const row of rows) {
-        // Campos conforme documentação LinxClientesFornec v262
-        const nome  = (row.nome_cliente || row.razao_cliente || '').trim();
-        const phone = (row.cel_cliente  || row.fone_cliente  || '').replace(/\D/g, '');
-        const cpf   = (row.doc_cliente  || '').replace(/\D/g, '');
-        const id    = cpf || phone;
-        if (!id || !nome) continue;
+  for (const row of rows) {
+    const nome  = (row.nome_cliente || row.razao_cliente || '').trim();
+    const phone = (row.cel_cliente  || row.fone_cliente  || '').replace(/\D/g, '');
+    const cpf   = (row.doc_cliente  || '').replace(/\D/g, '');
+    const id    = cpf || phone;
+    if (!id || !nome) continue;
 
-        const dtNasc = parseBirthDay(row.data_nascimento || '');
+    const dtNasc = parseBirthDay(row.data_nascimento || '');
 
-        await col.updateOne(
-          { _id: id },
-          {
-            $set: {
-              nome,
-              celular:    phone,
-              email:      (row.email_cliente || '').trim(),
-              dtNasc,
-              dtNascFull: row.dt_nasc || row.data_nascimento || row.dt_nascimento || '',
-              cpf:        cpf || '',
-              syncedAt:   new Date(),
-            },
-            $addToSet:    { lojas: board },
-            $setOnInsert: { criadoEm: new Date(), ultimaCompra: null, reengagementSentAt: null },
-          },
-          { upsert: true }
-        );
-        total++;
-      }
-      console.log(`[CRM] ${board}: ${rows.length} clientes sincronizados`);
-    } catch (e) {
-      console.warn(`[CRM] Falha ao sincronizar clientes de ${board}: ${e.message}`);
-    }
+    await col.updateOne(
+      { _id: id },
+      {
+        $set: {
+          nome,
+          celular:    phone,
+          email:      (row.email_cliente || '').trim(),
+          dtNasc,
+          dtNascFull: row.dt_nasc || row.data_nascimento || row.dt_nascimento || '',
+          cpf:        cpf || '',
+          syncedAt:   new Date(),
+        },
+        $setOnInsert: { criadoEm: new Date(), ultimaCompra: null, reengagementSentAt: null },
+      },
+      { upsert: true }
+    );
+    total++;
   }
+
+  console.log(`[CRM] ${rows.length} clientes sincronizados via ${crmBoard}`);
   return total;
 }
 
