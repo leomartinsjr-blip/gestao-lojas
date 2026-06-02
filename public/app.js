@@ -4976,6 +4976,7 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
   }
 
   let feriados  = (data.feriados  || []).map(f => ({ ...f }));
+  let extensoes = (data.extensoes || []).map(f => ({ ...f }));
   let faltas    = (data.faltas    || []).map(f => ({ ...f }));
   let vr        = data.vr        || '';
   let abertura  = data.abertura  || '';
