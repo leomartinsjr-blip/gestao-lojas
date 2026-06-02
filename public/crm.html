@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRM — Gestão Operacional</title>
+<link rel="icon" type="image/jpeg" href="favicon.jpg">
+<link rel="stylesheet" href="style.css">
+<style>
+  :root { --crm-sidebar: 210px; }
+  body { margin: 0; display: flex; min-height: 100vh; background: var(--bg); color: var(--text); font-family: inherit; }
+
+  /* Sidebar */
+  .crm-sidebar {
+    width: var(--crm-sidebar); min-height: 100vh; background: var(--surface);
+    border-right: 1px solid var(--border); display: flex; flex-direction: column;
+    padding: 20px 0; flex-shrink: 0;
+  }
+  .crm-logo { padding: 0 20px 20px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
+  .crm-logo h2 { font-size: .95rem; font-weight: 700; color: #58A6FF; margin: 0; }
+  .crm-logo span { font-size: .75rem; color: var(--muted); }
+  .crm-nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 9px 20px;
+    font-size: .85rem; color: var(--muted); cursor: pointer; border-radius: 0;
+    transition: background .15s, color .15s; border-left: 3px solid transparent;
+  }
+  .crm-nav-item:hover { background: var(--surface2); color: var(--text); }
+  .crm-nav-item.active { color: #58A6FF; background: rgba(88,166,255,.08); border-left-color: #58A6FF; }
+  .crm-nav-item svg { flex-shrink: 0; opacity: .75; }
+  .crm-nav-item.active svg { opacity: 1; }
+  .crm-sidebar-footer { margin-top: auto; padding: 16px 20px; border-top: 1px solid var(--border); }
+  .crm-back-link { font-size: .8rem; color: var(--muted); text-decoration: none; display: flex; align-items: center; gap: 6px; }
+  .crm-back-link:hover { color: var(--text); }
+
+  /* Main */
+  .crm-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .crm-header { padding: 20px 28px 0; display: flex; align-items: center; justify-content: space-between; }
+  .crm-title { font-size: 1.15rem; font-weight: 700; color: var(--text); }
+  .crm-content { padding: 20px 28px; flex: 1; }
+
+  /* Tabs */
+  .crm-tab { display: none; }
+  .crm-tab.active { display: block; }
+
+  /* Cards */
+  .crm-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 24px; }
+  .crm-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+  .crm-card-label { font-size: .75rem; color: var(--muted); margin-bottom: 6px; }
+  .crm-card-value { font-size: 1.6rem; font-weight: 700; color: var(--text); }
+  .crm-card-value.blue { color: #58A6FF; }
+  .crm-card-value.green { color: #3FB950; }
+  .crm-card-value.yellow { color: #D29922; }
+  .crm-card-value.red { color: #F85149; }
+
+  /* Tables */
+  .crm-table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .crm-table-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  .crm-table-header h3 { margin: 0; font-size: .9rem; font-weight: 600; }
+  table.crm-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  table.crm-table th { padding: 9px 14px; text-align: left; color: var(--muted); font-weight: 500; font-size: .75rem; border-bottom: 1px solid var(--border); background: var(--surface2); }
+  table.crm-table td { padding: 9px 14px; border-bottom: 1px solid var(--border); color: var(--text); }
+  table.crm-table tr:last-child td { border-bottom: none; }
+  table.crm-table tr:hover td { background: var(--surface2); }
+  .crm-empty { padding: 32px; text-align: center; color: var(--muted); font-size: .85rem; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .72rem; font-weight: 600; }
+  .badge-green  { background: rgba(63,185,80,.15);  color: #3FB950; }
+  .badge-red    { background: rgba(248,81,73,.15);   color: #F85149; }
+  .badge-blue   { background: rgba(88,166,255,.15);  color: #58A6FF; }
+  .badge-yellow { background: rgba(210,153,34,.15);  color: #D29922; }
+  .badge-gray   { background: var(--surface2); color: var(--muted); }
+
+  /* Forms */
+  .crm-form { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px 22px; }
+  .crm-form h3 { margin: 0 0 16px; font-size: .95rem; font-weight: 600; }
+  .crm-form-row { display: flex; gap: 14px; margin-bottom: 12px; flex-wrap: wrap; }
+  .crm-form-field { display: flex; flex-direction: column; gap: 5px; flex: 1; min-width: 160px; }
+  .crm-form-field label { font-size: .78rem; color: var(--muted); font-weight: 500; }
+  .crm-form-field input, .crm-form-field select, .crm-form-field textarea {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-size: .88rem; padding: 7px 10px; font-family: inherit; outline: none;
+    transition: border-color .15s;
+  }
+  .crm-form-field input:focus, .crm-form-field select:focus, .crm-form-field textarea:focus { border-color: #58A6FF; }
+  .crm-form-field textarea { resize: vertical; min-height: 80px; }
+  .crm-template-hint { font-size: .75rem; color: var(--muted); margin-top: 4px; }
+
+  /* Buttons */
+  .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px; font-size: .83rem; font-weight: 600; cursor: pointer; border: none; font-family: inherit; transition: opacity .15s; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-primary { background: #58A6FF; color: #000; }
+  .btn-primary:hover:not(:disabled) { opacity: .85; }
+  .btn-danger  { background: rgba(248,81,73,.15); color: #F85149; border: 1px solid rgba(248,81,73,.3); }
+  .btn-danger:hover:not(:disabled)  { background: rgba(248,81,73,.25); }
+  .btn-ghost   { background: none; color: var(--muted); border: 1px solid var(--border); }
+  .btn-ghost:hover:not(:disabled)   { color: var(--text); background: var(--surface2); }
+  .btn-sm      { padding: 4px 10px; font-size: .78rem; }
+  .btn-green   { background: rgba(63,185,80,.15); color: #3FB950; border: 1px solid rgba(63,185,80,.3); }
+  .btn-green:hover:not(:disabled) { background: rgba(63,185,80,.25); }
+
+  /* Search bar */
+  .crm-search { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .crm-search input, .crm-search select {
+    background: var(--surface2); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); font-size: .85rem; padding: 6px 10px; font-family: inherit; outline: none;
+  }
+  .crm-search input { min-width: 220px; }
+  .crm-search input:focus, .crm-search select:focus { border-color: #58A6FF; }
+
+  /* Pagination */
+  .crm-pagination { display: flex; align-items: center; gap: 8px; padding: 12px 18px; justify-content: flex-end; font-size: .82rem; color: var(--muted); }
+  .crm-pagination button { background: var(--surface2); border: 1px solid var(--border); border-radius: 5px; color: var(--text); padding: 4px 10px; cursor: pointer; font-size: .8rem; }
+  .crm-pagination button:disabled { opacity: .4; cursor: not-allowed; }
+
+  /* Campaign card */
+  .campaign-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; margin-bottom: 12px; }
+  .campaign-card-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .campaign-card-name { font-weight: 600; font-size: .9rem; }
+  .campaign-card-actions { display: flex; gap: 6px; }
+  .campaign-template { background: var(--surface2); border-radius: 6px; padding: 10px 12px; font-size: .82rem; color: var(--muted); white-space: pre-wrap; max-height: 80px; overflow: hidden; }
+
+  /* Section headers */
+  .crm-section-title { font-size: .8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin: 0 0 14px; }
+
+  /* Birthday list */
+  .birthday-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: .85rem; }
+  .birthday-item:last-child { border-bottom: none; }
+  .birthday-date { font-size: .78rem; color: var(--muted); min-width: 40px; }
+  .birthday-today { color: #3FB950; font-weight: 600; }
+
+  /* Responsive */
+  @media (max-width: 640px) {
+    .crm-sidebar { display: none; }
+    .crm-content { padding: 16px; }
+  }
+</style>
+</head>
+<body>
+
+<!-- SIDEBAR -->
+<nav class="crm-sidebar">
+  <div class="crm-logo">
+    <h2>CRM</h2>
+    <span>Relacionamento</span>
+  </div>
+  <div class="crm-nav-item active" data-tab="dashboard">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+    Dashboard
+  </div>
+  <div class="crm-nav-item" data-tab="clientes">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+    Clientes
+  </div>
+  <div class="crm-nav-item" data-tab="campanhas">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.6a16 16 0 0 0 6 6l.92-.92a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+    Campanhas
+  </div>
+  <div class="crm-nav-item" data-tab="historico">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    Histórico
+  </div>
+  <div class="crm-nav-item" data-tab="config">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    Configurações
+  </div>
+  <div class="crm-sidebar-footer">
+    <a href="/" class="crm-back-link">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+      Voltar ao sistema
+    </a>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<main class="crm-main">
+  <div class="crm-header">
+    <div class="crm-title" id="crmTitle">Dashboard</div>
+    <div id="crmHeaderActions"></div>
+  </div>
+  <div class="crm-content">
+
+    <!-- DASHBOARD -->
+    <div id="tab-dashboard" class="crm-tab active">
+      <div class="crm-grid" id="statsGrid">
+        <div class="crm-card"><div class="crm-card-label">Total de clientes</div><div class="crm-card-value blue" id="statTotal">—</div></div>
+        <div class="crm-card"><div class="crm-card-label">Enviados hoje</div><div class="crm-card-value green" id="statToday">—</div></div>
+        <div class="crm-card"><div class="crm-card-label">Enviados no mês</div><div class="crm-card-value" id="statMonth">—</div></div>
+        <div class="crm-card"><div class="crm-card-label">Em risco (60+ dias)</div><div class="crm-card-value yellow" id="statRisk">—</div></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start">
+        <div class="crm-table-wrap">
+          <div class="crm-table-header">
+            <h3>🎂 Aniversários — próximos 7 dias</h3>
+          </div>
+          <div id="birthdayList" style="padding:0 18px 4px"></div>
+        </div>
+        <div class="crm-table-wrap">
+          <div class="crm-table-header">
+            <h3>Mensagens recentes</h3>
+          </div>
+          <table class="crm-table" id="recentMsgTable">
+            <thead><tr><th>Cliente</th><th>Campanha</th><th>Status</th></tr></thead>
+            <tbody id="recentMsgBody"><tr><td colspan="3" class="crm-empty">Carregando…</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- CLIENTES -->
+    <div id="tab-clientes" class="crm-tab">
+      <div class="crm-table-wrap">
+        <div class="crm-table-header">
+          <h3 style="margin:0">Lista de Clientes</h3>
+          <div class="crm-search">
+            <input id="clienteSearch" placeholder="Buscar nome, telefone ou CPF…" oninput="debounceSearchClientes()">
+            <select id="clienteLoja" onchange="loadClientes()">
+              <option value="">Todas as lojas</option>
+              <option value="delrey">Del Rey</option>
+              <option value="minas">Minas</option>
+              <option value="contagem">Contagem</option>
+              <option value="estacao">Estação</option>
+              <option value="tommy">Tommy</option>
+              <option value="lez">Lez a Lez</option>
+              <option value="escritorio">Escritório</option>
+            </select>
+            <button class="btn btn-primary btn-sm" onclick="crmSyncCustomers()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+              Sincronizar
+            </button>
+          </div>
+        </div>
+        <table class="crm-table">
+          <thead><tr><th>Nome</th><th>Telefone</th><th>Aniversário</th><th>Lojas</th><th>Última compra</th></tr></thead>
+          <tbody id="clientesBody"><tr><td colspan="5" class="crm-empty">Carregando…</td></tr></tbody>
+        </table>
+        <div class="crm-pagination">
+          <span id="clientesPagInfo"></span>
+          <button id="btnClientesPrev" onclick="navigateClientes(-1)" disabled>‹ Anterior</button>
+          <button id="btnClientesNext" onclick="navigateClientes(1)" disabled>Próxima ›</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CAMPANHAS -->
+    <div id="tab-campanhas" class="crm-tab">
+      <div style="display:grid;grid-template-columns:1fr 360px;gap:20px;align-items:start">
+        <div>
+          <p class="crm-section-title">Campanhas ativas</p>
+          <div id="campaignsList"></div>
+          <div id="campaignsEmpty" class="crm-empty" style="display:none">Nenhuma campanha criada ainda.</div>
+        </div>
+        <div class="crm-form" id="campaignForm">
+          <h3 id="formTitle">Nova campanha</h3>
+          <input type="hidden" id="editCampaignId">
+          <div class="crm-form-row">
+            <div class="crm-form-field">
+              <label>Nome da campanha</label>
+              <input id="cfNome" placeholder="Ex: Aniversário 2024">
+            </div>
+          </div>
+          <div class="crm-form-row">
+            <div class="crm-form-field">
+              <label>Tipo</label>
+              <select id="cfTipo" onchange="updateConfigFields()">
+                <option value="birthday">🎂 Aniversário (automático)</option>
+                <option value="reengagement">💤 Reengajamento (automático)</option>
+                <option value="manual">📣 Manual</option>
+              </select>
+            </div>
+          </div>
+          <div id="cfReengagementConfig" style="display:none">
+            <div class="crm-form-row">
+              <div class="crm-form-field">
+                <label>Dias sem compra</label>
+                <input id="cfDias" type="number" value="60" min="1">
+              </div>
+            </div>
+          </div>
+          <div class="crm-form-row">
+            <div class="crm-form-field">
+              <label>Mensagem</label>
+              <textarea id="cfTemplate" rows="5" placeholder="Olá {{nome}}, tudo bem?"></textarea>
+              <div class="crm-template-hint">Variáveis: {{nome}} {{nomeCompleto}} {{dias}} {{loja}}</div>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+            <button class="btn btn-ghost btn-sm" onclick="resetCampaignForm()">Limpar</button>
+            <button class="btn btn-primary btn-sm" onclick="saveCampaign()">Salvar campanha</button>
+          </div>
+          <div id="cfErr" style="font-size:.8rem;color:#F85149;margin-top:8px;display:none"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HISTÓRICO -->
+    <div id="tab-historico" class="crm-tab">
+      <div class="crm-table-wrap">
+        <div class="crm-table-header">
+          <h3>Histórico de mensagens</h3>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="msgStatusFilter" onchange="loadMessages()" style="background:var(--surface2);border:1px solid var(--border);border-radius:6px;color:var(--text);padding:5px 8px;font-size:.83rem">
+              <option value="">Todos</option>
+              <option value="sent">Enviados</option>
+              <option value="failed">Com erro</option>
+            </select>
+          </div>
+        </div>
+        <table class="crm-table">
+          <thead><tr><th>Cliente</th><th>Telefone</th><th>Campanha</th><th>Status</th><th>Enviado em</th></tr></thead>
+          <tbody id="messagesBody"><tr><td colspan="5" class="crm-empty">Carregando…</td></tr></tbody>
+        </table>
+        <div class="crm-pagination">
+          <span id="msgPagInfo"></span>
+          <button id="btnMsgPrev" onclick="navigateMessages(-1)" disabled>‹ Anterior</button>
+          <button id="btnMsgNext" onclick="navigateMessages(1)" disabled>Próxima ›</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- CONFIG -->
+    <div id="tab-config" class="crm-tab">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start">
+        <div class="crm-form">
+          <h3>Teste de envio WhatsApp</h3>
+          <div class="crm-form-row">
+            <div class="crm-form-field">
+              <label>Telefone (com DDD)</label>
+              <input id="testPhone" placeholder="31999999999">
+            </div>
+          </div>
+          <div class="crm-form-row">
+            <div class="crm-form-field">
+              <label>Mensagem</label>
+              <textarea id="testMsg" rows="3" placeholder="Mensagem de teste"></textarea>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px">
+            <button class="btn btn-primary btn-sm" onclick="sendTest()">Enviar teste</button>
+          </div>
+          <div id="testResult" style="font-size:.82rem;margin-top:8px;display:none"></div>
+        </div>
+        <div class="crm-form">
+          <h3>Probe Microvix</h3>
+          <p style="font-size:.83rem;color:var(--muted);margin-top:0">Descobre os campos disponíveis no LinxClientes da sua conta Microvix.</p>
+          <button class="btn btn-ghost btn-sm" onclick="probeClientes()">Verificar campos disponíveis</button>
+          <pre id="probeResult" style="font-size:.75rem;color:var(--muted);margin-top:12px;white-space:pre-wrap;max-height:200px;overflow:auto;display:none"></pre>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /crm-content -->
+</main>
+
+<div id="toast" class="toast hidden"></div>
+
+<script src="crm.js"></script>
+</body>
+</html>

@@ -13,6 +13,7 @@ const cron       = require('node-cron');
 const nodemailer = require('nodemailer');
 const crypto     = require('crypto');
 const { runSync, runSyncHoje, runSync30Dias, runSyncRetroativo, getStatus, setLastSync } = require('./services/microvixSync');
+const { syncCustomers, sendWhatsApp: zapiSend, applyTemplate: crmTemplate, runScheduledCampaigns } = require('./services/crmSync');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -5566,6 +5567,163 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
   } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
+// ── CRM ────────────────────────────────────────────────────────────────────
+const { ObjectId } = require('mongodb');
+
+app.get('/crm', requireAdmin, (req, res) =>
+  res.sendFile(path.join(__dirname, 'public', 'crm.html')));
+
+// Probe Microvix LinxClientes fields
+app.get('/api/crm/clientes-raw', requireAdmin, async (req, res) => {
+  const lojas = (() => { try { return JSON.parse(process.env.MICROVIX_LOJAS || '{}'); } catch { return {}; } })();
+  const [board, cnpj] = Object.entries(lojas)[0] || [];
+  if (!board) return res.status(400).json({ error: 'MICROVIX_LOJAS não configurado' });
+  const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+  const { fetchClientes } = require('./services/microvix');
+  try {
+    const rows = await fetchClientes(cnpj, chave);
+    res.json({ fields: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 3), total: rows.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Sync customers from Microvix
+app.post('/api/crm/sync', requireAdmin, async (req, res) => {
+  if (!mongoDb) return res.status(503).json({ error: 'MongoDB não disponível' });
+  try {
+    const total = await syncCustomers(mongoDb);
+    res.json({ ok: true, total });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Stats for dashboard
+app.get('/api/crm/stats', requireAdmin, async (req, res) => {
+  if (!mongoDb) return res.status(503).json({ error: 'MongoDB não disponível' });
+  const brt = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  const birthdayDates = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(brt.getTime() + i * 86400_000);
+    return `${String(d.getUTCDate()).padStart(2,'0')}/${String(d.getUTCMonth()+1).padStart(2,'0')}`;
+  });
+  const todayDDMM = birthdayDates[0];
+  const [total, upcoming, atRisk, sentToday, sentMonth] = await Promise.all([
+    mongoDb.collection('crm_customers').countDocuments(),
+    mongoDb.collection('crm_customers').find({ dtNasc: { $in: birthdayDates } }).sort({ dtNasc: 1 }).toArray(),
+    mongoDb.collection('crm_customers').countDocuments({ ultimaCompra: { $lt: new Date(Date.now() - 60*86400_000), $ne: null } }),
+    mongoDb.collection('crm_messages').countDocuments({ enviadoEm: { $gte: new Date(brt.toISOString().slice(0,10)) } }),
+    mongoDb.collection('crm_messages').countDocuments({ enviadoEm: { $gte: new Date(brt.getUTCFullYear(), brt.getUTCMonth(), 1) } }),
+  ]);
+  res.json({ total, upcoming, atRisk, sentToday, sentMonth, todayDDMM });
+});
+
+// Customer list
+app.get('/api/crm/customers', requireAdmin, async (req, res) => {
+  if (!mongoDb) return res.status(503).json({ error: 'MongoDB não disponível' });
+  const { q, loja, page = '1' } = req.query;
+  const lim = 60, skip = (parseInt(page) - 1) * lim;
+  const filter = {};
+  if (q) filter.$or = [{ nome: { $regex: q, $options: 'i' } }, { celular: { $regex: q } }, { cpf: { $regex: q } }];
+  if (loja) filter.lojas = loja;
+  const [customers, count] = await Promise.all([
+    mongoDb.collection('crm_customers').find(filter).sort({ nome: 1 }).skip(skip).limit(lim).toArray(),
+    mongoDb.collection('crm_customers').countDocuments(filter),
+  ]);
+  res.json({ customers, total: count, page: parseInt(page), pages: Math.ceil(count / lim) });
+});
+
+// Update customer (e.g. add/fix phone)
+app.patch('/api/crm/customers/:id', requireAdmin, async (req, res) => {
+  if (!mongoDb) return res.status(503).json({ error: 'MongoDB não disponível' });
+  const { celular, email } = req.body || {};
+  const upd = {};
+  if (celular !== undefined) upd.celular = celular.replace(/\D/g, '');
+  if (email   !== undefined) upd.email   = email;
+  await mongoDb.collection('crm_customers').updateOne({ _id: req.params.id }, { $set: upd });
+  res.json({ ok: true });
+});
+
+// Campaign CRUD
+app.get('/api/crm/campaigns', requireAdmin, async (req, res) => {
+  if (!mongoDb) return res.status(503).json({ error: 'MongoDB não disponível' });
+  res.json(await mongoDb.collection('crm_campaigns').find().sort({ criadoEm: -1 }).toArray());
+});
+
+app.post('/api/crm/campaigns', requireAdmin, async (req, res) => {
+  if (!mongoDb) return res.status(503).json({ error: 'MongoDB não disponível' });
+  const { nome, tipo, template, config } = req.body || {};
+  if (!nome || !tipo || !template) return res.status(400).json({ error: 'Informe nome, tipo e template' });
+  const r = await mongoDb.collection('crm_campaigns').insertOne({ nome, tipo, template, config: config || {}, ativo: true, criadoEm: new Date() });
+  res.json({ ok: true, id: r.insertedId });
+});
+
+app.put('/api/crm/campaigns/:id', requireAdmin, async (req, res) => {
+  if (!mongoDb) return res.status(503).json({ error: 'MongoDB não disponível' });
+  const { nome, tipo, template, config, ativo } = req.body || {};
+  const upd = {};
+  if (nome !== undefined) upd.nome = nome;
+  if (tipo !== undefined) upd.tipo = tipo;
+  if (template !== undefined) upd.template = template;
+  if (config   !== undefined) upd.config   = config;
+  if (ativo    !== undefined) upd.ativo    = ativo;
+  await mongoDb.collection('crm_campaigns').updateOne({ _id: new ObjectId(req.params.id) }, { $set: upd });
+  res.json({ ok: true });
+});
+
+app.delete('/api/crm/campaigns/:id', requireAdmin, async (req, res) => {
+  if (!mongoDb) return res.status(503).json({ error: 'MongoDB não disponível' });
+  await mongoDb.collection('crm_campaigns').deleteOne({ _id: new ObjectId(req.params.id) });
+  res.json({ ok: true });
+});
+
+// Run campaign manually
+app.post('/api/crm/campaigns/:id/run', requireAdmin, async (req, res) => {
+  if (!mongoDb) return res.status(503).json({ error: 'MongoDB não disponível' });
+  const campaign = await mongoDb.collection('crm_campaigns').findOne({ _id: new ObjectId(req.params.id) });
+  if (!campaign) return res.status(404).json({ error: 'Campanha não encontrada' });
+
+  const { loja, limite = 100 } = req.body || {};
+  const filter = { celular: { $nin: ['', null] } };
+  if (loja) filter.lojas = loja;
+
+  const customers = await mongoDb.collection('crm_customers').find(filter).limit(parseInt(limite)).toArray();
+  let sent = 0, failed = 0;
+
+  for (const c of customers) {
+    const firstName = c.nome.split(' ')[0];
+    const msg = crmTemplate(campaign.template, { nome: firstName, nomeCompleto: c.nome, loja: c.lojas?.[0] || '', dias: '' });
+    try {
+      await zapiSend(c.celular, msg);
+      await mongoDb.collection('crm_messages').insertOne({ customerId: c._id, customerNome: c.nome, celular: c.celular, campaignId: String(campaign._id), campaignNome: campaign.nome, mensagem: msg, status: 'sent', erro: '', enviadoEm: new Date() });
+      sent++;
+    } catch (e) {
+      await mongoDb.collection('crm_messages').insertOne({ customerId: c._id, customerNome: c.nome, celular: c.celular, campaignId: String(campaign._id), campaignNome: campaign.nome, mensagem: msg, status: 'failed', erro: e.message, enviadoEm: new Date() });
+      failed++;
+    }
+    await new Promise(r => setTimeout(r, 1200));
+  }
+  res.json({ ok: true, sent, failed });
+});
+
+// Test send
+app.post('/api/crm/send-test', requireAdmin, async (req, res) => {
+  const { phone, message } = req.body || {};
+  if (!phone || !message) return res.status(400).json({ error: 'Informe phone e message' });
+  try { await zapiSend(phone, message); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Message log
+app.get('/api/crm/messages', requireAdmin, async (req, res) => {
+  if (!mongoDb) return res.status(503).json({ error: 'MongoDB não disponível' });
+  const { page = '1', status } = req.query;
+  const filter = {};
+  if (status) filter.status = status;
+  const lim = 50, skip = (parseInt(page) - 1) * lim;
+  const [messages, total] = await Promise.all([
+    mongoDb.collection('crm_messages').find(filter).sort({ enviadoEm: -1 }).skip(skip).limit(lim).toArray(),
+    mongoDb.collection('crm_messages').countDocuments(filter),
+  ]);
+  res.json({ messages, total, pages: Math.ceil(total / lim) });
+});
+
 // ── Start ──────────────────────────────────────────────────────────────────
 initMongo()
   .then(() => {
@@ -5636,6 +5794,22 @@ initMongo()
       setInterval(do30d,  MX_INTERVAL_30D_MS);       // 30d: 1× por dia
     } else {
       console.log('[Microvix] Credenciais não configuradas — sync desativado');
+    }
+
+    // ── Cron: CRM — campanhas automáticas 08:30 Brasília ─────────────────
+    if (mongoDb) {
+      cron.schedule('30 8 * * *', async () => {
+        console.log('[CRM] Executando campanhas agendadas…');
+        runScheduledCampaigns(mongoDb).catch(e => console.error('[CRM cron]', e.message));
+      }, { timezone: 'America/Sao_Paulo' });
+      // Sync de clientes Microvix — todo dia 06:00
+      if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
+        cron.schedule('0 6 * * *', async () => {
+          console.log('[CRM] Sync de clientes Microvix…');
+          syncCustomers(mongoDb).catch(e => console.error('[CRM sync]', e.message));
+        }, { timezone: 'America/Sao_Paulo' });
+      }
+      console.log('[CRM] Cron de campanhas agendado para 08:30 America/Sao_Paulo');
     }
 
     // ── Cron: contas a pagar — LinxFaturas diário 07:00 Brasília ─────────

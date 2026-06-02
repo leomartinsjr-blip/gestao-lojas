@@ -321,4 +321,20 @@ async function fetchSetores(cnpj, chave) {
   return parseCsv(raw);
 }
 
-module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, parseBrNum, buildRequest, postRequest, parseCsv };
+// Fetch LinxClientes → customer master data
+async function fetchClientes(cnpj, chave, dtIni, dtFim) {
+  const today = new Date().toISOString().slice(0, 10);
+  const body = buildRequest('LinxClientes', cnpj, [
+    { id: 'dt_update_inicio', valor: dtIni || '2000-01-01' },
+    { id: 'dt_update_fim',    valor: dtFim || today },
+  ], chave);
+  const raw = await postRequest(body, 90_000);
+  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro desconhecido';
+    throw new Error(`Microvix API (clientes): ${msg}`);
+  }
+  if (raw.trim().startsWith('<')) return [];
+  return parseCsv(raw);
+}
+
+module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, fetchClientes, parseBrNum, buildRequest, postRequest, parseCsv };
