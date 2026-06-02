@@ -240,10 +240,15 @@
       <button class="folgas-close-btn" id="folgasClose" title="Fechar">✕</button>
     </div>
 
-    <div class="folgas-toolbar">
+    <div class="folgas-tab-bar">
+      <button class="folgas-tab active" data-ftab="calendario">📅 Calendário</button>
+      <button class="folgas-tab" data-ftab="atestados">🏥 Atestados</button>
+      <button class="folgas-tab" data-ftab="ferias">🏖 Férias</button>
+    </div>
+
+    <div class="folgas-toolbar" id="folgasToolbar">
       <select id="folgasBoardFilter" class="folgas-filter"></select>
       <button class="add-item-btn" id="folgasAddEmpBtn">+ Funcionário</button>
-      <button class="add-item-btn" id="dadosFolhaBtn" style="margin-left:auto">📋 Dados p/ Folha</button>
       <div id="folgasAddForm" class="folgas-add-inline hidden">
         <input type="text" id="folgasEmpName" class="add-item-input" placeholder="Nome do funcionário…" style="width:180px">
         <select id="folgasEmpBoard" class="folgas-filter"></select>
@@ -256,7 +261,8 @@
       <div class="folgas-table-wrap" id="folgasTableWrap">
         <table class="folgas-table" id="folgasTable"></table>
       </div>
-      <div id="dadosFolhaBody" class="hidden" style="overflow-y:auto;flex:1;min-height:0"></div>
+      <div id="folgasAtestadosBody" class="hidden" style="overflow-y:auto;flex:1;min-height:0"></div>
+      <div id="folgasFeriasBody"    class="hidden" style="overflow-y:auto;flex:1;min-height:0"></div>
     </div>
   </div>
 </div>

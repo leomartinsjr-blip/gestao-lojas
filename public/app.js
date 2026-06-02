@@ -4771,7 +4771,7 @@ function initWeightsModal() {
 }
 
 // ── Folgas calendar ────────────────────────────────────────────────────────
-const FC = { year: null, month: null, employees: [], folgas: [], filterBoard: null, dadosView: false };
+const FC = { year: null, month: null, employees: [], folgas: [], ausencias: [], filterBoard: null, tab: 'calendario' };
 const DAY_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
 
 async function openFolgas() {
@@ -4786,20 +4786,40 @@ function closeFolgas() {
 
 async function loadFolgasData() {
   try {
-    const [emps, folgas] = await Promise.all([
+    const [emps, folgas, ausencias] = await Promise.all([
       apiFetch('GET', '/api/employees'),
       apiFetch('GET', `/api/folgas/${FC.year}/${FC.month}`),
+      apiFetch('GET', '/api/ausencias'),
     ]);
     FC.employees = emps;
     FC.folgas    = folgas;
+    FC.ausencias = ausencias;
     updateFolgasLabel();
     updateFolgasFilterAndForm();
-    if (FC.dadosView) {
-      _openDadosFolhaView(document.getElementById('dadosFolhaBody'));
-    } else {
-      renderFolgasTable();
-    }
+    _renderFolgasActiveTab();
   } catch (e) { toast('Erro ao carregar folgas: ' + e.message, true); }
+}
+
+function _renderFolgasActiveTab() {
+  const tableWrap = document.getElementById('folgasTableWrap');
+  const atBody    = document.getElementById('folgasAtestadosBody');
+  const ferBody   = document.getElementById('folgasFeriasBody');
+  const toolbar   = document.getElementById('folgasToolbar');
+  const addBtn    = document.getElementById('folgasAddEmpBtn');
+
+  [tableWrap, atBody, ferBody].forEach(el => el?.classList.add('hidden'));
+  addBtn && (addBtn.style.display = FC.tab === 'calendario' ? '' : 'none');
+
+  if (FC.tab === 'calendario') {
+    tableWrap?.classList.remove('hidden');
+    renderFolgasTable();
+  } else if (FC.tab === 'atestados') {
+    atBody?.classList.remove('hidden');
+    _renderAusenciasView(atBody, 'atestado');
+  } else if (FC.tab === 'ferias') {
+    ferBody?.classList.remove('hidden');
+    _renderAusenciasView(ferBody, 'ferias');
+  }
 }
 
 function updateFolgasLabel() {
@@ -5094,6 +5114,140 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
   render();
 }
 
+// ── Atestados / Férias ────────────────────────────────────────────────────
+
+function _renderAusenciasView(body, tipo) {
+  const isAdmin   = !S.user?.board;
+  const userBoard = S.user?.board;
+  const STORE_BOARDS = Object.keys(BOARDS).filter(b => b && b !== 'escritorio');
+  const label = tipo === 'atestado' ? 'Atestado Médico' : 'Férias';
+  const emoji = tipo === 'atestado' ? '🏥' : '🏖';
+
+  function boardEmpsFor(board) {
+    return FC.employees.filter(e => e.board === board && !e.inativo);
+  }
+
+  function getFilterBoard() {
+    return userBoard || FC.filterBoard || '';
+  }
+
+  function fmtDate(d) {
+    if (!d) return '—';
+    const [y, m, day] = d.split('-');
+    return `${day}/${m}/${y}`;
+  }
+
+  function filteredItems() {
+    let items = (FC.ausencias || []).filter(x => x.tipo === tipo);
+    const fb = getFilterBoard();
+    if (fb) items = items.filter(x => x.board === fb);
+    return items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
+  function render() {
+    const fb   = getFilterBoard();
+    const emps = fb ? boardEmpsFor(fb) : [];
+    const items = filteredItems();
+    const boardColor = fb ? (BOARDS[fb]?.color || '#8B949E') : '#8B949E';
+    const boardLbl   = fb ? (BOARDS[fb]?.label || fb) : '';
+
+    body.innerHTML = `<div class="aus-wrap">
+      <div class="aus-form-card">
+        <div class="aus-form-title">${emoji} Novo ${label}${boardLbl ? ` — ${boardLbl}` : ''}</div>
+        ${!fb && isAdmin ? `<div class="aus-no-board">Selecione uma loja no filtro acima para adicionar.</div>` : `
+        <div class="aus-form-grid">
+          <div class="ret-field">
+            <label>Funcionário</label>
+            <select id="ausColab">
+              <option value="">— selecione —</option>
+              ${emps.map(e => `<option value="${_escHtml(e.apelido||e.name)}">${_escHtml(e.apelido||e.name)}</option>`).join('')}
+              <option value="__outro">Outro (digitar)</option>
+            </select>
+          </div>
+          <div class="ret-field" id="ausColabOutroWrap" style="display:none">
+            <label>Nome</label>
+            <input type="text" id="ausColabOutro" placeholder="Nome do funcionário">
+          </div>
+          <div class="ret-field">
+            <label>Data início</label>
+            <input type="date" id="ausInicio">
+          </div>
+          <div class="ret-field">
+            <label>Data fim</label>
+            <input type="date" id="ausFim">
+          </div>
+          <div class="ret-field" style="grid-column:1/-1">
+            <label>Observação (opcional)</label>
+            <textarea id="ausObs" rows="2" maxlength="400" placeholder="Detalhes adicionais…"></textarea>
+          </div>
+        </div>
+        <button class="ret-submit-btn" id="ausSubmitBtn" style="margin-top:.5rem">Registrar ${label}</button>`}
+      </div>
+
+      <div class="aus-list">
+        <div class="aus-list-title">${items.length ? `${items.length} registro${items.length>1?'s':''}` : 'Nenhum registro'}</div>
+        ${items.map(r => {
+          const sc = BOARDS[r.board]?.color || '#8B949E';
+          const sl = BOARDS[r.board]?.label || r.board;
+          return `<div class="aus-card">
+            <div class="aus-card-top">
+              ${isAdmin ? `<span class="aus-board" style="color:${sc}">${sl}</span>` : ''}
+              <span class="aus-colab">${_escHtml(r.colaborador)}</span>
+              <span class="aus-period">${fmtDate(r.dataInicio)} → ${fmtDate(r.dataFim)}</span>
+              <button class="nf-del-btn aus-del-btn" data-id="${r.id}" title="Remover">✕</button>
+            </div>
+            ${r.observacao ? `<div class="aus-obs">"${_escHtml(r.observacao)}"</div>` : ''}
+            <div class="aus-meta">registrado por ${_escHtml(r.createdBy)} · ${new Date(r.createdAt).toLocaleDateString('pt-BR')}</div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+
+    const colabSel = body.querySelector('#ausColab');
+    if (colabSel) {
+      colabSel.addEventListener('change', function() {
+        body.querySelector('#ausColabOutroWrap').style.display = this.value === '__outro' ? '' : 'none';
+      });
+    }
+
+    body.querySelector('#ausSubmitBtn')?.addEventListener('click', async () => {
+      const sel  = body.querySelector('#ausColab').value;
+      const colaborador = sel === '__outro' ? body.querySelector('#ausColabOutro').value.trim() : sel;
+      const dataInicio  = body.querySelector('#ausInicio').value;
+      const dataFim     = body.querySelector('#ausFim').value;
+      const observacao  = body.querySelector('#ausObs').value.trim();
+
+      if (!colaborador) { toast('Selecione o funcionário', true); return; }
+      if (!dataInicio)  { toast('Informe a data de início', true); return; }
+      if (!dataFim)     { toast('Informe a data de fim', true); return; }
+      if (dataFim < dataInicio) { toast('Data fim anterior à data início', true); return; }
+
+      const btn = body.querySelector('#ausSubmitBtn');
+      btn.disabled = true;
+      try {
+        const item = await apiFetch('POST', '/api/ausencias', {
+          tipo, colaborador, dataInicio, dataFim, observacao,
+          board: fb,
+        });
+        FC.ausencias = [...(FC.ausencias || []), item];
+        toast(`${label} registrado ✓`);
+        render();
+      } catch(e) { toast('Erro: ' + e.message, true); btn.disabled = false; }
+    });
+
+    body.querySelectorAll('.aus-del-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Remover este registro?')) return;
+        const id = parseInt(btn.dataset.id);
+        await apiFetch('DELETE', `/api/ausencias/${id}`).catch(() => {});
+        FC.ausencias = FC.ausencias.filter(x => x.id !== id);
+        render();
+      });
+    });
+  }
+  render();
+}
+
 function initFolgasModal() {
   document.getElementById('folgasBtn').addEventListener('click', openFolgas);
   document.getElementById('folgasClose').addEventListener('click', closeFolgas);
@@ -5110,27 +5264,17 @@ function initFolgasModal() {
   });
   document.getElementById('folgasBoardFilter').addEventListener('change', e => {
     FC.filterBoard = e.target.value || null;
-    if (FC.dadosView) _openDadosFolhaView(document.getElementById('dadosFolhaBody'));
-    else renderFolgasTable();
+    _renderFolgasActiveTab();
   });
 
-  // Dados para Folha toggle
-  const dadosFolhaBtn  = document.getElementById('dadosFolhaBtn');
-  const dadosFolhaBody = document.getElementById('dadosFolhaBody');
-  const tableWrap      = document.getElementById('folgasTableWrap');
-  dadosFolhaBtn.addEventListener('click', () => {
-    FC.dadosView = !FC.dadosView;
-    if (FC.dadosView) {
-      tableWrap.classList.add('hidden');
-      dadosFolhaBody.classList.remove('hidden');
-      dadosFolhaBtn.textContent = '← Calendário';
-      _openDadosFolhaView(dadosFolhaBody);
-    } else {
-      tableWrap.classList.remove('hidden');
-      dadosFolhaBody.classList.add('hidden');
-      dadosFolhaBtn.textContent = '📋 Dados p/ Folha';
-      renderFolgasTable();
-    }
+  // Tab switching
+  document.querySelectorAll('.folgas-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.folgas-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      FC.tab = btn.dataset.ftab;
+      _renderFolgasActiveTab();
+    });
   });
 
   // Add employee form

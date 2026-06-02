@@ -954,6 +954,64 @@ app.delete('/api/folgas/:id', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/ausencias ────────────────────────────────────────────────────
+app.get('/api/ausencias', requireAuth, async (req, res) => {
+  try {
+    const db  = await readDB();
+    const { board } = req.session.user;
+    const isAdm = !board || board === 'escritorio';
+    const { tipo } = req.query;
+    let items = (db.ausencias || []).filter(x => isAdm || x.board === board);
+    if (tipo) items = items.filter(x => x.tipo === tipo);
+    items.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    res.json(items);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/ausencias ───────────────────────────────────────────────────
+app.post('/api/ausencias', requireAuth, async (req, res) => {
+  try {
+    const sessionBoard = req.session.user.board;
+    const isAdm = !sessionBoard || sessionBoard === 'escritorio';
+    const board = isAdm ? (req.body.board || '') : sessionBoard;
+    if (!board) return res.status(400).json({ error: 'Informe a loja' });
+    const { tipo, colaborador, dataInicio, dataFim, observacao } = req.body;
+    if (!['atestado', 'ferias'].includes(tipo)) return res.status(400).json({ error: 'Tipo inválido' });
+    if (!colaborador?.trim()) return res.status(400).json({ error: 'Colaborador obrigatório' });
+    if (!dataInicio) return res.status(400).json({ error: 'Data início obrigatória' });
+    if (!dataFim)    return res.status(400).json({ error: 'Data fim obrigatória' });
+    const db = await readDB();
+    if (!db.ausencias) db.ausencias = [];
+    const item = {
+      id: nextId(db), tipo, board,
+      colaborador: colaborador.trim(),
+      dataInicio, dataFim,
+      observacao: (observacao || '').trim(),
+      createdAt: new Date().toISOString(),
+      createdBy: req.session.user.label || req.session.user.username,
+    };
+    db.ausencias.push(item);
+    await writeDB(db);
+    res.json(item);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── DELETE /api/ausencias/:id ─────────────────────────────────────────────
+app.delete('/api/ausencias/:id', requireAuth, async (req, res) => {
+  try {
+    const id  = parseInt(req.params.id);
+    const db  = await readDB();
+    const item = (db.ausencias || []).find(x => x.id === id);
+    if (!item) return res.status(404).json({ error: 'Não encontrado' });
+    const { board } = req.session.user;
+    const isAdm = !board || board === 'escritorio';
+    if (!isAdm && item.board !== board) return res.status(403).json({ error: 'Sem acesso' });
+    db.ausencias = db.ausencias.filter(x => x.id !== id);
+    await writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/dados-folha/:year/:month/:board ──────────────────────────────
 app.get('/api/dados-folha/:year/:month/:board', requireAuth, async (req, res) => {
   try {

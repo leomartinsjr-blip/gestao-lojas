@@ -801,12 +801,34 @@ body {
 .users-del-btn { background: #3b1219; color: #F85149; border: 1px solid #F85149; border-radius: .35rem; padding: .25rem .6rem; font-size: .8rem; cursor: pointer; }
 .users-del-btn:hover { background: #4d1620; }
 
+/* ── Folgas tab bar ───────────────────────────────────────────────────── */
+.folgas-tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); flex-shrink: 0; padding: 0 1rem; }
+.folgas-tab { background: transparent; border: none; border-bottom: 2px solid transparent; color: var(--muted); font-size: .82rem; font-weight: 600; padding: .6rem .85rem; cursor: pointer; transition: color .15s, border-color .15s; white-space: nowrap; }
+.folgas-tab:hover { color: var(--text); }
+.folgas-tab.active { color: var(--text); border-bottom-color: #58A6FF; }
+
 .folgas-toolbar {
   padding: .6rem 1rem;
   border-bottom: 1px solid var(--border);
   display: flex; align-items: center; gap: .625rem;
   flex-shrink: 0; flex-wrap: wrap;
 }
+
+/* ── Ausências (Atestados / Férias) ───────────────────────────────────── */
+.aus-wrap { padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: 1rem; }
+.aus-form-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: .875rem 1rem; }
+.aus-form-title { font-size: .85rem; font-weight: 700; color: var(--text); margin-bottom: .75rem; }
+.aus-no-board { font-size: .82rem; color: var(--muted); }
+.aus-form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem .9rem; }
+.aus-list-title { font-size: .75rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .4rem; }
+.aus-card { background: var(--hover-bg, rgba(255,255,255,.03)); border: 1px solid var(--border); border-radius: 7px; padding: .6rem .9rem; margin-bottom: .45rem; }
+.aus-card-top { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .2rem; }
+.aus-board { font-size: .78rem; font-weight: 700; }
+.aus-colab { font-size: .88rem; font-weight: 600; color: var(--text); }
+.aus-period { font-size: .8rem; color: #58A6FF; font-weight: 600; margin-left: auto; }
+.aus-del-btn { margin-left: auto; }
+.aus-obs { font-size: .78rem; color: var(--muted); font-style: italic; margin-bottom: .15rem; }
+.aus-meta { font-size: .72rem; color: var(--muted); }
 .folgas-filter {
   background: var(--surface2); border: 1px solid var(--border);
   color: var(--text); padding: .3rem .6rem; border-radius: .375rem;
