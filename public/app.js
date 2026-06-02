@@ -439,6 +439,7 @@ async function loadData() {
     S.pendencias   = init.pendencias   || [];
     S.requisicoes  = init.requisicoes  || [];
     S.retiradas         = init.retiradas         || [];
+    S.adiantamentos     = init.adiantamentos     || [];
     S.indevaStats  = init.indevaStats  || {};
     _updateCampanhasBtn();
     _updateLojaAcaoBadge();
@@ -8216,6 +8217,7 @@ function _renderLojaAcaoModal() {
     <div class="la-tabs">
       <button class="la-tab${_lojaAcaoTab==='req'?' active':''}" data-tab="req">📦 Requisição</button>
       <button class="la-tab${_lojaAcaoTab==='retirada'?' active':''}" data-tab="retirada">💰 Retirada Colaborador</button>
+      <button class="la-tab${_lojaAcaoTab==='adiantamento'?' active':''}" data-tab="adiantamento">💵 Adiantamento</button>
     </div>
     <div id="la-tab-body"></div>`;
   body.querySelectorAll('.la-tab').forEach(btn => btn.addEventListener('click', () => {
@@ -8232,9 +8234,12 @@ function _renderLojaAcaoTab() {
   if (_lojaAcaoTab === 'req') {
     if (!S.user?.board) _renderReqAdminView(body);
     else _renderReqLojaView(body);
-  } else {
+  } else if (_lojaAcaoTab === 'retirada') {
     if (!S.user?.board) _renderRetiradaAdminView(body);
     else _renderRetiradaLojaView(body);
+  } else {
+    if (!S.user?.board) _renderAdiantamentoAdminView(body);
+    else _renderAdiantamentoLojaView(body);
   }
 }
 
@@ -8667,6 +8672,175 @@ function _renderRetiradaAdminView(body) {
         const updated = await apiFetch('PATCH', `/api/retiradas/${btn.dataset.id}/status`, { status: btn.dataset.status });
         const idx = (S.retiradas||[]).findIndex(x => x.id === parseInt(btn.dataset.id));
         if (idx >= 0) S.retiradas[idx] = updated;
+        render();
+      } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
+    }));
+  }
+  render();
+}
+
+// ── Adiantamento Funcionários ─────────────────────────────────────────────
+
+const ADI_STATUS = {
+  pendente:  { label: 'Pendente',  cls: 'ret-status-pend'  },
+  aprovado:  { label: 'Aprovado',  cls: 'ret-status-aprov' },
+  recusado:  { label: 'Recusado',  cls: 'ret-status-recus' },
+  pago:      { label: 'Pago',      cls: 'ret-status-paga'  },
+};
+
+function _adiBadge(status) {
+  const s = ADI_STATUS[status] || ADI_STATUS.pendente;
+  return `<span class="ret-status-badge ${s.cls}">${s.label}</span>`;
+}
+
+function _adiBrl(v) { return 'R$ ' + (v||0).toFixed(2).replace('.',','); }
+
+function _renderAdiantamentoLojaView(body) {
+  const board = S.user.board;
+  let showForm = true;
+
+  function render() {
+    if (showForm) {
+      const boardEmps = (S.employees||[]).filter(e => e.board === board && !e.inativo);
+      body.innerHTML = `<div class="ret-form-wrap">
+        <div class="req-form-top">
+          <h3 class="req-form-title">Adiantamento — ${BOARDS[board]?.label || board}</h3>
+          <button class="req-link-btn" id="adiHistBtn">Ver histórico →</button>
+        </div>
+        <div class="ret-form-grid">
+          <div class="ret-field">
+            <label>Funcionário</label>
+            <select id="adiColab">
+              <option value="">— selecione —</option>
+              ${boardEmps.map(e => `<option value="${_escHtml(e.apelido||e.name)}">${_escHtml(e.apelido||e.name)}</option>`).join('')}
+              <option value="__outro">Outro (digitar)</option>
+            </select>
+          </div>
+          <div class="ret-field" id="adiColabOutroWrap" style="display:none">
+            <label>Nome do funcionário</label>
+            <input type="text" id="adiColabOutro" placeholder="Digite o nome">
+          </div>
+          <div class="ret-field">
+            <label>Valor solicitado (R$)</label>
+            <input type="number" id="adiValor" step="0.01" min="0.01" placeholder="0,00">
+          </div>
+          <div class="ret-field" style="grid-column:1/-1">
+            <label>Observação (opcional)</label>
+            <textarea id="adiObs" rows="2" maxlength="400" placeholder="Motivo ou detalhes adicionais…"></textarea>
+          </div>
+        </div>
+        <button class="ret-submit-btn" id="adiSubmitBtn">Enviar Solicitação</button>
+      </div>`;
+
+      body.querySelector('#adiHistBtn').addEventListener('click', () => { showForm = false; render(); });
+      body.querySelector('#adiColab').addEventListener('change', function() {
+        body.querySelector('#adiColabOutroWrap').style.display = this.value === '__outro' ? '' : 'none';
+      });
+      body.querySelector('#adiSubmitBtn').addEventListener('click', async () => {
+        const selColab    = body.querySelector('#adiColab').value;
+        const colaborador = selColab === '__outro'
+          ? body.querySelector('#adiColabOutro').value.trim() : selColab;
+        const valor      = parseFloat(body.querySelector('#adiValor').value) || 0;
+        const observacao = body.querySelector('#adiObs').value.trim();
+
+        if (!colaborador) { toast('Selecione o funcionário', true); return; }
+        if (valor <= 0)   { toast('Informe o valor do adiantamento', true); return; }
+
+        const btn = body.querySelector('#adiSubmitBtn');
+        btn.disabled = true;
+        try {
+          const adi = await apiFetch('POST', '/api/adiantamentos', { colaborador, valor, observacao });
+          S.adiantamentos = [...(S.adiantamentos||[]), adi];
+          toast('Solicitação enviada ✓');
+          showForm = false; render();
+        } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
+      });
+    } else {
+      const items = (S.adiantamentos||[]).filter(x => x.board === board)
+        .sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+      body.innerHTML = `<div class="ret-form-wrap">
+        <div class="req-form-top">
+          <h3 class="req-form-title">Histórico de Adiantamentos</h3>
+          <button class="req-link-btn" id="adiBackBtn">← Nova solicitação</button>
+        </div>
+        ${!items.length ? '<div class="req-empty">Nenhuma solicitação enviada ainda</div>'
+          : items.map(r => `<div class="ret-hist-card">
+            <div class="ret-hist-top">
+              <span class="ret-colab">${_escHtml(r.colaborador)}</span>
+              <span class="ret-valor">${_adiBrl(r.valor)}</span>
+              ${_adiBadge(r.status)}
+              <span class="ret-date">${new Date(r.createdAt).toLocaleDateString('pt-BR')}</span>
+            </div>
+            ${r.observacao ? `<div class="ret-obs">"${_escHtml(r.observacao)}"</div>` : ''}
+          </div>`).join('')}
+      </div>`;
+      body.querySelector('#adiBackBtn').addEventListener('click', () => { showForm = true; render(); });
+    }
+  }
+  render();
+}
+
+function _renderAdiantamentoAdminView(body) {
+  let filterStatus = 'pendente';
+  let filterBoard  = '';
+  const NEXT_ADI = {
+    pendente: [['aprovado','Aprovar'],['recusado','Recusar']],
+    aprovado: [['pago','Marcar Pago']],
+    recusado: [],
+    pago:     [],
+  };
+
+  function render() {
+    let items = (S.adiantamentos||[]);
+    if (filterStatus !== 'all') items = items.filter(x => x.status === filterStatus);
+    if (filterBoard) items = items.filter(x => x.board === filterBoard);
+    items = [...items].sort((a,b) => b.createdAt.localeCompare(a.createdAt));
+
+    body.innerHTML = `<div class="req-admin-wrap">
+      <div class="req-admin-filters">
+        <div class="req-status-tabs">
+          ${[['pendente','Pendente'],['aprovado','Aprovado'],['recusado','Recusado'],['pago','Pago'],['all','Todos']].map(([s,l]) =>
+            `<button class="req-stab${filterStatus===s?' active':''}" data-s="${s}">${l}</button>`).join('')}
+        </div>
+        <div class="req-board-chips">
+          <button class="req-board-chip${filterBoard===''?' active':''}" data-b="" style="--rbc:#8B949E">Todas</button>
+          ${Object.keys(BOARDS).filter(b=>b!=='escritorio').map(b =>
+            `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'#8B949E'}">${BOARDS[b]?.label||b}</button>`).join('')}
+        </div>
+      </div>
+      <div class="req-admin-list">
+        ${!items.length ? '<div class="req-empty">Nenhuma solicitação encontrada</div>'
+          : items.map(r => {
+              const sc = BOARDS[r.board]?.color||'#8B949E';
+              const sl = BOARDS[r.board]?.label||r.board;
+              const actions = (NEXT_ADI[r.status]||[]).map(([s,l]) =>
+                `<button class="req-action-btn${s==='recusado'?' req-del-btn':''}" data-id="${r.id}" data-status="${s}">${l}</button>`).join('');
+              return `<div class="req-admin-item">
+                <div class="req-admin-item-hdr">
+                  <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+                    <span style="font-size:.8rem;font-weight:700;color:${sc}">${sl}</span>
+                    <span class="ret-colab">${_escHtml(r.colaborador)}</span>
+                    <span class="ret-valor">${_adiBrl(r.valor)}</span>
+                    ${_adiBadge(r.status)}
+                    <span class="req-admin-upd">${new Date(r.createdAt).toLocaleDateString('pt-BR')} · ${_escHtml(r.createdBy||'')}</span>
+                  </div>
+                  <div style="display:flex;gap:.4rem">${actions}</div>
+                </div>
+                ${r.observacao ? `<div class="ret-obs" style="margin-top:.35rem">"${_escHtml(r.observacao)}"</div>` : ''}
+                ${r.updatedAt ? `<div class="req-admin-upd">Atualizado ${new Date(r.updatedAt).toLocaleDateString('pt-BR')} por ${_escHtml(r.updatedBy||'—')}</div>` : ''}
+              </div>`;
+            }).join('')}
+      </div>
+    </div>`;
+
+    body.querySelectorAll('.req-stab').forEach(b => b.addEventListener('click', () => { filterStatus = b.dataset.s; render(); }));
+    body.querySelectorAll('.req-board-chip').forEach(b => b.addEventListener('click', () => { filterBoard = b.dataset.b; render(); }));
+    body.querySelectorAll('.req-action-btn[data-id]').forEach(btn => btn.addEventListener('click', async () => {
+      btn.disabled = true;
+      try {
+        const updated = await apiFetch('PATCH', `/api/adiantamentos/${btn.dataset.id}/status`, { status: btn.dataset.status });
+        const idx = (S.adiantamentos||[]).findIndex(x => x.id === parseInt(btn.dataset.id));
+        if (idx >= 0) S.adiantamentos[idx] = updated;
         render();
       } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
     }));

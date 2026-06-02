@@ -726,6 +726,11 @@ app.get('/api/init', requireAuth, async (req, res) => {
       .filter(x => isAdminOrEscritorio || x.board === board)
       .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
+    // Adiantamentos filtered by board
+    const adiantamentos = (db.adiantamentos || [])
+      .filter(x => isAdminOrEscritorio || x.board === board)
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+
     // Pendências — admin/escritorio only
     const pendencias = isAdminOrEscritorio ? (db.pendencias || []) : [];
 
@@ -780,6 +785,7 @@ app.get('/api/init', requireAuth, async (req, res) => {
       pendencias,
       requisicoes,
       retiradas,
+      adiantamentos,
       indevaStats:  indevaResult,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1976,6 +1982,65 @@ app.patch('/api/retiradas/:id/status', requireAdmin, async (req, res) => {
     const item = (db.retiradas || []).find(x => x.id === id);
     if (!item) return res.status(404).json({ error: 'Solicitação não encontrada' });
     const VALID = ['aprovada','recusada','retirada'];
+    if (!VALID.includes(req.body.status)) return res.status(400).json({ error: 'Status inválido' });
+    item.status    = req.body.status;
+    item.updatedAt = new Date().toISOString();
+    item.updatedBy = req.session.user.label || req.session.user.username;
+    await writeDB(db);
+    res.json(item);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/adiantamentos ────────────────────────────────────────────────
+app.get('/api/adiantamentos', requireAuth, async (req, res) => {
+  try {
+    const db  = await readDB();
+    const { board } = req.session.user;
+    const isAdm = !board || board === 'escritorio';
+    const items = (db.adiantamentos || [])
+      .filter(x => isAdm || x.board === board)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    res.json(items);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/adiantamentos ───────────────────────────────────────────────
+app.post('/api/adiantamentos', requireAuth, async (req, res) => {
+  try {
+    const board = req.session.user.board;
+    if (!board) return res.status(400).json({ error: 'Apenas lojas podem solicitar adiantamentos' });
+    const { colaborador, valor, observacao } = req.body;
+    if (!colaborador || !colaborador.trim()) return res.status(400).json({ error: 'Colaborador obrigatório' });
+    const v = parseFloat(valor);
+    if (!v || v <= 0) return res.status(400).json({ error: 'Valor inválido' });
+    const db = await readDB();
+    if (!db.adiantamentos) db.adiantamentos = [];
+    const item = {
+      id:          nextId(db),
+      board,
+      colaborador: colaborador.trim(),
+      valor:       parseFloat(v.toFixed(2)),
+      observacao:  (observacao || '').trim(),
+      status:      'pendente',
+      createdAt:   new Date().toISOString(),
+      createdBy:   req.session.user.label || req.session.user.username,
+      updatedAt:   null,
+      updatedBy:   null,
+    };
+    db.adiantamentos.push(item);
+    await writeDB(db);
+    res.json(item);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── PATCH /api/adiantamentos/:id/status ──────────────────────────────────
+app.patch('/api/adiantamentos/:id/status', requireAdmin, async (req, res) => {
+  try {
+    const id   = parseInt(req.params.id);
+    const db   = await readDB();
+    const item = (db.adiantamentos || []).find(x => x.id === id);
+    if (!item) return res.status(404).json({ error: 'Adiantamento não encontrado' });
+    const VALID = ['aprovado', 'recusado', 'pago'];
     if (!VALID.includes(req.body.status)) return res.status(400).json({ error: 'Status inválido' });
     item.status    = req.body.status;
     item.updatedAt = new Date().toISOString();
