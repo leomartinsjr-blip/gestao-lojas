@@ -5800,12 +5800,6 @@ initMongo()
   .then(() => {
     app.listen(PORT, () => {
       console.log(`\n✅  Gestão de Lojas → http://localhost:${PORT}\n`);
-      // Warm do catálogo de marcas e índice ref→cores em background após startup
-      if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
-        const _lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-        setTimeout(() => _getCatalog(_lojas).catch(e => console.warn('[Catalog startup]', e.message)), 5000);
-        setTimeout(() => _getRefColorIndex().catch(e => console.warn('[RefColor startup]', e.message)), 8000);
-      }
     });
 
     // ── Cron: fechamento de caixa — diário 08:00 Brasília, sincroniza d-1 ──
@@ -5856,9 +5850,7 @@ initMongo()
       const doHoje    = () => runSyncHoje(readDB, writeDB).catch(e => console.error('[Microvix/hoje]', e.message));
       const do30d     = () => runSync30Dias(readDB, writeDB).catch(e => console.error('[Microvix/30d]', e.message));
 
-      // Startup: encadeia para evitar conflito de flags
-      doSync().finally(() => doHoje());              // hoje logo após o sync de fechamento
-      setTimeout(do30d, MX_INTERVAL_30D_MS);          // 30d: só roda depois de 1 dia completo
+      setTimeout(do30d, MX_INTERVAL_30D_MS);
       console.log('[Microvix/30d] Conferência 30 dias agendada — 1× por dia');
 
       setInterval(doSync, MX_INTERVAL_MS);
