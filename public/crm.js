@@ -315,8 +315,13 @@ async function probeClientes() {
   const el = document.getElementById('probeResult');
   el.style.display = ''; el.textContent = 'Consultando Microvix…';
   try {
-    const r = await api('GET', '/api/crm/clientes-raw');
-    el.textContent = `Total: ${r.total} clientes\n\nCampos disponíveis:\n${r.fields.join('\n')}\n\nExemplo:\n${JSON.stringify(r.sample?.[0] || {}, null, 2)}`;
+    const results = await api('GET', '/api/crm/clientes-raw');
+    el.textContent = results.map(r =>
+      `[${r.tentativa}] → ${r.status}\n` +
+      (r.campos?.length ? `Campos: ${r.campos.join(', ')}\n` : '') +
+      (r.exemplo ? `Exemplo: ${JSON.stringify(r.exemplo, null, 2)}\n` : '') +
+      (r.raw_inicio ? `Raw: ${r.raw_inicio}\n` : '')
+    ).join('\n---\n');
   } catch (e) { el.textContent = 'Erro: ' + e.message; }
 }
 
