@@ -5573,7 +5573,7 @@ const { ObjectId } = require('mongodb');
 app.get('/crm', requireAdmin, (req, res) =>
   res.sendFile(path.join(__dirname, 'public', 'crm.html')));
 
-// Probe Microvix LinxClientes — testa cada variação de parâmetro e retorna raw
+// Probe — testa todos os possíveis comandos de clientes no Microvix
 app.get('/api/crm/clientes-raw', requireAdmin, async (req, res) => {
   const lojas = (() => { try { return JSON.parse(process.env.MICROVIX_LOJAS || '{}'); } catch { return {}; } })();
   const [board, cnpj] = Object.entries(lojas)[0] || [];
@@ -5582,25 +5582,22 @@ app.get('/api/crm/clientes-raw', requireAdmin, async (req, res) => {
   const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
   const cnpjClean = cnpj.replace(/\D/g, '');
   const today = new Date().toISOString().slice(0, 10);
-  const attempts = [
-    { label: 'sem parâmetros', params: [] },
-    { label: 'timestamp=0',    params: [{ id: 'timestamp', valor: '0' }] },
-    { label: 'datas 2000→hoje', params: [{ id: 'dt_update_inicio', valor: '2000-01-01' }, { id: 'dt_update_fim', valor: today }] },
-  ];
+  const commands = ['LinxClientes','LinxPessoas','LinxCadastroPessoas','LinxClientesCadastro','LinxClientesPortal'];
   const results = [];
-  for (const a of attempts) {
-    const body = buildRequest('LinxClientes', cnpjClean, a.params, chave);
-    const raw  = await postRequest(body, 30_000).catch(e => `ERRO: ${e.message}`);
-    const isXml = typeof raw === 'string' && raw.trim().startsWith('<');
+  for (const cmd of commands) {
+    const body = buildRequest(cmd, cnpjClean, [], chave);
+    const raw  = await postRequest(body, 20_000).catch(e => `ERRO: ${e.message}`);
+    const isXml = typeof raw === 'string' && (raw.trim().startsWith('<') || raw.startsWith('﻿<'));
     const rows  = isXml ? [] : (() => { try { return parseCsv(raw); } catch { return []; } })();
+    const notFound = raw.includes('não foi possível encontrar o comando') || raw.includes('comando especificado');
     results.push({
-      tentativa: a.label,
-      status:    isXml ? 'xml/erro' : `${rows.length} linhas`,
+      comando:   cmd,
+      status:    isXml ? (notFound ? 'não disponível' : 'xml/erro') : `${rows.length} linhas`,
       campos:    rows[0] ? Object.keys(rows[0]) : [],
       exemplo:   rows[0] || null,
-      raw_inicio: (raw || '').slice(0, 400),
+      raw_inicio: (raw || '').slice(0, 300),
     });
-    if (rows.length > 0) break; // encontrou — para
+    if (rows.length > 0) break;
   }
   res.json(results);
 });
@@ -5612,6 +5609,58 @@ app.post('/api/crm/sync', requireAdmin, async (req, res) => {
     const total = await syncCustomers(mongoDb);
     res.json({ ok: true, total });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Import customers from CSV/Excel upload
+app.post('/api/crm/import', requireAdmin, excelUpload.single('file'), async (req, res) => {
+  if (!mongoDb) return res.status(503).json({ error: 'MongoDB não disponível' });
+  if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+  const { parseBirthDay } = require('./services/crmSync');
+
+  let rows = [];
+  try {
+    const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    rows = XLSX.utils.sheet_to_json(ws, { defval: '' });
+  } catch (e) { return res.status(400).json({ error: 'Arquivo inválido: ' + e.message }); }
+
+  // Normaliza nomes de coluna para lowercase sem acento
+  const norm = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+  const findField = (row, candidates) => {
+    const keys = Object.keys(row);
+    for (const c of candidates) {
+      const found = keys.find(k => norm(k) === c || norm(k).includes(c));
+      if (found) return String(row[found] || '').trim();
+    }
+    return '';
+  };
+
+  const col = mongoDb.collection('crm_customers');
+  let imported = 0, skipped = 0;
+
+  for (const row of rows) {
+    const nome   = findField(row, ['nome','name','cliente','nome_cliente']);
+    const phone  = findField(row, ['celular','telefone','fone','phone','whatsapp']).replace(/\D/g,'');
+    const cpf    = findField(row, ['cpf']).replace(/\D/g,'');
+    const email  = findField(row, ['email','e-mail','e_mail']);
+    const dtRaw  = findField(row, ['nascimento','aniversario','dt_nasc','data_nasc','birthday']);
+    const dtNasc = parseBirthDay(dtRaw);
+    const loja   = findField(row, ['loja','store','board']);
+    const id     = cpf || phone;
+    if (!id || !nome) { skipped++; continue; }
+
+    await col.updateOne(
+      { _id: id },
+      {
+        $set: { nome, celular: phone, email, dtNasc, dtNascFull: dtRaw, cpf, syncedAt: new Date() },
+        $addToSet: { lojas: loja || 'importado' },
+        $setOnInsert: { criadoEm: new Date(), ultimaCompra: null, reengagementSentAt: null },
+      },
+      { upsert: true }
+    );
+    imported++;
+  }
+  res.json({ ok: true, imported, skipped, total: rows.length });
 });
 
 // Stats for dashboard

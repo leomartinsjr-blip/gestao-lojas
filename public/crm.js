@@ -150,6 +150,33 @@ function navigateClientes(delta) {
   loadClientes();
 }
 
+async function importCustomers(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';
+  const label = input.closest('label');
+  const origHTML = label.innerHTML;
+  label.style.opacity = '.5';
+  label.style.pointerEvents = 'none';
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const r = await fetch('/api/crm/import', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Erro ao importar');
+    toast(`Importados ${data.imported} clientes (${data.skipped} ignorados por falta de CPF/telefone).`);
+    loadClientes();
+  } catch (e) {
+    toast(e.message, true);
+  } finally {
+    label.innerHTML = origHTML;
+    label.style.opacity = '';
+    label.style.pointerEvents = '';
+    // Re-wire the input since innerHTML was replaced
+    label.querySelector('input').addEventListener('change', e => importCustomers(e.target));
+  }
+}
+
 async function crmSyncCustomers() {
   const btn = document.querySelector('[onclick="crmSyncCustomers()"]');
   btn.disabled = true; btn.textContent = 'Sincronizando…';
