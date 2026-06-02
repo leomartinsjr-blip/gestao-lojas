@@ -4945,7 +4945,7 @@ function _openDadosFolhaView(body) {
   _renderDadosFolha(body, board, FC.year, FC.month);
 }
 
-async function _renderDadosFolha(body, board, year, month) {
+async function _renderDadosFolha(body, board, year, month, empsList) {
   body.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:1.5rem">Carregando…</div>';
   let data;
   try {
@@ -4961,7 +4961,8 @@ async function _renderDadosFolha(body, board, year, month) {
   let abertura  = data.abertura  || '';
   let instagram = data.instagram || '';
 
-  const boardEmps = FC.employees.filter(e => e.board === board && !e.inativo);
+  const sourceEmps = empsList || FC.employees;
+  const boardEmps = sourceEmps.filter(e => e.board === board && !e.inativo);
   const boardLabel = BOARDS[board]?.label || board;
   const monthLabel = `${MONTHS_PT[month-1]} ${year}`;
 
@@ -8218,6 +8219,7 @@ function _renderLojaAcaoModal() {
       <button class="la-tab${_lojaAcaoTab==='req'?' active':''}" data-tab="req">📦 Requisição</button>
       <button class="la-tab${_lojaAcaoTab==='retirada'?' active':''}" data-tab="retirada">💰 Retirada Colaborador</button>
       <button class="la-tab${_lojaAcaoTab==='adiantamento'?' active':''}" data-tab="adiantamento">💵 Adiantamento</button>
+      <button class="la-tab${_lojaAcaoTab==='dados'?' active':''}" data-tab="dados">📋 Dados p/ Folha</button>
     </div>
     <div id="la-tab-body"></div>`;
   body.querySelectorAll('.la-tab').forEach(btn => btn.addEventListener('click', () => {
@@ -8237,9 +8239,11 @@ function _renderLojaAcaoTab() {
   } else if (_lojaAcaoTab === 'retirada') {
     if (!S.user?.board) _renderRetiradaAdminView(body);
     else _renderRetiradaLojaView(body);
-  } else {
+  } else if (_lojaAcaoTab === 'adiantamento') {
     if (!S.user?.board) _renderAdiantamentoAdminView(body);
     else _renderAdiantamentoLojaView(body);
+  } else {
+    _renderDadosLojaAcaoView(body);
   }
 }
 
@@ -8904,6 +8908,36 @@ function _renderAdiAdminGerenciar(content) {
         render();
       } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
     }));
+  }
+  render();
+}
+
+function _renderDadosLojaAcaoView(body) {
+  const STORE_BOARDS = Object.keys(BOARDS).filter(b => b && b !== 'escritorio');
+  const userBoard = S.user?.board;
+
+  if (userBoard) {
+    _renderDadosFolha(body, userBoard, S.year, S.month, S.employees);
+    return;
+  }
+
+  // Admin: seletor de loja
+  let filterBoard = STORE_BOARDS[0] || '';
+  function render() {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = `<div style="padding:.75rem 1.25rem .25rem">
+      <div class="req-board-chips">
+        ${STORE_BOARDS.map(b =>
+          `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'#8B949E'}">${BOARDS[b]?.label||b}</button>`).join('')}
+      </div>
+    </div>
+    <div id="dadosLojaAcaoContent"></div>`;
+    body.innerHTML = '';
+    body.appendChild(wrapper);
+    wrapper.querySelectorAll('.req-board-chip').forEach(btn => btn.addEventListener('click', () => {
+      filterBoard = btn.dataset.b; render();
+    }));
+    _renderDadosFolha(body.querySelector('#dadosLojaAcaoContent'), filterBoard, S.year, S.month, S.employees);
   }
   render();
 }
