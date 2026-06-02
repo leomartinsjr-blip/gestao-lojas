@@ -2,7 +2,8 @@
   "leonardo": {
     "password": "leo123",
     "board": null,
-    "label": "Leonardo"
+    "label": "Leonardo",
+    "email": "leomartinsjr@gmail.com"
   },
   "ingrid": {
     "password": "ing123",

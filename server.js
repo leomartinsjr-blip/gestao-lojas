@@ -10,6 +10,8 @@ const XLSX       = require('xlsx');
 const ExcelJS    = require('exceljs');
 const { MongoClient } = require('mongodb');
 const cron       = require('node-cron');
+const nodemailer = require('nodemailer');
+const crypto     = require('crypto');
 const { runSync, runSyncHoje, runSync30Dias, runSyncRetroativo, getStatus, setLastSync } = require('./services/microvixSync');
 
 const app  = express();
@@ -280,6 +282,17 @@ if (MONGODB_URI) {
   sessionOpts.store = MongoStore.create({ mongoUrl: MONGODB_URI, dbName: 'gestao_lojas', ttl: 8 * 3600 });
 }
 
+// ── Email (recuperação de senha) ───────────────────────────────────────────
+const emailTransporter = (process.env.EMAIL_USER && process.env.EMAIL_PASS)
+  ? nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS }
+    })
+  : null;
+
+// Reset tokens: token → { username, expires }
+const resetTokens = new Map();
+
 app.use(compress());
 app.use(express.json({ limit: '50mb' }));
 app.use(session(sessionOpts));
@@ -353,11 +366,72 @@ app.post('/api/change-password', requireAuth, (req, res) => {
   req.session.save(() => res.json({ ok: true }));
 });
 
+// ── POST /api/forgot-password (sem autenticação) ───────────────────────────
+app.post('/api/forgot-password', async (req, res) => {
+  const { username } = req.body || {};
+  const users = readUsers();
+  const key = (username || '').toLowerCase().trim();
+  const user = users[key];
+  if (!user || !user.email || !emailTransporter)
+    return res.json({ ok: true }); // sempre sucede — não revela se usuário existe
+
+  // Remove tokens anteriores do mesmo usuário e tokens expirados
+  for (const [t, v] of resetTokens)
+    if (v.username === key || v.expires < Date.now()) resetTokens.delete(t);
+
+  const token = crypto.randomBytes(32).toString('hex');
+  resetTokens.set(token, { username: key, expires: Date.now() + 60 * 60 * 1000 });
+
+  const appUrl = process.env.APP_URL || 'https://gestao-lojas.onrender.com';
+  const link = `${appUrl}/?reset=${token}`;
+
+  try {
+    await emailTransporter.sendMail({
+      from: `"Gestão Operacional" <${process.env.EMAIL_USER}>`,
+      to: user.email,
+      subject: 'Redefinição de senha — Gestão Operacional',
+      html: `<div style="font-family:sans-serif;max-width:480px;color:#1e2433">
+        <h2 style="color:#3b82f6">Redefinição de senha</h2>
+        <p>Olá, <strong>${user.label || key}</strong>!</p>
+        <p>Clique no botão abaixo para redefinir sua senha. O link é válido por <strong>1 hora</strong>.</p>
+        <p><a href="${link}" style="display:inline-block;background:#3b82f6;color:#fff;padding:10px 22px;border-radius:6px;text-decoration:none;font-weight:600;margin:8px 0">Redefinir senha</a></p>
+        <p style="color:#64748b;font-size:.85rem">Se não foi você quem solicitou, ignore este email.</p>
+      </div>`,
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error('Erro ao enviar email de reset:', e.message);
+    res.status(500).json({ error: 'Erro ao enviar email. Contate o administrador.' });
+  }
+});
+
+// ── POST /api/reset-password (sem autenticação) ────────────────────────────
+app.post('/api/reset-password', (req, res) => {
+  const { token, password } = req.body || {};
+  if (!token || !password || password.length < 4)
+    return res.status(400).json({ error: 'Senha inválida (mínimo 4 caracteres)' });
+  const entry = resetTokens.get(token);
+  if (!entry || entry.expires < Date.now()) {
+    resetTokens.delete(token);
+    return res.status(400).json({ error: 'Link expirado ou inválido. Solicite uma nova redefinição.' });
+  }
+  const users = readUsers();
+  const { username } = entry;
+  if (!users[username]) return res.status(400).json({ error: 'Usuário não encontrado' });
+  const ts = Date.now().toString();
+  users[username].password = password;
+  users[username].passwordChangedAt = ts;
+  users[username].mustChangePassword = false;
+  writeUsers(users);
+  resetTokens.delete(token);
+  res.json({ ok: true });
+});
+
 // ── GET /api/users  (admin) ────────────────────────────────────────────────
 app.get('/api/users', requireAdmin, (req, res) => {
   const users = readUsers();
   const list = Object.entries(users).map(([username, u]) => ({
-    username, label: u.label || username, board: u.board || null
+    username, label: u.label || username, board: u.board || null, email: u.email || null
   }));
   res.json(list);
 });
@@ -379,7 +453,7 @@ app.put('/api/users/:username', requireAdmin, (req, res) => {
   const key = req.params.username.toLowerCase();
   const users = readUsers();
   if (!users[key]) return res.status(404).json({ error: 'Usuário não encontrado' });
-  const { password, label, board } = req.body || {};
+  const { password, label, board, email } = req.body || {};
   if (password) {
     const ts = Date.now().toString();
     users[key].password = password;
@@ -394,6 +468,7 @@ app.put('/api/users/:username', requireAdmin, (req, res) => {
   }
   if (label !== undefined) users[key].label = label;
   if (board !== undefined) users[key].board = board;
+  if (email !== undefined) users[key].email = email || null;
   writeUsers(users);
   if (password && key === req.session.user.username) {
     return req.session.save(() => res.json({ ok: true }));

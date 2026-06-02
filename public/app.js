@@ -178,6 +178,8 @@ function initLoginForm() {
   const errEl = document.getElementById('loginError');
   const btn   = document.getElementById('loginBtn');
 
+  document.getElementById('forgotPwdBtn')?.addEventListener('click', showForgotPasswordModal);
+
   form.addEventListener('submit', async e => {
     e.preventDefault();
     const username = document.getElementById('loginUser').value.trim();
@@ -238,14 +240,12 @@ function showChangePasswordModal() {
       </div>
       <div id="cpErr" style="font-size:.8rem;color:#f87171;margin-bottom:12px;display:none"></div>
       <div style="display:flex;gap:10px;justify-content:flex-end">
-        <button id="cpSkip" style="background:none;border:1px solid #2d3654;border-radius:7px;padding:8px 16px;color:#94a3b8;cursor:pointer;font-size:.9rem">Agora não</button>
-        <button id="cpSubmit" style="background:#3b82f6;border:none;border-radius:7px;padding:8px 18px;color:#fff;cursor:pointer;font-size:.9rem;font-weight:600">Alterar</button>
+        <button id="cpSubmit" style="background:#3b82f6;border:none;border-radius:7px;padding:8px 18px;color:#fff;cursor:pointer;font-size:.9rem;font-weight:600">Alterar senha</button>
       </div>
     </div>`;
 
   document.body.appendChild(overlay);
 
-  document.getElementById('cpSkip').onclick = () => overlay.remove();
   document.getElementById('cpNewPass').focus();
 
   document.getElementById('cpSubmit').onclick = async () => {
@@ -266,6 +266,116 @@ function showChangePasswordModal() {
       try { msg = JSON.parse(e.message).error || msg; } catch {}
       errEl.textContent = msg; errEl.style.display = '';
       btn.disabled = false; btn.textContent = 'Alterar';
+    }
+  };
+}
+
+function showForgotPasswordModal() {
+  const existing = document.getElementById('forgotPwdModal');
+  if (existing) existing.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'forgotPwdModal';
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:9999';
+
+  overlay.innerHTML = `
+    <div style="background:#1e2433;border:1px solid #2d3654;border-radius:12px;padding:28px 32px;width:340px;max-width:95vw;box-shadow:0 8px 32px #0008">
+      <div style="font-size:1.1rem;font-weight:700;color:#e2e8f0;margin-bottom:6px">Recuperar senha</div>
+      <div style="font-size:.85rem;color:#94a3b8;margin-bottom:20px">Informe seu usuário e enviaremos um link de redefinição para o email cadastrado.</div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:.8rem;color:#94a3b8;display:block;margin-bottom:4px">Usuário</label>
+        <input id="fpUser" type="text" autocomplete="username" placeholder="seu usuário"
+          style="width:100%;box-sizing:border-box;background:#0f1623;border:1px solid #2d3654;border-radius:7px;padding:9px 12px;color:#e2e8f0;font-size:.95rem;outline:none">
+      </div>
+      <div id="fpMsg" style="font-size:.82rem;margin-bottom:12px;display:none"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button id="fpCancel" style="background:none;border:1px solid #2d3654;border-radius:7px;padding:8px 16px;color:#94a3b8;cursor:pointer;font-size:.9rem">Cancelar</button>
+        <button id="fpSubmit" style="background:#3b82f6;border:none;border-radius:7px;padding:8px 18px;color:#fff;cursor:pointer;font-size:.9rem;font-weight:600">Enviar link</button>
+      </div>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  document.getElementById('fpUser').focus();
+
+  document.getElementById('fpCancel').onclick = () => overlay.remove();
+
+  document.getElementById('fpSubmit').onclick = async () => {
+    const username = document.getElementById('fpUser').value.trim();
+    const msgEl = document.getElementById('fpMsg');
+    const btn = document.getElementById('fpSubmit');
+    if (!username) {
+      msgEl.style.color = '#f87171'; msgEl.textContent = 'Informe o usuário'; msgEl.style.display = ''; return;
+    }
+    btn.disabled = true; btn.textContent = 'Enviando…';
+    msgEl.style.display = 'none';
+    try {
+      await apiFetch('POST', '/api/forgot-password', { username });
+      msgEl.style.color = '#4ade80';
+      msgEl.textContent = 'Se o usuário tiver email cadastrado, você receberá o link em instantes.';
+      msgEl.style.display = '';
+      btn.style.display = 'none';
+      document.getElementById('fpCancel').textContent = 'Fechar';
+    } catch (e) {
+      let msg = 'Erro ao enviar. Tente novamente.';
+      try { msg = JSON.parse(e.message).error || msg; } catch {}
+      msgEl.style.color = '#f87171'; msgEl.textContent = msg; msgEl.style.display = '';
+      btn.disabled = false; btn.textContent = 'Enviar link';
+    }
+  };
+}
+
+function showResetPasswordPage(token) {
+  const loginOverlay = document.getElementById('loginOverlay');
+  if (loginOverlay) loginOverlay.classList.add('hidden');
+
+  const overlay = document.createElement('div');
+  overlay.id = 'resetPwdPage';
+  overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg,#0d1117);display:flex;align-items:center;justify-content:center;z-index:9999';
+
+  overlay.innerHTML = `
+    <div style="background:#1e2433;border:1px solid #2d3654;border-radius:12px;padding:28px 32px;width:360px;max-width:95vw;box-shadow:0 8px 32px #0008">
+      <div style="font-size:1.15rem;font-weight:700;color:#e2e8f0;margin-bottom:6px">Nova senha</div>
+      <div style="font-size:.85rem;color:#94a3b8;margin-bottom:20px">Escolha uma nova senha para sua conta.</div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:.8rem;color:#94a3b8;display:block;margin-bottom:4px">Nova senha</label>
+        <input id="rpNewPass" type="password" autocomplete="new-password" placeholder="Nova senha"
+          style="width:100%;box-sizing:border-box;background:#0f1623;border:1px solid #2d3654;border-radius:7px;padding:9px 12px;color:#e2e8f0;font-size:.95rem;outline:none">
+      </div>
+      <div style="margin-bottom:20px">
+        <label style="font-size:.8rem;color:#94a3b8;display:block;margin-bottom:4px">Confirmar senha</label>
+        <input id="rpConfPass" type="password" autocomplete="new-password" placeholder="Confirmar senha"
+          style="width:100%;box-sizing:border-box;background:#0f1623;border:1px solid #2d3654;border-radius:7px;padding:9px 12px;color:#e2e8f0;font-size:.95rem;outline:none">
+      </div>
+      <div id="rpErr" style="font-size:.8rem;color:#f87171;margin-bottom:12px;display:none"></div>
+      <button id="rpSubmit" style="width:100%;background:#3b82f6;border:none;border-radius:7px;padding:10px;color:#fff;cursor:pointer;font-size:.95rem;font-weight:600">Salvar nova senha</button>
+    </div>`;
+
+  document.body.appendChild(overlay);
+  document.getElementById('rpNewPass').focus();
+
+  document.getElementById('rpSubmit').onclick = async () => {
+    const pwd  = document.getElementById('rpNewPass').value;
+    const conf = document.getElementById('rpConfPass').value;
+    const errEl = document.getElementById('rpErr');
+    const btn = document.getElementById('rpSubmit');
+    errEl.style.display = 'none';
+    if (!pwd) { errEl.textContent = 'Informe a nova senha'; errEl.style.display = ''; return; }
+    if (pwd !== conf) { errEl.textContent = 'As senhas não coincidem'; errEl.style.display = ''; return; }
+    btn.disabled = true; btn.textContent = 'Salvando…';
+    try {
+      await apiFetch('POST', '/api/reset-password', { token, password: pwd });
+      overlay.innerHTML = `
+        <div style="background:#1e2433;border:1px solid #2d3654;border-radius:12px;padding:32px;width:340px;max-width:95vw;text-align:center;box-shadow:0 8px 32px #0008">
+          <div style="font-size:2rem;margin-bottom:12px">✓</div>
+          <div style="font-size:1.1rem;font-weight:700;color:#4ade80;margin-bottom:8px">Senha redefinida!</div>
+          <div style="font-size:.9rem;color:#94a3b8;margin-bottom:20px">Sua senha foi alterada com sucesso.</div>
+          <button onclick="window.location.href='/'" style="background:#3b82f6;border:none;border-radius:7px;padding:10px 24px;color:#fff;cursor:pointer;font-size:.9rem;font-weight:600">Fazer login</button>
+        </div>`;
+    } catch (e) {
+      let msg = 'Erro ao redefinir senha.';
+      try { msg = JSON.parse(e.message).error || msg; } catch {}
+      errEl.textContent = msg; errEl.style.display = '';
+      btn.disabled = false; btn.textContent = 'Salvar nova senha';
     }
   };
 }
@@ -9545,7 +9655,13 @@ function init() {
   document.getElementById('logoutBtn').addEventListener('click', logout);
   document.getElementById('btnPrev').addEventListener('click', () => navigate(-1));
   document.getElementById('btnNext').addEventListener('click', () => navigate(1));
-  checkAuth();
+
+  const resetToken = new URLSearchParams(location.search).get('reset');
+  if (resetToken) {
+    showResetPasswordPage(resetToken);
+  } else {
+    checkAuth();
+  }
 }
 
 init();
