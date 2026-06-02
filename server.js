@@ -98,6 +98,25 @@ async function initMongo() {
     const { _id, ...users } = usersDoc;
     _usersCache = users;
     console.log(`✅  Usuários carregados do MongoDB (${Object.keys(users).length})`);
+    // Patch: copia emails do users.json para o MongoDB se estiverem faltando
+    try {
+      const seedFile = fs.existsSync(SEED_USERS) ? SEED_USERS : null;
+      if (seedFile) {
+        const seed = JSON.parse(fs.readFileSync(seedFile, 'utf8'));
+        let updated = false;
+        for (const [k, v] of Object.entries(seed)) {
+          if (v.email && users[k] && !users[k].email) {
+            users[k].email = v.email;
+            updated = true;
+          }
+        }
+        if (updated) {
+          await mongoDb.collection('users').replaceOne({ _id: 'main' }, { _id: 'main', ...users });
+          _usersCache = users;
+          console.log('✅  Emails sincronizados do users.json para MongoDB');
+        }
+      }
+    } catch (e) { console.warn('Patch de emails falhou:', e.message); }
   }
 
   console.log('✅  MongoDB conectado');
