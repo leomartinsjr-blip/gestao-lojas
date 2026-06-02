@@ -8195,7 +8195,10 @@ function _reqStatusBadge(status) {
 function _updateLojaAcaoBadge() {
   const btn = document.getElementById('lojaAcaoBtn');
   if (!btn || S.user?.board) return; // only for admin
-  const count = (S.requisicoes || []).filter(x => x.status === 'pendente' || x.status === 'em-separacao').length;
+  const reqCount = (S.requisicoes    || []).filter(x => x.status === 'pendente' || x.status === 'em-separacao').length;
+  const retCount = (S.retiradas      || []).filter(x => x.status === 'pendente').length;
+  const adiCount = (S.adiantamentos  || []).filter(x => x.status === 'pendente').length;
+  const count = reqCount + retCount + adiCount;
   let badge = btn.querySelector('.req-badge');
   if (count > 0) {
     if (!badge) { badge = document.createElement('span'); badge.className = 'req-badge'; btn.appendChild(badge); }
@@ -8585,6 +8588,7 @@ function _renderRetiradaLojaView(body) {
           const ret = await apiFetch('POST', '/api/retiradas',
             { colaborador, grupo, marca, referencia, cor, tamanho, quantidade, precoCheio, observacao });
           S.retiradas = [...(S.retiradas||[]), ret];
+          _updateLojaAcaoBadge();
           toast('Solicitação enviada ✓');
           showForm = false; render();
         } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
@@ -8676,7 +8680,7 @@ function _renderRetiradaAdminView(body) {
         const updated = await apiFetch('PATCH', `/api/retiradas/${btn.dataset.id}/status`, { status: btn.dataset.status });
         const idx = (S.retiradas||[]).findIndex(x => x.id === parseInt(btn.dataset.id));
         if (idx >= 0) S.retiradas[idx] = updated;
-        render();
+        _updateLojaAcaoBadge(); render();
       } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
     }));
   }
@@ -8748,6 +8752,7 @@ function _renderAdiantamentoLojaView(body) {
             const adi = await apiFetch('POST', '/api/adiantamentos', { ...s, observacao });
             S.adiantamentos = [...(S.adiantamentos||[]), adi];
           }
+          _updateLojaAcaoBadge();
           toast(solicitacoes.length === 1 ? 'Solicitação enviada ✓' : `${solicitacoes.length} solicitações enviadas ✓`);
           showForm = false; render();
         } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
@@ -8905,7 +8910,7 @@ function _renderAdiAdminGerenciar(content) {
         const updated = await apiFetch('PATCH', `/api/adiantamentos/${btn.dataset.id}/status`, { status: btn.dataset.status });
         const idx = (S.adiantamentos||[]).findIndex(x => x.id === parseInt(btn.dataset.id));
         if (idx >= 0) S.adiantamentos[idx] = updated;
-        render();
+        _updateLojaAcaoBadge(); render();
       } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
     }));
   }
