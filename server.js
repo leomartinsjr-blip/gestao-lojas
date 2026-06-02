@@ -2007,8 +2007,10 @@ app.get('/api/adiantamentos', requireAuth, async (req, res) => {
 // ── POST /api/adiantamentos ───────────────────────────────────────────────
 app.post('/api/adiantamentos', requireAuth, async (req, res) => {
   try {
-    const board = req.session.user.board;
-    if (!board) return res.status(400).json({ error: 'Apenas lojas podem solicitar adiantamentos' });
+    const sessionBoard = req.session.user.board;
+    const isAdm = !sessionBoard || sessionBoard === 'escritorio';
+    const board = isAdm ? (req.body.board || '') : sessionBoard;
+    if (!board) return res.status(400).json({ error: 'Informe a loja' });
     const { colaborador, valor, observacao } = req.body;
     if (!colaborador || !colaborador.trim()) return res.status(400).json({ error: 'Colaborador obrigatório' });
     const v = parseFloat(valor);

@@ -8707,51 +8707,44 @@ function _renderAdiantamentoLojaView(body) {
           <h3 class="req-form-title">Adiantamento — ${BOARDS[board]?.label || board}</h3>
           <button class="req-link-btn" id="adiHistBtn">Ver histórico →</button>
         </div>
-        <div class="ret-form-grid">
-          <div class="ret-field">
-            <label>Funcionário</label>
-            <select id="adiColab">
-              <option value="">— selecione —</option>
-              ${boardEmps.map(e => `<option value="${_escHtml(e.apelido||e.name)}">${_escHtml(e.apelido||e.name)}</option>`).join('')}
-              <option value="__outro">Outro (digitar)</option>
-            </select>
-          </div>
-          <div class="ret-field" id="adiColabOutroWrap" style="display:none">
-            <label>Nome do funcionário</label>
-            <input type="text" id="adiColabOutro" placeholder="Digite o nome">
-          </div>
-          <div class="ret-field">
-            <label>Valor solicitado (R$)</label>
-            <input type="number" id="adiValor" step="0.01" min="0.01" placeholder="0,00">
-          </div>
-          <div class="ret-field" style="grid-column:1/-1">
-            <label>Observação (opcional)</label>
-            <textarea id="adiObs" rows="2" maxlength="400" placeholder="Motivo ou detalhes adicionais…"></textarea>
-          </div>
+        <div class="adi-emp-list">
+          ${boardEmps.map(e => {
+            const nome = _escHtml(e.apelido || e.name);
+            return `<div class="adi-emp-row">
+              <span class="adi-emp-nome">${nome}</span>
+              <div class="adi-emp-valor-wrap">
+                <span class="adi-brl-prefix">R$</span>
+                <input type="number" class="adi-valor-input" data-nome="${nome}" step="0.01" min="0.01" placeholder="0,00">
+              </div>
+            </div>`;
+          }).join('')}
+        </div>
+        <div class="ret-field" style="margin-top:.75rem">
+          <label>Observação (opcional)</label>
+          <textarea id="adiObs" rows="2" maxlength="400" placeholder="Motivo ou detalhes adicionais…"></textarea>
         </div>
         <button class="ret-submit-btn" id="adiSubmitBtn">Enviar Solicitação</button>
       </div>`;
 
       body.querySelector('#adiHistBtn').addEventListener('click', () => { showForm = false; render(); });
-      body.querySelector('#adiColab').addEventListener('change', function() {
-        body.querySelector('#adiColabOutroWrap').style.display = this.value === '__outro' ? '' : 'none';
-      });
       body.querySelector('#adiSubmitBtn').addEventListener('click', async () => {
-        const selColab    = body.querySelector('#adiColab').value;
-        const colaborador = selColab === '__outro'
-          ? body.querySelector('#adiColabOutro').value.trim() : selColab;
-        const valor      = parseFloat(body.querySelector('#adiValor').value) || 0;
         const observacao = body.querySelector('#adiObs').value.trim();
+        const solicitacoes = [];
+        body.querySelectorAll('.adi-valor-input').forEach(input => {
+          const valor = parseFloat(input.value) || 0;
+          if (valor > 0) solicitacoes.push({ colaborador: input.dataset.nome, valor });
+        });
 
-        if (!colaborador) { toast('Selecione o funcionário', true); return; }
-        if (valor <= 0)   { toast('Informe o valor do adiantamento', true); return; }
+        if (!solicitacoes.length) { toast('Informe o valor de pelo menos um funcionário', true); return; }
 
         const btn = body.querySelector('#adiSubmitBtn');
         btn.disabled = true;
         try {
-          const adi = await apiFetch('POST', '/api/adiantamentos', { colaborador, valor, observacao });
-          S.adiantamentos = [...(S.adiantamentos||[]), adi];
-          toast('Solicitação enviada ✓');
+          for (const s of solicitacoes) {
+            const adi = await apiFetch('POST', '/api/adiantamentos', { ...s, observacao });
+            S.adiantamentos = [...(S.adiantamentos||[]), adi];
+          }
+          toast(solicitacoes.length === 1 ? 'Solicitação enviada ✓' : `${solicitacoes.length} solicitações enviadas ✓`);
           showForm = false; render();
         } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
       });
@@ -8781,6 +8774,92 @@ function _renderAdiantamentoLojaView(body) {
 }
 
 function _renderAdiantamentoAdminView(body) {
+  let adminSubTab = 'lancar';
+
+  function render() {
+    body.innerHTML = `<div class="adi-admin-wrap">
+      <div class="adi-sub-tabs">
+        <button class="adi-sub-tab${adminSubTab==='lancar'?' active':''}" data-t="lancar">📝 Lançar</button>
+        <button class="adi-sub-tab${adminSubTab==='gerenciar'?' active':''}" data-t="gerenciar">⚙️ Gerenciar</button>
+      </div>
+      <div id="adi-admin-content"></div>
+    </div>`;
+
+    body.querySelectorAll('.adi-sub-tab').forEach(b => b.addEventListener('click', () => {
+      adminSubTab = b.dataset.t; render();
+    }));
+
+    const content = body.querySelector('#adi-admin-content');
+    if (adminSubTab === 'lancar') _renderAdiAdminLancar(content, render);
+    else _renderAdiAdminGerenciar(content);
+  }
+  render();
+}
+
+function _renderAdiAdminLancar(content, onSuccess) {
+  const STORE_BOARDS = Object.keys(BOARDS).filter(b => b && b !== 'escritorio');
+  let filterBoard = STORE_BOARDS[0] || '';
+
+  function renderForm() {
+    const emps = (S.employees||[]).filter(e => e.board === filterBoard && !e.inativo);
+    const cor  = BOARDS[filterBoard]?.color || '#8B949E';
+    content.innerHTML = `<div class="ret-form-wrap">
+      <div class="req-board-chips" style="margin-bottom:.9rem">
+        ${STORE_BOARDS.map(b =>
+          `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'#8B949E'}">${BOARDS[b]?.label||b}</button>`).join('')}
+      </div>
+      <div class="adi-emp-list">
+        ${emps.length
+          ? emps.map(e => {
+              const nome = _escHtml(e.apelido || e.name);
+              return `<div class="adi-emp-row">
+                <span class="adi-emp-nome">${nome}</span>
+                <div class="adi-emp-valor-wrap">
+                  <span class="adi-brl-prefix">R$</span>
+                  <input type="number" class="adi-valor-input" data-nome="${nome}" step="0.01" min="0.01" placeholder="0,00">
+                </div>
+              </div>`;
+            }).join('')
+          : '<div class="req-empty">Nenhum funcionário ativo nesta loja</div>'}
+      </div>
+      ${emps.length ? `
+      <div class="ret-field" style="margin-top:.75rem">
+        <label>Observação (opcional)</label>
+        <textarea id="adiAdminObs" rows="2" maxlength="400" placeholder="Motivo ou detalhes adicionais…"></textarea>
+      </div>
+      <button class="ret-submit-btn" id="adiAdminSubmitBtn">Enviar Solicitação</button>` : ''}
+    </div>`;
+
+    content.querySelectorAll('.req-board-chip').forEach(b => b.addEventListener('click', () => {
+      filterBoard = b.dataset.b; renderForm();
+    }));
+
+    const submitBtn = content.querySelector('#adiAdminSubmitBtn');
+    if (submitBtn) {
+      submitBtn.addEventListener('click', async () => {
+        const observacao = content.querySelector('#adiAdminObs').value.trim();
+        const solicitacoes = [];
+        content.querySelectorAll('.adi-valor-input').forEach(input => {
+          const valor = parseFloat(input.value) || 0;
+          if (valor > 0) solicitacoes.push({ colaborador: input.dataset.nome, valor });
+        });
+        if (!solicitacoes.length) { toast('Informe o valor de pelo menos um funcionário', true); return; }
+        submitBtn.disabled = true;
+        try {
+          for (const s of solicitacoes) {
+            const adi = await apiFetch('POST', '/api/adiantamentos', { ...s, observacao, board: filterBoard });
+            S.adiantamentos = [...(S.adiantamentos||[]), adi];
+          }
+          toast(solicitacoes.length === 1 ? 'Solicitação enviada ✓' : `${solicitacoes.length} solicitações enviadas ✓`);
+          onSuccess();
+        } catch(e) { toast('Erro: '+e.message, true); submitBtn.disabled = false; }
+      });
+    }
+  }
+  renderForm();
+}
+
+function _renderAdiAdminGerenciar(content) {
   let filterStatus = 'pendente';
   let filterBoard  = '';
   const NEXT_ADI = {
@@ -8796,7 +8875,7 @@ function _renderAdiantamentoAdminView(body) {
     if (filterBoard) items = items.filter(x => x.board === filterBoard);
     items = [...items].sort((a,b) => b.createdAt.localeCompare(a.createdAt));
 
-    body.innerHTML = `<div class="req-admin-wrap">
+    content.innerHTML = `<div class="req-admin-wrap">
       <div class="req-admin-filters">
         <div class="req-status-tabs">
           ${[['pendente','Pendente'],['aprovado','Aprovado'],['recusado','Recusado'],['pago','Pago'],['all','Todos']].map(([s,l]) =>
@@ -8833,9 +8912,9 @@ function _renderAdiantamentoAdminView(body) {
       </div>
     </div>`;
 
-    body.querySelectorAll('.req-stab').forEach(b => b.addEventListener('click', () => { filterStatus = b.dataset.s; render(); }));
-    body.querySelectorAll('.req-board-chip').forEach(b => b.addEventListener('click', () => { filterBoard = b.dataset.b; render(); }));
-    body.querySelectorAll('.req-action-btn[data-id]').forEach(btn => btn.addEventListener('click', async () => {
+    content.querySelectorAll('.req-stab').forEach(b => b.addEventListener('click', () => { filterStatus = b.dataset.s; render(); }));
+    content.querySelectorAll('.req-board-chip').forEach(b => b.addEventListener('click', () => { filterBoard = b.dataset.b; render(); }));
+    content.querySelectorAll('.req-action-btn[data-id]').forEach(btn => btn.addEventListener('click', async () => {
       btn.disabled = true;
       try {
         const updated = await apiFetch('PATCH', `/api/adiantamentos/${btn.dataset.id}/status`, { status: btn.dataset.status });

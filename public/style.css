@@ -2950,6 +2950,19 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .ret-prod-grid span { white-space:nowrap; }
 .ret-prod-grid span b { color:var(--text); font-weight:600; }
 
+/* ── Adiantamento ─────────────────────────────────────────────────────── */
+.adi-admin-wrap { padding: .25rem 0; }
+.adi-sub-tabs { display: flex; gap: .4rem; padding: .75rem 1.25rem .5rem; border-bottom: 1px solid var(--border); }
+.adi-sub-tab { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: .8rem; font-weight: 600; padding: .3rem .75rem; border-radius: 6px; cursor: pointer; transition: background .15s, color .15s; }
+.adi-sub-tab.active, .adi-sub-tab:hover { background: var(--hover-bg); color: var(--text); border-color: var(--text-muted, #8B949E); }
+.adi-emp-list { display: flex; flex-direction: column; gap: .4rem; margin-bottom: .25rem; }
+.adi-emp-row { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .5rem .75rem; background: var(--hover-bg, rgba(255,255,255,.03)); border: 1px solid var(--border); border-radius: 7px; }
+.adi-emp-nome { font-size: .88rem; font-weight: 600; color: var(--text); flex: 1; min-width: 0; }
+.adi-emp-valor-wrap { display: flex; align-items: center; gap: .3rem; }
+.adi-brl-prefix { font-size: .8rem; color: var(--muted); white-space: nowrap; }
+.adi-valor-input { width: 110px; background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: .88rem; padding: .35rem .5rem; border-radius: 6px; text-align: right; }
+.adi-valor-input:focus { outline: none; border-color: #58A6FF; }
+
 /* ── Aniversariantes Card ──────────────────────────────────────────────── */
 .aniv-item { display:flex; align-items:center; gap:.65rem; padding:.5rem .75rem; border-bottom:1px solid var(--border); }
 .aniv-item:last-child { border-bottom:none; }
