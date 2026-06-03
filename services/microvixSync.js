@@ -67,8 +67,8 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
       }
       if (siteCod && String(row.cod_vendedor || '').trim() !== siteCod) continue;
       if (row.cancelado === 'S' || row.cancelado === '1') continue;
-      // Ignora reservas B2C ainda não faturadas (tipo_transacao='R' sem chave_nf = sem NF emitida)
-      if ((row.tipo_transacao || '').trim().toUpperCase() === 'R' && !(row.chave_nf || '').trim()) continue;
+      // Ignora reservas B2C sem NF emitida (documento=0 = ainda não faturado)
+      if (!parseInt(row.documento || '0')) continue;
       const dateStr = parseDate(row.data_documento);
       if (!dateStr) continue;
       console.log(`[Microvix/site] INCLUÍDO doc=${row.documento} data=${dateStr} vend=${row.cod_vendedor} val=${row.valor_total} op=${row.operacao} tipo=${row.tipo_transacao}`);
