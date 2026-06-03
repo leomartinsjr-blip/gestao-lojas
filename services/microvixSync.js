@@ -80,6 +80,18 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
       else dayAgg[dateStr].retDocs.add(row.documento);
     }
     if (!db.vsales) db.vsales = {};
+
+    // Limpa entradas órfãs no intervalo: datas sem NF faturada devem ser removidas
+    for (let d = new Date(dtIni + 'T00:00:00Z'); d <= new Date(dtFin + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1)) {
+      const ds = `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}`;
+      if (dayAgg[ds]) continue;
+      const vsKey = `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-site-${siteEmp.id}`;
+      if (db.vsales[vsKey]?.entries?.[ds]) {
+        delete db.vsales[vsKey].entries[ds];
+        console.log(`[Microvix/site] Removida entrada órfã: ${ds}`);
+      }
+    }
+
     let updated = 0;
     for (const [dateStr, agg] of Object.entries(dayAgg)) {
       const year  = parseInt(dateStr.slice(0, 4));
