@@ -67,9 +67,11 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
       }
       if (siteCod && String(row.cod_vendedor || '').trim() !== siteCod) continue;
       if (row.cancelado === 'S' || row.cancelado === '1') continue;
+      // Ignora reservas B2C ainda não faturadas (tipo_transacao='R' = sem NF emitida)
+      if ((row.tipo_transacao || '').trim().toUpperCase() === 'R') continue;
       const dateStr = parseDate(row.data_documento);
       if (!dateStr) continue;
-      console.log(`[Microvix/site] INCLUÍDO doc=${row.documento} data=${dateStr} vend=${row.cod_vendedor} val=${row.valor_total} op=${row.operacao}`);
+      console.log(`[Microvix/site] INCLUÍDO doc=${row.documento} data=${dateStr} vend=${row.cod_vendedor} val=${row.valor_total} op=${row.operacao} tipo=${row.tipo_transacao}`);
       const sign = row.operacao === 'DS' ? -1 : 1;
       if (!dayAgg[dateStr]) dayAgg[dateStr] = { value: 0, pecas: 0, docs: new Set(), retDocs: new Set() };
       dayAgg[dateStr].value += sign * parseBrNum(row.valor_total);
