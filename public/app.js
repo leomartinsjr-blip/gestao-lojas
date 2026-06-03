@@ -3957,10 +3957,13 @@ function initPerfModal() {
     if (e.target.id === 'perfOverlay') closePerfModal();
   });
   document.getElementById('transBtn').addEventListener('click', () => window.open('/?gestao=1', '_blank'));
-  document.getElementById('transClose').addEventListener('click', closeTransModal);
+  const _gestaoStandaloneTab = new URLSearchParams(location.search).get('gestao') === '1';
+  document.getElementById('transClose').addEventListener('click', () => {
+    if (_gestaoStandaloneTab) window.close(); else closeTransModal();
+  });
   document.getElementById('transBackBtn').addEventListener('click', renderGestaoHub);
   document.getElementById('transOverlay').addEventListener('click', e => {
-    if (e.target.id === 'transOverlay') closeTransModal();
+    if (e.target.id === 'transOverlay' && !_gestaoStandaloneTab) closeTransModal();
   });
 }
 
