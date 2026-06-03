@@ -2371,13 +2371,14 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
     const today = new Date().toISOString().slice(0, 10);
     const date  = req.query.date || today;
 
-    const { fetchMovimento, fetchMovimentoPlanos, fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchSangrias, parseBrNum } = require('./services/microvix');
+    const { fetchMovimento, fetchMovimentoPlanos, fetchMovimentoCartoes, fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchSangrias, parseBrNum } = require('./services/microvix');
 
-    const [movRows, sangriaRows, planosCatalog, bandeirasCatalog] = await Promise.all([
+    const [movRows, sangriaRows, planosCatalog, bandeirasCatalog, cartoesRows] = await Promise.all([
       fetchMovimento(cnpj, date, date, chave),
       fetchSangrias(cnpj, date, date, chave),
       fetchLinxPlanos(cnpj, chave).catch(() => []),
       fetchLinxPlanosBandeiras(cnpj, chave).catch(() => []),
+      fetchMovimentoCartoes(cnpj, date, date, chave).catch(e => { console.warn('[conferencia-caixa] LinxMovimentoCartoes falhou:', e.message); return []; }),
     ]);
 
     // Catálogo cod_plano → nome
@@ -2508,6 +2509,36 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
         if (formas.length) docFormaMap[doc] = formas;
       }
       if (Object.keys(docFormaMap).length) console.log(`[conferencia-caixa] docFormaMap via campos total_*`);
+    }
+
+    // -- Estratégia 4: LinxMovimentoCartoes (fonte autoritativa de bandeiras de cartão) --
+    // Sobrescreve entradas "Cartão" de estratégias anteriores com dados reais de bandeira
+    if (cartoesRows.length) {
+      // cartoesByDoc[doc] = [{ forma, bandeira, valor }]
+      const cartoesByDoc = {};
+      for (const r of cartoesRows) {
+        const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+        if (rowCnpj && rowCnpj !== cnpjClean) continue;
+        const doc = String(r.cupomfiscal || r.documento || '').trim();
+        if (!doc || !docMap[doc]) continue;
+        const cd       = String(r.credito_debito || '').trim().toUpperCase();
+        const forma    = cd === 'D' ? 'Cartão Débito' : 'Cartão Crédito';
+        const bandeira = (r.descricao_bandeira || r.bandeira || '').trim();
+        const valor    = parseBrNum(r.valor || '0');
+        if (valor === 0) continue;
+        const sign     = docMap[doc].valor < 0 ? -1 : 1;
+        if (!cartoesByDoc[doc]) cartoesByDoc[doc] = [];
+        cartoesByDoc[doc].push({ forma, bandeira, valor: sign * valor });
+      }
+      if (Object.keys(cartoesByDoc).length) {
+        console.log(`[conferencia-caixa] LinxMovimentoCartoes: ${Object.keys(cartoesByDoc).length} docs com cartão`);
+        for (const [doc, cartoesEntries] of Object.entries(cartoesByDoc)) {
+          const existing = docFormaMap[doc] || [];
+          // Remove entradas "cartão" genéricas das estratégias anteriores; mantém não-cartão (Dinheiro, PIX etc.)
+          const nonCard = existing.filter(f => !/cart[aã]o/i.test(f.forma));
+          docFormaMap[doc] = [...nonCard, ...cartoesEntries];
+        }
+      }
     }
 
     // -- Agregar formasPagamento: forma → bandeiras → docs --

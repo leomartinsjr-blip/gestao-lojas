@@ -363,6 +363,21 @@ async function fetchClientes(cnpj, chave, dtIni, dtFim) {
   return allRows;
 }
 
+// Fetch LinxMovimentoCartoes → cartões utilizados por venda (bandeira, crédito/débito, valor)
+async function fetchMovimentoCartoes(cnpj, dtIni, dtFin, chave) {
+  const extra = [
+    { id: 'data_inicial', valor: dtIni },
+    { id: 'data_fim',     valor: dtFin },
+  ];
+  const body = buildRequest('LinxMovimentoCartoes', cnpj, extra, chave);
+  const raw  = await postRequest(body);
+  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro';
+    throw new Error(`Microvix API (movimentoCartoes): ${msg}`);
+  }
+  return parseCsv(raw);
+}
+
 // Fetch LinxPlanos → catálogo de planos de pagamento (cod_plano, descricao, ativo...)
 async function fetchLinxPlanos(cnpj, chave) {
   const body = buildRequest('LinxPlanos', cnpj, [], chave);
@@ -385,4 +400,4 @@ async function fetchLinxPlanosBandeiras(cnpj, chave) {
   return parseCsv(raw);
 }
 
-module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, fetchClientes, parseBrNum, buildRequest, postRequest, parseCsv };
+module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchMovimentoCartoes, fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, fetchClientes, parseBrNum, buildRequest, postRequest, parseCsv };
