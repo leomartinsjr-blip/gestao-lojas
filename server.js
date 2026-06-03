@@ -2380,6 +2380,7 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
 
     // -- Totais por vendedor via LinxMovimento (deduplicado por documento) --
     const seenDocs  = new Set();
+    const validRows = [];   // linhas válidas para fallback de formas de pagamento
     const vendMap   = {};
     let totalVendas = 0;
 
@@ -2395,6 +2396,7 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       const doc = String(r.documento || '').trim();
       if (!doc || seenDocs.has(doc)) continue;
       seenDocs.add(doc);
+      validRows.push({ r, sign: operacao === 'DS' ? -1 : 1 });
 
       const sign = operacao === 'DS' ? -1 : 1;
       const valor = parseBrNum(r.valor_total || r.total_liquido || '0');
@@ -2413,7 +2415,7 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       .filter(v => v.total > 0)
       .sort((a, b) => b.total - a.total);
 
-    // -- Formas de pagamento via LinxMovimentoPlanos --
+    // -- Formas de pagamento: tenta LinxMovimentoPlanos; fallback nos campos do LinxMovimento --
     let formasPagamento = [];
     try {
       const planoRows = await fetchMovimentoPlanos(cnpj, date, date, chave);
@@ -2435,7 +2437,36 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
         .map(([forma, total]) => ({ forma, total }))
         .sort((a, b) => b.total - a.total);
     } catch (e) {
-      console.warn('[conferencia-caixa] MovimentoPlanos indisponível:', e.message);
+      console.warn('[conferencia-caixa] MovimentoPlanos indisponível, usando fallback:', e.message);
+    }
+
+    // Fallback: agrega campos total_* de cada documento já filtrado
+    if (!formasPagamento.length && validRows.length) {
+      const CAMPOS = [
+        { field: 'total_dinheiro',  label: 'Dinheiro' },
+        { field: 'total_cheque',    label: 'Cheque' },
+        { field: 'total_cartao',    label: 'Cartão' },
+        { field: 'total_credito',   label: 'Crédito' },
+        { field: 'total_debito',    label: 'Débito' },
+        { field: 'total_crediario', label: 'Crediário' },
+        { field: 'total_outros',    label: 'Outros' },
+        { field: 'total_vale',      label: 'Vale' },
+        { field: 'total_deposito',  label: 'Depósito' },
+        { field: 'total_pix',       label: 'PIX' },
+        { field: 'total_boleto',    label: 'Boleto' },
+      ];
+      const formasMap = {};
+      for (const { r, sign } of validRows) {
+        for (const { field, label } of CAMPOS) {
+          const val = parseBrNum(r[field] || '0');
+          if (val === 0) continue;
+          formasMap[label] = (formasMap[label] || 0) + sign * val;
+        }
+      }
+      formasPagamento = Object.entries(formasMap)
+        .filter(([, v]) => v > 0)
+        .map(([forma, total]) => ({ forma, total }))
+        .sort((a, b) => b.total - a.total);
     }
 
     // -- Sangrias --
