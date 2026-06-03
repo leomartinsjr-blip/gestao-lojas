@@ -3781,10 +3781,9 @@ function _calcTransfersProporcional(boards, stocks, giro, periodDays = 90) {
     .filter(b => (stocks[b] || 0) > 1 && delta[b] > 0)
     .sort((a, b) => delta[b] - delta[a]);
 
-  // Regra 2: receptora só recebe se estoque = 0 e tem histórico de vendas
-  // (cobertura com stock=0 é sempre 0 meses, portanto regra de cobertura satisfeita automaticamente)
+  // Regra 2: receptora recebe se tem déficit em relação ao ideal e tem histórico de vendas
   const receivers = boards
-    .filter(b => (stocks[b] || 0) === 0 && (giro[b] || 0) > 0)
+    .filter(b => delta[b] < 0 && (giro[b] || 0) > 0)
     .sort((a, b) => delta[a] - delta[b]);
 
   if (!donors.length || !receivers.length) return null;
