@@ -9339,7 +9339,7 @@ function _attachIndevaTouchDrag(cards, zones, onDrop) {
   });
 }
 const INDEVA_STORES = ['delrey','minas','contagem','estacao','tommy'];
-const INDEVA_MOTIVOS = ['Preço','Tamanho / Modelagem','Não gostou do produto',
+const INDEVA_MOTIVOS = ['Troca','Troca com diferença','Preço','Tamanho / Modelagem','Não gostou do produto',
   'Sem estoque no tamanho','Só estava olhando','Voltará depois','Concorrência','Outro'];
 
 let _indevaBoard     = null;
