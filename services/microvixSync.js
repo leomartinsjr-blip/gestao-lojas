@@ -59,10 +59,17 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
     const siteCod = siteEmp.microvixCod ? String(siteEmp.microvixCod).trim() : null;
     const dayAgg = {};
     for (const row of rows) {
+      // Ignora linhas de outros CNPJs (Microvix pode retornar dados do grupo todo)
+      const rowCnpj = (row.cnpj_emp || row.cnpj || '').replace(/\D/g, '');
+      if (rowCnpj && rowCnpj !== cnpjClean) {
+        console.log(`[Microvix/site] Ignorando linha CNPJ externo: ${rowCnpj} doc=${row.documento} vend=${row.cod_vendedor} val=${row.valor_total}`);
+        continue;
+      }
       if (siteCod && String(row.cod_vendedor || '').trim() !== siteCod) continue;
       if (row.cancelado === 'S' || row.cancelado === '1') continue;
       const dateStr = parseDate(row.data_documento);
       if (!dateStr) continue;
+      console.log(`[Microvix/site] INCLUÍDO doc=${row.documento} data=${dateStr} vend=${row.cod_vendedor} val=${row.valor_total} op=${row.operacao}`);
       const sign = row.operacao === 'DS' ? -1 : 1;
       if (!dayAgg[dateStr]) dayAgg[dateStr] = { value: 0, pecas: 0, docs: new Set(), retDocs: new Set() };
       dayAgg[dateStr].value += sign * parseBrNum(row.valor_total);
