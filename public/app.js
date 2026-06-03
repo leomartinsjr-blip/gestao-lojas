@@ -3376,9 +3376,9 @@ function renderTransExcelTab(container) {
         const donors = boards
           .filter(b => (stocks[b] || 0) > 1 && delta[b] > 0)
           .sort((a, b) => delta[b] - delta[a]);
-        // Regra 2: receptora só recebe se estoque = 0 e tem vendas históricas
+        // Regra 2: receptora recebe se tem déficit em relação ao ideal e tem vendas históricas
         const receivers = boards
-          .filter(b => (stocks[b] || 0) === 0 && (giro[b] || 0) > 0)
+          .filter(b => delta[b] < 0 && (giro[b] || 0) > 0)
           .sort((a, b) => delta[a] - delta[b]);
         if (!donors.length || !receivers.length) return null;
         const workStocks = { ...stocks };
