@@ -3357,7 +3357,7 @@ function renderTransExcelTab(container) {
       result.innerHTML = '<div class="trans-loading">Calculando sugestões…</div>';
       const boards = companies.map(c => c.board);
 
-      function calcProporcional(boards, stocks, giro) {
+      function calcProporcional(boards, stocks, giro, ultimaCompra) {
         const totalGiro  = boards.reduce((s, b) => s + (giro[b]   || 0), 0);
         const totalStock = boards.reduce((s, b) => s + (stocks[b] || 0), 0);
         if (!totalGiro || !totalStock) return null;
@@ -3381,6 +3381,24 @@ function renderTransExcelTab(container) {
           .filter(b => delta[b] < 0 && (giro[b] || 0) > 0)
           .sort((a, b) => delta[a] - delta[b]);
         if (!donors.length || !receivers.length) return null;
+
+        // Proteção por tempo de exposição (Excel: usa ultimaCompra global para todos os boards)
+        const PROTECTION_DAYS = 45;
+        const todayMs = Date.now();
+        const maxDonation = {};
+        for (const don of donors) {
+          let maxCanDonate = delta[don];
+          if (ultimaCompra) {
+            const diasDesdeCompra = Math.floor((todayMs - Date.parse(ultimaCompra)) / 86400_000);
+            if (diasDesdeCompra < PROTECTION_DAYS) {
+              maxCanDonate = Math.ceil(delta[don] * (diasDesdeCompra / PROTECTION_DAYS));
+            }
+          }
+          maxDonation[don] = Math.min(maxCanDonate, (stocks[don] || 0) - 1);
+        }
+        const donated = {};
+        for (const don of donors) donated[don] = 0;
+
         const workStocks = { ...stocks };
         const workDelta  = { ...delta };
         const transfers  = [];
@@ -3388,14 +3406,14 @@ function renderTransExcelTab(container) {
           let needed = -workDelta[rec];
           for (const don of donors) {
             if (workDelta[don] <= 0) continue;
-            // Garante que doadora mantém ao menos 1 peça
-            const maxSend = (workStocks[don] || 0) - 1;
-            if (maxSend <= 0) continue;
-            const qty = Math.min(needed, workDelta[don], maxSend);
+            const remaining = maxDonation[don] - donated[don];
+            if (remaining <= 0) continue;
+            const qty = Math.min(needed, remaining);
             if (qty <= 0) continue;
             transfers.push({ de: don, para: rec, qty });
             workStocks[don] -= qty; workStocks[rec] += qty;
             workDelta[don]  -= qty; workDelta[rec]  += qty;
+            donated[don]    += qty;
             needed -= qty;
             if (needed <= 0) break;
           }
@@ -3406,7 +3424,7 @@ function renderTransExcelTab(container) {
 
       const sugestoes = [];
       for (const p of Object.values(products)) {
-        const calc = calcProporcional(boards, p.stocks, p.giro);
+        const calc = calcProporcional(boards, p.stocks, p.giro, p.ultimaCompra);
         if (!calc) continue;
         const { transfers, workStocks, ideal } = calc;
         const cat = catalog[p.cod] || {};

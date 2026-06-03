@@ -3757,7 +3757,7 @@ async function _buildCatalog(lojas) {
 //   - receivers: lojas com déficit (stock < ideal), ordenadas por maior déficit
 //   - A doadora cede apenas seu excesso → seu giro é respeitado
 // periodDays: duração do período do giro (ex: 90 dias para Microvix, ~510 para Excel de 17 meses)
-function _calcTransfersProporcional(boards, stocks, giro, periodDays = 90) {
+function _calcTransfersProporcional(boards, stocks, giro, periodDays = 90, lastCompra = {}) {
   const totalGiro  = boards.reduce((s, b) => s + (giro[b] || 0), 0);
   const totalStock = boards.reduce((s, b) => s + (stocks[b] || 0), 0);
   if (totalGiro === 0 || totalStock === 0) return null;
@@ -3792,20 +3792,39 @@ function _calcTransfersProporcional(boards, stocks, giro, periodDays = 90) {
   const workDelta  = { ...delta };
   const transfers  = [];
 
+  // Proteção por tempo de exposição: loja que recebeu o produto há menos de 45 dias
+  // só pode ceder uma fração do seu excesso (rampa linear com ceil)
+  const PROTECTION_DAYS = 45;
+  const todayMs = Date.now();
+  const maxDonation = {};
+  for (const don of donors) {
+    const compraDate = lastCompra[don];
+    let maxCanDonate = delta[don];
+    if (compraDate) {
+      const diasDesdeCompra = Math.floor((todayMs - Date.parse(compraDate)) / 86400_000);
+      if (diasDesdeCompra < PROTECTION_DAYS) {
+        maxCanDonate = Math.ceil(delta[don] * (diasDesdeCompra / PROTECTION_DAYS));
+      }
+    }
+    maxDonation[don] = Math.min(maxCanDonate, (stocks[don] || 0) - 1);
+  }
+  const donated = {};
+  for (const don of donors) donated[don] = 0;
+
   for (const rec of receivers) {
     let needed = -workDelta[rec];
     for (const don of donors) {
       if (workDelta[don] <= 0) continue;
-      // Garante que a doadora não fique com menos de 1 peça
-      const maxSend = (workStocks[don] || 0) - 1;
-      if (maxSend <= 0) continue;
-      const qty = Math.min(needed, workDelta[don], maxSend);
+      const remaining = maxDonation[don] - donated[don];
+      if (remaining <= 0) continue;
+      const qty = Math.min(needed, remaining);
       if (qty <= 0) continue;
       transfers.push({ de: don, para: rec, qty });
       workStocks[don] -= qty;
       workStocks[rec] += qty;
       workDelta[don]  -= qty;
       workDelta[rec]  += qty;
+      donated[don]    += qty;
       needed          -= qty;
       if (needed <= 0) break;
     }
@@ -3822,11 +3841,12 @@ async function _buildTransResult(boards, lojas, dias) {
   const today = todayUTC.toISOString().slice(0, 10);
   const dtIni = new Date(todayUTC - dias * 86400_000).toISOString().slice(0, 10);
 
-  const estoqueByBoard = {};
-  const giroByBoard    = {};
-  const catalogMov     = {};   // fallback info vinda dos movRows (campos limitados)
-  const ultVendaMap    = {};   // última venda por cod_produto (cross-board)
-  const ultCompraMap   = {};   // última entrada por cod_produto (cross-board)
+  const estoqueByBoard    = {};
+  const giroByBoard       = {};
+  const catalogMov        = {};   // fallback info vinda dos movRows (campos limitados)
+  const ultVendaMap       = {};   // última venda por cod_produto (cross-board)
+  const ultCompraMap      = {};   // última entrada por cod_produto (cross-board)
+  const ultCompraPerBoard = {};   // última entrada por cod_produto por loja { board: { cod: iso } }
 
   // Busca catálogo (setor, marca) em paralelo com estoque/movimento
   const [catalog] = await Promise.all([
@@ -3865,7 +3885,12 @@ async function _buildTransResult(boards, lojas, dias) {
         : raw;
 
       if (isEntrada) {
-        if (iso && (!ultCompraMap[cod] || iso > ultCompraMap[cod])) ultCompraMap[cod] = iso;
+        if (iso) {
+          if (!ultCompraMap[cod] || iso > ultCompraMap[cod]) ultCompraMap[cod] = iso;
+          if (!ultCompraPerBoard[board]) ultCompraPerBoard[board] = {};
+          if (!ultCompraPerBoard[board][cod] || iso > ultCompraPerBoard[board][cod])
+            ultCompraPerBoard[board][cod] = iso;
+        }
         continue;
       }
       if (operacao === 'DS') continue;
@@ -3899,7 +3924,11 @@ async function _buildTransResult(boards, lojas, dias) {
     const giro = {};
     for (const board of boards) giro[board] = giroByBoard[board][cod] || 0;
 
-    const calc = _calcTransfersProporcional(boards, stocks, giro, dias);
+    const lastCompraByBoard = {};
+    for (const board of boards)
+      lastCompraByBoard[board] = (ultCompraPerBoard[board] || {})[cod] || null;
+
+    const calc = _calcTransfersProporcional(boards, stocks, giro, dias, lastCompraByBoard);
     if (!calc) continue;
     const { transfers, workStocks, ideal } = calc;
 
