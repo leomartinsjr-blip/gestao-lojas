@@ -5329,6 +5329,145 @@ function _renderAusenciasView(body, tipo) {
   render();
 }
 
+// ── CONFERÊNCIA DE CAIXA ────────────────────────────────────────────────────
+function initCaixaConf() {
+  const overlay  = document.getElementById('caixaConfOverlay');
+  const closeBtn = document.getElementById('caixaConfClose');
+  const buscarBtn = document.getElementById('caixaConfBuscarBtn');
+  const boardSel = document.getElementById('caixaConfBoard');
+  const dateInp  = document.getElementById('caixaConfDate');
+
+  document.getElementById('caixaConfBtn').addEventListener('click', openCaixaConf);
+  closeBtn.addEventListener('click', () => overlay.classList.add('hidden'));
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.add('hidden'); });
+  buscarBtn.addEventListener('click', () => loadCaixaConf());
+}
+
+function openCaixaConf() {
+  const overlay  = document.getElementById('caixaConfOverlay');
+  const boardSel = document.getElementById('caixaConfBoard');
+  const dateInp  = document.getElementById('caixaConfDate');
+  const isAdmin  = !S.user?.board;
+
+  // Preenche data com hoje em BRT
+  const brt = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  const todayBRT = `${brt.getUTCFullYear()}-${String(brt.getUTCMonth()+1).padStart(2,'0')}-${String(brt.getUTCDate()).padStart(2,'0')}`;
+  if (!dateInp.value) dateInp.value = todayBRT;
+
+  // Admin vê selector de loja
+  if (isAdmin) {
+    boardSel.style.display = '';
+    if (!boardSel.options.length) {
+      for (const [k, v] of Object.entries(BOARDS)) {
+        if (k === 'site') continue;
+        const opt = document.createElement('option');
+        opt.value = k; opt.textContent = v.label;
+        boardSel.appendChild(opt);
+      }
+    }
+  } else {
+    boardSel.style.display = 'none';
+  }
+
+  overlay.classList.remove('hidden');
+  loadCaixaConf();
+}
+
+async function loadCaixaConf() {
+  const body     = document.getElementById('caixaConfBody');
+  const boardSel = document.getElementById('caixaConfBoard');
+  const dateInp  = document.getElementById('caixaConfDate');
+  const buscarBtn = document.getElementById('caixaConfBuscarBtn');
+  const isAdmin  = !S.user?.board;
+
+  const board = isAdmin ? (boardSel.value || Object.keys(BOARDS).find(k => k !== 'site')) : S.user.board;
+  const date  = dateInp.value;
+  if (!board || !date) return;
+
+  body.innerHTML = '<div class="trans-loading">Buscando dados do Microvix…</div>';
+  buscarBtn.disabled = true;
+  try {
+    const data = await apiFetch('GET', `/api/conferencia-caixa?board=${board}&date=${date}`);
+    renderCaixaConf(body, data);
+  } catch (e) {
+    body.innerHTML = `<div class="trans-error">Erro: ${e.message}</div>`;
+  } finally {
+    buscarBtn.disabled = false;
+  }
+}
+
+function renderCaixaConf(body, data) {
+  const { totalVendas, vendedores, formasPagamento, totalSangria, board, date } = data;
+  const fR = v => 'R$ ' + (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const boardLabel = BOARDS[board]?.label || board;
+  const boardColor = BOARDS[board]?.color || '#8B949E';
+
+  // Match vendedor names with S.employees
+  const empByMxCod = {};
+  for (const e of (S.employees || [])) {
+    if (e.microvixCod) empByMxCod[String(e.microvixCod)] = e.apelido || e.name;
+  }
+
+  const totalDinheiro = formasPagamento.find(f => /dinheiro/i.test(f.forma))?.total || 0;
+  const saldoCaixa    = totalDinheiro - totalSangria;
+
+  const formasHtml = formasPagamento.length
+    ? formasPagamento.map(f => `
+        <div class="cxconf-row">
+          <span class="cxconf-label">${f.forma}</span>
+          <span class="cxconf-val">${fR(f.total)}</span>
+        </div>`).join('')
+    : '<div class="cxconf-empty">Formas de pagamento não disponíveis no Microvix</div>';
+
+  const vendHtml = vendedores.length
+    ? vendedores.map(v => {
+        const nome = empByMxCod[v.cod] || v.nome || `Vendedor ${v.cod}`;
+        const pct  = totalVendas > 0 ? (v.total / totalVendas * 100).toFixed(0) : 0;
+        return `<div class="cxconf-row">
+          <span class="cxconf-label">${nome}</span>
+          <div style="display:flex;align-items:center;gap:.6rem;flex-shrink:0">
+            <span class="cxconf-pct">${pct}%</span>
+            <span class="cxconf-val">${fR(v.total)}</span>
+          </div>
+        </div>`;
+      }).join('')
+    : '<div class="cxconf-empty">Nenhuma venda registrada</div>';
+
+  body.innerHTML = `
+    <div class="cxconf-header">
+      <span style="color:${boardColor};font-weight:700">${boardLabel}</span>
+      <span class="cxconf-date">${date.split('-').reverse().join('/')}</span>
+      <span class="cxconf-total-label">Total do dia</span>
+      <span class="cxconf-total-val">${fR(totalVendas)}</span>
+    </div>
+    <div class="cxconf-grid">
+      <div class="cxconf-card">
+        <div class="cxconf-card-title">Formas de Pagamento</div>
+        ${formasHtml}
+        ${totalSangria > 0 ? `
+          <div class="cxconf-divider"></div>
+          <div class="cxconf-row">
+            <span class="cxconf-label">Sangria</span>
+            <span class="cxconf-val cxconf-neg">- ${fR(totalSangria)}</span>
+          </div>
+          <div class="cxconf-row cxconf-row--total">
+            <span class="cxconf-label">Saldo em caixa</span>
+            <span class="cxconf-val ${saldoCaixa >= 0 ? 'cxconf-pos' : 'cxconf-neg'}">${fR(saldoCaixa)}</span>
+          </div>` : ''}
+      </div>
+      <div class="cxconf-card">
+        <div class="cxconf-card-title">Por Vendedor</div>
+        ${vendHtml}
+        ${vendedores.length > 0 ? `
+          <div class="cxconf-divider"></div>
+          <div class="cxconf-row cxconf-row--total">
+            <span class="cxconf-label">Total</span>
+            <span class="cxconf-val">${fR(totalVendas)}</span>
+          </div>` : ''}
+      </div>
+    </div>`;
+}
+
 function initFolgasModal() {
   document.getElementById('folgasBtn').addEventListener('click', openFolgas);
   document.getElementById('folgasClose').addEventListener('click', closeFolgas);
@@ -10205,6 +10344,7 @@ function init() {
   initLoginForm();
   initPerfModal();
   initDailyModal();
+  initCaixaConf();
   initFolgasModal();
   initWeightsModal();
   initWeeklyModal();

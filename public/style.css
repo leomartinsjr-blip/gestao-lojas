@@ -775,6 +775,44 @@ body {
   font-size: 1rem; padding: .25rem .4rem; border-radius: .3rem;
   transition: color .15s; flex-shrink: 0;
 }
+
+/* ── Conferência de Caixa ─────────────────────────────────────────────────── */
+.cxconf-header {
+  display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;
+  margin-bottom: 1.25rem;
+}
+.cxconf-date { color: var(--muted); font-size: .85rem; }
+.cxconf-total-label { margin-left: auto; color: var(--muted); font-size: .85rem; }
+.cxconf-total-val { font-size: 1.5rem; font-weight: 700; color: var(--text); }
+.cxconf-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;
+}
+.cxconf-card {
+  background: var(--card); border: 1px solid var(--border);
+  border-radius: .6rem; padding: 1rem;
+}
+.cxconf-card-title {
+  font-size: .7rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .06em; color: var(--muted); margin-bottom: .75rem;
+}
+.cxconf-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: .35rem 0; border-bottom: 1px solid rgba(255,255,255,.04);
+}
+.cxconf-row:last-child { border-bottom: none; }
+.cxconf-row--total { margin-top: .25rem; font-weight: 700; }
+.cxconf-label { color: var(--muted); font-size: .875rem; }
+.cxconf-row--total .cxconf-label { color: var(--text); }
+.cxconf-val { font-size: .9rem; font-weight: 600; color: var(--text); white-space: nowrap; }
+.cxconf-pct { font-size: .75rem; color: var(--muted); min-width: 2.5rem; text-align: right; }
+.cxconf-pos { color: var(--up); }
+.cxconf-neg { color: var(--down); }
+.cxconf-divider { border-top: 1px solid var(--border); margin: .5rem 0; }
+.cxconf-empty { color: var(--muted); font-size: .82rem; font-style: italic; padding: .5rem 0; }
+@media (max-width: 600px) {
+  .cxconf-grid { grid-template-columns: 1fr; }
+  .cxconf-total-label { display: none; }
+}
 .folgas-close-btn:hover { color: var(--down); }
 
 /* ── Users Modal ──────────────────────────────────────────────────────────── */

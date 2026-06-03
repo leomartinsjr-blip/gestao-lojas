@@ -131,6 +131,17 @@
         <polyline points="10 9 9 9 8 9"/>
       </svg><span class="btn-label">Defeitos</span>
     </button>
+    <button id="caixaConfBtn" class="folgas-topbar-btn" title="Conferência de Caixa">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="2" y="3" width="20" height="14" rx="2"/>
+        <line x1="8" y1="21" x2="16" y2="21"/>
+        <line x1="12" y1="17" x2="12" y2="21"/>
+        <line x1="6" y1="8" x2="10" y2="8"/>
+        <line x1="6" y1="11" x2="10" y2="11"/>
+        <line x1="14" y1="8" x2="18" y2="8"/>
+        <line x1="14" y1="11" x2="18" y2="11"/>
+      </svg><span class="btn-label">Caixa</span>
+    </button>
     <button id="folgasBtn" class="folgas-topbar-btn" title="Folgas">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="3" y="4" width="18" height="18" rx="2"/>
@@ -541,6 +552,33 @@
         </div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- CONFERÊNCIA DE CAIXA -->
+<div id="caixaConfOverlay" class="folgas-overlay hidden">
+  <div class="folgas-panel" style="max-width:860px">
+    <div class="folgas-hdr">
+      <span class="folgas-hdr-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="3" width="20" height="14" rx="2"/>
+          <line x1="8" y1="21" x2="16" y2="21"/>
+          <line x1="12" y1="17" x2="12" y2="21"/>
+          <line x1="6" y1="8" x2="10" y2="8"/>
+          <line x1="6" y1="11" x2="10" y2="11"/>
+          <line x1="14" y1="8" x2="18" y2="8"/>
+          <line x1="14" y1="11" x2="18" y2="11"/>
+        </svg>
+        Conferência de Caixa
+      </span>
+      <div style="display:flex;align-items:center;gap:.5rem;margin-left:auto">
+        <select id="caixaConfBoard" class="folgas-filter" style="display:none"></select>
+        <input type="date" id="caixaConfDate" class="folgas-filter" style="width:auto">
+        <button id="caixaConfBuscarBtn" class="add-item-btn">Buscar</button>
+      </div>
+      <button class="folgas-close-btn" id="caixaConfClose" title="Fechar">✕</button>
+    </div>
+    <div id="caixaConfBody" style="overflow-y:auto;flex:1;padding:1.25rem;min-height:0"></div>
   </div>
 </div>
 

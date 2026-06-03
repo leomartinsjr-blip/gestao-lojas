@@ -2352,6 +2352,108 @@ app.post('/api/caixa-microvix/:board/:year/:month', requireAuth, async (req, res
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/conferencia-caixa?board=delrey&date=2026-06-03 ──────────────
+// Retorna formas de pagamento, total por vendedor e sangrias do dia
+app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
+  try {
+    const user  = req.session.user;
+    const board = req.query.board || user.board;
+    if (!board) return res.status(400).json({ error: 'board obrigatório' });
+    if (user.board && user.board !== 'escritorio' && user.board !== board)
+      return res.status(403).json({ error: 'Sem acesso' });
+
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = lojas[board];
+    if (!cnpj) return res.status(400).json({ error: `Loja "${board}" não configurada` });
+    const chave    = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const cnpjClean = cnpj.replace(/\D/g, '');
+
+    const today = new Date().toISOString().slice(0, 10);
+    const date  = req.query.date || today;
+
+    const { fetchMovimento, fetchMovimentoPlanos, fetchSangrias, parseBrNum } = require('./services/microvix');
+
+    const [movRows, sangriaRows] = await Promise.all([
+      fetchMovimento(cnpj, date, date, chave),
+      fetchSangrias(cnpj, date, date, chave),
+    ]);
+
+    // -- Totais por vendedor via LinxMovimento (deduplicado por documento) --
+    const seenDocs  = new Set();
+    const vendMap   = {};
+    let totalVendas = 0;
+
+    for (const r of movRows) {
+      const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+      if (rowCnpj && rowCnpj !== cnpjClean) continue;
+      if (r.cancelado === 'S' || r.cancelado === '1') continue;
+      const operacao = (r.operacao || '').trim().toUpperCase();
+      if (operacao !== 'S' && operacao !== 'DS') continue;
+      const serie = String(r.serie || r.serie_documento || r.num_serie || '').trim();
+      if (serie === '999') continue;
+      if (serie === '4' && operacao !== 'DS') continue;
+      const doc = String(r.documento || '').trim();
+      if (!doc || seenDocs.has(doc)) continue;
+      seenDocs.add(doc);
+
+      const sign = operacao === 'DS' ? -1 : 1;
+      const valor = parseBrNum(r.valor_total || r.total_liquido || '0');
+      totalVendas += sign * valor;
+
+      const cod  = String(r.cod_vendedor || '').trim();
+      const nome = (r.nome_vendedor || '').trim();
+      if (cod) {
+        if (!vendMap[cod]) vendMap[cod] = { cod, nome, total: 0, qtd: 0 };
+        vendMap[cod].total += sign * valor;
+        vendMap[cod].qtd   += sign > 0 ? 1 : -1;
+        if (!vendMap[cod].nome && nome) vendMap[cod].nome = nome;
+      }
+    }
+    const vendedores = Object.values(vendMap)
+      .filter(v => v.total > 0)
+      .sort((a, b) => b.total - a.total);
+
+    // -- Formas de pagamento via LinxMovimentoPlanos --
+    let formasPagamento = [];
+    try {
+      const planoRows = await fetchMovimentoPlanos(cnpj, date, date, chave);
+      const formasMap = {};
+      for (const r of planoRows) {
+        const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+        if (rowCnpj && rowCnpj !== cnpjClean) continue;
+        if (r.cancelado === 'S' || r.cancelado === '1') continue;
+        const operacao = (r.operacao || '').trim().toUpperCase();
+        if (operacao && operacao !== 'S' && operacao !== 'DS') continue;
+        const sign  = operacao === 'DS' ? -1 : 1;
+        const forma = (r.desc_forma_pagamento || r.forma_pagamento || r.descricao || r.desc_plano || r.plano || '').trim();
+        const valor = parseBrNum(r.valor || r.valor_total || '0');
+        if (!forma || valor === 0) continue;
+        formasMap[forma] = (formasMap[forma] || 0) + sign * valor;
+      }
+      formasPagamento = Object.entries(formasMap)
+        .filter(([, v]) => v > 0)
+        .map(([forma, total]) => ({ forma, total }))
+        .sort((a, b) => b.total - a.total);
+    } catch (e) {
+      console.warn('[conferencia-caixa] MovimentoPlanos indisponível:', e.message);
+    }
+
+    // -- Sangrias --
+    let totalSangria = 0;
+    for (const r of sangriaRows) {
+      const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+      if (rowCnpj && rowCnpj !== cnpjClean) continue;
+      if (r.cancelado === 'S' || r.cancelado === '1') continue;
+      totalSangria += Math.abs(parseBrNum(r.valor || '0'));
+    }
+
+    res.json({ board, date, totalVendas, vendedores, formasPagamento, totalSangria });
+  } catch (e) {
+    console.error('[conferencia-caixa]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── GET /api/microvix/caixa-debug?board=contagem&date=2026-05-02 ─────────
 // Mostra exatamente o que seria somado para dinheiro e sangria em um dia específico
 app.get('/api/microvix/caixa-debug', requireAdmin, async (req, res) => {
