@@ -1196,15 +1196,12 @@ function renderAniversariantesCard(col) {
     const storeColor = BOARDS[e.board]?.color || '#8B949E';
     const storeLabel = BOARDS[e.board]?.label || e.board;
     const displayName = e.apelido || e.name;
-    const age = S.year - parseInt(e.nascimento.slice(0, 4));
-
     return `<div class="aniv-item${isToday ? ' aniv-item--today' : ''}">
       <span class="aniv-day">${pad(day)}</span>
       <div class="aniv-info">
         <span class="aniv-name">${_escHtml(displayName)}${isToday ? ' 🎂' : ''}</span>
         <span class="aniv-meta" style="color:${storeColor}">${storeLabel}</span>
       </div>
-      <span class="aniv-age">${age} anos</span>
     </div>`;
   }).join('');
 }
