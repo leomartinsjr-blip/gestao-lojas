@@ -2596,6 +2596,38 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
   }
 });
 
+// ── GET /api/microvix/cartoes-debug?board=delrey&date=2026-06-03 ──────────
+// Retorna amostra bruta do LinxMovimentoCartoes para diagnóstico
+app.get('/api/microvix/cartoes-debug', requireAdmin, async (req, res) => {
+  try {
+    const board = req.query.board || 'delrey';
+    const date  = req.query.date || new Date().toISOString().slice(0, 10);
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = lojas[board];
+    if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado` });
+    const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+
+    const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
+    const body = buildRequest('LinxMovimentoCartoes', cnpj,
+      [{ id: 'data_inicial', valor: date }, { id: 'data_fim', valor: date }], chave);
+    const raw  = await postRequest(body, 30_000);
+
+    if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+      const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro';
+      return res.json({ ok: false, error: msg, raw: raw.slice(0, 500) });
+    }
+    const rows = parseCsv(raw);
+    res.json({
+      ok: true,
+      total: rows.length,
+      fields: rows[0] ? Object.keys(rows[0]) : [],
+      sample: rows.slice(0, 10),
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── GET /api/microvix/caixa-debug?board=contagem&date=2026-05-02 ─────────
 // Mostra exatamente o que seria somado para dinheiro e sangria em um dia específico
 app.get('/api/microvix/caixa-debug', requireAdmin, async (req, res) => {
