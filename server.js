@@ -2664,8 +2664,12 @@ app.get('/api/microvix/raw', async (req, res) => {
     const cnpj = req.query.cnpj || firstCnpj();
     if (!cnpj) return res.status(400).json({ error: 'MICROVIX_LOJAS não configurado' });
     const today = new Date().toISOString().slice(0, 10);
-    const rows  = await fetchMovimento(cnpj, today, today);
-    res.json({ date: today, count: rows.length, sample: rows.slice(0, 5), fields: rows[0] ? Object.keys(rows[0]) : [] });
+    const ini = req.query.ini || today;
+    const fin = req.query.fin || today;
+    const vend = req.query.vend || null;
+    let rows = await fetchMovimento(cnpj, ini, fin);
+    if (vend) rows = rows.filter(r => String(r.cod_vendedor || '').trim() === vend);
+    res.json({ ini, fin, count: rows.length, sample: rows.slice(0, 10), fields: rows[0] ? Object.keys(rows[0]) : [] });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
