@@ -363,4 +363,26 @@ async function fetchClientes(cnpj, chave, dtIni, dtFim) {
   return allRows;
 }
 
-module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, fetchClientes, parseBrNum, buildRequest, postRequest, parseCsv };
+// Fetch LinxPlanos → catálogo de planos de pagamento (cod_plano, descricao, ativo...)
+async function fetchLinxPlanos(cnpj, chave) {
+  const body = buildRequest('LinxPlanos', cnpj, [], chave);
+  const raw  = await postRequest(body);
+  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro';
+    throw new Error(`Microvix API (planos): ${msg}`);
+  }
+  return parseCsv(raw);
+}
+
+// Fetch LinxPlanosBandeiras → bandeiras (Visa, Master…) por plano de pagamento
+async function fetchLinxPlanosBandeiras(cnpj, chave) {
+  const body = buildRequest('LinxPlanosBandeiras', cnpj, [], chave);
+  const raw  = await postRequest(body);
+  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro';
+    throw new Error(`Microvix API (planosBandeiras): ${msg}`);
+  }
+  return parseCsv(raw);
+}
+
+module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, fetchClientes, parseBrNum, buildRequest, postRequest, parseCsv };

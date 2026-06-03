@@ -5402,7 +5402,6 @@ function renderCaixaConf(body, data) {
   const boardLabel = BOARDS[board]?.label || board;
   const boardColor = BOARDS[board]?.color || '#8B949E';
 
-  // Match vendedor names with S.employees
   const empByMxCod = {};
   for (const e of (S.employees || [])) {
     if (e.microvixCod) empByMxCod[String(e.microvixCod)] = e.apelido || e.name;
@@ -5411,25 +5410,51 @@ function renderCaixaConf(body, data) {
   const totalDinheiro = formasPagamento.find(f => /dinheiro/i.test(f.forma))?.total || 0;
   const saldoCaixa    = totalDinheiro - totalSangria;
 
+  function vendasHtml(vendas) {
+    if (!vendas?.length) return '';
+    return `<div class="cxconf-drill">
+      <div class="cxconf-drill-hdr">
+        <span>Doc</span><span>Hora</span><span>Descrição</span><span>Valor</span>
+      </div>
+      ${vendas.map(v => `
+        <div class="cxconf-drill-row">
+          <span class="cxconf-drill-doc">${v.doc}</span>
+          <span class="cxconf-drill-hora">${v.hora || '—'}</span>
+          <span class="cxconf-drill-desc">${_escHtml(v.vendedor || v.forma || '')}</span>
+          <span class="cxconf-drill-val">${fR(v.valor)}</span>
+        </div>`).join('')}
+    </div>`;
+  }
+
   const formasHtml = formasPagamento.length
-    ? formasPagamento.map(f => `
-        <div class="cxconf-row">
-          <span class="cxconf-label">${f.forma}</span>
-          <span class="cxconf-val">${fR(f.total)}</span>
-        </div>`).join('')
+    ? formasPagamento.map((f, i) => {
+        const titulo = f.bandeira ? `${f.forma} — ${f.bandeira}` : f.forma;
+        const pct = totalVendas > 0 ? (f.total / totalVendas * 100).toFixed(0) : 0;
+        return `<div class="cxconf-row cxconf-row--clickable" data-cxidx="f${i}">
+          <span class="cxconf-label">${_escHtml(titulo)}</span>
+          <div style="display:flex;align-items:center;gap:.6rem;flex-shrink:0">
+            <span class="cxconf-pct">${pct}%</span>
+            <span class="cxconf-val">${fR(f.total)}</span>
+            <svg class="cxconf-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </div>
+        </div>
+        <div class="cxconf-drill-wrap hidden" id="cxdrill-f${i}">${vendasHtml(f.vendas)}</div>`;
+      }).join('')
     : '<div class="cxconf-empty">Formas de pagamento não disponíveis no Microvix</div>';
 
   const vendHtml = vendedores.length
-    ? vendedores.map(v => {
+    ? vendedores.map((v, i) => {
         const nome = empByMxCod[v.cod] || v.nome || `Vendedor ${v.cod}`;
         const pct  = totalVendas > 0 ? (v.total / totalVendas * 100).toFixed(0) : 0;
-        return `<div class="cxconf-row">
-          <span class="cxconf-label">${nome}</span>
+        return `<div class="cxconf-row cxconf-row--clickable" data-cxidx="v${i}">
+          <span class="cxconf-label">${_escHtml(nome)}</span>
           <div style="display:flex;align-items:center;gap:.6rem;flex-shrink:0">
             <span class="cxconf-pct">${pct}%</span>
             <span class="cxconf-val">${fR(v.total)}</span>
+            <svg class="cxconf-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           </div>
-        </div>`;
+        </div>
+        <div class="cxconf-drill-wrap hidden" id="cxdrill-v${i}">${vendasHtml(v.vendas?.map(s => ({ ...s, vendedor: s.forma })))}</div>`;
       }).join('')
     : '<div class="cxconf-empty">Nenhuma venda registrada</div>';
 
@@ -5466,6 +5491,18 @@ function renderCaixaConf(body, data) {
           </div>` : ''}
       </div>
     </div>`;
+
+  // Drill-down: toggle ao clicar
+  body.querySelectorAll('.cxconf-row--clickable').forEach(row => {
+    row.addEventListener('click', () => {
+      const idx   = row.dataset.cxidx;
+      const drill = document.getElementById(`cxdrill-${idx}`);
+      if (!drill) return;
+      const open = !drill.classList.contains('hidden');
+      drill.classList.toggle('hidden', open);
+      row.querySelector('.cxconf-chevron')?.classList.toggle('cxconf-chevron--open', !open);
+    });
+  });
 }
 
 function initFolgasModal() {

@@ -2371,18 +2371,49 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
     const today = new Date().toISOString().slice(0, 10);
     const date  = req.query.date || today;
 
-    const { fetchMovimento, fetchMovimentoPlanos, fetchSangrias, parseBrNum } = require('./services/microvix');
+    const { fetchMovimento, fetchMovimentoPlanos, fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchSangrias, parseBrNum } = require('./services/microvix');
 
-    const [movRows, sangriaRows] = await Promise.all([
+    const [movRows, sangriaRows, planosCatalog, bandeirasCatalog] = await Promise.all([
       fetchMovimento(cnpj, date, date, chave),
       fetchSangrias(cnpj, date, date, chave),
+      fetchLinxPlanos(cnpj, chave).catch(() => []),
+      fetchLinxPlanosBandeiras(cnpj, chave).catch(() => []),
     ]);
 
-    // -- Totais por vendedor via LinxMovimento (deduplicado por documento) --
-    const seenDocs  = new Set();
-    const validRows = [];   // linhas válidas para fallback de formas de pagamento
-    const vendMap   = {};
+    // Catálogo cod_plano → nome
+    const planoNomeMap = {};
+    for (const p of planosCatalog) {
+      const cod  = String(p.cod_plano || p.codigo || p.id || '').trim();
+      const nome = (p.descricao || p.desc_plano || p.nome || '').trim();
+      if (cod && nome) planoNomeMap[cod] = nome;
+    }
+    // Catálogo cod_bandeira → nome (e cod_plano → [bandeiras] para lookup)
+    const bandeiraNomeMap = {};  // cod_bandeira → nome
+    const planoBandeiras  = {};  // cod_plano → [{ cod, nome }]
+    for (const b of bandeirasCatalog) {
+      const codB = String(b.cod_bandeira || b.id_bandeira || b.codigo || '').trim();
+      const nomeB = (b.desc_bandeira || b.bandeira || b.nome || b.descricao || '').trim();
+      const codP  = String(b.cod_plano || '').trim();
+      if (codB && nomeB) bandeiraNomeMap[codB] = nomeB;
+      if (codP && codB && nomeB) {
+        if (!planoBandeiras[codP]) planoBandeiras[codP] = [];
+        planoBandeiras[codP].push({ cod: codB, nome: nomeB });
+      }
+    }
+
+    // -- Processar LinxMovimento: deduplicar por documento, acumular totais --
+    const seenDocs = new Set();
+    const docMap   = {};   // doc → { doc, valor, vendedorCod, vendedorNome, hora, codPlano }
+    const vendMap  = {};   // cod → { cod, nome, total, qtd, vendas[] }
     let totalVendas = 0;
+
+    const parseBrDate = s => {
+      const str = String(s || '').trim();
+      const m1  = str.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      if (m1) return `${m1[3]}-${m1[2]}-${m1[1]}`;
+      const m2  = str.match(/^(\d{4}-\d{2}-\d{2})/);
+      return m2 ? m2[1] : null;
+    };
 
     for (const r of movRows) {
       const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
@@ -2396,52 +2427,68 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       const doc = String(r.documento || '').trim();
       if (!doc || seenDocs.has(doc)) continue;
       seenDocs.add(doc);
-      validRows.push({ r, sign: operacao === 'DS' ? -1 : 1 });
 
-      const sign = operacao === 'DS' ? -1 : 1;
+      const sign  = operacao === 'DS' ? -1 : 1;
       const valor = parseBrNum(r.valor_total || r.total_liquido || '0');
-      totalVendas += sign * valor;
+      const hora  = String(r.hora || r.hora_documento || r.hora_emissao || '').trim().slice(0, 5) || '';
+      const cod   = String(r.cod_vendedor || '').trim();
+      const nome  = (r.nome_vendedor || '').trim();
+      const codP  = String(r.cod_plano || r.plano || '').trim();
 
-      const cod  = String(r.cod_vendedor || '').trim();
-      const nome = (r.nome_vendedor || '').trim();
+      totalVendas += sign * valor;
+      docMap[doc] = { doc, valor: sign * valor, vendedorCod: cod, vendedorNome: nome, hora, codPlano: codP };
+
       if (cod) {
-        if (!vendMap[cod]) vendMap[cod] = { cod, nome, total: 0, qtd: 0 };
+        if (!vendMap[cod]) vendMap[cod] = { cod, nome, total: 0, qtd: 0, vendas: [] };
         vendMap[cod].total += sign * valor;
         vendMap[cod].qtd   += sign > 0 ? 1 : -1;
         if (!vendMap[cod].nome && nome) vendMap[cod].nome = nome;
       }
     }
-    const vendedores = Object.values(vendMap)
-      .filter(v => v.total > 0)
-      .sort((a, b) => b.total - a.total);
 
-    // -- Formas de pagamento: tenta LinxMovimentoPlanos; fallback nos campos do LinxMovimento --
-    let formasPagamento = [];
+    // -- Formas de pagamento com drill-down --
+    // docFormaMap[doc] = [{ forma, bandeira, valor }]
+    const docFormaMap = {};
+
+    // Estratégia 1: LinxMovimentoPlanos
     try {
       const planoRows = await fetchMovimentoPlanos(cnpj, date, date, chave);
-      const formasMap = {};
       for (const r of planoRows) {
         const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
         if (rowCnpj && rowCnpj !== cnpjClean) continue;
         if (r.cancelado === 'S' || r.cancelado === '1') continue;
         const operacao = (r.operacao || '').trim().toUpperCase();
         if (operacao && operacao !== 'S' && operacao !== 'DS') continue;
-        const sign  = operacao === 'DS' ? -1 : 1;
-        const forma = (r.desc_forma_pagamento || r.forma_pagamento || r.descricao || r.desc_plano || r.plano || '').trim();
-        const valor = parseBrNum(r.valor || r.valor_total || '0');
+        const sign     = operacao === 'DS' ? -1 : 1;
+        const doc      = String(r.documento || r.num_pedido || '').trim();
+        if (!doc || !docMap[doc]) continue;
+        const codP     = String(r.cod_plano || '').trim();
+        const codB     = String(r.cod_bandeira || '').trim();
+        const forma    = (r.desc_plano || r.descricao || r.desc_forma_pagamento || (codP && planoNomeMap[codP]) || '').trim();
+        const bandeira = (r.desc_bandeira || (codB && bandeiraNomeMap[codB]) || '').trim();
+        const valor    = parseBrNum(r.valor || r.valor_plano || r.valor_total || '0');
         if (!forma || valor === 0) continue;
-        formasMap[forma] = (formasMap[forma] || 0) + sign * valor;
+        if (!docFormaMap[doc]) docFormaMap[doc] = [];
+        docFormaMap[doc].push({ forma, bandeira, valor: sign * valor });
       }
-      formasPagamento = Object.entries(formasMap)
-        .filter(([, v]) => v > 0)
-        .map(([forma, total]) => ({ forma, total }))
-        .sort((a, b) => b.total - a.total);
+      const hasData = Object.keys(docFormaMap).length > 0;
+      if (hasData) console.log(`[conferencia-caixa] docFormaMap via LinxMovimentoPlanos: ${Object.keys(docFormaMap).length} docs`);
     } catch (e) {
-      console.warn('[conferencia-caixa] MovimentoPlanos indisponível, usando fallback:', e.message);
+      console.warn('[conferencia-caixa] LinxMovimentoPlanos falhou:', e.message);
     }
 
-    // Fallback: agrega campos total_* de cada documento já filtrado
-    if (!formasPagamento.length && validRows.length) {
+    // Estratégia 2: cod_plano do LinxMovimento + LinxPlanos
+    if (!Object.keys(docFormaMap).length && Object.keys(planoNomeMap).length) {
+      for (const [doc, d] of Object.entries(docMap)) {
+        if (!d.codPlano) continue;
+        const forma = planoNomeMap[d.codPlano] || d.codPlano;
+        docFormaMap[doc] = [{ forma, bandeira: '', valor: d.valor }];
+      }
+      if (Object.keys(docFormaMap).length) console.log(`[conferencia-caixa] docFormaMap via cod_plano+LinxPlanos`);
+    }
+
+    // Estratégia 3: campos total_* do LinxMovimento
+    if (!Object.keys(docFormaMap).length) {
       const CAMPOS = [
         { field: 'total_dinheiro',  label: 'Dinheiro' },
         { field: 'total_cheque',    label: 'Cheque' },
@@ -2449,25 +2496,53 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
         { field: 'total_credito',   label: 'Crédito' },
         { field: 'total_debito',    label: 'Débito' },
         { field: 'total_crediario', label: 'Crediário' },
-        { field: 'total_outros',    label: 'Outros' },
-        { field: 'total_vale',      label: 'Vale' },
-        { field: 'total_deposito',  label: 'Depósito' },
         { field: 'total_pix',       label: 'PIX' },
+        { field: 'total_vale',      label: 'Vale' },
         { field: 'total_boleto',    label: 'Boleto' },
+        { field: 'total_outros',    label: 'Outros' },
       ];
-      const formasMap = {};
-      for (const { r, sign } of validRows) {
+      for (const r of movRows) {
+        const doc = String(r.documento || '').trim();
+        if (!doc || !docMap[doc]) continue;
+        const sign = docMap[doc].valor < 0 ? -1 : 1;
+        const formas = [];
         for (const { field, label } of CAMPOS) {
           const val = parseBrNum(r[field] || '0');
-          if (val === 0) continue;
-          formasMap[label] = (formasMap[label] || 0) + sign * val;
+          if (val !== 0) formas.push({ forma: label, bandeira: '', valor: sign * val });
         }
+        if (formas.length) docFormaMap[doc] = formas;
       }
-      formasPagamento = Object.entries(formasMap)
-        .filter(([, v]) => v > 0)
-        .map(([forma, total]) => ({ forma, total }))
-        .sort((a, b) => b.total - a.total);
+      if (Object.keys(docFormaMap).length) console.log(`[conferencia-caixa] docFormaMap via campos total_*`);
     }
+
+    // -- Agregar formasPagamento com drill-down --
+    const formasAgg = {}; // "forma|bandeira" → { forma, bandeira, total, vendas[] }
+    for (const [doc, formas] of Object.entries(docFormaMap)) {
+      const d = docMap[doc] || {};
+      const vendNome = d.vendedorCod ? (vendMap[d.vendedorCod]?.nome || d.vendedorNome || d.vendedorCod) : '—';
+      for (const { forma, bandeira, valor } of formas) {
+        const key = `${forma}||${bandeira}`;
+        if (!formasAgg[key]) formasAgg[key] = { forma, bandeira, total: 0, vendas: [] };
+        formasAgg[key].total += valor;
+        formasAgg[key].vendas.push({ doc, valor, vendedor: vendNome, hora: d.hora || '' });
+      }
+    }
+    const formasPagamento = Object.values(formasAgg)
+      .filter(f => f.total > 0)
+      .sort((a, b) => b.total - a.total)
+      .map(f => ({ ...f, vendas: f.vendas.sort((a, b) => (a.hora || '').localeCompare(b.hora || '')) }));
+
+    // -- Agregar vendedores com drill-down --
+    for (const [doc, d] of Object.entries(docMap)) {
+      const cod = d.vendedorCod;
+      if (!cod || !vendMap[cod]) continue;
+      const formasDoc = (docFormaMap[doc] || []).map(f => f.bandeira ? `${f.forma} / ${f.bandeira}` : f.forma).join(', ') || '—';
+      vendMap[cod].vendas.push({ doc, valor: d.valor, forma: formasDoc, hora: d.hora || '' });
+    }
+    const vendedores = Object.values(vendMap)
+      .filter(v => v.total > 0)
+      .sort((a, b) => b.total - a.total)
+      .map(v => ({ ...v, vendas: v.vendas.sort((a, b) => (a.hora || '').localeCompare(b.hora || '')) }));
 
     // -- Sangrias --
     let totalSangria = 0;
