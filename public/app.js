@@ -5410,11 +5410,14 @@ function renderCaixaConf(body, data) {
   const totalDinheiro = formasPagamento.find(f => /dinheiro/i.test(f.forma))?.total || 0;
   const saldoCaixa    = totalDinheiro - totalSangria;
 
-  function vendasHtml(vendas) {
+  let _cxDrillIdx = 0;
+  function nextDrillId() { return `cxd-${_cxDrillIdx++}`; }
+
+  function vendasTableHtml(vendas, descLabel) {
     if (!vendas?.length) return '';
     return `<div class="cxconf-drill">
       <div class="cxconf-drill-hdr">
-        <span>Doc</span><span>Hora</span><span>Descrição</span><span>Valor</span>
+        <span>Doc</span><span>Hora</span><span>${descLabel}</span><span>Valor</span>
       </div>
       ${vendas.map(v => `
         <div class="cxconf-drill-row">
@@ -5426,27 +5429,53 @@ function renderCaixaConf(body, data) {
     </div>`;
   }
 
-  const formasHtml = formasPagamento.length
-    ? formasPagamento.map((f, i) => {
-        const titulo = f.bandeira ? `${f.forma} — ${f.bandeira}` : f.forma;
-        const pct = totalVendas > 0 ? (f.total / totalVendas * 100).toFixed(0) : 0;
-        return `<div class="cxconf-row cxconf-row--clickable" data-cxidx="f${i}">
-          <span class="cxconf-label">${_escHtml(titulo)}</span>
-          <div style="display:flex;align-items:center;gap:.6rem;flex-shrink:0">
-            <span class="cxconf-pct">${pct}%</span>
-            <span class="cxconf-val">${fR(f.total)}</span>
-            <svg class="cxconf-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+  function formaRowHtml(f) {
+    const pct      = totalVendas > 0 ? (f.total / totalVendas * 100).toFixed(0) : 0;
+    const drillId  = nextDrillId();
+    const hasBands = f.bandeiras?.some(b => b.bandeira);
+
+    let innerHtml;
+    if (hasBands) {
+      // Agrupa por bandeira → cada bandeira é expansível
+      innerHtml = f.bandeiras.map(b => {
+        const bId  = nextDrillId();
+        const bPct = f.total > 0 ? (b.total / f.total * 100).toFixed(0) : 0;
+        return `<div class="cxconf-row cxconf-row--sub cxconf-row--clickable" data-cxtgt="${bId}">
+          <span class="cxconf-label cxconf-label--sub">${_escHtml(b.bandeira || 'Sem bandeira')}</span>
+          <div style="display:flex;align-items:center;gap:.5rem;flex-shrink:0">
+            <span class="cxconf-pct">${bPct}%</span>
+            <span class="cxconf-val">${fR(b.total)}</span>
+            <svg class="cxconf-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           </div>
         </div>
-        <div class="cxconf-drill-wrap hidden" id="cxdrill-f${i}">${vendasHtml(f.vendas)}</div>`;
-      }).join('')
+        <div class="cxconf-drill-wrap hidden" id="${bId}">${vendasTableHtml(b.vendas, 'Vendedor')}</div>`;
+      }).join('');
+    } else {
+      innerHtml = vendasTableHtml(f.bandeiras?.[0]?.vendas || [], 'Vendedor');
+    }
+
+    return `<div class="cxconf-row cxconf-row--clickable" data-cxtgt="${drillId}">
+      <span class="cxconf-label">${_escHtml(f.forma)}</span>
+      <div style="display:flex;align-items:center;gap:.6rem;flex-shrink:0">
+        <span class="cxconf-pct">${pct}%</span>
+        <span class="cxconf-val">${fR(f.total)}</span>
+        <svg class="cxconf-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+    </div>
+    <div class="cxconf-drill-wrap hidden" id="${drillId}">${innerHtml}</div>`;
+  }
+
+  const formasHtml = formasPagamento.length
+    ? formasPagamento.map(f => formaRowHtml(f)).join('')
     : '<div class="cxconf-empty">Formas de pagamento não disponíveis no Microvix</div>';
 
   const vendHtml = vendedores.length
-    ? vendedores.map((v, i) => {
-        const nome = empByMxCod[v.cod] || v.nome || `Vendedor ${v.cod}`;
-        const pct  = totalVendas > 0 ? (v.total / totalVendas * 100).toFixed(0) : 0;
-        return `<div class="cxconf-row cxconf-row--clickable" data-cxidx="v${i}">
+    ? vendedores.map(v => {
+        const nome  = empByMxCod[v.cod] || v.nome || `Vendedor ${v.cod}`;
+        const pct   = totalVendas > 0 ? (v.total / totalVendas * 100).toFixed(0) : 0;
+        const vId   = nextDrillId();
+        const vRows = (v.vendas || []).map(s => ({ ...s, vendedor: s.forma }));
+        return `<div class="cxconf-row cxconf-row--clickable" data-cxtgt="${vId}">
           <span class="cxconf-label">${_escHtml(nome)}</span>
           <div style="display:flex;align-items:center;gap:.6rem;flex-shrink:0">
             <span class="cxconf-pct">${pct}%</span>
@@ -5454,7 +5483,7 @@ function renderCaixaConf(body, data) {
             <svg class="cxconf-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           </div>
         </div>
-        <div class="cxconf-drill-wrap hidden" id="cxdrill-v${i}">${vendasHtml(v.vendas?.map(s => ({ ...s, vendedor: s.forma })))}</div>`;
+        <div class="cxconf-drill-wrap hidden" id="${vId}">${vendasTableHtml(vRows, 'Forma de Pag.')}</div>`;
       }).join('')
     : '<div class="cxconf-empty">Nenhuma venda registrada</div>';
 
@@ -5492,11 +5521,10 @@ function renderCaixaConf(body, data) {
       </div>
     </div>`;
 
-  // Drill-down: toggle ao clicar
+  // Drill-down: toggle ao clicar em qualquer linha expansível
   body.querySelectorAll('.cxconf-row--clickable').forEach(row => {
     row.addEventListener('click', () => {
-      const idx   = row.dataset.cxidx;
-      const drill = document.getElementById(`cxdrill-${idx}`);
+      const drill = document.getElementById(row.dataset.cxtgt);
       if (!drill) return;
       const open = !drill.classList.contains('hidden');
       drill.classList.toggle('hidden', open);

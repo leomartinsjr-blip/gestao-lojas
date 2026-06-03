@@ -811,6 +811,8 @@ body {
 .cxconf-empty { color: var(--muted); font-size: .82rem; font-style: italic; padding: .5rem 0; }
 .cxconf-row--clickable { cursor: pointer; border-radius: .3rem; transition: background .12s; }
 .cxconf-row--clickable:hover { background: rgba(255,255,255,.04); }
+.cxconf-row--sub { padding-left: .75rem; }
+.cxconf-label--sub { color: var(--text); font-size: .84rem; }
 .cxconf-chevron { color: var(--muted); transition: transform .2s; flex-shrink: 0; }
 .cxconf-chevron--open { transform: rotate(90deg); }
 .cxconf-drill-wrap { padding: 0 .25rem .25rem; }

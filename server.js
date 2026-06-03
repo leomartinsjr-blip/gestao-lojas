@@ -2387,18 +2387,12 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       const nome = (p.descricao || p.desc_plano || p.nome || '').trim();
       if (cod && nome) planoNomeMap[cod] = nome;
     }
-    // Catálogo cod_bandeira → nome (e cod_plano → [bandeiras] para lookup)
-    const bandeiraNomeMap = {};  // cod_bandeira → nome
-    const planoBandeiras  = {};  // cod_plano → [{ cod, nome }]
+    // Catálogo cod_bandeira → nome
+    const bandeiraNomeMap = {};
     for (const b of bandeirasCatalog) {
-      const codB = String(b.cod_bandeira || b.id_bandeira || b.codigo || '').trim();
-      const nomeB = (b.desc_bandeira || b.bandeira || b.nome || b.descricao || '').trim();
-      const codP  = String(b.cod_plano || '').trim();
+      const codB  = String(b.cod_bandeira || b.id_bandeira || b.cod || b.codigo || '').trim();
+      const nomeB = (b.desc_bandeira || b.nome_bandeira || b.bandeira || b.nome || b.descricao || '').trim();
       if (codB && nomeB) bandeiraNomeMap[codB] = nomeB;
-      if (codP && codB && nomeB) {
-        if (!planoBandeiras[codP]) planoBandeiras[codP] = [];
-        planoBandeiras[codP].push({ cod: codB, nome: nomeB });
-      }
     }
 
     // -- Processar LinxMovimento: deduplicar por documento, acumular totais --
@@ -2463,9 +2457,10 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
         const doc      = String(r.documento || r.num_pedido || '').trim();
         if (!doc || !docMap[doc]) continue;
         const codP     = String(r.cod_plano || '').trim();
-        const codB     = String(r.cod_bandeira || '').trim();
+        const codB     = String(r.cod_bandeira || r.id_bandeira || '').trim();
         const forma    = (r.desc_plano || r.descricao || r.desc_forma_pagamento || (codP && planoNomeMap[codP]) || '').trim();
-        const bandeira = (r.desc_bandeira || (codB && bandeiraNomeMap[codB]) || '').trim();
+        // Prioriza nome resolvido do catálogo; só cai no campo bruto se não tiver código
+        const bandeira = (codB && bandeiraNomeMap[codB]) || (r.desc_bandeira && !codB ? r.desc_bandeira.trim() : '') || '';
         const valor    = parseBrNum(r.valor || r.valor_plano || r.valor_total || '0');
         if (!forma || valor === 0) continue;
         if (!docFormaMap[doc]) docFormaMap[doc] = [];
@@ -2515,22 +2510,32 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       if (Object.keys(docFormaMap).length) console.log(`[conferencia-caixa] docFormaMap via campos total_*`);
     }
 
-    // -- Agregar formasPagamento com drill-down --
-    const formasAgg = {}; // "forma|bandeira" → { forma, bandeira, total, vendas[] }
+    // -- Agregar formasPagamento: forma → bandeiras → docs --
+    const formasAgg = {}; // forma → { forma, total, bandeiras: { bKey → { bandeira, total, vendas[] } } }
     for (const [doc, formas] of Object.entries(docFormaMap)) {
-      const d = docMap[doc] || {};
+      const d       = docMap[doc] || {};
       const vendNome = d.vendedorCod ? (vendMap[d.vendedorCod]?.nome || d.vendedorNome || d.vendedorCod) : '—';
       for (const { forma, bandeira, valor } of formas) {
-        const key = `${forma}||${bandeira}`;
-        if (!formasAgg[key]) formasAgg[key] = { forma, bandeira, total: 0, vendas: [] };
-        formasAgg[key].total += valor;
-        formasAgg[key].vendas.push({ doc, valor, vendedor: vendNome, hora: d.hora || '' });
+        if (!formasAgg[forma]) formasAgg[forma] = { forma, total: 0, bandeiras: {} };
+        formasAgg[forma].total += valor;
+        const bKey = bandeira || '';
+        if (!formasAgg[forma].bandeiras[bKey])
+          formasAgg[forma].bandeiras[bKey] = { bandeira: bandeira || '', total: 0, vendas: [] };
+        formasAgg[forma].bandeiras[bKey].total += valor;
+        formasAgg[forma].bandeiras[bKey].vendas.push({ doc, valor, vendedor: vendNome, hora: d.hora || '' });
       }
     }
     const formasPagamento = Object.values(formasAgg)
       .filter(f => f.total > 0)
       .sort((a, b) => b.total - a.total)
-      .map(f => ({ ...f, vendas: f.vendas.sort((a, b) => (a.hora || '').localeCompare(b.hora || '')) }));
+      .map(f => ({
+        forma: f.forma,
+        total: f.total,
+        bandeiras: Object.values(f.bandeiras)
+          .filter(b => b.total > 0)
+          .sort((a, b) => b.total - a.total)
+          .map(b => ({ ...b, vendas: b.vendas.sort((x, y) => (x.hora || '').localeCompare(y.hora || '')) })),
+      }));
 
     // -- Agregar vendedores com drill-down --
     for (const [doc, d] of Object.entries(docMap)) {
