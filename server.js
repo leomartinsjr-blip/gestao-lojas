@@ -2396,10 +2396,36 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       if (codB && nomeB) bandeiraNomeMap[codB] = nomeB;
     }
 
+    // Helper: extrai bandeira do desc_plano (ex: "MASTER 2X" → "Mastercard")
+    function extractBandeira(descPlano) {
+      const d = (descPlano || '').toUpperCase();
+      if (/MASTER/.test(d))              return 'Mastercard';
+      if (/VISA/.test(d))                return 'Visa';
+      if (/\bELO\b/.test(d))             return 'Elo';
+      if (/AMEX|AMERICAN EXPRESS/.test(d)) return 'Amex';
+      if (/HIPERCARD|HIPER/.test(d))     return 'Hipercard';
+      if (/DINERS/.test(d))              return 'Diners';
+      if (/SOROCRED/.test(d))            return 'Sorocred';
+      if (/CABAL/.test(d))               return 'Cabal';
+      if (/BANESCARD/.test(d))           return 'Banescard';
+      return '';
+    }
+
+    // Helper: forma de pagamento normalizada a partir de forma_pgto + tipo_transacao
+    function buildForma(formaPgto, tipoTransacao) {
+      const f = (formaPgto || '').trim();
+      const t = (tipoTransacao || '').trim().toUpperCase();
+      if (/cart[aã]o/i.test(f) || t === 'C' || t === 'D') {
+        return t === 'D' ? 'Cartão Débito' : 'Cartão Crédito';
+      }
+      return f || 'Outros';
+    }
+
     // -- Processar LinxMovimento: deduplicar por documento, acumular totais --
     const seenDocs = new Set();
-    const docMap   = {};   // doc → { doc, valor, vendedorCod, vendedorNome, hora, codPlano }
-    const vendMap  = {};   // cod → { cod, nome, total, qtd, vendas[] }
+    const docMap   = {};    // doc → { doc, valor, vendedorCod, vendedorNome, hora, codPlano }
+    const identMap = {};    // identificador (UUID) → doc  (para linkar com LinxMovimentoPlanos)
+    const vendMap  = {};    // cod → { cod, nome, total, qtd, vendas[] }
     let totalVendas = 0;
 
     const parseBrDate = s => {
@@ -2429,9 +2455,11 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       const cod   = String(r.cod_vendedor || '').trim();
       const nome  = (r.nome_vendedor || '').trim();
       const codP  = String(r.cod_plano || r.plano || '').trim();
+      const ident = String(r.identificador || '').trim();
 
       totalVendas += sign * valor;
       docMap[doc] = { doc, valor: sign * valor, vendedorCod: cod, vendedorNome: nome, hora, codPlano: codP };
+      if (ident) identMap[ident] = doc;
 
       if (cod) {
         if (!vendMap[cod]) vendMap[cod] = { cod, nome, total: 0, qtd: 0, vendas: [] };
@@ -2446,24 +2474,34 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
     const docFormaMap = {};
 
     // Estratégia 1: LinxMovimentoPlanos
+    // Campos: identificador (UUID), plano (cod_plano), desc_plano, forma_pgto, tipo_transacao, total
     try {
       const planoRows = await fetchMovimentoPlanos(cnpj, date, date, chave);
       for (const r of planoRows) {
         const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
         if (rowCnpj && rowCnpj !== cnpjClean) continue;
-        if (r.cancelado === 'S' || r.cancelado === '1') continue;
-        const operacao = (r.operacao || '').trim().toUpperCase();
-        if (operacao && operacao !== 'S' && operacao !== 'DS') continue;
-        const sign     = operacao === 'DS' ? -1 : 1;
-        const doc      = String(r.documento || r.num_pedido || '').trim();
+
+        // Linkar via identificador (UUID) → doc, com fallback para documento numérico
+        const ident = String(r.identificador || '').trim();
+        const doc   = (ident && identMap[ident]) || String(r.documento || r.num_pedido || '').trim();
         if (!doc || !docMap[doc]) continue;
-        const codP     = String(r.cod_plano || '').trim();
-        const codB     = String(r.cod_bandeira || r.id_bandeira || '').trim();
-        const forma    = (r.desc_plano || r.descricao || r.desc_forma_pagamento || (codP && planoNomeMap[codP]) || '').trim();
-        // Prioriza nome resolvido do catálogo; só cai no campo bruto se não tiver código
-        const bandeira = (codB && bandeiraNomeMap[codB]) || (r.desc_bandeira && !codB ? r.desc_bandeira.trim() : '') || '';
-        const valor    = parseBrNum(r.valor || r.valor_plano || r.valor_total || '0');
-        if (!forma || valor === 0) continue;
+
+        const sign     = docMap[doc].valor < 0 ? -1 : 1;
+        const descP    = (r.desc_plano || '').trim();
+        const formaPgto = (r.forma_pgto || '').trim();
+        const tipoTrans = (r.tipo_transacao || '').trim().toUpperCase();
+
+        // Deriva forma normalizada (Cartão Crédito / Cartão Débito / Dinheiro / PIX...)
+        const forma = buildForma(formaPgto, tipoTrans) || descP || 'Outros';
+
+        // Bandeira: extrai do desc_plano (ex: "MASTER 2X" → "Mastercard")
+        const bandeira = /cart[aã]o/i.test(formaPgto) || tipoTrans === 'C' || tipoTrans === 'D'
+          ? extractBandeira(descP)
+          : '';
+
+        const valor = parseBrNum(r.total || r.valor || r.valor_plano || '0');
+        if (valor === 0) continue;
+
         if (!docFormaMap[doc]) docFormaMap[doc] = [];
         docFormaMap[doc].push({ forma, bandeira, valor: sign * valor });
       }
