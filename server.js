@@ -2408,6 +2408,7 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
     // Helper: extrai bandeira do desc_plano (ex: "MASTER 2X" → "Mastercard")
     function extractBandeira(descPlano) {
       const d = (descPlano || '').toUpperCase();
+      if (/MAESTRO/.test(d))             return 'Maestro';
       if (/MASTER/.test(d))              return 'Mastercard';
       if (/VISA/.test(d))                return 'Visa';
       if (/\bELO\b/.test(d))             return 'Elo';
@@ -2417,6 +2418,11 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       if (/SOROCRED/.test(d))            return 'Sorocred';
       if (/CABAL/.test(d))               return 'Cabal';
       if (/BANESCARD/.test(d))           return 'Banescard';
+      if (/AURA/.test(d))                return 'Aura';
+      if (/TICKET/.test(d))              return 'Ticket';
+      if (/ALELO/.test(d))               return 'Alelo';
+      if (/SODEXO/.test(d))              return 'Sodexo';
+      if (/VR\b|VALE REFEIC/.test(d))    return 'VR';
       return '';
     }
 
@@ -2656,22 +2662,52 @@ app.get('/api/microvix/cartoes-debug', requireAdmin, async (req, res) => {
     if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado` });
     const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
 
-    const { fetchMovimentoPlanos, parseCsv } = require('./services/microvix');
+    const { fetchMovimento, fetchMovimentoPlanos, parseBrNum } = require('./services/microvix');
 
-    // Todos os planos do dia — filtra apenas cartão/débito para ver desc_plano e tipo_transacao
-    const planoRows = await fetchMovimentoPlanos(cnpj, date, date, chave).catch(() => []);
-    const cardRows = planoRows.filter(r => {
-      const f = (r.forma_pgto || '').toLowerCase();
-      const t = (r.tipo_transacao || '').toUpperCase();
-      return /cart|d[eé]b|cr[eé]d/.test(f) || t === 'C' || t === 'D';
+    const [movRows, planoRows] = await Promise.all([
+      fetchMovimento(cnpj, date, date, chave).catch(() => []),
+      fetchMovimentoPlanos(cnpj, date, date, chave).catch(() => []),
+    ]);
+
+    // Constrói identMap igual ao endpoint principal
+    const cnpjClean2 = cnpj.replace(/\D/g, '');
+    const identMap2 = {};
+    const docMap2 = {};
+    for (const r of movRows) {
+      const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+      if (rowCnpj && rowCnpj !== cnpjClean2) continue;
+      if (r.cancelado === 'S') continue;
+      const op = (r.operacao || '').trim().toUpperCase();
+      if (op !== 'S' && op !== 'DS') continue;
+      const doc   = String(r.documento || '').trim();
+      const ident = String(r.identificador || '').trim();
+      if (doc) {
+        docMap2[doc] = true;
+        if (ident) identMap2[ident] = doc;
+      }
+    }
+
+    // Verifica cada linha de plano: linka ou não
+    const linkReport = planoRows.map(r => {
+      const ident  = String(r.identificador || '').trim();
+      const doc    = (ident && identMap2[ident]) || '';
+      const linked = !!(doc && docMap2[doc]);
+      return {
+        desc_plano: r.desc_plano,
+        forma_pgto: r.forma_pgto,
+        tipo_transacao: r.tipo_transacao,
+        identificador: ident.slice(0, 8) + '...',
+        doc_encontrado: doc || '—',
+        linked,
+      };
     });
 
     res.json({
-      totalPlanos: planoRows.length,
-      totalCartoes: cardRows.length,
-      camposDisponiveis: planoRows[0] ? Object.keys(planoRows[0]) : [],
-      amostraCartoes: cardRows.slice(0, 10),
-      amostraOutros: planoRows.filter(r => !cardRows.includes(r)).slice(0, 5),
+      movRows: movRows.length,
+      identMapSize: Object.keys(identMap2).length,
+      movTemIdentificador: movRows.some(r => r.identificador),
+      planoRows: planoRows.length,
+      linkReport,
     });
   } catch (e) {
     res.status(500).json({ error: e.message });
