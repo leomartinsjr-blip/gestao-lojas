@@ -2427,9 +2427,12 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
     }
 
     // Helper: forma de pagamento normalizada a partir de forma_pgto + tipo_transacao
-    function buildForma(formaPgto, tipoTransacao) {
+    function buildForma(formaPgto, tipoTransacao, descPlano) {
       const f = (formaPgto || '').trim();
       const t = (tipoTransacao || '').trim().toUpperCase();
+      const d = (descPlano  || '').toUpperCase();
+      // PIX deve ser checado antes de tipo_transacao (Microvix marca PIX como tipo "D")
+      if (/pix/i.test(f) || /\bpix\b/.test(d)) return 'PIX';
       if (t === 'C') return 'Cartão Crédito';
       if (t === 'D') return 'Cartão Débito';
       if (/cart[aã]o/i.test(f)) return 'Cartão Crédito';
@@ -2509,11 +2512,12 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
         const tipoTrans = (r.tipo_transacao || '').trim().toUpperCase();
 
         // Deriva forma normalizada (Cartão Crédito / Cartão Débito / Dinheiro / PIX...)
-        const forma = buildForma(formaPgto, tipoTrans) || descP || 'Outros';
+        const forma = buildForma(formaPgto, tipoTrans, descP) || descP || 'Outros';
 
         // Bandeira: extrai do desc_plano (ex: "MASTER 2X" → "Mastercard")
-        const isCard = tipoTrans === 'C' || tipoTrans === 'D'
-          || /cart[aã]o|d[eé]bito|cr[eé]dito/i.test(formaPgto);
+        const isPix  = forma === 'PIX';
+        const isCard = !isPix && (tipoTrans === 'C' || tipoTrans === 'D'
+          || /cart[aã]o|d[eé]bito|cr[eé]dito/i.test(formaPgto));
         const bandeira = isCard ? extractBandeira(descP) : '';
 
         const valor = parseBrNum(r.total || r.valor || r.valor_plano || '0');
