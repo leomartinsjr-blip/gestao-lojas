@@ -2669,20 +2669,26 @@ app.get('/api/microvix/cartoes-debug', requireAdmin, async (req, res) => {
       fetchMovimentoPlanos(cnpj, date, date, chave).catch(() => []),
     ]);
 
-    // Constrói identMap igual ao endpoint principal
+    // Constrói identMap com MESMO filtro do endpoint principal
     const cnpjClean2 = cnpj.replace(/\D/g, '');
     const identMap2 = {};
     const docMap2 = {};
+    const droppedDocs = [];
     for (const r of movRows) {
       const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
       if (rowCnpj && rowCnpj !== cnpjClean2) continue;
-      if (r.cancelado === 'S') continue;
+      if (r.cancelado === 'S' || r.cancelado === '1') continue;
       const op = (r.operacao || '').trim().toUpperCase();
       if (op !== 'S' && op !== 'DS') continue;
+      const serie = String(r.serie || r.serie_documento || r.num_serie || '').trim();
       const doc   = String(r.documento || '').trim();
       const ident = String(r.identificador || '').trim();
+      if (serie === '999' || (serie === '4' && op !== 'DS')) {
+        droppedDocs.push({ doc, serie, op, ident: ident.slice(0, 8) + '...', razao: serie === '999' ? 'serie999' : 'serie4' });
+        continue;
+      }
       if (doc) {
-        docMap2[doc] = true;
+        docMap2[doc] = { serie, op };
         if (ident) identMap2[ident] = doc;
       }
     }
@@ -2705,8 +2711,8 @@ app.get('/api/microvix/cartoes-debug', requireAdmin, async (req, res) => {
     res.json({
       movRows: movRows.length,
       identMapSize: Object.keys(identMap2).length,
-      movTemIdentificador: movRows.some(r => r.identificador),
       planoRows: planoRows.length,
+      droppedBySerie: droppedDocs,
       linkReport,
     });
   } catch (e) {
