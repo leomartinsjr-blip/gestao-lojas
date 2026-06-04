@@ -2656,35 +2656,23 @@ app.get('/api/microvix/cartoes-debug', requireAdmin, async (req, res) => {
     if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado` });
     const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
 
-    const { buildRequest, postRequest, parseCsv, fetchMovimento } = require('./services/microvix');
+    const { fetchMovimentoPlanos, parseCsv } = require('./services/microvix');
 
-    // Campos presentes no LinxMovimento (para ver se há total_cartao_credito etc.)
-    const movRows = await fetchMovimento(cnpj, date, date, chave).catch(() => []);
-    const movFields = movRows[0] ? Object.keys(movRows[0]).filter(k => /cart|cred|deb|band|plano|pag/i.test(k)) : [];
-    const movSample = movRows.slice(0, 3).map(r => {
-      const out = {};
-      movFields.forEach(k => { out[k] = r[k]; });
-      return out;
+    // Todos os planos do dia — filtra apenas cartão/débito para ver desc_plano e tipo_transacao
+    const planoRows = await fetchMovimentoPlanos(cnpj, date, date, chave).catch(() => []);
+    const cardRows = planoRows.filter(r => {
+      const f = (r.forma_pgto || '').toLowerCase();
+      const t = (r.tipo_transacao || '').toUpperCase();
+      return /cart|d[eé]b|cr[eé]d/.test(f) || t === 'C' || t === 'D';
     });
 
-    // LinxMovimentoCartoes raw
-    const body = buildRequest('LinxMovimentoCartoes', cnpj,
-      [{ id: 'data_inicial', valor: date }, { id: 'data_fim', valor: date }], chave);
-    const raw  = await postRequest(body, 30_000);
-    let cartoesResult;
-    if (raw.includes('<ResponseSuccess>False</ResponseSuccess>') || raw.includes('"Sucesso":"False"')) {
-      cartoesResult = { ok: false, error: 'API não disponível' };
-    } else {
-      const rows = parseCsv(raw);
-      const firstOk = rows.find(r => r.Sucesso !== 'False');
-      if (!firstOk && rows[0]?.Sucesso === 'False') {
-        cartoesResult = { ok: false, error: rows[0].Mensagens };
-      } else {
-        cartoesResult = { ok: true, total: rows.length, fields: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 5) };
-      }
-    }
-
-    res.json({ movimentoCamposRelevantes: movFields, movimentoSample: movSample, cartoesResult });
+    res.json({
+      totalPlanos: planoRows.length,
+      totalCartoes: cardRows.length,
+      camposDisponiveis: planoRows[0] ? Object.keys(planoRows[0]) : [],
+      amostraCartoes: cardRows.slice(0, 10),
+      amostraOutros: planoRows.filter(r => !cardRows.includes(r)).slice(0, 5),
+    });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
