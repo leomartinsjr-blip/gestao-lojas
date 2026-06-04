@@ -5417,12 +5417,11 @@ function renderCaixaConf(body, data) {
     if (!vendas?.length) return '';
     return `<div class="cxconf-drill">
       <div class="cxconf-drill-hdr">
-        <span>Doc</span><span>Hora</span><span>${descLabel}</span><span>Valor</span>
+        <span>Doc</span><span>${descLabel}</span><span>Valor</span>
       </div>
       ${vendas.map(v => `
         <div class="cxconf-drill-row">
           <span class="cxconf-drill-doc">${v.doc}</span>
-          <span class="cxconf-drill-hora">${v.hora || '—'}</span>
           <span class="cxconf-drill-desc">${_escHtml(v.vendedor || v.forma || '')}</span>
           <span class="cxconf-drill-val">${fR(v.valor)}</span>
         </div>`).join('')}

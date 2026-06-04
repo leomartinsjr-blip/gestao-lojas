@@ -822,25 +822,24 @@ body {
   margin-bottom: .25rem; overflow: hidden; font-size: .78rem;
 }
 .cxconf-drill-hdr {
-  display: grid; grid-template-columns: 5rem 3.5rem 1fr 5.5rem;
+  display: grid; grid-template-columns: 5rem 1fr 5.5rem;
   padding: .3rem .6rem; color: var(--muted); font-size: .7rem;
   text-transform: uppercase; letter-spacing: .05em;
   border-bottom: 1px solid rgba(255,255,255,.07);
 }
 .cxconf-drill-row {
-  display: grid; grid-template-columns: 5rem 3.5rem 1fr 5.5rem;
+  display: grid; grid-template-columns: 5rem 1fr 5.5rem;
   padding: .3rem .6rem; border-bottom: 1px solid rgba(255,255,255,.04);
 }
 .cxconf-drill-row:last-child { border-bottom: none; }
 .cxconf-drill-doc  { color: var(--muted); }
-.cxconf-drill-hora { color: var(--muted); }
 .cxconf-drill-desc { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cxconf-drill-val  { text-align: right; font-weight: 600; color: var(--text); }
 @media (max-width: 600px) {
   .cxconf-grid { grid-template-columns: 1fr; }
   .cxconf-total-label { display: none; }
   .cxconf-drill-hdr,
-  .cxconf-drill-row { grid-template-columns: 4rem 3rem 1fr 5rem; font-size: .72rem; }
+  .cxconf-drill-row { grid-template-columns: 4rem 1fr 5rem; font-size: .72rem; }
 }
 .folgas-close-btn:hover { color: var(--down); }
 

@@ -2371,15 +2371,24 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
     const today = new Date().toISOString().slice(0, 10);
     const date  = req.query.date || today;
 
-    const { fetchMovimento, fetchMovimentoPlanos, fetchMovimentoCartoes, fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchSangrias, parseBrNum } = require('./services/microvix');
+    const { fetchMovimento, fetchMovimentoPlanos, fetchMovimentoCartoes, fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchSangrias, fetchVendedores, parseBrNum } = require('./services/microvix');
 
-    const [movRows, sangriaRows, planosCatalog, bandeirasCatalog, cartoesRows] = await Promise.all([
+    const [movRows, sangriaRows, planosCatalog, bandeirasCatalog, cartoesRows, vendedoresRows] = await Promise.all([
       fetchMovimento(cnpj, date, date, chave),
       fetchSangrias(cnpj, date, date, chave),
       fetchLinxPlanos(cnpj, chave).catch(() => []),
       fetchLinxPlanosBandeiras(cnpj, chave).catch(() => []),
-      fetchMovimentoCartoes(cnpj, date, date, chave).catch(e => { console.warn('[conferencia-caixa] LinxMovimentoCartoes falhou:', e.message); return []; }),
+      fetchMovimentoCartoes(cnpj, date, date, chave).catch(() => []),
+      fetchVendedores(cnpj, chave).catch(() => []),
     ]);
+
+    // Catálogo cod_vendedor → nome
+    const vendNomeCache = {};
+    for (const v of vendedoresRows) {
+      const cod  = String(v.cod_vendedor || v.codigo || '').trim();
+      const nome = (v.nome_vendedor || v.nome || '').trim();
+      if (cod && nome) vendNomeCache[cod] = nome;
+    }
 
     // Catálogo cod_plano → nome
     const planoNomeMap = {};
@@ -2415,9 +2424,11 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
     function buildForma(formaPgto, tipoTransacao) {
       const f = (formaPgto || '').trim();
       const t = (tipoTransacao || '').trim().toUpperCase();
-      if (/cart[aã]o/i.test(f) || t === 'C' || t === 'D') {
-        return t === 'D' ? 'Cartão Débito' : 'Cartão Crédito';
-      }
+      if (t === 'C') return 'Cartão Crédito';
+      if (t === 'D') return 'Cartão Débito';
+      if (/cart[aã]o/i.test(f)) return 'Cartão Crédito';
+      if (/d[eé]bito/i.test(f))  return 'Cartão Débito';
+      if (/cr[eé]dito/i.test(f)) return 'Cartão Crédito';
       return f || 'Outros';
     }
 
@@ -2495,9 +2506,9 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
         const forma = buildForma(formaPgto, tipoTrans) || descP || 'Outros';
 
         // Bandeira: extrai do desc_plano (ex: "MASTER 2X" → "Mastercard")
-        const bandeira = /cart[aã]o/i.test(formaPgto) || tipoTrans === 'C' || tipoTrans === 'D'
-          ? extractBandeira(descP)
-          : '';
+        const isCard = tipoTrans === 'C' || tipoTrans === 'D'
+          || /cart[aã]o|d[eé]bito|cr[eé]dito/i.test(formaPgto);
+        const bandeira = isCard ? extractBandeira(descP) : '';
 
         const valor = parseBrNum(r.total || r.valor || r.valor_plano || '0');
         if (valor === 0) continue;
@@ -2583,7 +2594,7 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
     const formasAgg = {}; // forma → { forma, total, bandeiras: { bKey → { bandeira, total, vendas[] } } }
     for (const [doc, formas] of Object.entries(docFormaMap)) {
       const d       = docMap[doc] || {};
-      const vendNome = d.vendedorCod ? (vendMap[d.vendedorCod]?.nome || d.vendedorNome || d.vendedorCod) : '—';
+      const vendNome = d.vendedorCod ? (vendNomeCache[d.vendedorCod] || vendMap[d.vendedorCod]?.nome || d.vendedorNome || d.vendedorCod) : '—';
       for (const { forma, bandeira, valor } of formas) {
         if (!formasAgg[forma]) formasAgg[forma] = { forma, total: 0, bandeiras: {} };
         formasAgg[forma].total += valor;
