@@ -5756,8 +5756,13 @@ function calcWeekKpis(emp, week, extraData) {
     dates.push(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`);
   }
 
-  // Férias do próprio vendedor neste mês
-  const empVacDays = new Set(vsale.meta?.vacationDays || []);
+  // Férias do vendedor — combina mês atual e meses extras (semanas que cruzam meses)
+  const empVacDays = new Set([
+    ...(vsale.meta?.vacationDays || []),
+    ...Object.values(extraData || {}).flatMap(d =>
+      d.vsales?.[emp.id]?.meta?.vacationDays || []
+    ),
+  ]);
 
   // Weight sum + autoMeta: soma das metas diárias reais do vendedor
   // Meta diária = metaLoja * peso_do_dia / nAtivos_no_dia / 100
