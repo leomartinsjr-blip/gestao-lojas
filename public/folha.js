@@ -19,7 +19,8 @@ function cargoTipo(cargo) {
   if (/^sub.*gerente|sub[\s-]gerente/.test(c)) return 'sub';
   if (/g\.?\s*vend|gerente\s+vend/.test(c))    return 'gvend';
   if (/gerente/.test(c))                       return 'gerente';
-  if (/supervisor|sócio|socio/.test(c))        return 'supervisor';
+  if (/sócio|socio/.test(c))                   return 'socio';
+  if (/supervisor/.test(c))                    return 'supervisor';
   return 'vendedor';
 }
 
@@ -473,16 +474,74 @@ function defaultEntry(emp) {
   const df   = FP.mensal.domingosFeriados || 4;
 
   const vs     = FP.vsales[emp.id] || {};
+
+  // ── Sócio — pró-labore + complemento + comissão por loja ──
+  if (tipo === 'socio') {
+    const proLabore   = r2(ecfg.salarioFixo || 0);
+    const complemento = 0;
+    const sBoards     = emp.supervisedBoards || [];
+    const totalVendas = r2(FP.supervisorVendaMap[emp.id] || 0);
+    const totalMeta   = r2(FP.supervisorMetaMap[emp.id]  || 0);
+    const faixa       = calcFaixa(ecfg, totalVendas, totalMeta);
+    const lojaComissoes = sBoards.map(b => {
+      const venda = r2(FP.lojaVendaMap[b] || 0);
+      return { board: b, vendas: venda, comissaoPct: faixa.comPct, comissao: r2(venda * faixa.comPct / 100) };
+    });
+    const comissaoTotal = r2(lojaComissoes.reduce((s, l) => s + l.comissao, 0));
+    const proventos = r2(proLabore + complemento + comissaoTotal);
+    const inss = r2(proventos * (ecfg.inssRate || 0) / 100);
+    const vt   = r2(proventos * (ecfg.vtRate   || 0) / 100);
+    return {
+      tipo, proLabore, complemento, lojaComissoes,
+      vendas: totalVendas, meta: totalMeta,
+      pctMeta: totalMeta > 0 ? r2(totalVendas / totalMeta * 100) : 0,
+      faixaLabel: faixa.label, comissaoPct: faixa.comPct,
+      comissaoTotal, feriado: 0,
+      extras:     (FP.prevExtras[emp.id]?.extras     || []).map(x => ({ ...x, _prev: true })),
+      proventos,
+      valeCompras: 0, adiantamento: 0, inss, irpf: 0, vt,
+      arredondamento: 0,
+      extrasDesc: (FP.prevExtras[emp.id]?.extrasDesc || []).map(x => ({ ...x, _prev: true })),
+      totalDescontos: r2(inss + vt), liquido: r2(proventos - inss - vt),
+    };
+  }
+
+  // ── Supervisor — cálculo por loja ──
+  if (tipo === 'supervisor') {
+    const fixo      = r2(ecfg.salarioFixo || 0);
+    const sBoards   = emp.supervisedBoards || [];
+    const totalVendas = r2(FP.supervisorVendaMap[emp.id] || 0);
+    const totalMeta   = r2(FP.supervisorMetaMap[emp.id]  || 0);
+    const faixa       = calcFaixa(ecfg, totalVendas, totalMeta);
+    const pctMeta     = totalMeta > 0 ? r2(totalVendas / totalMeta * 100) : 0;
+    const lojaComissoes = sBoards.map(b => {
+      const venda = r2(FP.lojaVendaMap[b] || 0);
+      return { board: b, vendas: venda, comissaoPct: faixa.comPct, comissao: r2(venda * faixa.comPct / 100) };
+    });
+    const comissaoTotal = r2(lojaComissoes.reduce((s, l) => s + l.comissao, 0));
+    const proventos = r2(fixo + comissaoTotal);
+    const inss = r2(proventos * (ecfg.inssRate || 0) / 100);
+    const vt   = r2(proventos * (ecfg.vtRate   || 0) / 100);
+    return {
+      tipo, fixo, lojaComissoes,
+      vendas: totalVendas, meta: totalMeta, pctMeta,
+      faixaLabel: faixa.label, comissaoPct: faixa.comPct,
+      comissaoTotal, feriado: 0,
+      extras:     (FP.prevExtras[emp.id]?.extras     || []).map(x => ({ ...x, _prev: true })),
+      proventos,
+      valeCompras: 0, adiantamento: 0, inss, irpf: 0, vt,
+      arredondamento: 0,
+      extrasDesc: (FP.prevExtras[emp.id]?.extrasDesc || []).map(x => ({ ...x, _prev: true })),
+      totalDescontos: r2(inss + vt), liquido: r2(proventos - inss - vt),
+    };
+  }
+
   const vendas = tipo === 'gerente'
     ? r2(FP.lojaVendaMap[FP.board] || 0)
-    : tipo === 'supervisor'
-      ? r2(FP.supervisorVendaMap[emp.id] || 0)
-      : sumVendas(emp.id);
+    : sumVendas(emp.id);
   const meta = tipo === 'gerente'
     ? r2(FP.lojaMetaMap[FP.board] || 0)
-    : tipo === 'supervisor'
-      ? r2(FP.supervisorMetaMap[emp.id] || 0)
-      : r2(vs.meta?.mensal || 0);
+    : r2(vs.meta?.mensal || 0);
 
   // ── Caixa ──
   if (tipo === 'caixa') {
@@ -510,18 +569,18 @@ function defaultEntry(emp) {
   const comissaoTotal = r2(vendas * comissaoPct / 100);
 
   // DSR = (comissaoContab + prêmio) / du × df  →  equivale a comissaoTotal × df / (du + df)
-  const premio = r2((tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend' || tipo === 'supervisor')
+  const premio = r2((tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
     ? (cfg.premioGerente || 0) : (cfg.premioVendedor || 0));
   const dsr = (du + df) > 0 ? r2(comissaoTotal * df / (du + df)) : 0;
   const comissaoContab = r2(comissaoTotal - dsr - premio);
 
-  const fixo = (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend' || tipo === 'supervisor')
+  const fixo = (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
     ? r2(ecfg.salarioFixo || 0)
     : 0;
 
   const gm = tipo === 'gerente'
     ? r2(cfg.garantiaMinimaGerente    || cfg.garantiaMinima || 0)
-    : (tipo === 'sub' || tipo === 'gvend' || tipo === 'supervisor')
+    : (tipo === 'sub' || tipo === 'gvend')
       ? r2(cfg.garantiaMinimaSubGerente || cfg.garantiaMinima || 0)
       : r2(cfg.garantiaMinima || 0);
   const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);
@@ -632,6 +691,60 @@ function buildEmpForm(emp, entry) {
       provRows += `<div class="fp-field"><label>Premiação da Loja (R$)</label>${inp(`fp-premiacaoBalanco-${emp.id}`, e.premiacaoBalanco || 0)}
         <span style="font-size:.7rem;color:#484f58">${semGerHintC}</span></div>`;
     }
+  } else if (tipo === 'socio') {
+    const lojaComissoes = e.lojaComissoes || (emp.supervisedBoards || []).map(b => ({
+      board: b, vendas: r2(FP.lojaVendaMap[b]||0), comissaoPct: e.comissaoPct||0, comissao: 0,
+    }));
+    const totalVendas = r2(FP.supervisorVendaMap[emp.id] || 0);
+    const totalMeta   = r2(FP.supervisorMetaMap[emp.id]  || 0);
+    const pctTotal    = totalMeta > 0 ? `${r2(totalVendas/totalMeta*100).toFixed(1)}% da meta total` : 'sem meta';
+    provRows += `
+      <div class="fp-field"><label>Pró-Labore (R$)</label>${inp(`fp-proLabore-${emp.id}`, e.proLabore || 0)}</div>
+      <div class="fp-field"><label>Complemento (R$)</label>${inp(`fp-complemento-${emp.id}`, e.complemento || 0)}</div>`;
+    lojaComissoes.forEach(lj => {
+      const bi = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase(), color: '#8b949e' };
+      provRows += `<div class="fp-field fp-field-inline">
+        <label style="color:${bi.color};min-width:90px">${bi.label}</label>
+        ${inpRO(`fp-supVendas-${emp.id}-${lj.board}`, lj.vendas)}
+        <span class="fp-times">×</span>
+        <span style="font-size:.85rem;color:#8b949e;padding:.15rem .2rem">${r2(lj.comissaoPct).toFixed(2)}%</span>
+        ${faixaBadge(e.faixaLabel || '—')}
+        <span class="fp-equals">=</span>
+        ${inp(`fp-supCom-${emp.id}-${lj.board}`, lj.comissao)}
+      </div>`;
+    });
+    provRows += `<div class="fp-field fp-field-inline" style="border-top:1px solid #30363d;padding-top:.5rem;margin-top:.25rem">
+      <label style="font-weight:600">Total Comissão</label>
+      <span></span><span></span><span></span><span></span>
+      <span class="fp-total-inline" id="fp-supComTotal-${emp.id}">${brl(e.comissaoTotal||0)}</span>
+      <span style="font-size:.7rem;color:#8b949e;margin-left:.3rem">${pctTotal}</span>
+    </div>`;
+  } else if (tipo === 'supervisor') {
+    const lojaComissoes = e.lojaComissoes || (emp.supervisedBoards || []).map(b => ({
+      board: b, vendas: r2(FP.lojaVendaMap[b]||0), comissaoPct: e.comissaoPct||0, comissao: 0,
+    }));
+    const totalVendas = r2(FP.supervisorVendaMap[emp.id] || 0);
+    const totalMeta   = r2(FP.supervisorMetaMap[emp.id]  || 0);
+    const pctTotal    = totalMeta > 0 ? `${r2(totalVendas/totalMeta*100).toFixed(1)}% da meta total` : 'sem meta';
+    provRows += `<div class="fp-field"><label>Salário Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}</div>`;
+    lojaComissoes.forEach(lj => {
+      const bi = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase(), color: '#8b949e' };
+      provRows += `<div class="fp-field fp-field-inline">
+        <label style="color:${bi.color};min-width:90px">${bi.label}</label>
+        ${inpRO(`fp-supVendas-${emp.id}-${lj.board}`, lj.vendas)}
+        <span class="fp-times">×</span>
+        <span style="font-size:.85rem;color:#8b949e;padding:.15rem .2rem">${r2(lj.comissaoPct).toFixed(2)}%</span>
+        ${faixaBadge(e.faixaLabel || '—')}
+        <span class="fp-equals">=</span>
+        ${inp(`fp-supCom-${emp.id}-${lj.board}`, lj.comissao)}
+      </div>`;
+    });
+    provRows += `<div class="fp-field fp-field-inline" style="border-top:1px solid #30363d;padding-top:.5rem;margin-top:.25rem">
+      <label style="font-weight:600">Total Comissão</label>
+      <span></span><span></span><span></span><span></span>
+      <span class="fp-total-inline" id="fp-supComTotal-${emp.id}">${brl(e.comissaoTotal||0)}</span>
+      <span style="font-size:.7rem;color:#8b949e;margin-left:.3rem">${pctTotal}</span>
+    </div>`;
   } else {
     const pctDisplay = e.pctMeta > 0 ? `${r2(e.pctMeta).toFixed(1)}% da meta` : 'sem meta';
 
@@ -944,7 +1057,19 @@ function recalc(empId) {
 
   let proventos = 0;
 
-  if (tipo === 'caixa') {
+  if (tipo === 'socio') {
+    const sBoards = emp?.supervisedBoards || [];
+    const comTotal = r2(sBoards.reduce((s, b) => s + g(`fp-supCom-${empId}-${b}`), 0));
+    const totEl = document.getElementById(`fp-supComTotal-${empId}`);
+    if (totEl) totEl.textContent = brl(comTotal);
+    proventos = r2(g(`fp-proLabore-${empId}`) + g(`fp-complemento-${empId}`) + comTotal);
+  } else if (tipo === 'supervisor') {
+    const sBoards = emp?.supervisedBoards || [];
+    const comTotal = r2(sBoards.reduce((s, b) => s + g(`fp-supCom-${empId}-${b}`), 0));
+    const totEl = document.getElementById(`fp-supComTotal-${empId}`);
+    if (totEl) totEl.textContent = brl(comTotal);
+    proventos = r2(g(`fp-fixo-${empId}`) + comTotal);
+  } else if (tipo === 'caixa') {
     proventos = g(`fp-fixo-${empId}`) + g(`fp-quebra-${empId}`) + g(`fp-comLoja-${empId}`) + g(`fp-premiacaoBalanco-${empId}`);
   } else {
     const vendas   = g(`fp-vendas-${empId}`);
@@ -1013,6 +1138,35 @@ function saveEntryFromForm(empId) {
 
   const extProv = (prev.extras||[]).reduce((s,ex)=>s+r2(ex.valor),0);
   const extDesc = (prev.extrasDesc||[]).reduce((s,ex)=>s+r2(ex.valor),0);
+
+  if (tipo === 'socio' || tipo === 'supervisor') {
+    const sBoards = emp?.supervisedBoards || [];
+    const lojaComissoes = sBoards.map(b => ({
+      board: b,
+      vendas:      r2(FP.lojaVendaMap[b] || 0),
+      comissaoPct: prev.comissaoPct || 0,
+      comissao:    g(`fp-supCom-${empId}-${b}`),
+    }));
+    const comissaoTotal = r2(lojaComissoes.reduce((s, l) => s + l.comissao, 0));
+    const proLabore   = tipo === 'socio' ? g(`fp-proLabore-${empId}`)   : 0;
+    const complemento = tipo === 'socio' ? g(`fp-complemento-${empId}`) : 0;
+    const fixo    = tipo === 'supervisor' ? g(`fp-fixo-${empId}`) : 0;
+    const feriado = g(`fp-feriado-${empId}`);
+    const proventos = r2((tipo === 'socio' ? proLabore + complemento : fixo) + comissaoTotal + feriado + extProv);
+    const totalDesc = r2(g(`fp-valeCompras-${empId}`) + g(`fp-adiantamento-${empId}`) +
+      g(`fp-inss-${empId}`) + g(`fp-irpf-${empId}`) + g(`fp-vt-${empId}`) + g(`fp-arred-${empId}`) + extDesc);
+    FP.folha[FP.board].entries[empId] = {
+      ...prev, tipo, proLabore, complemento, fixo, lojaComissoes, comissaoTotal,
+      vendas: prev.vendas, meta: prev.meta, pctMeta: prev.pctMeta,
+      faixaLabel: prev.faixaLabel, comissaoPct: prev.comissaoPct,
+      feriado, proventos,
+      valeCompras: g(`fp-valeCompras-${empId}`), adiantamento: g(`fp-adiantamento-${empId}`),
+      inss: g(`fp-inss-${empId}`), irpf: g(`fp-irpf-${empId}`),
+      vt: g(`fp-vt-${empId}`), arredondamento: g(`fp-arred-${empId}`),
+      totalDescontos: totalDesc, liquido: r2(proventos - totalDesc),
+    };
+    return;
+  }
 
   let proventos=0, comissaoTotal=0, comissaoContab=0, dsr=0, premio=0;
 
