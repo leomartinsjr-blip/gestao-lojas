@@ -5756,20 +5756,18 @@ function calcWeekKpis(emp, week, extraData) {
     dates.push(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`);
   }
 
-  // Dias anteriores à admissão do vendedor não entram no cálculo
-  const admissao = emp.admissao || null;
+  // Férias do próprio vendedor neste mês
+  const empVacDays = new Set(vsale.meta?.vacationDays || []);
 
   // Weight sum + autoMeta: soma das metas diárias reais do vendedor
   // Meta diária = metaLoja * peso_do_dia / nAtivos_no_dia / 100
-  // (mesma lógica de computeSellerDayGoals na planilha mês)
+  // Dia de férias → meta = 0 (mesma lógica de computeSellerDayGoals)
   let weekWeightSum = 0;
   let autoMeta = 0;
   for (const ds of dates) {
-    if (admissao && ds < admissao) continue;
     const mk = ds.slice(0, 7);
     let dayWeight = 0;
     let metaLoja  = 0;
-    let allEmpsInBoard = S.employees;
     let vsalesForMonth = S.vsales;
     if (mk === curKey) {
       const daysInMonth = new Date(S.year, S.month, 0).getDate();
@@ -5782,14 +5780,14 @@ function calcWeekKpis(emp, week, extraData) {
       metaLoja       = extraData[mk].dailySalesMeta?.[emp.board] || 0;
       vsalesForMonth = extraData[mk].vsales || {};
     }
+    weekWeightSum += dayWeight;
+    if (empVacDays.has(ds)) continue; // férias: meta diária = 0
     // nAtivos: vendedores da loja sem férias naquele dia
-    const nAtivos = Math.max(1, allEmpsInBoard.filter(e =>
+    const nAtivos = Math.max(1, S.employees.filter(e =>
       e.board === emp.board && isVend(e) && !e.inativo &&
       !(vsalesForMonth[e.id]?.meta?.vacationDays || []).includes(ds)
     ).length);
-    const storeDayGoal = metaLoja * dayWeight / 100;
-    weekWeightSum += dayWeight;
-    autoMeta      += storeDayGoal / nAtivos;
+    autoMeta += metaLoja * dayWeight / 100 / nAtivos;
   }
   // check manual meta override from current AND extra months
   const wkMetasForWeek = S.weeklyMetas[week.startStr] ||
@@ -5806,7 +5804,6 @@ function calcWeekKpis(emp, week, extraData) {
   let valorForProj = 0, weekWeightAccum = 0;
 
   for (const ds of dates) {
-    if (admissao && ds < admissao) continue;
     const monthKey = ds.slice(0, 7);
     const dayCutoff = (monthKey === curKey) ? cutoff : todayStr;
     if (ds > dayCutoff) break;
@@ -5822,7 +5819,6 @@ function calcWeekKpis(emp, week, extraData) {
 
   // Accumulate weight and sales up to D-1 BRT for projection
   for (const ds of dates) {
-    if (admissao && ds < admissao) continue;
     if (ds > projCutoff) break;
     const monthKey = ds.slice(0, 7);
     if (monthKey === curKey) {
