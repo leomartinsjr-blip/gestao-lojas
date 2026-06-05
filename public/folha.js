@@ -1361,6 +1361,22 @@ function buildRecibo(emp, entry, mes, origin) {
   const loja = BOARDS_INFO[emp.board]?.label || emp.board.toUpperCase();
   const adm  = emp.admissao ? `ADM. ${emp.admissao}` : '';
 
+  // Configuração visual por loja
+  const STORE_RECIBO = {
+    tommy: {
+      logoFile: 'logotommy.png',
+      logoAlt:  'Tommy Hilfiger',
+      tagline:  'Somos do tamanho que nos permitimos ser... Lute, insista... Permita-se',
+      garantia: 'GARANTIA TOMMY',
+    },
+  };
+  const rc = STORE_RECIBO[emp.board] || {
+    logoFile: 'logosurfers.webp',
+    logoAlt:  "Surfer's",
+    tagline:  'Um time, um objetivo, uma conquista.',
+    garantia: 'GARANTIA SURFERS',
+  };
+
   const num   = v => Math.round((parseFloat(v)||0)*100)/100;
   const fmt   = v => num(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
   const money = v => { const n=num(v); return n===0 ? 'R$&nbsp;-' : `R$&nbsp;${fmt(n)}`; };
@@ -1394,6 +1410,21 @@ function buildRecibo(emp, entry, mes, origin) {
         prov += tr('PREM. META LOJA', entry.premiacaoBalanco);
       }
     }
+  } else if (tipo === 'supervisor' || tipo === 'socio') {
+    if (tipo === 'supervisor' && num(entry.fixo) > 0)
+      prov += tr('SALÁRIO FIXO', entry.fixo, entry.fixo);
+    if (tipo === 'socio') {
+      prov += tr('PRÓ-LABORE', entry.proLabore || 0, entry.proLabore || 0);
+      if (num(entry.complemento) > 0)
+        prov += tr('COMPLEMENTO', entry.complemento, entry.complemento);
+    }
+    const lojaComissoes = entry.lojaComissoes || [];
+    lojaComissoes.forEach(lj => {
+      const bi = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase() };
+      if (num(lj.vendas) > 0 || num(lj.comissao) > 0)
+        prov += tr(bi.label.toUpperCase(), lj.comissao, lj.vendas,
+          num(lj.comissaoPct) ? fmt(lj.comissaoPct) + '%' : '');
+    });
   } else {
     if (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
       prov += tr('SALÁRIO FIXO', entry.fixo || 0, entry.fixo);
@@ -1422,7 +1453,7 @@ function buildRecibo(emp, entry, mes, origin) {
         ? r2(cfg.garantiaMinimaSubGerente || cfg.garantiaMinima || 0)
         : r2(cfg.garantiaMinima || 0);
     if (num(entry.gmComplement) > 0)
-      prov += tr('GARANTIA SURFERS', entry.gmComplement, gm, '', false, '#fef9c3');
+      prov += tr(rc.garantia, entry.gmComplement, gm, '', false, '#fef9c3');
     if (num(entry.comissaoLoja) > 0)
       prov += tr((tipo === 'gvend' || tipo === 'sub') ? 'VENDAS DA LOJA' : 'COMISSÃO LOJA', entry.comissaoLoja, entry.vendaLoja,
         ecfg.comissaoVR ? fmt(ecfg.comissaoVR) + '%' : '');
@@ -1483,7 +1514,7 @@ function buildRecibo(emp, entry, mes, origin) {
 <table style="${tbl}border-bottom:none">
   <tr>
     <td style="width:105px;padding:6px 8px;border-right:1px solid #000;vertical-align:middle">
-      <img src="${origin}/logosurfers.webp" alt="Surfer's" style="height:36px;width:auto;display:block">
+      <img src="${origin}/${rc.logoFile}" alt="${rc.logoAlt}" style="height:36px;width:auto;display:block">
     </td>
     <td style="padding:5px 8px;border-right:1px solid #000;vertical-align:middle;text-align:center">
       <div style="display:inline-block;border:1px solid #000;padding:3px 12px;font-weight:700;font-size:11pt;letter-spacing:.4px">${emp.name.toUpperCase()}</div>
@@ -1494,7 +1525,7 @@ function buildRecibo(emp, entry, mes, origin) {
       <div style="font-size:8pt;margin-top:2px;color:#444">${adm}</div>
     </td>
   </tr>
-  <tr><td colspan="3" style="text-align:center;padding:5px;border-top:1px solid #000;font-style:italic;font-size:9pt">"Um time, um objetivo, uma conquista."</td></tr>
+  <tr><td colspan="3" style="text-align:center;padding:5px;border-top:1px solid #000;font-style:italic;font-size:9pt">"${rc.tagline}"</td></tr>
 </table>
 
 <table style="${tbl}border-top:none;border-bottom:none;margin-top:-1px">
@@ -1522,7 +1553,7 @@ function buildRecibo(emp, entry, mes, origin) {
 <table style="${tbl}border-top:none;margin-top:-1px">
   <tr>
     <td style="width:90px;padding:8px;border-right:1px solid #000;vertical-align:bottom;text-align:center">
-      <img src="${origin}/logosurfers.webp" alt="" style="height:42px;width:auto;display:block;margin:0 auto">
+      <img src="${origin}/${rc.logoFile}" alt="" style="height:42px;width:auto;display:block;margin:0 auto">
     </td>
     <td style="padding:8px 14px;vertical-align:top">
       <p style="font-size:8pt;line-height:1.45;margin-bottom:14px">Recebi a importância líquida constante no presente recibo individual de pagamento, dando, por este, plena e geral quitação, para nada mais reclamar com relação a salários vencidos e outros proventos do trabalho, inclusive por serviço extraordinário, até a presente data.</p>
