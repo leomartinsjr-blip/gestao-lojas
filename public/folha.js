@@ -19,6 +19,7 @@ function cargoTipo(cargo) {
   if (/^sub.*gerente|sub[\s-]gerente/.test(c)) return 'sub';
   if (/g\.?\s*vend|gerente\s+vend/.test(c))    return 'gvend';
   if (/gerente/.test(c))                       return 'gerente';
+  if (/supervisor|sócio|socio/.test(c))        return 'supervisor';
   return 'vendedor';
 }
 
@@ -70,6 +71,7 @@ let FP = {
   folha: {}, folhaConfig: {}, empConfig: {},
   mensal: { diasUteis: 22, domingosFeriados: 4 },
   lojaMetaMap: {}, lojaVendaMap: {},
+  supervisorVendaMap: {}, supervisorMetaMap: {},
   premiacaoSemanal: {}, premiacaoSemanalDetalhe: {},
   premiacaoSemanalGer: {}, premiacaoSemanalGerDetalhe: {}, prevExtras: {},
   activeEmpId: null, dirty: false,
@@ -112,8 +114,10 @@ async function loadPeriod() {
     FP.folha        = d.folha        || {};
     FP.folhaConfig  = d.folhaConfig  || {};
     FP.empConfig    = d.empConfig    || {};
-    FP.lojaMetaMap       = d.lojaMetaMap       || {};
-    FP.lojaVendaMap      = d.lojaVendaMap      || {};
+    FP.lojaMetaMap        = d.lojaMetaMap        || {};
+    FP.lojaVendaMap       = d.lojaVendaMap       || {};
+    FP.supervisorVendaMap = d.supervisorVendaMap || {};
+    FP.supervisorMetaMap  = d.supervisorMetaMap  || {};
     FP.premiacaoSemanal           = d.premiacaoSemanal           || {};
     FP.premiacaoSemanalDetalhe    = d.premiacaoSemanalDetalhe    || {};
     FP.premiacaoSemanalGer        = d.premiacaoSemanalGer        || {};
@@ -471,10 +475,14 @@ function defaultEntry(emp) {
   const vs     = FP.vsales[emp.id] || {};
   const vendas = tipo === 'gerente'
     ? r2(FP.lojaVendaMap[FP.board] || 0)
-    : sumVendas(emp.id);
+    : tipo === 'supervisor'
+      ? r2(FP.supervisorVendaMap[emp.id] || 0)
+      : sumVendas(emp.id);
   const meta = tipo === 'gerente'
     ? r2(FP.lojaMetaMap[FP.board] || 0)
-    : r2(vs.meta?.mensal || 0);
+    : tipo === 'supervisor'
+      ? r2(FP.supervisorMetaMap[emp.id] || 0)
+      : r2(vs.meta?.mensal || 0);
 
   // ── Caixa ──
   if (tipo === 'caixa') {
@@ -502,18 +510,18 @@ function defaultEntry(emp) {
   const comissaoTotal = r2(vendas * comissaoPct / 100);
 
   // DSR = (comissaoContab + prêmio) / du × df  →  equivale a comissaoTotal × df / (du + df)
-  const premio = r2((tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
+  const premio = r2((tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend' || tipo === 'supervisor')
     ? (cfg.premioGerente || 0) : (cfg.premioVendedor || 0));
   const dsr = (du + df) > 0 ? r2(comissaoTotal * df / (du + df)) : 0;
   const comissaoContab = r2(comissaoTotal - dsr - premio);
 
-  const fixo = (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
+  const fixo = (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend' || tipo === 'supervisor')
     ? r2(ecfg.salarioFixo || 0)
     : 0;
 
   const gm = tipo === 'gerente'
     ? r2(cfg.garantiaMinimaGerente    || cfg.garantiaMinima || 0)
-    : (tipo === 'sub' || tipo === 'gvend')
+    : (tipo === 'sub' || tipo === 'gvend' || tipo === 'supervisor')
       ? r2(cfg.garantiaMinimaSubGerente || cfg.garantiaMinima || 0)
       : r2(cfg.garantiaMinima || 0);
   const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);

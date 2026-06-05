@@ -814,7 +814,7 @@ app.get('/api/employees/photos', requireAuth, async (req, res) => {
 // ── POST /api/employees ────────────────────────────────────────────────────
 app.post('/api/employees', requireAuth, async (req, res) => {
   try {
-    const { name, board, cpf, nascimento, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento, apelido, microvixCod } = req.body;
+    const { name, board, cpf, nascimento, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento, apelido, microvixCod, supervisedBoards } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
     if (!nascimento) return res.status(400).json({ error: 'Data de nascimento obrigatória' });
     const db = await readDB();
@@ -837,6 +837,7 @@ app.post('/api/employees', requireAuth, async (req, res) => {
       isVendedor: isVendedor !== false,
       inativo: inativo === true || inativo === 'true',
       desligamento: desligamento || '',
+      supervisedBoards: Array.isArray(supervisedBoards) ? supervisedBoards : [],
     };
     db.employees.push(emp);
     await writeDB(db);
@@ -848,7 +849,7 @@ app.post('/api/employees', requireAuth, async (req, res) => {
 app.put('/api/employees/:id', requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { name, board, cpf, nascimento, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento, apelido, microvixCod, foto } = req.body;
+    const { name, board, cpf, nascimento, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento, apelido, microvixCod, foto, supervisedBoards } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
     if (!nascimento) return res.status(400).json({ error: 'Data de nascimento obrigatória' });
     const db  = await readDB();
@@ -874,6 +875,7 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
       isVendedor: isVendedor !== false,
       inativo: inativo === true || inativo === 'true',
       desligamento: desligamento || '',
+      supervisedBoards: Array.isArray(supervisedBoards) ? supervisedBoards : (db.employees[idx].supervisedBoards || []),
     };
     await writeDB(db);
     res.json(db.employees[idx]);
@@ -5640,7 +5642,12 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       const empId = parseInt(key.split('-').at(-1));
       if (empId) savedEmpIds.add(empId);
     }
-    const employees = (db.employees || []).filter(e => !e.inativo || savedEmpIds.has(e.id));
+    const monthEnd = `${year}-${String(month).padStart(2,'0')}-${String(new Date(year, month, 0).getDate()).padStart(2,'0')}`;
+    const employees = (db.employees || []).filter(e => {
+      if (e.inativo && !savedEmpIds.has(e.id)) return false;
+      if (e.admissao && e.admissao > monthEnd && !savedEmpIds.has(e.id)) return false;
+      return true;
+    });
 
     const isVend = e => e.isVendedor !== false;
 
@@ -5817,6 +5824,16 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       }
     }
 
+    // Vendas e meta totais para supervisores (soma das lojas supervisionadas)
+    const supervisorVendaMap = {};
+    const supervisorMetaMap  = {};
+    for (const emp of employees) {
+      if (!/supervisor|sócio|socio/i.test(emp.cargo || '')) continue;
+      const sBoards = emp.supervisedBoards || [];
+      supervisorVendaMap[emp.id] = sBoards.reduce((s, b) => s + (lojaVendaMap[b] || 0), 0);
+      supervisorMetaMap[emp.id]  = sBoards.reduce((s, b) => s + (lojaMetaMap[b]  || 0), 0);
+    }
+
     res.json({
       folha:             (db.folhas || {})[mk] || {},
       employees,
@@ -5826,6 +5843,8 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       folhaMensal:       (db.folhaConfigMensal || {})[mk] || {},
       lojaMetaMap,
       lojaVendaMap,
+      supervisorVendaMap,
+      supervisorMetaMap,
       premiacaoSemanal,
       premiacaoSemanalDetalhe,
       premiacaoSemanalGer,

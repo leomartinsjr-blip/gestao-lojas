@@ -6189,6 +6189,7 @@ function openFuncForm(id) {
   document.getElementById('funcContrato1').value = emp?.contrato1 || '';
   document.getElementById('funcContrato2').value = emp?.contrato2 || '';
   document.getElementById('funcCargo').value     = emp?.cargo     || '';
+  _toggleSupervisorSection(emp?.cargo || '', emp?.supervisedBoards || []);
   document.getElementById('funcSalario').value   = emp?.salario   || '';
   document.getElementById('funcComissaoSemMeta').value  = emp?.comissaoSemMeta  || '';
   document.getElementById('funcComissao').value         = emp?.comissao         || '';
@@ -6241,6 +6242,24 @@ function _updateFotoPreview(emp) {
   }
 }
 
+function _toggleSupervisorSection(cargo, selectedBoards = []) {
+  const isSupervisor = /supervisor|sócio|socio/i.test(cargo);
+  const wrap = document.getElementById('funcSupervisedBoardsWrap');
+  const grid = document.getElementById('funcSupervisedBoardsGrid');
+  if (!wrap || !grid) return;
+  wrap.style.display = isSupervisor ? '' : 'none';
+  if (!isSupervisor) return;
+  grid.innerHTML = Object.entries(BOARDS)
+    .filter(([k]) => k !== 'escritorio' && k !== 'admin' && k !== 'surfers')
+    .map(([k, v]) => {
+      const checked = selectedBoards.includes(k) ? 'checked' : '';
+      return `<label class="func-check-label" style="display:flex;align-items:center;gap:.4rem;cursor:pointer">
+        <input type="checkbox" class="func-supervised-board" value="${k}" ${checked}>
+        <span style="color:${v.color}">${v.label}</span>
+      </label>`;
+    }).join('');
+}
+
 function hideFuncForm() {
   document.getElementById('funcBody').classList.remove('func-body--open');
   document.getElementById('funcFotoInput').value = '';
@@ -6278,6 +6297,7 @@ async function saveFuncionario() {
   const inativo   = document.getElementById('funcInativo').checked;
   const desligamento = document.getElementById('funcDesligamento').value;
   const fotoRemoved  = !FE.newPhotoFile && !FE.currentPhotoUrl && !!FE.editingId;
+  const supervisedBoards = [...document.querySelectorAll('.func-supervised-board:checked')].map(cb => cb.value);
 
   if (!name || !board) { toast('Nome e loja são obrigatórios', true); return; }
   if (!cargo) { toast('Cargo é obrigatório', true); return; }
@@ -6288,7 +6308,7 @@ async function saveFuncionario() {
   const btn = document.getElementById('funcSaveBtn');
   btn.disabled = true;
   try {
-    const body = { name, apelido, board, cpf, nascimento, microvixCod, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento };
+    const body = { name, apelido, board, cpf, nascimento, microvixCod, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento, supervisedBoards };
     if (fotoRemoved) body.foto = '';
     let emp;
     if (FE.editingId) {
@@ -6375,6 +6395,9 @@ function initFuncionariosModal() {
   document.getElementById('funcInativo').addEventListener('change', e => {
     document.getElementById('funcDesligamentoWrap').style.display = e.target.checked ? '' : 'none';
     _updateFotoPreview(null);
+  });
+  document.getElementById('funcCargo').addEventListener('change', e => {
+    _toggleSupervisorSection(e.target.value, []);
   });
 
   // Show "Fotos Microvix" button only for admins
