@@ -1364,7 +1364,7 @@ function buildRecibo(emp, entry, mes, origin) {
   // Configuração visual por loja
   const STORE_RECIBO = {
     tommy: {
-      logoFile: 'logotommy.png',
+      logoFile: 'logotommy.svg',
       logoAlt:  'Tommy Hilfiger',
       tagline:  'Somos do tamanho que nos permitimos ser... Lute, insista... Permita-se',
       garantia: 'GARANTIA TOMMY',
