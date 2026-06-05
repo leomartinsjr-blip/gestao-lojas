@@ -794,7 +794,26 @@ app.get('/api/init', requireAuth, async (req, res) => {
       retiradas,
       adiantamentos,
       indevaStats:  indevaResult,
+      dailySalesMeta: Object.fromEntries(
+        BOARDS.filter(b => b !== 'admin' && b !== 'escritorio').map(b => [
+          b, db.dailySales?.[`${mk}-${b}`]?.meta?.mensal || 0
+        ])
+      ),
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/dailysales-meta/:year/:month ──────────────────────────────────
+app.get('/api/dailysales-meta/:year/:month', requireAuth, async (req, res) => {
+  try {
+    const mk = monthKey(parseInt(req.params.year), parseInt(req.params.month));
+    const db = await readDB();
+    const result = Object.fromEntries(
+      BOARDS.filter(b => b !== 'admin' && b !== 'escritorio').map(b => [
+        b, db.dailySales?.[`${mk}-${b}`]?.meta?.mensal || 0
+      ])
+    );
+    res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

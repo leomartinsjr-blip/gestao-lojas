@@ -436,7 +436,8 @@ async function loadData() {
     });
     S.weights      = init.weights      || {};
     S.vsales       = init.vsales       || {};
-    S.weeklyMetas  = init.weeklyMetas  || {};
+    S.weeklyMetas      = init.weeklyMetas      || {};
+    S.dailySalesMeta   = init.dailySalesMeta   || {};
     S.folgas       = init.folgas       || [];
     S.storeFluxo   = init.storeFluxo   || {};
     S.campaigns    = init.campaigns    || [];
@@ -5707,10 +5708,11 @@ function getWeeksInMonth(year, month) {
 async function loadMonthData(year, month) {
   const key = `${year}-${String(month).padStart(2,'0')}`;
   if (WK.cache[key]) return WK.cache[key];
-  const [emps, weights, weeklyMetas] = await Promise.all([
+  const [emps, weights, weeklyMetas, dailySalesMeta] = await Promise.all([
     Promise.resolve(S.employees),
     apiFetch('GET', `/api/weights/${year}/${month}`).catch(() => ({})),
     apiFetch('GET', `/api/weekly-metas/${year}/${month}`).catch(() => ({})),
+    apiFetch('GET', `/api/dailysales-meta/${year}/${month}`).catch(() => ({})),
   ]);
   const vsalesArr = await Promise.all(emps.map(emp =>
     apiFetch('GET', `/api/vsales/${year}/${month}/${emp.board}/${emp.id}`)
@@ -5721,6 +5723,7 @@ async function loadMonthData(year, month) {
     vsales: Object.fromEntries(vsalesArr),
     weights: weights || {},
     weeklyMetas: weeklyMetas || {},
+    dailySalesMeta: dailySalesMeta || {},
   };
   WK.cache[key] = data;
   return data;
@@ -5753,25 +5756,40 @@ function calcWeekKpis(emp, week, extraData) {
     dates.push(`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`);
   }
 
-  // Weight sum + autoMeta: cada dia usa o peso e a meta do seu próprio mês
+  // Dias anteriores à admissão do vendedor não entram no cálculo
+  const admissao = emp.admissao || null;
+
+  // Weight sum + autoMeta: soma das metas diárias reais do vendedor
+  // Meta diária = metaLoja * peso_do_dia / nAtivos_no_dia / 100
+  // (mesma lógica de computeSellerDayGoals na planilha mês)
   let weekWeightSum = 0;
   let autoMeta = 0;
   for (const ds of dates) {
-    const monthKey = ds.slice(0, 7);
+    if (admissao && ds < admissao) continue;
+    const mk = ds.slice(0, 7);
     let dayWeight = 0;
-    let dayMensal = 0;
-    if (monthKey === curKey) {
+    let metaLoja  = 0;
+    let allEmpsInBoard = S.employees;
+    let vsalesForMonth = S.vsales;
+    if (mk === curKey) {
       const daysInMonth = new Date(S.year, S.month, 0).getDate();
       dayWeight  = S.weights[ds] ?? +(100 / daysInMonth).toFixed(6);
-      dayMensal  = mensal;
-    } else if (extraData?.[monthKey]) {
-      const [y, m] = monthKey.split('-').map(Number);
+      metaLoja   = S.dailySalesMeta?.[emp.board] || 0;
+    } else if (extraData?.[mk]) {
+      const [y, m] = mk.split('-').map(Number);
       const dim  = new Date(y, m, 0).getDate();
-      dayWeight  = extraData[monthKey].weights?.[ds] ?? +(100 / dim).toFixed(6);
-      dayMensal  = extraData[monthKey].vsales?.[emp.id]?.meta?.mensal || 0;
+      dayWeight      = extraData[mk].weights?.[ds] ?? +(100 / dim).toFixed(6);
+      metaLoja       = extraData[mk].dailySalesMeta?.[emp.board] || 0;
+      vsalesForMonth = extraData[mk].vsales || {};
     }
+    // nAtivos: vendedores da loja sem férias naquele dia
+    const nAtivos = Math.max(1, allEmpsInBoard.filter(e =>
+      e.board === emp.board && isVend(e) && !e.inativo &&
+      !(vsalesForMonth[e.id]?.meta?.vacationDays || []).includes(ds)
+    ).length);
+    const storeDayGoal = metaLoja * dayWeight / 100;
     weekWeightSum += dayWeight;
-    autoMeta      += dayMensal * dayWeight / 100;
+    autoMeta      += storeDayGoal / nAtivos;
   }
   // check manual meta override from current AND extra months
   const wkMetasForWeek = S.weeklyMetas[week.startStr] ||
@@ -5788,6 +5806,7 @@ function calcWeekKpis(emp, week, extraData) {
   let valorForProj = 0, weekWeightAccum = 0;
 
   for (const ds of dates) {
+    if (admissao && ds < admissao) continue;
     const monthKey = ds.slice(0, 7);
     const dayCutoff = (monthKey === curKey) ? cutoff : todayStr;
     if (ds > dayCutoff) break;
@@ -5803,6 +5822,7 @@ function calcWeekKpis(emp, week, extraData) {
 
   // Accumulate weight and sales up to D-1 BRT for projection
   for (const ds of dates) {
+    if (admissao && ds < admissao) continue;
     if (ds > projCutoff) break;
     const monthKey = ds.slice(0, 7);
     if (monthKey === curKey) {
