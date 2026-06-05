@@ -5787,12 +5787,20 @@ function calcWeekKpis(emp, week, extraData) {
     }
     weekWeightSum += dayWeight;
     if (empVacDays.has(ds)) continue; // férias: meta diária = 0
-    // nAtivos: vendedores da loja sem férias naquele dia
-    const nAtivos = Math.max(1, S.employees.filter(e =>
-      e.board === emp.board && isVend(e) && !e.inativo &&
-      !(vsalesForMonth[e.id]?.meta?.vacationDays || []).includes(ds)
-    ).length);
-    autoMeta += metaLoja * dayWeight / 100 / nAtivos;
+    if (metaLoja > 0) {
+      // Loja com metaLoja configurada: divide pelo nAtivos do dia
+      const nAtivos = Math.max(1, S.employees.filter(e =>
+        e.board === emp.board && isVend(e) && !e.inativo &&
+        !(vsalesForMonth[e.id]?.meta?.vacationDays || []).includes(ds)
+      ).length);
+      autoMeta += metaLoja * dayWeight / 100 / nAtivos;
+    } else {
+      // Fallback: usa meta mensal individual do vendedor (comportamento anterior)
+      const dayMensal = mk === curKey
+        ? mensal
+        : (extraData?.[mk]?.vsales?.[emp.id]?.meta?.mensal || 0);
+      autoMeta += dayMensal * dayWeight / 100;
+    }
   }
   // check manual meta override from current AND extra months
   const wkMetasForWeek = S.weeklyMetas[week.startStr] ||
