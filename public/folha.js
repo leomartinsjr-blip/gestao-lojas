@@ -1382,6 +1382,18 @@ function buildRecibo(emp, entry, mes, origin) {
   if (tipo === 'caixa') {
     prov += tr('SALÁRIO FIXO',    entry.fixo   || 0, entry.fixo);
     prov += tr('QUEBRA DE CAIXA', entry.quebra || 0, entry.quebra);
+    if (num(entry.comissaoLoja) > 0)
+      prov += tr('COMISSÃO LOJA', entry.comissaoLoja, entry.vendaLoja,
+        ecfg.comissaoVR ? fmt(ecfg.comissaoVR) + '%' : '');
+    if (num(entry.premiacaoBalanco) > 0) {
+      const semDetGerC = (FP.premiacaoSemanalGerDetalhe[emp.id] || []);
+      const semSumGerC = semDetGerC.reduce((s, x) => s + num(x.valor), 0);
+      if (semDetGerC.length && Math.abs(semSumGerC - num(entry.premiacaoBalanco)) < 0.02) {
+        semDetGerC.forEach(s => prov += tr(`PREM. LOJA SEM. ${s.label}`, s.valor));
+      } else {
+        prov += tr('PREM. META LOJA', entry.premiacaoBalanco);
+      }
+    }
   } else {
     if (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
       prov += tr('SALÁRIO FIXO', entry.fixo || 0, entry.fixo);
