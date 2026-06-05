@@ -7265,18 +7265,22 @@ function _renderMeetingHistory(body, board, isAdmin, refresh) {
 }
 
 function renderMeetingCard(container) {
-  const isAdmin = !S.user?.board;
+  const isAdmin = userIsAdmin(S.user);
+  const isSupervisor = !S.user?.board && !isAdmin;
   const isEscritorio = S.user?.board === 'escritorio';
   const userBoard = S.user?.board;
-  let activeBoard = (isAdmin || isEscritorio) ? NF_STORES[0] : userBoard;
+  const visibleStores = isAdmin || isEscritorio ? NF_STORES
+    : isSupervisor ? NF_STORES.filter(b => (S.user?.lojas||[]).includes(b))
+    : null;
+  let activeBoard = visibleStores ? visibleStores[0] : userBoard;
   let showHistory = false;
 
   const card = document.createElement('div');
   card.className = 'main-card';
 
-  const tabsHtml = (isAdmin || isEscritorio) ? `
+  const tabsHtml = visibleStores ? `
     <div class="nf-tabs">
-      ${NF_STORES.map(b => `
+      ${visibleStores.map(b => `
         <button class="nf-tab${b === activeBoard ? ' active' : ''}" data-board="${b}"
           style="--nf-tab-color:${BOARDS[b]?.color || '#8B949E'}">
           ${BOARDS[b]?.label || b}
@@ -7294,7 +7298,7 @@ function renderMeetingCard(container) {
         </svg>
         Reunião Mensal
       </span>
-      ${(!isAdmin && !isEscritorio) ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
+      ${!visibleStores ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
       <button class="nf-hist-btn" id="mtgHistBtn" style="display:none">Histórico</button>
     </div>
     ${tabsHtml}
@@ -7336,7 +7340,7 @@ function renderMeetingCard(container) {
 
   histBtn.addEventListener('click', () => { showHistory = !showHistory; refresh(); });
 
-  if (isAdmin || isEscritorio) {
+  if (visibleStores) {
     card.querySelectorAll('.nf-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         activeBoard = tab.dataset.board;
@@ -7372,7 +7376,7 @@ function _nfStatusChip(status) {
 }
 
 function _renderNFActive(body, board, refresh) {
-  const isAdmin      = !S.user?.board;
+  const isAdmin      = userIsAdmin(S.user);
   const isEscritorio = S.user?.board === 'escritorio';
   const items = (S.nfItems || []).filter(x => x.board === board && !x.archived);
   if (!items.length) {
@@ -7387,7 +7391,7 @@ function _renderNFActive(body, board, refresh) {
       <button class="nf-pend-btn${item.status==='pendente'?' nf-btn-cur':''}" data-id="${item.id}" data-action="pendente" title="Manter pendente">⏳</button>
     ` : '';
     const currentUser = S.user?.label || S.user?.username;
-    const canDelete = isAdmin || (!!S.user?.board && item.addedBy === currentUser);
+    const canDelete = isAdmin || (!isAdmin && item.addedBy === currentUser);
     return `
     <div class="nf-item" data-id="${item.id}">
       <label class="nf-chk-label" style="${!showChk ? 'pointer-events:none;opacity:.35' : ''}">
@@ -7438,7 +7442,7 @@ function _renderNFActive(body, board, refresh) {
 }
 
 function _renderNFHistory(body, board, refresh) {
-  const isAdmin = !S.user?.board;
+  const isAdmin = userIsAdmin(S.user);
   const currentUser = S.user?.label || S.user?.username;
   const items = (S.nfItems || []).filter(x => x.board === board && x.archived)
     .sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''));
@@ -7648,18 +7652,22 @@ function renderContratoCard(container) {
 }
 
 function renderCaixaCard(container) {
-  const isAdmin      = !S.user?.board;
+  const isAdmin      = userIsAdmin(S.user);
+  const isSupervisor = !S.user?.board && !isAdmin;
   const isEscritorio = S.user?.board === 'escritorio';
   const userBoard    = S.user?.board;
-  let activeBoard    = (isAdmin || isEscritorio) ? NF_STORES[0] : userBoard;
+  const visibleStores = isAdmin || isEscritorio ? NF_STORES
+    : isSupervisor ? NF_STORES.filter(b => (S.user?.lojas||[]).includes(b))
+    : null;
+  let activeBoard    = visibleStores ? visibleStores[0] : userBoard;
 
   const syncSvg   = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
   const expandSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
   const sangriaSvg = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>`;
 
   function tabsMarkup(activeB) {
-    if (!isAdmin && !isEscritorio) return '';
-    return `<div class="nf-tabs">${NF_STORES.map(b => `
+    if (!visibleStores) return '';
+    return `<div class="nf-tabs">${visibleStores.map(b => `
       <button class="nf-tab${b === activeB ? ' active' : ''}" data-board="${b}"
         style="--nf-tab-color:${BOARDS[b]?.color || '#8B949E'}">${BOARDS[b]?.label || b}
       </button>`).join('')}</div>`;
@@ -7679,7 +7687,7 @@ function renderCaixaCard(container) {
         </svg>
         Fechamento de Caixa
       </span>
-      ${(!isAdmin && !isEscritorio) ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
+      ${!visibleStores ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
       <div style="display:flex;gap:.3rem;margin-left:auto">
         <button class="caixa-sync-btn" id="caixaSyncBtn" title="Sincronizar com Microvix">${syncSvg} Microvix</button>
         ${(isAdmin || isEscritorio) ? `<button class="caixa-sync-btn" id="caixaSangriaBtn" title="Ver todas as sangrias">${sangriaSvg} Sangrias</button>` : ''}
@@ -7852,7 +7860,7 @@ function renderCaixaCard(container) {
   const syncBtn = card.querySelector('#caixaSyncBtn');
   if (syncBtn) syncBtn.addEventListener('click', () => doSync(syncBtn, refresh));
 
-  if (isAdmin || isEscritorio) {
+  if (visibleStores) {
     card.querySelectorAll('.nf-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         activeBoard = tab.dataset.board;
@@ -7872,7 +7880,7 @@ function renderCaixaCard(container) {
     const syncOvl = ovl.querySelector('#caixaSyncBtnOvl');
     if (syncOvl) syncOvl.addEventListener('click', () => doSync(syncOvl, () => { refreshOvl(); refresh(); }));
 
-    if (isAdmin || isEscritorio) {
+    if (visibleStores) {
       ovlTabs.querySelectorAll('.nf-tab').forEach(tab => {
         tab.addEventListener('click', () => {
           activeBoard = tab.dataset.board;
@@ -7954,18 +7962,22 @@ function renderCaixaCard(container) {
 }
 
 function renderNFCard(container) {
-  const isAdmin = !S.user?.board;
+  const isAdmin = userIsAdmin(S.user);
+  const isSupervisor = !S.user?.board && !isAdmin;
   const isEscritorio = S.user?.board === 'escritorio';
   const userBoard = S.user?.board;
-  let activeBoard = (isAdmin || isEscritorio) ? NF_STORES[0] : userBoard;
+  const visibleStores = isAdmin || isEscritorio ? NF_STORES
+    : isSupervisor ? NF_STORES.filter(b => (S.user?.lojas||[]).includes(b))
+    : null;
+  let activeBoard = visibleStores ? visibleStores[0] : userBoard;
   let showHistory = false;
 
   const card = document.createElement('div');
   card.className = 'main-card';
 
-  const tabsHtml = (isAdmin || isEscritorio) ? `
+  const tabsHtml = visibleStores ? `
     <div class="nf-tabs">
-      ${NF_STORES.map(b => {
+      ${visibleStores.map(b => {
         const pending = (S.nfItems || []).filter(x => x.board === b && !x.archived && x.status === 'pendente').length;
         return `<button class="nf-tab${b === activeBoard ? ' active' : ''}" data-board="${b}"
           style="--nf-tab-color:${BOARDS[b]?.color || '#8B949E'}">
@@ -7984,7 +7996,7 @@ function renderNFCard(container) {
         </svg>
         Recebimento de NF
       </span>
-      ${(!isAdmin && !isEscritorio) ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
+      ${!visibleStores ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
       <button class="nf-hist-btn" id="nfHistBtn" style="display:none">Histórico</button>
     </div>
     ${tabsHtml}
@@ -8027,7 +8039,7 @@ function renderNFCard(container) {
     refresh();
   });
 
-  if (isAdmin || isEscritorio) {
+  if (visibleStores) {
     card.querySelectorAll('.nf-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         activeBoard = tab.dataset.board;
