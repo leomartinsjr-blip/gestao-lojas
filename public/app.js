@@ -76,9 +76,12 @@ function hideLogin() {
   document.getElementById('topbar').classList.remove('hidden');
 }
 
+function userIsAdmin(u) { return !u?.board && !(u?.lojas && u.lojas.length); }
+
 function applyUserPermissions(user) {
   document.getElementById('userChip').textContent = user.label || user.username;
-  const isAdmin = !user.board;
+  const isAdmin = userIsAdmin(user);
+  const isSupervisor = !user.board && !isAdmin;
   const ids = ['funcBtn','campanhasBtn','usersBtn','perfBtn','transBtn','folhaBtn','crmBtn'];
   ids.forEach(id => {
     const el = document.getElementById(id);
@@ -86,7 +89,7 @@ function applyUserPermissions(user) {
   });
   const marcasEl = document.getElementById('marcasBtn');
   if (marcasEl) marcasEl.style.display = 'flex';
-  const indevaVisible = isAdmin || user.board === 'escritorio' || INDEVA_STORES.includes(user.board);
+  const indevaVisible = isAdmin || isSupervisor || user.board === 'escritorio' || INDEVA_STORES.includes(user.board);
   const indevaEl = document.getElementById('indevaBtn');
   if (indevaEl) indevaEl.style.display = indevaVisible ? '' : 'none';
 }
@@ -403,6 +406,10 @@ function navigate(delta) {
 // ── Load data ──────────────────────────────────────────────────────────────
 function visibleBoards() {
   if (!S.user?.board) {
+    const lojas = S.user?.lojas;
+    if (lojas && lojas.length) {
+      return Object.entries(BOARDS).filter(([k]) => lojas.includes(k));
+    }
     const all = Object.entries(BOARDS);
     if (DASH_BOARD_FILTER.size === 0) return all;
     return all.filter(([k]) => DASH_BOARD_FILTER.has(k));
@@ -528,7 +535,8 @@ function renderDashboard() {
     return;
   }
 
-  const isAdmin = !S.user?.board;
+  const isAdmin = !S.user?.board; // admin or supervisor — controls collapsible rows/grand total
+  const canFilterStores = userIsAdmin(S.user); // only true admin can change store filter
 
   const daysInMonth = new Date(S.year, S.month, 0).getDate();
   const defW = +(100 / daysInMonth).toFixed(6);
@@ -575,7 +583,7 @@ function renderDashboard() {
   grid.appendChild(leftCol);
 
   // ── FILTRO DE LOJAS ──────────────────────────────────────────────────────
-  if (isAdmin) {
+  if (canFilterStores) {
     const storeBoards = Object.entries(BOARDS).filter(([k]) => k !== 'admin' && k !== 'escritorio');
     const filterBar = document.createElement('div');
     filterBar.className = 'dash-store-filter';
@@ -1727,10 +1735,12 @@ async function _loadCompCard(body) {
   const daysInCur = new Date(S.year, S.month, 0).getDate();
   const prefix    = `${S.year}-${pad(S.month)}-`;
 
-  // Lojas visíveis: login individual vê só a sua
+  // Lojas visíveis: login individual vê só a sua, supervisor vê as suas lojas
   const ALL_STORE_KEYS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'lez', 'site'];
   const isAdmin = !S.user?.board;
-  const STORE_KEYS = isAdmin ? ALL_STORE_KEYS : ALL_STORE_KEYS.filter(k => k === S.user.board);
+  const STORE_KEYS = userIsAdmin(S.user) ? ALL_STORE_KEYS
+    : isAdmin ? ALL_STORE_KEYS.filter(k => (S.user.lojas || []).includes(k))
+    : ALL_STORE_KEYS.filter(k => k === S.user.board);
   const mi = S.month - 1;
 
   // D-1 BRT (igual ao Performance Mensal)
@@ -9419,6 +9429,19 @@ const BOARD_LABELS = {
   '': 'Admin', escritorio: 'Escritório', delrey: 'Del Rey', minas: 'Minas',
   contagem: 'Contagem', estacao: 'Estação', tommy: 'Tommy', lez: 'Lez a Lez', site: 'Site'
 };
+const SUPERVISOR_STORES = [
+  ['delrey','Del Rey'],['minas','Minas'],['contagem','Contagem'],
+  ['estacao','Estação'],['tommy','Tommy'],['lez','Lez a Lez']
+];
+const TIPO_OPTIONS = [
+  ['admin','Admin'],['supervisor','Supervisor'],['escritorio','Escritório'],
+  ['delrey','Del Rey'],['minas','Minas'],['contagem','Contagem'],
+  ['estacao','Estação'],['tommy','Tommy'],['lez','Lez a Lez']
+];
+function userTipo(u) {
+  if (u.lojas && u.lojas.length) return 'supervisor';
+  return u.board || 'admin';
+}
 
 async function _loadUsersList() {
   const list = document.getElementById('usersList');
@@ -9431,36 +9454,63 @@ async function _loadUsersList() {
         <thead><tr>
           <th class="users-th">Usuário</th>
           <th class="users-th">Nome</th>
-          <th class="users-th">Board</th>
+          <th class="users-th">Acesso</th>
           <th class="users-th">Nova Senha</th>
           <th class="users-th"></th>
         </tr></thead>
         <tbody>
-        ${users.map(u => `
+        ${users.map(u => {
+          const tipo = userTipo(u);
+          return `
           <tr class="users-tr" data-user="${u.username}">
             <td class="users-td users-td-user">${u.username}</td>
             <td class="users-td"><input class="users-input users-inline-input" data-field="label" value="${u.label}" placeholder="Nome"></td>
-            <td class="users-td">
-              <select class="users-input users-select users-inline-input" data-field="board">
-                ${Object.entries(BOARD_LABELS).map(([v,l]) => `<option value="${v}"${(u.board==null&&v==='')||u.board===v?' selected':''}>${l}</option>`).join('')}
+            <td class="users-td users-td-acesso">
+              <select class="users-input users-select users-inline-input" data-field="tipo">
+                ${TIPO_OPTIONS.map(([v,l]) => `<option value="${v}"${tipo===v?' selected':''}>${l}</option>`).join('')}
               </select>
+              <div class="users-supervisor-lojas${tipo==='supervisor' ? '' : ' hidden'}" data-role="lojas-box">
+                ${SUPERVISOR_STORES.map(([v,l]) => `<label class="users-loja-chk"><input type="checkbox" value="${v}"${(u.lojas||[]).includes(v)?' checked':''}> ${l}</label>`).join('')}
+              </div>
             </td>
             <td class="users-td"><input class="users-input users-inline-input" data-field="password" type="text" placeholder="••••••" autocomplete="off"></td>
             <td class="users-td users-td-actions">
               <button class="users-save-btn" data-user="${u.username}">Salvar</button>
               <button class="users-del-btn" data-user="${u.username}">Excluir</button>
             </td>
-          </tr>`).join('')}
+          </tr>`;}).join('')}
         </tbody>
       </table>`;
+
+    list.querySelectorAll('[data-field="tipo"]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const box = sel.closest('td').querySelector('[data-role="lojas-box"]');
+        if (box) box.classList.toggle('hidden', sel.value !== 'supervisor');
+      });
+    });
 
     list.querySelectorAll('.users-save-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         const row = list.querySelector(`tr[data-user="${btn.dataset.user}"]`);
         const body = {};
         row.querySelectorAll('[data-field]').forEach(el => {
-          if (el.dataset.field === 'board') { body.board = el.value.trim() || null; }
-          else if (el.value.trim()) body[el.dataset.field] = el.value.trim();
+          if (el.dataset.field === 'tipo') {
+            const tipo = el.value;
+            if (tipo === 'supervisor') {
+              body.board = null;
+              body.lojas = [...row.querySelectorAll('[data-role="lojas-box"] input:checked')].map(cb => cb.value);
+            } else if (tipo === 'admin') {
+              body.board = null;
+              body.lojas = null;
+            } else {
+              body.board = tipo;
+              body.lojas = null;
+            }
+          } else if (el.dataset.field !== 'password') {
+            if (el.value.trim()) body[el.dataset.field] = el.value.trim();
+          } else if (el.value.trim()) {
+            body.password = el.value.trim();
+          }
         });
         try {
           await apiFetch('PUT', `/api/users/${btn.dataset.user}`, body);
@@ -9500,19 +9550,34 @@ function initUsersModal() {
   document.getElementById('usersOverlay').addEventListener('click', e => {
     if (e.target === document.getElementById('usersOverlay')) closeUsersModal();
   });
+  document.getElementById('newTipo').addEventListener('change', e => {
+    document.getElementById('newLojasSupervisor').classList.toggle('hidden', e.target.value !== 'supervisor');
+  });
+
   document.getElementById('addUserBtn').addEventListener('click', async () => {
     const username = document.getElementById('newUsername').value.trim();
     const label    = document.getElementById('newLabel').value.trim();
-    const board    = document.getElementById('newBoard').value;
+    const tipo     = document.getElementById('newTipo').value;
     const password = document.getElementById('newPassword').value.trim();
     const errEl    = document.getElementById('usersFormError');
     errEl.classList.add('hidden');
     if (!username || !password) { errEl.textContent = 'Usuário e senha são obrigatórios'; errEl.classList.remove('hidden'); return; }
+
+    let board = null, lojas = null;
+    if (tipo === 'supervisor') {
+      lojas = [...document.querySelectorAll('#newLojasSupervisor input:checked')].map(cb => cb.value);
+    } else if (tipo !== 'admin') {
+      board = tipo;
+    }
+
     try {
-      await apiFetch('POST', '/api/users', { username, label, board, password });
+      await apiFetch('POST', '/api/users', { username, label, board, lojas, password });
       document.getElementById('newUsername').value = '';
       document.getElementById('newLabel').value = '';
       document.getElementById('newPassword').value = '';
+      document.getElementById('newTipo').value = 'admin';
+      document.getElementById('newLojasSupervisor').classList.add('hidden');
+      document.querySelectorAll('#newLojasSupervisor input').forEach(cb => { cb.checked = false; });
       _loadUsersList();
     } catch (e) {
       errEl.textContent = e.message;

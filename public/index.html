@@ -719,8 +719,9 @@
         <div class="users-form-row">
           <input id="newUsername" class="users-input" type="text" placeholder="Usuário (login)" autocomplete="off" spellcheck="false">
           <input id="newLabel"    class="users-input" type="text" placeholder="Nome exibido">
-          <select id="newBoard" class="users-input users-select">
-            <option value="">Admin</option>
+          <select id="newTipo" class="users-input users-select">
+            <option value="admin">Admin</option>
+            <option value="supervisor">Supervisor</option>
             <option value="escritorio">Escritório</option>
             <option value="delrey">Del Rey</option>
             <option value="minas">Minas</option>
@@ -731,6 +732,15 @@
           </select>
           <input id="newPassword" class="users-input" type="text" placeholder="Senha">
           <button id="addUserBtn" class="users-add-btn">+ Adicionar</button>
+        </div>
+        <div id="newLojasSupervisor" class="users-supervisor-lojas hidden">
+          <span class="users-lojas-label">Lojas do supervisor:</span>
+          <label class="users-loja-chk"><input type="checkbox" value="delrey"> Del Rey</label>
+          <label class="users-loja-chk"><input type="checkbox" value="minas"> Minas</label>
+          <label class="users-loja-chk"><input type="checkbox" value="contagem"> Contagem</label>
+          <label class="users-loja-chk"><input type="checkbox" value="estacao"> Estação</label>
+          <label class="users-loja-chk"><input type="checkbox" value="tommy"> Tommy</label>
+          <label class="users-loja-chk"><input type="checkbox" value="lez"> Lez a Lez</label>
         </div>
         <div id="usersFormError" class="users-form-error hidden"></div>
       </div>

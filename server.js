@@ -348,7 +348,8 @@ function requireAuth(req, res, next) {
 
 function requireAdmin(req, res, next) {
   if (!req.session?.user) return res.status(401).json({ error: 'Não autenticado' });
-  if (req.session.user.board)
+  const u = req.session.user;
+  if (u.board || (u.lojas && u.lojas.length))
     return res.status(403).json({ error: 'Acesso restrito' });
   next();
 }
@@ -361,8 +362,8 @@ app.post('/api/login', (req, res) => {
   const user  = users[key];
   if (!user || user.password !== password)
     return res.status(401).json({ error: 'Usuário ou senha incorretos' });
-  req.session.user = { username: key, board: user.board, label: user.label, passwordChangedAt: user.passwordChangedAt || null, mustChangePassword: !!user.mustChangePassword };
-  res.json({ username: key, board: user.board, label: user.label, mustChangePassword: !!user.mustChangePassword });
+  req.session.user = { username: key, board: user.board, lojas: user.lojas || null, label: user.label, passwordChangedAt: user.passwordChangedAt || null, mustChangePassword: !!user.mustChangePassword };
+  res.json({ username: key, board: user.board, lojas: user.lojas || null, label: user.label, mustChangePassword: !!user.mustChangePassword });
 });
 
 // ── POST /api/logout ───────────────────────────────────────────────────────
@@ -451,19 +452,19 @@ app.post('/api/reset-password', (req, res) => {
 app.get('/api/users', requireAdmin, (req, res) => {
   const users = readUsers();
   const list = Object.entries(users).map(([username, u]) => ({
-    username, label: u.label || username, board: u.board || null, email: u.email || null
+    username, label: u.label || username, board: u.board || null, lojas: u.lojas || null, email: u.email || null
   }));
   res.json(list);
 });
 
 // ── POST /api/users  (admin) ───────────────────────────────────────────────
 app.post('/api/users', requireAdmin, (req, res) => {
-  const { username, password, label, board } = req.body || {};
+  const { username, password, label, board, lojas } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'Informe usuário e senha' });
   const key = username.toLowerCase().trim();
   const users = readUsers();
   if (users[key]) return res.status(409).json({ error: 'Usuário já existe' });
-  users[key] = { password, label: label || key, board: board || null, mustChangePassword: true };
+  users[key] = { password, label: label || key, board: board || null, lojas: (lojas && lojas.length) ? lojas : null, mustChangePassword: true };
   writeUsers(users);
   res.json({ ok: true, username: key });
 });
@@ -473,7 +474,7 @@ app.put('/api/users/:username', requireAdmin, (req, res) => {
   const key = req.params.username.toLowerCase();
   const users = readUsers();
   if (!users[key]) return res.status(404).json({ error: 'Usuário não encontrado' });
-  const { password, label, board, email } = req.body || {};
+  const { password, label, board, email, lojas } = req.body || {};
   if (password) {
     const ts = Date.now().toString();
     users[key].password = password;
@@ -489,6 +490,7 @@ app.put('/api/users/:username', requireAdmin, (req, res) => {
   if (label !== undefined) users[key].label = label;
   if (board !== undefined) users[key].board = board;
   if (email !== undefined) users[key].email = email || null;
+  if (lojas !== undefined) users[key].lojas = (lojas && lojas.length) ? lojas : null;
   writeUsers(users);
   if (password && key === req.session.user.username) {
     return req.session.save(() => res.json({ ok: true }));
@@ -682,13 +684,16 @@ app.get('/api/init', requireAuth, async (req, res) => {
     const prefix = `${mk}-`;
 
     const db = await readDB();
-    const { board } = req.session.user;
-    const isAdminOrEscritorio = !board || board === 'escritorio';
+    const { board, lojas: userLojas } = req.session.user;
+    const isSupervisor = !board && !!(userLojas && userLojas.length);
+    const isAdminOrEscritorio = !board && !isSupervisor || board === 'escritorio';
 
     // Employees — sem foto para reduzir tamanho da resposta (fotos carregam em background)
     const allEmps = db.employees || [];
     const stripFoto = e => { const { foto, ...rest } = e; return rest; };
-    const employees = (isAdminOrEscritorio ? allEmps : allEmps.filter(e => e.board === board)).map(stripFoto);
+    const employees = isSupervisor
+      ? allEmps.filter(e => userLojas.includes(e.board)).map(stripFoto)
+      : (isAdminOrEscritorio ? allEmps : allEmps.filter(e => e.board === board)).map(stripFoto);
 
     // VSales for all employees this month
     const vsalesAll = db.vsales || {};
@@ -707,23 +712,25 @@ app.get('/api/init', requireAuth, async (req, res) => {
 
     // Campaigns filtered by board
     const allCamps = db.campaigns || [];
-    const campaigns = board ? allCamps.filter(c => c.scope === 'rede' || c.stores.includes(board)) : allCamps;
+    const campaigns = isSupervisor
+      ? allCamps.filter(c => c.scope === 'rede' || userLojas.some(l => c.stores.includes(l)))
+      : board ? allCamps.filter(c => c.scope === 'rede' || c.stores.includes(board)) : allCamps;
 
     // Meeting items filtered by board
     const allMeeting = db.meetingItems || [];
     const meetingItems = allMeeting.filter(x =>
-      isAdminOrEscritorio || (x.board === board && x.visibility === 'loja')
+      isAdminOrEscritorio || (isSupervisor && userLojas.includes(x.board) && x.visibility === 'loja') || (x.board === board && x.visibility === 'loja')
     );
 
     // Requisições filtered by board
     const allReq = db.requisicoes || [];
     const requisicoes = allReq
-      .filter(x => isAdminOrEscritorio || x.board === board)
+      .filter(x => isAdminOrEscritorio || (isSupervisor ? userLojas.includes(x.board) : x.board === board))
       .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
     // Retiradas filtered by board
     const retiradas = (db.retiradas || [])
-      .filter(x => isAdminOrEscritorio || x.board === board)
+      .filter(x => isAdminOrEscritorio || (isSupervisor ? userLojas.includes(x.board) : x.board === board))
       .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
 
     // Adiantamentos filtered by board
