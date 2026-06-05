@@ -852,10 +852,9 @@ function buildEmpForm(emp, entry) {
 
   return `
   <div class="fp-emp-form active" id="empform-${emp.id}">
-    <div style="font-size:.75rem;color:#8b949e;margin-bottom:.75rem">
-      ${emp.name} · ${emp.cargo}
-      ${ecfg.inssRate ? ` · INSS ${ecfg.inssRate}%` : ''}${ecfg.vtRate ? ` · VT ${ecfg.vtRate}%` : ''}
-      ${emp.banco ? ` · Banco ${emp.banco} / Cta ${emp.conta||'—'}` : ''}
+    <div style="font-size:.75rem;color:#8b949e;margin-bottom:.75rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+      <span>${emp.name} · ${emp.cargo}${ecfg.inssRate ? ` · INSS ${ecfg.inssRate}%` : ''}${ecfg.vtRate ? ` · VT ${ecfg.vtRate}%` : ''}${emp.banco ? ` · Banco ${emp.banco} / Cta ${emp.conta||'—'}` : ''}</span>
+      <button class="fp-btn" style="padding:.2rem .6rem;font-size:.72rem;margin-left:auto" onclick="fpGerarEmp(${emp.id})" title="Recalcular só este colaborador">↺ Gerar</button>
     </div>
     <div class="fp-form-grid">
       <div class="fp-section">
@@ -1265,6 +1264,19 @@ function fpGerar() {
   FP.dirty = true;
   renderPanel();
   toast('Folha gerada.');
+}
+
+function fpGerarEmp(empId) {
+  const emp = FP.employees.find(e => e.id === empId);
+  if (!emp) return;
+  const hasData = !!(FP.folha[FP.board]?.entries?.[empId]);
+  if (hasData && !confirm(`Recalcular a folha de ${emp.apelido || emp.name}? Os valores editados manualmente serão perdidos.`)) return;
+  if (!FP.folha[FP.board]) FP.folha[FP.board] = {};
+  if (!FP.folha[FP.board].entries) FP.folha[FP.board].entries = {};
+  FP.folha[FP.board].entries[empId] = defaultEntry(emp);
+  FP.dirty = true;
+  selectEmp(empId);
+  toast(`Folha de ${emp.apelido || emp.name} recalculada.`);
 }
 
 // ── Salvar / Exportar ──────────────────────────────────────────────────────
