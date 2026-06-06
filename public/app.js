@@ -4182,7 +4182,10 @@ function computeSellerDayGoals(empId) {
     if (vacSet.has(dateStr)) { goals[dateStr] = { goal: 0, nActive: 0, isVacation: true }; continue; }
     const W           = PD.weights[dateStr] ?? defW;
     const storeDayGoal = PD.metaLoja * W / 100;
+    // nActive = vendedores ativos naquele dia (admitidos e não demitidos ainda)
     const nActive     = Math.max(1, PD.employees.filter(e =>
+      (!e.admissao     || e.admissao     <= dateStr) &&
+      (!e.desligamento || e.desligamento >= dateStr) &&
       !(PD.allVsales[e.id]?.meta?.vacationDays || []).includes(dateStr)
     ).length);
     goals[dateStr] = { goal: storeDayGoal / nActive, nActive, isVacation: false };
@@ -5789,8 +5792,11 @@ function calcWeekKpis(emp, week, extraData) {
     if (empVacDays.has(ds)) continue; // férias: meta diária = 0
     if (metaLoja > 0) {
       // Loja com metaLoja configurada: divide pelo nAtivos do dia
+      // nAtivos = vendedores ativos naquele dia (admitidos e não demitidos ainda)
       const nAtivos = Math.max(1, S.employees.filter(e =>
-        e.board === emp.board && isVend(e) && !e.inativo &&
+        e.board === emp.board && isVend(e) &&
+        (!e.admissao     || e.admissao     <= ds) &&
+        (!e.desligamento || e.desligamento >= ds) &&
         !(vsalesForMonth[e.id]?.meta?.vacationDays || []).includes(ds)
       ).length);
       autoMeta += metaLoja * dayWeight / 100 / nAtivos;
