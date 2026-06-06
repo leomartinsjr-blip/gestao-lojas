@@ -1487,15 +1487,15 @@ function _renderDashWeekBody(body, week, extraData) {
       const sPaVal   = totPecas > 0 && totAtend > 0 ? totPecas / totAtend : null;
       const sHitPA   = sPaVal != null && sPaVal > PA_THRESHOLD;
 
-      const gerentePremio = refIsComplete ? (sHitMeta ? PREMIO_GERENTE_VENDAS : 0) + (sHitMeta && sHitPA ? PREMIO_PA : 0) : 0;
+      const gerentePremio = !refIsFuture ? (sHitMeta ? PREMIO_GERENTE_VENDAS : 0) + (sHitMeta && sHitPA ? PREMIO_PA : 0) : 0;
       totPremio += gerentePremio;
 
       const vendorRows = [];
       for (const emp of allEmps) {
         const k = kpiMap.get(emp.id);
         const paEarned  = k.hitMeta && k.hitPA;
-        const pVendas   = k.isComplete ? (k.hitMeta ? PREMIO_VENDAS : 0) : null;
-        const pPA       = k.isComplete ? (paEarned ? PREMIO_PA : 0) : null;
+        const pVendas   = !k.isFuture ? (k.hitMeta ? PREMIO_VENDAS : 0) : null;
+        const pPA       = !k.isFuture ? (paEarned ? PREMIO_PA : 0) : null;
         const pTotal    = pVendas != null ? pVendas + (pPA||0) : null;
         if (pTotal != null) totPremio += pTotal;
 
@@ -1618,14 +1618,14 @@ function _renderDashWeekBody(body, week, extraData) {
     const sPaVal   = totPecas > 0 && totAtend > 0 ? totPecas / totAtend : null;
     const sHitPA   = sPaVal != null && sPaVal > PA_THRESHOLD;
 
-    const gerentePremio = refIsComplete ? (sHitMeta ? PREMIO_GERENTE_VENDAS : 0) + (sHitMeta && sHitPA ? PREMIO_PA : 0) : 0;
+    const gerentePremio = !refIsFuture ? (sHitMeta ? PREMIO_GERENTE_VENDAS : 0) + (sHitMeta && sHitPA ? PREMIO_PA : 0) : 0;
     totPremio += gerentePremio;
 
     const rows = allEmps.map(emp => {
       const k = kpiMap.get(emp.id);
       const paEarned  = k.hitMeta && k.hitPA;
-      const pVendas   = k.isComplete ? (k.hitMeta ? PREMIO_VENDAS : 0) : null;
-      const pPA       = k.isComplete ? (paEarned ? PREMIO_PA : 0) : null;
+      const pVendas   = !k.isFuture ? (k.hitMeta ? PREMIO_VENDAS : 0) : null;
+      const pPA       = !k.isFuture ? (paEarned ? PREMIO_PA : 0) : null;
       const pTotal    = pVendas != null ? pVendas + (pPA||0) : null;
       if (pTotal != null) totPremio += pTotal;
 
@@ -5989,8 +5989,8 @@ async function renderWeeklyModal() {
       const hitMeta   = k.isGerente ? storeHitMeta : k.hitMeta;
       const hitPA     = k.isGerente ? storeHitPA   : k.hitPA;
       const premioAmt = k.isGerente ? PREMIO_GERENTE_VENDAS : PREMIO_VENDAS;
-      const pVendas   = k.isComplete ? (hitMeta ? premioAmt : 0) : null;
-      const pPA       = k.isComplete ? (hitMeta && hitPA ? PREMIO_PA : 0) : null;
+      const pVendas   = !k.isFuture ? (hitMeta ? premioAmt : 0) : null;
+      const pPA       = !k.isFuture ? (hitMeta && hitPA ? PREMIO_PA : 0) : null;
       const pTotal    = pVendas != null ? pVendas + (pPA || 0) : null;
       if (pTotal != null) totPremio += pTotal;
 
