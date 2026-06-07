@@ -5617,8 +5617,9 @@ app.get('/api/folha/debug-premiacao/:year/:month', requireAdmin, async (req, res
     for (let d = new Date(firstSunday); ; d.setDate(d.getDate() + 7)) {
       const ws = `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
       if (ws > lastDayStr) break;
-      const hasMeta = weeklyMetasMonth[ws] && Object.keys(weeklyMetasMonth[ws]).length > 0;
-      if (ws >= monthStart || hasMeta) allWeekStarts.add(ws);
+      const weEndD2 = new Date(d); weEndD2.setDate(weEndD2.getDate() + 6);
+      const weEnd2 = `${weEndD2.getFullYear()}-${padD(weEndD2.getMonth()+1)}-${padD(weEndD2.getDate())}`;
+      if (weEnd2 >= monthStart && weEnd2 <= lastDayStr) allWeekStarts.add(ws);
     }
 
     const semanas = [];
@@ -5875,9 +5876,10 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       if (ws > lastDayStr) break;
       const weEndD = new Date(d); weEndD.setDate(weEndD.getDate() + 6);
       const weEnd = `${weEndD.getFullYear()}-${padD(weEndD.getMonth()+1)}-${padD(weEndD.getDate())}`;
-      // inclui semana se: começa no mês OU tem meta manual definida neste mês (ex.: semana cross-month com meta explicita)
-      const hasMeta = weeklyMetasMonth[ws] && Object.keys(weeklyMetasMonth[ws]).length > 0;
-      if (ws >= monthStart || hasMeta) allWeekStarts.add(ws);
+      // Inclui semana se o FIM cair dentro do mês — garante que semanas cross-month
+      // (ex.: Dom 31/05–Sáb 06/06) sempre sejam avaliadas para o mês de junho,
+      // permitindo que férias/admissão da semana parcial sejam verificados corretamente.
+      if (weEnd >= monthStart && weEnd <= lastDayStr) allWeekStarts.add(ws);
     }
 
     for (const weekStart of allWeekStarts) {
