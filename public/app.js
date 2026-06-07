@@ -4663,12 +4663,17 @@ function startVendCellEdit(td, empId) {
   td.innerHTML = ''; td.appendChild(inp);
   inp.focus(); inp.select();
 
+  let committed = false;
   const commit = async () => {
+    if (committed) return;
+    committed = true;
+    const userVal = inp.value;
     let val = isValue
-      ? parseFloat(inp.value.replace(/\./g,'').replace(',','.')) || 0
-      : parseInt(inp.value.replace(/\D/g,'')) || 0;
+      ? parseFloat(userVal.replace(/\./g,'').replace(',','.')) || 0
+      : parseInt(userVal.replace(/\D/g,'')) || 0;
     const merged = { value: existing.value||0, pecas: existing.pecas||0, atendimentos: existing.atendimentos||0 };
     merged[field] = val;
+    td.innerHTML = '<span style="opacity:.45;font-size:.75em">💾</span>';
     try {
       if (!merged.value && !merged.pecas && !merged.atendimentos) {
         await apiFetch('DELETE', `/api/vsales/${PD.year}/${PD.month}/${PD.board}/${empId}/${dateStr}`);
@@ -4677,12 +4682,23 @@ function startVendCellEdit(td, empId) {
         await apiFetch('PUT', `/api/vsales/${PD.year}/${PD.month}/${PD.board}/${empId}/${dateStr}`, merged);
         PD.allVsales[empId].entries[dateStr] = merged;
       }
-    } catch(e) { toast('Erro: ' + e.message, true); }
-    _renderKeepScroll();
-    _syncPDToS();
+      _renderKeepScroll();
+      _syncPDToS();
+    } catch(e) {
+      toast('Erro ao salvar — tente novamente', true);
+      committed = false;
+      const inp2 = document.createElement('input');
+      inp2.type = 'text'; inp2.className = 'ds-cell-input';
+      inp2.value = userVal;
+      td.innerHTML = ''; td.appendChild(inp2);
+      inp2.focus(); inp2.select();
+      inp2.addEventListener('blur', commit2);
+      inp2.addEventListener('keydown', e => { if (e.key==='Enter') inp2.blur(); if (e.key==='Escape') _renderKeepScroll(); });
+      function commit2() { inp2.removeEventListener('blur', commit2); commit(); }
+    }
   };
   inp.addEventListener('blur', commit);
-  inp.addEventListener('keydown', e => { if (e.key==='Enter') inp.blur(); if (e.key==='Escape') _renderKeepScroll(); });
+  inp.addEventListener('keydown', e => { if (e.key==='Enter') { e.preventDefault(); inp.blur(); } if (e.key==='Escape') _renderKeepScroll(); });
 }
 
 function _renderKeepScroll() {
@@ -4702,17 +4718,23 @@ function startFluxoCellEdit(td) {
   td.innerHTML = ''; td.appendChild(inp);
   inp.focus(); inp.select();
 
+  let committed = false;
   const commit = async () => {
+    if (committed) return;
+    committed = true;
     const val = parseInt(inp.value.replace(/\D/g,'')) || 0;
     try {
       await apiFetch('PUT', `/api/storefluxo/${PD.year}/${PD.month}/${PD.board}/${dateStr}`, { value: val });
       if (val === 0) delete PD.fluxo[dateStr]; else PD.fluxo[dateStr] = val;
-    } catch(e) { toast('Erro: ' + e.message, true); }
-    _renderKeepScroll();
-    _syncPDToS();
+      _renderKeepScroll();
+      _syncPDToS();
+    } catch(e) {
+      toast('Erro ao salvar — tente novamente', true);
+      committed = false;
+    }
   };
   inp.addEventListener('blur', commit);
-  inp.addEventListener('keydown', e => { if (e.key==='Enter') inp.blur(); if (e.key==='Escape') _renderKeepScroll(); });
+  inp.addEventListener('keydown', e => { if (e.key==='Enter') { e.preventDefault(); inp.blur(); } if (e.key==='Escape') _renderKeepScroll(); });
 }
 
 function startGlobalWeightEdit(td) {
