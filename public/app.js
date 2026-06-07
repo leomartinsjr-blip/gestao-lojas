@@ -5893,16 +5893,36 @@ function calcWeekKpis(emp, week, extraData) {
 
   const isGerente = emp.isVendedor === false;
 
+  // Verifica se o funcionário trabalhou todos os dias da semana (dentro do mês atual)
+  // Regra: dia marcado como férias (Part%) ou antes da admissão → sem direito ao prêmio
+  const _pad2 = n => String(n).padStart(2,'0');
+  const _curMonthStart = `${S.year}-${_pad2(S.month)}-01`;
+  const _curMonthEnd   = `${S.year}-${_pad2(S.month)}-${_pad2(new Date(S.year, S.month, 0).getDate())}`;
+  // Admissão efetiva: usa emp.admissao ou primeira entrada de vsales do mês (sem admissão cadastrada)
+  let _effAdmissao = emp.admissao || null;
+  if (!_effAdmissao) {
+    const _firstEntry = Object.keys(vsale.entries || {})
+      .filter(d => d >= _curMonthStart && d <= _curMonthEnd).sort()[0];
+    if (_firstEntry) _effAdmissao = _firstEntry;
+  }
+  const trabalhouSemanaInteira = dates.every(ds => {
+    if (ds < _curMonthStart || ds > _curMonthEnd) return true; // dias fora do mês não bloqueiam
+    if (empVacDays.has(ds)) return false;
+    if (_effAdmissao && ds < _effAdmissao) return false;
+    if (emp.desligamento && ds > emp.desligamento) return false;
+    return true;
+  });
+
   const hitMeta = wMeta > 0 && valor >= wMeta;
   const hitPA   = pa != null && pa > PA_THRESHOLD;
-  const pVendas = isComplete ? (hitMeta ? PREMIO_VENDAS : 0) : null;
-  const pPA     = isComplete ? (hitMeta && hitPA ? PREMIO_PA : 0) : null;
+  const pVendas = isComplete ? (hitMeta && trabalhouSemanaInteira ? PREMIO_VENDAS : 0) : null;
+  const pPA     = isComplete ? (hitMeta && hitPA && trabalhouSemanaInteira ? PREMIO_PA : 0) : null;
   const pTotal  = pVendas != null ? pVendas + (pPA||0) : null;
 
   const pctProj = (wMeta > 0 && projecao != null) ? projecao / wMeta * 100 : null;
 
   return { wMeta, valor, pa, pecas, atend, pctMeta, pctProj, projecao,
-           hitMeta, hitPA, pVendas, pPA, pTotal, isGerente,
+           hitMeta, hitPA, pVendas, pPA, pTotal, isGerente, trabalhouSemanaInteira,
            isComplete, isFuture, daysElapsed, totalDays: 7 };
 }
 
@@ -6011,12 +6031,14 @@ async function renderWeeklyModal() {
       const hitMeta   = k.isGerente ? storeHitMeta : k.hitMeta;
       const hitPA     = k.isGerente ? storeHitPA   : k.hitPA;
       const premioAmt = k.isGerente ? PREMIO_GERENTE_VENDAS : PREMIO_VENDAS;
-      const pVendas   = !k.isFuture ? (hitMeta ? premioAmt : 0) : null;
-      const pPA       = !k.isFuture ? (hitMeta && hitPA ? PREMIO_PA : 0) : null;
+      // Prêmio só para quem trabalhou a semana inteira (sem férias/admissão no meio da semana)
+      const elegivel  = k.trabalhouSemanaInteira;
+      const pVendas   = !k.isFuture ? (hitMeta && elegivel ? premioAmt : 0) : null;
+      const pPA       = !k.isFuture ? (hitMeta && hitPA && elegivel ? PREMIO_PA : 0) : null;
       const pTotal    = pVendas != null ? pVendas + (pPA || 0) : null;
       if (pTotal != null) totPremio += pTotal;
 
-      if (isCurrent && hitMeta && (k.wMeta > 0 || k.isGerente)) {
+      if (isCurrent && hitMeta && elegivel && (k.wMeta > 0 || k.isGerente)) {
         const empKey = `wk-emp-${emp.id}-${week.startStr}`;
         if (!META_ACHIEVED.has(empKey)) {
           META_ACHIEVED.add(empKey);
@@ -6028,8 +6050,10 @@ async function renderWeeklyModal() {
       const projCls    = k.projecao == null ? '' : k.projecao >= k.wMeta ? 'kpi-pos' : 'kpi-neg';
       const pctProjCls = k.pctProj  == null ? '' : k.pctProj  >= 100 ? 'kpi-pos' : k.pctProj  >= 80 ? 'kpi-warn' : 'kpi-neg';
 
-      const paEarned2 = hitMeta && hitPA;
-      const premioHtml = k.isComplete
+      const paEarned2 = hitMeta && hitPA && elegivel;
+      const premioHtml = !elegivel
+        ? `<span class="wk-p wk-p-no" title="Não trabalhou a semana inteira (férias ou admissão no meio da semana)" style="font-style:italic;opacity:.7">sem direito</span>`
+        : k.isComplete
         ? `<span class="wk-p ${pVendas>0?'wk-p-ok':'wk-p-no'}" title="Meta de vendas">${fBRL(premioAmt)} ${hitMeta?'✓':'✗'}</span>
            <span class="wk-p ${paEarned2?'wk-p-ok':'wk-p-no'}" title="${hitPA&&!hitMeta?'PA atingido mas meta venda não':'PA > '+PA_THRESHOLD}">+${fBRL(PREMIO_PA)} ${paEarned2?'✓':'✗'}</span>`
         : k.isFuture ? '<span class="wk-p-pending">—</span>'
