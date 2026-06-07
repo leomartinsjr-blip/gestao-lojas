@@ -251,13 +251,13 @@ function buildTotalForm(emps) {
     totalLiq  += entry.liquido        || 0;
 
     // acumula custos por categoria
-    if (_ct === 'vendedor') {
-      comVend    += entry.comissaoTotal || 0;
-      vendasVend += entry.vendas        || 0;
-    } else if (_ct === 'gerente' || _ct === 'gvend' || _ct === 'sub') {
-      comGer     += entry.comissaoTotal || 0;
-      comLojaGer += entry.comissaoLoja  || 0;
-      fixoGer    += entry.fixo          || 0;
+    // comissão individual (próprias vendas) → sempre em comVend, independente do cargo
+    comVend    += entry.comissaoTotal || 0;
+    vendasVend += entry.vendas        || 0;
+    // comissão sobre total da loja (comissaoVR) → só gerência/sub
+    if (_ct === 'gerente' || _ct === 'gvend' || _ct === 'sub') {
+      comLojaGer += entry.comissaoLoja || 0;
+      fixoGer    += entry.fixo         || 0;
     }
     gmTotal          += entry.gmComplement     || 0;
     premiacaoTotal   += entry.premiacao        || 0;
@@ -286,9 +286,9 @@ function buildTotalForm(emps) {
   feriadoTotal       = r2(feriadoTotal);
   const totalPremiacoes = r2(premiacaoTotal + premiacaoLojaTotal + extrasTotal + feriadoTotal);
 
+  comLojaGer         = r2(comLojaGer);
   fixoGer            = r2(fixoGer);
-  const totalComGerTudo = r2(comGer + comLojaGer);
-  const totalCustoComissao = r2(comVend + totalComGerTudo + fixoGer + gmTotal + totalPremiacoes);
+  const totalCustoComissao = r2(comVend + comLojaGer + fixoGer + gmTotal + totalPremiacoes);
 
   const pct = (v) => vendaLoja > 0 ? ` <span style="color:#8b949e;font-size:.75rem">(${(v/vendaLoja*100).toFixed(1)}%)</span>` : '';
 
@@ -310,7 +310,6 @@ function buildTotalForm(emps) {
   ].filter(Boolean).join('');
 
   const gerSubRows = [
-    comGer     > 0 ? subRow('Comissão individual (própria)', comGer) : '',
     comLojaGer > 0 ? subRow('Comissão sobre vendas da loja', comLojaGer) : '',
     fixoGer    > 0 ? subRow('Salário fixo gerência/sub', fixoGer) : '',
   ].filter(Boolean).join('');
@@ -324,10 +323,10 @@ function buildTotalForm(emps) {
     <table style="width:100%;border-collapse:collapse;font-size:.83rem">
       <tbody>
         ${comVend > 0 ? custRow('Comissão Vendedores', comVend, vendasVend > 0 ? `sobre ${brl(vendasVend)} vendidos` : '') : ''}
-        ${(totalComGerTudo > 0 || fixoGer > 0) ? `
+        ${(comLojaGer > 0 || fixoGer > 0) ? `
         <tr style="border-bottom:${gerSubRows ? '0' : '1px solid #1a1f26'}">
-          <td style="padding:.35rem .5rem;font-size:.82rem;color:#e6edf3">Gerência / Sub-Gerência</td>
-          <td style="padding:.35rem .5rem;text-align:right;white-space:nowrap;color:#e6edf3">${brl(r2(totalComGerTudo + fixoGer))}${pct(r2(totalComGerTudo + fixoGer))}</td>
+          <td style="padding:.35rem .5rem;font-size:.82rem;color:#e6edf3">Comissão Gerência (total loja)</td>
+          <td style="padding:.35rem .5rem;text-align:right;white-space:nowrap;color:#e6edf3">${brl(r2(comLojaGer + fixoGer))}${pct(r2(comLojaGer + fixoGer))}</td>
           <td></td>
         </tr>
         ${gerSubRows ? `<tr><td colspan="3" style="padding:0 0 .3rem">${gerSubRows}</td></tr>` : ''}` : ''}
