@@ -5804,18 +5804,26 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
           const storePremioVal = empCfg.premioLojaValor > 0 ? empCfg.premioLojaValor : PREMIO_GER_W;
 
           // Prêmio de loja para gerente, sub-gerente e funcionários com flag no config
+          // Regra: só recebe se trabalhou a semana inteira (admissão anterior ao início da semana)
           if (useStorePremio) {
-            let val = 0;
-            if (storeHitMeta) val += storePremioVal;
-            if (storeHitMeta && storeHitPA) val += PREMIO_PA_W;
-            if (val > 0) {
-              premiacaoSemanalGer[emp.id] += val;
-              premiacaoSemanalGerDetalhe[emp.id].push({ label: semLabel, valor: val });
+            const admissao = emp.admissao || '';
+            if (!admissao || admissao <= weekStart) {
+              let val = 0;
+              if (storeHitMeta) val += storePremioVal;
+              if (storeHitMeta && storeHitPA) val += PREMIO_PA_W;
+              if (val > 0) {
+                premiacaoSemanalGer[emp.id] += val;
+                premiacaoSemanalGerDetalhe[emp.id].push({ label: semLabel, valor: val });
+              }
             }
           }
 
           // Prêmio individual para vendedor, gerente vendedor e sub-gerente
+          // Regra: só recebe se trabalhou a semana inteira (admissão anterior ao início da semana)
           if (isGVend || isSubGer || (!isGer && isVend(emp))) {
+            const admissao = emp.admissao || '';
+            const trabalhouSemanaInteira = !admissao || admissao <= weekStart;
+            if (!trabalhouSemanaInteira) continue;
             const vs = vsalesAll[`${mk}-${board}-${emp.id}`] || {};
             const we2 = Object.entries(vs.entries||{}).filter(([d]) => d>=weekStart && d<=weStr);
             const empSales = we2.reduce((s,[,e]) => s+(e.value||0), 0);
