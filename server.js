@@ -5606,26 +5606,84 @@ app.get('/api/folha/debug-premiacao/:year/:month', requireAdmin, async (req, res
     const todayStr   = new Date().toISOString().slice(0, 10);
     const lastDay    = new Date(year, month, 0);
     const padD       = n => String(n).padStart(2,'0');
+    const monthStart = `${year}-${String(month).padStart(2,'0')}-01`;
     const lastDayStr = `${year}-${padD(month)}-${padD(lastDay.getDate())}`;
 
+    // Generate allWeekStarts (same logic as folha endpoint)
+    const allWeekStarts = new Set();
+    const msDate = new Date(monthStart + 'T12:00:00');
+    const firstSunday = new Date(msDate);
+    firstSunday.setDate(msDate.getDate() - msDate.getDay());
+    for (let d = new Date(firstSunday); ; d.setDate(d.getDate() + 7)) {
+      const ws = `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
+      if (ws > lastDayStr) break;
+      const hasMeta = weeklyMetasMonth[ws] && Object.keys(weeklyMetasMonth[ws]).length > 0;
+      if (ws >= monthStart || hasMeta) allWeekStarts.add(ws);
+    }
+
     const semanas = [];
-    for (const [weekStart, weekData] of Object.entries(weeklyMetasMonth)) {
-      const ws = new Date(weekStart + 'T12:00:00');
-      const we = new Date(ws); we.setDate(we.getDate() + 6);
-      const weStr = `${we.getFullYear()}-${padD(we.getMonth()+1)}-${padD(we.getDate())}`;
+    for (const weekStart of allWeekStarts) {
+      const wsDate = new Date(weekStart + 'T12:00:00');
+      const weDate = new Date(wsDate); weDate.setDate(weDate.getDate() + 6);
+      const weStr = `${weDate.getFullYear()}-${padD(weDate.getMonth()+1)}-${padD(weDate.getDate())}`;
       const skipped = weStr > lastDayStr || weStr >= todayStr;
+      const hasMeta = weeklyMetasMonth[weekStart] && Object.keys(weeklyMetasMonth[weekStart]).length > 0;
+      const weekData = weeklyMetasMonth[weekStart] || {};
+
+      const empsDetalhes = employees.map(emp => {
+        const vsEmp = vsalesAll[`${mk}-${emp.board}-${emp.id}`] || {};
+        const vacSet = new Set(vsEmp.meta?.vacationDays || []);
+        let effectiveAdmissao = emp.admissao || null;
+        if (!effectiveAdmissao) {
+          const allEntryDates = Object.keys(vsEmp.entries || {})
+            .filter(d => d >= monthStart && d <= lastDayStr).sort();
+          if (allEntryDates.length > 0) effectiveAdmissao = allEntryDates[0];
+        }
+        const diasAvaliados = [];
+        const d = new Date(weekStart + 'T12:00:00');
+        const end = new Date(weStr + 'T12:00:00');
+        let trabInteira = true;
+        let motivoFalha = null;
+        while (d <= end) {
+          const ds = `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
+          if (ds >= monthStart && ds <= lastDayStr) {
+            let bloqueio = null;
+            if (vacSet.has(ds)) bloqueio = 'férias';
+            else if (effectiveAdmissao && ds < effectiveAdmissao) bloqueio = `antes admissão (${effectiveAdmissao})`;
+            else if (emp.desligamento && ds > emp.desligamento) bloqueio = `após desligamento (${emp.desligamento})`;
+            if (bloqueio && trabInteira) { trabInteira = false; motivoFalha = `${ds}: ${bloqueio}`; }
+            diasAvaliados.push({ ds, bloqueio });
+          }
+          d.setDate(d.getDate() + 1);
+        }
+        const we2 = Object.entries(vsEmp.entries||{}).filter(([d]) => d>=weekStart && d<=weStr);
+        const empSales = we2.reduce((s,[,e]) => s+(e.value||0), 0);
+        const mMeta = weekData[emp.id]?.meta || 0;
+        const mMensal = vsEmp.meta?.mensal || 0;
+        return {
+          id: emp.id, name: emp.name, cargo: emp.cargo, board: emp.board,
+          admissao: emp.admissao || null,
+          effectiveAdmissao,
+          vacationDays: [...vacSet],
+          trabalhouSemanaInteira: trabInteira,
+          motivoFalha,
+          empSales,
+          mMeta, mMensal,
+          diasAvaliados,
+        };
+      });
+
       semanas.push({
-        weekStart, weStr, skipped,
+        weekStart, weStr, skipped, hasMeta,
         empMetas: Object.keys(weekData).length,
-        empIds: Object.keys(weekData),
+        emps: empsDetalhes,
       });
     }
     res.json({
-      mk, todayStr, lastDayStr,
-      semanasComMeta: semanas.length,
+      mk, todayStr, monthStart, lastDayStr,
+      allWeekStarts: [...allWeekStarts],
       semanas,
-      empIds: employees.map(e => ({ id: e.id, name: e.name, board: e.board })),
-      vsalesKeys: Object.keys(vsalesAll).filter(k => k.startsWith(mk)),
+      employees: employees.map(e => ({ id: e.id, name: e.name, board: e.board, admissao: e.admissao || null, cargo: e.cargo })),
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -5807,6 +5865,17 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
           // Regra: % diário zerado (férias, admissão no meio, desligamento) = não trabalhou = sem prêmio
           const vsEmp = vsalesAll[`${mk}-${board}-${emp.id}`] || {};
           const vacSet = new Set(vsEmp.meta?.vacationDays || []);
+
+          // Se admissão não estiver cadastrada, usa primeira entrada de vsales do mês como fallback
+          // (detecta funcionários que começaram no meio do mês sem data de admissão preenchida)
+          let effectiveAdmissao = emp.admissao || null;
+          if (!effectiveAdmissao) {
+            const allEntryDates = Object.keys(vsEmp.entries || {})
+              .filter(d => d >= monthStart && d <= lastDayStr)
+              .sort();
+            if (allEntryDates.length > 0) effectiveAdmissao = allEntryDates[0];
+          }
+
           const trabalhouSemanaInteira = (() => {
             const d = new Date(weekStart + 'T12:00:00');
             const end = new Date(weStr + 'T12:00:00');
@@ -5814,8 +5883,8 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
               const ds = `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
               if (ds >= monthStart && ds <= lastDayStr) {
                 if (vacSet.has(ds)) return false;
-                if (emp.admissao    && ds < emp.admissao)    return false;
-                if (emp.desligamento && ds > emp.desligamento) return false;
+                if (effectiveAdmissao && ds < effectiveAdmissao) return false;
+                if (emp.desligamento  && ds > emp.desligamento)  return false;
               }
               d.setDate(d.getDate() + 1);
             }
