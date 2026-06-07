@@ -230,7 +230,7 @@ function buildTotalForm(emps) {
 
   // ── Acumuladores para o resumo de custos ──────────────────────────────────
   let comVend = 0, vendasVend = 0;
-  let comGer = 0, comLojaGer = 0;
+  let comGer = 0, comLojaGer = 0, fixoGer = 0;
   let gmTotal = 0;
   let premiacaoTotal = 0, premiacaoLojaTotal = 0;
   let extrasTotal = 0, feriadoTotal = 0;
@@ -257,6 +257,7 @@ function buildTotalForm(emps) {
     } else if (_ct === 'gerente' || _ct === 'gvend' || _ct === 'sub') {
       comGer     += entry.comissaoTotal || 0;
       comLojaGer += entry.comissaoLoja  || 0;
+      fixoGer    += entry.fixo          || 0;
     }
     gmTotal          += entry.gmComplement     || 0;
     premiacaoTotal   += entry.premiacao        || 0;
@@ -284,23 +285,34 @@ function buildTotalForm(emps) {
   extrasTotal        = r2(extrasTotal);
   feriadoTotal       = r2(feriadoTotal);
   const totalPremiacoes = r2(premiacaoTotal + premiacaoLojaTotal + extrasTotal + feriadoTotal);
+
+  fixoGer            = r2(fixoGer);
   const totalComGerTudo = r2(comGer + comLojaGer);
-  const totalCustoComissao = r2(comVend + totalComGerTudo + gmTotal + totalPremiacoes);
+  const totalCustoComissao = r2(comVend + totalComGerTudo + fixoGer + gmTotal + totalPremiacoes);
 
   const pct = (v) => vendaLoja > 0 ? ` <span style="color:#8b949e;font-size:.75rem">(${(v/vendaLoja*100).toFixed(1)}%)</span>` : '';
 
-  const custRow = (label, valor, sub='', color='#e6edf3', bold=false) =>
+  const custRow = (label, valor, sub='', color='#e6edf3') =>
     `<tr style="border-bottom:1px solid #1a1f26">
-      <td style="padding:.35rem .5rem;color:${color};${bold?'font-weight:700':'font-size:.82rem'}">${label}</td>
-      <td style="padding:.35rem .5rem;text-align:right;color:${color};${bold?'font-weight:700':''};white-space:nowrap">${brl(valor)}${pct(valor)}</td>
+      <td style="padding:.35rem .5rem;color:${color};font-size:.82rem">${label}</td>
+      <td style="padding:.35rem .5rem;text-align:right;color:${color};white-space:nowrap">${brl(valor)}${pct(valor)}</td>
       ${sub ? `<td style="padding:.35rem .5rem;font-size:.72rem;color:#484f58">${sub}</td>` : '<td></td>'}
     </tr>`;
 
+  const subRow = (label, valor) =>
+    `<div style="display:flex;justify-content:space-between;font-size:.72rem;color:#8b949e;padding:.1rem .4rem .1rem 1rem"><span>${label}</span><span>${brl(valor)}</span></div>`;
+
   const premSubRows = [
-    premiacaoTotal     > 0 ? `<div style="display:flex;justify-content:space-between;font-size:.72rem;color:#8b949e;padding:.1rem .4rem .1rem 1rem"><span>Meta semanal</span><span>${brl(premiacaoTotal)}</span></div>` : '',
-    premiacaoLojaTotal > 0 ? `<div style="display:flex;justify-content:space-between;font-size:.72rem;color:#8b949e;padding:.1rem .4rem .1rem 1rem"><span>Prêmio loja/balanço</span><span>${brl(premiacaoLojaTotal)}</span></div>` : '',
-    extrasTotal        > 0 ? `<div style="display:flex;justify-content:space-between;font-size:.72rem;color:#8b949e;padding:.1rem .4rem .1rem 1rem"><span>Extras (Instagram, dobra, abertura…)</span><span>${brl(extrasTotal)}</span></div>` : '',
-    feriadoTotal       > 0 ? `<div style="display:flex;justify-content:space-between;font-size:.72rem;color:#8b949e;padding:.1rem .4rem .1rem 1rem"><span>Feriados</span><span>${brl(feriadoTotal)}</span></div>` : '',
+    premiacaoTotal     > 0 ? subRow('Meta semanal', premiacaoTotal) : '',
+    premiacaoLojaTotal > 0 ? subRow('Prêmio loja/balanço', premiacaoLojaTotal) : '',
+    extrasTotal        > 0 ? subRow('Extras (Instagram, dobra, abertura…)', extrasTotal) : '',
+    feriadoTotal       > 0 ? subRow('Feriados', feriadoTotal) : '',
+  ].filter(Boolean).join('');
+
+  const gerSubRows = [
+    comGer     > 0 ? subRow('Comissão individual (própria)', comGer) : '',
+    comLojaGer > 0 ? subRow('Comissão sobre vendas da loja', comLojaGer) : '',
+    fixoGer    > 0 ? subRow('Salário fixo gerência/sub', fixoGer) : '',
   ].filter(Boolean).join('');
 
   const resumo = `
@@ -312,8 +324,13 @@ function buildTotalForm(emps) {
     <table style="width:100%;border-collapse:collapse;font-size:.83rem">
       <tbody>
         ${comVend > 0 ? custRow('Comissão Vendedores', comVend, vendasVend > 0 ? `sobre ${brl(vendasVend)} vendidos` : '') : ''}
-        ${totalComGerTudo > 0 ? custRow('Comissão Gerência', totalComGerTudo,
-            comLojaGer > 0 ? `individual ${brl(comGer)} + loja ${brl(comLojaGer)}` : '') : ''}
+        ${(totalComGerTudo > 0 || fixoGer > 0) ? `
+        <tr style="border-bottom:${gerSubRows ? '0' : '1px solid #1a1f26'}">
+          <td style="padding:.35rem .5rem;font-size:.82rem;color:#e6edf3">Gerência / Sub-Gerência</td>
+          <td style="padding:.35rem .5rem;text-align:right;white-space:nowrap;color:#e6edf3">${brl(r2(totalComGerTudo + fixoGer))}${pct(r2(totalComGerTudo + fixoGer))}</td>
+          <td></td>
+        </tr>
+        ${gerSubRows ? `<tr><td colspan="3" style="padding:0 0 .3rem">${gerSubRows}</td></tr>` : ''}` : ''}
         ${gmTotal > 0 ? custRow('Complemento Garantia Mínima', gmTotal, 'diferença paga por não bater comissão mínima', '#f59e0b') : ''}
         ${totalPremiacoes > 0 ? `
         <tr style="border-bottom:${premSubRows ? '0' : '1px solid #1a1f26'}">
@@ -323,7 +340,7 @@ function buildTotalForm(emps) {
         </tr>
         ${premSubRows ? `<tr><td colspan="3" style="padding:0 0 .3rem">${premSubRows}</td></tr>` : ''}` : ''}
         <tr style="border-top:2px solid #30363d;background:#0d1117">
-          <td style="padding:.5rem .5rem;color:#58a6ff;font-weight:700;font-size:.85rem">TOTAL COMISSÃO + PRÊMIOS</td>
+          <td style="padding:.5rem .5rem;color:#58a6ff;font-weight:700;font-size:.85rem">TOTAL FOLHA VARIÁVEL + FIXO GER.</td>
           <td style="padding:.5rem .5rem;text-align:right;color:#58a6ff;font-weight:700;font-size:.9rem;white-space:nowrap">${brl(totalCustoComissao)}${pct(totalCustoComissao)}</td>
           <td></td>
         </tr>
