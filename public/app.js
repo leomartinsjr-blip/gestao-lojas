@@ -5911,6 +5911,15 @@ function calcWeekKpis(emp, week, extraData) {
     if (emp.desligamento && ds > emp.desligamento) return false;
     return true;
   });
+  // DEBUG TEMPORÁRIO — remover após confirmar
+  if (emp.name?.toUpperCase().includes('THIAGGO') || emp.apelido?.toUpperCase().includes('THIAGGO')) {
+    console.log('[DEBUG Thiaggo]', {
+      dates, empVacDays: [...empVacDays], _effAdmissao,
+      admissao: emp.admissao, desligamento: emp.desligamento,
+      trabalhouSemanaInteira,
+      vsaleVacDays: vsale.meta?.vacationDays,
+    });
+  }
 
   const hitMeta = wMeta > 0 && valor >= wMeta;
   const hitPA   = pa != null && pa > PA_THRESHOLD;
