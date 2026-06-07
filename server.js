@@ -5630,9 +5630,35 @@ app.get('/api/folha/debug-premiacao/:year/:month', requireAdmin, async (req, res
       const hasMeta = weeklyMetasMonth[weekStart] && Object.keys(weeklyMetasMonth[weekStart]).length > 0;
       const weekData = weeklyMetasMonth[weekStart] || {};
 
+      // Build ausencia days map for debug
+      const ausenciasAll = db.ausencias || [];
+      const _normNameDbg = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+      const ausenciaDiasMapDbg = {};
+      for (const emp of employees) {
+        const empNorm = _normNameDbg(emp.apelido || emp.name);
+        const empAus  = ausenciasAll.filter(a =>
+          ['ferias','atestado'].includes(a.tipo) &&
+          _normNameDbg(a.colaborador) === empNorm &&
+          a.dataFim >= monthStart && a.dataInicio <= lastDayStr
+        );
+        if (!empAus.length) continue;
+        const days = new Set();
+        for (const a of empAus) {
+          const cur = new Date(a.dataInicio + 'T12:00:00');
+          const fim = new Date(a.dataFim    + 'T12:00:00');
+          while (cur <= fim) {
+            const ds = cur.toISOString().slice(0,10);
+            if (ds >= monthStart && ds <= lastDayStr) days.add(ds);
+            cur.setDate(cur.getDate() + 1);
+          }
+        }
+        if (days.size > 0) ausenciaDiasMapDbg[emp.id] = [...days].sort();
+      }
+
       const empsDetalhes = employees.map(emp => {
         const vsEmp = vsalesAll[`${mk}-${emp.board}-${emp.id}`] || {};
         const vacSet = new Set(vsEmp.meta?.vacationDays || []);
+        const ausenciaDias = new Set(ausenciaDiasMapDbg[emp.id] || []);
         let effectiveAdmissao = emp.admissao || null;
         if (!effectiveAdmissao) {
           const allEntryDates = Object.keys(vsEmp.entries || {})
@@ -5648,7 +5674,8 @@ app.get('/api/folha/debug-premiacao/:year/:month', requireAdmin, async (req, res
           const ds = `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
           if (ds >= monthStart && ds <= lastDayStr) {
             let bloqueio = null;
-            if (vacSet.has(ds)) bloqueio = 'férias';
+            if (vacSet.has(ds)) bloqueio = 'férias (Part%)';
+            else if (ausenciaDias.has(ds)) bloqueio = 'férias/atestado (calendário)';
             else if (effectiveAdmissao && ds < effectiveAdmissao) bloqueio = `antes admissão (${effectiveAdmissao})`;
             else if (emp.desligamento && ds > emp.desligamento) bloqueio = `após desligamento (${emp.desligamento})`;
             if (bloqueio && trabInteira) { trabInteira = false; motivoFalha = `${ds}: ${bloqueio}`; }
@@ -5665,6 +5692,7 @@ app.get('/api/folha/debug-premiacao/:year/:month', requireAdmin, async (req, res
           admissao: emp.admissao || null,
           effectiveAdmissao,
           vacationDays: [...vacSet],
+          ausenciaDias: ausenciaDiasMapDbg[emp.id] || [],
           trabalhouSemanaInteira: trabInteira,
           motivoFalha,
           empSales,
@@ -5762,6 +5790,34 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
     for (const emp of employees) {
       const key = `${mk}-${emp.board}-${emp.id}`;
       vsales[emp.id] = vsalesAll[key] || { meta: { mensal: 0 }, entries: {} };
+    }
+
+    // ── Ausências (férias/atestados) → mapa de dias bloqueados por funcionário ──
+    // Usado para excluir funcionários que não trabalharam a semana inteira da premiação semanal
+    const ausencias = db.ausencias || [];
+    // Normaliza nome para comparação case-insensitive sem acento
+    const _normName = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+    // Para cada funcionário, expande o range de férias/atestado em dias individuais
+    const ausenciaDiasMap = {}; // empId → Set<'YYYY-MM-DD'>
+    for (const emp of employees) {
+      const empNorm = _normName(emp.apelido || emp.name);
+      const empAus  = ausencias.filter(a =>
+        ['ferias','atestado'].includes(a.tipo) &&
+        _normName(a.colaborador) === empNorm &&
+        a.dataFim >= monthStart && a.dataInicio <= lastDayStr
+      );
+      if (!empAus.length) continue;
+      const days = new Set();
+      for (const a of empAus) {
+        const cur = new Date(a.dataInicio + 'T12:00:00');
+        const fim = new Date(a.dataFim    + 'T12:00:00');
+        while (cur <= fim) {
+          const ds = cur.toISOString().slice(0,10);
+          if (ds >= monthStart && ds <= lastDayStr) days.add(ds);
+          cur.setDate(cur.getDate() + 1);
+        }
+      }
+      if (days.size > 0) ausenciaDiasMap[emp.id] = days;
     }
 
     // ── Premiação semanal — calcula para semanas cujo último dia está dentro do mês ──
@@ -5876,13 +5932,15 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
             if (allEntryDates.length > 0) effectiveAdmissao = allEntryDates[0];
           }
 
+          const ausenciaDias = ausenciaDiasMap[emp.id] || new Set();
           const trabalhouSemanaInteira = (() => {
             const d = new Date(weekStart + 'T12:00:00');
             const end = new Date(weStr + 'T12:00:00');
             while (d <= end) {
               const ds = `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
               if (ds >= monthStart && ds <= lastDayStr) {
-                if (vacSet.has(ds)) return false;
+                if (vacSet.has(ds))        return false; // férias via toggle Part%
+                if (ausenciaDias.has(ds))  return false; // férias/atestado via calendário
                 if (effectiveAdmissao && ds < effectiveAdmissao) return false;
                 if (emp.desligamento  && ds > emp.desligamento)  return false;
               }
