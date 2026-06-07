@@ -5893,20 +5893,19 @@ function calcWeekKpis(emp, week, extraData) {
 
   const isGerente = emp.isVendedor === false;
 
-  // Verifica se o funcionário trabalhou todos os dias da semana (dentro do mês atual)
+  // Verifica se o funcionário trabalhou todos os dias da semana
   // Regra: dia marcado como férias (Part%) ou antes da admissão → sem direito ao prêmio
-  const _pad2 = n => String(n).padStart(2,'0');
-  const _curMonthStart = `${S.year}-${_pad2(S.month)}-01`;
-  const _curMonthEnd   = `${S.year}-${_pad2(S.month)}-${_pad2(new Date(S.year, S.month, 0).getDate())}`;
-  // Admissão efetiva: usa emp.admissao ou primeira entrada de vsales do mês (sem admissão cadastrada)
+  // empVacDays já combina o mês atual + meses extras da semana cross-month
+  // Admissão efetiva: usa emp.admissao ou a primeira entrada de vsales (qualquer mês da semana)
   let _effAdmissao = emp.admissao || null;
   if (!_effAdmissao) {
-    const _firstEntry = Object.keys(vsale.entries || {})
-      .filter(d => d >= _curMonthStart && d <= _curMonthEnd).sort()[0];
-    if (_firstEntry) _effAdmissao = _firstEntry;
+    const _allEntries = [
+      ...Object.keys(vsale.entries || {}),
+      ...Object.values(extraData || {}).flatMap(d => Object.keys(d.vsales?.[emp.id]?.entries || {})),
+    ].sort();
+    if (_allEntries.length > 0) _effAdmissao = _allEntries[0];
   }
   const trabalhouSemanaInteira = dates.every(ds => {
-    if (ds < _curMonthStart || ds > _curMonthEnd) return true; // dias fora do mês não bloqueiam
     if (empVacDays.has(ds)) return false;
     if (_effAdmissao && ds < _effAdmissao) return false;
     if (emp.desligamento && ds > emp.desligamento) return false;
