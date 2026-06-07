@@ -5803,34 +5803,45 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
           const useStorePremio = isGer || isGVend || isSubGer || empCfg.recebePremiaoLoja;
           const storePremioVal = empCfg.premioLojaValor > 0 ? empCfg.premioLojaValor : PREMIO_GER_W;
 
-          // Prêmio de loja para gerente, sub-gerente e funcionários com flag no config
-          // Regra: só recebe se trabalhou a semana inteira (admissão anterior ao início da semana)
-          if (useStorePremio) {
-            const admissao = emp.admissao || '';
-            if (!admissao || admissao <= weekStart) {
-              let val = 0;
-              if (storeHitMeta) val += storePremioVal;
-              if (storeHitMeta && storeHitPA) val += PREMIO_PA_W;
-              if (val > 0) {
-                premiacaoSemanalGer[emp.id] += val;
-                premiacaoSemanalGerDetalhe[emp.id].push({ label: semLabel, valor: val });
+          // Verifica se o funcionário trabalhou todos os dias da semana
+          // Regra: % diário zerado (férias, admissão no meio, desligamento) = não trabalhou = sem prêmio
+          const vsEmp = vsalesAll[`${mk}-${board}-${emp.id}`] || {};
+          const vacSet = new Set(vsEmp.meta?.vacationDays || []);
+          const trabalhouSemanaInteira = (() => {
+            const d = new Date(weekStart + 'T12:00:00');
+            const end = new Date(weStr + 'T12:00:00');
+            while (d <= end) {
+              const ds = `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
+              if (ds >= monthStart && ds <= lastDayStr) {
+                if (vacSet.has(ds)) return false;
+                if (emp.admissao    && ds < emp.admissao)    return false;
+                if (emp.desligamento && ds > emp.desligamento) return false;
               }
+              d.setDate(d.getDate() + 1);
+            }
+            return true;
+          })();
+
+          // Prêmio de loja para gerente, sub-gerente e funcionários com flag no config
+          if (useStorePremio && trabalhouSemanaInteira) {
+            let val = 0;
+            if (storeHitMeta) val += storePremioVal;
+            if (storeHitMeta && storeHitPA) val += PREMIO_PA_W;
+            if (val > 0) {
+              premiacaoSemanalGer[emp.id] += val;
+              premiacaoSemanalGerDetalhe[emp.id].push({ label: semLabel, valor: val });
             }
           }
 
           // Prêmio individual para vendedor, gerente vendedor e sub-gerente
-          // Regra: só recebe se trabalhou a semana inteira (admissão anterior ao início da semana)
           if (isGVend || isSubGer || (!isGer && isVend(emp))) {
-            const admissao = emp.admissao || '';
-            const trabalhouSemanaInteira = !admissao || admissao <= weekStart;
             if (!trabalhouSemanaInteira) continue;
-            const vs = vsalesAll[`${mk}-${board}-${emp.id}`] || {};
-            const we2 = Object.entries(vs.entries||{}).filter(([d]) => d>=weekStart && d<=weStr);
+            const we2 = Object.entries(vsEmp.entries||{}).filter(([d]) => d>=weekStart && d<=weStr);
             const empSales = we2.reduce((s,[,e]) => s+(e.value||0), 0);
             const empPecas = we2.reduce((s,[,e]) => s+(e.pecas||0), 0);
             const empAtend = we2.reduce((s,[,e]) => s+(e.atendimentos||0), 0);
             const mMeta   = weekData[emp.id]?.meta || 0;
-            const mMensal = vs.meta?.mensal || 0;
+            const mMensal = vsEmp.meta?.mensal || 0;
             const empMeta = mMeta > 0 ? mMeta : (wws > 0 ? mMensal * wws / 100 : 0);
             if (empMeta > 0 && empSales >= empMeta) {
               let val = PREMIO_VEND_W;
