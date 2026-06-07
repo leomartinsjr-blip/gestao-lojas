@@ -237,6 +237,7 @@ function buildTotalForm(emps) {
   // Invariante: fixoAll + comVend + comLoja + gmTotal + totalPremiacoes = totalProv
   let fixoAll = 0, fixoSubRows = [];
   let comVend = 0, vendasVend = 0;
+  let comSup = 0;
   let comLoja = 0;
   let gmTotal = 0;
   let premiacaoTotal = 0, premiacaoLojaTotal = 0;
@@ -274,10 +275,11 @@ function buildTotalForm(emps) {
     // comissão individual: só quem vende por conta própria
     // gerente/socio/supervisor têm comissaoTotal calculado sobre total da loja → vai para comLoja
     if (_ct === 'gerente' || _ct === 'socio') {
-      // gerente/sócio: comissaoTotal calculado sobre total da loja
       comLoja += entry.comissaoTotal || 0;
+    } else if (_ct === 'supervisor') {
+      comSup += entry.comissaoTotal || 0;
     } else {
-      // vendedor, sub, gvend, supervisor: comissão individual
+      // vendedor, sub, gvend
       comVend    += entry.comissaoTotal || 0;
       vendasVend += entry.vendas        || 0;
     }
@@ -309,8 +311,9 @@ function buildTotalForm(emps) {
   premiacaoLojaTotal   = r2(premiacaoLojaTotal);
   extrasTotal          = r2(extrasTotal);
   feriadoTotal         = r2(feriadoTotal);
+  comSup                 = r2(comSup);
   const totalPremiacoes  = r2(premiacaoTotal + premiacaoLojaTotal + extrasTotal + feriadoTotal);
-  const totalResumo      = r2(fixoAll + comVend + comLoja + gmTotal + totalPremiacoes);
+  const totalResumo      = r2(fixoAll + comVend + comSup + comLoja + gmTotal + totalPremiacoes);
   const totalProvR       = r2(totalProv);
   const diff             = r2(totalProvR - totalResumo);
   const confOk           = Math.abs(diff) < 0.02;
@@ -352,6 +355,7 @@ function buildTotalForm(emps) {
         </tr>
         ${fixoSubHtml ? `<tr><td colspan="3" style="padding:0 0 .3rem">${fixoSubHtml}</td></tr>` : ''}` : ''}
         ${comVend > 0 ? custRow('Comissão Vendedores (individual)', comVend) : ''}
+        ${comSup  > 0 ? custRow('Comissão Supervisor', comSup) : ''}
         ${comLoja > 0 ? custRow('Comissão sobre total da loja (gerência/caixa)', comLoja) : ''}
         ${gmTotal > 0 ? custRow('Complemento Garantia Mínima', gmTotal, '#f59e0b') : ''}
         ${totalPremiacoes > 0 ? `
