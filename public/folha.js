@@ -227,6 +227,14 @@ function boardEmps(board) {
 function buildTotalForm(emps) {
   if (!emps.length) return '<div style="padding:2rem;color:#8b949e;text-align:center">Nenhum funcionário nesta loja.</div>';
   let totalProv = 0, totalDesc = 0, totalLiq = 0;
+
+  // ── Acumuladores para o resumo de custos ──────────────────────────────────
+  let comVend = 0, vendasVend = 0;
+  let comGer = 0, comLojaGer = 0;
+  let gmTotal = 0;
+  let premiacaoTotal = 0, premiacaoLojaTotal = 0;
+  let extrasTotal = 0, feriadoTotal = 0;
+
   const rows = emps.map(emp => {
     let entry = FP.folha[FP.board]?.entries?.[emp.id] || defaultEntry(emp);
     const _ct = cargoTipo(emp.cargo);
@@ -238,9 +246,24 @@ function buildTotalForm(emps) {
     if (calcPrem !== r2(entry.premiacao || 0) || calcPremGer !== r2(entry.premiacaoBalanco || 0)) {
       entry = defaultEntry(emp);
     }
-    totalProv += entry.proventos     || 0;
+    totalProv += entry.proventos      || 0;
     totalDesc += entry.totalDescontos || 0;
     totalLiq  += entry.liquido        || 0;
+
+    // acumula custos por categoria
+    if (_ct === 'vendedor') {
+      comVend    += entry.comissaoTotal || 0;
+      vendasVend += entry.vendas        || 0;
+    } else if (_ct === 'gerente' || _ct === 'gvend' || _ct === 'sub') {
+      comGer     += entry.comissaoTotal || 0;
+      comLojaGer += entry.comissaoLoja  || 0;
+    }
+    gmTotal          += entry.gmComplement     || 0;
+    premiacaoTotal   += entry.premiacao        || 0;
+    premiacaoLojaTotal += entry.premiacaoBalanco || 0;
+    extrasTotal      += (entry.extras || []).reduce((s, ex) => s + r2(ex.valor), 0);
+    feriadoTotal     += entry.feriado          || 0;
+
     return `<tr style="border-bottom:1px solid #21262d">
       <td style="padding:.4rem .5rem;color:#e6edf3">${emp.apelido || emp.name.split(' ')[0]}</td>
       <td style="padding:.4rem .5rem;color:#8b949e;font-size:.78rem">${emp.cargo}</td>
@@ -249,6 +272,65 @@ function buildTotalForm(emps) {
       <td style="padding:.4rem .5rem;text-align:right;color:#3fb950;font-weight:600">${brl(entry.liquido||0)}</td>
     </tr>`;
   }).join('');
+
+  // ── Cálculos do resumo ────────────────────────────────────────────────────
+  const vendaLoja    = r2(FP.lojaVendaMap[FP.board] || 0);
+  comVend            = r2(comVend);
+  comGer             = r2(comGer);
+  comLojaGer         = r2(comLojaGer);
+  gmTotal            = r2(gmTotal);
+  premiacaoTotal     = r2(premiacaoTotal);
+  premiacaoLojaTotal = r2(premiacaoLojaTotal);
+  extrasTotal        = r2(extrasTotal);
+  feriadoTotal       = r2(feriadoTotal);
+  const totalPremiacoes = r2(premiacaoTotal + premiacaoLojaTotal + extrasTotal + feriadoTotal);
+  const totalComGerTudo = r2(comGer + comLojaGer);
+  const totalCustoComissao = r2(comVend + totalComGerTudo + gmTotal + totalPremiacoes);
+
+  const pct = (v) => vendaLoja > 0 ? ` <span style="color:#8b949e;font-size:.75rem">(${(v/vendaLoja*100).toFixed(1)}%)</span>` : '';
+
+  const custRow = (label, valor, sub='', color='#e6edf3', bold=false) =>
+    `<tr style="border-bottom:1px solid #1a1f26">
+      <td style="padding:.35rem .5rem;color:${color};${bold?'font-weight:700':'font-size:.82rem'}">${label}</td>
+      <td style="padding:.35rem .5rem;text-align:right;color:${color};${bold?'font-weight:700':''};white-space:nowrap">${brl(valor)}${pct(valor)}</td>
+      ${sub ? `<td style="padding:.35rem .5rem;font-size:.72rem;color:#484f58">${sub}</td>` : '<td></td>'}
+    </tr>`;
+
+  const premSubRows = [
+    premiacaoTotal     > 0 ? `<div style="display:flex;justify-content:space-between;font-size:.72rem;color:#8b949e;padding:.1rem .4rem .1rem 1rem"><span>Meta semanal</span><span>${brl(premiacaoTotal)}</span></div>` : '',
+    premiacaoLojaTotal > 0 ? `<div style="display:flex;justify-content:space-between;font-size:.72rem;color:#8b949e;padding:.1rem .4rem .1rem 1rem"><span>Prêmio loja/balanço</span><span>${brl(premiacaoLojaTotal)}</span></div>` : '',
+    extrasTotal        > 0 ? `<div style="display:flex;justify-content:space-between;font-size:.72rem;color:#8b949e;padding:.1rem .4rem .1rem 1rem"><span>Extras (Instagram, dobra, abertura…)</span><span>${brl(extrasTotal)}</span></div>` : '',
+    feriadoTotal       > 0 ? `<div style="display:flex;justify-content:space-between;font-size:.72rem;color:#8b949e;padding:.1rem .4rem .1rem 1rem"><span>Feriados</span><span>${brl(feriadoTotal)}</span></div>` : '',
+  ].filter(Boolean).join('');
+
+  const resumo = `
+  <div style="margin-top:1.25rem;border:1px solid #30363d;border-radius:.5rem;overflow:hidden">
+    <div style="background:#161b22;padding:.5rem .75rem;font-size:.72rem;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:.05em;display:flex;justify-content:space-between;align-items:center">
+      <span>Custo da Folha — Composição</span>
+      ${vendaLoja > 0 ? `<span style="font-weight:400;color:#484f58">Vendas loja: ${brl(vendaLoja)}</span>` : ''}
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:.83rem">
+      <tbody>
+        ${comVend > 0 ? custRow('Comissão Vendedores', comVend, vendasVend > 0 ? `sobre ${brl(vendasVend)} vendidos` : '') : ''}
+        ${totalComGerTudo > 0 ? custRow('Comissão Gerência', totalComGerTudo,
+            comLojaGer > 0 ? `individual ${brl(comGer)} + loja ${brl(comLojaGer)}` : '') : ''}
+        ${gmTotal > 0 ? custRow('Complemento Garantia Mínima', gmTotal, 'diferença paga por não bater comissão mínima', '#f59e0b') : ''}
+        ${totalPremiacoes > 0 ? `
+        <tr style="border-bottom:${premSubRows ? '0' : '1px solid #1a1f26'}">
+          <td style="padding:.35rem .5rem;font-size:.82rem;color:#e6edf3">Premiações</td>
+          <td style="padding:.35rem .5rem;text-align:right;white-space:nowrap;color:#e6edf3">${brl(totalPremiacoes)}${pct(totalPremiacoes)}</td>
+          <td></td>
+        </tr>
+        ${premSubRows ? `<tr><td colspan="3" style="padding:0 0 .3rem">${premSubRows}</td></tr>` : ''}` : ''}
+        <tr style="border-top:2px solid #30363d;background:#0d1117">
+          <td style="padding:.5rem .5rem;color:#58a6ff;font-weight:700;font-size:.85rem">TOTAL COMISSÃO + PRÊMIOS</td>
+          <td style="padding:.5rem .5rem;text-align:right;color:#58a6ff;font-weight:700;font-size:.9rem;white-space:nowrap">${brl(totalCustoComissao)}${pct(totalCustoComissao)}</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>`;
+
   return `
   <div class="fp-emp-form active" id="empform-total" style="padding:.75rem 0">
     <table style="width:100%;border-collapse:collapse;font-size:.85rem">
@@ -271,6 +353,7 @@ function buildTotalForm(emps) {
         </tr>
       </tfoot>
     </table>
+    ${resumo}
   </div>`;
 }
 
