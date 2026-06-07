@@ -6058,6 +6058,10 @@ async function renderWeeklyModal() {
       const projCls    = k.projecao == null ? '' : k.projecao >= k.wMeta ? 'kpi-pos' : 'kpi-neg';
       const pctProjCls = k.pctProj  == null ? '' : k.pctProj  >= 100 ? 'kpi-pos' : k.pctProj  >= 80 ? 'kpi-warn' : 'kpi-neg';
 
+      // DEBUG TEMPORÁRIO — remover após confirmar
+      if (emp.name?.toUpperCase().includes('THIAGGO') || emp.apelido?.toUpperCase().includes('THIAGGO')) {
+        console.log('[DEBUG Thiaggo RENDER]', { elegivel, hitMeta, isGerente: k.isGerente, trabalhouSemanaInteira: k.trabalhouSemanaInteira });
+      }
       const paEarned2 = hitMeta && hitPA && elegivel;
       const premioHtml = !elegivel
         ? `<span class="wk-p wk-p-no" title="Não trabalhou a semana inteira (férias ou admissão no meio da semana)" style="font-style:italic;opacity:.7">sem direito</span>`
