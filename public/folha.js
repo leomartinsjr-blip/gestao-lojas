@@ -273,12 +273,13 @@ function buildTotalForm(emps) {
 
     // comissão individual: só quem vende por conta própria
     // gerente/socio/supervisor têm comissaoTotal calculado sobre total da loja → vai para comLoja
-    if (_ct === 'vendedor' || _ct === 'sub' || _ct === 'gvend') {
+    if (_ct === 'gerente' || _ct === 'socio') {
+      // gerente/sócio: comissaoTotal calculado sobre total da loja
+      comLoja += entry.comissaoTotal || 0;
+    } else {
+      // vendedor, sub, gvend, supervisor: comissão individual
       comVend    += entry.comissaoTotal || 0;
       vendasVend += entry.vendas        || 0;
-    } else {
-      // gerente, socio, supervisor: comissaoTotal é sobre total da loja
-      comLoja    += entry.comissaoTotal || 0;
     }
     // comissaoLoja (comissaoVR) → sempre sobre total da loja
     comLoja    += entry.comissaoLoja  || 0;
