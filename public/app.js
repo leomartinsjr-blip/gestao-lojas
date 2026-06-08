@@ -3223,12 +3223,43 @@ function renderTransExcelTab(container) {
       const XLSX_LOCAL = window.XLSX;
       if (!XLSX_LOCAL) throw new Error('Biblioteca de leitura de Excel não carregada. Recarregue a página.');
 
-      const wb = XLSX_LOCAL.read(buffer, { type: 'array', cellDates: false, raw: true });
+      // Detecta se é HTML disfarçado de XLS (padrão Microvix)
+      const isHtmlXls = new Uint8Array(buffer.slice(0, 1))[0] === 0x3C; // '<'
+
+      // Para HTML: usa DOMParser para extrair células como texto puro (sem conversão de datas)
+      // Para XLSX binário: usa XLSX normalmente
+      function readAsSheets(buf) {
+        if (isHtmlXls) {
+          const text = new TextDecoder('utf-8').decode(buf);
+          const doc = new DOMParser().parseFromString(text, 'text/html');
+          const sheetMap = {};
+          doc.querySelectorAll('table').forEach((tbl, i) => {
+            const name = tbl.getAttribute('name') || String(i);
+            const rows = [];
+            tbl.querySelectorAll('tr').forEach(tr => {
+              const cells = [];
+              tr.querySelectorAll('td,th').forEach(td => cells.push(td.textContent.trim()));
+              rows.push(cells);
+            });
+            sheetMap[name] = rows;
+          });
+          return { names: Object.keys(sheetMap), sheets: sheetMap };
+        } else {
+          const wb2 = XLSX_LOCAL.read(buf, { type: 'array', cellDates: false, raw: false });
+          const sheetMap = {};
+          wb2.SheetNames.forEach(n => {
+            sheetMap[n] = XLSX_LOCAL.utils.sheet_to_json(wb2.Sheets[n], { header: 1, raw: false, defval: '' });
+          });
+          return { names: wb2.SheetNames, sheets: sheetMap };
+        }
+      }
+
+      const { names: sheetNames, sheets: sheetData } = readAsSheets(buffer);
 
       // Extrai período do Excel (Sheet1: "Período:" → "01/01/2025 à 31/05/2026")
       let periodDays = 365;
       try {
-        const s1 = XLSX_LOCAL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1 });
+        const s1 = sheetData[sheetNames[0]];
         const periodRow = s1.find(r => Array.isArray(r) && String(r[0]||'').includes('ríodo'));
         const periodStr = String(periodRow?.[1] || '');
         const [startStr, endStr] = periodStr.split(' à ');
@@ -3255,8 +3286,8 @@ function renderTransExcelTab(container) {
       const normH = h => String(h||'').normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase().trim();
       let companies = [], headerSheetIdx = -1, headerColRowIdx = -1;
       let colCodigo = 0, colDescricao = 1, colRef = 2, colUltimaCompra = 8;
-      for (let i = 0; i < wb.SheetNames.length; i++) {
-        const rows = XLSX_LOCAL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1 });
+      for (let i = 0; i < sheetNames.length; i++) {
+        const rows = sheetData[sheetNames[i]];
         const colRowIdx = rows.findIndex(r => Array.isArray(r) &&
           r.some(c => typeof c === 'string' && normH(c) === 'codigo'));
         if (colRowIdx === -1) continue;
@@ -3285,25 +3316,13 @@ function renderTransExcelTab(container) {
       }
       if (!companies.length) throw new Error('Formato não reconhecido — não encontrei colunas de lojas no Excel.');
 
-      // Retorna sempre DD/MM/YYYY para manter formato igual à planilha
+      // Retorna DD/MM/YYYY — células chegam como strings puras (sem conversão XLSX)
       function parseExcelDate(val) {
-        if (!val && val !== 0) return null;
-        if (val instanceof Date) {
-          if (isNaN(val.getTime())) return null;
-          return `${String(val.getDate()).padStart(2,'0')}/${String(val.getMonth()+1).padStart(2,'0')}/${val.getFullYear()}`;
-        }
-        if (typeof val === 'number') {
-          try {
-            const d = XLSX_LOCAL.SSF.parse_date_code(Math.round(val));
-            if (d && d.y > 2000) return `${String(d.d).padStart(2,'0')}/${String(d.m).padStart(2,'0')}/${d.y}`;
-          } catch {}
-          return null;
-        }
+        if (!val) return null;
         const s = String(val).trim();
         if (!s || s === '-') return null;
-        // DD/MM/YYYY já no formato correto
-        if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
-        // ISO YYYY-MM-DD → converte para DD/MM/YYYY
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s; // já DD/MM/YYYY
+        // fallback ISO YYYY-MM-DD
         const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
         if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
         return null;
@@ -3316,20 +3335,6 @@ function renderTransExcelTab(container) {
         return toMs(a) - toMs(b);
       }
 
-      // Corrige datas futuras com dia<=12: o XLSX leu DD/MM como MM/DD e trocou dia/mês
-      function fixFutureDate(dateStr) {
-        if (!dateStr) return dateStr;
-        const [dd, mm, yy] = dateStr.split('/').map(Number);
-        if (dd > 12) return dateStr; // dia inequívoco, não há troca possível
-        if (Date.UTC(yy, mm-1, dd) <= todayUTC) return dateStr; // já é passado, OK
-        // Data futura com dia ambíguo — XLSX provavelmente trocou dia↔mês
-        if (mm <= 31 && dd <= 12) {
-          const swapped = Date.UTC(yy, dd-1, mm);
-          if (swapped <= todayUTC) // versão trocada é passado → usar ela
-            return `${String(mm).padStart(2,'0')}/${String(dd).padStart(2,'0')}/${yy}`;
-        }
-        return dateStr;
-      }
 
       // Passo 2: extrai dados — suporta aba única (dados na mesma aba do header) e multi-aba
       result.innerHTML = '<div class="trans-loading">Extraindo produtos…</div>';
@@ -3351,11 +3356,7 @@ function renderTransExcelTab(container) {
             : (typeof rawCod === 'string' && /^\d+$/.test(rawCod.trim()) ? rawCod.trim() : null);
           if (!cod) continue;
           if (!products[cod]) {
-            const _rawDate = r[colUltimaCompra];
-            const ultimaCompra = fixFutureDate(parseExcelDate(_rawDate));
-            if (Object.keys(products).length < 5) {
-              console.log(`[DateRaw] cod=${cod} | tipo=${typeof _rawDate} | raw=`, _rawDate, '| parsed=', ultimaCompra);
-            }
+            const ultimaCompra = parseExcelDate(r[colUltimaCompra]);
             const rawRef = String(r[colRef] || '').trim().replace(/^="(.+)"$/, '$1');
             products[cod] = { cod, descricao: String(r[colDescricao] || '').trim(), referencia: rawRef, setor: currentSetor, ultimaCompra, stocks: {}, giro: {} };
           }
@@ -3366,42 +3367,18 @@ function renderTransExcelTab(container) {
         }
       }
 
-      // Aba do header — aba única ou primeira aba com dados (lê com raw:true para datas seriais)
-      const headerSheetRowsRaw = XLSX_LOCAL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[headerSheetIdx]], { header: 1, raw: true });
-      processDataRows(headerSheetRowsRaw, headerColRowIdx + 1);
+      // Aba do header
+      processDataRows(sheetData[sheetNames[headerSheetIdx]], headerColRowIdx + 1);
 
       // Abas seguintes (formato multi-aba legado)
-      for (let i = headerSheetIdx + 1; i < wb.SheetNames.length; i++) {
-        const rows = XLSX_LOCAL.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1, raw: true });
-        processDataRows(rows, 0);
+      for (let i = headerSheetIdx + 1; i < sheetNames.length; i++) {
+        processDataRows(sheetData[sheetNames[i]], 0);
       }
 
       // Passo 3: filtra produtos sem entrada recente (obrigatório)
       const totalBruto = Object.keys(products).length;
       if (!totalBruto) throw new Error(`Nenhum produto encontrado no Excel. Colunas detectadas: código=${colCodigo}, descrição=${colDescricao}, ref=${colRef}, última compra=${colUltimaCompra}. Verifique se o relatório está no formato correto.`);
 
-      // Diagnóstico de datas — mostra amostras no console para verificação
-      const allDates = Object.values(products).map(p => p.ultimaCompra).filter(Boolean);
-      const uniqueDates = [...new Set(allDates)].sort((a,b) => cmpDateBR(b,a));
-      console.group('[TransDiag] Filtro de última entrada');
-      console.log(`Filtro ativo: entrada ≥ ${compraMinDate}`);
-      console.log(`Total produtos lidos: ${totalBruto}`);
-      console.log(`Datas encontradas (mais recentes primeiro):`, uniqueDates.slice(0,10));
-      const semData = Object.values(products).filter(p => !p.ultimaCompra).length;
-      if (semData) console.warn(`${semData} produtos sem data de última entrada — serão excluídos`);
-      // Amostra: primeiros 5 que serão excluídos pelo filtro
-      const excAmostra = Object.values(products)
-        .filter(p => !p.ultimaCompra || cmpDateBR(p.ultimaCompra, compraMinDate) < 0)
-        .slice(0,5)
-        .map(p => `${p.cod} (${p.ultimaCompra || 'sem data'})`);
-      if (excAmostra.length) console.log(`Exemplos excluídos:`, excAmostra);
-      // Amostra: primeiros 5 que passam
-      const passAmostra = Object.values(products)
-        .filter(p => p.ultimaCompra && cmpDateBR(p.ultimaCompra, compraMinDate) >= 0)
-        .slice(0,5)
-        .map(p => `${p.cod} (${p.ultimaCompra})`);
-      if (passAmostra.length) console.log(`Exemplos incluídos:`, passAmostra);
-      console.groupEnd();
 
       for (const cod of Object.keys(products)) {
         const p = products[cod];
