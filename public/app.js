@@ -92,6 +92,9 @@ function applyUserPermissions(user) {
   const indevaVisible = isAdmin || isSupervisor || user.board === 'escritorio' || INDEVA_STORES.includes(user.board);
   const indevaEl = document.getElementById('indevaBtn');
   if (indevaEl) indevaEl.style.display = indevaVisible ? '' : 'none';
+
+  const conferenciaEl = document.getElementById('conferenciaBtn');
+  if (conferenciaEl) conferenciaEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
 }
 
 async function checkAuth() {

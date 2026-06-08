@@ -6557,6 +6557,272 @@ app.get('/api/crm/messages', requireAdmin, async (req, res) => {
   res.json({ messages, total, pages: Math.ceil(total / lim) });
 });
 
+// ══════════════════════════════════════════════════════════════════════════
+// MÓDULO: CONFERÊNCIA DE CAIXA — ESCRITÓRIO
+// ══════════════════════════════════════════════════════════════════════════
+
+// Middleware: permite escritório e admin
+function requireEscritorioOrAdmin(req, res, next) {
+  if (!req.session?.user) return res.status(401).json({ error: 'Não autenticado' });
+  const b = req.session.user.board;
+  if (b && b !== 'escritorio') return res.status(403).json({ error: 'Acesso restrito ao escritório' });
+  next();
+}
+
+// GET /conferencia — serve a página
+app.get('/conferencia', requireEscritorioOrAdmin, (req, res) =>
+  res.sendFile(path.join(__dirname, 'public', 'conferencia.html')));
+
+// GET /api/conferencia/regras — retorna regras por loja
+app.get('/api/conferencia/regras', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    res.json(db.confRegras || {});
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/conferencia/regras — salva regras por loja
+// body: { delrey: { parcelaMin: 50, descontoMaxItem: 10, descontoMaxVenda: 15 }, ... }
+app.put('/api/conferencia/regras', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    db.confRegras = req.body;
+    await writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/conferencia/alertas?board=delrey&dtIni=2026-06-01&dtFin=2026-06-08
+// Retorna vendas com alertas de parcela mínima e desconto abusivo
+app.get('/api/conferencia/alertas', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { board, dtIni, dtFin } = req.query;
+    if (!board || !dtIni || !dtFin) return res.status(400).json({ error: 'board, dtIni e dtFin obrigatórios' });
+
+    const db    = await readDB();
+    const regra = (db.confRegras || {})[board] || {};
+    const parcelaMin    = parseFloat(regra.parcelaMin    || 0);
+    const descontoMaxItem  = parseFloat(regra.descontoMaxItem  || 100);
+    const descontoMaxVenda = parseFloat(regra.descontoMaxVenda || 100);
+
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = lojas[board];
+    if (!cnpj) return res.status(400).json({ error: `Loja "${board}" não configurada` });
+    const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const cnpjClean = cnpj.replace(/\D/g, '');
+
+    const { fetchMovimento, fetchMovimentoPlanos, fetchMovimentoItens, parseBrNum } = require('./services/microvix');
+
+    const [movRows, planoRows, itemRows] = await Promise.all([
+      fetchMovimento(cnpj, dtIni, dtFin, chave),
+      fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave).catch(() => []),
+      fetchMovimentoItens(cnpj, dtIni, dtFin, chave).catch(() => []),
+    ]);
+
+    const parseBR = s => parseFloat(String(s || '').replace(/\./g, '').replace(',', '.')) || 0;
+
+    // Mapa de documentos válidos
+    const identMap = {};
+    const docSet   = new Set();
+    const docInfo  = {}; // doc → { vendedor, data, hora, valor }
+    for (const r of movRows) {
+      const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+      if (rowCnpj && rowCnpj !== cnpjClean) continue;
+      if (r.cancelado === 'S' || r.cancelado === '1') continue;
+      const op   = (r.operacao || '').trim().toUpperCase();
+      if (op !== 'S' && op !== 'DS') continue;
+      const serie = String(r.serie || r.serie_documento || '').trim();
+      if (serie === '999' || (serie === '4' && op !== 'DS')) continue;
+      const doc   = String(r.documento || '').trim();
+      const ident = String(r.identificador || '').trim();
+      if (!doc) continue;
+      docSet.add(doc);
+      if (ident) identMap[ident] = doc;
+      const sign = op === 'DS' ? -1 : 1;
+      docInfo[doc] = {
+        doc,
+        vendedor: (r.nome_vendedor || r.cod_vendedor || '').trim(),
+        data:     String(r.data || r.data_movimento || '').trim().slice(0, 10),
+        hora:     String(r.hora || '').trim().slice(0, 5),
+        valorTotal: sign * parseBR(r.valor_total || r.total_liquido || '0'),
+        alertas:  [],
+      };
+    }
+
+    // ── Parcela mínima via LinxMovimentoPlanos ─────────────────────────────
+    if (parcelaMin > 0) {
+      for (const r of planoRows) {
+        const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+        if (rowCnpj && rowCnpj !== cnpjClean) continue;
+        const ident = String(r.identificador || '').trim();
+        const doc   = (ident && identMap[ident]) || String(r.documento || '').trim();
+        if (!doc || !docSet.has(doc)) continue;
+
+        const descPlano = (r.desc_plano || '').toUpperCase();
+        const tipoTrans = (r.tipo_transacao || '').toUpperCase();
+        if (tipoTrans !== 'C') continue; // só crédito tem parcelas
+
+        // Extrai número de parcelas do desc_plano: "MASTER 3X" → 3
+        const mParcela = descPlano.match(/\b(\d+)\s*X\b/);
+        const numParcelas = mParcela ? parseInt(mParcela[1]) : 1;
+        if (numParcelas <= 1) continue; // à vista não tem mínimo de parcela
+
+        const valorPlano = parseBR(r.total || r.valor || r.valor_plano || '0');
+        const valorParcela = valorPlano / numParcelas;
+
+        if (valorParcela < parcelaMin && valorParcela > 0) {
+          if (docInfo[doc]) {
+            docInfo[doc].alertas.push({
+              tipo: 'parcela_minima',
+              plano: r.desc_plano,
+              numParcelas,
+              valorPlano,
+              valorParcela: +valorParcela.toFixed(2),
+              parcelaMin,
+              msg: `Parcela de R$ ${valorParcela.toFixed(2)} abaixo do mínimo de R$ ${parcelaMin.toFixed(2)} (${numParcelas}x em ${r.desc_plano})`,
+            });
+          }
+        }
+      }
+    }
+
+    // ── Desconto abusivo via LinxMovimentoItens ────────────────────────────
+    // Agrupa itens por documento
+    const itensPorDoc = {};
+    for (const r of itemRows) {
+      const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+      if (rowCnpj && rowCnpj !== cnpjClean) continue;
+      const doc = String(r.documento || '').trim();
+      if (!doc || !docSet.has(doc)) continue;
+      if (!itensPorDoc[doc]) itensPorDoc[doc] = [];
+      itensPorDoc[doc].push(r);
+    }
+
+    for (const [doc, itens] of Object.entries(itensPorDoc)) {
+      if (!docInfo[doc]) continue;
+      let totalBruto = 0, totalDesconto = 0;
+
+      for (const item of itens) {
+        const vlrBruto    = parseBR(item.valor_bruto    || item.preco_unitario || '0') * parseBR(item.quantidade || '1');
+        const vlrDesconto = parseBR(item.valor_desconto || '0');
+        const percItem    = vlrBruto > 0 ? (vlrDesconto / vlrBruto) * 100 : 0;
+
+        totalBruto    += vlrBruto;
+        totalDesconto += vlrDesconto;
+
+        if (descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesconto > 0) {
+          docInfo[doc].alertas.push({
+            tipo:       'desconto_item',
+            produto:    (item.descricao || item.nome_produto || item.cod_produto || '').trim(),
+            vlrBruto:   +vlrBruto.toFixed(2),
+            vlrDesconto:+vlrDesconto.toFixed(2),
+            percDesconto: +percItem.toFixed(1),
+            descontoMax: descontoMaxItem,
+            msg: `Item "${(item.descricao || item.cod_produto || '').trim()}" com ${percItem.toFixed(1)}% de desconto (máx ${descontoMaxItem}%)`,
+          });
+        }
+      }
+
+      // Alerta de desconto total da venda
+      if (descontoMaxVenda < 100 && totalBruto > 0) {
+        const percVenda = (totalDesconto / totalBruto) * 100;
+        if (percVenda > descontoMaxVenda && totalDesconto > 0) {
+          docInfo[doc].alertas.push({
+            tipo:        'desconto_venda',
+            totalBruto:  +totalBruto.toFixed(2),
+            totalDesconto: +totalDesconto.toFixed(2),
+            percDesconto:  +percVenda.toFixed(1),
+            descontoMax:   descontoMaxVenda,
+            msg: `Venda com ${percVenda.toFixed(1)}% de desconto total (máx ${descontoMaxVenda}%)`,
+          });
+        }
+      }
+    }
+
+    const vendas = Object.values(docInfo)
+      .filter(v => v.alertas.length > 0)
+      .sort((a, b) => (a.data + a.hora).localeCompare(b.data + b.hora));
+
+    res.json({ board, dtIni, dtFin, regra, total: vendas.length, vendas });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/conferencia/conciliacao-rede
+// Recebe arquivo da Rede (Excel/CSV) e cruza com LinxMovimentoCartoes do Microvix
+app.post('/api/conferencia/conciliacao-rede', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { board, dtIni, dtFin, linhas } = req.body;
+    // linhas: [{ nsu, bandeira, valor, data }] — parseado no frontend
+    if (!board || !dtIni || !dtFin || !Array.isArray(linhas)) {
+      return res.status(400).json({ error: 'board, dtIni, dtFin e linhas obrigatórios' });
+    }
+
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = lojas[board];
+    if (!cnpj) return res.status(400).json({ error: `Loja "${board}" não configurada` });
+    const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const cnpjClean = cnpj.replace(/\D/g, '');
+
+    const { fetchMovimentoCartoes } = require('./services/microvix');
+    const cartoesRows = await fetchMovimentoCartoes(cnpj, dtIni, dtFin, chave).catch(() => []);
+
+    const parseBR = s => parseFloat(String(s || '').replace(/\./g, '').replace(',', '.')) || 0;
+
+    // Monta mapa Microvix por NSU normalizado
+    const mxMap = {};
+    for (const r of cartoesRows) {
+      const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+      if (rowCnpj && rowCnpj !== cnpjClean) continue;
+      const nsu = String(r.nsu || r.nsu_host || r.autorizacao || r.cod_autorizacao || '').trim().replace(/^0+/, '');
+      if (!nsu) continue;
+      mxMap[nsu] = {
+        nsu,
+        bandeira: (r.bandeira || r.desc_bandeira || '').trim(),
+        valor:    parseBR(r.valor || r.valor_total || '0'),
+        data:     String(r.data || r.data_movimento || '').trim().slice(0, 10),
+        doc:      String(r.documento || '').trim(),
+      };
+    }
+
+    // Monta mapa Rede por NSU normalizado
+    const redeMap = {};
+    for (const l of linhas) {
+      const nsu = String(l.nsu || '').trim().replace(/^0+/, '');
+      if (!nsu) continue;
+      redeMap[nsu] = { nsu, bandeira: l.bandeira || '', valor: parseFloat(l.valor) || 0, data: l.data || '' };
+    }
+
+    const allNsus = new Set([...Object.keys(mxMap), ...Object.keys(redeMap)]);
+    const resultado = [];
+    for (const nsu of allNsus) {
+      const mx   = mxMap[nsu];
+      const rede = redeMap[nsu];
+      if (mx && rede) {
+        const difValor = +(rede.valor - mx.valor).toFixed(2);
+        resultado.push({ nsu, status: Math.abs(difValor) > 0.01 ? 'divergencia_valor' : 'ok', mx, rede, difValor });
+      } else if (mx && !rede) {
+        resultado.push({ nsu, status: 'somente_microvix', mx, rede: null, difValor: null });
+      } else {
+        resultado.push({ nsu, status: 'somente_rede', mx: null, rede, difValor: null });
+      }
+    }
+
+    resultado.sort((a, b) => {
+      const ordem = { divergencia_valor: 0, somente_rede: 1, somente_microvix: 2, ok: 3 };
+      return (ordem[a.status] ?? 9) - (ordem[b.status] ?? 9);
+    });
+
+    res.json({
+      board, dtIni, dtFin,
+      totalMx: Object.keys(mxMap).length,
+      totalRede: Object.keys(redeMap).length,
+      ok: resultado.filter(r => r.status === 'ok').length,
+      divergencias: resultado.filter(r => r.status !== 'ok').length,
+      resultado,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Start ──────────────────────────────────────────────────────────────────
 initMongo()
   .then(() => {
