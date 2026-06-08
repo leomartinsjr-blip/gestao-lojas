@@ -6631,6 +6631,7 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
         const rowCnpj = (r.cnpj_emp||r.cnpj||'').replace(/\D/g,'');
         if (!rowCnpj || rowCnpj !== cnpjClean) continue;
         if ((r.cancelado||'').toUpperCase() !== 'N' && r.cancelado) continue;
+        if ((r.soma_relatorio||'S').toUpperCase() === 'N') continue;
         const op = (r.operacao||'').toUpperCase();
         if (op !== 'S') continue; // só vendas, não devoluções no dashboard
 
@@ -6780,6 +6781,8 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
       if (!rowCnpj || rowCnpj !== cnpjClean) continue;
       if (r.cancelado === 'S' || r.cancelado === '1') continue;
+      // soma_relatorio='N' indica lançamento interno/ajuste que não deve aparecer em relatórios
+      if ((r.soma_relatorio || 'S').toUpperCase() === 'N') continue;
       const op    = (r.operacao || '').trim().toUpperCase();
       if (op !== 'S' && op !== 'DS') continue;
       const serie = String(r.serie || r.serie_documento || '').trim();
