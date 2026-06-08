@@ -6706,7 +6706,7 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
             fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchVendedores,
             fetchProdutosPromocoes, parseBrNum } = require('./services/microvix');
 
-    const [movRows, planoRows, cartoesRows, planosCatalog, bandeirasCatalog, vendedoresRows, promoRows] = await Promise.all([
+    const [movRows, planoRows, cartoesRows, planosCatalog, bandeirasCatalog, vendedoresRows, promoRows, catalog] = await Promise.all([
       fetchMovimento(cnpj, dtIni, dtFin, chave),
       fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave).catch(() => []),
       fetchMovimentoCartoes(cnpj, dtIni, dtFin, chave).catch(() => []),
@@ -6714,6 +6714,7 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       fetchLinxPlanosBandeiras(cnpj, chave).catch(() => []),
       fetchVendedores(cnpj, chave).catch(() => []),
       fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave).catch(() => []),
+      _getCatalog(lojas).catch(() => ({})),
     ]);
 
     const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
@@ -6850,8 +6851,12 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
           }
         }
 
+        const catInfo = catalog[codProd] || {};
         docMap[doc].itens.push({
           descricao:    (r.descricao || r.nome_produto || r.referencia || codProd || '—').trim(),
+          nome:         (catInfo.nome || catInfo.nomeBase || '').trim(),
+          colecao:      (catInfo.linha || '').trim(),
+          marca:        (catInfo.marca || '').trim(),
           quantidade:   qty,
           vlrUnitario:  +vlrUnit.toFixed(2),
           vlrBruto:     +vlrBruto.toFixed(2),

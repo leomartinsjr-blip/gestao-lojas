@@ -249,8 +249,9 @@
               const promoTag = it.emPromocao
                 ? `<span style="background:#2dd4bf14;color:#2dd4bf;font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;margin-left:4px">PROMO ${it.precoPromocao?fmtR(it.precoPromocao):''}</span>`
                 : '';
+              const subInfo = [it.nome, it.colecao].filter(Boolean).join(' · ');
               return `<tr class="${temDesc?'has-disc':''}">
-                <td>${esc(it.descricao)}${promoTag}</td>
+                <td>${esc(it.descricao)}${promoTag}${subInfo ? `<br><span style="font-size:10px;color:var(--cf-muted);font-weight:400">${esc(subInfo)}</span>` : ''}</td>
                 <td class="num">${it.quantidade}x</td>
                 <td class="num">${fmtR(it.vlrUnitario)}</td>
                 <td class="num">${fmtR(it.vlrBruto)}</td>
