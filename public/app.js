@@ -3521,7 +3521,7 @@ function renderTransTable(container, data) {
   const fN = v => v != null ? v : 0;
   const boardLabel = k => BOARDS[k]?.label || k;
   const boardColor = k => BOARDS[k]?.color || '#8B949E';
-  const fmtDate    = iso => iso ? iso.slice(0,10).split('-').reverse().join('/') : '—';
+  const fmtDate    = d => d ? d : '—'; // já em DD/MM/YYYY
 
   // Resumo por par De→Para
   const pairCount = {};
@@ -3544,7 +3544,7 @@ function renderTransTable(container, data) {
   const buildRows = list => list.map(s => {
     const senders   = [...new Set(s.transfers.map(t => t.de))];
     const receivers = [...new Set(s.transfers.map(t => t.para))];
-    const compraIso = s.ultimaCompra || '';
+    const compraBR = s.ultimaCompra || '';
 
     const enviarHtml = s.transfers.map(t =>
       `<span class="trans-sc trans-sc-send" data-de="${t.de}" data-para="${t.para}">
@@ -3563,13 +3563,13 @@ function renderTransTable(container, data) {
     return `<tr class="trans-row"
         data-enviar="${senders.join(',')}"
         data-receber="${receivers.join(',')}"
-        data-ultima-compra="${compraIso}"
+        data-ultima-compra="${compraBR}"
         data-setor="${s.setor || ''}">
       <td class="trans-td trans-cod">${s.cod_produto}</td>
       <td class="trans-td trans-setor">${s.setor || '—'}</td>
       <td class="trans-td trans-ref">${s.referencia || '—'}</td>
       <td class="trans-td">${s.descricao || '—'}</td>
-      <td class="trans-td trans-td-c trans-date">${fmtDate(compraIso)}</td>
+      <td class="trans-td trans-td-c trans-date">${fmtDate(compraBR)}</td>
       <td class="trans-td trans-td-chips trans-col-send">${enviarHtml}</td>
       <td class="trans-td trans-td-chips trans-col-recv">${receberHtml}</td>
     </tr>`;
@@ -3675,7 +3675,7 @@ function _exportTransExcel(sugestoes, lojaFilter = '', tipoFilter = '') {
       : isRecvFocus
       ? transfers.map(t => `${BOARDS[t.de]?.label || t.de}: ${t.qty}`).join(', ')
       : transfers.map(t => `${BOARDS[t.de]?.label||t.de}→${BOARDS[t.para]?.label||t.para}: ${t.qty}`).join(', ');
-    const compra = s.ultimaCompra ? s.ultimaCompra.slice(0,10).split('-').reverse().join('/') : '—';
+    const compra = s.ultimaCompra || '—';
     return [s.cod_produto, s.setor || '—', s.referencia || '—', s.descricao || '—', compra, enviar];
   }).filter(Boolean);
   const ws = XL.utils.aoa_to_sheet([header, ...rows]);
