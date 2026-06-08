@@ -402,11 +402,8 @@ async function fetchLinxPlanosBandeiras(cnpj, chave) {
 
 // Fetch LinxProdutosPromocoes → produtos em promoção por loja
 async function fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave) {
-  const extra = [
-    { id: 'data_inicial', valor: dtIni },
-    { id: 'data_fim',     valor: dtFin },
-  ];
-  const body = buildRequest('LinxProdutosPromocoes', cnpj, extra, chave);
+  // LinxProdutosPromocoes não aceita data_inicial/data_fim — busca todas as promoções ativas
+  const body = buildRequest('LinxProdutosPromocoes', cnpj, [], chave);
   const raw  = await postRequest(body);
   if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
     const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro';
