@@ -289,11 +289,11 @@ td.muted  { color: var(--cf-muted); }
     </div>
   </div>
   <nav class="cf-tabs-inline">
-    <button class="cf-tab active" data-tab="vendas">
+    <button class="cf-tab" data-tab="vendas">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
       Vendas
     </button>
-    <button class="cf-tab" data-tab="dashboard">
+    <button class="cf-tab active" data-tab="dashboard">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
       Dashboard
     </button>
@@ -317,7 +317,7 @@ td.muted  { color: var(--cf-muted); }
 <div class="cf-content">
 
 <!-- ══ VENDAS ═══════════════════════════════════════════════════════════ -->
-<div class="cf-panel active" id="tab-vendas">
+<div class="cf-panel" id="tab-vendas">
   <div class="cf-filter-bar">
     <div class="cf-fg"><label>Loja</label><select id="vBoard"></select></div>
     <div class="cf-fg"><label>De</label><input type="date" id="vDtIni"/></div>
@@ -352,7 +352,7 @@ td.muted  { color: var(--cf-muted); }
 </div>
 
 <!-- ══ DASHBOARD ═════════════════════════════════════════════════════════ -->
-<div class="cf-panel" id="tab-dashboard">
+<div class="cf-panel active" id="tab-dashboard">
   <div class="cf-filter-bar">
     <div class="cf-fg"><label>De</label><input type="date" id="dDtIni"/></div>
     <div class="cf-fg"><label>Até</label><input type="date" id="dDtFin"/></div>
