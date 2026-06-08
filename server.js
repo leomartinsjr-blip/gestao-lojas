@@ -6704,7 +6704,7 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
           doc,
           data:         dataISO,
           hora:         String(r.hora_lancamento || r.hora_documento || r.hora_emissao || '').trim().slice(0, 5),
-          valorTotal:   sign * parseBR(r.valor_total || r.total_liquido || '0'),
+          valorTotal:   0, // acumulado abaixo a partir de valor_liquido de cada item
           vendedorCod:  cod,
           vendedorNome: vendNomeCache[cod] || nome || cod,
           formas:  [],
@@ -6719,13 +6719,17 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       const qty      = parseBR(r.quantidade || '1');
       const vlrUnit  = parseBR(r.preco_unitario || r.preco_cheio || '0');
       const vlrDesc  = parseBR(r.desconto || '0');
-      const vlrLiq   = parseBR(r.valor_liquido || '0') || (vlrUnit * qty - vlrDesc);
+      // valor_liquido = valor líquido do item já com desconto aplicado
+      const vlrLiq   = parseBR(r.valor_liquido || '0') || Math.max(0, vlrUnit * qty - vlrDesc);
       const vlrBruto = vlrUnit * qty;
       const percItem = vlrBruto > 0 && vlrDesc > 0 ? (vlrDesc / vlrBruto) * 100 : 0;
 
+      // Acumula o total da venda somando valor líquido de cada item
+      docMap[doc].valorTotal += docMap[doc].sign * vlrLiq;
+
       if (vlrUnit > 0 || vlrLiq > 0) {
         docMap[doc].itens.push({
-          descricao:    (r.descricao || r.nome_produto || r.cod_produto || '—').trim(),
+          descricao:    (r.descricao || r.nome_produto || r.referencia || r.cod_produto || '—').trim(),
           quantidade:   qty,
           vlrUnitario:  +vlrUnit.toFixed(2),
           vlrBruto:     +vlrBruto.toFixed(2),
@@ -6736,7 +6740,7 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
         if (descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {
           docMap[doc].alertas.push({
             tipo: 'desconto_item',
-            msg:  `"${(r.descricao || r.cod_produto || '').trim()}" ${percItem.toFixed(1)}% desc (máx ${descontoMaxItem}%)`,
+            msg:  `"${(r.descricao || r.referencia || r.cod_produto || '').trim()}" ${percItem.toFixed(1)}% desc (máx ${descontoMaxItem}%)`,
           });
         }
       }
