@@ -7810,6 +7810,7 @@ function renderCaixaCard(container) {
         <span class="caixa-overlay-title">Sangrias — <span id="sgOvlPeriodo"></span></span>
         <button class="caixa-ovl-close" id="sgOvlClose">✕</button>
       </div>
+      <div id="sgOvlFilters" style="display:none;padding:.5rem .85rem;border-bottom:1px solid var(--border);gap:.35rem;flex-wrap:wrap;flex-direction:row"></div>
       <div class="caixa-ovl-body" id="sgOvlBody"></div>
     </div>`;
   document.body.appendChild(sgOvl);
@@ -7984,11 +7985,14 @@ function renderCaixaCard(container) {
     const sgBtn = card.querySelector('#caixaSangriaBtn');
     if (sgBtn) {
       sgBtn.addEventListener('click', async () => {
-        const sgBody   = sgOvl.querySelector('#sgOvlBody');
+        const sgBody    = sgOvl.querySelector('#sgOvlBody');
         const sgPeriodo = sgOvl.querySelector('#sgOvlPeriodo');
+        const sgFilters = sgOvl.querySelector('#sgOvlFilters');
         const meses = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
         sgPeriodo.textContent = `${meses[S.month-1]}/${S.year}`;
         sgBody.innerHTML = '<div style="padding:1rem;color:var(--muted);font-size:.85rem">Carregando…</div>';
+        sgFilters.style.display = 'none';
+        sgFilters.innerHTML = '';
         sgOvl.classList.add('active');
         document.body.style.overflow = 'hidden';
 
@@ -7999,32 +8003,86 @@ function renderCaixaCard(container) {
             return;
           }
           const fmtCur = v => `R$ ${Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
-          const total  = rows.reduce((s, r) => s + r.valor, 0);
-          sgBody.innerHTML = `
-            <div class="caixa-table-wrap" style="max-height:calc(92vh - 110px)">
-              <table class="caixa-table">
-                <thead><tr>
-                  <th style="text-align:left">Loja</th>
-                  <th style="text-align:left">Data</th>
-                  <th style="text-align:left">Descrição</th>
-                  <th>Valor</th>
-                </tr></thead>
-                <tbody>${rows.map(r => `
-                  <tr>
-                    <td style="padding:.38rem .6rem;font-size:.8rem;white-space:nowrap">
-                      <span style="color:${BOARDS[r.board]?.color||'var(--muted)'};font-weight:600">${r.loja}</span>
-                    </td>
-                    <td style="padding:.38rem .6rem;font-size:.8rem;white-space:nowrap;color:var(--muted)">${r.data}</td>
-                    <td style="padding:.38rem .6rem;font-size:.8rem">${r.desc || '—'}</td>
-                    <td class="caixa-td-val" style="color:#F85149;font-weight:600">${fmtCur(r.valor)}</td>
-                  </tr>`).join('')}
-                </tbody>
-                <tfoot><tr class="caixa-total-row">
-                  <td colspan="3">Total</td>
-                  <td style="text-align:right;color:#F85149">${fmtCur(total)}</td>
-                </tr></tfoot>
-              </table>
-            </div>`;
+
+          // Lojas presentes nos dados
+          const lojas = [...new Set(rows.map(r => r.board))].filter(Boolean);
+          let filtroAtivo = null; // null = todas
+
+          function renderSgTable() {
+            const filtered = filtroAtivo ? rows.filter(r => r.board === filtroAtivo) : rows;
+            const total = filtered.reduce((s, r) => s + r.valor, 0);
+
+            // Totais por loja (para o resumo)
+            const porLoja = {};
+            rows.forEach(r => { porLoja[r.board] = (porLoja[r.board] || 0) + r.valor; });
+
+            const resumoHtml = filtroAtivo ? '' : `
+              <div style="display:flex;flex-wrap:wrap;gap:.5rem;padding:.6rem .85rem;border-bottom:1px solid var(--border)">
+                ${lojas.map(b => `
+                  <div style="display:flex;align-items:center;gap:.35rem;font-size:.78rem">
+                    <span style="color:${BOARDS[b]?.color||'var(--muted)'};font-weight:700">${BOARDS[b]?.label||b}</span>
+                    <span style="color:#F85149;font-weight:600">${fmtCur(porLoja[b]||0)}</span>
+                  </div>`).join('<span style="color:var(--border)">|</span>')}
+              </div>`;
+
+            sgBody.innerHTML = resumoHtml + `
+              <div class="caixa-table-wrap" style="max-height:calc(92vh - ${filtroAtivo ? 160 : 210}px)">
+                <table class="caixa-table">
+                  <thead><tr>
+                    <th style="text-align:left">Loja</th>
+                    <th style="text-align:left">Data</th>
+                    <th style="text-align:left">Descrição</th>
+                    <th>Valor</th>
+                  </tr></thead>
+                  <tbody>${filtered.map(r => `
+                    <tr>
+                      <td style="padding:.38rem .6rem;font-size:.8rem;white-space:nowrap">
+                        <span style="color:${BOARDS[r.board]?.color||'var(--muted)'};font-weight:600">${r.loja}</span>
+                      </td>
+                      <td style="padding:.38rem .6rem;font-size:.8rem;white-space:nowrap;color:var(--muted)">${r.data}</td>
+                      <td style="padding:.38rem .6rem;font-size:.8rem">${r.desc || '—'}</td>
+                      <td class="caixa-td-val" style="color:#F85149;font-weight:600">${fmtCur(r.valor)}</td>
+                    </tr>`).join('')}
+                  </tbody>
+                  <tfoot><tr class="caixa-total-row">
+                    <td colspan="3">Total${filtroAtivo ? ` — ${BOARDS[filtroAtivo]?.label||filtroAtivo}` : ' Geral'}</td>
+                    <td style="text-align:right;color:#F85149">${fmtCur(total)}</td>
+                  </tr></tfoot>
+                </table>
+              </div>`;
+          }
+
+          // Botões de filtro
+          if (lojas.length > 1) {
+            sgFilters.style.display = 'flex';
+            const allBtn = document.createElement('button');
+            allBtn.className = 'nf-tab active';
+            allBtn.textContent = 'Todas';
+            allBtn.style.cssText = '--nf-tab-color:#8B949E';
+            allBtn.addEventListener('click', () => {
+              filtroAtivo = null;
+              sgFilters.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+              allBtn.classList.add('active');
+              renderSgTable();
+            });
+            sgFilters.appendChild(allBtn);
+
+            lojas.forEach(board => {
+              const btn = document.createElement('button');
+              btn.className = 'nf-tab';
+              btn.textContent = BOARDS[board]?.label || board;
+              btn.style.cssText = `--nf-tab-color:${BOARDS[board]?.color||'#8B949E'}`;
+              btn.addEventListener('click', () => {
+                filtroAtivo = board;
+                sgFilters.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                renderSgTable();
+              });
+              sgFilters.appendChild(btn);
+            });
+          }
+
+          renderSgTable();
         } catch(e) {
           sgBody.innerHTML = `<div style="padding:1rem;color:var(--down);font-size:.85rem">Erro: ${e.message}</div>`;
         }
