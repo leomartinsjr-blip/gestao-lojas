@@ -207,14 +207,16 @@
           <thead><tr>
             <th>Produto</th>
             <th class="num">Qtd</th>
-            <th class="num">Vlr Unit. Bruto</th>
+            <th class="num">Preço Tabela</th>
             <th class="num">Total Bruto</th>
             <th class="num">Desc. Produto</th>
             <th class="num">%</th>
+            <th class="num">Total Líquido</th>
           </tr></thead>
           <tbody>
             ${itens.map(it => {
               const temDesc = it.vlrDesconto > 0;
+              const liq = it.vlrLiquido ?? (it.vlrBruto - it.vlrDesconto);
               return `<tr class="${temDesc?'has-disc':''}">
                 <td>${esc(it.descricao)}</td>
                 <td class="num">${it.quantidade}x</td>
@@ -222,6 +224,7 @@
                 <td class="num">${fmtR(it.vlrBruto)}</td>
                 <td class="num ${temDesc?'disc-val':'disc-zero'}">${temDesc?fmtR(it.vlrDesconto):'—'}</td>
                 <td class="num">${temDesc?`<span class="disc-pct">${it.percDesconto}%</span>`:'—'}</td>
+                <td class="num" style="font-weight:600">${fmtR(liq)}</td>
               </tr>`;
             }).join('')}
           </tbody>
@@ -231,6 +234,7 @@
               <td class="num">${fmtR(totalBruto)}</td>
               <td class="num" style="color:var(--amber)">${totalDesc>0?fmtR(totalDesc):'—'}</td>
               <td class="num" style="color:var(--amber)">${totalDesc>0&&totalBruto>0?`<span class="disc-pct">${((totalDesc/totalBruto)*100).toFixed(1)}%</span>`:'—'}</td>
+              <td class="num" style="font-weight:700">${fmtR(itens.reduce((s,i)=>s+(i.vlrLiquido??(i.vlrBruto-i.vlrDesconto)),0))}</td>
             </tr>
           </tfoot>
         </table>

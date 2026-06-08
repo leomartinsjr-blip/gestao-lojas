@@ -6695,7 +6695,9 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       // Cria entrada do documento na primeira linha encontrada
       if (!docMap[doc]) {
         const cod  = String(r.cod_vendedor || '').trim();
-        const nome = (r.nome_vendedor || '').trim();
+        // nome_vendedor não existe no LinxMovimento; extrai do campo obs como fallback
+        const obsNome = (r.obs || '').match(/Nome do Vendedor:\s*(.+?)(?:\s*\|.*)?$/i);
+        const nome = (r.nome_vendedor || (obsNome && obsNome[1]) || '').trim();
         // data_documento vem como "DD/MM/YYYY" no Microvix
         const rawDate = String(r.data_documento || r.data_emissao || r.data || '').trim();
         const mD = rawDate.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
@@ -6716,26 +6718,25 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       }
 
       // Cada linha do LinxMovimento é um item da venda
-      const qty     = parseBR(r.quantidade || '1');
-      // desconto_total_item é o campo correto; desconto como fallback
-      const vlrDesc = parseBR(r.desconto_total_item || r.desconto || '0');
-      // valor_liquido = total líquido do item (após desconto)
-      const vlrLiq  = parseBR(r.valor_liquido || '0');
-      // total bruto = líquido + desconto (assim não depende de preco_cheio/preco_unitario)
-      const vlrBruto  = vlrLiq + vlrDesc;
-      const vlrUnit   = qty > 0 ? vlrBruto / qty : vlrBruto; // unitário bruto
+      const qty       = parseBR(r.quantidade || '1');
+      const vlrUnit   = parseBR(r.preco_tabela_epoca || r.preco_unitario || '0'); // preço bruto de tabela
+      const vlrLiq    = parseBR(r.preco_unitario || r.valor_liquido || '0');      // preço vendido (já com desconto)
+      const vlrDesc   = parseBR(r.desconto_item || r.desconto_total_item || '0'); // desconto por item
+      const vlrBruto  = vlrUnit * qty;
+      const vlrLiqTot = vlrLiq * qty;
       const percItem  = vlrBruto > 0 && vlrDesc > 0 ? (vlrDesc / vlrBruto) * 100 : 0;
 
-      // Acumula o total da venda somando valor líquido de cada item
-      docMap[doc].valorTotal += docMap[doc].sign * vlrLiq;
+      // Acumula o total da venda somando preco_unitario × quantidade
+      docMap[doc].valorTotal += docMap[doc].sign * vlrLiqTot;
 
       if (vlrUnit > 0 || vlrLiq > 0) {
         docMap[doc].itens.push({
           descricao:    (r.descricao || r.nome_produto || r.referencia || r.cod_produto || '—').trim(),
           quantidade:   qty,
-          vlrUnitario:  +vlrUnit.toFixed(2),
-          vlrBruto:     +vlrBruto.toFixed(2),
-          vlrDesconto:  +vlrDesc.toFixed(2),
+          vlrUnitario:  +vlrUnit.toFixed(2),   // preço bruto de tabela
+          vlrBruto:     +vlrBruto.toFixed(2),   // bruto × qtd
+          vlrLiquido:   +vlrLiqTot.toFixed(2),  // líquido × qtd
+          vlrDesconto:  +vlrDesc.toFixed(2),    // desconto_item
           percDesconto: +percItem.toFixed(1),
         });
 
