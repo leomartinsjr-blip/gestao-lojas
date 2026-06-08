@@ -6679,7 +6679,7 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
 
     for (const r of movRows) {
       const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
-      if (rowCnpj && rowCnpj !== cnpjClean) continue;
+      if (!rowCnpj || rowCnpj !== cnpjClean) continue;
       if (r.cancelado === 'S' || r.cancelado === '1') continue;
       const op    = (r.operacao || '').trim().toUpperCase();
       if (op !== 'S' && op !== 'DS') continue;
@@ -6771,7 +6771,7 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
     const docFormaMap = {};
     for (const r of planoRows) {
       const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
-      if (rowCnpj && rowCnpj !== cnpjClean) continue;
+      if (!rowCnpj || rowCnpj !== cnpjClean) continue;
       const ident = String(r.identificador || '').trim();
       const doc   = (ident && identMap[ident]) || String(r.documento || '').trim();
       if (!doc || !docMap[doc]) continue;
@@ -6790,7 +6790,7 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
     // Fallback: LinxMovimentoCartoes (sobrescreve bandeiras de cartão)
     for (const r of cartoesRows) {
       const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
-      if (rowCnpj && rowCnpj !== cnpjClean) continue;
+      if (!rowCnpj || rowCnpj !== cnpjClean) continue;
       const doc = String(r.cupomfiscal || r.documento || '').trim();
       if (!doc || !docMap[doc]) continue;
       const cd       = String(r.credito_debito || '').trim().toUpperCase();
@@ -6821,7 +6821,7 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
     if (parcelaMin > 0) {
       for (const r of planoRows) {
         const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
-        if (rowCnpj && rowCnpj !== cnpjClean) continue;
+        if (!rowCnpj || rowCnpj !== cnpjClean) continue;
         const ident = String(r.identificador || '').trim();
         const doc   = (ident && identMap[ident]) || String(r.documento || '').trim();
         if (!doc || !docMap[doc]) continue;

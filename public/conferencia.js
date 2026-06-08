@@ -81,8 +81,8 @@
     const el = $('vResult');
     if (!qtdVendas) { el.innerHTML = '<div class="cf-empty">Nenhuma venda encontrada.</div>'; return; }
 
-    if (_grupo === 'forma')    { el.innerHTML = renderGrupos(porForma,    totalVendas, 'Forma de Pagamento', v => esc(v.vendedor)); return; }
-    if (_grupo === 'vendedor') { el.innerHTML = renderGrupos(porVendedor, totalVendas, 'Vendedor', v => esc(formasLabel(v.formas))); return; }
+    if (_grupo === 'forma')    { el.innerHTML = renderGrupos(porForma,    totalVendas); bindDrills(el); return; }
+    if (_grupo === 'vendedor') { el.innerHTML = renderGrupos(porVendedor, totalVendas); bindDrills(el); return; }
 
     // Lista simples
     el.innerHTML = `
@@ -121,7 +121,7 @@
           const drillId = `dr-${i}-${Math.random().toString(36).slice(2,6)}`;
           const hasItens = v.itens?.length > 0;
           return `
-          <tr class="${v.alertas?.length?'row-alert':''}" ${hasItens?`data-drill="${drillId}" style="cursor:pointer"`:''}">
+          <tr class="${v.alertas?.length?'row-alert':''}" ${hasItens?`data-drill="${drillId}" style="cursor:pointer"`:''}>
             <td>${fmtD(v.data)}</td>
             <td class="muted">${v.hora||'—'}</td>
             <td class="mono">${v.doc}</td>
@@ -160,7 +160,7 @@
     </div>`;
   }
 
-  function renderGrupos(grupos, totalGeral, tituloCol, subLabel) {
+  function renderGrupos(grupos, totalGeral) {
     return grupos.map((g,gi) => {
       const pct    = totalGeral>0 ? (g.total/totalGeral*100).toFixed(1) : '0';
       const alertas= (g.vendas||[]).filter(v=>v.alertas?.length).length;
@@ -180,52 +180,35 @@
             <svg class="cf-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           </div>
           <div class="cf-card-body" id="${bodyId}">
-            ${tabelaVendas(g.vendas||[], v=>esc(v.vendedor), v=>esc(formasLabel(v.formas)))}
+            ${tabelaVendas(g.vendas||[], v => esc(v.vendedor), v => esc(formasLabel(v.formas)))}
           </div>
         </div>`;
     }).join('');
   }
 
   function bindDrills(container) {
-    // Card headers
-    container.querySelectorAll('.cf-card-hdr').forEach(hdr => {
+    // Card headers (grupos)
+    container.querySelectorAll('.cf-card-hdr:not([data-bound])').forEach(hdr => {
+      hdr.dataset.bound = '1';
       hdr.addEventListener('click', () => {
-        const body = container.querySelector('#'+hdr.dataset.body);
+        const body = document.getElementById(hdr.dataset.body);
         if (!body) return;
         const open = body.classList.toggle('open');
         hdr.querySelector('.cf-chevron')?.classList.toggle('open', open);
+        if (open) bindDrills(body);
       });
     });
     // Row drills (itens da venda)
-    container.querySelectorAll('tr[data-drill]').forEach(row => {
+    container.querySelectorAll('tr[data-drill]:not([data-bound])').forEach(row => {
+      row.dataset.bound = '1';
       row.addEventListener('click', () => {
-        const drill = container.querySelector('#'+row.dataset.drill);
+        const drill = document.getElementById(row.dataset.drill);
         if (!drill) return;
         const open = drill.classList.toggle('hidden');
         row.querySelector('.cf-chevron')?.classList.toggle('open', !open);
       });
     });
   }
-
-  // Bind para lista (sem grupos)
-  const vResult = $('vResult');
-  const observer = new MutationObserver(() => bindDrills(vResult));
-  observer.observe(vResult, { childList:true });
-
-  // Bind para grupos
-  const vResultObs = new MutationObserver(() => {
-    vResult.querySelectorAll('.cf-card-hdr').forEach(hdr => {
-      if (hdr._bound) return; hdr._bound = true;
-      hdr.addEventListener('click', () => {
-        const body = document.getElementById(hdr.dataset.body);
-        if (!body) return;
-        const open = body.classList.toggle('open');
-        hdr.querySelector('.cf-chevron')?.classList.toggle('open', open);
-        bindDrills(body);
-      });
-    });
-  });
-  vResultObs.observe(vResult, { childList:true, subtree:true });
 
   // ════════════════════════════════════════════════════════════════════════
   // CONCILIAÇÃO REDE
