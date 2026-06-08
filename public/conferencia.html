@@ -3,305 +3,325 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Conferência de Caixa</title>
+<title>Conferência · Gestão de Lojas</title>
 <link rel="stylesheet" href="/style.css"/>
 <style>
+/* ── Palette exec_dark ─────────────────────────────────────── */
 :root {
-  --r: 10px;
-  --green:  #22c55e; --green-bg:  #22c55e14;
-  --blue:   #3b82f6; --blue-bg:   #3b82f614;
-  --purple: #a855f7; --purple-bg: #a855f714;
-  --amber:  #f59e0b; --amber-bg:  #f59e0b14;
-  --red:    #ef4444; --red-bg:    #ef444414;
-  --teal:   #14b8a6; --teal-bg:   #14b8a614;
-  --gray-bg: #ffffff08;
+  --cf-bg:      #0f1722;
+  --cf-card:    #111827;
+  --cf-card2:   #1a2235;
+  --cf-border:  #ffffff0f;
+  --cf-text:    #E6EEF3;
+  --cf-muted:   #98A2B3;
+  --cf-primary: #4AA3FF;
+  --cf-accent:  #FF9A4A;
+  --cf-alert:   #FF6161;
+  --cf-green:   #34d399;
+  --cf-purple:  #a78bfa;
+  --cf-teal:    #2dd4bf;
+
+  --cf-primary-bg: #4AA3FF14;
+  --cf-accent-bg:  #FF9A4A14;
+  --cf-alert-bg:   #FF616114;
+  --cf-green-bg:   #34d39914;
+  --cf-purple-bg:  #a78bfa14;
+
+  --r: 12px;
 }
 *, *::before, *::after { box-sizing: border-box; }
-body { background: var(--bg); color: var(--text); font-family: var(--font); margin: 0; font-size: 13px; }
+body {
+  background: var(--cf-bg); color: var(--cf-text);
+  font-family: var(--font, system-ui, sans-serif);
+  margin: 0; font-size: 13px; min-height: 100vh;
+}
 
 /* ── Topbar ─────────────────────────────────────────────────── */
 .cf-topbar {
-  display: flex; align-items: center; gap: 12px;
-  padding: 14px 24px;
-  background: linear-gradient(135deg, #1e3a5f 0%, #0f2040 100%);
-  border-bottom: 1px solid #ffffff18;
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 28px; height: 52px;
+  background: var(--cf-card); border-bottom: 1px solid var(--cf-border);
+  position: sticky; top: 0; z-index: 100;
 }
-.cf-topbar-icon { color: var(--blue); flex-shrink: 0; }
-.cf-topbar h1 { font-size: 15px; font-weight: 700; margin: 0; color: #fff; letter-spacing: -.2px; }
-.cf-topbar-sub { font-size: 11px; color: #ffffff60; }
-.cf-user-chip {
-  margin-left: auto; display: flex; align-items: center; gap: 6px;
-  background: #ffffff12; border: 1px solid #ffffff20; border-radius: 20px;
-  padding: 4px 10px; font-size: 11px; color: #ffffffb0;
+.cf-logo {
+  display: flex; align-items: center; gap: 10px;
+  padding-right: 16px; border-right: 1px solid var(--cf-border);
 }
-
-/* ── Tabs ───────────────────────────────────────────────────── */
-.cf-tabs {
-  display: flex; gap: 0; padding: 0 24px;
-  background: var(--surface); border-bottom: 2px solid var(--border);
-}
+.cf-logo svg { color: var(--cf-primary); }
+.cf-logo-text { font-size: 13px; font-weight: 700; color: var(--cf-text); letter-spacing: -.3px; }
+.cf-logo-sub  { font-size: 10px; color: var(--cf-muted); margin-top: 1px; }
+.cf-tabs-inline { display: flex; gap: 0; margin-left: 8px; }
 .cf-tab {
-  padding: 12px 20px; font-size: 12px; font-weight: 600; cursor: pointer;
-  border: none; background: none; color: var(--muted); font-family: var(--font);
-  border-bottom: 2px solid transparent; margin-bottom: -2px;
-  transition: color .15s, border-color .15s;
+  padding: 0 18px; height: 52px; font-size: 12px; font-weight: 600; cursor: pointer;
+  border: none; background: none; color: var(--cf-muted); font-family: inherit;
+  border-bottom: 2px solid transparent; transition: color .15s, border-color .15s;
+  display: flex; align-items: center; gap: 6px; white-space: nowrap;
 }
-.cf-tab:hover { color: var(--text); }
-.cf-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+.cf-tab:hover { color: var(--cf-text); }
+.cf-tab.active { color: var(--cf-primary); border-bottom-color: var(--cf-primary); }
+.cf-topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+.cf-user-chip {
+  display: flex; align-items: center; gap: 6px;
+  background: var(--cf-card2); border: 1px solid var(--cf-border); border-radius: 20px;
+  padding: 5px 12px; font-size: 11px; color: var(--cf-muted);
+}
 
-/* ── Panels ─────────────────────────────────────────────────── */
-.cf-panel { display: none; padding: 20px 24px; }
+/* ── Content ─────────────────────────────────────────────────── */
+.cf-content { padding: 24px 28px; }
+.cf-panel { display: none; }
 .cf-panel.active { display: block; }
 
-/* ── Filter card ────────────────────────────────────────────── */
-.cf-filter-card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--r); padding: 14px 18px; margin-bottom: 18px;
-  display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+/* ── Filter bar ─────────────────────────────────────────────── */
+.cf-filter-bar {
+  display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap;
+  background: var(--cf-card); border: 1px solid var(--cf-border);
+  border-radius: var(--r); padding: 12px 16px; margin-bottom: 20px;
 }
-.cf-fg { display: flex; flex-direction: column; gap: 4px; }
-.cf-fg label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; font-weight: 600; }
+.cf-fg { display: flex; flex-direction: column; gap: 3px; }
+.cf-fg label { font-size: 10px; color: var(--cf-muted); text-transform: uppercase; letter-spacing: .7px; font-weight: 700; }
 .cf-fg select, .cf-fg input[type=date] {
-  background: var(--bg); border: 1px solid var(--border); color: var(--text);
-  padding: 6px 10px; border-radius: 7px; font-size: 12px; font-family: var(--font);
-  min-width: 110px;
+  background: var(--cf-card2); border: 1px solid var(--cf-border); color: var(--cf-text);
+  padding: 7px 10px; border-radius: 8px; font-size: 12px; font-family: inherit; min-width: 110px;
 }
-.cf-fg select:focus, .cf-fg input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-bg); }
-
+.cf-fg select:focus, .cf-fg input:focus { outline: none; border-color: var(--cf-primary); box-shadow: 0 0 0 2px #4AA3FF1a; }
 .btn-primary {
-  background: var(--blue); color: #fff; border: none;
-  padding: 7px 18px; border-radius: 7px; font-size: 12px; font-weight: 600;
-  cursor: pointer; font-family: var(--font); display: flex; align-items: center; gap: 6px;
-  transition: opacity .15s;
+  background: var(--cf-primary); color: #fff; border: none;
+  padding: 8px 18px; border-radius: 8px; font-size: 12px; font-weight: 700;
+  cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 6px;
+  transition: opacity .15s; white-space: nowrap;
 }
 .btn-primary:hover { opacity: .88; }
 .btn-primary:disabled { opacity: .45; cursor: default; }
-
-.grp-btns { display: flex; gap: 1px; background: var(--border); border-radius: 7px; overflow: hidden; margin-left: auto; }
+.grp-btns { display: flex; gap: 1px; background: var(--cf-border); border-radius: 8px; overflow: hidden; }
 .btn-grp {
-  background: var(--surface); color: var(--muted); border: none;
-  padding: 6px 14px; font-size: 11px; font-weight: 600; cursor: pointer;
-  font-family: var(--font); transition: background .12s, color .12s;
+  background: var(--cf-card2); color: var(--cf-muted); border: none;
+  padding: 7px 14px; font-size: 11px; font-weight: 600; cursor: pointer;
+  font-family: inherit; transition: background .12s, color .12s;
 }
-.btn-grp:hover { background: var(--surface2, #2a2a2a); color: var(--text); }
-.btn-grp.active { background: var(--blue); color: #fff; }
+.btn-grp:hover { color: var(--cf-text); }
+.btn-grp.active { background: var(--cf-primary); color: #fff; }
 
-/* ── Summary strips ─────────────────────────────────────────── */
-.cf-stats { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
-.stat-card {
-  flex: 1; min-width: 120px; background: var(--surface);
-  border: 1px solid var(--border); border-radius: var(--r);
-  padding: 12px 16px; display: flex; align-items: center; gap: 12px;
+/* ── KPI row ─────────────────────────────────────────────────── */
+.kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+@media (max-width: 900px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+.kpi-card {
+  background: var(--cf-card); border: 1px solid var(--cf-border);
+  border-radius: var(--r); padding: 20px 22px;
+  display: flex; flex-direction: column; gap: 12px;
+  transition: border-color .15s;
 }
-.stat-card-btn:hover { border-color: var(--red); }
-.stat-card-active { border-color: var(--red) !important; background: rgba(239,68,68,0.08) !important; }
-.stat-icon {
-  width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center; font-size: 16px;
+.kpi-card:hover { border-color: #ffffff1f; }
+.kpi-card.clickable { cursor: pointer; }
+.kpi-card.active-filter { border-color: var(--cf-alert) !important; background: #FF616108; }
+.kpi-top { display: flex; align-items: flex-start; justify-content: space-between; }
+.kpi-icon {
+  width: 40px; height: 40px; border-radius: 10px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 18px;
 }
-.stat-icon.green  { background: var(--green-bg);  color: var(--green);  }
-.stat-icon.blue   { background: var(--blue-bg);   color: var(--blue);   }
-.stat-icon.amber  { background: var(--amber-bg);  color: var(--amber);  }
-.stat-icon.red    { background: var(--red-bg);    color: var(--red);    }
-.stat-icon.purple { background: var(--purple-bg); color: var(--purple); }
-.stat-val { font-size: 20px; font-weight: 800; line-height: 1; }
-.stat-lbl { font-size: 10px; color: var(--muted); margin-top: 3px; font-weight: 500; text-transform: uppercase; letter-spacing: .4px; }
+.kpi-icon.blue   { background: var(--cf-primary-bg); color: var(--cf-primary); }
+.kpi-icon.amber  { background: var(--cf-accent-bg);  color: var(--cf-accent);  }
+.kpi-icon.red    { background: var(--cf-alert-bg);   color: var(--cf-alert);   }
+.kpi-icon.green  { background: var(--cf-green-bg);   color: var(--cf-green);   }
+.kpi-icon.purple { background: var(--cf-purple-bg);  color: var(--cf-purple);  }
+.kpi-badge {
+  font-size: 10px; font-weight: 700; padding: 2px 8px;
+  border-radius: 20px; background: var(--cf-card2); color: var(--cf-muted);
+}
+.kpi-val { font-size: 26px; font-weight: 800; line-height: 1; letter-spacing: -.5px; }
+.kpi-meta { display: flex; align-items: center; justify-content: space-between; }
+.kpi-lbl { font-size: 11px; color: var(--cf-muted); font-weight: 500; }
+.kpi-sub { font-size: 11px; color: var(--cf-muted); }
 
-/* ── Sale list card ─────────────────────────────────────────── */
-.sales-card {
-  background: var(--surface); border: 1px solid var(--border);
+/* ── Body 2-column grid ─────────────────────────────────────── */
+.cf-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .cf-grid2 { grid-template-columns: 1fr; } }
+.cf-grid2.wide-left { grid-template-columns: 3fr 2fr; }
+
+/* ── Panel card ─────────────────────────────────────────────── */
+.panel-card {
+  background: var(--cf-card); border: 1px solid var(--cf-border);
   border-radius: var(--r); overflow: hidden;
 }
-.sales-card-hdr {
-  padding: 10px 16px; border-bottom: 1px solid var(--border);
-  font-size: 11px; font-weight: 700; color: var(--muted);
-  text-transform: uppercase; letter-spacing: .5px;
-  background: var(--gray-bg);
+.panel-card-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--cf-border);
 }
+.panel-card-title { font-size: 12px; font-weight: 700; color: var(--cf-text); text-transform: uppercase; letter-spacing: .5px; }
+.panel-card-meta  { font-size: 11px; color: var(--cf-muted); }
+.panel-card-body  { padding: 16px 18px; display: flex; flex-direction: column; gap: 14px; }
+
+/* ── Horizontal bar rows ────────────────────────────────────── */
+.hbar-row { display: flex; flex-direction: column; gap: 6px; }
+.hbar-top  { display: flex; align-items: baseline; justify-content: space-between; }
+.hbar-label { font-size: 12px; font-weight: 700; }
+.hbar-value { font-size: 14px; font-weight: 800; }
+.hbar-sub   { font-size: 10px; color: var(--cf-muted); }
+.hbar-track { height: 7px; background: var(--cf-card2); border-radius: 4px; overflow: hidden; }
+.hbar-fill  { height: 100%; border-radius: 4px; transition: width .5s ease; }
 
 /* ── Table ──────────────────────────────────────────────────── */
 .cf-tbl { width: 100%; border-collapse: collapse; }
 .cf-tbl th {
-  padding: 8px 14px; text-align: left; font-size: 10px; font-weight: 700;
-  color: var(--muted); border-bottom: 1px solid var(--border);
-  text-transform: uppercase; letter-spacing: .4px; white-space: nowrap;
-  background: var(--gray-bg);
+  padding: 9px 16px; text-align: left; font-size: 10px; font-weight: 700;
+  color: var(--cf-muted); border-bottom: 1px solid var(--cf-border);
+  text-transform: uppercase; letter-spacing: .5px; white-space: nowrap;
+  background: #ffffff04;
 }
 .cf-tbl th.num, .cf-tbl td.num { text-align: right; }
 .cf-tbl td {
-  padding: 9px 14px; border-bottom: 1px solid var(--border);
+  padding: 10px 16px; border-bottom: 1px solid var(--cf-border);
   vertical-align: middle; font-size: 12px;
 }
 .cf-tbl tr:last-child td { border-bottom: none; }
 .cf-tbl tbody tr.sale-row { transition: background .1s; }
-.cf-tbl tbody tr.sale-row:hover td { background: var(--surface2, #1e1e1e); }
+.cf-tbl tbody tr.sale-row:hover td { background: var(--cf-card2); }
 .cf-tbl tbody tr.sale-row[data-drill] { cursor: pointer; }
-/* Left border accent */
 .cf-tbl td.accent-cell { padding-left: 0; width: 3px; padding-right: 0; }
 .accent-bar { width: 3px; height: 100%; min-height: 36px; border-radius: 2px; }
-.accent-bar.ok     { background: transparent; }
-.accent-bar.disc   { background: var(--amber); }
-.accent-bar.alert  { background: var(--red); }
+.accent-bar.ok    { background: transparent; }
+.accent-bar.disc  { background: var(--cf-accent); }
+.accent-bar.alert { background: var(--cf-alert); }
+td.mono   { font-family: monospace; font-size: 11px; color: var(--cf-muted); }
+td.muted  { color: var(--cf-muted); }
+.total-row td { font-weight: 700; background: #ffffff04 !important; border-top: 1px solid var(--cf-border); }
 
-td.mono { font-family: monospace; font-size: 11px; color: var(--muted); }
-td.muted { color: var(--muted); }
+/* ── Sales card (vendas list) ───────────────────────────────── */
+.sales-card { background: var(--cf-card); border: 1px solid var(--cf-border); border-radius: var(--r); overflow: hidden; }
+.sales-card-hdr {
+  padding: 11px 16px; border-bottom: 1px solid var(--cf-border);
+  font-size: 11px; font-weight: 700; color: var(--cf-muted);
+  text-transform: uppercase; letter-spacing: .5px; background: #ffffff04;
+}
 
-/* ── Payment chips ──────────────────────────────────────────── */
+/* ── Pay chips ──────────────────────────────────────────────── */
 .pay-chips { display: flex; flex-wrap: wrap; gap: 3px; }
 .pay-chip {
   display: inline-flex; align-items: center; gap: 3px;
   padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 600; white-space: nowrap;
 }
-.pay-chip.credito  { background: var(--green-bg);  color: var(--green);  }
-.pay-chip.debito   { background: var(--blue-bg);   color: var(--blue);   }
-.pay-chip.pix      { background: var(--teal-bg);   color: var(--teal);   }
-.pay-chip.dinheiro { background: var(--gray-bg);   color: var(--muted);  }
-.pay-chip.outros   { background: var(--purple-bg); color: var(--purple); }
+.pay-chip.credito  { background: var(--cf-green-bg);  color: var(--cf-green);  }
+.pay-chip.debito   { background: var(--cf-primary-bg); color: var(--cf-primary); }
+.pay-chip.pix      { background: #2dd4bf14; color: var(--cf-teal); }
+.pay-chip.dinheiro { background: #ffffff0a; color: var(--cf-muted); }
+.pay-chip.outros   { background: var(--cf-purple-bg); color: var(--cf-purple); }
 
-/* ── Alert badges ───────────────────────────────────────────── */
+/* ── Badges ─────────────────────────────────────────────────── */
 .badge {
   display: inline-flex; align-items: center; gap: 3px;
   padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 700; white-space: nowrap;
 }
-.badge-parc { background: var(--amber-bg);  color: var(--amber); }
-.badge-di   { background: var(--red-bg);    color: var(--red);   }
-.badge-dv   { background: var(--red-bg);    color: var(--red);   }
-.badge-ok   { background: var(--green-bg);  color: var(--green); }
-.badge-rede { background: var(--purple-bg); color: var(--purple);}
+.badge-parc { background: var(--cf-accent-bg);  color: var(--cf-accent); }
+.badge-di   { background: var(--cf-alert-bg);   color: var(--cf-alert);  }
+.badge-dv   { background: var(--cf-alert-bg);   color: var(--cf-alert);  }
+.badge-ok   { background: var(--cf-green-bg);   color: var(--cf-green);  }
+.badge-rede { background: var(--cf-purple-bg);  color: var(--cf-purple); }
 
 /* ── Drill-down ─────────────────────────────────────────────── */
-.drill-row td { padding: 0 !important; border-bottom: 2px solid var(--border) !important; }
-.drill-wrap {
-  background: #0a0a14; border-left: 3px solid var(--amber);
-  padding: 12px 0;
-}
-.drill-hdr {
-  padding: 4px 20px 8px; font-size: 10px; font-weight: 700;
-  color: var(--amber); text-transform: uppercase; letter-spacing: .5px;
-}
+.drill-row td { padding: 0 !important; border-bottom: 2px solid var(--cf-border) !important; }
+.drill-wrap { background: #080f1a; border-left: 3px solid var(--cf-accent); padding: 12px 0; }
+.drill-hdr { padding: 4px 20px 8px; font-size: 10px; font-weight: 700; color: var(--cf-accent); text-transform: uppercase; letter-spacing: .5px; }
 .drill-tbl { width: 100%; border-collapse: collapse; }
-.drill-tbl th {
-  padding: 5px 14px 5px 20px; font-size: 10px; color: var(--muted);
-  font-weight: 600; text-transform: uppercase; letter-spacing: .3px;
-  border-bottom: 1px solid #ffffff0a; text-align: left;
-}
+.drill-tbl th { padding: 5px 14px 5px 20px; font-size: 10px; color: var(--cf-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .3px; border-bottom: 1px solid #ffffff08; text-align: left; }
 .drill-tbl th.num, .drill-tbl td.num { text-align: right; }
-.drill-tbl td {
-  padding: 6px 14px 6px 20px; font-size: 11px; color: #ffffffb0;
-  border-bottom: 1px solid #ffffff06;
-}
+.drill-tbl td { padding: 6px 14px 6px 20px; font-size: 11px; color: #ffffffb0; border-bottom: 1px solid #ffffff05; }
 .drill-tbl tr:last-child td { border-bottom: none; }
-.drill-tbl td.disc-val { color: var(--amber); font-weight: 700; }
+.drill-tbl td.disc-val { color: var(--cf-accent); font-weight: 700; }
 .drill-tbl td.disc-zero { color: #ffffff30; }
-.disc-pct {
-  display: inline-block; background: var(--amber-bg); color: var(--amber);
-  border-radius: 4px; padding: 1px 5px; font-size: 10px; font-weight: 700; margin-left: 4px;
-}
-.drill-tbl tr.has-disc td:first-child::before {
-  content: '▸ '; color: var(--amber); font-size: 9px;
-}
+.disc-pct { display: inline-block; background: var(--cf-accent-bg); color: var(--cf-accent); border-radius: 4px; padding: 1px 5px; font-size: 10px; font-weight: 700; margin-left: 4px; }
+.drill-tbl tr.has-disc td:first-child::before { content: '▸ '; color: var(--cf-accent); font-size: 9px; }
 
 /* ── Grupo cards ────────────────────────────────────────────── */
-.grupo-card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--r); overflow: hidden; margin-bottom: 10px;
-}
-.grupo-hdr {
-  display: flex; align-items: center; gap: 12px; padding: 12px 16px;
-  cursor: pointer; user-select: none; transition: background .12s;
-}
-.grupo-hdr:hover { background: var(--surface2, #1e1e1e); }
+.grupo-card { background: var(--cf-card); border: 1px solid var(--cf-border); border-radius: var(--r); overflow: hidden; margin-bottom: 10px; }
+.grupo-hdr { display: flex; align-items: center; gap: 12px; padding: 13px 16px; cursor: pointer; user-select: none; transition: background .12s; }
+.grupo-hdr:hover { background: var(--cf-card2); }
 .grupo-color { width: 4px; height: 32px; border-radius: 3px; flex-shrink: 0; }
 .grupo-title { font-weight: 700; font-size: 13px; flex: 1; }
-.grupo-meta { display: flex; gap: 16px; align-items: center; font-size: 11px; color: var(--muted); }
-.grupo-pct-bar {
-  height: 5px; background: var(--blue); border-radius: 3px; opacity: .5;
-  display: inline-block; vertical-align: middle; margin-left: 5px;
-}
+.grupo-meta { display: flex; gap: 16px; align-items: center; font-size: 11px; color: var(--cf-muted); }
+.grupo-pct-bar { height: 5px; border-radius: 3px; opacity: .5; display: inline-block; vertical-align: middle; margin-left: 5px; }
 .grupo-total { font-weight: 800; font-size: 15px; margin-left: auto; }
-.grupo-chev { color: var(--muted); flex-shrink: 0; transition: transform .2s; }
+.grupo-chev { color: var(--cf-muted); flex-shrink: 0; transition: transform .2s; }
 .grupo-chev.open { transform: rotate(90deg); }
-.grupo-body { display: none; border-top: 1px solid var(--border); }
+.grupo-body { display: none; border-top: 1px solid var(--cf-border); }
 .grupo-body.open { display: block; }
 
-/* ── Conciliação / File drop ────────────────────────────────── */
+/* ── Conciliação ────────────────────────────────────────────── */
 .file-drop {
-  border: 2px dashed var(--border); border-radius: var(--r);
-  padding: 32px; text-align: center; cursor: pointer; color: var(--muted);
+  border: 2px dashed var(--cf-border); border-radius: var(--r);
+  padding: 36px; text-align: center; cursor: pointer; color: var(--cf-muted);
   font-size: 12px; margin-bottom: 18px; transition: border-color .15s, color .15s;
 }
-.file-drop:hover { border-color: var(--blue); color: var(--text); }
+.file-drop:hover { border-color: var(--cf-primary); color: var(--cf-text); }
 
 /* ── Regras ─────────────────────────────────────────────────── */
 .regras-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
-.regra-card {
-  background: var(--surface); border: 1px solid var(--border);
-  border-radius: var(--r); padding: 16px; border-top: 3px solid var(--blue);
-}
-.regra-card h3 { margin: 0 0 12px; font-size: 12px; font-weight: 800; text-transform: uppercase; color: var(--blue); letter-spacing: .3px; }
+.regra-card { background: var(--cf-card); border: 1px solid var(--cf-border); border-radius: var(--r); padding: 18px; border-top: 3px solid var(--cf-primary); }
+.regra-card h3 { margin: 0 0 14px; font-size: 12px; font-weight: 800; text-transform: uppercase; color: var(--cf-primary); letter-spacing: .3px; }
 .rf { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
-.rf label { font-size: 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
-.rf input {
-  background: var(--bg); border: 1px solid var(--border); color: var(--text);
-  padding: 6px 10px; border-radius: 6px; font-size: 13px; width: 100%;
-}
-.rf input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-bg); }
+.rf label { font-size: 10px; color: var(--cf-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+.rf input { background: var(--cf-card2); border: 1px solid var(--cf-border); color: var(--cf-text); padding: 7px 10px; border-radius: 7px; font-size: 13px; width: 100%; }
+.rf input:focus { outline: none; border-color: var(--cf-primary); }
 
 /* ── Misc ───────────────────────────────────────────────────── */
 .hidden { display: none !important; }
-.spinner {
-  display: inline-block; width: 12px; height: 12px;
-  border: 2px solid var(--muted); border-top-color: var(--blue);
-  border-radius: 50%; animation: spin .6s linear infinite;
-}
+.spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #ffffff20; border-top-color: var(--cf-primary); border-radius: 50%; animation: spin .6s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
-.cf-empty { padding: 40px; text-align: center; color: var(--muted); font-size: 13px; }
+.cf-empty { padding: 48px; text-align: center; color: var(--cf-muted); font-size: 13px; }
 .chevron { width: 14px; height: 14px; flex-shrink: 0; transition: transform .18s; }
 .chevron.open { transform: rotate(90deg); }
-.total-row td { font-weight: 700; background: var(--gray-bg) !important; border-top: 1px solid var(--border); }
+.section-title {
+  font-size: 11px; font-weight: 700; color: var(--cf-muted);
+  text-transform: uppercase; letter-spacing: .6px; margin-bottom: 12px;
+}
+.col-stack { display: flex; flex-direction: column; gap: 16px; }
 </style>
 </head>
 <body>
 
 <!-- ── Topbar ── -->
 <div class="cf-topbar">
-  <svg class="cf-topbar-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-    <rect x="2" y="5" width="20" height="14" rx="2"/>
-    <line x1="2" y1="10" x2="22" y2="10"/>
-  </svg>
-  <div>
-    <div class="cf-topbar h1" style="font-size:15px;font-weight:700;color:#fff;margin:0">Conferência de Caixa</div>
-    <div class="cf-topbar-sub">Escritório · Gestão de Lojas</div>
+  <div class="cf-logo">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
+    </svg>
+    <div>
+      <div class="cf-logo-text">Conferência</div>
+      <div class="cf-logo-sub">Gestão de Lojas</div>
+    </div>
   </div>
-  <div class="cf-user-chip">
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
-    <span id="userLabel">—</span>
+  <nav class="cf-tabs-inline">
+    <button class="cf-tab active" data-tab="vendas">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Vendas
+    </button>
+    <button class="cf-tab" data-tab="dashboard">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </button>
+    <button class="cf-tab" data-tab="conciliacao">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+      Conciliação Rede
+    </button>
+    <button class="cf-tab" data-tab="regras">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0 0 4.93 19.07M19.07 4.93l-1.41 1.41M18.36 18.36l-1.41-1.41M5.64 5.64l1.41 1.41M5.64 18.36l1.41-1.41"/></svg>
+      Regras
+    </button>
+  </nav>
+  <div class="cf-topbar-right">
+    <div class="cf-user-chip">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+      <span id="userLabel">—</span>
+    </div>
   </div>
 </div>
 
-<!-- ── Tabs ── -->
-<div class="cf-tabs">
-  <button class="cf-tab active" data-tab="vendas">📊 Vendas</button>
-  <button class="cf-tab" data-tab="dashboard">🏪 Dashboard Lojas</button>
-  <button class="cf-tab" data-tab="conciliacao">🔄 Conciliação Rede</button>
-  <button class="cf-tab" data-tab="regras">⚙️ Regras por Loja</button>
-</div>
+<div class="cf-content">
 
 <!-- ══ VENDAS ═══════════════════════════════════════════════════════════ -->
 <div class="cf-panel active" id="tab-vendas">
-  <div class="cf-filter-card">
-    <div class="cf-fg">
-      <label>Loja</label>
-      <select id="vBoard"></select>
-    </div>
-    <div class="cf-fg">
-      <label>De</label>
-      <input type="date" id="vDtIni"/>
-    </div>
-    <div class="cf-fg">
-      <label>Até</label>
-      <input type="date" id="vDtFin"/>
-    </div>
+  <div class="cf-filter-bar">
+    <div class="cf-fg"><label>Loja</label><select id="vBoard"></select></div>
+    <div class="cf-fg"><label>De</label><input type="date" id="vDtIni"/></div>
+    <div class="cf-fg"><label>Até</label><input type="date" id="vDtFin"/></div>
     <button class="btn-primary" id="vBuscarBtn">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       Buscar
@@ -312,25 +332,28 @@ td.muted { color: var(--muted); }
       <button class="btn-grp" data-grupo="vendedor">Vendedor</button>
     </div>
   </div>
-  <div id="vStats"></div>
+
+  <!-- KPI row (preenchido pelo JS) -->
+  <div id="vKpiRow" class="kpi-row" style="display:none"></div>
+
   <div id="vResult"></div>
 
-  <!-- Debug panel -->
-  <div style="margin-top:24px">
+  <!-- Debug -->
+  <div style="margin-top:28px;padding-top:20px;border-top:1px solid var(--cf-border)">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
-      <span style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">🛠 Debug Microvix</span>
-      <button id="debugBtn" style="background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:4px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-family:var(--font)">Carregar amostras brutas</button>
-      <span id="debugStatus" style="font-size:11px;color:var(--muted)"></span>
+      <span style="font-size:10px;font-weight:700;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.6px">🛠 Debug Microvix</span>
+      <button id="debugBtn" style="background:var(--cf-card2);border:1px solid var(--cf-border);color:var(--cf-muted);padding:4px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-family:inherit">Amostras brutas</button>
+      <span id="debugStatus" style="font-size:11px;color:var(--cf-muted)"></span>
     </div>
     <div id="debugPanel" class="hidden">
-      <div id="debugContent" style="background:#0a0a14;border:1px solid var(--border);border-radius:8px;padding:14px;font-family:monospace;font-size:11px;color:#a0c4ff;overflow-x:auto;white-space:pre;max-height:500px;overflow-y:auto"></div>
+      <div id="debugContent" style="background:#080f1a;border:1px solid var(--cf-border);border-radius:8px;padding:14px;font-family:monospace;font-size:11px;color:#7ab8ff;overflow-x:auto;white-space:pre;max-height:500px;overflow-y:auto"></div>
     </div>
   </div>
 </div>
 
 <!-- ══ DASHBOARD ═════════════════════════════════════════════════════════ -->
 <div class="cf-panel" id="tab-dashboard">
-  <div class="cf-filter-card">
+  <div class="cf-filter-bar">
     <div class="cf-fg"><label>De</label><input type="date" id="dDtIni"/></div>
     <div class="cf-fg"><label>Até</label><input type="date" id="dDtFin"/></div>
     <button class="btn-primary" id="dBuscarBtn">
@@ -343,18 +366,18 @@ td.muted { color: var(--muted); }
 
 <!-- ══ CONCILIAÇÃO REDE ══════════════════════════════════════════════════ -->
 <div class="cf-panel" id="tab-conciliacao">
-  <div class="cf-filter-card">
+  <div class="cf-filter-bar">
     <div class="cf-fg"><label>Loja</label><select id="cBoard"></select></div>
     <div class="cf-fg"><label>De</label><input type="date" id="cDtIni"/></div>
     <div class="cf-fg"><label>Até</label><input type="date" id="cDtFin"/></div>
   </div>
   <div class="file-drop" id="fileDrop">
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="display:block;margin:0 auto 10px;opacity:.5">
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="display:block;margin:0 auto 12px;opacity:.4">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
       <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
     </svg>
-    <div style="font-weight:600;margin-bottom:4px">Arraste o arquivo da Rede aqui</div>
-    <div style="font-size:11px">ou <strong>clique para selecionar</strong> — Excel (.xlsx, .xls) ou CSV</div>
+    <div style="font-weight:700;margin-bottom:6px">Arraste o arquivo da Rede aqui</div>
+    <div style="font-size:11px;color:var(--cf-muted)">ou <strong style="color:var(--cf-primary)">clique para selecionar</strong> — Excel (.xlsx, .xls) ou CSV</div>
     <input type="file" id="redeFile" accept=".xlsx,.xls,.csv" style="display:none"/>
   </div>
   <div id="cResult"></div>
@@ -362,15 +385,17 @@ td.muted { color: var(--muted); }
 
 <!-- ══ REGRAS ════════════════════════════════════════════════════════════ -->
 <div class="cf-panel" id="tab-regras">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
     <div>
-      <div style="font-weight:700;font-size:14px">Regras por Loja</div>
-      <div style="font-size:11px;color:var(--muted);margin-top:2px">Configure limites de parcela e desconto. Valor 0 desativa a verificação.</div>
+      <div style="font-weight:800;font-size:14px">Regras por Loja</div>
+      <div style="font-size:11px;color:var(--cf-muted);margin-top:3px">Configure limites de parcela e desconto. Valor 0 desativa a verificação.</div>
     </div>
-    <button class="btn-primary" id="salvarRegrasBtn" style="margin-left:auto">💾 Salvar</button>
+    <button class="btn-primary" id="salvarRegrasBtn" style="margin-left:auto">💾 Salvar Regras</button>
   </div>
   <div class="regras-grid" id="regrasGrid"></div>
 </div>
+
+</div><!-- /cf-content -->
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="/conferencia.js"></script>
