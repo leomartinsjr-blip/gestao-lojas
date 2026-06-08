@@ -3213,8 +3213,8 @@ function renderTransExcelTab(container) {
   });
 
   calcBtn.addEventListener('click', async () => {
-    const compraMinDate = dateInputToISO();
-    if (!input.files[0] || !compraMinDate) return;
+    const compraMinDate = dateInput.value; // DD/MM/YYYY — mesmo formato da planilha
+    if (!input.files[0] || !compraMinDate || compraMinDate.length < 10) return;
     calcBtn.disabled = true;
     try {
       // Passo 1: lê e parseia o Excel no browser (evita upload de arquivo grande)
@@ -3285,36 +3285,34 @@ function renderTransExcelTab(container) {
       }
       if (!companies.length) throw new Error('Formato não reconhecido — não encontrei colunas de lojas no Excel.');
 
+      // Retorna sempre DD/MM/YYYY para manter formato igual à planilha
       function parseExcelDate(val) {
         if (!val && val !== 0) return null;
-        // XLSX 0.20+ pode retornar Date objects mesmo com raw:true em arquivos .xls
         if (val instanceof Date) {
           if (isNaN(val.getTime())) return null;
-          const y = val.getFullYear();
-          const m = String(val.getMonth() + 1).padStart(2, '0');
-          const d = String(val.getDate()).padStart(2, '0');
-          return `${y}-${m}-${d}`;
+          return `${String(val.getDate()).padStart(2,'0')}/${String(val.getMonth()+1).padStart(2,'0')}/${val.getFullYear()}`;
         }
         if (typeof val === 'number') {
-          // Serial date do Excel — arredonda para evitar decimais de horário (ex: 46146.999… = 05/05)
           try {
             const d = XLSX_LOCAL.SSF.parse_date_code(Math.round(val));
-            if (d && d.y > 2000) return `${d.y}-${String(d.m).padStart(2,'0')}-${String(d.d).padStart(2,'0')}`;
+            if (d && d.y > 2000) return `${String(d.d).padStart(2,'0')}/${String(d.m).padStart(2,'0')}/${d.y}`;
           } catch {}
           return null;
         }
         const s = String(val).trim();
         if (!s || s === '-') return null;
-        if (s.includes('/')) {
-          const parts = s.split('/');
-          if (parts.length === 3) {
-            const [d, m, y] = parts;
-            return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
-          }
-        }
-        // ISO
-        if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
+        // DD/MM/YYYY já no formato correto
+        if (/^\d{2}\/\d{2}\/\d{4}$/.test(s)) return s;
+        // ISO YYYY-MM-DD → converte para DD/MM/YYYY
+        const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (iso) return `${iso[3]}/${iso[2]}/${iso[1]}`;
         return null;
+      }
+
+      // Compara datas DD/MM/YYYY: retorna negativo/0/positivo
+      function cmpDateBR(a, b) {
+        const toMs = d => { const [dd,mm,yy] = d.split('/'); return Date.UTC(+yy,+mm-1,+dd); };
+        return toMs(a) - toMs(b);
       }
 
       // Passo 2: extrai dados — suporta aba única (dados na mesma aba do header) e multi-aba
@@ -3366,10 +3364,10 @@ function renderTransExcelTab(container) {
       if (!totalBruto) throw new Error(`Nenhum produto encontrado no Excel. Colunas detectadas: código=${colCodigo}, descrição=${colDescricao}, ref=${colRef}, última compra=${colUltimaCompra}. Verifique se o relatório está no formato correto.`);
       for (const cod of Object.keys(products)) {
         const p = products[cod];
-        if (!p.ultimaCompra || p.ultimaCompra < compraMinDate) delete products[cod];
+        if (!p.ultimaCompra || cmpDateBR(p.ultimaCompra, compraMinDate) < 0) delete products[cod];
       }
       const excluidos = totalBruto - Object.keys(products).length;
-      if (!Object.keys(products).length) throw new Error(`Todos os ${totalBruto} produtos foram filtrados pela data de entrada (a partir de ${compraMinDate.split('-').reverse().join('/')}). Tente uma data de entrada anterior ou verifique se o relatório tem a coluna "Última Compra" (col. ${colUltimaCompra+1}).`);
+      if (!Object.keys(products).length) throw new Error(`Todos os ${totalBruto} produtos foram filtrados pela data de entrada (a partir de ${compraMinDate}). Tente uma data de entrada anterior ou verifique se o relatório tem a coluna "Última Compra" (col. ${colUltimaCompra+1}).`);
 
       // Passo 4: busca entradas do catálogo apenas para os produtos do Excel
       result.innerHTML = '<div class="trans-loading">Buscando catálogo Microvix…</div>';
@@ -3597,7 +3595,7 @@ function renderTransTable(container, data) {
 
   const html = `
     <div class="trans-summary">
-      <span class="trans-total"><strong>${total}</strong> SKU${total>1?'s':''} com sugestão${dias ? ` · últimos ${dias} dias` : ''}${compraMinDate ? ` · entrada ≥ ${compraMinDate.split('-').reverse().join('/')}` : ''}${excluidos ? ` <span class="trans-excluidos">(${excluidos} excluídos por data)</span>` : ''}</span>
+      <span class="trans-total"><strong>${total}</strong> SKU${total>1?'s':''} com sugestão${dias ? ` · últimos ${dias} dias` : ''}${compraMinDate ? ` · entrada ≥ ${compraMinDate}` : ''}${excluidos ? ` <span class="trans-excluidos">(${excluidos} excluídos por data)</span>` : ''}</span>
       <button id="transExportBtn" class="trans-export-btn">↓ Exportar Excel</button>
       <div class="trans-pairs">${pairSummary}</div>
     </div>
