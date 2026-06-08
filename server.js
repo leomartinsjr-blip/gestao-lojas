@@ -4165,6 +4165,12 @@ async function _buildCatalog(lojas) {
 //   - receivers: lojas com déficit (stock < ideal), ordenadas por maior déficit
 //   - A doadora cede apenas seu excesso → seu giro é respeitado
 // periodDays: duração do período do giro (ex: 90 dias para Microvix, ~510 para Excel de 17 meses)
+function _parseDateBR(d) {
+  if (!d) return NaN;
+  const m = String(d).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  return m ? Date.UTC(+m[3], +m[2] - 1, +m[1]) : Date.parse(d);
+}
+
 function _calcTransfersProporcional(boards, stocks, giro, periodDays = 90, lastCompra = {}) {
   const totalGiro  = boards.reduce((s, b) => s + (giro[b] || 0), 0);
   const totalStock = boards.reduce((s, b) => s + (stocks[b] || 0), 0);
@@ -4209,7 +4215,7 @@ function _calcTransfersProporcional(boards, stocks, giro, periodDays = 90, lastC
     const compraDate = lastCompra[don];
     let maxCanDonate = delta[don];
     if (compraDate) {
-      const diasDesdeCompra = Math.floor((todayMs - Date.parse(compraDate)) / 86400_000);
+      const diasDesdeCompra = Math.floor((todayMs - _parseDateBR(compraDate)) / 86400_000);
       if (diasDesdeCompra < PROTECTION_DAYS) {
         maxCanDonate = Math.ceil(delta[don] * (diasDesdeCompra / PROTECTION_DAYS));
       }

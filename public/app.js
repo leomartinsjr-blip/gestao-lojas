@@ -3400,7 +3400,8 @@ function renderTransExcelTab(container) {
         for (const don of donors) {
           let maxCanDonate = delta[don];
           if (ultimaCompra) {
-            const diasDesdeCompra = Math.floor((todayMs - Date.parse(ultimaCompra)) / 86400_000);
+            const parseDateBR = d => { const m = String(d).match(/^(\d{2})\/(\d{2})\/(\d{4})$/); return m ? Date.UTC(+m[3],+m[2]-1,+m[1]) : Date.parse(d); };
+            const diasDesdeCompra = Math.floor((todayMs - parseDateBR(ultimaCompra)) / 86400_000);
             if (diasDesdeCompra < PROTECTION_DAYS) {
               maxCanDonate = Math.ceil(delta[don] * (diasDesdeCompra / PROTECTION_DAYS));
             }
