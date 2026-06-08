@@ -704,6 +704,7 @@ function renderDashboard() {
     { key:'name',     label:'Vendedor',  cls:'' },
     { key:'mensal',   label:'Meta Mês',  cls:'dash-th-r' },
     { key:'valor',    label:'Realizado', cls:'dash-th-r' },
+    { key:'desvio',   label:'Desvio',    cls:'dash-th-r' },
     { key:'pctMeta',  label:'% Meta',    cls:'dash-th-r' },
     { key:'projecao', label:'Projeção',  cls:'dash-th-r' },
     { key:'pctProj',  label:'% Projeção',cls:'dash-th-r' },
@@ -748,7 +749,8 @@ function renderDashboard() {
       const tm        = (valor > 0 && atend > 0) ? valor/atend : null;
       const iStats    = S.indevaStats?.[emp.board]?.monthly?.[String(emp.id)];
       const conv      = iStats?.total > 0 ? iStats.conv / iStats.total * 100 : null;
-      return { emp, valor, pecas, atend, mensal, pctMeta, projecao, pctProj, pa, tm, conv };
+      const desvio    = mensal > 0 ? valor - mensal : null;
+      return { emp, valor, pecas, atend, mensal, desvio, pctMeta, projecao, pctProj, pa, tm, conv };
     });
     _boardRowData[bk] = rowData;
     let totV=0, totP=0, totA=0, totM=0;
@@ -836,7 +838,7 @@ function renderDashboard() {
     if (isAdmin) {
       storeRow.className = 'dash-store-hdr dash-store-collapse';
       if (isExp) {
-        storeRow.innerHTML = `<td colspan="9" class="dash-store-hdr-td" style="border-left:3px solid ${bc.color};">
+        storeRow.innerHTML = `<td colspan="10" class="dash-store-hdr-td" style="border-left:3px solid ${bc.color};">
           <span class="dia-chevron">▾</span>
           <span class="dash-store-dot" style="background:${bc.color}"></span><strong>${bc.label}</strong>
         </td>`;
@@ -848,6 +850,7 @@ function renderDashboard() {
           </td>
           <td class="dash-td dash-td-num">${fBRL(totMeta||null)}</td>
           <td class="dash-td dash-td-num">${fBRL(totValor||null)}</td>
+          ${(() => { const d = totMeta > 0 ? totValor - totMeta : null; return `<td class="dash-td dash-td-num${d==null?'':d>=0?' kpi-pos':' kpi-neg'}">${d==null?'—':(d>=0?'+':'')+fBRL(d)}</td>`; })()}
           <td class="dash-td dash-td-num">${fPct(totPctMeta)}</td>
           <td class="dash-td dash-td-num">${fBRL(totProj)}</td>
           <td class="dash-td dash-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
@@ -878,6 +881,7 @@ function renderDashboard() {
           <td class="dash-td dash-td-name">${emp.apelido || emp.name}</td>
           <td class="dash-td dash-td-num">${fBRL(mensal || null)}</td>
           <td class="dash-td dash-td-num">${fBRL(valor || null)}</td>
+          <td class="dash-td dash-td-num${desvio == null ? '' : desvio >= 0 ? ' kpi-pos' : ' kpi-neg'}">${desvio == null ? '—' : (desvio >= 0 ? '+' : '') + fBRL(desvio)}</td>
           <td class="dash-td dash-td-num">${fPct(pctMeta)}</td>
           <td class="dash-td dash-td-num">${fBRL(projecao)}</td>
           <td class="dash-td dash-td-num ${pctProjCls}">${fPct(pctProj)}</td>
@@ -894,6 +898,7 @@ function renderDashboard() {
         <td class="dash-td">Total <strong>${bc.label}</strong></td>
         <td class="dash-td dash-td-num">${fBRL(totMeta || null)}</td>
         <td class="dash-td dash-td-num">${fBRL(totValor || null)}</td>
+        ${(() => { const d = totMeta > 0 ? totValor - totMeta : null; return `<td class="dash-td dash-td-num${d == null ? '' : d >= 0 ? ' kpi-pos' : ' kpi-neg'}">${d == null ? '—' : (d >= 0 ? '+' : '') + fBRL(d)}</td>`; })()}
         <td class="dash-td dash-td-num">${fPct(totPctMeta)}</td>
         <td class="dash-td dash-td-num">${fBRL(totProj)}</td>
         <td class="dash-td dash-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
@@ -924,6 +929,7 @@ function renderDashboard() {
       <td class="dash-td"><strong>Total Geral</strong></td>
       <td class="dash-td dash-td-num">${fBRL(grandMeta || null)}</td>
       <td class="dash-td dash-td-num">${fBRL(grandValor || null)}</td>
+      ${(() => { const d = grandMeta > 0 ? grandValor - grandMeta : null; return `<td class="dash-td dash-td-num${d==null?'':d>=0?' kpi-pos':' kpi-neg'}">${d==null?'—':(d>=0?'+':'')+fBRL(d)}</td>`; })()}
       <td class="dash-td dash-td-num">${fPct(gPctMeta)}</td>
       <td class="dash-td dash-td-num">${fBRL(gProj)}</td>
       <td class="dash-td dash-td-num ${gProjCls}">${fPct(gPctProj)}</td>
@@ -6099,10 +6105,12 @@ async function renderWeeklyModal() {
         ? `<td class="wk-td wk-td-edit" data-empid="${emp.id}" data-week="${week.startStr}">${fBRL(k.wMeta||null)}</td>`
         : `<td class="wk-td wk-td-num">${fBRL(k.wMeta||null)}</td>`;
 
+      const wkDesvio = k.wMeta > 0 ? k.valor - k.wMeta : null;
       return `<tr class="wk-row">
         <td class="wk-td wk-td-name">${emp.apelido || emp.name}</td>
         ${metaCell}
         <td class="wk-td wk-td-num">${fBRL(k.valor||null)}</td>
+        <td class="wk-td wk-td-num${wkDesvio==null?'':wkDesvio>=0?' kpi-pos':' kpi-neg'}">${wkDesvio==null?'—':(wkDesvio>=0?'+':'')+fBRL(wkDesvio)}</td>
         <td class="wk-td wk-td-num ${pctCls}">${fPct(k.pctMeta)}</td>
         <td class="wk-td wk-td-num ${projCls}">${fBRL(k.projecao)}</td>
         <td class="wk-td wk-td-num ${pctProjCls}">${fPct(k.pctProj)}</td>
@@ -6135,6 +6143,7 @@ async function renderWeeklyModal() {
           <th class="wk-th">Vendedor</th>
           <th class="wk-th wk-th-r">Meta Semana ${isAdmin?'<span class="wk-edit-hint">(clique p/ editar)</span>':''}</th>
           <th class="wk-th wk-th-r">Realizado</th>
+          <th class="wk-th wk-th-r">Desvio</th>
           <th class="wk-th wk-th-r">% Meta</th>
           <th class="wk-th wk-th-r">Projeção</th>
           <th class="wk-th wk-th-r">% Projeção</th>
@@ -6146,6 +6155,7 @@ async function renderWeeklyModal() {
           <td class="wk-td">Total</td>
           <td class="wk-td wk-td-num">${fBRL(totMeta||null)}</td>
           <td class="wk-td wk-td-num">${fBRL(totValor||null)}</td>
+          ${(() => { const d = totMeta > 0 ? totValor - totMeta : null; return `<td class="wk-td wk-td-num${d==null?'':d>=0?' kpi-pos':' kpi-neg'}">${d==null?'—':(d>=0?'+':'')+fBRL(d)}</td>`; })()}
           <td class="wk-td wk-td-num ${tpCls}">${fPct(totPct)}</td>
           <td class="wk-td wk-td-num ${tprojCls2}">${hasProj2 ? fBRL(totProjecao2) : '—'}</td>
           <td class="wk-td wk-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
