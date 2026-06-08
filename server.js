@@ -6639,7 +6639,7 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
         const vlrUnit  = parseBR(r.preco_tabela_epoca||r.preco_unitario||'0');
         const vlrLiq   = parseBR(r.preco_unitario||r.valor_liquido||'0');
         const vlrDesc  = parseBR(r.desconto_item||r.desconto_total_item||'0');
-        const vlrCusto = parseBR(r.preco_custo||'0');
+        const vlrCusto = parseBR(r.custo_medio_epoca||r.preco_custo||'0');
 
         loja.vlrLiquido  += vlrLiq  * qty;
         loja.vlrBruto    += vlrUnit * qty;
@@ -7100,7 +7100,7 @@ app.get('/api/conferencia/debug', requireEscritorioOrAdmin, async (req, res) => 
         const vlrUnit  = parseBR(r.preco_tabela_epoca||r.preco_unitario||'0');
         const vlrLiq   = parseBR(r.preco_unitario||r.valor_liquido||'0');
         const vlrDesc  = parseBR(r.desconto_item||r.desconto_total_item||'0');
-        const vlrCusto = parseBR(r.preco_custo||'0');
+        const vlrCusto = parseBR(r.custo_medio_epoca||r.preco_custo||'0');
         const cmvItem  = vlrLiq > 0 ? (vlrCusto / vlrLiq * 100).toFixed(1) : '—';
         return {
           cod_produto:          r.cod_produto,
@@ -7115,7 +7115,7 @@ app.get('/api/conferencia/debug', requireEscritorioOrAdmin, async (req, res) => 
           '→ vlrLiq(×qtd)':     (vlrLiq*qty).toFixed(2),
           '→ vlrCusto(unit)':   vlrCusto.toFixed(2),
           '→ vlrCusto(×qtd)':   (vlrCusto*qty).toFixed(2),
-          '→ CMV_item(%)':      cmvItem + '%  [preco_custo÷preco_unitario]',
+          '→ CMV_item(%)':      cmvItem + '%  [custo_medio_epoca÷preco_unitario]',
         };
       });
       const totalCalc = computed_itens.reduce((s,i) => s + parseFloat(i['→ vlrLiquido(×qtd)']), 0);
