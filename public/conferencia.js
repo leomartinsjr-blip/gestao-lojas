@@ -145,7 +145,8 @@
     if (counts.parcela_minima)    parts.push(`<span class="badge badge-parc" title="${alertas.filter(a=>a.tipo==='parcela_minima').map(a=>esc(a.msg)).join('\n')}">💳 Parcela</span>`);
     if (counts.desconto_item)     parts.push(`<span class="badge badge-di"   title="${alertas.filter(a=>a.tipo==='desconto_item').map(a=>esc(a.msg)).join('\n')}">🏷 Item×${counts.desconto_item}</span>`);
     if (counts.desconto_venda)    parts.push(`<span class="badge badge-dv"   title="${alertas.filter(a=>a.tipo==='desconto_venda').map(a=>esc(a.msg)).join('\n')}">📉 Venda</span>`);
-    if (counts.desconto_parcelado)parts.push(`<span class="badge badge-dv"   title="${alertas.filter(a=>a.tipo==='desconto_parcelado').map(a=>esc(a.msg)).join('\n')}">🚫 Desc.Parcelado</span>`);
+    if (counts.desconto_parcelado)       parts.push(`<span class="badge badge-dv"   title="${alertas.filter(a=>a.tipo==='desconto_parcelado').map(a=>esc(a.msg)).join('\n')}">🚫 Desc.Parcelado</span>`);
+    if (counts.preco_promocao_divergente)parts.push(`<span class="badge badge-rede" title="${alertas.filter(a=>a.tipo==='preco_promocao_divergente').map(a=>esc(a.msg)).join('\n')}">🏷 Preço Promo</span>`);
     return parts.join(' ');
   }
 
@@ -218,8 +219,11 @@
             ${itens.map(it => {
               const temDesc = it.vlrDesconto > 0;
               const liq = it.vlrLiquido ?? (it.vlrBruto - it.vlrDesconto);
+              const promoTag = it.emPromocao
+                ? `<span style="background:var(--teal-bg);color:var(--teal);font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;margin-left:4px">PROMO ${it.precoPromocao?fmtR(it.precoPromocao):''}</span>`
+                : '';
               return `<tr class="${temDesc?'has-disc':''}">
-                <td>${esc(it.descricao)}</td>
+                <td>${esc(it.descricao)}${promoTag}</td>
                 <td class="num">${it.quantidade}x</td>
                 <td class="num">${fmtR(it.vlrUnitario)}</td>
                 <td class="num">${fmtR(it.vlrBruto)}</td>
@@ -596,9 +600,10 @@
 
       content.textContent = fmtRows('LinxMovimento', data.movimento)
                           + fmtRows('LinxMovimentoPlanos', data.movimentoPlanos)
+                          + fmtRows('LinxProdutosPromocoes', data.promocoes)
                           + fmtVendas(data.vendas_calculadas || []);
       panel.classList.remove('hidden');
-      status.textContent = `✓ ${data.movimento.total} mov · ${data.movimentoPlanos.total} planos · ${(data.vendas_calculadas||[]).length} vendas analisadas`;
+      status.textContent = `✓ ${data.movimento.total} mov · ${data.movimentoPlanos.total} planos · ${data.promocoes?.total??0} promoções · ${(data.vendas_calculadas||[]).length} vendas analisadas`;
     } catch(e) {
       status.textContent = '⚠ ' + e.message;
     } finally { btn.disabled=false; }

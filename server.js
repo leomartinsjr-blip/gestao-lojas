@@ -6700,18 +6700,29 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
     const cnpjClean = cnpj.replace(/\D/g, '');
 
     const { fetchMovimento, fetchMovimentoPlanos, fetchMovimentoCartoes,
-            fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchVendedores, parseBrNum } = require('./services/microvix');
+            fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchVendedores,
+            fetchProdutosPromocoes, parseBrNum } = require('./services/microvix');
 
-    const [movRows, planoRows, cartoesRows, planosCatalog, bandeirasCatalog, vendedoresRows] = await Promise.all([
+    const [movRows, planoRows, cartoesRows, planosCatalog, bandeirasCatalog, vendedoresRows, promoRows] = await Promise.all([
       fetchMovimento(cnpj, dtIni, dtFin, chave),
       fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave).catch(() => []),
       fetchMovimentoCartoes(cnpj, dtIni, dtFin, chave).catch(() => []),
       fetchLinxPlanos(cnpj, chave).catch(() => []),
       fetchLinxPlanosBandeiras(cnpj, chave).catch(() => []),
       fetchVendedores(cnpj, chave).catch(() => []),
+      fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave).catch(() => []),
     ]);
 
     const parseBR = s => parseFloat(String(s || '').replace(/\./g, '').replace(',', '.')) || 0;
+
+    // Mapa de promoções: cod_produto → { preco_promocao, data_inicio, data_fim }
+    // Se produto está em promoção no período, o desconto é esperado — não alerta
+    const promoMap = {};
+    for (const p of (Array.isArray(promoRows) ? promoRows : [])) {
+      const cod    = String(p.cod_produto || p.codigo || '').trim();
+      const preco  = parseBR(p.preco_promocao || p.valor_promocao || p.preco || '0');
+      if (cod && preco > 0) promoMap[cod] = { preco, raw: p };
+    }
 
     // Catálogos
     const vendNomeCache = {};
@@ -6818,20 +6829,41 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       docMap[doc].valorTotal += docMap[doc].sign * vlrLiqTot;
 
       if (vlrUnit > 0 || vlrLiq > 0) {
+        const codProd  = String(r.cod_produto || '').trim();
+        const promo    = promoMap[codProd];
+        const emPromocao = !!promo;
+
+        // Se em promoção: verifica se preço vendido bate com preço da promoção (tolerância R$0,01)
+        let alertaPromo = null;
+        if (emPromocao) {
+          const difPreco = Math.abs(vlrLiq - promo.preco);
+          if (difPreco > 0.02) {
+            alertaPromo = {
+              tipo: 'preco_promocao_divergente',
+              msg:  `"${(r.descricao || codProd).trim()}" em promoção: esperado R$ ${promo.preco.toFixed(2)}, vendido R$ ${vlrLiq.toFixed(2)}`,
+            };
+          }
+        }
+
         docMap[doc].itens.push({
-          descricao:    (r.descricao || r.nome_produto || r.referencia || r.cod_produto || '—').trim(),
+          descricao:    (r.descricao || r.nome_produto || r.referencia || codProd || '—').trim(),
           quantidade:   qty,
-          vlrUnitario:  +vlrUnit.toFixed(2),   // preço bruto de tabela
-          vlrBruto:     +vlrBruto.toFixed(2),   // bruto × qtd
-          vlrLiquido:   +vlrLiqTot.toFixed(2),  // líquido × qtd
-          vlrDesconto:  +vlrDesc.toFixed(2),    // desconto_item
+          vlrUnitario:  +vlrUnit.toFixed(2),
+          vlrBruto:     +vlrBruto.toFixed(2),
+          vlrLiquido:   +vlrLiqTot.toFixed(2),
+          vlrDesconto:  +vlrDesc.toFixed(2),
           percDesconto: +percItem.toFixed(1),
+          emPromocao,
+          precoPromocao: emPromocao ? +promo.preco.toFixed(2) : null,
         });
 
-        if (descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {
+        if (alertaPromo) {
+          docMap[doc].alertas.push(alertaPromo);
+        } else if (!emPromocao && descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {
+          // Só alerta desconto excessivo se o produto NÃO está em promoção
           docMap[doc].alertas.push({
             tipo: 'desconto_item',
-            msg:  `"${(r.descricao || r.referencia || r.cod_produto || '').trim()}" ${percItem.toFixed(1)}% desc (máx ${descontoMaxItem}%)`,
+            msg:  `"${(r.descricao || r.referencia || codProd || '').trim()}" ${percItem.toFixed(1)}% desc (máx ${descontoMaxItem}%)`,
           });
         }
       }
@@ -7024,9 +7056,11 @@ app.get('/api/conferencia/debug', requireEscritorioOrAdmin, async (req, res) => 
     const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
     const cnpjClean = cnpj.replace(/\D/g, '');
     const { fetchMovimento, fetchMovimentoPlanos, fetchMovimentoCartoes } = require('./services/microvix');
-    const [movRows, planoRows] = await Promise.all([
+    const { fetchProdutosPromocoes: fetchPromo } = require('./services/microvix');
+    const [movRows, planoRows, promoRowsDbg] = await Promise.all([
       fetchMovimento(cnpj, dtIni, dtFin, chave).catch(e => []),
       fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave).catch(e => []),
+      fetchPromo(cnpj, dtIni, dtFin, chave).catch(e => ({ error: e.message })),
     ]);
 
     const parseBR = s => parseFloat(String(s||'').replace(/\./g,'').replace(',','.')) || 0;
@@ -7091,6 +7125,7 @@ app.get('/api/conferencia/debug', requireEscritorioOrAdmin, async (req, res) => 
     res.json({
       movimento:       { total: Array.isArray(movRows)?movRows.length:'erro', amostra: (Array.isArray(movRows)?movRows:[]).slice(0,3) },
       movimentoPlanos: { total: Array.isArray(planoRows)?planoRows.length:'erro', amostra: (Array.isArray(planoRows)?planoRows:[]).slice(0,3) },
+      promocoes:       { total: Array.isArray(promoRowsDbg)?promoRowsDbg.length:'erro', amostra: Array.isArray(promoRowsDbg)?promoRowsDbg.slice(0,5):promoRowsDbg },
       vendas_calculadas: docsSample,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }

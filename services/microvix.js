@@ -400,4 +400,19 @@ async function fetchLinxPlanosBandeiras(cnpj, chave) {
   return parseCsv(raw);
 }
 
-module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchMovimentoCartoes, fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, fetchClientes, parseBrNum, buildRequest, postRequest, parseCsv };
+// Fetch LinxProdutosPromocoes → produtos em promoção por loja
+async function fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave) {
+  const extra = [
+    { id: 'data_inicial', valor: dtIni },
+    { id: 'data_fim',     valor: dtFin },
+  ];
+  const body = buildRequest('LinxProdutosPromocoes', cnpj, extra, chave);
+  const raw  = await postRequest(body);
+  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro';
+    throw new Error(`Microvix API (promocoes): ${msg}`);
+  }
+  return parseCsv(raw);
+}
+
+module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchMovimentoCartoes, fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, fetchClientes, fetchProdutosPromocoes, parseBrNum, buildRequest, postRequest, parseCsv };
