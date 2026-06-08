@@ -6601,7 +6601,7 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
 
     const lojas   = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const BOARDS  = ['delrey','minas','contagem','estacao','tommy','surfers'];
-    const parseBR = s => parseFloat(String(s||'').replace(/\./g,'').replace(',','.')) || 0;
+    const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
 
     const { fetchMovimento } = require('./services/microvix');
 
@@ -6716,7 +6716,7 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave).catch(() => []),
     ]);
 
-    const parseBR = s => parseFloat(String(s || '').replace(/\./g, '').replace(',', '.')) || 0;
+    const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
 
     // Mapa de promoções: cod_produto → { preco_promocao, data_inicio, data_fim }
     // Se produto está em promoção no período, o desconto é esperado — não alerta
@@ -7068,7 +7068,7 @@ app.get('/api/conferencia/debug', requireEscritorioOrAdmin, async (req, res) => 
       fetchPromo(cnpj, dtIni, dtFin, chave).catch(e => ({ error: e.message })),
     ]);
 
-    const parseBR = s => parseFloat(String(s||'').replace(/\./g,'').replace(',','.')) || 0;
+    const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
 
     // Agrupa linhas por documento e calcula valores como o endpoint real faz
     const docsRaw = {}; // doc → { linhas_mov[], linhas_plano[] }
@@ -7158,7 +7158,7 @@ app.post('/api/conferencia/conciliacao-rede', requireEscritorioOrAdmin, async (r
     const { fetchMovimentoCartoes } = require('./services/microvix');
     const cartoesRows = await fetchMovimentoCartoes(cnpj, dtIni, dtFin, chave).catch(() => []);
 
-    const parseBR = s => parseFloat(String(s || '').replace(/\./g, '').replace(',', '.')) || 0;
+    const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
 
     // Monta mapa Microvix por NSU normalizado
     const mxMap = {};
