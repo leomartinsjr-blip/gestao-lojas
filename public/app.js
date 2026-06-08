@@ -3171,7 +3171,7 @@ function renderTransExcelTab(container) {
       </label>
       <label class="trans-compra-filter-label">
         <span>Última entrada a partir de:</span>
-        <input type="date" id="transExcelCompraFrom" class="trans-compra-date-input">
+        <input type="text" id="transExcelCompraFrom" class="trans-compra-date-input" placeholder="DD/MM/AAAA" maxlength="10">
       </label>
       <button class="trans-calc-btn" id="transExcelCalcBtn" disabled>
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
@@ -3188,8 +3188,14 @@ function renderTransExcelTab(container) {
   const dateInput = container.querySelector('#transExcelCompraFrom');
   const result    = container.querySelector('#transExcelResult');
 
+  function dateInputToISO() {
+    const [d, m, y] = (dateInput.value || '').split('/');
+    if (!d || !m || !y || y.length < 4) return null;
+    return `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+  }
+
   const updateCalcBtn = () => {
-    calcBtn.disabled = !(input.files[0] && dateInput.value);
+    calcBtn.disabled = !(input.files[0] && dateInputToISO());
   };
 
   input.addEventListener('change', () => {
@@ -3197,12 +3203,19 @@ function renderTransExcelTab(container) {
     updateCalcBtn();
   });
 
-  dateInput.addEventListener('change', updateCalcBtn);
+  // Máscara DD/MM/AAAA
+  dateInput.addEventListener('input', () => {
+    let v = dateInput.value.replace(/\D/g, '').slice(0, 8);
+    if (v.length > 4) v = v.slice(0,2) + '/' + v.slice(2,4) + '/' + v.slice(4);
+    else if (v.length > 2) v = v.slice(0,2) + '/' + v.slice(2);
+    dateInput.value = v;
+    updateCalcBtn();
+  });
 
   calcBtn.addEventListener('click', async () => {
-    if (!input.files[0] || !dateInput.value) return;
+    const compraMinDate = dateInputToISO();
+    if (!input.files[0] || !compraMinDate) return;
     calcBtn.disabled = true;
-    const compraMinDate = dateInput.value; // formato YYYY-MM-DD
     try {
       // Passo 1: lê e parseia o Excel no browser (evita upload de arquivo grande)
       result.innerHTML = '<div class="trans-loading">Lendo arquivo…</div>';
