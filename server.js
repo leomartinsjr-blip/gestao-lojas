@@ -5799,6 +5799,17 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       vsales[emp.id] = vsalesAll[key] || { meta: { mensal: 0 }, entries: {} };
     }
 
+    // ── Premiação semanal — calcula para semanas cujo último dia está dentro do mês ──
+    const PREMIO_VEND_W = 80, PREMIO_GER_W = 250, PREMIO_PA_W = 50, PA_THR = 1.80;
+    const weeklyMetasMonth = (db.weeklyMetas || {})[mk] || {};
+    const globalWeights    = (db.globalWeights || {})[mk] || {};
+    const daysInMonth      = new Date(year, month, 0).getDate();
+    const todayStr   = new Date().toISOString().slice(0, 10);
+    const lastDay    = new Date(year, month, 0);
+    const padD       = n => String(n).padStart(2,'0');
+    const lastDayStr = `${year}-${padD(month)}-${padD(lastDay.getDate())}`;
+    const monthStart = `${year}-${padD(month)}-01`;
+
     // ── Ausências (férias/atestados) → mapa de dias bloqueados por funcionário ──
     // Usado para excluir funcionários que não trabalharam a semana inteira da premiação semanal
     const ausencias = db.ausencias || [];
@@ -5826,17 +5837,6 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       }
       if (days.size > 0) ausenciaDiasMap[emp.id] = days;
     }
-
-    // ── Premiação semanal — calcula para semanas cujo último dia está dentro do mês ──
-    const PREMIO_VEND_W = 80, PREMIO_GER_W = 250, PREMIO_PA_W = 50, PA_THR = 1.80;
-    const weeklyMetasMonth = (db.weeklyMetas || {})[mk] || {};
-    const globalWeights    = (db.globalWeights || {})[mk] || {};
-    const daysInMonth      = new Date(year, month, 0).getDate();
-    const todayStr   = new Date().toISOString().slice(0, 10);
-    const lastDay    = new Date(year, month, 0);
-    const padD       = n => String(n).padStart(2,'0');
-    const lastDayStr = `${year}-${padD(month)}-${padD(lastDay.getDate())}`;
-    const monthStart = `${year}-${padD(month)}-01`;
     const premiacaoSemanal           = {};
     const premiacaoSemanalDetalhe    = {};
     const premiacaoSemanalGer        = {};
