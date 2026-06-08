@@ -3,9 +3,9 @@
   const LOJA_LABEL = { delrey:'Del Rey', minas:'Minas', contagem:'Contagem', estacao:'Estação', tommy:'Tommy', surfers:'Surfers' };
 
   const $ = id => document.getElementById(id);
-  const fmtR = v => 'R$ ' + (+v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
-  const fmtD = s => s ? s.split('-').reverse().join('/') : '—';
-  const esc  = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const fmtR  = v => 'R$ ' + (+v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+  const fmtD  = s => s ? s.split('-').reverse().join('/') : '—';
+  const esc   = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 
   async function api(method, url, body) {
     const r = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: body ? JSON.stringify(body) : undefined });
@@ -13,7 +13,6 @@
     return r.json();
   }
 
-  // ── Auth ─────────────────────────────────────────────────────────────────
   fetch('/api/me').then(r=>r.json()).then(u => { $('userLabel').textContent = u.label||u.username||''; }).catch(()=>{});
 
   // ── Tabs ─────────────────────────────────────────────────────────────────
@@ -31,7 +30,6 @@
     $(id).appendChild(o);
   }));
 
-  // Datas padrão: mês corrente
   const hoje = new Date().toISOString().slice(0,10);
   const ini  = hoje.slice(0,8)+'01';
   $('vDtIni').value = ini; $('vDtFin').value = hoje;
@@ -40,172 +38,253 @@
   // ════════════════════════════════════════════════════════════════════════
   // VENDAS
   // ════════════════════════════════════════════════════════════════════════
-  let _data = null;
-  let _grupo = 'lista';
+  let _data = null, _grupo = 'lista';
 
   $('vBuscarBtn').addEventListener('click', buscarVendas);
-  document.querySelectorAll('.btn-seg').forEach(btn => btn.addEventListener('click', () => {
-    document.querySelectorAll('.btn-seg').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.btn-grp').forEach(btn => btn.addEventListener('click', () => {
+    document.querySelectorAll('.btn-grp').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
     _grupo = btn.dataset.grupo;
     if (_data) render(_data);
   }));
 
   async function buscarVendas() {
-    const board = $('vBoard').value, dtIni = $('vDtIni').value, dtFin = $('vDtFin').value;
+    const board=$('vBoard').value, dtIni=$('vDtIni').value, dtFin=$('vDtFin').value;
     if (!board||!dtIni||!dtFin) return alert('Preencha loja e período.');
-    const btn = $('vBuscarBtn');
-    btn.disabled = true; btn.innerHTML = '<span class="spinner"></span>';
-    $('vSummary').innerHTML = ''; $('vResult').innerHTML = '';
+    const btn=$('vBuscarBtn');
+    btn.disabled=true;
+    btn.innerHTML='<span class="spinner"></span> Buscando…';
+    $('vStats').innerHTML=''; $('vResult').innerHTML='';
     try {
       _data = await api('GET', `/api/conferencia/vendas?board=${board}&dtIni=${dtIni}&dtFin=${dtFin}`);
       render(_data);
     } catch(e) {
-      $('vResult').innerHTML = `<div class="cf-empty" style="color:#ef4444">${esc(e.message)}</div>`;
-    } finally { btn.disabled=false; btn.textContent='Buscar'; }
+      $('vResult').innerHTML=`<div class="cf-empty" style="color:#ef4444">⚠ ${esc(e.message)}</div>`;
+    } finally {
+      btn.disabled=false;
+      btn.innerHTML='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Buscar';
+    }
   }
 
   function render(data) {
     const { vendas, porForma, porVendedor, totalVendas, totalAlertas, qtdVendas } = data;
 
-    // Summary
-    $('vSummary').innerHTML = `
-      <div class="cf-summary">
-        <div class="cf-chip"><div class="cf-chip-val">${qtdVendas}</div><div class="cf-chip-lbl">Vendas</div></div>
-        <div class="cf-chip"><div class="cf-chip-val">${fmtR(totalVendas)}</div><div class="cf-chip-lbl">Total</div></div>
-        ${totalAlertas ? `<div class="cf-chip"><div class="cf-chip-val" style="color:#f59e0b">${totalAlertas}</div><div class="cf-chip-lbl">Com alerta</div></div>` : ''}
-        ${data.regra?.parcelaMin ? `<div class="cf-chip"><div class="cf-chip-val" style="font-size:13px">${fmtR(data.regra.parcelaMin)}</div><div class="cf-chip-lbl">Parcela mín.</div></div>` : ''}
-        ${data.regra?.descontoMaxVenda ? `<div class="cf-chip"><div class="cf-chip-val" style="font-size:13px">${data.regra.descontoMaxVenda}%</div><div class="cf-chip-lbl">Desc. máx. venda</div></div>` : ''}
+    // ── Stats ────────────────────────────────────────────────────────────
+    const totalDesc = vendas.reduce((s,v) => s + (v.desconto?.valor||0), 0);
+    const comDesc   = vendas.filter(v => v.desconto?.valor > 0).length;
+    $('vStats').innerHTML = `
+      <div class="cf-stats">
+        <div class="stat-card">
+          <div class="stat-icon green">🛍</div>
+          <div><div class="stat-val">${qtdVendas}</div><div class="stat-lbl">Vendas</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon blue">💰</div>
+          <div><div class="stat-val" style="font-size:16px">${fmtR(totalVendas)}</div><div class="stat-lbl">Total Líquido</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon amber">🏷</div>
+          <div><div class="stat-val" style="font-size:16px;color:var(--amber)">${fmtR(totalDesc)}</div><div class="stat-lbl">Total Descontos (${comDesc} vendas)</div></div>
+        </div>
+        ${totalAlertas ? `
+        <div class="stat-card">
+          <div class="stat-icon red">⚠</div>
+          <div><div class="stat-val" style="color:var(--red)">${totalAlertas}</div><div class="stat-lbl">Com Alertas</div></div>
+        </div>` : ''}
+        ${data.regra?.parcelaMin ? `
+        <div class="stat-card">
+          <div class="stat-icon purple">💳</div>
+          <div><div class="stat-val" style="font-size:14px">${fmtR(data.regra.parcelaMin)}</div><div class="stat-lbl">Parcela Mín.</div></div>
+        </div>` : ''}
       </div>`;
 
     const el = $('vResult');
-    if (!qtdVendas) { el.innerHTML = '<div class="cf-empty">Nenhuma venda encontrada.</div>'; return; }
+    if (!qtdVendas) { el.innerHTML='<div class="cf-empty">Nenhuma venda encontrada no período.</div>'; return; }
 
-    if (_grupo === 'forma')    { el.innerHTML = renderGrupos(porForma,    totalVendas); bindDrills(el); return; }
-    if (_grupo === 'vendedor') { el.innerHTML = renderGrupos(porVendedor, totalVendas); bindDrills(el); return; }
+    if (_grupo==='forma')    { el.innerHTML = renderGrupos(porForma,    totalVendas, 'blue');   bindDrills(el); return; }
+    if (_grupo==='vendedor') { el.innerHTML = renderGrupos(porVendedor, totalVendas, 'purple'); bindDrills(el); return; }
 
-    // Lista simples
     el.innerHTML = `
-      <div class="cf-card">
-        <div class="cf-card-body open">
-          ${tabelaVendas(vendas, v => esc(v.vendedor), v => esc(formasLabel(v.formas)))}
-        </div>
+      <div class="sales-card">
+        <div class="sales-card-hdr">${qtdVendas} vendas encontradas</div>
+        ${tabelaVendas(vendas)}
       </div>`;
     bindDrills(el);
   }
 
-  function formasLabel(formas) {
-    if (!formas?.length) return '—';
-    return [...new Set(formas.map(f => f.bandeira ? `${f.forma} / ${f.bandeira}` : f.forma))].join(' · ');
+  // ── Helpers visuais ───────────────────────────────────────────────────
+  function payChip(forma, bandeira) {
+    const f = (forma||'').toLowerCase();
+    const cls = /créd|cred|crédito/i.test(f) ? 'credito'
+              : /déb|deb|débito/i.test(f)    ? 'debito'
+              : /pix/i.test(f)               ? 'pix'
+              : /dinheiro|espécie/i.test(f)  ? 'dinheiro'
+              :                                'outros';
+    const label = bandeira ? `${forma} · ${bandeira}` : forma;
+    return `<span class="pay-chip ${cls}">${esc(label)}</span>`;
   }
 
-  function badges(alertas) {
+  function formaChips(formas) {
+    if (!formas?.length) return '<span style="color:var(--muted);font-size:11px">—</span>';
+    const seen = new Set();
+    return formas.map(f => {
+      const key = (f.forma||'')+(f.bandeira||'');
+      if (seen.has(key)) return '';
+      seen.add(key);
+      return payChip(f.forma, f.bandeira);
+    }).join('');
+  }
+
+  function alertBadges(alertas) {
     if (!alertas?.length) return '';
-    return alertas.map(a => {
-      const [cls,lbl] = a.tipo==='parcela_minima' ? ['badge-parc','Parcela']
-                      : a.tipo==='desconto_item'   ? ['badge-di','Desc.Item']
-                      :                              ['badge-dv','Desc.Venda'];
-      return `<span class="badge ${cls}" title="${esc(a.msg)}">${lbl}</span>`;
-    }).join(' ');
+    const counts = {};
+    alertas.forEach(a => counts[a.tipo] = (counts[a.tipo]||0)+1);
+    const parts = [];
+    if (counts.parcela_minima) parts.push(`<span class="badge badge-parc" title="${alertas.filter(a=>a.tipo==='parcela_minima').map(a=>esc(a.msg)).join('\n')}">💳 Parcela</span>`);
+    if (counts.desconto_item)  parts.push(`<span class="badge badge-di"   title="${alertas.filter(a=>a.tipo==='desconto_item').map(a=>esc(a.msg)).join('\n')}">🏷 Item×${counts.desconto_item}</span>`);
+    if (counts.desconto_venda) parts.push(`<span class="badge badge-dv"   title="${alertas.filter(a=>a.tipo==='desconto_venda').map(a=>esc(a.msg)).join('\n')}">📉 Venda</span>`);
+    return parts.join(' ');
   }
 
-  function tabelaVendas(vendas, colA, colB) {
-    return `<table class="cf-tbl">
-      <thead><tr>
-        <th>Data</th><th>Hora</th><th>Doc</th>
-        <th>Vendedor</th><th>Forma Pgto</th>
-        <th class="num">Desconto</th><th class="num">Total</th><th>Alertas</th><th></th>
-      </tr></thead>
-      <tbody>
-        ${vendas.map((v,i) => {
-          const drillId = `dr-${i}-${Math.random().toString(36).slice(2,6)}`;
-          const hasItens = v.itens?.length > 0;
-          return `
-          <tr class="${v.alertas?.length?'row-alert':''}" ${hasItens?`data-drill="${drillId}" style="cursor:pointer"`:''}>
-            <td>${fmtD(v.data)}</td>
-            <td class="muted">${v.hora||'—'}</td>
-            <td class="mono">${v.doc}</td>
-            <td>${colA(v)}</td>
-            <td style="font-size:11px;color:var(--muted)">${colB(v)}</td>
-            <td class="num" style="color:${v.desconto?.valor?'#f59e0b':'var(--muted)'}">
-              ${v.desconto?.valor ? fmtR(v.desconto.valor)+` <span style="font-size:10px">(${v.desconto.perc}%)</span>` : '—'}
-            </td>
-            <td class="num">${fmtR(v.valorTotal)}</td>
-            <td>${badges(v.alertas)}</td>
-            <td style="width:16px;color:var(--muted)">
-              ${hasItens ? `<svg class="cf-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>` : ''}
-            </td>
-          </tr>
-          ${hasItens ? `<tr id="${drillId}" class="hidden"><td colspan="9" style="padding:0">${drillItens(v.itens)}</td></tr>` : ''}`;
-        }).join('')}
-      </tbody>
-    </table>`;
+  function accentClass(v) {
+    if (v.alertas?.length) return 'alert';
+    if (v.desconto?.valor > 0) return 'disc';
+    return 'ok';
   }
 
-  function drillItens(itens) {
-    return `<div class="cf-drill">
-      <table class="cf-drill-tbl">
-        <thead><tr><th>Produto</th><th>Qtd</th><th class="num">Unitário</th><th class="num">Bruto</th><th class="num">Desconto</th><th class="num">%</th></tr></thead>
+  // ── Tabela de vendas ──────────────────────────────────────────────────
+  function tabelaVendas(vendas) {
+    return `
+      <table class="cf-tbl">
+        <thead><tr>
+          <th style="width:4px;padding:0"></th>
+          <th>Data</th><th>Hora</th><th>Doc</th>
+          <th>Vendedor</th><th>Forma de Pagamento</th>
+          <th class="num">Desc. Produto</th>
+          <th class="num">Total Venda</th>
+          <th>Alertas</th>
+          <th style="width:20px"></th>
+        </tr></thead>
         <tbody>
-          ${itens.map(it => `<tr>
-            <td>${esc(it.descricao)}</td>
-            <td>${it.quantidade}</td>
-            <td class="num">${fmtR(it.vlrUnitario)}</td>
-            <td class="num">${fmtR(it.vlrBruto)}</td>
-            <td class="num ${it.vlrDesconto>0?'alert-col':''}">${it.vlrDesconto>0?fmtR(it.vlrDesconto):'—'}</td>
-            <td class="num ${parseFloat(it.percDesconto)>0?'alert-col':''}">${parseFloat(it.percDesconto)>0?it.percDesconto+'%':'—'}</td>
-          </tr>`).join('')}
+          ${vendas.map((v,i) => {
+            const did   = `dr-${i}-${Math.random().toString(36).slice(2,7)}`;
+            const acc   = accentClass(v);
+            const hasIt = v.itens?.length > 0;
+            return `
+            <tr class="sale-row ${acc==='alert'?'':''}${hasIt?`" data-drill="${did}`:''}" >
+              <td class="accent-cell"><div class="accent-bar ${acc}"></div></td>
+              <td style="font-weight:600">${fmtD(v.data)}</td>
+              <td class="muted">${v.hora||'—'}</td>
+              <td class="mono">${esc(v.doc)}</td>
+              <td>${esc(v.vendedor||'—')}</td>
+              <td><div class="pay-chips">${formaChips(v.formas)}</div></td>
+              <td class="num">${v.desconto?.valor>0
+                ? `<span style="color:var(--amber);font-weight:700">${fmtR(v.desconto.valor)}</span><span style="font-size:10px;color:var(--amber);margin-left:4px">${v.desconto.perc}%</span>`
+                : '<span style="color:var(--muted)">—</span>'}</td>
+              <td class="num" style="font-weight:700">${fmtR(v.valorTotal)}</td>
+              <td>${alertBadges(v.alertas)}</td>
+              <td style="color:var(--muted)">
+                ${hasIt?`<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>`:''}
+              </td>
+            </tr>
+            ${hasIt?`<tr class="drill-row hidden" id="${did}"><td colspan="10" style="padding:0">${drillItens(v)}</td></tr>`:''}`;
+          }).join('')}
         </tbody>
-      </table>
-    </div>`;
+      </table>`;
   }
 
-  function renderGrupos(grupos, totalGeral) {
+  // ── Drill-down de itens ───────────────────────────────────────────────
+  function drillItens(v) {
+    const itens = v.itens || [];
+    const totalBruto = itens.reduce((s,i)=>s+i.vlrBruto,0);
+    const totalDesc  = itens.reduce((s,i)=>s+i.vlrDesconto,0);
+    return `
+      <div class="drill-wrap">
+        <div class="drill-hdr">🧾 Itens da venda ${esc(v.doc)}</div>
+        <table class="drill-tbl">
+          <thead><tr>
+            <th>Produto</th>
+            <th class="num">Qtd</th>
+            <th class="num">Vlr Unit. Bruto</th>
+            <th class="num">Total Bruto</th>
+            <th class="num">Desc. Produto</th>
+            <th class="num">%</th>
+          </tr></thead>
+          <tbody>
+            ${itens.map(it => {
+              const temDesc = it.vlrDesconto > 0;
+              return `<tr class="${temDesc?'has-disc':''}">
+                <td>${esc(it.descricao)}</td>
+                <td class="num">${it.quantidade}x</td>
+                <td class="num">${fmtR(it.vlrUnitario)}</td>
+                <td class="num">${fmtR(it.vlrBruto)}</td>
+                <td class="num ${temDesc?'disc-val':'disc-zero'}">${temDesc?fmtR(it.vlrDesconto):'—'}</td>
+                <td class="num">${temDesc?`<span class="disc-pct">${it.percDesconto}%</span>`:'—'}</td>
+              </tr>`;
+            }).join('')}
+          </tbody>
+          <tfoot>
+            <tr class="total-row">
+              <td colspan="3" style="font-size:11px;color:var(--muted)">Total</td>
+              <td class="num">${fmtR(totalBruto)}</td>
+              <td class="num" style="color:var(--amber)">${totalDesc>0?fmtR(totalDesc):'—'}</td>
+              <td class="num" style="color:var(--amber)">${totalDesc>0&&totalBruto>0?`<span class="disc-pct">${((totalDesc/totalBruto)*100).toFixed(1)}%</span>`:'—'}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>`;
+  }
+
+  // ── Grupos ────────────────────────────────────────────────────────────
+  const GRUPO_COLORS = ['#3b82f6','#a855f7','#22c55e','#f59e0b','#14b8a6','#ef4444','#8b5cf6','#f97316'];
+
+  function renderGrupos(grupos, totalGeral, colorTheme) {
     return grupos.map((g,gi) => {
+      const cor    = GRUPO_COLORS[gi % GRUPO_COLORS.length];
       const pct    = totalGeral>0 ? (g.total/totalGeral*100).toFixed(1) : '0';
+      const barW   = Math.max(4, Math.round(parseFloat(pct)*0.6));
       const alertas= (g.vendas||[]).filter(v=>v.alertas?.length).length;
-      const barW   = Math.round(parseFloat(pct)*0.8); // max ~80px
-      const cardId = `gc-${gi}`;
       const bodyId = `gb-${gi}`;
       return `
-        <div class="cf-card">
-          <div class="cf-card-hdr" data-card="${cardId}" data-body="${bodyId}">
-            <span class="cf-card-title">${esc(g.label)}</span>
-            <span class="cf-card-meta">
+        <div class="grupo-card">
+          <div class="grupo-hdr" data-body="${bodyId}">
+            <div class="grupo-color" style="background:${cor}"></div>
+            <span class="grupo-title">${esc(g.label)}</span>
+            <span class="grupo-meta">
               <span>${g.qtd} venda${g.qtd!==1?'s':''}</span>
-              <span>${pct}%<span class="perc-bar" style="width:${barW}px"></span></span>
-              ${alertas ? `<span class="badge badge-di">${alertas} alertas</span>` : ''}
+              <span style="color:${cor}">${pct}%<span class="grupo-pct-bar" style="width:${barW}px;background:${cor}"></span></span>
+              ${alertas?`<span class="badge badge-di">⚠ ${alertas}</span>`:''}
             </span>
-            <span class="cf-card-total">${fmtR(g.total)}</span>
-            <svg class="cf-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+            <span class="grupo-total">${fmtR(g.total)}</span>
+            <svg class="grupo-chev chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
           </div>
-          <div class="cf-card-body" id="${bodyId}">
-            ${tabelaVendas(g.vendas||[], v => esc(v.vendedor), v => esc(formasLabel(v.formas)))}
+          <div class="grupo-body" id="${bodyId}">
+            <div class="sales-card-hdr" style="border-top:none">${g.qtd} vendas · ${fmtR(g.total)}</div>
+            ${tabelaVendas(g.vendas||[])}
           </div>
         </div>`;
     }).join('');
   }
 
+  // ── Binding de cliques ────────────────────────────────────────────────
   function bindDrills(container) {
-    // Card headers (grupos)
-    container.querySelectorAll('.cf-card-hdr:not([data-bound])').forEach(hdr => {
+    container.querySelectorAll('.grupo-hdr:not([data-bound])').forEach(hdr => {
       hdr.dataset.bound = '1';
       hdr.addEventListener('click', () => {
         const body = document.getElementById(hdr.dataset.body);
         if (!body) return;
         const open = body.classList.toggle('open');
-        hdr.querySelector('.cf-chevron')?.classList.toggle('open', open);
+        hdr.querySelector('.chevron')?.classList.toggle('open', open);
         if (open) bindDrills(body);
       });
     });
-    // Row drills (itens da venda)
     container.querySelectorAll('tr[data-drill]:not([data-bound])').forEach(row => {
       row.dataset.bound = '1';
       row.addEventListener('click', () => {
         const drill = document.getElementById(row.dataset.drill);
         if (!drill) return;
         const open = drill.classList.toggle('hidden');
-        row.querySelector('.cf-chevron')?.classList.toggle('open', !open);
+        row.querySelector('.chevron')?.classList.toggle('open', !open);
       });
     });
   }
@@ -213,9 +292,9 @@
   // ════════════════════════════════════════════════════════════════════════
   // CONCILIAÇÃO REDE
   // ════════════════════════════════════════════════════════════════════════
-  const fileDrop = $('fileDrop'), fileInput = $('redeFile');
+  const fileDrop=$('fileDrop'), fileInput=$('redeFile');
   fileDrop.addEventListener('click', ()=>fileInput.click());
-  fileDrop.addEventListener('dragover', e=>{e.preventDefault();fileDrop.style.borderColor='var(--accent,#3b82f6)';});
+  fileDrop.addEventListener('dragover', e=>{e.preventDefault();fileDrop.style.borderColor='var(--blue)';});
   fileDrop.addEventListener('dragleave', ()=>fileDrop.style.borderColor='');
   fileDrop.addEventListener('drop', e=>{e.preventDefault();fileDrop.style.borderColor='';processRede(e.dataTransfer.files[0]);});
   fileInput.addEventListener('change', ()=>fileInput.files[0]&&processRede(fileInput.files[0]));
@@ -223,25 +302,25 @@
   async function processRede(file) {
     const board=$('cBoard').value, dtIni=$('cDtIni').value, dtFin=$('cDtFin').value;
     if (!board||!dtIni||!dtFin) return alert('Preencha loja e período antes de enviar o arquivo.');
-    $('cResult').innerHTML = '<div class="cf-empty"><span class="spinner"></span> Processando…</div>';
+    $('cResult').innerHTML='<div class="cf-empty"><span class="spinner"></span> Processando…</div>';
     try {
       const linhas = await parseRedeFile(file);
       if (!linhas.length) { $('cResult').innerHTML='<div class="cf-empty" style="color:#ef4444">Nenhuma transação encontrada no arquivo.</div>'; return; }
-      $('cResult').innerHTML = `<div style="padding:8px 0;color:var(--muted);font-size:11px">${linhas.length} transações lidas. Cruzando com Microvix…</div>`;
-      const data = await api('POST', '/api/conferencia/conciliacao-rede', { board, dtIni, dtFin, linhas });
+      $('cResult').innerHTML=`<div style="padding:8px 0;color:var(--muted);font-size:11px">${linhas.length} transações lidas. Cruzando com Microvix…</div>`;
+      const data = await api('POST','/api/conferencia/conciliacao-rede',{board,dtIni,dtFin,linhas});
       renderConciliacao(data);
-    } catch(e) { $('cResult').innerHTML=`<div class="cf-empty" style="color:#ef4444">${esc(e.message)}</div>`; }
+    } catch(e) { $('cResult').innerHTML=`<div class="cf-empty" style="color:#ef4444">⚠ ${esc(e.message)}</div>`; }
   }
 
   async function parseRedeFile(file) {
     return new Promise((resolve,reject) => {
-      const reader = new FileReader();
-      reader.onload = e => {
+      const reader=new FileReader();
+      reader.onload=e=>{
         try {
-          const wb   = XLSX.read(new Uint8Array(e.target.result), {type:'array'});
-          const ws   = wb.Sheets[wb.SheetNames[0]];
-          const rows = XLSX.utils.sheet_to_json(ws, {defval:''});
-          const get  = (r,...names) => { for (const n of names) { const k=Object.keys(r).find(k=>k.toString().toLowerCase().includes(n)); if (k&&r[k]!=='') return String(r[k]).trim(); } return ''; };
+          const wb=XLSX.read(new Uint8Array(e.target.result),{type:'array'});
+          const ws=wb.Sheets[wb.SheetNames[0]];
+          const rows=XLSX.utils.sheet_to_json(ws,{defval:''});
+          const get=(r,...ns)=>{for(const n of ns){const k=Object.keys(r).find(k=>k.toString().toLowerCase().includes(n));if(k&&r[k]!=='')return String(r[k]).trim();}return '';};
           resolve(rows.map(r=>({
             nsu:      get(r,'nsu','autorizacao','autorização','cod_aut','numero'),
             bandeira: get(r,'bandeira','brand','cartao','cartão'),
@@ -250,40 +329,35 @@
           })).filter(l=>l.nsu&&l.valor>0));
         } catch(err){reject(err);}
       };
-      reader.onerror = reject;
+      reader.onerror=reject;
       reader.readAsArrayBuffer(file);
     });
   }
 
   function renderConciliacao(data) {
-    const { resultado, totalMx, totalRede, ok, divergencias } = data;
-    $('cResult').innerHTML = `
-      <div class="cf-summary">
-        <div class="cf-chip"><div class="cf-chip-val">${totalRede}</div><div class="cf-chip-lbl">Transações Rede</div></div>
-        <div class="cf-chip"><div class="cf-chip-val">${totalMx}</div><div class="cf-chip-lbl">Transações Microvix</div></div>
-        <div class="cf-chip"><div class="cf-chip-val" style="color:#22c55e">${ok}</div><div class="cf-chip-lbl">Conciliadas</div></div>
-        <div class="cf-chip"><div class="cf-chip-val" style="color:#ef4444">${divergencias}</div><div class="cf-chip-lbl">Divergências</div></div>
+    const {resultado,totalMx,totalRede,ok,divergencias}=data;
+    $('cResult').innerHTML=`
+      <div class="cf-stats">
+        <div class="stat-card"><div class="stat-icon purple">🔄</div><div><div class="stat-val">${totalRede}</div><div class="stat-lbl">Transações Rede</div></div></div>
+        <div class="stat-card"><div class="stat-icon blue">📊</div><div><div class="stat-val">${totalMx}</div><div class="stat-lbl">Transações Microvix</div></div></div>
+        <div class="stat-card"><div class="stat-icon green">✅</div><div><div class="stat-val" style="color:var(--green)">${ok}</div><div class="stat-lbl">Conciliadas</div></div></div>
+        <div class="stat-card"><div class="stat-icon red">❌</div><div><div class="stat-val" style="color:var(--red)">${divergencias}</div><div class="stat-lbl">Divergências</div></div></div>
       </div>
-      <div class="cf-card">
-        <div class="cf-card-body open">
-          <table class="cf-tbl">
-            <thead><tr>
-              <th>Status</th><th>NSU</th><th>Bandeira</th>
-              <th class="num">Rede</th><th class="num">Microvix</th><th class="num">Diferença</th><th>Data</th>
-            </tr></thead>
-            <tbody>
-              ${resultado.map(r=>`<tr>
-                <td>${statusBadge(r.status)}</td>
-                <td class="mono">${r.nsu}</td>
-                <td>${esc(r.rede?.bandeira||r.mx?.bandeira||'—')}</td>
-                <td class="num">${r.rede?fmtR(r.rede.valor):'—'}</td>
-                <td class="num">${r.mx?fmtR(r.mx.valor):'—'}</td>
-                <td class="num">${r.difValor!=null?`<span style="color:${Math.abs(r.difValor)>.01?'#ef4444':'#22c55e'}">${fmtR(r.difValor)}</span>`:'—'}</td>
-                <td class="muted">${esc(r.rede?.data||r.mx?.data||'—')}</td>
-              </tr>`).join('')}
-            </tbody>
-          </table>
-        </div>
+      <div class="sales-card">
+        <table class="cf-tbl">
+          <thead><tr><th>Status</th><th>NSU</th><th>Bandeira</th><th class="num">Rede</th><th class="num">Microvix</th><th class="num">Diferença</th><th>Data</th></tr></thead>
+          <tbody>
+            ${resultado.map(r=>`<tr>
+              <td>${statusBadge(r.status)}</td>
+              <td class="mono">${esc(r.nsu)}</td>
+              <td>${esc(r.rede?.bandeira||r.mx?.bandeira||'—')}</td>
+              <td class="num">${r.rede?fmtR(r.rede.valor):'—'}</td>
+              <td class="num">${r.mx?fmtR(r.mx.valor):'—'}</td>
+              <td class="num">${r.difValor!=null?`<span style="color:${Math.abs(r.difValor)>.01?'var(--red)':'var(--green)'}">${fmtR(r.difValor)}</span>`:'—'}</td>
+              <td class="muted">${esc(r.rede?.data||r.mx?.data||'—')}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
       </div>`;
   }
 
@@ -302,24 +376,24 @@
   let regrasData = {};
 
   async function loadRegras() {
-    try { regrasData = await api('GET','/api/conferencia/regras'); renderRegras(); }
-    catch(e) { alert('Erro ao carregar regras: '+e.message); }
+    try { regrasData=await api('GET','/api/conferencia/regras'); renderRegras(); }
+    catch(e){ alert('Erro ao carregar regras: '+e.message); }
   }
 
   function renderRegras() {
-    const grid = $('regrasGrid');
-    grid.innerHTML = '';
+    const grid=$('regrasGrid');
+    grid.innerHTML='';
     LOJAS.forEach(board => {
-      const r = regrasData[board]||{};
-      const card = document.createElement('div');
-      card.className = 'regra-card';
-      card.innerHTML = `
+      const r=regrasData[board]||{};
+      const card=document.createElement('div');
+      card.className='regra-card';
+      card.innerHTML=`
         <h3>${LOJA_LABEL[board]}</h3>
         <div class="rf"><label>Parcela mínima (R$)</label>
           <input type="number" min="0" step="0.01" data-board="${board}" data-field="parcelaMin" value="${r.parcelaMin||0}"/></div>
-        <div class="rf"><label>Desconto máximo por item (%)</label>
+        <div class="rf"><label>Desc. máx. por item (%)</label>
           <input type="number" min="0" max="100" step="0.1" data-board="${board}" data-field="descontoMaxItem" value="${r.descontoMaxItem||0}"/></div>
-        <div class="rf"><label>Desconto máximo por venda (%)</label>
+        <div class="rf"><label>Desc. máx. por venda (%)</label>
           <input type="number" min="0" max="100" step="0.1" data-board="${board}" data-field="descontoMaxVenda" value="${r.descontoMaxVenda||0}"/></div>`;
       grid.appendChild(card);
     });
@@ -327,17 +401,17 @@
 
   $('salvarRegrasBtn').addEventListener('click', async () => {
     document.querySelectorAll('#regrasGrid input').forEach(inp => {
-      const {board,field} = inp.dataset;
+      const {board,field}=inp.dataset;
       if (!regrasData[board]) regrasData[board]={};
-      regrasData[board][field] = parseFloat(inp.value)||0;
+      regrasData[board][field]=parseFloat(inp.value)||0;
     });
-    const btn = $('salvarRegrasBtn');
+    const btn=$('salvarRegrasBtn');
     btn.disabled=true; btn.textContent='Salvando…';
     try {
       await api('PUT','/api/conferencia/regras',regrasData);
-      btn.textContent='✓ Salvo';
-      setTimeout(()=>{btn.textContent='Salvar';btn.disabled=false;},1500);
-    } catch(e) { alert('Erro: '+e.message); btn.textContent='Salvar'; btn.disabled=false; }
+      btn.innerHTML='✅ Salvo';
+      setTimeout(()=>{btn.innerHTML='💾 Salvar';btn.disabled=false;},1500);
+    } catch(e){ alert('Erro: '+e.message); btn.innerHTML='💾 Salvar'; btn.disabled=false; }
   });
 
   loadRegras();

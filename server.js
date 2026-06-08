@@ -6717,9 +6717,10 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
 
       // Cada linha do LinxMovimento é um item da venda
       const qty      = parseBR(r.quantidade || '1');
-      const vlrUnit  = parseBR(r.preco_unitario || r.preco_cheio || '0');
+      // preco_cheio = preço cheio/bruto antes de qualquer desconto; preco_unitario como fallback
+      const vlrUnit  = parseBR(r.preco_cheio || r.preco_unitario || '0');
       const vlrDesc  = parseBR(r.desconto || '0');
-      // valor_liquido = valor líquido do item já com desconto aplicado
+      // valor_liquido = total líquido do item após desconto
       const vlrLiq   = parseBR(r.valor_liquido || '0') || Math.max(0, vlrUnit * qty - vlrDesc);
       const vlrBruto = vlrUnit * qty;
       const percItem = vlrBruto > 0 && vlrDesc > 0 ? (vlrDesc / vlrBruto) * 100 : 0;

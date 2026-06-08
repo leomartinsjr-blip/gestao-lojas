@@ -6,190 +6,327 @@
 <title>Conferência de Caixa</title>
 <link rel="stylesheet" href="/style.css"/>
 <style>
-  :root { --radius:8px; }
-  body { background:var(--bg); color:var(--text); font-family:var(--font); margin:0; font-size:13px; }
+:root {
+  --r: 10px;
+  --green:  #22c55e; --green-bg:  #22c55e14;
+  --blue:   #3b82f6; --blue-bg:   #3b82f614;
+  --purple: #a855f7; --purple-bg: #a855f714;
+  --amber:  #f59e0b; --amber-bg:  #f59e0b14;
+  --red:    #ef4444; --red-bg:    #ef444414;
+  --teal:   #14b8a6; --teal-bg:   #14b8a614;
+  --gray-bg: #ffffff08;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: var(--font); margin: 0; font-size: 13px; }
 
-  /* ── Topbar ── */
-  .cf-topbar { display:flex; align-items:center; gap:10px; padding:12px 20px; border-bottom:1px solid var(--border); background:var(--surface); }
-  .cf-topbar h1 { font-size:14px; font-weight:600; margin:0; }
-  .cf-user { margin-left:auto; font-size:11px; color:var(--muted); }
+/* ── Topbar ─────────────────────────────────────────────────── */
+.cf-topbar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 24px;
+  background: linear-gradient(135deg, #1e3a5f 0%, #0f2040 100%);
+  border-bottom: 1px solid #ffffff18;
+}
+.cf-topbar-icon { color: var(--blue); flex-shrink: 0; }
+.cf-topbar h1 { font-size: 15px; font-weight: 700; margin: 0; color: #fff; letter-spacing: -.2px; }
+.cf-topbar-sub { font-size: 11px; color: #ffffff60; }
+.cf-user-chip {
+  margin-left: auto; display: flex; align-items: center; gap: 6px;
+  background: #ffffff12; border: 1px solid #ffffff20; border-radius: 20px;
+  padding: 4px 10px; font-size: 11px; color: #ffffffb0;
+}
 
-  /* ── Tabs ── */
-  .cf-tabs { display:flex; gap:2px; padding:12px 20px 0; border-bottom:1px solid var(--border); }
-  .cf-tab { padding:7px 16px; border-radius:6px 6px 0 0; font-size:12px; cursor:pointer;
-    border:1px solid transparent; color:var(--muted); background:none; font-family:var(--font); }
-  .cf-tab.active { border-color:var(--border); border-bottom-color:var(--bg);
-    background:var(--bg); color:var(--text); font-weight:600; }
+/* ── Tabs ───────────────────────────────────────────────────── */
+.cf-tabs {
+  display: flex; gap: 0; padding: 0 24px;
+  background: var(--surface); border-bottom: 2px solid var(--border);
+}
+.cf-tab {
+  padding: 12px 20px; font-size: 12px; font-weight: 600; cursor: pointer;
+  border: none; background: none; color: var(--muted); font-family: var(--font);
+  border-bottom: 2px solid transparent; margin-bottom: -2px;
+  transition: color .15s, border-color .15s;
+}
+.cf-tab:hover { color: var(--text); }
+.cf-tab.active { color: var(--blue); border-bottom-color: var(--blue); }
 
-  /* ── Panels ── */
-  .cf-panel { display:none; padding:18px 20px; }
-  .cf-panel.active { display:block; }
+/* ── Panels ─────────────────────────────────────────────────── */
+.cf-panel { display: none; padding: 20px 24px; }
+.cf-panel.active { display: block; }
 
-  /* ── Filter bar ── */
-  .cf-filters { display:flex; align-items:flex-end; gap:10px; flex-wrap:wrap; margin-bottom:16px; }
-  .cf-fgroup { display:flex; flex-direction:column; gap:3px; }
-  .cf-fgroup label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
-  .cf-fgroup select, .cf-fgroup input[type=date] {
-    background:var(--surface); border:1px solid var(--border); color:var(--text);
-    padding:5px 9px; border-radius:6px; font-size:12px; font-family:var(--font); }
-  .cf-fgroup select:focus, .cf-fgroup input:focus { outline:none; border-color:var(--accent,#3b82f6); }
+/* ── Filter card ────────────────────────────────────────────── */
+.cf-filter-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 14px 18px; margin-bottom: 18px;
+  display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+}
+.cf-fg { display: flex; flex-direction: column; gap: 4px; }
+.cf-fg label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .6px; font-weight: 600; }
+.cf-fg select, .cf-fg input[type=date] {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  padding: 6px 10px; border-radius: 7px; font-size: 12px; font-family: var(--font);
+  min-width: 110px;
+}
+.cf-fg select:focus, .cf-fg input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-bg); }
 
-  /* ── Buttons ── */
-  .btn-p { background:var(--accent,#3b82f6); color:#fff; border:none; padding:6px 14px;
-    border-radius:6px; font-size:12px; cursor:pointer; font-family:var(--font); }
-  .btn-p:hover { opacity:.85; }
-  .btn-p:disabled { opacity:.5; cursor:default; }
-  .btn-grp { display:flex; gap:3px; }
-  .btn-seg { background:var(--surface2,#2a2a2a); color:var(--muted); border:1px solid var(--border);
-    padding:5px 11px; border-radius:5px; font-size:11px; cursor:pointer; font-family:var(--font); }
-  .btn-seg.active { background:var(--accent,#3b82f6); color:#fff; border-color:var(--accent,#3b82f6); }
+.btn-primary {
+  background: var(--blue); color: #fff; border: none;
+  padding: 7px 18px; border-radius: 7px; font-size: 12px; font-weight: 600;
+  cursor: pointer; font-family: var(--font); display: flex; align-items: center; gap: 6px;
+  transition: opacity .15s;
+}
+.btn-primary:hover { opacity: .88; }
+.btn-primary:disabled { opacity: .45; cursor: default; }
 
-  /* ── Summary chips ── */
-  .cf-summary { display:flex; gap:10px; flex-wrap:wrap; margin-bottom:14px; }
-  .cf-chip { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
-    padding:8px 14px; min-width:80px; }
-  .cf-chip-val { font-size:18px; font-weight:700; line-height:1.1; }
-  .cf-chip-lbl { font-size:10px; color:var(--muted); margin-top:2px; }
+.grp-btns { display: flex; gap: 1px; background: var(--border); border-radius: 7px; overflow: hidden; margin-left: auto; }
+.btn-grp {
+  background: var(--surface); color: var(--muted); border: none;
+  padding: 6px 14px; font-size: 11px; font-weight: 600; cursor: pointer;
+  font-family: var(--font); transition: background .12s, color .12s;
+}
+.btn-grp:hover { background: var(--surface2, #2a2a2a); color: var(--text); }
+.btn-grp.active { background: var(--blue); color: #fff; }
 
-  /* ── Cards (grupos) ── */
-  .cf-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
-    overflow:hidden; margin-bottom:10px; }
-  .cf-card-hdr { display:flex; align-items:center; gap:10px; padding:10px 14px;
-    cursor:pointer; user-select:none; }
-  .cf-card-hdr:hover { background:var(--surface2,#2a2a2a); }
-  .cf-card-title { font-weight:600; font-size:13px; flex:1; }
-  .cf-card-meta { font-size:11px; color:var(--muted); display:flex; gap:12px; align-items:center; }
-  .cf-card-total { font-weight:700; font-size:13px; }
-  .cf-chevron { transition:transform .2s; flex-shrink:0; }
-  .cf-chevron.open { transform:rotate(90deg); }
+/* ── Summary strips ─────────────────────────────────────────── */
+.cf-stats { display: flex; gap: 10px; margin-bottom: 18px; flex-wrap: wrap; }
+.stat-card {
+  flex: 1; min-width: 120px; background: var(--surface);
+  border: 1px solid var(--border); border-radius: var(--r);
+  padding: 12px 16px; display: flex; align-items: center; gap: 12px;
+}
+.stat-icon {
+  width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 16px;
+}
+.stat-icon.green  { background: var(--green-bg);  color: var(--green);  }
+.stat-icon.blue   { background: var(--blue-bg);   color: var(--blue);   }
+.stat-icon.amber  { background: var(--amber-bg);  color: var(--amber);  }
+.stat-icon.red    { background: var(--red-bg);    color: var(--red);    }
+.stat-icon.purple { background: var(--purple-bg); color: var(--purple); }
+.stat-val { font-size: 20px; font-weight: 800; line-height: 1; }
+.stat-lbl { font-size: 10px; color: var(--muted); margin-top: 3px; font-weight: 500; text-transform: uppercase; letter-spacing: .4px; }
 
-  /* ── Table inside cards ── */
-  .cf-card-body { display:none; border-top:1px solid var(--border); }
-  .cf-card-body.open { display:block; }
-  .cf-tbl { width:100%; border-collapse:collapse; }
-  .cf-tbl th { padding:5px 12px; text-align:left; font-size:10px; color:var(--muted);
-    border-bottom:1px solid var(--border); font-weight:500; white-space:nowrap; }
-  .cf-tbl td { padding:6px 12px; border-bottom:1px solid var(--border); vertical-align:top; font-size:12px; }
-  .cf-tbl tr:last-child td { border-bottom:none; }
-  .cf-tbl tr.row-alert td { background:#f59e0b09; }
-  .cf-tbl tr:hover td { background:var(--surface2,#1e1e1e); }
-  .cf-tbl td.num { text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }
-  .cf-tbl td.mono { font-family:monospace; font-size:11px; }
-  .cf-tbl td.muted { color:var(--muted); }
+/* ── Sale list card ─────────────────────────────────────────── */
+.sales-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); overflow: hidden;
+}
+.sales-card-hdr {
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+  font-size: 11px; font-weight: 700; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .5px;
+  background: var(--gray-bg);
+}
 
-  /* ── Drill row (itens da venda) ── */
-  .cf-drill { background:var(--surface2,#1a1a1a); border-top:1px solid var(--border); padding:0; }
-  .cf-drill-tbl { width:100%; border-collapse:collapse; font-size:11px; }
-  .cf-drill-tbl th { padding:4px 14px 4px 28px; color:var(--muted); font-weight:400; border-bottom:1px solid var(--border); }
-  .cf-drill-tbl td { padding:4px 14px 4px 28px; border-bottom:1px solid var(--border); color:var(--muted); }
-  .cf-drill-tbl tr:last-child td { border-bottom:none; }
-  .cf-drill-tbl td.alert-col { color:#f59e0b; }
+/* ── Table ──────────────────────────────────────────────────── */
+.cf-tbl { width: 100%; border-collapse: collapse; }
+.cf-tbl th {
+  padding: 8px 14px; text-align: left; font-size: 10px; font-weight: 700;
+  color: var(--muted); border-bottom: 1px solid var(--border);
+  text-transform: uppercase; letter-spacing: .4px; white-space: nowrap;
+  background: var(--gray-bg);
+}
+.cf-tbl th.num, .cf-tbl td.num { text-align: right; }
+.cf-tbl td {
+  padding: 9px 14px; border-bottom: 1px solid var(--border);
+  vertical-align: middle; font-size: 12px;
+}
+.cf-tbl tr:last-child td { border-bottom: none; }
+.cf-tbl tbody tr.sale-row { transition: background .1s; }
+.cf-tbl tbody tr.sale-row:hover td { background: var(--surface2, #1e1e1e); }
+.cf-tbl tbody tr.sale-row[data-drill] { cursor: pointer; }
+/* Left border accent */
+.cf-tbl td.accent-cell { padding-left: 0; width: 3px; padding-right: 0; }
+.accent-bar { width: 3px; height: 100%; min-height: 36px; border-radius: 2px; }
+.accent-bar.ok     { background: transparent; }
+.accent-bar.disc   { background: var(--amber); }
+.accent-bar.alert  { background: var(--red); }
 
-  /* ── Badges ── */
-  .badge { display:inline-flex; align-items:center; padding:1px 7px; border-radius:10px; font-size:10px; font-weight:600; white-space:nowrap; }
-  .badge-parc { background:#f59e0b18; color:#f59e0b; }
-  .badge-di   { background:#ef444418; color:#ef4444; }
-  .badge-dv   { background:#dc262618; color:#dc2626; }
-  .badge-ok   { background:#22c55e18; color:#22c55e; }
-  .badge-rede { background:#8b5cf618; color:#8b5cf6; }
+td.mono { font-family: monospace; font-size: 11px; color: var(--muted); }
+td.muted { color: var(--muted); }
 
-  /* ── Regras ── */
-  .regras-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:10px; }
-  .regra-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:14px; }
-  .regra-card h3 { margin:0 0 10px; font-size:12px; font-weight:700; text-transform:uppercase; color:var(--muted); }
-  .rf { display:flex; flex-direction:column; gap:3px; margin-bottom:8px; }
-  .rf label { font-size:10px; color:var(--muted); }
-  .rf input { background:var(--bg); border:1px solid var(--border); color:var(--text);
-    padding:5px 8px; border-radius:5px; font-size:12px; width:100%; box-sizing:border-box; }
-  .rf input:focus { outline:none; border-color:var(--accent,#3b82f6); }
+/* ── Payment chips ──────────────────────────────────────────── */
+.pay-chips { display: flex; flex-wrap: wrap; gap: 3px; }
+.pay-chip {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 600; white-space: nowrap;
+}
+.pay-chip.credito  { background: var(--green-bg);  color: var(--green);  }
+.pay-chip.debito   { background: var(--blue-bg);   color: var(--blue);   }
+.pay-chip.pix      { background: var(--teal-bg);   color: var(--teal);   }
+.pay-chip.dinheiro { background: var(--gray-bg);   color: var(--muted);  }
+.pay-chip.outros   { background: var(--purple-bg); color: var(--purple); }
 
-  /* ── File drop ── */
-  .file-drop { border:2px dashed var(--border); border-radius:var(--radius); padding:28px;
-    text-align:center; cursor:pointer; color:var(--muted); font-size:12px; margin-bottom:16px; }
-  .file-drop:hover { border-color:var(--accent,#3b82f6); color:var(--text); }
+/* ── Alert badges ───────────────────────────────────────────── */
+.badge {
+  display: inline-flex; align-items: center; gap: 3px;
+  padding: 2px 7px; border-radius: 10px; font-size: 10px; font-weight: 700; white-space: nowrap;
+}
+.badge-parc { background: var(--amber-bg);  color: var(--amber); }
+.badge-di   { background: var(--red-bg);    color: var(--red);   }
+.badge-dv   { background: var(--red-bg);    color: var(--red);   }
+.badge-ok   { background: var(--green-bg);  color: var(--green); }
+.badge-rede { background: var(--purple-bg); color: var(--purple);}
 
-  /* ── Misc ── */
-  .hidden { display:none !important; }
-  .spinner { display:inline-block; width:13px; height:13px; border:2px solid var(--muted);
-    border-top-color:var(--accent,#3b82f6); border-radius:50%; animation:spin .6s linear infinite; }
-  @keyframes spin { to { transform:rotate(360deg); } }
-  .cf-empty { padding:32px; text-align:center; color:var(--muted); }
-  .perc-bar { display:inline-block; height:4px; background:var(--accent,#3b82f6); border-radius:2px; opacity:.4; vertical-align:middle; margin-left:4px; }
+/* ── Drill-down ─────────────────────────────────────────────── */
+.drill-row td { padding: 0 !important; border-bottom: 2px solid var(--border) !important; }
+.drill-wrap {
+  background: #0a0a14; border-left: 3px solid var(--amber);
+  padding: 12px 0;
+}
+.drill-hdr {
+  padding: 4px 20px 8px; font-size: 10px; font-weight: 700;
+  color: var(--amber); text-transform: uppercase; letter-spacing: .5px;
+}
+.drill-tbl { width: 100%; border-collapse: collapse; }
+.drill-tbl th {
+  padding: 5px 14px 5px 20px; font-size: 10px; color: var(--muted);
+  font-weight: 600; text-transform: uppercase; letter-spacing: .3px;
+  border-bottom: 1px solid #ffffff0a; text-align: left;
+}
+.drill-tbl th.num, .drill-tbl td.num { text-align: right; }
+.drill-tbl td {
+  padding: 6px 14px 6px 20px; font-size: 11px; color: #ffffffb0;
+  border-bottom: 1px solid #ffffff06;
+}
+.drill-tbl tr:last-child td { border-bottom: none; }
+.drill-tbl td.disc-val { color: var(--amber); font-weight: 700; }
+.drill-tbl td.disc-zero { color: #ffffff30; }
+.disc-pct {
+  display: inline-block; background: var(--amber-bg); color: var(--amber);
+  border-radius: 4px; padding: 1px 5px; font-size: 10px; font-weight: 700; margin-left: 4px;
+}
+.drill-tbl tr.has-disc td:first-child::before {
+  content: '▸ '; color: var(--amber); font-size: 9px;
+}
+
+/* ── Grupo cards ────────────────────────────────────────────── */
+.grupo-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); overflow: hidden; margin-bottom: 10px;
+}
+.grupo-hdr {
+  display: flex; align-items: center; gap: 12px; padding: 12px 16px;
+  cursor: pointer; user-select: none; transition: background .12s;
+}
+.grupo-hdr:hover { background: var(--surface2, #1e1e1e); }
+.grupo-color { width: 4px; height: 32px; border-radius: 3px; flex-shrink: 0; }
+.grupo-title { font-weight: 700; font-size: 13px; flex: 1; }
+.grupo-meta { display: flex; gap: 16px; align-items: center; font-size: 11px; color: var(--muted); }
+.grupo-pct-bar {
+  height: 5px; background: var(--blue); border-radius: 3px; opacity: .5;
+  display: inline-block; vertical-align: middle; margin-left: 5px;
+}
+.grupo-total { font-weight: 800; font-size: 15px; margin-left: auto; }
+.grupo-chev { color: var(--muted); flex-shrink: 0; transition: transform .2s; }
+.grupo-chev.open { transform: rotate(90deg); }
+.grupo-body { display: none; border-top: 1px solid var(--border); }
+.grupo-body.open { display: block; }
+
+/* ── Conciliação / File drop ────────────────────────────────── */
+.file-drop {
+  border: 2px dashed var(--border); border-radius: var(--r);
+  padding: 32px; text-align: center; cursor: pointer; color: var(--muted);
+  font-size: 12px; margin-bottom: 18px; transition: border-color .15s, color .15s;
+}
+.file-drop:hover { border-color: var(--blue); color: var(--text); }
+
+/* ── Regras ─────────────────────────────────────────────────── */
+.regras-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
+.regra-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 16px; border-top: 3px solid var(--blue);
+}
+.regra-card h3 { margin: 0 0 12px; font-size: 12px; font-weight: 800; text-transform: uppercase; color: var(--blue); letter-spacing: .3px; }
+.rf { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
+.rf label { font-size: 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+.rf input {
+  background: var(--bg); border: 1px solid var(--border); color: var(--text);
+  padding: 6px 10px; border-radius: 6px; font-size: 13px; width: 100%;
+}
+.rf input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 2px var(--blue-bg); }
+
+/* ── Misc ───────────────────────────────────────────────────── */
+.hidden { display: none !important; }
+.spinner {
+  display: inline-block; width: 12px; height: 12px;
+  border: 2px solid var(--muted); border-top-color: var(--blue);
+  border-radius: 50%; animation: spin .6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.cf-empty { padding: 40px; text-align: center; color: var(--muted); font-size: 13px; }
+.chevron { width: 14px; height: 14px; flex-shrink: 0; transition: transform .18s; }
+.chevron.open { transform: rotate(90deg); }
+.total-row td { font-weight: 700; background: var(--gray-bg) !important; border-top: 1px solid var(--border); }
 </style>
 </head>
 <body>
 
+<!-- ── Topbar ── -->
 <div class="cf-topbar">
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-    <rect x="2" y="3" width="20" height="14" rx="2"/>
-    <line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
-    <polyline points="7 8 10 11 13 8"/>
+  <svg class="cf-topbar-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+    <rect x="2" y="5" width="20" height="14" rx="2"/>
+    <line x1="2" y1="10" x2="22" y2="10"/>
   </svg>
-  <h1>Conferência de Caixa — Escritório</h1>
-  <span class="cf-user" id="userLabel"></span>
+  <div>
+    <div class="cf-topbar h1" style="font-size:15px;font-weight:700;color:#fff;margin:0">Conferência de Caixa</div>
+    <div class="cf-topbar-sub">Escritório · Gestão de Lojas</div>
+  </div>
+  <div class="cf-user-chip">
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+    <span id="userLabel">—</span>
+  </div>
 </div>
 
+<!-- ── Tabs ── -->
 <div class="cf-tabs">
-  <button class="cf-tab active" data-tab="vendas">Vendas</button>
-  <button class="cf-tab" data-tab="conciliacao">Conciliação Rede</button>
-  <button class="cf-tab" data-tab="regras">Regras por Loja</button>
+  <button class="cf-tab active" data-tab="vendas">📊 Vendas</button>
+  <button class="cf-tab" data-tab="conciliacao">🔄 Conciliação Rede</button>
+  <button class="cf-tab" data-tab="regras">⚙️ Regras por Loja</button>
 </div>
 
-<!-- ══ VENDAS ════════════════════════════════════════════════════════════ -->
+<!-- ══ VENDAS ═══════════════════════════════════════════════════════════ -->
 <div class="cf-panel active" id="tab-vendas">
-  <div class="cf-filters">
-    <div class="cf-fgroup">
+  <div class="cf-filter-card">
+    <div class="cf-fg">
       <label>Loja</label>
       <select id="vBoard"></select>
     </div>
-    <div class="cf-fgroup">
+    <div class="cf-fg">
       <label>De</label>
       <input type="date" id="vDtIni"/>
     </div>
-    <div class="cf-fgroup">
+    <div class="cf-fg">
       <label>Até</label>
       <input type="date" id="vDtFin"/>
     </div>
-    <div class="cf-fgroup">
-      <label>&nbsp;</label>
-      <button class="btn-p" id="vBuscarBtn">Buscar</button>
-    </div>
-    <div class="cf-fgroup" style="margin-left:auto">
-      <label>Agrupar</label>
-      <div class="btn-grp">
-        <button class="btn-seg active" data-grupo="lista">Lista</button>
-        <button class="btn-seg" data-grupo="forma">Forma Pgto</button>
-        <button class="btn-seg" data-grupo="vendedor">Vendedor</button>
-      </div>
+    <button class="btn-primary" id="vBuscarBtn">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Buscar
+    </button>
+    <div class="grp-btns" style="margin-left:auto">
+      <button class="btn-grp active" data-grupo="lista">Lista</button>
+      <button class="btn-grp" data-grupo="forma">Forma Pgto</button>
+      <button class="btn-grp" data-grupo="vendedor">Vendedor</button>
     </div>
   </div>
-  <div id="vSummary"></div>
+  <div id="vStats"></div>
   <div id="vResult"></div>
 </div>
 
 <!-- ══ CONCILIAÇÃO REDE ══════════════════════════════════════════════════ -->
 <div class="cf-panel" id="tab-conciliacao">
-  <div class="cf-filters">
-    <div class="cf-fgroup">
-      <label>Loja</label>
-      <select id="cBoard"></select>
-    </div>
-    <div class="cf-fgroup">
-      <label>De</label>
-      <input type="date" id="cDtIni"/>
-    </div>
-    <div class="cf-fgroup">
-      <label>Até</label>
-      <input type="date" id="cDtFin"/>
-    </div>
+  <div class="cf-filter-card">
+    <div class="cf-fg"><label>Loja</label><select id="cBoard"></select></div>
+    <div class="cf-fg"><label>De</label><input type="date" id="cDtIni"/></div>
+    <div class="cf-fg"><label>Até</label><input type="date" id="cDtFin"/></div>
   </div>
   <div class="file-drop" id="fileDrop">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="display:block;margin:0 auto 8px">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="display:block;margin:0 auto 10px;opacity:.5">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
       <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
     </svg>
-    Arraste o arquivo da Rede aqui ou <strong>clique para selecionar</strong>
-    <div style="font-size:10px;margin-top:4px;color:var(--muted)">Excel (.xlsx, .xls) ou CSV</div>
+    <div style="font-weight:600;margin-bottom:4px">Arraste o arquivo da Rede aqui</div>
+    <div style="font-size:11px">ou <strong>clique para selecionar</strong> — Excel (.xlsx, .xls) ou CSV</div>
     <input type="file" id="redeFile" accept=".xlsx,.xls,.csv" style="display:none"/>
   </div>
   <div id="cResult"></div>
@@ -197,9 +334,12 @@
 
 <!-- ══ REGRAS ════════════════════════════════════════════════════════════ -->
 <div class="cf-panel" id="tab-regras">
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
-    <p style="margin:0;font-size:12px;color:var(--muted)">Configure os limites por loja. Valor 0 desativa a verificação.</p>
-    <button class="btn-p" id="salvarRegrasBtn" style="margin-left:auto">Salvar</button>
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+    <div>
+      <div style="font-weight:700;font-size:14px">Regras por Loja</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:2px">Configure limites de parcela e desconto. Valor 0 desativa a verificação.</div>
+    </div>
+    <button class="btn-primary" id="salvarRegrasBtn" style="margin-left:auto">💾 Salvar</button>
   </div>
   <div class="regras-grid" id="regrasGrid"></div>
 </div>
