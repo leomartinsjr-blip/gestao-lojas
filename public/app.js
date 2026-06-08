@@ -3310,9 +3310,25 @@ function renderTransExcelTab(container) {
       }
 
       // Compara datas DD/MM/YYYY: retorna negativo/0/positivo
+      const todayUTC = Date.now();
       function cmpDateBR(a, b) {
         const toMs = d => { const [dd,mm,yy] = d.split('/'); return Date.UTC(+yy,+mm-1,+dd); };
         return toMs(a) - toMs(b);
+      }
+
+      // Corrige datas futuras com dia<=12: o XLSX leu DD/MM como MM/DD e trocou dia/mês
+      function fixFutureDate(dateStr) {
+        if (!dateStr) return dateStr;
+        const [dd, mm, yy] = dateStr.split('/').map(Number);
+        if (dd > 12) return dateStr; // dia inequívoco, não há troca possível
+        if (Date.UTC(yy, mm-1, dd) <= todayUTC) return dateStr; // já é passado, OK
+        // Data futura com dia ambíguo — XLSX provavelmente trocou dia↔mês
+        if (mm <= 31 && dd <= 12) {
+          const swapped = Date.UTC(yy, dd-1, mm);
+          if (swapped <= todayUTC) // versão trocada é passado → usar ela
+            return `${String(mm).padStart(2,'0')}/${String(dd).padStart(2,'0')}/${yy}`;
+        }
+        return dateStr;
       }
 
       // Passo 2: extrai dados — suporta aba única (dados na mesma aba do header) e multi-aba
@@ -3336,7 +3352,7 @@ function renderTransExcelTab(container) {
           if (!cod) continue;
           if (!products[cod]) {
             const _rawDate = r[colUltimaCompra];
-            const ultimaCompra = parseExcelDate(_rawDate);
+            const ultimaCompra = fixFutureDate(parseExcelDate(_rawDate));
             if (Object.keys(products).length < 5) {
               console.log(`[DateRaw] cod=${cod} | tipo=${typeof _rawDate} | raw=`, _rawDate, '| parsed=', ultimaCompra);
             }
