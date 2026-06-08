@@ -6592,18 +6592,18 @@ app.put('/api/conferencia/regras', requireEscritorioOrAdmin, async (req, res) =>
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/conferencia/alertas?board=delrey&dtIni=2026-06-01&dtFin=2026-06-08
-// Retorna vendas com alertas de parcela mínima e desconto abusivo
-app.get('/api/conferencia/alertas', requireEscritorioOrAdmin, async (req, res) => {
+// GET /api/conferencia/vendas?board=delrey&dtIni=2026-06-01&dtFin=2026-06-08
+// Retorna TODAS as vendas do período com formas de pagamento, vendedor e alertas de regra
+app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) => {
   try {
     const { board, dtIni, dtFin } = req.query;
     if (!board || !dtIni || !dtFin) return res.status(400).json({ error: 'board, dtIni e dtFin obrigatórios' });
 
     const db    = await readDB();
     const regra = (db.confRegras || {})[board] || {};
-    const parcelaMin    = parseFloat(regra.parcelaMin    || 0);
-    const descontoMaxItem  = parseFloat(regra.descontoMaxItem  || 100);
-    const descontoMaxVenda = parseFloat(regra.descontoMaxVenda || 100);
+    const parcelaMin      = parseFloat(regra.parcelaMin      || 0);
+    const descontoMaxItem = parseFloat(regra.descontoMaxItem || 100);
+    const descontoMaxVenda= parseFloat(regra.descontoMaxVenda|| 100);
 
     const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const cnpj  = lojas[board];
@@ -6611,139 +6611,263 @@ app.get('/api/conferencia/alertas', requireEscritorioOrAdmin, async (req, res) =
     const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
     const cnpjClean = cnpj.replace(/\D/g, '');
 
-    const { fetchMovimento, fetchMovimentoPlanos, fetchMovimentoItens, parseBrNum } = require('./services/microvix');
+    const { fetchMovimento, fetchMovimentoPlanos, fetchMovimentoItens, fetchMovimentoCartoes,
+            fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchVendedores, parseBrNum } = require('./services/microvix');
 
-    const [movRows, planoRows, itemRows] = await Promise.all([
+    const [movRows, planoRows, itemRows, cartoesRows, planosCatalog, bandeirasCatalog, vendedoresRows] = await Promise.all([
       fetchMovimento(cnpj, dtIni, dtFin, chave),
       fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave).catch(() => []),
       fetchMovimentoItens(cnpj, dtIni, dtFin, chave).catch(() => []),
+      fetchMovimentoCartoes(cnpj, dtIni, dtFin, chave).catch(() => []),
+      fetchLinxPlanos(cnpj, chave).catch(() => []),
+      fetchLinxPlanosBandeiras(cnpj, chave).catch(() => []),
+      fetchVendedores(cnpj, chave).catch(() => []),
     ]);
 
     const parseBR = s => parseFloat(String(s || '').replace(/\./g, '').replace(',', '.')) || 0;
 
-    // Mapa de documentos válidos
+    // Catálogos
+    const vendNomeCache = {};
+    for (const v of vendedoresRows) {
+      const cod = String(v.cod_vendedor || v.codigo || '').trim();
+      const nome = (v.nome_vendedor || v.nome || '').trim();
+      if (cod && nome) vendNomeCache[cod] = nome;
+    }
+    const planoNomeMap = {};
+    for (const p of planosCatalog) {
+      const cod  = String(p.cod_plano || p.codigo || p.id || '').trim();
+      const nome = (p.descricao || p.desc_plano || p.nome || '').trim();
+      if (cod && nome) planoNomeMap[cod] = nome;
+    }
+    const bandeiraNomeMap = {};
+    for (const b of bandeirasCatalog) {
+      const cod  = String(b.cod_bandeira || b.id_bandeira || b.cod || '').trim();
+      const nome = (b.desc_bandeira || b.nome_bandeira || b.bandeira || b.nome || '').trim();
+      if (cod && nome) bandeiraNomeMap[cod] = nome;
+    }
+
+    function extractBandeira(descPlano) {
+      const d = (descPlano || '').toUpperCase();
+      if (/MAESTRO/.test(d))              return 'Maestro';
+      if (/MASTER/.test(d))               return 'Mastercard';
+      if (/VISA/.test(d))                 return 'Visa';
+      if (/\bELO\b/.test(d))              return 'Elo';
+      if (/AMEX|AMERICAN EXPRESS/.test(d))return 'Amex';
+      if (/HIPERCARD|HIPER/.test(d))      return 'Hipercard';
+      if (/DINERS/.test(d))               return 'Diners';
+      if (/ALELO/.test(d))                return 'Alelo';
+      if (/SODEXO/.test(d))               return 'Sodexo';
+      if (/\bVR\b/.test(d))               return 'VR';
+      return '';
+    }
+    function buildForma(formaPgto, tipoTransacao, descPlano) {
+      const f = (formaPgto || '').trim();
+      const t = (tipoTransacao || '').trim().toUpperCase();
+      const d = (descPlano   || '').toUpperCase();
+      if (/pix/i.test(f) || /\bpix\b/.test(d)) return 'PIX';
+      if (t === 'C') return 'Cartão Crédito';
+      if (t === 'D') return 'Cartão Débito';
+      if (/cart[aã]o/i.test(f)) return 'Cartão Crédito';
+      if (/d[eé]bito/i.test(f)) return 'Cartão Débito';
+      if (/cr[eé]dito/i.test(f))return 'Cartão Crédito';
+      return f || 'Outros';
+    }
+
+    // ── Processar LinxMovimento ─────────────────────────────────────────────
     const identMap = {};
-    const docSet   = new Set();
-    const docInfo  = {}; // doc → { vendedor, data, hora, valor }
+    const seenDocs = new Set();
+    const docMap   = {}; // doc → { doc, data, hora, valorTotal, vendedorCod, vendedorNome, formas[], alertas[] }
+
     for (const r of movRows) {
       const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
       if (rowCnpj && rowCnpj !== cnpjClean) continue;
       if (r.cancelado === 'S' || r.cancelado === '1') continue;
-      const op   = (r.operacao || '').trim().toUpperCase();
+      const op    = (r.operacao || '').trim().toUpperCase();
       if (op !== 'S' && op !== 'DS') continue;
       const serie = String(r.serie || r.serie_documento || '').trim();
       if (serie === '999' || (serie === '4' && op !== 'DS')) continue;
       const doc   = String(r.documento || '').trim();
       const ident = String(r.identificador || '').trim();
-      if (!doc) continue;
-      docSet.add(doc);
+      if (!doc || seenDocs.has(doc)) continue;
+      seenDocs.add(doc);
       if (ident) identMap[ident] = doc;
+
       const sign = op === 'DS' ? -1 : 1;
-      docInfo[doc] = {
+      const cod  = String(r.cod_vendedor || '').trim();
+      const nome = (r.nome_vendedor || '').trim();
+      docMap[doc] = {
         doc,
-        vendedor: (r.nome_vendedor || r.cod_vendedor || '').trim(),
-        data:     String(r.data || r.data_movimento || '').trim().slice(0, 10),
-        hora:     String(r.hora || '').trim().slice(0, 5),
-        valorTotal: sign * parseBR(r.valor_total || r.total_liquido || '0'),
-        alertas:  [],
+        data:         String(r.data || r.data_movimento || '').trim().slice(0, 10),
+        hora:         String(r.hora || '').trim().slice(0, 5),
+        valorTotal:   sign * parseBR(r.valor_total || r.total_liquido || '0'),
+        vendedorCod:  cod,
+        vendedorNome: vendNomeCache[cod] || nome || cod,
+        formas:  [],
+        alertas: [],
+        codPlano: String(r.cod_plano || r.plano || '').trim(),
       };
     }
 
-    // ── Parcela mínima via LinxMovimentoPlanos ─────────────────────────────
+    // ── Formas de pagamento via LinxMovimentoPlanos ─────────────────────────
+    const docFormaMap = {};
+    for (const r of planoRows) {
+      const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+      if (rowCnpj && rowCnpj !== cnpjClean) continue;
+      const ident = String(r.identificador || '').trim();
+      const doc   = (ident && identMap[ident]) || String(r.documento || '').trim();
+      if (!doc || !docMap[doc]) continue;
+      const sign    = docMap[doc].valorTotal < 0 ? -1 : 1;
+      const descP   = (r.desc_plano || '').trim();
+      const forma   = buildForma(r.forma_pgto, r.tipo_transacao, descP);
+      const isPix   = forma === 'PIX';
+      const isCard  = !isPix && /(C|D)/.test((r.tipo_transacao || '').toUpperCase());
+      const bandeira= isCard ? extractBandeira(descP) : '';
+      const valor   = parseBR(r.total || r.valor || r.valor_plano || '0');
+      if (valor === 0) continue;
+      if (!docFormaMap[doc]) docFormaMap[doc] = [];
+      docFormaMap[doc].push({ forma, bandeira, descPlano: descP, valor: sign * valor, tipoTrans: (r.tipo_transacao || '').toUpperCase() });
+    }
+
+    // Fallback: LinxMovimentoCartoes (sobrescreve bandeiras de cartão)
+    for (const r of cartoesRows) {
+      const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+      if (rowCnpj && rowCnpj !== cnpjClean) continue;
+      const doc = String(r.cupomfiscal || r.documento || '').trim();
+      if (!doc || !docMap[doc]) continue;
+      const cd       = String(r.credito_debito || '').trim().toUpperCase();
+      const forma    = cd === 'D' ? 'Cartão Débito' : 'Cartão Crédito';
+      const bandeira = (r.descricao_bandeira || r.bandeira || '').trim();
+      const valor    = parseBR(r.valor || '0');
+      if (valor === 0) continue;
+      const sign = docMap[doc].valorTotal < 0 ? -1 : 1;
+      const existing = (docFormaMap[doc] || []).filter(f => !/cart[aã]o/i.test(f.forma));
+      if (!docFormaMap[doc]) docFormaMap[doc] = [...existing];
+      else docFormaMap[doc] = existing;
+      docFormaMap[doc].push({ forma, bandeira, descPlano: bandeira, valor: sign * valor, tipoTrans: cd });
+    }
+
+    // Popula formas em cada doc
+    for (const [doc, formas] of Object.entries(docFormaMap)) {
+      if (docMap[doc]) docMap[doc].formas = formas;
+    }
+    // Docs sem formas: usa cod_plano como fallback
+    for (const d of Object.values(docMap)) {
+      if (d.formas.length === 0 && d.codPlano && planoNomeMap[d.codPlano]) {
+        const nome = planoNomeMap[d.codPlano];
+        d.formas = [{ forma: nome, bandeira: '', descPlano: nome, valor: d.valorTotal, tipoTrans: '' }];
+      }
+    }
+
+    // ── Alertas: parcela mínima ─────────────────────────────────────────────
     if (parcelaMin > 0) {
       for (const r of planoRows) {
         const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
         if (rowCnpj && rowCnpj !== cnpjClean) continue;
         const ident = String(r.identificador || '').trim();
         const doc   = (ident && identMap[ident]) || String(r.documento || '').trim();
-        if (!doc || !docSet.has(doc)) continue;
-
-        const descPlano = (r.desc_plano || '').toUpperCase();
-        const tipoTrans = (r.tipo_transacao || '').toUpperCase();
-        if (tipoTrans !== 'C') continue; // só crédito tem parcelas
-
-        // Extrai número de parcelas do desc_plano: "MASTER 3X" → 3
-        const mParcela = descPlano.match(/\b(\d+)\s*X\b/);
-        const numParcelas = mParcela ? parseInt(mParcela[1]) : 1;
-        if (numParcelas <= 1) continue; // à vista não tem mínimo de parcela
-
-        const valorPlano = parseBR(r.total || r.valor || r.valor_plano || '0');
-        const valorParcela = valorPlano / numParcelas;
-
-        if (valorParcela < parcelaMin && valorParcela > 0) {
-          if (docInfo[doc]) {
-            docInfo[doc].alertas.push({
-              tipo: 'parcela_minima',
-              plano: r.desc_plano,
-              numParcelas,
-              valorPlano,
-              valorParcela: +valorParcela.toFixed(2),
-              parcelaMin,
-              msg: `Parcela de R$ ${valorParcela.toFixed(2)} abaixo do mínimo de R$ ${parcelaMin.toFixed(2)} (${numParcelas}x em ${r.desc_plano})`,
-            });
-          }
+        if (!doc || !docMap[doc]) continue;
+        if ((r.tipo_transacao || '').toUpperCase() !== 'C') continue;
+        const mP = (r.desc_plano || '').toUpperCase().match(/\b(\d+)\s*X\b/);
+        const nP = mP ? parseInt(mP[1]) : 1;
+        if (nP <= 1) continue;
+        const vlrPlano = parseBR(r.total || r.valor || r.valor_plano || '0');
+        const vlrParc  = vlrPlano / nP;
+        if (vlrParc < parcelaMin && vlrParc > 0) {
+          docMap[doc].alertas.push({
+            tipo: 'parcela_minima',
+            msg:  `Parcela de R$ ${vlrParc.toFixed(2)} abaixo do mínimo (${nP}x em ${r.desc_plano})`,
+          });
         }
       }
     }
 
-    // ── Desconto abusivo via LinxMovimentoItens ────────────────────────────
-    // Agrupa itens por documento
+    // ── Alertas: desconto por item e por venda ──────────────────────────────
     const itensPorDoc = {};
     for (const r of itemRows) {
       const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
       if (rowCnpj && rowCnpj !== cnpjClean) continue;
       const doc = String(r.documento || '').trim();
-      if (!doc || !docSet.has(doc)) continue;
+      if (!doc || !docMap[doc]) continue;
       if (!itensPorDoc[doc]) itensPorDoc[doc] = [];
       itensPorDoc[doc].push(r);
     }
 
     for (const [doc, itens] of Object.entries(itensPorDoc)) {
-      if (!docInfo[doc]) continue;
-      let totalBruto = 0, totalDesconto = 0;
-
+      let totalBruto = 0, totalDesc = 0;
       for (const item of itens) {
-        const vlrBruto    = parseBR(item.valor_bruto    || item.preco_unitario || '0') * parseBR(item.quantidade || '1');
-        const vlrDesconto = parseBR(item.valor_desconto || '0');
-        const percItem    = vlrBruto > 0 ? (vlrDesconto / vlrBruto) * 100 : 0;
-
-        totalBruto    += vlrBruto;
-        totalDesconto += vlrDesconto;
-
-        if (descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesconto > 0) {
-          docInfo[doc].alertas.push({
-            tipo:       'desconto_item',
-            produto:    (item.descricao || item.nome_produto || item.cod_produto || '').trim(),
-            vlrBruto:   +vlrBruto.toFixed(2),
-            vlrDesconto:+vlrDesconto.toFixed(2),
-            percDesconto: +percItem.toFixed(1),
-            descontoMax: descontoMaxItem,
-            msg: `Item "${(item.descricao || item.cod_produto || '').trim()}" com ${percItem.toFixed(1)}% de desconto (máx ${descontoMaxItem}%)`,
+        const vlrBruto = parseBR(item.valor_bruto || item.preco_unitario || '0') * parseBR(item.quantidade || '1');
+        const vlrDesc  = parseBR(item.valor_desconto || '0');
+        const percItem = vlrBruto > 0 ? (vlrDesc / vlrBruto) * 100 : 0;
+        totalBruto += vlrBruto; totalDesc += vlrDesc;
+        if (descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {
+          docMap[doc].alertas.push({
+            tipo: 'desconto_item',
+            msg:  `Item "${(item.descricao || item.cod_produto || '').trim()}" com ${percItem.toFixed(1)}% desc (máx ${descontoMaxItem}%)`,
           });
         }
       }
-
-      // Alerta de desconto total da venda
-      if (descontoMaxVenda < 100 && totalBruto > 0) {
-        const percVenda = (totalDesconto / totalBruto) * 100;
-        if (percVenda > descontoMaxVenda && totalDesconto > 0) {
-          docInfo[doc].alertas.push({
-            tipo:        'desconto_venda',
-            totalBruto:  +totalBruto.toFixed(2),
-            totalDesconto: +totalDesconto.toFixed(2),
-            percDesconto:  +percVenda.toFixed(1),
-            descontoMax:   descontoMaxVenda,
-            msg: `Venda com ${percVenda.toFixed(1)}% de desconto total (máx ${descontoMaxVenda}%)`,
+      if (descontoMaxVenda < 100 && totalBruto > 0 && totalDesc > 0) {
+        const percV = (totalDesc / totalBruto) * 100;
+        if (percV > descontoMaxVenda) {
+          docMap[doc].alertas.push({
+            tipo: 'desconto_venda',
+            msg:  `Desconto total ${percV.toFixed(1)}% na venda (máx ${descontoMaxVenda}%)`,
           });
         }
+      }
+      // Desconto total da venda em R$ e % para exibição mesmo sem alerta
+      if (totalDesc > 0) {
+        docMap[doc].desconto = { valor: +totalDesc.toFixed(2), perc: totalBruto > 0 ? +((totalDesc/totalBruto)*100).toFixed(1) : 0 };
       }
     }
 
-    const vendas = Object.values(docInfo)
-      .filter(v => v.alertas.length > 0)
-      .sort((a, b) => (a.data + a.hora).localeCompare(b.data + b.hora));
+    // ── Montar lista e agrupamentos ─────────────────────────────────────────
+    const vendas = Object.values(docMap)
+      .filter(v => v.valorTotal > 0)
+      .sort((a, b) => (a.data + a.hora).localeCompare(b.data + b.hora))
+      .map(v => ({
+        doc:         v.doc,
+        data:        v.data,
+        hora:        v.hora,
+        vendedor:    v.vendedorNome || v.vendedorCod || '—',
+        valorTotal:  v.valorTotal,
+        formas:      v.formas,
+        desconto:    v.desconto || null,
+        alertas:     v.alertas,
+      }));
 
-    res.json({ board, dtIni, dtFin, regra, total: vendas.length, vendas });
+    // Agrupamento por forma de pagamento
+    const porForma = {};
+    for (const v of vendas) {
+      const formasDoc = v.formas.length ? v.formas : [{ forma: 'Sem informação', bandeira: '', valor: v.valorTotal }];
+      for (const f of formasDoc) {
+        const key = f.bandeira ? `${f.forma} / ${f.bandeira}` : f.forma;
+        if (!porForma[key]) porForma[key] = { label: key, forma: f.forma, bandeira: f.bandeira, total: 0, qtd: 0, vendas: [] };
+        porForma[key].total += f.valor;
+        porForma[key].qtd   += 1;
+        if (!porForma[key].vendas.find(x => x.doc === v.doc)) porForma[key].vendas.push(v);
+      }
+    }
+
+    // Agrupamento por vendedor
+    const porVendedor = {};
+    for (const v of vendas) {
+      const key = v.vendedor || '—';
+      if (!porVendedor[key]) porVendedor[key] = { label: key, total: 0, qtd: 0, vendas: [] };
+      porVendedor[key].total += v.valorTotal;
+      porVendedor[key].qtd   += 1;
+      porVendedor[key].vendas.push(v);
+    }
+
+    res.json({
+      board, dtIni, dtFin, regra,
+      totalVendas: vendas.reduce((s, v) => s + v.valorTotal, 0),
+      totalAlertas: vendas.filter(v => v.alertas.length > 0).length,
+      qtdVendas: vendas.length,
+      vendas,
+      porForma:    Object.values(porForma).sort((a, b) => b.total - a.total),
+      porVendedor: Object.values(porVendedor).sort((a, b) => b.total - a.total),
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

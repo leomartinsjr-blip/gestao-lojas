@@ -44,6 +44,13 @@
   .status-div { color:#ef4444; font-size:11px; font-weight:600; }
   .status-mx { color:#f59e0b; font-size:11px; }
   .status-rede { color:#8b5cf6; font-size:11px; }
+  .row-alerta td { background:#f59e0b08; }
+  .grupo-row:hover td { background:var(--surface,#1e1e1e); cursor:pointer; }
+  .grupo-btn { background:var(--surface2,#2a2a2a); color:var(--muted); border:1px solid var(--border); padding:5px 12px; border-radius:5px; font-size:12px; cursor:pointer; }
+  .grupo-btn.active { background:var(--accent,#3b82f6); color:#fff; border-color:var(--accent,#3b82f6); }
+  .chevron { transition:transform .2s; display:inline-block; }
+  .chevron.open { transform:rotate(90deg); }
+  .hidden { display:none !important; }
   .summary-bar { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:16px; }
   .summary-chip { background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:8px 14px; font-size:12px; }
   .summary-chip strong { display:block; font-size:18px; font-weight:700; }
@@ -81,7 +88,7 @@
   <div class="regras-grid" id="regrasGrid"></div>
 </div>
 
-<!-- ── PAINEL: ALERTAS ───────────────────────────────────────────────── -->
+<!-- ── PAINEL: VENDAS ─────────────────────────────────────────────────── -->
 <div class="conf-panel" id="tab-alertas">
   <div class="form-row">
     <div class="form-group">
@@ -99,6 +106,14 @@
     <div class="form-group">
       <label>&nbsp;</label>
       <button class="btn-primary" id="buscarAlertasBtn">Buscar</button>
+    </div>
+    <div class="form-group" style="margin-left:auto">
+      <label>Agrupar por</label>
+      <div style="display:flex;gap:4px">
+        <button class="grupo-btn active" data-grupo="lista">Lista</button>
+        <button class="grupo-btn" data-grupo="forma">Forma Pgto</button>
+        <button class="grupo-btn" data-grupo="vendedor">Vendedor</button>
+      </div>
     </div>
   </div>
   <div id="alertasResult"></div>
