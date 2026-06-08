@@ -7096,23 +7096,26 @@ app.get('/api/conferencia/debug', requireEscritorioOrAdmin, async (req, res) => 
     // Para cada doc, mostra campos-chave e o que seria calculado
     const docsSample = Object.entries(docsRaw).slice(0, 5).map(([doc, d]) => {
       const computed_itens = d.linhas_mov.map(r => {
-        const qty     = parseBR(r.quantidade||'1');
-        const vlrUnit = parseBR(r.preco_tabela_epoca||r.preco_unitario||'0');
-        const vlrLiq  = parseBR(r.preco_unitario||r.valor_liquido||'0');
-        const vlrDesc = parseBR(r.desconto_item||r.desconto_total_item||'0');
+        const qty      = parseBR(r.quantidade||'1');
+        const vlrUnit  = parseBR(r.preco_tabela_epoca||r.preco_unitario||'0');
+        const vlrLiq   = parseBR(r.preco_unitario||r.valor_liquido||'0');
+        const vlrDesc  = parseBR(r.desconto_item||r.desconto_total_item||'0');
+        const vlrCusto = parseBR(r.preco_custo||'0');
+        const cmvItem  = vlrLiq > 0 ? (vlrCusto / vlrLiq * 100).toFixed(1) : '—';
         return {
-          cod_produto:        r.cod_produto,
-          quantidade:         r.quantidade,
-          preco_tabela_epoca: r.preco_tabela_epoca,   // bruto unitário usado
-          preco_unitario:     r.preco_unitario,        // líquido unitário usado
-          desconto_item:      r.desconto_item,         // desconto usado
-          desconto_total_item:r.desconto_total_item,
-          desconto:           r.desconto,
-          valor_liquido:      r.valor_liquido,
-          '→ vlrUnitBruto':   vlrUnit.toFixed(2),
-          '→ vlrBruto(×qtd)': (vlrUnit*qty).toFixed(2),
-          '→ vlrDesconto':    vlrDesc.toFixed(2),
-          '→ vlrLiquido(×qtd)':(vlrLiq*qty).toFixed(2),
+          cod_produto:          r.cod_produto,
+          quantidade:           r.quantidade,
+          preco_tabela_epoca:   r.preco_tabela_epoca,
+          preco_unitario:       r.preco_unitario,
+          preco_custo:          r.preco_custo,
+          custo_medio_epoca:    r.custo_medio_epoca,
+          desconto_item:        r.desconto_item,
+          '→ vlrUnitBruto':     vlrUnit.toFixed(2),
+          '→ vlrLiq(unit)':     vlrLiq.toFixed(2),
+          '→ vlrLiq(×qtd)':     (vlrLiq*qty).toFixed(2),
+          '→ vlrCusto(unit)':   vlrCusto.toFixed(2),
+          '→ vlrCusto(×qtd)':   (vlrCusto*qty).toFixed(2),
+          '→ CMV_item(%)':      cmvItem + '%  [preco_custo÷preco_unitario]',
         };
       });
       const totalCalc = computed_itens.reduce((s,i) => s + parseFloat(i['→ vlrLiquido(×qtd)']), 0);
