@@ -311,6 +311,18 @@ td.muted { color: var(--muted); }
   </div>
   <div id="vStats"></div>
   <div id="vResult"></div>
+
+  <!-- Debug panel -->
+  <div style="margin-top:24px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+      <span style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px">🛠 Debug Microvix</span>
+      <button id="debugBtn" style="background:var(--surface);border:1px solid var(--border);color:var(--muted);padding:4px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-family:var(--font)">Carregar amostras brutas</button>
+      <span id="debugStatus" style="font-size:11px;color:var(--muted)"></span>
+    </div>
+    <div id="debugPanel" class="hidden">
+      <div id="debugContent" style="background:#0a0a14;border:1px solid var(--border);border-radius:8px;padding:14px;font-family:monospace;font-size:11px;color:#a0c4ff;overflow-x:auto;white-space:pre;max-height:500px;overflow-y:auto"></div>
+    </div>
+  </div>
 </div>
 
 <!-- ══ CONCILIAÇÃO REDE ══════════════════════════════════════════════════ -->

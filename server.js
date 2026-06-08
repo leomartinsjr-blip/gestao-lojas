@@ -6717,7 +6717,8 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
 
       // Cada linha do LinxMovimento é um item da venda
       const qty     = parseBR(r.quantidade || '1');
-      const vlrDesc = parseBR(r.desconto || '0');
+      // desconto_total_item é o campo correto; desconto como fallback
+      const vlrDesc = parseBR(r.desconto_total_item || r.desconto || '0');
       // valor_liquido = total líquido do item (após desconto)
       const vlrLiq  = parseBR(r.valor_liquido || '0');
       // total bruto = líquido + desconto (assim não depende de preco_cheio/preco_unitario)
@@ -6897,6 +6898,31 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       vendas,
       porForma:    Object.values(porForma).sort((a, b) => b.total - a.total),
       porVendedor: Object.values(porVendedor).sort((a, b) => b.total - a.total),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/conferencia/debug?board=delrey&dtIni=2026-06-01&dtFin=2026-06-01
+// Retorna amostras brutas das tabelas Microvix para conferir campos
+app.get('/api/conferencia/debug', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { board, dtIni, dtFin } = req.query;
+    if (!board || !dtIni || !dtFin) return res.status(400).json({ error: 'board, dtIni, dtFin obrigatórios' });
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = lojas[board];
+    if (!cnpj) return res.status(400).json({ error: `Loja "${board}" não configurada` });
+    const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const { fetchMovimento, fetchMovimentoPlanos, fetchMovimentoCartoes } = require('./services/microvix');
+    const [movRows, planoRows, cartoesRows] = await Promise.all([
+      fetchMovimento(cnpj, dtIni, dtFin, chave).catch(e => ({ error: e.message })),
+      fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave).catch(e => ({ error: e.message })),
+      fetchMovimentoCartoes(cnpj, dtIni, dtFin, chave).catch(e => ({ error: e.message })),
+    ]);
+    const sample = arr => Array.isArray(arr) ? arr.slice(0, 5) : arr;
+    res.json({
+      movimento:        { total: Array.isArray(movRows) ? movRows.length : 'erro', amostra: sample(movRows) },
+      movimentoPlanos:  { total: Array.isArray(planoRows) ? planoRows.length : 'erro', amostra: sample(planoRows) },
+      movimentoCartoes: { total: Array.isArray(cartoesRows) ? cartoesRows.length : 'erro', amostra: sample(cartoesRows) },
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

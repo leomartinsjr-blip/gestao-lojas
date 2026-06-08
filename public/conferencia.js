@@ -417,4 +417,36 @@
   });
 
   loadRegras();
+
+  // ════════════════════════════════════════════════════════════════════════
+  // DEBUG
+  // ════════════════════════════════════════════════════════════════════════
+  $('debugBtn').addEventListener('click', async () => {
+    const board=$('vBoard').value, dtIni=$('vDtIni').value, dtFin=$('vDtFin').value;
+    if (!board||!dtIni||!dtFin) return alert('Selecione loja e período primeiro.');
+    const btn=$('debugBtn'), status=$('debugStatus'), panel=$('debugPanel'), content=$('debugContent');
+    btn.disabled=true; status.textContent='Carregando…';
+    try {
+      const data = await api('GET', `/api/conferencia/debug?board=${board}&dtIni=${dtIni}&dtFin=${dtFin}`);
+      const fmt = (label, obj) => {
+        const total = obj.total;
+        const rows  = obj.amostra || [];
+        const keys  = rows.length ? Object.keys(rows[0]) : [];
+        let out = `══ ${label} (${total} linhas) ══\nCampos: ${keys.join(', ')}\n\n`;
+        rows.forEach((r,i) => {
+          out += `--- Linha ${i+1} ---\n`;
+          keys.forEach(k => { out += `  ${k.padEnd(28)} ${JSON.stringify(r[k])}\n`; });
+          out += '\n';
+        });
+        return out;
+      };
+      content.textContent = fmt('LinxMovimento', data.movimento)
+                          + fmt('LinxMovimentoPlanos', data.movimentoPlanos)
+                          + fmt('LinxMovimentoCartoes', data.movimentoCartoes);
+      panel.classList.remove('hidden');
+      status.textContent = `✓ ${data.movimento.total} mov · ${data.movimentoPlanos.total} planos · ${data.movimentoCartoes.total} cartões`;
+    } catch(e) {
+      status.textContent = '⚠ ' + e.message;
+    } finally { btn.disabled=false; }
+  });
 })();
