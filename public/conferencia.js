@@ -38,7 +38,7 @@
   // ════════════════════════════════════════════════════════════════════════
   // VENDAS
   // ════════════════════════════════════════════════════════════════════════
-  let _data = null, _grupo = 'lista';
+  let _data = null, _grupo = 'lista', _filtroAlerta = false;
 
   $('vBuscarBtn').addEventListener('click', buscarVendas);
   document.querySelectorAll('.btn-grp').forEach(btn => btn.addEventListener('click', () => {
@@ -87,9 +87,9 @@
           <div><div class="stat-val" style="font-size:16px;color:var(--amber)">${fmtR(totalDesc)}</div><div class="stat-lbl">Total Descontos (${comDesc} vendas)</div></div>
         </div>
         ${totalAlertas ? `
-        <div class="stat-card">
+        <div class="stat-card stat-card-btn${_filtroAlerta ? ' stat-card-active' : ''}" id="btnFiltroAlerta" title="Clique para filtrar vendas com alerta" style="cursor:pointer">
           <div class="stat-icon red">⚠</div>
-          <div><div class="stat-val" style="color:var(--red)">${totalAlertas}</div><div class="stat-lbl">Com Alertas</div></div>
+          <div><div class="stat-val" style="color:var(--red)">${totalAlertas}</div><div class="stat-lbl">Com Alertas${_filtroAlerta ? ' ✕' : ''}</div></div>
         </div>` : ''}
         ${data.regra?.parcelaMin ? `
         <div class="stat-card">
@@ -98,16 +98,23 @@
         </div>` : ''}
       </div>`;
 
+    const btnFA = document.getElementById('btnFiltroAlerta');
+    if (btnFA) btnFA.addEventListener('click', () => { _filtroAlerta = !_filtroAlerta; render(_data); });
+
     const el = $('vResult');
     if (!qtdVendas) { el.innerHTML='<div class="cf-empty">Nenhuma venda encontrada no período.</div>'; return; }
 
     if (_grupo==='forma')    { el.innerHTML = renderGrupos(porForma,    totalVendas, 'blue');   bindDrills(el); return; }
     if (_grupo==='vendedor') { el.innerHTML = renderGrupos(porVendedor, totalVendas, 'purple'); bindDrills(el); return; }
 
+    const vendasFiltradas = _filtroAlerta ? vendas.filter(v => v.alertas && v.alertas.length > 0) : vendas;
+    const hdr = _filtroAlerta
+      ? `${vendasFiltradas.length} venda(s) com alerta de ${qtdVendas} total`
+      : `${qtdVendas} vendas encontradas`;
     el.innerHTML = `
       <div class="sales-card">
-        <div class="sales-card-hdr">${qtdVendas} vendas encontradas</div>
-        ${tabelaVendas(vendas)}
+        <div class="sales-card-hdr">${hdr}</div>
+        ${tabelaVendas(vendasFiltradas)}
       </div>`;
     bindDrills(el);
   }
