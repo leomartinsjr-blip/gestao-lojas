@@ -7133,7 +7133,7 @@ app.get('/api/conferencia/debug', requireEscritorioOrAdmin, async (req, res) => 
     res.json({
       movimento:       { total: Array.isArray(movRows)?movRows.length:'erro', amostra: (Array.isArray(movRows)?movRows:[]).slice(0,3) },
       movimentoPlanos: { total: Array.isArray(planoRows)?planoRows.length:'erro', amostra: (Array.isArray(planoRows)?planoRows:[]).slice(0,3) },
-      promocoes:       { total: Array.isArray(promoRowsDbg)?promoRowsDbg.length:'erro', amostra: Array.isArray(promoRowsDbg)?promoRowsDbg.slice(0,5):[] },
+      promocoes:       { total: Array.isArray(promoRowsDbg)?promoRowsDbg.length:'erro', erro: Array.isArray(promoRowsDbg)?null:promoRowsDbg?.error, amostra: Array.isArray(promoRowsDbg)?promoRowsDbg.slice(0,5):[] },
       vendas_calculadas: docsSample,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }

@@ -660,7 +660,8 @@
                           + fmtRows('LinxProdutosPromocoes', data.promocoes)
                           + fmtVendas(data.vendas_calculadas || []);
       panel.classList.remove('hidden');
-      status.textContent = `✓ ${data.movimento.total} mov · ${data.movimentoPlanos.total} planos · ${data.promocoes?.total??0} promoções · ${(data.vendas_calculadas||[]).length} vendas`;
+      const promoInfo = data.promocoes?.erro ? `⚠ promoções: ${data.promocoes.erro}` : `${data.promocoes?.total??0} promoções`;
+      status.textContent = `✓ ${data.movimento.total} mov · ${data.movimentoPlanos.total} planos · ${promoInfo} · ${(data.vendas_calculadas||[]).length} vendas`;
     } catch(e) {
       status.textContent = '⚠ ' + e.message;
     } finally { btn.disabled=false; }
