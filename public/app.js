@@ -3238,7 +3238,11 @@ function renderTransExcelTab(container) {
             const rows = [];
             tbl.querySelectorAll('tr').forEach(tr => {
               const cells = [];
-              tr.querySelectorAll('td,th').forEach(td => cells.push(td.textContent.trim()));
+              tr.querySelectorAll('td,th').forEach(td => {
+                const span = parseInt(td.getAttribute('colspan') || '1', 10) || 1;
+                const text = td.textContent.trim();
+                for (let s = 0; s < span; s++) cells.push(text);
+              });
               rows.push(cells);
             });
             sheetMap[name] = rows;
