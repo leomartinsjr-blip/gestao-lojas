@@ -142,9 +142,10 @@
     const counts = {};
     alertas.forEach(a => counts[a.tipo] = (counts[a.tipo]||0)+1);
     const parts = [];
-    if (counts.parcela_minima) parts.push(`<span class="badge badge-parc" title="${alertas.filter(a=>a.tipo==='parcela_minima').map(a=>esc(a.msg)).join('\n')}">💳 Parcela</span>`);
-    if (counts.desconto_item)  parts.push(`<span class="badge badge-di"   title="${alertas.filter(a=>a.tipo==='desconto_item').map(a=>esc(a.msg)).join('\n')}">🏷 Item×${counts.desconto_item}</span>`);
-    if (counts.desconto_venda) parts.push(`<span class="badge badge-dv"   title="${alertas.filter(a=>a.tipo==='desconto_venda').map(a=>esc(a.msg)).join('\n')}">📉 Venda</span>`);
+    if (counts.parcela_minima)    parts.push(`<span class="badge badge-parc" title="${alertas.filter(a=>a.tipo==='parcela_minima').map(a=>esc(a.msg)).join('\n')}">💳 Parcela</span>`);
+    if (counts.desconto_item)     parts.push(`<span class="badge badge-di"   title="${alertas.filter(a=>a.tipo==='desconto_item').map(a=>esc(a.msg)).join('\n')}">🏷 Item×${counts.desconto_item}</span>`);
+    if (counts.desconto_venda)    parts.push(`<span class="badge badge-dv"   title="${alertas.filter(a=>a.tipo==='desconto_venda').map(a=>esc(a.msg)).join('\n')}">📉 Venda</span>`);
+    if (counts.desconto_parcelado)parts.push(`<span class="badge badge-dv"   title="${alertas.filter(a=>a.tipo==='desconto_parcelado').map(a=>esc(a.msg)).join('\n')}">🚫 Desc.Parcelado</span>`);
     return parts.join(' ');
   }
 
@@ -400,16 +401,25 @@
         <div class="rf"><label>Desc. máx. por item (%)</label>
           <input type="number" min="0" max="100" step="0.1" data-board="${board}" data-field="descontoMaxItem" value="${r.descontoMaxItem||0}"/></div>
         <div class="rf"><label>Desc. máx. por venda (%)</label>
-          <input type="number" min="0" max="100" step="0.1" data-board="${board}" data-field="descontoMaxVenda" value="${r.descontoMaxVenda||0}"/></div>`;
+          <input type="number" min="0" max="100" step="0.1" data-board="${board}" data-field="descontoMaxVenda" value="${r.descontoMaxVenda||0}"/></div>
+        <div class="rf" style="flex-direction:row;align-items:center;gap:8px;margin-top:4px">
+          <input type="checkbox" id="chk-${board}-ava" data-board="${board}" data-field="descontoSomenteAVista" data-type="bool" ${r.descontoSomenteAVista?'checked':''}
+            style="width:15px;height:15px;accent-color:var(--blue);cursor:pointer;flex-shrink:0"/>
+          <label for="chk-${board}-ava" style="font-size:11px;cursor:pointer;text-transform:none;letter-spacing:0;color:var(--text)">
+            Desconto somente à vista<br>
+            <span style="font-size:10px;color:var(--muted)">(alerta se houver desc. em crédito parcelado)</span>
+          </label>
+        </div>`;
       grid.appendChild(card);
     });
   }
 
   $('salvarRegrasBtn').addEventListener('click', async () => {
     document.querySelectorAll('#regrasGrid input').forEach(inp => {
-      const {board,field}=inp.dataset;
+      const {board,field,type}=inp.dataset;
       if (!regrasData[board]) regrasData[board]={};
-      regrasData[board][field]=parseFloat(inp.value)||0;
+      if (type === 'bool') regrasData[board][field] = inp.checked;
+      else regrasData[board][field] = parseFloat(inp.value)||0;
     });
     const btn=$('salvarRegrasBtn');
     btn.disabled=true; btn.textContent='Salvando…';

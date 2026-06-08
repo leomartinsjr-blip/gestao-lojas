@@ -6601,9 +6601,10 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
 
     const db    = await readDB();
     const regra = (db.confRegras || {})[board] || {};
-    const parcelaMin      = parseFloat(regra.parcelaMin      || 0);
-    const descontoMaxItem = parseFloat(regra.descontoMaxItem || 100);
-    const descontoMaxVenda= parseFloat(regra.descontoMaxVenda|| 100);
+    const parcelaMin           = parseFloat(regra.parcelaMin      || 0);
+    const descontoMaxItem      = parseFloat(regra.descontoMaxItem || 100);
+    const descontoMaxVenda     = parseFloat(regra.descontoMaxVenda|| 100);
+    const descontoSomenteAVista= regra.descontoSomenteAVista === true || regra.descontoSomenteAVista === 'true';
 
     const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const cnpj  = lojas[board];
@@ -6851,6 +6852,27 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       }
     }
 
+
+    // ── Alerta: desconto somente à vista ───────────────────────────────────
+    // Débito, PIX, dinheiro e crédito 1x = à vista. Crédito 2x+ = parcelado.
+    if (descontoSomenteAVista) {
+      for (const d of Object.values(docMap)) {
+        if (!d.desconto || d.desconto.valor <= 0) continue;
+        const temParcelado = d.formas.some(f =>
+          f.tipoTrans === 'C' && (f.parcelas || 1) > 1
+        );
+        if (temParcelado) {
+          const parcInfo = d.formas
+            .filter(f => f.tipoTrans === 'C' && (f.parcelas || 1) > 1)
+            .map(f => `${f.bandeira || f.forma} ${f.parcelas}x`)
+            .join(', ');
+          d.alertas.push({
+            tipo: 'desconto_parcelado',
+            msg:  `Desconto de R$ ${d.desconto.valor.toFixed(2).replace('.',',')} concedido em venda parcelada (${parcInfo})`,
+          });
+        }
+      }
+    }
 
     // ── Montar lista e agrupamentos ─────────────────────────────────────────
     const vendas = Object.values(docMap)
