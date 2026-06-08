@@ -6716,14 +6716,14 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       }
 
       // Cada linha do LinxMovimento é um item da venda
-      const qty      = parseBR(r.quantidade || '1');
-      // preco_cheio = preço cheio/bruto antes de qualquer desconto; preco_unitario como fallback
-      const vlrUnit  = parseBR(r.preco_cheio || r.preco_unitario || '0');
-      const vlrDesc  = parseBR(r.desconto || '0');
-      // valor_liquido = total líquido do item após desconto
-      const vlrLiq   = parseBR(r.valor_liquido || '0') || Math.max(0, vlrUnit * qty - vlrDesc);
-      const vlrBruto = vlrUnit * qty;
-      const percItem = vlrBruto > 0 && vlrDesc > 0 ? (vlrDesc / vlrBruto) * 100 : 0;
+      const qty     = parseBR(r.quantidade || '1');
+      const vlrDesc = parseBR(r.desconto || '0');
+      // valor_liquido = total líquido do item (após desconto)
+      const vlrLiq  = parseBR(r.valor_liquido || '0');
+      // total bruto = líquido + desconto (assim não depende de preco_cheio/preco_unitario)
+      const vlrBruto  = vlrLiq + vlrDesc;
+      const vlrUnit   = qty > 0 ? vlrBruto / qty : vlrBruto; // unitário bruto
+      const percItem  = vlrBruto > 0 && vlrDesc > 0 ? (vlrDesc / vlrBruto) * 100 : 0;
 
       // Acumula o total da venda somando valor líquido de cada item
       docMap[doc].valorTotal += docMap[doc].sign * vlrLiq;
@@ -6784,8 +6784,13 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       const bandeira= isCard ? extractBandeira(descP) : '';
       const valor   = parseBR(r.total || r.valor || r.valor_plano || '0');
       if (valor === 0) continue;
+      // parcelas: usa qtde_parcelas diretamente ou extrai do desc_plano (ex: "MASTER 3X")
+      const parcelas = parseInt(r.qtde_parcelas || '') || (() => {
+        const m = descP.toUpperCase().match(/\b(\d+)\s*X\b/);
+        return m ? parseInt(m[1]) : 1;
+      })();
       if (!docFormaMap[doc]) docFormaMap[doc] = [];
-      docFormaMap[doc].push({ forma, bandeira, descPlano: descP, valor: sign * valor, tipoTrans: (r.tipo_transacao || '').toUpperCase() });
+      docFormaMap[doc].push({ forma, bandeira, descPlano: descP, valor: sign * valor, tipoTrans: (r.tipo_transacao || '').toUpperCase(), parcelas });
     }
 
     // Fallback: LinxMovimentoCartoes (sobrescreve bandeiras de cartão)

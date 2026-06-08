@@ -113,25 +113,27 @@
   }
 
   // ── Helpers visuais ───────────────────────────────────────────────────
-  function payChip(forma, bandeira) {
+  function payChip(forma, bandeira, parcelas) {
     const f = (forma||'').toLowerCase();
     const cls = /créd|cred|crédito/i.test(f) ? 'credito'
               : /déb|deb|débito/i.test(f)    ? 'debito'
               : /pix/i.test(f)               ? 'pix'
               : /dinheiro|espécie/i.test(f)  ? 'dinheiro'
               :                                'outros';
-    const label = bandeira ? `${forma} · ${bandeira}` : forma;
-    return `<span class="pay-chip ${cls}">${esc(label)}</span>`;
+    const parts = [];
+    if (bandeira) parts.push(bandeira); else parts.push(forma);
+    if (parcelas > 1) parts.push(`${parcelas}x`);
+    return `<span class="pay-chip ${cls}">${esc(parts.join(' · '))}</span>`;
   }
 
   function formaChips(formas) {
     if (!formas?.length) return '<span style="color:var(--muted);font-size:11px">—</span>';
     const seen = new Set();
     return formas.map(f => {
-      const key = (f.forma||'')+(f.bandeira||'');
+      const key = (f.forma||'')+(f.bandeira||'')+(f.parcelas||1);
       if (seen.has(key)) return '';
       seen.add(key);
-      return payChip(f.forma, f.bandeira);
+      return payChip(f.forma, f.bandeira, f.parcelas);
     }).join('');
   }
 
