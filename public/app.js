@@ -3223,7 +3223,7 @@ function renderTransExcelTab(container) {
       const XLSX_LOCAL = window.XLSX;
       if (!XLSX_LOCAL) throw new Error('Biblioteca de leitura de Excel não carregada. Recarregue a página.');
 
-      const wb = XLSX_LOCAL.read(buffer, { type: 'array' });
+      const wb = XLSX_LOCAL.read(buffer, { type: 'array', cellDates: false, raw: true });
 
       // Extrai período do Excel (Sheet1: "Período:" → "01/01/2025 à 31/05/2026")
       let periodDays = 365;
