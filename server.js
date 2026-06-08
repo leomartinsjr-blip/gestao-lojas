@@ -6695,15 +6695,20 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       const sign = op === 'DS' ? -1 : 1;
       const cod  = String(r.cod_vendedor || '').trim();
       const nome = (r.nome_vendedor || '').trim();
+      // data_documento vem como "DD/MM/YYYY" no Microvix
+      const rawDate = String(r.data_documento || r.data_emissao || r.data || '').trim();
+      const mD = rawDate.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+      const dataISO = mD ? `${mD[3]}-${mD[2]}-${mD[1]}` : rawDate.slice(0, 10);
       docMap[doc] = {
         doc,
-        data:         String(r.data || r.data_movimento || '').trim().slice(0, 10),
-        hora:         String(r.hora || '').trim().slice(0, 5),
+        data:         dataISO,
+        hora:         String(r.hora || r.hora_documento || r.hora_emissao || '').trim().slice(0, 5),
         valorTotal:   sign * parseBR(r.valor_total || r.total_liquido || '0'),
         vendedorCod:  cod,
         vendedorNome: vendNomeCache[cod] || nome || cod,
         formas:  [],
         alertas: [],
+        itens:   [],
         codPlano: String(r.cod_plano || r.plano || '').trim(),
       };
     }
@@ -6795,14 +6800,27 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
     for (const [doc, itens] of Object.entries(itensPorDoc)) {
       let totalBruto = 0, totalDesc = 0;
       for (const item of itens) {
-        const vlrBruto = parseBR(item.valor_bruto || item.preco_unitario || '0') * parseBR(item.quantidade || '1');
+        const qty      = parseBR(item.quantidade || '1');
+        const vlrUnit  = parseBR(item.valor_bruto || item.preco_unitario || item.preco_cheio || '0');
+        const vlrBruto = vlrUnit * qty;
         const vlrDesc  = parseBR(item.valor_desconto || '0');
         const percItem = vlrBruto > 0 ? (vlrDesc / vlrBruto) * 100 : 0;
         totalBruto += vlrBruto; totalDesc += vlrDesc;
+
+        // Salva itens para exibição no drill-down
+        docMap[doc].itens.push({
+          descricao:   (item.descricao || item.nome_produto || item.cod_produto || '—').trim(),
+          quantidade:  qty,
+          vlrUnitario: +vlrUnit.toFixed(2),
+          vlrBruto:    +vlrBruto.toFixed(2),
+          vlrDesconto: +vlrDesc.toFixed(2),
+          percDesconto:+percItem.toFixed(1),
+        });
+
         if (descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {
           docMap[doc].alertas.push({
             tipo: 'desconto_item',
-            msg:  `Item "${(item.descricao || item.cod_produto || '').trim()}" com ${percItem.toFixed(1)}% desc (máx ${descontoMaxItem}%)`,
+            msg:  `"${(item.descricao || item.cod_produto || '').trim()}" ${percItem.toFixed(1)}% desc (máx ${descontoMaxItem}%)`,
           });
         }
       }
@@ -6815,9 +6833,11 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
           });
         }
       }
-      // Desconto total da venda em R$ e % para exibição mesmo sem alerta
-      if (totalDesc > 0) {
-        docMap[doc].desconto = { valor: +totalDesc.toFixed(2), perc: totalBruto > 0 ? +((totalDesc/totalBruto)*100).toFixed(1) : 0 };
+      if (totalDesc > 0 || totalBruto > 0) {
+        docMap[doc].desconto = {
+          valor: +totalDesc.toFixed(2),
+          perc:  totalBruto > 0 ? +((totalDesc/totalBruto)*100).toFixed(1) : 0,
+        };
       }
     }
 
@@ -6834,6 +6854,7 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
         formas:      v.formas,
         desconto:    v.desconto || null,
         alertas:     v.alertas,
+        itens:       v.itens,
       }));
 
     // Agrupamento por forma de pagamento
