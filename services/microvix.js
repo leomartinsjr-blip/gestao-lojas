@@ -409,7 +409,13 @@ async function fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave) {
     const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro';
     throw new Error(`Microvix API (promocoes): ${msg}`);
   }
-  return parseCsv(raw);
+  const rows = parseCsv(raw);
+  // Detecta resposta de erro retornada como CSV (campos Sucesso/Mensagens)
+  if (rows.length && (rows[0].Sucesso === 'False' || 'Mensagens' in rows[0])) {
+    const msg = rows[0].Mensagens || 'Erro interno na API';
+    throw new Error(`Microvix API (promocoes): ${msg}`);
+  }
+  return rows;
 }
 
 module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchMovimentoCartoes, fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, fetchClientes, fetchProdutosPromocoes, parseBrNum, buildRequest, postRequest, parseCsv };
