@@ -401,9 +401,19 @@ async function fetchLinxPlanosBandeiras(cnpj, chave) {
 }
 
 // Fetch LinxProdutosPromocoes → produtos em promoção por loja
+// Parâmetros obrigatórios (manual v209): data_cad_inicial, data_cad_fim, data_vig_inicial, data_vig_fim, promocao_ativa
 async function fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave) {
-  // LinxProdutosPromocoes não aceita data_inicial/data_fim — busca todas as promoções ativas
-  const body = buildRequest('LinxProdutosPromocoes', cnpj, [], chave);
+  const vigIni = dtIni || new Date().toISOString().slice(0, 10);
+  const vigFim = dtFin || vigIni;
+  // data_cad_inicial ampla (2000-01-01) para não perder promoções antigas ainda vigentes
+  const params = [
+    { id: 'data_cad_inicial', valor: '2000-01-01' },
+    { id: 'data_cad_fim',     valor: vigFim },
+    { id: 'data_vig_inicial', valor: vigIni },
+    { id: 'data_vig_fim',     valor: vigFim },
+    { id: 'promocao_ativa',   valor: 'S' },
+  ];
+  const body = buildRequest('LinxProdutosPromocoes', cnpj, params, chave);
   const raw  = await postRequest(body);
   if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
     const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro';
