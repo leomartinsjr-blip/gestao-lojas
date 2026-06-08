@@ -7118,7 +7118,7 @@ app.get('/api/conferencia/debug', requireEscritorioOrAdmin, async (req, res) => 
           '→ CMV_item(%)':      cmvItem + '%  [custo_medio_epoca÷preco_unitario]',
         };
       });
-      const totalCalc = computed_itens.reduce((s,i) => s + parseFloat(i['→ vlrLiquido(×qtd)']), 0);
+      const totalCalc = computed_itens.reduce((s,i) => s + parseFloat(i['→ vlrLiq(×qtd)']), 0);
       const formas = d.linhas_plano.map(r => ({
         desc_plano:    r.desc_plano,
         tipo_transacao:r.tipo_transacao,
@@ -7131,7 +7131,7 @@ app.get('/api/conferencia/debug', requireEscritorioOrAdmin, async (req, res) => 
     res.json({
       movimento:       { total: Array.isArray(movRows)?movRows.length:'erro', amostra: (Array.isArray(movRows)?movRows:[]).slice(0,3) },
       movimentoPlanos: { total: Array.isArray(planoRows)?planoRows.length:'erro', amostra: (Array.isArray(planoRows)?planoRows:[]).slice(0,3) },
-      promocoes:       { total: Array.isArray(promoRowsDbg)?promoRowsDbg.length:'erro', amostra: Array.isArray(promoRowsDbg)?promoRowsDbg.slice(0,5):promoRowsDbg },
+      promocoes:       { total: Array.isArray(promoRowsDbg)?promoRowsDbg.length:'erro', amostra: Array.isArray(promoRowsDbg)?promoRowsDbg.slice(0,5):[] },
       vendas_calculadas: docsSample,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
