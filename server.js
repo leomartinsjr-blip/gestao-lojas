@@ -6633,21 +6633,20 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
         if (r.cancelado === 'S' || r.cancelado === '1') continue;
         if ((r.soma_relatorio||'S').toUpperCase() === 'N') continue;
         const op    = (r.operacao||'').trim().toUpperCase();
-        if (op !== 'S' && op !== 'DS') continue;
+        if (op !== 'S') continue;
         const serie = String(r.serie||r.serie_documento||'').trim();
-        if (serie === '999' || (serie === '4' && op !== 'DS')) continue;
+        if (serie === '999' || serie === '4') continue;
 
-        const sign     = op === 'DS' ? -1 : 1;
         const qty      = parseBR(r.quantidade||'1');
         const vlrUnit  = parseBR(r.preco_tabela_epoca||r.preco_unitario||'0');
         const vlrLiq   = parseBR(r.preco_unitario||r.valor_liquido||'0');
         const vlrDesc  = parseBR(r.desconto_item||r.desconto_total_item||'0');
         const vlrCusto = parseBR(r.custo_medio_epoca||r.preco_custo||'0');
 
-        loja.vlrLiquido  += sign * vlrLiq  * qty;
-        loja.vlrBruto    += sign * vlrUnit * qty;
-        loja.vlrDesconto += sign * vlrDesc * qty;
-        loja.vlrCusto    += sign * vlrCusto * qty;
+        loja.vlrLiquido  += vlrLiq  * qty;
+        loja.vlrBruto    += vlrUnit * qty;
+        loja.vlrDesconto += vlrDesc * qty;
+        loja.vlrCusto    += vlrCusto * qty;
         loja.qtdItens    += 1;
 
         // Vendedor
@@ -6657,9 +6656,9 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
           const nome    = (r.nome_vendedor || (obsNome && obsNome[1]) || cod).trim();
           const vkey    = `${board}::${cod}`;
           if (!porVendedor[vkey]) porVendedor[vkey] = { board, cod, nome, vlrLiquido:0, vlrBruto:0, vlrDesconto:0, qtdItens:0 };
-          porVendedor[vkey].vlrLiquido  += sign * vlrLiq  * qty;
-          porVendedor[vkey].vlrBruto    += sign * vlrUnit * qty;
-          porVendedor[vkey].vlrDesconto += sign * vlrDesc * qty;
+          porVendedor[vkey].vlrLiquido  += vlrLiq  * qty;
+          porVendedor[vkey].vlrBruto    += vlrUnit * qty;
+          porVendedor[vkey].vlrDesconto += vlrDesc * qty;
           porVendedor[vkey].qtdItens    += 1;
         }
       }
