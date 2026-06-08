@@ -3341,7 +3341,11 @@ function renderTransExcelTab(container) {
             : (typeof rawCod === 'string' && /^\d+$/.test(rawCod.trim()) ? rawCod.trim() : null);
           if (!cod) continue;
           if (!products[cod]) {
-            const ultimaCompra = parseExcelDate(r[colUltimaCompra]);
+            const _rawDate = r[colUltimaCompra];
+            const ultimaCompra = parseExcelDate(_rawDate);
+            if (Object.keys(products).length < 5) {
+              console.log(`[DateRaw] cod=${cod} | tipo=${typeof _rawDate} | raw=`, _rawDate, '| parsed=', ultimaCompra);
+            }
             const rawRef = String(r[colRef] || '').trim().replace(/^="(.+)"$/, '$1');
             products[cod] = { cod, descricao: String(r[colDescricao] || '').trim(), referencia: rawRef, setor: currentSetor, ultimaCompra, stocks: {}, giro: {} };
           }
