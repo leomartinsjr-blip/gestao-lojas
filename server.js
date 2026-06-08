@@ -6592,6 +6592,93 @@ app.put('/api/conferencia/regras', requireEscritorioOrAdmin, async (req, res) =>
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/conferencia/dashboard?dtIni=2026-06-01&dtFin=2026-06-08
+// Consolida todas as lojas: ranking de desconto por loja, por vendedor e CMV
+app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { dtIni, dtFin } = req.query;
+    if (!dtIni || !dtFin) return res.status(400).json({ error: 'dtIni e dtFin obrigatórios' });
+
+    const lojas   = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const BOARDS  = ['delrey','minas','contagem','estacao','tommy','surfers'];
+    const parseBR = s => parseFloat(String(s||'').replace(/\./g,'').replace(',','.')) || 0;
+
+    const { fetchMovimento } = require('./services/microvix');
+
+    // Busca todas as lojas em paralelo
+    const resultados = await Promise.all(BOARDS.map(async board => {
+      const cnpj = lojas[board];
+      if (!cnpj) return { board, erro: 'não configurada' };
+      const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+      const cnpjClean = cnpj.replace(/\D/g,'');
+      try {
+        const rows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
+        return { board, cnpjClean, rows: Array.isArray(rows) ? rows : [] };
+      } catch (e) {
+        return { board, erro: e.message, rows: [] };
+      }
+    }));
+
+    const porLoja     = {};
+    const porVendedor = {};
+
+    for (const { board, cnpjClean, rows, erro } of resultados) {
+      if (erro) { porLoja[board] = { board, erro }; continue; }
+
+      const loja = { board, vlrLiquido:0, vlrBruto:0, vlrDesconto:0, vlrCusto:0, qtdItens:0 };
+
+      for (const r of rows) {
+        const rowCnpj = (r.cnpj_emp||r.cnpj||'').replace(/\D/g,'');
+        if (!rowCnpj || rowCnpj !== cnpjClean) continue;
+        if ((r.cancelado||'').toUpperCase() !== 'N' && r.cancelado) continue;
+        const op = (r.operacao||'').toUpperCase();
+        if (op !== 'S') continue; // só vendas, não devoluções no dashboard
+
+        const qty      = parseBR(r.quantidade||'1');
+        const vlrUnit  = parseBR(r.preco_tabela_epoca||r.preco_unitario||'0');
+        const vlrLiq   = parseBR(r.preco_unitario||r.valor_liquido||'0');
+        const vlrDesc  = parseBR(r.desconto_item||r.desconto_total_item||'0');
+        const vlrCusto = parseBR(r.preco_custo||'0');
+
+        loja.vlrLiquido  += vlrLiq  * qty;
+        loja.vlrBruto    += vlrUnit * qty;
+        loja.vlrDesconto += vlrDesc;
+        loja.vlrCusto    += vlrCusto * qty;
+        loja.qtdItens    += 1;
+
+        // Vendedor
+        const cod  = String(r.cod_vendedor||'').trim();
+        if (cod) {
+          const obsNome = (r.obs||'').match(/Nome do Vendedor:\s*(.+?)(?:\s*\|.*)?$/i);
+          const nome    = (r.nome_vendedor || (obsNome && obsNome[1]) || cod).trim();
+          const vkey    = `${board}::${cod}`;
+          if (!porVendedor[vkey]) porVendedor[vkey] = { board, cod, nome, vlrLiquido:0, vlrBruto:0, vlrDesconto:0, qtdItens:0 };
+          porVendedor[vkey].vlrLiquido  += vlrLiq  * qty;
+          porVendedor[vkey].vlrBruto    += vlrUnit * qty;
+          porVendedor[vkey].vlrDesconto += vlrDesc;
+          porVendedor[vkey].qtdItens    += 1;
+        }
+      }
+
+      loja.percDesconto = loja.vlrBruto > 0 ? (loja.vlrDesconto / loja.vlrBruto) * 100 : 0;
+      loja.cmvPerc      = loja.vlrLiquido > 0 ? (loja.vlrCusto / loja.vlrLiquido) * 100 : 0;
+      porLoja[board] = loja;
+    }
+
+    // Calcula % desconto por vendedor
+    const vendedores = Object.values(porVendedor).map(v => ({
+      ...v,
+      percDesconto: v.vlrBruto > 0 ? (v.vlrDesconto / v.vlrBruto) * 100 : 0,
+    }));
+
+    res.json({
+      dtIni, dtFin,
+      porLoja:     Object.values(porLoja),
+      porVendedor: vendedores.sort((a,b) => b.percDesconto - a.percDesconto).slice(0, 20),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/conferencia/vendas?board=delrey&dtIni=2026-06-01&dtFin=2026-06-08
 // Retorna TODAS as vendas do período com formas de pagamento, vendedor e alertas de regra
 app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) => {

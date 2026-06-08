@@ -297,6 +297,126 @@
   }
 
   // ════════════════════════════════════════════════════════════════════════
+  // DASHBOARD
+  // ════════════════════════════════════════════════════════════════════════
+  $('dDtIni').value = ini; $('dDtFin').value = hoje;
+  $('dBuscarBtn').addEventListener('click', buscarDashboard);
+
+  async function buscarDashboard() {
+    const dtIni=$('dDtIni').value, dtFin=$('dDtFin').value;
+    if (!dtIni||!dtFin) return alert('Preencha o período.');
+    const btn=$('dBuscarBtn');
+    btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Buscando…';
+    $('dResult').innerHTML='<div class="cf-empty"><span class="spinner"></span> Consultando todas as lojas…</div>';
+    try {
+      const data = await api('GET', `/api/conferencia/dashboard?dtIni=${dtIni}&dtFin=${dtFin}`);
+      renderDashboard(data);
+    } catch(e) {
+      $('dResult').innerHTML=`<div class="cf-empty" style="color:var(--red)">⚠ ${esc(e.message)}</div>`;
+    } finally {
+      btn.disabled=false;
+      btn.innerHTML='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Buscar todas as lojas';
+    }
+  }
+
+  const LOJA_COLORS = { delrey:'#3b82f6', minas:'#a855f7', contagem:'#22c55e', estacao:'#f59e0b', tommy:'#14b8a6', surfers:'#ef4444' };
+
+  function renderDashboard({ porLoja, porVendedor }) {
+    const lojas = porLoja.filter(l => !l.erro);
+
+    // totais para normalizar barras
+    const maxDesc  = Math.max(...lojas.map(l => l.percDesconto), 0.01);
+    const maxCmv   = Math.max(...lojas.map(l => l.cmvPerc),      0.01);
+    const maxVDesc = Math.max(...(porVendedor||[]).map(v => v.percDesconto), 0.01);
+
+    const rankingCard = (title, icon, rows) => `
+      <div class="sales-card" style="flex:1;min-width:280px">
+        <div class="sales-card-hdr">${icon} ${title}</div>
+        <div style="padding:12px 16px;display:flex;flex-direction:column;gap:10px">
+          ${rows}
+        </div>
+      </div>`;
+
+    const barRow = (label, sublabel, pct, maxPct, color, valueLabel, extra='') => {
+      const barW = Math.round((pct / maxPct) * 100);
+      const alertColor = pct > maxPct * 0.7 ? 'var(--red)' : pct > maxPct * 0.4 ? 'var(--amber)' : 'var(--green)';
+      return `
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+            <span style="font-weight:700;font-size:12px">${esc(label)}</span>
+            <span style="font-size:13px;font-weight:800;color:${alertColor}">${valueLabel}</span>
+          </div>
+          ${sublabel ? `<div style="font-size:10px;color:var(--muted);margin-bottom:4px">${esc(sublabel)}</div>` : ''}
+          <div style="height:6px;background:var(--border);border-radius:3px;overflow:hidden">
+            <div style="height:100%;width:${barW}%;background:${color};border-radius:3px;transition:width .4s"></div>
+          </div>
+          ${extra}
+        </div>`;
+    };
+
+    // ── Ranking desconto por loja ──
+    const lojasDesc = [...lojas].sort((a,b) => b.percDesconto - a.percDesconto);
+    const rowsDescLoja = lojasDesc.map(l =>
+      barRow(
+        LOJA_LABEL[l.board] || l.board,
+        `${fmtR(l.vlrDesconto)} de desconto em ${fmtR(l.vlrBruto)} bruto`,
+        l.percDesconto, maxDesc,
+        LOJA_COLORS[l.board] || 'var(--blue)',
+        l.percDesconto.toFixed(1) + '%',
+      )
+    ).join('');
+
+    // ── CMV por loja ──
+    const lojasCmv = [...lojas].sort((a,b) => b.cmvPerc - a.cmvPerc);
+    const rowsCmv = lojasCmv.map(l => {
+      const cmvColor = l.cmvPerc > 60 ? 'var(--red)' : l.cmvPerc > 45 ? 'var(--amber)' : 'var(--green)';
+      return barRow(
+        LOJA_LABEL[l.board] || l.board,
+        `Custo ${fmtR(l.vlrCusto)} / Venda Líq. ${fmtR(l.vlrLiquido)}`,
+        l.cmvPerc, maxCmv,
+        LOJA_COLORS[l.board] || 'var(--blue)',
+        `<span style="color:${cmvColor}">${l.cmvPerc.toFixed(1)}%</span>`,
+      );
+    }).join('');
+
+    // ── Resumo total por loja ──
+    const totalLojas = lojas.reduce((s,l) => ({ vlrLiquido: s.vlrLiquido+l.vlrLiquido, vlrDesconto: s.vlrDesconto+l.vlrDesconto, vlrCusto: s.vlrCusto+l.vlrCusto }), { vlrLiquido:0, vlrDesconto:0, vlrCusto:0 });
+    const totalCmv  = totalLojas.vlrLiquido > 0 ? (totalLojas.vlrCusto / totalLojas.vlrLiquido * 100) : 0;
+
+    const statsHtml = `
+      <div class="cf-stats" style="margin-bottom:18px">
+        <div class="stat-card"><div class="stat-icon blue">💰</div>
+          <div><div class="stat-val" style="font-size:15px">${fmtR(totalLojas.vlrLiquido)}</div><div class="stat-lbl">Venda Líquida Total</div></div></div>
+        <div class="stat-card"><div class="stat-icon amber">🏷</div>
+          <div><div class="stat-val" style="font-size:15px;color:var(--amber)">${fmtR(totalLojas.vlrDesconto)}</div><div class="stat-lbl">Desconto Total</div></div></div>
+        <div class="stat-card"><div class="stat-icon ${totalCmv>60?'red':totalCmv>45?'amber':'green'}">📦</div>
+          <div><div class="stat-val" style="color:${totalCmv>60?'var(--red)':totalCmv>45?'var(--amber)':'var(--green)'}">${totalCmv.toFixed(1)}%</div><div class="stat-lbl">CMV Geral</div></div></div>
+      </div>`;
+
+    // ── Top vendedores com mais desconto ──
+    const topVend = (porVendedor||[]).slice(0, 15);
+    const rowsVend = topVend.map(v =>
+      barRow(
+        v.nome,
+        `${LOJA_LABEL[v.board]||v.board} · ${fmtR(v.vlrDesconto)} desc em ${fmtR(v.vlrBruto)} bruto`,
+        v.percDesconto, maxVDesc,
+        'var(--purple)',
+        v.percDesconto.toFixed(1) + '%',
+      )
+    ).join('');
+
+    $('dResult').innerHTML = `
+      ${statsHtml}
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start">
+        ${rankingCard('Desconto por Loja', '🏷', rowsDescLoja)}
+        ${rankingCard('CMV por Loja', '📦', rowsCmv)}
+      </div>
+      <div style="margin-top:14px">
+        ${rankingCard('Top Vendedores com Mais Desconto', '👤', rowsVend || '<div style="color:var(--muted);font-size:12px;padding:8px">Nenhum vendedor encontrado.</div>')}
+      </div>`;
+  }
+
+  // ════════════════════════════════════════════════════════════════════════
   // CONCILIAÇÃO REDE
   // ════════════════════════════════════════════════════════════════════════
   const fileDrop=$('fileDrop'), fileInput=$('redeFile');

@@ -280,6 +280,7 @@ td.muted { color: var(--muted); }
 <!-- ── Tabs ── -->
 <div class="cf-tabs">
   <button class="cf-tab active" data-tab="vendas">📊 Vendas</button>
+  <button class="cf-tab" data-tab="dashboard">🏪 Dashboard Lojas</button>
   <button class="cf-tab" data-tab="conciliacao">🔄 Conciliação Rede</button>
   <button class="cf-tab" data-tab="regras">⚙️ Regras por Loja</button>
 </div>
@@ -323,6 +324,19 @@ td.muted { color: var(--muted); }
       <div id="debugContent" style="background:#0a0a14;border:1px solid var(--border);border-radius:8px;padding:14px;font-family:monospace;font-size:11px;color:#a0c4ff;overflow-x:auto;white-space:pre;max-height:500px;overflow-y:auto"></div>
     </div>
   </div>
+</div>
+
+<!-- ══ DASHBOARD ═════════════════════════════════════════════════════════ -->
+<div class="cf-panel" id="tab-dashboard">
+  <div class="cf-filter-card">
+    <div class="cf-fg"><label>De</label><input type="date" id="dDtIni"/></div>
+    <div class="cf-fg"><label>Até</label><input type="date" id="dDtFin"/></div>
+    <button class="btn-primary" id="dBuscarBtn">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Buscar todas as lojas
+    </button>
+  </div>
+  <div id="dResult"></div>
 </div>
 
 <!-- ══ CONCILIAÇÃO REDE ══════════════════════════════════════════════════ -->
