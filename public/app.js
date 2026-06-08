@@ -3358,10 +3358,31 @@ function renderTransExcelTab(container) {
 
       // Passo 3: filtra produtos sem entrada recente (obrigatório)
       const totalBruto = Object.keys(products).length;
-      // Diagnóstico: log para comparar entre versões do XLSX
-      const p884 = products['884901'];
-      console.log(`[TransDiag] XLSX ${XLSX_LOCAL.version} | sheets=${wb.SheetNames.length} | headerSheet=${headerSheetIdx} | totalProdutos=${totalBruto} | 884901=${p884 ? `ultimaCompra=${p884.ultimaCompra} stocks=${JSON.stringify(p884.stocks)} giro=${JSON.stringify(p884.giro)}` : 'NÃO ENCONTRADO'}`);
       if (!totalBruto) throw new Error(`Nenhum produto encontrado no Excel. Colunas detectadas: código=${colCodigo}, descrição=${colDescricao}, ref=${colRef}, última compra=${colUltimaCompra}. Verifique se o relatório está no formato correto.`);
+
+      // Diagnóstico de datas — mostra amostras no console para verificação
+      const allDates = Object.values(products).map(p => p.ultimaCompra).filter(Boolean);
+      const uniqueDates = [...new Set(allDates)].sort((a,b) => cmpDateBR(b,a));
+      console.group('[TransDiag] Filtro de última entrada');
+      console.log(`Filtro ativo: entrada ≥ ${compraMinDate}`);
+      console.log(`Total produtos lidos: ${totalBruto}`);
+      console.log(`Datas encontradas (mais recentes primeiro):`, uniqueDates.slice(0,10));
+      const semData = Object.values(products).filter(p => !p.ultimaCompra).length;
+      if (semData) console.warn(`${semData} produtos sem data de última entrada — serão excluídos`);
+      // Amostra: primeiros 5 que serão excluídos pelo filtro
+      const excAmostra = Object.values(products)
+        .filter(p => !p.ultimaCompra || cmpDateBR(p.ultimaCompra, compraMinDate) < 0)
+        .slice(0,5)
+        .map(p => `${p.cod} (${p.ultimaCompra || 'sem data'})`);
+      if (excAmostra.length) console.log(`Exemplos excluídos:`, excAmostra);
+      // Amostra: primeiros 5 que passam
+      const passAmostra = Object.values(products)
+        .filter(p => p.ultimaCompra && cmpDateBR(p.ultimaCompra, compraMinDate) >= 0)
+        .slice(0,5)
+        .map(p => `${p.cod} (${p.ultimaCompra})`);
+      if (passAmostra.length) console.log(`Exemplos incluídos:`, passAmostra);
+      console.groupEnd();
+
       for (const cod of Object.keys(products)) {
         const p = products[cod];
         if (!p.ultimaCompra || cmpDateBR(p.ultimaCompra, compraMinDate) < 0) delete products[cod];
