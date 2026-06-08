@@ -442,23 +442,43 @@
     btn.disabled=true; status.textContent='Carregando…';
     try {
       const data = await api('GET', `/api/conferencia/debug?board=${board}&dtIni=${dtIni}&dtFin=${dtFin}`);
-      const fmt = (label, obj) => {
-        const total = obj.total;
-        const rows  = obj.amostra || [];
-        const keys  = rows.length ? Object.keys(rows[0]) : [];
-        let out = `══ ${label} (${total} linhas) ══\nCampos: ${keys.join(', ')}\n\n`;
+      const fmtRows = (label, obj) => {
+        const rows = obj.amostra || [];
+        const keys = rows.length ? Object.keys(rows[0]) : [];
+        let out = `══ ${label} (${obj.total} linhas) — primeiras ${rows.length} ══\n`;
         rows.forEach((r,i) => {
-          out += `--- Linha ${i+1} ---\n`;
-          keys.forEach(k => { out += `  ${k.padEnd(28)} ${JSON.stringify(r[k])}\n`; });
-          out += '\n';
+          out += `\n--- Linha ${i+1} ---\n`;
+          keys.forEach(k => { out += `  ${k.padEnd(30)} ${JSON.stringify(r[k])}\n`; });
+        });
+        return out + '\n';
+      };
+
+      const fmtVendas = vendas => {
+        let out = `══ VENDAS CALCULADAS (primeiras ${vendas.length}) ══\n`;
+        vendas.forEach(v => {
+          out += `\n┌── Doc ${v.doc}  →  Total calculado: R$ ${v['→ totalVendaCalculado']}\n`;
+          out += `│   Formas: ${v.formas.map(f=>`${f.desc_plano} ${f.qtde_parcelas}x = ${f.total}`).join(' | ')}\n`;
+          v.itens.forEach((it,i) => {
+            out += `│   Item ${i+1}: cod=${it.cod_produto} qty=${it.quantidade}\n`;
+            out += `│     preco_tabela_epoca  = ${it.preco_tabela_epoca}  → bruto unit usado\n`;
+            out += `│     preco_unitario      = ${it.preco_unitario}  → líquido unit usado\n`;
+            out += `│     desconto_item       = ${it.desconto_item}\n`;
+            out += `│     desconto_total_item = ${it.desconto_total_item}\n`;
+            out += `│     desconto            = ${it.desconto}\n`;
+            out += `│     → vlr bruto (×qtd) = R$ ${it['→ vlrBruto(×qtd)']}\n`;
+            out += `│     → desconto         = R$ ${it['→ vlrDesconto']}\n`;
+            out += `│     → líquido (×qtd)   = R$ ${it['→ vlrLiquido(×qtd)']}\n`;
+          });
+          out += `└──\n`;
         });
         return out;
       };
-      content.textContent = fmt('LinxMovimento', data.movimento)
-                          + fmt('LinxMovimentoPlanos', data.movimentoPlanos)
-                          + fmt('LinxMovimentoCartoes', data.movimentoCartoes);
+
+      content.textContent = fmtRows('LinxMovimento', data.movimento)
+                          + fmtRows('LinxMovimentoPlanos', data.movimentoPlanos)
+                          + fmtVendas(data.vendas_calculadas || []);
       panel.classList.remove('hidden');
-      status.textContent = `✓ ${data.movimento.total} mov · ${data.movimentoPlanos.total} planos · ${data.movimentoCartoes.total} cartões`;
+      status.textContent = `✓ ${data.movimento.total} mov · ${data.movimentoPlanos.total} planos · ${(data.vendas_calculadas||[]).length} vendas analisadas`;
     } catch(e) {
       status.textContent = '⚠ ' + e.message;
     } finally { btn.disabled=false; }

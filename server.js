@@ -6934,18 +6934,77 @@ app.get('/api/conferencia/debug', requireEscritorioOrAdmin, async (req, res) => 
     const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const cnpj  = lojas[board];
     if (!cnpj) return res.status(400).json({ error: `Loja "${board}" não configurada` });
-    const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const cnpjClean = cnpj.replace(/\D/g, '');
     const { fetchMovimento, fetchMovimentoPlanos, fetchMovimentoCartoes } = require('./services/microvix');
-    const [movRows, planoRows, cartoesRows] = await Promise.all([
-      fetchMovimento(cnpj, dtIni, dtFin, chave).catch(e => ({ error: e.message })),
-      fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave).catch(e => ({ error: e.message })),
-      fetchMovimentoCartoes(cnpj, dtIni, dtFin, chave).catch(e => ({ error: e.message })),
+    const [movRows, planoRows] = await Promise.all([
+      fetchMovimento(cnpj, dtIni, dtFin, chave).catch(e => []),
+      fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave).catch(e => []),
     ]);
-    const sample = arr => Array.isArray(arr) ? arr.slice(0, 5) : arr;
+
+    const parseBR = s => parseFloat(String(s||'').replace(/\./g,'').replace(',','.')) || 0;
+
+    // Agrupa linhas por documento e calcula valores como o endpoint real faz
+    const docsRaw = {}; // doc → { linhas_mov[], linhas_plano[] }
+    for (const r of (Array.isArray(movRows) ? movRows : [])) {
+      const rowCnpj = (r.cnpj_emp||r.cnpj||'').replace(/\D/g,'');
+      if (rowCnpj && rowCnpj !== cnpjClean) continue;
+      if (r.cancelado === 'N' || !r.cancelado) {
+        const op = (r.operacao||'').toUpperCase();
+        if (op === 'S' || op === 'DS') {
+          const doc = String(r.documento||'').trim();
+          if (doc) {
+            if (!docsRaw[doc]) docsRaw[doc] = { linhas_mov: [], linhas_plano: [] };
+            docsRaw[doc].linhas_mov.push(r);
+          }
+        }
+      }
+    }
+    for (const r of (Array.isArray(planoRows) ? planoRows : [])) {
+      const ident = String(r.identificador||'').trim();
+      // encontra doc pelo identificador
+      const doc = Object.keys(docsRaw).find(d =>
+        docsRaw[d].linhas_mov.some(m => String(m.identificador||'').trim() === ident)
+      );
+      if (doc) docsRaw[doc].linhas_plano.push(r);
+    }
+
+    // Para cada doc, mostra campos-chave e o que seria calculado
+    const docsSample = Object.entries(docsRaw).slice(0, 5).map(([doc, d]) => {
+      const computed_itens = d.linhas_mov.map(r => {
+        const qty     = parseBR(r.quantidade||'1');
+        const vlrUnit = parseBR(r.preco_tabela_epoca||r.preco_unitario||'0');
+        const vlrLiq  = parseBR(r.preco_unitario||r.valor_liquido||'0');
+        const vlrDesc = parseBR(r.desconto_item||r.desconto_total_item||'0');
+        return {
+          cod_produto:        r.cod_produto,
+          quantidade:         r.quantidade,
+          preco_tabela_epoca: r.preco_tabela_epoca,   // bruto unitário usado
+          preco_unitario:     r.preco_unitario,        // líquido unitário usado
+          desconto_item:      r.desconto_item,         // desconto usado
+          desconto_total_item:r.desconto_total_item,
+          desconto:           r.desconto,
+          valor_liquido:      r.valor_liquido,
+          '→ vlrUnitBruto':   vlrUnit.toFixed(2),
+          '→ vlrBruto(×qtd)': (vlrUnit*qty).toFixed(2),
+          '→ vlrDesconto':    vlrDesc.toFixed(2),
+          '→ vlrLiquido(×qtd)':(vlrLiq*qty).toFixed(2),
+        };
+      });
+      const totalCalc = computed_itens.reduce((s,i) => s + parseFloat(i['→ vlrLiquido(×qtd)']), 0);
+      const formas = d.linhas_plano.map(r => ({
+        desc_plano:    r.desc_plano,
+        tipo_transacao:r.tipo_transacao,
+        total:         r.total,
+        qtde_parcelas: r.qtde_parcelas,
+      }));
+      return { doc, '→ totalVendaCalculado': totalCalc.toFixed(2), itens: computed_itens, formas };
+    });
+
     res.json({
-      movimento:        { total: Array.isArray(movRows) ? movRows.length : 'erro', amostra: sample(movRows) },
-      movimentoPlanos:  { total: Array.isArray(planoRows) ? planoRows.length : 'erro', amostra: sample(planoRows) },
-      movimentoCartoes: { total: Array.isArray(cartoesRows) ? cartoesRows.length : 'erro', amostra: sample(cartoesRows) },
+      movimento:       { total: Array.isArray(movRows)?movRows.length:'erro', amostra: (Array.isArray(movRows)?movRows:[]).slice(0,3) },
+      movimentoPlanos: { total: Array.isArray(planoRows)?planoRows.length:'erro', amostra: (Array.isArray(planoRows)?planoRows:[]).slice(0,3) },
+      vendas_calculadas: docsSample,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
