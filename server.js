@@ -6611,13 +6611,12 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
     const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
     const cnpjClean = cnpj.replace(/\D/g, '');
 
-    const { fetchMovimento, fetchMovimentoPlanos, fetchMovimentoItens, fetchMovimentoCartoes,
+    const { fetchMovimento, fetchMovimentoPlanos, fetchMovimentoCartoes,
             fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchVendedores, parseBrNum } = require('./services/microvix');
 
-    const [movRows, planoRows, itemRows, cartoesRows, planosCatalog, bandeirasCatalog, vendedoresRows] = await Promise.all([
+    const [movRows, planoRows, cartoesRows, planosCatalog, bandeirasCatalog, vendedoresRows] = await Promise.all([
       fetchMovimento(cnpj, dtIni, dtFin, chave),
       fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave).catch(() => []),
-      fetchMovimentoItens(cnpj, dtIni, dtFin, chave).catch(() => []),
       fetchMovimentoCartoes(cnpj, dtIni, dtFin, chave).catch(() => []),
       fetchLinxPlanos(cnpj, chave).catch(() => []),
       fetchLinxPlanosBandeiras(cnpj, chave).catch(() => []),
@@ -6674,9 +6673,9 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
     }
 
     // ── Processar LinxMovimento ─────────────────────────────────────────────
+    // LinxMovimento retorna UMA LINHA POR ITEM — agrupamos por documento
     const identMap = {};
-    const seenDocs = new Set();
-    const docMap   = {}; // doc → { doc, data, hora, valorTotal, vendedorCod, vendedorNome, formas[], alertas[] }
+    const docMap   = {}; // doc → { doc, data, hora, valorTotal, vendedorCod, vendedorNome, formas[], alertas[], itens[] }
 
     for (const r of movRows) {
       const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
@@ -6688,29 +6687,80 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       if (serie === '999' || (serie === '4' && op !== 'DS')) continue;
       const doc   = String(r.documento || '').trim();
       const ident = String(r.identificador || '').trim();
-      if (!doc || seenDocs.has(doc)) continue;
-      seenDocs.add(doc);
-      if (ident) identMap[ident] = doc;
+      if (!doc) continue;
+      if (ident && !identMap[ident]) identMap[ident] = doc;
 
       const sign = op === 'DS' ? -1 : 1;
-      const cod  = String(r.cod_vendedor || '').trim();
-      const nome = (r.nome_vendedor || '').trim();
-      // data_documento vem como "DD/MM/YYYY" no Microvix
-      const rawDate = String(r.data_documento || r.data_emissao || r.data || '').trim();
-      const mD = rawDate.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
-      const dataISO = mD ? `${mD[3]}-${mD[2]}-${mD[1]}` : rawDate.slice(0, 10);
-      docMap[doc] = {
-        doc,
-        data:         dataISO,
-        hora:         String(r.hora || r.hora_documento || r.hora_emissao || '').trim().slice(0, 5),
-        valorTotal:   sign * parseBR(r.valor_total || r.total_liquido || '0'),
-        vendedorCod:  cod,
-        vendedorNome: vendNomeCache[cod] || nome || cod,
-        formas:  [],
-        alertas: [],
-        itens:   [],
-        codPlano: String(r.cod_plano || r.plano || '').trim(),
-      };
+
+      // Cria entrada do documento na primeira linha encontrada
+      if (!docMap[doc]) {
+        const cod  = String(r.cod_vendedor || '').trim();
+        const nome = (r.nome_vendedor || '').trim();
+        // data_documento vem como "DD/MM/YYYY" no Microvix
+        const rawDate = String(r.data_documento || r.data_emissao || r.data || '').trim();
+        const mD = rawDate.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+        const dataISO = mD ? `${mD[3]}-${mD[2]}-${mD[1]}` : rawDate.slice(0, 10);
+        docMap[doc] = {
+          doc,
+          data:         dataISO,
+          hora:         String(r.hora_lancamento || r.hora_documento || r.hora_emissao || '').trim().slice(0, 5),
+          valorTotal:   sign * parseBR(r.valor_total || r.total_liquido || '0'),
+          vendedorCod:  cod,
+          vendedorNome: vendNomeCache[cod] || nome || cod,
+          formas:  [],
+          alertas: [],
+          itens:   [],
+          codPlano: String(r.cod_plano || r.plano || '').trim(),
+          sign,
+        };
+      }
+
+      // Cada linha do LinxMovimento é um item da venda
+      const qty      = parseBR(r.quantidade || '1');
+      const vlrUnit  = parseBR(r.preco_unitario || r.preco_cheio || '0');
+      const vlrDesc  = parseBR(r.desconto || '0');
+      const vlrLiq   = parseBR(r.valor_liquido || '0') || (vlrUnit * qty - vlrDesc);
+      const vlrBruto = vlrUnit * qty;
+      const percItem = vlrBruto > 0 && vlrDesc > 0 ? (vlrDesc / vlrBruto) * 100 : 0;
+
+      if (vlrUnit > 0 || vlrLiq > 0) {
+        docMap[doc].itens.push({
+          descricao:    (r.descricao || r.nome_produto || r.cod_produto || '—').trim(),
+          quantidade:   qty,
+          vlrUnitario:  +vlrUnit.toFixed(2),
+          vlrBruto:     +vlrBruto.toFixed(2),
+          vlrDesconto:  +vlrDesc.toFixed(2),
+          percDesconto: +percItem.toFixed(1),
+        });
+
+        if (descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {
+          docMap[doc].alertas.push({
+            tipo: 'desconto_item',
+            msg:  `"${(r.descricao || r.cod_produto || '').trim()}" ${percItem.toFixed(1)}% desc (máx ${descontoMaxItem}%)`,
+          });
+        }
+      }
+    }
+
+    // Alertas de desconto por venda e totais de desconto
+    for (const d of Object.values(docMap)) {
+      const totalBruto = d.itens.reduce((s, i) => s + i.vlrBruto, 0);
+      const totalDesc  = d.itens.reduce((s, i) => s + i.vlrDesconto, 0);
+      if (totalDesc > 0 || totalBruto > 0) {
+        d.desconto = {
+          valor: +totalDesc.toFixed(2),
+          perc:  totalBruto > 0 ? +((totalDesc / totalBruto) * 100).toFixed(1) : 0,
+        };
+        if (descontoMaxVenda < 100 && totalBruto > 0 && totalDesc > 0) {
+          const percV = (totalDesc / totalBruto) * 100;
+          if (percV > descontoMaxVenda) {
+            d.alertas.push({
+              tipo: 'desconto_venda',
+              msg:  `Desconto total ${percV.toFixed(1)}% na venda (máx ${descontoMaxVenda}%)`,
+            });
+          }
+        }
+      }
     }
 
     // ── Formas de pagamento via LinxMovimentoPlanos ─────────────────────────
@@ -6772,8 +6822,11 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
         const doc   = (ident && identMap[ident]) || String(r.documento || '').trim();
         if (!doc || !docMap[doc]) continue;
         if ((r.tipo_transacao || '').toUpperCase() !== 'C') continue;
-        const mP = (r.desc_plano || '').toUpperCase().match(/\b(\d+)\s*X\b/);
-        const nP = mP ? parseInt(mP[1]) : 1;
+        // qtde_parcelas é campo direto no LinxMovimentoPlanos
+        const nP = parseInt(r.qtde_parcelas || '') || (() => {
+          const mP = (r.desc_plano || '').toUpperCase().match(/\b(\d+)\s*X\b/);
+          return mP ? parseInt(mP[1]) : 1;
+        })();
         if (nP <= 1) continue;
         const vlrPlano = parseBR(r.total || r.valor || r.valor_plano || '0');
         const vlrParc  = vlrPlano / nP;
@@ -6786,60 +6839,6 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       }
     }
 
-    // ── Alertas: desconto por item e por venda ──────────────────────────────
-    const itensPorDoc = {};
-    for (const r of itemRows) {
-      const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
-      if (rowCnpj && rowCnpj !== cnpjClean) continue;
-      const doc = String(r.documento || '').trim();
-      if (!doc || !docMap[doc]) continue;
-      if (!itensPorDoc[doc]) itensPorDoc[doc] = [];
-      itensPorDoc[doc].push(r);
-    }
-
-    for (const [doc, itens] of Object.entries(itensPorDoc)) {
-      let totalBruto = 0, totalDesc = 0;
-      for (const item of itens) {
-        const qty      = parseBR(item.quantidade || '1');
-        const vlrUnit  = parseBR(item.valor_bruto || item.preco_unitario || item.preco_cheio || '0');
-        const vlrBruto = vlrUnit * qty;
-        const vlrDesc  = parseBR(item.valor_desconto || '0');
-        const percItem = vlrBruto > 0 ? (vlrDesc / vlrBruto) * 100 : 0;
-        totalBruto += vlrBruto; totalDesc += vlrDesc;
-
-        // Salva itens para exibição no drill-down
-        docMap[doc].itens.push({
-          descricao:   (item.descricao || item.nome_produto || item.cod_produto || '—').trim(),
-          quantidade:  qty,
-          vlrUnitario: +vlrUnit.toFixed(2),
-          vlrBruto:    +vlrBruto.toFixed(2),
-          vlrDesconto: +vlrDesc.toFixed(2),
-          percDesconto:+percItem.toFixed(1),
-        });
-
-        if (descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {
-          docMap[doc].alertas.push({
-            tipo: 'desconto_item',
-            msg:  `"${(item.descricao || item.cod_produto || '').trim()}" ${percItem.toFixed(1)}% desc (máx ${descontoMaxItem}%)`,
-          });
-        }
-      }
-      if (descontoMaxVenda < 100 && totalBruto > 0 && totalDesc > 0) {
-        const percV = (totalDesc / totalBruto) * 100;
-        if (percV > descontoMaxVenda) {
-          docMap[doc].alertas.push({
-            tipo: 'desconto_venda',
-            msg:  `Desconto total ${percV.toFixed(1)}% na venda (máx ${descontoMaxVenda}%)`,
-          });
-        }
-      }
-      if (totalDesc > 0 || totalBruto > 0) {
-        docMap[doc].desconto = {
-          valor: +totalDesc.toFixed(2),
-          perc:  totalBruto > 0 ? +((totalDesc/totalBruto)*100).toFixed(1) : 0,
-        };
-      }
-    }
 
     // ── Montar lista e agrupamentos ─────────────────────────────────────────
     const vendas = Object.values(docMap)
