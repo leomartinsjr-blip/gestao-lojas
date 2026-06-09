@@ -383,20 +383,22 @@
               const zebra = idx % 2 === 1 ? 'drill-row-alt' : '';
 
               // Linha de info: código · ref · marca · coleção
-              const cod  = it.cod_produto || '';
-              const ref  = it.referencia  || '';
-              const marc = it.marca       || '';
-              const col  = it.colecao     || '';
+              const cod   = it.cod_produto || '';
+              const ref   = it.referencia  || '';
+              const marc  = it.marca       || '';
+              const col   = it.colecao     || '';
+              // Nome: catálogo (nomeBase) > descrição do movimento > código como fallback
+              const nome  = it.nome || it.descricao || cod;
               const tags = [
-                cod  ? `<span class="di-tag di-cod">${esc(cod)}</span>`   : '',
+                cod  ? `<span class="di-tag di-cod">${esc(cod)}</span>`     : '',
                 ref  ? `<span class="di-tag di-ref">Ref ${esc(ref)}</span>` : '',
-                marc ? `<span class="di-tag di-marca">${esc(marc)}</span>` : '',
-                col  ? `<span class="di-tag di-col">${esc(col)}</span>`   : '',
+                marc ? `<span class="di-tag di-marca">${esc(marc)}</span>`  : '',
+                col  ? `<span class="di-tag di-col">${esc(col)}</span>`     : '',
               ].filter(Boolean).join('');
 
               return `<tr class="${[temDesc?'has-disc':'', zebra].filter(Boolean).join(' ')}">
                 <td>
-                  <span class="di-nome">${esc(it.descricao)}</span>
+                  <span class="di-nome">${esc(nome)}</span>
                   ${tags ? `<div class="di-tags">${tags}</div>` : ''}
                 </td>
                 <td class="num">${it.quantidade}x</td>

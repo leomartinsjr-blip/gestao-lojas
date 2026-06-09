@@ -4200,15 +4200,17 @@ async function _buildCatalog(lojas) {
           const entry = {
             nomeBase,
             referencia:  ref,
-            setor:       (r.desc_setor  || '').trim(),
-            marca:       (r.desc_marca  || '').trim(),
-            desc_cor:    (r.desc_cor    || '').trim(),
+            setor:       (r.desc_setor    || '').trim(),
+            marca:       (r.desc_marca    || '').trim(),
+            linha:       (r.desc_colecao  || '').trim(),
+            desc_cor:    (r.desc_cor      || '').trim(),
             preco_venda: parseBrNum(r.preco_venda || r.preco || r.preco_cheio || '0'),
           };
           const mergeEntry = (key) => {
             if (!map[key]) { map[key] = entry; return; }
             if (!map[key].marca       && entry.marca)       map[key].marca       = entry.marca;
             if (!map[key].setor       && entry.setor)       map[key].setor       = entry.setor;
+            if (!map[key].linha       && entry.linha)       map[key].linha       = entry.linha;
             if (!map[key].nomeBase    && entry.nomeBase)    map[key].nomeBase    = entry.nomeBase;
             if (!map[key].preco_venda && entry.preco_venda) map[key].preco_venda = entry.preco_venda;
           };
