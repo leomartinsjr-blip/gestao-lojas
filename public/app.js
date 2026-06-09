@@ -7414,14 +7414,20 @@ function renderMeetingCard(container) {
   const card = document.createElement('div');
   card.className = 'main-card';
 
-  const tabsHtml = visibleStores ? `
-    <div class="nf-tabs">
-      ${visibleStores.map(b => `
-        <button class="nf-tab${b === activeBoard ? ' active' : ''}" data-board="${b}"
+  function _mtgTabsHtml() {
+    if (!visibleStores) return '';
+    return `<div class="nf-tabs">
+      ${visibleStores.map(b => {
+        const pending = (S.meetingItems || []).filter(x =>
+          x.board === b && x.year === S.year && x.month === S.month && !x.archived
+        ).length;
+        return `<button class="nf-tab${b === activeBoard ? ' active' : ''}" data-board="${b}"
           style="--nf-tab-color:${BOARDS[b]?.color || '#8B949E'}">
-          ${BOARDS[b]?.label || b}
-        </button>`).join('')}
-    </div>` : '';
+          ${BOARDS[b]?.label || b}${pending ? ` <span class="nf-tab-badge">${pending}</span>` : ''}
+        </button>`;
+      }).join('')}
+    </div>`;
+  }
 
   card.innerHTML = `
     <div class="main-card-hdr">
@@ -7437,7 +7443,7 @@ function renderMeetingCard(container) {
       ${!visibleStores ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
       <button class="nf-hist-btn" id="mtgHistBtn" style="display:none">Histórico</button>
     </div>
-    ${tabsHtml}
+    <div id="mtgTabsWrap">${_mtgTabsHtml()}</div>
     <div class="main-card-body nf-card-body" id="mtgCardBody"></div>
     <div class="nf-add-row" id="mtgAddRow">
       <input type="text" class="nf-input" id="mtgInput" placeholder="${(isAdmin || isEscritorio) ? 'Adicionar pauta…' : 'Enviar pendência para adm…'}" maxlength="200">
@@ -7452,6 +7458,20 @@ function renderMeetingCard(container) {
   const input   = card.querySelector('#mtgInput');
   const addBtn  = card.querySelector('#mtgAddBtn');
 
+  function _refreshTabs() {
+    if (!visibleStores) return;
+    const wrap = card.querySelector('#mtgTabsWrap');
+    if (!wrap) return;
+    wrap.innerHTML = _mtgTabsHtml();
+    wrap.querySelectorAll('.nf-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        activeBoard = tab.dataset.board;
+        showHistory = false;
+        refresh();
+      });
+    });
+  }
+
   function refresh() {
     const archived = (S.meetingItems || []).filter(x =>
       x.board === activeBoard && x.year === S.year && x.month === S.month && x.archived
@@ -7463,6 +7483,7 @@ function renderMeetingCard(container) {
       histBtn.style.display = 'none';
       if (showHistory) showHistory = false;
     }
+    _refreshTabs();
     if (showHistory) {
       _renderMeetingHistory(body, activeBoard, isAdmin, refresh);
       if (addRow) addRow.style.display = 'none';
@@ -7475,17 +7496,6 @@ function renderMeetingCard(container) {
   refresh();
 
   histBtn.addEventListener('click', () => { showHistory = !showHistory; refresh(); });
-
-  if (visibleStores) {
-    card.querySelectorAll('.nf-tab').forEach(tab => {
-      tab.addEventListener('click', () => {
-        activeBoard = tab.dataset.board;
-        showHistory = false;
-        card.querySelectorAll('.nf-tab').forEach(t => t.classList.toggle('active', t === tab));
-        refresh();
-      });
-    });
-  }
 
   async function addMeetingItem() {
     const text = input.value.trim();
