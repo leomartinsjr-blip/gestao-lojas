@@ -101,20 +101,36 @@ body {
 .btn-grp:hover { color: var(--cf-text); }
 .btn-grp.active { background: var(--cf-primary); color: #fff; }
 
-/* ── KPI chips compactos ─────────────────────────────────────── */
-.kpi-row { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; align-items: stretch; }
+/* ── KPI cards — layout estilo dashboard (igual à referência) ─── */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 18px;
+}
+@media (max-width: 900px) { .kpi-row { grid-template-columns: repeat(2,1fr); } }
 .kpi-card {
   background: var(--cf-card); border: 1px solid var(--cf-border);
-  border-radius: 10px; padding: 12px 18px;
-  display: flex; align-items: center; gap: 14px;
-  transition: border-color .15s; min-width: 180px; flex: 1 1 0; max-width: 280px;
+  border-radius: 12px; padding: 16px 18px 14px;
+  display: flex; flex-direction: column; gap: 0;
+  transition: border-color .15s, box-shadow .15s;
+  position: relative; overflow: hidden;
 }
-.kpi-card:hover { border-color: #ffffff1f; }
+.kpi-card:hover { border-color: #ffffff18; box-shadow: 0 4px 16px #0006; }
 .kpi-card.clickable { cursor: pointer; }
 .kpi-card.active-filter { border-color: var(--cf-alert) !important; background: #FF616108; }
+/* topo: label à esquerda + ícone à direita */
+.kpi-top {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  margin-bottom: 10px;
+}
+.kpi-lbl {
+  font-size: 11px; color: var(--cf-muted); font-weight: 600;
+  text-transform: uppercase; letter-spacing: .5px; line-height: 1.2;
+}
 .kpi-icon {
-  width: 34px; height: 34px; border-radius: 8px; flex-shrink: 0;
-  display: flex; align-items: center; justify-content: center; font-size: 18px;
+  width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; font-size: 14px;
 }
 .kpi-icon.blue   { background: var(--cf-primary-bg); color: var(--cf-primary); }
 .kpi-icon.amber  { background: var(--cf-accent-bg);  color: var(--cf-accent);  }
@@ -122,13 +138,31 @@ body {
 .kpi-icon.green  { background: var(--cf-green-bg);   color: var(--cf-green);   }
 .kpi-icon.purple { background: var(--cf-purple-bg);  color: var(--cf-purple);  }
 .kpi-icon.muted  { background: #ffffff08;            color: var(--cf-muted);   }
-.kpi-body { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-.kpi-val  { font-size: 20px; font-weight: 800; letter-spacing: -.4px; line-height: 1.1; white-space: nowrap; }
-.kpi-lbl  { font-size: 10px; color: var(--cf-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; white-space: nowrap; }
-.kpi-sub  { font-size: 10px; color: var(--cf-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kpi-badge { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 20px; background: var(--cf-card2); color: var(--cf-muted); margin-left: auto; align-self: flex-start; white-space: nowrap; }
-.kpi-top  { display: none; } /* não usado no novo layout */
-.kpi-meta { display: none; } /* não usado no novo layout */
+/* valor grande no centro */
+.kpi-val {
+  font-size: 30px; font-weight: 800; letter-spacing: -.8px;
+  line-height: 1.05; color: var(--cf-text); margin-bottom: 6px;
+}
+/* subtítulo + badge na base */
+.kpi-meta {
+  display: flex; align-items: center; justify-content: space-between; gap: 6px;
+  margin-top: auto;
+}
+.kpi-sub   { font-size: 11px; color: var(--cf-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi-badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 20px; background: var(--cf-card2); color: var(--cf-muted); white-space: nowrap; flex-shrink: 0; }
+/* barra de cor na base do card */
+.kpi-card::after {
+  content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+  opacity: 0; transition: opacity .15s;
+}
+.kpi-card:hover::after { opacity: 1; }
+.kpi-card.kpi-green::after  { background: var(--cf-green); }
+.kpi-card.kpi-blue::after   { background: var(--cf-primary); }
+.kpi-card.kpi-amber::after  { background: var(--cf-accent); }
+.kpi-card.kpi-red::after    { background: var(--cf-alert); }
+.kpi-card.kpi-muted::after  { background: var(--cf-muted); }
+/* compatibilidade — kpi-body não usado mais */
+.kpi-body { display: contents; }
 
 /* ── Alert summary box ───────────────────────────────────────── */
 .alert-summary-box { background: var(--cf-card); border: 1px solid #FF616130; border-left: 3px solid var(--cf-alert); border-radius: 10px; padding: 10px 16px; margin-bottom: 12px; }

@@ -107,7 +107,7 @@
       ${totalAlertas
         ? kpiCard('red', svgAlert(), totalAlertas, 'Com Alertas', 'Clique para filtrar', 'alerta', _filtroAlerta ? '● ativo' : '')
         : kpiCard('muted', svgCheck(), qtdVendas - (vendas.filter(v=>v.alertas?.length).length), 'Sem Alertas', '100% em conformidade', '')}`;
-    kpiRow.style.display = 'flex';
+    kpiRow.style.display = 'grid';
 
     if (totalAlertas) {
       const cardAlerta = kpiRow.querySelector('.kpi-alerta');
@@ -222,16 +222,18 @@
   }
 
   function kpiCard(color, iconSvg, value, label, sub, extraClass, badge) {
-    const cls = extraClass ? `kpi-card kpi-${extraClass}` : 'kpi-card';
+    const cls = ['kpi-card', `kpi-${color}`, extraClass ? `kpi-${extraClass}` : ''].filter(Boolean).join(' ');
     return `
       <div class="${cls}">
-        <div class="kpi-icon ${color}">${iconSvg}</div>
-        <div class="kpi-body">
+        <div class="kpi-top">
           <div class="kpi-lbl">${label}</div>
-          <div class="kpi-val">${value}</div>
-          ${sub ? `<div class="kpi-sub">${sub}</div>` : ''}
+          <div class="kpi-icon ${color}">${iconSvg}</div>
         </div>
-        ${badge ? `<span class="kpi-badge">${esc(badge)}</span>` : ''}
+        <div class="kpi-val">${value}</div>
+        <div class="kpi-meta">
+          ${sub  ? `<span class="kpi-sub">${sub}</span>` : '<span></span>'}
+          ${badge ? `<span class="kpi-badge">${esc(String(badge))}</span>` : ''}
+        </div>
       </div>`;
   }
 
