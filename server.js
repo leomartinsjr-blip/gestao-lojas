@@ -4730,12 +4730,16 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
 
     for (const [cod, stocks] of Object.entries(stocksMap)) {
       const giro = giroMap[cod] || {};
-      const calc = _calcTransfersProporcional(boards, stocks, giro);
+      const info = catalogMap[cod] || {};
+      // Monta lastCompra por loja: usa a mesma data para todas as lojas,
+      // pois a planilha só tem uma data de última compra por produto (cross-loja)
+      const lastCompra = {};
+      if (info.ultimaCompra) boards.forEach(b => { lastCompra[b] = info.ultimaCompra; });
+      const calc = _calcTransfersProporcional(boards, stocks, giro, 90, lastCompra);
       if (!calc) continue;
       const { transfers, workStocks, ideal } = calc;
 
-      const cat  = catalog[cod]  || {};
-      const info = catalogMap[cod] || {};
+      const cat = catalog[cod] || {};
       sugestoes.push({
         cod_produto:  cod,
         descricao:    cat.nome     || info.descricao || '—',
