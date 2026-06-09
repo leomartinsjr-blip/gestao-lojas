@@ -4626,19 +4626,23 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
     }
 
     // Localiza aba com header das colunas (tem "Código" e "Descrição")
-    let companies = [];   // [{ board, vendaCol, saldoCol }]
+    let companies   = [];   // [{ board, vendaCol, saldoCol }]
     let headerSheetIdx = -1;
+    let headerRowIdx   = -1;  // linha do header dentro da aba
+    let allSheetRows   = {};  // cache das rows por aba
 
     console.log('[Excel] Abas encontradas:', wb.SheetNames);
 
     for (let i = 0; i < wb.SheetNames.length; i++) {
       const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1 });
+      allSheetRows[i] = rows;
       // Aceita 'Código' com ou sem acento, e 'Codigo'
       const colRowIdx = rows.findIndex(r => Array.isArray(r) &&
         r.some(c => typeof c === 'string' && c.normalize('NFD').replace(/[̀-ͯ]/g,'').toLowerCase() === 'codigo'));
       console.log(`[Excel] Aba ${i} "${wb.SheetNames[i]}": colRowIdx=${colRowIdx}, totalRows=${rows.length}`);
       if (colRowIdx === -1) continue;
       headerSheetIdx = i;
+      headerRowIdx   = colRowIdx;
       const headerRow  = rows[colRowIdx];
       const companyRow = colRowIdx > 0 ? rows[colRowIdx - 1] : [];
       console.log('[Excel] headerRow[0..15]:', headerRow.slice(0, 15));
@@ -4664,16 +4668,26 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
 
     const boards = companies.map(c => c.board);
 
-    // Lê todas as abas de dados (após o header)
+    // Lê dados: começa na mesma aba do header (logo após a linha de header),
+    // e continua nas abas seguintes se houver mais de uma.
     const stocksMap  = {};  // cod → { board: qty }
     const giroMap    = {};  // cod → { board: qty }
     const catalogMap = {};  // cod → { descricao, setor, ultimaCompra }
 
-    // setor persiste entre abas: uma aba tem o label, a(s) seguinte(s) têm os dados
+    // Monta lista de abas e linha inicial de cada uma
+    const sheetsToRead = [
+      { idx: headerSheetIdx, startRow: headerRowIdx + 1 },
+      ...Array.from({ length: wb.SheetNames.length - headerSheetIdx - 1 }, (_, k) => ({
+        idx: headerSheetIdx + 1 + k, startRow: 0,
+      })),
+    ];
+
     let currentSetor = '';
-    for (let i = headerSheetIdx + 1; i < wb.SheetNames.length; i++) {
-      const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[i]], { header: 1 });
-      for (const r of rows) {
+    for (const { idx, startRow } of sheetsToRead) {
+      const rows = allSheetRows[idx] ||
+        XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[idx]], { header: 1 });
+      for (let ri = startRow; ri < rows.length; ri++) {
+        const r = rows[ri];
         if (!r || !r.length) continue;
         if (typeof r[0] === 'string' && r[0].includes('Setor')) {
           // "SetorSetor: BERMUDAS (9)" → "BERMUDAS"
@@ -4705,6 +4719,8 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
         }
       }
     }
+
+    console.log(`[Excel] Produtos lidos da planilha: ${Object.keys(stocksMap).length}`);
 
     // Enriquece com catálogo Microvix (setor, marca) e aplica lógica proporcional
     const lojas = (() => { try { return JSON.parse(process.env.MICROVIX_LOJAS || '{}'); } catch { return {}; } })();
