@@ -7441,12 +7441,13 @@ app.get('/api/conferencia/debug', requireEscritorioOrAdmin, async (req, res) => 
     if (!cnpj) return res.status(400).json({ error: `Loja "${board}" não configurada` });
     const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
     const cnpjClean = cnpj.replace(/\D/g, '');
-    const { fetchMovimento, fetchMovimentoPlanos, fetchAcoesPromocionais, fetchMovimentoAcoesPromocionais } = require('./services/microvix');
-    const [movRows, planoRows, acoesRowsDbg, movAcoesRowsDbg] = await Promise.all([
+    const { fetchMovimento, fetchMovimentoPlanos, fetchAcoesPromocionais, fetchMovimentoAcoesPromocionais, fetchProdutos, fetchProdutosPromocoes } = require('./services/microvix');
+    const [movRows, planoRows, acoesRowsDbg, movAcoesRowsDbg, produtosPromoDbg] = await Promise.all([
       fetchMovimento(cnpj, dtIni, dtFin, chave).catch(e => []),
       fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave).catch(e => []),
       fetchAcoesPromocionais(cnpj, chave).catch(e => ({ error: e.message })),
       fetchMovimentoAcoesPromocionais(cnpj, dtIni, dtFin, chave).catch(e => ({ error: e.message })),
+      fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave).catch(e => ({ error: e.message })),
     ]);
 
     const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
@@ -7523,6 +7524,7 @@ app.get('/api/conferencia/debug', requireEscritorioOrAdmin, async (req, res) => 
       movimentoPlanos:  { total: Array.isArray(planoRows)?planoRows.length:'erro', amostra: (Array.isArray(planoRows)?planoRows:[]).slice(0,3) },
       acoesPromocionais:{ total: Array.isArray(acoesRowsDbg)?acoesRowsDbg.length:'erro', erro: Array.isArray(acoesRowsDbg)?null:acoesRowsDbg?.error, amostra: Array.isArray(acoesRowsDbg)?acoesRowsDbg.slice(0,5):[] },
       movimentoAcoes:   { total: Array.isArray(movAcoesRowsDbg)?movAcoesRowsDbg.length:'erro', erro: Array.isArray(movAcoesRowsDbg)?null:movAcoesRowsDbg?.error, amostra: Array.isArray(movAcoesRowsDbg)?movAcoesRowsDbg.slice(0,5):[] },
+      produtosPromocoes:{ total: Array.isArray(produtosPromoDbg)?produtosPromoDbg.length:'erro', erro: Array.isArray(produtosPromoDbg)?null:produtosPromoDbg?.error, campos: Array.isArray(produtosPromoDbg)&&produtosPromoDbg[0]?Object.keys(produtosPromoDbg[0]):[], amostra: Array.isArray(produtosPromoDbg)?produtosPromoDbg.slice(0,3):[] },
       diagnostico_701464: {
         linhas_movimento: mov701464,
         transacoes: transacoes701464,
