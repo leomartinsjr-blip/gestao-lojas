@@ -3699,6 +3699,18 @@ app.get('/api/catalog-warm', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Cache de resultados de marcas (vendas + estoque) ─────────────────────────
+// Key: "boards|dtIni|dtFin"  — TTL: 5 min se inclui hoje, 60 min se período passado
+const _marcasCache        = {};
+const _estoqueMarcasCache = {};
+function _marcasCacheKey(targetBoards, dtIni, dtFin) {
+  return [...targetBoards].sort().join(',') + '|' + dtIni + '|' + dtFin;
+}
+function _marcasTTL(dtFin) {
+  const today = new Date().toISOString().slice(0, 10);
+  return dtFin >= today ? 5 * 60 * 1000 : 60 * 60 * 1000;
+}
+
 // ── GET /api/relatorio-marcas ─────────────────────────────────────────────
 // ?dtIni=2026-05-01&dtFin=2026-05-26&board=delrey  ou  &boards=delrey,minas,contagem,estacao
 // Grupo especial: &boards=surfers → delrey,minas,contagem,estacao
@@ -3963,18 +3975,6 @@ app.get('/api/estoque-marcas', requireAuth, async (req, res) => {
     res.json(ePayload);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-
-// ── Cache de resultados de marcas (vendas + estoque) ─────────────────────────
-// Key: "boards|dtIni|dtFin"  — TTL: 5 min se inclui hoje, 60 min se período passado
-const _marcasCache       = {};  // { [key]: { data, at } }
-const _estoqueMarcasCache = {}; // { [key]: { data, at } }
-function _marcasCacheKey(targetBoards, dtIni, dtFin) {
-  return [...targetBoards].sort().join(',') + '|' + dtIni + '|' + dtFin;
-}
-function _marcasTTL(dtFin) {
-  const today = new Date().toISOString().slice(0, 10);
-  return dtFin >= today ? 5 * 60 * 1000 : 60 * 60 * 1000;
-}
 
 // ── Transferências: cache de resultado (TTL 30min) ─────────────────────────
 let _transResultCache = {};
