@@ -3250,6 +3250,12 @@ function renderTransExcelTab(container) {
         </svg>
         Calcular sugestões
       </button>
+      <div class="trans-compra-filter" id="transExcelMarcaWrap" style="display:none">
+        <label class="trans-label">Marca:</label>
+        <select id="transExcelMarcaSel" class="trans-date-input" style="min-width:130px">
+          <option value="">Todas</option>
+        </select>
+      </div>
     </div>
     <div id="transExcelResult" style="padding:.5rem 0"></div>`;
 
@@ -3591,7 +3597,25 @@ function renderTransExcelTab(container) {
         return String(a.referencia).localeCompare(String(b.referencia), 'pt-BR', { numeric: true });
       });
 
-      renderTransTable(result, { boards, dias: null, total: sugestoes.length, totalAnalisados: totalBruto, sugestoes, source: 'excel', excluidos, compraMinDate });
+      // Guarda todas as sugestões para filtro por marca
+      const _allSugestoes = sugestoes;
+
+      // Popula select de marcas
+      const marcaWrap = container.querySelector('#transExcelMarcaWrap');
+      const marcaSel  = container.querySelector('#transExcelMarcaSel');
+      const marcas = [...new Set(sugestoes.map(s => s.marca).filter(m => m && m !== '—'))].sort((a,b) => a.localeCompare(b,'pt-BR'));
+      marcaSel.innerHTML = '<option value="">Todas</option>';
+      marcas.forEach(m => { const o = document.createElement('option'); o.value = m; o.textContent = m; marcaSel.appendChild(o); });
+      marcaWrap.style.display = '';
+
+      const renderFiltered = () => {
+        const sel = marcaSel.value;
+        const filtrado = sel ? _allSugestoes.filter(s => s.marca === sel) : _allSugestoes;
+        renderTransTable(result, { boards, dias: null, total: filtrado.length, totalAnalisados: totalBruto, sugestoes: filtrado, source: 'excel', excluidos, compraMinDate });
+      };
+
+      marcaSel.addEventListener('change', renderFiltered);
+      renderFiltered();
     } catch (e) {
       let msg = e.message || e.toString() || 'Erro desconhecido';
       try { const j = JSON.parse(msg); msg = j.error || msg; } catch {}
