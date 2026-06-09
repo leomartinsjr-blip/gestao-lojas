@@ -348,7 +348,7 @@
               const percDesc = baseDescPct > 0 ? ((baseDescPct - vlrLiqUnit) / baseDescPct * 100) : 0;
               const temDescPct = percDesc > 0.05;
               return `<tr class="${temDesc?'has-disc':''}">
-                <td>${esc(it.descricao)}${subInfo ? `<br><span style="font-size:10px;color:var(--cf-muted);font-weight:400">${esc(subInfo)}</span>` : ''}</td>
+                <td><span style="font-weight:600">${esc(it.descricao)}</span>${subInfo ? `<br><span style="font-size:11px;color:var(--cf-muted);font-weight:400">${esc(subInfo)}</span>` : ''}</td>
                 <td class="num">${it.quantidade}x</td>
                 <td class="num">${fmtR(it.vlrUnitario)}</td>
                 <td class="num">${promoCell}</td>
