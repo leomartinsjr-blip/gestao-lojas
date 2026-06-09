@@ -335,7 +335,7 @@
               <td>${esc(v.vendedor||'—')}</td>
               <td><div class="pay-chips">${formaChips(v.formas)}</div></td>
               <td class="num">${v.desconto?.valor>0
-                ? `<span style="color:${P('accent')};font-weight:700">${fmtR(v.desconto.valor)}</span><span style="font-size:10px;color:${P('accent')};margin-left:4px">${v.desconto.perc}%</span>`
+                ? `<span style="color:#DC2626;font-weight:700">${fmtR(v.desconto.valor)}</span><span class="disc-pct">${v.desconto.perc}%</span>`
                 : `<span style="color:${P('muted')}">—</span>`}</td>
               <td class="num" style="font-weight:800">${fmtR(v.valorTotal)}</td>
               <td>
