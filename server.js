@@ -4799,29 +4799,51 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
   }
 });
 
-// GET /api/transferencias/setores — lista setores distintos do catálogo (para filtro)
+// GET /api/transferencias/setores — setores distintos (do cache de transferências ou do catálogo)
 app.get('/api/transferencias/setores', requireAdmin, async (req, res) => {
   try {
-    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-    const catalog = await _getCatalog(lojas).catch(() => ({}));
     const seen = new Set();
-    for (const entry of Object.values(catalog)) {
-      const s = (entry.setor || '').trim();
-      if (s && s !== '—') seen.add(s);
+    // Fonte 1: cache de sugestões (mais confiável — já passou pelo enriquecimento)
+    const cached = Object.values(_transResultCache)[0];
+    if (cached?.result?.sugestoes?.length) {
+      for (const s of cached.result.sugestoes) {
+        const v = (s.setor || '').trim();
+        if (v && v !== '—') seen.add(v);
+      }
+    }
+    // Fonte 2: catálogo (fallback se cache vazio)
+    if (seen.size === 0) {
+      const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+      const catalog = await _getCatalog(lojas).catch(() => ({}));
+      for (const entry of Object.values(catalog)) {
+        const v = (entry.setor || '').trim();
+        if (v && v !== '—') seen.add(v);
+      }
     }
     res.json([...seen].sort((a, b) => a.localeCompare(b, 'pt-BR')));
   } catch (e) { res.json([]); }
 });
 
-// GET /api/transferencias/marcas — lista marcas distintas do catálogo (para filtro)
+// GET /api/transferencias/marcas — marcas distintas (do cache de transferências ou do catálogo)
 app.get('/api/transferencias/marcas', requireAdmin, async (req, res) => {
   try {
-    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-    const catalog = await _getCatalog(lojas).catch(() => ({}));
     const seen = new Set();
-    for (const entry of Object.values(catalog)) {
-      const m = (entry.marca || '').trim();
-      if (m && m !== '—') seen.add(m);
+    // Fonte 1: cache de sugestões
+    const cached = Object.values(_transResultCache)[0];
+    if (cached?.result?.sugestoes?.length) {
+      for (const s of cached.result.sugestoes) {
+        const v = (s.marca || '').trim();
+        if (v && v !== '—') seen.add(v);
+      }
+    }
+    // Fonte 2: catálogo (fallback)
+    if (seen.size === 0) {
+      const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+      const catalog = await _getCatalog(lojas).catch(() => ({}));
+      for (const entry of Object.values(catalog)) {
+        const v = (entry.marca || '').trim();
+        if (v && v !== '—') seen.add(v);
+      }
     }
     res.json([...seen].sort((a, b) => a.localeCompare(b, 'pt-BR')));
   } catch (e) { res.json([]); }

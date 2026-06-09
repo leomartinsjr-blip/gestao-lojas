@@ -3613,8 +3613,40 @@ async function loadTransSugestoes(container) {
       return;
     }
     renderTransTable(container, data);
+    // Após calcular, atualiza dropdowns com valores reais do cache
+    _reloadTransFiltros();
   } catch (e) {
     container.innerHTML = `<div class="trans-error">Erro: ${e.message}</div>`;
+  }
+}
+
+function _reloadTransFiltros() {
+  const setorSel = document.getElementById('transSetorSel');
+  const marcaSel = document.getElementById('transMarcaSel');
+  if (!setorSel && !marcaSel) return;
+  if (setorSel) {
+    fetch('/api/transferencias/setores').then(r => r.json()).then(setores => {
+      const cur = setorSel.value;
+      setorSel.innerHTML = '<option value="">Todos</option>';
+      setores.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s; opt.textContent = s;
+        if (s === cur) opt.selected = true;
+        setorSel.appendChild(opt);
+      });
+    }).catch(() => {});
+  }
+  if (marcaSel) {
+    fetch('/api/transferencias/marcas').then(r => r.json()).then(marcas => {
+      const cur = marcaSel.value;
+      marcaSel.innerHTML = '<option value="">Todas</option>';
+      marcas.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m; opt.textContent = m;
+        if (m === cur) opt.selected = true;
+        marcaSel.appendChild(opt);
+      });
+    }).catch(() => {});
   }
 }
 
