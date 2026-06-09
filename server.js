@@ -7244,9 +7244,7 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
           nomePromocao:  emPromocao ? acaoPromo.descricao : null,
         });
 
-        if (alertaPromo) {
-          docMap[doc].alertas.push(alertaPromo);
-        } else if (!emPromocao && descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {
+        if (!emPromocao && descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {
           // Só alerta desconto excessivo se o produto NÃO está em promoção
           docMap[doc].alertas.push({
             tipo: 'desconto_item',
