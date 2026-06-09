@@ -4050,6 +4050,52 @@ async function _buildRefColorIndex() {
   return data;
 }
 
+const CATALOG_CHUNK_SIZE = 20000; // ~3-4 MB por chunk, bem abaixo do limite de 16 MB
+
+async function _saveCatalogMongo(map) {
+  const entries  = Object.entries(map);
+  const total    = entries.length;
+  const updatedAt = new Date();
+  const numChunks = Math.ceil(total / CATALOG_CHUNK_SIZE);
+  const col = mongoDb.collection('catalog');
+
+  // Salva cada chunk em paralelo
+  const ops = [];
+  for (let i = 0; i < numChunks; i++) {
+    const chunk = Object.fromEntries(entries.slice(i * CATALOG_CHUNK_SIZE, (i + 1) * CATALOG_CHUNK_SIZE));
+    ops.push(col.replaceOne(
+      { _id: `fullCatalog_${i}` },
+      { _id: `fullCatalog_${i}`, data: chunk, updatedAt },
+      { upsert: true }
+    ));
+  }
+  // Remove chunks antigos que não existem mais (se o catálogo encolheu)
+  ops.push(col.deleteMany({ _id: { $regex: /^fullCatalog_/, $gt: `fullCatalog_${numChunks - 1}` } }));
+  // Salva metadado com número de chunks
+  ops.push(col.replaceOne(
+    { _id: 'fullCatalog_meta' },
+    { _id: 'fullCatalog_meta', numChunks, total, updatedAt },
+    { upsert: true }
+  ));
+  await Promise.all(ops);
+  console.log(`[Catalog] Salvo no MongoDB: ${total} entradas em ${numChunks} chunks`);
+}
+
+async function _loadCatalogMongo() {
+  const col  = mongoDb.collection('catalog');
+  const meta = await col.findOne({ _id: 'fullCatalog_meta' });
+  if (!meta || !meta.numChunks) return null;
+
+  const chunks = await Promise.all(
+    Array.from({ length: meta.numChunks }, (_, i) => col.findOne({ _id: `fullCatalog_${i}` }))
+  );
+  if (chunks.some(c => !c?.data)) return null; // algum chunk sumiu
+
+  const map = Object.assign({}, ...chunks.map(c => c.data));
+  console.log(`[Catalog] Carregado do MongoDB: ${Object.keys(map).length} entradas (${meta.numChunks} chunks)`);
+  return { map, updatedAt: meta.updatedAt };
+}
+
 async function _getCatalog(lojas) {
   if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
 
@@ -4064,11 +4110,10 @@ async function _getCatalog(lojas) {
   // Cold start: tenta carregar do MongoDB antes de aguardar o build completo
   if (mongoDb) {
     try {
-      const doc = await mongoDb.collection('catalog').findOne({ _id: 'fullCatalog' });
-      if (doc?.data && Object.keys(doc.data).length > 0) {
-        _catalogCache   = doc.data;
-        _catalogCacheAt = doc.updatedAt ? new Date(doc.updatedAt).getTime() : 0;
-        console.log(`[Catalog] Carregado do MongoDB: ${Object.keys(_catalogCache).length} entradas`);
+      const loaded = await _loadCatalogMongo();
+      if (loaded && Object.keys(loaded.map).length > 0) {
+        _catalogCache   = loaded.map;
+        _catalogCacheAt = loaded.updatedAt ? new Date(loaded.updatedAt).getTime() : 0;
         return _catalogCache;
       }
     } catch (e) { console.warn('[Catalog] MongoDB load:', e.message); }
@@ -4166,12 +4211,7 @@ async function _buildCatalog(lojas) {
     _catalogCacheAt = Date.now();
 
     if (mongoDb && Object.keys(map).length > 0) {
-      mongoDb.collection('catalog').replaceOne(
-        { _id: 'fullCatalog' },
-        { _id: 'fullCatalog', data: map, updatedAt: new Date() },
-        { upsert: true }
-      ).then(() => console.log('[Catalog] Salvo no MongoDB'))
-       .catch(e => console.warn('[Catalog] Erro ao salvar:', e.message));
+      _saveCatalogMongo(map).catch(e => console.warn('[Catalog] Erro ao salvar:', e.message));
     }
 
     return map;
