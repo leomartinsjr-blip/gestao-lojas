@@ -4708,12 +4708,27 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
         }
 
         if (!catalogMap[cod]) {
-          // Col 8 = "Data Última compra" em formato DD/MM/YYYY
-          const rawDate = String(r[8] || '').trim();
+          // Col 8 = "Data Última compra" — pode vir como serial numérico do Excel,
+          // string DD/MM/YYYY, ou string YYYY-MM-DD
+          const rawDate = r[8];
           let ultimaCompra = null;
-          if (rawDate && rawDate !== '-' && rawDate.includes('/')) {
-            const [d, m, y] = rawDate.split('/');
-            ultimaCompra = `${y}-${m.padStart(2,'0')}-${d.padStart(2,'0')}`;
+          if (typeof rawDate === 'number' && rawDate > 1000) {
+            // Serial numérico do Excel → converte para ISO (sistema de datas 1900)
+            const jsDate = new Date(Math.round((rawDate - 25569) * 86400 * 1000));
+            if (!isNaN(jsDate)) {
+              ultimaCompra = jsDate.toISOString().slice(0, 10);
+            }
+          } else if (rawDate instanceof Date) {
+            ultimaCompra = rawDate.toISOString().slice(0, 10);
+          } else {
+            const s = String(rawDate || '').trim();
+            if (s && s !== '-') {
+              // DD/MM/YYYY
+              const mBR = s.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+              if (mBR) ultimaCompra = `${mBR[3]}-${mBR[2]}-${mBR[1]}`;
+              // YYYY-MM-DD
+              else if (/^\d{4}-\d{2}-\d{2}$/.test(s)) ultimaCompra = s;
+            }
           }
           catalogMap[cod] = { descricao: String(r[1] || '').trim(), setor: currentSetor, ultimaCompra };
         }
