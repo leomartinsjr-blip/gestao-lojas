@@ -26,11 +26,23 @@
   }));
 
   // ── Selects ───────────────────────────────────────────────────────────────
-  ['vBoard','cBoard'].forEach(id => LOJAS.forEach(b => {
+  // vBoard já tem a opção "all" no HTML; adiciona as lojas específicas
+  LOJAS.forEach(b => {
     const o = document.createElement('option');
     o.value = b; o.textContent = LOJA_LABEL[b];
-    $(id).appendChild(o);
-  }));
+    $('vBoard').appendChild(o);
+  });
+  // cBoard só lojas específicas
+  LOJAS.forEach(b => {
+    const o = document.createElement('option');
+    o.value = b; o.textContent = LOJA_LABEL[b];
+    $('cBoard').appendChild(o);
+  });
+
+  // Ao selecionar "all" no vBoard, ativa automaticamente filtro de alertas
+  $('vBoard').addEventListener('change', () => {
+    if ($('vBoard').value === 'all') _filtroAlerta = true;
+  });
 
   const hoje = new Date().toISOString().slice(0,10);
   const ini  = hoje.slice(0,8)+'01';
@@ -40,7 +52,7 @@
   // ════════════════════════════════════════════════════════════════════════
   // VENDAS
   // ════════════════════════════════════════════════════════════════════════
-  let _data = null, _grupo = 'lista', _filtroAlerta = false;
+  let _data = null, _grupo = 'lista', _filtroAlerta = false, _revisoesMap = {};
 
   $('vBuscarBtn').addEventListener('click', buscarVendas);
   document.querySelectorAll('.btn-grp').forEach(btn => btn.addEventListener('click', () => {
@@ -61,7 +73,15 @@
     $('vResult').innerHTML = '';
     const alertRowReset = $('vAlertRow'); if (alertRowReset) { alertRowReset.innerHTML = ''; alertRowReset.style.display = 'none'; }
     try {
-      _data = await api('GET', `/api/conferencia/vendas?board=${board}&dtIni=${dtIni}&dtFin=${dtFin}`);
+      [_data] = await Promise.all([
+        api('GET', `/api/conferencia/vendas?board=${board}&dtIni=${dtIni}&dtFin=${dtFin}`),
+      ]);
+      // Carrega revisões salvas para o período/board
+      try {
+        const revisoes = await api('GET', `/api/conferencia/revisoes?board=${board}&dtIni=${dtIni}&dtFin=${dtFin}`);
+        _revisoesMap = {};
+        for (const r of revisoes) _revisoesMap[r.doc + '::' + r.board] = r;
+      } catch(_) { _revisoesMap = {}; }
       render(_data);
     } catch(e) {
       $('vResult').innerHTML = `<div class="cf-empty" style="color:${P('alert')}">⚠ ${esc(e.message)}</div>`;
@@ -236,6 +256,18 @@
     return parts.join(' ');
   }
 
+  function revisaoBtns(v) {
+    const board = v.board || $('vBoard').value;
+    const key   = v.doc + '::' + board;
+    const rev   = _revisoesMap[key];
+    const cAct  = rev?.status === 'conferida'  ? ' active' : '';
+    const rAct  = rev?.status === 'reprovada'  ? ' active' : '';
+    return `<div class="revisao-btns">
+      <button class="btn-conferida${cAct}" data-doc="${esc(v.doc)}" data-board="${esc(board)}">✓ Conferida</button>
+      <button class="btn-reprovada${rAct}" data-doc="${esc(v.doc)}" data-board="${esc(board)}">✗ Reprovada</button>
+    </div>`;
+  }
+
   function accentClass(v) {
     if (v.alertas?.length) return 'alert';
     if (v.desconto?.valor > 0) return 'disc';
@@ -272,7 +304,10 @@
                 ? `<span style="color:${P('accent')};font-weight:700">${fmtR(v.desconto.valor)}</span><span style="font-size:10px;color:${P('accent')};margin-left:4px">${v.desconto.perc}%</span>`
                 : `<span style="color:${P('muted')}">—</span>`}</td>
               <td class="num" style="font-weight:800">${fmtR(v.valorTotal)}</td>
-              <td>${alertBadges(v.alertas)}</td>
+              <td>
+                ${alertBadges(v.alertas)}
+                ${v.alertas?.length ? revisaoBtns(v) : ''}
+              </td>
               <td style="color:${P('muted')}">
                 ${hasIt ? `<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>` : ''}
               </td>
@@ -380,14 +415,84 @@
     });
     container.querySelectorAll('tr[data-drill]:not([data-bound])').forEach(row => {
       row.dataset.bound = '1';
-      row.addEventListener('click', () => {
+      row.addEventListener('click', e => {
+        if (e.target.closest('.revisao-btns')) return; // não abrir drill ao clicar em botões
         const drill = document.getElementById(row.dataset.drill);
         if (!drill) return;
         const open = drill.classList.toggle('hidden');
         row.querySelector('.chevron')?.classList.toggle('open', !open);
       });
     });
+    // Botões de revisão
+    container.querySelectorAll('.btn-conferida:not([data-bound])').forEach(btn => {
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', e => { e.stopPropagation(); salvarRevisao(btn.dataset.doc, btn.dataset.board, 'conferida'); });
+    });
+    container.querySelectorAll('.btn-reprovada:not([data-bound])').forEach(btn => {
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', e => { e.stopPropagation(); abrirModalReprovacao(btn.dataset.doc, btn.dataset.board); });
+    });
   }
+
+  async function salvarRevisao(doc, board, status, obs, valorCobrar) {
+    const venda = (_data?.vendas || []).find(v => v.doc === doc && (v.board === board || !v.board));
+    if (!venda) return;
+    const body = {
+      doc, board: board || $('vBoard').value,
+      data: venda.data,
+      dtIni: $('vDtIni').value, dtFin: $('vDtFin').value,
+      vendedorCod: venda.vendedorCod, vendedorNome: venda.vendedorNome,
+      valorTotal: venda.valorTotal,
+      valorCobrar: valorCobrar || 0,
+      status, obs: obs || '',
+      alertas: venda.alertas || [],
+    };
+    try {
+      const saved = await api('POST', '/api/conferencia/revisao', body);
+      _revisoesMap[doc + '::' + (board || $('vBoard').value)] = saved;
+      // Atualiza visualmente todos os botões deste doc+board
+      document.querySelectorAll(`.btn-conferida[data-doc="${esc(doc)}"][data-board="${esc(board)}"],
+                                  .btn-reprovada[data-doc="${esc(doc)}"][data-board="${esc(board)}"]`).forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.classList.contains('btn-' + status)) btn.classList.add('active');
+      });
+    } catch(e) { alert('Erro ao salvar revisão: ' + e.message); }
+  }
+
+  // ── Modal de Reprovação ──────────────────────────────────────────────────
+  let _modalDoc = null, _modalBoard = null;
+
+  function abrirModalReprovacao(doc, board) {
+    const venda = (_data?.vendas || []).find(v => v.doc === doc && (v.board === board || !v.board));
+    if (!venda) return;
+    _modalDoc = doc; _modalBoard = board;
+    const rev = _revisoesMap[doc + '::' + board];
+    const boardLabel = LOJA_LABEL[board] || board || '';
+    $('modalRepSubtitle').textContent = `${venda.vendedorNome || venda.vendedor || '—'} · ${boardLabel} · ${fmtR(venda.valorTotal)}`;
+    $('modalRepAlertas').innerHTML = (venda.alertas || []).map(a => `• ${esc(a.msg)}`).join('<br>') || '—';
+    // Pré-preenche valor a cobrar: soma dos vlrDesconto dos itens com alerta
+    const alertaItens = new Set((venda.alertas || []).filter(a => a.tipo === 'desconto_item').map(a => a.msg));
+    let vlrCobrar = rev?.valorCobrar ?? venda.itens?.filter(it => it.vlrDesconto > 0).reduce((s, it) => s + it.vlrDesconto, 0) ?? 0;
+    $('modalRepValorCobrar').value = vlrCobrar.toFixed(2);
+    $('modalRepObs').value = rev?.obs || '';
+    $('modalReprovacao').classList.add('open');
+    $('modalRepObs').focus();
+  }
+
+  $('modalRepCancelar').addEventListener('click', () => $('modalReprovacao').classList.remove('open'));
+  $('modalReprovacao').addEventListener('click', e => { if (e.target === $('modalReprovacao')) $('modalReprovacao').classList.remove('open'); });
+  $('modalRepConfirmar').addEventListener('click', async () => {
+    const obs = $('modalRepObs').value.trim();
+    if (!obs) { $('modalRepObs').focus(); $('modalRepObs').style.borderColor = 'var(--cf-alert)'; return; }
+    $('modalRepObs').style.borderColor = '';
+    const valorCobrar = parseFloat($('modalRepValorCobrar').value) || 0;
+    $('modalRepConfirmar').disabled = true;
+    try {
+      await salvarRevisao(_modalDoc, _modalBoard, 'reprovada', obs, valorCobrar);
+      $('modalReprovacao').classList.remove('open');
+    } catch(e) { alert('Erro: ' + e.message); }
+    finally { $('modalRepConfirmar').disabled = false; }
+  });
 
   // ════════════════════════════════════════════════════════════════════════
   // DASHBOARD — exec_dark layout
@@ -677,6 +782,89 @@
   });
 
   loadRegras();
+
+  // ════════════════════════════════════════════════════════════════════════
+  // REPROVADAS
+  // ════════════════════════════════════════════════════════════════════════
+  $('rDtIni').value = ini; $('rDtFin').value = hoje;
+  $('rBuscarBtn').addEventListener('click', buscarReprovadas);
+
+  async function buscarReprovadas() {
+    const dtIni=$('rDtIni').value, dtFin=$('rDtFin').value;
+    if (!dtIni||!dtFin) return alert('Preencha o período.');
+    const btn=$('rBuscarBtn');
+    btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Buscando…';
+    $('rResult').innerHTML='<div class="cf-empty"><span class="spinner"></span> Consultando…</div>';
+    try {
+      const data = await api('GET', `/api/conferencia/reprovadas?dtIni=${dtIni}&dtFin=${dtFin}`);
+      renderReprovadas(data);
+    } catch(e) {
+      $('rResult').innerHTML=`<div class="cf-empty" style="color:${P('alert')}">⚠ ${esc(e.message)}</div>`;
+    } finally {
+      btn.disabled=false;
+      btn.innerHTML='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Buscar Reprovadas';
+    }
+  }
+
+  function renderReprovadas(grupos) {
+    const el = $('rResult');
+    if (!grupos.length) { el.innerHTML='<div class="cf-empty">Nenhuma venda reprovada no período.</div>'; return; }
+    const totalCobrar = grupos.reduce((s,g)=>s+g.valorCobrar,0);
+    const totalVendas = grupos.reduce((s,g)=>s+g.count,0);
+    el.innerHTML = `
+      <div class="kpi-row" style="margin-bottom:20px">
+        ${kpiCard('red',   svgAlert(), totalVendas, 'Vendas Reprovadas', '', '')}
+        ${kpiCard('amber', svgTag(),   fmtR(totalCobrar), 'Total a Cobrar', '', '')}
+      </div>
+      <div class="panel-card">
+        <div class="panel-card-hdr">
+          <span class="panel-card-title">Reprovadas por Vendedor</span>
+          <span class="panel-card-meta">${grupos.length} vendedor(es)</span>
+        </div>
+        <table class="cf-tbl">
+          <thead><tr>
+            <th>Vendedor</th><th>Loja</th>
+            <th class="num">Qtd</th>
+            <th class="num">Total Vendas</th>
+            <th class="num">Valor a Cobrar</th>
+            <th></th>
+          </tr></thead>
+          <tbody>
+            ${grupos.map((g, gi) => {
+              const bodyId = `rep-${gi}`;
+              return `<tr class="sale-row" style="cursor:pointer" data-body="${bodyId}" onclick="document.getElementById('${bodyId}').classList.toggle('open');this.querySelector('.chevron')?.classList.toggle('open',document.getElementById('${bodyId}').classList.contains('open'))">
+                <td style="font-weight:700">${esc(g.vendedorNome||g.vendedorCod||'—')}</td>
+                <td><span style="background:${LOJA_COLORS[g.board]||'#4AA3FF'}18;color:${LOJA_COLORS[g.board]||'#4AA3FF'};font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px">${esc(LOJA_LABEL[g.board]||g.board)}</span></td>
+                <td class="num"><span class="badge badge-di">${g.count}</span></td>
+                <td class="num" style="font-weight:700">${fmtR(g.valorTotal)}</td>
+                <td class="num" style="color:var(--cf-alert);font-weight:800">${fmtR(g.valorCobrar)}</td>
+                <td style="color:var(--cf-muted)"><svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg></td>
+              </tr>
+              <tr><td colspan="6" style="padding:0">
+                <div class="grupo-body" id="${bodyId}" style="border-top:none">
+                  <table class="cf-tbl" style="font-size:11px">
+                    <thead><tr>
+                      <th>Data</th><th>Doc</th><th class="num">Total</th>
+                      <th class="num">A Cobrar</th><th>Obs</th><th>Por</th>
+                    </tr></thead>
+                    <tbody>
+                      ${g.vendas.map(v=>`<tr>
+                        <td>${fmtD(v.data)}</td>
+                        <td class="mono">${esc(v.doc)}</td>
+                        <td class="num">${fmtR(v.valorTotal)}</td>
+                        <td class="num" style="color:var(--cf-alert);font-weight:700">${fmtR(v.valorCobrar)}</td>
+                        <td style="color:var(--cf-muted);max-width:200px;word-break:break-word">${esc(v.obs||'—')}</td>
+                        <td class="muted">${esc(v.updatedBy||'—')}</td>
+                      </tr>`).join('')}
+                    </tbody>
+                  </table>
+                </div>
+              </td></tr>`;
+            }).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
 
   // ════════════════════════════════════════════════════════════════════════
   // DEBUG

@@ -270,6 +270,31 @@ td.muted  { color: var(--cf-muted); }
 .rf input { background: var(--cf-card2); border: 1px solid var(--cf-border); color: var(--cf-text); padding: 7px 10px; border-radius: 7px; font-size: 13px; width: 100%; }
 .rf input:focus { outline: none; border-color: var(--cf-primary); }
 
+/* ── Revisão Buttons ────────────────────────────────────────── */
+.revisao-btns { display:flex; gap:6px; margin-top:6px; }
+.btn-conferida, .btn-reprovada { font-size:11px; padding:3px 10px; border-radius:5px; border:1px solid; cursor:pointer; font-family:inherit; font-weight:600; transition:.15s; }
+.btn-conferida { border-color:var(--cf-green); color:var(--cf-green); background:transparent; }
+.btn-conferida.active { background:var(--cf-green); color:#fff; }
+.btn-reprovada { border-color:var(--cf-alert); color:var(--cf-alert); background:transparent; }
+.btn-reprovada.active { background:var(--cf-alert); color:#fff; }
+
+/* ── Modal ──────────────────────────────────────────────────── */
+.cf-modal-overlay { display:none; position:fixed; inset:0; background:#000000a0; z-index:999; align-items:center; justify-content:center; }
+.cf-modal-overlay.open { display:flex; }
+.cf-modal { background:var(--cf-card); border:1px solid var(--cf-border); border-radius:var(--r); padding:24px; width:460px; max-width:95vw; display:flex; flex-direction:column; gap:14px; }
+.cf-modal-title { font-size:14px; font-weight:800; color:var(--cf-alert); margin-bottom:2px; }
+.cf-modal-sub   { font-size:11px; color:var(--cf-muted); }
+.cf-modal-field { display:flex; flex-direction:column; gap:4px; }
+.cf-modal-field label { font-size:10px; font-weight:700; color:var(--cf-muted); text-transform:uppercase; letter-spacing:.5px; }
+.cf-modal-field input, .cf-modal-field textarea { background:var(--cf-card2); border:1px solid var(--cf-border); color:var(--cf-text); padding:8px 10px; border-radius:8px; font-size:12px; font-family:inherit; width:100%; resize:vertical; }
+.cf-modal-field input:focus, .cf-modal-field textarea:focus { outline:none; border-color:var(--cf-alert); }
+.cf-modal-actions { display:flex; gap:8px; justify-content:flex-end; margin-top:4px; }
+.btn-cancel { background:var(--cf-card2); border:1px solid var(--cf-border); color:var(--cf-muted); padding:8px 16px; border-radius:8px; font-size:12px; font-weight:600; cursor:pointer; font-family:inherit; }
+.btn-cancel:hover { color:var(--cf-text); }
+.btn-danger { background:var(--cf-alert); border:none; color:#fff; padding:8px 16px; border-radius:8px; font-size:12px; font-weight:700; cursor:pointer; font-family:inherit; }
+.btn-danger:hover { opacity:.88; }
+.btn-danger:disabled { opacity:.45; cursor:default; }
+
 /* ── Misc ───────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #ffffff20; border-top-color: var(--cf-primary); border-radius: 50%; animation: spin .6s linear infinite; }
@@ -310,6 +335,10 @@ td.muted  { color: var(--cf-muted); }
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
       Conciliação Rede
     </button>
+    <button class="cf-tab" data-tab="reprovadas">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+      Reprovadas
+    </button>
     <button class="cf-tab" data-tab="regras">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0 0 4.93 19.07M19.07 4.93l-1.41 1.41M18.36 18.36l-1.41-1.41M5.64 5.64l1.41 1.41M5.64 18.36l1.41-1.41"/></svg>
       Regras
@@ -328,7 +357,7 @@ td.muted  { color: var(--cf-muted); }
 <!-- ══ VENDAS ═══════════════════════════════════════════════════════════ -->
 <div class="cf-panel" id="tab-vendas">
   <div class="cf-filter-bar">
-    <div class="cf-fg"><label>Loja</label><select id="vBoard"></select></div>
+    <div class="cf-fg"><label>Loja</label><select id="vBoard"><option value="all">Todas as Lojas</option></select></div>
     <div class="cf-fg"><label>De</label><input type="date" id="vDtIni"/></div>
     <div class="cf-fg"><label>Até</label><input type="date" id="vDtFin"/></div>
     <button class="btn-primary" id="vBuscarBtn">
@@ -407,7 +436,43 @@ td.muted  { color: var(--cf-muted); }
   <div class="regras-grid" id="regrasGrid"></div>
 </div>
 
+<!-- ══ REPROVADAS ═════════════════════════════════════════════════════════ -->
+<div class="cf-panel" id="tab-reprovadas">
+  <div class="cf-filter-bar">
+    <div class="cf-fg"><label>De</label><input type="date" id="rDtIni"/></div>
+    <div class="cf-fg"><label>Até</label><input type="date" id="rDtFin"/></div>
+    <button class="btn-primary" id="rBuscarBtn">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Buscar Reprovadas
+    </button>
+  </div>
+  <div id="rResult"></div>
+</div>
+
 </div><!-- /cf-content -->
+
+<!-- ══ MODAL REPROVAÇÃO ══════════════════════════════════════════════════ -->
+<div class="cf-modal-overlay" id="modalReprovacao">
+  <div class="cf-modal">
+    <div>
+      <div class="cf-modal-title">Reprovar Venda</div>
+      <div class="cf-modal-sub" id="modalRepSubtitle"></div>
+    </div>
+    <div id="modalRepAlertas" style="background:#FF616108;border:1px solid #FF616130;border-radius:8px;padding:10px 12px;font-size:11px;line-height:1.6;color:var(--cf-muted)"></div>
+    <div class="cf-modal-field">
+      <label>Valor a Cobrar (R$)</label>
+      <input type="number" id="modalRepValorCobrar" min="0" step="0.01" placeholder="0,00"/>
+    </div>
+    <div class="cf-modal-field">
+      <label>Observação <span style="color:var(--cf-alert)">*</span></label>
+      <textarea id="modalRepObs" rows="3" placeholder="Descreva o motivo da reprovação…"></textarea>
+    </div>
+    <div class="cf-modal-actions">
+      <button class="btn-cancel" id="modalRepCancelar">Cancelar</button>
+      <button class="btn-danger" id="modalRepConfirmar">✗ Confirmar Reprovação</button>
+    </div>
+  </div>
+</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="/conferencia.js"></script>

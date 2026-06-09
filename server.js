@@ -7061,12 +7061,100 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Conferência Revisão helpers ──────────────────────────────────────────────
+async function getConferenciaRevisoesCol() {
+  if (!mongoDb) throw new Error('MongoDB não conectado');
+  const col = mongoDb.collection('confRevisoes');
+  // Garante índice único em doc+board
+  await col.createIndex({ doc: 1, board: 1 }, { unique: true, background: true }).catch(() => {});
+  return col;
+}
+
+// GET /api/conferencia/revisoes?board=X&dtIni=Y&dtFin=Z
+app.get('/api/conferencia/revisoes', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { board, dtIni, dtFin } = req.query;
+    if (!dtIni || !dtFin) return res.status(400).json({ error: 'dtIni e dtFin obrigatórios' });
+    const col = await getConferenciaRevisoesCol();
+    const query = { dtIni, dtFin };
+    if (board && board !== 'all') query.board = board;
+    const revisoes = await col.find(query).toArray();
+    res.json(revisoes);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/conferencia/revisao
+app.post('/api/conferencia/revisao', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { doc, board, data, dtIni, dtFin, vendedorCod, vendedorNome, valorTotal, valorCobrar, status, obs, alertas } = req.body;
+    if (!doc || !board || !status) return res.status(400).json({ error: 'doc, board e status obrigatórios' });
+    if (status === 'reprovada' && !obs) return res.status(400).json({ error: 'Observação obrigatória para reprovação' });
+    if (!['conferida', 'reprovada'].includes(status)) return res.status(400).json({ error: 'status inválido' });
+    const col = await getConferenciaRevisoesCol();
+    const updatedBy = req.session?.user?.username || 'desconhecido';
+    const updatedAt = new Date();
+    const docSave = { doc, board, data, dtIni, dtFin, vendedorCod, vendedorNome, valorTotal, valorCobrar: valorCobrar || 0, status, obs: obs || '', alertas: alertas || [], updatedBy, updatedAt };
+    await col.replaceOne({ doc, board }, docSave, { upsert: true });
+    res.json(docSave);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/conferencia/reprovadas?dtIni=Y&dtFin=Z
+app.get('/api/conferencia/reprovadas', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { dtIni, dtFin } = req.query;
+    if (!dtIni || !dtFin) return res.status(400).json({ error: 'dtIni e dtFin obrigatórios' });
+    const col = await getConferenciaRevisoesCol();
+    const reprovadas = await col.find({ dtIni, dtFin, status: 'reprovada' }).toArray();
+    // Agrupa por vendedor
+    const byVend = {};
+    for (const r of reprovadas) {
+      const key = `${r.board}::${r.vendedorCod}`;
+      if (!byVend[key]) byVend[key] = { vendedorNome: r.vendedorNome, vendedorCod: r.vendedorCod, board: r.board, count: 0, valorTotal: 0, valorCobrar: 0, vendas: [] };
+      byVend[key].count++;
+      byVend[key].valorTotal  += r.valorTotal  || 0;
+      byVend[key].valorCobrar += r.valorCobrar || 0;
+      byVend[key].vendas.push(r);
+    }
+    res.json(Object.values(byVend).sort((a, b) => b.valorCobrar - a.valorCobrar));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/conferencia/vendas?board=delrey&dtIni=2026-06-01&dtFin=2026-06-08
+// board=all: busca todas as lojas em paralelo, retorna apenas vendas com alertas
 // Retorna TODAS as vendas do período com formas de pagamento, vendedor e alertas de regra
 app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) => {
   try {
     const { board, dtIni, dtFin } = req.query;
     if (!board || !dtIni || !dtFin) return res.status(400).json({ error: 'board, dtIni e dtFin obrigatórios' });
+
+    // ── board=all: busca todas as lojas em paralelo ──────────────────────────
+    if (board === 'all') {
+      const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+      const boards = Object.keys(lojas);
+      if (!boards.length) return res.status(400).json({ error: 'Nenhuma loja configurada em MICROVIX_LOJAS' });
+      const results = await Promise.allSettled(boards.map(b =>
+        fetch(`http://localhost:${process.env.PORT || 3000}/api/conferencia/vendas?board=${b}&dtIni=${dtIni}&dtFin=${dtFin}`, {
+          headers: { Cookie: req.headers.cookie || '' },
+        }).then(r => r.json())
+      ));
+      const allVendas = [];
+      for (const r of results) {
+        if (r.status === 'fulfilled' && Array.isArray(r.value?.vendas)) {
+          for (const v of r.value.vendas) {
+            if (v.alertas?.length > 0) allVendas.push(v);
+          }
+        }
+      }
+      allVendas.sort((a, b) => (a.board + a.data + a.hora).localeCompare(b.board + b.data + b.hora));
+      const totalVendas = allVendas.reduce((s, v) => s + v.valorTotal, 0);
+      return res.json({
+        board: 'all', dtIni, dtFin, regra: {},
+        totalVendas, totalAlertas: allVendas.length, qtdVendas: allVendas.length,
+        vendas: allVendas,
+        porForma: [], porVendedor: [],
+      });
+    }
 
     const db    = await readDB();
     const regra = (db.confRegras || {})[board] || {};
@@ -7373,15 +7461,18 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       .filter(v => v.valorTotal > 0)
       .sort((a, b) => (a.data + a.hora).localeCompare(b.data + b.hora))
       .map(v => ({
-        doc:         v.doc,
-        data:        v.data,
-        hora:        v.hora,
-        vendedor:    v.vendedorNome || v.vendedorCod || '—',
-        valorTotal:  v.valorTotal,
-        formas:      v.formas,
-        desconto:    v.desconto || null,
-        alertas:     v.alertas,
-        itens:       v.itens,
+        doc:          v.doc,
+        board:        v.board,
+        data:         v.data,
+        hora:         v.hora,
+        vendedor:     v.vendedorNome || v.vendedorCod || '—',
+        vendedorCod:  v.vendedorCod,
+        vendedorNome: v.vendedorNome,
+        valorTotal:   v.valorTotal,
+        formas:       v.formas,
+        desconto:     v.desconto || null,
+        alertas:      v.alertas,
+        itens:        v.itens,
       }));
 
     // Agrupamento por forma de pagamento
