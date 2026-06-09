@@ -3806,40 +3806,100 @@ function _exportTransExcel(sugestoes, lojaFilter = '', tipoFilter = '') {
   const XL = window.XLSX;
   if (!XL) { alert('Biblioteca SheetJS não carregada. Recarregue a página.'); return; }
 
-  const isSendFocus = lojaFilter && tipoFilter === 'enviar';
-  const isRecvFocus = lojaFilter && tipoFilter === 'receber';
-
-  const header = isSendFocus
-    ? ['Código', 'Setor', 'Marca', 'Referência', 'Produto', 'Últ. Entrada', `Enviar de ${BOARDS[lojaFilter]?.label||lojaFilter} para`]
-    : isRecvFocus
-    ? ['Código', 'Setor', 'Marca', 'Referência', 'Produto', 'Últ. Entrada', `Receber em ${BOARDS[lojaFilter]?.label||lojaFilter} de`]
-    : ['Código', 'Setor', 'Marca', 'Referência', 'Produto', 'Últ. Entrada', 'Enviar (destino: qtd)'];
-
-  const rows = sugestoes.map(s => {
-    let transfers = s.transfers;
-    if (isSendFocus) transfers = transfers.filter(t => t.de === lojaFilter);
-    else if (isRecvFocus) transfers = transfers.filter(t => t.para === lojaFilter);
-    else if (lojaFilter) transfers = transfers.filter(t => t.de === lojaFilter || t.para === lojaFilter);
-    if (!transfers.length) return null;
-    const enviar = isSendFocus
-      ? transfers.map(t => `${BOARDS[t.para]?.label || t.para}: ${t.qty}`).join(', ')
-      : isRecvFocus
-      ? transfers.map(t => `${BOARDS[t.de]?.label || t.de}: ${t.qty}`).join(', ')
-      : transfers.map(t => `${BOARDS[t.de]?.label||t.de}→${BOARDS[t.para]?.label||t.para}: ${t.qty}`).join(', ');
-    const compra = s.ultimaCompra || '—';
-    return [s.cod_produto, s.setor || '—', s.marca || '—', s.referencia || '—', s.descricao || '—', compra, enviar];
-  }).filter(Boolean);
-  const ws = XL.utils.aoa_to_sheet([header, ...rows]);
-  ws['!cols'] = [{ wch:10 }, { wch:22 }, { wch:18 }, { wch:14 }, { wch:42 }, { wch:12 }, { wch:40 }];
-  ws['!pageSetup'] = { paperSize: 9, orientation: 'landscape', fitToPage: 1, fitToWidth: 1, fitToHeight: 0 };
-  ws['!sheetPr']   = { pageSetUpPr: { fitToPage: 1 } };
-  ws['!margins']   = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
+  const today = new Date().toLocaleDateString('pt-BR');
   const wb = XL.utils.book_new();
-  XL.utils.book_append_sheet(wb, ws, 'Transferências');
   if (!wb.Workbook) wb.Workbook = {};
-  if (!wb.Workbook.Names) wb.Workbook.Names = [];
-  wb.Workbook.Names.push({ Name: '_xlnm.Print_Area', Ref: `Transferências!$A$1:$G$${rows.length + 1}` });
-  XL.writeFile(wb, 'transferencias.xlsx');
+  wb.Workbook.Views = [{ RTL: false }];
+
+  // Descobre todas as lojas doadoras (têm produtos para enviar)
+  const donors = [...new Set(sugestoes.flatMap(s => s.transfers.map(t => t.de)))].sort();
+  if (!donors.length) { alert('Nenhuma transferência para exportar.'); return; }
+
+  for (const donor of donors) {
+    const donorLabel = BOARDS[donor]?.label || donor;
+
+    // Descobre destinos desta loja doadora
+    const destinos = [...new Set(
+      sugestoes.flatMap(s => s.transfers.filter(t => t.de === donor).map(t => t.para))
+    )].sort();
+
+    // Filtra sugestões que esta loja precisa enviar
+    const itens = sugestoes
+      .map(s => {
+        const ts = s.transfers.filter(t => t.de === donor);
+        if (!ts.length) return null;
+        return { ...s, transfers: ts };
+      })
+      .filter(Boolean);
+
+    // Monta cabeçalho: colunas fixas + uma coluna por destino + Total
+    const fixedCols  = ['Setor', 'Marca', 'Ref.', 'Produto', 'Cor', 'Tam.', 'Últ. Entrada'];
+    const destLabels = destinos.map(d => `→ ${BOARDS[d]?.label || d}`);
+    const header     = [...fixedCols, ...destLabels, 'Total'];
+
+    // Linha de título (mesclada depois via merge)
+    const titleRow = [`SEPARAÇÃO: ${donorLabel.toUpperCase()}  |  Data: ${today}`];
+
+    const dataRows = itens.map(s => {
+      const fixed = [
+        s.setor        || '—',
+        s.marca        || '—',
+        s.referencia   || '—',
+        s.descricao    || '—',
+        s.desc_cor     || '—',
+        s.desc_tamanho || '—',
+        s.ultimaCompra || '—',
+      ];
+      let total = 0;
+      const qtds = destinos.map(d => {
+        const t = s.transfers.find(t => t.para === d);
+        const q = t ? t.qty : 0;
+        total += q;
+        return q || '';
+      });
+      return [...fixed, ...qtds, total];
+    });
+
+    const aoa = [titleRow, header, ...dataRows];
+    const ws  = XL.utils.aoa_to_sheet(aoa);
+
+    // Larguras de colunas
+    const totalCols = fixedCols.length + destinos.length + 1;
+    ws['!cols'] = [
+      { wch: 18 }, // Setor
+      { wch: 16 }, // Marca
+      { wch: 13 }, // Ref.
+      { wch: 36 }, // Produto
+      { wch:  8 }, // Cor
+      { wch:  6 }, // Tam.
+      { wch: 12 }, // Últ. Entrada
+      ...destinos.map(() => ({ wch: 12 })),
+      { wch: 7  }, // Total
+    ];
+
+    // Mescla célula do título na linha 1
+    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } }];
+
+    // Configuração de impressão: paisagem, 1 página de largura
+    ws['!pageSetup'] = { paperSize: 9, orientation: 'landscape', fitToPage: 1, fitToWidth: 1, fitToHeight: 0 };
+    ws['!sheetPr']   = { pageSetUpPr: { fitToPage: 1 } };
+    ws['!margins']   = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
+
+    // Print area
+    const colLetter = n => { let s = ''; while (n >= 0) { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; } return s; };
+    const lastCol   = colLetter(totalCols - 1);
+    const lastRow   = dataRows.length + 2; // título + header + dados
+    if (!wb.Workbook.Names) wb.Workbook.Names = [];
+    const sheetName = donorLabel.slice(0, 31);
+    wb.Workbook.Names.push({ Name: '_xlnm.Print_Area', Ref: `${sheetName}!$A$1:$${lastCol}$${lastRow}` });
+
+    // Congela linha do cabeçalho (row 2)
+    ws['!freeze'] = { xSplit: 0, ySplit: 2 };
+
+    XL.utils.book_append_sheet(wb, ws, sheetName);
+  }
+
+  XL.writeFile(wb, `transferencias-${today.replace(/\//g,'-')}.xlsx`);
 }
 
 function applyTransFilter(container) {
