@@ -7331,6 +7331,8 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
 
         const catInfo = catalog[codProd] || {};
         docMap[doc].itens.push({
+          cod_produto:  codProd,
+          referencia:   (catInfo.referencia || r.referencia || '').trim(),
           descricao:    (r.descricao || r.nome_produto || r.referencia || codProd || '—').trim(),
           nome:         (catInfo.nome || catInfo.nomeBase || '').trim(),
           colecao:      (catInfo.linha || '').trim(),

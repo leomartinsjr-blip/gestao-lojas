@@ -239,9 +239,20 @@ td.muted  { color: var(--cf-muted); }
 .drill-tbl td.disc-val { color: var(--cf-accent); font-weight: 700; }
 .drill-tbl td.disc-zero { color: #ffffff28; }
 .disc-pct { display: inline-block; background: var(--cf-accent-bg); color: var(--cf-accent); border-radius: 4px; padding: 2px 6px; font-size: 11px; font-weight: 700; margin-left: 4px; }
-.drill-tbl tr.has-disc { background: #FF9A4A06; }
+.drill-tbl tbody tr:nth-child(odd)  { background: #0a1220; }
+.drill-tbl tbody tr:nth-child(even) { background: #0d1628; }
+.drill-tbl tbody tr:hover td { background: #12203a !important; }
 .drill-tbl tr.has-disc td:first-child { border-left: 3px solid var(--cf-accent); padding-left: 17px; }
-.drill-tbl tfoot td { background: #0a1220; font-size: 12px; font-weight: 700; color: var(--cf-text); border-top: 1px solid #ffffff18; padding: 10px 16px 10px 20px; }
+.drill-tbl tfoot td { background: #070e1a; font-size: 12px; font-weight: 700; color: var(--cf-text); border-top: 2px solid #ffffff18; padding: 10px 16px 10px 20px; }
+
+/* ── Item tags (cod · ref · marca · coleção) ─────────────────── */
+.di-nome  { font-weight: 600; font-size: 12px; display: block; }
+.di-tags  { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.di-tag   { font-size: 10px; font-weight: 600; padding: 2px 7px; border-radius: 4px; white-space: nowrap; }
+.di-cod   { background: #4AA3FF18; color: #4AA3FF; }
+.di-ref   { background: #a78bfa18; color: #a78bfa; }
+.di-marca { background: #34d39918; color: #34d399; }
+.di-col   { background: #FF9A4A18; color: #FF9A4A; }
 
 /* ── Grupo cards ────────────────────────────────────────────── */
 .grupo-card { background: var(--cf-card); border: 1px solid var(--cf-border); border-radius: var(--r); overflow: hidden; margin-bottom: 10px; }

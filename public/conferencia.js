@@ -370,20 +370,35 @@
             <th class="num">%</th><th class="num">Total Líquido</th>
           </tr></thead>
           <tbody>
-            ${itens.map(it => {
+            ${itens.map((it, idx) => {
               const temDesc = it.vlrDesconto > 0;
               const liq = it.vlrLiquido ?? (it.vlrBruto - it.vlrDesconto);
-              const subInfo = [it.nome, it.colecao].filter(Boolean).join(' · ');
               const promoCell = it.emPromocao && it.precoPromocao
                 ? `<span style="color:#2dd4bf;font-weight:700">${fmtR(it.precoPromocao)}</span>`
                 : '—';
-              // % desconto: se em promoção, calcula sobre preço promo; senão sobre preço tabela
               const vlrLiqUnit = it.quantidade > 0 ? liq / it.quantidade : liq;
               const baseDescPct = (it.emPromocao && it.precoPromocao) ? it.precoPromocao : it.vlrUnitario;
               const percDesc = baseDescPct > 0 ? ((baseDescPct - vlrLiqUnit) / baseDescPct * 100) : 0;
               const temDescPct = percDesc > 0.05;
-              return `<tr class="${temDesc?'has-disc':''}">
-                <td><span style="font-weight:600">${esc(it.descricao)}</span>${subInfo ? `<br><span style="font-size:11px;color:var(--cf-muted);font-weight:400">${esc(subInfo)}</span>` : ''}</td>
+              const zebra = idx % 2 === 1 ? 'drill-row-alt' : '';
+
+              // Linha de info: código · ref · marca · coleção
+              const cod  = it.cod_produto || '';
+              const ref  = it.referencia  || '';
+              const marc = it.marca       || '';
+              const col  = it.colecao     || '';
+              const tags = [
+                cod  ? `<span class="di-tag di-cod">${esc(cod)}</span>`   : '',
+                ref  ? `<span class="di-tag di-ref">Ref ${esc(ref)}</span>` : '',
+                marc ? `<span class="di-tag di-marca">${esc(marc)}</span>` : '',
+                col  ? `<span class="di-tag di-col">${esc(col)}</span>`   : '',
+              ].filter(Boolean).join('');
+
+              return `<tr class="${[temDesc?'has-disc':'', zebra].filter(Boolean).join(' ')}">
+                <td>
+                  <span class="di-nome">${esc(it.descricao)}</span>
+                  ${tags ? `<div class="di-tags">${tags}</div>` : ''}
+                </td>
                 <td class="num">${it.quantidade}x</td>
                 <td class="num">${fmtR(it.vlrUnitario)}</td>
                 <td class="num">${promoCell}</td>
