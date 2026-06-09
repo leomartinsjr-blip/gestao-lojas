@@ -3563,10 +3563,16 @@ function renderTransExcelTab(container) {
         if (!calc) continue;
         const { transfers, workStocks, ideal } = calc;
         const cat = catalog[p.cod] || {};
+        // Extrai tamanho e cor da descrição do Excel (formato Microvix: "NOME TAMANHO COR")
+        const _parts = (p.descricao || '').trim().split(/\s+/);
+        const _cor = _parts.length >= 1 ? _parts[_parts.length - 1] : '';
+        const _tam = _parts.length >= 2 ? _parts[_parts.length - 2] : '';
         sugestoes.push({
           cod_produto:  p.cod,
           referencia:   p.referencia || '—',
           descricao:    cat.nomeBase || cat.nome || p.descricao || '—',
+          desc_tamanho: _tam || '—',
+          desc_cor:     cat.desc_cor || _cor || '—',
           setor:        cat.setor    || p.setor || '—',
           marca:        cat.marca    || '—',
           stocks:       p.stocks,
