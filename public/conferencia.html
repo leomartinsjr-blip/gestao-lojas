@@ -103,6 +103,15 @@ body {
 
 /* ── KPI row ─────────────────────────────────────────────────── */
 .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 20px; }
+
+/* ── Alert summary box ───────────────────────────────────────── */
+.alert-summary-box { background: var(--cf-card); border: 1px solid var(--cf-red); border-left: 4px solid var(--cf-red); border-radius: 10px; padding: 14px 18px; }
+.alert-summary-title { font-size: 12px; font-weight: 700; color: var(--cf-red); text-transform: uppercase; letter-spacing: .6px; margin-bottom: 10px; }
+.alert-summary-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.alert-summary-table th { font-size: 11px; font-weight: 600; color: var(--cf-muted); text-transform: uppercase; letter-spacing: .4px; padding: 4px 8px; border-bottom: 1px solid var(--cf-border); }
+.alert-summary-table td { padding: 6px 8px; border-bottom: 1px solid var(--cf-border); }
+.alert-summary-table tfoot td { font-size: 13px; padding: 8px 8px 2px; }
+.alert-summary-table .num { text-align: right; }
 @media (max-width: 900px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
 .kpi-card {
   background: var(--cf-card); border: 1px solid var(--cf-border);
@@ -335,6 +344,9 @@ td.muted  { color: var(--cf-muted); }
 
   <!-- KPI row (preenchido pelo JS) -->
   <div id="vKpiRow" class="kpi-row" style="display:none"></div>
+
+  <!-- Resumo de alertas por loja (preenchido pelo JS) -->
+  <div id="vAlertRow" style="display:none;margin-bottom:16px"></div>
 
   <div id="vResult"></div>
 

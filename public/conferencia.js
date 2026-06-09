@@ -59,6 +59,7 @@
     const kpiRow = $('vKpiRow');
     kpiRow.style.display = 'none'; kpiRow.innerHTML = '';
     $('vResult').innerHTML = '';
+    const alertRowReset = $('vAlertRow'); if (alertRowReset) { alertRowReset.innerHTML = ''; alertRowReset.style.display = 'none'; }
     try {
       _data = await api('GET', `/api/conferencia/vendas?board=${board}&dtIni=${dtIni}&dtFin=${dtFin}`);
       render(_data);
@@ -95,6 +96,60 @@
         cardAlerta.classList.add('clickable');
         cardAlerta.addEventListener('click', () => { _filtroAlerta = !_filtroAlerta; render(_data); });
       }
+    }
+
+    // ── Resumo de alertas por loja ─────────────────────────────────────────
+    const alertRow = $('vAlertRow');
+    if (totalAlertas && alertRow) {
+      // agrupa por board
+      const porLoja = {};
+      for (const v of vendas) {
+        const loja = v.board || '—';
+        if (!porLoja[loja]) porLoja[loja] = { total: 0, comAlerta: 0 };
+        porLoja[loja].total++;
+        if (v.alertas?.length) porLoja[loja].comAlerta++;
+      }
+      const lojas = Object.entries(porLoja).sort((a,b) => b[1].comAlerta - a[1].comAlerta);
+      const totalComAlerta = vendas.filter(v => v.alertas?.length).length;
+      const pctGeral = qtdVendas > 0 ? (totalComAlerta / qtdVendas * 100).toFixed(1) : '0';
+
+      alertRow.innerHTML = `
+        <div class="alert-summary-box">
+          <div class="alert-summary-title">⚠ Resumo de Alertas por Loja</div>
+          <table class="alert-summary-table">
+            <thead><tr>
+              <th>Loja</th>
+              <th class="num">Com Alerta</th>
+              <th class="num">Total Vendas</th>
+              <th class="num">% do Total</th>
+              <th></th>
+            </tr></thead>
+            <tbody>
+              ${lojas.map(([loja, g]) => {
+                const pct = g.total > 0 ? (g.comAlerta / g.total * 100).toFixed(1) : '0';
+                const barW = Math.round(parseFloat(pct));
+                return g.comAlerta > 0 ? `<tr>
+                  <td style="font-weight:600;text-transform:capitalize">${esc(loja)}</td>
+                  <td class="num" style="color:var(--cf-red);font-weight:700">${g.comAlerta}</td>
+                  <td class="num" style="color:var(--cf-muted)">${g.total}</td>
+                  <td class="num" style="color:var(--cf-red)">${pct}%</td>
+                  <td style="width:80px"><div style="background:var(--cf-red);opacity:.25;height:6px;border-radius:3px;width:${barW}%"></div></td>
+                </tr>` : '';
+              }).join('')}
+            </tbody>
+            <tfoot><tr style="border-top:1px solid var(--cf-border)">
+              <td style="font-weight:700">Total</td>
+              <td class="num" style="color:var(--cf-red);font-weight:700">${totalComAlerta}</td>
+              <td class="num" style="color:var(--cf-muted)">${qtdVendas}</td>
+              <td class="num" style="color:var(--cf-red);font-weight:700">${pctGeral}%</td>
+              <td></td>
+            </tr></tfoot>
+          </table>
+        </div>`;
+      alertRow.style.display = 'block';
+    } else if (alertRow) {
+      alertRow.innerHTML = '';
+      alertRow.style.display = 'none';
     }
 
     const el = $('vResult');

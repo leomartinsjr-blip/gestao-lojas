@@ -7187,6 +7187,7 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
         const dataISO = mD ? `${mD[3]}-${mD[2]}-${mD[1]}` : rawDate.slice(0, 10);
         docMap[doc] = {
           doc,
+          board,
           data:         dataISO,
           hora:         String(r.hora_lancamento || r.hora_documento || r.hora_emissao || '').trim().slice(0, 5),
           valorTotal:   0, // acumulado abaixo a partir de valor_liquido de cada item
