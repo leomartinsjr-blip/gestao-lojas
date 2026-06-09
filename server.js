@@ -7120,6 +7120,24 @@ app.get('/api/conferencia/reprovadas', requireEscritorioOrAdmin, async (req, res
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Função extraída para reuso no board=all
+async function _buildConferenciaVendas(board, dtIni, dtFin) {
+  const db    = await readDB();
+  const regra = (db.confRegras || {})[board] || {};
+  const parcelaMin           = parseFloat(regra.parcelaMin      || 0);
+  const descontoMaxItem      = parseFloat(regra.descontoMaxItem || 100);
+  const descontoMaxVenda     = parseFloat(regra.descontoMaxVenda|| 100);
+  const descontoSomenteAVista= regra.descontoSomenteAVista === true || regra.descontoSomenteAVista === 'true';
+
+  const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+  const cnpj  = lojas[board];
+  if (!cnpj) throw new Error(`Loja "${board}" não configurada`);
+
+  // Reutiliza todo o código do handler movendo req/res para fora
+  // Chama o handler interno via _buildConferenciaVendasCore
+  return _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMin, descontoMaxItem, descontoMaxVenda, descontoSomenteAVista, cnpj);
+}
+
 // GET /api/conferencia/vendas?board=delrey&dtIni=2026-06-01&dtFin=2026-06-08
 // board=all: busca todas as lojas em paralelo, retorna apenas vendas com alertas
 // Retorna TODAS as vendas do período com formas de pagamento, vendedor e alertas de regra
@@ -7133,11 +7151,7 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
       const boards = Object.keys(lojas);
       if (!boards.length) return res.status(400).json({ error: 'Nenhuma loja configurada em MICROVIX_LOJAS' });
-      const results = await Promise.allSettled(boards.map(b =>
-        fetch(`http://localhost:${process.env.PORT || 3000}/api/conferencia/vendas?board=${b}&dtIni=${dtIni}&dtFin=${dtFin}`, {
-          headers: { Cookie: req.headers.cookie || '' },
-        }).then(r => r.json())
-      ));
+      const results = await Promise.allSettled(boards.map(b => _buildConferenciaVendas(b, dtIni, dtFin)));
       const allVendas = [];
       for (const r of results) {
         if (r.status === 'fulfilled' && Array.isArray(r.value?.vendas)) {
@@ -7156,16 +7170,13 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       });
     }
 
-    const db    = await readDB();
-    const regra = (db.confRegras || {})[board] || {};
-    const parcelaMin           = parseFloat(regra.parcelaMin      || 0);
-    const descontoMaxItem      = parseFloat(regra.descontoMaxItem || 100);
-    const descontoMaxVenda     = parseFloat(regra.descontoMaxVenda|| 100);
-    const descontoSomenteAVista= regra.descontoSomenteAVista === true || regra.descontoSomenteAVista === 'true';
+    const result = await _buildConferenciaVendas(board, dtIni, dtFin);
+    return res.json(result);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
+async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMin, descontoMaxItem, descontoMaxVenda, descontoSomenteAVista, cnpj) {
     const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-    const cnpj  = lojas[board];
-    if (!cnpj) return res.status(400).json({ error: `Loja "${board}" não configurada` });
     const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
     const cnpjClean = cnpj.replace(/\D/g, '');
 
@@ -7498,7 +7509,7 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       porVendedor[key].vendas.push(v);
     }
 
-    res.json({
+    return {
       board, dtIni, dtFin, regra,
       totalVendas: vendas.reduce((s, v) => s + v.valorTotal, 0),
       totalAlertas: vendas.filter(v => v.alertas.length > 0).length,
@@ -7506,9 +7517,8 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       vendas,
       porForma:    Object.values(porForma).sort((a, b) => b.total - a.total),
       porVendedor: Object.values(porVendedor).sort((a, b) => b.total - a.total),
-    });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+    };
+}
 
 // GET /api/conferencia/debug?board=delrey&dtIni=2026-06-01&dtFin=2026-06-01
 // Retorna amostras brutas das tabelas Microvix para conferir campos
