@@ -4900,6 +4900,141 @@ app.get('/api/transferencias', requireAdmin, (req, res) => {
   }
 });
 
+// POST /api/transferencias/export — gera Excel formatado para impressão (ExcelJS)
+app.post('/api/transferencias/export', requireAdmin, async (req, res) => {
+  try {
+    const { sugestoes = [], boards = [] } = req.body || {};
+    if (!sugestoes.length) return res.status(400).json({ error: 'Sem sugestões' });
+
+    const ExcelJS = require('exceljs');
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Gestão Lojas';
+    wb.created = new Date();
+
+    const today = new Date().toLocaleDateString('pt-BR');
+    const BOARDS_LABEL = (() => { try { const l = JSON.parse(process.env.MICROVIX_LOJAS || '{}'); return Object.fromEntries(Object.keys(l).map(k => [k, k.charAt(0).toUpperCase() + k.slice(1)])); } catch { return {}; } })();
+    const boardLabel = k => BOARDS_LABEL[k] || k;
+
+    // cores
+    const COR_HEADER_BG  = 'FF1F2937'; // cinza escuro
+    const COR_HEADER_FG  = 'FFFFFFFF';
+    const COR_TITLE_BG   = 'FF111827';
+    const COR_ZEBRA      = 'FFF3F4F6'; // cinza claro para linhas pares
+    const COR_BORDER     = 'FFD1D5DB';
+
+    const donors = [...new Set(sugestoes.flatMap(s => s.transfers.map(t => t.de)))].sort();
+
+    for (const donor of donors) {
+      const donorLabel = boardLabel(donor);
+      const destinos = [...new Set(
+        sugestoes.flatMap(s => s.transfers.filter(t => t.de === donor).map(t => t.para))
+      )].sort();
+
+      const itens = sugestoes
+        .map(s => { const ts = s.transfers.filter(t => t.de === donor); return ts.length ? { ...s, transfers: ts } : null; })
+        .filter(Boolean);
+
+      const ws = wb.addWorksheet(donorLabel.slice(0, 31), {
+        pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+                     margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
+        headerFooter: { oddHeader: `&L&B${donorLabel.toUpperCase()}&R&BData: ${today}` },
+      });
+
+      const fixedDefs = [
+        { header: 'Código',  key: 'cod',   width: 10 },
+        { header: 'Marca',   key: 'marca',  width: 14 },
+        { header: 'Ref.',    key: 'ref',    width: 12 },
+        { header: 'Produto', key: 'prod',   width: 32 },
+        { header: 'Cor',     key: 'cor',    width:  7 },
+        { header: 'Tam.',    key: 'tam',    width:  6 },
+      ];
+      const destDefs = destinos.map(d => ({ header: `→ ${boardLabel(d)}`, key: d, width: 10 }));
+      const totalDef = { header: 'Total', key: 'total', width: 7 };
+      const allDefs  = [...fixedDefs, ...destDefs, totalDef];
+
+      ws.columns = allDefs;
+
+      // Linha 1: título mesclado
+      ws.spliceRows(1, 0, []);
+      const titleRow = ws.getRow(1);
+      titleRow.getCell(1).value = `SEPARAÇÃO: ${donorLabel.toUpperCase()}  |  Data: ${today}`;
+      titleRow.getCell(1).font  = { bold: true, size: 13, color: { argb: COR_HEADER_FG } };
+      titleRow.getCell(1).fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_TITLE_BG } };
+      titleRow.getCell(1).alignment = { vertical: 'middle', horizontal: 'left' };
+      titleRow.height = 24;
+      ws.mergeCells(1, 1, 1, allDefs.length);
+
+      // Linha 2: cabeçalho
+      const hdrRow = ws.getRow(2);
+      allDefs.forEach((d, i) => {
+        const cell = hdrRow.getCell(i + 1);
+        cell.value = d.header;
+        cell.font  = { bold: true, color: { argb: COR_HEADER_FG }, size: 10 };
+        cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_HEADER_BG } };
+        cell.alignment = { vertical: 'middle', horizontal: i >= fixedDefs.length ? 'center' : 'left' };
+        cell.border = { bottom: { style: 'medium', color: { argb: COR_BORDER } } };
+      });
+      hdrRow.height = 18;
+
+      // Congela até linha 2
+      ws.views = [{ state: 'frozen', xSplit: 0, ySplit: 2 }];
+
+      // Dados
+      itens.forEach((s, idx) => {
+        const rowNum = idx + 3;
+        const isEven = idx % 2 === 1;
+        const bgColor = isEven ? COR_ZEBRA : 'FFFFFFFF';
+        let total = 0;
+        const qtds = destinos.map(d => { const t = s.transfers.find(t => t.para === d); return t ? t.qty : 0; });
+        qtds.forEach(q => { total += q; });
+
+        const values = [
+          s.cod_produto,
+          s.marca        !== '—' ? s.marca        : '',
+          s.referencia   !== '—' ? s.referencia   : '',
+          s.descricao    !== '—' ? s.descricao    : '',
+          s.desc_cor     !== '—' ? s.desc_cor     : '',
+          s.desc_tamanho !== '—' ? s.desc_tamanho : '',
+          ...qtds,
+          total,
+        ];
+
+        const row = ws.getRow(rowNum);
+        values.forEach((v, i) => {
+          const cell = row.getCell(i + 1);
+          cell.value = v;
+          cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: bgColor } };
+          cell.font  = { size: 9 };
+          cell.alignment = { vertical: 'middle', horizontal: i >= fixedDefs.length ? 'center' : 'left' };
+          cell.border = {
+            top:    { style: 'thin', color: { argb: COR_BORDER } },
+            bottom: { style: 'thin', color: { argb: COR_BORDER } },
+            left:   { style: 'thin', color: { argb: COR_BORDER } },
+            right:  { style: 'thin', color: { argb: COR_BORDER } },
+          };
+          // destaca qtd > 0 nas colunas de destino
+          if (i >= fixedDefs.length && i < fixedDefs.length + destinos.length && v > 0) {
+            cell.font = { bold: true, size: 9, color: { argb: 'FF1D4ED8' } };
+          }
+          // destaca total
+          if (i === values.length - 1) {
+            cell.font = { bold: true, size: 9 };
+          }
+        });
+        row.height = 15;
+      });
+    }
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="transferencias-${today.replace(/\//g,'-')}.xlsx"`);
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) {
+    console.error('[export/trans]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── CADASTRO DE PRODUTO ─────────────────────────────────────────────────
 
 // Marcas extraídas do catálogo de produtos (LinxProdutos, já funciona)

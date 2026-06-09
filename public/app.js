@@ -3781,7 +3781,7 @@ function renderTransTable(container, data) {
   applyTransFilter(container);
 
   const exportBtn = container.querySelector('#transExportBtn');
-  if (exportBtn) exportBtn.addEventListener('click', () => _exportTransExcel(sugestoes, _transLojaFilter, _transTipoFilter));
+  if (exportBtn) exportBtn.addEventListener('click', () => _exportTransExcel(sugestoes));
 
   // Filtro loja
   container.querySelectorAll('.trans-loja-btn').forEach(btn => {
@@ -3802,100 +3802,25 @@ function renderTransTable(container, data) {
   });
 }
 
-function _exportTransExcel(sugestoes, lojaFilter = '', tipoFilter = '') {
-  const XL = window.XLSX;
-  if (!XL) { alert('Biblioteca SheetJS não carregada. Recarregue a página.'); return; }
-
-  const today = new Date().toLocaleDateString('pt-BR');
-  const wb = XL.utils.book_new();
-  if (!wb.Workbook) wb.Workbook = {};
-  wb.Workbook.Views = [{ RTL: false }];
-
-  // Descobre todas as lojas doadoras (têm produtos para enviar)
-  const donors = [...new Set(sugestoes.flatMap(s => s.transfers.map(t => t.de)))].sort();
-  if (!donors.length) { alert('Nenhuma transferência para exportar.'); return; }
-
-  for (const donor of donors) {
-    const donorLabel = BOARDS[donor]?.label || donor;
-
-    // Descobre destinos desta loja doadora
-    const destinos = [...new Set(
-      sugestoes.flatMap(s => s.transfers.filter(t => t.de === donor).map(t => t.para))
-    )].sort();
-
-    // Filtra sugestões que esta loja precisa enviar
-    const itens = sugestoes
-      .map(s => {
-        const ts = s.transfers.filter(t => t.de === donor);
-        if (!ts.length) return null;
-        return { ...s, transfers: ts };
-      })
-      .filter(Boolean);
-
-    // Monta cabeçalho: colunas fixas + uma coluna por destino + Total
-    const fixedCols  = ['Marca', 'Ref.', 'Produto', 'Cor', 'Tam.'];
-    const destLabels = destinos.map(d => `→ ${BOARDS[d]?.label || d}`);
-    const header     = [...fixedCols, ...destLabels, 'Total'];
-
-    // Linha de título (mesclada depois via merge)
-    const titleRow = [`SEPARAÇÃO: ${donorLabel.toUpperCase()}  |  Data: ${today}`];
-
-    const dataRows = itens.map(s => {
-      const fixed = [
-        s.marca        || '—',
-        s.referencia   || '—',
-        s.descricao    || '—',
-        s.desc_cor     || '—',
-        s.desc_tamanho || '—',
-      ];
-      let total = 0;
-      const qtds = destinos.map(d => {
-        const t = s.transfers.find(t => t.para === d);
-        const q = t ? t.qty : 0;
-        total += q;
-        return q || '';
-      });
-      return [...fixed, ...qtds, total];
+async function _exportTransExcel(sugestoes) {
+  try {
+    const today = new Date().toLocaleDateString('pt-BR');
+    const res = await fetch('/api/transferencias/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sugestoes }),
     });
-
-    const aoa = [titleRow, header, ...dataRows];
-    const ws  = XL.utils.aoa_to_sheet(aoa);
-
-    // Larguras de colunas
-    const totalCols = fixedCols.length + destinos.length + 1;
-    ws['!cols'] = [
-      { wch: 14 }, // Marca
-      { wch: 12 }, // Ref.
-      { wch: 32 }, // Produto
-      { wch:  7 }, // Cor
-      { wch:  5 }, // Tam.
-      ...destinos.map(() => ({ wch: 10 })),
-      { wch:  6 }, // Total
-    ];
-
-    // Mescla célula do título na linha 1
-    ws['!merges'] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: totalCols - 1 } }];
-
-    // Configuração de impressão: paisagem, 1 página de largura
-    ws['!pageSetup'] = { paperSize: 9, orientation: 'landscape', fitToPage: 1, fitToWidth: 1, fitToHeight: 0 };
-    ws['!sheetPr']   = { pageSetUpPr: { fitToPage: 1 } };
-    ws['!margins']   = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
-
-    // Print area
-    const colLetter = n => { let s = ''; while (n >= 0) { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; } return s; };
-    const lastCol   = colLetter(totalCols - 1);
-    const lastRow   = dataRows.length + 2; // título + header + dados
-    if (!wb.Workbook.Names) wb.Workbook.Names = [];
-    const sheetName = donorLabel.slice(0, 31);
-    wb.Workbook.Names.push({ Name: '_xlnm.Print_Area', Ref: `${sheetName}!$A$1:$${lastCol}$${lastRow}` });
-
-    // Congela linha do cabeçalho (row 2)
-    ws['!freeze'] = { xSplit: 0, ySplit: 2 };
-
-    XL.utils.book_append_sheet(wb, ws, sheetName);
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || res.status); }
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    a.href     = url;
+    a.download = `transferencias-${today.replace(/\//g,'-')}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('Erro ao exportar: ' + e.message);
   }
-
-  XL.writeFile(wb, `transferencias-${today.replace(/\//g,'-')}.xlsx`);
 }
 
 function applyTransFilter(container) {
