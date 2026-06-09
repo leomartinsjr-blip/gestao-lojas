@@ -401,31 +401,42 @@ async function fetchLinxPlanosBandeiras(cnpj, chave) {
 }
 
 // Fetch LinxProdutosPromocoes → produtos em promoção por loja
-// Parâmetros obrigatórios (manual v209): data_cad_inicial, data_cad_fim, data_vig_inicial, data_vig_fim, promocao_ativa
+// Tenta variações de parâmetros: primeiro só promocao_ativa, depois com datas amplas
 async function fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave) {
-  const vigIni = dtIni || new Date().toISOString().slice(0, 10);
-  const vigFim = dtFin || vigIni;
-  // data_cad_inicial ampla (2000-01-01) para não perder promoções antigas ainda vigentes
-  const params = [
-    { id: 'data_cad_inicial', valor: '2000-01-01' },
-    { id: 'data_cad_fim',     valor: vigFim },
-    { id: 'data_vig_inicial', valor: vigIni },
-    { id: 'data_vig_fim',     valor: vigFim },
-    { id: 'promocao_ativa',   valor: 'S' },
+  const hoje = new Date().toISOString().slice(0, 10);
+  const fim  = dtFin || hoje;
+
+  // Variações a tentar, da mais simples para a mais restritiva
+  const tentativas = [
+    // 1. Só ativa, sem datas
+    [{ id: 'promocao_ativa', valor: 'S' }],
+    // 2. Ativa, datas de cadastro amplas, vigência = hoje
+    [
+      { id: 'data_cad_inicial', valor: '2000-01-01' },
+      { id: 'data_cad_fim',     valor: hoje },
+      { id: 'data_vig_inicial', valor: hoje },
+      { id: 'data_vig_fim',     valor: hoje },
+      { id: 'promocao_ativa',   valor: 'S' },
+    ],
+    // 3. Ativa, datas de vigência cobrindo o período pedido
+    [
+      { id: 'data_cad_inicial', valor: '2000-01-01' },
+      { id: 'data_cad_fim',     valor: fim },
+      { id: 'data_vig_inicial', valor: dtIni || hoje },
+      { id: 'data_vig_fim',     valor: fim },
+      { id: 'promocao_ativa',   valor: 'S' },
+    ],
   ];
-  const body = buildRequest('LinxProdutosPromocoes', cnpj, params, chave);
-  const raw  = await postRequest(body);
-  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
-    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro';
-    throw new Error(`Microvix API (promocoes): ${msg}`);
+
+  for (const params of tentativas) {
+    const body = buildRequest('LinxProdutosPromocoes', cnpj, params, chave);
+    const raw  = await postRequest(body);
+    if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) continue;
+    const rows = parseCsv(raw);
+    if (rows.length && (rows[0].Sucesso === 'False' || 'Mensagens' in rows[0])) continue;
+    if (rows.length > 0) return rows;
   }
-  const rows = parseCsv(raw);
-  // Detecta resposta de erro retornada como CSV (campos Sucesso/Mensagens)
-  if (rows.length && (rows[0].Sucesso === 'False' || 'Mensagens' in rows[0])) {
-    const msg = rows[0].Mensagens || 'Erro interno na API';
-    throw new Error(`Microvix API (promocoes): ${msg}`);
-  }
-  return rows;
+  return [];
 }
 
 // Fetch LinxAcoesPromocionais → catálogo de ações promocionais cadastradas

@@ -7083,38 +7083,28 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
 
     const { fetchMovimento, fetchMovimentoPlanos, fetchMovimentoCartoes,
             fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchVendedores,
-            fetchAcoesPromocionais, fetchMovimentoAcoesPromocionais, parseBrNum } = require('./services/microvix');
+            fetchProdutosPromocoes, parseBrNum } = require('./services/microvix');
 
-    const [movRows, planoRows, cartoesRows, planosCatalog, bandeirasCatalog, vendedoresRows, acoesRows, movAcoesRows, catalog] = await Promise.all([
+    const [movRows, planoRows, cartoesRows, planosCatalog, bandeirasCatalog, vendedoresRows, promoRows, catalog] = await Promise.all([
       fetchMovimento(cnpj, dtIni, dtFin, chave),
       fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave).catch(() => []),
       fetchMovimentoCartoes(cnpj, dtIni, dtFin, chave).catch(() => []),
       fetchLinxPlanos(cnpj, chave).catch(() => []),
       fetchLinxPlanosBandeiras(cnpj, chave).catch(() => []),
       fetchVendedores(cnpj, chave).catch(() => []),
-      fetchAcoesPromocionais(cnpj, chave).catch(() => []),
-      fetchMovimentoAcoesPromocionais(cnpj, dtIni, dtFin, chave).catch(() => []),
+      fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave).catch(() => []),
       _getCatalog(lojas).catch(() => ({})),
     ]);
 
     const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
 
-    // Mapa de ações promocionais: id → descricao
-    const acoesMap = {};
-    for (const a of (Array.isArray(acoesRows) ? acoesRows : [])) {
-      const id = String(a.id_acoes_promocionais || '').trim();
-      if (id) acoesMap[id] = (a.descricao || '').trim();
+    // Mapa de preços promocionais: cod_produto → preco_promocao
+    const promoMap = {};
+    for (const p of (Array.isArray(promoRows) ? promoRows : [])) {
+      const cod   = String(p.cod_produto || '').trim();
+      const preco = parseBR(p.preco_promocao || '0');
+      if (cod && preco > 0) promoMap[cod] = preco;
     }
-
-    // Mapa de ações por transação: transacao → { descricao, desconto }
-    const movAcoesMap = {};
-    for (const a of (Array.isArray(movAcoesRows) ? movAcoesRows : [])) {
-      const trans = String(a.transacao || '').trim();
-      const idAcao = String(a.id_acoes_promocionais || '').trim();
-      const desc = parseBR(a.desconto_item || '0');
-      if (trans) movAcoesMap[trans] = { descricao: acoesMap[idAcao] || `Promoção ${idAcao}`, desconto: desc };
-    }
-
 
     // Catálogos
     const vendNomeCache = {};
@@ -7223,11 +7213,9 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       docMap[doc].valorTotal += docMap[doc].sign * vlrLiqTot;
 
       if (vlrUnit > 0 || vlrLiq > 0) {
-        const codProd    = String(r.cod_produto || '').trim();
-        // Desconto detectado direto no movimento: preco_tabela_epoca > preco_unitario
-        const emPromocao = vlrDesc > 0 || vlrUnit > vlrLiq;
-        const precoTabela = +vlrUnit.toFixed(2);
-        const precoVendido = +vlrLiq.toFixed(2);
+        const codProd      = String(r.cod_produto || '').trim();
+        const precoPromo   = promoMap[codProd] || null;
+        const emPromocao   = !!precoPromo;
 
         const catInfo = catalog[codProd] || {};
         docMap[doc].itens.push({
@@ -7236,13 +7224,13 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
           colecao:      (catInfo.linha || '').trim(),
           marca:        (catInfo.marca || '').trim(),
           quantidade:   qty,
-          vlrUnitario:  precoTabela,
+          vlrUnitario:  +vlrUnit.toFixed(2),
           vlrBruto:     +vlrBruto.toFixed(2),
           vlrLiquido:   +vlrLiqTot.toFixed(2),
           vlrDesconto:  +vlrDesc.toFixed(2),
           percDesconto: +percItem.toFixed(1),
           emPromocao,
-          precoVendido:  emPromocao ? precoVendido : null,
+          precoPromocao: precoPromo,
         });
 
         if (!emPromocao && descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {

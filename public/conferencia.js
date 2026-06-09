@@ -248,12 +248,12 @@
               const temDesc = it.vlrDesconto > 0;
               const liq = it.vlrLiquido ?? (it.vlrBruto - it.vlrDesconto);
               const subInfo = [it.nome, it.colecao].filter(Boolean).join(' · ');
-              const promoCell = it.emPromocao && it.precoVendido
-                ? `<span style="color:#2dd4bf;font-weight:700">${fmtR(it.precoVendido)}</span>`
+              const promoCell = it.emPromocao && it.precoPromocao
+                ? `<span style="color:#2dd4bf;font-weight:700">${fmtR(it.precoPromocao)}</span>`
                 : '—';
-              // % desconto: preço tabela vs preço vendido efetivo
+              // % desconto: se em promoção, calcula sobre preço promo; senão sobre preço tabela
               const vlrLiqUnit = it.quantidade > 0 ? liq / it.quantidade : liq;
-              const baseDescPct = it.vlrUnitario > 0 ? it.vlrUnitario : 0;
+              const baseDescPct = (it.emPromocao && it.precoPromocao) ? it.precoPromocao : it.vlrUnitario;
               const percDesc = baseDescPct > 0 ? ((baseDescPct - vlrLiqUnit) / baseDescPct * 100) : 0;
               const temDescPct = percDesc > 0.05;
               return `<tr class="${temDesc?'has-disc':''}">
