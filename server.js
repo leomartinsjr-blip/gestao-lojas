@@ -4374,15 +4374,20 @@ async function _buildTransResult(boards, lojas, dias) {
   const ultCompraMap      = {};   // última entrada por cod_produto (cross-board)
   const ultCompraPerBoard = {};   // última entrada por cod_produto por loja { board: { cod: iso } }
 
+  // Período para busca de entradas: sempre 365 dias (independente do giro)
+  const dtIniEntradas = new Date(todayUTC - 365 * 86400_000).toISOString().slice(0, 10);
+
   // Busca catálogo (setor, marca) em paralelo com estoque/movimento
   const [catalog] = await Promise.all([
     _getCatalog(lojas),
     Promise.all(boards.map(async board => {
     const cnpj  = lojas[board].replace(/\D/g, '');
     const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-    const [estRows, movRows] = await Promise.all([
+    // Busca estoque, giro (período selecionado) e entradas (365 dias) em paralelo
+    const [estRows, movRows, entRows] = await Promise.all([
       fetchEstoque(cnpj, chave, today),
       fetchMovimento(cnpj, dtIni, today, chave),
+      fetchMovimento(cnpj, dtIniEntradas, today, chave, 'E'),  // só entradas, 365 dias
     ]);
 
     estoqueByBoard[board] = {};
@@ -4395,6 +4400,22 @@ async function _buildTransResult(boards, lojas, dias) {
       estoqueByBoard[board][cod].qty += qty;
     }
 
+    // Processa entradas dos últimos 365 dias
+    for (const r of entRows) {
+      if (r.cancelado === 'S' || r.cancelado === '1') continue;
+      const cod = String(r.cod_produto || r.codproduto || '').trim();
+      if (!cod) continue;
+      const raw = (r.data_documento || r.data_lancamento || '').slice(0, 10);
+      const iso = raw && raw.includes('/')
+        ? (() => { const [d,m,y] = raw.split('/'); return `${y}-${m}-${d}`; })()
+        : raw;
+      if (!iso) continue;
+      if (!ultCompraMap[cod] || iso > ultCompraMap[cod]) ultCompraMap[cod] = iso;
+      if (!ultCompraPerBoard[board]) ultCompraPerBoard[board] = {};
+      if (!ultCompraPerBoard[board][cod] || iso > ultCompraPerBoard[board][cod])
+        ultCompraPerBoard[board][cod] = iso;
+    }
+
     giroByBoard[board] = {};
     for (const r of movRows) {
       if (r.cancelado === 'S' || r.cancelado === '1') continue;
@@ -4403,23 +4424,14 @@ async function _buildTransResult(boards, lojas, dias) {
 
       const tipoMov = (r.tipo_movimentacao || '').trim().toUpperCase();
       const operacao = (r.operacao || '').trim().toUpperCase();
-      const isEntrada = tipoMov === 'E' || ['EC','ET','EE','EN','ENT','NF','NFS'].includes(operacao);
+      // Pula entradas (já processadas separadamente) e devoluções
+      if (tipoMov === 'E' || ['EC','ET','EE','EN','ENT','NF','NFS'].includes(operacao)) continue;
+      if (operacao === 'DS') continue;
 
       const raw = (r.data_documento || r.data_lancamento || '').slice(0, 10);
       const iso = raw && raw.includes('/')
         ? (() => { const [d,m,y] = raw.split('/'); return `${y}-${m}-${d}`; })()
         : raw;
-
-      if (isEntrada) {
-        if (iso) {
-          if (!ultCompraMap[cod] || iso > ultCompraMap[cod]) ultCompraMap[cod] = iso;
-          if (!ultCompraPerBoard[board]) ultCompraPerBoard[board] = {};
-          if (!ultCompraPerBoard[board][cod] || iso > ultCompraPerBoard[board][cod])
-            ultCompraPerBoard[board][cod] = iso;
-        }
-        continue;
-      }
-      if (operacao === 'DS') continue;
 
       giroByBoard[board][cod] = (giroByBoard[board][cod] || 0) + (parseInt(r.quantidade || 0) || 1);
       if (iso && (!ultVendaMap[cod] || iso > ultVendaMap[cod])) ultVendaMap[cod] = iso;
