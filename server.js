@@ -7115,14 +7115,6 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       if (trans) movAcoesMap[trans] = { descricao: acoesMap[idAcao] || `Promoção ${idAcao}`, desconto: desc };
     }
 
-    // Mapa de promoções: cod_produto → { preco_promocao, data_inicio, data_fim }
-    // Se produto está em promoção no período, o desconto é esperado — não alerta
-    const promoMap = {};
-    for (const p of (Array.isArray(promoRows) ? promoRows : [])) {
-      const cod    = String(p.cod_produto || p.codigo || '').trim();
-      const preco  = parseBR(p.preco_promocao || p.valor_promocao || p.preco || '0');
-      if (cod && preco > 0) promoMap[cod] = { preco, raw: p };
-    }
 
     // Catálogos
     const vendNomeCache = {};
