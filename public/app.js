@@ -3144,6 +3144,8 @@ function renderTransTabContent(container) {
     renderTransExcelTab(container);
     return;
   }
+  // Modo automático: limpa filtro de data herdado do Excel
+  _transCompraFrom = '';
   container.innerHTML = `
     <div class="trans-toolbar">
       <label class="trans-label">Período para giro:</label>
@@ -3800,7 +3802,7 @@ function applyTransFilter(container) {
       lojaOk = receber.length > 0;
     }
 
-    const compraOk = !_transCompraFrom || compra >= _transCompraFrom;
+    const compraOk = !_transCompraFrom || !compra || compra >= _transCompraFrom;
     const visible  = lojaOk && compraOk;
     row.style.display = visible ? '' : 'none';
 
