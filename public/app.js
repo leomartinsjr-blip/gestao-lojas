@@ -2060,6 +2060,7 @@ function closePerfModal() {
 const TRANS_BOARDS = ['delrey','minas','contagem','estacao'];
 let _transDias      = 30;
 let _transCompraFrom = '';  // ISO "YYYY-MM-DD"
+let _transSetor     = '';   // setor selecionado para filtro automático
 let _transLojaFilter = '';  // board key
 let _transTipoFilter = '';  // 'enviar' | 'receber' | ''
 let _transTab       = 'microvix'; // 'microvix' | 'excel'
@@ -3153,6 +3154,12 @@ function renderTransTabContent(container) {
         <label class="trans-label">Última entrada desde:</label>
         <input type="date" id="transCompraFrom" class="trans-date-input" value="${_transCompraFrom}">
       </div>
+      <div class="trans-compra-filter">
+        <label class="trans-label">Setor:</label>
+        <select id="transSetorSel" class="trans-date-input" style="min-width:130px">
+          <option value="">Todos</option>
+        </select>
+      </div>
       <button class="trans-calc-btn" id="transCalcBtn">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
@@ -3161,6 +3168,18 @@ function renderTransTabContent(container) {
       </button>
     </div>
     <div id="transResult" style="padding:.5rem 0"></div>`;
+
+  // Carrega setores do catálogo
+  const setorSel = container.querySelector('#transSetorSel');
+  fetch('/api/transferencias/setores').then(r => r.json()).then(setores => {
+    setores.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s; opt.textContent = s;
+      if (s === _transSetor) opt.selected = true;
+      setorSel.appendChild(opt);
+    });
+  }).catch(() => {});
+  setorSel.addEventListener('change', () => { _transSetor = setorSel.value; });
 
   container.querySelectorAll('.trans-dias-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -3551,7 +3570,8 @@ async function loadTransSugestoes(container) {
   container.innerHTML = '<div class="trans-loading">Buscando estoque e vendas no Microvix…</div>';
   try {
     const lojas = TRANS_BOARDS.join(',');
-    const r = await fetch(`/api/transferencias?dias=${_transDias}&lojas=${lojas}`);
+    const setorParam = _transSetor ? `&setor=${encodeURIComponent(_transSetor)}` : '';
+    const r = await fetch(`/api/transferencias?dias=${_transDias}&lojas=${lojas}${setorParam}`);
     if (!r.ok) {
       const txt = await r.text().catch(() => '');
       throw new Error(`HTTP ${r.status}${txt ? ': ' + txt.slice(0, 120) : ''}`);

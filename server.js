@@ -4799,6 +4799,21 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
   }
 });
 
+// GET /api/transferencias/setores — lista setores distintos do catálogo (para filtro)
+app.get('/api/transferencias/setores', requireAdmin, async (req, res) => {
+  try {
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const catalog = await _getCatalog(lojas).catch(() => ({}));
+    const seen = new Set();
+    for (const entry of Object.values(catalog)) {
+      const s = (entry.setor || '').trim();
+      if (s && s !== '—') seen.add(s);
+    }
+    const list = [...seen].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    res.json(list);
+  } catch (e) { res.json([]); }
+});
+
 // GET /api/transferencias/preload — dispara aquecimento, responde imediatamente
 app.get('/api/transferencias/preload', requireAdmin, (req, res) => {
   const { boards, lojas, firstCnpj, firstChave } = _transBoards(null);
@@ -4807,19 +4822,27 @@ app.get('/api/transferencias/preload', requireAdmin, (req, res) => {
   res.json({ ok: true, msg: 'Aquecimento iniciado em background' });
 });
 
-// GET /api/transferencias?dias=30&lojas=delrey,minas,contagem,estacao
+// GET /api/transferencias?dias=30&lojas=delrey,minas,contagem,estacao&setor=SURF
 // Nunca faz chamadas Microvix — apenas lê cache ou retorna cacheLoading:true
 app.get('/api/transferencias', requireAdmin, (req, res) => {
   try {
-    const dias = Math.max(1, parseInt(req.query.dias || '30'));
+    const dias  = Math.max(1, parseInt(req.query.dias || '30'));
+    const setor = (req.query.setor || '').trim();
     const { boards, lojas, firstCnpj, firstChave } = _transBoards(req.query.lojas || null);
     if (!boards.length) return res.status(400).json({ error: 'Nenhuma loja configurada em MICROVIX_LOJAS' });
     _warmAllTrans(boards, lojas, dias, firstCnpj, firstChave).catch(e =>
       console.warn('[Trans] warm bg error:', e.message)
     );
     const cached = _transResultCache[String(dias)];
-    if (cached && Date.now() - cached.at < TRANS_RESULT_TTL)
-      return res.json(cached.result);
+    if (cached && Date.now() - cached.at < TRANS_RESULT_TTL) {
+      if (!setor) return res.json(cached.result);
+      // Filtra por setor no cache (case-insensitive)
+      const setorLow = setor.toLowerCase();
+      const filtered = cached.result.sugestoes.filter(s =>
+        (s.setor || '').toLowerCase().includes(setorLow)
+      );
+      return res.json({ ...cached.result, sugestoes: filtered, total: filtered.length });
+    }
     return res.json({ cacheLoading: true, msg: 'Preparando dados… tente novamente em alguns segundos.' });
   } catch (e) {
     console.error('[Trans] endpoint error:', e.message);
