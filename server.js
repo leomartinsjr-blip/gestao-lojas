@@ -7429,6 +7429,115 @@ initMongo()
       }).catch(e => console.warn('[Catalog] Warm-up falhou:', e.message));
     }
 
+    // Pré-aquece cache de marcas em background (startup + cron diário)
+    async function _prewarmMarcasCache() {
+      if (!process.env.MICROVIX_CHAVE || !process.env.MICROVIX_LOJAS) return;
+      const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+      const SURFERS = ['delrey', 'minas', 'contagem', 'estacao'];
+      const targetBoards = SURFERS.filter(b => lojas[b]);
+      if (!targetBoards.length) return;
+      const today = new Date().toISOString().slice(0, 10);
+      // Mês atual: 1º dia até hoje
+      const mesIni = today.slice(0, 8) + '01';
+
+      // Verifica se já está em cache antes de disparar
+      const cKeyHoje = _marcasCacheKey(targetBoards, today, today);
+      const cKeyMes  = _marcasCacheKey(targetBoards, mesIni, today);
+      const { fetchMovimento, parseBrNum } = require('./services/microvix');
+      const catalog = await _getCatalog(lojas).catch(() => ({}));
+
+      async function _buildMarcasPayload(dtIni, dtFin) {
+        const boardResults = await Promise.all(
+          targetBoards.map(async b => {
+            const cnpj  = (lojas[b] || '').replace(/\D/g, '');
+            if (!cnpj) return [];
+            const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+            try { return await fetchMovimento(cnpj, dtIni, dtFin, chave); }
+            catch (e) { console.warn(`[prewarm/${b}] ${e.message}`); return []; }
+          })
+        );
+        const byMarca = {};
+        for (const rows of boardResults) {
+          for (const row of rows) {
+            if (row.cancelado === 'S' || row.cancelado === '1') continue;
+            if (row.excluido  === 'S') continue;
+            if (row.soma_relatorio === 'N') continue;
+            const op = (row.operacao || '').toUpperCase();
+            if (op !== 'S' && op !== 'DS') continue;
+            const sign = op === 'DS' ? -1 : 1;
+            const cod  = String(row.cod_produto || '').replace(/\.0+$/, '').trim();
+            const barra = String(row.cod_barra || '').replace(/\.0+$/, '').trim();
+            if (!cod) continue;
+            const prodInfo = catalog[cod] || catalog[barra] || {};
+            const marca = ((prodInfo.marca || row.desc_marca || row.marca || '').trim()) || '(sem marca)';
+            const setor = ((prodInfo.setor || row.desc_setor || row.setor || '').trim()) || '(sem setor)';
+            const nome  = (prodInfo.nomeBase || row.nome_produto || row.nome || row.descricao || cod).trim();
+            const qtd   = sign * parseBrNum(row.quantidade  || '0');
+            const valor = sign * parseBrNum(row.valor_total || '0');
+            const mKey  = marca.toUpperCase();
+            if (!byMarca[mKey]) byMarca[mKey] = { marca, qtd: 0, valor: 0, setores: {} };
+            byMarca[mKey].qtd   += qtd;
+            byMarca[mKey].valor += valor;
+            const sKey = setor.toUpperCase();
+            if (!byMarca[mKey].setores[sKey]) byMarca[mKey].setores[sKey] = { setor, qtd: 0, valor: 0, produtos: {} };
+            byMarca[mKey].setores[sKey].qtd   += qtd;
+            byMarca[mKey].setores[sKey].valor += valor;
+            const rKey = (prodInfo.referencia || cod).toUpperCase();
+            const cor  = prodInfo.desc_cor || '';
+            const produtos = byMarca[mKey].setores[sKey].produtos;
+            if (!produtos[rKey]) produtos[rKey] = { ref: prodInfo.referencia || cod, nome: prodInfo.nomeBase || nome, qtd: 0, valor: 0, cores: {} };
+            produtos[rKey].qtd   += qtd;
+            produtos[rKey].valor += valor;
+            const cKey2 = cor.toUpperCase() || '__SEM_COR__';
+            if (!produtos[rKey].cores[cKey2]) produtos[rKey].cores[cKey2] = { cor: cor || '—', qtd: 0, valor: 0 };
+            produtos[rKey].cores[cKey2].qtd   += qtd;
+            produtos[rKey].cores[cKey2].valor += valor;
+          }
+        }
+        const result = Object.values(byMarca)
+          .map(m => ({
+            marca: m.marca, qtd: m.qtd, valor: parseFloat(m.valor.toFixed(2)),
+            setores: Object.values(m.setores).map(s => ({
+              setor: s.setor, qtd: s.qtd, valor: parseFloat(s.valor.toFixed(2)),
+              produtos: Object.values(s.produtos).sort((a, b) => b.valor - a.valor).map(p => ({
+                ref: p.ref, nome: p.nome, qtd: p.qtd, valor: parseFloat(p.valor.toFixed(2)),
+                cores: Object.values(p.cores).sort((a, b) => b.valor - a.valor).map(c => ({ ...c, valor: parseFloat(c.valor.toFixed(2)) })),
+              })),
+            })).sort((a, b) => b.valor - a.valor),
+          })).sort((a, b) => b.valor - a.valor);
+        return { dtIni, dtFin, boards: targetBoards, total: result.length, marcas: result };
+      }
+
+      // Hoje
+      if (!_marcasCache[cKeyHoje] || Date.now() - _marcasCache[cKeyHoje].at > 5 * 60 * 1000) {
+        console.log('[prewarm] Pré-aquecendo cache de marcas — hoje');
+        _buildMarcasPayload(today, today).then(p => {
+          _marcasCache[cKeyHoje] = { data: p, at: Date.now() };
+          console.log(`[prewarm] Cache de hoje pronto (${p.total} marcas)`);
+        }).catch(e => console.warn('[prewarm/hoje]', e.message));
+      }
+      // Mês atual (lançado 5s depois para não disputar a API ao mesmo tempo)
+      setTimeout(() => {
+        if (!_marcasCache[cKeyMes] || Date.now() - _marcasCache[cKeyMes].at > 30 * 60 * 1000) {
+          console.log('[prewarm] Pré-aquecendo cache de marcas — mês atual');
+          _buildMarcasPayload(mesIni, today).then(p => {
+            _marcasCache[cKeyMes] = { data: p, at: Date.now() };
+            console.log(`[prewarm] Cache do mês pronto (${p.total} marcas)`);
+          }).catch(e => console.warn('[prewarm/mes]', e.message));
+        }
+      }, 5000);
+    }
+
+    // Dispara prewarm 10s após startup (catálogo precisa estar carregado primeiro)
+    if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
+      setTimeout(() => _prewarmMarcasCache().catch(e => console.warn('[prewarm]', e.message)), 10_000);
+      // Cron: re-aquece às 08:15 todo dia (após cron de fechamento às 08:00)
+      cron.schedule('15 8 * * *', () => {
+        console.log('[prewarm] Cron 08:15 — re-aquecendo cache de marcas');
+        _prewarmMarcasCache().catch(e => console.warn('[prewarm cron]', e.message));
+      }, { timezone: 'America/Sao_Paulo' });
+    }
+
     // Auto-sync Microvix if credentials are set
     if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
       console.log(`[Microvix] Auto-sync a cada ${MX_INTERVAL_MS / 60000} min`);
