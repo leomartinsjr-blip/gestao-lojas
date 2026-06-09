@@ -3833,7 +3833,7 @@ function _exportTransExcel(sugestoes, lojaFilter = '', tipoFilter = '') {
       .filter(Boolean);
 
     // Monta cabeçalho: colunas fixas + uma coluna por destino + Total
-    const fixedCols  = ['Setor', 'Marca', 'Ref.', 'Produto', 'Cor', 'Tam.', 'Últ. Entrada'];
+    const fixedCols  = ['Marca', 'Ref.', 'Produto', 'Cor', 'Tam.'];
     const destLabels = destinos.map(d => `→ ${BOARDS[d]?.label || d}`);
     const header     = [...fixedCols, ...destLabels, 'Total'];
 
@@ -3842,13 +3842,11 @@ function _exportTransExcel(sugestoes, lojaFilter = '', tipoFilter = '') {
 
     const dataRows = itens.map(s => {
       const fixed = [
-        s.setor        || '—',
         s.marca        || '—',
         s.referencia   || '—',
         s.descricao    || '—',
         s.desc_cor     || '—',
         s.desc_tamanho || '—',
-        s.ultimaCompra || '—',
       ];
       let total = 0;
       const qtds = destinos.map(d => {
@@ -3866,15 +3864,13 @@ function _exportTransExcel(sugestoes, lojaFilter = '', tipoFilter = '') {
     // Larguras de colunas
     const totalCols = fixedCols.length + destinos.length + 1;
     ws['!cols'] = [
-      { wch: 18 }, // Setor
-      { wch: 16 }, // Marca
-      { wch: 13 }, // Ref.
-      { wch: 36 }, // Produto
-      { wch:  8 }, // Cor
-      { wch:  6 }, // Tam.
-      { wch: 12 }, // Últ. Entrada
-      ...destinos.map(() => ({ wch: 12 })),
-      { wch: 7  }, // Total
+      { wch: 14 }, // Marca
+      { wch: 12 }, // Ref.
+      { wch: 32 }, // Produto
+      { wch:  7 }, // Cor
+      { wch:  5 }, // Tam.
+      ...destinos.map(() => ({ wch: 10 })),
+      { wch:  6 }, // Total
     ];
 
     // Mescla célula do título na linha 1
