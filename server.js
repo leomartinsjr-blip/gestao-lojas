@@ -7416,6 +7416,19 @@ initMongo()
     // Restaura lastSync do banco para o botão mostrar verde imediatamente após deploy
     readDB().then(db => { if (db.microvixLastSync) setLastSync(db.microvixLastSync); }).catch(() => {});
 
+    // Warm-up do catálogo a partir do MongoDB (evita build pesado durante o primeiro auto-sync)
+    if (mongoDb && process.env.MICROVIX_LOJAS) {
+      _loadCatalogMongo().then(loaded => {
+        if (loaded && Object.keys(loaded.map).length > 0) {
+          _catalogCache   = loaded.map;
+          _catalogCacheAt = loaded.updatedAt ? new Date(loaded.updatedAt).getTime() : Date.now();
+          console.log(`[Catalog] Warm-up do MongoDB: ${Object.keys(_catalogCache).length} entradas`);
+        } else {
+          console.log('[Catalog] MongoDB vazio — catálogo será construído na primeira requisição');
+        }
+      }).catch(e => console.warn('[Catalog] Warm-up falhou:', e.message));
+    }
+
     // Auto-sync Microvix if credentials are set
     if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
       console.log(`[Microvix] Auto-sync a cada ${MX_INTERVAL_MS / 60000} min`);
