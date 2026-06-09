@@ -4061,7 +4061,20 @@ async function _getCatalog(lojas) {
   // Cache expirado mas existe: devolve imediatamente sem bloquear (rebuild acontece em background)
   if (_catalogCache) return _catalogCache;
 
-  // Cold start (sem cache): aguarda o build terminar uma única vez
+  // Cold start: tenta carregar do MongoDB antes de aguardar o build completo
+  if (mongoDb) {
+    try {
+      const doc = await mongoDb.collection('catalog').findOne({ _id: 'fullCatalog' });
+      if (doc?.data && Object.keys(doc.data).length > 0) {
+        _catalogCache   = doc.data;
+        _catalogCacheAt = doc.updatedAt ? new Date(doc.updatedAt).getTime() : 0;
+        console.log(`[Catalog] Carregado do MongoDB: ${Object.keys(_catalogCache).length} entradas`);
+        return _catalogCache;
+      }
+    } catch (e) { console.warn('[Catalog] MongoDB load:', e.message); }
+  }
+
+  // Sem MongoDB e sem cache: aguarda o build
   return _catalogWarmPromise;
 }
 
@@ -4151,6 +4164,16 @@ async function _buildCatalog(lojas) {
     console.log(`[Catalog] ${totalProd} produtos → ${Object.keys(map).length} entradas (via ${mainBoard})`);
     _catalogCache   = map;
     _catalogCacheAt = Date.now();
+
+    if (mongoDb && Object.keys(map).length > 0) {
+      mongoDb.collection('catalog').replaceOne(
+        { _id: 'fullCatalog' },
+        { _id: 'fullCatalog', data: map, updatedAt: new Date() },
+        { upsert: true }
+      ).then(() => console.log('[Catalog] Salvo no MongoDB'))
+       .catch(e => console.warn('[Catalog] Erro ao salvar:', e.message));
+    }
+
     return map;
   } catch (e) {
     console.warn('[Catalog] Erro:', e.message);
@@ -4195,9 +4218,16 @@ function _calcTransfersProporcional(boards, stocks, giro, periodDays = 90, lastC
     .filter(b => (stocks[b] || 0) > 1 && delta[b] > 0)
     .sort((a, b) => delta[b] - delta[a]);
 
-  // Regra 2: receptora recebe se tem déficit em relação ao ideal e tem histórico de vendas
+  // Regra 2: receptora recebe se tem déficit em relação ao ideal, tem histórico de vendas
+  // E cobertura atual < MIN_COB_RECEIVER meses (evita transferir para loja já bem abastecida)
+  const MIN_COB_RECEIVER = 1.5;
   const receivers = boards
-    .filter(b => delta[b] < 0 && (giro[b] || 0) > 0)
+    .filter(b => {
+      if (delta[b] >= 0 || (giro[b] || 0) <= 0) return false;
+      const giroMensal = (giro[b] / periodDays) * 30;
+      const cobertura  = giroMensal > 0 ? (stocks[b] || 0) / giroMensal : Infinity;
+      return cobertura < MIN_COB_RECEIVER;
+    })
     .sort((a, b) => delta[a] - delta[b]);
 
   if (!donors.length || !receivers.length) return null;
