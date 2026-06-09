@@ -428,4 +428,29 @@ async function fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave) {
   return rows;
 }
 
-module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchMovimentoCartoes, fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, fetchClientes, fetchProdutosPromocoes, parseBrNum, buildRequest, postRequest, parseCsv };
+// Fetch LinxAcoesPromocionais → catálogo de ações promocionais cadastradas
+async function fetchAcoesPromocionais(cnpj, chave) {
+  const body = buildRequest('LinxAcoesPromocionais', cnpj, [{ id: 'ativa', valor: '1' }], chave);
+  const raw  = await postRequest(body);
+  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro';
+    throw new Error(`Microvix API (acoesPromocionais): ${msg}`);
+  }
+  return parseCsv(raw);
+}
+
+// Fetch LinxMovimentoAcoesPromocionais → ações aplicadas por transação no período
+async function fetchMovimentoAcoesPromocionais(cnpj, dtIni, dtFin, chave) {
+  const body = buildRequest('LinxMovimentoAcoesPromocionais', cnpj, [
+    { id: 'data_inicial', valor: dtIni },
+    { id: 'data_fim',     valor: dtFin },
+  ], chave);
+  const raw = await postRequest(body);
+  if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) {
+    const msg = (raw.match(/<Message>([^<]+)<\/Message>/) || [])[1] || 'Erro';
+    throw new Error(`Microvix API (movimentoAcoes): ${msg}`);
+  }
+  return parseCsv(raw);
+}
+
+module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchMovimentoCartoes, fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, fetchClientes, fetchProdutosPromocoes, fetchAcoesPromocionais, fetchMovimentoAcoesPromocionais, parseBrNum, buildRequest, postRequest, parseCsv };

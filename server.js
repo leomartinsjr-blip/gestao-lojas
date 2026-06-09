@@ -7083,20 +7083,37 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
 
     const { fetchMovimento, fetchMovimentoPlanos, fetchMovimentoCartoes,
             fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchVendedores,
-            fetchProdutosPromocoes, parseBrNum } = require('./services/microvix');
+            fetchAcoesPromocionais, fetchMovimentoAcoesPromocionais, parseBrNum } = require('./services/microvix');
 
-    const [movRows, planoRows, cartoesRows, planosCatalog, bandeirasCatalog, vendedoresRows, promoRows, catalog] = await Promise.all([
+    const [movRows, planoRows, cartoesRows, planosCatalog, bandeirasCatalog, vendedoresRows, acoesRows, movAcoesRows, catalog] = await Promise.all([
       fetchMovimento(cnpj, dtIni, dtFin, chave),
       fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave).catch(() => []),
       fetchMovimentoCartoes(cnpj, dtIni, dtFin, chave).catch(() => []),
       fetchLinxPlanos(cnpj, chave).catch(() => []),
       fetchLinxPlanosBandeiras(cnpj, chave).catch(() => []),
       fetchVendedores(cnpj, chave).catch(() => []),
-      fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave).catch(() => []),
+      fetchAcoesPromocionais(cnpj, chave).catch(() => []),
+      fetchMovimentoAcoesPromocionais(cnpj, dtIni, dtFin, chave).catch(() => []),
       _getCatalog(lojas).catch(() => ({})),
     ]);
 
     const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
+
+    // Mapa de ações promocionais: id → descricao
+    const acoesMap = {};
+    for (const a of (Array.isArray(acoesRows) ? acoesRows : [])) {
+      const id = String(a.id_acoes_promocionais || '').trim();
+      if (id) acoesMap[id] = (a.descricao || '').trim();
+    }
+
+    // Mapa de ações por transação: transacao → { descricao, desconto }
+    const movAcoesMap = {};
+    for (const a of (Array.isArray(movAcoesRows) ? movAcoesRows : [])) {
+      const trans = String(a.transacao || '').trim();
+      const idAcao = String(a.id_acoes_promocionais || '').trim();
+      const desc = parseBR(a.desconto_item || '0');
+      if (trans) movAcoesMap[trans] = { descricao: acoesMap[idAcao] || `Promoção ${idAcao}`, desconto: desc };
+    }
 
     // Mapa de promoções: cod_produto → { preco_promocao, data_inicio, data_fim }
     // Se produto está em promoção no período, o desconto é esperado — não alerta
@@ -7214,21 +7231,10 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       docMap[doc].valorTotal += docMap[doc].sign * vlrLiqTot;
 
       if (vlrUnit > 0 || vlrLiq > 0) {
-        const codProd  = String(r.cod_produto || '').trim();
-        const promo    = promoMap[codProd];
-        const emPromocao = !!promo;
-
-        // Se em promoção: verifica se preço vendido bate com preço da promoção (tolerância R$0,01)
-        let alertaPromo = null;
-        if (emPromocao) {
-          const difPreco = Math.abs(vlrLiq - promo.preco);
-          if (difPreco > 0.02) {
-            alertaPromo = {
-              tipo: 'preco_promocao_divergente',
-              msg:  `"${(r.descricao || codProd).trim()}" em promoção: esperado R$ ${promo.preco.toFixed(2)}, vendido R$ ${vlrLiq.toFixed(2)}`,
-            };
-          }
-        }
+        const codProd    = String(r.cod_produto || '').trim();
+        const trans      = String(r.transacao   || '').trim();
+        const acaoPromo  = movAcoesMap[trans] || null;
+        const emPromocao = !!acaoPromo;
 
         const catInfo = catalog[codProd] || {};
         docMap[doc].itens.push({
@@ -7243,7 +7249,7 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
           vlrDesconto:  +vlrDesc.toFixed(2),
           percDesconto: +percItem.toFixed(1),
           emPromocao,
-          precoPromocao: emPromocao ? +promo.preco.toFixed(2) : null,
+          nomePromocao:  emPromocao ? acaoPromo.descricao : null,
         });
 
         if (alertaPromo) {
