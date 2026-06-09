@@ -5023,6 +5023,28 @@ app.post('/api/transferencias/export', requireAdmin, async (req, res) => {
         });
         row.height = 15;
       });
+
+      // Linha de totais
+      const totalRowNum = itens.length + 3;
+      const totRow = ws.getRow(totalRowNum);
+      const COR_TOTAL_BG = 'FF1F2937';
+
+      // Soma por destino e grand total
+      const destTotals = destinos.map(d =>
+        itens.reduce((sum, s) => { const t = s.transfers.find(t => t.para === d); return sum + (t ? t.qty : 0); }, 0)
+      );
+      const grandTotal = destTotals.reduce((a, b) => a + b, 0);
+
+      const totalValues = ['', '', '', 'TOTAL', '', '', ...destTotals, grandTotal];
+      totalValues.forEach((v, i) => {
+        const cell = totRow.getCell(i + 1);
+        cell.value = v;
+        cell.font  = { bold: true, size: 10, color: { argb: 'FFFFFFFF' } };
+        cell.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_TOTAL_BG } };
+        cell.alignment = { vertical: 'middle', horizontal: i >= fixedDefs.length ? 'center' : (i === 3 ? 'right' : 'left') };
+        cell.border = { top: { style: 'medium', color: { argb: 'FF000000' } } };
+      });
+      totRow.height = 18;
     }
 
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
