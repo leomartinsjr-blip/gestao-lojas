@@ -3782,7 +3782,7 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
 
         const marca = ((prodInfo.marca || row.desc_marca || row.marca || '').trim()) || '(sem marca)';
         const setor = ((prodInfo.setor || row.desc_setor || row.setor || '').trim()) || '(sem setor)';
-        const nome  = (prodInfo.nome || row.nome_produto || row.nome || row.descricao || cod).trim();
+        const nome  = (prodInfo.nomeBase || row.nome_produto || row.nome || row.descricao || cod).trim();
         const qtd   = sign * parseBrNum(row.quantidade  || '0');
         const valor = sign * parseBrNum(row.valor_total || '0');
 
@@ -3920,7 +3920,7 @@ app.get('/api/estoque-marcas', requireAuth, async (req, res) => {
 
         const rKey = (prodInfo.referencia || cod).toUpperCase();
         const ref  = prodInfo.referencia || cod;
-        const nome = prodInfo.nomeBase || prodInfo.nome || '';
+        const nome = prodInfo.nomeBase || '';
         if (!byMarca[mKey].setores[sKey].refs[rKey])
           byMarca[mKey].setores[sKey].refs[rKey] = { ref, nome, lojas: {} };
         if (!byMarca[mKey].setores[sKey].refs[rKey].lojas[b])
@@ -4196,24 +4196,20 @@ async function _buildCatalog(lojas) {
           const ref   = String(r.referencia  || '').replace(/\.0+$/, '').trim();
           const barra = String(r.cod_barra   || '').replace(/\.0+$/, '').trim();
           if (!cod && !ref) continue;
+          const nomeBase = (r.descricao_basica || r.nome || '').trim();
           const entry = {
-            tipo:     'produto',
-            nome:     (r.nome        || '').trim(),
-            nomeBase: (r.descricao_basica || r.nome || '').trim(),
-            referencia: ref,
-            setor:    (r.desc_setor  || '').trim(),
-            marca:    (r.desc_marca  || '').trim(),
-            linha:    (r.desc_linha  || '').trim(),
-            desc_cor: (r.desc_cor    || '').trim(),
-            desc_tam: (r.desc_tamanho || '').trim(),
+            nomeBase,
+            referencia:  ref,
+            setor:       (r.desc_setor  || '').trim(),
+            marca:       (r.desc_marca  || '').trim(),
+            desc_cor:    (r.desc_cor    || '').trim(),
             preco_venda: parseBrNum(r.preco_venda || r.preco || r.preco_cheio || '0'),
           };
           const mergeEntry = (key) => {
             if (!map[key]) { map[key] = entry; return; }
             if (!map[key].marca       && entry.marca)       map[key].marca       = entry.marca;
             if (!map[key].setor       && entry.setor)       map[key].setor       = entry.setor;
-            if (!map[key].nome        && entry.nome)        map[key].nome        = entry.nome;
-            if (!map[key].linha       && entry.linha)       map[key].linha       = entry.linha;
+            if (!map[key].nomeBase    && entry.nomeBase)    map[key].nomeBase    = entry.nomeBase;
             if (!map[key].preco_venda && entry.preco_venda) map[key].preco_venda = entry.preco_venda;
           };
           if (cod)                                      mergeEntry(cod);
@@ -4467,12 +4463,12 @@ async function _buildTransResult(boards, lojas, dias) {
     sugestoes.push({
       cod_produto:  cod,
       cod_barra,
-      descricao:    cat.nome      || mov.descricao    || '—',
+      descricao:    cat.nomeBase  || mov.descricao    || '—',
       desc_cor:     cat.desc_cor  || mov.desc_cor     || '—',
       desc_tamanho: cat.desc_tam  || mov.desc_tamanho || '—',
       setor:        cat.setor     || mov.setor        || '—',
       marca:        cat.marca     || '—',
-      linha:        cat.linha     || '—',
+      linha:        '—',
       stocks,
       ideal,
       giro,
@@ -4586,7 +4582,7 @@ app.post('/api/equalizacao-dados', requireAdmin, async (req, res) => {
       const cat = catalog[String(p.cod)] || {};
       sugestoes.push({
         cod_produto:  p.cod,
-        descricao:    cat.nome     || p.descricao || '—',
+        descricao:    cat.nomeBase || p.descricao || '—',
         desc_cor:     cat.desc_cor || '—',
         desc_tamanho: cat.desc_tam || '—',
         setor:        cat.setor    || p.setor || '—',
@@ -4770,7 +4766,7 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
       const cat = catalog[cod] || {};
       sugestoes.push({
         cod_produto:  cod,
-        descricao:    cat.nome     || info.descricao || '—',
+        descricao:    cat.nomeBase || info.descricao || '—',
         desc_cor:     cat.desc_cor || '—',
         desc_tamanho: cat.desc_tam || '—',
         setor:        cat.setor    || info.setor || '—',
