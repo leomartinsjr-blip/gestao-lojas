@@ -4762,7 +4762,9 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
       return String(a.cod_produto).localeCompare(String(b.cod_produto), 'pt-BR', { numeric: true });
     });
 
-    res.json({ boards, dias: null, total: sugestoes.length, sugestoes, source: 'excel' });
+    const totalAnalisados = Object.keys(stocksMap).length;
+    console.log(`[Excel] ${totalAnalisados} produtos analisados → ${sugestoes.length} com sugestão`);
+    res.json({ boards, dias: null, total: sugestoes.length, totalAnalisados, sugestoes, source: 'excel' });
   } catch (e) {
     console.error('[Equalizacao Excel]', e.message);
     res.status(500).json({ error: e.message });

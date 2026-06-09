@@ -3537,7 +3537,7 @@ async function loadTransSugestoes(container) {
 }
 
 function renderTransTable(container, data) {
-  const { boards, dias, total, sugestoes, excluidos, compraMinDate } = data;
+  const { boards, dias, total, totalAnalisados, sugestoes, excluidos, compraMinDate } = data;
   if (!total) {
     container.innerHTML = `<div class="trans-empty">Nenhuma sugestão de transferência encontrada para os últimos ${dias} dias.<br><span style="color:var(--muted);font-size:.78rem">Todas as lojas já têm estoque mínimo de 1 peça por SKU.</span></div>`;
     return;
@@ -3620,7 +3620,7 @@ function renderTransTable(container, data) {
 
   const html = `
     <div class="trans-summary">
-      <span class="trans-total"><strong>${total}</strong> SKU${total>1?'s':''} com sugestão${dias ? ` · últimos ${dias} dias` : ''}${compraMinDate ? ` · entrada ≥ ${compraMinDate}` : ''}${excluidos ? ` <span class="trans-excluidos">(${excluidos} excluídos por data)</span>` : ''}</span>
+      <span class="trans-total"><strong>${total}</strong> SKU${total>1?'s':''} com sugestão${totalAnalisados ? ` <span style="color:var(--muted);font-weight:400">de ${totalAnalisados} analisados</span>` : ''}${dias ? ` · últimos ${dias} dias` : ''}${compraMinDate ? ` · entrada ≥ ${compraMinDate}` : ''}${excluidos ? ` <span class="trans-excluidos">(${excluidos} excluídos por data)</span>` : ''}</span>
       <button id="transExportBtn" class="trans-export-btn">↓ Exportar Excel</button>
       <div class="trans-pairs">${pairSummary}</div>
     </div>
