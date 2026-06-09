@@ -3565,9 +3565,10 @@ function renderTransExcelTab(container) {
         const cat = catalog[p.cod] || {};
         sugestoes.push({
           cod_produto:  p.cod,
-          descricao:    cat.nome     || p.descricao || '—',
-          setor:        cat.setor    || p.setor || '—',
           referencia:   p.referencia || '—',
+          descricao:    cat.nomeBase || cat.nome || p.descricao || '—',
+          setor:        cat.setor    || p.setor || '—',
+          marca:        cat.marca    || '—',
           stocks:       p.stocks,
           ideal,
           giro:         p.giro,
@@ -3581,7 +3582,7 @@ function renderTransExcelTab(container) {
         if (ss !== 0) return ss;
         const sm = (a.marca || '').localeCompare(b.marca || '', 'pt-BR');
         if (sm !== 0) return sm;
-        return String(a.cod_produto).localeCompare(String(b.cod_produto), 'pt-BR', { numeric: true });
+        return String(a.referencia).localeCompare(String(b.referencia), 'pt-BR', { numeric: true });
       });
 
       renderTransTable(result, { boards, dias: null, total: sugestoes.length, totalAnalisados: totalBruto, sugestoes, source: 'excel', excluidos, compraMinDate });
@@ -3709,8 +3710,9 @@ function renderTransTable(container, data) {
         data-setor="${s.setor || ''}">
       <td class="trans-td trans-cod">${s.cod_produto}</td>
       <td class="trans-td trans-setor">${s.setor || '—'}</td>
+      <td class="trans-td trans-setor">${s.marca || '—'}</td>
       <td class="trans-td trans-ref">${s.referencia || '—'}</td>
-      <td class="trans-td">${s.descricao || '—'}</td>
+      <td class="trans-td">${s.descricao || '—'}${(s.desc_cor && s.desc_cor !== '—') || (s.desc_tamanho && s.desc_tamanho !== '—') ? `<br><span style="font-size:.75rem;color:var(--muted)">${[s.desc_cor, s.desc_tamanho].filter(v => v && v !== '—').join(' / ')}</span>` : ''}</td>
       <td class="trans-td trans-td-c trans-date">${fmtDate(compraBR)}</td>
       <td class="trans-td trans-td-chips trans-col-send">${enviarHtml}</td>
       <td class="trans-td trans-td-chips trans-col-recv">${receberHtml}</td>
@@ -3759,6 +3761,7 @@ function renderTransTable(container, data) {
       <thead><tr>
         <th class="trans-th">Código</th>
         <th class="trans-th">Setor</th>
+        <th class="trans-th">Marca</th>
         <th class="trans-th">Ref.</th>
         <th class="trans-th">Produto</th>
         <th class="trans-th trans-th-c">Últ. Entrada</th>
@@ -3801,10 +3804,10 @@ function _exportTransExcel(sugestoes, lojaFilter = '', tipoFilter = '') {
   const isRecvFocus = lojaFilter && tipoFilter === 'receber';
 
   const header = isSendFocus
-    ? ['Código', 'Setor', 'Referência', 'Produto', 'Últ. Entrada', `Enviar de ${BOARDS[lojaFilter]?.label||lojaFilter} para`]
+    ? ['Código', 'Setor', 'Marca', 'Referência', 'Produto', 'Últ. Entrada', `Enviar de ${BOARDS[lojaFilter]?.label||lojaFilter} para`]
     : isRecvFocus
-    ? ['Código', 'Setor', 'Referência', 'Produto', 'Últ. Entrada', `Receber em ${BOARDS[lojaFilter]?.label||lojaFilter} de`]
-    : ['Código', 'Setor', 'Referência', 'Produto', 'Últ. Entrada', 'Enviar (destino: qtd)'];
+    ? ['Código', 'Setor', 'Marca', 'Referência', 'Produto', 'Últ. Entrada', `Receber em ${BOARDS[lojaFilter]?.label||lojaFilter} de`]
+    : ['Código', 'Setor', 'Marca', 'Referência', 'Produto', 'Últ. Entrada', 'Enviar (destino: qtd)'];
 
   const rows = sugestoes.map(s => {
     let transfers = s.transfers;
@@ -3818,10 +3821,10 @@ function _exportTransExcel(sugestoes, lojaFilter = '', tipoFilter = '') {
       ? transfers.map(t => `${BOARDS[t.de]?.label || t.de}: ${t.qty}`).join(', ')
       : transfers.map(t => `${BOARDS[t.de]?.label||t.de}→${BOARDS[t.para]?.label||t.para}: ${t.qty}`).join(', ');
     const compra = s.ultimaCompra || '—';
-    return [s.cod_produto, s.setor || '—', s.referencia || '—', s.descricao || '—', compra, enviar];
+    return [s.cod_produto, s.setor || '—', s.marca || '—', s.referencia || '—', s.descricao || '—', compra, enviar];
   }).filter(Boolean);
   const ws = XL.utils.aoa_to_sheet([header, ...rows]);
-  ws['!cols'] = [{ wch:10 }, { wch:22 }, { wch:14 }, { wch:42 }, { wch:12 }, { wch:40 }];
+  ws['!cols'] = [{ wch:10 }, { wch:22 }, { wch:18 }, { wch:14 }, { wch:42 }, { wch:12 }, { wch:40 }];
   ws['!pageSetup'] = { paperSize: 9, orientation: 'landscape', fitToPage: 1, fitToWidth: 1, fitToHeight: 0 };
   ws['!sheetPr']   = { pageSetUpPr: { fitToPage: 1 } };
   ws['!margins']   = { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 };
@@ -3829,7 +3832,7 @@ function _exportTransExcel(sugestoes, lojaFilter = '', tipoFilter = '') {
   XL.utils.book_append_sheet(wb, ws, 'Transferências');
   if (!wb.Workbook) wb.Workbook = {};
   if (!wb.Workbook.Names) wb.Workbook.Names = [];
-  wb.Workbook.Names.push({ Name: '_xlnm.Print_Area', Ref: `Transferências!$A$1:$F$${rows.length + 1}` });
+  wb.Workbook.Names.push({ Name: '_xlnm.Print_Area', Ref: `Transferências!$A$1:$G$${rows.length + 1}` });
   XL.writeFile(wb, 'transferencias.xlsx');
 }
 
