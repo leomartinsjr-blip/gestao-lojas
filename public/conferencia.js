@@ -250,6 +250,7 @@
     const parts = [];
     if (counts.parcela_minima)           parts.push(`<span class="badge badge-parc" title="${alertas.filter(a=>a.tipo==='parcela_minima').map(a=>esc(a.msg)).join('\n')}">💳 Parcela</span>`);
     if (counts.desconto_item)            parts.push(`<span class="badge badge-di"   title="${alertas.filter(a=>a.tipo==='desconto_item').map(a=>esc(a.msg)).join('\n')}">🏷 Item×${counts.desconto_item}</span>`);
+    if (counts.marca_sem_desconto)       parts.push(`<span class="badge badge-marca" title="${alertas.filter(a=>a.tipo==='marca_sem_desconto').map(a=>esc(a.msg)).join('\n')}">🚫 Marca×${counts.marca_sem_desconto}</span>`);
     if (counts.desconto_venda)           parts.push(`<span class="badge badge-dv"   title="${alertas.filter(a=>a.tipo==='desconto_venda').map(a=>esc(a.msg)).join('\n')}">📉 Venda</span>`);
     if (counts.desconto_parcelado)       parts.push(`<span class="badge badge-dv"   title="${alertas.filter(a=>a.tipo==='desconto_parcelado').map(a=>esc(a.msg)).join('\n')}">🚫 Parcelado</span>`);
     if (counts.preco_promocao_divergente)parts.push(`<span class="badge badge-rede" title="${alertas.filter(a=>a.tipo==='preco_promocao_divergente').map(a=>esc(a.msg)).join('\n')}">🏷 Promo</span>`);
@@ -760,6 +761,14 @@
             Desconto somente à vista<br>
             <span style="font-size:10px;color:${P('muted')}">(alerta se houver desc. em crédito parcelado)</span>
           </label>
+        </div>
+        <div class="rf" style="margin-top:8px">
+          <label>Marcas sem desconto</label>
+          <input type="text" data-board="${board}" data-field="marcasSemDesconto" data-type="tags"
+            placeholder="ex: VANS, ADIDAS, NIKE"
+            value="${Array.isArray(r.marcasSemDesconto)?r.marcasSemDesconto.join(', '):''}"
+            style="font-size:11px"/>
+          <span style="font-size:10px;color:${P('muted')};margin-top:3px;display:block">Separe por vírgula. Alerta se qualquer desconto for aplicado.</span>
         </div>`;
       grid.appendChild(card);
     });
@@ -770,6 +779,7 @@
       const {board,field,type}=inp.dataset;
       if (!regrasData[board]) regrasData[board]={};
       if (type === 'bool') regrasData[board][field] = inp.checked;
+      else if (type === 'tags') regrasData[board][field] = inp.value.split(',').map(s=>s.trim()).filter(Boolean);
       else regrasData[board][field] = parseFloat(inp.value)||0;
     });
     const btn=$('salvarRegrasBtn');

@@ -7128,6 +7128,7 @@ async function _buildConferenciaVendas(board, dtIni, dtFin) {
   const descontoMaxItem      = parseFloat(regra.descontoMaxItem || 100);
   const descontoMaxVenda     = parseFloat(regra.descontoMaxVenda|| 100);
   const descontoSomenteAVista= regra.descontoSomenteAVista === true || regra.descontoSomenteAVista === 'true';
+  const marcasSemDesconto    = Array.isArray(regra.marcasSemDesconto) ? regra.marcasSemDesconto.map(m => m.trim().toUpperCase()) : [];
 
   const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
   const cnpj  = lojas[board];
@@ -7135,7 +7136,7 @@ async function _buildConferenciaVendas(board, dtIni, dtFin) {
 
   // Reutiliza todo o código do handler movendo req/res para fora
   // Chama o handler interno via _buildConferenciaVendasCore
-  return _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMin, descontoMaxItem, descontoMaxVenda, descontoSomenteAVista, cnpj);
+  return _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMin, descontoMaxItem, descontoMaxVenda, descontoSomenteAVista, marcasSemDesconto, cnpj);
 }
 
 // GET /api/conferencia/vendas?board=delrey&dtIni=2026-06-01&dtFin=2026-06-08
@@ -7175,7 +7176,7 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMin, descontoMaxItem, descontoMaxVenda, descontoSomenteAVista, cnpj) {
+async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMin, descontoMaxItem, descontoMaxVenda, descontoSomenteAVista, marcasSemDesconto, cnpj) {
     const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
     const cnpjClean = cnpj.replace(/\D/g, '');
@@ -7338,6 +7339,14 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
           docMap[doc].alertas.push({
             tipo: 'desconto_item',
             msg:  `"${(r.descricao || r.referencia || codProd || '').trim()}" ${percItem.toFixed(1)}% desc (máx ${descontoMaxItem}%)`,
+          });
+        }
+        // Alerta: marca sem desconto permitido
+        const marcaItem = (catInfo.marca || '').trim().toUpperCase();
+        if (marcasSemDesconto.length && marcaItem && marcasSemDesconto.includes(marcaItem) && vlrDesc > 0) {
+          docMap[doc].alertas.push({
+            tipo: 'marca_sem_desconto',
+            msg:  `"${(r.descricao || r.referencia || codProd || '').trim()}" (${catInfo.marca}) não permite desconto`,
           });
         }
       }
