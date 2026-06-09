@@ -7224,9 +7224,10 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
 
       if (vlrUnit > 0 || vlrLiq > 0) {
         const codProd    = String(r.cod_produto || '').trim();
-        const trans      = String(r.transacao   || '').trim();
-        const acaoPromo  = movAcoesMap[trans] || null;
-        const emPromocao = !!acaoPromo;
+        // Desconto detectado direto no movimento: preco_tabela_epoca > preco_unitario
+        const emPromocao = vlrDesc > 0 || vlrUnit > vlrLiq;
+        const precoTabela = +vlrUnit.toFixed(2);
+        const precoVendido = +vlrLiq.toFixed(2);
 
         const catInfo = catalog[codProd] || {};
         docMap[doc].itens.push({
@@ -7235,13 +7236,13 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
           colecao:      (catInfo.linha || '').trim(),
           marca:        (catInfo.marca || '').trim(),
           quantidade:   qty,
-          vlrUnitario:  +vlrUnit.toFixed(2),
+          vlrUnitario:  precoTabela,
           vlrBruto:     +vlrBruto.toFixed(2),
           vlrLiquido:   +vlrLiqTot.toFixed(2),
           vlrDesconto:  +vlrDesc.toFixed(2),
           percDesconto: +percItem.toFixed(1),
           emPromocao,
-          nomePromocao:  emPromocao ? acaoPromo.descricao : null,
+          precoVendido:  emPromocao ? precoVendido : null,
         });
 
         if (!emPromocao && descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {
