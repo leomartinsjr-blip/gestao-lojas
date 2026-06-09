@@ -223,6 +223,14 @@ body {
 .cf-tbl tbody tr.sale-row:nth-child(even) td { background: #F8F9FB; }
 .cf-tbl tbody tr.sale-row:hover td { background: #EEF3FF !important; }
 .cf-tbl tbody tr.sale-row[data-drill] { cursor: pointer; }
+.cf-tbl tbody tr.sale-row.row-open td {
+  background: #EEF3FF !important;
+  border-top: 2px solid var(--cf-primary) !important;
+  font-weight: 600;
+}
+.cf-tbl tbody tr.sale-row.row-open td:first-child {
+  border-left: 3px solid var(--cf-primary);
+}
 .cf-tbl .accent-cell { padding: 0 !important; width: 3px; }
 .cf-tbl .accent-bar { width: 3px; height: 100%; min-height: 38px; }
 .cf-tbl .accent-bar.alert { background: var(--cf-alert); }

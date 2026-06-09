@@ -471,6 +471,7 @@
         const drill = document.getElementById(row.dataset.drill);
         if (!drill) return;
         const open = drill.classList.toggle('hidden');
+        row.classList.toggle('row-open', !open);
         row.querySelector('.chevron')?.classList.toggle('open', !open);
       });
     });
