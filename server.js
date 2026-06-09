@@ -3717,6 +3717,14 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
       : board                        ? [board]
       : Object.keys(lojas);
 
+    // Cache hit
+    const cKey = _marcasCacheKey(targetBoards, dtIni, dtFin);
+    const cached = _marcasCache[cKey];
+    if (cached && Date.now() - cached.at < _marcasTTL(dtFin)) {
+      console.log(`[relatorioMarcas] cache HIT (${cKey})`);
+      return res.json(cached.data);
+    }
+
     const { fetchMovimento, parseBrNum } = require('./services/microvix');
 
     // Aguarda catálogo — se já em cache retorna imediato; se não, constrói agora
@@ -3814,7 +3822,9 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
       .sort((a, b) => b.valor - a.valor);
 
     console.log(`[relatorioMarcas] linhas:${_diagTotal} sem_marca:${_diagMiss} (${_diagTotal ? ((_diagMiss/_diagTotal)*100).toFixed(1) : 0}%) catalogSize:${Object.keys(catalog).length}`);
-    res.json({ dtIni, dtFin, boards: targetBoards, total: result.length, marcas: result });
+    const payload = { dtIni, dtFin, boards: targetBoards, total: result.length, marcas: result };
+    _marcasCache[cKey] = { data: payload, at: Date.now() };
+    res.json(payload);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -3836,8 +3846,17 @@ app.get('/api/estoque-marcas', requireAuth, async (req, res) => {
       : board                  ? [board]
       : Object.keys(lojas);
 
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Cache hit (estoque tem TTL de 5 min — sempre "hoje")
+    const eCacheKey = _marcasCacheKey(targetBoards, today, today);
+    const eCached = _estoqueMarcasCache[eCacheKey];
+    if (eCached && Date.now() - eCached.at < 5 * 60 * 1000) {
+      console.log(`[estoqueMarcas] cache HIT`);
+      return res.json(eCached.data);
+    }
+
     const { fetchEstoque, parseBrNum } = require('./services/microvix');
-    const today   = new Date().toISOString().slice(0, 10);
     const catalog = await _getCatalog(lojas).catch(() => ({}));
 
     const stockByBoard = {};
@@ -3939,9 +3958,23 @@ app.get('/api/estoque-marcas', requireAuth, async (req, res) => {
       }))
       .sort((a, b) => b.totalValor - a.totalValor);
 
-    res.json({ boards: targetBoards, estoque: result });
+    const ePayload = { boards: targetBoards, estoque: result };
+    _estoqueMarcasCache[eCacheKey] = { data: ePayload, at: Date.now() };
+    res.json(ePayload);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// ── Cache de resultados de marcas (vendas + estoque) ─────────────────────────
+// Key: "boards|dtIni|dtFin"  — TTL: 5 min se inclui hoje, 60 min se período passado
+const _marcasCache       = {};  // { [key]: { data, at } }
+const _estoqueMarcasCache = {}; // { [key]: { data, at } }
+function _marcasCacheKey(targetBoards, dtIni, dtFin) {
+  return [...targetBoards].sort().join(',') + '|' + dtIni + '|' + dtFin;
+}
+function _marcasTTL(dtFin) {
+  const today = new Date().toISOString().slice(0, 10);
+  return dtFin >= today ? 5 * 60 * 1000 : 60 * 60 * 1000;
+}
 
 // ── Transferências: cache de resultado (TTL 30min) ─────────────────────────
 let _transResultCache = {};
