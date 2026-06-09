@@ -7439,10 +7439,14 @@ initMongo()
       const today = new Date().toISOString().slice(0, 10);
       // Mês atual: 1º dia até hoje
       const mesIni = today.slice(0, 8) + '01';
+      // Últimos 90 dias
+      const d90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+      const ini90 = d90.toISOString().slice(0, 10);
 
       // Verifica se já está em cache antes de disparar
       const cKeyHoje = _marcasCacheKey(targetBoards, today, today);
       const cKeyMes  = _marcasCacheKey(targetBoards, mesIni, today);
+      const cKey90   = _marcasCacheKey(targetBoards, ini90, today);
       const { fetchMovimento, parseBrNum } = require('./services/microvix');
       const catalog = await _getCatalog(lojas).catch(() => ({}));
 
@@ -7526,6 +7530,16 @@ initMongo()
           }).catch(e => console.warn('[prewarm/mes]', e.message));
         }
       }, 5000);
+      // Últimos 90 dias (lançado 10s depois)
+      setTimeout(() => {
+        if (!_marcasCache[cKey90] || Date.now() - _marcasCache[cKey90].at > 60 * 60 * 1000) {
+          console.log('[prewarm] Pré-aquecendo cache de marcas — últimos 90 dias');
+          _buildMarcasPayload(ini90, today).then(p => {
+            _marcasCache[cKey90] = { data: p, at: Date.now() };
+            console.log(`[prewarm] Cache 90 dias pronto (${p.total} marcas)`);
+          }).catch(e => console.warn('[prewarm/90d]', e.message));
+        }
+      }, 10_000);
     }
 
     // Dispara prewarm 10s após startup (catálogo precisa estar carregado primeiro)
