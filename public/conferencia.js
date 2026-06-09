@@ -239,6 +239,7 @@
           <thead><tr>
             <th>Produto</th>
             <th class="num">Qtd</th><th class="num">Preço Tabela</th>
+            <th class="num">Preço Promo</th>
             <th class="num">Total Bruto</th><th class="num">Desc.</th>
             <th class="num">%</th><th class="num">Total Líquido</th>
           </tr></thead>
@@ -246,24 +247,30 @@
             ${itens.map(it => {
               const temDesc = it.vlrDesconto > 0;
               const liq = it.vlrLiquido ?? (it.vlrBruto - it.vlrDesconto);
-              const promoTag = it.emPromocao
-                ? `<span style="background:#2dd4bf14;color:#2dd4bf;font-size:9px;font-weight:700;padding:1px 5px;border-radius:4px;margin-left:4px">PROMO ${it.precoPromocao?fmtR(it.precoPromocao):''}</span>`
-                : '';
               const subInfo = [it.nome, it.colecao].filter(Boolean).join(' · ');
+              const promoCell = it.emPromocao && it.precoPromocao
+                ? `<span style="color:#2dd4bf;font-weight:700">${fmtR(it.precoPromocao)}</span>`
+                : '—';
+              // % desconto: se em promoção, calcula sobre preço promo; senão sobre preço tabela
+              const vlrLiqUnit = it.quantidade > 0 ? liq / it.quantidade : liq;
+              const baseDescPct = it.emPromocao && it.precoPromocao ? it.precoPromocao : it.vlrUnitario;
+              const percDesc = baseDescPct > 0 ? ((baseDescPct - vlrLiqUnit) / baseDescPct * 100) : 0;
+              const temDescPct = percDesc > 0.05;
               return `<tr class="${temDesc?'has-disc':''}">
-                <td>${esc(it.descricao)}${promoTag}${subInfo ? `<br><span style="font-size:10px;color:var(--cf-muted);font-weight:400">${esc(subInfo)}</span>` : ''}</td>
+                <td>${esc(it.descricao)}${subInfo ? `<br><span style="font-size:10px;color:var(--cf-muted);font-weight:400">${esc(subInfo)}</span>` : ''}</td>
                 <td class="num">${it.quantidade}x</td>
                 <td class="num">${fmtR(it.vlrUnitario)}</td>
+                <td class="num">${promoCell}</td>
                 <td class="num">${fmtR(it.vlrBruto)}</td>
                 <td class="num ${temDesc?'disc-val':'disc-zero'}">${temDesc?fmtR(it.vlrDesconto):'—'}</td>
-                <td class="num">${temDesc?`<span class="disc-pct">${it.percDesconto}%</span>`:'—'}</td>
+                <td class="num">${temDescPct?`<span class="disc-pct">${percDesc.toFixed(1)}%</span>`:'—'}</td>
                 <td class="num" style="font-weight:700">${fmtR(liq)}</td>
               </tr>`;
             }).join('')}
           </tbody>
           <tfoot>
             <tr class="total-row">
-              <td colspan="3" style="font-size:11px;color:${P('muted')}">Total</td>
+              <td colspan="4" style="font-size:11px;color:${P('muted')}">Total</td>
               <td class="num">${fmtR(totalBruto)}</td>
               <td class="num" style="color:${P('accent')}">${totalDesc>0?fmtR(totalDesc):'—'}</td>
               <td class="num" style="color:${P('accent')}">${totalDesc>0&&totalBruto>0?`<span class="disc-pct">${((totalDesc/totalBruto)*100).toFixed(1)}%</span>`:'—'}</td>
