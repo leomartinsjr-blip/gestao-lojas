@@ -3180,27 +3180,34 @@ function renderTransTabContent(container) {
     </div>
     <div id="transResult" style="padding:.5rem 0"></div>`;
 
-  // Carrega setores e marcas do catálogo em paralelo
+  // Carrega setores e marcas via saldo atual das lojas
   const setorSel = container.querySelector('#transSetorSel');
   const marcaSel = container.querySelector('#transMarcaSel');
 
-  fetch('/api/transferencias/setores').then(r => r.json()).then(setores => {
+  function _preencherFiltros(setores, marcas) {
+    const curSetor = setorSel.value;
+    const curMarca = marcaSel.value;
+    setorSel.innerHTML = '<option value="">Todos</option>';
+    marcaSel.innerHTML = '<option value="">Todas</option>';
     setores.forEach(s => {
       const opt = document.createElement('option');
       opt.value = s; opt.textContent = s;
-      if (s === _transSetor) opt.selected = true;
+      if (s === (curSetor || _transSetor)) opt.selected = true;
       setorSel.appendChild(opt);
     });
-  }).catch(() => {});
-
-  fetch('/api/transferencias/marcas').then(r => r.json()).then(marcas => {
     marcas.forEach(m => {
       const opt = document.createElement('option');
       opt.value = m; opt.textContent = m;
-      if (m === _transMarca) opt.selected = true;
+      if (m === (curMarca || _transMarca)) opt.selected = true;
       marcaSel.appendChild(opt);
     });
-  }).catch(() => {});
+  }
+
+  setorSel.insertAdjacentHTML('afterend', ''); // força reflow
+  fetch('/api/transferencias/filtros')
+    .then(r => r.json())
+    .then(({ setores = [], marcas = [] }) => _preencherFiltros(setores, marcas))
+    .catch(() => {});
 
   setorSel.addEventListener('change', () => { _transSetor = setorSel.value; });
   marcaSel.addEventListener('change', () => { _transMarca = marcaSel.value; });
@@ -3623,31 +3630,27 @@ async function loadTransSugestoes(container) {
 function _reloadTransFiltros() {
   const setorSel = document.getElementById('transSetorSel');
   const marcaSel = document.getElementById('transMarcaSel');
-  if (!setorSel && !marcaSel) return;
-  if (setorSel) {
-    fetch('/api/transferencias/setores').then(r => r.json()).then(setores => {
-      const cur = setorSel.value;
+  if (!setorSel || !marcaSel) return;
+  fetch('/api/transferencias/filtros')
+    .then(r => r.json())
+    .then(({ setores = [], marcas = [] }) => {
+      const curSetor = setorSel.value;
+      const curMarca = marcaSel.value;
       setorSel.innerHTML = '<option value="">Todos</option>';
+      marcaSel.innerHTML = '<option value="">Todas</option>';
       setores.forEach(s => {
         const opt = document.createElement('option');
         opt.value = s; opt.textContent = s;
-        if (s === cur) opt.selected = true;
+        if (s === curSetor) opt.selected = true;
         setorSel.appendChild(opt);
       });
-    }).catch(() => {});
-  }
-  if (marcaSel) {
-    fetch('/api/transferencias/marcas').then(r => r.json()).then(marcas => {
-      const cur = marcaSel.value;
-      marcaSel.innerHTML = '<option value="">Todas</option>';
       marcas.forEach(m => {
         const opt = document.createElement('option');
         opt.value = m; opt.textContent = m;
-        if (m === cur) opt.selected = true;
+        if (m === curMarca) opt.selected = true;
         marcaSel.appendChild(opt);
       });
     }).catch(() => {});
-  }
 }
 
 function renderTransTable(container, data) {

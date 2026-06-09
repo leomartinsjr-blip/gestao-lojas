@@ -4799,54 +4799,56 @@ app.post('/api/equalizacao-excel', requireAdmin, _equalizacaoUpload.single('file
   }
 });
 
-// GET /api/transferencias/setores — setores distintos (do cache de transferências ou do catálogo)
-app.get('/api/transferencias/setores', requireAdmin, async (req, res) => {
+// GET /api/transferencias/filtros — setores e marcas dos produtos com saldo no estoque atual
+// Busca fetchEstoque de todas as lojas, cruza com catálogo para obter setor/marca
+app.get('/api/transferencias/filtros', requireAdmin, async (req, res) => {
   try {
-    const seen = new Set();
-    // Fonte 1: cache de sugestões (mais confiável — já passou pelo enriquecimento)
-    const cached = Object.values(_transResultCache)[0];
-    if (cached?.result?.sugestoes?.length) {
-      for (const s of cached.result.sugestoes) {
-        const v = (s.setor || '').trim();
-        if (v && v !== '—') seen.add(v);
-      }
-    }
-    // Fonte 2: catálogo (fallback se cache vazio)
-    if (seen.size === 0) {
-      const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-      const catalog = await _getCatalog(lojas).catch(() => ({}));
-      for (const entry of Object.values(catalog)) {
-        const v = (entry.setor || '').trim();
-        if (v && v !== '—') seen.add(v);
-      }
-    }
-    res.json([...seen].sort((a, b) => a.localeCompare(b, 'pt-BR')));
-  } catch (e) { res.json([]); }
-});
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const boards = Object.keys(lojas).filter(b => b !== 'site');
+    if (!boards.length) return res.json({ setores: [], marcas: [] });
 
-// GET /api/transferencias/marcas — marcas distintas (do cache de transferências ou do catálogo)
-app.get('/api/transferencias/marcas', requireAdmin, async (req, res) => {
-  try {
-    const seen = new Set();
-    // Fonte 1: cache de sugestões
-    const cached = Object.values(_transResultCache)[0];
-    if (cached?.result?.sugestoes?.length) {
-      for (const s of cached.result.sugestoes) {
-        const v = (s.marca || '').trim();
-        if (v && v !== '—') seen.add(v);
+    const { fetchEstoque } = require('./services/microvix');
+    const today = new Date().toISOString().slice(0, 10);
+
+    // Busca saldo de todas as lojas em paralelo
+    const stockRows = await Promise.all(boards.map(async b => {
+      const cnpj  = (lojas[b] || '').replace(/\D/g, '');
+      const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+      if (!cnpj) return [];
+      return fetchEstoque(cnpj, chave, today).catch(() => []);
+    }));
+
+    // Coleta cod_produtos com saldo > 0
+    const codsComSaldo = new Set();
+    for (const rows of stockRows) {
+      for (const r of rows) {
+        const cod = String(r.cod_produto || r.codproduto || '').replace(/\.0+$/, '').trim();
+        const qty = parseFloat((r.quantidade || '0').replace(',', '.')) || 0;
+        if (cod && qty > 0) codsComSaldo.add(cod);
       }
     }
-    // Fonte 2: catálogo (fallback)
-    if (seen.size === 0) {
-      const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-      const catalog = await _getCatalog(lojas).catch(() => ({}));
-      for (const entry of Object.values(catalog)) {
-        const v = (entry.marca || '').trim();
-        if (v && v !== '—') seen.add(v);
-      }
+
+    // Cruza com catálogo para obter setor e marca
+    const catalog = await _getCatalog(lojas).catch(() => ({}));
+    const setores = new Set();
+    const marcas  = new Set();
+    for (const cod of codsComSaldo) {
+      const entry = catalog[cod] || {};
+      const s = (entry.setor || '').trim();
+      const m = (entry.marca || '').trim();
+      if (s && s !== '—') setores.add(s);
+      if (m && m !== '—') marcas.add(m);
     }
-    res.json([...seen].sort((a, b) => a.localeCompare(b, 'pt-BR')));
-  } catch (e) { res.json([]); }
+
+    console.log(`[Trans/filtros] ${codsComSaldo.size} produtos com saldo → ${setores.size} setores, ${marcas.size} marcas`);
+    res.json({
+      setores: [...setores].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+      marcas:  [...marcas ].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    });
+  } catch (e) {
+    console.warn('[Trans/filtros]', e.message);
+    res.json({ setores: [], marcas: [] });
+  }
 });
 
 // GET /api/transferencias/preload — dispara aquecimento, responde imediatamente
