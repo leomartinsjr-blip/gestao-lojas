@@ -1421,7 +1421,6 @@ function _renderDayCardBody(body, dateStr) {
         <span class="dia-val">${grandVal > 0 ? fV(grandVal) : '—'}</span>
         <span class="dia-meta">${grandMeta > 0 ? fV(grandMeta) : '—'}</span>
         <span class="dia-pa">${grandPa != null ? grandPa.toFixed(2) : '—'}</span>
-        <span class="dia-conv ${gConvCls}">${grandConv != null ? grandConv.toFixed(1) + '%' : '—'}</span>
         <span class="dia-pct ${gPctCls}">${grandPct != null ? grandPct.toFixed(1) + '%' : '—'}</span>
       </div>`);
   }
