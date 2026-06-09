@@ -4809,8 +4809,21 @@ app.get('/api/transferencias/setores', requireAdmin, async (req, res) => {
       const s = (entry.setor || '').trim();
       if (s && s !== '—') seen.add(s);
     }
-    const list = [...seen].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-    res.json(list);
+    res.json([...seen].sort((a, b) => a.localeCompare(b, 'pt-BR')));
+  } catch (e) { res.json([]); }
+});
+
+// GET /api/transferencias/marcas — lista marcas distintas do catálogo (para filtro)
+app.get('/api/transferencias/marcas', requireAdmin, async (req, res) => {
+  try {
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const catalog = await _getCatalog(lojas).catch(() => ({}));
+    const seen = new Set();
+    for (const entry of Object.values(catalog)) {
+      const m = (entry.marca || '').trim();
+      if (m && m !== '—') seen.add(m);
+    }
+    res.json([...seen].sort((a, b) => a.localeCompare(b, 'pt-BR')));
   } catch (e) { res.json([]); }
 });
 
@@ -4828,6 +4841,7 @@ app.get('/api/transferencias', requireAdmin, (req, res) => {
   try {
     const dias  = Math.max(1, parseInt(req.query.dias || '30'));
     const setor = (req.query.setor || '').trim();
+    const marca = (req.query.marca || '').trim();
     const { boards, lojas, firstCnpj, firstChave } = _transBoards(req.query.lojas || null);
     if (!boards.length) return res.status(400).json({ error: 'Nenhuma loja configurada em MICROVIX_LOJAS' });
     _warmAllTrans(boards, lojas, dias, firstCnpj, firstChave).catch(e =>
@@ -4835,12 +4849,14 @@ app.get('/api/transferencias', requireAdmin, (req, res) => {
     );
     const cached = _transResultCache[String(dias)];
     if (cached && Date.now() - cached.at < TRANS_RESULT_TTL) {
-      if (!setor) return res.json(cached.result);
-      // Filtra por setor no cache (case-insensitive)
+      if (!setor && !marca) return res.json(cached.result);
       const setorLow = setor.toLowerCase();
-      const filtered = cached.result.sugestoes.filter(s =>
-        (s.setor || '').toLowerCase().includes(setorLow)
-      );
+      const marcaLow = marca.toLowerCase();
+      const filtered = cached.result.sugestoes.filter(s => {
+        const setorOk = !setor || (s.setor || '').toLowerCase().includes(setorLow);
+        const marcaOk = !marca || (s.marca || '').toLowerCase().includes(marcaLow);
+        return setorOk && marcaOk;
+      });
       return res.json({ ...cached.result, sugestoes: filtered, total: filtered.length });
     }
     return res.json({ cacheLoading: true, msg: 'Preparando dados… tente novamente em alguns segundos.' });

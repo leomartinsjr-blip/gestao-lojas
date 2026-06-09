@@ -2061,6 +2061,7 @@ const TRANS_BOARDS = ['delrey','minas','contagem','estacao'];
 let _transDias      = 30;
 let _transCompraFrom = '';  // ISO "YYYY-MM-DD"
 let _transSetor     = '';   // setor selecionado para filtro automático
+let _transMarca     = '';   // marca selecionada para filtro automático
 let _transLojaFilter = '';  // board key
 let _transTipoFilter = '';  // 'enviar' | 'receber' | ''
 let _transTab       = 'microvix'; // 'microvix' | 'excel'
@@ -3144,8 +3145,10 @@ function renderTransTabContent(container) {
     renderTransExcelTab(container);
     return;
   }
-  // Modo automático: limpa filtro de data herdado do Excel
+  // Modo automático: limpa filtros herdados do Excel
   _transCompraFrom = '';
+  _transSetor = '';
+  _transMarca = '';
   container.innerHTML = `
     <div class="trans-toolbar">
       <label class="trans-label">Período para giro:</label>
@@ -3162,6 +3165,12 @@ function renderTransTabContent(container) {
           <option value="">Todos</option>
         </select>
       </div>
+      <div class="trans-compra-filter">
+        <label class="trans-label">Marca:</label>
+        <select id="transMarcaSel" class="trans-date-input" style="min-width:130px">
+          <option value="">Todas</option>
+        </select>
+      </div>
       <button class="trans-calc-btn" id="transCalcBtn">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
           <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
@@ -3171,8 +3180,10 @@ function renderTransTabContent(container) {
     </div>
     <div id="transResult" style="padding:.5rem 0"></div>`;
 
-  // Carrega setores do catálogo
+  // Carrega setores e marcas do catálogo em paralelo
   const setorSel = container.querySelector('#transSetorSel');
+  const marcaSel = container.querySelector('#transMarcaSel');
+
   fetch('/api/transferencias/setores').then(r => r.json()).then(setores => {
     setores.forEach(s => {
       const opt = document.createElement('option');
@@ -3181,7 +3192,18 @@ function renderTransTabContent(container) {
       setorSel.appendChild(opt);
     });
   }).catch(() => {});
+
+  fetch('/api/transferencias/marcas').then(r => r.json()).then(marcas => {
+    marcas.forEach(m => {
+      const opt = document.createElement('option');
+      opt.value = m; opt.textContent = m;
+      if (m === _transMarca) opt.selected = true;
+      marcaSel.appendChild(opt);
+    });
+  }).catch(() => {});
+
   setorSel.addEventListener('change', () => { _transSetor = setorSel.value; });
+  marcaSel.addEventListener('change', () => { _transMarca = marcaSel.value; });
 
   container.querySelectorAll('.trans-dias-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -3573,7 +3595,8 @@ async function loadTransSugestoes(container) {
   try {
     const lojas = TRANS_BOARDS.join(',');
     const setorParam = _transSetor ? `&setor=${encodeURIComponent(_transSetor)}` : '';
-    const r = await fetch(`/api/transferencias?dias=${_transDias}&lojas=${lojas}${setorParam}`);
+    const marcaParam = _transMarca ? `&marca=${encodeURIComponent(_transMarca)}` : '';
+    const r = await fetch(`/api/transferencias?dias=${_transDias}&lojas=${lojas}${setorParam}${marcaParam}`);
     if (!r.ok) {
       const txt = await r.text().catch(() => '');
       throw new Error(`HTTP ${r.status}${txt ? ': ' + txt.slice(0, 120) : ''}`);
