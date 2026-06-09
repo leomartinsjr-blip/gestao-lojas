@@ -4311,7 +4311,7 @@ function _calcTransfersProporcional(boards, stocks, giro, periodDays = 90, lastC
 
   // Proteção por tempo de exposição: loja que recebeu o produto há menos de 45 dias
   // só pode ceder uma fração do seu excesso (rampa linear com ceil)
-  const PROTECTION_DAYS = 45;
+  const PROTECTION_DAYS = 90;
   const todayMs = Date.now();
   const maxDonation = {};
   for (const don of donors) {
