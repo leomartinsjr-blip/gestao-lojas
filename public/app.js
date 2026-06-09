@@ -3423,14 +3423,20 @@ function renderTransExcelTab(container) {
         const donors = boards
           .filter(b => (stocks[b] || 0) > 1 && delta[b] > 0)
           .sort((a, b) => delta[b] - delta[a]);
-        // Regra 2: receptora recebe se tem déficit em relação ao ideal e tem vendas históricas
+        // Regra 2: receptora recebe se tem déficit, tem vendas E cobertura atual < 1.5 meses
+        const MIN_COB_RECEIVER = 1.5;
         const receivers = boards
-          .filter(b => delta[b] < 0 && (giro[b] || 0) > 0)
+          .filter(b => {
+            if (delta[b] >= 0 || (giro[b] || 0) <= 0) return false;
+            const giroMensal = (giro[b] / periodDays) * 30;
+            const cobertura  = giroMensal > 0 ? (stocks[b] || 0) / giroMensal : Infinity;
+            return cobertura < MIN_COB_RECEIVER;
+          })
           .sort((a, b) => delta[a] - delta[b]);
         if (!donors.length || !receivers.length) return null;
 
         // Proteção por tempo de exposição (Excel: usa ultimaCompra global para todos os boards)
-        const PROTECTION_DAYS = 45;
+        const PROTECTION_DAYS = 90;
         const todayMs = Date.now();
         const maxDonation = {};
         for (const don of donors) {
@@ -3497,7 +3503,7 @@ function renderTransExcelTab(container) {
         return String(a.cod_produto).localeCompare(String(b.cod_produto), 'pt-BR', { numeric: true });
       });
 
-      renderTransTable(result, { boards, dias: null, total: sugestoes.length, sugestoes, source: 'excel', excluidos, compraMinDate });
+      renderTransTable(result, { boards, dias: null, total: sugestoes.length, totalAnalisados: totalBruto, sugestoes, source: 'excel', excluidos, compraMinDate });
     } catch (e) {
       let msg = e.message || e.toString() || 'Erro desconhecido';
       try { const j = JSON.parse(msg); msg = j.error || msg; } catch {}
