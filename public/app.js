@@ -1311,7 +1311,6 @@ function _renderDayCardBody(body, dateStr) {
       <span>Realizado</span>
       <span>Meta Dia</span>
       <span>PA</span>
-      <span>Conv</span>
       <span>%</span>
     </div>`;
 
@@ -1354,7 +1353,6 @@ function _renderDayCardBody(body, dateStr) {
           <span class="dia-val">${valor > 0 ? fV(valor) : '—'}</span>
           <span class="dia-meta">${metaDia > 0 ? fV(metaDia) : '—'}</span>
           <span class="dia-pa">${pa != null ? pa.toFixed(2) : '—'}</span>
-          <span class="dia-conv ${cCls}">${empConv != null ? empConv.toFixed(1) + '%' : '—'}</span>
           <span class="dia-pct ${pctCls}">${pct != null ? pct.toFixed(1) + '%' : '—'}</span>
         </div>`);
     }
@@ -1389,7 +1387,6 @@ function _renderDayCardBody(body, dateStr) {
       <span class="dia-val">${storeTotalVal > 0 ? fV(storeTotalVal) : '—'}</span>
       <span class="dia-meta">${storeTotalMeta > 0 ? fV(storeTotalMeta) : '—'}</span>
       <span class="dia-pa">${storePa != null ? storePa.toFixed(2) : '—'}</span>
-      <span class="dia-conv ${sConvCls}">${storeConv != null ? storeConv.toFixed(1) + '%' : '—'}</span>
       <span class="dia-pct ${sPctCls}">${storePct != null ? storePct.toFixed(1) + '%' : '—'}</span>`;
     if (isAdmin) {
       storeRow.style.cursor = 'pointer';
