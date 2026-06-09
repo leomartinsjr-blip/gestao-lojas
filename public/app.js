@@ -2141,8 +2141,30 @@ function renderTransView() {
   _gestaoShowBack(true);
   _gestaoSetTitle(`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>`, 'Sugestão de Transferência');
   const body = document.getElementById('transBody');
-  body.innerHTML = `<div id="transTabContent"></div>`;
-  renderTransExcelTab(body.querySelector('#transTabContent'));
+  body.innerHTML = `
+    <div class="trans-mode-tabs">
+      <button class="trans-mode-tab${_transTab === 'microvix' ? ' active' : ''}" data-tab="microvix">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+        Automático (Microvix)
+      </button>
+      <button class="trans-mode-tab${_transTab === 'excel' ? ' active' : ''}" data-tab="excel">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Importar Excel
+      </button>
+    </div>
+    <div id="transTabContent"></div>`;
+
+  function switchTab(tab) {
+    _transTab = tab;
+    body.querySelectorAll('.trans-mode-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+    renderTransTabContent(body.querySelector('#transTabContent'));
+  }
+
+  body.querySelectorAll('.trans-mode-tab').forEach(btn => {
+    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+  });
+
+  renderTransTabContent(body.querySelector('#transTabContent'));
 }
 
 function renderPromocaoView() {
@@ -3118,7 +3140,7 @@ async function _cadExport(btn, rows) {
 
 
 function renderTransTabContent(container) {
-  if (true) {
+  if (_transTab === 'excel') {
     renderTransExcelTab(container);
     return;
   }

@@ -2349,6 +2349,19 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 }
 .trans-tab-btn:hover { color: var(--fg); }
 .trans-tab-btn.active { color: #58A6FF; border-bottom-color: #58A6FF; }
+.trans-mode-tabs {
+  display: flex; gap: 0; border-bottom: 1px solid var(--border);
+  padding: 0 1rem; background: var(--card);
+}
+.trans-mode-tab {
+  display: flex; align-items: center; gap: .35rem;
+  padding: .55rem .9rem; font-size: .8rem; font-weight: 600;
+  color: var(--muted); background: transparent; border: none;
+  border-bottom: 2px solid transparent; cursor: pointer;
+  transition: color .15s, border-color .15s; white-space: nowrap;
+}
+.trans-mode-tab:hover { color: var(--fg); }
+.trans-mode-tab.active { color: #58A6FF; border-bottom-color: #58A6FF; }
 .trans-toolbar {
   display: flex; align-items: center; gap: .75rem; flex-wrap: wrap;
   padding: .75rem 1rem; border-bottom: 1px solid var(--border);
