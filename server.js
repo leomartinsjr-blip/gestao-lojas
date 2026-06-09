@@ -7099,6 +7099,17 @@ app.post('/api/conferencia/revisao', requireEscritorioOrAdmin, async (req, res) 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// DELETE /api/conferencia/revisao?doc=X&board=Y — remove revisão, volta para pendentes
+app.delete('/api/conferencia/revisao', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { doc, board } = req.query;
+    if (!doc || !board) return res.status(400).json({ error: 'doc e board obrigatórios' });
+    const col = await getConferenciaRevisoesCol();
+    await col.deleteOne({ doc, board });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/conferencia/reprovadas?dtIni=Y&dtFin=Z
 app.get('/api/conferencia/reprovadas', requireEscritorioOrAdmin, async (req, res) => {
   try {

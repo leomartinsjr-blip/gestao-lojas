@@ -178,16 +178,47 @@
     if (_grupo === 'forma')    { el.innerHTML = renderGrupos(porForma,    totalVendas, 'blue');   bindDrills(el); return; }
     if (_grupo === 'vendedor') { el.innerHTML = renderGrupos(porVendedor, totalVendas, 'purple'); bindDrills(el); return; }
 
-    const vendasFiltradas = _filtroAlerta ? vendas.filter(v => v.alertas && v.alertas.length > 0) : vendas;
+    const base = _filtroAlerta ? vendas.filter(v => v.alertas && v.alertas.length > 0) : vendas;
+
+    // Separa pendentes (sem revisão) de revisadas
+    const pendentes  = base.filter(v => !_revisoesMap[v.doc + '::' + (v.board || $('vBoard').value)]);
+    const revisadas  = base.filter(v =>  _revisoesMap[v.doc + '::' + (v.board || $('vBoard').value)]);
+
     const hdr = _filtroAlerta
-      ? `${vendasFiltradas.length} venda(s) com alerta <span style="color:${P('muted')};font-weight:400">de ${qtdVendas} total</span>`
-      : `${qtdVendas} vendas encontradas`;
+      ? `${pendentes.length} pendente(s) com alerta <span style="color:${P('muted')};font-weight:400">de ${qtdVendas} total</span>`
+      : `${pendentes.length} de ${qtdVendas} vendas`;
+
     el.innerHTML = `
       <div class="sales-card">
         <div class="sales-card-hdr">${hdr}</div>
-        ${tabelaVendas(vendasFiltradas)}
-      </div>`;
+        ${tabelaVendas(pendentes)}
+      </div>
+      ${revisadas.length ? `
+      <div class="sales-card" style="margin-top:12px;opacity:.85">
+        <div class="sales-card-hdr" style="cursor:pointer;user-select:none" id="revisadasToggle">
+          <span>✅ ${revisadas.filter(v=>_revisoesMap[v.doc+'::' +(v.board||$('vBoard').value)]?.status==='conferida').length} conferida(s)
+          &nbsp;·&nbsp; ❌ ${revisadas.filter(v=>_revisoesMap[v.doc+'::'+(v.board||$('vBoard').value)]?.status==='reprovada').length} reprovada(s)</span>
+          <span id="revisadasChevron" style="font-size:11px;color:${P('muted')}">▼ mostrar</span>
+        </div>
+        <div id="revisadasBody" style="display:none">
+          ${tabelaVendas(revisadas)}
+        </div>
+      </div>` : ''}`;
+
     bindDrills(el);
+
+    // Toggle mostrar/ocultar revisadas
+    const tog = $('revisadasToggle');
+    if (tog) {
+      tog.addEventListener('click', () => {
+        const body = $('revisadasBody');
+        const chev = $('revisadasChevron');
+        const open = body.style.display === 'none';
+        body.style.display = open ? 'block' : 'none';
+        chev.textContent = open ? '▲ ocultar' : '▼ mostrar';
+        if (open) bindDrills(body);
+      });
+    }
   }
 
   function kpiCard(color, iconSvg, value, label, sub, extraClass, badge) {
@@ -261,11 +292,15 @@
     const board = v.board || $('vBoard').value;
     const key   = v.doc + '::' + board;
     const rev   = _revisoesMap[key];
-    const cAct  = rev?.status === 'conferida'  ? ' active' : '';
-    const rAct  = rev?.status === 'reprovada'  ? ' active' : '';
+    const cAct  = rev?.status === 'conferida' ? ' active' : '';
+    const rAct  = rev?.status === 'reprovada' ? ' active' : '';
+    const voltarBtn = rev
+      ? `<button class="btn-voltar" data-doc="${esc(v.doc)}" data-board="${esc(board)}" title="Remover revisão e voltar para pendentes">↩ Voltar</button>`
+      : '';
     return `<div class="revisao-btns">
       <button class="btn-conferida${cAct}" data-doc="${esc(v.doc)}" data-board="${esc(board)}">✓ Conferida</button>
       <button class="btn-reprovada${rAct}" data-doc="${esc(v.doc)}" data-board="${esc(board)}">✗ Reprovada</button>
+      ${voltarBtn}
     </div>`;
   }
 
@@ -433,6 +468,20 @@
       btn.dataset.bound = '1';
       btn.addEventListener('click', e => { e.stopPropagation(); abrirModalReprovacao(btn.dataset.doc, btn.dataset.board); });
     });
+    // Botão voltar — remove revisão
+    container.querySelectorAll('.btn-voltar:not([data-bound])').forEach(btn => {
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const { doc, board } = btn.dataset;
+        if (!confirm('Remover revisão e voltar para pendentes?')) return;
+        try {
+          await api('DELETE', `/api/conferencia/revisao?doc=${encodeURIComponent(doc)}&board=${encodeURIComponent(board)}`);
+          delete _revisoesMap[doc + '::' + board];
+          render(_data);
+        } catch(err) { alert('Erro: ' + err.message); }
+      });
+    });
   }
 
   async function salvarRevisao(doc, board, status, obs, valorCobrar) {
@@ -451,12 +500,7 @@
     try {
       const saved = await api('POST', '/api/conferencia/revisao', body);
       _revisoesMap[doc + '::' + (board || $('vBoard').value)] = saved;
-      // Atualiza visualmente todos os botões deste doc+board
-      document.querySelectorAll(`.btn-conferida[data-doc="${esc(doc)}"][data-board="${esc(board)}"],
-                                  .btn-reprovada[data-doc="${esc(doc)}"][data-board="${esc(board)}"]`).forEach(btn => {
-        btn.classList.remove('active');
-        if (btn.classList.contains('btn-' + status)) btn.classList.add('active');
-      });
+      render(_data); // re-renderiza: venda sai dos pendentes e vai para revisadas
     } catch(e) { alert('Erro ao salvar revisão: ' + e.message); }
   }
 
