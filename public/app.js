@@ -3453,11 +3453,23 @@ function renderTransExcelTab(container) {
         const donated = {};
         for (const don of donors) donated[don] = 0;
 
+        // Regra 4: receptora não pode ficar com mais de MAX_COB_AFTER meses de cobertura pós-transferência
+        const MAX_COB_AFTER = 3;
+        const maxReceive = {};
+        for (const rec of receivers) {
+          const giroMensal = (giro[rec] / periodDays) * 30;
+          const maxStock   = Math.ceil(giroMensal * MAX_COB_AFTER);
+          maxReceive[rec]  = Math.max(0, maxStock - (stocks[rec] || 0));
+        }
+
         const workStocks = { ...stocks };
         const workDelta  = { ...delta };
         const transfers  = [];
+        const received   = {};
+        for (const rec of receivers) received[rec] = 0;
         for (const rec of receivers) {
-          let needed = -workDelta[rec];
+          let needed = Math.min(-workDelta[rec], maxReceive[rec] - received[rec]);
+          if (needed <= 0) continue;
           for (const don of donors) {
             if (workDelta[don] <= 0) continue;
             const remaining = maxDonation[don] - donated[don];
@@ -3468,6 +3480,7 @@ function renderTransExcelTab(container) {
             workStocks[don] -= qty; workStocks[rec] += qty;
             workDelta[don]  -= qty; workDelta[rec]  += qty;
             donated[don]    += qty;
+            received[rec]   += qty;
             needed -= qty;
             if (needed <= 0) break;
           }
