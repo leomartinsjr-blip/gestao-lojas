@@ -2796,15 +2796,27 @@ app.get('/api/caixa-resumo', requireAuth, async (req, res) => {
   const db = await readDB();
   const allStatus = db.caixaStatus || {};
   const storeKeys = ['delrey','minas','contagem','estacao','tommy','lez'];
+
+  // Calcula quantos dias já se passaram no mês (até hoje, horário BRT)
+  const nowBRT = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  const todayStr = nowBRT.toISOString().slice(0, 10); // YYYY-MM-DD
+  const [yr, mo] = month.split('-').map(Number);
+  const daysInMonth = new Date(yr, mo, 0).getDate();
+  const currentMonth = `${nowBRT.getUTCFullYear()}-${String(nowBRT.getUTCMonth()+1).padStart(2,'0')}`;
+  const daysSoFar = month === currentMonth
+    ? Math.min(nowBRT.getUTCDate(), daysInMonth)
+    : (month < currentMonth ? daysInMonth : 0);
+
   const result = {};
   for (const board of storeKeys) {
-    let fechados = 0, abertos = 0;
+    let fechados = 0;
     for (const [key, entry] of Object.entries(allStatus)) {
       if (!key.startsWith(board + ':')) continue;
       const date = key.split(':')[1];
       if (!date || !date.startsWith(month)) continue;
-      if (entry.fechado) fechados++; else abertos++;
+      if (entry.fechado) fechados++;
     }
+    const abertos = Math.max(0, daysSoFar - fechados);
     result[board] = { fechados, abertos };
   }
   res.json({ month, stores: result });
