@@ -122,7 +122,7 @@
             <span class="cx-stat-n">${st.fechados}</span>
             <span class="cx-stat-l">Fechados</span>
           </div>
-          <div class="cx-stat">
+          <div class="cx-stat cx-stat--open">
             <span class="cx-stat-n">${st.abertos}</span>
             <span class="cx-stat-l">Em aberto</span>
           </div>
@@ -519,7 +519,7 @@
               <td class="num">${v.desconto?.valor>0
                 ? `<span style="color:#DC2626;font-weight:700">${fmtR(v.desconto.valor)}</span><span class="disc-pct">${v.desconto.perc}%</span>`
                 : `<span style="color:${P('muted')}">—</span>`}</td>
-              <td class="num" style="font-weight:800">${fmtR(v.valorTotal)}</td>
+              <td class="num" style="font-weight:800;color:${v.valorTotal<0?'var(--cf-alert)':'var(--cf-text)'}">${fmtR(v.valorTotal)}</td>
               <td>
                 ${alertBadges(v.alertas)}
                 ${v.alertas?.length ? revisaoBtns(v) : ''}
