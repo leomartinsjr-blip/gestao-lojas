@@ -2619,7 +2619,10 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
         if (!doc || !docMap[doc]) continue;
         const cd       = String(r.credito_debito || '').trim().toUpperCase();
         const forma    = cd === 'D' ? 'Cartão Débito' : 'Cartão Crédito';
-        const bandeira = (r.descricao_bandeira || r.bandeira || '').trim();
+        // Normaliza a bandeira para o nome canônico (ex.: portal Tommy manda
+        // "VISA ELECTRON"/"MAESTRO" → "Visa"/"Maestro") para casar com o extrato Rede.
+        const bandeiraRaw = (r.descricao_bandeira || r.bandeira || '').trim();
+        const bandeira    = extractBandeira(bandeiraRaw) || bandeiraRaw;
         const valor    = parseBrNum(r.valor || '0');
         if (valor === 0) continue;
         const sign     = docMap[doc].valor < 0 ? -1 : 1;
@@ -4384,13 +4387,20 @@ async function _buildCatalog(lojas) {
       return boardCount;
     }
 
-    // Agrupa boards por chave Microvix — busca um representante por sistema distinto
+    // Agrupa boards por (chave + CNPJ) — busca um representante por catálogo distinto.
+    // O catálogo Microvix (LinxProdutos) é por empresa/CNPJ sob uma chave; lojas que
+    // compartilham os dois compartilham o mesmo catálogo. Tommy é outra empresa (CNPJ
+    // próprio) mesmo usando a chave padrão, então precisa ser buscado à parte — não basta
+    // distinguir pela chave.
     const defaultChave = process.env.MICROVIX_CHAVE || '';
-    const seenChaves = new Set();
+    const seenSources = new Set();
     const representantes = [];
     for (const b of boards) {
       const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || defaultChave;
-      if (!seenChaves.has(chave)) { seenChaves.add(chave); representantes.push(b); }
+      const cnpj  = (lojas[b] || '').replace(/\D/g, '');
+      if (!cnpj) continue;
+      const source = `${chave}|${cnpj}`;
+      if (!seenSources.has(source)) { seenSources.add(source); representantes.push(b); }
     }
     let totalProd = 0;
     for (const b of representantes) {
@@ -7643,7 +7653,10 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       if (!doc || !docMap[doc]) continue;
       const cd       = String(r.credito_debito || '').trim().toUpperCase();
       const forma    = cd === 'D' ? 'Cartão Débito' : 'Cartão Crédito';
-      const bandeira = (r.descricao_bandeira || r.bandeira || '').trim();
+      // Normaliza a bandeira para o nome canônico (portal Tommy manda nomes verbosos
+      // como "VISA ELECTRON"/"MAESTRO") para casar com o extrato Rede.
+      const bandeiraRaw = (r.descricao_bandeira || r.bandeira || '').trim();
+      const bandeira    = extractBandeira(bandeiraRaw) || bandeiraRaw;
       const valor    = parseBR(r.valor || '0');
       if (valor === 0) continue;
       const sign = docMap[doc].valorTotal < 0 ? -1 : 1;
