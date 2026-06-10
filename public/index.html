@@ -572,12 +572,9 @@
 
 <!-- CONFERÊNCIA DE CAIXA -->
 <div id="caixaConfOverlay" class="folgas-overlay hidden">
-  <div class="folgas-panel" style="max-width:980px">
+  <div class="folgas-panel" style="max-width:860px">
     <div class="folgas-hdr">
-      <button id="caixaConfBackBtn" class="cxconf-back-btn hidden" title="Voltar">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-      </button>
-      <span class="folgas-hdr-title" id="caixaConfTitle">
+      <span class="folgas-hdr-title">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="2" y="3" width="20" height="14" rx="2"/>
           <line x1="8" y1="21" x2="16" y2="21"/>
@@ -590,7 +587,9 @@
         Conferência de Caixa
       </span>
       <div style="display:flex;align-items:center;gap:.5rem;margin-left:auto">
+        <select id="caixaConfBoard" class="folgas-filter" style="display:none"></select>
         <input type="date" id="caixaConfDate" class="folgas-filter" style="width:auto">
+        <button id="caixaConfBuscarBtn" class="add-item-btn">Buscar</button>
       </div>
       <button class="folgas-close-btn" id="caixaConfClose" title="Fechar">✕</button>
     </div>
