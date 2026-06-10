@@ -7645,9 +7645,14 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
 
     // ── Montar lista e agrupamentos ─────────────────────────────────────────
     const vendas = Object.values(docMap)
+      // Exclui docs com total zero
       // Série 4 com total positivo = transferência interna / lançamento especial → exclui
-      // Série 4 com total negativo = devolução → mantém para subtrair do total
-      .filter(v => v.serie === '4' ? v.valorTotal < 0 : v.valorTotal > 0)
+      // Qualquer série com total negativo = devolução/troca → mantém para subtrair do total
+      .filter(v => {
+        if (v.valorTotal === 0) return false;
+        if (v.serie === '4' && v.valorTotal > 0) return false;
+        return true;
+      })
       .sort((a, b) => (a.data + a.hora).localeCompare(b.data + b.hora))
       .map(v => ({
         doc:          v.doc,
