@@ -5566,178 +5566,69 @@ function _renderAusenciasView(body, tipo) {
 }
 
 // ── CONFERÊNCIA DE CAIXA ────────────────────────────────────────────────────
-// Estado interno do painel de caixa
-const _CX = { view: 'overview', board: null, date: null };
-
 function initCaixaConf() {
-  const overlay = document.getElementById('caixaConfOverlay');
+  const overlay  = document.getElementById('caixaConfOverlay');
+  const closeBtn = document.getElementById('caixaConfClose');
+  const buscarBtn = document.getElementById('caixaConfBuscarBtn');
   document.getElementById('caixaConfBtn').addEventListener('click', openCaixaConf);
-  document.getElementById('caixaConfClose').addEventListener('click', () => overlay.classList.add('hidden'));
+  closeBtn.addEventListener('click', () => overlay.classList.add('hidden'));
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.add('hidden'); });
-  document.getElementById('caixaConfBackBtn').addEventListener('click', () => {
-    _CX.view = 'overview';
-    _CX.board = null;
-    _caixaSetHeader();
-    loadCaixaConf();
-  });
-  document.getElementById('caixaConfDate').addEventListener('change', loadCaixaConf);
-}
-
-function _caixaSetHeader() {
-  const backBtn = document.getElementById('caixaConfBackBtn');
-  const title   = document.getElementById('caixaConfTitle');
-  if (_CX.view === 'detail' && _CX.board) {
-    backBtn.classList.remove('hidden');
-    const bc = BOARDS[_CX.board];
-    title.innerHTML = `<span style="color:${bc?.color}">${bc?.label || _CX.board}</span>&nbsp;— Conferência de Caixa`;
-  } else {
-    backBtn.classList.add('hidden');
-    title.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-      <rect x="2" y="3" width="20" height="14" rx="2"/>
-      <line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
-      <line x1="6" y1="8" x2="10" y2="8"/><line x1="6" y1="11" x2="10" y2="11"/>
-      <line x1="14" y1="8" x2="18" y2="8"/><line x1="14" y1="11" x2="18" y2="11"/>
-    </svg> Conferência de Caixa`;
-  }
+  buscarBtn.addEventListener('click', () => loadCaixaConf());
 }
 
 function openCaixaConf() {
-  const dateInp = document.getElementById('caixaConfDate');
+  const overlay  = document.getElementById('caixaConfOverlay');
+  const boardSel = document.getElementById('caixaConfBoard');
+  const dateInp  = document.getElementById('caixaConfDate');
+  const isAdmin  = !S.user?.board;
   const brt = new Date(Date.now() - 3 * 60 * 60 * 1000);
   const todayBRT = `${brt.getUTCFullYear()}-${String(brt.getUTCMonth()+1).padStart(2,'0')}-${String(brt.getUTCDate()).padStart(2,'0')}`;
   if (!dateInp.value) dateInp.value = todayBRT;
-  _CX.date  = dateInp.value;
-  _CX.view  = 'overview';
-  _CX.board = null;
-  _caixaSetHeader();
-  document.getElementById('caixaConfOverlay').classList.remove('hidden');
+  if (isAdmin) {
+    boardSel.style.display = '';
+    if (!boardSel.options.length) {
+      for (const [k, v] of Object.entries(BOARDS)) {
+        if (k === 'site') continue;
+        const opt = document.createElement('option');
+        opt.value = k; opt.textContent = v.label;
+        boardSel.appendChild(opt);
+      }
+    }
+  } else { boardSel.style.display = 'none'; }
+  overlay.classList.remove('hidden');
   loadCaixaConf();
 }
 
 async function loadCaixaConf() {
-  const body    = document.getElementById('caixaConfBody');
-  const dateInp = document.getElementById('caixaConfDate');
-  _CX.date = dateInp.value;
-  if (!_CX.date) return;
-
-  const isAdmin = !S.user?.board || S.user?.board === 'escritorio';
-
-  // Se usuário de loja, vai direto para o detail da sua loja
-  if (!isAdmin && S.user?.board && !['admin','escritorio'].includes(S.user.board)) {
-    _CX.view  = 'detail';
-    _CX.board = S.user.board;
-    _caixaSetHeader();
-  }
-
-  if (_CX.view === 'detail' && _CX.board) {
-    body.innerHTML = '<div class="trans-loading">Buscando dados do Microvix…</div>';
-    try {
-      const [data, status] = await Promise.all([
-        apiFetch('GET', `/api/conferencia-caixa?board=${_CX.board}&date=${_CX.date}`),
-        apiFetch('GET', `/api/caixa-status?board=${_CX.board}&date=${_CX.date}`),
-      ]);
-      renderCaixaDetail(body, data, status);
-    } catch (e) {
-      body.innerHTML = `<div class="trans-error">Erro: ${e.message}</div>`;
-    }
-  } else {
-    body.innerHTML = '<div class="trans-loading">Carregando…</div>';
-    try {
-      const month = _CX.date.slice(0, 7);
-      const resumo = await apiFetch('GET', `/api/caixa-resumo?month=${month}`);
-      renderCaixaOverview(body, resumo, _CX.date);
-    } catch (e) {
-      body.innerHTML = `<div class="trans-error">Erro: ${e.message}</div>`;
-    }
-  }
+  const body     = document.getElementById('caixaConfBody');
+  const boardSel = document.getElementById('caixaConfBoard');
+  const dateInp  = document.getElementById('caixaConfDate');
+  const buscarBtn = document.getElementById('caixaConfBuscarBtn');
+  const isAdmin  = !S.user?.board;
+  const board = isAdmin ? (boardSel.value || Object.keys(BOARDS).find(k => k !== 'site')) : S.user.board;
+  const date  = dateInp.value;
+  if (!board || !date) return;
+  body.innerHTML = '<div class="trans-loading">Buscando dados do Microvix…</div>';
+  buscarBtn.disabled = true;
+  try {
+    const data = await apiFetch('GET', `/api/conferencia-caixa?board=${board}&date=${date}`);
+    renderCaixaConf(body, data);
+  } catch (e) {
+    body.innerHTML = `<div class="trans-error">Erro: ${e.message}</div>`;
+  } finally { buscarBtn.disabled = false; }
 }
 
-// ── Overview: grid de cards por loja ──────────────────────────────────────
-function renderCaixaOverview(body, resumo, date) {
-  const storeBoards = ['delrey','minas','contagem','estacao','tommy','lez'];
-  const dateLabel = date.split('-').reverse().join('/');
-  const month = date.slice(0, 7);
-  const [yr, mo] = month.split('-');
-  const daysInMonth = new Date(+yr, +mo, 0).getDate();
-  const today = parseInt(date.split('-')[2]);
-  const daysSoFar = Math.min(today, daysInMonth);
-
-  const cards = storeBoards.map(bk => {
-    const bc    = BOARDS[bk] || { label: bk, color: '#64748b' };
-    const st    = resumo.stores?.[bk] || { fechados: 0, abertos: 0 };
-    const total = st.fechados + st.abertos;
-    const pct   = daysSoFar > 0 ? Math.round(st.fechados / daysSoFar * 100) : 0;
-    return `<div class="cxov-card" data-board="${bk}" role="button" tabindex="0">
-      <div class="cxov-card-top">
-        <span class="cxov-store-label" style="color:${bc.color}">${bc.label}</span>
-        <svg class="cxov-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-      </div>
-      <div class="cxov-stats">
-        <div class="cxov-stat cxov-stat--fechado">
-          <span class="cxov-stat-num">${st.fechados}</span>
-          <span class="cxov-stat-lbl">Fechados</span>
-        </div>
-        <div class="cxov-stat cxov-stat--aberto">
-          <span class="cxov-stat-num">${st.abertos}</span>
-          <span class="cxov-stat-lbl">Em aberto</span>
-        </div>
-      </div>
-      <div class="cxov-bar-wrap">
-        <div class="cxov-bar" style="width:${pct}%;background:${bc.color}"></div>
-      </div>
-      <div class="cxov-bar-label">${st.fechados} de ${daysSoFar} dias — ${pct}%</div>
-    </div>`;
-  }).join('');
-
-  body.innerHTML = `
-    <div class="cxov-month-label">${['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'][+mo-1]} ${yr} — ${dateLabel}</div>
-    <div class="cxov-grid">${cards}</div>`;
-
-  body.querySelectorAll('.cxov-card').forEach(card => {
-    const open = () => {
-      _CX.view  = 'detail';
-      _CX.board = card.dataset.board;
-      _caixaSetHeader();
-      loadCaixaConf();
-    };
-    card.addEventListener('click', open);
-    card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') open(); });
-  });
-}
-
-// ── Detail: caixa de uma loja no dia ─────────────────────────────────────
-function renderCaixaConf(body, data, status = {}) {
-  renderCaixaDetail(body, data, status);
-}
-
-function renderCaixaDetail(body, data, status = {}) {
-  const { totalVendas, vendedores, formasPagamento, totalSangria, vendasAlerta = [], board, date } = data;
+function renderCaixaConf(body, data) {
+  const { totalVendas, vendedores, formasPagamento, totalSangria } = data;
   const fR = v => 'R$ ' + (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const boardLabel = BOARDS[board]?.label || board;
-  const boardColor = BOARDS[board]?.color || '#8B949E';
-  const isAdmin = !S.user?.board || S.user?.board === 'escritorio';
 
   const empByMxCod = {};
   for (const e of (S.employees || [])) {
     if (e.microvixCod) empByMxCod[String(e.microvixCod)] = e.apelido || e.name;
   }
 
-  const alertasTicked = new Set(status.alertasTicked || []);
-  const formasOk      = status.formasOk || false;
-  const fechado       = status.fechado  || false;
-  const allAlertasDone = vendasAlerta.length === 0 || vendasAlerta.every(v => alertasTicked.has(v.doc));
-  const canFechar      = formasOk && allAlertasDone;
-
-  const statusBadge = fechado
-    ? `<span class="cxconf-badge cxconf-badge--fechado">Fechado</span>`
-    : canFechar
-      ? `<span class="cxconf-badge cxconf-badge--ok">Pronto para fechar</span>`
-      : (formasOk || alertasTicked.size > 0)
-        ? `<span class="cxconf-badge cxconf-badge--partial">Em conferência</span>`
-        : `<span class="cxconf-badge cxconf-badge--open">Aberto</span>`;
-
-  let _cxDrillIdx = 0;
-  function nextDrillId() { return `cxd-${_cxDrillIdx++}`; }
+  let _drillIdx = 0;
+  function nextDrillId() { return `cxd-${_drillIdx++}`; }
 
   function vendasTableHtml(vendas, descLabel) {
     if (!vendas?.length) return '';
@@ -5796,11 +5687,6 @@ function renderCaixaDetail(body, data, status = {}) {
           <span class="cxconf-val ${saldoCaixa >= 0 ? 'cxconf-pos' : 'cxconf-neg'}">${fR(saldoCaixa)}</span></div>` : '')
     : '<div class="cxconf-empty">Formas de pagamento não disponíveis no Microvix</div>';
 
-  const formasBtnHtml = isAdmin && !fechado ? `
-    <button class="cxconf-step-btn ${formasOk ? 'cxconf-step-btn--undo' : 'cxconf-step-btn--ok'}" id="cxFormasBtn">
-      ${formasOk ? 'Desfazer conferência' : 'Confirmar Formas'}
-    </button>` : '';
-
   // ── Total por vendedor ──
   const vendHtml = vendedores.length
     ? vendedores.map(v => {
@@ -5821,83 +5707,22 @@ function renderCaixaDetail(body, data, status = {}) {
         <div class="cxconf-row cxconf-row--total"><span class="cxconf-label">Total</span><span class="cxconf-val">${fR(totalVendas)}</span></div>`
     : '<div class="cxconf-empty">Nenhuma venda registrada</div>';
 
-  // ── Vendas com alerta (tickáveis individualmente) ──
-  const alertasConteudo = vendasAlerta.length
-    ? vendasAlerta.map(v => {
-        const nome   = empByMxCod[v.vendedorCod] || v.vendedorNome || v.vendedorCod || '—';
-        const alerta = v.desconto > 0 && v.parcelado
-          ? `Desc. ${fR(v.desconto)} · ${v.numParcelas}x`
-          : v.desconto > 0 ? `Desc. ${fR(v.desconto)}` : `${v.numParcelas}x`;
-        const ticked = alertasTicked.has(v.doc);
-        const tickBtn = isAdmin && !fechado
-          ? `<button class="cxconf-tick-btn ${ticked ? 'cxconf-tick-btn--on' : ''}" data-doc="${_escHtml(v.doc)}" title="${ticked ? 'Desmarcar' : 'Marcar conferido'}">
-              ${ticked ? '✓' : '○'}
-            </button>` : (ticked ? `<span class="cxconf-tick-done">✓</span>` : `<span class="cxconf-tick-pend">○</span>`);
-        return `<div class="cxconf-alerta-item ${ticked ? 'cxconf-alerta-item--ok' : ''}">
-          ${tickBtn}
-          <span class="cxconf-alerta-doc">${v.doc}</span>
-          <span class="cxconf-alerta-hora">${v.hora || '—'}</span>
-          <span class="cxconf-alerta-nome">${_escHtml(nome)}</span>
-          <span class="cxconf-alerta-tag">${alerta}</span>
-          <span class="cxconf-alerta-val">${fR(v.valor)}</span>
-        </div>`;
-      }).join('')
-    : '<div class="cxconf-empty">Nenhuma venda com desconto ou parcelamento</div>';
-
-  const tickedCount = vendasAlerta.filter(v => alertasTicked.has(v.doc)).length;
-
-  // ── Fechar caixa ──
-  const fecharHtml = isAdmin && !fechado ? `
-    <div class="cxconf-fechar-wrap">
-      <button id="caixaFecharBtn" class="cxconf-fechar-btn" ${canFechar ? '' : 'disabled'}>
-        Fechar Caixa do Dia
-      </button>
-      ${!canFechar ? `<span class="cxconf-fechar-hint">${!formasOk ? 'Confirme as formas de pagamento' : 'Confira todas as vendas com alerta'}</span>` : ''}
-    </div>` : fechado ? `
-    <div class="cxconf-fechar-wrap">
-      <div class="cxconf-fechado-info">Caixa fechado por <strong>${_escHtml(status.fechadoBy || '')}</strong>
-        ${status.fechadoTs ? ' em ' + new Date(status.fechadoTs).toLocaleString('pt-BR') : ''}</div>
-    </div>` : '';
-
   body.innerHTML = `
-    <div class="cxconf-header">
-      <span class="cxconf-date">${date.split('-').reverse().join('/')}</span>
-      <span class="cxconf-total-label">Total do dia</span>
-      <span class="cxconf-total-val">${fR(totalVendas)}</span>
-      ${statusBadge}
-    </div>
-
-    <div class="cxdet-grid">
-      <div class="cxdet-col">
+    <div class="cxconf-grid">
+      <div class="cxconf-col">
         <div class="cxconf-card">
-          <div class="cxconf-card-title-row">
-            <span class="cxconf-card-title">Formas de Pagamento</span>
-            ${formasOk ? '<span class="cxconf-step-badge cxconf-step-badge--ok">✓ Confirmado</span>' : ''}
-            ${formasBtnHtml}
-          </div>
+          <div class="cxconf-card-title">Formas de Pagamento</div>
           ${formasConteudo}
         </div>
+      </div>
+      <div class="cxconf-col">
         <div class="cxconf-card">
           <div class="cxconf-card-title">Por Vendedor</div>
           ${vendHtml}
         </div>
       </div>
-      <div class="cxdet-col">
-        <div class="cxconf-card">
-          <div class="cxconf-card-title-row">
-            <span class="cxconf-card-title">Vendas com Alerta</span>
-            <span class="cxconf-step-badge ${allAlertasDone ? 'cxconf-step-badge--ok' : 'cxconf-step-badge--pending'}">
-              ${tickedCount}/${vendasAlerta.length} conferidas
-            </span>
-          </div>
-          <div class="cxconf-alerta-list">${alertasConteudo}</div>
-        </div>
-      </div>
-    </div>
+    </div>`;
 
-    ${fecharHtml}`;
-
-  // Drill-down
   body.querySelectorAll('.cxconf-row--clickable').forEach(row => {
     row.addEventListener('click', () => {
       const drill = document.getElementById(row.dataset.cxtgt);
@@ -5905,44 +5730,6 @@ function renderCaixaDetail(body, data, status = {}) {
       drill.classList.toggle('hidden');
       row.querySelector('.cxconf-chevron')?.classList.toggle('cxconf-chevron--open', !drill.classList.contains('hidden'));
     });
-  });
-
-  // Tick individual de alerta
-  body.querySelectorAll('.cxconf-tick-btn').forEach(btn => {
-    btn.addEventListener('click', async () => {
-      const doc    = btn.dataset.doc;
-      const ticked = btn.classList.contains('cxconf-tick-btn--on');
-      btn.disabled = true;
-      try {
-        await apiFetch('POST', '/api/caixa-status', {
-          board: _CX.board, date: _CX.date,
-          action: ticked ? 'untickAlerta' : 'tickAlerta', doc,
-        });
-        loadCaixaConf();
-      } catch (e) { alert('Erro: ' + e.message); btn.disabled = false; }
-    });
-  });
-
-  // Confirmar formas
-  document.getElementById('cxFormasBtn')?.addEventListener('click', async () => {
-    const btn = document.getElementById('cxFormasBtn');
-    const ok  = !formasOk;
-    btn.disabled = true;
-    try {
-      await apiFetch('POST', '/api/caixa-status', { board: _CX.board, date: _CX.date, action: 'setFormasOk', ok });
-      loadCaixaConf();
-    } catch (e) { alert('Erro: ' + e.message); btn.disabled = false; }
-  });
-
-  // Fechar caixa
-  document.getElementById('caixaFecharBtn')?.addEventListener('click', async () => {
-    if (!confirm('Confirmar fechamento do caixa do dia?')) return;
-    const btn = document.getElementById('caixaFecharBtn');
-    btn.disabled = true;
-    try {
-      await apiFetch('POST', '/api/caixa-fechar', { board: _CX.board, date: _CX.date, totalAlertas: vendasAlerta.length });
-      loadCaixaConf();
-    } catch (e) { alert('Erro: ' + e.message); btn.disabled = false; }
   });
 }
 
