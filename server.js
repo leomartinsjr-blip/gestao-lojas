@@ -2714,11 +2714,11 @@ app.get('/api/caixa-status', requireAuth, async (req, res) => {
   if (!board || !date) return res.status(400).json({ error: 'board e date obrigatórios' });
   const db = await readDB();
   const key = `${board}:${date}`;
-  res.json((db.caixaStatus || {})[key] || { alertasTicked: [], formasOk: false, fechado: false });
+  res.json((db.caixaStatus || {})[key] || { alertasTicked: [], vendasOk: false, cartoesOk: false, vendedoresOk: false, fechado: false });
 });
 
 // ── POST /api/caixa-status ────────────────────────────────────────────────
-// body: { board, date, action: 'tickAlerta'|'untickAlerta'|'setFormasOk', doc?, ok? }
+// body: { board, date, action, doc?, ok? }
 app.post('/api/caixa-status', requireAuth, async (req, res) => {
   const user = req.session.user;
   const isAdmin = !user.board || user.board === 'escritorio';
@@ -2728,7 +2728,7 @@ app.post('/api/caixa-status', requireAuth, async (req, res) => {
   const db = await readDB();
   if (!db.caixaStatus) db.caixaStatus = {};
   const key = `${board}:${date}`;
-  if (!db.caixaStatus[key]) db.caixaStatus[key] = { alertasTicked: [], formasOk: false, fechado: false };
+  if (!db.caixaStatus[key]) db.caixaStatus[key] = { alertasTicked: [], vendasOk: false, cartoesOk: false, vendedoresOk: false, fechado: false };
   const entry = db.caixaStatus[key];
   if (!Array.isArray(entry.alertasTicked)) entry.alertasTicked = [];
 
@@ -2736,10 +2736,21 @@ app.post('/api/caixa-status', requireAuth, async (req, res) => {
     if (!entry.alertasTicked.includes(doc)) entry.alertasTicked.push(doc);
   } else if (action === 'untickAlerta' && doc) {
     entry.alertasTicked = entry.alertasTicked.filter(d => d !== doc);
+  } else if (action === 'setVendasOk') {
+    entry.vendasOk = !!ok;
+    if (entry.vendasOk) { entry.vendasOkBy = user.name || user.login; entry.vendasOkTs = new Date().toISOString(); }
+    else { delete entry.vendasOkBy; delete entry.vendasOkTs; if (entry.fechado) { entry.fechado = false; delete entry.fechadoBy; delete entry.fechadoTs; } }
+  } else if (action === 'setCartoesOk') {
+    entry.cartoesOk = !!ok;
+    if (entry.cartoesOk) { entry.cartoesOkBy = user.name || user.login; entry.cartoesOkTs = new Date().toISOString(); }
+    else { delete entry.cartoesOkBy; delete entry.cartoesOkTs; if (entry.fechado) { entry.fechado = false; delete entry.fechadoBy; delete entry.fechadoTs; } }
+  } else if (action === 'setVendedoresOk') {
+    entry.vendedoresOk = !!ok;
+    if (entry.vendedoresOk) { entry.vendedoresOkBy = user.name || user.login; entry.vendedoresOkTs = new Date().toISOString(); }
+    else { delete entry.vendedoresOkBy; delete entry.vendedoresOkTs; if (entry.fechado) { entry.fechado = false; delete entry.fechadoBy; delete entry.fechadoTs; } }
   } else if (action === 'setFormasOk') {
+    // legado — mantém compatibilidade
     entry.formasOk = !!ok;
-    if (entry.formasOk) { entry.formasOkBy = user.name || user.login; entry.formasOkTs = new Date().toISOString(); }
-    else { delete entry.formasOkBy; delete entry.formasOkTs; }
   }
   await writeDB(db);
   res.json({ ok: true, status: entry });
@@ -2755,12 +2766,10 @@ app.post('/api/caixa-fechar', requireAuth, async (req, res) => {
   const db = await readDB();
   if (!db.caixaStatus) db.caixaStatus = {};
   const key = `${board}:${date}`;
-  if (!db.caixaStatus[key]) db.caixaStatus[key] = { alertasTicked: [], formasOk: false, fechado: false };
+  if (!db.caixaStatus[key]) db.caixaStatus[key] = { alertasTicked: [], vendasOk: false, cartoesOk: false, vendedoresOk: false, fechado: false };
   const entry = db.caixaStatus[key];
-  const ticked = (entry.alertasTicked || []).length;
-  const allAlertasDone = ticked >= (totalAlertas || 0);
-  if (!entry.formasOk || !allAlertasDone)
-    return res.status(400).json({ error: 'Confira todas as formas de pagamento e as vendas com alerta antes de fechar' });
+  if (!entry.vendasOk || !entry.cartoesOk || !entry.vendedoresOk)
+    return res.status(400).json({ error: 'Conclua os 3 passos da rotina (Vendas, Cartões, Vendedores) antes de fechar.' });
   entry.fechado = true;
   entry.fechadoBy = user.name || user.login;
   entry.fechadoTs = new Date().toISOString();
@@ -2781,8 +2790,10 @@ app.get('/api/caixa-mes', requireAuth, async (req, res) => {
     const date = key.split(':')[1];
     if (!date || !date.startsWith(month)) continue;
     days[date] = {
-      fechado:            entry.fechado || false,
-      formasOk:           entry.formasOk || false,
+      fechado:            entry.fechado       || false,
+      vendasOk:           entry.vendasOk      || false,
+      cartoesOk:          entry.cartoesOk     || false,
+      vendedoresOk:       entry.vendedoresOk  || false,
       alertasTickedCount: (entry.alertasTicked || []).length,
     };
   }

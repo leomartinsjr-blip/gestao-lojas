@@ -162,7 +162,7 @@
       } else if (entry.fechado) {
         badgeClass = 'cx-day-badge--fechado';
         badgeText  = 'Fechado';
-      } else if (entry.formasOk || entry.alertasTickedCount > 0) {
+      } else if (entry.vendasOk || entry.cartoesOk || entry.vendedoresOk || entry.alertasTickedCount > 0) {
         badgeClass = 'cx-day-badge--parcial';
         badgeText  = 'Em conferência';
       } else {
@@ -176,12 +176,22 @@
         isFuture ? 'cx-day-card--futuro' : '',
       ].filter(Boolean).join(' ');
 
+      // Ícones de progresso dos 3 passos
+      const progressIcos = (!isFuture && entry && !entry.fechado)
+        ? `<div style="display:flex;gap:3px;margin-top:4px">
+            <span title="Vendas"    style="font-size:10px">${entry.vendasOk    ? '✅' : '⬜'}</span>
+            <span title="Cartões"   style="font-size:10px">${entry.cartoesOk   ? '✅' : '⬜'}</span>
+            <span title="Vendedores"style="font-size:10px">${entry.vendedoresOk? '✅' : '⬜'}</span>
+           </div>`
+        : '';
+
       return `<div class="${cardClass}" data-date="${date}">
         <div style="display:flex;align-items:baseline;gap:6px">
           <span class="cx-day-num">${i + 1}</span>
           <span class="cx-day-dow">${dow}</span>
         </div>
         ${badgeText ? `<span class="cx-day-badge ${badgeClass}">${badgeText}</span>` : ''}
+        ${progressIcos}
       </div>`;
     }).join('');
 
@@ -208,6 +218,7 @@
   // VENDAS
   // ════════════════════════════════════════════════════════════════════════
   let _data = null, _grupo = 'lista', _filtroAlerta = false, _revisoesMap = {};
+  let _rotinaStatus = null, _rotinaBoard = null, _rotinaDate = null;
 
   $('vBuscarBtn').addEventListener('click', buscarVendas);
   document.querySelectorAll('.btn-grp').forEach(btn => btn.addEventListener('click', () => {
@@ -237,6 +248,15 @@
         _revisoesMap = {};
         for (const r of revisoes) _revisoesMap[r.doc + '::' + r.board] = r;
       } catch(_) { _revisoesMap = {}; }
+      // Carrega status da rotina (só para loja+dia único)
+      if (board !== 'all' && dtIni === dtFin) {
+        try {
+          _rotinaStatus = await api('GET', `/api/caixa-status?board=${board}&date=${dtIni}`);
+          _rotinaBoard = board; _rotinaDate = dtIni;
+        } catch(_) { _rotinaStatus = null; }
+      } else {
+        _rotinaStatus = null; _rotinaBoard = null; _rotinaDate = null;
+      }
       render(_data);
     } catch(e) {
       $('vResult').innerHTML = `<div class="cf-empty" style="color:${P('alert')}">⚠ ${esc(e.message)}</div>`;
@@ -401,6 +421,144 @@
         if (open) bindDrills(body);
       });
     }
+
+    // Renderiza rotina depois que revisadas estão no DOM
+    renderRotina(data);
+  }
+
+  // ── Rotina de conferência (stepper) ──────────────────────────────────────
+  function renderRotina(data) {
+    const el = $('vRotina');
+    if (!el) return;
+    if (!_rotinaStatus || !_rotinaBoard || !_rotinaDate) {
+      el.style.display = 'none'; el.innerHTML = ''; return;
+    }
+
+    const { vendas, totalAlertas } = data;
+    const st = _rotinaStatus;
+    const board = _rotinaBoard;
+    const date  = _rotinaDate;
+
+    // Check 1: todos os alertas foram revisados?
+    const alertasComVenda = vendas.filter(v => v.alertas?.length);
+    const alertasRevisados = alertasComVenda.length === 0 ||
+      alertasComVenda.every(v => !!_revisoesMap[v.doc + '::' + (v.board || board)]);
+    const canVendas = alertasRevisados && !st.vendasOk && !st.fechado;
+    const canCartoes = st.vendasOk && !st.cartoesOk && !st.fechado;
+    const canVendedores = st.vendasOk && st.cartoesOk && !st.vendedoresOk && !st.fechado;
+    const canFechar = st.vendasOk && st.cartoesOk && st.vendedoresOk && !st.fechado;
+
+    function stepIco(done, num) {
+      return done ? '✅' : `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--cf-card);border:1.5px solid var(--cf-border);font-size:10px;font-weight:700;color:var(--cf-muted)">${num}</span>`;
+    }
+
+    function stepSub(done, by, ts, pending) {
+      if (done && by) return `${by} · ${ts ? new Date(ts).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : ''}`;
+      return pending || '';
+    }
+
+    const s1Done = st.vendasOk;
+    const s2Done = st.cartoesOk;
+    const s3Done = st.vendedoresOk;
+
+    el.innerHTML = `
+      <div class="rotina-bar">
+        <span class="rotina-title">📋 Rotina · ${date.split('-').reverse().join('/')}</span>
+        <div class="rotina-steps">
+
+          <!-- Step 1: Vendas -->
+          <div class="rotina-step ${s1Done ? 'done' : canVendas ? 'active' : ''}">
+            <span class="rotina-step-ico">${stepIco(s1Done, 1)}</span>
+            <div class="rotina-step-info">
+              <span class="rotina-step-label">Vendas</span>
+              <span class="rotina-step-sub">${s1Done
+                ? stepSub(true, st.vendasOkBy, st.vendasOkTs)
+                : alertasComVenda.length === 0
+                  ? 'Sem alertas'
+                  : `${alertasComVenda.filter(v=>!!_revisoesMap[v.doc+'::'+(v.board||board)]).length}/${alertasComVenda.length} revisados`
+              }</span>
+            </div>
+            ${!s1Done
+              ? `<button class="rotina-step-btn btn-ok" id="rBtnVendas" ${canVendas?'':'disabled'}>✓ Confirmar</button>`
+              : `<button class="rotina-step-btn btn-undo" id="rBtnVendasUndo">↩</button>`}
+          </div>
+
+          <span class="rotina-arrow">›</span>
+
+          <!-- Step 2: Cartões -->
+          <div class="rotina-step ${s2Done ? 'done' : canCartoes ? 'active' : 'locked'}">
+            <span class="rotina-step-ico">${stepIco(s2Done, 2)}</span>
+            <div class="rotina-step-info">
+              <span class="rotina-step-label">Cartões</span>
+              <span class="rotina-step-sub">${s2Done
+                ? stepSub(true, st.cartoesOkBy, st.cartoesOkTs)
+                : 'Conciliar com extrato'}</span>
+            </div>
+            ${!s2Done
+              ? `<button class="rotina-step-btn btn-ok" id="rBtnCartoes" ${canCartoes?'':'disabled'}>✓ Confirmar</button>`
+              : `<button class="rotina-step-btn btn-undo" id="rBtnCartoesUndo">↩</button>`}
+          </div>
+
+          <span class="rotina-arrow">›</span>
+
+          <!-- Step 3: Vendedores -->
+          <div class="rotina-step ${s3Done ? 'done' : canVendedores ? 'active' : 'locked'}">
+            <span class="rotina-step-ico">${stepIco(s3Done, 3)}</span>
+            <div class="rotina-step-info">
+              <span class="rotina-step-label">Vendedores</span>
+              <span class="rotina-step-sub">${s3Done
+                ? stepSub(true, st.vendedoresOkBy, st.vendedoresOkTs)
+                : 'Conferir totais'}</span>
+            </div>
+            ${!s3Done
+              ? `<button class="rotina-step-btn btn-ok" id="rBtnVendedores" ${canVendedores?'':'disabled'}>✓ Confirmar</button>`
+              : `<button class="rotina-step-btn btn-undo" id="rBtnVendedoresUndo">↩</button>`}
+          </div>
+
+        </div>
+
+        <!-- Fechar o dia -->
+        <div class="rotina-fechar">
+          ${st.fechado
+            ? `<button class="btn-fechar fechado" disabled>🔒 Dia Fechado</button>`
+            : `<button class="btn-fechar" id="rBtnFechar" ${canFechar?'':'disabled'}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+                Fechar o Dia
+              </button>`}
+        </div>
+      </div>`;
+
+    el.style.display = 'block';
+
+    // ── Listeners ──
+    async function rotinaAction(action, okVal, btnId) {
+      const btn = $(btnId);
+      if (btn) { btn.disabled = true; btn.textContent = '…'; }
+      try {
+        const res = await api('POST', '/api/caixa-status', { board, date, action, ok: okVal });
+        _rotinaStatus = res.status;
+        renderRotina(_data);
+      } catch(e) { alert(e.message); if (btn) { btn.disabled = false; } }
+    }
+
+    if ($('rBtnVendas'))        $('rBtnVendas').onclick       = () => rotinaAction('setVendasOk', true, 'rBtnVendas');
+    if ($('rBtnVendasUndo'))    $('rBtnVendasUndo').onclick   = () => rotinaAction('setVendasOk', false, 'rBtnVendasUndo');
+    if ($('rBtnCartoes'))       $('rBtnCartoes').onclick      = () => rotinaAction('setCartoesOk', true, 'rBtnCartoes');
+    if ($('rBtnCartoesUndo'))   $('rBtnCartoesUndo').onclick  = () => rotinaAction('setCartoesOk', false, 'rBtnCartoesUndo');
+    if ($('rBtnVendedores'))    $('rBtnVendedores').onclick   = () => rotinaAction('setVendedoresOk', true, 'rBtnVendedores');
+    if ($('rBtnVendedoresUndo'))$('rBtnVendedoresUndo').onclick= () => rotinaAction('setVendedoresOk', false, 'rBtnVendedoresUndo');
+    if ($('rBtnFechar'))        $('rBtnFechar').onclick       = async () => {
+      if (!confirm(`Fechar o dia ${date.split('-').reverse().join('/')} para ${board}?`)) return;
+      const btn = $('rBtnFechar');
+      btn.disabled = true; btn.textContent = '…';
+      try {
+        const res = await api('POST', '/api/caixa-fechar', { board, date });
+        _rotinaStatus = res.status;
+        renderRotina(_data);
+        // Atualiza cards de caixa
+        if (typeof loadCxView === 'function') loadCxView();
+      } catch(e) { alert(e.message); btn.disabled = false; }
+    };
   }
 
   function kpiCard(color, iconSvg, value, label, sub, extraClass, badge) {
