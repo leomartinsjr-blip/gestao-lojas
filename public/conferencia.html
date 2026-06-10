@@ -366,6 +366,53 @@ td.muted  { color: var(--cf-muted); }
 .btn-danger:hover { opacity:.88; }
 .btn-danger:disabled { opacity:.45; cursor:default; }
 
+/* ── Conferência de Caixa — seção inline ──────────────────────────────── */
+.cx-back-btn {
+  background:none; border:1px solid var(--cf-border); color:var(--cf-muted); cursor:pointer;
+  border-radius:6px; padding:4px 7px; display:flex; align-items:center; transition:.15s;
+}
+.cx-back-btn:hover { color:var(--cf-text); border-color:#aaa; }
+.cx-month-input {
+  background:#fff; border:1px solid var(--cf-border); color:var(--cf-text);
+  padding:5px 10px; border-radius:8px; font-size:12px; font-family:inherit;
+}
+.cx-month-input:focus { outline:none; border-color:var(--cf-primary); }
+.cx-store-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:10px; }
+.cx-store-card {
+  background:#fff; border:1px solid var(--cf-border); border-radius:10px;
+  padding:14px 16px; cursor:pointer; transition:border-color .15s, box-shadow .15s;
+}
+.cx-store-card:hover { border-color:var(--cf-primary); box-shadow:0 2px 8px #3b82f618; }
+.cx-store-name { font-weight:800; font-size:12px; letter-spacing:.04em; margin-bottom:10px; }
+.cx-store-stats { display:flex; gap:12px; margin-bottom:8px; }
+.cx-stat { display:flex; flex-direction:column; }
+.cx-stat-n { font-size:1.35rem; font-weight:800; line-height:1; }
+.cx-stat-l { font-size:10px; color:var(--cf-muted); text-transform:uppercase; letter-spacing:.04em; margin-top:2px; }
+.cx-stat--ok .cx-stat-n { color:var(--cf-green); }
+.cx-prog-wrap { height:4px; background:var(--cf-card2); border-radius:2px; overflow:hidden; }
+.cx-prog-bar  { height:100%; border-radius:2px; }
+.cx-prog-lbl  { font-size:10px; color:var(--cf-muted); margin-top:4px; }
+.cx-day-grid  { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:8px; }
+.cx-day-card {
+  background:#fff; border:1px solid var(--cf-border); border-radius:8px;
+  padding:10px 12px; cursor:pointer; transition:border-color .15s, box-shadow .15s;
+  display:flex; flex-direction:column; gap:4px;
+}
+.cx-day-card:hover { border-color:var(--cf-primary); box-shadow:0 2px 8px #3b82f618; }
+.cx-day-card--fechado { border-color:#10b98140; background:#f0fdf4; }
+.cx-day-card--fechado:hover { border-color:var(--cf-green); }
+.cx-day-card--futuro  { opacity:.35; cursor:default; pointer-events:none; }
+.cx-day-num  { font-size:1.1rem; font-weight:800; color:var(--cf-text); }
+.cx-day-dow  { font-size:10px; color:var(--cf-muted); text-transform:uppercase; letter-spacing:.04em; }
+.cx-day-badge {
+  font-size:10px; font-weight:700; padding:2px 7px; border-radius:20px; width:fit-content;
+  text-transform:uppercase; letter-spacing:.04em; margin-top:2px;
+}
+.cx-day-badge--fechado { background:#d1fae5; color:#065f46; }
+.cx-day-badge--parcial { background:#fef3c7; color:#92400e; }
+.cx-day-badge--aberto  { background:#fee2e2; color:#991b1b; }
+.cx-day-badge--vazio   { background:var(--cf-card2); color:var(--cf-muted); }
+
 /* ── Misc ───────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #ffffff20; border-top-color: var(--cf-primary); border-radius: 50%; animation: spin .6s linear infinite; }
@@ -427,6 +474,23 @@ td.muted  { color: var(--cf-muted); }
 
 <!-- ══ VENDAS ═══════════════════════════════════════════════════════════ -->
 <div class="cf-panel" id="tab-vendas">
+
+  <!-- ── Caixas do Mês ── -->
+  <div id="cxSection" style="margin-bottom:20px">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+      <button id="cxBackBtn" class="cx-back-btn" style="display:none">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--cf-muted)">Conferência de Caixa</span>
+      <span id="cxBreadcrumb" style="font-size:11px;color:var(--cf-muted)"></span>
+      <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
+        <input type="month" id="cxMonth" class="cx-month-input"/>
+      </div>
+    </div>
+    <div id="cxBody"></div>
+  </div>
+  <hr style="border:none;border-top:1px solid var(--cf-border);margin-bottom:16px"/>
+
   <div class="cf-filter-bar">
     <div class="cf-fg"><label>Loja</label><select id="vBoard"><option value="all">Todas as Lojas</option></select></div>
     <div class="cf-fg"><label>De</label><input type="date" id="vDtIni"/></div>

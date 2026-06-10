@@ -2768,6 +2768,27 @@ app.post('/api/caixa-fechar', requireAuth, async (req, res) => {
   res.json({ ok: true, status: entry });
 });
 
+// ── GET /api/caixa-mes?board=X&month=YYYY-MM ─────────────────────────────
+// Retorna status de cada dia do mês para uma loja
+app.get('/api/caixa-mes', requireAuth, async (req, res) => {
+  const { board, month } = req.query;
+  if (!board || !month) return res.status(400).json({ error: 'board e month obrigatórios' });
+  const db = await readDB();
+  const allStatus = db.caixaStatus || {};
+  const days = {};
+  for (const [key, entry] of Object.entries(allStatus)) {
+    if (!key.startsWith(board + ':')) continue;
+    const date = key.split(':')[1];
+    if (!date || !date.startsWith(month)) continue;
+    days[date] = {
+      fechado:            entry.fechado || false,
+      formasOk:           entry.formasOk || false,
+      alertasTickedCount: (entry.alertasTicked || []).length,
+    };
+  }
+  res.json({ board, month, days });
+});
+
 // ── GET /api/caixa-resumo?month=YYYY-MM ──────────────────────────────────
 // Retorna por loja: quantos dias do mês têm caixa fechado vs abertos
 app.get('/api/caixa-resumo', requireAuth, async (req, res) => {

@@ -50,6 +50,161 @@
   $('cDtIni').value = ini; $('cDtFin').value = hoje;
 
   // ════════════════════════════════════════════════════════════════════════
+  // CAIXAS DO MÊS — store cards → day cards → day detail
+  // ════════════════════════════════════════════════════════════════════════
+  const DIAS_PT = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+  const MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const CX_STORES = ['delrey','minas','contagem','estacao','tommy','lez'];
+  const CX_LABELS = { delrey:'Del Rey', minas:'Minas', contagem:'Contagem', estacao:'Estação', tommy:'Tommy', lez:'Lez a Lez' };
+  const CX_COLORS = { delrey:'#4AA3FF', minas:'#3FB950', contagem:'#D29922', estacao:'#F85149', tommy:'#22D3EE', lez:'#F472B6' };
+
+  let _cxStore = null; // null = overview, string = lojas view
+
+  // Inicializa mês com o mês atual
+  const cxMonthEl = $('cxMonth');
+  cxMonthEl.value = hoje.slice(0,7);
+  cxMonthEl.addEventListener('change', () => loadCxView());
+
+  $('cxBackBtn').addEventListener('click', () => {
+    _cxStore = null;
+    loadCxView();
+  });
+
+  async function loadCxView() {
+    const month = cxMonthEl.value || hoje.slice(0,7);
+    const body  = $('cxBody');
+    const backBtn = $('cxBackBtn');
+    const crumb   = $('cxBreadcrumb');
+
+    if (!_cxStore) {
+      // ── Level 0: store cards ──
+      backBtn.style.display = 'none';
+      crumb.textContent = '';
+      body.innerHTML = '<div style="font-size:11px;color:var(--cf-muted);padding:8px 0">Carregando…</div>';
+      try {
+        const resumo = await api('GET', `/api/caixa-resumo?month=${month}`);
+        renderCxStores(body, resumo, month);
+      } catch(e) {
+        body.innerHTML = `<div style="color:var(--cf-alert);font-size:12px">⚠ ${esc(e.message)}</div>`;
+      }
+    } else {
+      // ── Level 1: day cards for selected store ──
+      backBtn.style.display = '';
+      const [yr, mo] = month.split('-');
+      crumb.innerHTML = `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        <span style="color:${CX_COLORS[_cxStore]};font-weight:700">${CX_LABELS[_cxStore] || _cxStore}</span>
+        &nbsp;— ${MESES_PT[+mo-1]} ${yr}`;
+      body.innerHTML = '<div style="font-size:11px;color:var(--cf-muted);padding:8px 0">Carregando…</div>';
+      try {
+        const data = await api('GET', `/api/caixa-mes?board=${_cxStore}&month=${month}`);
+        renderCxDays(body, data, month);
+      } catch(e) {
+        body.innerHTML = `<div style="color:var(--cf-alert);font-size:12px">⚠ ${esc(e.message)}</div>`;
+      }
+    }
+  }
+
+  function renderCxStores(body, resumo, month) {
+    const [yr, mo] = month.split('-');
+    const daysInMonth = new Date(+yr, +mo, 0).getDate();
+    const todayDay    = hoje.startsWith(month) ? parseInt(hoje.split('-')[2]) : daysInMonth;
+    const daysSoFar   = Math.min(todayDay, daysInMonth);
+
+    const cards = CX_STORES.map(bk => {
+      const color = CX_COLORS[bk];
+      const st    = resumo.stores?.[bk] || { fechados:0, abertos:0 };
+      const pct   = daysSoFar > 0 ? Math.round(st.fechados / daysSoFar * 100) : 0;
+      return `<div class="cx-store-card" data-store="${bk}">
+        <div class="cx-store-name" style="color:${color}">${CX_LABELS[bk]}</div>
+        <div class="cx-store-stats">
+          <div class="cx-stat cx-stat--ok">
+            <span class="cx-stat-n">${st.fechados}</span>
+            <span class="cx-stat-l">Fechados</span>
+          </div>
+          <div class="cx-stat">
+            <span class="cx-stat-n">${st.abertos}</span>
+            <span class="cx-stat-l">Em aberto</span>
+          </div>
+        </div>
+        <div class="cx-prog-wrap"><div class="cx-prog-bar" style="width:${pct}%;background:${color}"></div></div>
+        <div class="cx-prog-lbl">${st.fechados} de ${daysSoFar} dias · ${pct}%</div>
+      </div>`;
+    }).join('');
+
+    body.innerHTML = `<div class="cx-store-grid">${cards}</div>`;
+
+    body.querySelectorAll('.cx-store-card').forEach(card => {
+      card.addEventListener('click', () => {
+        _cxStore = card.dataset.store;
+        loadCxView();
+      });
+    });
+  }
+
+  function renderCxDays(body, data, month) {
+    const { days } = data;
+    const [yr, mo] = month.split('-');
+    const daysInMonth = new Date(+yr, +mo, 0).getDate();
+    const color = CX_COLORS[_cxStore];
+
+    const cards = Array.from({ length: daysInMonth }, (_, i) => {
+      const d    = String(i + 1).padStart(2, '0');
+      const date = `${month}-${d}`;
+      const dow  = DIAS_PT[new Date(`${date}T12:00:00`).getDay()];
+      const isFuture = date > hoje;
+      const entry = days[date];
+
+      let badgeClass, badgeText;
+      if (!entry) {
+        badgeClass = isFuture ? '' : 'cx-day-badge--aberto';
+        badgeText  = isFuture ? '' : 'Aberto';
+      } else if (entry.fechado) {
+        badgeClass = 'cx-day-badge--fechado';
+        badgeText  = 'Fechado';
+      } else if (entry.formasOk || entry.alertasTickedCount > 0) {
+        badgeClass = 'cx-day-badge--parcial';
+        badgeText  = 'Em conferência';
+      } else {
+        badgeClass = 'cx-day-badge--aberto';
+        badgeText  = 'Aberto';
+      }
+
+      const cardClass = [
+        'cx-day-card',
+        entry?.fechado ? 'cx-day-card--fechado' : '',
+        isFuture ? 'cx-day-card--futuro' : '',
+      ].filter(Boolean).join(' ');
+
+      return `<div class="${cardClass}" data-date="${date}">
+        <div style="display:flex;align-items:baseline;gap:6px">
+          <span class="cx-day-num">${i + 1}</span>
+          <span class="cx-day-dow">${dow}</span>
+        </div>
+        ${badgeText ? `<span class="cx-day-badge ${badgeClass}">${badgeText}</span>` : ''}
+      </div>`;
+    }).join('');
+
+    body.innerHTML = `<div class="cx-day-grid">${cards}</div>`;
+
+    body.querySelectorAll('.cx-day-card[data-date]').forEach(card => {
+      card.addEventListener('click', () => {
+        const date = card.dataset.date;
+        // Preenche os filtros da aba de vendas e busca
+        $('vBoard').value  = _cxStore;
+        $('vDtIni').value  = date;
+        $('vDtFin').value  = date;
+        buscarVendas();
+        // Scroll suave até a seção de vendas
+        $('vResult').scrollIntoView({ behavior:'smooth', block:'start' });
+      });
+    });
+  }
+
+  // Carrega a view inicial de caixas
+  loadCxView();
+
+  // ════════════════════════════════════════════════════════════════════════
   // VENDAS
   // ════════════════════════════════════════════════════════════════════════
   let _data = null, _grupo = 'lista', _filtroAlerta = false, _revisoesMap = {};
