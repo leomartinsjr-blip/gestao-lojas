@@ -1682,7 +1682,7 @@
 
         // Try to find columns: date, bandeira/produto, modalidade, valor
         // Find the real header row: row with most non-empty string cells (skip title rows)
-        let iData=-1, iBandeira=-1, iMod=-1, iValor=-1;
+        let iData=-1, iBandeira=-1, iMod=-1, iValor=-1, iStatus=-1;
         const norm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
         const hdrs = rows.reduce((best, r) => {
           const nonEmpty = r.filter(c => typeof c === 'string' && c.trim().length > 1).length;
@@ -1694,6 +1694,7 @@
           if (iData<0     && /\bdata\b/.test(s)) iData = i;
           if (iBandeira<0 && /(bandeira|produto|adquirente|brand)/.test(s)) iBandeira = i;
           if (iMod<0      && /(modalidade|modali)/.test(s)) iMod = i;
+          if (iStatus<0   && /(status)/.test(s)) iStatus = i;
           // prefer "valor da venda" / "valor líquido" / "valor" — pick first match
           if (iValor<0    && /(valor\s+d[ao]\s+venda|valor\s+liq|valor\s+bruto|valor\s+total|valor\s+da|amount)/.test(s)) iValor = i;
         });
@@ -1707,6 +1708,11 @@
         for (let ri = hdrsRowIdx+1; ri < rows.length; ri++) {
           const r = rows[ri];
           if (!r || r.every(c => c==='' || c==null)) continue;
+          // só considera vendas aprovadas ou pagas
+          if (iStatus >= 0) {
+            const st = String(r[iStatus]||'').trim().toLowerCase();
+            if (st !== 'aprovada' && st !== 'pago' && st !== 'paga') continue;
+          }
 
           // Parse date
           let dateStr = '';
