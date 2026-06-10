@@ -6,27 +6,27 @@
 <title>Conferência · Gestão de Lojas</title>
 <link rel="stylesheet" href="/style.css"/>
 <style>
-/* ── Palette light ─────────────────────────────────────────── */
+/* ── Palette dark ──────────────────────────────────────────── */
 :root {
-  --cf-bg:      #F4F6F9;
-  --cf-card:    #FFFFFF;
-  --cf-card2:   #F8F9FB;
-  --cf-border:  #E5E9EF;
-  --cf-text:    #1A2233;
-  --cf-muted:   #7A8699;
-  --cf-primary: #3B82F6;
-  --cf-accent:  #F59E0B;
-  --cf-alert:   #EF4444;
-  --cf-green:   #10B981;
-  --cf-purple:  #8B5CF6;
-  --cf-teal:    #14B8A6;
-  --cf-red:     #EF4444;
+  --cf-bg:      #0D1117;
+  --cf-card:    #161B22;
+  --cf-card2:   #1C2128;
+  --cf-border:  #30363D;
+  --cf-text:    #E6EDF3;
+  --cf-muted:   #7D8590;
+  --cf-primary: #4493F8;
+  --cf-accent:  #E3B341;
+  --cf-alert:   #F85149;
+  --cf-green:   #3FB950;
+  --cf-purple:  #BC8CFF;
+  --cf-teal:    #39D3BB;
+  --cf-red:     #F85149;
 
-  --cf-primary-bg: #3B82F610;
-  --cf-accent-bg:  #F59E0B12;
-  --cf-alert-bg:   #EF444412;
-  --cf-green-bg:   #10B98112;
-  --cf-purple-bg:  #8B5CF612;
+  --cf-primary-bg: #4493F818;
+  --cf-accent-bg:  #E3B34118;
+  --cf-alert-bg:   #F8514918;
+  --cf-green-bg:   #3FB95018;
+  --cf-purple-bg:  #BC8CFF18;
 
   --r: 10px;
 }
@@ -451,11 +451,11 @@ td.muted  { color: var(--cf-muted); }
     </div>
   </div>
   <nav class="cf-tabs-inline">
-    <button class="cf-tab" data-tab="vendas">
+    <button class="cf-tab active" data-tab="vendas">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
       Vendas
     </button>
-    <button class="cf-tab active" data-tab="dashboard">
+    <button class="cf-tab" data-tab="dashboard">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
       Dashboard
     </button>
@@ -483,7 +483,7 @@ td.muted  { color: var(--cf-muted); }
 <div class="cf-content">
 
 <!-- ══ VENDAS ═══════════════════════════════════════════════════════════ -->
-<div class="cf-panel" id="tab-vendas">
+<div class="cf-panel active" id="tab-vendas">
 
   <!-- ── Caixas do Mês ── -->
   <div id="cxSection" style="margin-bottom:20px">
@@ -538,7 +538,7 @@ td.muted  { color: var(--cf-muted); }
 </div>
 
 <!-- ══ DASHBOARD ═════════════════════════════════════════════════════════ -->
-<div class="cf-panel active" id="tab-dashboard">
+<div class="cf-panel" id="tab-dashboard">
   <div class="cf-filter-bar">
     <div class="cf-fg"><label>De</label><input type="date" id="dDtIni"/></div>
     <div class="cf-fg"><label>Até</label><input type="date" id="dDtFin"/></div>
