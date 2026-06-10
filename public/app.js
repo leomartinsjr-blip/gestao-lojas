@@ -1135,6 +1135,9 @@ function renderDashboard() {
     }
   }
 
+  // ── CARD: Conferência de Caixa (resumo por loja) → admins e escritório ──
+  renderConferenciaStatusCard(rightCol);
+
   // ── CARD: Folgas → coluna direita ────────────────────────────────────────
   const folgasCard = document.createElement('div');
   folgasCard.className = 'main-card';
@@ -7937,6 +7940,79 @@ function renderContratoCard(container) {
 
   card.querySelector('#contratoCardBody').innerHTML =
     isAdmin ? buildRowsAll() : buildRows(userBoard);
+}
+
+function renderConferenciaStatusCard(container) {
+  const isAdmin      = userIsAdmin(S.user);
+  const isEscritorio = S.user?.board === 'escritorio';
+  if (!isAdmin && !isEscritorio) return;
+
+  const CONF_STORES = NF_STORES.filter(b => b !== 'site');
+  const today       = new Date();
+  const isCurrentMonth = today.getFullYear() === S.year && (today.getMonth() + 1) === S.month;
+  const daysElapsed = isCurrentMonth
+    ? today.getDate()
+    : new Date(S.year, S.month, 0).getDate();
+
+  const card = document.createElement('div');
+  card.className  = 'main-card';
+  card.dataset.cardId = 'card-conf-status';
+  card.innerHTML = `
+    <div class="main-card-hdr">
+      <span class="main-card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="9 11 12 14 22 4"/>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+        </svg>
+        Conferência de Caixa
+      </span>
+      <span class="main-card-sub">${MONTHS_PT[S.month-1]} ${S.year}</span>
+    </div>
+    <div class="main-card-body" id="confStatusBody" style="padding:.5rem .75rem .6rem"></div>`;
+  container.appendChild(card);
+
+  const body = card.querySelector('#confStatusBody');
+  body.innerHTML = '<div style="color:var(--muted);font-size:.78rem;padding:.25rem 0">Carregando…</div>';
+
+  Promise.all(
+    CONF_STORES.map(b =>
+      apiFetch('GET', `/api/caixa/${S.year}/${S.month}/${b}`)
+        .then(data => ({ board: b, data }))
+        .catch(() => ({ board: b, data: {} }))
+    )
+  ).then(results => {
+    const chips = results.map(({ board: b, data }) => {
+      let fechados = 0;
+      for (let d = 1; d <= daysElapsed; d++) {
+        const e = data[d] || {};
+        if ((e.caixa ?? 0) !== 0 || (e.sangria ?? 0) !== 0 || (e.deposito ?? 0) !== 0) fechados++;
+      }
+      const emAberto = daysElapsed - fechados;
+      const pct      = daysElapsed > 0 ? Math.round(fechados / daysElapsed * 100) : 0;
+      const color    = BOARDS[b]?.color || '#8B949E';
+      const label    = BOARDS[b]?.label || b;
+      return `
+        <div style="display:flex;flex-direction:column;gap:.2rem;min-width:0;flex:1">
+          <div style="font-size:.7rem;font-weight:700;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
+          <div style="display:flex;gap:.5rem;align-items:baseline">
+            <div style="text-align:center">
+              <div style="font-size:1.3rem;font-weight:700;color:#3FB950;line-height:1">${fechados}</div>
+              <div style="font-size:.58rem;color:var(--muted);letter-spacing:.03em;margin-top:.1rem">FECHADOS</div>
+            </div>
+            <div style="text-align:center">
+              <div style="font-size:1.3rem;font-weight:700;color:#F85149;line-height:1">${emAberto}</div>
+              <div style="font-size:.58rem;color:var(--muted);letter-spacing:.03em;margin-top:.1rem">EM ABERTO</div>
+            </div>
+          </div>
+          <div style="font-size:.65rem;color:var(--muted)">${fechados} de ${daysElapsed} dias · ${pct}%</div>
+          <div style="height:2px;background:var(--border);border-radius:1px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${color};transition:width .4s"></div>
+          </div>
+        </div>`;
+    }).join('');
+
+    body.innerHTML = `<div style="display:flex;gap:.75rem;flex-wrap:wrap">${chips}</div>`;
+  });
 }
 
 function renderCaixaCard(container) {
