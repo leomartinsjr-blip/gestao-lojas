@@ -2504,9 +2504,10 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       const nome  = (r.nome_vendedor || '').trim();
       const codP  = String(r.cod_plano || r.plano || '').trim();
       const ident = String(r.identificador || '').trim();
+      const desconto = parseBrNum(r.valor_desconto || r.desconto || r.vl_desconto || '0');
 
       totalVendas += sign * valor;
-      docMap[doc] = { doc, valor: sign * valor, vendedorCod: cod, vendedorNome: nome, hora, codPlano: codP };
+      docMap[doc] = { doc, valor: sign * valor, vendedorCod: cod, vendedorNome: nome, hora, codPlano: codP, desconto };
       if (ident) identMap[ident] = doc;
 
       if (cod) {
@@ -2553,6 +2554,14 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
 
         if (!docFormaMap[doc]) docFormaMap[doc] = [];
         docFormaMap[doc].push({ forma, bandeira, valor: sign * valor });
+
+        // Detecta parcelamento pelo desc_plano (ex: "MASTER 2X", "VISA 3X")
+        const parcelaMatch = descP.match(/\b(\d+)\s*[Xx]\b/);
+        if (parcelaMatch && parseInt(parcelaMatch[1]) > 1 && docMap[doc]) {
+          docMap[doc].parcelado = true;
+          docMap[doc].descParcela = descP;
+          docMap[doc].numParcelas = parseInt(parcelaMatch[1]);
+        }
       }
       const hasData = Object.keys(docFormaMap).length > 0;
       if (hasData) console.log(`[conferencia-caixa] docFormaMap via LinxMovimentoPlanos: ${Object.keys(docFormaMap).length} docs`);
@@ -2676,11 +2685,75 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       totalSangria += Math.abs(parseBrNum(r.valor || '0'));
     }
 
-    res.json({ board, date, totalVendas, vendedores, formasPagamento, totalSangria });
+    // -- Vendas com alerta (desconto ou parcelamento) --
+    const vendasAlerta = Object.values(docMap)
+      .filter(d => d.valor > 0 && (d.desconto > 0 || d.parcelado))
+      .map(d => ({
+        doc: d.doc,
+        hora: d.hora,
+        valor: d.valor,
+        desconto: d.desconto || 0,
+        parcelado: d.parcelado || false,
+        numParcelas: d.numParcelas || null,
+        descParcela: d.descParcela || null,
+        vendedorCod: d.vendedorCod,
+        vendedorNome: d.vendedorNome,
+      }))
+      .sort((a, b) => (a.hora || '').localeCompare(b.hora || ''));
+
+    res.json({ board, date, totalVendas, vendedores, formasPagamento, totalSangria, vendasAlerta });
   } catch (e) {
     console.error('[conferencia-caixa]', e.message);
     res.status(500).json({ error: e.message });
   }
+});
+
+// ── GET /api/caixa-status?board=X&date=Y ─────────────────────────────────
+app.get('/api/caixa-status', requireAuth, async (req, res) => {
+  const { board, date } = req.query;
+  if (!board || !date) return res.status(400).json({ error: 'board e date obrigatórios' });
+  const db = await readDB();
+  const key = `${board}:${date}`;
+  res.json((db.caixaStatus || {})[key] || { steps: {}, fechado: false });
+});
+
+// ── POST /api/caixa-status ────────────────────────────────────────────────
+app.post('/api/caixa-status', requireAuth, async (req, res) => {
+  const user = req.session.user;
+  const isAdmin = !user.board || user.board === 'escritorio';
+  if (!isAdmin) return res.status(403).json({ error: 'Sem permissão' });
+  const { board, date, step, ok } = req.body;
+  if (!board || !date || !step) return res.status(400).json({ error: 'Parâmetros inválidos' });
+  const db = await readDB();
+  if (!db.caixaStatus) db.caixaStatus = {};
+  const key = `${board}:${date}`;
+  if (!db.caixaStatus[key]) db.caixaStatus[key] = { steps: {}, fechado: false };
+  db.caixaStatus[key].steps[step] = ok
+    ? { ok: true, user: user.name || user.login, ts: new Date().toISOString() }
+    : { ok: false };
+  await writeDB(db);
+  res.json({ ok: true, status: db.caixaStatus[key] });
+});
+
+// ── POST /api/caixa-fechar ────────────────────────────────────────────────
+app.post('/api/caixa-fechar', requireAuth, async (req, res) => {
+  const user = req.session.user;
+  const isAdmin = !user.board || user.board === 'escritorio';
+  if (!isAdmin) return res.status(403).json({ error: 'Sem permissão' });
+  const { board, date } = req.body;
+  if (!board || !date) return res.status(400).json({ error: 'Parâmetros inválidos' });
+  const db = await readDB();
+  if (!db.caixaStatus) db.caixaStatus = {};
+  const key = `${board}:${date}`;
+  if (!db.caixaStatus[key]) db.caixaStatus[key] = { steps: {}, fechado: false };
+  const steps = db.caixaStatus[key].steps;
+  const allDone = ['alertas', 'formas', 'rede'].every(s => steps[s]?.ok);
+  if (!allDone) return res.status(400).json({ error: 'Todas as etapas devem ser conferidas antes de fechar' });
+  db.caixaStatus[key].fechado = true;
+  db.caixaStatus[key].fechadoBy = user.name || user.login;
+  db.caixaStatus[key].fechadoTs = new Date().toISOString();
+  await writeDB(db);
+  res.json({ ok: true, status: db.caixaStatus[key] });
 });
 
 // ── GET /api/microvix/cartoes-debug?board=delrey&date=2026-06-03 ──────────

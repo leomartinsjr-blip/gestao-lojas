@@ -5614,7 +5614,7 @@ async function loadCaixaConf() {
   const boardSel = document.getElementById('caixaConfBoard');
   const dateInp  = document.getElementById('caixaConfDate');
   const buscarBtn = document.getElementById('caixaConfBuscarBtn');
-  const isAdmin  = !S.user?.board;
+  const isAdmin  = !S.user?.board || S.user?.board === 'escritorio';
 
   const board = isAdmin ? (boardSel.value || Object.keys(BOARDS).find(k => k !== 'site')) : S.user.board;
   const date  = dateInp.value;
@@ -5623,8 +5623,11 @@ async function loadCaixaConf() {
   body.innerHTML = '<div class="trans-loading">Buscando dados do Microvix…</div>';
   buscarBtn.disabled = true;
   try {
-    const data = await apiFetch('GET', `/api/conferencia-caixa?board=${board}&date=${date}`);
-    renderCaixaConf(body, data);
+    const [data, status] = await Promise.all([
+      apiFetch('GET', `/api/conferencia-caixa?board=${board}&date=${date}`),
+      apiFetch('GET', `/api/caixa-status?board=${board}&date=${date}`),
+    ]);
+    renderCaixaConf(body, data, status);
   } catch (e) {
     body.innerHTML = `<div class="trans-error">Erro: ${e.message}</div>`;
   } finally {
@@ -5632,20 +5635,32 @@ async function loadCaixaConf() {
   }
 }
 
-function renderCaixaConf(body, data) {
-  const { totalVendas, vendedores, formasPagamento, totalSangria, board, date } = data;
+function renderCaixaConf(body, data, status = {}) {
+  const { totalVendas, vendedores, formasPagamento, totalSangria, vendasAlerta = [], board, date } = data;
   const fR = v => 'R$ ' + (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const boardLabel = BOARDS[board]?.label || board;
   const boardColor = BOARDS[board]?.color || '#8B949E';
+  const isAdmin = !S.user?.board || S.user?.board === 'escritorio';
 
   const empByMxCod = {};
   for (const e of (S.employees || [])) {
     if (e.microvixCod) empByMxCod[String(e.microvixCod)] = e.apelido || e.name;
   }
 
-  const totalDinheiro = formasPagamento.find(f => /dinheiro/i.test(f.forma))?.total || 0;
-  const saldoCaixa    = totalDinheiro - totalSangria;
+  const steps = status.steps || {};
+  const fechado = status.fechado || false;
+  const allDone = ['alertas', 'formas', 'rede'].every(s => steps[s]?.ok);
 
+  // Status badge
+  const statusBadge = fechado
+    ? `<span class="cxconf-badge cxconf-badge--fechado">Fechado</span>`
+    : allDone
+      ? `<span class="cxconf-badge cxconf-badge--ok">Pronto para fechar</span>`
+      : Object.values(steps).some(s => s?.ok)
+        ? `<span class="cxconf-badge cxconf-badge--partial">Em conferência</span>`
+        : `<span class="cxconf-badge cxconf-badge--open">Aberto</span>`;
+
+  // Helpers de drill-down
   let _cxDrillIdx = 0;
   function nextDrillId() { return `cxd-${_cxDrillIdx++}`; }
 
@@ -5664,14 +5679,59 @@ function renderCaixaConf(body, data) {
     </div>`;
   }
 
+  function stepHeaderHtml(stepKey, label, icon) {
+    const s = steps[stepKey];
+    const done = s?.ok;
+    const badgeHtml = done
+      ? `<span class="cxconf-step-badge cxconf-step-badge--ok">✓ Conferido${s.user ? ' por ' + _escHtml(s.user) : ''}</span>`
+      : `<span class="cxconf-step-badge cxconf-step-badge--pending">Pendente</span>`;
+    const btnHtml = isAdmin && !fechado ? `
+      <button class="cxconf-step-btn ${done ? 'cxconf-step-btn--undo' : 'cxconf-step-btn--ok'}"
+        data-step="${stepKey}" data-ok="${done ? '0' : '1'}">
+        ${done ? 'Desfazer' : 'Marcar Conferido'}
+      </button>` : '';
+    return `<div class="cxconf-step-hdr">
+      <span class="cxconf-step-icon">${icon}</span>
+      <span class="cxconf-step-title">${label}</span>
+      ${badgeHtml}
+      <div style="margin-left:auto">${btnHtml}</div>
+    </div>`;
+  }
+
+  // ── Etapa 1: Vendas com alerta ──
+  const alertasHtml = vendasAlerta.length
+    ? `<div class="cxconf-drill">
+        <div class="cxconf-drill-hdr cxconf-alerta-hdr">
+          <span>Doc</span><span>Hora</span><span>Vendedor</span><span>Alerta</span><span>Valor</span>
+        </div>
+        ${vendasAlerta.map(v => {
+          const nome = empByMxCod[v.vendedorCod] || v.vendedorNome || v.vendedorCod || '—';
+          const alerta = v.desconto > 0 && v.parcelado
+            ? `Desc. ${fR(v.desconto)} · ${v.numParcelas}x`
+            : v.desconto > 0
+              ? `Desc. ${fR(v.desconto)}`
+              : `${v.numParcelas}x (${_escHtml(v.descParcela || '')})`;
+          return `<div class="cxconf-drill-row cxconf-alerta-row">
+            <span class="cxconf-drill-doc">${v.doc}</span>
+            <span class="cxconf-drill-desc">${v.hora || '—'}</span>
+            <span class="cxconf-drill-desc">${_escHtml(nome)}</span>
+            <span class="cxconf-alerta-tag">${alerta}</span>
+            <span class="cxconf-drill-val">${fR(v.valor)}</span>
+          </div>`;
+        }).join('')}
+      </div>`
+    : `<div class="cxconf-empty">Nenhuma venda com desconto ou parcelamento</div>`;
+
+  // ── Etapa 2: Formas de pagamento ──
+  const totalDinheiro = formasPagamento.find(f => /dinheiro/i.test(f.forma))?.total || 0;
+  const saldoCaixa    = totalDinheiro - totalSangria;
+
   function formaRowHtml(f) {
     const pct      = totalVendas > 0 ? (f.total / totalVendas * 100).toFixed(0) : 0;
     const drillId  = nextDrillId();
     const hasBands = f.bandeiras?.some(b => b.bandeira);
-
     let innerHtml;
     if (hasBands) {
-      // Agrupa por bandeira → cada bandeira é expansível
       innerHtml = f.bandeiras.map(b => {
         const bId  = nextDrillId();
         const bPct = f.total > 0 ? (b.total / f.total * 100).toFixed(0) : 0;
@@ -5688,7 +5748,6 @@ function renderCaixaConf(body, data) {
     } else {
       innerHtml = vendasTableHtml(f.bandeiras?.[0]?.vendas || [], 'Vendedor');
     }
-
     return `<div class="cxconf-row cxconf-row--clickable" data-cxtgt="${drillId}">
       <span class="cxconf-label">${_escHtml(f.forma)}</span>
       <div style="display:flex;align-items:center;gap:.6rem;flex-shrink:0">
@@ -5701,26 +5760,37 @@ function renderCaixaConf(body, data) {
   }
 
   const formasHtml = formasPagamento.length
-    ? formasPagamento.map(f => formaRowHtml(f)).join('')
+    ? formasPagamento.map(f => formaRowHtml(f)).join('') + (totalSangria > 0 ? `
+        <div class="cxconf-divider"></div>
+        <div class="cxconf-row">
+          <span class="cxconf-label">Sangria</span>
+          <span class="cxconf-val cxconf-neg">- ${fR(totalSangria)}</span>
+        </div>
+        <div class="cxconf-row cxconf-row--total">
+          <span class="cxconf-label">Saldo em caixa</span>
+          <span class="cxconf-val ${saldoCaixa >= 0 ? 'cxconf-pos' : 'cxconf-neg'}">${fR(saldoCaixa)}</span>
+        </div>` : '')
     : '<div class="cxconf-empty">Formas de pagamento não disponíveis no Microvix</div>';
 
-  const vendHtml = vendedores.length
-    ? vendedores.map(v => {
-        const nome  = empByMxCod[v.cod] || v.nome || `Vendedor ${v.cod}`;
-        const pct   = totalVendas > 0 ? (v.total / totalVendas * 100).toFixed(0) : 0;
-        const vId   = nextDrillId();
-        const vRows = (v.vendas || []).map(s => ({ ...s, vendedor: s.forma }));
-        return `<div class="cxconf-row cxconf-row--clickable" data-cxtgt="${vId}">
-          <span class="cxconf-label">${_escHtml(nome)}</span>
-          <div style="display:flex;align-items:center;gap:.6rem;flex-shrink:0">
-            <span class="cxconf-pct">${pct}%</span>
-            <span class="cxconf-val">${fR(v.total)}</span>
-            <svg class="cxconf-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-          </div>
-        </div>
-        <div class="cxconf-drill-wrap hidden" id="${vId}">${vendasTableHtml(vRows, 'Forma de Pag.')}</div>`;
-      }).join('')
-    : '<div class="cxconf-empty">Nenhuma venda registrada</div>';
+  // ── Etapa 3: Integração Rede ──
+  const redeHtml = `<div class="cxconf-rede-placeholder">
+    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".4"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+    <span>Importação via planilha em breve</span>
+  </div>`;
+
+  // ── Fechar caixa ──
+  const fecharHtml = isAdmin && !fechado ? `
+    <div class="cxconf-fechar-wrap">
+      <button id="caixaFecharBtn" class="cxconf-fechar-btn ${allDone ? '' : 'cxconf-fechar-btn--disabled'}"
+        ${allDone ? '' : 'disabled'}>
+        Fechar Caixa do Dia
+      </button>
+      ${!allDone ? '<span class="cxconf-fechar-hint">Confira todas as etapas para fechar</span>' : ''}
+    </div>` : fechado ? `
+    <div class="cxconf-fechar-wrap">
+      <div class="cxconf-fechado-info">Caixa fechado por <strong>${_escHtml(status.fechadoBy || '')}</strong>
+        ${status.fechadoTs ? ' em ' + new Date(status.fechadoTs).toLocaleString('pt-BR') : ''}</div>
+    </div>` : '';
 
   body.innerHTML = `
     <div class="cxconf-header">
@@ -5728,35 +5798,36 @@ function renderCaixaConf(body, data) {
       <span class="cxconf-date">${date.split('-').reverse().join('/')}</span>
       <span class="cxconf-total-label">Total do dia</span>
       <span class="cxconf-total-val">${fR(totalVendas)}</span>
+      ${statusBadge}
     </div>
-    <div class="cxconf-grid">
-      <div class="cxconf-card">
-        <div class="cxconf-card-title">Formas de Pagamento</div>
-        ${formasHtml}
-        ${totalSangria > 0 ? `
-          <div class="cxconf-divider"></div>
-          <div class="cxconf-row">
-            <span class="cxconf-label">Sangria</span>
-            <span class="cxconf-val cxconf-neg">- ${fR(totalSangria)}</span>
-          </div>
-          <div class="cxconf-row cxconf-row--total">
-            <span class="cxconf-label">Saldo em caixa</span>
-            <span class="cxconf-val ${saldoCaixa >= 0 ? 'cxconf-pos' : 'cxconf-neg'}">${fR(saldoCaixa)}</span>
-          </div>` : ''}
-      </div>
-      <div class="cxconf-card">
-        <div class="cxconf-card-title">Por Vendedor</div>
-        ${vendHtml}
-        ${vendedores.length > 0 ? `
-          <div class="cxconf-divider"></div>
-          <div class="cxconf-row cxconf-row--total">
-            <span class="cxconf-label">Total</span>
-            <span class="cxconf-val">${fR(totalVendas)}</span>
-          </div>` : ''}
-      </div>
-    </div>`;
 
-  // Drill-down: toggle ao clicar em qualquer linha expansível
+    <div class="cxconf-steps">
+      <div class="cxconf-step ${steps.alertas?.ok ? 'cxconf-step--done' : ''}">
+        ${stepHeaderHtml('alertas', 'Vendas com Alerta', '⚠️')}
+        <div class="cxconf-step-body">
+          <div class="cxconf-step-count">${vendasAlerta.length} venda${vendasAlerta.length !== 1 ? 's' : ''} com desconto ou parcelamento</div>
+          ${alertasHtml}
+        </div>
+      </div>
+
+      <div class="cxconf-step ${steps.formas?.ok ? 'cxconf-step--done' : ''}">
+        ${stepHeaderHtml('formas', 'Formas de Pagamento', '💳')}
+        <div class="cxconf-step-body">
+          ${formasHtml}
+        </div>
+      </div>
+
+      <div class="cxconf-step ${steps.rede?.ok ? 'cxconf-step--done' : ''}">
+        ${stepHeaderHtml('rede', 'Integração com a Rede (Cartões)', '🔗')}
+        <div class="cxconf-step-body">
+          ${redeHtml}
+        </div>
+      </div>
+    </div>
+
+    ${fecharHtml}`;
+
+  // Drill-down
   body.querySelectorAll('.cxconf-row--clickable').forEach(row => {
     row.addEventListener('click', () => {
       const drill = document.getElementById(row.dataset.cxtgt);
@@ -5765,6 +5836,46 @@ function renderCaixaConf(body, data) {
       drill.classList.toggle('hidden', open);
       row.querySelector('.cxconf-chevron')?.classList.toggle('cxconf-chevron--open', !open);
     });
+  });
+
+  // Botões de conferência por etapa
+  body.querySelectorAll('.cxconf-step-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const step = btn.dataset.step;
+      const ok   = btn.dataset.ok === '1';
+      btn.disabled = true;
+      try {
+        const boardSel = document.getElementById('caixaConfBoard');
+        const dateInp  = document.getElementById('caixaConfDate');
+        const boardVal = !S.user?.board || S.user?.board === 'escritorio'
+          ? (boardSel.value || Object.keys(BOARDS).find(k => k !== 'site'))
+          : S.user.board;
+        await apiFetch('POST', '/api/caixa-status', { board: boardVal, date: dateInp.value, step, ok });
+        loadCaixaConf();
+      } catch (e) {
+        alert('Erro: ' + e.message);
+        btn.disabled = false;
+      }
+    });
+  });
+
+  // Botão fechar caixa
+  document.getElementById('caixaFecharBtn')?.addEventListener('click', async () => {
+    if (!confirm('Confirmar fechamento do caixa do dia?')) return;
+    const btn = document.getElementById('caixaFecharBtn');
+    btn.disabled = true;
+    try {
+      const boardSel = document.getElementById('caixaConfBoard');
+      const dateInp  = document.getElementById('caixaConfDate');
+      const boardVal = !S.user?.board || S.user?.board === 'escritorio'
+        ? (boardSel.value || Object.keys(BOARDS).find(k => k !== 'site'))
+        : S.user.board;
+      await apiFetch('POST', '/api/caixa-fechar', { board: boardVal, date: dateInp.value });
+      loadCaixaConf();
+    } catch (e) {
+      alert('Erro: ' + e.message);
+      btn.disabled = false;
+    }
   });
 }
 
