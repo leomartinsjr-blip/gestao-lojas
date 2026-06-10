@@ -1420,15 +1420,17 @@
 
   // Mapeamento completo das formas do Microvix → bandeira + modalidade + parcelas
   // Baseado no FaturamentoPorPlanos exportado
+  const _C10 = [1,2,3,4,5,6,7,8,9,10];
   const TAXAS_BANDEIRAS = [
-    { id: 'mastercard', label: 'Mastercard',    credito: [1,2,3,4,5,6,7,8,9,10], debito: false },
-    { id: 'visa',       label: 'Visa',          credito: [1,2,3,4,5,6,7,8,9,10], debito: false },
-    { id: 'elo',        label: 'Elo',           credito: [1,2,3,4,5,6,7,8],       debito: true  },
-    { id: 'amex',       label: 'Amex',          credito: [1,2,3,4,5,6,10],        debito: false },
-    { id: 'maestro',    label: 'Maestro',       credito: [],                       debito: true  },
-    { id: 'visa_elec',  label: 'Visa Electron', credito: [],                       debito: true  },
-    { id: 'hipercard',  label: 'Hipercard',     credito: [1,2,3,4,5,6,7,8,9,10], debito: false },
-    { id: 'pix',        label: 'PIX',           credito: [],                       debito: false, pix: true },
+    { id: 'mastercard', label: 'Mastercard',    credito: _C10, debito: false },
+    { id: 'visa',       label: 'Visa',          credito: _C10, debito: false },
+    { id: 'elo',        label: 'Elo',           credito: _C10, debito: true  },
+    { id: 'amex',       label: 'Amex',          credito: _C10, debito: false },
+    { id: 'maestro',    label: 'Maestro',       credito: _C10, debito: true  },
+    { id: 'visa_elec',  label: 'Visa Electron', credito: _C10, debito: true  },
+    { id: 'hipercard',  label: 'Hipercard',     credito: _C10, debito: false },
+    { id: 'diners',     label: 'Diners',        credito: _C10, debito: false },
+    { id: 'pix',        label: 'PIX',           credito: [],   debito: false, pix: true },
   ];
 
   let taxasData = {};
