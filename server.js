@@ -7419,7 +7419,8 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       const op    = (r.operacao || '').trim().toUpperCase();
       if (op !== 'S' && op !== 'DS') continue;
       const serie = String(r.serie || r.serie_documento || '').trim();
-      if (serie === '999' || (serie === '4' && op !== 'DS')) continue;
+      if (serie === '999') continue;
+      // Série 4: processa normalmente — pós-filtro vai remover os de total positivo (transferências internas)
       const doc   = String(r.documento || '').trim();
       const ident = String(r.identificador || '').trim();
       if (!doc) continue;
@@ -7440,6 +7441,7 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
         docMap[doc] = {
           doc,
           board,
+          serie,
           data:         dataISO,
           hora:         String(r.hora_lancamento || r.hora_documento || r.hora_emissao || '').trim().slice(0, 5),
           valorTotal:   0, // acumulado abaixo a partir de valor_liquido de cada item
@@ -7632,7 +7634,9 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
 
     // ── Montar lista e agrupamentos ─────────────────────────────────────────
     const vendas = Object.values(docMap)
-      .filter(v => v.valorTotal > 0)
+      // Série 4 com total positivo = transferência interna / lançamento especial → exclui
+      // Série 4 com total negativo = devolução → mantém para subtrair do total
+      .filter(v => v.serie === '4' ? v.valorTotal < 0 : v.valorTotal > 0)
       .sort((a, b) => (a.data + a.hora).localeCompare(b.data + b.hora))
       .map(v => ({
         doc:          v.doc,
