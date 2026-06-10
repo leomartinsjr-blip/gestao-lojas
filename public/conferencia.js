@@ -257,6 +257,7 @@
       } else {
         _rotinaStatus = null; _rotinaBoard = null; _rotinaDate = null;
       }
+      _redeRows = null;
       render(_data);
     } catch(e) {
       $('vResult').innerHTML = `<div class="cf-empty" style="color:${P('alert')}">⚠ ${esc(e.message)}</div>`;
@@ -559,6 +560,219 @@
         if (typeof loadCxView === 'function') loadCxView();
       } catch(e) { alert(e.message); btn.disabled = false; }
     };
+
+    // Mostra/oculta seção de conciliação de cartões
+    renderCartoesSection();
+  }
+
+  // ── Conciliação de Cartões (Passo 2) ────────────────────────────────────
+  let _redeRows = null; // linhas parseadas do Excel da Rede
+
+  function renderCartoesSection() {
+    const el = $('vCartoesSection');
+    if (!el) return;
+    if (!_rotinaStatus || !_rotinaBoard || !_rotinaDate || _rotinaStatus.fechado) {
+      el.style.display = 'none'; el.innerHTML = ''; return;
+    }
+    const st = _rotinaStatus;
+    // Só aparece quando step 2 está ativo (vendasOk = true)
+    if (!st.vendasOk) { el.style.display = 'none'; el.innerHTML = ''; return; }
+
+    const isDone = st.cartoesOk;
+
+    el.innerHTML = `
+      <div class="conc-box">
+        <div class="conc-hdr">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg>
+          Passo 2 — Conciliação de Cartões
+          ${isDone ? '<span class="conc-badge ok" style="margin-left:8px">✅ Confirmado</span>' : '<span class="conc-badge nok" style="margin-left:8px">Pendente</span>'}
+        </div>
+        <div class="conc-body">
+          ${_redeRows ? renderConcTable() : renderDropZone()}
+          ${_redeRows ? `
+            <div class="conc-summary">
+              <span class="conc-file-info">📎 <strong>${_redeRows.length}</strong> transações importadas da Rede</span>
+              <button id="concReimportar" style="font-size:11px;padding:3px 10px;border-radius:6px;border:1px solid var(--cf-border);color:var(--cf-muted);background:transparent;cursor:pointer;font-family:inherit">↩ Reimportar</button>
+              ${!isDone ? `<button id="concConfirmar" class="rotina-step-btn btn-ok" style="margin-left:auto" ${concAllOk() ? '' : 'disabled'}>✓ Confirmar Cartões</button>` : ''}
+              ${isDone  ? `<button id="concDesfazer" class="rotina-step-btn btn-undo" style="margin-left:auto">↩ Desfazer</button>` : ''}
+            </div>` : ''}
+        </div>
+      </div>`;
+
+    el.style.display = 'block';
+
+    // Drag & drop + click no dropzone
+    const drop = el.querySelector('.conc-drop');
+    if (drop) {
+      drop.addEventListener('click', () => {
+        const inp = document.createElement('input');
+        inp.type = 'file'; inp.accept = '.xlsx,.xls';
+        inp.onchange = e => handleRedeFile(e.target.files[0]);
+        inp.click();
+      });
+      drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('drag-over'); });
+      drop.addEventListener('dragleave', () => drop.classList.remove('drag-over'));
+      drop.addEventListener('drop', e => { e.preventDefault(); drop.classList.remove('drag-over'); handleRedeFile(e.dataTransfer.files[0]); });
+    }
+
+    const reimp = el.querySelector('#concReimportar');
+    if (reimp) reimp.onclick = () => { _redeRows = null; renderCartoesSection(); };
+
+    const conf = el.querySelector('#concConfirmar');
+    if (conf) conf.onclick = async () => {
+      conf.disabled = true; conf.textContent = '…';
+      try {
+        const res = await api('POST', '/api/caixa-status', { board: _rotinaBoard, date: _rotinaDate, action: 'setCartoesOk', ok: true });
+        _rotinaStatus = res.status;
+        renderRotina(_data);
+      } catch(e) { alert(e.message); }
+    };
+
+    const desf = el.querySelector('#concDesfazer');
+    if (desf) desf.onclick = async () => {
+      const res = await api('POST', '/api/caixa-status', { board: _rotinaBoard, date: _rotinaDate, action: 'setCartoesOk', ok: false });
+      _rotinaStatus = res.status;
+      renderRotina(_data);
+    };
+  }
+
+  function renderDropZone() {
+    return `
+      <div class="conc-drop">
+        <div class="conc-drop-ico">📂</div>
+        <div class="conc-drop-txt">
+          Arraste o Excel da Rede aqui ou <strong>clique para selecionar</strong><br>
+          <span style="font-size:10px;margin-top:4px;display:block">Relatório de Vendas exportado do portal Rede (.xlsx)</span>
+        </div>
+      </div>`;
+  }
+
+  function handleRedeFile(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const wb = XLSX.read(e.target.result, { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+        // Localiza a linha de cabeçalho (contém "data da venda")
+        let hdrIdx = rows.findIndex(r => String(r[0]||'').toLowerCase().includes('data da venda'));
+        if (hdrIdx < 0) { alert('Não foi possível localizar o cabeçalho no arquivo. Verifique se é o relatório correto.'); return; }
+        const hdr = rows[hdrIdx].map(c => String(c||'').toLowerCase().trim());
+        const iData     = hdr.indexOf('data da venda');
+        const iStatus   = hdr.indexOf('status da venda');
+        const iValor    = hdr.findIndex(h => h.includes('valor da venda original'));
+        const iMod      = hdr.indexOf('modalidade');
+        const iBandeira = hdr.indexOf('bandeira');
+
+        _redeRows = [];
+        for (let i = hdrIdx + 1; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r[iData]) continue;
+          const status = String(r[iStatus]||'').toLowerCase().trim();
+          if (status !== 'aprovada' && status !== 'pago') continue;
+          const valorRaw = String(r[iValor]||'').replace(/R\$\s*/,'').replace(/\./g,'').replace(',','.');
+          const valor = parseFloat(valorRaw) || 0;
+          if (valor === 0) continue;
+          const mod      = String(r[iMod]     ||'').toLowerCase().trim();
+          const bandeira = String(r[iBandeira]||'').trim();
+          _redeRows.push({ mod, bandeira: bandeira === '-' ? '' : bandeira, valor });
+        }
+        renderCartoesSection();
+      } catch(err) { alert('Erro ao ler arquivo: ' + err.message); }
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function buildRedeAgrupado() {
+    if (!_redeRows) return {};
+    const map = {};
+    for (const r of _redeRows) {
+      const key = `${r.mod}::${r.bandeira.toLowerCase()}`;
+      if (!map[key]) map[key] = { mod: r.mod, bandeira: r.bandeira, total: 0 };
+      map[key].total += r.valor;
+    }
+    return map;
+  }
+
+  function buildMicrovixAgrupado() {
+    if (!_data?.porForma) return {};
+    const map = {};
+    for (const f of _data.porForma) {
+      if (f.total <= 0) continue; // ignora devoluções
+      const forma = (f.forma||'').toLowerCase();
+      let mod;
+      if (/cr[eé]d/i.test(forma))     mod = 'crédito';
+      else if (/d[eé]b/i.test(forma)) mod = 'débito';
+      else if (/pix/i.test(forma))    mod = 'pix';
+      else continue; // dinheiro, crediário etc. não estão na Rede
+      const bandeira = (f.bandeira||'').trim();
+      const key = `${mod}::${bandeira.toLowerCase()}`;
+      if (!map[key]) map[key] = { mod, bandeira, total: 0 };
+      map[key].total += f.total;
+    }
+    return map;
+  }
+
+  function concAllOk() {
+    if (!_redeRows) return false;
+    const rede = buildRedeAgrupado();
+    const mx   = buildMicrovixAgrupado();
+    const keys = new Set([...Object.keys(rede), ...Object.keys(mx)]);
+    for (const k of keys) {
+      const diff = Math.abs((rede[k]?.total||0) - (mx[k]?.total||0));
+      if (diff > 0.10) return false;
+    }
+    return keys.size > 0;
+  }
+
+  function renderConcTable() {
+    const rede = buildRedeAgrupado();
+    const mx   = buildMicrovixAgrupado();
+    const keys = new Set([...Object.keys(rede), ...Object.keys(mx)]);
+    if (!keys.size) return '<div class="cf-empty">Nenhum dado de cartão encontrado.</div>';
+
+    let totalRede = 0, totalMx = 0, totalDiff = 0;
+    const rows = [...keys].sort().map(k => {
+      const r = rede[k]?.total || 0;
+      const m = mx[k]?.total   || 0;
+      const d = r - m;
+      const ok = Math.abs(d) <= 0.10;
+      totalRede += r; totalMx += m; totalDiff += d;
+      const entry = rede[k] || mx[k];
+      const onlyRede = !!rede[k] && !mx[k];
+      const onlyMx   = !rede[k] && !!mx[k];
+      const rowCls   = onlyRede ? 'only-rede' : onlyMx ? 'only-microvix' : ok ? 'ok' : 'nok';
+      const bandLabel = entry.bandeira || (entry.mod === 'pix' ? '—' : '—');
+      return `<tr class="${rowCls}">
+        <td style="text-transform:capitalize">${esc(entry.mod)}</td>
+        <td>${esc(bandLabel)}</td>
+        <td class="num">${r ? fmtR(r) : '<span style="color:var(--cf-muted)">—</span>'}</td>
+        <td class="num">${m ? fmtR(m) : '<span style="color:var(--cf-muted)">—</span>'}</td>
+        <td class="num diff">${ok ? '<span style="color:var(--cf-green)">✓</span>' : (d > 0 ? '+' : '') + fmtR(d)}</td>
+      </tr>`;
+    }).join('');
+
+    const allOk = Math.abs(totalDiff) <= 0.10;
+    return `
+      <table class="conc-tbl">
+        <thead><tr>
+          <th>Modalidade</th>
+          <th>Bandeira</th>
+          <th class="num">Rede (extrato)</th>
+          <th class="num">Microvix</th>
+          <th class="num">Diferença</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr>
+          <td colspan="2">Total</td>
+          <td class="num">${fmtR(totalRede)}</td>
+          <td class="num">${fmtR(totalMx)}</td>
+          <td class="num diff" style="color:${allOk ? 'var(--cf-green)' : 'var(--cf-alert)'};font-weight:800">
+            ${allOk ? '✓ OK' : (totalDiff > 0 ? '+' : '') + fmtR(totalDiff)}
+          </td>
+        </tr></tfoot>
+      </table>`;
   }
 
   function kpiCard(color, iconSvg, value, label, sub, extraClass, badge) {

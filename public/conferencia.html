@@ -424,6 +424,51 @@ td.muted  { color: var(--cf-muted); }
 .cx-day-badge--aberto  { background:#F8514920; color:var(--cf-alert); }
 .cx-day-badge--vazio   { background:var(--cf-card2); color:var(--cf-muted); }
 
+/* ── Conciliação cartões ────────────────────────────────────── */
+.conc-box {
+  background: var(--cf-card); border: 1px solid var(--cf-border);
+  border-radius: var(--r); overflow: hidden;
+}
+.conc-hdr {
+  padding: 12px 18px; border-bottom: 1px solid var(--cf-border);
+  display: flex; align-items: center; gap: 10px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: .5px; color: var(--cf-text);
+}
+.conc-body { padding: 16px 18px; }
+.conc-drop {
+  border: 2px dashed var(--cf-border); border-radius: 8px;
+  padding: 28px; text-align: center; cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+.conc-drop:hover, .conc-drop.drag-over {
+  border-color: var(--cf-primary); background: #4493F808;
+}
+.conc-drop-ico { font-size: 28px; margin-bottom: 8px; }
+.conc-drop-txt { font-size: 12px; color: var(--cf-muted); }
+.conc-drop-txt strong { color: var(--cf-primary); }
+.conc-tbl { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 12px; }
+.conc-tbl th {
+  padding: 7px 12px; font-size: 10px; font-weight: 700; color: var(--cf-muted);
+  text-transform: uppercase; letter-spacing: .4px;
+  border-bottom: 1px solid var(--cf-border); text-align: left;
+  background: var(--cf-card2);
+}
+.conc-tbl th.num, .conc-tbl td.num { text-align: right; }
+.conc-tbl td { padding: 9px 12px; border-bottom: 1px solid var(--cf-border); }
+.conc-tbl tr:last-child td { border-bottom: none; }
+.conc-tbl tr.ok  td.diff { color: var(--cf-green); font-weight: 700; }
+.conc-tbl tr.nok td.diff { color: var(--cf-alert); font-weight: 700; }
+.conc-tbl tr.only-rede td { color: var(--cf-accent); }
+.conc-tbl tr.only-microvix td { color: var(--cf-muted); }
+.conc-tbl tfoot td { background: var(--cf-card2); font-weight: 700; border-top: 2px solid var(--cf-border); padding: 10px 12px; }
+.conc-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 10px; font-size: 10px; font-weight: 700; }
+.conc-badge.ok  { background: var(--cf-green-bg);  color: var(--cf-green);  }
+.conc-badge.nok { background: var(--cf-alert-bg);  color: var(--cf-alert);  }
+.conc-summary { display: flex; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+.conc-file-info { font-size: 11px; color: var(--cf-muted); }
+.conc-file-info strong { color: var(--cf-text); }
+
 /* ── Rotina stepper ─────────────────────────────────────────── */
 .rotina-bar {
   background: var(--cf-card); border: 1px solid var(--cf-border);
@@ -566,6 +611,9 @@ td.muted  { color: var(--cf-muted); }
 
   <!-- Rotina diária (preenchido pelo JS — só aparece em loja+dia único) -->
   <div id="vRotina" style="display:none;margin-bottom:16px"></div>
+
+  <!-- Conciliação de cartões (passo 2 da rotina) -->
+  <div id="vCartoesSection" style="display:none;margin-bottom:16px"></div>
 
   <!-- KPI row (preenchido pelo JS) -->
   <div id="vKpiRow" class="kpi-row" style="display:none"></div>
