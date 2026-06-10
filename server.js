@@ -7231,6 +7231,45 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Extrato Rede (mensal) ─────────────────────────────────────────────────────
+async function getRedeExtratoCol() {
+  if (!mongoDb) throw new Error('MongoDB não conectado');
+  const col = mongoDb.collection('confRedeExtrato');
+  await col.createIndex({ board: 1, date: 1 }, { unique: true, background: true }).catch(() => {});
+  return col;
+}
+
+// POST /api/conferencia/rede-extrato — salva extrato mensal agrupado por dia
+// body: { board, data: { "2026-06-01": [{ mod, bandeira, valor }], ... } }
+app.post('/api/conferencia/rede-extrato', requireAuth, async (req, res) => {
+  try {
+    const user = req.session.user;
+    const { board, data } = req.body;
+    if (!board || !data) return res.status(400).json({ error: 'board e data obrigatórios' });
+    const col = await getRedeExtratoCol();
+    const ops = Object.entries(data).map(([date, rows]) => ({
+      updateOne: {
+        filter: { board, date },
+        update: { $set: { board, date, rows, uploadedBy: user.name || user.login, uploadedAt: new Date() } },
+        upsert: true,
+      },
+    }));
+    if (ops.length) await col.bulkWrite(ops);
+    res.json({ ok: true, dias: ops.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/conferencia/rede-extrato?board=X&date=Y
+app.get('/api/conferencia/rede-extrato', requireAuth, async (req, res) => {
+  try {
+    const { board, date } = req.query;
+    if (!board || !date) return res.status(400).json({ error: 'board e date obrigatórios' });
+    const col = await getRedeExtratoCol();
+    const entry = await col.findOne({ board, date });
+    res.json(entry ? { rows: entry.rows, uploadedBy: entry.uploadedBy, uploadedAt: entry.uploadedAt } : { rows: null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Conferência Revisão helpers ──────────────────────────────────────────────
 async function getConferenciaRevisoesCol() {
   if (!mongoDb) throw new Error('MongoDB não conectado');

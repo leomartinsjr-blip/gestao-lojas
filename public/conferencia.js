@@ -257,7 +257,7 @@
       } else {
         _rotinaStatus = null; _rotinaBoard = null; _rotinaDate = null;
       }
-      _redeRows = null;
+      _redeRows = null; _redeRowsSource = null; _redeRowsServerInfo = null;
       render(_data);
     } catch(e) {
       $('vResult').innerHTML = `<div class="cf-empty" style="color:${P('alert')}">⚠ ${esc(e.message)}</div>`;
@@ -568,7 +568,10 @@
   // ── Conciliação de Cartões (Passo 2) ────────────────────────────────────
   let _redeRows = null; // linhas parseadas do Excel da Rede
 
-  function renderCartoesSection() {
+  let _redeRowsSource = null; // 'manual' | 'server'
+  let _redeRowsServerInfo = null; // { uploadedBy, uploadedAt }
+
+  async function renderCartoesSection() {
     const el = $('vCartoesSection');
     if (!el) return;
     if (!_rotinaStatus || !_rotinaBoard || !_rotinaDate || _rotinaStatus.fechado) {
@@ -578,7 +581,22 @@
     // Só aparece quando step 2 está ativo (vendasOk = true)
     if (!st.vendasOk) { el.style.display = 'none'; el.innerHTML = ''; return; }
 
+    // Auto-load from server if no rows yet
+    if (!_redeRows) {
+      try {
+        const saved = await api('GET', `/api/conferencia/rede-extrato?board=${_rotinaBoard}&date=${_rotinaDate}`);
+        if (saved && saved.rows && saved.rows.length > 0) {
+          _redeRows = saved.rows;
+          _redeRowsSource = 'server';
+          _redeRowsServerInfo = { uploadedBy: saved.uploadedBy, uploadedAt: saved.uploadedAt };
+        }
+      } catch(e) { /* server may not have data yet */ }
+    }
+
     const isDone = st.cartoesOk;
+    const serverBadge = (_redeRowsSource === 'server' && _redeRowsServerInfo)
+      ? `<span style="font-size:10px;color:var(--cf-muted);margin-left:6px">📅 extrato mensal • por ${_redeRowsServerInfo.uploadedBy||'?'}</span>`
+      : '';
 
     el.innerHTML = `
       <div class="conc-box">
@@ -591,7 +609,7 @@
           ${_redeRows ? renderConcTable() : renderDropZone()}
           ${_redeRows ? `
             <div class="conc-summary">
-              <span class="conc-file-info">📎 <strong>${_redeRows.length}</strong> transações importadas da Rede</span>
+              <span class="conc-file-info">📎 <strong>${_redeRows.length}</strong> transações${serverBadge}</span>
               <button id="concReimportar" style="font-size:11px;padding:3px 10px;border-radius:6px;border:1px solid var(--cf-border);color:var(--cf-muted);background:transparent;cursor:pointer;font-family:inherit">↩ Reimportar</button>
               ${!isDone ? `<button id="concConfirmar" class="rotina-step-btn btn-ok" style="margin-left:auto" ${concAllOk() ? '' : 'disabled'}>✓ Confirmar Cartões</button>` : ''}
               ${isDone  ? `<button id="concDesfazer" class="rotina-step-btn btn-undo" style="margin-left:auto">↩ Desfazer</button>` : ''}
@@ -616,7 +634,7 @@
     }
 
     const reimp = el.querySelector('#concReimportar');
-    if (reimp) reimp.onclick = () => { _redeRows = null; renderCartoesSection(); };
+    if (reimp) reimp.onclick = () => { _redeRows = null; _redeRowsSource = null; _redeRowsServerInfo = null; renderCartoesSection(); };
 
     const conf = el.querySelector('#concConfirmar');
     if (conf) conf.onclick = async () => {
@@ -1625,6 +1643,140 @@
         </table>
       </div>`;
   }
+
+  // ════════════════════════════════════════════════════════════════════════
+  // EXTRATO MENSAL REDE — upload + pre-load
+  // ════════════════════════════════════════════════════════════════════════
+
+  // parsed data for the monthly modal: { "2026-06-01": [{mod, bandeira, valor}, …], … }
+  let _redeExtratoMensal = null;
+
+  // Open modal and populate board select
+  $('btnImportarRedesMensal').addEventListener('click', () => {
+    const sel = $('redeExtratoBoard');
+    sel.innerHTML = '<option value="">Selecionar loja…</option>';
+    LOJAS.forEach(b => { const o = document.createElement('option'); o.value=b; o.textContent=LOJA_LABEL[b]||b; sel.appendChild(o); });
+    // Pre-select currently viewed board if single
+    const cur = $('cxBoard')?.value;
+    if (cur && cur !== 'all') sel.value = cur;
+    $('redeExtratoStatus').textContent = '';
+    $('redeExtratoDropLabel').textContent = 'Arraste o arquivo ou clique aqui';
+    $('redeExtratoFileInput').value = '';
+    _redeExtratoMensal = null;
+    const btn = $('btnConfirmarExtratoRede');
+    btn.style.opacity = '.5'; btn.style.pointerEvents = 'none';
+    $('redeExtratoModal').style.display = 'flex';
+  });
+
+  // Handle file chosen in the modal
+  window.handleRedeExtratoMonthFile = function(file) {
+    if (!file) return;
+    $('redeExtratoStatus').textContent = 'Lendo arquivo…';
+    $('redeExtratoDropLabel').textContent = file.name;
+    const reader = new FileReader();
+    reader.onload = e => {
+      try {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        const ws = wb.Sheets[wb.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+
+        // Try to find columns: date, bandeira/produto, modalidade, valor
+        // Typical Rede layout has headers in first or second row
+        let iData=-1, iBandeira=-1, iMod=-1, iValor=-1;
+        const hdrs = rows.find(r => r.some(c => /data|dt\b/i.test(String(c))));
+        if (!hdrs) throw new Error('Não encontrei coluna de data no arquivo.');
+        hdrs.forEach((h, i) => {
+          const s = String(h||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+          if (iData<0     && /^(data|dt\b|data\s+transac)/.test(s)) iData = i;
+          if (iBandeira<0 && /(bandeira|produto|adquirente|cartao|cartão)/.test(s)) iBandeira = i;
+          if (iMod<0      && /(modalidade|mod\b|tipo)/.test(s)) iMod = i;
+          if (iValor<0    && /(valor|vlr|montante|total)/.test(s)) iValor = i;
+        });
+        if (iData<0) throw new Error('Coluna de data não encontrada.');
+        if (iValor<0) throw new Error('Coluna de valor não encontrada.');
+
+        const byDay = {};
+        const hdrsRowIdx = rows.indexOf(hdrs);
+        for (let ri = hdrsRowIdx+1; ri < rows.length; ri++) {
+          const r = rows[ri];
+          if (!r || r.every(c => c==='' || c==null)) continue;
+
+          // Parse date
+          let dateStr = '';
+          const rawDate = r[iData];
+          if (typeof rawDate === 'number') {
+            // Excel serial date
+            const d = XLSX.SSF.parse_date_code(rawDate);
+            if (d) {
+              const mm = String(d.m).padStart(2,'0'), dd = String(d.d).padStart(2,'0');
+              dateStr = `${d.y}-${mm}-${dd}`;
+            }
+          } else {
+            const s = String(rawDate||'').trim();
+            // dd/mm/yyyy or yyyy-mm-dd
+            const m1 = s.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+            const m2 = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (m1) dateStr = `${m1[3]}-${m1[2]}-${m1[1]}`;
+            else if (m2) dateStr = s.slice(0,10);
+          }
+          if (!dateStr) continue;
+
+          const rawVal = r[iValor];
+          let valor;
+          if (typeof rawVal === 'number') {
+            valor = rawVal;
+          } else {
+            valor = parseFloat(String(rawVal||'').replace(/R\$\s*/,'').replace(/\./g,'').replace(',','.')) || 0;
+          }
+          if (!valor) continue;
+
+          const bandeira = iBandeira>=0 ? String(r[iBandeira]||'').trim() : '';
+          const rawMod   = iMod>=0     ? String(r[iMod]||'').trim().toLowerCase() : '';
+          const mod      = /cred/i.test(rawMod) ? 'crédito' : /deb/i.test(rawMod) ? 'débito' : /pix/i.test(rawMod) ? 'pix' : rawMod;
+
+          if (!byDay[dateStr]) byDay[dateStr] = [];
+          byDay[dateStr].push({ mod, bandeira, valor });
+        }
+
+        const nDays = Object.keys(byDay).length;
+        if (nDays === 0) throw new Error('Nenhum lançamento encontrado no arquivo.');
+
+        _redeExtratoMensal = byDay;
+        $('redeExtratoStatus').textContent = `✓ ${nDays} dia(s) encontrado(s) no arquivo`;
+        const btn = $('btnConfirmarExtratoRede');
+        btn.style.opacity = '1'; btn.style.pointerEvents = 'auto';
+      } catch(err) {
+        $('redeExtratoStatus').textContent = '⚠ ' + err.message;
+        _redeExtratoMensal = null;
+        const btn = $('btnConfirmarExtratoRede');
+        btn.style.opacity = '.5'; btn.style.pointerEvents = 'none';
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  // Confirm upload → POST to server
+  window.confirmarExtratoRedeMensal = async function() {
+    const board = $('redeExtratoBoard').value;
+    if (!board) { alert('Selecione a loja.'); return; }
+    if (!_redeExtratoMensal) return;
+    const btn = $('btnConfirmarExtratoRede');
+    btn.disabled = true; btn.textContent = 'Salvando…';
+    try {
+      await api('POST', '/api/conferencia/rede-extrato', { board, data: _redeExtratoMensal });
+      const nDays = Object.keys(_redeExtratoMensal).length;
+      $('redeExtratoStatus').textContent = `✓ Salvo! ${nDays} dia(s) disponíveis na conferência.`;
+      btn.textContent = 'Salvo ✓';
+      setTimeout(() => {
+        $('redeExtratoModal').style.display = 'none';
+        // If currently viewing cartões for same board, reload
+        if (_rotinaBoard && _rotinaBoard === board && _rotinaDate) renderCartoesSection();
+      }, 1200);
+    } catch(err) {
+      $('redeExtratoStatus').textContent = '⚠ ' + err.message;
+      btn.disabled = false; btn.textContent = 'Salvar';
+    }
+  };
 
   // ════════════════════════════════════════════════════════════════════════
   // DEBUG

@@ -622,6 +622,11 @@ td.muted  { color: var(--cf-muted); }
       <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--cf-muted)">Conferência de Caixa</span>
       <span id="cxBreadcrumb" style="font-size:11px;color:var(--cf-muted)"></span>
       <div style="margin-left:auto;display:flex;align-items:center;gap:6px">
+        <button id="btnImportarRedesMensal" title="Importar extrato mensal da Rede para conciliação automática"
+          style="background:var(--cf-card2);border:1px solid var(--cf-border);color:var(--cf-muted);padding:5px 12px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:5px">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          Extrato Rede
+        </button>
         <input type="month" id="cxMonth" class="cx-month-input"/>
       </div>
     </div>
@@ -761,6 +766,43 @@ td.muted  { color: var(--cf-muted); }
     <div class="cf-modal-actions">
       <button class="btn-cancel" id="modalRepCancelar">Cancelar</button>
       <button class="btn-danger" id="modalRepConfirmar">✗ Confirmar Reprovação</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: importar extrato mensal Rede -->
+<div id="redeExtratoModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;align-items:center;justify-content:center">
+  <div style="background:var(--cf-card);border:1px solid var(--cf-border);border-radius:14px;padding:28px;min-width:360px;max-width:460px;width:90%;box-shadow:0 8px 40px rgba(0,0,0,.4)">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:18px">
+      <span style="font-size:16px;font-weight:700;color:var(--cf-text)">Importar Extrato Mensal — Rede</span>
+      <button onclick="document.getElementById('redeExtratoModal').style.display='none'" style="background:none;border:none;color:var(--cf-muted);font-size:20px;cursor:pointer;line-height:1">&times;</button>
+    </div>
+    <p style="font-size:12px;color:var(--cf-muted);margin:0 0 16px">
+      Selecione a loja e importe o Excel do mês completo da Rede.<br>O sistema irá identificar os dias e pré-carregar cada conferência automaticamente.
+    </p>
+    <label style="display:block;font-size:11px;font-weight:600;color:var(--cf-muted);margin-bottom:6px">LOJA</label>
+    <select id="redeExtratoBoard" style="width:100%;background:var(--cf-card2);border:1px solid var(--cf-border);color:var(--cf-text);border-radius:8px;padding:8px 10px;font-size:13px;margin-bottom:14px;font-family:inherit">
+      <option value="">Selecionar loja…</option>
+    </select>
+    <label style="display:block;font-size:11px;font-weight:600;color:var(--cf-muted);margin-bottom:6px">ARQUIVO EXCEL</label>
+    <div id="redeExtratoDropArea" style="border:2px dashed var(--cf-border);border-radius:10px;padding:22px;text-align:center;cursor:pointer;transition:border-color .2s;margin-bottom:16px"
+         onclick="document.getElementById('redeExtratoFileInput').click()"
+         ondragover="event.preventDefault();this.style.borderColor='var(--cf-accent)'"
+         ondragleave="this.style.borderColor='var(--cf-border)'"
+         ondrop="event.preventDefault();this.style.borderColor='var(--cf-border)';handleRedeExtratoMonthFile(event.dataTransfer.files[0])">
+      <div id="redeExtratoDropLabel" style="font-size:12px;color:var(--cf-muted)">Arraste o arquivo ou clique aqui</div>
+    </div>
+    <input id="redeExtratoFileInput" type="file" accept=".xls,.xlsx" style="display:none" onchange="handleRedeExtratoMonthFile(this.files[0])">
+    <div id="redeExtratoStatus" style="font-size:12px;min-height:18px;color:var(--cf-muted);margin-bottom:14px"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end">
+      <button onclick="document.getElementById('redeExtratoModal').style.display='none'"
+        style="background:var(--cf-card2);border:1px solid var(--cf-border);color:var(--cf-muted);padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit">
+        Cancelar
+      </button>
+      <button id="btnConfirmarExtratoRede" onclick="confirmarExtratoRedeMensal()"
+        style="background:var(--cf-accent);border:none;color:#fff;padding:8px 18px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;opacity:.5;pointer-events:none">
+        Salvar
+      </button>
     </div>
   </div>
 </div>
