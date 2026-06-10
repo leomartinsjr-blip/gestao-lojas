@@ -7319,13 +7319,15 @@ app.delete('/api/conferencia/revisao', requireEscritorioOrAdmin, async (req, res
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/conferencia/reprovadas?dtIni=Y&dtFin=Z
+// GET /api/conferencia/reprovadas?dtIni=Y&dtFin=Z[&board=delrey]
 app.get('/api/conferencia/reprovadas', requireEscritorioOrAdmin, async (req, res) => {
   try {
-    const { dtIni, dtFin } = req.query;
+    const { dtIni, dtFin, board } = req.query;
     if (!dtIni || !dtFin) return res.status(400).json({ error: 'dtIni e dtFin obrigatórios' });
     const col = await getConferenciaRevisoesCol();
-    const reprovadas = await col.find({ dtIni, dtFin, status: 'reprovada' }).toArray();
+    const query = { dtIni, dtFin, status: 'reprovada' };
+    if (board) query.board = board;
+    const reprovadas = await col.find(query).toArray();
     // Agrupa por vendedor
     const byVend = {};
     for (const r of reprovadas) {

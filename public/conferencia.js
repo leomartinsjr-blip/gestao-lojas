@@ -1657,17 +1657,22 @@
   // REPROVADAS
   // ════════════════════════════════════════════════════════════════════════
   $('rDtIni').value = ini; $('rDtFin').value = hoje;
+  // popular select de loja
+  { const sel = $('rBoard');
+    LOJAS.forEach(b => { const o=document.createElement('option'); o.value=b; o.textContent=LOJA_LABEL[b]||b; sel.appendChild(o); }); }
   $('rBuscarBtn').addEventListener('click', buscarReprovadas);
 
   async function buscarReprovadas() {
-    const dtIni=$('rDtIni').value, dtFin=$('rDtFin').value;
+    const dtIni=$('rDtIni').value, dtFin=$('rDtFin').value, board=$('rBoard').value;
     if (!dtIni||!dtFin) return alert('Preencha o período.');
     const btn=$('rBuscarBtn');
     btn.disabled=true; btn.innerHTML='<span class="spinner"></span> Buscando…';
     $('rResult').innerHTML='<div class="cf-empty"><span class="spinner"></span> Consultando…</div>';
     try {
-      const data = await api('GET', `/api/conferencia/reprovadas?dtIni=${dtIni}&dtFin=${dtFin}`);
-      renderReprovadas(data);
+      let url = `/api/conferencia/reprovadas?dtIni=${dtIni}&dtFin=${dtFin}`;
+      if (board) url += `&board=${board}`;
+      const data = await api('GET', url);
+      renderReprovadas(data, !board);
     } catch(e) {
       $('rResult').innerHTML=`<div class="cf-empty" style="color:${P('alert')}">⚠ ${esc(e.message)}</div>`;
     } finally {
@@ -1676,16 +1681,45 @@
     }
   }
 
-  function renderReprovadas(grupos) {
+  function renderReprovadas(grupos, showLojasSummary) {
     const el = $('rResult');
     if (!grupos.length) { el.innerHTML='<div class="cf-empty">Nenhuma venda reprovada no período.</div>'; return; }
     const totalCobrar = grupos.reduce((s,g)=>s+g.valorCobrar,0);
     const totalVendas = grupos.reduce((s,g)=>s+g.count,0);
+
+    // resumo por loja (só quando "Todas" selecionado)
+    let lojasBlock = '';
+    if (showLojasSummary) {
+      const byLoja = {};
+      for (const g of grupos) {
+        if (!byLoja[g.board]) byLoja[g.board] = { count:0, valorCobrar:0 };
+        byLoja[g.board].count      += g.count;
+        byLoja[g.board].valorCobrar += g.valorCobrar;
+      }
+      const lojaRows = Object.entries(byLoja).sort((a,b)=>b[1].valorCobrar-a[1].valorCobrar).map(([b,v])=>`
+        <tr>
+          <td><span style="background:${LOJA_COLORS[b]||'#4AA3FF'}18;color:${LOJA_COLORS[b]||'#4AA3FF'};font-size:11px;font-weight:700;padding:2px 10px;border-radius:10px">${LOJA_LABEL[b]||b}</span></td>
+          <td class="num"><span class="badge badge-di">${v.count}</span></td>
+          <td class="num" style="color:var(--cf-alert);font-weight:800">${fmtR(v.valorCobrar)}</td>
+        </tr>`).join('');
+      lojasBlock = `
+      <div class="panel-card" style="margin-bottom:16px">
+        <div class="panel-card-hdr">
+          <span class="panel-card-title">Resumo por Loja</span>
+        </div>
+        <table class="cf-tbl">
+          <thead><tr><th>Loja</th><th class="num">Qtd</th><th class="num">Valor a Cobrar</th></tr></thead>
+          <tbody>${lojaRows}</tbody>
+        </table>
+      </div>`;
+    }
+
     el.innerHTML = `
       <div class="kpi-row" style="margin-bottom:20px">
         ${kpiCard('red',   svgAlert(), totalVendas, 'Vendas Reprovadas', '', '')}
         ${kpiCard('amber', svgTag(),   fmtR(totalCobrar), 'Total a Cobrar', '', '')}
       </div>
+      ${lojasBlock}
       <div class="panel-card">
         <div class="panel-card-hdr">
           <span class="panel-card-title">Reprovadas por Vendedor</span>
