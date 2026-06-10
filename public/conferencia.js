@@ -255,13 +255,40 @@
     const percDesc  = totalVendas > 0 ? ((totalDesc / (totalVendas + totalDesc)) * 100).toFixed(1) : '0.0';
 
     const kpiRow = $('vKpiRow');
+
+    // ── Cards de breakdown: formas e vendedores ──
+    const formaRows = (porForma || []).slice(0, 6).map(f => {
+      const pct = totalVendas > 0 ? (f.total / totalVendas * 100).toFixed(0) : 0;
+      return `<div class="kpi-bk-row">
+        <span class="kpi-bk-lbl">${esc(f.label)}</span>
+        <span class="kpi-bk-pct">${pct}%</span>
+        <span class="kpi-bk-val">${fmtR(f.total)}</span>
+      </div>`;
+    }).join('');
+    const vendRows = (porVendedor || []).slice(0, 6).map(v => {
+      const pct = totalVendas > 0 ? (v.total / totalVendas * 100).toFixed(0) : 0;
+      return `<div class="kpi-bk-row">
+        <span class="kpi-bk-lbl">${esc(v.label)}</span>
+        <span class="kpi-bk-pct">${pct}%</span>
+        <span class="kpi-bk-val">${fmtR(v.total)}</span>
+      </div>`;
+    }).join('');
+
     kpiRow.innerHTML = `
       ${kpiCard('green', svgStore(), qtdVendas, 'Vendas no Período', comDesc + ' com desconto', '')}
       ${kpiCard('blue',  svgMoney(), fmtR(totalVendas), 'Total Líquido', '', '')}
       ${kpiCard('amber', svgTag(), fmtR(totalDesc), 'Total Descontos', percDesc + '% sobre bruto', 'desc', comDesc + ' vendas')}
       ${totalAlertas
         ? kpiCard('red', svgAlert(), totalAlertas, 'Com Alertas', 'Clique para filtrar', 'alerta', _filtroAlerta ? '● ativo' : '')
-        : kpiCard('muted', svgCheck(), qtdVendas - (vendas.filter(v=>v.alertas?.length).length), 'Sem Alertas', '100% em conformidade', '')}`;
+        : kpiCard('muted', svgCheck(), qtdVendas - (vendas.filter(v=>v.alertas?.length).length), 'Sem Alertas', '100% em conformidade', '')}
+      <div class="kpi-card kpi-bk-card kpi-blue">
+        <div class="kpi-top"><div class="kpi-lbl">Formas de Pagamento</div><div class="kpi-icon blue"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></div></div>
+        <div class="kpi-bk-list">${formaRows || '<span style="color:var(--cf-muted);font-size:11px">—</span>'}</div>
+      </div>
+      <div class="kpi-card kpi-bk-card kpi-teal">
+        <div class="kpi-top"><div class="kpi-lbl">Por Vendedor</div><div class="kpi-icon teal"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div></div>
+        <div class="kpi-bk-list">${vendRows || '<span style="color:var(--cf-muted);font-size:11px">—</span>'}</div>
+      </div>`;
     kpiRow.style.display = 'grid';
 
     if (totalAlertas) {

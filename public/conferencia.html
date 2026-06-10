@@ -112,6 +112,16 @@ body {
   margin-bottom: 18px;
 }
 @media (max-width: 900px) { .kpi-row { grid-template-columns: repeat(2,1fr); } }
+/* breakdown cards (formas + vendedor) ocupam 2 colunas cada */
+.kpi-bk-card { grid-column: span 2; }
+@media (max-width: 900px) { .kpi-bk-card { grid-column: span 2; } }
+.kpi-bk-list { display: flex; flex-direction: column; gap: 3px; margin-top: 4px; }
+.kpi-bk-row  { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.kpi-bk-lbl  { flex: 1; color: var(--cf-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi-bk-pct  { color: var(--cf-muted); min-width: 28px; text-align: right; }
+.kpi-bk-val  { font-weight: 700; color: var(--cf-text); min-width: 80px; text-align: right; }
+.kpi-icon.teal { background: #14B8A612; color: #14B8A6; }
+.kpi-card.kpi-teal::after { background: #14B8A6; }
 .kpi-card {
   background: var(--cf-card); border: 1px solid var(--cf-border);
   border-radius: 12px; padding: 16px 18px 14px;

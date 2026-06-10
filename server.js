@@ -7205,7 +7205,7 @@ app.get('/api/conferencia/revisoes', requireEscritorioOrAdmin, async (req, res) 
     const { board, dtIni, dtFin } = req.query;
     if (!dtIni || !dtFin) return res.status(400).json({ error: 'dtIni e dtFin obrigatórios' });
     const col = await getConferenciaRevisoesCol();
-    const query = { dtIni, dtFin };
+    const query = { data: { $gte: dtIni, $lte: dtFin } };
     if (board && board !== 'all') query.board = board;
     const revisoes = await col.find(query).toArray();
     res.json(revisoes);
