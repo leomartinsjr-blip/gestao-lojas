@@ -810,24 +810,41 @@
     return keys.size > 0;
   }
 
-  function renderConcTable() {
-    const rede = buildRedeAgrupado();
-    const mx   = buildMicrovixAgrupado();
-    const keys = new Set([...Object.keys(rede), ...Object.keys(mx)]);
-    if (!keys.size) return '<div class="cf-empty">Nenhum dado de cartão encontrado.</div>';
+  function buildOutrosAgrupado() {
+    // Formas que NÃO vão para a Rede: dinheiro, crediário, vale troca, etc.
+    if (!_data?.porForma) return [];
+    const outros = [];
+    for (const f of _data.porForma) {
+      if (f.total === 0) continue;
+      const forma = (f.forma||'').toLowerCase();
+      if (/cart[aã]o\s+cr[eé]d/i.test(forma)) continue;
+      if (/cart[aã]o\s+d[eé]b/i.test(forma))  continue;
+      if (/pix/i.test(forma))                   continue;
+      // tudo que sobra: dinheiro, crediário, vale troca, etc.
+      outros.push({ label: f.label || f.forma, total: f.total });
+    }
+    return outros;
+  }
 
-    let totalRede = 0, totalMx = 0, totalDiff = 0;
-    const rows = [...keys].sort().map(k => {
+  function renderConcTable() {
+    const rede   = buildRedeAgrupado();
+    const mx     = buildMicrovixAgrupado();
+    const outros = buildOutrosAgrupado();
+    const keys   = new Set([...Object.keys(rede), ...Object.keys(mx)]);
+    if (!keys.size && !outros.length) return '<div class="cf-empty">Nenhum dado de pagamento encontrado.</div>';
+
+    let totalRede = 0, totalMxCartoes = 0, totalDiff = 0;
+    const cardRows = [...keys].sort().map(k => {
       const r = rede[k]?.total || 0;
       const m = mx[k]?.total   || 0;
       const d = r - m;
       const ok = Math.abs(d) <= 0.10;
-      totalRede += r; totalMx += m; totalDiff += d;
+      totalRede += r; totalMxCartoes += m; totalDiff += d;
       const entry = rede[k] || mx[k];
       const onlyRede = !!rede[k] && !mx[k];
       const onlyMx   = !rede[k] && !!mx[k];
       const rowCls   = onlyRede ? 'only-rede' : onlyMx ? 'only-microvix' : ok ? 'ok' : 'nok';
-      const bandLabel = entry.bandeira || (entry.mod === 'pix' ? '—' : '—');
+      const bandLabel = entry.bandeira || '—';
       return `<tr class="${rowCls}">
         <td style="text-transform:capitalize">${esc(entry.mod)}</td>
         <td>${esc(bandLabel)}</td>
@@ -837,7 +854,25 @@
       </tr>`;
     }).join('');
 
-    const allOk = Math.abs(totalDiff) <= 0.10;
+    const cartoesOk = Math.abs(totalDiff) <= 0.10;
+
+    // Linhas de outras formas (só coluna Microvix, sem Rede)
+    let totalOutros = 0;
+    const outrosRows = outros.map(o => {
+      totalOutros += o.total;
+      return `<tr class="only-microvix">
+        <td colspan="2" style="color:var(--cf-muted);font-style:italic">${esc(o.label)}</td>
+        <td class="num"><span style="color:var(--cf-muted)">—</span></td>
+        <td class="num">${fmtR(o.total)}</td>
+        <td class="num"><span style="color:var(--cf-muted)">—</span></td>
+      </tr>`;
+    }).join('');
+
+    const totalMxGeral = totalMxCartoes + totalOutros;
+    const totalVendas  = _data?.totalVendas || 0;
+    const diffGeral    = totalMxGeral - totalVendas;
+    const geralOk      = Math.abs(diffGeral) <= 0.10;
+
     return `
       <table class="conc-tbl">
         <thead><tr>
@@ -847,15 +882,30 @@
           <th class="num">Microvix</th>
           <th class="num">Diferença</th>
         </tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr>
-          <td colspan="2">Total</td>
-          <td class="num">${fmtR(totalRede)}</td>
-          <td class="num">${fmtR(totalMx)}</td>
-          <td class="num diff" style="color:${allOk ? 'var(--cf-green)' : 'var(--cf-alert)'};font-weight:800">
-            ${allOk ? '✓ OK' : (totalDiff > 0 ? '+' : '') + fmtR(totalDiff)}
-          </td>
-        </tr></tfoot>
+        <tbody>
+          ${cardRows}
+          ${outrosRows}
+        </tbody>
+        <tfoot>
+          <tr style="border-top:1px solid var(--cf-border)">
+            <td colspan="2" style="color:var(--cf-muted);font-size:11px">Subtotal cartões</td>
+            <td class="num" style="font-weight:700">${fmtR(totalRede)}</td>
+            <td class="num" style="font-weight:700">${fmtR(totalMxCartoes)}</td>
+            <td class="num diff" style="color:${cartoesOk ? 'var(--cf-green)' : 'var(--cf-alert)'};font-weight:800">
+              ${cartoesOk ? '✓' : (totalDiff > 0 ? '+' : '') + fmtR(totalDiff)}
+            </td>
+          </tr>
+          <tr style="border-top:2px solid var(--cf-border);background:var(--cf-card2)">
+            <td colspan="2" style="font-weight:800">Total Geral</td>
+            <td class="num" style="color:var(--cf-muted)">—</td>
+            <td class="num" style="font-weight:800">${fmtR(totalMxGeral)}</td>
+            <td class="num diff" style="color:${geralOk ? 'var(--cf-green)' : 'var(--cf-alert)'};font-weight:800">
+              ${geralOk
+                ? '✓ Bate com total líquido'
+                : (diffGeral > 0 ? '+' : '') + fmtR(diffGeral) + ' vs líquido'}
+            </td>
+          </tr>
+        </tfoot>
       </table>`;
   }
 
