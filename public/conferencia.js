@@ -1681,29 +1681,24 @@
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
 
         // Try to find columns: date, bandeira/produto, modalidade, valor
-        // Typical Rede layout has headers in first or second row
+        // Find the real header row: row with most non-empty string cells (skip title rows)
         let iData=-1, iBandeira=-1, iMod=-1, iValor=-1;
-        const hdrs = rows.find(r => r.some(c => /data|dt\b/i.test(String(c))));
-        if (!hdrs) throw new Error('Não encontrei coluna de data no arquivo.');
+        const norm = s => String(s||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+        const hdrs = rows.reduce((best, r) => {
+          const nonEmpty = r.filter(c => typeof c === 'string' && c.trim().length > 1).length;
+          return nonEmpty > (best ? best.filter(c => typeof c==='string' && c.trim().length>1).length : 0) ? r : best;
+        }, null);
+        if (!hdrs) throw new Error('Não encontrei linha de cabeçalho no arquivo.');
         hdrs.forEach((h, i) => {
-          const s = String(h||'').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
-          if (iData<0     && /data|dt\.?\s*(transac|pagam|venc|mov)?/.test(s)) iData = i;
-          if (iBandeira<0 && /(bandeira|produto|adquirente|cartao|cartao|brand)/.test(s)) iBandeira = i;
-          if (iMod<0      && /(modalidade|mod\b|tipo|modali)/.test(s)) iMod = i;
-          if (iValor<0    && /(valor|vlr|montante|total|amount)/.test(s)) iValor = i;
+          const s = norm(h);
+          if (iData<0     && /\bdata\b/.test(s)) iData = i;
+          if (iBandeira<0 && /(bandeira|produto|adquirente|brand)/.test(s)) iBandeira = i;
+          if (iMod<0      && /(modalidade|modali)/.test(s)) iMod = i;
+          // prefer "valor da venda" / "valor líquido" / "valor" — pick first match
+          if (iValor<0    && /(valor\s+d[ao]\s+venda|valor\s+liq|valor\s+bruto|valor\s+total|valor\s+da|amount)/.test(s)) iValor = i;
         });
-        // fallback: se iData ainda não encontrado, usa a 1ª coluna que contenha alguma data
-        if (iData < 0) {
-          const hdrsRowIdx2 = rows.indexOf(hdrs);
-          for (let ri2 = hdrsRowIdx2+1; ri2 < Math.min(hdrsRowIdx2+5, rows.length); ri2++) {
-            rows[hdrsRowIdx2+1]?.forEach((cell, ci) => {
-              if (iData >= 0) return;
-              const s2 = String(cell||'');
-              if (/\d{2}[\/\-]\d{2}[\/\-]\d{2,4}/.test(s2) || (typeof cell==='number' && cell > 40000 && cell < 60000)) iData = ci;
-            });
-            if (iData >= 0) break;
-          }
-        }
+        // broader fallback for valor
+        if (iValor<0) hdrs.forEach((h,i) => { if (iValor<0 && /\bvalor\b|\bvlr\b/.test(norm(h))) iValor = i; });
         if (iData<0) throw new Error('Coluna de data não encontrada. Verifique se o arquivo é o extrato correto da Rede.');
         if (iValor<0) throw new Error('Coluna de valor não encontrada.');
 
@@ -1751,7 +1746,7 @@
         }
 
         const nDays = Object.keys(byDay).length;
-        if (nDays === 0) throw new Error('Nenhum lançamento encontrado no arquivo.');
+        if (nDays === 0) throw new Error(`Nenhum lançamento encontrado. Colunas detectadas: data=${iData} valor=${iValor} mod=${iMod} bandeira=${iBandeira}`);
 
         _redeExtratoMensal = byDay;
         $('redeExtratoStatus').textContent = `✓ ${nDays} dia(s) encontrado(s) no arquivo`;
