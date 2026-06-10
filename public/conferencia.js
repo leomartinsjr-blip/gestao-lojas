@@ -527,7 +527,49 @@
                 Fechar o Dia
               </button>`}
         </div>
-      </div>`;
+      </div>
+
+      ${(canVendedores || s3Done) ? (() => {
+        const vends = (porVendedor || []);
+        const totalLiq = vends.reduce((s,v) => s + v.total, 0);
+        const totalQtd = vends.reduce((s,v) => s + v.qtd, 0);
+        return `<div class="conc-box" style="margin-top:10px">
+          <div class="conc-hdr">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+            Passo 3 — Vendedores
+            ${s3Done ? '<span class="conc-badge ok" style="margin-left:8px">✅ Confirmado</span>' : '<span class="conc-badge nok" style="margin-left:8px">Pendente</span>'}
+          </div>
+          <div class="conc-body" style="padding:0">
+            <table class="conc-tbl" style="width:100%">
+              <thead><tr>
+                <th>Vendedor</th>
+                <th class="num">Qtd Vendas</th>
+                <th class="num">Total Líquido</th>
+                <th class="num">% do Total</th>
+              </tr></thead>
+              <tbody>
+                ${vends.length === 0
+                  ? `<tr><td colspan="4" style="text-align:center;color:var(--cf-muted);padding:16px">Nenhum vendedor encontrado</td></tr>`
+                  : vends.map(v => {
+                    const pct = totalLiq > 0 ? (v.total / totalLiq * 100).toFixed(1) : '0.0';
+                    return `<tr>
+                      <td style="font-weight:600">${esc(v.label)}</td>
+                      <td class="num"><span class="badge badge-di">${v.qtd}</span></td>
+                      <td class="num" style="font-weight:700">${fmtR(v.total)}</td>
+                      <td class="num" style="color:var(--cf-muted)">${pct}%</td>
+                    </tr>`;
+                  }).join('')}
+              </tbody>
+              <tfoot><tr style="border-top:2px solid var(--cf-border)">
+                <td style="font-weight:700;color:var(--cf-muted)">TOTAL</td>
+                <td class="num" style="font-weight:700">${totalQtd}</td>
+                <td class="num" style="font-weight:800;color:var(--cf-text)">${fmtR(totalLiq)}</td>
+                <td class="num">100%</td>
+              </tr></tfoot>
+            </table>
+          </div>
+        </div>`;
+      })() : ''}`;
 
     el.style.display = 'block';
 
