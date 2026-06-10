@@ -4384,10 +4384,21 @@ async function _buildCatalog(lojas) {
       return boardCount;
     }
 
-    // Catálogo compartilhado — busca apenas da loja principal
-    const totalProd = await fetchBoard(mainBoard).catch(e => { console.warn(`[Catalog/${mainBoard}] erro:`, e.message); return 0; });
+    // Agrupa boards por chave Microvix — busca um representante por sistema distinto
+    const defaultChave = process.env.MICROVIX_CHAVE || '';
+    const seenChaves = new Set();
+    const representantes = [];
+    for (const b of boards) {
+      const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || defaultChave;
+      if (!seenChaves.has(chave)) { seenChaves.add(chave); representantes.push(b); }
+    }
+    let totalProd = 0;
+    for (const b of representantes) {
+      const n = await fetchBoard(b).catch(e => { console.warn(`[Catalog/${b}] erro:`, e.message); return 0; });
+      totalProd += n;
+    }
 
-    console.log(`[Catalog] ${totalProd} produtos → ${Object.keys(map).length} entradas (via ${mainBoard})`);
+    console.log(`[Catalog] ${totalProd} produtos → ${Object.keys(map).length} entradas (via ${representantes.join(',')})`);
     _catalogCache   = map;
     _catalogCacheAt = Date.now();
 
@@ -7325,7 +7336,7 @@ app.get('/api/conferencia/reprovadas', requireEscritorioOrAdmin, async (req, res
     const { dtIni, dtFin, board } = req.query;
     if (!dtIni || !dtFin) return res.status(400).json({ error: 'dtIni e dtFin obrigatórios' });
     const col = await getConferenciaRevisoesCol();
-    const query = { dtIni, dtFin, status: 'reprovada' };
+    const query = { data: { $gte: dtIni, $lte: dtFin }, status: 'reprovada' };
     if (board) query.board = board;
     const reprovadas = await col.find(query).toArray();
     // Agrupa por vendedor
