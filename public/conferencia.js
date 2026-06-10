@@ -671,8 +671,15 @@
           if (!r[iData]) continue;
           const status = String(r[iStatus]||'').toLowerCase().trim();
           if (status !== 'aprovada' && status !== 'pago') continue;
-          const valorRaw = String(r[iValor]||'').replace(/R\$\s*/,'').replace(/\./g,'').replace(',','.');
-          const valor = parseFloat(valorRaw) || 0;
+          // SheetJS pode retornar número (ponto decimal JS) ou texto "R$ 1.279,60"
+          const rawVal = r[iValor];
+          let valor;
+          if (typeof rawVal === 'number') {
+            valor = rawVal;
+          } else {
+            // Formato BRL: remove "R$", remove separador de milhar (.), troca vírgula por ponto
+            valor = parseFloat(String(rawVal||'').replace(/R\$\s*/,'').replace(/\./g,'').replace(',','.')) || 0;
+          }
           if (valor === 0) continue;
           const mod      = String(r[iMod]     ||'').toLowerCase().trim();
           const bandeira = String(r[iBandeira]||'').trim();
