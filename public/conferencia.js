@@ -1415,6 +1415,116 @@
   loadRegras();
 
   // ════════════════════════════════════════════════════════════════════════
+  // TAXAS DE CARTÃO
+  // ════════════════════════════════════════════════════════════════════════
+
+  // Mapeamento completo das formas do Microvix → bandeira + modalidade + parcelas
+  // Baseado no FaturamentoPorPlanos exportado
+  const TAXAS_BANDEIRAS = [
+    { id: 'mastercard', label: 'Mastercard',    credito: [1,2,3,4,5,6,7,8,9,10], debito: false },
+    { id: 'visa',       label: 'Visa',          credito: [1,2,3,4,5,6,7,8,9,10], debito: false },
+    { id: 'elo',        label: 'Elo',           credito: [1,2,3,4,5,6,7,8],       debito: true  },
+    { id: 'amex',       label: 'Amex',          credito: [1,2,3,4,5,6,10],        debito: false },
+    { id: 'maestro',    label: 'Maestro',       credito: [],                       debito: true  },
+    { id: 'visa_elec',  label: 'Visa Electron', credito: [],                       debito: true  },
+    { id: 'hipercard',  label: 'Hipercard',     credito: [1,2,3,4,5,6,7,8,9,10], debito: false },
+    { id: 'pix',        label: 'PIX',           credito: [],                       debito: false, pix: true },
+  ];
+
+  let taxasData = {};
+
+  async function loadTaxas() {
+    try { taxasData = await api('GET', '/api/conferencia/taxas'); } catch(_) { taxasData = {}; }
+    renderTaxas();
+  }
+
+  function renderTaxas() {
+    const el = $('taxasContent');
+    if (!el) return;
+
+    // Encontra o máximo de parcelas para montar o cabeçalho
+    const maxParc = 10;
+    const parcs   = Array.from({length: maxParc}, (_, i) => i + 1);
+
+    const colHeaders = `
+      <th class="bandeira-hdr">Bandeira</th>
+      <th>Débito</th>
+      <th>PIX</th>
+      ${parcs.map(p => `<th>${p}x</th>`).join('')}
+    `;
+
+    const rows = TAXAS_BANDEIRAS.map(b => {
+      const bd = taxasData[b.id] || {};
+
+      function inp(key, enabled) {
+        if (!enabled) return `<td style="background:var(--cf-card2);text-align:center"><span style="color:var(--cf-border)">—</span></td>`;
+        const val = bd[key] !== undefined ? bd[key] : '';
+        const filled = val !== '' ? ' filled' : '';
+        return `<td style="text-align:center">
+          <input class="taxa-input${filled}" data-band="${b.id}" data-key="${key}" value="${val}" placeholder="—" type="text" inputmode="decimal">
+        </td>`;
+      }
+
+      const debitoCell = inp('debito', b.debito);
+      const pixCell    = inp('pix',    !!b.pix);
+      const creditCells = parcs.map(p => inp(String(p), b.credito.includes(p))).join('');
+
+      return `<tr>
+        <td class="bandeira-cell">${esc(b.label)}</td>
+        ${debitoCell}
+        ${pixCell}
+        ${creditCells}
+      </tr>`;
+    }).join('');
+
+    el.innerHTML = `
+      <div class="taxas-wrap">
+        <table class="taxas-tbl">
+          <thead><tr>${colHeaders}</tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+      <div style="font-size:11px;color:var(--cf-muted);margin-top:12px">
+        💡 Valores em % · Deixe em branco se não utiliza aquela bandeira/parcela · Utilize vírgula ou ponto decimal
+      </div>`;
+
+    // Destaca inputs preenchidos em tempo real
+    el.querySelectorAll('.taxa-input').forEach(inp => {
+      inp.addEventListener('input', () => {
+        inp.classList.toggle('filled', inp.value.trim() !== '');
+      });
+    });
+  }
+
+  $('salvarTaxasBtn').addEventListener('click', async () => {
+    const result = {};
+    document.querySelectorAll('.taxa-input').forEach(inp => {
+      const band = inp.dataset.band;
+      const key  = inp.dataset.key;
+      const raw  = inp.value.trim().replace(',', '.');
+      const val  = parseFloat(raw);
+      if (!isNaN(val) && raw !== '') {
+        if (!result[band]) result[band] = {};
+        result[band][key] = val;
+      }
+    });
+    const btn = $('salvarTaxasBtn');
+    btn.disabled = true; btn.textContent = 'Salvando…';
+    try {
+      await api('PUT', '/api/conferencia/taxas', result);
+      taxasData = result;
+      renderTaxas();
+      btn.textContent = '✓ Salvo!';
+      setTimeout(() => { btn.disabled = false; btn.innerHTML = '💾 Salvar Taxas'; }, 1500);
+    } catch(e) {
+      alert('Erro ao salvar: ' + e.message);
+      btn.disabled = false; btn.innerHTML = '💾 Salvar Taxas';
+    }
+  });
+
+  loadTaxas();
+
+  // ════════════════════════════════════════════════════════════════════════
   // REPROVADAS
   // ════════════════════════════════════════════════════════════════════════
   $('rDtIni').value = ini; $('rDtFin').value = hoje;

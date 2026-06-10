@@ -340,6 +340,37 @@ td.muted  { color: var(--cf-muted); }
 }
 .file-drop:hover { border-color: var(--cf-primary); color: var(--cf-text); }
 
+/* ── Taxas de Cartão ────────────────────────────────────────── */
+.taxas-wrap { overflow-x: auto; }
+.taxas-tbl { border-collapse: collapse; font-size: 12px; min-width: 900px; }
+.taxas-tbl th {
+  padding: 8px 10px; font-size: 10px; font-weight: 700; color: var(--cf-muted);
+  text-transform: uppercase; letter-spacing: .4px; white-space: nowrap;
+  background: var(--cf-card2); border: 1px solid var(--cf-border); text-align: center;
+}
+.taxas-tbl th.bandeira-hdr { text-align: left; min-width: 130px; }
+.taxas-tbl td { border: 1px solid var(--cf-border); padding: 4px 6px; }
+.taxas-tbl td.bandeira-cell {
+  font-weight: 700; color: var(--cf-text); padding: 8px 12px;
+  background: var(--cf-card); white-space: nowrap;
+}
+.taxas-tbl td.mod-cell { background: var(--cf-card2); text-align: center; font-size: 10px; color: var(--cf-muted); font-weight: 600; padding: 4px 8px; vertical-align: middle; }
+.taxas-tbl tr:hover td:not(.bandeira-cell):not(.mod-cell) { background: #4493F808; }
+.taxa-input {
+  width: 60px; background: transparent; border: none; border-bottom: 1px solid var(--cf-border);
+  color: var(--cf-text); font-size: 12px; font-family: inherit; text-align: center;
+  padding: 4px 2px; outline: none; transition: border-color .15s;
+}
+.taxa-input:focus { border-color: var(--cf-primary); }
+.taxa-input::placeholder { color: var(--cf-muted); }
+.taxa-input.filled { color: var(--cf-green); font-weight: 700; }
+.taxa-input.na { opacity: .25; pointer-events: none; }
+.taxas-section-hdr {
+  background: var(--cf-card2); border: 1px solid var(--cf-border);
+  border-radius: var(--r); padding: 10px 16px; margin-bottom: 12px;
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--cf-muted);
+}
+
 /* ── Regras ─────────────────────────────────────────────────── */
 .regras-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; }
 .regra-card { background: var(--cf-card); border: 1px solid var(--cf-border); border-radius: var(--r); padding: 18px; border-top: 3px solid var(--cf-primary); box-shadow: 0 1px 4px #0000000a; }
@@ -564,6 +595,10 @@ td.muted  { color: var(--cf-muted); }
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0 0 4.93 19.07M19.07 4.93l-1.41 1.41M18.36 18.36l-1.41-1.41M5.64 5.64l1.41 1.41M5.64 18.36l1.41-1.41"/></svg>
       Regras
     </button>
+    <button class="cf-tab" data-tab="taxas">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>
+      Taxas
+    </button>
   </nav>
   <div class="cf-topbar-right">
     <div class="cf-user-chip">
@@ -678,6 +713,18 @@ td.muted  { color: var(--cf-muted); }
     <button class="btn-primary" id="salvarRegrasBtn" style="margin-left:auto">💾 Salvar Regras</button>
   </div>
   <div class="regras-grid" id="regrasGrid"></div>
+</div>
+
+<!-- ══ TAXAS ══════════════════════════════════════════════════════════════ -->
+<div class="cf-panel" id="tab-taxas">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+    <div>
+      <div style="font-weight:800;font-size:14px">Taxas de Cartão (MDR)</div>
+      <div style="font-size:11px;color:var(--cf-muted);margin-top:3px">Cadastre as taxas cobradas por bandeira e parcelas. Use ponto ou vírgula. Ex: 2,17</div>
+    </div>
+    <button class="btn-primary" id="salvarTaxasBtn" style="margin-left:auto">💾 Salvar Taxas</button>
+  </div>
+  <div id="taxasContent"></div>
 </div>
 
 <!-- ══ REPROVADAS ═════════════════════════════════════════════════════════ -->

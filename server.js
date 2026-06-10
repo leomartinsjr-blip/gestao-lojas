@@ -7123,6 +7123,24 @@ app.put('/api/conferencia/regras', requireEscritorioOrAdmin, async (req, res) =>
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/conferencia/taxas — retorna tabela de taxas MDR por bandeira/parcelas
+app.get('/api/conferencia/taxas', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    res.json(db.confTaxas || {});
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/conferencia/taxas — salva tabela de taxas
+app.put('/api/conferencia/taxas', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    db.confTaxas = req.body;
+    await writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/conferencia/dashboard?dtIni=2026-06-01&dtFin=2026-06-08
 // Consolida todas as lojas: ranking de desconto por loja, por vendedor e CMV
 app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res) => {
