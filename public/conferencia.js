@@ -691,12 +691,28 @@
     reader.readAsArrayBuffer(file);
   }
 
+  // Normaliza nome de bandeira para key de match (Rede e Microvix às vezes usam nomes diferentes)
+  function normBandeira(bandeira, mod) {
+    const b = (bandeira||'').toLowerCase().trim();
+    if (!b || b === '-') return '';
+    if (/maestro/.test(b))                          return 'maestro';
+    if (/master/.test(b))                           return mod === 'débito' ? 'maestro' : 'mastercard';
+    if (/visa\s*ele|v\.?electron/.test(b))          return 'visa electron';
+    if (/visa/.test(b))                             return 'visa';
+    if (/elo/.test(b))                              return 'elo';
+    if (/amex|american/.test(b))                    return 'amex';
+    if (/hiper/.test(b))                            return 'hipercard';
+    if (/diners/.test(b))                           return 'diners';
+    return b;
+  }
+
   function buildRedeAgrupado() {
     if (!_redeRows) return {};
     const map = {};
     for (const r of _redeRows) {
-      const key = `${r.mod}::${r.bandeira.toLowerCase()}`;
-      if (!map[key]) map[key] = { mod: r.mod, bandeira: r.bandeira, total: 0 };
+      const band = normBandeira(r.bandeira, r.mod);
+      const key = `${r.mod}::${band}`;
+      if (!map[key]) map[key] = { mod: r.mod, bandeira: band, total: 0 };
       map[key].total += r.valor;
     }
     return map;
@@ -709,12 +725,13 @@
       if (f.total <= 0) continue; // ignora devoluções
       const forma = (f.forma||'').toLowerCase();
       let mod;
-      if (/cr[eé]d/i.test(forma))     mod = 'crédito';
-      else if (/d[eé]b/i.test(forma)) mod = 'débito';
-      else if (/pix/i.test(forma))    mod = 'pix';
-      else continue; // dinheiro, crediário etc. não estão na Rede
-      const bandeira = (f.bandeira||'').trim();
-      const key = `${mod}::${bandeira.toLowerCase()}`;
+      // Usa prefixo "cartão" para evitar falso match com "Crediário"
+      if (/cart[aã]o\s+cr[eé]d/i.test(forma))     mod = 'crédito';
+      else if (/cart[aã]o\s+d[eé]b/i.test(forma)) mod = 'débito';
+      else if (/pix/i.test(forma))                  mod = 'pix';
+      else continue; // dinheiro, crediário, vale trocas etc. não estão na Rede
+      const bandeira = normBandeira(f.bandeira, mod);
+      const key = `${mod}::${bandeira}`;
       if (!map[key]) map[key] = { mod, bandeira, total: 0 };
       map[key].total += f.total;
     }
