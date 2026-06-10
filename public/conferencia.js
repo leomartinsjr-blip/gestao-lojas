@@ -884,7 +884,6 @@
         </tr></thead>
         <tbody>
           ${cardRows}
-          ${outrosRows}
         </tbody>
         <tfoot>
           <tr style="border-top:1px solid var(--cf-border)">
@@ -895,6 +894,7 @@
               ${cartoesOk ? '✓' : (totalDiff > 0 ? '+' : '') + fmtR(totalDiff)}
             </td>
           </tr>
+          ${outrosRows}
           <tr style="border-top:2px solid var(--cf-border);background:var(--cf-card2)">
             <td colspan="2" style="font-weight:800">Total Geral</td>
             <td class="num" style="color:var(--cf-muted)">—</td>
