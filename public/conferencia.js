@@ -435,7 +435,7 @@
       el.style.display = 'none'; el.innerHTML = ''; return;
     }
 
-    const { vendas, totalAlertas } = data;
+    const { vendas, totalAlertas, porVendedor } = data;
     const st = _rotinaStatus;
     const board = _rotinaBoard;
     const date  = _rotinaDate;
