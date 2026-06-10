@@ -7613,6 +7613,24 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       }
     }
 
+    // Fallback PIX: lê total_pix diretamente do LinxMovimento (mesmo método usado no botão Caixa)
+    // Garante que PIX apareça mesmo quando LinxMovimentoPlanos não retorna a entrada separada
+    for (const r of movRows) {
+      const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+      if (!rowCnpj || rowCnpj !== cnpjClean) continue;
+      const doc = String(r.documento || '').trim();
+      if (!doc || !docMap[doc]) continue;
+      const vlrPix = parseBR(r.total_pix || '0');
+      if (vlrPix === 0) continue;
+      // Só adiciona se o doc ainda não tem PIX nas formas
+      const jaTemPix = (docFormaMap[doc] || []).some(f => /pix/i.test(f.forma));
+      if (jaTemPix) continue;
+      const sign = docMap[doc].valorTotal < 0 ? -1 : 1;
+      if (!docFormaMap[doc]) docFormaMap[doc] = [];
+      docFormaMap[doc].push({ forma: 'PIX', bandeira: '', descPlano: 'PIX', valor: sign * vlrPix, tipoTrans: '' });
+      docMap[doc].formas = docFormaMap[doc];
+    }
+
     // ── Alertas: parcela mínima ─────────────────────────────────────────────
     if (parcelaMin > 0) {
       for (const r of planoRows) {
