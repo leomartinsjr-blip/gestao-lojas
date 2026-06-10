@@ -7959,6 +7959,87 @@ app.post('/api/conferencia/conciliacao-rede', requireEscritorioOrAdmin, async (r
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ════════════════════════════════════════════════════════════════════════════
+// CERTIFICADOS DIGITAIS
+// ════════════════════════════════════════════════════════════════════════════
+
+async function getCertCol() {
+  const col = mongoDb.collection('certificados');
+  await col.createIndex({ id: 1 }, { unique: true, background: true }).catch(() => {});
+  return col;
+}
+
+// GET /certificados — serve a página
+app.get('/certificados', requireEscritorioOrAdmin, (req, res) =>
+  res.sendFile(path.join(__dirname, 'public', 'certificados.html')));
+
+// GET /api/certificados
+app.get('/api/certificados', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const col = await getCertCol();
+    const docs = await col.find({}).sort({ validade: 1 }).toArray();
+    res.json(docs);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/certificados
+app.post('/api/certificados', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { loja, tipo, validade, obs } = req.body;
+    if (!loja || !validade) return res.status(400).json({ error: 'loja e validade são obrigatórios' });
+    const col = await getCertCol();
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const doc = {
+      id, loja, tipo: tipo || 'e-CNPJ A1', validade, obs: obs || '',
+      criadoPor: req.session?.user?.username || '?',
+      criadoEm: new Date().toISOString(),
+      atualizadoPor: null, atualizadoEm: null,
+    };
+    await col.insertOne(doc);
+    res.json(doc);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/certificados/:id
+app.put('/api/certificados/:id', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { loja, tipo, validade, obs } = req.body;
+    const col = await getCertCol();
+    const upd = {
+      ...(loja     !== undefined && { loja }),
+      ...(tipo     !== undefined && { tipo }),
+      ...(validade !== undefined && { validade }),
+      ...(obs      !== undefined && { obs }),
+      atualizadoPor: req.session?.user?.username || '?',
+      atualizadoEm: new Date().toISOString(),
+    };
+    const r = await col.findOneAndUpdate({ id: req.params.id }, { $set: upd }, { returnDocument: 'after' });
+    if (!r) return res.status(404).json({ error: 'não encontrado' });
+    res.json(r);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/certificados/:id
+app.delete('/api/certificados/:id', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const col = await getCertCol();
+    await col.deleteOne({ id: req.params.id });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/certificados/alertas — retorna certs vencidos ou próximos (para notif no login)
+app.get('/api/certificados/alertas', requireAuth, async (req, res) => {
+  try {
+    const col = await getCertCol();
+    const dias = parseInt(req.query.dias) || 30;
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const limite = new Date(hoje); limite.setDate(limite.getDate() + dias);
+    const docs = await col.find({ validade: { $lte: limite.toISOString().slice(0,10) } }).sort({ validade: 1 }).toArray();
+    res.json(docs);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Start ──────────────────────────────────────────────────────────────────
 initMongo()
   .then(() => {

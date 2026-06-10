@@ -95,6 +95,8 @@ function applyUserPermissions(user) {
 
   const conferenciaEl = document.getElementById('conferenciaBtn');
   if (conferenciaEl) conferenciaEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
+  const certificadosEl = document.getElementById('certificadosBtn');
+  if (certificadosEl) certificadosEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
 }
 
 async function checkAuth() {
@@ -519,6 +521,30 @@ async function loadData() {
         document.getElementById('anivWarnMsg').innerHTML =
           `Feliz aniversário para:<br><br>${nomes}`;
         setTimeout(() => document.getElementById('anivWarnOverlay').classList.remove('hidden'), 600);
+      }
+
+      // Aviso certificados digitais vencendo (só admin/escritório)
+      const isAdminOrEsc = !S.user?.board || S.user?.board === 'escritorio' || S.user?.role === 'admin';
+      if (isAdminOrEsc) {
+        try {
+          const certAlertas = await apiFetch('GET', '/api/certificados/alertas?dias=30');
+          if (certAlertas?.length) {
+            const certWarnEl = document.getElementById('certWarnOverlay');
+            const certMsgEl  = document.getElementById('certWarnMsg');
+            if (certWarnEl && certMsgEl) {
+              const linhas = certAlertas.map(c => {
+                const days = Math.round((new Date(c.validade + 'T12:00:00') - new Date().setHours(0,0,0,0)) / 86400000);
+                const status = days < 0 ? `<span style="color:#F85149">VENCIDO há ${Math.abs(days)}d</span>`
+                             : days === 0 ? `<span style="color:#F85149">vence HOJE</span>`
+                             : days <= 15  ? `<span style="color:#E3B341">vence em ${days}d</span>`
+                             : `<span style="color:#4493F8">vence em ${days}d</span>`;
+                return `<strong>${_escHtml(c.loja)}</strong> · ${_escHtml(c.tipo||'')} — ${status}`;
+              }).join('<br>');
+              certMsgEl.innerHTML = linhas;
+              setTimeout(() => certWarnEl.classList.remove('hidden'), anivHoje.length ? 1200 : 700);
+            }
+          }
+        } catch(_) {}
       }
     }
   } catch (e) {

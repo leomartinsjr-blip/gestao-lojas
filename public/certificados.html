@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Certificados Digitais · Gestão de Lojas</title>
+<link rel="stylesheet" href="/style.css"/>
+<style>
+:root {
+  --cf-bg:      #0D1117;
+  --cf-card:    #161B22;
+  --cf-card2:   #1C2128;
+  --cf-border:  #30363D;
+  --cf-text:    #E6EDF3;
+  --cf-muted:   #7D8590;
+  --cf-primary: #4493F8;
+  --cf-accent:  #E3B341;
+  --cf-alert:   #F85149;
+  --cf-green:   #3FB950;
+  --cf-purple:  #BC8CFF;
+  --cf-teal:    #39D3BB;
+  --r: 10px;
+  --cf-primary-bg: #4493F818;
+  --cf-accent-bg:  #E3B34118;
+  --cf-alert-bg:   #F8514918;
+  --cf-green-bg:   #3FB95018;
+}
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  background: var(--cf-bg); color: var(--cf-text);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  margin: 0; font-size: 13px; min-height: 100vh;
+}
+
+/* ── Topbar ── */
+.cf-topbar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 0 28px; height: 54px;
+  background: var(--cf-card); border-bottom: 1px solid var(--cf-border);
+  position: sticky; top: 0; z-index: 100;
+}
+.cf-logo { display: flex; align-items: center; gap: 10px; padding-right: 20px; border-right: 1px solid var(--cf-border); }
+.cf-logo-icon { width: 28px; height: 28px; background: var(--cf-primary); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+.cf-logo-title { font-size: 15px; font-weight: 700; color: var(--cf-text); }
+.cf-logo-sub { font-size: 11px; color: var(--cf-muted); }
+.cf-topbar-right { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+#userLabel { font-size: 12px; color: var(--cf-muted); }
+
+/* ── Layout ── */
+.page { max-width: 860px; margin: 0 auto; padding: 28px 20px 60px; }
+
+/* ── Summary cards ── */
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.sum-card {
+  background: var(--cf-card); border: 1px solid var(--cf-border);
+  border-radius: var(--r); padding: 16px 14px; text-align: center;
+  cursor: pointer; transition: border-color .15s, background .15s;
+}
+.sum-card:hover { border-color: var(--cf-primary); }
+.sum-card.active { background: var(--cf-card2); border-color: var(--cf-primary); }
+.sum-num { font-size: 28px; font-weight: 700; line-height: 1; }
+.sum-label { font-size: 11px; color: var(--cf-muted); margin-top: 5px; font-weight: 500; }
+.c-expired  { color: var(--cf-alert); }
+.c-critical { color: var(--cf-accent); }
+.c-warning  { color: var(--cf-primary); }
+.c-ok       { color: var(--cf-green); }
+
+/* ── Toolbar ── */
+.toolbar {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 16px; flex-wrap: wrap;
+}
+.toolbar input[type=text] { flex: 1; min-width: 160px; }
+.cf-input, .cf-select {
+  background: var(--cf-card); border: 1px solid var(--cf-border);
+  color: var(--cf-text); border-radius: 8px; padding: 7px 12px;
+  font-size: 13px; font-family: inherit; height: 34px; outline: none;
+  transition: border-color .15s;
+}
+.cf-input:focus, .cf-select:focus { border-color: var(--cf-primary); box-shadow: 0 0 0 3px #4493F820; }
+.cf-select option { background: var(--cf-card2); }
+.cf-btn {
+  background: var(--cf-card); border: 1px solid var(--cf-border);
+  color: var(--cf-text); border-radius: 8px; padding: 7px 14px;
+  font-size: 13px; font-family: inherit; height: 34px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  transition: background .15s, border-color .15s;
+}
+.cf-btn:hover { background: var(--cf-card2); border-color: var(--cf-muted); }
+.cf-btn.primary { background: var(--cf-primary-bg); border-color: var(--cf-primary); color: var(--cf-primary); }
+.cf-btn.primary:hover { background: #4493F830; }
+
+/* ── Section title ── */
+.section-title { font-size: 11px; font-weight: 600; color: var(--cf-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
+
+/* ── Cert cards ── */
+.cert-card {
+  background: var(--cf-card); border: 1px solid var(--cf-border);
+  border-radius: var(--r); padding: 14px 16px; margin-bottom: 6px;
+  display: flex; align-items: center; gap: 14px;
+  transition: border-color .15s;
+  border-left: 3px solid transparent;
+}
+.cert-card:hover { border-color: var(--cf-border); border-left-color: inherit; }
+.cert-card.expired  { border-left-color: var(--cf-alert); }
+.cert-card.critical { border-left-color: var(--cf-accent); }
+.cert-card.warning  { border-left-color: var(--cf-primary); }
+.cert-card.ok       { border-left-color: var(--cf-green); }
+
+.cert-info { flex: 1; min-width: 0; }
+.cert-loja { font-size: 14px; font-weight: 600; color: var(--cf-text); }
+.cert-meta { font-size: 12px; color: var(--cf-muted); margin-top: 3px; }
+.cert-obs  { font-size: 11px; color: var(--cf-accent); margin-top: 3px; font-style: italic; }
+
+.cert-badge {
+  font-size: 11px; font-weight: 600; padding: 3px 10px;
+  border-radius: 20px; white-space: nowrap;
+}
+.cert-badge.expired  { background: var(--cf-alert-bg);  color: var(--cf-alert); }
+.cert-badge.critical { background: var(--cf-accent-bg); color: var(--cf-accent); }
+.cert-badge.warning  { background: var(--cf-primary-bg);color: var(--cf-primary); }
+.cert-badge.ok       { background: var(--cf-green-bg);  color: var(--cf-green); }
+
+.cert-date { font-size: 13px; font-weight: 600; text-align: right; white-space: nowrap; color: var(--cf-text); }
+.cert-date small { display: block; font-size: 11px; font-weight: 400; color: var(--cf-muted); }
+
+.icon-btn {
+  background: none; border: none; padding: 6px; height: auto;
+  cursor: pointer; color: var(--cf-muted); font-size: 16px;
+  border-radius: 6px; display: flex; align-items: center;
+  transition: background .15s, color .15s;
+}
+.icon-btn:hover { color: var(--cf-text); background: var(--cf-card2); }
+.icon-btn.del:hover { color: var(--cf-alert); }
+
+.cf-empty { text-align: center; color: var(--cf-muted); font-size: 13px; padding: 3rem 0; }
+
+/* ── Modal ── */
+.modal-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,.65);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 200; padding: 1rem;
+}
+.modal {
+  background: var(--cf-card); border: 1px solid var(--cf-border);
+  border-radius: 14px; padding: 24px; width: 100%; max-width: 420px;
+  box-shadow: 0 8px 40px rgba(0,0,0,.4);
+}
+.modal-title { font-size: 15px; font-weight: 700; color: var(--cf-text); margin-bottom: 20px; }
+.form-group { margin-bottom: 14px; }
+.form-group label { display: block; font-size: 11px; font-weight: 600; color: var(--cf-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 5px; }
+.form-group .cf-input, .form-group .cf-select, .form-group textarea { width: 100%; }
+.form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+textarea.cf-input { height: auto; min-height: 60px; resize: vertical; padding: 8px 12px; }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
+.modal-err { font-size: 12px; color: var(--cf-alert); margin-top: 4px; min-height: 18px; }
+
+/* ── Audit line ── */
+.cert-audit { font-size: 10px; color: var(--cf-muted); margin-top: 2px; }
+
+@media (max-width: 540px) {
+  .summary-grid { grid-template-columns: repeat(2,1fr); }
+  .form-row { grid-template-columns: 1fr; }
+  .cf-topbar { padding: 0 14px; }
+}
+</style>
+</head>
+<body>
+
+<div class="cf-topbar">
+  <div class="cf-logo">
+    <div class="cf-logo-icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5">
+        <rect x="3" y="11" width="18" height="11" rx="2"/>
+        <path d="M7 11V7a5 5 0 0110 0v4"/>
+      </svg>
+    </div>
+    <div>
+      <div class="cf-logo-title">Certificados Digitais</div>
+      <div class="cf-logo-sub">Controle de vencimento</div>
+    </div>
+  </div>
+  <div class="cf-topbar-right">
+    <span id="userLabel"></span>
+    <a href="/" class="cf-btn" style="font-size:12px;height:30px;padding:5px 12px">← Início</a>
+  </div>
+</div>
+
+<div class="page">
+  <div id="summaryGrid" class="summary-grid"></div>
+  <div class="toolbar">
+    <input type="text" id="searchInput" class="cf-input" placeholder="Buscar loja ou tipo…"/>
+    <select id="filterSelect" class="cf-select">
+      <option value="all">Todos</option>
+      <option value="expired">Vencidos</option>
+      <option value="critical">Urgentes (≤15d)</option>
+      <option value="warning">Atenção (≤30d)</option>
+      <option value="ok">Em dia</option>
+    </select>
+    <button class="cf-btn primary" id="btnNovo">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      Novo Certificado
+    </button>
+    <button class="cf-btn" id="btnExport" title="Exportar CSV">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      CSV
+    </button>
+  </div>
+  <div class="section-title" id="sectionTitle">Certificados</div>
+  <div id="certList"></div>
+</div>
+
+<!-- Modal -->
+<div class="modal-overlay" id="modalOverlay" style="display:none" onclick="closeModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-title" id="modalTitle">Novo certificado</div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Loja</label>
+        <select id="fLoja" class="cf-select">
+          <option value="">— selecione —</option>
+          <option>Del Rey</option>
+          <option>Minas</option>
+          <option>Contagem</option>
+          <option>Estação</option>
+          <option>Tommy</option>
+          <option>Surfers</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>Tipo</label>
+        <select id="fTipo" class="cf-select">
+          <option>e-CNPJ A1</option>
+          <option>e-CNPJ A3</option>
+          <option>e-CPF A1</option>
+          <option>e-CPF A3</option>
+          <option>e-NFe A1</option>
+          <option>e-NFe A3</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-group">
+      <label>Data de Vencimento</label>
+      <input type="date" id="fValidade" class="cf-input"/>
+    </div>
+    <div class="form-group">
+      <label>Observação <span style="font-weight:400;text-transform:none">(opcional)</span></label>
+      <textarea id="fObs" class="cf-input" placeholder="Ex: Renovar com contador X, token no armário Y…"></textarea>
+    </div>
+    <div class="modal-err" id="modalErr"></div>
+    <div class="modal-actions">
+      <button class="cf-btn" onclick="closeModal()">Cancelar</button>
+      <button class="cf-btn primary" id="btnSalvar" onclick="salvarCert()">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const LOJAS_COLORS = { 'Del Rey':'#4AA3FF','Minas':'#a78bfa','Contagem':'#34d399','Estação':'#FF9A4A','Tommy':'#2dd4bf','Surfers':'#FF6161' };
+
+let certs = [];
+let filter = 'all';
+let search = '';
+let editId = null;
+
+const today = new Date(); today.setHours(0,0,0,0);
+
+function daysDiff(val) {
+  const d = new Date(val + 'T12:00:00'); d.setHours(0,0,0,0);
+  return Math.round((d - today) / 86400000);
+}
+function statusOf(days) {
+  if (days < 0)   return 'expired';
+  if (days <= 15) return 'critical';
+  if (days <= 30) return 'warning';
+  return 'ok';
+}
+function statusLabel(days) {
+  if (days < 0)   return 'Vencido há ' + Math.abs(days) + 'd';
+  if (days === 0) return 'Vence hoje!';
+  if (days <= 15) return days + 'd — urgente';
+  if (days <= 30) return days + 'd — atenção';
+  return days + ' dias';
+}
+function fmtDate(iso) {
+  if (!iso) return '—';
+  return new Date(iso + 'T12:00:00').toLocaleDateString('pt-BR');
+}
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+async function api(method, url, body) {
+  const r = await fetch(url, { method, headers:{'Content-Type':'application/json'}, body: body ? JSON.stringify(body) : undefined });
+  if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.error||r.statusText); }
+  return r.json();
+}
+
+async function loadCerts() {
+  certs = await api('GET', '/api/certificados');
+  render();
+}
+
+function filtered() {
+  return certs.filter(c => {
+    const days = daysDiff(c.validade);
+    const st = statusOf(days);
+    const q = search.toLowerCase();
+    return (filter === 'all' || st === filter)
+      && (!q || c.loja.toLowerCase().includes(q) || (c.tipo||'').toLowerCase().includes(q) || (c.obs||'').toLowerCase().includes(q));
+  }).sort((a,b) => daysDiff(a.validade) - daysDiff(b.validade));
+}
+
+function counts() {
+  const r = { expired:0, critical:0, warning:0, ok:0 };
+  certs.forEach(c => r[statusOf(daysDiff(c.validade))]++);
+  return r;
+}
+
+function render() {
+  const c = counts();
+  const list = filtered();
+
+  // Summary
+  document.getElementById('summaryGrid').innerHTML = [
+    ['expired',  c.expired,  'Vencidos',        'c-expired'],
+    ['critical', c.critical, '≤ 15 dias',       'c-critical'],
+    ['warning',  c.warning,  '≤ 30 dias',       'c-warning'],
+    ['ok',       c.ok,       'Em dia',          'c-ok'],
+  ].map(([f, n, lbl, cls]) =>
+    `<div class="sum-card${filter===f?' active':''}" onclick="setFilter('${f}')">
+      <div class="sum-num ${cls}">${n}</div>
+      <div class="sum-label">${lbl}</div>
+    </div>`
+  ).join('');
+
+  // Section title
+  document.getElementById('sectionTitle').textContent = `Certificados (${list.length})`;
+
+  // List
+  const listEl = document.getElementById('certList');
+  if (!list.length) {
+    listEl.innerHTML = '<div class="cf-empty">Nenhum certificado encontrado</div>';
+    return;
+  }
+  listEl.innerHTML = list.map(c => {
+    const days = daysDiff(c.validade);
+    const st   = statusOf(days);
+    const cor  = LOJAS_COLORS[c.loja] || '#7D8590';
+    const audit = c.atualizadoPor
+      ? `Atualizado por ${esc(c.atualizadoPor)} · ${new Date(c.atualizadoEm).toLocaleDateString('pt-BR')}`
+      : c.criadoPor ? `Cadastrado por ${esc(c.criadoPor)} · ${new Date(c.criadoEm).toLocaleDateString('pt-BR')}` : '';
+    return `<div class="cert-card ${st}">
+      <div style="width:3px;height:36px;border-radius:2px;background:${cor};flex-shrink:0"></div>
+      <div class="cert-info">
+        <div class="cert-loja">${esc(c.loja)}</div>
+        <div class="cert-meta">${esc(c.tipo)}</div>
+        ${c.obs ? `<div class="cert-obs">📝 ${esc(c.obs)}</div>` : ''}
+        ${audit ? `<div class="cert-audit">${audit}</div>` : ''}
+      </div>
+      <span class="cert-badge ${st}">${statusLabel(days)}</span>
+      <div class="cert-date">${fmtDate(c.validade)}<small>vencimento</small></div>
+      <button class="icon-btn" onclick="openEdit('${c.id}')" title="Editar">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+      </button>
+      <button class="icon-btn del" onclick="deleteCert('${c.id}','${esc(c.loja)}')" title="Remover">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+      </button>
+    </div>`;
+  }).join('');
+}
+
+function setFilter(f) { filter = f; render(); }
+
+document.getElementById('searchInput').addEventListener('input', e => { search = e.target.value; render(); });
+document.getElementById('filterSelect').addEventListener('change', e => { filter = e.target.value; render(); });
+
+// ── Modal ──
+function openAdd() {
+  editId = null;
+  document.getElementById('modalTitle').textContent = 'Novo certificado';
+  document.getElementById('fLoja').value = '';
+  document.getElementById('fTipo').value = 'e-CNPJ A1';
+  document.getElementById('fValidade').value = '';
+  document.getElementById('fObs').value = '';
+  document.getElementById('modalErr').textContent = '';
+  document.getElementById('modalOverlay').style.display = 'flex';
+}
+function openEdit(id) {
+  const c = certs.find(x => x.id === id);
+  if (!c) return;
+  editId = id;
+  document.getElementById('modalTitle').textContent = 'Editar certificado';
+  document.getElementById('fLoja').value    = c.loja    || '';
+  document.getElementById('fTipo').value    = c.tipo    || 'e-CNPJ A1';
+  document.getElementById('fValidade').value= c.validade|| '';
+  document.getElementById('fObs').value     = c.obs     || '';
+  document.getElementById('modalErr').textContent = '';
+  document.getElementById('modalOverlay').style.display = 'flex';
+}
+function closeModal(e) {
+  if (e && e.target !== document.getElementById('modalOverlay')) return;
+  document.getElementById('modalOverlay').style.display = 'none';
+}
+document.querySelector('.modal-actions .cf-btn:first-child')?.addEventListener('click', () => {
+  document.getElementById('modalOverlay').style.display = 'none';
+});
+
+async function salvarCert() {
+  const loja    = document.getElementById('fLoja').value.trim();
+  const tipo    = document.getElementById('fTipo').value;
+  const validade= document.getElementById('fValidade').value;
+  const obs     = document.getElementById('fObs').value.trim();
+  const errEl   = document.getElementById('modalErr');
+  if (!loja)    { errEl.textContent = 'Selecione a loja.'; return; }
+  if (!validade){ errEl.textContent = 'Informe a data de vencimento.'; return; }
+  errEl.textContent = '';
+  const btn = document.getElementById('btnSalvar');
+  btn.disabled = true; btn.textContent = 'Salvando…';
+  try {
+    if (editId) {
+      const upd = await api('PUT', `/api/certificados/${editId}`, { loja, tipo, validade, obs });
+      certs = certs.map(c => c.id === editId ? upd : c);
+    } else {
+      const novo = await api('POST', '/api/certificados', { loja, tipo, validade, obs });
+      certs.push(novo);
+    }
+    document.getElementById('modalOverlay').style.display = 'none';
+    render();
+  } catch(e) {
+    errEl.textContent = '⚠ ' + e.message;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Salvar';
+  }
+}
+
+async function deleteCert(id, loja) {
+  if (!confirm(`Remover certificado de ${loja}?`)) return;
+  try {
+    await api('DELETE', `/api/certificados/${id}`);
+    certs = certs.filter(c => c.id !== id);
+    render();
+  } catch(e) { alert('Erro: ' + e.message); }
+}
+
+// ── Export CSV ──
+document.getElementById('btnExport').addEventListener('click', () => {
+  const rows = [['Loja','Tipo','Vencimento','Status','Dias','Observação','Cadastrado por']];
+  filtered().forEach(c => {
+    const days = daysDiff(c.validade);
+    rows.push([c.loja, c.tipo, c.validade, statusOf(days), days, c.obs||'', c.criadoPor||'']);
+  });
+  const csv = rows.map(r => r.map(v => '"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\n');
+  const a = document.createElement('a');
+  a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
+  a.download = 'certificados.csv';
+  a.click();
+});
+
+document.getElementById('btnNovo').addEventListener('click', openAdd);
+
+// ── User label ──
+fetch('/api/me').then(r=>r.json()).then(u => {
+  document.getElementById('userLabel').textContent = u.label || u.username || '';
+}).catch(()=>{});
+
+loadCerts();
+</script>
+</body>
+</html>
