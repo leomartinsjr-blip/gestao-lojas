@@ -504,6 +504,22 @@ async function loadData() {
         setTimeout(() => document.getElementById('vendasWarnOverlay').classList.remove('hidden'),
           hasFolgasCurMonth ? 800 : 1400);
       }
+
+      // Aviso aniversariantes: funcionários com aniversário HOJE
+      const todayMD = `${_pad(now.getMonth()+1)}-${_pad(now.getDate())}`;
+      const anivHoje = S.employees.filter(e =>
+        !e.inativo && e.nascimento && e.nascimento.slice(5) === todayMD
+      );
+      if (anivHoje.length) {
+        const nomes = anivHoje.map(e => {
+          const nome = e.apelido || e.name;
+          const loja = (BOARDS[e.board]?.label) || e.board || '';
+          return `<strong>${_escHtml(nome)}</strong>${loja ? ` <span style="opacity:.7">(${_escHtml(loja)})</span>` : ''}`;
+        }).join('<br>');
+        document.getElementById('anivWarnMsg').innerHTML =
+          `Feliz aniversário para:<br><br>${nomes}`;
+        setTimeout(() => document.getElementById('anivWarnOverlay').classList.remove('hidden'), 600);
+      }
     }
   } catch (e) {
     if (e.message.includes('401') || e.message.includes('autenticado')) { showLogin(); return; }

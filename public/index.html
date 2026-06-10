@@ -619,6 +619,16 @@
 <!-- TOAST -->
 <div id="toast" class="toast hidden"></div>
 
+<!-- ANIVERSARIANTES WARNING -->
+<div id="anivWarnOverlay" class="folgas-warn-overlay hidden" onclick="this.classList.add('hidden')">
+  <div class="folgas-warn-box" onclick="event.stopPropagation()">
+    <div class="folgas-warn-icon">🎂</div>
+    <div class="folgas-warn-title">Aniversariantes hoje!</div>
+    <div class="folgas-warn-msg" id="anivWarnMsg"></div>
+    <button class="folgas-warn-btn" onclick="document.getElementById('anivWarnOverlay').classList.add('hidden')">Entendido 🎉</button>
+  </div>
+</div>
+
 <!-- VENDAS WARNING -->
 <div id="vendasWarnOverlay" class="folgas-warn-overlay hidden" onclick="this.classList.add('hidden')">
   <div class="folgas-warn-box" onclick="event.stopPropagation()">
