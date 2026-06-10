@@ -2714,25 +2714,35 @@ app.get('/api/caixa-status', requireAuth, async (req, res) => {
   if (!board || !date) return res.status(400).json({ error: 'board e date obrigatórios' });
   const db = await readDB();
   const key = `${board}:${date}`;
-  res.json((db.caixaStatus || {})[key] || { steps: {}, fechado: false });
+  res.json((db.caixaStatus || {})[key] || { alertasTicked: [], formasOk: false, fechado: false });
 });
 
 // ── POST /api/caixa-status ────────────────────────────────────────────────
+// body: { board, date, action: 'tickAlerta'|'untickAlerta'|'setFormasOk', doc?, ok? }
 app.post('/api/caixa-status', requireAuth, async (req, res) => {
   const user = req.session.user;
   const isAdmin = !user.board || user.board === 'escritorio';
   if (!isAdmin) return res.status(403).json({ error: 'Sem permissão' });
-  const { board, date, step, ok } = req.body;
-  if (!board || !date || !step) return res.status(400).json({ error: 'Parâmetros inválidos' });
+  const { board, date, action, doc, ok } = req.body;
+  if (!board || !date || !action) return res.status(400).json({ error: 'Parâmetros inválidos' });
   const db = await readDB();
   if (!db.caixaStatus) db.caixaStatus = {};
   const key = `${board}:${date}`;
-  if (!db.caixaStatus[key]) db.caixaStatus[key] = { steps: {}, fechado: false };
-  db.caixaStatus[key].steps[step] = ok
-    ? { ok: true, user: user.name || user.login, ts: new Date().toISOString() }
-    : { ok: false };
+  if (!db.caixaStatus[key]) db.caixaStatus[key] = { alertasTicked: [], formasOk: false, fechado: false };
+  const entry = db.caixaStatus[key];
+  if (!Array.isArray(entry.alertasTicked)) entry.alertasTicked = [];
+
+  if (action === 'tickAlerta' && doc) {
+    if (!entry.alertasTicked.includes(doc)) entry.alertasTicked.push(doc);
+  } else if (action === 'untickAlerta' && doc) {
+    entry.alertasTicked = entry.alertasTicked.filter(d => d !== doc);
+  } else if (action === 'setFormasOk') {
+    entry.formasOk = !!ok;
+    if (entry.formasOk) { entry.formasOkBy = user.name || user.login; entry.formasOkTs = new Date().toISOString(); }
+    else { delete entry.formasOkBy; delete entry.formasOkTs; }
+  }
   await writeDB(db);
-  res.json({ ok: true, status: db.caixaStatus[key] });
+  res.json({ ok: true, status: entry });
 });
 
 // ── POST /api/caixa-fechar ────────────────────────────────────────────────
@@ -2740,20 +2750,43 @@ app.post('/api/caixa-fechar', requireAuth, async (req, res) => {
   const user = req.session.user;
   const isAdmin = !user.board || user.board === 'escritorio';
   if (!isAdmin) return res.status(403).json({ error: 'Sem permissão' });
-  const { board, date } = req.body;
+  const { board, date, totalAlertas } = req.body;
   if (!board || !date) return res.status(400).json({ error: 'Parâmetros inválidos' });
   const db = await readDB();
   if (!db.caixaStatus) db.caixaStatus = {};
   const key = `${board}:${date}`;
-  if (!db.caixaStatus[key]) db.caixaStatus[key] = { steps: {}, fechado: false };
-  const steps = db.caixaStatus[key].steps;
-  const allDone = ['alertas', 'formas', 'rede'].every(s => steps[s]?.ok);
-  if (!allDone) return res.status(400).json({ error: 'Todas as etapas devem ser conferidas antes de fechar' });
-  db.caixaStatus[key].fechado = true;
-  db.caixaStatus[key].fechadoBy = user.name || user.login;
-  db.caixaStatus[key].fechadoTs = new Date().toISOString();
+  if (!db.caixaStatus[key]) db.caixaStatus[key] = { alertasTicked: [], formasOk: false, fechado: false };
+  const entry = db.caixaStatus[key];
+  const ticked = (entry.alertasTicked || []).length;
+  const allAlertasDone = ticked >= (totalAlertas || 0);
+  if (!entry.formasOk || !allAlertasDone)
+    return res.status(400).json({ error: 'Confira todas as formas de pagamento e as vendas com alerta antes de fechar' });
+  entry.fechado = true;
+  entry.fechadoBy = user.name || user.login;
+  entry.fechadoTs = new Date().toISOString();
   await writeDB(db);
-  res.json({ ok: true, status: db.caixaStatus[key] });
+  res.json({ ok: true, status: entry });
+});
+
+// ── GET /api/caixa-resumo?month=YYYY-MM ──────────────────────────────────
+// Retorna por loja: quantos dias do mês têm caixa fechado vs abertos
+app.get('/api/caixa-resumo', requireAuth, async (req, res) => {
+  const month = req.query.month || new Date().toISOString().slice(0, 7);
+  const db = await readDB();
+  const allStatus = db.caixaStatus || {};
+  const storeKeys = ['delrey','minas','contagem','estacao','tommy','lez'];
+  const result = {};
+  for (const board of storeKeys) {
+    let fechados = 0, abertos = 0;
+    for (const [key, entry] of Object.entries(allStatus)) {
+      if (!key.startsWith(board + ':')) continue;
+      const date = key.split(':')[1];
+      if (!date || !date.startsWith(month)) continue;
+      if (entry.fechado) fechados++; else abertos++;
+    }
+    result[board] = { fechados, abertos };
+  }
+  res.json({ month, stores: result });
 });
 
 // ── GET /api/microvix/cartoes-debug?board=delrey&date=2026-06-03 ──────────

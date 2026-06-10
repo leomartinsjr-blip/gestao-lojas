@@ -841,6 +841,64 @@ body {
   .cxconf-drill-hdr,
   .cxconf-drill-row { grid-template-columns: 4rem 1fr 5rem; font-size: .72rem; }
 }
+/* ── Conferência de Caixa — overview e detail ───────────────────────────── */
+.cxconf-back-btn {
+  background: none; border: none; color: var(--muted); cursor: pointer; padding: .25rem .4rem;
+  border-radius: .3rem; display: flex; align-items: center; transition: color .15s;
+}
+.cxconf-back-btn:hover { color: var(--text); }
+
+.cxov-month-label { font-size: .78rem; color: var(--muted); margin-bottom: .85rem; }
+.cxov-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: .75rem; }
+.cxov-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: .65rem;
+  padding: .9rem 1rem; cursor: pointer; transition: border-color .15s, transform .1s; outline: none;
+}
+.cxov-card:hover { border-color: rgba(255,255,255,.2); transform: translateY(-1px); }
+.cxov-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: .65rem; }
+.cxov-store-label { font-weight: 800; font-size: .82rem; letter-spacing: .05em; }
+.cxov-arrow { color: var(--muted); }
+.cxov-stats { display: flex; gap: 1rem; margin-bottom: .65rem; }
+.cxov-stat { display: flex; flex-direction: column; }
+.cxov-stat-num { font-size: 1.4rem; font-weight: 700; line-height: 1; }
+.cxov-stat-lbl { font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.cxov-stat--fechado .cxov-stat-num { color: #3fb950; }
+.cxov-bar-wrap { height: 4px; background: rgba(255,255,255,.08); border-radius: 2px; margin-bottom: .35rem; overflow: hidden; }
+.cxov-bar { height: 100%; border-radius: 2px; transition: width .4s; }
+.cxov-bar-label { font-size: .68rem; color: var(--muted); }
+
+.cxdet-grid { display: grid; grid-template-columns: 1fr 1fr; gap: .85rem; }
+@media (max-width: 680px) { .cxdet-grid { grid-template-columns: 1fr; } }
+.cxdet-col { display: flex; flex-direction: column; gap: .85rem; }
+
+.cxconf-card-title-row {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin-bottom: .75rem;
+}
+.cxconf-card-title-row .cxconf-card-title { margin-bottom: 0; }
+
+.cxconf-alerta-list { display: flex; flex-direction: column; gap: .3rem; }
+.cxconf-alerta-item {
+  display: grid; grid-template-columns: 1.8rem 4.5rem 3rem 1fr auto auto;
+  align-items: center; gap: .4rem;
+  padding: .35rem .4rem; border-radius: .35rem;
+  border: 1px solid rgba(255,255,255,.05); font-size: .82rem;
+}
+.cxconf-alerta-item--ok { background: rgba(63,185,80,.06); border-color: rgba(63,185,80,.2); }
+.cxconf-alerta-doc  { color: var(--muted); font-size: .75rem; }
+.cxconf-alerta-hora { color: var(--muted); font-size: .75rem; }
+.cxconf-alerta-nome { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cxconf-alerta-val  { font-weight: 600; text-align: right; white-space: nowrap; }
+
+.cxconf-tick-btn {
+  width: 1.5rem; height: 1.5rem; border-radius: 50%; border: 2px solid rgba(255,255,255,.2);
+  background: none; cursor: pointer; font-size: .85rem; display: flex; align-items: center;
+  justify-content: center; color: var(--muted); transition: all .15s; padding: 0;
+}
+.cxconf-tick-btn:hover  { border-color: #3fb950; color: #3fb950; }
+.cxconf-tick-btn--on    { border-color: #3fb950; background: rgba(63,185,80,.2); color: #3fb950; }
+.cxconf-tick-done       { color: #3fb950; font-size: .9rem; }
+.cxconf-tick-pend       { color: var(--muted); }
+
 /* ── Conferência de Caixa — novos estilos ──────────────────────────────── */
 .cxconf-badge {
   font-size: .72rem; font-weight: 700; padding: .2rem .55rem; border-radius: 999px;
