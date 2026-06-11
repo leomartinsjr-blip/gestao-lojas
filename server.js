@@ -7736,6 +7736,33 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       docMap[doc].formas = docFormaMap[doc];
     }
 
+    // ── Desconto no total da venda: redistribui proporcionalmente nos itens ──
+    for (const d of Object.values(docMap)) {
+      if (!d.formas.length || d.itens.length === 0) continue;
+      const sumFormas = +d.formas.reduce((s, f) => s + f.valor, 0).toFixed(2);
+      const descTotal = +(d.valorTotal - sumFormas).toFixed(2);
+      if (descTotal <= 0.02) continue;
+      const totalBruto = d.itens.reduce((s, i) => s + i.vlrBruto, 0);
+      if (totalBruto > 0) {
+        let distribuido = 0;
+        for (let i = 0; i < d.itens.length; i++) {
+          const it = d.itens[i];
+          const descItem = i < d.itens.length - 1
+            ? +(descTotal * (it.vlrBruto / totalBruto)).toFixed(2)
+            : +(descTotal - distribuido).toFixed(2);
+          it.vlrDesconto = +(it.vlrDesconto + descItem).toFixed(2);
+          it.vlrLiquido  = +(it.vlrLiquido  - descItem).toFixed(2);
+          distribuido += descItem;
+        }
+      }
+      d.valorTotal = sumFormas;
+      const totalDescItens = d.itens.reduce((s, i) => s + i.vlrDesconto, 0);
+      d.desconto = {
+        valor: +totalDescItens.toFixed(2),
+        perc:  totalBruto > 0 ? +((totalDescItens / totalBruto) * 100).toFixed(1) : 0,
+      };
+    }
+
     // ── Alertas: parcela mínima ─────────────────────────────────────────────
     if (parcelaMin > 0) {
       for (const r of planoRows) {
