@@ -2490,8 +2490,8 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       if (r.cancelado === 'S' || r.cancelado === '1') continue;
       const operacao = (r.operacao || '').trim().toUpperCase();
       if (operacao !== 'S' && operacao !== 'DS') continue;
-      // tipo_transacao 'J' = ajuste de balanço/estoque (não é venda ao cliente)
-      if ((r.tipo_transacao || '').trim().toUpperCase() === 'J') continue;
+      // tipo_transacao 'J' sem documento = ajuste de balanço/estoque (Tommy: FALTA BALANÇO)
+      if ((r.tipo_transacao || '').trim().toUpperCase() === 'J' && String(r.documento || '').trim() === '0') continue;
       const serie = String(r.serie || r.serie_documento || r.num_serie || '').trim();
       if (serie === '999') continue;
       if (serie === '4' && operacao !== 'DS') continue;
@@ -7511,8 +7511,8 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       if ((r.soma_relatorio || 'S').toUpperCase() === 'N') continue;
       const op    = (r.operacao || '').trim().toUpperCase();
       if (op !== 'S' && op !== 'DS') continue;
-      // tipo_transacao 'J' = ajuste de balanço/estoque (não é venda ao cliente)
-      if ((r.tipo_transacao || '').trim().toUpperCase() === 'J') continue;
+      // tipo_transacao 'J' sem documento = ajuste de balanço/estoque (Tommy: FALTA BALANÇO)
+      if ((r.tipo_transacao || '').trim().toUpperCase() === 'J' && String(r.documento || '').trim() === '0') continue;
       const serie = String(r.serie || r.serie_documento || '').trim();
       if (serie === '999') continue;
       // Série 4: processa normalmente — pós-filtro vai remover os de total positivo (transferências internas)
