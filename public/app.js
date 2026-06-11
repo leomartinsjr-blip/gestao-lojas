@@ -1135,10 +1135,16 @@ function renderDashboard() {
     }
   }
 
+  // ── CARD: Aniversariantes do Mês ─────────────────────────────────────────
+  renderAniversariantesCard(rightCol);
+
   // ── CARD: Conferência de Caixa (resumo por loja) → admins e escritório ──
   renderConferenciaStatusCard(rightCol);
 
-  // ── CARD: Folgas → coluna direita ────────────────────────────────────────
+  // ── CARD: Contratos de Experiência ───────────────────────────────────────
+  renderContratoCard(rightCol);
+
+  // ── CARD: Folgas ──────────────────────────────────────────────────────────
   const folgasCard = document.createElement('div');
   folgasCard.className = 'main-card';
   folgasCard.dataset.cardId = 'card-folgas';
@@ -1158,9 +1164,6 @@ function renderDashboard() {
   `;
   rightCol.appendChild(folgasCard);
   _renderDashFolgas(folgasCard.querySelector('#dashFolgasBody'));
-
-  // Campanhas abaixo de Folgas (coluna direita)
-  if (campDashCard) rightCol.appendChild(campDashCard);
 
   // ── CARD: Comparativo por Loja → coluna esquerda (abaixo da performance) ─
   const compCard = document.createElement('div');
@@ -1198,11 +1201,8 @@ function renderDashboard() {
   // ── CARD: Fechamento de Caixa ─────────────────────────────────────────────
   renderCaixaCard(rightCol);
 
-  // ── CARD: Contratos de Experiência ───────────────────────────────────────
-  renderContratoCard(rightCol);
-
-  // ── CARD: Aniversariantes do Mês ─────────────────────────────────────────
-  renderAniversariantesCard(rightCol);
+  // Campanhas abaixo do Fechamento de Caixa
+  if (campDashCard) rightCol.appendChild(campDashCard);
 
 }
 
