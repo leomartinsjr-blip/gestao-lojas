@@ -7811,6 +7811,24 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       if (!docFormaMap[doc]) docFormaMap[doc] = [];
       docFormaMap[doc].push({ forma: 'PIX', bandeira: '', descPlano: 'PIX', valor: sign * vlrPix, tipoTrans: '' });
       docMap[doc].formas = docFormaMap[doc];
+      // Quando LinxMovimentoPlanos reporta Dinheiro com o valor cheio (inclui o PIX),
+      // o fallback PIX duplica o valor. Detecta e corrige deduzindo o PIX do Dinheiro.
+      const sumComPix = docFormaMap[doc].reduce((s, f) => s + f.valor, 0);
+      const excesso   = +(sumComPix - docMap[doc].valorTotal).toFixed(2);
+      if (excesso > 0.02) {
+        let restante = excesso;
+        for (const f of docFormaMap[doc]) {
+          if (/dinheiro|esp[eé]cie/i.test(f.forma) && f.valor > 0) {
+            const deduz = Math.min(f.valor, restante);
+            f.valor    = +(f.valor - deduz).toFixed(2);
+            restante   = +(restante - deduz).toFixed(2);
+            if (restante <= 0.01) break;
+          }
+        }
+        // Remove formas zeradas
+        docMap[doc].formas = docFormaMap[doc].filter(f => Math.abs(f.valor) > 0.01);
+        docFormaMap[doc]   = docMap[doc].formas;
+      }
     }
 
     // ── Desconto no total da venda: redistribui proporcionalmente nos itens ──
