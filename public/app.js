@@ -8034,14 +8034,14 @@ function renderConferenciaStatusCard(container) {
           <div style="font-size:.7rem;font-weight:700;color:${color};
             white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
             letter-spacing:.02em">${label}</div>
-          <div style="display:flex;gap:.6rem;align-items:flex-end">
-            <div style="display:flex;flex-direction:column;align-items:center;gap:.1rem">
-              <span style="font-size:1.45rem;font-weight:700;color:#3FB950;line-height:1">${fechados}</span>
-              <span style="font-size:.6rem;font-weight:600;color:var(--muted);letter-spacing:.05em">FECHADOS</span>
+          <div style="display:flex;gap:.3rem;align-items:flex-end">
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:.1rem;min-width:0">
+              <span style="font-size:1.35rem;font-weight:700;color:#3FB950;line-height:1">${fechados}</span>
+              <span style="font-size:.56rem;font-weight:600;color:var(--muted);letter-spacing:.04em;white-space:nowrap">FECH.</span>
             </div>
-            <div style="display:flex;flex-direction:column;align-items:center;gap:.1rem">
-              <span style="font-size:1.45rem;font-weight:700;color:#F85149;line-height:1">${emAberto}</span>
-              <span style="font-size:.6rem;font-weight:600;color:var(--muted);letter-spacing:.05em">EM ABERTO</span>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:.1rem;min-width:0">
+              <span style="font-size:1.35rem;font-weight:700;color:#F85149;line-height:1">${emAberto}</span>
+              <span style="font-size:.56rem;font-weight:600;color:var(--muted);letter-spacing:.04em;white-space:nowrap">ABERTO</span>
             </div>
           </div>
           <div style="font-size:.68rem;color:var(--muted)">${fechados} de ${daysElapsed} dias · ${pct}%</div>

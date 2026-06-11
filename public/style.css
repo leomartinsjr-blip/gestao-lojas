@@ -137,7 +137,7 @@ body {
 .dash-day-row > [data-card-id="card-conf-status"] {
   flex: 2 1 0; min-width: 0;
 }
-@media (max-width: 1300px) {
+@media (max-width: 700px) {
   .dash-day-row { flex-direction: column; }
   .dash-day-row > .main-card:first-child,
   .dash-day-row > [data-card-id="card-conf-status"] { flex: none; }
