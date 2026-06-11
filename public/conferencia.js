@@ -39,10 +39,7 @@
     $('cBoard').appendChild(o);
   });
 
-  // Ao selecionar "all" no vBoard, ativa automaticamente filtro de alertas
-  $('vBoard').addEventListener('change', () => {
-    if ($('vBoard').value === 'all') _filtroAlerta = true;
-  });
+  $('vBoard').addEventListener('change', () => { /* sem filtro automático */ });
 
   const hoje = new Date().toISOString().slice(0,10);
   const ini  = hoje.slice(0,8)+'01';
@@ -217,7 +214,7 @@
   // ════════════════════════════════════════════════════════════════════════
   // VENDAS
   // ════════════════════════════════════════════════════════════════════════
-  let _data = null, _grupo = 'lista', _filtroAlerta = false, _revisoesMap = {};
+  let _data = null, _grupo = 'lista', _revisoesMap = {};
   let _rotinaStatus = null, _rotinaBoard = null, _rotinaDate = null;
 
   $('vBuscarBtn').addEventListener('click', buscarVendas);
@@ -300,8 +297,8 @@
       ${kpiCard('blue',  svgMoney(), fmtR(totalVendas), 'Total Líquido', '', '')}
       ${kpiCard('amber', svgTag(), fmtR(totalDesc), 'Total Descontos', percDesc + '% sobre bruto', 'desc', comDesc + ' vendas')}
       ${totalAlertas
-        ? kpiCard('red', svgAlert(), totalAlertas, 'Com Alertas', 'Clique para filtrar', 'alerta', _filtroAlerta ? '● ativo' : '')
-        : kpiCard('muted', svgCheck(), qtdVendas - (vendas.filter(v=>v.alertas?.length).length), 'Sem Alertas', '100% em conformidade', '')}
+        ? kpiCard('red', svgAlert(), totalAlertas, 'Com Alertas', 'Requer revisão', 'alerta', '')
+        : kpiCard('muted', svgCheck(), qtdVendas, 'Sem Alertas', '100% em conformidade', '')}
       <div class="kpi-card kpi-bk-card kpi-blue">
         <div class="kpi-top"><div class="kpi-lbl">Formas de Pagamento</div><div class="kpi-icon blue"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></div></div>
         <div class="kpi-bk-list">${formaRows || '<span style="color:var(--cf-muted);font-size:11px">—</span>'}</div>
@@ -312,14 +309,7 @@
       </div>`;
     kpiRow.style.display = 'grid';
 
-    if (totalAlertas) {
-      const cardAlerta = kpiRow.querySelector('.kpi-alerta');
-      if (cardAlerta) {
-        if (_filtroAlerta) cardAlerta.classList.add('active-filter');
-        cardAlerta.classList.add('clickable');
-        cardAlerta.addEventListener('click', () => { _filtroAlerta = !_filtroAlerta; render(_data); });
-      }
-    }
+    // KPI de alertas é apenas informativo — sem filtro
 
     // ── Resumo de alertas por loja ─────────────────────────────────────────
     const alertRow = $('vAlertRow');
@@ -381,15 +371,11 @@
     if (_grupo === 'forma')    { el.innerHTML = renderGrupos(porForma,    totalVendas, 'blue');   bindDrills(el); return; }
     if (_grupo === 'vendedor') { el.innerHTML = renderGrupos(porVendedor, totalVendas, 'purple'); bindDrills(el); return; }
 
-    const base = _filtroAlerta ? vendas.filter(v => v.alertas && v.alertas.length > 0) : vendas;
+    // Separa pendentes (sem revisão) de revisadas — mostra todas as vendas
+    const pendentes = vendas.filter(v => !_revisoesMap[v.doc + '::' + (v.board || $('vBoard').value)]);
+    const revisadas = vendas.filter(v =>  _revisoesMap[v.doc + '::' + (v.board || $('vBoard').value)]);
 
-    // Separa pendentes (sem revisão) de revisadas
-    const pendentes  = base.filter(v => !_revisoesMap[v.doc + '::' + (v.board || $('vBoard').value)]);
-    const revisadas  = base.filter(v =>  _revisoesMap[v.doc + '::' + (v.board || $('vBoard').value)]);
-
-    const hdr = _filtroAlerta
-      ? `${pendentes.length} pendente(s) com alerta <span style="color:${P('muted')};font-weight:400">de ${qtdVendas} total</span>`
-      : `${pendentes.length} de ${qtdVendas} vendas`;
+    const hdr = `${pendentes.length} de ${qtdVendas} vendas`;
 
     el.innerHTML = `
       <div class="sales-card">
