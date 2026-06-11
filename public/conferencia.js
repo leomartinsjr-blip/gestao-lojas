@@ -1117,12 +1117,16 @@
       const confirmado = parseFloat(_confirmacoesManual[row.key] || 0);
       const diff = +(confirmado - row.valor).toFixed(2);
       const ok   = Math.abs(diff) <= 0.10;
-      const diffHtml = confirmado === 0
-        ? '<span style="color:var(--cf-alert);font-size:11px">pendente</span>'
-        : ok
-          ? '<span style="color:var(--cf-green)">&#10003;</span>'
-          : '<span style="color:var(--cf-alert)">' + (diff > 0 ? '+' : '') + fmtR(diff) + '</span>';
-      return `<tr class="` + (ok ? 'ok' : 'nok') + `" style="background:var(--cf-card2)">
+      const semValor = row.valor <= 0.01;
+      const diffHtml = semValor && confirmado === 0
+        ? '<span style="color:var(--cf-green)">&#10003;</span>'
+        : confirmado === 0
+          ? '<span style="color:var(--cf-alert);font-size:11px">pendente</span>'
+          : ok
+            ? '<span style="color:var(--cf-green)">&#10003;</span>'
+            : '<span style="color:var(--cf-alert)">' + (diff > 0 ? '+' : '') + fmtR(diff) + '</span>';
+      const rowOk = ok || (semValor && confirmado === 0);
+      return `<tr class="` + (rowOk ? 'ok' : 'nok') + `" style="background:var(--cf-card2)">
         <td colspan="2" style="font-style:italic;font-size:12px">` + esc(row.label) + ` <span style="font-size:10px;color:var(--cf-muted)">(confirmação manual)</span></td>
         <td class="num" style="color:var(--cf-muted)">—</td>
         <td class="num">` + fmtR(row.valor) + `</td>
