@@ -716,8 +716,8 @@ function renderDashboard() {
     _updateDayCard();
     _startDayCardAutoRefresh();
 
-    // Conferência de Caixa ao lado do faturamento diário (só admins/escritório)
-    renderConferenciaStatusCard(dayRow);
+    // Conferência de Caixa ao lado do faturamento diário (admins/supervisores; escritório usa rightCol)
+    if (S.user?.board !== 'escritorio') renderConferenciaStatusCard(dayRow);
   }
 
   // ── CARD: Performance Mensal ────────────────────────────────────────────
@@ -1140,6 +1140,9 @@ function renderDashboard() {
       }).catch(() => {});
     }
   }
+
+  // ── CARD: Conferência de Caixa → escritório vê aqui (leftCol foi removida)
+  if (S.user?.board === 'escritorio') renderConferenciaStatusCard(rightCol);
 
   // ── CARD: Aniversariantes do Mês ─────────────────────────────────────────
   renderAniversariantesCard(rightCol);
