@@ -7968,11 +7968,11 @@ function renderConferenciaStatusCard(container) {
       </span>
       <span class="main-card-sub">${MONTHS_PT[S.month-1]} ${S.year}</span>
     </div>
-    <div class="main-card-body" id="confStatusBody" style="padding:.5rem .75rem .6rem"></div>`;
+    <div class="main-card-body" id="confStatusBody"></div>`;
   container.appendChild(card);
 
   const body = card.querySelector('#confStatusBody');
-  body.innerHTML = '<div style="color:var(--muted);font-size:.78rem;padding:.25rem 0">Carregando…</div>';
+  body.innerHTML = '<div style="padding:.75rem .85rem;color:var(--muted);font-size:.78rem">Carregando…</div>';
 
   Promise.all(
     CONF_STORES.map(b =>
@@ -7992,26 +7992,35 @@ function renderConferenciaStatusCard(container) {
       const color    = BOARDS[b]?.color || '#8B949E';
       const label    = BOARDS[b]?.label || b;
       return `
-        <div style="display:flex;flex-direction:column;gap:.2rem;min-width:0;flex:1">
-          <div style="font-size:.7rem;font-weight:700;color:${color};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${label}</div>
-          <div style="display:flex;gap:.5rem;align-items:baseline">
-            <div style="text-align:center">
-              <div style="font-size:1.3rem;font-weight:700;color:#3FB950;line-height:1">${fechados}</div>
-              <div style="font-size:.58rem;color:var(--muted);letter-spacing:.03em;margin-top:.1rem">FECHADOS</div>
+        <div style="
+          background:var(--surface2);
+          border:1px solid var(--border);
+          border-radius:.5rem;
+          padding:.6rem .7rem .55rem;
+          display:flex;flex-direction:column;gap:.35rem;
+          min-width:0;flex:1 1 calc(33% - .5rem);
+        ">
+          <div style="font-size:.7rem;font-weight:700;color:${color};
+            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+            letter-spacing:.02em">${label}</div>
+          <div style="display:flex;gap:.6rem;align-items:flex-end">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:.1rem">
+              <span style="font-size:1.45rem;font-weight:700;color:#3FB950;line-height:1">${fechados}</span>
+              <span style="font-size:.6rem;font-weight:600;color:var(--muted);letter-spacing:.05em">FECHADOS</span>
             </div>
-            <div style="text-align:center">
-              <div style="font-size:1.3rem;font-weight:700;color:#F85149;line-height:1">${emAberto}</div>
-              <div style="font-size:.58rem;color:var(--muted);letter-spacing:.03em;margin-top:.1rem">EM ABERTO</div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:.1rem">
+              <span style="font-size:1.45rem;font-weight:700;color:#F85149;line-height:1">${emAberto}</span>
+              <span style="font-size:.6rem;font-weight:600;color:var(--muted);letter-spacing:.05em">EM ABERTO</span>
             </div>
           </div>
-          <div style="font-size:.65rem;color:var(--muted)">${fechados} de ${daysElapsed} dias · ${pct}%</div>
-          <div style="height:2px;background:var(--border);border-radius:1px;overflow:hidden">
-            <div style="height:100%;width:${pct}%;background:${color};transition:width .4s"></div>
+          <div style="font-size:.68rem;color:var(--muted)">${fechados} de ${daysElapsed} dias · ${pct}%</div>
+          <div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${color};border-radius:2px;transition:width .4s"></div>
           </div>
         </div>`;
     }).join('');
 
-    body.innerHTML = `<div style="display:flex;gap:.75rem;flex-wrap:wrap">${chips}</div>`;
+    body.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:.5rem;padding:.65rem .7rem">${chips}</div>`;
   });
 }
 
