@@ -1490,6 +1490,7 @@
     const m = document.getElementById('vendaModal');
     if (m) m.remove();
     document.removeEventListener('keydown', _onEscVenda);
+    if (_modalCloseCallback) { _modalCloseCallback(); _modalCloseCallback = null; }
   }
   function _onEscVenda(e) { if (e.key === 'Escape') fecharModalVenda(); }
 
@@ -1546,17 +1547,17 @@
 
   async function salvarRevisao(doc, board, status, obs, valorCobrar) {
     const venda = (_data?.vendas || []).find(v => v.doc === doc && (v.board === board || !v.board));
-    if (!venda) return;
     const body = {
       doc, board: board || $('vBoard').value,
-      data: venda.data,
+      data: venda?.data,
       dtIni: $('vDtIni').value, dtFin: $('vDtFin').value,
-      vendedorCod: venda.vendedorCod, vendedorNome: venda.vendedorNome,
-      valorTotal: venda.valorTotal,
+      vendedorCod: venda?.vendedorCod, vendedorNome: venda?.vendedorNome,
+      valorTotal: venda?.valorTotal,
       valorCobrar: valorCobrar || 0,
       status, obs: obs || '',
-      alertas: venda.alertas || [],
+      alertas: venda?.alertas || [],
     };
+    if (!venda) { fecharModalVenda(); return; }
     try {
       const saved = await api('POST', '/api/conferencia/revisao', body);
       _revisoesMap[doc + '::' + (board || $('vBoard').value)] = saved;
@@ -1567,6 +1568,7 @@
 
   // ── Modal de Reprovação ──────────────────────────────────────────────────
   let _modalDoc = null, _modalBoard = null;
+  let _modalCloseCallback = null;
 
   function abrirModalReprovacao(doc, board) {
     const venda = (_data?.vendas || []).find(v => v.doc === doc && (v.board === board || !v.board));
@@ -2163,15 +2165,14 @@
       fecharModalVenda(); // remove loading modal
 
       if (venda) {
-        // Temporarily inject into _data so abrirModalVenda can find it
+        // Inject venda into _data so salvarRevisao can find it while modal is open
         const prevData = _data;
         if (!_data) _data = { vendas: [] };
         if (!_data.vendas.find(v => String(v.doc) === String(docId) && (v.board === board || !v.board))) {
           _data = { ..._data, vendas: [...(_data.vendas || []), { ...venda, board }] };
         }
+        _modalCloseCallback = () => { _data = prevData; };
         abrirModalVenda(docId, board);
-        // restore original _data after modal is built (modal captured its data already)
-        _data = prevData;
       } else {
         // venda não encontrada no Microvix — mostra modal simples com os dados da revisão
         const rev = _revisoesMap[docId + '::' + board] || {};
