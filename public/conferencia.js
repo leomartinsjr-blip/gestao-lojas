@@ -214,7 +214,7 @@
   // ════════════════════════════════════════════════════════════════════════
   // VENDAS
   // ════════════════════════════════════════════════════════════════════════
-  let _data = null, _grupo = 'lista', _revisoesMap = {};
+  let _data = null, _grupo = 'lista', _revisoesMap = {}, _filtroSoAlertas = false;
   // Expõe para diagnóstico no F12: window._cfDebug.data, window._cfDebug.board, etc.
   window._cfDebug = { get data() { return _data; }, get board() { return typeof _rotinaBoard !== 'undefined' ? _rotinaBoard : null; }, get date() { return typeof _rotinaDate !== 'undefined' ? _rotinaDate : null; } };
   window._cfDebugDoc = async (doc) => { const r = await fetch(`/api/conferencia/debug-doc?board=${window._cfDebug.board}&date=${window._cfDebug.date}&doc=${doc}`); const j = await r.json(); console.table(j.formas); console.log('valorTotal:', j.valorTotal, 'sumFormas:', j.sumFormas, 'gap:', j.gap); return j; };
@@ -301,7 +301,7 @@
       ${kpiCard('blue',  svgMoney(), fmtR(totalVendas), 'Total Líquido', '', '')}
       ${kpiCard('amber', svgTag(), fmtR(totalDesc), 'Total Descontos', percDesc + '% sobre bruto', 'desc', comDesc + ' vendas')}
       ${totalAlertas
-        ? kpiCard('red', svgAlert(), totalAlertas, 'Com Alertas', 'Requer revisão', 'alerta', '')
+        ? `<div id="kpiAlertasCard" style="cursor:pointer" title="Clique para filtrar só alertas">${kpiCard('red', svgAlert(), totalAlertas, 'Com Alertas', _filtroSoAlertas ? '🔍 Filtro ativo — clique para limpar' : 'Clique para ver só alertas', 'alerta', '')}</div>`
         : kpiCard('muted', svgCheck(), qtdVendas, 'Sem Alertas', '100% em conformidade', '')}
       <div class="kpi-card kpi-bk-card kpi-blue">
         <div class="kpi-top"><div class="kpi-lbl">Formas de Pagamento</div><div class="kpi-icon blue"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></div></div>
@@ -313,7 +313,13 @@
       </div>`;
     kpiRow.style.display = 'grid';
 
-    // KPI de alertas é apenas informativo — sem filtro
+    // KPI alertas: clique filtra a lista
+    const kpiAlertasCard = $('kpiAlertasCard');
+    if (kpiAlertasCard) kpiAlertasCard.addEventListener('click', () => {
+      _filtroSoAlertas = !_filtroSoAlertas;
+      render(_data);
+      if (_filtroSoAlertas) $('vResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
 
     // ── Resumo de alertas por loja ─────────────────────────────────────────
     const alertRow = $('vAlertRow');
@@ -375,11 +381,16 @@
     if (_grupo === 'forma')    { el.innerHTML = renderGrupos(porForma,    totalVendas, 'blue');   bindDrills(el); return; }
     if (_grupo === 'vendedor') { el.innerHTML = renderGrupos(porVendedor, totalVendas, 'purple'); bindDrills(el); return; }
 
-    // Separa pendentes (sem revisão) de revisadas — mostra todas as vendas
-    const pendentes = vendas.filter(v => !_revisoesMap[v.doc + '::' + (v.board || $('vBoard').value)]);
-    const revisadas = vendas.filter(v =>  _revisoesMap[v.doc + '::' + (v.board || $('vBoard').value)]);
+    // Filtro: só alertas
+    const vendasFiltradas = _filtroSoAlertas ? vendas.filter(v => v.alertas?.length) : vendas;
 
-    const hdr = `${pendentes.length} de ${qtdVendas} vendas`;
+    // Separa pendentes (sem revisão) de revisadas — mostra todas as vendas
+    const pendentes = vendasFiltradas.filter(v => !_revisoesMap[v.doc + '::' + (v.board || $('vBoard').value)]);
+    const revisadas = vendasFiltradas.filter(v =>  _revisoesMap[v.doc + '::' + (v.board || $('vBoard').value)]);
+
+    const hdr = _filtroSoAlertas
+      ? `<span style="color:var(--cf-red)">${pendentes.length} venda(s) com alerta</span> <button id="btnLimparFiltro" style="font-size:10px;margin-left:8px;padding:2px 8px;border-radius:5px;border:1px solid var(--cf-border);background:transparent;color:var(--cf-muted);cursor:pointer">✕ limpar filtro</button>`
+      : `${pendentes.length} de ${qtdVendas} vendas`;
 
     el.innerHTML = `
       <div class="sales-card">
@@ -399,6 +410,9 @@
       </div>` : ''}`;
 
     bindDrills(el);
+
+    const btnLimpar = $('btnLimparFiltro');
+    if (btnLimpar) btnLimpar.onclick = () => { _filtroSoAlertas = false; render(_data); };
 
     // Toggle mostrar/ocultar revisadas
     const tog = $('revisadasToggle');
@@ -1250,12 +1264,12 @@
           <th style="width:20px"></th>
         </tr></thead>
         <tbody>
-          ${vendas.map((v,i) => {
-            const did   = `dr-${i}-${Math.random().toString(36).slice(2,7)}`;
-            const acc   = accentClass(v);
-            const hasIt = v.itens?.length > 0;
+          ${vendas.map((v) => {
+            const acc    = accentClass(v);
+            const hasIt  = v.itens?.length > 0;
+            const board  = v.board || $('vBoard').value;
             return `
-            <tr class="sale-row"${hasIt ? ` data-drill="${did}"` : ''}>
+            <tr class="sale-row" style="cursor:pointer" data-drill="modal" data-docid="${esc(v.doc)}" data-board="${esc(board)}">
               <td class="accent-cell"><div class="accent-bar ${acc}"></div></td>
               <td style="font-weight:700">${fmtD(v.data)}</td>
               <td class="muted">${v.hora||'—'}</td>
@@ -1263,18 +1277,14 @@
               <td>${esc(v.vendedor||'—')}</td>
               <td><div class="pay-chips">${formaChips(v.formas)}</div></td>
               <td class="num">${v.desconto?.valor>0
-                ? `<span style="color:#DC2626;font-weight:700">${fmtR(v.desconto.valor)}</span><span class="disc-pct">${v.desconto.perc}%</span>`
-                : `<span style="color:${P('muted')}">—</span>`}</td>
+                ? '<span style="color:#DC2626;font-weight:700">' + fmtR(v.desconto.valor) + '</span><span class="disc-pct">' + v.desconto.perc + '%</span>'
+                : '<span style="color:' + P('muted') + '">—</span>'}</td>
               <td class="num" style="font-weight:800;color:${v.valorTotal<0?'var(--cf-alert)':'var(--cf-text)'}">${fmtR(v.valorTotal)}</td>
-              <td>
-                ${alertBadges(v.alertas)}
-                ${v.alertas?.length ? revisaoBtns(v) : ''}
-              </td>
+              <td>${alertBadges(v.alertas)}</td>
               <td style="color:${P('muted')}">
-                ${hasIt ? `<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>` : ''}
+                ${hasIt ? '<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>' : ''}
               </td>
-            </tr>
-            ${hasIt ? `<tr class="drill-row hidden" id="${did}"><td colspan="10" style="padding:0">${drillItens(v)}</td></tr>` : ''}`;
+            </tr>`;
           }).join('')}
         </tbody>
       </table>`;
@@ -1381,6 +1391,60 @@
     }).join('');
   }
 
+  // ── Modal de detalhe da venda ────────────────────────────────────────────
+  function abrirModalVenda(docId, board) {
+    const venda = (_data?.vendas || []).find(v => v.doc === docId && (v.board === board || !v.board));
+    if (!venda) return;
+    const boardLabel = LOJA_LABEL[venda.board || board] || venda.board || board || '';
+    const rev = _revisoesMap[docId + '::' + (board || $('vBoard').value)];
+    const statusBadge = rev
+      ? (rev.status === 'conferida'
+          ? '<span style="background:#3FB95020;color:var(--cf-green);border:1px solid var(--cf-green);border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700">✅ Conferida</span>'
+          : '<span style="background:#ef444420;color:var(--cf-red);border:1px solid var(--cf-red);border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700">❌ Reprovada</span>')
+      : '';
+
+    const modal = document.createElement('div');
+    modal.id = 'vendaModal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:9000;background:#00000088;display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeInModal .15s ease';
+    modal.innerHTML =
+      '<div style="background:var(--cf-card);border:1px solid var(--cf-border);border-radius:14px;width:100%;max-width:860px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 64px #00000060">' +
+        '<div style="display:flex;align-items:center;gap:12px;padding:18px 22px;border-bottom:1px solid var(--cf-border);flex-shrink:0">' +
+          '<div style="flex:1">' +
+            '<div style="font-size:16px;font-weight:800;color:var(--cf-text)">Doc ' + esc(docId) + ' &nbsp;·&nbsp; ' + esc(venda.vendedor||'—') + '</div>' +
+            '<div style="font-size:12px;color:var(--cf-muted);margin-top:2px">' + esc(boardLabel) + ' &nbsp;·&nbsp; ' + fmtD(venda.data) + ' ' + (venda.hora||'') + ' &nbsp;·&nbsp; Total: <strong style="color:var(--cf-text)">' + fmtR(venda.valorTotal) + '</strong> &nbsp;' + statusBadge + '</div>' +
+          '</div>' +
+          '<button id="vendaModalClose" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--cf-muted);padding:4px 8px;border-radius:6px;line-height:1" title="Fechar">✕</button>' +
+        '</div>' +
+        '<div style="overflow-y:auto;padding:20px 22px;flex:1">' +
+          (venda.alertas?.length ? '<div style="background:#ef444410;border:1px solid #ef444440;border-radius:8px;padding:12px 16px;margin-bottom:16px">' +
+            '<div style="font-size:11px;font-weight:700;color:var(--cf-red);margin-bottom:6px">⚠ ALERTAS</div>' +
+            venda.alertas.map(a => '<div style="font-size:12px;color:var(--cf-text);padding:2px 0">• ' + esc(a.msg) + '</div>').join('') +
+          '</div>' : '') +
+          '<div style="margin-bottom:16px">' +
+            '<div style="font-size:11px;font-weight:700;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Formas de Pagamento</div>' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap">' + (venda.formas||[]).map(f => '<span style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:6px;padding:4px 12px;font-size:12px">' + esc(f.forma) + (f.bandeira ? ' · ' + esc(f.bandeira) : '') + ' <strong>' + fmtR(f.valor) + '</strong>' + (f.parcelas > 1 ? ' · ' + f.parcelas + 'x' : '') + '</span>').join('') + '</div>' +
+          '</div>' +
+          drillItens(venda) +
+          '<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--cf-border)">' +
+            revisaoBtns(venda) +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    document.body.appendChild(modal);
+    modal.querySelector('#vendaModalClose').onclick = fecharModalVenda;
+    modal.addEventListener('click', e => { if (e.target === modal) fecharModalVenda(); });
+    document.addEventListener('keydown', _onEscVenda);
+    bindDrills(modal);
+  }
+
+  function fecharModalVenda() {
+    const m = document.getElementById('vendaModal');
+    if (m) m.remove();
+    document.removeEventListener('keydown', _onEscVenda);
+  }
+  function _onEscVenda(e) { if (e.key === 'Escape') fecharModalVenda(); }
+
   function bindDrills(container) {
     container.querySelectorAll('.grupo-hdr:not([data-bound])').forEach(hdr => {
       hdr.dataset.bound = '1';
@@ -1395,7 +1459,11 @@
     container.querySelectorAll('tr[data-drill]:not([data-bound])').forEach(row => {
       row.dataset.bound = '1';
       row.addEventListener('click', e => {
-        if (e.target.closest('.revisao-btns')) return; // não abrir drill ao clicar em botões
+        if (e.target.closest('.revisao-btns')) return;
+        const docId = row.dataset.docid;
+        const board = row.dataset.board || $('vBoard').value;
+        if (docId) { abrirModalVenda(docId, board); return; }
+        // fallback: grupos (por vendedor/forma)
         const drill = document.getElementById(row.dataset.drill);
         if (!drill) return;
         const open = drill.classList.toggle('hidden');

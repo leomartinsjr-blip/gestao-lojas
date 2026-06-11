@@ -550,6 +550,8 @@ td.muted  { color: var(--cf-muted); }
 .btn-fechar:disabled { opacity: .3; cursor: default; }
 .btn-fechar.fechado  { background: var(--cf-muted); cursor: default; }
 
+@keyframes fadeInModal { from { opacity:0; transform:scale(.97); } to { opacity:1; transform:scale(1); } }
+
 /* ── Misc ───────────────────────────────────────────────────── */
 .hidden { display: none !important; }
 .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid #ffffff20; border-top-color: var(--cf-primary); border-radius: 50%; animation: spin .6s linear infinite; }
