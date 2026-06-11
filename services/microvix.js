@@ -31,7 +31,7 @@ ${paramXml}
 </LinxMicrovix>`;
 }
 
-function postRequest(body, timeoutMs = 60_000) {
+function postRequest(body, timeoutMs = 45_000) {
   return new Promise((resolve, reject) => {
     const buf = Buffer.from(body, 'utf-8');
     const opts = {
@@ -43,13 +43,15 @@ function postRequest(body, timeoutMs = 60_000) {
         'Content-Length': buf.length,
       },
     };
+    // Timer absoluto: garante que a promise rejeita mesmo se o servidor
+    // responde lentamente (req.setTimeout só dispara em inatividade)
+    const timer = setTimeout(() => { req.destroy(); reject(new Error('Microvix timeout')); }, timeoutMs);
     const req = https.request(opts, res => {
       const chunks = [];
       res.on('data', c => chunks.push(c));
-      res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+      res.on('end', () => { clearTimeout(timer); resolve(Buffer.concat(chunks).toString('utf-8')); });
     });
-    req.on('error', reject);
-    req.setTimeout(timeoutMs, () => { req.destroy(); reject(new Error('Microvix timeout')); });
+    req.on('error', e => { clearTimeout(timer); reject(e); });
     req.write(buf);
     req.end();
   });
