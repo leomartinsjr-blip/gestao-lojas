@@ -5657,17 +5657,20 @@ async function loadCaixaConf() {
   buscarBtn.disabled = true;
   try {
     const data = await apiFetch('GET', `/api/conferencia-caixa?board=${board}&date=${date}`);
-    renderCaixaConf(body, data);
+    const totalDiario = S.employees
+      .filter(e => e.board === board && isVend(e))
+      .reduce((s, e) => s + ((S.vsales[e.id]?.entries?.[date]?.value) || 0), 0);
+    renderCaixaConf(body, data, totalDiario);
   } catch (e) {
     body.innerHTML = `<div class="trans-error">Erro: ${e.message}</div>`;
   } finally { buscarBtn.disabled = false; }
 }
 
-function renderCaixaConf(body, data) {
+function renderCaixaConf(body, data, totalDiario = 0) {
   const { vendedores, formasPagamento, totalSangria } = data;
   const fR = v => 'R$ ' + (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  // Fonte autoritativa: soma das formas de pagamento (LinxMovimentoPlanos/Cartoes)
-  const totalGeral = formasPagamento.reduce((s, f) => s + f.total, 0);
+  const totalGeral     = formasPagamento.reduce((s, f) => s + f.total, 0);
+  const totalVendedores = vendedores.reduce((s, v) => s + v.total, 0);
 
   const empByMxCod = {};
   for (const e of (S.employees || [])) {
@@ -5753,6 +5756,27 @@ function renderCaixaConf(body, data) {
       }).join('')
     : '<div class="cxconf-empty">Nenhuma venda registrada</div>';
 
+  const TOL = 0.05;
+  function validRowHtml(label, val, base) {
+    const noData = val === 0 && label === 'Faturamento Diário';
+    const diff   = Math.abs(val - base);
+    const ok     = !noData && diff <= TOL;
+    const warn   = !noData && diff > TOL;
+    const cls    = noData ? 'cxconf-valid--info' : ok ? 'cxconf-valid--ok' : 'cxconf-valid--warn';
+    const icon   = noData
+      ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
+      : ok
+      ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`
+      : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+    const diffTag = warn ? `<span class="cxconf-valid-diff">dif. ${fR(diff)}</span>` : '';
+    const valStr  = noData ? '<span style="color:var(--muted);font-size:.72rem">Não disponível</span>' : `<span class="cxconf-valid-val">${fR(val)}</span>`;
+    return `<div class="cxconf-valid-row ${cls}">
+      <span class="cxconf-valid-icon">${icon}</span>
+      <span class="cxconf-valid-label">${label}</span>
+      ${valStr}${diffTag}
+    </div>`;
+  }
+
   body.innerHTML = `
     <div class="cxconf-grid">
       <div class="cxconf-col">
@@ -5776,6 +5800,11 @@ function renderCaixaConf(body, data) {
         Total Faturamento
       </span>
       <span class="cxconf-total-bar-val">${fR(totalGeral)}</span>
+    </div>
+    <div class="cxconf-validation">
+      ${validRowHtml('Formas de Pagamento', totalGeral, totalGeral)}
+      ${validRowHtml('Por Vendedor', totalVendedores, totalGeral)}
+      ${validRowHtml('Faturamento Diário', totalDiario, totalGeral)}
     </div>`;
 
   body.querySelectorAll('.cxconf-row--clickable').forEach(row => {

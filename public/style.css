@@ -826,6 +826,23 @@ body {
   font-size: 1.6rem; font-weight: 800; color: #fff;
   letter-spacing: -.01em;
 }
+.cxconf-validation { display: flex; flex-direction: column; gap: .35rem; margin-top: .6rem; }
+.cxconf-valid-row {
+  display: flex; align-items: center; gap: .55rem;
+  padding: .5rem .85rem;
+  border-radius: .45rem;
+  font-size: .78rem;
+}
+.cxconf-valid--ok   { background: rgba(63,185,80,.1);    border: 1px solid rgba(63,185,80,.3); }
+.cxconf-valid--warn { background: rgba(210,153,34,.1);   border: 1px solid rgba(210,153,34,.3); }
+.cxconf-valid--info { background: rgba(139,148,158,.07); border: 1px solid rgba(139,148,158,.2); }
+.cxconf-valid--ok   .cxconf-valid-icon svg { color: #3FB950; }
+.cxconf-valid--warn .cxconf-valid-icon svg { color: #D2A81F; }
+.cxconf-valid--info .cxconf-valid-icon svg { color: var(--muted); }
+.cxconf-valid-icon  { flex-shrink: 0; display: flex; align-items: center; }
+.cxconf-valid-label { flex: 1; font-weight: 600; color: var(--text); }
+.cxconf-valid-val   { font-weight: 700; color: var(--text); }
+.cxconf-valid-diff  { font-size: .71rem; color: #D2A81F; padding-left: .15rem; font-weight: 600; }
 .cxconf-empty { color: var(--muted); font-size: .82rem; font-style: italic; padding: .5rem 0; }
 .cxconf-row--clickable { cursor: pointer; border-radius: .3rem; transition: background .12s; }
 .cxconf-row--clickable:hover { background: rgba(255,255,255,.04); }
