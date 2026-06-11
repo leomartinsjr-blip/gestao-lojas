@@ -678,6 +678,13 @@
     const reimp = el.querySelector('#concReimportar');
     if (reimp) reimp.onclick = () => { _redeRows = null; _redeRowsSource = null; _redeRowsServerInfo = null; renderCartoesSection(); };
 
+    el.querySelectorAll('.gap-toggle-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const target = document.getElementById(row.dataset.target);
+        if (target) target.style.display = target.style.display === 'none' ? '' : 'none';
+      });
+    });
+
     const conf = el.querySelector('#concConfirmar');
     if (conf) conf.onclick = async () => {
       conf.disabled = true; conf.textContent = '…';
@@ -872,6 +879,27 @@
     const totalVendas  = _data?.totalVendas || 0;
     const diffGeral    = totalMxGeral - totalVendas;
     const geralOk      = Math.abs(diffGeral) <= 0.10;
+    const gapDocs      = _data?.docsComGap || [];
+
+    // Monta HTML do diagnóstico de gap (colapsável)
+    const gapDebugId = `gap-debug-${Date.now()}`;
+    const gapDebugHtml = !geralOk && gapDocs.length ? `
+      <tr id="${gapDebugId}" style="display:none;background:var(--cf-card2)">
+        <td colspan="5" style="padding:.4rem .75rem">
+          <div style="font-size:11px;color:var(--cf-muted);margin-bottom:.3rem">
+            ${gapDocs.length} doc(s) com forma de pagamento incompleta no Microvix:
+          </div>
+          ${gapDocs.map(g => `
+            <div style="display:flex;gap:.5rem;font-size:11.5px;padding:.15rem 0;border-bottom:1px solid var(--cf-border)">
+              <span style="color:var(--cf-muted);min-width:60px">Doc ${esc(g.doc)}</span>
+              <span style="min-width:80px">${esc(g.vendedor||'')}</span>
+              <span style="color:var(--cf-muted)">${g.hora||''}</span>
+              <span style="margin-left:auto">venda <strong>${fmtR(g.valorTotal)}</strong></span>
+              <span>forms <strong>${fmtR(g.sumFormas)}</strong></span>
+              <span style="color:var(--cf-alert)">gap <strong>${fmtR(g.gap)}</strong></span>
+            </div>`).join('')}
+        </td>
+      </tr>` : '';
 
     return `
       <table class="conc-tbl">
@@ -895,16 +923,17 @@
             </td>
           </tr>
           ${outrosRows}
-          <tr style="border-top:2px solid var(--cf-border);background:var(--cf-card2)">
+          <tr style="border-top:2px solid var(--cf-border);background:var(--cf-card2)${!geralOk && gapDocs.length ? ';cursor:pointer' : ''}" ${!geralOk && gapDocs.length ? `class="gap-toggle-row" data-target="${gapDebugId}"` : ''}>
             <td colspan="2" style="font-weight:800">Total Geral</td>
             <td class="num" style="color:var(--cf-muted)">—</td>
             <td class="num" style="font-weight:800">${fmtR(totalMxGeral)}</td>
             <td class="num diff" style="color:${geralOk ? 'var(--cf-green)' : 'var(--cf-alert)'};font-weight:800">
               ${geralOk
                 ? '✓ Bate com total líquido'
-                : (diffGeral > 0 ? '+' : '') + fmtR(diffGeral) + ' vs líquido'}
+                : `${(diffGeral > 0 ? '+' : '') + fmtR(diffGeral)} vs líquido${gapDocs.length ? ' <span style="font-size:10px;font-weight:400;opacity:.7">▼ ver docs</span>' : ''}`}
             </td>
           </tr>
+          ${gapDebugHtml}
         </tfoot>
       </table>`;
   }

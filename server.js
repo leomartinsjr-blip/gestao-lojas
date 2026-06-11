@@ -2648,6 +2648,36 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       }
     }
 
+    // -- Estratégia 5: Fallback per-doc para docs sem forma após Estratégias 1-4 --
+    // Garante que nenhum documento fique fora do formasPagamento (zerando a diferença "vs líquido")
+    {
+      let filled = 0;
+      for (const r of movRows) {
+        const doc = String(r.documento || '').trim();
+        if (!doc || !docMap[doc] || docFormaMap[doc]) continue;
+        const sign = docMap[doc].valor < 0 ? -1 : 1;
+        const FAL = [
+          { field: 'total_dinheiro',          label: 'Dinheiro' },
+          { field: 'total_cartao',             label: 'Cartão' },
+          { field: 'total_pix',                label: 'PIX' },
+          { field: 'total_cheque',             label: 'Cheque' },
+          { field: 'total_crediario',          label: 'Crediário' },
+          { field: 'total_convenio',           label: 'Convênio' },
+          { field: 'total_cheque_prazo',       label: 'Cheque Prazo' },
+          { field: 'total_deposito_bancario',  label: 'Depósito Bancário' },
+        ];
+        const formas = [];
+        for (const { field, label } of FAL) {
+          const val = parseBrNum(r[field] || '0');
+          if (val !== 0) formas.push({ forma: label, bandeira: '', valor: sign * val });
+        }
+        if (!formas.length) formas.push({ forma: 'Outros', bandeira: '', valor: docMap[doc].valor });
+        docFormaMap[doc] = formas;
+        filled++;
+      }
+      if (filled) console.log(`[conferencia-caixa] Estrategia5 fallback: ${filled} doc(s) sem forma preenchidos via total_*`);
+    }
+
     // -- Agregar formasPagamento: forma → bandeiras → docs --
     const formasAgg = {}; // forma → { forma, total, bandeiras: { bKey → { bandeira, total, vendas[] } } }
     for (const [doc, formas] of Object.entries(docFormaMap)) {
@@ -7803,6 +7833,30 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       porVendedor[key].vendas.push(v);
     }
 
+    // Diagnóstico: docs onde sum(formas.valor) ≠ valorTotal
+    const docsComGap = vendas
+      .map(v => {
+        const sumF = +v.formas.reduce((s, f) => s + f.valor, 0).toFixed(2);
+        const gap  = +(v.valorTotal - sumF).toFixed(2);
+        if (Math.abs(gap) < 0.02) return null;
+        return {
+          doc:        v.doc,
+          hora:       v.hora,
+          vendedor:   v.vendedor,
+          valorTotal: +v.valorTotal.toFixed(2),
+          sumFormas:  sumF,
+          gap,
+          formas: v.formas.map(f => ({ forma: f.forma, bandeira: f.bandeira, valor: +f.valor.toFixed(2) })),
+        };
+      })
+      .filter(Boolean);
+
+    if (docsComGap.length) {
+      console.log(`[conferencia/vendas] ${board} ${dtIni}: ${docsComGap.length} doc(s) com gap forma×total →`,
+        docsComGap.map(g => `doc ${g.doc}: total=${g.valorTotal} formas=${g.sumFormas} gap=${g.gap} formas=[${g.formas.map(f=>`${f.forma}/${f.bandeira}:${f.valor}`).join(',')}]`).join(' | ')
+      );
+    }
+
     return {
       board, dtIni, dtFin, regra,
       totalVendas: vendas.reduce((s, v) => s + v.valorTotal, 0),
@@ -7811,6 +7865,7 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       vendas,
       porForma:    Object.values(porForma).sort((a, b) => b.total - a.total),
       porVendedor: Object.values(porVendedor).sort((a, b) => b.total - a.total),
+      docsComGap,
     };
 }
 
