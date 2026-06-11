@@ -5664,8 +5664,10 @@ async function loadCaixaConf() {
 }
 
 function renderCaixaConf(body, data) {
-  const { totalVendas, vendedores, formasPagamento, totalSangria } = data;
+  const { vendedores, formasPagamento, totalSangria } = data;
   const fR = v => 'R$ ' + (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  // Fonte autoritativa: soma das formas de pagamento (LinxMovimentoPlanos/Cartoes)
+  const totalGeral = formasPagamento.reduce((s, f) => s + f.total, 0);
 
   const empByMxCod = {};
   for (const e of (S.employees || [])) {
@@ -5692,7 +5694,7 @@ function renderCaixaConf(body, data) {
   const saldoCaixa    = totalDinheiro - totalSangria;
 
   function formaRowHtml(f) {
-    const pct     = totalVendas > 0 ? (f.total / totalVendas * 100).toFixed(0) : 0;
+    const pct     = totalGeral > 0 ? (f.total / totalGeral * 100).toFixed(0) : 0;
     const drillId = nextDrillId();
     const hasBands = f.bandeiras?.some(b => b.bandeira);
     let innerHtml;
@@ -5736,7 +5738,7 @@ function renderCaixaConf(body, data) {
   const vendHtml = vendedores.length
     ? vendedores.map(v => {
         const nome = empByMxCod[v.cod] || v.nome || `Vendedor ${v.cod}`;
-        const pct  = totalVendas > 0 ? (v.total / totalVendas * 100).toFixed(0) : 0;
+        const pct  = totalGeral > 0 ? (v.total / totalGeral * 100).toFixed(0) : 0;
         const vId  = nextDrillId();
         const vRows = (v.vendas || []).map(s => ({ ...s, vendedor: s.forma }));
         return `<div class="cxconf-row cxconf-row--clickable" data-cxtgt="${vId}">
@@ -5748,8 +5750,7 @@ function renderCaixaConf(body, data) {
           </div>
         </div>
         <div class="cxconf-drill-wrap hidden" id="${vId}">${vendasTableHtml(vRows, 'Forma de Pag.')}</div>`;
-      }).join('') + `<div class="cxconf-divider"></div>
-        <div class="cxconf-row cxconf-row--total"><span class="cxconf-label">Total</span><span class="cxconf-val">${fR(totalVendas)}</span></div>`
+      }).join('')
     : '<div class="cxconf-empty">Nenhuma venda registrada</div>';
 
   body.innerHTML = `
@@ -5766,6 +5767,15 @@ function renderCaixaConf(body, data) {
           ${vendHtml}
         </div>
       </div>
+    </div>
+    <div class="cxconf-total-bar">
+      <span class="cxconf-total-bar-label">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0">
+          <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
+        </svg>
+        Total Faturamento
+      </span>
+      <span class="cxconf-total-bar-val">${fR(totalGeral)}</span>
     </div>`;
 
   body.querySelectorAll('.cxconf-row--clickable').forEach(row => {
