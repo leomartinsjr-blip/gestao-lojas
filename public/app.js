@@ -7986,10 +7986,14 @@ function renderContratoCard(container) {
 
 function renderConferenciaStatusCard(container) {
   const isAdmin      = userIsAdmin(S.user);
+  const isSupervisor = !S.user?.board && !isAdmin;
   const isEscritorio = S.user?.board === 'escritorio';
-  if (!isAdmin && !isEscritorio) return;
+  if (!isAdmin && !isEscritorio && !isSupervisor) return;
 
-  const CONF_STORES = NF_STORES.filter(b => b !== 'site');
+  const allConf = NF_STORES.filter(b => b !== 'site');
+  const CONF_STORES = isSupervisor
+    ? allConf.filter(b => (S.user?.lojas || []).includes(b))
+    : allConf;
 
   const card = document.createElement('div');
   card.className  = 'main-card';
