@@ -2500,7 +2500,12 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       seenDocs.add(doc);
 
       const sign  = operacao === 'DS' ? -1 : 1;
-      const valor = parseBrNum(r.valor_total || r.total_liquido || '0');
+      // total_* campos repetem o valor TOTAL do documento em cada linha de item
+      // valor_total é por-item e subestima documentos com múltiplos itens
+      const valor = ['total_cartao','total_dinheiro','total_pix','total_cheque',
+                     'total_crediario','total_convenio','total_cheque_prazo','total_deposito_bancario']
+        .reduce((s, k) => s + parseBrNum(r[k] || '0'), 0)
+        || parseBrNum(r.valor_total || r.total_liquido || '0');
       const hora  = String(r.hora || r.hora_documento || r.hora_emissao || '').trim().slice(0, 5) || '';
       const cod   = String(r.cod_vendedor || '').trim();
       const nome  = (r.nome_vendedor || '').trim();
