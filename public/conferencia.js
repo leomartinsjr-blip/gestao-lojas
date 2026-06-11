@@ -1560,7 +1560,8 @@
     try {
       const saved = await api('POST', '/api/conferencia/revisao', body);
       _revisoesMap[doc + '::' + (board || $('vBoard').value)] = saved;
-      render(_data); // re-renderiza: venda sai dos pendentes e vai para revisadas
+      fecharModalVenda();
+      render(_data);
     } catch(e) { alert('Erro ao salvar revisão: ' + e.message); }
   }
 
