@@ -7412,6 +7412,49 @@ app.get('/api/conferencia/reprovadas', requireEscritorioOrAdmin, async (req, res
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Saldo Reserva (cobrança antecipada não lançada no Microvix) ──────────────
+async function getSaldoReservaCol() {
+  if (!mongoDb) throw new Error('MongoDB não conectado');
+  const col = mongoDb.collection('confSaldoReserva');
+  await col.createIndex({ board: 1, mod: 1, bandeira: 1 }, { unique: true, background: true }).catch(() => {});
+  return col;
+}
+
+// GET /api/conferencia/saldo-reserva?board=X
+app.get('/api/conferencia/saldo-reserva', requireAuth, async (req, res) => {
+  try {
+    const { board } = req.query;
+    if (!board) return res.status(400).json({ error: 'board obrigatório' });
+    const col   = await getSaldoReservaCol();
+    const docs  = await col.find({ board }).toArray();
+    // retorna map: { 'crédito::visa': { valor, obs, updatedBy, updatedAt } }
+    const map = {};
+    for (const d of docs) map[d.mod + '::' + d.bandeira] = { valor: d.valor, obs: d.obs || '', updatedBy: d.updatedBy, updatedAt: d.updatedAt };
+    res.json(map);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/conferencia/saldo-reserva
+app.post('/api/conferencia/saldo-reserva', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { board, mod, bandeira, valor, obs } = req.body;
+    if (!board || !mod) return res.status(400).json({ error: 'board e mod obrigatórios' });
+    const col = await getSaldoReservaCol();
+    const updatedBy = req.session?.user?.username || 'sistema';
+    const v = parseFloat(valor) || 0;
+    if (v <= 0) {
+      await col.deleteOne({ board, mod, bandeira: bandeira || '' });
+    } else {
+      await col.updateOne(
+        { board, mod, bandeira: bandeira || '' },
+        { $set: { board, mod, bandeira: bandeira || '', valor: v, obs: obs || '', updatedBy, updatedAt: new Date() } },
+        { upsert: true }
+      );
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/conferencia/debug-doc?board=X&date=Y&doc=Z  — diagnóstico de formas de um doc específico
 app.get('/api/conferencia/debug-doc', requireEscritorioOrAdmin, async (req, res) => {
   try {

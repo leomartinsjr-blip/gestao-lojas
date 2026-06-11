@@ -258,7 +258,7 @@
         _rotinaStatus = null; _rotinaBoard = null; _rotinaDate = null;
       }
       _redeRows = null; _redeRowsSource = null; _redeRowsServerInfo = null;
-      _confirmacoesManual = {};
+      _confirmacoesManual = {}; _saldoReserva = {};
       render(_data);
     } catch(e) {
       $('vResult').innerHTML = `<div class="cf-empty" style="color:${P('alert')}">⚠ ${esc(e.message)}</div>`;
@@ -619,6 +619,8 @@
 
   let _confirmacoesManual = {}; // { 'pix_direto': 200.00, 'cielo': 300.00, ... }
   let _confManualSaveTimer = null;
+  let _saldoReserva = {}; // { 'crédito::visa': { valor, obs } }
+  let _saldoReservaSaveTimer = null;
 
   async function renderCartoesSection() {
     const el = $('vCartoesSection');
@@ -642,11 +644,14 @@
       } catch(e) { /* server may not have data yet */ }
     }
 
-    // Auto-load confirmações manuais
+    // Auto-load confirmações manuais e saldo reserva
     try {
       const saved = await api('GET', `/api/conferencia/confirmacoes-manuais?board=${_rotinaBoard}&date=${_rotinaDate}`);
       _confirmacoesManual = saved.entries || {};
     } catch(e) { _confirmacoesManual = {}; }
+    try {
+      _saldoReserva = await api('GET', `/api/conferencia/saldo-reserva?board=${_rotinaBoard}`);
+    } catch(e) { _saldoReserva = {}; }
 
     const isDone = st.cartoesOk;
     const serverBadge = (_redeRowsSource === 'server' && _redeRowsServerInfo)
@@ -737,6 +742,26 @@
           try {
             await api('POST', '/api/conferencia/confirmacoes-manuais', { board: _rotinaBoard, date: _rotinaDate, entries: _confirmacoesManual });
           } catch(e) { console.warn('Erro ao salvar confirmações manuais:', e.message); }
+        }, 800);
+      });
+    });
+
+    // Inputs de saldo reserva
+    el.querySelectorAll('input[data-reserva-key]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const key   = inp.dataset.reservaKey;
+        const mod   = inp.dataset.reservaMod;
+        const band  = inp.dataset.reservaBand;
+        const val   = parseFloat(inp.value) || 0;
+        if (val > 0) _saldoReserva[key] = { valor: val, obs: '' };
+        else delete _saldoReserva[key];
+        const confBtn = el.querySelector('#concConfirmar');
+        if (confBtn) confBtn.disabled = !concAllOk();
+        clearTimeout(_saldoReservaSaveTimer);
+        _saldoReservaSaveTimer = setTimeout(async () => {
+          try {
+            await api('POST', '/api/conferencia/saldo-reserva', { board: _rotinaBoard, mod, bandeira: band, valor: val });
+          } catch(e) { console.warn('Erro ao salvar saldo reserva:', e.message); }
         }, 800);
       });
     });
@@ -929,7 +954,10 @@
     const mx   = buildMicrovixAgrupado();
     const keys = new Set([...Object.keys(rede), ...Object.keys(mx)]);
     for (const k of keys) {
-      const diff = Math.abs((rede[k]?.total||0) - (mx[k]?.total||0));
+      const r = rede[k]?.total || 0;
+      const m = mx[k]?.total  || 0;
+      const reserva = _saldoReserva[k]?.valor || 0;
+      const diff = Math.abs(r - m - reserva);
       if (diff > 0.10) return false;
     }
     if (!keys.size) return false;
@@ -1011,10 +1039,15 @@
       const entry = rede[k] || mx[k];
       const onlyRede = !!rede[k] && !mx[k];
       const onlyMx   = !rede[k] && !!mx[k];
-      const rowCls   = onlyRede ? 'only-rede' : onlyMx ? 'only-microvix' : ok ? 'ok' : 'nok';
       const bandLabel = entry.bandeira || '—';
+      const reserva    = _saldoReserva[k]?.valor || 0;
+      const reservaObs = _saldoReserva[k]?.obs   || '';
+      const dComReserva = +(d - reserva).toFixed(2);
+      const okComReserva = Math.abs(dComReserva) <= 0.10;
+      const rowCls   = onlyRede ? 'only-rede' : onlyMx ? 'only-microvix' : okComReserva ? 'ok' : 'nok';
+
       const panelId  = 'diff-panel-' + k.replace(/[^a-z0-9]/g,'_');
-      const lupaBtn  = !ok
+      const lupaBtn  = !okComReserva
         ? ` <button onclick="document.getElementById('${panelId}').style.display=document.getElementById('${panelId}').style.display==='none'?'':'none'" style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:13px;opacity:.7;vertical-align:middle" title="Ver vendas com diferença">🔍</button>`
         : '';
       const diffPanel = !ok ? (() => {
@@ -1043,12 +1076,23 @@
         rows2 += '</table></td></tr>';
         return rows2;
       })() : '';
+      // Campo reserva: aparece quando Rede > Microvix (diff > 0)
+      const reservaField = d > 0.10 ? (
+        '<div style="margin-top:4px;display:flex;align-items:center;gap:4px">' +
+          '<span style="font-size:10px;color:var(--cf-muted)">reserva:</span>' +
+          '<input type="number" step="0.01" min="0" data-reserva-key="' + esc(k) + '" data-reserva-mod="' + esc(entry.mod) + '" data-reserva-band="' + esc(entry.bandeira||'') + '" value="' + (reserva > 0 ? reserva.toFixed(2) : '') + '" placeholder="0,00" title="' + esc(reservaObs) + '" style="width:80px;text-align:right;padding:2px 4px;border-radius:4px;border:1px solid var(--cf-border);background:var(--cf-input,var(--cf-card));color:inherit;font-size:11px;font-family:inherit">' +
+        '</div>'
+      ) : '';
+      const diffDisplay = okComReserva
+        ? '<span style="color:var(--cf-green)">✓' + (reserva > 0 ? ' <span style="font-size:10px;opacity:.7">(reserva)</span>' : '') + '</span>'
+        : (dComReserva > 0 ? '+' : '') + fmtR(dComReserva);
+
       return `<tr class="${rowCls}">
         <td style="text-transform:capitalize">${esc(entry.mod)}</td>
         <td>${esc(bandLabel)}</td>
         <td class="num">${r ? fmtR(r) : '<span style="color:var(--cf-muted)">—</span>'}</td>
         <td class="num">${m ? fmtR(m) : '<span style="color:var(--cf-muted)">—</span>'}</td>
-        <td class="num diff">${ok ? '<span style="color:var(--cf-green)">✓</span>' : (d > 0 ? '+' : '') + fmtR(d)}${lupaBtn}</td>
+        <td class="num diff">${diffDisplay}${lupaBtn}${reservaField}</td>
       </tr>${diffPanel}`;
     }).join('');
 
