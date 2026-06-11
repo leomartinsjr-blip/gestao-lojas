@@ -255,6 +255,7 @@
         _rotinaStatus = null; _rotinaBoard = null; _rotinaDate = null;
       }
       _redeRows = null; _redeRowsSource = null; _redeRowsServerInfo = null;
+      _confirmacoesManual = {};
       render(_data);
     } catch(e) {
       $('vResult').innerHTML = `<div class="cf-empty" style="color:${P('alert')}">⚠ ${esc(e.message)}</div>`;
@@ -599,6 +600,9 @@
   let _redeRowsSource = null; // 'manual' | 'server'
   let _redeRowsServerInfo = null; // { uploadedBy, uploadedAt }
 
+  let _confirmacoesManual = {}; // { 'pix_direto': 200.00, 'cielo': 300.00, ... }
+  let _confManualSaveTimer = null;
+
   async function renderCartoesSection() {
     const el = $('vCartoesSection');
     if (!el) return;
@@ -620,6 +624,12 @@
         }
       } catch(e) { /* server may not have data yet */ }
     }
+
+    // Auto-load confirmações manuais
+    try {
+      const saved = await api('GET', `/api/conferencia/confirmacoes-manuais?board=${_rotinaBoard}&date=${_rotinaDate}`);
+      _confirmacoesManual = saved.entries || {};
+    } catch(e) { _confirmacoesManual = {}; }
 
     const isDone = st.cartoesOk;
     const serverBadge = (_redeRowsSource === 'server' && _redeRowsServerInfo)
@@ -672,6 +682,45 @@
       row.addEventListener('click', () => {
         const target = document.getElementById(row.dataset.target);
         if (target) target.style.display = target.style.display === 'none' ? '' : 'none';
+      });
+    });
+
+    // Inputs de confirmação manual
+    el.querySelectorAll('input[data-manual-key]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const key = inp.dataset.manualKey;
+        const val = parseFloat(inp.value) || 0;
+        _confirmacoesManual[key] = val;
+
+        // Atualiza o diff ao lado do campo imediatamente
+        const row = inp.closest('tr');
+        if (row) {
+          const manualRows = buildManualRows();
+          const rowDef = manualRows.find(r => r.key === key);
+          if (rowDef) {
+            const diff = +(val - rowDef.valor).toFixed(2);
+            const ok   = Math.abs(diff) <= 0.10;
+            row.className = ok ? 'ok' : 'nok';
+            const diffSpan = row.querySelector('[data-diff-span]') || row.querySelector('td:last-child span');
+            if (diffSpan) {
+              if (val === 0) { diffSpan.style.color = 'var(--cf-alert)'; diffSpan.textContent = 'pendente'; }
+              else if (ok) { diffSpan.style.color = 'var(--cf-green)'; diffSpan.innerHTML = '&#10003;'; }
+              else { diffSpan.style.color = 'var(--cf-alert)'; diffSpan.textContent = (diff > 0 ? '+' : '') + fmtR(diff); }
+            }
+          }
+        }
+
+        // Habilita/desabilita botão confirmar
+        const confBtn = el.querySelector('#concConfirmar');
+        if (confBtn) confBtn.disabled = !concAllOk();
+
+        // Salva no servidor com debounce
+        clearTimeout(_confManualSaveTimer);
+        _confManualSaveTimer = setTimeout(async () => {
+          try {
+            await api('POST', '/api/conferencia/confirmacoes-manuais', { board: _rotinaBoard, date: _rotinaDate, entries: _confirmacoesManual });
+          } catch(e) { console.warn('Erro ao salvar confirmações manuais:', e.message); }
+        }, 800);
       });
     });
 
@@ -866,7 +915,14 @@
       const diff = Math.abs((rede[k]?.total||0) - (mx[k]?.total||0));
       if (diff > 0.10) return false;
     }
-    return keys.size > 0;
+    if (!keys.size) return false;
+    // Verifica confirmações manuais
+    const manualRows = buildManualRows();
+    for (const row of manualRows) {
+      const confirmado = parseFloat(_confirmacoesManual[row.key] || 0);
+      if (Math.abs(confirmado - row.valor) > 0.10) return false;
+    }
+    return true;
   }
 
   function buildOutrosAgrupado() {
@@ -879,10 +935,35 @@
       if (/cart[aã]o\s+cr[eé]d/i.test(forma)) continue;
       if (/cart[aã]o\s+d[eé]b/i.test(forma))  continue;
       if (/pix/i.test(forma))                   continue;
-      // tudo que sobra: dinheiro, crediário, vale troca, etc.
-      outros.push({ label: f.label || f.forma, total: f.total });
+      // Dinheiro: sem confirmação manual (tem outra tela)
+      const isDinheiro = /dinheiro|esp[eé]cie/i.test(forma);
+      // Crediário/Vale troca: formas internas, sem confirmação manual
+      const isInterno  = /credi[aá]rio|vale\s*troc/i.test(forma);
+      outros.push({ label: f.label || f.forma, total: f.total, manualKey: (!isDinheiro && !isInterno) ? forma.replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'') : null });
     }
     return outros;
+  }
+
+  // Calcula linhas que precisam de confirmação manual
+  function buildManualRows() {
+    const rows = [];
+
+    // PIX direto = Microvix PIX − Rede PIX (se positivo)
+    const mx   = buildMicrovixAgrupado();
+    const rede = buildRedeAgrupado();
+    const mxPix   = Object.entries(mx).filter(([k]) => k.startsWith('pix::')).reduce((s,[,v]) => s + v.total, 0);
+    const redePix = Object.entries(rede).filter(([k]) => k.startsWith('pix::')).reduce((s,[,v]) => s + v.total, 0);
+    const pixDireto = +(mxPix - redePix).toFixed(2);
+    if (pixDireto > 0.01) {
+      rows.push({ key: 'pix_direto', label: 'PIX Direto (conta)', valor: pixDireto });
+    }
+
+    // Outros que precisam de confirmação manual (Cielo, etc.)
+    const outros = buildOutrosAgrupado();
+    for (const o of outros) {
+      if (o.manualKey) rows.push({ key: o.manualKey, label: o.label, valor: o.total });
+    }
+    return rows;
   }
 
   function renderConcTable() {
@@ -917,13 +998,40 @@
 
     // Linhas de outras formas (só coluna Microvix, sem Rede)
     let totalOutros = 0;
-    const outrosRows = outros.map(o => {
+    const outrosRows = outros.filter(o => !o.manualKey).map(o => {
       totalOutros += o.total;
       return `<tr class="only-microvix">
         <td colspan="2" style="color:var(--cf-muted);font-style:italic">${esc(o.label)}</td>
         <td class="num"><span style="color:var(--cf-muted)">—</span></td>
         <td class="num">${fmtR(o.total)}</td>
         <td class="num"><span style="color:var(--cf-muted)">—</span></td>
+      </tr>`;
+    }).join('');
+
+    // Linhas de confirmação manual (PIX direto, Cielo, etc.)
+    const manualRows = buildManualRows();
+    const manualRowsHtml = manualRows.map(row => {
+      totalOutros += row.valor;
+      const confirmado = parseFloat(_confirmacoesManual[row.key] || 0);
+      const diff = +(confirmado - row.valor).toFixed(2);
+      const ok   = Math.abs(diff) <= 0.10;
+      const diffHtml = confirmado === 0
+        ? '<span style="color:var(--cf-alert);font-size:11px">pendente</span>'
+        : ok
+          ? '<span style="color:var(--cf-green)">&#10003;</span>'
+          : '<span style="color:var(--cf-alert)">' + (diff > 0 ? '+' : '') + fmtR(diff) + '</span>';
+      return `<tr class="` + (ok ? 'ok' : 'nok') + `" style="background:var(--cf-card2)">
+        <td colspan="2" style="font-style:italic;font-size:12px">` + esc(row.label) + ` <span style="font-size:10px;color:var(--cf-muted)">(confirmação manual)</span></td>
+        <td class="num" style="color:var(--cf-muted)">—</td>
+        <td class="num">` + fmtR(row.valor) + `</td>
+        <td class="num">
+          <input type="number" step="0.01" min="0"
+            data-manual-key="` + esc(row.key) + `"
+            value="` + (confirmado > 0 ? confirmado.toFixed(2) : '') + `"
+            placeholder="0,00"
+            style="width:90px;text-align:right;padding:2px 4px;border-radius:4px;border:1px solid var(--cf-border);background:var(--cf-input,var(--cf-card));color:inherit;font-size:12px;font-family:inherit">
+          ` + diffHtml + `
+        </td>
       </tr>`;
     }).join('');
 
@@ -975,6 +1083,7 @@
             </td>
           </tr>
           ${outrosRows}
+          ${manualRowsHtml}
           <tr style="border-top:2px solid var(--cf-border);background:var(--cf-card2)${!geralOk && gapDocs.length ? ';cursor:pointer' : ''}" ${!geralOk && gapDocs.length ? `class="gap-toggle-row" data-target="${gapDebugId}"` : ''}>
             <td colspan="2" style="font-weight:800">Total Geral</td>
             <td class="num" style="color:var(--cf-muted)">—</td>

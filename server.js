@@ -7412,6 +7412,41 @@ app.get('/api/conferencia/reprovadas', requireEscritorioOrAdmin, async (req, res
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Confirmações Manuais (PIX direto, Cielo, etc.) ──────────────────────────
+async function getConfirmacoesManualCol() {
+  if (!mongoDb) throw new Error('MongoDB não conectado');
+  const col = mongoDb.collection('confConfirmacoesManual');
+  await col.createIndex({ board: 1, date: 1 }, { unique: true, background: true }).catch(() => {});
+  return col;
+}
+
+// GET /api/conferencia/confirmacoes-manuais?board=X&date=Y
+app.get('/api/conferencia/confirmacoes-manuais', requireAuth, async (req, res) => {
+  try {
+    const { board, date } = req.query;
+    if (!board || !date) return res.status(400).json({ error: 'board e date obrigatórios' });
+    const col = await getConfirmacoesManualCol();
+    const doc = await col.findOne({ board, date });
+    res.json(doc ? { entries: doc.entries || {}, updatedBy: doc.updatedBy, updatedAt: doc.updatedAt } : { entries: {} });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/conferencia/confirmacoes-manuais
+app.post('/api/conferencia/confirmacoes-manuais', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { board, date, entries } = req.body;
+    if (!board || !date) return res.status(400).json({ error: 'board e date obrigatórios' });
+    const col  = await getConfirmacoesManualCol();
+    const updatedBy = req.session?.user?.username || 'sistema';
+    await col.updateOne(
+      { board, date },
+      { $set: { board, date, entries: entries || {}, updatedBy, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Função extraída para reuso no board=all
 async function _buildConferenciaVendas(board, dtIni, dtFin) {
   const db    = await readDB();
