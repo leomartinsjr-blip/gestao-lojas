@@ -684,7 +684,10 @@ function renderDashboard() {
       </div>
       <div class="main-card-body" id="dayCardBody"></div>
     `;
-    leftCol.appendChild(dayCard);
+    const dayRow = document.createElement('div');
+    dayRow.className = 'dash-day-row';
+    dayRow.appendChild(dayCard);
+    leftCol.appendChild(dayRow);
 
     function _updateDayCard() {
       const d = DASH_DAY.refDate;
@@ -712,6 +715,9 @@ function renderDashboard() {
 
     _updateDayCard();
     _startDayCardAutoRefresh();
+
+    // Conferência de Caixa ao lado do faturamento diário (só admins/escritório)
+    renderConferenciaStatusCard(dayRow);
   }
 
   // ── CARD: Performance Mensal ────────────────────────────────────────────
@@ -1137,9 +1143,6 @@ function renderDashboard() {
 
   // ── CARD: Aniversariantes do Mês ─────────────────────────────────────────
   renderAniversariantesCard(rightCol);
-
-  // ── CARD: Conferência de Caixa (resumo por loja) → admins e escritório ──
-  renderConferenciaStatusCard(rightCol);
 
   // ── CARD: Contratos de Experiência ───────────────────────────────────────
   renderContratoCard(rightCol);
