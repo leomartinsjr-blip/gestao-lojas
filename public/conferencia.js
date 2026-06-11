@@ -985,13 +985,43 @@
       const onlyMx   = !rede[k] && !!mx[k];
       const rowCls   = onlyRede ? 'only-rede' : onlyMx ? 'only-microvix' : ok ? 'ok' : 'nok';
       const bandLabel = entry.bandeira || '—';
+      const panelId  = 'diff-panel-' + k.replace(/[^a-z0-9]/g,'_');
+      const lupaBtn  = !ok
+        ? ` <button onclick="document.getElementById('${panelId}').style.display=document.getElementById('${panelId}').style.display==='none'?'':'none'" style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:13px;opacity:.7;vertical-align:middle" title="Ver vendas com diferença">🔍</button>`
+        : '';
+      const diffPanel = !ok ? (() => {
+        const mxVendas = (_data?.vendas || []).filter(v => {
+          if (!v.formas?.length) return false;
+          return v.formas.some(f => {
+            const fm = (f.forma||'').toLowerCase();
+            const bnd = normBandeira(f.bandeira, entry.mod);
+            const fmod = /cart[aã]o\s+cr[eé]d/i.test(fm) ? 'crédito' : /cart[aã]o\s+d[eé]b/i.test(fm) ? 'débito' : /pix/i.test(fm) ? 'pix' : null;
+            return fmod === entry.mod && (entry.bandeira ? bnd === entry.bandeira : true);
+          });
+        });
+        if (!mxVendas.length) return `<tr id="${panelId}" style="display:none"><td colspan="5" style="padding:6px 12px;font-size:11px;color:var(--cf-muted)">Nenhuma venda encontrada para esta forma.</td></tr>`;
+        let rows2 = '<tr id="' + panelId + '" style="display:none;background:var(--cf-card2)"><td colspan="5" style="padding:4px 8px"><table style="width:100%;border-collapse:collapse;font-size:11px">';
+        rows2 += '<tr style="color:var(--cf-muted)"><th style="text-align:left;padding:2px 4px">Doc</th><th style="text-align:left;padding:2px 4px">Vendedor</th><th style="text-align:left;padding:2px 4px">Hora</th><th style="text-align:right;padding:2px 4px">Valor</th><th style="text-align:left;padding:2px 4px">Bandeira</th></tr>';
+        for (const v of mxVendas) {
+          for (const f of (v.formas||[])) {
+            const fm = (f.forma||'').toLowerCase();
+            const bnd = normBandeira(f.bandeira, entry.mod);
+            const fmod = /cart[aã]o\s+cr[eé]d/i.test(fm) ? 'crédito' : /cart[aã]o\s+d[eé]b/i.test(fm) ? 'débito' : /pix/i.test(fm) ? 'pix' : null;
+            if (fmod !== entry.mod) continue;
+            if (entry.bandeira && bnd !== entry.bandeira) continue;
+            rows2 += '<tr><td style="padding:2px 4px">' + esc(v.doc) + '</td><td style="padding:2px 4px">' + esc(v.vendedor||'') + '</td><td style="padding:2px 4px;color:var(--cf-muted)">' + esc(v.hora||'') + '</td><td style="padding:2px 4px;text-align:right">' + fmtR(f.valor||0) + '</td><td style="padding:2px 4px;color:var(--cf-muted)">' + esc(f.bandeira||'—') + '</td></tr>';
+          }
+        }
+        rows2 += '</table></td></tr>';
+        return rows2;
+      })() : '';
       return `<tr class="${rowCls}">
         <td style="text-transform:capitalize">${esc(entry.mod)}</td>
         <td>${esc(bandLabel)}</td>
         <td class="num">${r ? fmtR(r) : '<span style="color:var(--cf-muted)">—</span>'}</td>
         <td class="num">${m ? fmtR(m) : '<span style="color:var(--cf-muted)">—</span>'}</td>
-        <td class="num diff">${ok ? '<span style="color:var(--cf-green)">✓</span>' : (d > 0 ? '+' : '') + fmtR(d)}</td>
-      </tr>`;
+        <td class="num diff">${ok ? '<span style="color:var(--cf-green)">✓</span>' : (d > 0 ? '+' : '') + fmtR(d)}${lupaBtn}</td>
+      </tr>${diffPanel}`;
     }).join('');
 
     const cartoesOk = Math.abs(totalDiff) <= 0.10;

@@ -503,39 +503,42 @@ td.muted  { color: var(--cf-muted); }
 /* ── Rotina stepper ─────────────────────────────────────────── */
 .rotina-bar {
   background: var(--cf-card); border: 1px solid var(--cf-border);
-  border-radius: var(--r); padding: 14px 18px;
-  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  border-radius: var(--r); padding: 16px 20px;
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  justify-content: center;
 }
 .rotina-title {
   font-size: 11px; font-weight: 700; color: var(--cf-muted);
   text-transform: uppercase; letter-spacing: .6px; white-space: nowrap;
+  flex-shrink: 0;
 }
-.rotina-steps { display: flex; align-items: center; gap: 6px; flex: 1; flex-wrap: wrap; }
+.rotina-steps { display: flex; align-items: stretch; gap: 8px; flex: 1; flex-wrap: wrap; justify-content: center; }
 .rotina-step {
-  display: flex; align-items: center; gap: 8px;
-  background: var(--cf-card2); border: 1px solid var(--cf-border);
-  border-radius: 8px; padding: 8px 14px; transition: border-color .15s;
+  display: flex; align-items: center; gap: 12px;
+  background: var(--cf-card2); border: 2px solid var(--cf-border);
+  border-radius: 12px; padding: 12px 18px; transition: border-color .15s, box-shadow .15s;
+  min-width: 160px;
 }
-.rotina-step.done   { border-color: var(--cf-green);  background: #3FB95010; }
-.rotina-step.active { border-color: var(--cf-primary); background: #4493F810; }
-.rotina-step.locked { opacity: .45; }
-.rotina-step-ico { font-size: 16px; line-height: 1; }
-.rotina-step-info { display: flex; flex-direction: column; gap: 1px; }
-.rotina-step-label { font-size: 11px; font-weight: 700; color: var(--cf-text); white-space: nowrap; }
-.rotina-step-sub   { font-size: 10px; color: var(--cf-muted); white-space: nowrap; }
+.rotina-step.done   { border-color: var(--cf-green);  background: #3FB95018; box-shadow: 0 0 0 1px #3FB95030; }
+.rotina-step.active { border-color: var(--cf-primary); background: #4493F818; box-shadow: 0 0 0 3px #4493F820; }
+.rotina-step.locked { opacity: .4; }
+.rotina-step-ico { font-size: 22px; line-height: 1; flex-shrink: 0; }
+.rotina-step-info { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.rotina-step-label { font-size: 13px; font-weight: 700; color: var(--cf-text); white-space: nowrap; }
+.rotina-step-sub   { font-size: 11px; color: var(--cf-muted); white-space: nowrap; }
 .rotina-step-btn {
-  font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 6px;
-  border: 1px solid; cursor: pointer; font-family: inherit; white-space: nowrap;
-  transition: .15s; margin-left: 4px;
+  font-size: 12px; font-weight: 700; padding: 6px 13px; border-radius: 7px;
+  border: 1.5px solid; cursor: pointer; font-family: inherit; white-space: nowrap;
+  transition: .15s; margin-left: 4px; flex-shrink: 0;
 }
 .rotina-step-btn.btn-ok    { border-color: var(--cf-green);  color: var(--cf-green);  background: transparent; }
 .rotina-step-btn.btn-ok:hover    { background: var(--cf-green);  color: #fff; }
-.rotina-step-btn.btn-undo  { border-color: var(--cf-muted);  color: var(--cf-muted);  background: transparent; font-size: 10px; padding: 3px 7px; }
+.rotina-step-btn.btn-undo  { border-color: var(--cf-muted);  color: var(--cf-muted);  background: transparent; font-size: 11px; padding: 4px 8px; }
 .rotina-step-btn.btn-undo:hover  { color: var(--cf-text); border-color: var(--cf-text); }
 .rotina-step-btn:disabled  { opacity: .35; cursor: default; pointer-events: none; }
-.rotina-arrow { color: var(--cf-border); font-size: 16px; flex-shrink: 0; }
+.rotina-arrow { color: var(--cf-border); font-size: 20px; flex-shrink: 0; }
 .rotina-fechar {
-  margin-left: auto; display: flex; align-items: center; gap: 8px;
+  flex-shrink: 0; display: flex; align-items: center; gap: 8px;
 }
 .btn-fechar {
   background: var(--cf-green); color: #fff; border: none;
