@@ -7948,11 +7948,6 @@ function renderConferenciaStatusCard(container) {
   if (!isAdmin && !isEscritorio) return;
 
   const CONF_STORES = NF_STORES.filter(b => b !== 'site');
-  const today       = new Date();
-  const isCurrentMonth = today.getFullYear() === S.year && (today.getMonth() + 1) === S.month;
-  const daysElapsed = isCurrentMonth
-    ? today.getDate()
-    : new Date(S.year, S.month, 0).getDate();
 
   const card = document.createElement('div');
   card.className  = 'main-card';
@@ -7974,20 +7969,14 @@ function renderConferenciaStatusCard(container) {
   const body = card.querySelector('#confStatusBody');
   body.innerHTML = '<div style="padding:.75rem .85rem;color:var(--muted);font-size:.78rem">Carregando…</div>';
 
-  Promise.all(
-    CONF_STORES.map(b =>
-      apiFetch('GET', `/api/caixa/${S.year}/${S.month}/${b}`)
-        .then(data => ({ board: b, data }))
-        .catch(() => ({ board: b, data: {} }))
-    )
-  ).then(results => {
-    const chips = results.map(({ board: b, data }) => {
-      let fechados = 0;
-      for (let d = 1; d <= daysElapsed; d++) {
-        const e = data[d] || {};
-        if ((e.caixa ?? 0) !== 0 || (e.sangria ?? 0) !== 0 || (e.deposito ?? 0) !== 0) fechados++;
-      }
-      const emAberto = daysElapsed - fechados;
+  const monthStr = `${S.year}-${String(S.month).padStart(2,'0')}`;
+  apiFetch('GET', `/api/caixa-resumo?month=${monthStr}`)
+    .catch(() => ({ stores: {} }))
+  .then(({ stores = {} }) => {
+    const chips = CONF_STORES.map(b => {
+      const { fechados = 0, abertos = 0 } = stores[b] || {};
+      const daysElapsed = fechados + abertos;
+      const emAberto = abertos;
       const pct      = daysElapsed > 0 ? Math.round(fechados / daysElapsed * 100) : 0;
       const color    = BOARDS[b]?.color || '#8B949E';
       const label    = BOARDS[b]?.label || b;
