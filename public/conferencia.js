@@ -867,25 +867,101 @@
     const geralOk      = Math.abs(diffGeral) <= 0.10;
     const gapDocs      = _data?.docsComGap || [];
 
-    // Monta HTML do diagnóstico de gap (colapsável)
+    // ── Debug de gap detalhado (por venda) ──────────────────────────────────
     const gapDebugId = `gap-debug-${Date.now()}`;
-    const gapDebugHtml = !geralOk && gapDocs.length ? `
-      <tr id="${gapDebugId}" style="display:none;background:var(--cf-card2)">
-        <td colspan="5" style="padding:.4rem .75rem">
-          <div style="font-size:11px;color:var(--cf-muted);margin-bottom:.3rem">
-            ${gapDocs.length} doc(s) com forma de pagamento incompleta no Microvix:
-          </div>
-          ${gapDocs.map(g => `
-            <div style="display:flex;gap:.5rem;font-size:11.5px;padding:.15rem 0;border-bottom:1px solid var(--cf-border)">
-              <span style="color:var(--cf-muted);min-width:60px">Doc ${esc(g.doc)}</span>
-              <span style="min-width:80px">${esc(g.vendedor||'')}</span>
-              <span style="color:var(--cf-muted)">${g.hora||''}</span>
-              <span style="margin-left:auto">venda <strong>${fmtR(g.valorTotal)}</strong></span>
-              <span>forms <strong>${fmtR(g.sumFormas)}</strong></span>
-              <span style="color:var(--cf-alert)">gap <strong>${fmtR(g.gap)}</strong></span>
-            </div>`).join('')}
-        </td>
-      </tr>` : '';
+    let gapDebugHtml = '';
+    if (!geralOk) {
+      // Reconstrói breakdown por venda direto do _data.vendas
+      const vendas = _data?.vendas || [];
+      const rows = vendas.map(v => {
+        const sumF = (v.formas || []).reduce((s, f) => s + (f.valor || 0), 0);
+        const diff = v.valorTotal - sumF;
+        const hasDiff = Math.abs(diff) > 0.01;
+        const formasDesc = (v.formas || []).map(f =>
+          `${f.forma||'?'}${f.bandeira?' ('+f.bandeira+')':''}=${fmtR(f.valor||0)}`
+        ).join(', ') || '<em style="color:var(--cf-muted)">sem formas</em>';
+        return { v, sumF, diff, hasDiff, formasDesc };
+      }).filter(x => x.hasDiff || !x.v.formas?.length);
+
+      // Também mostra gapDocs do backend se tiver
+      const backendGapRows = gapDocs.map(g => `
+        <tr style="background:rgba(239,68,68,.07)">
+          <td class="mono" style="color:var(--cf-muted)">${esc(g.doc)}</td>
+          <td>${esc(g.vendedor||'—')}</td>
+          <td>${g.hora||'—'}</td>
+          <td class="num" style="font-weight:700">${fmtR(g.valorTotal)}</td>
+          <td class="num">${fmtR(g.sumFormas)}</td>
+          <td class="num" style="color:var(--cf-alert);font-weight:800">${fmtR(g.gap)}</td>
+          <td style="font-size:10px;color:var(--cf-muted)">(backend gap)</td>
+        </tr>`).join('');
+
+      const frontendGapRows = rows.map(({ v, sumF, diff, formasDesc }) => `
+        <tr style="background:rgba(239,68,68,.05)">
+          <td class="mono" style="color:var(--cf-muted)">${esc(v.doc)}</td>
+          <td>${esc(v.vendedor||'—')}</td>
+          <td>${v.hora||'—'}</td>
+          <td class="num" style="font-weight:700">${fmtR(v.valorTotal)}</td>
+          <td class="num">${fmtR(sumF)}</td>
+          <td class="num" style="color:${diff < 0 ? 'var(--cf-alert)' : 'var(--cf-green)'};font-weight:800">${fmtR(diff)}</td>
+          <td style="font-size:10px;color:var(--cf-muted);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(formasDesc)}">${formasDesc}</td>
+        </tr>`).join('');
+
+      // porForma completo (todas as linhas que entram nos totais)
+      const porFormaRows = (_data?.porForma || []).map(f => `
+        <tr>
+          <td style="text-transform:capitalize">${esc(f.forma||'?')}</td>
+          <td>${esc(f.bandeira||'—')}</td>
+          <td class="num">${fmtR(f.total)}</td>
+          <td style="font-size:10px;color:var(--cf-muted)">${
+            /cart[aã]o\s+cr[eé]d/i.test(f.forma||'') ? '→ crédito' :
+            /cart[aã]o\s+d[eé]b/i.test(f.forma||'') ? '→ débito' :
+            /pix/i.test(f.forma||'') ? '→ pix' :
+            '→ outros (dinheiro/crediário/etc)'
+          }</td>
+        </tr>`).join('');
+
+      gapDebugHtml = `
+        <tr id="${gapDebugId}" style="display:none">
+          <td colspan="5" style="padding:.6rem .75rem;background:var(--cf-card2)">
+            <div style="font-size:12px;font-weight:700;color:var(--cf-alert);margin-bottom:.5rem">
+              🔍 Debug Gap: ${fmtR(diffGeral)} (totalMxGeral ${fmtR(totalMxGeral)} − totalVendas API ${fmtR(totalVendas)})
+            </div>
+
+            <div style="font-size:11px;font-weight:600;color:var(--cf-muted);margin:.4rem 0 .2rem">Vendas com divergência (valorTotal ≠ soma das formas):</div>
+            ${(rows.length || gapDocs.length) ? `
+            <table style="width:100%;font-size:11.5px;border-collapse:collapse">
+              <thead><tr style="color:var(--cf-muted);font-size:10px">
+                <th style="text-align:left;padding:2px 4px">Doc</th>
+                <th style="text-align:left;padding:2px 4px">Vendedor</th>
+                <th style="text-align:left;padding:2px 4px">Hora</th>
+                <th style="text-align:right;padding:2px 4px">valorTotal</th>
+                <th style="text-align:right;padding:2px 4px">∑ formas</th>
+                <th style="text-align:right;padding:2px 4px">diff</th>
+                <th style="text-align:left;padding:2px 4px">formas</th>
+              </tr></thead>
+              <tbody>${backendGapRows}${frontendGapRows}</tbody>
+            </table>` : `<div style="font-size:11px;color:var(--cf-muted)">Nenhuma venda com divergência individual encontrada — o gap pode ser de formas não mapeadas.</div>`}
+
+            <div style="font-size:11px;font-weight:600;color:var(--cf-muted);margin:.7rem 0 .2rem">porForma completo (o que entra nos totais):</div>
+            <table style="width:100%;font-size:11px;border-collapse:collapse">
+              <thead><tr style="color:var(--cf-muted);font-size:10px">
+                <th style="text-align:left;padding:2px 4px">Forma</th>
+                <th style="text-align:left;padding:2px 4px">Bandeira</th>
+                <th style="text-align:right;padding:2px 4px">Total</th>
+                <th style="text-align:left;padding:2px 4px">Categoria</th>
+              </tr></thead>
+              <tbody>${porFormaRows}</tbody>
+              <tfoot>
+                <tr style="font-weight:700;border-top:1px solid var(--cf-border)">
+                  <td colspan="2" style="padding:2px 4px;color:var(--cf-muted)">∑ porForma</td>
+                  <td style="text-align:right;padding:2px 4px">${fmtR((_data?.porForma||[]).reduce((s,f)=>s+f.total,0))}</td>
+                  <td style="padding:2px 4px;color:var(--cf-muted)">totalVendas API: <strong>${fmtR(totalVendas)}</strong></td>
+                </tr>
+              </tfoot>
+            </table>
+          </td>
+        </tr>`;
+    }
 
     return `
       <table class="conc-tbl">
@@ -909,14 +985,14 @@
             </td>
           </tr>
           ${outrosRows}
-          <tr style="border-top:2px solid var(--cf-border);background:var(--cf-card2)${!geralOk && gapDocs.length ? ';cursor:pointer' : ''}" ${!geralOk && gapDocs.length ? `class="gap-toggle-row" data-target="${gapDebugId}"` : ''}>
+          <tr style="border-top:2px solid var(--cf-border);background:var(--cf-card2)${!geralOk ? ';cursor:pointer' : ''}" ${!geralOk ? `class="gap-toggle-row" data-target="${gapDebugId}"` : ''}>
             <td colspan="2" style="font-weight:800">Total Geral</td>
             <td class="num" style="color:var(--cf-muted)">—</td>
             <td class="num" style="font-weight:800">${fmtR(totalMxGeral)}</td>
             <td class="num diff" style="color:${geralOk ? 'var(--cf-green)' : 'var(--cf-alert)'};font-weight:800">
               ${geralOk
                 ? '✓ Bate com total líquido'
-                : `${(diffGeral > 0 ? '+' : '') + fmtR(diffGeral)} vs líquido${gapDocs.length ? ' <span style="font-size:10px;font-weight:400;opacity:.7">▼ ver docs</span>' : ''}`}
+                : `${(diffGeral > 0 ? '+' : '') + fmtR(diffGeral)} vs líquido <span style="font-size:10px;font-weight:400;opacity:.7">▼ debug</span>`}
             </td>
           </tr>
           ${gapDebugHtml}
