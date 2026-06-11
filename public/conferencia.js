@@ -2104,7 +2104,7 @@
                       <th class="num">A Cobrar</th><th>Obs</th><th>Por</th>
                     </tr></thead>
                     <tbody>
-                      ${g.vendas.map(v=>`<tr>
+                      ${g.vendas.map(v=>`<tr class="sale-row" style="cursor:pointer" data-rep-docid="${esc(v.doc)}" data-rep-board="${esc(v.board||g.board)}" data-rep-date="${esc(v.data)}">
                         <td>${fmtD(v.data)}</td>
                         <td class="mono">${esc(v.doc)}</td>
                         <td class="num">${fmtR(v.valorTotal)}</td>
@@ -2120,6 +2120,83 @@
           </tbody>
         </table>
       </div>`;
+
+    // bind click on individual reprovada rows
+    const rResult = $('rResult');
+    rResult.querySelectorAll('tr[data-rep-docid]').forEach(tr => {
+      tr.addEventListener('click', () => {
+        const docId = tr.dataset.repDocid;
+        const board = tr.dataset.repBoard;
+        const date  = tr.dataset.repDate;
+        abrirModalReprovadaVenda(docId, board, date);
+      });
+    });
+  }
+
+  // Cache para evitar re-buscar o mesmo board+date já carregado
+  const _repDayCache = {};
+
+  async function abrirModalReprovadaVenda(docId, board, date) {
+    // mostra modal de loading
+    const loadModal = document.createElement('div');
+    loadModal.id = 'vendaModal';
+    loadModal.style.cssText = 'position:fixed;inset:0;z-index:9000;background:#00000088;display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeInModal .15s ease';
+    loadModal.innerHTML = '<div style="background:var(--cf-card);border:1px solid var(--cf-border);border-radius:14px;padding:32px 40px;display:flex;align-items:center;gap:14px;color:var(--cf-muted);font-size:14px"><span class="spinner"></span> Carregando venda…</div>';
+    document.body.appendChild(loadModal);
+    loadModal.addEventListener('click', e => { if (e.target === loadModal) fecharModalVenda(); });
+    document.addEventListener('keydown', _onEscVenda);
+
+    try {
+      const cacheKey = board + '::' + date;
+      if (!_repDayCache[cacheKey]) {
+        const d = await api('GET', `/api/conferencia/data?board=${encodeURIComponent(board)}&date=${encodeURIComponent(date)}`);
+        _repDayCache[cacheKey] = d;
+      }
+      const dayData = _repDayCache[cacheKey];
+      const venda = (dayData?.vendas || []).find(v => String(v.doc) === String(docId));
+
+      fecharModalVenda(); // remove loading modal
+
+      if (venda) {
+        // Temporarily inject into _data so abrirModalVenda can find it
+        const prevData = _data;
+        if (!_data) _data = { vendas: [] };
+        if (!_data.vendas.find(v => String(v.doc) === String(docId) && (v.board === board || !v.board))) {
+          _data = { ..._data, vendas: [...(_data.vendas || []), { ...venda, board }] };
+        }
+        abrirModalVenda(docId, board);
+        // restore original _data after modal is built (modal captured its data already)
+        _data = prevData;
+      } else {
+        // venda não encontrada no Microvix — mostra modal simples com os dados da revisão
+        const rev = _revisoesMap[docId + '::' + board] || {};
+        const boardLabel = LOJA_LABEL[board] || board;
+        const modal = document.createElement('div');
+        modal.id = 'vendaModal';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:9000;background:#00000088;display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeInModal .15s ease';
+        modal.innerHTML =
+          '<div style="background:var(--cf-card);border:1px solid var(--cf-border);border-radius:14px;width:100%;max-width:600px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 64px #00000060">' +
+            '<div style="display:flex;align-items:center;gap:12px;padding:18px 22px;border-bottom:1px solid var(--cf-border)">' +
+              '<div style="flex:1">' +
+                '<div style="font-size:16px;font-weight:800;color:var(--cf-text)">Doc ' + esc(docId) + '</div>' +
+                '<div style="font-size:12px;color:var(--cf-muted);margin-top:2px">' + esc(boardLabel) + ' &nbsp;·&nbsp; ' + fmtD(date) + ' <span style="background:#ef444420;color:var(--cf-red);border:1px solid var(--cf-red);border-radius:6px;padding:2px 8px;font-size:10px;font-weight:700;margin-left:6px">❌ Reprovada</span></div>' +
+              '</div>' +
+              '<button id="vendaModalClose" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--cf-muted);padding:4px 8px;border-radius:6px;line-height:1" title="Fechar">✕</button>' +
+            '</div>' +
+            '<div style="padding:20px 22px">' +
+              '<div style="background:#ef444410;border:1px solid #ef444440;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--cf-muted)">Venda não encontrada nos dados do Microvix para esta data.</div>' +
+              (rev.obs ? '<div style="font-size:13px;color:var(--cf-text);margin-bottom:8px"><strong>Obs:</strong> ' + esc(rev.obs) + '</div>' : '') +
+              (rev.valorCobrar ? '<div style="font-size:13px;color:var(--cf-alert);font-weight:700">A cobrar: ' + fmtR(rev.valorCobrar) + '</div>' : '') +
+            '</div>' +
+          '</div>';
+        document.body.appendChild(modal);
+        modal.querySelector('#vendaModalClose').onclick = fecharModalVenda;
+        modal.addEventListener('click', e => { if (e.target === modal) fecharModalVenda(); });
+      }
+    } catch(e) {
+      fecharModalVenda();
+      alert('Erro ao carregar venda: ' + e.message);
+    }
   }
 
   // ════════════════════════════════════════════════════════════════════════
