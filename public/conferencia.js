@@ -919,10 +919,12 @@
       if (diff > 0.10) return false;
     }
     if (!keys.size) return false;
-    // Verifica confirmações manuais
+    // Verifica confirmações manuais (linha com valor=0 sem preenchimento = OK)
     const manualRows = buildManualRows();
     for (const row of manualRows) {
-      const confirmado = parseFloat(_confirmacoesManual[row.key] || 0);
+      const confirmado = parseFloat(_confirmacoesManual[row.key] ?? '');
+      const preenchido = _confirmacoesManual[row.key] !== undefined && _confirmacoesManual[row.key] !== '';
+      if (row.valor <= 0.01 && !preenchido) continue; // R$0 sem preencher = OK
       if (Math.abs(confirmado - row.valor) > 0.10) return false;
     }
     return true;
@@ -948,23 +950,32 @@
   }
 
   // Calcula linhas que precisam de confirmação manual
+  // Sempre inclui PIX Direto e Cielo — o usuário preenche o que recebeu (zero se não teve)
   function buildManualRows() {
     const rows = [];
 
-    // PIX direto = Microvix PIX − Rede PIX (se positivo)
+    // PIX direto = Microvix PIX − Rede PIX (pode ser 0 se todo PIX passou pela Rede)
     const mx   = buildMicrovixAgrupado();
     const rede = buildRedeAgrupado();
     const mxPix   = Object.entries(mx).filter(([k]) => k.startsWith('pix::')).reduce((s,[,v]) => s + v.total, 0);
     const redePix = Object.entries(rede).filter(([k]) => k.startsWith('pix::')).reduce((s,[,v]) => s + v.total, 0);
-    const pixDireto = +(mxPix - redePix).toFixed(2);
-    if (pixDireto > 0.01) {
-      rows.push({ key: 'pix_direto', label: 'PIX Direto (conta)', valor: pixDireto });
+    const pixDireto = Math.max(0, +(mxPix - redePix).toFixed(2));
+    rows.push({ key: 'pix_direto', label: 'PIX Direto (conta)', valor: pixDireto });
+
+    // Cielo: busca no Microvix ou mostra como R$0 para confirmação
+    const outros = buildOutrosAgrupado();
+    const cieloMx = outros.filter(o => /cielo/i.test(o.label));
+    if (cieloMx.length) {
+      for (const o of cieloMx) rows.push({ key: 'cielo', label: o.label, valor: o.total });
+    } else {
+      rows.push({ key: 'cielo', label: 'Cielo (link/portal)', valor: 0 });
     }
 
-    // Outros que precisam de confirmação manual (Cielo, etc.)
-    const outros = buildOutrosAgrupado();
+    // Demais formas externas (não Rede, não Dinheiro, não Cielo já adicionado)
     for (const o of outros) {
-      if (o.manualKey) rows.push({ key: o.manualKey, label: o.label, valor: o.total });
+      if (o.manualKey && !/cielo/i.test(o.label)) {
+        rows.push({ key: o.manualKey, label: o.label, valor: o.total });
+      }
     }
     return rows;
   }
