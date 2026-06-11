@@ -215,6 +215,9 @@
   // VENDAS
   // ════════════════════════════════════════════════════════════════════════
   let _data = null, _grupo = 'lista', _revisoesMap = {};
+  // Expõe para diagnóstico no F12: window._cfDebug.data, window._cfDebug.board, etc.
+  window._cfDebug = { get data() { return _data; }, get board() { return typeof _rotinaBoard !== 'undefined' ? _rotinaBoard : null; }, get date() { return typeof _rotinaDate !== 'undefined' ? _rotinaDate : null; } };
+  window._cfDebugDoc = async (doc) => { const r = await fetch(`/api/conferencia/debug-doc?board=${window._cfDebug.board}&date=${window._cfDebug.date}&doc=${doc}`); const j = await r.json(); console.table(j.formas); console.log('valorTotal:', j.valorTotal, 'sumFormas:', j.sumFormas, 'gap:', j.gap); return j; };
   let _rotinaStatus = null, _rotinaBoard = null, _rotinaDate = null;
 
   $('vBuscarBtn').addEventListener('click', buscarVendas);
@@ -1079,15 +1082,21 @@
           <div style="font-size:11px;color:var(--cf-muted);margin-bottom:.3rem">
             ${gapDocs.length} doc(s) com forma de pagamento incompleta no Microvix:
           </div>
-          ${gapDocs.map(g => `
-            <div style="display:flex;gap:.5rem;font-size:11.5px;padding:.15rem 0;border-bottom:1px solid var(--cf-border)">
-              <span style="color:var(--cf-muted);min-width:60px">Doc ${esc(g.doc)}</span>
-              <span style="min-width:80px">${esc(g.vendedor||'')}</span>
-              <span style="color:var(--cf-muted)">${g.hora||''}</span>
-              <span style="margin-left:auto">venda <strong>${fmtR(g.valorTotal)}</strong></span>
-              <span>forms <strong>${fmtR(g.sumFormas)}</strong></span>
-              <span style="color:var(--cf-alert)">gap <strong>${fmtR(g.gap)}</strong></span>
-            </div>`).join('')}
+          ${gapDocs.map(g => {
+            const formasHtml = (g.formas||[]).map(f => '<span style="background:var(--cf-card);border:1px solid var(--cf-border);border-radius:4px;padding:1px 5px;font-size:10px">' + esc(f.forma) + (f.bandeira && f.bandeira!=='—' ? ' '+esc(f.bandeira) : '') + ' <strong>' + fmtR(f.valor) + '</strong></span>').join(' ');
+            return `
+            <div style="padding:.25rem 0;border-bottom:1px solid var(--cf-border)">
+              <div style="display:flex;gap:.5rem;font-size:11.5px;flex-wrap:wrap;align-items:center">
+                <span style="color:var(--cf-muted);min-width:60px">Doc ${esc(g.doc)}</span>
+                <span style="min-width:80px">${esc(g.vendedor||'')}</span>
+                <span style="color:var(--cf-muted)">${g.hora||''}</span>
+                <span style="margin-left:auto">venda <strong>${fmtR(g.valorTotal)}</strong></span>
+                <span>formas <strong>${fmtR(g.sumFormas)}</strong></span>
+                <span style="color:var(--cf-alert)">gap <strong>${fmtR(g.gap)}</strong></span>
+              </div>
+              ${formasHtml ? '<div style="margin-top:3px;display:flex;gap:4px;flex-wrap:wrap">' + formasHtml + '</div>' : ''}
+            </div>`;
+          }).join('')}
         </td>
       </tr>` : '';
 

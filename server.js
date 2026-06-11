@@ -7412,6 +7412,37 @@ app.get('/api/conferencia/reprovadas', requireEscritorioOrAdmin, async (req, res
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/conferencia/debug-doc?board=X&date=Y&doc=Z  — diagnóstico de formas de um doc específico
+app.get('/api/conferencia/debug-doc', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { board, date, doc } = req.query;
+    if (!board || !date) return res.status(400).json({ error: 'board e date obrigatórios' });
+    const result = await _buildConferenciaVendas(board, date, date);
+    const vendas = result.vendas || [];
+    if (doc) {
+      const venda = vendas.find(v => String(v.doc) === String(doc));
+      if (!venda) return res.json({ error: `doc ${doc} não encontrado`, totalVendas: result.totalVendas, qtd: vendas.length });
+      const sumFormas = venda.formas.reduce((s, f) => s + f.valor, 0);
+      return res.json({
+        doc:        venda.doc,
+        valorTotal: +venda.valorTotal.toFixed(2),
+        sumFormas:  +sumFormas.toFixed(2),
+        gap:        +(venda.valorTotal - sumFormas).toFixed(2),
+        formas:     venda.formas.map(f => ({ forma: f.forma, bandeira: f.bandeira||'—', valor: +f.valor.toFixed(2) })),
+        desconto:   venda.desconto,
+        itens:      venda.itens.map(i => ({ cod: i.cod_produto, desc: i.descricao, vlrBruto: +i.vlrBruto.toFixed(2), vlrLiquido: +i.vlrLiquido.toFixed(2), vlrDesconto: +i.vlrDesconto.toFixed(2) })),
+      });
+    }
+    // Sem doc: retorna sumário por forma e docsComGap
+    return res.json({
+      totalVendas: +result.totalVendas.toFixed(2),
+      qtdVendas:   result.qtdVendas,
+      porForma:    result.porForma.map(f => ({ forma: f.forma, bandeira: f.bandeira||'—', total: +f.total.toFixed(2) })),
+      docsComGap:  result.docsComGap || [],
+    });
+  } catch (e) { res.status(500).json({ error: e.message, stack: e.stack }); }
+});
+
 // ── Confirmações Manuais (PIX direto, Cielo, etc.) ──────────────────────────
 async function getConfirmacoesManualCol() {
   if (!mongoDb) throw new Error('MongoDB não conectado');
