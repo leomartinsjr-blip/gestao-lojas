@@ -867,54 +867,25 @@
     const geralOk      = Math.abs(diffGeral) <= 0.10;
     const gapDocs      = _data?.docsComGap || [];
 
-    // Painel de vendas do dia para diagnóstico de gap
+    // Monta HTML do diagnóstico de gap (colapsável)
     const gapDebugId = `gap-debug-${Date.now()}`;
-    let gapDebugHtml = '';
-    if (!geralOk) {
-      const vendas = _data?.vendas || [];
-      const vendasRows = vendas.map(v => {
-        const sumF = (v.formas || []).reduce((s, f) => s + (f.valor || 0), 0);
-        const diffV = v.valorTotal - sumF;
-        const hasDiff = Math.abs(diffV) > 0.01;
-        const formasDesc = (v.formas || []).map(f =>
-          `${f.forma||'?'}${f.bandeira ? ' ' + f.bandeira : ''}${f.parcelas > 1 ? ' ' + f.parcelas + 'x' : ''}: ${fmtR(f.valor||0)}`
-        ).join(' · ') || '—';
-        return `<tr style="${hasDiff ? 'background:rgba(239,68,68,.08)' : ''}">
-          <td class="mono" style="color:var(--cf-muted);font-size:11px">${esc(v.doc)}</td>
-          <td style="font-size:11.5px">${esc(v.vendedor||'—')}</td>
-          <td style="font-size:11px;color:var(--cf-muted)">${v.hora||'—'}</td>
-          <td class="num" style="font-weight:700">${fmtR(v.valorTotal)}</td>
-          <td class="num" style="color:${hasDiff ? 'var(--cf-alert)' : 'var(--cf-muted)'}">${fmtR(sumF)}</td>
-          <td class="num" style="font-weight:800;color:${hasDiff ? 'var(--cf-alert)' : 'var(--cf-green)'}">
-            ${hasDiff ? (diffV > 0 ? '+' : '') + fmtR(diffV) : '✓'}
-          </td>
-          <td style="font-size:10px;color:var(--cf-muted);max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(formasDesc)}">${formasDesc}</td>
-        </tr>`;
-      }).join('');
-
-      const sumValorTotal = vendas.reduce((s, v) => s + v.valorTotal, 0);
-      gapDebugHtml = `
-        <tr id="${gapDebugId}" style="display:none">
-          <td colspan="5" style="padding:0">
-            <div style="padding:.5rem .75rem .3rem;background:var(--cf-card2);border-top:1px solid var(--cf-border)">
-              <span style="font-size:11px;font-weight:700;color:var(--cf-muted)">Vendas do dia — valorTotal vs formas de pagamento</span>
-              <span style="font-size:10px;color:var(--cf-muted);margin-left:8px">∑ valorTotal ${fmtR(sumValorTotal)} · porForma ${fmtR(totalMxGeral)} · diff ${fmtR(totalMxGeral - sumValorTotal)}</span>
-            </div>
-            <table style="width:100%;border-collapse:collapse;font-size:11.5px">
-              <thead><tr style="background:var(--cf-card2)">
-                <th style="text-align:left;padding:3px 8px;font-size:10px;color:var(--cf-muted);font-weight:600">Doc</th>
-                <th style="text-align:left;padding:3px 8px;font-size:10px;color:var(--cf-muted);font-weight:600">Vendedor</th>
-                <th style="text-align:left;padding:3px 8px;font-size:10px;color:var(--cf-muted);font-weight:600">Hora</th>
-                <th style="text-align:right;padding:3px 8px;font-size:10px;color:var(--cf-muted);font-weight:600">Total venda</th>
-                <th style="text-align:right;padding:3px 8px;font-size:10px;color:var(--cf-muted);font-weight:600">∑ formas</th>
-                <th style="text-align:right;padding:3px 8px;font-size:10px;color:var(--cf-muted);font-weight:600">Diff</th>
-                <th style="text-align:left;padding:3px 8px;font-size:10px;color:var(--cf-muted);font-weight:600">Formas</th>
-              </tr></thead>
-              <tbody>${vendasRows}</tbody>
-            </table>
-          </td>
-        </tr>`;
-    }
+    const gapDebugHtml = !geralOk && gapDocs.length ? `
+      <tr id="${gapDebugId}" style="display:none;background:var(--cf-card2)">
+        <td colspan="5" style="padding:.4rem .75rem">
+          <div style="font-size:11px;color:var(--cf-muted);margin-bottom:.3rem">
+            ${gapDocs.length} doc(s) com forma de pagamento incompleta no Microvix:
+          </div>
+          ${gapDocs.map(g => `
+            <div style="display:flex;gap:.5rem;font-size:11.5px;padding:.15rem 0;border-bottom:1px solid var(--cf-border)">
+              <span style="color:var(--cf-muted);min-width:60px">Doc ${esc(g.doc)}</span>
+              <span style="min-width:80px">${esc(g.vendedor||'')}</span>
+              <span style="color:var(--cf-muted)">${g.hora||''}</span>
+              <span style="margin-left:auto">venda <strong>${fmtR(g.valorTotal)}</strong></span>
+              <span>forms <strong>${fmtR(g.sumFormas)}</strong></span>
+              <span style="color:var(--cf-alert)">gap <strong>${fmtR(g.gap)}</strong></span>
+            </div>`).join('')}
+        </td>
+      </tr>` : '';
 
     return `
       <table class="conc-tbl">
@@ -938,14 +909,14 @@
             </td>
           </tr>
           ${outrosRows}
-          <tr style="border-top:2px solid var(--cf-border);background:var(--cf-card2)${!geralOk ? ';cursor:pointer' : ''}" ${!geralOk ? `class="gap-toggle-row" data-target="${gapDebugId}"` : ''}>
+          <tr style="border-top:2px solid var(--cf-border);background:var(--cf-card2)${!geralOk && gapDocs.length ? ';cursor:pointer' : ''}" ${!geralOk && gapDocs.length ? `class="gap-toggle-row" data-target="${gapDebugId}"` : ''}>
             <td colspan="2" style="font-weight:800">Total Geral</td>
             <td class="num" style="color:var(--cf-muted)">—</td>
             <td class="num" style="font-weight:800">${fmtR(totalMxGeral)}</td>
             <td class="num diff" style="color:${geralOk ? 'var(--cf-green)' : 'var(--cf-alert)'};font-weight:800">
               ${geralOk
                 ? '✓ Bate com total líquido'
-                : `${(diffGeral > 0 ? '+' : '') + fmtR(diffGeral)} vs líquido <span style="font-size:10px;font-weight:400;opacity:.7">▼ ver vendas</span>`}
+                : `${(diffGeral > 0 ? '+' : '') + fmtR(diffGeral)} vs líquido${gapDocs.length ? ' <span style="font-size:10px;font-weight:400;opacity:.7">▼ ver docs</span>' : ''}`}
             </td>
           </tr>
           ${gapDebugHtml}
