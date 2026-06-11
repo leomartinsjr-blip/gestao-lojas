@@ -4176,6 +4176,7 @@ const TRANS_RESULT_TTL = 30 * 60 * 1000;
 let _catalogCache = null;
 let _catalogCacheAt = 0;
 let _catalogWarmPromise = null;  // Promise compartilhada — callers concorrentes aguardam a mesma
+let _catalogWarmStartAt = 0;    // Timestamp de início do build atual
 let _catalogRawFields = [];      // campos brutos do LinxProdutos (para diagnóstico)
 let _catalogRawSample = null;    // amostra bruta (1 produto)
 const CATALOG_TTL = 6 * 60 * 60 * 1000;
@@ -4323,8 +4324,14 @@ async function _loadCatalogMongo() {
 async function _getCatalog(lojas) {
   if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
 
-  // Inicia rebuild em background se ainda não está rodando
+  // Inicia rebuild em background se ainda não está rodando (ou se travou há mais de 50s)
+  const warmStuck = _catalogWarmPromise && (Date.now() - _catalogWarmStartAt > 50_000);
+  if (warmStuck) {
+    console.warn('[Catalog] build travado há >50s — descartando e retornando cache vazio');
+    _catalogWarmPromise = null;
+  }
   if (!_catalogWarmPromise) {
+    _catalogWarmStartAt = Date.now();
     _catalogWarmPromise = _buildCatalog(lojas).finally(() => { _catalogWarmPromise = null; });
   }
 
@@ -4343,8 +4350,11 @@ async function _getCatalog(lojas) {
     } catch (e) { console.warn('[Catalog] MongoDB load:', e.message); }
   }
 
-  // Sem MongoDB e sem cache: aguarda o build
-  return _catalogWarmPromise;
+  // Sem MongoDB e sem cache: aguarda o build com timeout de 50s para não bloquear
+  return Promise.race([
+    _catalogWarmPromise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('catalog build timeout')), 50_000)),
+  ]).catch(() => ({}));
 }
 
 async function _buildCatalog(lojas) {
