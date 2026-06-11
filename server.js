@@ -7333,8 +7333,9 @@ app.get('/api/conferencia/rede-extrato', requireAuth, async (req, res) => {
 async function getConferenciaRevisoesCol() {
   if (!mongoDb) throw new Error('MongoDB não conectado');
   const col = mongoDb.collection('confRevisoes');
-  // Garante índice único em doc+board
+  // Garante índice único em doc+board e índice por data para queries de período
   await col.createIndex({ doc: 1, board: 1 }, { unique: true, background: true }).catch(() => {});
+  await col.createIndex({ data: 1, board: 1 }, { background: true }).catch(() => {});
   return col;
 }
 
