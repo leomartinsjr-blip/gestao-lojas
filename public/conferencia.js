@@ -2149,7 +2149,7 @@
     try {
       const cacheKey = board + '::' + date;
       if (!_repDayCache[cacheKey]) {
-        const d = await api('GET', `/api/conferencia/data?board=${encodeURIComponent(board)}&date=${encodeURIComponent(date)}`);
+        const d = await api('GET', `/api/conferencia/vendas?board=${encodeURIComponent(board)}&dtIni=${encodeURIComponent(date)}&dtFin=${encodeURIComponent(date)}`);
         _repDayCache[cacheKey] = d;
       }
       const dayData = _repDayCache[cacheKey];
