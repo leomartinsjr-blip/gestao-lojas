@@ -639,9 +639,13 @@
             <div class="conc-summary">
               <span class="conc-file-info">📎 <strong>${_redeRows.length}</strong> transações${serverBadge}</span>
               <button id="concReimportar" style="font-size:11px;padding:3px 10px;border-radius:6px;border:1px solid var(--cf-border);color:var(--cf-muted);background:transparent;cursor:pointer;font-family:inherit">↩ Reimportar</button>
-              ${!isDone ? `<button id="concConfirmar" class="rotina-step-btn btn-ok" style="margin-left:auto" ${concAllOk() ? '' : 'disabled'}>✓ Confirmar Cartões</button>` : ''}
-              ${isDone  ? `<button id="concDesfazer" class="rotina-step-btn btn-undo" style="margin-left:auto">↩ Desfazer</button>` : ''}
-            </div>` : ''}
+              ${!isDone ? '<button id="concConfirmar" class="rotina-step-btn btn-ok" style="margin-left:auto" ' + (concAllOk() ? '' : 'disabled') + '>✓ Confirmar Cartões</button>' : ''}
+              ${isDone  ? '<button id="concDesfazer" class="rotina-step-btn btn-undo" style="margin-left:auto">↩ Desfazer</button>' : ''}
+            </div>
+            <div style="padding:4px 0 0">
+              <button id="concVerVendas" style="font-size:11px;padding:3px 10px;border-radius:6px;border:1px solid var(--cf-border);color:var(--cf-muted);background:transparent;cursor:pointer;font-family:inherit">🔍 Ver vendas</button>
+            </div>
+            <div id="concVerVendasPanel" style="display:none;margin-top:6px;border-top:1px solid var(--cf-border)"></div>` : ''}
         </div>
       </div>`;
 
@@ -687,6 +691,68 @@
       _rotinaStatus = res.status;
       renderRotina(_data);
     };
+
+    // Botão "ver vendas" para diagnóstico de gap
+    const verVendasBtn = el.querySelector('#concVerVendas');
+    if (verVendasBtn) {
+      verVendasBtn.onclick = () => {
+        const panel = el.querySelector('#concVerVendasPanel');
+        if (!panel) return;
+        if (panel.style.display !== 'none') { panel.style.display = 'none'; verVendasBtn.textContent = '🔍 Ver vendas'; return; }
+        const vendas = _data?.vendas || [];
+        const totalVendas = _data?.totalVendas || 0;
+        const sumPorForma = (_data?.porForma || []).reduce(function(s, f) { return s + f.total; }, 0);
+        let html = '<table style="width:100%;border-collapse:collapse;font-size:11.5px">';
+        html += '<thead><tr style="background:var(--cf-card2);font-size:10px;color:var(--cf-muted)">';
+        html += '<th style="text-align:left;padding:3px 8px">Doc</th>';
+        html += '<th style="text-align:left;padding:3px 8px">Vendedor</th>';
+        html += '<th style="text-align:left;padding:3px 8px">Hora</th>';
+        html += '<th style="text-align:right;padding:3px 8px">Total venda</th>';
+        html += '<th style="text-align:right;padding:3px 8px">∑ formas</th>';
+        html += '<th style="text-align:right;padding:3px 8px">Diff</th>';
+        html += '<th style="text-align:left;padding:3px 8px">Formas</th>';
+        html += '</tr></thead><tbody>';
+        for (var i = 0; i < vendas.length; i++) {
+          var v = vendas[i];
+          var sumF = 0;
+          var formasDesc = '';
+          var formasParts = [];
+          if (v.formas) {
+            for (var j = 0; j < v.formas.length; j++) {
+              sumF += v.formas[j].valor || 0;
+              var fp = (v.formas[j].forma || '?');
+              if (v.formas[j].bandeira) fp += ' ' + v.formas[j].bandeira;
+              fp += ': ' + fmtR(v.formas[j].valor || 0);
+              formasParts.push(fp);
+            }
+          }
+          formasDesc = formasParts.join(' · ') || '—';
+          var diffV = v.valorTotal - sumF;
+          var hasDiff = Math.abs(diffV) > 0.01;
+          var rowStyle = hasDiff ? 'background:rgba(239,68,68,.08)' : '';
+          var diffColor = hasDiff ? 'var(--cf-alert)' : 'var(--cf-green)';
+          var diffText = hasDiff ? ((diffV > 0 ? '+' : '') + fmtR(diffV)) : '✓';
+          html += '<tr style="' + rowStyle + '">';
+          html += '<td style="font-family:monospace;color:var(--cf-muted);padding:3px 8px">' + esc(v.doc) + '</td>';
+          html += '<td style="padding:3px 8px">' + esc(v.vendedor || '—') + '</td>';
+          html += '<td style="color:var(--cf-muted);padding:3px 8px">' + (v.hora || '—') + '</td>';
+          html += '<td style="text-align:right;font-weight:700;padding:3px 8px">' + fmtR(v.valorTotal) + '</td>';
+          html += '<td style="text-align:right;padding:3px 8px">' + fmtR(sumF) + '</td>';
+          html += '<td style="text-align:right;font-weight:800;color:' + diffColor + ';padding:3px 8px">' + diffText + '</td>';
+          html += '<td style="font-size:10px;color:var(--cf-muted);padding:3px 8px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(formasDesc) + '">' + esc(formasDesc) + '</td>';
+          html += '</tr>';
+        }
+        html += '</tbody>';
+        html += '<tfoot><tr style="border-top:2px solid var(--cf-border);font-weight:700">';
+        html += '<td colspan="3" style="padding:3px 8px;color:var(--cf-muted);font-size:10px">totalVendas API: ' + fmtR(totalVendas) + ' · ∑ porForma: ' + fmtR(sumPorForma) + '</td>';
+        html += '<td style="text-align:right;padding:3px 8px">' + fmtR(vendas.reduce(function(s,v){return s+v.valorTotal;},0)) + '</td>';
+        html += '<td colspan="3" style="padding:3px 8px"></td>';
+        html += '</tr></tfoot></table>';
+        panel.innerHTML = html;
+        panel.style.display = '';
+        verVendasBtn.textContent = '🔍 Ocultar vendas';
+      };
+    }
   }
 
   function renderDropZone() {
