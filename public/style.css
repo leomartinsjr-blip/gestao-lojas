@@ -23,7 +23,7 @@
   --col-tommy:      #22D3EE;
   --col-lez:        #F472B6;
 
-  --topbar-h: 56px;
+  --topbar-h: 88px;
   --col-w:    320px;
 }
 
@@ -41,9 +41,25 @@ body {
   height: var(--topbar-h);
   background: var(--surface);
   border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; gap: 1.5rem;
-  padding: 0 1.25rem;
+  display: flex; flex-direction: column;
 }
+
+.topbar-row1 {
+  display: flex; align-items: center; gap: 1rem;
+  padding: 0 1.25rem;
+  height: 52px; flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+}
+.topbar-row1-right {
+  margin-left: auto; display: flex; align-items: center; gap: .65rem;
+}
+.topbar-row2 {
+  display: flex; align-items: center; gap: .2rem;
+  padding: 0 .75rem;
+  height: 36px; flex-shrink: 0;
+  overflow-x: auto; scrollbar-width: none;
+}
+.topbar-row2::-webkit-scrollbar { display: none; }
 
 .brand {
   display: flex; align-items: center; gap: .5rem;
@@ -51,31 +67,28 @@ body {
   white-space: nowrap;
 }
 .brand svg { color: #58A6FF; flex-shrink: 0; }
-.brand-logo { height: 36px; width: auto; object-fit: contain; display: block; }
+.brand-logo { height: 32px; width: auto; object-fit: contain; display: block; }
 
 .month-nav {
-  display: flex; align-items: center; gap: .5rem; margin: 0 auto;
+  display: flex; align-items: center; gap: .5rem;
 }
 .nav-btn {
   background: var(--surface2); border: 1px solid var(--border);
   color: var(--muted); cursor: pointer; border-radius: .375rem;
-  width: 32px; height: 32px; display: flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
   transition: all .15s;
 }
 .nav-btn:hover { color: var(--text); border-color: var(--border2); }
 
 .current-month {
-  font-size: 1rem; font-weight: 700; min-width: 105px;
+  font-size: .9375rem; font-weight: 700; min-width: 100px;
   text-align: center; letter-spacing: -.01em;
 }
 
-.topbar-right {
-  display: flex; align-items: center; gap: .75rem; white-space: nowrap; flex: 1;
-}
+.topbar-right { display: flex; align-items: center; gap: .75rem; white-space: nowrap; flex: 1; }
 .topbar-user {
   display: flex; align-items: center; gap: .5rem;
-  margin-left: auto;
-  padding-left: .75rem;
+  padding-left: .65rem;
   border-left: 1px solid var(--border);
 }
 
