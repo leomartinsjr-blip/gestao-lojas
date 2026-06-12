@@ -5497,6 +5497,136 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── AI fuzzy match de referências do fornecedor contra catálogo Microvix ──────
+app.post('/api/cadastro-produto/ai-match', requireAdmin, async (req, res) => {
+  try {
+    const { refs } = req.body;
+    if (!Array.isArray(refs) || !refs.length) return res.status(400).json({ error: 'refs deve ser array não vazio' });
+    // Aceita tanto strings simples quanto objetos { ref, desc }
+    const refItems = refs.map(r => typeof r === 'string' ? { ref: r, desc: '' } : r);
+
+    const Anthropic = require('@anthropic-ai/sdk');
+    const client = new Anthropic.default({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const idx = await Promise.race([
+      _getRefColorIndex(),
+      new Promise(r => setTimeout(() => r(null), 15_000)),
+    ]).catch(() => null);
+
+    if (!idx || !Object.keys(idx).length) {
+      return res.json({ matches: refItems.map(r => ({ supplierRef: r.ref, suggestedRef: null, error: 'catálogo não disponível' })) });
+    }
+
+    const catalogRefs = Object.keys(idx);
+    const norm = s => (s || '').toString().replace(/\.0+$/, '').trim().toUpperCase();
+
+    // String similarity: Jaro-Winkler simplificado + bonus de prefixo
+    function similarity(a, b) {
+      a = norm(a); b = norm(b);
+      if (!a || !b) return 0;
+      if (a === b) return 1;
+      const maxDist = Math.floor(Math.max(a.length, b.length) / 2) - 1;
+      if (maxDist < 0) return 0;
+      const aMatches = new Array(a.length).fill(false);
+      const bMatches = new Array(b.length).fill(false);
+      let matches = 0, transpositions = 0;
+      for (let i = 0; i < a.length; i++) {
+        const start = Math.max(0, i - maxDist);
+        const end   = Math.min(i + maxDist + 1, b.length);
+        for (let j = start; j < end; j++) {
+          if (bMatches[j] || a[i] !== b[j]) continue;
+          aMatches[i] = bMatches[j] = true;
+          matches++;
+          break;
+        }
+      }
+      if (!matches) return 0;
+      let k = 0;
+      for (let i = 0; i < a.length; i++) {
+        if (!aMatches[i]) continue;
+        while (!bMatches[k]) k++;
+        if (a[i] !== b[k]) transpositions++;
+        k++;
+      }
+      const jaro = (matches/a.length + matches/b.length + (matches - transpositions/2)/matches) / 3;
+      // Winkler prefix bonus
+      let prefix = 0;
+      for (let i = 0; i < Math.min(4, a.length, b.length); i++) { if (a[i] === b[i]) prefix++; else break; }
+      return jaro + prefix * 0.1 * (1 - jaro);
+    }
+
+    // Para cada ref do fornecedor, seleciona os top 15 candidatos do catálogo
+    function topCandidates(supplierRef, n = 15) {
+      const sn = norm(supplierRef);
+      return catalogRefs
+        .map(r => ({ r, s: similarity(sn, r) }))
+        .sort((a, b) => b.s - a.s)
+        .slice(0, n)
+        .filter(x => x.s > 0.3)
+        .map(x => x.r);
+    }
+
+    // Processa em batches de 20 refs por chamada Claude
+    const BATCH = 20;
+    const results = [];
+
+    for (let i = 0; i < refItems.length; i += BATCH) {
+      const batch = refItems.slice(i, i + BATCH);
+      const batchData = batch.map(item => {
+        const refNorm  = norm(item.ref);
+        const descNorm = norm(item.desc || '');
+        // Candidatos da ref + candidatos da descrição (para casos como Converse onde a ref vem na desc)
+        const candFromRef  = topCandidates(refNorm);
+        const candFromDesc = descNorm ? topCandidates(descNorm) : [];
+        const candidates   = [...new Set([...candFromRef, ...candFromDesc])].slice(0, 20);
+        return { ref: refNorm, desc: descNorm || undefined, candidates };
+      });
+
+      const prompt = `Você recebe referências de produtos de um fornecedor e uma lista de candidatos do catálogo Microvix para cada uma.
+A referência pode estar no campo "ref", ou embutida no campo "desc" (descrição do produto) — ambos são fornecidos quando disponíveis.
+Seu trabalho é identificar qual candidato melhor corresponde (pode ser abreviação, variação de formato, sufixos extras, etc.).
+
+Para cada item, responda APENAS com o JSON abaixo, sem texto adicional:
+{ "matches": [ { "ref": "REF_FORNECEDOR", "match": "REF_CATALOGO_OU_NULL", "source": "ref_ou_desc" } ] }
+
+Onde:
+- "match" é o código exato do catálogo Microvix que melhor corresponde, ou null se nenhum candidato for adequado
+- "source" é "ref" se o match veio do campo ref, ou "desc" se veio da descrição
+
+Dados:
+${JSON.stringify(batchData, null, 2)}`;
+
+      const stream = await client.messages.stream({
+        model: 'claude-opus-4-8',
+        max_tokens: 1024,
+        thinking: { type: 'adaptive' },
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const msg = await stream.finalMessage();
+      const text = msg.content.find(b => b.type === 'text')?.text || '';
+
+      try {
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('sem JSON na resposta');
+        const parsed = JSON.parse(jsonMatch[0]);
+        for (const m of (parsed.matches || [])) {
+          results.push({ supplierRef: m.ref, suggestedRef: m.match || null, source: m.source || 'ref' });
+        }
+      } catch (parseErr) {
+        for (const bd of batchData) {
+          results.push({ supplierRef: bd.ref, suggestedRef: null, error: 'parse error' });
+        }
+      }
+    }
+
+    // Preserva a ordem original
+    const matchMap = Object.fromEntries(results.map(r => [r.supplierRef, r]));
+    const ordered = refItems.map(item => matchMap[norm(item.ref)] || { supplierRef: item.ref, suggestedRef: null });
+
+    res.json({ matches: ordered });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Força rebuild do índice ref→cores
 app.post('/api/catalog/rebuild-refcolor', requireAdmin, async (req, res) => {
   _refColorIndex = null; _refColorIdxAt = 0; _refColorIdxPromise = null;

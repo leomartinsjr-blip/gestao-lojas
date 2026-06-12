@@ -8,6 +8,7 @@
     "dev": "node --watch server.js"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.104.1",
     "@sparticuz/chromium": "^148.0.0",
     "compression": "^1.8.1",
     "connect-mongo": "^6.0.0",

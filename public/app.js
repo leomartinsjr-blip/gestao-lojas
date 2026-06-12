@@ -3000,6 +3000,7 @@ function _cadRenderProdSection(sec) {
           <th class="trans-th">Preço Venda</th>
           <th class="trans-th">NCM</th>
           <th class="trans-th" style="width:24px"></th>
+          <th class="trans-th" style="min-width:130px">Match IA</th>
         </tr></thead>
         <tbody>
           ${prods.map((p, i) => `<tr data-idx="${i}">
@@ -3016,6 +3017,7 @@ function _cadRenderProdSection(sec) {
             <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="_preco"        data-i="${i}" value="${_escHtml(p._preco)}" style="width:75px"></td>
             <td class="trans-td">${_cadMkNcmSel(p._ncm, i)}</td>
             <td class="trans-td"><button class="cad-del-btn" data-i="${i}" title="Remover">×</button></td>
+            <td class="trans-td cad-ai-cell" data-i="${i}" style="font-size:.7rem;color:var(--muted)">—</td>
           </tr>`).join('')}
         </tbody>
       </table>
@@ -3026,6 +3028,9 @@ function _cadRenderProdSection(sec) {
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         Verificar no Microvix
       </button>
+      <button class="trans-calc-btn" id="cadAiMatchBtn" style="background:var(--accent2,#6e40c9);border-color:var(--accent2,#6e40c9)">
+        ✦ Sugerir Match com IA
+      </button>
     </div>`;
 
   sec.querySelectorAll('.cad-ci').forEach(inp => {
@@ -3035,6 +3040,7 @@ function _cadRenderProdSection(sec) {
     btn.addEventListener('click', () => { _cad.products.splice(+btn.dataset.i, 1); _cadRenderProdSection(sec); });
   });
   sec.querySelector('#cadCheckBtn').addEventListener('click', () => _cadCheckAndExport(sec));
+  sec.querySelector('#cadAiMatchBtn').addEventListener('click', () => _cadAiMatch(sec));
 }
 
 async function _cadCheckAndExport(sec) {
@@ -3122,6 +3128,50 @@ async function _cadCheckAndExport(sec) {
     toast('Erro: ' + e.message, true);
     btn.disabled = false;
     btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Verificar no Microvix`;
+  }
+}
+
+async function _cadAiMatch(sec) {
+  const btn = sec.querySelector('#cadAiMatchBtn');
+  btn.disabled = true;
+  btn.textContent = '✦ Consultando IA…';
+
+  // Garante que edições inline estejam salvas
+  sec.querySelectorAll('.cad-ci').forEach(inp => {
+    if (_cad.products[+inp.dataset.i]) _cad.products[+inp.dataset.i][inp.dataset.f] = inp.value;
+  });
+
+  const refs = _cad.products.map(p => ({
+    ref:  p._ref_final  || p.referencia || '',
+    desc: p._desc_final || p.nome       || '',
+  }));
+
+  try {
+    const res = await apiFetch('POST', '/api/cadastro-produto/ai-match', { refs });
+    const matches = res.matches || [];
+
+    sec.querySelectorAll('.cad-ai-cell').forEach((td, i) => {
+      const m = matches[i];
+      if (!m) return;
+      const origRef = _escHtml(refs[i]?.ref || '');
+      if (m.suggestedRef) {
+        const same = (refs[i]?.ref || '').toString().trim().toUpperCase() === m.suggestedRef.trim().toUpperCase();
+        const fromDesc = m.source === 'desc';
+        td.innerHTML = same
+          ? `<span style="color:var(--green,#3fb950);font-size:.7rem">✓ ${_escHtml(m.suggestedRef)}</span>`
+          : `<span style="color:var(--muted);font-size:.68rem">${origRef}</span><br>
+             <span style="color:#e3b341;font-size:.72rem;font-weight:600">→ ${_escHtml(m.suggestedRef)}</span>${fromDesc ? `<br><span style="font-size:.65rem;color:var(--muted)">(da descrição)</span>` : ''}`;
+      } else {
+        td.innerHTML = `<span style="color:var(--muted);font-size:.68rem;font-style:italic">sem sugestão</span>`;
+      }
+    });
+
+    toast(`Match IA concluído — ${matches.filter(m => m?.suggestedRef).length} sugestões de ${matches.length}`);
+  } catch (e) {
+    toast('Erro IA: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✦ Sugerir Match com IA';
   }
 }
 
