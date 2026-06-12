@@ -7521,6 +7521,18 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
         loja.vlrCusto    += sign * vlrCusto * qty;
         loja.qtdItens    += sign;
 
+        // Vendedor — bruto/desconto/qtd por item (antes do seenDocs)
+        const cod  = String(r.cod_vendedor||'').trim();
+        if (cod) {
+          const obsNome = (r.obs||'').match(/Nome do Vendedor:\s*(.+?)(?:\s*\|.*)?$/i);
+          const nome    = (r.nome_vendedor || (obsNome && obsNome[1]) || cod).trim();
+          const vkey    = `${board}::${cod}`;
+          if (!porVendedor[vkey]) porVendedor[vkey] = { board, cod, nome, vlrLiquido:0, vlrBruto:0, vlrDesconto:0, qtdItens:0 };
+          porVendedor[vkey].vlrBruto    += sign * vlrUnit * qty;
+          porVendedor[vkey].vlrDesconto += sign * vlrDesc * qty;
+          porVendedor[vkey].qtdItens    += sign;
+        }
+
         // Venda líquida: por documento (igual ao sync de Performance Mensal)
         // total_* repete o valor total do doc em cada item — deduplica com seenDocs
         const doc = String(r.documento||'').trim();
@@ -7532,18 +7544,9 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
           || parseBR(r.valor_total||r.total_liquido||'0');
         loja.vlrLiquido += sign * vlrLiq;
 
-        // Vendedor
-        const cod  = String(r.cod_vendedor||'').trim();
-        if (cod) {
-          const obsNome = (r.obs||'').match(/Nome do Vendedor:\s*(.+?)(?:\s*\|.*)?$/i);
-          const nome    = (r.nome_vendedor || (obsNome && obsNome[1]) || cod).trim();
-          const vkey    = `${board}::${cod}`;
-          if (!porVendedor[vkey]) porVendedor[vkey] = { board, cod, nome, vlrLiquido:0, vlrBruto:0, vlrDesconto:0, qtdItens:0 };
-          porVendedor[vkey].vlrBruto    += sign * vlrUnit * qty;
-          porVendedor[vkey].vlrDesconto += sign * vlrDesc * qty;
-          porVendedor[vkey].qtdItens    += sign;
-          // vlrLiquido do vendedor: só soma no primeiro item do doc (seenDocs já passou)
-          porVendedor[vkey].vlrLiquido  += sign * vlrLiq;
+        // vlrLiquido do vendedor: por documento (após seenDocs)
+        if (cod && porVendedor[`${board}::${cod}`]) {
+          porVendedor[`${board}::${cod}`].vlrLiquido += sign * vlrLiq;
         }
       }
 
