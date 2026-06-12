@@ -5592,16 +5592,24 @@ app.post('/api/cadastro-produto/ai-match', requireAdmin, async (req, res) => {
       // Numera os itens para matching por índice (robusto contra variações de string)
       const numberedData = batchData.map((item, idx) => ({ idx, ...item }));
 
+      // Setores disponíveis para sugestão
+      const setoresDisp = [...new Set(Object.values(catalog).map(e => e.setor).filter(Boolean))].sort();
+
       const prompt = `Você recebe uma lista numerada de produtos de fornecedor, cada um com campo "ref" e/ou "desc", e uma lista de candidatos do catálogo Microvix.
 A referência pode estar em "ref" ou embutida em "desc" (ex: pedidos Converse onde a ref fica na descrição).
+A referência pode também estar combinada com a cor no mesmo campo (ex: "VN0A5KQZBA2" onde "VN0A5KQZ" é a ref e "BA2" é a cor).
 Identifique o candidato que melhor corresponde a cada produto.
 
+Além do match de referência, sugira o SETOR baseado na descrição do produto.
+Setores disponíveis no catálogo: ${setoresDisp.join(', ') || 'Calçados, Vestuário, Acessórios'}
+
 Responda SOMENTE com um array JSON, um objeto por produto, NA MESMA ORDEM da entrada, sem texto adicional:
-[{"idx":0,"match":"REF_CATALOGO_OU_NULL","source":"ref"},{"idx":1,"match":null,"source":"ref"},...]
+[{"idx":0,"match":"REF_CATALOGO_OU_NULL","source":"ref","setor":"Calçados"},{"idx":1,"match":null,"source":"ref","setor":"Vestuário"},...]
 
 Regras:
 - "match": código exato do catálogo que melhor corresponde, ou null se nenhum serve
 - "source": "ref" se achou pela ref, "desc" se achou pela descrição
+- "setor": setor mais adequado para o produto baseado na descrição; use um dos setores da lista acima ou null se não conseguir determinar
 - Mantenha a ordem e quantidade exata dos itens de entrada
 
 Dados:
@@ -5621,7 +5629,7 @@ ${JSON.stringify(numberedData, null, 2)}`;
         const parsed = JSON.parse(jsonMatch[0]);
         for (const m of parsed) {
           const bd = batchData[m.idx ?? parsed.indexOf(m)];
-          results.push({ supplierRef: bd?.ref ?? '', suggestedRef: m.match || null, source: m.source || 'ref' });
+          results.push({ supplierRef: bd?.ref ?? '', suggestedRef: m.match || null, source: m.source || 'ref', aiSetor: m.setor || null });
         }
       } catch (parseErr) {
         console.warn('[AI Match] parse error:', parseErr.message, '| texto:', text.slice(0, 300));
@@ -5637,9 +5645,11 @@ ${JSON.stringify(numberedData, null, 2)}`;
       const r = results[i] || { supplierRef: item.ref, suggestedRef: null };
       if (r.suggestedRef) {
         const catEntry = catalog[r.suggestedRef] || catalog[normCat(r.suggestedRef)] || {};
-        r.catalogSetor = catEntry.setor || null;
+        r.catalogSetor = catEntry.setor || r.aiSetor || null;
         r.catalogNcm   = catEntry.ncm   || null;
         r.catalogCores = idx[r.suggestedRef] || idx[normCat(r.suggestedRef)] || [];
+      } else if (r.aiSetor) {
+        r.catalogSetor = r.aiSetor;
       }
       return r;
     });

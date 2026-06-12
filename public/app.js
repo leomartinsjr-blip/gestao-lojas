@@ -2586,11 +2586,17 @@ function _cadSuggestSetor(texts) {
   if (/\bregata\b/.test(t)) return 'Regata';
   if (/camiseta|t-shirt|tshirt/.test(t)) return 'TS Basica';
   if (/feminino|fem\b|woman|blusa|saia|vestido/.test(t)) return 'Moda Feminina';
-  if (/masculino|masc\b|\bman\b/.test(t)) return 'Moda Masculina';
+  if (/masculino|masc\b|\bmn\b|\bman\b/.test(t)) return 'Moda Masculina';
   if (/infantil|kids|bebe|crianca/.test(t)) return 'Infantil';
-  if (/calcado|tenis|sandalia|sapato|bota|chinelo/.test(t)) return 'Calçados';
-  if (/acessorio|bolsa|mochila|bone|oculos|relogio/.test(t)) return 'Acessórios';
+  if (/calcado|tenis|sandalia|sapato|bota|chinelo|sneaker|skate.*shoe|chukka|slip.?on|loafer|boot|slipper/.test(t)) return 'Calçados';
+  if (/acessorio|bolsa|mochila|bone|oculos|relogio|meia|carteira|cinto/.test(t)) return 'Acessórios';
   return 'Moda';
+}
+
+// Remove prefixo de quantidade do formato "QTD/TAMANHO" (ex: "1/35" → "35", "2/M" → "M")
+function _cadCleanTamanho(v) {
+  const m = v.match(/^\d+\/(.+)$/);
+  return m ? m[1].trim() : v;
 }
 
 function _cadSuggestNcm(setor, textos) {
@@ -2676,7 +2682,7 @@ function _cadBuildProducts() {
                : _cadSplitCors(p.desc_cor  || '').length ? _cadSplitCors(p.desc_cor)
                : _cadExtractAllCors(txt).length           ? _cadExtractAllCors(txt)
                : [''];
-    const tams = hasMappedTam  ? splitRaw(p.desc_tamanho)
+    const tams = hasMappedTam  ? splitRaw(p.desc_tamanho).map(_cadCleanTamanho)
                : _cadSplitTams(p.desc_tamanho || '').length ? _cadSplitTams(p.desc_tamanho)
                : _cadExtractTam(txt)                         ? [_cadExtractTam(txt)]
                : ['Único'];
@@ -3388,6 +3394,19 @@ async function _cadAiMatch(sec) {
 
       // ── Destaque amarelo se houver algum campo com ⚠ ──
       tr.classList.toggle('cad-row-warn', !!tr.querySelector('.cad-col-warn'));
+    });
+
+    // ── Limpa tamanho formato "QTD/TAM" em todos os produtos ──
+    _cad.products.forEach((p, i) => {
+      const cleaned = _cadCleanTamanho(p.desc_tamanho || '');
+      if (cleaned !== p.desc_tamanho) {
+        p.desc_tamanho = cleaned;
+        const tr = sec.querySelector(`tr[data-idx="${i}"]`);
+        if (tr) {
+          const inp = tr.querySelectorAll('td')[6]?.querySelector('input');
+          if (inp) inp.value = cleaned;
+        }
+      }
     });
 
     // Atualiza contadores
