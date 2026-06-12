@@ -4216,7 +4216,7 @@ async function _getRefColorIndex() {
 async function _buildRefColorIndex() {
   const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
   const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-  const boards = Object.keys(lojas).filter(b => b !== 'site');
+  const boards = Object.keys(lojas).filter(b => b !== 'site' && b !== 'tommy');
   if (!boards.length) return {};
 
   const board = boards[0]; // catálogo é único para todas as lojas Surfers
@@ -4359,8 +4359,8 @@ async function _getCatalog(lojas) {
 
 async function _buildCatalog(lojas) {
   const { fetchServicos, buildRequest, postRequest, parseCsv, parseBrNum } = require('./services/microvix');
-  // Catálogo é único para todas as lojas Surfers — busca apenas de uma loja representativa
-  const boards = Object.keys(lojas).filter(b => b !== 'site');
+  // Catálogo é único para todas as lojas Surfers — busca apenas de uma loja representativa (exclui Tommy)
+  const boards = Object.keys(lojas).filter(b => b !== 'site' && b !== 'tommy');
   if (!boards.length) return {};
   const mainBoard = boards[0];  // todas as lojas compartilham o mesmo catálogo
   // Descarta cache antigo ANTES de construir — sem referência _prevCache para não manter o objeto
@@ -5508,10 +5508,12 @@ app.post('/api/cadastro-produto/ai-match', requireAdmin, async (req, res) => {
     const Anthropic = require('@anthropic-ai/sdk');
     const client = new Anthropic.default({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-    const idx = await Promise.race([
-      _getRefColorIndex(),
-      new Promise(r => setTimeout(() => r(null), 15_000)),
-    ]).catch(() => null);
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+
+    const [idx, catalog] = await Promise.all([
+      Promise.race([_getRefColorIndex(), new Promise(r => setTimeout(() => r(null), 15_000))]).catch(() => null),
+      Promise.race([_getCatalog(lojas),  new Promise(r => setTimeout(() => r({}),  15_000))]).catch(() => ({})),
+    ]);
 
     if (!idx || !Object.keys(idx).length) {
       return res.json({ matches: refItems.map(r => ({ supplierRef: r.ref, suggestedRef: null, error: 'catálogo não disponível' })) });
@@ -5627,8 +5629,17 @@ ${JSON.stringify(numberedData, null, 2)}`;
       }
     }
 
-    // Matching por posição — results foi preenchido em ordem
-    const ordered = refItems.map((item, i) => results[i] || { supplierRef: item.ref, suggestedRef: null });
+    // Enriquece com setor e cores do catálogo para a ref sugerida
+    const normCat = s => (s || '').toString().replace(/\.0+$/, '').trim().toUpperCase();
+    const ordered = refItems.map((item, i) => {
+      const r = results[i] || { supplierRef: item.ref, suggestedRef: null };
+      if (r.suggestedRef) {
+        const catEntry = catalog[r.suggestedRef] || catalog[normCat(r.suggestedRef)] || {};
+        r.catalogSetor = catEntry.setor || null;
+        r.catalogCores = idx[r.suggestedRef] || idx[normCat(r.suggestedRef)] || [];
+      }
+      return r;
+    });
 
     res.json({ matches: ordered });
   } catch (e) { res.status(500).json({ error: e.message }); }

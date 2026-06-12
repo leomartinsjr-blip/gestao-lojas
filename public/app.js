@@ -2687,7 +2687,7 @@ function _cadBuildProducts() {
           _ref_final:  _cadApplyTemplate(_cad.modeloRef,  { ...p, desc_cor: cor, desc_tamanho: tam }),
           _desc_final: _cadApplyTemplate(_cad.modeloDesc, { ...p, desc_cor: cor, desc_tamanho: tam }),
           _custo: custo, _preco: precoAuto, _ncm: p._ncm || _cadSuggestNcm(setor, [txt]),
-          linha: p.linha || '',
+          linha: 'Unisex',
         });
       }
     }
@@ -2991,7 +2991,6 @@ function _cadRenderProdSection(sec) {
           <th class="trans-th">Status</th>
           <th class="trans-th">Referência</th>
           <th class="trans-th">Descrição (Microvix)</th>
-          <th class="trans-th">Marca</th>
           <th class="trans-th">Setor</th>
           <th class="trans-th">Linha</th>
           <th class="trans-th">Cor</th>
@@ -3008,9 +3007,8 @@ function _cadRenderProdSection(sec) {
             <td class="trans-td"><span class="cad-badge cad-badge-new" style="font-size:.65rem">NOVO</span></td>
             <td class="trans-td"><input class="cad-ci" data-f="_ref_final"  data-i="${i}" value="${_escHtml(p._ref_final)}"></td>
             <td class="trans-td"><input class="cad-ci" data-f="_desc_final" data-i="${i}" value="${_escHtml(p._desc_final)}" style="min-width:180px"></td>
-            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_marca"    data-i="${i}" value="${_escHtml(p.desc_marca||'')}" placeholder="Marca" style="width:90px"></td>
             <td class="trans-td">${_cadMkSetorSel(p.desc_setor, i)}</td>
-            <td class="trans-td">${_cadMkLinhaSel(p.linha, i)}</td>
+            <td class="trans-td">${_cadMkLinhaSel('Unisex', i)}</td>
             <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_cor"      data-i="${i}" value="${_escHtml(p.desc_cor)}" style="width:80px"></td>
             <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_tamanho"  data-i="${i}" value="${_escHtml(p.desc_tamanho)}" style="width:65px"></td>
             <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="_custo"        data-i="${i}" value="${_escHtml(p._custo)}" style="width:75px"></td>
@@ -3079,7 +3077,7 @@ async function _cadCheckAndExport(sec) {
       // Referência existe + sem match → ? (com dropdown vazio, usuário escolhe)
       tr.style.opacity = (!isNew && corMatch) ? '.45' : '1';
 
-      // td[0]=# td[1]=status td[2]=ref td[3]=desc td[4]=marca td[5]=setor td[6]=linha td[7]=cor
+      // td[0]=# td[1]=status td[2]=ref td[3]=desc td[4]=setor td[5]=linha td[6]=cor
       const tds      = tr.querySelectorAll('td');
       const label    = isNew ? 'NOVO' : (corMatch ? '✓' : '?');
       const badgeCls = isNew ? 'cad-badge-new' : (corMatch ? 'cad-badge-existing' : 'cad-badge-warn');
@@ -3093,11 +3091,11 @@ async function _cadCheckAndExport(sec) {
       }
 
       if (!isNew && hasColors) {
-        if (tds[7]) {
+        if (tds[6]) {
           const orig = res._parsedRef
             ? `${res._parsedRef} + ${_escHtml(res._parsedCor || '')} (extraído)`
             : _escHtml(_cad.products[i]?.desc_cor || '');
-          tds[7].innerHTML = `<div class="cad-sku-map-hint" style="font-size:.68rem;color:var(--muted);margin-bottom:.15rem">${orig}</div>
+          tds[6].innerHTML = `<div class="cad-sku-map-hint" style="font-size:.68rem;color:var(--muted);margin-bottom:.15rem">${orig}</div>
             <select class="cad-sku-sel" data-i="${i}" data-field="desc_cor">
               <option value="">— cadastrar —</option>
               ${res._corsDisponiveis.map(c => `<option value="${_escHtml(c)}"${c === corMatch ? ' selected' : ''}>${_escHtml(c)}</option>`).join('')}
@@ -3153,14 +3151,51 @@ async function _cadAiMatch(sec) {
     sec.querySelectorAll('.cad-ai-cell').forEach((td, i) => {
       const m = matches[i];
       if (!m) return;
-      const origRef = _escHtml(refs[i]?.ref || '');
+      const origRef  = _escHtml(refs[i]?.ref || '');
+      const tr       = td.closest('tr');
+      const tds      = tr ? tr.querySelectorAll('td') : [];
+
       if (m.suggestedRef) {
-        const same = (refs[i]?.ref || '').toString().trim().toUpperCase() === m.suggestedRef.trim().toUpperCase();
+        const same     = (refs[i]?.ref || '').toString().trim().toUpperCase() === m.suggestedRef.trim().toUpperCase();
         const fromDesc = m.source === 'desc';
+
+        // Célula IA
         td.innerHTML = same
           ? `<span style="background:#1a3a1a;color:#3fb950;border-radius:4px;padding:.1rem .35rem;font-size:.7rem;font-weight:600">✓ ${_escHtml(m.suggestedRef)}</span>`
           : `<span style="color:var(--muted);font-size:.65rem;text-decoration:line-through">${origRef}</span><br>
              <span style="background:#3a2e00;color:#e3b341;border-radius:4px;padding:.1rem .35rem;font-size:.72rem;font-weight:700">→ ${_escHtml(m.suggestedRef)}</span>${fromDesc ? `<br><span style="font-size:.62rem;color:var(--muted)">(da descrição)</span>` : ''}`;
+
+        // Badge status → já cadastrado
+        if (tds[1]) tds[1].innerHTML = `<span class="cad-badge cad-badge-existing">✓</span>`;
+        if (tr) tr.style.opacity = same ? '.45' : '1';
+
+        // Setor: do catálogo se existir, senão mantém sugestão atual
+        const catSetor = m.catalogSetor || null;
+        if (tds[4]) {
+          const currentSetor = _cad.products[i]?.desc_setor || '';
+          const setor = catSetor || currentSetor;
+          if (setor && _cad.products[i]) _cad.products[i].desc_setor = setor;
+          tds[4].innerHTML = _cadMkSetorSel(setor, i);
+          tds[4].querySelector('select')?.addEventListener('change', e => {
+            if (_cad.products[i]) _cad.products[i].desc_setor = e.target.value;
+          });
+        }
+
+        // Cor: dropdown com opções do catálogo Microvix, pré-selecionando a cor do pedido se existir
+        const catalogCores = Array.isArray(m.catalogCores) ? m.catalogCores : [];
+        if (tds[6] && catalogCores.length) {
+          const corPedido = (_cad.products[i]?.desc_cor || '').toString().trim().toUpperCase();
+          const corMatch  = catalogCores.find(c => c.toUpperCase() === corPedido) || '';
+          if (corMatch && _cad.products[i]) _cad.products[i].desc_cor = corMatch;
+          tds[6].innerHTML = `
+            <select class="cad-sku-sel" data-i="${i}" data-field="desc_cor">
+              <option value="">— cor —</option>
+              ${catalogCores.map(c => `<option value="${_escHtml(c)}"${c === corMatch ? ' selected' : ''}>${_escHtml(c)}</option>`).join('')}
+            </select>`;
+          tds[6].querySelector('select')?.addEventListener('change', e => {
+            if (_cad.products[i]) _cad.products[i].desc_cor = e.target.value;
+          });
+        }
       } else {
         td.innerHTML = `<span style="color:var(--muted);font-size:.68rem;font-style:italic">sem sugestão</span>`;
       }
