@@ -3856,6 +3856,54 @@ app.get('/api/debug/cmv-campos', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/debug/desconto-vendedor?board=contagem&dtIni=2026-06-01&dtFin=2026-06-11&cod=88
+// Mostra o cálculo de desconto item a item para um vendedor específico
+app.get('/api/debug/desconto-vendedor', requireAdmin, async (req, res) => {
+  try {
+    const { board = 'contagem', dtIni, dtFin, cod } = req.query;
+    if (!dtIni || !dtFin || !cod) return res.status(400).json({ error: 'board, dtIni, dtFin, cod obrigatórios' });
+    const lojas     = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj      = (lojas[board] || '').replace(/\D/g,'');
+    const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const parseBR   = s => { const t = String(s||'').trim(); return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
+    const { fetchMovimento } = require('./services/microvix');
+    const rows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
+
+    let totalBruto = 0, totalDesc = 0, docsSeen = new Set();
+    const itens = [];
+    for (const r of rows) {
+      if (r.cancelado === 'S' || r.cancelado === '1') continue;
+      if ((r.operacao||'').trim().toUpperCase() !== 'S') continue;
+      if (String(r.cod_vendedor||'').trim() !== String(cod).trim()) continue;
+      const qty       = parseBR(r.quantidade||'1');
+      const vlrUnit   = parseBR(r.preco_tabela_epoca||r.preco_unitario||'0');
+      const descItem  = parseBR(r.desconto_item||'0');
+      const descTotal = parseBR(r.desconto_total_item||'0');
+      const vlrDesc   = parseBR(r.desconto_item||r.desconto_total_item||'0');
+      totalBruto += vlrUnit * qty;
+      totalDesc  += vlrDesc * qty;
+      itens.push({
+        doc: r.documento, qty, vlrUnit,
+        desconto_item: descItem, desconto_total_item: descTotal,
+        vlrDesc_usado: vlrDesc,
+        bruto_linha: vlrUnit * qty,
+        desc_linha: vlrDesc * qty,
+        isNewDoc: !docsSeen.has(r.documento),
+      });
+      docsSeen.add(r.documento);
+    }
+    res.json({
+      board, cod, dtIni, dtFin,
+      totalBruto: totalBruto.toFixed(2),
+      totalDesc: totalDesc.toFixed(2),
+      pctDesc: totalBruto > 0 ? (totalDesc/totalBruto*100).toFixed(1)+'%' : '0%',
+      totalDocs: docsSeen.size,
+      totalItens: itens.length,
+      itens: itens.slice(0, 30),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/microvix/produtos-xml?board=delrey  → retorna resposta RAW do Microvix para diagnóstico
 app.get('/api/microvix/produtos-xml', requireAdmin, async (req, res) => {
   try {
