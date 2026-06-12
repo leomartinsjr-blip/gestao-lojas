@@ -2768,6 +2768,8 @@ async function _cadParseFile(body) {
       _cad.rawRows = data.slice(1).filter(r => r.some(c => c != null && c !== ''));
     }
     if (!_cad.rawRows.length) throw new Error('Nenhuma linha de dados encontrada');
+    _cad._wizStep = 0;
+    _cad.mapping  = null; // força auto-detect no wizard
     _cadRenderConfigAndMapping(content);
   } catch (e) {
     content.innerHTML = `<div class="trans-error">Erro ao ler arquivo: ${_escHtml(e.message)}</div>`;
@@ -2780,162 +2782,273 @@ function _cadRenderConfigAndMapping(content) {
     const n = h.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');
     return ['descricao','nome','produto','item','desc'].some(k => n.includes(k));
   });
-  // Sample texts: prefer desc column, fall back to first column of every row
-  const sampleTexts = _cad.rawRows.slice(0, 40)
-    .map(r => String(r[descIdx >= 0 ? descIdx : 0] ?? '')).filter(Boolean);
+  const sampleTexts = _cad.rawRows.slice(0,40).map(r => String(r[descIdx>=0?descIdx:0]??'')).filter(Boolean);
   if (!_cad.ncm) _cad.ncm = _cadSuggestNcm(_cadSuggestSetor(sampleTexts), sampleTexts);
 
-  const tokBtns = target => ['REF','NOME','COR','TAM','MARCA']
-    .map(t => `<button class="cad-token" data-token="{${t}}" data-target="${target}">{${t}}</button>`).join('');
+  // Wizard state — persiste entre re-renders
+  if (!_cad._wizStep) _cad._wizStep = 0;
 
-  const pModes = [
-    { val:'markup',  lbl:'Mark-up',   extra:`<input type="number" id="cadMarkup" class="cad-input-sm" value="${_cad.markup}" min="0" max="9999" style="width:60px;margin-left:.3rem"> %` },
-    { val:'manual',  lbl:'Manual R$', extra:`<input type="text" id="cadManualPrice" class="cad-input-sm" value="${_escHtml(_cad.manualPrice)}" placeholder="0,00" style="width:70px;margin-left:.3rem">` },
-    { val:'auto',    lbl:'Do pedido', extra:'' },
+  // Inicializa mapeamento com auto-detect
+  if (!_cad.mapping) {
+    _cad.mapping = {};
+    for (const f of CAMPOS_MX) { const a = autoMap[f.key]; if (a) _cad.mapping[f.key] = a; }
+  }
+
+  // Passos do wizard na ordem pedida
+  const STEPS = [
+    { key:'referencia',   label:'Referência',     icon:'🔖', desc:'Qual coluna contém o código de referência do produto?',          required:true,  hasTemplate:true,  templateKey:'modeloRef',  templateLabel:'Modelo de referência', templatePlaceholder:'{REF}' },
+    { key:'nome',         label:'Descrição',       icon:'📝', desc:'Qual coluna contém o nome ou descrição do produto?',             required:true,  hasTemplate:true,  templateKey:'modeloDesc', templateLabel:'Modelo de descrição',  templatePlaceholder:'{NOME} {COR} {TAM}' },
+    { key:'desc_cor',     label:'Cor',             icon:'🎨', desc:'Qual coluna contém a cor do produto?',                          required:false, hasTemplate:false },
+    { key:'desc_tamanho', label:'Tamanho',         icon:'📐', desc:'Qual coluna contém o tamanho do produto?',                      required:false, hasTemplate:false },
+    { key:'desc_setor',   label:'Setor',           icon:'🗂️', desc:'Qual coluna contém o setor / departamento do produto?',        required:false, hasTemplate:false },
+    { key:'preco_custo',  label:'Custo c/ICMS',    icon:'💰', desc:'Qual coluna contém o custo do produto com ICMS?',               required:false, hasTemplate:false },
+    { key:'preco_venda',  label:'Preço de Venda',  icon:'🏷️', desc:'Como calcular o preço de venda?',                              required:false, hasTemplate:false, isPriceStep:true },
+    { key:'__preview',    label:'Prévia',           icon:'✅', desc:'Revise como ficará o cadastro e gere a tabela de produtos.',   required:false, isPreview:true },
   ];
 
-  content.innerHTML = `
-    <div class="cad-config-grid">
-      <div class="cad-config-left">
-        <div class="cad-section-header">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-          Mapeamento de Colunas
-          <span class="cad-section-sub">${_cad.rawRows.length} linhas · ${_cad.headers.length} col.</span>
+  const tokBtns = (targetId, step) =>
+    ['REF','NOME','COR','TAM'].map(t =>
+      `<button class="cad-token" data-token="{${t}}" data-target="${targetId}">{${t}}</button>`).join('');
+
+  function colSamples(colName) {
+    if (!colName) return [];
+    const idx = _cad.headers.indexOf(colName);
+    if (idx < 0) return [];
+    return [...new Set(_cad.rawRows.slice(0,80).map(r => String(r[idx]??'').trim()).filter(Boolean))].slice(0,6);
+  }
+
+  function buildStepHTML(stepIdx) {
+    const step   = STEPS[stepIdx];
+    const total  = STEPS.length;
+    const pct    = Math.round((stepIdx / (total-1)) * 100);
+
+    // ── Progress bar ──
+    const dots = STEPS.map((s,i) => {
+      const cls = i < stepIdx ? 'cad-wiz-dot done' : i === stepIdx ? 'cad-wiz-dot active' : 'cad-wiz-dot';
+      return `<div class="${cls}" title="${s.label}"></div>`;
+    }).join('');
+
+    let body = '';
+
+    if (step.isPreview) {
+      // ── Final step: preview ──
+      const map = _cad.mapping || {};
+      const sampleP = {};
+      for (const [f, col] of Object.entries(map)) {
+        const ci = _cad.headers.indexOf(col);
+        if (ci >= 0) sampleP[f] = String(_cad.rawRows[0]?.[ci]??'').trim();
+      }
+      const txt = (sampleP.referencia||'') + ' ' + (sampleP.nome||'');
+      sampleP.desc_cor     = sampleP.desc_cor     || _cadExtractCor(txt);
+      sampleP.desc_tamanho = sampleP.desc_tamanho || _cadExtractTam(txt);
+      const refPrev  = _cadApplyTemplate(_cad.modeloRef,  sampleP) || '—';
+      const descPrev = _cadApplyTemplate(_cad.modeloDesc, sampleP) || '—';
+      const priceLabel = _cad.priceMode === 'markup' ? `Mark-up ${_cad.markup}%`
+                       : _cad.priceMode === 'manual' ? `Manual R$ ${_cad.manualPrice}`
+                       : 'Do pedido';
+
+      body = `
+        <div class="cad-wiz-preview-card">
+          <div class="cad-wiz-preview-title">Como ficará o primeiro produto</div>
+          <div class="cad-wiz-preview-grid">
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">Referência</span><span class="cad-wiz-pval" style="font-weight:700;color:var(--accent)">${_escHtml(refPrev)}</span></div>
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">Descrição</span><span class="cad-wiz-pval">${_escHtml(descPrev)}</span></div>
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">Cor</span><span class="cad-wiz-pval">${_escHtml(sampleP.desc_cor||'—')}</span></div>
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">Tamanho</span><span class="cad-wiz-pval">${_escHtml(sampleP.desc_tamanho||'—')}</span></div>
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">Setor</span><span class="cad-wiz-pval">${_escHtml(sampleP.desc_setor||_cadSuggestSetor([descPrev])||'—')}</span></div>
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">Custo c/ICMS</span><span class="cad-wiz-pval">${_escHtml(sampleP.preco_custo||'—')}</span></div>
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">Preço de Venda</span><span class="cad-wiz-pval">${_escHtml(priceLabel)}</span></div>
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">Linha</span><span class="cad-wiz-pval">Unisex</span></div>
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">NCM</span><span class="cad-wiz-pval"><input type="text" id="cadNcm" class="cad-input-sm" value="${_escHtml(_cad.ncm)}" placeholder="0000.00.00" style="width:110px"></span></div>
+          </div>
+          <div style="margin-top:1.25rem;font-size:.75rem;color:var(--muted)">${_cad.rawRows.length} linhas no arquivo · ${Object.keys(_cad.mapping||{}).length} campos mapeados</div>
+        </div>`;
+    } else if (step.isPriceStep) {
+      // ── Preço de venda ──
+      body = `
+        <div class="cad-wiz-price-opts">
+          <label class="cad-wiz-price-opt${_cad.priceMode==='markup'?' sel':''}">
+            <input type="radio" name="wizPrice" value="markup"${_cad.priceMode==='markup'?' checked':''}> Mark-up
+            <input type="number" id="cadMarkup" class="cad-input-sm" value="${_cad.markup}" min="0" max="9999" style="width:65px;margin-left:.5rem"> %
+          </label>
+          <label class="cad-wiz-price-opt${_cad.priceMode==='manual'?' sel':''}">
+            <input type="radio" name="wizPrice" value="manual"${_cad.priceMode==='manual'?' checked':''}> Manual R$
+            <input type="text" id="cadManualPrice" class="cad-input-sm" value="${_escHtml(_cad.manualPrice)}" placeholder="0,00" style="width:80px;margin-left:.5rem">
+          </label>
+          <label class="cad-wiz-price-opt${_cad.priceMode==='auto'?' sel':''}">
+            <input type="radio" name="wizPrice" value="auto"${_cad.priceMode==='auto'?' checked':''}> Do pedido (coluna)
+          </label>
+        </div>`;
+    } else {
+      // ── Passo normal: seletor de coluna ──
+      const current  = _cad.mapping?.[step.key] || '';
+      const samples  = colSamples(current);
+      const selOpts  = ['', ..._cad.headers].map(h =>
+        `<option value="${_escHtml(h)}"${h===current?' selected':''}>${h||'— não usar —'}</option>`).join('');
+
+      body = `
+        <div class="cad-wiz-col-wrap">
+          <label class="cad-field-label" style="font-size:.8rem;margin-bottom:.4rem;display:block">Coluna do arquivo</label>
+          <select class="cad-input cad-wiz-colsel" style="width:100%;font-size:.9rem" data-key="${step.key}">${selOpts}</select>
+          <div class="cad-wiz-samples" id="wizSamples">
+            ${samples.length
+              ? samples.map(s => `<span class="cad-wiz-sample">${_escHtml(s)}</span>`).join('')
+              : '<span style="color:var(--muted);font-size:.75rem;font-style:italic">— sem exemplos —</span>'}
+          </div>
+        </div>`;
+
+      if (step.hasTemplate) {
+        const tval = step.templateKey === 'modeloRef' ? _cad.modeloRef : _cad.modeloDesc;
+        const prevId = step.templateKey === 'modeloRef' ? 'cadRefPrev' : 'cadDescPrev';
+        const sampleP = {};
+        for (const [f, col] of Object.entries(_cad.mapping||{})) {
+          const ci = _cad.headers.indexOf(col); if (ci>=0) sampleP[f]=String(_cad.rawRows[0]?.[ci]??'').trim();
+        }
+        const txt2 = (sampleP.referencia||'')+ ' '+(sampleP.nome||'');
+        sampleP.desc_cor=sampleP.desc_cor||_cadExtractCor(txt2);
+        sampleP.desc_tamanho=sampleP.desc_tamanho||_cadExtractTam(txt2);
+        const prev = _cadApplyTemplate(tval, sampleP) || '(aguardando mapeamento)';
+        body += `
+          <div style="margin-top:1rem">
+            <label class="cad-field-label" style="font-size:.8rem;margin-bottom:.4rem;display:block">${_escHtml(step.templateLabel)}</label>
+            <div class="cad-tmpl-row">
+              <input type="text" id="cadTmpl_${step.templateKey}" class="cad-input" value="${_escHtml(tval)}" placeholder="${_escHtml(step.templatePlaceholder)}" style="flex:1">
+              <div class="cad-tokens">${tokBtns('cadTmpl_'+step.templateKey, step)}</div>
+            </div>
+            <div class="cad-prev-line" style="margin-top:.35rem">Prévia: <span id="${prevId}" class="cad-prev-val">${_escHtml(prev)}</span></div>
+          </div>`;
+      }
+    }
+
+    const isLast  = stepIdx === total - 1;
+    const isFirst = stepIdx === 0;
+
+    return `
+      <div class="cad-wizard" id="cadWizard">
+        <div class="cad-wiz-header">
+          <div class="cad-wiz-dots">${dots}</div>
+          <div class="cad-wiz-step-info">${stepIdx+1} / ${total}</div>
         </div>
-        <table class="cad-map-table">
-          <thead><tr><th>Campo Microvix</th><th>Coluna do pedido</th><th>Exemplo</th></tr></thead>
-          <tbody>
-            ${CAMPOS_MX.map(f => {
-              const auto = autoMap[f.key] || '';
-              const prev = auto ? String(_cad.rawRows[0]?.[_cad.headers.indexOf(auto)] ?? '').slice(0,35) : '';
-              return `<tr>
-                <td class="cad-map-field">${_escHtml(f.label)}${f.required ? '<span class="cad-required"> *</span>' : ''}</td>
-                <td><select class="cad-map-select" data-mx="${f.key}">
-                  <option value="">— não usar —</option>
-                  ${_cad.headers.map(h => `<option value="${_escHtml(h)}"${h === auto ? ' selected' : ''}>${_escHtml(h)}</option>`).join('')}
-                </select></td>
-                <td class="cad-map-preview" id="cadPrev_${f.key}">${_escHtml(prev)}</td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
+        <div class="cad-wiz-body">
+          <div class="cad-wiz-icon">${step.icon}</div>
+          <div class="cad-wiz-field-name">${_escHtml(step.label)}${step.required?'<span class="cad-required"> *</span>':''}</div>
+          <div class="cad-wiz-field-desc">${_escHtml(step.desc)}</div>
+          ${body}
+        </div>
+        <div class="cad-wiz-footer">
+          <button class="cad-wiz-btn cad-wiz-back" id="wizBack" ${isFirst?'style="visibility:hidden"':''}>← Voltar</button>
+          ${isLast
+            ? `<button class="trans-calc-btn" id="cadGenerateBtn">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Gerar tabela de produtos
+               </button>`
+            : `<button class="cad-wiz-btn cad-wiz-next" id="wizNext">Próximo →</button>`}
+        </div>
       </div>
+      <div id="cadProdSection" style="margin-top:1.5rem;display:none"></div>`;
+  }
 
-      <div class="cad-config-right">
-        <div class="cad-section-header">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 1 0 4.93 19.07"/></svg>
-          Configurações do Pedido
-        </div>
-        <div class="cad-config-form">
+  function renderStep(stepIdx) {
+    _cad._wizStep = stepIdx;
+    content.innerHTML = buildStepHTML(stepIdx);
+    const step = STEPS[stepIdx];
 
-          <div class="cad-form-row">
-            <div class="cad-form-field cad-form-wide">
-              <label class="cad-field-label">Modelo de Referência</label>
-              <div class="cad-tmpl-row">
-                <input type="text" id="cadModeloRef" class="cad-input" value="${_escHtml(_cad.modeloRef)}" placeholder="{REF}">
-                <div class="cad-tokens">${tokBtns('cadModeloRef')}</div>
-              </div>
-              <div class="cad-prev-line">Prévia: <span id="cadRefPrev" class="cad-prev-val"></span></div>
-            </div>
-          </div>
+    // Seletor de coluna
+    const colSel = content.querySelector('.cad-wiz-colsel');
+    if (colSel) {
+      colSel.addEventListener('change', () => {
+        if (!_cad.mapping) _cad.mapping = {};
+        _cad.mapping[step.key] = colSel.value;
+        // Atualiza amostras
+        const samplesEl = content.querySelector('#wizSamples');
+        if (samplesEl) {
+          const s = colSamples(colSel.value);
+          samplesEl.innerHTML = s.length
+            ? s.map(v => `<span class="cad-wiz-sample">${_escHtml(v)}</span>`).join('')
+            : '<span style="color:var(--muted);font-size:.75rem;font-style:italic">— sem exemplos —</span>';
+        }
+        // Atualiza prévia de template se existir
+        if (step.hasTemplate) _cadRefreshWizPrev(content, stepIdx, STEPS);
+      });
+    }
 
-          <div class="cad-form-row">
-            <div class="cad-form-field cad-form-wide">
-              <label class="cad-field-label">Modelo de Descrição</label>
-              <div class="cad-tmpl-row">
-                <input type="text" id="cadModeloDesc" class="cad-input" value="${_escHtml(_cad.modeloDesc)}" placeholder="{NOME} {COR} {TAM}">
-                <div class="cad-tokens">${tokBtns('cadModeloDesc')}</div>
-              </div>
-              <div class="cad-prev-line">Prévia: <span id="cadDescPrev" class="cad-prev-val"></span></div>
-            </div>
-          </div>
-
-          <div class="cad-form-row">
-            <div class="cad-form-field cad-form-wide">
-              <label class="cad-field-label">Preço de Venda</label>
-              <div class="cad-price-modes">
-                ${pModes.map(m => `<label class="cad-price-mode${_cad.priceMode === m.val ? ' active' : ''}">
-                  <input type="radio" name="cadPriceMode" value="${m.val}"${_cad.priceMode === m.val ? ' checked' : ''}> ${m.lbl}${m.extra}
-                </label>`).join('')}
-              </div>
-            </div>
-          </div>
-
-          <div class="cad-form-row">
-            <div class="cad-form-field">
-              <label class="cad-field-label">NCM (sugerido)</label>
-              <input type="text" id="cadNcm" class="cad-input" value="${_escHtml(_cad.ncm)}" placeholder="0000.00.00">
-            </div>
-            <div class="cad-form-field">
-              <label class="cad-field-label">Linha</label>
-              <input class="cad-input cad-input-fixed" value="Unisex" disabled>
-            </div>
-            <div class="cad-form-field" style="flex:1.6">
-              <label class="cad-field-label">Tipo de item</label>
-              <input class="cad-input cad-input-fixed" value="Mercadoria para Revenda" disabled>
-            </div>
-          </div>
-
-          <div class="cad-form-row" style="justify-content:flex-end;margin-top:.5rem">
-            <button class="trans-calc-btn" id="cadGenerateBtn">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-              Gerar tabela de produtos
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div id="cadProdSection" style="margin-top:1.5rem;display:none"></div>`;
-
-  content.querySelectorAll('.cad-map-select').forEach(sel => {
-    sel.addEventListener('change', () => {
-      const idx = _cad.headers.indexOf(sel.value);
-      const val = idx >= 0 ? String(_cad.rawRows[0]?.[idx] ?? '').slice(0,35) : '';
-      const el = content.querySelector('#cadPrev_' + sel.dataset.mx);
-      if (el) el.textContent = val;
-      _cadRefreshPrev(content);
+    // Tokens de template
+    content.querySelectorAll('.cad-token').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const inp = content.querySelector('#' + btn.dataset.target);
+        if (!inp) return;
+        const s = inp.selectionStart, e2 = inp.selectionEnd;
+        inp.value = inp.value.slice(0,s) + btn.dataset.token + inp.value.slice(e2);
+        inp.focus();
+        _cadRefreshWizPrev(content, stepIdx, STEPS);
+      });
     });
-  });
 
-  content.querySelectorAll('.cad-token').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const inp = content.querySelector('#' + btn.dataset.target);
-      if (!inp) return;
-      const s = inp.selectionStart, e2 = inp.selectionEnd;
-      inp.value = inp.value.slice(0,s) + btn.dataset.token + inp.value.slice(e2);
-      inp.focus(); _cadRefreshPrev(content);
+    // Input de template
+    const tmplInp = content.querySelector(`#cadTmpl_${step.templateKey}`);
+    if (tmplInp) {
+      tmplInp.addEventListener('input', () => {
+        _cad[step.templateKey] = tmplInp.value;
+        _cadRefreshWizPrev(content, stepIdx, STEPS);
+      });
+    }
+
+    // Preço
+    content.querySelectorAll('[name="wizPrice"]').forEach(r => {
+      r.addEventListener('change', () => {
+        _cad.priceMode = r.value;
+        content.querySelectorAll('.cad-wiz-price-opt').forEach(l => l.classList.toggle('sel', l.contains(r)));
+      });
     });
-  });
+    const mkpInp = content.querySelector('#cadMarkup');
+    if (mkpInp) mkpInp.addEventListener('input', () => { _cad.markup = mkpInp.value; });
+    const manInp = content.querySelector('#cadManualPrice');
+    if (manInp) manInp.addEventListener('input', () => { _cad.manualPrice = manInp.value; });
 
-  const binds = { cadModeloRef:'modeloRef',
-                  cadModeloDesc:'modeloDesc', cadNcm:'ncm', cadMarkup:'markup', cadManualPrice:'manualPrice' };
-  Object.entries(binds).forEach(([id, key]) => {
-    const el = content.querySelector('#' + id);
-    if (!el) return;
-    el.addEventListener('input', () => { _cad[key] = el.value; _cadRefreshPrev(content); });
-  });
+    // NCM (na prévia)
+    const ncmInp = content.querySelector('#cadNcm');
+    if (ncmInp) ncmInp.addEventListener('input', () => { _cad.ncm = ncmInp.value; });
 
-  content.querySelectorAll('[name="cadPriceMode"]').forEach(r => {
-    r.addEventListener('change', () => {
-      _cad.priceMode = r.value;
-      content.querySelectorAll('.cad-price-mode').forEach(l => l.classList.toggle('active', l.contains(r)));
-      _cadRefreshPrev(content);
+    // Navegação
+    content.querySelector('#wizBack')?.addEventListener('click', () => renderStep(stepIdx - 1));
+    content.querySelector('#wizNext')?.addEventListener('click', () => {
+      if (step.required && !_cad.mapping?.[step.key]) {
+        toast(`Mapeie a coluna de ${step.label} antes de continuar`, true); return;
+      }
+      renderStep(stepIdx + 1);
     });
-  });
 
-  content.querySelector('#cadGenerateBtn').addEventListener('click', () => {
-    _cad.mapping = {};
-    content.querySelectorAll('.cad-map-select').forEach(sel => { if (sel.value) _cad.mapping[sel.dataset.mx] = sel.value; });
-    if (!_cad.mapping.referencia && !_cad.mapping.nome) { toast('Mapeie pelo menos Referência ou Nome', true); return; }
-    _cad.products = _cadBuildProducts();
-    if (!_cad.products.length) { toast('Nenhum produto encontrado com o mapeamento atual', true); return; }
-    const sec = content.querySelector('#cadProdSection');
-    _cadRenderProdSection(sec);
-    sec.style.display = '';
-    sec.scrollIntoView({ behavior:'smooth', block:'start' });
-  });
+    // Gerar tabela
+    content.querySelector('#cadGenerateBtn')?.addEventListener('click', () => {
+      if (!_cad.mapping?.referencia && !_cad.mapping?.nome) { toast('Mapeie pelo menos Referência ou Nome', true); return; }
+      _cad.products = _cadBuildProducts();
+      if (!_cad.products.length) { toast('Nenhum produto encontrado com o mapeamento atual', true); return; }
+      const sec = content.querySelector('#cadProdSection');
+      _cadRenderProdSection(sec);
+      sec.style.display = '';
+      sec.scrollIntoView({ behavior:'smooth', block:'start' });
+    });
+  }
 
-  _cadRefreshPrev(content);
+  renderStep(_cad._wizStep);
+}
+
+function _cadRefreshWizPrev(content, stepIdx, STEPS) {
+  const step = STEPS[stepIdx];
+  if (!step?.hasTemplate) return;
+  const sampleP = {};
+  for (const [f, col] of Object.entries(_cad.mapping||{})) {
+    const ci = _cad.headers.indexOf(col); if (ci>=0) sampleP[f]=String(_cad.rawRows[0]?.[ci]??'').trim();
+  }
+  const txt = (sampleP.referencia||'')+ ' '+(sampleP.nome||'');
+  sampleP.desc_cor=sampleP.desc_cor||_cadExtractCor(txt);
+  sampleP.desc_tamanho=sampleP.desc_tamanho||_cadExtractTam(txt);
+  const tmplInp = content.querySelector(`#cadTmpl_${step.templateKey}`);
+  if (tmplInp) _cad[step.templateKey] = tmplInp.value;
+  const val   = _cad[step.templateKey] || '';
+  const prevId = step.templateKey === 'modeloRef' ? 'cadRefPrev' : 'cadDescPrev';
+  const el = content.querySelector('#' + prevId);
+  if (el) el.textContent = _cadApplyTemplate(val, sampleP) || '(aguardando mapeamento)';
 }
 
 function _cadRefreshPrev(content) {
