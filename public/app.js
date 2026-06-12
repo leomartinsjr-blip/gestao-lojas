@@ -3158,9 +3158,9 @@ async function _cadAiMatch(sec) {
         const same = (refs[i]?.ref || '').toString().trim().toUpperCase() === m.suggestedRef.trim().toUpperCase();
         const fromDesc = m.source === 'desc';
         td.innerHTML = same
-          ? `<span style="color:var(--green,#3fb950);font-size:.7rem">✓ ${_escHtml(m.suggestedRef)}</span>`
-          : `<span style="color:var(--muted);font-size:.68rem">${origRef}</span><br>
-             <span style="color:#e3b341;font-size:.72rem;font-weight:600">→ ${_escHtml(m.suggestedRef)}</span>${fromDesc ? `<br><span style="font-size:.65rem;color:var(--muted)">(da descrição)</span>` : ''}`;
+          ? `<span style="background:#1a3a1a;color:#3fb950;border-radius:4px;padding:.1rem .35rem;font-size:.7rem;font-weight:600">✓ ${_escHtml(m.suggestedRef)}</span>`
+          : `<span style="color:var(--muted);font-size:.65rem;text-decoration:line-through">${origRef}</span><br>
+             <span style="background:#3a2e00;color:#e3b341;border-radius:4px;padding:.1rem .35rem;font-size:.72rem;font-weight:700">→ ${_escHtml(m.suggestedRef)}</span>${fromDesc ? `<br><span style="font-size:.62rem;color:var(--muted)">(da descrição)</span>` : ''}`;
       } else {
         td.innerHTML = `<span style="color:var(--muted);font-size:.68rem;font-style:italic">sem sugestão</span>`;
       }
@@ -3215,6 +3215,7 @@ function _cadUpdateExportActions(sec) {
       <button class="trans-calc-btn" id="cadRecheckBtn" style="background:transparent;border:1px solid rgba(88,166,255,.3);color:var(--muted);padding:.28rem .6rem">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </button>
+      <button class="trans-calc-btn" id="cadAiMatchBtn" style="background:#3a1f6e;border-color:#6e40c9">✦ Sugerir Match com IA</button>
       ${newCount > 0
         ? `<button class="trans-calc-btn" id="cadExportBtn">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 16 12 21 17 16"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
@@ -3227,6 +3228,8 @@ function _cadUpdateExportActions(sec) {
   if (eb) eb.addEventListener('click', () => _cadExport(eb, exportRows));
   const rb = actEl.querySelector('#cadRecheckBtn');
   if (rb) rb.addEventListener('click', () => _cadCheckAndExport(sec));
+  const ab = actEl.querySelector('#cadAiMatchBtn');
+  if (ab) ab.addEventListener('click', () => _cadAiMatch(sec));
 }
 
 async function _cadExport(btn, rows) {
