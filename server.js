@@ -7452,6 +7452,7 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
       if (erro) { porLoja[board] = { board, erro }; continue; }
 
       const loja = { board, vlrLiquido:0, vlrBruto:0, vlrDesconto:0, vlrCusto:0, qtdItens:0 };
+      const seenDocs = new Set();
 
       for (const r of rows) {
         const rowCnpj = (r.cnpj_emp||r.cnpj||'').replace(/\D/g,'');
@@ -7464,18 +7465,27 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
         if (serie === '999') continue;
         if (serie === '4' && op !== 'DS') continue;
 
-        const sign     = op === 'DS' ? -1 : 1;
-        const qty      = parseBR(r.quantidade||'1');
-        const vlrUnit  = parseBR(r.preco_tabela_epoca||r.preco_unitario||'0');
-        const vlrLiq   = parseBR(r.preco_unitario||r.valor_liquido||'0');
-        const vlrDesc  = parseBR(r.desconto_item||r.desconto_total_item||'0');
-        const vlrCusto = parseBR(r.custo_medio_epoca||r.preco_custo||'0');
+        const sign = op === 'DS' ? -1 : 1;
+        const qty  = parseBR(r.quantidade||'1');
 
-        loja.vlrLiquido  += sign * vlrLiq  * qty;
-        loja.vlrBruto    += sign * vlrUnit * qty;
-        loja.vlrDesconto += sign * vlrDesc * qty;
-        loja.vlrCusto    += sign * vlrCusto * qty;
-        loja.qtdItens    += sign;
+        // Custo: soma por item (custo_medio_epoca existe por item, não por documento)
+        const vlrCusto = parseBR(r.custo_medio_epoca||r.preco_custo||'0');
+        loja.vlrCusto += sign * vlrCusto * qty;
+        loja.qtdItens += sign;
+
+        // Venda: soma por documento (igual ao sync de Performance Mensal)
+        // total_* repete o valor total do doc em cada item — deduplica com seenDocs
+        const doc = String(r.documento||'').trim();
+        if (!doc || seenDocs.has(doc)) continue;
+        seenDocs.add(doc);
+        const vlrLiq = ['total_cartao','total_dinheiro','total_pix','total_cheque',
+                        'total_crediario','total_convenio','total_cheque_prazo','total_deposito_bancario']
+          .reduce((s, k) => s + parseBR(r[k]||'0'), 0)
+          || parseBR(r.valor_total||r.total_liquido||'0');
+        const vlrDesc = parseBR(r.valor_desconto||r.desconto||'0');
+        loja.vlrLiquido  += sign * vlrLiq;
+        loja.vlrDesconto += sign * vlrDesc;
+        loja.vlrBruto    += sign * (vlrLiq + vlrDesc);
 
         // Vendedor
         const cod  = String(r.cod_vendedor||'').trim();
@@ -7484,9 +7494,9 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
           const nome    = (r.nome_vendedor || (obsNome && obsNome[1]) || cod).trim();
           const vkey    = `${board}::${cod}`;
           if (!porVendedor[vkey]) porVendedor[vkey] = { board, cod, nome, vlrLiquido:0, vlrBruto:0, vlrDesconto:0, qtdItens:0 };
-          porVendedor[vkey].vlrLiquido  += sign * vlrLiq  * qty;
-          porVendedor[vkey].vlrBruto    += sign * vlrUnit * qty;
-          porVendedor[vkey].vlrDesconto += sign * vlrDesc * qty;
+          porVendedor[vkey].vlrLiquido  += sign * vlrLiq;
+          porVendedor[vkey].vlrBruto    += sign * (vlrLiq + vlrDesc);
+          porVendedor[vkey].vlrDesconto += sign * vlrDesc;
           porVendedor[vkey].qtdItens    += sign;
         }
       }
