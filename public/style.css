@@ -3362,6 +3362,9 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 /* ── Tabela de produtos — tela cheia ── */
 .cad-fullscreen-body { padding: .5rem .75rem !important; }
 .cad-fullscreen-body .cad-panel { max-width: none; }
+/* Painel em tela cheia ao entrar na tabela de produtos */
+.perf-overlay.cad-overlay-fullscreen { padding: 0; align-items: stretch; justify-content: stretch; }
+.perf-overlay.cad-overlay-fullscreen .perf-panel { max-width: 100vw; max-height: 100vh; width: 100vw; height: 100vh; border-radius: 0; border: none; }
 .cad-prod-table { font-size: .78rem; }
 .cad-prod-table .trans-td { padding: .3rem .4rem; vertical-align: middle; }
 .cad-prod-table .trans-th { padding: .35rem .4rem; font-size: .68rem; }

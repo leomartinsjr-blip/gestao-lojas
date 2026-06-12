@@ -2132,7 +2132,9 @@ function openTransModal() {
   renderGestaoHub();
 }
 function closeTransModal() {
-  document.getElementById('transOverlay').classList.add('hidden');
+  const ov = document.getElementById('transOverlay');
+  ov.classList.add('hidden');
+  ov.classList.remove('cad-overlay-fullscreen');
 }
 
 function _gestaoSetTitle(icon, text) {
@@ -2143,6 +2145,8 @@ function _gestaoShowBack(show) {
 }
 
 function renderGestaoHub() {
+  document.getElementById('transOverlay')?.classList.remove('cad-overlay-fullscreen');
+  document.getElementById('transBody')?.classList.remove('cad-fullscreen-body');
   _gestaoShowBack(false);
   _gestaoSetTitle(`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`, 'Gestão de Produtos');
   const body = document.getElementById('transBody');
@@ -3133,8 +3137,9 @@ function _cadSugCell(inputHtml, origVal, suggested) {
 
 function _cadRenderProdSection(sec) {
   const prods = _cad.products;
-  // Ativa tela cheia no container pai
+  // Ativa tela cheia
   document.getElementById('transBody')?.classList.add('cad-fullscreen-body');
+  document.getElementById('transOverlay')?.classList.add('cad-overlay-fullscreen');
 
   sec.innerHTML = `
     <div class="cad-section-header" style="margin-bottom:.75rem">
@@ -3389,12 +3394,65 @@ async function _cadAiMatch(sec) {
     const cntEx = sec.querySelector('.cad-count-exists'); if (cntEx) cntEx.textContent = `${exiC} já cadastrados`;
 
     toast(`IA concluída — ${matchCount} matches encontrados de ${matches.length} produtos`);
+    _cadUpdateExportActionsAfterAi(sec);
   } catch (e) {
     toast('Erro IA: ' + e.message, true);
   } finally {
     btn.disabled = false;
     btn.textContent = '✦ Sugerir Match com IA';
   }
+}
+
+function _cadUpdateExportActionsAfterAi(sec) {
+  const newProds      = _cad.products.filter(p => !p._microvixExists);
+  const existingProds = _cad.products.filter(p =>  p._microvixExists);
+  const newCount      = newProds.length;
+  const existingCount = existingProds.length;
+
+  const exportRows = newProds.map(p => ({
+    referencia:   p._ref_final  || p.referencia || '',
+    nome:         p._desc_final || p.nome       || '',
+    cod_barra:    p.cod_barra   || '',
+    desc_marca:   p.desc_marca  || '',
+    desc_setor:   p.desc_setor  || '',
+    linha:        p.linha       || '',
+    desc_cor:     p.desc_cor    || '',
+    desc_tamanho: p.desc_tamanho || '',
+    preco_custo:  p._custo      || '',
+    preco_venda:  p._preco      || '',
+    ncm:          p._ncm        || '',
+    markup:       _cad.priceMode === 'markup' ? String(_cad.markup) : '',
+  }));
+
+  const actEl = sec.querySelector('.cad-prod-actions');
+  actEl.innerHTML = `
+    <div class="cad-summary-row" style="margin:0;flex:1">
+      <div class="cad-summary-card cad-summary-new" style="padding:.4rem .8rem;min-width:70px">
+        <span class="cad-summary-num">${newCount}</span><span class="cad-summary-lbl">novos</span>
+      </div>
+      <div class="cad-summary-card cad-summary-exists" style="padding:.4rem .8rem;min-width:70px">
+        <span class="cad-summary-num">${existingCount}</span><span class="cad-summary-lbl">já no Microvix</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:.4rem;align-items:center">
+      <button class="trans-calc-btn" id="cadRecheckBtn" style="background:transparent;border:1px solid rgba(88,166,255,.3);color:var(--muted);padding:.28rem .6rem">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
+      <button class="trans-calc-btn" id="cadAiMatchBtn" style="background:#3a1f6e;border-color:#6e40c9">✦ Sugerir Match com IA</button>
+      ${newCount > 0
+        ? `<button class="trans-calc-btn" id="cadExportBtn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 16 12 21 17 16"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+            Baixar cadastro Microvix (${newCount} produtos)
+          </button>`
+        : `<span style="color:#3FB950;font-size:.8rem">✓ Todos já estão no Microvix</span>`}
+    </div>`;
+
+  const eb = actEl.querySelector('#cadExportBtn');
+  if (eb) eb.addEventListener('click', () => _cadExport(eb, exportRows));
+  const rb = actEl.querySelector('#cadRecheckBtn');
+  if (rb) rb.addEventListener('click', () => _cadCheckAndExport(sec));
+  const ab = actEl.querySelector('#cadAiMatchBtn');
+  if (ab) ab.addEventListener('click', () => _cadAiMatch(sec));
 }
 
 function _cadUpdateExportActions(sec) {
