@@ -2865,6 +2865,9 @@ function _cadRenderConfigAndMapping(content) {
         </div>`;
     } else if (step.isPriceStep) {
       // ── Preço de venda ──
+      const priceColOpts = ['', ..._cad.headers].map(h =>
+        `<option value="${_escHtml(h)}"${h===(_cad.mapping?.preco_venda||'')?' selected':''}>${h||'— selecionar coluna —'}</option>`).join('');
+      const autoSamples = colSamples(_cad.mapping?.preco_venda || '');
       body = `
         <div class="cad-wiz-price-opts">
           <label class="cad-wiz-price-opt${_cad.priceMode==='markup'?' sel':''}">
@@ -2878,6 +2881,13 @@ function _cadRenderConfigAndMapping(content) {
           <label class="cad-wiz-price-opt${_cad.priceMode==='auto'?' sel':''}">
             <input type="radio" name="wizPrice" value="auto"${_cad.priceMode==='auto'?' checked':''}> Do pedido (coluna)
           </label>
+        </div>
+        <div id="wizPriceColWrap" style="margin-top:.85rem;${_cad.priceMode!=='auto'?'display:none':''}">
+          <label class="cad-field-label" style="font-size:.78rem;margin-bottom:.35rem;display:block">Qual coluna contém o preço?</label>
+          <select class="cad-input" id="wizPriceCol" style="width:100%">${priceColOpts}</select>
+          <div class="cad-wiz-samples" id="wizPriceSamples">
+            ${autoSamples.length ? autoSamples.map(s=>`<span class="cad-wiz-sample">${_escHtml(s)}</span>`).join('') : ''}
+          </div>
         </div>`;
     } else {
       // ── Passo normal: seletor de coluna ──
@@ -2998,12 +3008,26 @@ function _cadRenderConfigAndMapping(content) {
       r.addEventListener('change', () => {
         _cad.priceMode = r.value;
         content.querySelectorAll('.cad-wiz-price-opt').forEach(l => l.classList.toggle('sel', l.contains(r)));
+        const colWrap = content.querySelector('#wizPriceColWrap');
+        if (colWrap) colWrap.style.display = r.value === 'auto' ? '' : 'none';
       });
     });
     const mkpInp = content.querySelector('#cadMarkup');
     if (mkpInp) mkpInp.addEventListener('input', () => { _cad.markup = mkpInp.value; });
     const manInp = content.querySelector('#cadManualPrice');
     if (manInp) manInp.addEventListener('input', () => { _cad.manualPrice = manInp.value; });
+    const priceColSel = content.querySelector('#wizPriceCol');
+    if (priceColSel) {
+      priceColSel.addEventListener('change', () => {
+        if (!_cad.mapping) _cad.mapping = {};
+        _cad.mapping.preco_venda = priceColSel.value;
+        const samplesEl = content.querySelector('#wizPriceSamples');
+        if (samplesEl) {
+          const s = colSamples(priceColSel.value);
+          samplesEl.innerHTML = s.map(v => `<span class="cad-wiz-sample">${_escHtml(v)}</span>`).join('');
+        }
+      });
+    }
 
     // NCM (na prévia)
     const ncmInp = content.querySelector('#cadNcm');
