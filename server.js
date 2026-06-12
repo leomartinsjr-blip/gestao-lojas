@@ -3812,6 +3812,50 @@ app.get('/api/debug/tommy-catalog', requireAdmin, async (req, res) => {
   }
 });
 
+// GET /api/debug/cmv-campos?board=delrey&dtIni=2026-06-01&dtFin=2026-06-01
+// Mostra todos os campos de custo disponíveis no LinxMovimento e LinxMovimentoItens
+app.get('/api/debug/cmv-campos', requireAdmin, async (req, res) => {
+  try {
+    const board  = req.query.board  || 'delrey';
+    const dtIni  = req.query.dtIni  || new Date().toISOString().slice(0,10);
+    const dtFin  = req.query.dtFin  || dtIni;
+    const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj   = (lojas[board] || '').replace(/\D/g,'');
+    const chave  = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado` });
+
+    const { fetchMovimento, fetchMovimentoItens } = require('./services/microvix');
+    const [mov, itens] = await Promise.all([
+      fetchMovimento(cnpj, dtIni, dtFin, chave).catch(e => ({ error: e.message })),
+      fetchMovimentoItens(cnpj, dtIni, dtFin, chave).catch(e => ({ error: e.message })),
+    ]);
+
+    const custoCampos = /custo|preco_custo|preco_tabela|preco_unit|valor_unit/i;
+
+    const movSample   = Array.isArray(mov)   ? mov.find(r => r.operacao === 'S') || mov[0] : mov;
+    const itensSample = Array.isArray(itens) ? itens[0] : itens;
+
+    const movCustoFields   = movSample   && !movSample.error   ? Object.entries(movSample).filter(([k]) => custoCampos.test(k))   : [];
+    const itensCustoFields = itensSample && !itensSample.error ? Object.entries(itensSample).filter(([k]) => custoCampos.test(k)) : [];
+
+    res.json({
+      board, dtIni, dtFin,
+      LinxMovimento: {
+        total_rows: Array.isArray(mov) ? mov.length : 0,
+        todos_campos: Array.isArray(mov) && mov[0] ? Object.keys(mov[0]) : [],
+        campos_custo: Object.fromEntries(movCustoFields),
+        sample_s: movSample && !movSample.error ? movSample : null,
+      },
+      LinxMovimentoItens: {
+        total_rows: Array.isArray(itens) ? itens.length : 0,
+        todos_campos: Array.isArray(itens) && itens[0] ? Object.keys(itens[0]) : [],
+        campos_custo: Object.fromEntries(itensCustoFields),
+        sample: itensSample && !itensSample.error ? itensSample : null,
+      },
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/microvix/produtos-xml?board=delrey  → retorna resposta RAW do Microvix para diagnóstico
 app.get('/api/microvix/produtos-xml', requireAdmin, async (req, res) => {
   try {
