@@ -3914,28 +3914,28 @@ app.get('/api/catalog-lookup', requireAdmin, (req, res) => {
   res.json({ cacheSize: _catalogCache ? Object.keys(_catalogCache).length : 0, result });
 });
 
-// ── GET /api/catalog-warm — força construção do catálogo e reporta resultado ─
+// ── GET /api/catalog-warm — força rebuild do catálogo e aguarda conclusão ────
 app.get('/api/catalog-warm', requireAdmin, async (req, res) => {
-  _catalogCache = null; _catalogCacheAt = 0;
+  // Invalida o cache para forçar rebuild completo via _buildCatalog
+  _catalogCache = null; _catalogCacheAt = 0; _catalogWarmPromise = null;
   const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-  const { fetchProdutos, fetchServicos, parseBrNum } = require('./services/microvix');
-  const firstBoard = Object.keys(lojas)[0];
-  if (!firstBoard) return res.status(400).json({ error: 'Nenhuma loja configurada' });
-  const cnpj  = lojas[firstBoard].replace(/\D/g, '');
-  const chave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
   try {
     const t0 = Date.now();
-    const [prodRows, svcRows] = await Promise.all([
-      fetchProdutos(cnpj, chave, 0).catch(e => ({ error: e.message })),
-      fetchServicos(cnpj, chave, 0).catch(e => ({ error: e.message })),
-    ]);
-    const prodError = Array.isArray(prodRows) ? null : prodRows.error;
-    const svcError  = Array.isArray(svcRows)  ? null : svcRows.error;
-    const prodCount = Array.isArray(prodRows) ? prodRows.length : 0;
-    const svcCount  = Array.isArray(svcRows)  ? svcRows.length  : 0;
-    const sampleProd = Array.isArray(prodRows) && prodRows[0] ? Object.keys(prodRows[0]) : [];
+    const catalog = await _getCatalog(lojas);
     const ms = Date.now() - t0;
-    res.json({ ms, prodCount, svcCount, prodError, svcError, prodFields: sampleProd, sampleProd: (Array.isArray(prodRows) ? prodRows.slice(0,2) : []) });
+    const entries = Object.entries(catalog);
+    const withSetor = entries.filter(([,v]) => v.setor).length;
+    const withMarca = entries.filter(([,v]) => v.marca).length;
+    // Mostra quais portais/boards foram incluídos
+    const portais = [...new Set(entries.slice(0, 500).map(([,v]) => v.portal).filter(Boolean))];
+    res.json({
+      ok: true, ms,
+      total_entradas: entries.length,
+      com_setor: withSetor,
+      com_marca: withMarca,
+      portais_amostra: portais,
+      sample: entries.slice(0, 2).map(([k, v]) => ({ key: k, ...v })),
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -4456,6 +4456,7 @@ async function _buildCatalog(lojas) {
             desc_cor:    (r.desc_cor      || '').trim(),
             ncm:         (r.cod_ncm || r.ncm || '').toString().replace(/\.0+$/, '').trim(),
             preco_venda: parseBrNum(r.preco_venda || r.preco || r.preco_cheio || '0'),
+            portal:      (r.portal        || '').toString().trim(),
           };
           const mergeEntry = (key) => {
             if (!map[key]) { map[key] = entry; return; }
