@@ -3385,6 +3385,9 @@ async function _cadAiMatch(sec) {
 
       // ── Re-bind inputs novos ──
       tds[2]?.querySelector('input')?.addEventListener('change', e => { p._ref_final = e.target.value; });
+
+      // ── Destaque amarelo se houver algum campo com ⚠ ──
+      tr.classList.toggle('cad-row-warn', !!tr.querySelector('.cad-col-warn'));
     });
 
     // Atualiza contadores

@@ -3374,6 +3374,8 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .cad-row-new  { border-left: 3px solid #e3b341; }
 .cad-row-exists { border-left: 3px solid rgba(63,185,80,.35); opacity: .65; }
 .cad-row-exists:hover { opacity: 1; }
+.cad-row-warn { background: rgba(210,153,34,.08) !important; }
+.cad-row-warn:hover { background: rgba(210,153,34,.14) !important; }
 
 /* Célula de sugestão IA */
 .cad-sug-wrap { display: flex; flex-direction: column; gap: .15rem; }
