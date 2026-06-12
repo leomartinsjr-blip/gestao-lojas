@@ -3898,8 +3898,12 @@ app.get('/api/catalog-status', requireAdmin, async (req, res) => {
     mid:   allKeys.filter(k => k.length >= 4 && k.length <= 7).slice(0, 5),
     long:  allKeys.filter(k => k.length >= 8).slice(0, 5),
   };
+  const portais = [...new Set(entries.map(([,v]) => v.portal).filter(Boolean))];
+  const buildingFor = _catalogWarmPromise ? Math.round((Date.now() - _catalogWarmStartAt) / 1000) : null;
   res.json({ cached: !!_catalogCache, size, ageMin, withMarca, withSetor,
              pctMarca: size ? ((withMarca/size)*100).toFixed(1)+'%' : '0%',
+             portais_no_cache: portais,
+             building: !!_catalogWarmPromise, buildingForSec: buildingFor,
              rawFields: _catalogRawFields, rawSample: _catalogRawSample,
              keysSample, sampleWith, sampleWithout });
 });
@@ -3914,29 +3918,22 @@ app.get('/api/catalog-lookup', requireAdmin, (req, res) => {
   res.json({ cacheSize: _catalogCache ? Object.keys(_catalogCache).length : 0, result });
 });
 
-// ── GET /api/catalog-warm — força rebuild do catálogo e aguarda conclusão ────
+// ── GET /api/catalog-warm — dispara rebuild em background e responde imediatamente ────
+// Acesse /api/catalog-status para checar quando terminar
 app.get('/api/catalog-warm', requireAdmin, async (req, res) => {
-  // Invalida o cache para forçar rebuild completo via _buildCatalog
   _catalogCache = null; _catalogCacheAt = 0; _catalogWarmPromise = null;
   const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-  try {
-    const t0 = Date.now();
-    const catalog = await _getCatalog(lojas);
-    const ms = Date.now() - t0;
-    const entries = Object.entries(catalog);
-    const withSetor = entries.filter(([,v]) => v.setor).length;
-    const withMarca = entries.filter(([,v]) => v.marca).length;
-    // Mostra quais portais/boards foram incluídos
-    const portais = [...new Set(entries.slice(0, 500).map(([,v]) => v.portal).filter(Boolean))];
-    res.json({
-      ok: true, ms,
-      total_entradas: entries.length,
-      com_setor: withSetor,
-      com_marca: withMarca,
-      portais_amostra: portais,
-      sample: entries.slice(0, 2).map(([k, v]) => ({ key: k, ...v })),
-    });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  // Dispara build em background (sem await — o build leva 60-120s)
+  _catalogWarmStartAt = Date.now();
+  _catalogWarmPromise = _buildCatalog(lojas)
+    .then(cat => { console.log(`[Catalog] rebuild manual concluído: ${Object.keys(cat).length} entradas`); })
+    .catch(e  => { console.warn('[Catalog] rebuild manual erro:', e.message); })
+    .finally(() => { _catalogWarmPromise = null; });
+  res.json({
+    ok: true,
+    message: 'Rebuild iniciado em background. Acesse /api/catalog-status em ~2 minutos para verificar.',
+    dica: 'portais_incluidos aparecerá em /api/catalog-status quando concluir',
+  });
 });
 
 // ── Cache de resultados de marcas (vendas + estoque) ─────────────────────────
