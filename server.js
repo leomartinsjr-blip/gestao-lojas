@@ -5582,46 +5582,50 @@ app.post('/api/cadastro-produto/ai-match', requireAdmin, async (req, res) => {
         return { ref: refNorm, desc: descNorm || undefined, candidates };
       });
 
-      const prompt = `Você recebe referências de produtos de um fornecedor e uma lista de candidatos do catálogo Microvix para cada uma.
-A referência pode estar no campo "ref", ou embutida no campo "desc" (descrição do produto) — ambos são fornecidos quando disponíveis.
-Seu trabalho é identificar qual candidato melhor corresponde (pode ser abreviação, variação de formato, sufixos extras, etc.).
+      // Numera os itens para matching por índice (robusto contra variações de string)
+      const numberedData = batchData.map((item, idx) => ({ idx, ...item }));
 
-Para cada item, responda APENAS com o JSON abaixo, sem texto adicional:
-{ "matches": [ { "ref": "REF_FORNECEDOR", "match": "REF_CATALOGO_OU_NULL", "source": "ref_ou_desc" } ] }
+      const prompt = `Você recebe uma lista numerada de produtos de fornecedor, cada um com campo "ref" e/ou "desc", e uma lista de candidatos do catálogo Microvix.
+A referência pode estar em "ref" ou embutida em "desc" (ex: pedidos Converse onde a ref fica na descrição).
+Identifique o candidato que melhor corresponde a cada produto.
 
-Onde:
-- "match" é o código exato do catálogo Microvix que melhor corresponde, ou null se nenhum candidato for adequado
-- "source" é "ref" se o match veio do campo ref, ou "desc" se veio da descrição
+Responda SOMENTE com um array JSON, um objeto por produto, NA MESMA ORDEM da entrada, sem texto adicional:
+[{"idx":0,"match":"REF_CATALOGO_OU_NULL","source":"ref"},{"idx":1,"match":null,"source":"ref"},...]
+
+Regras:
+- "match": código exato do catálogo que melhor corresponde, ou null se nenhum serve
+- "source": "ref" se achou pela ref, "desc" se achou pela descrição
+- Mantenha a ordem e quantidade exata dos itens de entrada
 
 Dados:
-${JSON.stringify(batchData, null, 2)}`;
+${JSON.stringify(numberedData, null, 2)}`;
 
-      const stream = await client.messages.stream({
-        model: 'claude-opus-4-8',
+      const msg = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
         max_tokens: 1024,
-        thinking: { type: 'adaptive' },
         messages: [{ role: 'user', content: prompt }],
       });
-      const msg = await stream.finalMessage();
       const text = msg.content.find(b => b.type === 'text')?.text || '';
+      console.log('[AI Match] resposta Claude:', text.slice(0, 300));
 
       try {
-        const jsonMatch = text.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error('sem JSON na resposta');
+        const jsonMatch = text.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) throw new Error('sem JSON array na resposta: ' + text.slice(0, 200));
         const parsed = JSON.parse(jsonMatch[0]);
-        for (const m of (parsed.matches || [])) {
-          results.push({ supplierRef: m.ref, suggestedRef: m.match || null, source: m.source || 'ref' });
+        for (const m of parsed) {
+          const bd = batchData[m.idx ?? parsed.indexOf(m)];
+          results.push({ supplierRef: bd?.ref ?? '', suggestedRef: m.match || null, source: m.source || 'ref' });
         }
       } catch (parseErr) {
+        console.warn('[AI Match] parse error:', parseErr.message, '| texto:', text.slice(0, 300));
         for (const bd of batchData) {
           results.push({ supplierRef: bd.ref, suggestedRef: null, error: 'parse error' });
         }
       }
     }
 
-    // Preserva a ordem original
-    const matchMap = Object.fromEntries(results.map(r => [r.supplierRef, r]));
-    const ordered = refItems.map(item => matchMap[norm(item.ref)] || { supplierRef: item.ref, suggestedRef: null });
+    // Matching por posição — results foi preenchido em ordem
+    const ordered = refItems.map((item, i) => results[i] || { supplierRef: item.ref, suggestedRef: null });
 
     res.json({ matches: ordered });
   } catch (e) { res.status(500).json({ error: e.message }); }
