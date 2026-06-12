@@ -5582,6 +5582,9 @@ app.post('/api/cadastro-produto/ai-match', requireAdmin, async (req, res) => {
         return { ref: refNorm, desc: descNorm || undefined, candidates };
       });
 
+      // Log para debug
+      console.log('[AI Match] batchData:', JSON.stringify(batchData.map(b => ({ ref: b.ref, desc: b.desc, nCandidates: b.candidates.length, topCand: b.candidates.slice(0,3) })), null, 2));
+
       // Numera os itens para matching por índice (robusto contra variações de string)
       const numberedData = batchData.map((item, idx) => ({ idx, ...item }));
 
@@ -5606,7 +5609,7 @@ ${JSON.stringify(numberedData, null, 2)}`;
         messages: [{ role: 'user', content: prompt }],
       });
       const text = msg.content.find(b => b.type === 'text')?.text || '';
-      console.log('[AI Match] resposta Claude:', text.slice(0, 300));
+      console.log('[AI Match] resposta Claude completa:', text);
 
       try {
         const jsonMatch = text.match(/\[[\s\S]*\]/);
