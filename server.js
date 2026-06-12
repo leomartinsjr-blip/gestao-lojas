@@ -3763,6 +3763,55 @@ app.get('/api/microvix/produtos-raw', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/debug/tommy-catalog → diagnóstico completo do catálogo Tommy
+app.get('/api/debug/tommy-catalog', requireAdmin, async (req, res) => {
+  try {
+    const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpjRaw = lojas['tommy'];
+    const cnpj    = (cnpjRaw || '').replace(/\D/g, '');
+    const chave   = process.env.MICROVIX_CHAVE_TOMMY || process.env.MICROVIX_CHAVE || '';
+    const chaveSource = process.env.MICROVIX_CHAVE_TOMMY ? 'MICROVIX_CHAVE_TOMMY' : 'MICROVIX_CHAVE (fallback)';
+
+    const result = {
+      env: {
+        MICROVIX_LOJAS_tommy: cnpjRaw || '(não mapeado)',
+        cnpj_limpo: cnpj || '(vazio)',
+        chave_usada: chave ? chave.slice(0, 8) + '...' : '(não definida)',
+        chave_source: chaveSource,
+        MICROVIX_CHAVE_TOMMY_definida: !!process.env.MICROVIX_CHAVE_TOMMY,
+      },
+    };
+
+    if (!cnpj) {
+      return res.json({ ...result, status: 'ERRO', erro: 'Tommy não mapeado em MICROVIX_LOJAS' });
+    }
+    if (!chave) {
+      return res.json({ ...result, status: 'ERRO', erro: 'Nenhuma chave Microvix disponível' });
+    }
+
+    const { fetchProdutos } = require('./services/microvix');
+    const rows = await fetchProdutos(cnpj, chave, 0);
+
+    result.status = rows.length > 0 ? 'OK' : 'VAZIO';
+    result.total_rows = rows.length;
+    result.fields = rows[0] ? Object.keys(rows[0]) : [];
+    result.sample = rows.slice(0, 3);
+
+    // Verifica se setor/marca estão presentes
+    const comSetor = rows.filter(r => r.desc_setor).length;
+    const comMarca = rows.filter(r => r.desc_marca).length;
+    result.stats = { com_setor: comSetor, com_marca: comMarca, sem_setor: rows.length - comSetor };
+
+    // Verifica se o catálogo em memória tem dados Tommy
+    const catalogSize = _catalogCache ? Object.keys(_catalogCache).length : 0;
+    result.catalog_cache = { total_entradas: catalogSize, cache_ativo: !!_catalogCache };
+
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ status: 'ERRO', erro: e.message, stack: e.stack?.split('\n').slice(0,5) });
+  }
+});
+
 // GET /api/microvix/produtos-xml?board=delrey  → retorna resposta RAW do Microvix para diagnóstico
 app.get('/api/microvix/produtos-xml', requireAdmin, async (req, res) => {
   try {
@@ -4359,8 +4408,8 @@ async function _getCatalog(lojas) {
 
 async function _buildCatalog(lojas) {
   const { fetchServicos, buildRequest, postRequest, parseCsv, parseBrNum } = require('./services/microvix');
-  // Catálogo é único para todas as lojas Surfers — busca apenas de uma loja representativa (exclui Tommy)
-  const boards = Object.keys(lojas).filter(b => b !== 'site' && b !== 'tommy');
+  // Inclui Tommy — tem CNPJ próprio, então seenSources vai buscá-lo como catálogo separado
+  const boards = Object.keys(lojas).filter(b => b !== 'site');
   if (!boards.length) return {};
   const mainBoard = boards[0];  // todas as lojas compartilham o mesmo catálogo
   // Descarta cache antigo ANTES de construir — sem referência _prevCache para não manter o objeto
