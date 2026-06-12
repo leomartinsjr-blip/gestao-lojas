@@ -7473,26 +7473,35 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
     const BOARDS  = ['delrey','minas','contagem','estacao','tommy','surfers'];
     const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
 
-    const { fetchMovimento } = require('./services/microvix');
+    const { fetchMovimento, fetchVendedores } = require('./services/microvix');
 
-    // Busca todas as lojas em paralelo
+    // Busca todas as lojas em paralelo (movimento + vendedores para resolver nomes)
     const resultados = await Promise.all(BOARDS.map(async board => {
       const cnpj = lojas[board];
       if (!cnpj) return { board, erro: 'não configurada' };
       const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
       const cnpjClean = cnpj.replace(/\D/g,'');
       try {
-        const rows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
-        return { board, cnpjClean, rows: Array.isArray(rows) ? rows : [] };
+        const [rows, vendRows] = await Promise.all([
+          fetchMovimento(cnpj, dtIni, dtFin, chave),
+          fetchVendedores(cnpjClean, chave).catch(() => []),
+        ]);
+        const vendNomes = {};
+        for (const v of (Array.isArray(vendRows) ? vendRows : [])) {
+          const cod = String(v.cod_vendedor || '').trim();
+          const nom = (v.nome_vendedor || v.nome || '').trim();
+          if (cod && nom) vendNomes[cod] = nom;
+        }
+        return { board, cnpjClean, rows: Array.isArray(rows) ? rows : [], vendNomes };
       } catch (e) {
-        return { board, erro: e.message, rows: [] };
+        return { board, erro: e.message, rows: [], vendNomes: {} };
       }
     }));
 
     const porLoja     = {};
     const porVendedor = {};
 
-    for (const { board, cnpjClean, rows, erro } of resultados) {
+    for (const { board, cnpjClean, rows, erro, vendNomes } of resultados) {
       if (erro) { porLoja[board] = { board, erro }; continue; }
 
       const loja = { board, vlrLiquido:0, vlrBruto:0, vlrDesconto:0, vlrCusto:0, qtdItens:0 };
@@ -7525,7 +7534,7 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
         const cod  = String(r.cod_vendedor||'').trim();
         if (cod) {
           const obsNome = (r.obs||'').match(/Nome do Vendedor:\s*(.+?)(?:\s*\|.*)?$/i);
-          const nome    = (r.nome_vendedor || (obsNome && obsNome[1]) || cod).trim();
+          const nome    = (vendNomes[cod] || r.nome_vendedor || (obsNome && obsNome[1]) || cod).trim();
           const vkey    = `${board}::${cod}`;
           if (!porVendedor[vkey]) porVendedor[vkey] = { board, cod, nome, vlrLiquido:0, vlrBruto:0, vlrDesconto:0, qtdItens:0 };
           porVendedor[vkey].vlrBruto    += sign * vlrUnit * qty;
