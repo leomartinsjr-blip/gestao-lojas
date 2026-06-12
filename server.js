@@ -4405,6 +4405,7 @@ async function _buildCatalog(lojas) {
             marca:       (r.desc_marca    || '').trim(),
             linha:       (r.desc_colecao  || '').trim(),
             desc_cor:    (r.desc_cor      || '').trim(),
+            ncm:         (r.cod_ncm || r.ncm || '').toString().replace(/\.0+$/, '').trim(),
             preco_venda: parseBrNum(r.preco_venda || r.preco || r.preco_cheio || '0'),
           };
           const mergeEntry = (key) => {
@@ -4413,6 +4414,7 @@ async function _buildCatalog(lojas) {
             if (!map[key].setor       && entry.setor)       map[key].setor       = entry.setor;
             if (!map[key].linha       && entry.linha)       map[key].linha       = entry.linha;
             if (!map[key].nomeBase    && entry.nomeBase)    map[key].nomeBase    = entry.nomeBase;
+            if (!map[key].ncm         && entry.ncm)         map[key].ncm         = entry.ncm;
             if (!map[key].preco_venda && entry.preco_venda) map[key].preco_venda = entry.preco_venda;
           };
           if (cod)                                      mergeEntry(cod);
@@ -5636,6 +5638,7 @@ ${JSON.stringify(numberedData, null, 2)}`;
       if (r.suggestedRef) {
         const catEntry = catalog[r.suggestedRef] || catalog[normCat(r.suggestedRef)] || {};
         r.catalogSetor = catEntry.setor || null;
+        r.catalogNcm   = catEntry.ncm   || null;
         r.catalogCores = idx[r.suggestedRef] || idx[normCat(r.suggestedRef)] || [];
       }
       return r;

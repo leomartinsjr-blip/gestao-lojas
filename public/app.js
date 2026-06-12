@@ -3294,6 +3294,18 @@ async function _cadAiMatch(sec) {
           });
         }
 
+        // NCM do catálogo Microvix
+        if (m.catalogNcm && _cad.products[i]) {
+          _cad.products[i]._ncm = m.catalogNcm;
+          const ncmSel = tr ? tr.querySelector(`[data-f="_ncm"][data-i="${i}"]`) : null;
+          if (ncmSel) {
+            // Tenta selecionar opção existente, senão adiciona
+            const opt = ncmSel.querySelector(`option[value="${m.catalogNcm}"]`);
+            if (opt) opt.selected = true;
+            else { const o = document.createElement('option'); o.value = m.catalogNcm; o.textContent = m.catalogNcm; o.selected = true; ncmSel.prepend(o); }
+          }
+        }
+
         // Cor: dropdown com opções do catálogo Microvix, pré-selecionando a cor do pedido se existir
         const catalogCores = Array.isArray(m.catalogCores) ? m.catalogCores : [];
         if (tds[6] && catalogCores.length) {
