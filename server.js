@@ -7465,15 +7465,19 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
         if (serie === '999') continue;
         if (serie === '4' && op !== 'DS') continue;
 
-        const sign = op === 'DS' ? -1 : 1;
-        const qty  = parseBR(r.quantidade||'1');
-
-        // Custo: soma por item (custo_medio_epoca existe por item, não por documento)
+        const sign     = op === 'DS' ? -1 : 1;
+        const qty      = parseBR(r.quantidade||'1');
+        const vlrUnit  = parseBR(r.preco_tabela_epoca||r.preco_unitario||'0');
+        const vlrDesc  = parseBR(r.desconto_item||r.desconto_total_item||'0');
         const vlrCusto = parseBR(r.custo_medio_epoca||r.preco_custo||'0');
-        loja.vlrCusto += sign * vlrCusto * qty;
-        loja.qtdItens += sign;
 
-        // Venda: soma por documento (igual ao sync de Performance Mensal)
+        // Bruto, desconto e custo: por item (campos granulares por linha)
+        loja.vlrBruto    += sign * vlrUnit * qty;
+        loja.vlrDesconto += sign * vlrDesc * qty;
+        loja.vlrCusto    += sign * vlrCusto * qty;
+        loja.qtdItens    += sign;
+
+        // Venda líquida: por documento (igual ao sync de Performance Mensal)
         // total_* repete o valor total do doc em cada item — deduplica com seenDocs
         const doc = String(r.documento||'').trim();
         if (!doc || seenDocs.has(doc)) continue;
@@ -7482,10 +7486,7 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
                         'total_crediario','total_convenio','total_cheque_prazo','total_deposito_bancario']
           .reduce((s, k) => s + parseBR(r[k]||'0'), 0)
           || parseBR(r.valor_total||r.total_liquido||'0');
-        const vlrDesc = parseBR(r.valor_desconto||r.desconto||'0');
-        loja.vlrLiquido  += sign * vlrLiq;
-        loja.vlrDesconto += sign * vlrDesc;
-        loja.vlrBruto    += sign * (vlrLiq + vlrDesc);
+        loja.vlrLiquido += sign * vlrLiq;
 
         // Vendedor
         const cod  = String(r.cod_vendedor||'').trim();
@@ -7494,10 +7495,11 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
           const nome    = (r.nome_vendedor || (obsNome && obsNome[1]) || cod).trim();
           const vkey    = `${board}::${cod}`;
           if (!porVendedor[vkey]) porVendedor[vkey] = { board, cod, nome, vlrLiquido:0, vlrBruto:0, vlrDesconto:0, qtdItens:0 };
-          porVendedor[vkey].vlrLiquido  += sign * vlrLiq;
-          porVendedor[vkey].vlrBruto    += sign * (vlrLiq + vlrDesc);
-          porVendedor[vkey].vlrDesconto += sign * vlrDesc;
+          porVendedor[vkey].vlrBruto    += sign * vlrUnit * qty;
+          porVendedor[vkey].vlrDesconto += sign * vlrDesc * qty;
           porVendedor[vkey].qtdItens    += sign;
+          // vlrLiquido do vendedor: só soma no primeiro item do doc (seenDocs já passou)
+          porVendedor[vkey].vlrLiquido  += sign * vlrLiq;
         }
       }
 
