@@ -17,6 +17,65 @@
 
   fetch('/api/me').then(r=>r.json()).then(u => { $('userLabel').textContent = u.label||u.username||''; }).catch(()=>{});
 
+  // ── Catálogo: botão warm + status ─────────────────────────────────────────
+  (function() {
+    const btn   = $('btnCatalogWarm');
+    const label = $('catalogWarmLabel');
+    const icon  = $('catalogWarmIcon');
+    if (!btn) return;
+
+    let polling = null;
+
+    function setSpinning(on) {
+      icon.style.animation = on ? 'spin 1s linear infinite' : '';
+    }
+
+    function showStatus(data) {
+      if (data.building) {
+        label.textContent = `Atualizando… ${data.buildingForSec || 0}s`;
+        btn.style.borderColor = 'var(--cf-primary)';
+        btn.style.color = 'var(--cf-primary)';
+        setSpinning(true);
+      } else if (data.cached && data.size > 0) {
+        label.textContent = `Catálogo: ${data.size.toLocaleString('pt-BR')} itens`;
+        btn.style.borderColor = 'var(--cf-green)';
+        btn.style.color = 'var(--cf-green)';
+        setSpinning(false);
+        clearInterval(polling); polling = null;
+      } else {
+        label.textContent = 'Catálogo vazio';
+        btn.style.borderColor = 'var(--cf-alert)';
+        btn.style.color = 'var(--cf-alert)';
+        setSpinning(false);
+        clearInterval(polling); polling = null;
+      }
+    }
+
+    function fetchStatus() {
+      fetch('/api/catalog-status').then(r => r.ok ? r.json() : null).then(d => { if (d) showStatus(d); }).catch(() => {});
+    }
+
+    function startPolling() {
+      clearInterval(polling);
+      polling = setInterval(fetchStatus, 3000);
+    }
+
+    btn.addEventListener('click', () => {
+      if (polling) return;
+      label.textContent = 'Iniciando…';
+      btn.style.borderColor = 'var(--cf-primary)';
+      btn.style.color = 'var(--cf-primary)';
+      setSpinning(true);
+      fetch('/api/catalog-warm')
+        .then(r => r.json())
+        .then(d => { if (d.ok) startPolling(); })
+        .catch(() => { label.textContent = 'Erro'; setSpinning(false); });
+    });
+
+    // Carrega status ao abrir
+    fetchStatus();
+  })();
+
   // ── Tabs ──────────────────────────────────────────────────────────────────
   document.querySelectorAll('.cf-tab').forEach(btn => btn.addEventListener('click', () => {
     document.querySelectorAll('.cf-tab').forEach(b=>b.classList.remove('active'));
