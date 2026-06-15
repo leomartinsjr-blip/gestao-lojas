@@ -4012,7 +4012,12 @@ app.get('/api/catalog-lookup', requireAdmin, (req, res) => {
 
 // ── GET /api/catalog-warm — dispara rebuild em background e responde imediatamente ────
 // Acesse /api/catalog-status para checar quando terminar
-app.get('/api/catalog-warm', requireAdmin, async (req, res) => {
+// Aceita também ?token=CATALOG_WARM_SECRET para uso em tarefas agendadas (sem sessão)
+app.get('/api/catalog-warm', (req, res, next) => {
+  const secret = process.env.CATALOG_WARM_SECRET;
+  if (secret && req.query.token === secret) return next();
+  return requireAdmin(req, res, next);
+}, async (req, res) => {
   _catalogCache = null; _catalogCacheAt = 0; _catalogWarmPromise = null;
   const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
   // Dispara build em background (sem await — o build leva 60-120s)
