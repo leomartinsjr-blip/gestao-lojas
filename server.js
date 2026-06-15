@@ -4033,6 +4033,17 @@ app.get('/api/catalog-warm', (req, res, next) => {
   });
 });
 
+// ── GET /api/promo-cache-clear — limpa cache de promoções para forçar rebusca ──
+app.get('/api/promo-cache-clear', (req, res, next) => {
+  const secret = process.env.CATALOG_WARM_SECRET;
+  if (secret && req.query.token === secret) return next();
+  return requireAdmin(req, res, next);
+}, (req, res) => {
+  const keys = Object.keys(_promoCache);
+  keys.forEach(k => delete _promoCache[k]);
+  res.json({ ok: true, cleared: keys.length, msg: 'Cache de promoções limpo — próxima conferência rebusca tudo.' });
+});
+
 // ── Cache de resultados de marcas (vendas + estoque) ─────────────────────────
 // Key: "boards|dtIni|dtFin"  — TTL: 5 min se inclui hoje, 60 min se período passado
 const _marcasCache        = {};
