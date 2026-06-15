@@ -7972,8 +7972,11 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
     const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
 
     // Mapa de preços promocionais: cod_produto → preco_promocao
-<<<<<<< HEAD
-    // O Microvix pode retornar o campo com diferentes nomes dependendo da versão
+    // Filtra apenas promoções vigentes hoje (API retorna range amplo)
+    // Datas da API vêm em DD/MM/YYYY HH:MM:SS — parser manual para evitar interpretação MM/DD
+    // O Microvix pode retornar o campo de preco com diferentes nomes dependendo da versão
+    const parseBRDt = s => { const m = String(s||'').match(/(\d{2})\/(\d{2})\/(\d{4})/); return m ? new Date(+m[3], +m[2]-1, +m[1]) : null; };
+    const agora = new Date();
     const promoMap = {};
     for (const p of (Array.isArray(promoRows) ? promoRows : [])) {
       const cod   = String(p.cod_produto || p.codigo_produto || p.codigo || '').trim();
@@ -7981,22 +7984,11 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
         p.preco_promocao || p.preco_venda_promocao || p.preco_promo ||
         p.preco_venda_promo || p.preco_venda || p.valor || '0'
       );
-      if (cod && preco > 0) promoMap[cod] = preco;
-=======
-    // Filtra apenas promoções vigentes hoje (API retorna range amplo)
-    // Datas da API vêm em DD/MM/YYYY HH:MM:SS — parser manual para evitar interpretação MM/DD
-    const parseBRDt = s => { const m = String(s||'').match(/(\d{2})\/(\d{2})\/(\d{4})/); return m ? new Date(+m[3], +m[2]-1, +m[1]) : null; };
-    const agora = new Date();
-    const promoMap = {};
-    for (const p of (Array.isArray(promoRows) ? promoRows : [])) {
-      const cod   = String(p.cod_produto || '').trim();
-      const preco = parseBR(p.preco_promocao || '0');
       if (!cod || preco <= 0) continue;
       const inicio = parseBRDt(p.data_inicio_promocao);
       const fim2   = parseBRDt(p.data_termino_promocao);
       if (inicio && fim2 && (agora < inicio || agora > fim2)) continue;
       promoMap[cod] = preco;
->>>>>>> 68f82364473145eed5d3d5c756557cfed8452c60
     }
 
     // Catálogos
