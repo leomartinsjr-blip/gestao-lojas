@@ -1051,7 +1051,9 @@
       const m = mx[k]?.total  || 0;
       const reserva = _saldoReserva[k]?.valor || 0;
       const d0 = r - m;
-      const reservaEf = d0 > 0.10 ? Math.min(reserva, d0) : 0;
+      let reservaEf = 0;
+      if (d0 > 0.10)  reservaEf =  Math.min(reserva,  d0);
+      if (d0 < -0.10) reservaEf = -Math.min(reserva, -d0);
       const diff = Math.abs(d0 - reservaEf);
       if (diff > 0.10) return false;
     }
@@ -1137,8 +1139,10 @@
       const bandLabel = entry.bandeira || '—';
       const reserva    = _saldoReserva[k]?.valor || 0;
       const reservaObs = _saldoReserva[k]?.obs   || '';
-      // Reserva só reduz excedente positivo da Rede — nunca aprofunda déficit
-      const reservaEfetiva = d > 0.10 ? Math.min(reserva, d) : 0;
+      // Reserva reduz excedente positivo (Rede > Microvix) ou justifica déficit (Microvix > Rede)
+      let reservaEfetiva = 0;
+      if (d > 0.10)  reservaEfetiva =  Math.min(reserva,  d);
+      if (d < -0.10) reservaEfetiva = -Math.min(reserva, -d);
       const dComReserva = +(d - reservaEfetiva).toFixed(2);
       const okComReserva = Math.abs(dComReserva) <= 0.10;
       const rowCls   = onlyRede ? 'only-rede' : onlyMx ? 'only-microvix' : okComReserva ? 'ok' : 'nok';
@@ -1173,12 +1177,14 @@
         rows2 += '</table></td></tr>';
         return rows2;
       })() : '';
-      // Campo reserva: aparece quando Rede > Microvix (diff > 0)
-      const reservaField = d > 0.10 ? (
+      // Campo reserva: aparece quando há diferença em qualquer sentido
+      const reservaLabel = d < -0.10 ? 'pgt. anterior:' : 'reserva:';
+      const reservaPlaceholderObs = d < -0.10 ? 'ex: pagamento recebido em 13/06' : 'ex: venda em aberto';
+      const reservaField = Math.abs(d) > 0.10 ? (
         '<div style="margin-top:4px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">' +
-          '<span style="font-size:10px;color:var(--cf-muted)">reserva:</span>' +
+          '<span style="font-size:10px;color:var(--cf-muted)">' + reservaLabel + '</span>' +
           '<input type="number" step="0.01" min="0" data-reserva-key="' + esc(k) + '" data-reserva-mod="' + esc(entry.mod) + '" data-reserva-band="' + esc(entry.bandeira||'') + '" value="' + (reserva > 0 ? reserva.toFixed(2) : '') + '" placeholder="0,00" style="width:80px;text-align:right;padding:2px 4px;border-radius:4px;border:1px solid var(--cf-border);background:var(--cf-input,var(--cf-card));color:inherit;font-size:11px;font-family:inherit">' +
-          '<input type="text" data-reserva-obs-key="' + esc(k) + '" data-reserva-mod="' + esc(entry.mod) + '" data-reserva-band="' + esc(entry.bandeira||'') + '" value="' + esc(reservaObs) + '" placeholder="observação (ex: venda em aberto)" style="flex:1;min-width:140px;padding:2px 4px;border-radius:4px;border:1px solid var(--cf-border);background:var(--cf-input,var(--cf-card));color:inherit;font-size:11px;font-family:inherit">' +
+          '<input type="text" data-reserva-obs-key="' + esc(k) + '" data-reserva-mod="' + esc(entry.mod) + '" data-reserva-band="' + esc(entry.bandeira||'') + '" value="' + esc(reservaObs) + '" placeholder="' + reservaPlaceholderObs + '" style="flex:1;min-width:140px;padding:2px 4px;border-radius:4px;border:1px solid var(--cf-border);background:var(--cf-input,var(--cf-card));color:inherit;font-size:11px;font-family:inherit">' +
         '</div>'
       ) : '';
       const diffDisplay = okComReserva
