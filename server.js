@@ -7932,14 +7932,16 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
 
     // Mapa de preços promocionais: cod_produto → preco_promocao
     // Filtra apenas promoções vigentes hoje (API retorna range amplo)
+    // Datas da API vêm em DD/MM/YYYY HH:MM:SS — parser manual para evitar interpretação MM/DD
+    const parseBRDt = s => { const m = String(s||'').match(/(\d{2})\/(\d{2})\/(\d{4})/); return m ? new Date(+m[3], +m[2]-1, +m[1]) : null; };
     const agora = new Date();
     const promoMap = {};
     for (const p of (Array.isArray(promoRows) ? promoRows : [])) {
       const cod   = String(p.cod_produto || '').trim();
       const preco = parseBR(p.preco_promocao || '0');
       if (!cod || preco <= 0) continue;
-      const inicio = p.data_inicio_promocao ? new Date(p.data_inicio_promocao) : null;
-      const fim2   = p.data_termino_promocao ? new Date(p.data_termino_promocao) : null;
+      const inicio = parseBRDt(p.data_inicio_promocao);
+      const fim2   = parseBRDt(p.data_termino_promocao);
       if (inicio && fim2 && (agora < inicio || agora > fim2)) continue;
       promoMap[cod] = preco;
     }
