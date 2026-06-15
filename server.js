@@ -4324,6 +4324,18 @@ let _catalogRawFields = [];      // campos brutos do LinxProdutos (para diagnós
 let _catalogRawSample = null;    // amostra bruta (1 produto)
 const CATALOG_TTL = 6 * 60 * 60 * 1000;
 
+// Cache de promoções — válido até meia-noite do dia atual
+const _promoCache = {};  // key: cnpj → { rows, date }
+function _promoCacheKey(cnpj) { return String(cnpj).replace(/\D/g, ''); }
+function _promoIsValid(cnpj) {
+  const c = _promoCache[_promoCacheKey(cnpj)];
+  return c && c.date === new Date().toISOString().slice(0, 10);
+}
+function _promoGet(cnpj) { return _promoCache[_promoCacheKey(cnpj)]?.rows || []; }
+function _promoSet(cnpj, rows) {
+  _promoCache[_promoCacheKey(cnpj)] = { rows, date: new Date().toISOString().slice(0, 10) };
+}
+
 // ── Índice compacto ref→cores (para /api/cadastro-produto/check) ────────────
 // Persiste no MongoDB → sobrevive a restarts; muito menor que o catálogo completo
 let _refColorIndex    = null;   // { "REF123": ["AZUL","PRETO"], ... }
@@ -7917,6 +7929,10 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
             fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchVendedores,
             fetchProdutosPromocoes, parseBrNum } = require('./services/microvix');
 
+    const promoPromise = _promoIsValid(cnpj)
+      ? Promise.resolve(_promoGet(cnpj))
+      : fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave).then(rows => { _promoSet(cnpj, rows); return rows; }).catch(() => []);
+
     const [movRows, planoRows, cartoesRows, planosCatalog, bandeirasCatalog, vendedoresRows, promoRows, catalog] = await Promise.all([
       fetchMovimento(cnpj, dtIni, dtFin, chave),
       fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave).catch(() => []),
@@ -7924,7 +7940,7 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       fetchLinxPlanos(cnpj, chave).catch(() => []),
       fetchLinxPlanosBandeiras(cnpj, chave).catch(() => []),
       fetchVendedores(cnpj, chave).catch(() => []),
-      fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave).catch(() => []),
+      promoPromise,
       _getCatalog(lojas).catch(() => ({})),
     ]);
 
