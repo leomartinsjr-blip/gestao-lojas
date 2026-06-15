@@ -8290,8 +8290,8 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
           return mP ? parseInt(mP[1]) : 1;
         })();
         if (nP <= 1) continue;
-        const vlrPlano = parseBR(r.total || r.valor || r.valor_plano || '0');
-        const vlrParc  = vlrPlano / nP;
+        const vlrLiqVenda = Math.abs(docMap[doc].valorTotal || 0);
+        const vlrParc     = vlrLiqVenda > 0 ? vlrLiqVenda / nP : parseBR(r.total || r.valor || r.valor_plano || '0') / nP;
         if (vlrParc < parcelaMin && vlrParc > 0) {
           docMap[doc].alertas.push({
             tipo: 'parcela_minima',
