@@ -4467,10 +4467,10 @@ async function _loadCatalogMongo() {
 async function _getCatalog(lojas) {
   if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
 
-  // Inicia rebuild em background se ainda não está rodando (ou se travou há mais de 50s)
-  const warmStuck = _catalogWarmPromise && (Date.now() - _catalogWarmStartAt > 50_000);
+  // Inicia rebuild em background se ainda não está rodando (ou se travou há mais de 10min)
+  const warmStuck = _catalogWarmPromise && (Date.now() - _catalogWarmStartAt > 600_000);
   if (warmStuck) {
-    console.warn('[Catalog] build travado há >50s — descartando e retornando cache vazio');
+    console.warn('[Catalog] build travado há >10min — descartando e retornando cache vazio');
     _catalogWarmPromise = null;
   }
   if (!_catalogWarmPromise) {
@@ -4493,10 +4493,10 @@ async function _getCatalog(lojas) {
     } catch (e) { console.warn('[Catalog] MongoDB load:', e.message); }
   }
 
-  // Sem MongoDB e sem cache: aguarda o build com timeout de 50s para não bloquear
+  // Sem MongoDB e sem cache: aguarda o build com timeout de 10min para não bloquear
   return Promise.race([
     _catalogWarmPromise,
-    new Promise((_, rej) => setTimeout(() => rej(new Error('catalog build timeout')), 50_000)),
+    new Promise((_, rej) => setTimeout(() => rej(new Error('catalog build timeout')), 600_000)),
   ]).catch(() => ({}));
 }
 
