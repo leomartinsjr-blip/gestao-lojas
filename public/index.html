@@ -41,22 +41,44 @@
 
 <!-- TOP BAR -->
 <header id="topbar" class="hidden">
-  <div class="brand">
-    <img src="/logosurfers.webp" alt="Logo" class="brand-logo">
+  <!-- Linha 1: identidade + mês + sync + usuário -->
+  <div class="topbar-row1">
+    <div class="brand">
+      <img src="/logosurfers.webp" alt="Logo" class="brand-logo">
+    </div>
+    <div class="month-nav">
+      <button class="nav-btn" id="btnPrev" title="Mês anterior">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <div class="current-month" id="currentMonthLabel">—</div>
+      <button class="nav-btn" id="btnNext" title="Próximo mês">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
+    <div class="topbar-row1-right">
+      <div id="saveIndicator" class="save-indicator hidden">Salvando…</div>
+      <button id="mxSyncBtn" class="mx-sync-btn" title="Sincronizar com Microvix">
+        <svg id="mxSyncIcon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
+          <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
+        </svg>
+        <span id="mxSyncLabel">Microvix</span>
+      </button>
+      <div class="topbar-user">
+        <div id="userChip" class="user-chip"></div>
+        <button id="logoutBtn" class="logout-btn" title="Sair">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg><span class="btn-label">Sair</span>
+        </button>
+      </div>
+    </div>
   </div>
 
-  <div class="month-nav">
-    <button class="nav-btn" id="btnPrev" title="Mês anterior">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
-    </button>
-    <div class="current-month" id="currentMonthLabel">—</div>
-    <button class="nav-btn" id="btnNext" title="Próximo mês">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
-    </button>
-  </div>
-
-  <div class="topbar-right">
-    <div id="saveIndicator" class="save-indicator hidden">Salvando…</div>
+  <!-- Linha 2: botões de navegação -->
+  <div class="topbar-row2">
     <a href="/crm" target="_blank" id="crmBtn" class="folgas-topbar-btn" style="display:none" title="CRM">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/>
@@ -69,13 +91,6 @@
         <line x1="2" y1="10" x2="22" y2="10"/>
       </svg><span class="btn-label">Contas a Pagar</span>
     </a>
-    <button id="mxSyncBtn" class="mx-sync-btn" title="Sincronizar com Microvix">
-      <svg id="mxSyncIcon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
-        <path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/>
-      </svg>
-      <span id="mxSyncLabel">Microvix</span>
-    </button>
     <button id="dailyBtn" class="folgas-topbar-btn" title="Planilha do Mês">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/>
@@ -179,16 +194,6 @@
         <line x1="19" y1="8" x2="19" y2="14"/><line x1="22" y1="11" x2="16" y2="11"/>
       </svg><span class="btn-label">Logins</span>
     </button>
-    <div class="topbar-user">
-      <div id="userChip" class="user-chip"></div>
-      <button id="logoutBtn" class="logout-btn" title="Sair">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-          <polyline points="16 17 21 12 16 7"/>
-          <line x1="21" y1="12" x2="9" y2="12"/>
-        </svg><span class="btn-label">Sair</span>
-      </button>
-    </div>
   </div>
 </header>
 

@@ -684,7 +684,10 @@ function renderDashboard() {
       </div>
       <div class="main-card-body" id="dayCardBody"></div>
     `;
-    leftCol.appendChild(dayCard);
+    const dayRow = document.createElement('div');
+    dayRow.className = 'dash-day-row';
+    dayRow.appendChild(dayCard);
+    leftCol.appendChild(dayRow);
 
     function _updateDayCard() {
       const d = DASH_DAY.refDate;
@@ -712,6 +715,9 @@ function renderDashboard() {
 
     _updateDayCard();
     _startDayCardAutoRefresh();
+
+    // Conferência de Caixa ao lado do faturamento diário (admins/supervisores; escritório usa rightCol)
+    if (S.user?.board !== 'escritorio') renderConferenciaStatusCard(dayRow);
   }
 
   // ── CARD: Performance Mensal ────────────────────────────────────────────
@@ -1135,7 +1141,16 @@ function renderDashboard() {
     }
   }
 
-  // ── CARD: Folgas → coluna direita ────────────────────────────────────────
+  // ── CARD: Conferência de Caixa → escritório vê aqui (leftCol foi removida)
+  if (S.user?.board === 'escritorio') renderConferenciaStatusCard(rightCol);
+
+  // ── CARD: Aniversariantes do Mês ─────────────────────────────────────────
+  renderAniversariantesCard(rightCol);
+
+  // ── CARD: Contratos de Experiência ───────────────────────────────────────
+  renderContratoCard(rightCol);
+
+  // ── CARD: Folgas ──────────────────────────────────────────────────────────
   const folgasCard = document.createElement('div');
   folgasCard.className = 'main-card';
   folgasCard.dataset.cardId = 'card-folgas';
@@ -1155,9 +1170,6 @@ function renderDashboard() {
   `;
   rightCol.appendChild(folgasCard);
   _renderDashFolgas(folgasCard.querySelector('#dashFolgasBody'));
-
-  // Campanhas abaixo de Folgas (coluna direita)
-  if (campDashCard) rightCol.appendChild(campDashCard);
 
   // ── CARD: Comparativo por Loja → coluna esquerda (abaixo da performance) ─
   const compCard = document.createElement('div');
@@ -1195,11 +1207,8 @@ function renderDashboard() {
   // ── CARD: Fechamento de Caixa ─────────────────────────────────────────────
   renderCaixaCard(rightCol);
 
-  // ── CARD: Contratos de Experiência ───────────────────────────────────────
-  renderContratoCard(rightCol);
-
-  // ── CARD: Aniversariantes do Mês ─────────────────────────────────────────
-  renderAniversariantesCard(rightCol);
+  // Campanhas abaixo do Fechamento de Caixa
+  if (campDashCard) rightCol.appendChild(campDashCard);
 
 }
 
@@ -2123,7 +2132,9 @@ function openTransModal() {
   renderGestaoHub();
 }
 function closeTransModal() {
-  document.getElementById('transOverlay').classList.add('hidden');
+  const ov = document.getElementById('transOverlay');
+  ov.classList.add('hidden');
+  ov.classList.remove('cad-overlay-fullscreen');
 }
 
 function _gestaoSetTitle(icon, text) {
@@ -2134,6 +2145,8 @@ function _gestaoShowBack(show) {
 }
 
 function renderGestaoHub() {
+  document.getElementById('transOverlay')?.classList.remove('cad-overlay-fullscreen');
+  document.getElementById('transBody')?.classList.remove('cad-fullscreen-body');
   _gestaoShowBack(false);
   _gestaoSetTitle(`<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`, 'Gestão de Produtos');
   const body = document.getElementById('transBody');
@@ -2573,11 +2586,17 @@ function _cadSuggestSetor(texts) {
   if (/\bregata\b/.test(t)) return 'Regata';
   if (/camiseta|t-shirt|tshirt/.test(t)) return 'TS Basica';
   if (/feminino|fem\b|woman|blusa|saia|vestido/.test(t)) return 'Moda Feminina';
-  if (/masculino|masc\b|\bman\b/.test(t)) return 'Moda Masculina';
+  if (/masculino|masc\b|\bmn\b|\bman\b/.test(t)) return 'Moda Masculina';
   if (/infantil|kids|bebe|crianca/.test(t)) return 'Infantil';
-  if (/calcado|tenis|sandalia|sapato|bota|chinelo/.test(t)) return 'Calçados';
-  if (/acessorio|bolsa|mochila|bone|oculos|relogio/.test(t)) return 'Acessórios';
+  if (/calcado|tenis|sandalia|sapato|bota|chinelo|sneaker|skate.*shoe|chukka|slip.?on|loafer|boot|slipper/.test(t)) return 'Calçados';
+  if (/acessorio|bolsa|mochila|bone|oculos|relogio|meia|carteira|cinto/.test(t)) return 'Acessórios';
   return 'Moda';
+}
+
+// Remove prefixo de quantidade do formato "QTD/TAMANHO" (ex: "1/35" → "35", "2/M" → "M")
+function _cadCleanTamanho(v) {
+  const m = v.match(/^\d+\/(.+)$/);
+  return m ? m[1].trim() : v;
 }
 
 function _cadSuggestNcm(setor, textos) {
@@ -2663,7 +2682,7 @@ function _cadBuildProducts() {
                : _cadSplitCors(p.desc_cor  || '').length ? _cadSplitCors(p.desc_cor)
                : _cadExtractAllCors(txt).length           ? _cadExtractAllCors(txt)
                : [''];
-    const tams = hasMappedTam  ? splitRaw(p.desc_tamanho)
+    const tams = hasMappedTam  ? splitRaw(p.desc_tamanho).map(_cadCleanTamanho)
                : _cadSplitTams(p.desc_tamanho || '').length ? _cadSplitTams(p.desc_tamanho)
                : _cadExtractTam(txt)                         ? [_cadExtractTam(txt)]
                : ['Único'];
@@ -2678,7 +2697,7 @@ function _cadBuildProducts() {
           _ref_final:  _cadApplyTemplate(_cad.modeloRef,  { ...p, desc_cor: cor, desc_tamanho: tam }),
           _desc_final: _cadApplyTemplate(_cad.modeloDesc, { ...p, desc_cor: cor, desc_tamanho: tam }),
           _custo: custo, _preco: precoAuto, _ncm: p._ncm || _cadSuggestNcm(setor, [txt]),
-          linha: p.linha || '',
+          linha: 'Unisex',
         });
       }
     }
@@ -2759,6 +2778,8 @@ async function _cadParseFile(body) {
       _cad.rawRows = data.slice(1).filter(r => r.some(c => c != null && c !== ''));
     }
     if (!_cad.rawRows.length) throw new Error('Nenhuma linha de dados encontrada');
+    _cad._wizStep = 0;
+    _cad.mapping  = null; // força auto-detect no wizard
     _cadRenderConfigAndMapping(content);
   } catch (e) {
     content.innerHTML = `<div class="trans-error">Erro ao ler arquivo: ${_escHtml(e.message)}</div>`;
@@ -2771,162 +2792,297 @@ function _cadRenderConfigAndMapping(content) {
     const n = h.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[^a-z0-9]/g,'');
     return ['descricao','nome','produto','item','desc'].some(k => n.includes(k));
   });
-  // Sample texts: prefer desc column, fall back to first column of every row
-  const sampleTexts = _cad.rawRows.slice(0, 40)
-    .map(r => String(r[descIdx >= 0 ? descIdx : 0] ?? '')).filter(Boolean);
+  const sampleTexts = _cad.rawRows.slice(0,40).map(r => String(r[descIdx>=0?descIdx:0]??'')).filter(Boolean);
   if (!_cad.ncm) _cad.ncm = _cadSuggestNcm(_cadSuggestSetor(sampleTexts), sampleTexts);
 
-  const tokBtns = target => ['REF','NOME','COR','TAM','MARCA']
-    .map(t => `<button class="cad-token" data-token="{${t}}" data-target="${target}">{${t}}</button>`).join('');
+  // Wizard state — persiste entre re-renders
+  if (!_cad._wizStep) _cad._wizStep = 0;
 
-  const pModes = [
-    { val:'markup',  lbl:'Mark-up',   extra:`<input type="number" id="cadMarkup" class="cad-input-sm" value="${_cad.markup}" min="0" max="9999" style="width:60px;margin-left:.3rem"> %` },
-    { val:'manual',  lbl:'Manual R$', extra:`<input type="text" id="cadManualPrice" class="cad-input-sm" value="${_escHtml(_cad.manualPrice)}" placeholder="0,00" style="width:70px;margin-left:.3rem">` },
-    { val:'auto',    lbl:'Do pedido', extra:'' },
+  // Inicializa mapeamento com auto-detect
+  if (!_cad.mapping) {
+    _cad.mapping = {};
+    for (const f of CAMPOS_MX) { const a = autoMap[f.key]; if (a) _cad.mapping[f.key] = a; }
+  }
+
+  // Passos do wizard na ordem pedida
+  const STEPS = [
+    { key:'referencia',   label:'Referência',     icon:'🔖', desc:'Qual coluna contém o código de referência do produto?',          required:true,  hasTemplate:true,  templateKey:'modeloRef',  templateLabel:'Modelo de referência', templatePlaceholder:'{REF}' },
+    { key:'nome',         label:'Descrição',       icon:'📝', desc:'Qual coluna contém o nome ou descrição do produto?',             required:true,  hasTemplate:true,  templateKey:'modeloDesc', templateLabel:'Modelo de descrição',  templatePlaceholder:'{NOME} {COR} {TAM}' },
+    { key:'desc_cor',     label:'Cor',             icon:'🎨', desc:'Qual coluna contém a cor do produto?',                          required:false, hasTemplate:false },
+    { key:'desc_tamanho', label:'Tamanho',         icon:'📐', desc:'Qual coluna contém o tamanho do produto?',                      required:false, hasTemplate:false },
+    { key:'desc_setor',   label:'Setor',           icon:'🗂️', desc:'Qual coluna contém o setor / departamento do produto?',        required:false, hasTemplate:false },
+    { key:'preco_custo',  label:'Custo c/ICMS',    icon:'💰', desc:'Qual coluna contém o custo do produto com ICMS?',               required:false, hasTemplate:false },
+    { key:'preco_venda',  label:'Preço de Venda',  icon:'🏷️', desc:'Como calcular o preço de venda?',                              required:false, hasTemplate:false, isPriceStep:true },
+    { key:'__preview',    label:'Prévia',           icon:'✅', desc:'Revise como ficará o cadastro e gere a tabela de produtos.',   required:false, isPreview:true },
   ];
 
-  content.innerHTML = `
-    <div class="cad-config-grid">
-      <div class="cad-config-left">
-        <div class="cad-section-header">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-          Mapeamento de Colunas
-          <span class="cad-section-sub">${_cad.rawRows.length} linhas · ${_cad.headers.length} col.</span>
+  const tokBtns = (targetId, step) =>
+    ['REF','NOME','COR','TAM'].map(t =>
+      `<button class="cad-token" data-token="{${t}}" data-target="${targetId}">{${t}}</button>`).join('');
+
+  function colSamples(colName) {
+    if (!colName) return [];
+    const idx = _cad.headers.indexOf(colName);
+    if (idx < 0) return [];
+    return [...new Set(_cad.rawRows.slice(0,80).map(r => String(r[idx]??'').trim()).filter(Boolean))].slice(0,6);
+  }
+
+  function buildStepHTML(stepIdx) {
+    const step   = STEPS[stepIdx];
+    const total  = STEPS.length;
+    const pct    = Math.round((stepIdx / (total-1)) * 100);
+
+    // ── Progress bar ──
+    const dots = STEPS.map((s,i) => {
+      const cls = i < stepIdx ? 'cad-wiz-dot done' : i === stepIdx ? 'cad-wiz-dot active' : 'cad-wiz-dot';
+      return `<div class="${cls}" title="${s.label}"></div>`;
+    }).join('');
+
+    let body = '';
+
+    if (step.isPreview) {
+      // ── Final step: preview ──
+      const map = _cad.mapping || {};
+      const sampleP = {};
+      for (const [f, col] of Object.entries(map)) {
+        const ci = _cad.headers.indexOf(col);
+        if (ci >= 0) sampleP[f] = String(_cad.rawRows[0]?.[ci]??'').trim();
+      }
+      const txt = (sampleP.referencia||'') + ' ' + (sampleP.nome||'');
+      sampleP.desc_cor     = sampleP.desc_cor     || _cadExtractCor(txt);
+      sampleP.desc_tamanho = sampleP.desc_tamanho || _cadExtractTam(txt);
+      const refPrev  = _cadApplyTemplate(_cad.modeloRef,  sampleP) || '—';
+      const descPrev = _cadApplyTemplate(_cad.modeloDesc, sampleP) || '—';
+      const priceLabel = _cad.priceMode === 'markup' ? `Mark-up ${_cad.markup}%`
+                       : _cad.priceMode === 'manual' ? `Manual R$ ${_cad.manualPrice}`
+                       : 'Do pedido';
+
+      body = `
+        <div class="cad-wiz-preview-card">
+          <div class="cad-wiz-preview-title">Como ficará o primeiro produto</div>
+          <div class="cad-wiz-preview-grid">
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">Referência</span><span class="cad-wiz-pval" style="font-weight:700;color:var(--accent)">${_escHtml(refPrev)}</span></div>
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">Descrição</span><span class="cad-wiz-pval">${_escHtml(descPrev)}</span></div>
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">Cor</span><span class="cad-wiz-pval">${_escHtml(sampleP.desc_cor||'—')}</span></div>
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">Tamanho</span><span class="cad-wiz-pval">${_escHtml(sampleP.desc_tamanho||'—')}</span></div>
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">Setor</span><span class="cad-wiz-pval">${_escHtml(sampleP.desc_setor||_cadSuggestSetor([descPrev])||'—')}</span></div>
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">Custo c/ICMS</span><span class="cad-wiz-pval">${_escHtml(sampleP.preco_custo||'—')}</span></div>
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">Preço de Venda</span><span class="cad-wiz-pval">${_escHtml(priceLabel)}</span></div>
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">Linha</span><span class="cad-wiz-pval">Unisex</span></div>
+            <div class="cad-wiz-prow"><span class="cad-wiz-plbl">NCM</span><span class="cad-wiz-pval"><input type="text" id="cadNcm" class="cad-input-sm" value="${_escHtml(_cad.ncm)}" placeholder="0000.00.00" style="width:110px"></span></div>
+          </div>
+          <div style="margin-top:1.25rem;font-size:.75rem;color:var(--muted)">${_cad.rawRows.length} linhas no arquivo · ${Object.keys(_cad.mapping||{}).length} campos mapeados</div>
+        </div>`;
+    } else if (step.isPriceStep) {
+      // ── Preço de venda ──
+      const priceColOpts = ['', ..._cad.headers].map(h =>
+        `<option value="${_escHtml(h)}"${h===(_cad.mapping?.preco_venda||'')?' selected':''}>${h||'— selecionar coluna —'}</option>`).join('');
+      const autoSamples = colSamples(_cad.mapping?.preco_venda || '');
+      body = `
+        <div class="cad-wiz-price-opts">
+          <label class="cad-wiz-price-opt${_cad.priceMode==='markup'?' sel':''}">
+            <input type="radio" name="wizPrice" value="markup"${_cad.priceMode==='markup'?' checked':''}> Mark-up
+            <input type="number" id="cadMarkup" class="cad-input-sm" value="${_cad.markup}" min="0" max="9999" style="width:65px;margin-left:.5rem"> %
+          </label>
+          <label class="cad-wiz-price-opt${_cad.priceMode==='manual'?' sel':''}">
+            <input type="radio" name="wizPrice" value="manual"${_cad.priceMode==='manual'?' checked':''}> Manual R$
+            <input type="text" id="cadManualPrice" class="cad-input-sm" value="${_escHtml(_cad.manualPrice)}" placeholder="0,00" style="width:80px;margin-left:.5rem">
+          </label>
+          <label class="cad-wiz-price-opt${_cad.priceMode==='auto'?' sel':''}">
+            <input type="radio" name="wizPrice" value="auto"${_cad.priceMode==='auto'?' checked':''}> Do pedido (coluna)
+          </label>
         </div>
-        <table class="cad-map-table">
-          <thead><tr><th>Campo Microvix</th><th>Coluna do pedido</th><th>Exemplo</th></tr></thead>
-          <tbody>
-            ${CAMPOS_MX.map(f => {
-              const auto = autoMap[f.key] || '';
-              const prev = auto ? String(_cad.rawRows[0]?.[_cad.headers.indexOf(auto)] ?? '').slice(0,35) : '';
-              return `<tr>
-                <td class="cad-map-field">${_escHtml(f.label)}${f.required ? '<span class="cad-required"> *</span>' : ''}</td>
-                <td><select class="cad-map-select" data-mx="${f.key}">
-                  <option value="">— não usar —</option>
-                  ${_cad.headers.map(h => `<option value="${_escHtml(h)}"${h === auto ? ' selected' : ''}>${_escHtml(h)}</option>`).join('')}
-                </select></td>
-                <td class="cad-map-preview" id="cadPrev_${f.key}">${_escHtml(prev)}</td>
-              </tr>`;
-            }).join('')}
-          </tbody>
-        </table>
+        <div id="wizPriceColWrap" style="margin-top:.85rem;${_cad.priceMode!=='auto'?'display:none':''}">
+          <label class="cad-field-label" style="font-size:.78rem;margin-bottom:.35rem;display:block">Qual coluna contém o preço?</label>
+          <select class="cad-input" id="wizPriceCol" style="width:100%">${priceColOpts}</select>
+          <div class="cad-wiz-samples" id="wizPriceSamples">
+            ${autoSamples.length ? autoSamples.map(s=>`<span class="cad-wiz-sample">${_escHtml(s)}</span>`).join('') : ''}
+          </div>
+        </div>`;
+    } else {
+      // ── Passo normal: seletor de coluna ──
+      const current  = _cad.mapping?.[step.key] || '';
+      const samples  = colSamples(current);
+      const selOpts  = ['', ..._cad.headers].map(h =>
+        `<option value="${_escHtml(h)}"${h===current?' selected':''}>${h||'— não usar —'}</option>`).join('');
+
+      body = `
+        <div class="cad-wiz-col-wrap">
+          <label class="cad-field-label" style="font-size:.8rem;margin-bottom:.4rem;display:block">Coluna do arquivo</label>
+          <select class="cad-input cad-wiz-colsel" style="width:100%;font-size:.9rem" data-key="${step.key}">${selOpts}</select>
+          <div class="cad-wiz-samples" id="wizSamples">
+            ${samples.length
+              ? samples.map(s => `<span class="cad-wiz-sample">${_escHtml(s)}</span>`).join('')
+              : '<span style="color:var(--muted);font-size:.75rem;font-style:italic">— sem exemplos —</span>'}
+          </div>
+        </div>`;
+
+      if (step.hasTemplate) {
+        const tval = step.templateKey === 'modeloRef' ? _cad.modeloRef : _cad.modeloDesc;
+        const prevId = step.templateKey === 'modeloRef' ? 'cadRefPrev' : 'cadDescPrev';
+        const sampleP = {};
+        for (const [f, col] of Object.entries(_cad.mapping||{})) {
+          const ci = _cad.headers.indexOf(col); if (ci>=0) sampleP[f]=String(_cad.rawRows[0]?.[ci]??'').trim();
+        }
+        const txt2 = (sampleP.referencia||'')+ ' '+(sampleP.nome||'');
+        sampleP.desc_cor=sampleP.desc_cor||_cadExtractCor(txt2);
+        sampleP.desc_tamanho=sampleP.desc_tamanho||_cadExtractTam(txt2);
+        const prev = _cadApplyTemplate(tval, sampleP) || '(aguardando mapeamento)';
+        body += `
+          <div style="margin-top:1rem">
+            <label class="cad-field-label" style="font-size:.8rem;margin-bottom:.4rem;display:block">${_escHtml(step.templateLabel)}</label>
+            <div class="cad-tmpl-row">
+              <input type="text" id="cadTmpl_${step.templateKey}" class="cad-input" value="${_escHtml(tval)}" placeholder="${_escHtml(step.templatePlaceholder)}" style="flex:1">
+              <div class="cad-tokens">${tokBtns('cadTmpl_'+step.templateKey, step)}</div>
+            </div>
+            <div class="cad-prev-line" style="margin-top:.35rem">Prévia: <span id="${prevId}" class="cad-prev-val">${_escHtml(prev)}</span></div>
+          </div>`;
+      }
+    }
+
+    const isLast  = stepIdx === total - 1;
+    const isFirst = stepIdx === 0;
+
+    return `
+      <div class="cad-wizard" id="cadWizard">
+        <div class="cad-wiz-header">
+          <div class="cad-wiz-dots">${dots}</div>
+          <div class="cad-wiz-step-info">${stepIdx+1} / ${total}</div>
+        </div>
+        <div class="cad-wiz-body">
+          <div class="cad-wiz-icon">${step.icon}</div>
+          <div class="cad-wiz-field-name">${_escHtml(step.label)}${step.required?'<span class="cad-required"> *</span>':''}</div>
+          <div class="cad-wiz-field-desc">${_escHtml(step.desc)}</div>
+          ${body}
+        </div>
+        <div class="cad-wiz-footer">
+          <button class="cad-wiz-btn cad-wiz-back" id="wizBack" ${isFirst?'style="visibility:hidden"':''}>← Voltar</button>
+          ${isLast
+            ? `<button class="trans-calc-btn" id="cadGenerateBtn">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Gerar tabela de produtos
+               </button>`
+            : `<button class="cad-wiz-btn cad-wiz-next" id="wizNext">Próximo →</button>`}
+        </div>
       </div>
+      <div id="cadProdSection" style="margin-top:1.5rem;display:none"></div>`;
+  }
 
-      <div class="cad-config-right">
-        <div class="cad-section-header">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 1 0 4.93 19.07"/></svg>
-          Configurações do Pedido
-        </div>
-        <div class="cad-config-form">
+  function renderStep(stepIdx) {
+    _cad._wizStep = stepIdx;
+    content.innerHTML = buildStepHTML(stepIdx);
+    const step = STEPS[stepIdx];
 
-          <div class="cad-form-row">
-            <div class="cad-form-field cad-form-wide">
-              <label class="cad-field-label">Modelo de Referência</label>
-              <div class="cad-tmpl-row">
-                <input type="text" id="cadModeloRef" class="cad-input" value="${_escHtml(_cad.modeloRef)}" placeholder="{REF}">
-                <div class="cad-tokens">${tokBtns('cadModeloRef')}</div>
-              </div>
-              <div class="cad-prev-line">Prévia: <span id="cadRefPrev" class="cad-prev-val"></span></div>
-            </div>
-          </div>
+    // Seletor de coluna
+    const colSel = content.querySelector('.cad-wiz-colsel');
+    if (colSel) {
+      colSel.addEventListener('change', () => {
+        if (!_cad.mapping) _cad.mapping = {};
+        _cad.mapping[step.key] = colSel.value;
+        // Atualiza amostras
+        const samplesEl = content.querySelector('#wizSamples');
+        if (samplesEl) {
+          const s = colSamples(colSel.value);
+          samplesEl.innerHTML = s.length
+            ? s.map(v => `<span class="cad-wiz-sample">${_escHtml(v)}</span>`).join('')
+            : '<span style="color:var(--muted);font-size:.75rem;font-style:italic">— sem exemplos —</span>';
+        }
+        // Atualiza prévia de template se existir
+        if (step.hasTemplate) _cadRefreshWizPrev(content, stepIdx, STEPS);
+      });
+    }
 
-          <div class="cad-form-row">
-            <div class="cad-form-field cad-form-wide">
-              <label class="cad-field-label">Modelo de Descrição</label>
-              <div class="cad-tmpl-row">
-                <input type="text" id="cadModeloDesc" class="cad-input" value="${_escHtml(_cad.modeloDesc)}" placeholder="{NOME} {COR} {TAM}">
-                <div class="cad-tokens">${tokBtns('cadModeloDesc')}</div>
-              </div>
-              <div class="cad-prev-line">Prévia: <span id="cadDescPrev" class="cad-prev-val"></span></div>
-            </div>
-          </div>
-
-          <div class="cad-form-row">
-            <div class="cad-form-field cad-form-wide">
-              <label class="cad-field-label">Preço de Venda</label>
-              <div class="cad-price-modes">
-                ${pModes.map(m => `<label class="cad-price-mode${_cad.priceMode === m.val ? ' active' : ''}">
-                  <input type="radio" name="cadPriceMode" value="${m.val}"${_cad.priceMode === m.val ? ' checked' : ''}> ${m.lbl}${m.extra}
-                </label>`).join('')}
-              </div>
-            </div>
-          </div>
-
-          <div class="cad-form-row">
-            <div class="cad-form-field">
-              <label class="cad-field-label">NCM (sugerido)</label>
-              <input type="text" id="cadNcm" class="cad-input" value="${_escHtml(_cad.ncm)}" placeholder="0000.00.00">
-            </div>
-            <div class="cad-form-field">
-              <label class="cad-field-label">Linha</label>
-              <input class="cad-input cad-input-fixed" value="Unisex" disabled>
-            </div>
-            <div class="cad-form-field" style="flex:1.6">
-              <label class="cad-field-label">Tipo de item</label>
-              <input class="cad-input cad-input-fixed" value="Mercadoria para Revenda" disabled>
-            </div>
-          </div>
-
-          <div class="cad-form-row" style="justify-content:flex-end;margin-top:.5rem">
-            <button class="trans-calc-btn" id="cadGenerateBtn">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-              Gerar tabela de produtos
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div id="cadProdSection" style="margin-top:1.5rem;display:none"></div>`;
-
-  content.querySelectorAll('.cad-map-select').forEach(sel => {
-    sel.addEventListener('change', () => {
-      const idx = _cad.headers.indexOf(sel.value);
-      const val = idx >= 0 ? String(_cad.rawRows[0]?.[idx] ?? '').slice(0,35) : '';
-      const el = content.querySelector('#cadPrev_' + sel.dataset.mx);
-      if (el) el.textContent = val;
-      _cadRefreshPrev(content);
+    // Tokens de template
+    content.querySelectorAll('.cad-token').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const inp = content.querySelector('#' + btn.dataset.target);
+        if (!inp) return;
+        const s = inp.selectionStart, e2 = inp.selectionEnd;
+        inp.value = inp.value.slice(0,s) + btn.dataset.token + inp.value.slice(e2);
+        inp.focus();
+        _cadRefreshWizPrev(content, stepIdx, STEPS);
+      });
     });
-  });
 
-  content.querySelectorAll('.cad-token').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const inp = content.querySelector('#' + btn.dataset.target);
-      if (!inp) return;
-      const s = inp.selectionStart, e2 = inp.selectionEnd;
-      inp.value = inp.value.slice(0,s) + btn.dataset.token + inp.value.slice(e2);
-      inp.focus(); _cadRefreshPrev(content);
+    // Input de template
+    const tmplInp = content.querySelector(`#cadTmpl_${step.templateKey}`);
+    if (tmplInp) {
+      tmplInp.addEventListener('input', () => {
+        _cad[step.templateKey] = tmplInp.value;
+        _cadRefreshWizPrev(content, stepIdx, STEPS);
+      });
+    }
+
+    // Preço
+    content.querySelectorAll('[name="wizPrice"]').forEach(r => {
+      r.addEventListener('change', () => {
+        _cad.priceMode = r.value;
+        content.querySelectorAll('.cad-wiz-price-opt').forEach(l => l.classList.toggle('sel', l.contains(r)));
+        const colWrap = content.querySelector('#wizPriceColWrap');
+        if (colWrap) colWrap.style.display = r.value === 'auto' ? '' : 'none';
+      });
     });
-  });
+    const mkpInp = content.querySelector('#cadMarkup');
+    if (mkpInp) mkpInp.addEventListener('input', () => { _cad.markup = mkpInp.value; });
+    const manInp = content.querySelector('#cadManualPrice');
+    if (manInp) manInp.addEventListener('input', () => { _cad.manualPrice = manInp.value; });
+    const priceColSel = content.querySelector('#wizPriceCol');
+    if (priceColSel) {
+      priceColSel.addEventListener('change', () => {
+        if (!_cad.mapping) _cad.mapping = {};
+        _cad.mapping.preco_venda = priceColSel.value;
+        const samplesEl = content.querySelector('#wizPriceSamples');
+        if (samplesEl) {
+          const s = colSamples(priceColSel.value);
+          samplesEl.innerHTML = s.map(v => `<span class="cad-wiz-sample">${_escHtml(v)}</span>`).join('');
+        }
+      });
+    }
 
-  const binds = { cadModeloRef:'modeloRef',
-                  cadModeloDesc:'modeloDesc', cadNcm:'ncm', cadMarkup:'markup', cadManualPrice:'manualPrice' };
-  Object.entries(binds).forEach(([id, key]) => {
-    const el = content.querySelector('#' + id);
-    if (!el) return;
-    el.addEventListener('input', () => { _cad[key] = el.value; _cadRefreshPrev(content); });
-  });
+    // NCM (na prévia)
+    const ncmInp = content.querySelector('#cadNcm');
+    if (ncmInp) ncmInp.addEventListener('input', () => { _cad.ncm = ncmInp.value; });
 
-  content.querySelectorAll('[name="cadPriceMode"]').forEach(r => {
-    r.addEventListener('change', () => {
-      _cad.priceMode = r.value;
-      content.querySelectorAll('.cad-price-mode').forEach(l => l.classList.toggle('active', l.contains(r)));
-      _cadRefreshPrev(content);
+    // Navegação
+    content.querySelector('#wizBack')?.addEventListener('click', () => renderStep(stepIdx - 1));
+    content.querySelector('#wizNext')?.addEventListener('click', () => {
+      if (step.required && !_cad.mapping?.[step.key]) {
+        toast(`Mapeie a coluna de ${step.label} antes de continuar`, true); return;
+      }
+      renderStep(stepIdx + 1);
     });
-  });
 
-  content.querySelector('#cadGenerateBtn').addEventListener('click', () => {
-    _cad.mapping = {};
-    content.querySelectorAll('.cad-map-select').forEach(sel => { if (sel.value) _cad.mapping[sel.dataset.mx] = sel.value; });
-    if (!_cad.mapping.referencia && !_cad.mapping.nome) { toast('Mapeie pelo menos Referência ou Nome', true); return; }
-    _cad.products = _cadBuildProducts();
-    if (!_cad.products.length) { toast('Nenhum produto encontrado com o mapeamento atual', true); return; }
-    const sec = content.querySelector('#cadProdSection');
-    _cadRenderProdSection(sec);
-    sec.style.display = '';
-    sec.scrollIntoView({ behavior:'smooth', block:'start' });
-  });
+    // Gerar tabela
+    content.querySelector('#cadGenerateBtn')?.addEventListener('click', () => {
+      if (!_cad.mapping?.referencia && !_cad.mapping?.nome) { toast('Mapeie pelo menos Referência ou Nome', true); return; }
+      _cad.products = _cadBuildProducts();
+      if (!_cad.products.length) { toast('Nenhum produto encontrado com o mapeamento atual', true); return; }
+      const sec = content.querySelector('#cadProdSection');
+      _cadRenderProdSection(sec);
+      sec.style.display = '';
+      sec.scrollIntoView({ behavior:'smooth', block:'start' });
+    });
+  }
 
-  _cadRefreshPrev(content);
+  renderStep(_cad._wizStep);
+}
+
+function _cadRefreshWizPrev(content, stepIdx, STEPS) {
+  const step = STEPS[stepIdx];
+  if (!step?.hasTemplate) return;
+  const sampleP = {};
+  for (const [f, col] of Object.entries(_cad.mapping||{})) {
+    const ci = _cad.headers.indexOf(col); if (ci>=0) sampleP[f]=String(_cad.rawRows[0]?.[ci]??'').trim();
+  }
+  const txt = (sampleP.referencia||'')+ ' '+(sampleP.nome||'');
+  sampleP.desc_cor=sampleP.desc_cor||_cadExtractCor(txt);
+  sampleP.desc_tamanho=sampleP.desc_tamanho||_cadExtractTam(txt);
+  const tmplInp = content.querySelector(`#cadTmpl_${step.templateKey}`);
+  if (tmplInp) _cad[step.templateKey] = tmplInp.value;
+  const val   = _cad[step.templateKey] || '';
+  const prevId = step.templateKey === 'modeloRef' ? 'cadRefPrev' : 'cadDescPrev';
+  const el = content.querySelector('#' + prevId);
+  if (el) el.textContent = _cadApplyTemplate(val, sampleP) || '(aguardando mapeamento)';
 }
 
 function _cadRefreshPrev(content) {
@@ -2967,8 +3123,30 @@ function _cadMkNcmSel(val, i) {
     <option value="">— NCM —</option>${extra}${opts}</select>`;
 }
 
+// Ícone de status por coluna: ✓ verde = ok, ⚠ amarelo = atenção, vazio = sem dado
+function _cadFieldIcon(suggested, original) {
+  if (!suggested && !original) return '';
+  if (!suggested) return '';
+  const s = (suggested||'').toString().trim().toUpperCase();
+  const o = (original||'').toString().trim().toUpperCase();
+  if (!o || s === o) return '<span class="cad-col-ok">✓</span>';
+  return '<span class="cad-col-warn">⚠</span>';
+}
+
+// Célula de campo sugerível: valor editável + hint do original abaixo
+function _cadSugCell(inputHtml, origVal, suggested) {
+  const icon   = _cadFieldIcon(suggested, origVal);
+  const hint   = origVal && suggested && (origVal.trim().toUpperCase() !== (suggested||'').trim().toUpperCase())
+    ? `<div class="cad-orig-hint">do pedido: ${_escHtml(origVal)}</div>` : '';
+  return `<div class="cad-sug-wrap">${icon}${inputHtml}${hint}</div>`;
+}
+
 function _cadRenderProdSection(sec) {
   const prods = _cad.products;
+  // Ativa tela cheia
+  document.getElementById('transBody')?.classList.add('cad-fullscreen-body');
+  document.getElementById('transOverlay')?.classList.add('cad-overlay-fullscreen');
+
   sec.innerHTML = `
     <div class="cad-section-header" style="margin-bottom:.75rem">
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/></svg>
@@ -2976,56 +3154,72 @@ function _cadRenderProdSection(sec) {
       <span class="cad-section-sub">${prods.length} itens · edite os campos antes de exportar</span>
     </div>
     <div style="overflow-x:auto">
-      <table class="trans-table">
+      <table class="trans-table cad-prod-table">
         <thead><tr>
-          <th class="trans-th" style="width:28px">#</th>
-          <th class="trans-th">Status</th>
+          <th class="trans-th" style="width:24px">#</th>
+          <th class="trans-th" style="width:70px">Status</th>
           <th class="trans-th">Referência</th>
-          <th class="trans-th">Descrição (Microvix)</th>
-          <th class="trans-th">Marca</th>
-          <th class="trans-th">Setor</th>
-          <th class="trans-th">Linha</th>
-          <th class="trans-th">Cor</th>
-          <th class="trans-th">Tam.</th>
-          <th class="trans-th">Custo c/ICMS</th>
-          <th class="trans-th">Preço Venda</th>
-          <th class="trans-th">NCM</th>
-          <th class="trans-th" style="width:24px"></th>
+          <th class="trans-th" style="min-width:180px">Descrição</th>
+          <th class="trans-th" style="min-width:130px">Setor</th>
+          <th class="trans-th" style="min-width:100px">Cor</th>
+          <th class="trans-th" style="width:80px">Tam.</th>
+          <th class="trans-th" style="width:90px">Custo</th>
+          <th class="trans-th" style="width:90px">Preço</th>
+          <th class="trans-th" style="min-width:190px">NCM</th>
+          <th class="trans-th" style="width:20px"></th>
         </tr></thead>
         <tbody>
-          ${prods.map((p, i) => `<tr data-idx="${i}">
-            <td class="trans-td" style="color:var(--muted);font-size:.7rem">${i+1}</td>
-            <td class="trans-td"><span class="cad-badge cad-badge-new" style="font-size:.65rem">NOVO</span></td>
-            <td class="trans-td"><input class="cad-ci" data-f="_ref_final"  data-i="${i}" value="${_escHtml(p._ref_final)}"></td>
-            <td class="trans-td"><input class="cad-ci" data-f="_desc_final" data-i="${i}" value="${_escHtml(p._desc_final)}" style="min-width:180px"></td>
-            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_marca"    data-i="${i}" value="${_escHtml(p.desc_marca||'')}" placeholder="Marca" style="width:90px"></td>
-            <td class="trans-td">${_cadMkSetorSel(p.desc_setor, i)}</td>
-            <td class="trans-td">${_cadMkLinhaSel(p.linha, i)}</td>
-            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_cor"      data-i="${i}" value="${_escHtml(p.desc_cor)}" style="width:80px"></td>
-            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="desc_tamanho"  data-i="${i}" value="${_escHtml(p.desc_tamanho)}" style="width:65px"></td>
-            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="_custo"        data-i="${i}" value="${_escHtml(p._custo)}" style="width:75px"></td>
-            <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="_preco"        data-i="${i}" value="${_escHtml(p._preco)}" style="width:75px"></td>
-            <td class="trans-td">${_cadMkNcmSel(p._ncm, i)}</td>
-            <td class="trans-td"><button class="cad-del-btn" data-i="${i}" title="Remover">×</button></td>
-          </tr>`).join('')}
+          ${prods.map((p, i) => {
+            const isNew = !p._microvixExists;
+            return `<tr data-idx="${i}" class="${isNew ? 'cad-row-new' : 'cad-row-exists'}">
+              <td class="trans-td cad-td-num">${i+1}</td>
+              <td class="trans-td"><span class="cad-badge cad-badge-new">NOVO</span></td>
+              <td class="trans-td">${_cadSugCell(
+                `<input class="cad-ci" data-f="_ref_final" data-i="${i}" value="${_escHtml(p._ref_final)}">`,
+                p._origRef || '', p._ref_final)}</td>
+              <td class="trans-td"><input class="cad-ci" data-f="_desc_final" data-i="${i}" value="${_escHtml(p._desc_final)}"></td>
+              <td class="trans-td">${_cadSugCell(_cadMkSetorSel(p.desc_setor, i), p._origSetor || '', p.desc_setor)}</td>
+              <td class="trans-td">${_cadSugCell(
+                `<input class="cad-ci cad-ci-sm" data-f="desc_cor" data-i="${i}" value="${_escHtml(p.desc_cor)}" style="width:90px">`,
+                p._origCor || '', p.desc_cor)}</td>
+              <td class="trans-td">${_cadSugCell(
+                `<input class="cad-ci cad-ci-sm" data-f="desc_tamanho" data-i="${i}" value="${_escHtml(p.desc_tamanho)}" style="width:55px">`,
+                p._origTam || '', p.desc_tamanho)}</td>
+              <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="_custo" data-i="${i}" value="${_escHtml(p._custo)}" style="width:75px"></td>
+              <td class="trans-td"><input class="cad-ci cad-ci-sm" data-f="_preco" data-i="${i}" value="${_escHtml(p._preco)}" style="width:75px"></td>
+              <td class="trans-td">${_cadMkNcmSel(p._ncm, i)}</td>
+              <td class="trans-td"><button class="cad-del-btn" data-i="${i}" title="Remover">×</button></td>
+            </tr>`;
+          }).join('')}
         </tbody>
       </table>
     </div>
     <div class="cad-prod-actions">
-      <span class="cad-hint-sm">${prods.length} produtos · UN · Mercadoria para Revenda · Contabiliza: Sim · Exige controle: Sim</span>
+      <span class="cad-hint-sm">${prods.length} produtos · <span class="cad-count-new">0 novos</span> · <span class="cad-count-exists">0 já cadastrados</span></span>
       <button class="trans-calc-btn" id="cadCheckBtn">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         Verificar no Microvix
+      </button>
+      <button class="trans-calc-btn" id="cadAiMatchBtn" style="background:#3a1f6e;border-color:#6e40c9">
+        ✦ Sugerir Match com IA
       </button>
     </div>`;
 
   sec.querySelectorAll('.cad-ci').forEach(inp => {
     inp.addEventListener('change', () => { if (_cad.products[+inp.dataset.i]) _cad.products[+inp.dataset.i][inp.dataset.f] = inp.value; });
   });
+  sec.querySelectorAll('select.cad-ci-sel').forEach(sel => {
+    sel.addEventListener('change', () => { if (_cad.products[+sel.dataset.i]) _cad.products[+sel.dataset.i][sel.dataset.f] = sel.value; });
+  });
   sec.querySelectorAll('.cad-del-btn').forEach(btn => {
-    btn.addEventListener('click', () => { _cad.products.splice(+btn.dataset.i, 1); _cadRenderProdSection(sec); });
+    btn.addEventListener('click', () => {
+      document.getElementById('transBody')?.classList.remove('cad-fullscreen-body');
+      _cad.products.splice(+btn.dataset.i, 1);
+      _cadRenderProdSection(sec);
+    });
   });
   sec.querySelector('#cadCheckBtn').addEventListener('click', () => _cadCheckAndExport(sec));
+  sec.querySelector('#cadAiMatchBtn').addEventListener('click', () => _cadAiMatch(sec));
 }
 
 async function _cadCheckAndExport(sec) {
@@ -3064,7 +3258,7 @@ async function _cadCheckAndExport(sec) {
       // Referência existe + sem match → ? (com dropdown vazio, usuário escolhe)
       tr.style.opacity = (!isNew && corMatch) ? '.45' : '1';
 
-      // td[0]=# td[1]=status td[2]=ref td[3]=desc td[4]=marca td[5]=setor td[6]=linha td[7]=cor
+      // td[0]=# td[1]=status td[2]=ref td[3]=desc td[4]=setor td[5]=cor td[6]=tam td[7]=custo td[8]=preco td[9]=ncm td[10]=×
       const tds      = tr.querySelectorAll('td');
       const label    = isNew ? 'NOVO' : (corMatch ? '✓' : '?');
       const badgeCls = isNew ? 'cad-badge-new' : (corMatch ? 'cad-badge-existing' : 'cad-badge-warn');
@@ -3078,15 +3272,14 @@ async function _cadCheckAndExport(sec) {
       }
 
       if (!isNew && hasColors) {
-        if (tds[7]) {
-          const orig = res._parsedRef
-            ? `${res._parsedRef} + ${_escHtml(res._parsedCor || '')} (extraído)`
-            : _escHtml(_cad.products[i]?.desc_cor || '');
-          tds[7].innerHTML = `<div class="cad-sku-map-hint" style="font-size:.68rem;color:var(--muted);margin-bottom:.15rem">${orig}</div>
-            <select class="cad-sku-sel" data-i="${i}" data-field="desc_cor">
-              <option value="">— cadastrar —</option>
-              ${res._corsDisponiveis.map(c => `<option value="${_escHtml(c)}"${c === corMatch ? ' selected' : ''}>${_escHtml(c)}</option>`).join('')}
-            </select>`;
+        if (tds[5]) {
+          const origCor = res._parsedRef ? `${res._parsedRef}+${res._parsedCor||''}` : (_cad.products[i]?.desc_cor || '');
+          tds[5].innerHTML = _cadSugCell(
+            `<select class="cad-sku-sel" data-i="${i}" data-field="desc_cor">
+               <option value="">— cor —</option>
+               ${res._corsDisponiveis.map(c => `<option value="${_escHtml(c)}"${c===corMatch?' selected':''}>${_escHtml(c)}</option>`).join('')}
+             </select>`,
+            origCor, corMatch);
         }
       }
     });
@@ -3114,6 +3307,174 @@ async function _cadCheckAndExport(sec) {
     btn.disabled = false;
     btn.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Verificar no Microvix`;
   }
+}
+
+async function _cadAiMatch(sec) {
+  const btn = sec.querySelector('#cadAiMatchBtn');
+  btn.disabled = true;
+  btn.textContent = '✦ Consultando IA…';
+
+  sec.querySelectorAll('.cad-ci').forEach(inp => {
+    if (_cad.products[+inp.dataset.i]) _cad.products[+inp.dataset.i][inp.dataset.f] = inp.value;
+  });
+
+  const refs = _cad.products.map(p => ({
+    ref:  p._ref_final  || p.referencia || '',
+    desc: p._desc_final || p.nome       || '',
+  }));
+
+  try {
+    const res = await apiFetch('POST', '/api/cadastro-produto/ai-match', { refs });
+    const matches = res.matches || [];
+    let matchCount = 0;
+
+    matches.forEach((m, i) => {
+      const p  = _cad.products[i];
+      const tr = sec.querySelector(`tr[data-idx="${i}"]`);
+      if (!p || !tr) return;
+      const tds = tr.querySelectorAll('td');
+
+      if (!m?.suggestedRef) return;
+
+      const origRef   = refs[i]?.ref || '';
+      const sameRef   = origRef.trim().toUpperCase() === m.suggestedRef.trim().toUpperCase();
+      matchCount++;
+
+      // ── Guarda originais (para o hint "do pedido") ──
+      if (!p._origRef)   p._origRef   = origRef;
+      if (!p._origSetor) p._origSetor = p.desc_setor || '';
+      if (!p._origCor)   p._origCor   = p.desc_cor   || '';
+      if (!p._origTam)   p._origTam   = p.desc_tamanho || '';
+
+      // ── Status ──
+      p._microvixExists = true;
+      tr.classList.remove('cad-row-new');
+      tr.classList.add('cad-row-exists');
+      if (tds[1]) tds[1].innerHTML = `<span class="cad-badge cad-badge-existing" style="opacity:${sameRef?'.6':'1'}">✓</span>`;
+
+      // ── Referência ──
+      p._ref_final = m.suggestedRef;
+      if (tds[2]) tds[2].innerHTML = _cadSugCell(
+        `<input class="cad-ci" data-f="_ref_final" data-i="${i}" value="${_escHtml(m.suggestedRef)}">`,
+        sameRef ? '' : origRef, m.suggestedRef);
+
+      // ── Setor do catálogo ──
+      const setor = m.catalogSetor || p.desc_setor || '';
+      p.desc_setor = setor;
+      if (tds[4]) {
+        tds[4].innerHTML = _cadSugCell(_cadMkSetorSel(setor, i), p._origSetor, setor);
+        tds[4].querySelector('select')?.addEventListener('change', e => { p.desc_setor = e.target.value; });
+      }
+
+      // ── Cor do catálogo ──
+      const catalogCores = Array.isArray(m.catalogCores) ? m.catalogCores : [];
+      const origCor = p._origCor;
+      const corMatch = catalogCores.find(c => c.toUpperCase() === origCor.toUpperCase()) || catalogCores[0] || origCor;
+      if (corMatch) p.desc_cor = corMatch;
+      if (tds[5]) {
+        const corInput = catalogCores.length
+          ? `<select class="cad-ci cad-ci-sel" data-f="desc_cor" data-i="${i}">
+               <option value="">— cor —</option>
+               ${catalogCores.map(c => `<option value="${_escHtml(c)}"${c===corMatch?' selected':''}>${_escHtml(c)}</option>`).join('')}
+             </select>`
+          : `<input class="cad-ci cad-ci-sm" data-f="desc_cor" data-i="${i}" value="${_escHtml(corMatch)}" style="width:90px">`;
+        const sameCorOrig = !origCor || corMatch.toUpperCase() === origCor.toUpperCase();
+        tds[5].innerHTML = _cadSugCell(corInput, sameCorOrig ? '' : origCor, corMatch);
+        tds[5].querySelector('select,input')?.addEventListener('change', e => { p.desc_cor = e.target.value; });
+      }
+
+      // ── NCM do catálogo ──
+      if (m.catalogNcm) {
+        p._ncm = m.catalogNcm;
+        if (tds[9]) tds[9].innerHTML = _cadMkNcmSel(m.catalogNcm, i);
+      }
+
+      // ── Re-bind inputs novos ──
+      tds[2]?.querySelector('input')?.addEventListener('change', e => { p._ref_final = e.target.value; });
+
+      // ── Destaque amarelo se houver algum campo com ⚠ ──
+      tr.classList.toggle('cad-row-warn', !!tr.querySelector('.cad-col-warn'));
+    });
+
+    // ── Limpa tamanho formato "QTD/TAM" em todos os produtos ──
+    _cad.products.forEach((p, i) => {
+      const cleaned = _cadCleanTamanho(p.desc_tamanho || '');
+      if (cleaned !== p.desc_tamanho) {
+        p.desc_tamanho = cleaned;
+        const tr = sec.querySelector(`tr[data-idx="${i}"]`);
+        if (tr) {
+          const inp = tr.querySelectorAll('td')[6]?.querySelector('input');
+          if (inp) inp.value = cleaned;
+        }
+      }
+    });
+
+    // Atualiza contadores
+    const newC  = _cad.products.filter(p => !p._microvixExists).length;
+    const exiC  = _cad.products.filter(p =>  p._microvixExists).length;
+    const cntEl = sec.querySelector('.cad-count-new');  if (cntEl) cntEl.textContent = `${newC} novos`;
+    const cntEx = sec.querySelector('.cad-count-exists'); if (cntEx) cntEx.textContent = `${exiC} já cadastrados`;
+
+    toast(`IA concluída — ${matchCount} matches encontrados de ${matches.length} produtos`);
+    _cadUpdateExportActionsAfterAi(sec);
+  } catch (e) {
+    toast('Erro IA: ' + e.message, true);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '✦ Sugerir Match com IA';
+  }
+}
+
+function _cadUpdateExportActionsAfterAi(sec) {
+  const newProds      = _cad.products.filter(p => !p._microvixExists);
+  const existingProds = _cad.products.filter(p =>  p._microvixExists);
+  const newCount      = newProds.length;
+  const existingCount = existingProds.length;
+
+  const exportRows = newProds.map(p => ({
+    referencia:   p._ref_final  || p.referencia || '',
+    nome:         p._desc_final || p.nome       || '',
+    cod_barra:    p.cod_barra   || '',
+    desc_marca:   p.desc_marca  || '',
+    desc_setor:   p.desc_setor  || '',
+    linha:        p.linha       || '',
+    desc_cor:     p.desc_cor    || '',
+    desc_tamanho: p.desc_tamanho || '',
+    preco_custo:  p._custo      || '',
+    preco_venda:  p._preco      || '',
+    ncm:          p._ncm        || '',
+    markup:       _cad.priceMode === 'markup' ? String(_cad.markup) : '',
+  }));
+
+  const actEl = sec.querySelector('.cad-prod-actions');
+  actEl.innerHTML = `
+    <div class="cad-summary-row" style="margin:0;flex:1">
+      <div class="cad-summary-card cad-summary-new" style="padding:.4rem .8rem;min-width:70px">
+        <span class="cad-summary-num">${newCount}</span><span class="cad-summary-lbl">novos</span>
+      </div>
+      <div class="cad-summary-card cad-summary-exists" style="padding:.4rem .8rem;min-width:70px">
+        <span class="cad-summary-num">${existingCount}</span><span class="cad-summary-lbl">já no Microvix</span>
+      </div>
+    </div>
+    <div style="display:flex;gap:.4rem;align-items:center">
+      <button class="trans-calc-btn" id="cadRecheckBtn" style="background:transparent;border:1px solid rgba(88,166,255,.3);color:var(--muted);padding:.28rem .6rem">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      </button>
+      <button class="trans-calc-btn" id="cadAiMatchBtn" style="background:#3a1f6e;border-color:#6e40c9">✦ Sugerir Match com IA</button>
+      ${newCount > 0
+        ? `<button class="trans-calc-btn" id="cadExportBtn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 16 12 21 17 16"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
+            Baixar cadastro Microvix (${newCount} produtos)
+          </button>`
+        : `<span style="color:#3FB950;font-size:.8rem">✓ Todos já estão no Microvix</span>`}
+    </div>`;
+
+  const eb = actEl.querySelector('#cadExportBtn');
+  if (eb) eb.addEventListener('click', () => _cadExport(eb, exportRows));
+  const rb = actEl.querySelector('#cadRecheckBtn');
+  if (rb) rb.addEventListener('click', () => _cadCheckAndExport(sec));
+  const ab = actEl.querySelector('#cadAiMatchBtn');
+  if (ab) ab.addEventListener('click', () => _cadAiMatch(sec));
 }
 
 function _cadUpdateExportActions(sec) {
@@ -3156,6 +3517,7 @@ function _cadUpdateExportActions(sec) {
       <button class="trans-calc-btn" id="cadRecheckBtn" style="background:transparent;border:1px solid rgba(88,166,255,.3);color:var(--muted);padding:.28rem .6rem">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </button>
+      <button class="trans-calc-btn" id="cadAiMatchBtn" style="background:#3a1f6e;border-color:#6e40c9">✦ Sugerir Match com IA</button>
       ${newCount > 0
         ? `<button class="trans-calc-btn" id="cadExportBtn">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 16 12 21 17 16"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
@@ -3168,6 +3530,8 @@ function _cadUpdateExportActions(sec) {
   if (eb) eb.addEventListener('click', () => _cadExport(eb, exportRows));
   const rb = actEl.querySelector('#cadRecheckBtn');
   if (rb) rb.addEventListener('click', () => _cadCheckAndExport(sec));
+  const ab = actEl.querySelector('#cadAiMatchBtn');
+  if (ab) ab.addEventListener('click', () => _cadAiMatch(sec));
 }
 
 async function _cadExport(btn, rows) {
@@ -5654,15 +6018,20 @@ async function loadCaixaConf() {
   buscarBtn.disabled = true;
   try {
     const data = await apiFetch('GET', `/api/conferencia-caixa?board=${board}&date=${date}`);
-    renderCaixaConf(body, data);
+    const totalDiario = S.employees
+      .filter(e => e.board === board && isVend(e))
+      .reduce((s, e) => s + ((S.vsales[e.id]?.entries?.[date]?.value) || 0), 0);
+    renderCaixaConf(body, data, totalDiario);
   } catch (e) {
     body.innerHTML = `<div class="trans-error">Erro: ${e.message}</div>`;
   } finally { buscarBtn.disabled = false; }
 }
 
-function renderCaixaConf(body, data) {
-  const { totalVendas, vendedores, formasPagamento, totalSangria } = data;
+function renderCaixaConf(body, data, totalDiario = 0) {
+  const { vendedores, formasPagamento, totalSangria } = data;
   const fR = v => 'R$ ' + (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const totalGeral     = formasPagamento.reduce((s, f) => s + f.total, 0);
+  const totalVendedores = vendedores.reduce((s, v) => s + v.total, 0);
 
   const empByMxCod = {};
   for (const e of (S.employees || [])) {
@@ -5689,7 +6058,7 @@ function renderCaixaConf(body, data) {
   const saldoCaixa    = totalDinheiro - totalSangria;
 
   function formaRowHtml(f) {
-    const pct     = totalVendas > 0 ? (f.total / totalVendas * 100).toFixed(0) : 0;
+    const pct     = totalGeral > 0 ? (f.total / totalGeral * 100).toFixed(0) : 0;
     const drillId = nextDrillId();
     const hasBands = f.bandeiras?.some(b => b.bandeira);
     let innerHtml;
@@ -5733,7 +6102,7 @@ function renderCaixaConf(body, data) {
   const vendHtml = vendedores.length
     ? vendedores.map(v => {
         const nome = empByMxCod[v.cod] || v.nome || `Vendedor ${v.cod}`;
-        const pct  = totalVendas > 0 ? (v.total / totalVendas * 100).toFixed(0) : 0;
+        const pct  = totalGeral > 0 ? (v.total / totalGeral * 100).toFixed(0) : 0;
         const vId  = nextDrillId();
         const vRows = (v.vendas || []).map(s => ({ ...s, vendedor: s.forma }));
         return `<div class="cxconf-row cxconf-row--clickable" data-cxtgt="${vId}">
@@ -5745,9 +6114,29 @@ function renderCaixaConf(body, data) {
           </div>
         </div>
         <div class="cxconf-drill-wrap hidden" id="${vId}">${vendasTableHtml(vRows, 'Forma de Pag.')}</div>`;
-      }).join('') + `<div class="cxconf-divider"></div>
-        <div class="cxconf-row cxconf-row--total"><span class="cxconf-label">Total</span><span class="cxconf-val">${fR(totalVendas)}</span></div>`
+      }).join('')
     : '<div class="cxconf-empty">Nenhuma venda registrada</div>';
+
+  const TOL = 0.05;
+  function validRowHtml(label, val, base) {
+    const noData = val === 0 && label === 'Faturamento Diário';
+    const diff   = Math.abs(val - base);
+    const ok     = !noData && diff <= TOL;
+    const warn   = !noData && diff > TOL;
+    const cls    = noData ? 'cxconf-valid--info' : ok ? 'cxconf-valid--ok' : 'cxconf-valid--warn';
+    const icon   = noData
+      ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>`
+      : ok
+      ? `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>`
+      : `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
+    const diffTag = warn ? `<span class="cxconf-valid-diff">dif. ${fR(diff)}</span>` : '';
+    const valStr  = noData ? '<span style="color:var(--muted);font-size:.72rem">Não disponível</span>' : `<span class="cxconf-valid-val">${fR(val)}</span>`;
+    return `<div class="cxconf-valid-row ${cls}">
+      <span class="cxconf-valid-icon">${icon}</span>
+      <span class="cxconf-valid-label">${label}</span>
+      ${valStr}${diffTag}
+    </div>`;
+  }
 
   body.innerHTML = `
     <div class="cxconf-grid">
@@ -5763,6 +6152,20 @@ function renderCaixaConf(body, data) {
           ${vendHtml}
         </div>
       </div>
+    </div>
+    <div class="cxconf-total-bar">
+      <span class="cxconf-total-bar-label">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" style="flex-shrink:0">
+          <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/>
+        </svg>
+        Total Faturamento
+      </span>
+      <span class="cxconf-total-bar-val">${fR(totalGeral)}</span>
+    </div>
+    <div class="cxconf-validation">
+      ${validRowHtml('Formas de Pagamento', totalGeral, totalGeral)}
+      ${validRowHtml('Por Vendedor', totalVendedores, totalGeral)}
+      ${validRowHtml('Faturamento Diário', totalDiario, totalGeral)}
     </div>`;
 
   body.querySelectorAll('.cxconf-row--clickable').forEach(row => {
@@ -7937,6 +8340,81 @@ function renderContratoCard(container) {
 
   card.querySelector('#contratoCardBody').innerHTML =
     isAdmin ? buildRowsAll() : buildRows(userBoard);
+}
+
+function renderConferenciaStatusCard(container) {
+  const isAdmin      = userIsAdmin(S.user);
+  const isSupervisor = !S.user?.board && !isAdmin;
+  const isEscritorio = S.user?.board === 'escritorio';
+  if (!isAdmin && !isEscritorio && !isSupervisor) return;
+
+  const allConf = NF_STORES.filter(b => b !== 'site');
+  const CONF_STORES = isSupervisor
+    ? allConf.filter(b => (S.user?.lojas || []).includes(b))
+    : allConf;
+
+  const card = document.createElement('div');
+  card.className  = 'main-card';
+  card.dataset.cardId = 'card-conf-status';
+  card.innerHTML = `
+    <div class="main-card-hdr">
+      <span class="main-card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <polyline points="9 11 12 14 22 4"/>
+          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+        </svg>
+        Conferência de Caixa
+      </span>
+      <span class="main-card-sub">${MONTHS_PT[S.month-1]} ${S.year}</span>
+    </div>
+    <div class="main-card-body" id="confStatusBody"></div>`;
+  container.appendChild(card);
+
+  const body = card.querySelector('#confStatusBody');
+  body.innerHTML = '<div style="padding:.75rem .85rem;color:var(--muted);font-size:.78rem">Carregando…</div>';
+
+  const monthStr = `${S.year}-${String(S.month).padStart(2,'0')}`;
+  apiFetch('GET', `/api/caixa-resumo?month=${monthStr}`)
+    .catch(() => ({ stores: {} }))
+  .then(({ stores = {} }) => {
+    const chips = CONF_STORES.map(b => {
+      const { fechados = 0, abertos = 0 } = stores[b] || {};
+      const daysElapsed = fechados + abertos;
+      const emAberto = abertos;
+      const pct      = daysElapsed > 0 ? Math.round(fechados / daysElapsed * 100) : 0;
+      const color    = BOARDS[b]?.color || '#8B949E';
+      const label    = BOARDS[b]?.label || b;
+      return `
+        <div style="
+          background:var(--surface2);
+          border:1px solid var(--border);
+          border-radius:.5rem;
+          padding:.6rem .7rem .55rem;
+          display:flex;flex-direction:column;gap:.35rem;
+          min-width:0;flex:1 1 calc(33% - .5rem);
+        ">
+          <div style="font-size:.7rem;font-weight:700;color:${color};
+            white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+            letter-spacing:.02em">${label}</div>
+          <div style="display:flex;gap:.3rem;align-items:flex-end">
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:.1rem;min-width:0">
+              <span style="font-size:1.35rem;font-weight:700;color:#3FB950;line-height:1">${fechados}</span>
+              <span style="font-size:.56rem;font-weight:600;color:var(--muted);letter-spacing:.04em;white-space:nowrap">FECH.</span>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:.1rem;min-width:0">
+              <span style="font-size:1.35rem;font-weight:700;color:#F85149;line-height:1">${emAberto}</span>
+              <span style="font-size:.56rem;font-weight:600;color:var(--muted);letter-spacing:.04em;white-space:nowrap">ABERTO</span>
+            </div>
+          </div>
+          <div style="font-size:.68rem;color:var(--muted)">${fechados} de ${daysElapsed} dias · ${pct}%</div>
+          <div style="height:3px;background:var(--border);border-radius:2px;overflow:hidden">
+            <div style="height:100%;width:${pct}%;background:${color};border-radius:2px;transition:width .4s"></div>
+          </div>
+        </div>`;
+    }).join('');
+
+    body.innerHTML = `<div style="display:flex;flex-wrap:wrap;gap:.5rem;padding:.65rem .7rem">${chips}</div>`;
+  });
 }
 
 function renderCaixaCard(container) {

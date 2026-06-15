@@ -31,7 +31,7 @@ ${paramXml}
 </LinxMicrovix>`;
 }
 
-function postRequest(body, timeoutMs = 60_000) {
+function postRequest(body, timeoutMs = 45_000) {
   return new Promise((resolve, reject) => {
     const buf = Buffer.from(body, 'utf-8');
     const opts = {
@@ -43,13 +43,15 @@ function postRequest(body, timeoutMs = 60_000) {
         'Content-Length': buf.length,
       },
     };
+    // Timer absoluto: garante que a promise rejeita mesmo se o servidor
+    // responde lentamente (req.setTimeout só dispara em inatividade)
+    const timer = setTimeout(() => { req.destroy(); reject(new Error('Microvix timeout')); }, timeoutMs);
     const req = https.request(opts, res => {
       const chunks = [];
       res.on('data', c => chunks.push(c));
-      res.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+      res.on('end', () => { clearTimeout(timer); resolve(Buffer.concat(chunks).toString('utf-8')); });
     });
-    req.on('error', reject);
-    req.setTimeout(timeoutMs, () => { req.destroy(); reject(new Error('Microvix timeout')); });
+    req.on('error', e => { clearTimeout(timer); reject(e); });
     req.write(buf);
     req.end();
   });
@@ -403,40 +405,33 @@ async function fetchLinxPlanosBandeiras(cnpj, chave) {
 // Fetch LinxProdutosPromocoes → produtos em promoção por loja
 // Tenta variações de parâmetros: primeiro só promocao_ativa, depois com datas amplas
 async function fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave) {
-  const hoje = new Date().toISOString().slice(0, 10);
-  const fim  = dtFin || hoje;
-
-  // Variações a tentar, da mais simples para a mais restritiva
-  const tentativas = [
-    // 1. Só ativa, sem datas
-    [{ id: 'promocao_ativa', valor: 'S' }],
-    // 2. Ativa, datas de cadastro amplas, vigência = hoje
-    [
+  // data_vig_inicial/data_vig_fim filtram pelo intervalo da promoção em si,
+  // não pela data de consulta — usar range amplo e filtrar no cliente.
+  // Pagina via timestamp igual ao catálogo (limite de 5000 linhas por página).
+  const allRows = [];
+  let ts = 0;
+  for (let page = 0; page < 20; page++) {
+    const params = [
+      { id: 'timestamp',       valor: String(ts) },
       { id: 'data_cad_inicial', valor: '2000-01-01' },
-      { id: 'data_cad_fim',     valor: hoje },
-      { id: 'data_vig_inicial', valor: hoje },
-      { id: 'data_vig_fim',     valor: hoje },
+      { id: 'data_cad_fim',     valor: '2099-12-31' },
+      { id: 'data_vig_inicial', valor: '2000-01-01' },
+      { id: 'data_vig_fim',     valor: '2050-12-31' },
       { id: 'promocao_ativa',   valor: 'S' },
-    ],
-    // 3. Ativa, datas de vigência cobrindo o período pedido
-    [
-      { id: 'data_cad_inicial', valor: '2000-01-01' },
-      { id: 'data_cad_fim',     valor: fim },
-      { id: 'data_vig_inicial', valor: dtIni || hoje },
-      { id: 'data_vig_fim',     valor: fim },
-      { id: 'promocao_ativa',   valor: 'S' },
-    ],
-  ];
-
-  for (const params of tentativas) {
+    ];
     const body = buildRequest('LinxProdutosPromocoes', cnpj, params, chave);
-    const raw  = await postRequest(body);
-    if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) continue;
+    let raw;
+    try { raw = await postRequest(body); } catch (e) { break; }
+    if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) break;
     const rows = parseCsv(raw);
-    if (rows.length && (rows[0].Sucesso === 'False' || 'Mensagens' in rows[0])) continue;
-    if (rows.length > 0) return rows;
+    if (!rows.length || rows[0].Sucesso === 'False' || 'Mensagens' in rows[0]) break;
+    allRows.push(...rows);
+    if (rows.length < 5000) break;
+    const maxTs = Math.max(...rows.map(r => parseInt(r.timestamp) || 0));
+    if (maxTs <= ts) break;
+    ts = maxTs;
   }
-  return [];
+  return allRows;
 }
 
 // Fetch LinxAcoesPromocionais → catálogo de ações promocionais cadastradas

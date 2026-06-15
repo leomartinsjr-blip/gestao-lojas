@@ -17,6 +17,71 @@
 
   fetch('/api/me').then(r=>r.json()).then(u => { $('userLabel').textContent = u.label||u.username||''; }).catch(()=>{});
 
+  // ── Catálogo: status + rebuild manual ────────────────────────────────────
+  (function() {
+    const btn   = $('btnCatalogWarm');
+    const label = $('catalogWarmLabel');
+    const icon  = $('catalogWarmIcon');
+    if (!btn) return;
+
+    let polling = null;
+    let _lastData = null;
+
+    function setSpinning(on) {
+      icon.style.animation = on ? 'spin 1s linear infinite' : '';
+    }
+
+    function showStatus(data) {
+      _lastData = data;
+      if (data.building) {
+        label.textContent = `Atualizando… ${data.buildingForSec || 0}s`;
+        btn.style.borderColor = 'var(--cf-primary)';
+        btn.style.color = 'var(--cf-primary)';
+        btn.title = 'Catálogo sendo reconstruído';
+        setSpinning(true);
+        if (!polling) polling = setInterval(fetchStatus, 3000);
+      } else if (data.cached && data.size > 0) {
+        label.textContent = `Catálogo: ${data.size.toLocaleString('pt-BR')} itens`;
+        btn.style.borderColor = 'var(--cf-green)';
+        btn.style.color = 'var(--cf-green)';
+        btn.title = 'Catálogo carregado — clique para forçar atualização';
+        setSpinning(false);
+        clearInterval(polling); polling = null;
+      } else {
+        label.textContent = 'Catálogo vazio — clique para carregar';
+        btn.style.borderColor = 'var(--cf-alert)';
+        btn.style.color = 'var(--cf-alert)';
+        btn.title = 'Catálogo não carregado — clique para iniciar';
+        setSpinning(false);
+        clearInterval(polling); polling = null;
+      }
+    }
+
+    function fetchStatus() {
+      fetch('/api/catalog-status').then(r => r.ok ? r.json() : null).then(d => { if (d) showStatus(d); }).catch(() => {});
+    }
+
+    btn.addEventListener('click', () => {
+      // Se já está carregando, não faz nada
+      if (_lastData?.building) return;
+      // Se catálogo está ok e clicou sem intenção de forçar, ignora
+      if (_lastData?.cached && _lastData?.size > 0) {
+        if (!confirm('Catálogo já carregado. Forçar atualização?')) return;
+      }
+      label.textContent = 'Iniciando…';
+      btn.style.borderColor = 'var(--cf-primary)';
+      btn.style.color = 'var(--cf-primary)';
+      setSpinning(true);
+      fetch('/api/catalog-warm')
+        .then(r => r.json())
+        .then(d => { if (d.ok) { _lastData = { building: true }; fetchStatus(); } })
+        .catch(() => { label.textContent = 'Erro'; setSpinning(false); });
+    });
+
+    // Apenas exibe o status atual — não aciona rebuild
+    fetchStatus();
+  })();
+
   // ── Tabs ──────────────────────────────────────────────────────────────────
   document.querySelectorAll('.cf-tab').forEach(btn => btn.addEventListener('click', () => {
     document.querySelectorAll('.cf-tab').forEach(b=>b.classList.remove('active'));
@@ -39,10 +104,7 @@
     $('cBoard').appendChild(o);
   });
 
-  // Ao selecionar "all" no vBoard, ativa automaticamente filtro de alertas
-  $('vBoard').addEventListener('change', () => {
-    if ($('vBoard').value === 'all') _filtroAlerta = true;
-  });
+  $('vBoard').addEventListener('change', () => { /* sem filtro automático */ });
 
   const hoje = new Date().toISOString().slice(0,10);
   const ini  = hoje.slice(0,8)+'01';
@@ -217,7 +279,10 @@
   // ════════════════════════════════════════════════════════════════════════
   // VENDAS
   // ════════════════════════════════════════════════════════════════════════
-  let _data = null, _grupo = 'lista', _filtroAlerta = false, _revisoesMap = {};
+  let _data = null, _grupo = 'lista', _revisoesMap = {}, _filtroSoAlertas = false;
+  // Expõe para diagnóstico no F12: window._cfDebug.data, window._cfDebug.board, etc.
+  window._cfDebug = { get data() { return _data; }, get board() { return typeof _rotinaBoard !== 'undefined' ? _rotinaBoard : null; }, get date() { return typeof _rotinaDate !== 'undefined' ? _rotinaDate : null; } };
+  window._cfDebugDoc = async (doc) => { const r = await fetch(`/api/conferencia/debug-doc?board=${window._cfDebug.board}&date=${window._cfDebug.date}&doc=${doc}`); const j = await r.json(); console.table(j.formas); console.log('valorTotal:', j.valorTotal, 'sumFormas:', j.sumFormas, 'gap:', j.gap); return j; };
   let _rotinaStatus = null, _rotinaBoard = null, _rotinaDate = null;
 
   $('vBuscarBtn').addEventListener('click', buscarVendas);
@@ -258,6 +323,7 @@
         _rotinaStatus = null; _rotinaBoard = null; _rotinaDate = null;
       }
       _redeRows = null; _redeRowsSource = null; _redeRowsServerInfo = null;
+      _confirmacoesManual = {}; _saldoReserva = {};
       render(_data);
     } catch(e) {
       $('vResult').innerHTML = `<div class="cf-empty" style="color:${P('alert')}">⚠ ${esc(e.message)}</div>`;
@@ -300,8 +366,8 @@
       ${kpiCard('blue',  svgMoney(), fmtR(totalVendas), 'Total Líquido', '', '')}
       ${kpiCard('amber', svgTag(), fmtR(totalDesc), 'Total Descontos', percDesc + '% sobre bruto', 'desc', comDesc + ' vendas')}
       ${totalAlertas
-        ? kpiCard('red', svgAlert(), totalAlertas, 'Com Alertas', 'Clique para filtrar', 'alerta', _filtroAlerta ? '● ativo' : '')
-        : kpiCard('muted', svgCheck(), qtdVendas - (vendas.filter(v=>v.alertas?.length).length), 'Sem Alertas', '100% em conformidade', '')}
+        ? `<div id="kpiAlertasCard" style="cursor:pointer" title="Clique para filtrar só alertas">${kpiCard('red', svgAlert(), totalAlertas, 'Com Alertas', _filtroSoAlertas ? '🔍 Filtro ativo — clique para limpar' : 'Clique para ver só alertas', 'alerta', '')}</div>`
+        : kpiCard('muted', svgCheck(), qtdVendas, 'Sem Alertas', '100% em conformidade', '')}
       <div class="kpi-card kpi-bk-card kpi-blue">
         <div class="kpi-top"><div class="kpi-lbl">Formas de Pagamento</div><div class="kpi-icon blue"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="4" width="22" height="16" rx="2"/><line x1="1" y1="10" x2="23" y2="10"/></svg></div></div>
         <div class="kpi-bk-list">${formaRows || '<span style="color:var(--cf-muted);font-size:11px">—</span>'}</div>
@@ -312,14 +378,13 @@
       </div>`;
     kpiRow.style.display = 'grid';
 
-    if (totalAlertas) {
-      const cardAlerta = kpiRow.querySelector('.kpi-alerta');
-      if (cardAlerta) {
-        if (_filtroAlerta) cardAlerta.classList.add('active-filter');
-        cardAlerta.classList.add('clickable');
-        cardAlerta.addEventListener('click', () => { _filtroAlerta = !_filtroAlerta; render(_data); });
-      }
-    }
+    // KPI alertas: clique filtra a lista
+    const kpiAlertasCard = $('kpiAlertasCard');
+    if (kpiAlertasCard) kpiAlertasCard.addEventListener('click', () => {
+      _filtroSoAlertas = !_filtroSoAlertas;
+      render(_data);
+      if (_filtroSoAlertas) $('vResult').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
 
     // ── Resumo de alertas por loja ─────────────────────────────────────────
     const alertRow = $('vAlertRow');
@@ -381,14 +446,15 @@
     if (_grupo === 'forma')    { el.innerHTML = renderGrupos(porForma,    totalVendas, 'blue');   bindDrills(el); return; }
     if (_grupo === 'vendedor') { el.innerHTML = renderGrupos(porVendedor, totalVendas, 'purple'); bindDrills(el); return; }
 
-    const base = _filtroAlerta ? vendas.filter(v => v.alertas && v.alertas.length > 0) : vendas;
+    // Filtro: só alertas
+    const vendasFiltradas = _filtroSoAlertas ? vendas.filter(v => v.alertas?.length) : vendas;
 
-    // Separa pendentes (sem revisão) de revisadas
-    const pendentes  = base.filter(v => !_revisoesMap[v.doc + '::' + (v.board || $('vBoard').value)]);
-    const revisadas  = base.filter(v =>  _revisoesMap[v.doc + '::' + (v.board || $('vBoard').value)]);
+    // Separa pendentes (sem revisão) de revisadas — mostra todas as vendas
+    const pendentes = vendasFiltradas.filter(v => !_revisoesMap[v.doc + '::' + (v.board || $('vBoard').value)]);
+    const revisadas = vendasFiltradas.filter(v =>  _revisoesMap[v.doc + '::' + (v.board || $('vBoard').value)]);
 
-    const hdr = _filtroAlerta
-      ? `${pendentes.length} pendente(s) com alerta <span style="color:${P('muted')};font-weight:400">de ${qtdVendas} total</span>`
+    const hdr = _filtroSoAlertas
+      ? `<span style="color:var(--cf-red)">${pendentes.length} venda(s) com alerta</span> <button id="btnLimparFiltro" style="font-size:10px;margin-left:8px;padding:2px 8px;border-radius:5px;border:1px solid var(--cf-border);background:transparent;color:var(--cf-muted);cursor:pointer">✕ limpar filtro</button>`
       : `${pendentes.length} de ${qtdVendas} vendas`;
 
     el.innerHTML = `
@@ -409,6 +475,9 @@
       </div>` : ''}`;
 
     bindDrills(el);
+
+    const btnLimpar = $('btnLimparFiltro');
+    if (btnLimpar) btnLimpar.onclick = () => { _filtroSoAlertas = false; render(_data); };
 
     // Toggle mostrar/ocultar revisadas
     const tog = $('revisadasToggle');
@@ -613,6 +682,11 @@
   let _redeRowsSource = null; // 'manual' | 'server'
   let _redeRowsServerInfo = null; // { uploadedBy, uploadedAt }
 
+  let _confirmacoesManual = {}; // { 'pix_direto': 200.00, 'cielo': 300.00, ... }
+  let _confManualSaveTimer = null;
+  let _saldoReserva = {}; // { 'crédito::visa': { valor, obs } }
+  let _saldoReservaSaveTimer = null;
+
   async function renderCartoesSection() {
     const el = $('vCartoesSection');
     if (!el) return;
@@ -635,6 +709,15 @@
       } catch(e) { /* server may not have data yet */ }
     }
 
+    // Auto-load confirmações manuais e saldo reserva
+    try {
+      const saved = await api('GET', `/api/conferencia/confirmacoes-manuais?board=${_rotinaBoard}&date=${_rotinaDate}`);
+      _confirmacoesManual = saved.entries || {};
+    } catch(e) { _confirmacoesManual = {}; }
+    try {
+      _saldoReserva = await api('GET', `/api/conferencia/saldo-reserva?board=${_rotinaBoard}`);
+    } catch(e) { _saldoReserva = {}; }
+
     const isDone = st.cartoesOk;
     const serverBadge = (_redeRowsSource === 'server' && _redeRowsServerInfo)
       ? `<span style="font-size:10px;color:var(--cf-muted);margin-left:6px">📅 extrato mensal • por ${_redeRowsServerInfo.uploadedBy||'?'}</span>`
@@ -653,9 +736,13 @@
             <div class="conc-summary">
               <span class="conc-file-info">📎 <strong>${_redeRows.length}</strong> transações${serverBadge}</span>
               <button id="concReimportar" style="font-size:11px;padding:3px 10px;border-radius:6px;border:1px solid var(--cf-border);color:var(--cf-muted);background:transparent;cursor:pointer;font-family:inherit">↩ Reimportar</button>
-              ${!isDone ? `<button id="concConfirmar" class="rotina-step-btn btn-ok" style="margin-left:auto" ${concAllOk() ? '' : 'disabled'}>✓ Confirmar Cartões</button>` : ''}
-              ${isDone  ? `<button id="concDesfazer" class="rotina-step-btn btn-undo" style="margin-left:auto">↩ Desfazer</button>` : ''}
-            </div>` : ''}
+              ${!isDone ? '<button id="concConfirmar" class="rotina-step-btn btn-ok" style="margin-left:auto" ' + (concAllOk() ? '' : 'disabled') + '>✓ Confirmar Cartões</button>' : ''}
+              ${isDone  ? '<button id="concDesfazer" class="rotina-step-btn btn-undo" style="margin-left:auto">↩ Desfazer</button>' : ''}
+            </div>
+            <div style="padding:4px 0 0">
+              <button id="concVerVendas" style="font-size:11px;padding:3px 10px;border-radius:6px;border:1px solid var(--cf-border);color:var(--cf-muted);background:transparent;cursor:pointer;font-family:inherit">🔍 Ver vendas</button>
+            </div>
+            <div id="concVerVendasPanel" style="display:none;margin-top:6px;border-top:1px solid var(--cf-border)"></div>` : ''}
         </div>
       </div>`;
 
@@ -678,6 +765,72 @@
     const reimp = el.querySelector('#concReimportar');
     if (reimp) reimp.onclick = () => { _redeRows = null; _redeRowsSource = null; _redeRowsServerInfo = null; renderCartoesSection(); };
 
+    el.querySelectorAll('.gap-toggle-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const target = document.getElementById(row.dataset.target);
+        if (target) target.style.display = target.style.display === 'none' ? '' : 'none';
+      });
+    });
+
+    // Inputs de confirmação manual
+    el.querySelectorAll('input[data-manual-key]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const key = inp.dataset.manualKey;
+        const val = parseFloat(inp.value) || 0;
+        _confirmacoesManual[key] = val;
+
+        // Atualiza o diff ao lado do campo imediatamente
+        const row = inp.closest('tr');
+        if (row) {
+          const manualRows = buildManualRows();
+          const rowDef = manualRows.find(r => r.key === key);
+          if (rowDef) {
+            const diff = +(val - rowDef.valor).toFixed(2);
+            const ok   = Math.abs(diff) <= 0.10;
+            row.className = ok ? 'ok' : 'nok';
+            const diffSpan = row.querySelector('[data-diff-span]') || row.querySelector('td:last-child span');
+            if (diffSpan) {
+              if (val === 0) { diffSpan.style.color = 'var(--cf-alert)'; diffSpan.textContent = 'pendente'; }
+              else if (ok) { diffSpan.style.color = 'var(--cf-green)'; diffSpan.innerHTML = '&#10003;'; }
+              else { diffSpan.style.color = 'var(--cf-alert)'; diffSpan.textContent = (diff > 0 ? '+' : '') + fmtR(diff); }
+            }
+          }
+        }
+
+        // Habilita/desabilita botão confirmar
+        const confBtn = el.querySelector('#concConfirmar');
+        if (confBtn) confBtn.disabled = !concAllOk();
+
+        // Salva no servidor com debounce
+        clearTimeout(_confManualSaveTimer);
+        _confManualSaveTimer = setTimeout(async () => {
+          try {
+            await api('POST', '/api/conferencia/confirmacoes-manuais', { board: _rotinaBoard, date: _rotinaDate, entries: _confirmacoesManual });
+          } catch(e) { console.warn('Erro ao salvar confirmações manuais:', e.message); }
+        }, 800);
+      });
+    });
+
+    // Inputs de saldo reserva
+    el.querySelectorAll('input[data-reserva-key]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const key   = inp.dataset.reservaKey;
+        const mod   = inp.dataset.reservaMod;
+        const band  = inp.dataset.reservaBand;
+        const val   = parseFloat(inp.value) || 0;
+        if (val > 0) _saldoReserva[key] = { valor: val, obs: '' };
+        else delete _saldoReserva[key];
+        const confBtn = el.querySelector('#concConfirmar');
+        if (confBtn) confBtn.disabled = !concAllOk();
+        clearTimeout(_saldoReservaSaveTimer);
+        _saldoReservaSaveTimer = setTimeout(async () => {
+          try {
+            await api('POST', '/api/conferencia/saldo-reserva', { board: _rotinaBoard, mod, bandeira: band, valor: val });
+          } catch(e) { console.warn('Erro ao salvar saldo reserva:', e.message); }
+        }, 800);
+      });
+    });
+
     const conf = el.querySelector('#concConfirmar');
     if (conf) conf.onclick = async () => {
       conf.disabled = true; conf.textContent = '…';
@@ -694,6 +847,68 @@
       _rotinaStatus = res.status;
       renderRotina(_data);
     };
+
+    // Botão "ver vendas" para diagnóstico de gap
+    const verVendasBtn = el.querySelector('#concVerVendas');
+    if (verVendasBtn) {
+      verVendasBtn.onclick = () => {
+        const panel = el.querySelector('#concVerVendasPanel');
+        if (!panel) return;
+        if (panel.style.display !== 'none') { panel.style.display = 'none'; verVendasBtn.textContent = '🔍 Ver vendas'; return; }
+        const vendas = _data?.vendas || [];
+        const totalVendas = _data?.totalVendas || 0;
+        const sumPorForma = (_data?.porForma || []).reduce(function(s, f) { return s + f.total; }, 0);
+        let html = '<table style="width:100%;border-collapse:collapse;font-size:11.5px">';
+        html += '<thead><tr style="background:var(--cf-card2);font-size:10px;color:var(--cf-muted)">';
+        html += '<th style="text-align:left;padding:3px 8px">Doc</th>';
+        html += '<th style="text-align:left;padding:3px 8px">Vendedor</th>';
+        html += '<th style="text-align:left;padding:3px 8px">Hora</th>';
+        html += '<th style="text-align:right;padding:3px 8px">Total venda</th>';
+        html += '<th style="text-align:right;padding:3px 8px">∑ formas</th>';
+        html += '<th style="text-align:right;padding:3px 8px">Diff</th>';
+        html += '<th style="text-align:left;padding:3px 8px">Formas</th>';
+        html += '</tr></thead><tbody>';
+        for (var i = 0; i < vendas.length; i++) {
+          var v = vendas[i];
+          var sumF = 0;
+          var formasDesc = '';
+          var formasParts = [];
+          if (v.formas) {
+            for (var j = 0; j < v.formas.length; j++) {
+              sumF += v.formas[j].valor || 0;
+              var fp = (v.formas[j].forma || '?');
+              if (v.formas[j].bandeira) fp += ' ' + v.formas[j].bandeira;
+              fp += ': ' + fmtR(v.formas[j].valor || 0);
+              formasParts.push(fp);
+            }
+          }
+          formasDesc = formasParts.join(' · ') || '—';
+          var diffV = v.valorTotal - sumF;
+          var hasDiff = Math.abs(diffV) > 0.01;
+          var rowStyle = hasDiff ? 'background:rgba(239,68,68,.08)' : '';
+          var diffColor = hasDiff ? 'var(--cf-alert)' : 'var(--cf-green)';
+          var diffText = hasDiff ? ((diffV > 0 ? '+' : '') + fmtR(diffV)) : '✓';
+          html += '<tr style="' + rowStyle + '">';
+          html += '<td style="font-family:monospace;color:var(--cf-muted);padding:3px 8px">' + esc(v.doc) + '</td>';
+          html += '<td style="padding:3px 8px">' + esc(v.vendedor || '—') + '</td>';
+          html += '<td style="color:var(--cf-muted);padding:3px 8px">' + (v.hora || '—') + '</td>';
+          html += '<td style="text-align:right;font-weight:700;padding:3px 8px">' + fmtR(v.valorTotal) + '</td>';
+          html += '<td style="text-align:right;padding:3px 8px">' + fmtR(sumF) + '</td>';
+          html += '<td style="text-align:right;font-weight:800;color:' + diffColor + ';padding:3px 8px">' + diffText + '</td>';
+          html += '<td style="font-size:10px;color:var(--cf-muted);padding:3px 8px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(formasDesc) + '">' + esc(formasDesc) + '</td>';
+          html += '</tr>';
+        }
+        html += '</tbody>';
+        html += '<tfoot><tr style="border-top:2px solid var(--cf-border);font-weight:700">';
+        html += '<td colspan="3" style="padding:3px 8px;color:var(--cf-muted);font-size:10px">totalVendas API: ' + fmtR(totalVendas) + ' · ∑ porForma: ' + fmtR(sumPorForma) + '</td>';
+        html += '<td style="text-align:right;padding:3px 8px">' + fmtR(vendas.reduce(function(s,v){return s+v.valorTotal;},0)) + '</td>';
+        html += '<td colspan="3" style="padding:3px 8px"></td>';
+        html += '</tr></tfoot></table>';
+        panel.innerHTML = html;
+        panel.style.display = '';
+        verVendasBtn.textContent = '🔍 Ocultar vendas';
+      };
+    }
   }
 
   function renderDropZone() {
@@ -804,10 +1019,22 @@
     const mx   = buildMicrovixAgrupado();
     const keys = new Set([...Object.keys(rede), ...Object.keys(mx)]);
     for (const k of keys) {
-      const diff = Math.abs((rede[k]?.total||0) - (mx[k]?.total||0));
+      const r = rede[k]?.total || 0;
+      const m = mx[k]?.total  || 0;
+      const reserva = _saldoReserva[k]?.valor || 0;
+      const diff = Math.abs(r - m - reserva);
       if (diff > 0.10) return false;
     }
-    return keys.size > 0;
+    if (!keys.size) return false;
+    // Verifica confirmações manuais (linha com valor=0 sem preenchimento = OK)
+    const manualRows = buildManualRows();
+    for (const row of manualRows) {
+      const confirmado = parseFloat(_confirmacoesManual[row.key] ?? '');
+      const preenchido = _confirmacoesManual[row.key] !== undefined && _confirmacoesManual[row.key] !== '';
+      if (row.valor <= 0.01 && !preenchido) continue; // R$0 sem preencher = OK
+      if (Math.abs(confirmado - row.valor) > 0.10) return false;
+    }
+    return true;
   }
 
   function buildOutrosAgrupado() {
@@ -820,10 +1047,44 @@
       if (/cart[aã]o\s+cr[eé]d/i.test(forma)) continue;
       if (/cart[aã]o\s+d[eé]b/i.test(forma))  continue;
       if (/pix/i.test(forma))                   continue;
-      // tudo que sobra: dinheiro, crediário, vale troca, etc.
-      outros.push({ label: f.label || f.forma, total: f.total });
+      // Dinheiro: sem confirmação manual (tem outra tela)
+      const isDinheiro = /dinheiro|esp[eé]cie/i.test(forma);
+      // Crediário/Vale troca: formas internas, sem confirmação manual
+      const isInterno  = /credi[aá]rio|vale\s*troc/i.test(forma);
+      outros.push({ label: f.label || f.forma, total: f.total, manualKey: (!isDinheiro && !isInterno) ? forma.replace(/\s+/g,'_').replace(/[^a-z0-9_]/g,'') : null });
     }
     return outros;
+  }
+
+  // Calcula linhas que precisam de confirmação manual
+  // Sempre inclui PIX Direto e Cielo — o usuário preenche o que recebeu (zero se não teve)
+  function buildManualRows() {
+    const rows = [];
+
+    // PIX direto = Microvix PIX − Rede PIX (pode ser 0 se todo PIX passou pela Rede)
+    const mx   = buildMicrovixAgrupado();
+    const rede = buildRedeAgrupado();
+    const mxPix   = Object.entries(mx).filter(([k]) => k.startsWith('pix::')).reduce((s,[,v]) => s + v.total, 0);
+    const redePix = Object.entries(rede).filter(([k]) => k.startsWith('pix::')).reduce((s,[,v]) => s + v.total, 0);
+    const pixDireto = Math.max(0, +(mxPix - redePix).toFixed(2));
+    rows.push({ key: 'pix_direto', label: 'PIX Direto (conta)', valor: pixDireto });
+
+    // Cielo: busca no Microvix ou mostra como R$0 para confirmação
+    const outros = buildOutrosAgrupado();
+    const cieloMx = outros.filter(o => /cielo/i.test(o.label));
+    if (cieloMx.length) {
+      for (const o of cieloMx) rows.push({ key: 'cielo', label: o.label, valor: o.total });
+    } else {
+      rows.push({ key: 'cielo', label: 'Cielo (link/portal)', valor: 0 });
+    }
+
+    // Demais formas externas (não Rede, não Dinheiro, não Cielo já adicionado)
+    for (const o of outros) {
+      if (o.manualKey && !/cielo/i.test(o.label)) {
+        rows.push({ key: o.manualKey, label: o.label, valor: o.total });
+      }
+    }
+    return rows;
   }
 
   function renderConcTable() {
@@ -843,22 +1104,68 @@
       const entry = rede[k] || mx[k];
       const onlyRede = !!rede[k] && !mx[k];
       const onlyMx   = !rede[k] && !!mx[k];
-      const rowCls   = onlyRede ? 'only-rede' : onlyMx ? 'only-microvix' : ok ? 'ok' : 'nok';
       const bandLabel = entry.bandeira || '—';
+      const reserva    = _saldoReserva[k]?.valor || 0;
+      const reservaObs = _saldoReserva[k]?.obs   || '';
+      const dComReserva = +(d - reserva).toFixed(2);
+      const okComReserva = Math.abs(dComReserva) <= 0.10;
+      const rowCls   = onlyRede ? 'only-rede' : onlyMx ? 'only-microvix' : okComReserva ? 'ok' : 'nok';
+
+      const panelId  = 'diff-panel-' + k.replace(/[^a-z0-9]/g,'_');
+      const lupaBtn  = !okComReserva
+        ? ` <button onclick="document.getElementById('${panelId}').style.display=document.getElementById('${panelId}').style.display==='none'?'':'none'" style="background:none;border:none;cursor:pointer;padding:0 2px;font-size:13px;opacity:.7;vertical-align:middle" title="Ver vendas com diferença">🔍</button>`
+        : '';
+      const diffPanel = !ok ? (() => {
+        const mxVendas = (_data?.vendas || []).filter(v => {
+          if (!v.formas?.length) return false;
+          return v.formas.some(f => {
+            const fm = (f.forma||'').toLowerCase();
+            const bnd = normBandeira(f.bandeira, entry.mod);
+            const fmod = /cart[aã]o\s+cr[eé]d/i.test(fm) ? 'crédito' : /cart[aã]o\s+d[eé]b/i.test(fm) ? 'débito' : /pix/i.test(fm) ? 'pix' : null;
+            return fmod === entry.mod && (entry.bandeira ? bnd === entry.bandeira : true);
+          });
+        });
+        if (!mxVendas.length) return `<tr id="${panelId}" style="display:none"><td colspan="5" style="padding:6px 12px;font-size:11px;color:var(--cf-muted)">Nenhuma venda encontrada para esta forma.</td></tr>`;
+        let rows2 = '<tr id="' + panelId + '" style="display:none;background:var(--cf-card2)"><td colspan="5" style="padding:4px 8px"><table style="width:100%;border-collapse:collapse;font-size:11px">';
+        rows2 += '<tr style="color:var(--cf-muted)"><th style="text-align:left;padding:2px 4px">Doc</th><th style="text-align:left;padding:2px 4px">Vendedor</th><th style="text-align:left;padding:2px 4px">Hora</th><th style="text-align:right;padding:2px 4px">Valor</th><th style="text-align:left;padding:2px 4px">Bandeira</th></tr>';
+        for (const v of mxVendas) {
+          for (const f of (v.formas||[])) {
+            const fm = (f.forma||'').toLowerCase();
+            const bnd = normBandeira(f.bandeira, entry.mod);
+            const fmod = /cart[aã]o\s+cr[eé]d/i.test(fm) ? 'crédito' : /cart[aã]o\s+d[eé]b/i.test(fm) ? 'débito' : /pix/i.test(fm) ? 'pix' : null;
+            if (fmod !== entry.mod) continue;
+            if (entry.bandeira && bnd !== entry.bandeira) continue;
+            rows2 += '<tr><td style="padding:2px 4px">' + esc(v.doc) + '</td><td style="padding:2px 4px">' + esc(v.vendedor||'') + '</td><td style="padding:2px 4px;color:var(--cf-muted)">' + esc(v.hora||'') + '</td><td style="padding:2px 4px;text-align:right">' + fmtR(f.valor||0) + '</td><td style="padding:2px 4px;color:var(--cf-muted)">' + esc(f.bandeira||'—') + '</td></tr>';
+          }
+        }
+        rows2 += '</table></td></tr>';
+        return rows2;
+      })() : '';
+      // Campo reserva: aparece quando Rede > Microvix (diff > 0)
+      const reservaField = d > 0.10 ? (
+        '<div style="margin-top:4px;display:flex;align-items:center;gap:4px">' +
+          '<span style="font-size:10px;color:var(--cf-muted)">reserva:</span>' +
+          '<input type="number" step="0.01" min="0" data-reserva-key="' + esc(k) + '" data-reserva-mod="' + esc(entry.mod) + '" data-reserva-band="' + esc(entry.bandeira||'') + '" value="' + (reserva > 0 ? reserva.toFixed(2) : '') + '" placeholder="0,00" title="' + esc(reservaObs) + '" style="width:80px;text-align:right;padding:2px 4px;border-radius:4px;border:1px solid var(--cf-border);background:var(--cf-input,var(--cf-card));color:inherit;font-size:11px;font-family:inherit">' +
+        '</div>'
+      ) : '';
+      const diffDisplay = okComReserva
+        ? '<span style="color:var(--cf-green)">✓' + (reserva > 0 ? ' <span style="font-size:10px;opacity:.7">(reserva)</span>' : '') + '</span>'
+        : (dComReserva > 0 ? '+' : '') + fmtR(dComReserva);
+
       return `<tr class="${rowCls}">
         <td style="text-transform:capitalize">${esc(entry.mod)}</td>
         <td>${esc(bandLabel)}</td>
         <td class="num">${r ? fmtR(r) : '<span style="color:var(--cf-muted)">—</span>'}</td>
         <td class="num">${m ? fmtR(m) : '<span style="color:var(--cf-muted)">—</span>'}</td>
-        <td class="num diff">${ok ? '<span style="color:var(--cf-green)">✓</span>' : (d > 0 ? '+' : '') + fmtR(d)}</td>
-      </tr>`;
+        <td class="num diff">${diffDisplay}${lupaBtn}${reservaField}</td>
+      </tr>${diffPanel}`;
     }).join('');
 
     const cartoesOk = Math.abs(totalDiff) <= 0.10;
 
     // Linhas de outras formas (só coluna Microvix, sem Rede)
     let totalOutros = 0;
-    const outrosRows = outros.map(o => {
+    const outrosRows = outros.filter(o => !o.manualKey).map(o => {
       totalOutros += o.total;
       return `<tr class="only-microvix">
         <td colspan="2" style="color:var(--cf-muted);font-style:italic">${esc(o.label)}</td>
@@ -868,10 +1175,68 @@
       </tr>`;
     }).join('');
 
+    // Linhas de confirmação manual (PIX direto, Cielo, etc.)
+    const manualRows = buildManualRows();
+    const manualRowsHtml = manualRows.map(row => {
+      totalOutros += row.valor;
+      const confirmado = parseFloat(_confirmacoesManual[row.key] || 0);
+      const diff = +(confirmado - row.valor).toFixed(2);
+      const ok   = Math.abs(diff) <= 0.10;
+      const semValor = row.valor <= 0.01;
+      const diffHtml = semValor && confirmado === 0
+        ? '<span style="color:var(--cf-green)">&#10003;</span>'
+        : confirmado === 0
+          ? '<span style="color:var(--cf-alert);font-size:11px">pendente</span>'
+          : ok
+            ? '<span style="color:var(--cf-green)">&#10003;</span>'
+            : '<span style="color:var(--cf-alert)">' + (diff > 0 ? '+' : '') + fmtR(diff) + '</span>';
+      const rowOk = ok || (semValor && confirmado === 0);
+      return `<tr class="` + (rowOk ? 'ok' : 'nok') + `" style="background:var(--cf-card2)">
+        <td colspan="2" style="font-style:italic;font-size:12px">` + esc(row.label) + ` <span style="font-size:10px;color:var(--cf-muted)">(confirmação manual)</span></td>
+        <td class="num" style="color:var(--cf-muted)">—</td>
+        <td class="num">` + fmtR(row.valor) + `</td>
+        <td class="num">
+          <input type="number" step="0.01" min="0"
+            data-manual-key="` + esc(row.key) + `"
+            value="` + (confirmado > 0 ? confirmado.toFixed(2) : '') + `"
+            placeholder="0,00"
+            style="width:90px;text-align:right;padding:2px 4px;border-radius:4px;border:1px solid var(--cf-border);background:var(--cf-input,var(--cf-card));color:inherit;font-size:12px;font-family:inherit">
+          ` + diffHtml + `
+        </td>
+      </tr>`;
+    }).join('');
+
     const totalMxGeral = totalMxCartoes + totalOutros;
     const totalVendas  = _data?.totalVendas || 0;
     const diffGeral    = totalMxGeral - totalVendas;
     const geralOk      = Math.abs(diffGeral) <= 0.10;
+    const gapDocs      = _data?.docsComGap || [];
+
+    // Monta HTML do diagnóstico de gap (colapsável)
+    const gapDebugId = `gap-debug-${Date.now()}`;
+    const gapDebugHtml = !geralOk && gapDocs.length ? `
+      <tr id="${gapDebugId}" style="display:none;background:var(--cf-card2)">
+        <td colspan="5" style="padding:.4rem .75rem">
+          <div style="font-size:11px;color:var(--cf-muted);margin-bottom:.3rem">
+            ${gapDocs.length} doc(s) com forma de pagamento incompleta no Microvix:
+          </div>
+          ${gapDocs.map(g => {
+            const formasHtml = (g.formas||[]).map(f => '<span style="background:var(--cf-card);border:1px solid var(--cf-border);border-radius:4px;padding:1px 5px;font-size:10px">' + esc(f.forma) + (f.bandeira && f.bandeira!=='—' ? ' '+esc(f.bandeira) : '') + ' <strong>' + fmtR(f.valor) + '</strong></span>').join(' ');
+            return `
+            <div style="padding:.25rem 0;border-bottom:1px solid var(--cf-border)">
+              <div style="display:flex;gap:.5rem;font-size:11.5px;flex-wrap:wrap;align-items:center">
+                <span style="color:var(--cf-muted);min-width:60px">Doc ${esc(g.doc)}</span>
+                <span style="min-width:80px">${esc(g.vendedor||'')}</span>
+                <span style="color:var(--cf-muted)">${g.hora||''}</span>
+                <span style="margin-left:auto">venda <strong>${fmtR(g.valorTotal)}</strong></span>
+                <span>formas <strong>${fmtR(g.sumFormas)}</strong></span>
+                <span style="color:var(--cf-alert)">gap <strong>${fmtR(g.gap)}</strong></span>
+              </div>
+              ${formasHtml ? '<div style="margin-top:3px;display:flex;gap:4px;flex-wrap:wrap">' + formasHtml + '</div>' : ''}
+            </div>`;
+          }).join('')}
+        </td>
+      </tr>` : '';
 
     return `
       <table class="conc-tbl">
@@ -895,16 +1260,18 @@
             </td>
           </tr>
           ${outrosRows}
-          <tr style="border-top:2px solid var(--cf-border);background:var(--cf-card2)">
+          ${manualRowsHtml}
+          <tr style="border-top:2px solid var(--cf-border);background:var(--cf-card2)${!geralOk && gapDocs.length ? ';cursor:pointer' : ''}" ${!geralOk && gapDocs.length ? `class="gap-toggle-row" data-target="${gapDebugId}"` : ''}>
             <td colspan="2" style="font-weight:800">Total Geral</td>
             <td class="num" style="color:var(--cf-muted)">—</td>
             <td class="num" style="font-weight:800">${fmtR(totalMxGeral)}</td>
             <td class="num diff" style="color:${geralOk ? 'var(--cf-green)' : 'var(--cf-alert)'};font-weight:800">
               ${geralOk
                 ? '✓ Bate com total líquido'
-                : (diffGeral > 0 ? '+' : '') + fmtR(diffGeral) + ' vs líquido'}
+                : `${(diffGeral > 0 ? '+' : '') + fmtR(diffGeral)} vs líquido${gapDocs.length ? ' <span style="font-size:10px;font-weight:400;opacity:.7">▼ ver docs</span>' : ''}`}
             </td>
           </tr>
+          ${gapDebugHtml}
         </tfoot>
       </table>`;
   }
@@ -1010,12 +1377,12 @@
           <th style="width:20px"></th>
         </tr></thead>
         <tbody>
-          ${vendas.map((v,i) => {
-            const did   = `dr-${i}-${Math.random().toString(36).slice(2,7)}`;
-            const acc   = accentClass(v);
-            const hasIt = v.itens?.length > 0;
+          ${vendas.map((v) => {
+            const acc    = accentClass(v);
+            const hasIt  = v.itens?.length > 0;
+            const board  = v.board || $('vBoard').value;
             return `
-            <tr class="sale-row"${hasIt ? ` data-drill="${did}"` : ''}>
+            <tr class="sale-row" style="cursor:pointer" data-drill="modal" data-docid="${esc(v.doc)}" data-board="${esc(board)}">
               <td class="accent-cell"><div class="accent-bar ${acc}"></div></td>
               <td style="font-weight:700">${fmtD(v.data)}</td>
               <td class="muted">${v.hora||'—'}</td>
@@ -1023,18 +1390,14 @@
               <td>${esc(v.vendedor||'—')}</td>
               <td><div class="pay-chips">${formaChips(v.formas)}</div></td>
               <td class="num">${v.desconto?.valor>0
-                ? `<span style="color:#DC2626;font-weight:700">${fmtR(v.desconto.valor)}</span><span class="disc-pct">${v.desconto.perc}%</span>`
-                : `<span style="color:${P('muted')}">—</span>`}</td>
+                ? '<span style="color:#DC2626;font-weight:700">' + fmtR(v.desconto.valor) + '</span><span class="disc-pct">' + v.desconto.perc + '%</span>'
+                : '<span style="color:' + P('muted') + '">—</span>'}</td>
               <td class="num" style="font-weight:800;color:${v.valorTotal<0?'var(--cf-alert)':'var(--cf-text)'}">${fmtR(v.valorTotal)}</td>
-              <td>
-                ${alertBadges(v.alertas)}
-                ${v.alertas?.length ? revisaoBtns(v) : ''}
-              </td>
+              <td>${alertBadges(v.alertas)}</td>
               <td style="color:${P('muted')}">
-                ${hasIt ? `<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>` : ''}
+                ${hasIt ? '<svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>' : ''}
               </td>
-            </tr>
-            ${hasIt ? `<tr class="drill-row hidden" id="${did}"><td colspan="10" style="padding:0">${drillItens(v)}</td></tr>` : ''}`;
+            </tr>`;
           }).join('')}
         </tbody>
       </table>`;
@@ -1141,6 +1504,61 @@
     }).join('');
   }
 
+  // ── Modal de detalhe da venda ────────────────────────────────────────────
+  function abrirModalVenda(docId, board) {
+    const venda = (_data?.vendas || []).find(v => v.doc === docId && (v.board === board || !v.board));
+    if (!venda) return;
+    const boardLabel = LOJA_LABEL[venda.board || board] || venda.board || board || '';
+    const rev = _revisoesMap[docId + '::' + (board || $('vBoard').value)];
+    const statusBadge = rev
+      ? (rev.status === 'conferida'
+          ? '<span style="background:#3FB95020;color:var(--cf-green);border:1px solid var(--cf-green);border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700">✅ Conferida</span>'
+          : '<span style="background:#ef444420;color:var(--cf-red);border:1px solid var(--cf-red);border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700">❌ Reprovada</span>')
+      : '';
+
+    const modal = document.createElement('div');
+    modal.id = 'vendaModal';
+    modal.style.cssText = 'position:fixed;inset:0;z-index:9000;background:#00000088;display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeInModal .15s ease';
+    modal.innerHTML =
+      '<div style="background:var(--cf-card);border:1px solid var(--cf-border);border-radius:14px;width:100%;max-width:860px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 64px #00000060">' +
+        '<div style="display:flex;align-items:center;gap:12px;padding:18px 22px;border-bottom:1px solid var(--cf-border);flex-shrink:0">' +
+          '<div style="flex:1">' +
+            '<div style="font-size:16px;font-weight:800;color:var(--cf-text)">Doc ' + esc(docId) + ' &nbsp;·&nbsp; ' + esc(venda.vendedor||'—') + '</div>' +
+            '<div style="font-size:12px;color:var(--cf-muted);margin-top:2px">' + esc(boardLabel) + ' &nbsp;·&nbsp; ' + fmtD(venda.data) + ' ' + (venda.hora||'') + ' &nbsp;·&nbsp; Total: <strong style="color:var(--cf-text)">' + fmtR(venda.valorTotal) + '</strong> &nbsp;' + statusBadge + '</div>' +
+          '</div>' +
+          '<button id="vendaModalClose" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--cf-muted);padding:4px 8px;border-radius:6px;line-height:1" title="Fechar">✕</button>' +
+        '</div>' +
+        '<div style="overflow-y:auto;padding:20px 22px;flex:1">' +
+          (venda.alertas?.length ? '<div style="background:#ef444410;border:1px solid #ef444440;border-radius:8px;padding:12px 16px;margin-bottom:16px">' +
+            '<div style="font-size:11px;font-weight:700;color:var(--cf-red);margin-bottom:6px">⚠ ALERTAS</div>' +
+            venda.alertas.map(a => '<div style="font-size:12px;color:var(--cf-text);padding:2px 0">• ' + esc(a.msg) + '</div>').join('') +
+          '</div>' : '') +
+          '<div style="margin-bottom:16px">' +
+            '<div style="font-size:11px;font-weight:700;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Formas de Pagamento</div>' +
+            '<div style="display:flex;gap:8px;flex-wrap:wrap">' + (venda.formas||[]).map(f => '<span style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:6px;padding:4px 12px;font-size:12px">' + esc(f.forma) + (f.bandeira ? ' · ' + esc(f.bandeira) : '') + ' <strong>' + fmtR(f.valor) + '</strong>' + (f.parcelas > 1 ? ' · ' + f.parcelas + 'x' : '') + '</span>').join('') + '</div>' +
+          '</div>' +
+          drillItens(venda) +
+          '<div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--cf-border)">' +
+            revisaoBtns(venda) +
+          '</div>' +
+        '</div>' +
+      '</div>';
+
+    document.body.appendChild(modal);
+    modal.querySelector('#vendaModalClose').onclick = fecharModalVenda;
+    modal.addEventListener('click', e => { if (e.target === modal) fecharModalVenda(); });
+    document.addEventListener('keydown', _onEscVenda);
+    bindDrills(modal);
+  }
+
+  function fecharModalVenda() {
+    const m = document.getElementById('vendaModal');
+    if (m) m.remove();
+    document.removeEventListener('keydown', _onEscVenda);
+    if (_modalCloseCallback) { _modalCloseCallback(); _modalCloseCallback = null; }
+  }
+  function _onEscVenda(e) { if (e.key === 'Escape') fecharModalVenda(); }
+
   function bindDrills(container) {
     container.querySelectorAll('.grupo-hdr:not([data-bound])').forEach(hdr => {
       hdr.dataset.bound = '1';
@@ -1155,7 +1573,11 @@
     container.querySelectorAll('tr[data-drill]:not([data-bound])').forEach(row => {
       row.dataset.bound = '1';
       row.addEventListener('click', e => {
-        if (e.target.closest('.revisao-btns')) return; // não abrir drill ao clicar em botões
+        if (e.target.closest('.revisao-btns')) return;
+        const docId = row.dataset.docid;
+        const board = row.dataset.board || $('vBoard').value;
+        if (docId) { abrirModalVenda(docId, board); return; }
+        // fallback: grupos (por vendedor/forma)
         const drill = document.getElementById(row.dataset.drill);
         if (!drill) return;
         const open = drill.classList.toggle('hidden');
@@ -1170,7 +1592,7 @@
     });
     container.querySelectorAll('.btn-reprovada:not([data-bound])').forEach(btn => {
       btn.dataset.bound = '1';
-      btn.addEventListener('click', e => { e.stopPropagation(); abrirModalReprovacao(btn.dataset.doc, btn.dataset.board); });
+      btn.addEventListener('click', e => { e.stopPropagation(); abrirModalReprovacao(btn.dataset.doc, btn.dataset.board, btn); });
     });
     // Botão voltar — remove revisão
     container.querySelectorAll('.btn-voltar:not([data-bound])').forEach(btn => {
@@ -1190,57 +1612,84 @@
 
   async function salvarRevisao(doc, board, status, obs, valorCobrar) {
     const venda = (_data?.vendas || []).find(v => v.doc === doc && (v.board === board || !v.board));
-    if (!venda) return;
     const body = {
       doc, board: board || $('vBoard').value,
-      data: venda.data,
+      data: venda?.data,
       dtIni: $('vDtIni').value, dtFin: $('vDtFin').value,
-      vendedorCod: venda.vendedorCod, vendedorNome: venda.vendedorNome,
-      valorTotal: venda.valorTotal,
+      vendedorCod: venda?.vendedorCod, vendedorNome: venda?.vendedorNome,
+      valorTotal: venda?.valorTotal,
       valorCobrar: valorCobrar || 0,
       status, obs: obs || '',
-      alertas: venda.alertas || [],
+      alertas: venda?.alertas || [],
     };
+    if (!venda) { fecharModalVenda(); return; }
     try {
       const saved = await api('POST', '/api/conferencia/revisao', body);
       _revisoesMap[doc + '::' + (board || $('vBoard').value)] = saved;
-      render(_data); // re-renderiza: venda sai dos pendentes e vai para revisadas
+      fecharModalVenda();
+      render(_data);
     } catch(e) { alert('Erro ao salvar revisão: ' + e.message); }
   }
 
-  // ── Modal de Reprovação ──────────────────────────────────────────────────
+  // ── Popover de Reprovação ────────────────────────────────────────────────
   let _modalDoc = null, _modalBoard = null;
+  let _modalCloseCallback = null;
 
-  function abrirModalReprovacao(doc, board) {
+  function fecharRepPopover() {
+    $('repPopover').style.display   = 'none';
+    $('repPopBackdrop').style.display = 'none';
+  }
+
+  function abrirModalReprovacao(doc, board, anchorEl) {
     const venda = (_data?.vendas || []).find(v => v.doc === doc && (v.board === board || !v.board));
     if (!venda) return;
     _modalDoc = doc; _modalBoard = board;
     const rev = _revisoesMap[doc + '::' + board];
     const boardLabel = LOJA_LABEL[board] || board || '';
-    $('modalRepSubtitle').textContent = `${venda.vendedorNome || venda.vendedor || '—'} · ${boardLabel} · ${fmtR(venda.valorTotal)}`;
-    $('modalRepAlertas').innerHTML = (venda.alertas || []).map(a => `• ${esc(a.msg)}`).join('<br>') || '—';
-    // Pré-preenche valor a cobrar: soma dos vlrDesconto dos itens com alerta
-    const alertaItens = new Set((venda.alertas || []).filter(a => a.tipo === 'desconto_item').map(a => a.msg));
-    let vlrCobrar = rev?.valorCobrar ?? venda.itens?.filter(it => it.vlrDesconto > 0).reduce((s, it) => s + it.vlrDesconto, 0) ?? 0;
-    $('modalRepValorCobrar').value = vlrCobrar.toFixed(2);
-    $('modalRepObs').value = rev?.obs || '';
-    $('modalReprovacao').classList.add('open');
-    $('modalRepObs').focus();
+    $('repPopSubtitle').textContent = `${venda.vendedorNome || venda.vendedor || '—'} · ${boardLabel} · ${fmtR(venda.valorTotal)}`;
+    const vlrCobrar = rev?.valorCobrar ?? venda.itens?.filter(it => it.vlrDesconto > 0).reduce((s, it) => s + it.vlrDesconto, 0) ?? 0;
+    $('repPopValorCobrar').value = vlrCobrar > 0 ? vlrCobrar.toFixed(2) : '';
+    $('repPopObs').value = rev?.obs || '';
+    $('repPopObs').style.borderColor = '';
+
+    // Posiciona acima do botão clicado
+    const pop = $('repPopover');
+    pop.style.display = 'block';
+    const anchor = anchorEl || document.body;
+    const rect   = anchor.getBoundingClientRect();
+    const popH   = pop.offsetHeight || 220;
+    let top  = rect.top - popH - 8;
+    let left = rect.left;
+    if (top < 8) top = rect.bottom + 8;
+    if (left + 300 > window.innerWidth) left = window.innerWidth - 308;
+    pop.style.top  = top + 'px';
+    pop.style.left = left + 'px';
+
+    $('repPopBackdrop').style.display = 'block';
+    setTimeout(() => $('repPopObs').focus(), 50);
   }
 
-  $('modalRepCancelar').addEventListener('click', () => $('modalReprovacao').classList.remove('open'));
-  $('modalReprovacao').addEventListener('click', e => { if (e.target === $('modalReprovacao')) $('modalReprovacao').classList.remove('open'); });
-  $('modalRepConfirmar').addEventListener('click', async () => {
-    const obs = $('modalRepObs').value.trim();
-    if (!obs) { $('modalRepObs').focus(); $('modalRepObs').style.borderColor = 'var(--cf-alert)'; return; }
-    $('modalRepObs').style.borderColor = '';
-    const valorCobrar = parseFloat($('modalRepValorCobrar').value) || 0;
-    $('modalRepConfirmar').disabled = true;
+  $('repPopBackdrop').addEventListener('click', fecharRepPopover);
+
+  document.querySelectorAll('.rep-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      $('repPopObs').value = chip.dataset.txt;
+      $('repPopObs').style.borderColor = '';
+      $('repPopObs').focus();
+    });
+  });
+
+  $('repPopConfirmar').addEventListener('click', async () => {
+    const obs = $('repPopObs').value.trim();
+    if (!obs) { $('repPopObs').style.borderColor = 'var(--cf-alert)'; $('repPopObs').focus(); return; }
+    $('repPopObs').style.borderColor = '';
+    const valorCobrar = parseFloat($('repPopValorCobrar').value) || 0;
+    $('repPopConfirmar').disabled = true;
     try {
       await salvarRevisao(_modalDoc, _modalBoard, 'reprovada', obs, valorCobrar);
-      $('modalReprovacao').classList.remove('open');
+      fecharRepPopover();
     } catch(e) { alert('Erro: ' + e.message); }
-    finally { $('modalRepConfirmar').disabled = false; }
+    finally { $('repPopConfirmar').disabled = false; }
   });
 
   // ════════════════════════════════════════════════════════════════════════
@@ -1752,7 +2201,7 @@
                       <th class="num">A Cobrar</th><th>Obs</th><th>Por</th>
                     </tr></thead>
                     <tbody>
-                      ${g.vendas.map(v=>`<tr>
+                      ${g.vendas.map(v=>`<tr class="sale-row" style="cursor:pointer" data-rep-docid="${esc(v.doc)}" data-rep-board="${esc(v.board||g.board)}" data-rep-date="${esc(v.data)}">
                         <td>${fmtD(v.data)}</td>
                         <td class="mono">${esc(v.doc)}</td>
                         <td class="num">${fmtR(v.valorTotal)}</td>
@@ -1768,6 +2217,82 @@
           </tbody>
         </table>
       </div>`;
+
+    // bind click on individual reprovada rows
+    const rResult = $('rResult');
+    rResult.querySelectorAll('tr[data-rep-docid]').forEach(tr => {
+      tr.addEventListener('click', () => {
+        const docId = tr.dataset.repDocid;
+        const board = tr.dataset.repBoard;
+        const date  = tr.dataset.repDate;
+        abrirModalReprovadaVenda(docId, board, date);
+      });
+    });
+  }
+
+  // Cache para evitar re-buscar o mesmo board+date já carregado
+  const _repDayCache = {};
+
+  async function abrirModalReprovadaVenda(docId, board, date) {
+    // mostra modal de loading
+    const loadModal = document.createElement('div');
+    loadModal.id = 'vendaModal';
+    loadModal.style.cssText = 'position:fixed;inset:0;z-index:9000;background:#00000088;display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeInModal .15s ease';
+    loadModal.innerHTML = '<div style="background:var(--cf-card);border:1px solid var(--cf-border);border-radius:14px;padding:32px 40px;display:flex;align-items:center;gap:14px;color:var(--cf-muted);font-size:14px"><span class="spinner"></span> Carregando venda…</div>';
+    document.body.appendChild(loadModal);
+    loadModal.addEventListener('click', e => { if (e.target === loadModal) fecharModalVenda(); });
+    document.addEventListener('keydown', _onEscVenda);
+
+    try {
+      const cacheKey = board + '::' + date;
+      if (!_repDayCache[cacheKey]) {
+        const d = await api('GET', `/api/conferencia/vendas?board=${encodeURIComponent(board)}&dtIni=${encodeURIComponent(date)}&dtFin=${encodeURIComponent(date)}`);
+        _repDayCache[cacheKey] = d;
+      }
+      const dayData = _repDayCache[cacheKey];
+      const venda = (dayData?.vendas || []).find(v => String(v.doc) === String(docId));
+
+      fecharModalVenda(); // remove loading modal
+
+      if (venda) {
+        // Inject venda into _data so salvarRevisao can find it while modal is open
+        const prevData = _data;
+        if (!_data) _data = { vendas: [] };
+        if (!_data.vendas.find(v => String(v.doc) === String(docId) && (v.board === board || !v.board))) {
+          _data = { ..._data, vendas: [...(_data.vendas || []), { ...venda, board }] };
+        }
+        _modalCloseCallback = () => { _data = prevData; };
+        abrirModalVenda(docId, board);
+      } else {
+        // venda não encontrada no Microvix — mostra modal simples com os dados da revisão
+        const rev = _revisoesMap[docId + '::' + board] || {};
+        const boardLabel = LOJA_LABEL[board] || board;
+        const modal = document.createElement('div');
+        modal.id = 'vendaModal';
+        modal.style.cssText = 'position:fixed;inset:0;z-index:9000;background:#00000088;display:flex;align-items:center;justify-content:center;padding:16px;animation:fadeInModal .15s ease';
+        modal.innerHTML =
+          '<div style="background:var(--cf-card);border:1px solid var(--cf-border);border-radius:14px;width:100%;max-width:600px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 64px #00000060">' +
+            '<div style="display:flex;align-items:center;gap:12px;padding:18px 22px;border-bottom:1px solid var(--cf-border)">' +
+              '<div style="flex:1">' +
+                '<div style="font-size:16px;font-weight:800;color:var(--cf-text)">Doc ' + esc(docId) + '</div>' +
+                '<div style="font-size:12px;color:var(--cf-muted);margin-top:2px">' + esc(boardLabel) + ' &nbsp;·&nbsp; ' + fmtD(date) + ' <span style="background:#ef444420;color:var(--cf-red);border:1px solid var(--cf-red);border-radius:6px;padding:2px 8px;font-size:10px;font-weight:700;margin-left:6px">❌ Reprovada</span></div>' +
+              '</div>' +
+              '<button id="vendaModalClose" style="background:none;border:none;cursor:pointer;font-size:20px;color:var(--cf-muted);padding:4px 8px;border-radius:6px;line-height:1" title="Fechar">✕</button>' +
+            '</div>' +
+            '<div style="padding:20px 22px">' +
+              '<div style="background:#ef444410;border:1px solid #ef444440;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:12px;color:var(--cf-muted)">Venda não encontrada nos dados do Microvix para esta data.</div>' +
+              (rev.obs ? '<div style="font-size:13px;color:var(--cf-text);margin-bottom:8px"><strong>Obs:</strong> ' + esc(rev.obs) + '</div>' : '') +
+              (rev.valorCobrar ? '<div style="font-size:13px;color:var(--cf-alert);font-weight:700">A cobrar: ' + fmtR(rev.valorCobrar) + '</div>' : '') +
+            '</div>' +
+          '</div>';
+        document.body.appendChild(modal);
+        modal.querySelector('#vendaModalClose').onclick = fecharModalVenda;
+        modal.addEventListener('click', e => { if (e.target === modal) fecharModalVenda(); });
+      }
+    } catch(e) {
+      fecharModalVenda();
+      alert('Erro ao carregar venda: ' + e.message);
+    }
   }
 
   // ════════════════════════════════════════════════════════════════════════

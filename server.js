@@ -2490,6 +2490,8 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       if (r.cancelado === 'S' || r.cancelado === '1') continue;
       const operacao = (r.operacao || '').trim().toUpperCase();
       if (operacao !== 'S' && operacao !== 'DS') continue;
+      // tipo_transacao 'J' sem documento = ajuste de balanço/estoque (Tommy: FALTA BALANÇO)
+      if ((r.tipo_transacao || '').trim().toUpperCase() === 'J' && String(r.documento || '').trim() === '0') continue;
       const serie = String(r.serie || r.serie_documento || r.num_serie || '').trim();
       if (serie === '999') continue;
       if (serie === '4' && operacao !== 'DS') continue;
@@ -2498,10 +2500,16 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       seenDocs.add(doc);
 
       const sign  = operacao === 'DS' ? -1 : 1;
-      const valor = parseBrNum(r.valor_total || r.total_liquido || '0');
+      // total_* campos repetem o valor TOTAL do documento em cada linha de item
+      // valor_total é por-item e subestima documentos com múltiplos itens
+      const valor = ['total_cartao','total_dinheiro','total_pix','total_cheque',
+                     'total_crediario','total_convenio','total_cheque_prazo','total_deposito_bancario']
+        .reduce((s, k) => s + parseBrNum(r[k] || '0'), 0)
+        || parseBrNum(r.valor_total || r.total_liquido || '0');
       const hora  = String(r.hora || r.hora_documento || r.hora_emissao || '').trim().slice(0, 5) || '';
       const cod   = String(r.cod_vendedor || '').trim();
-      const nome  = (r.nome_vendedor || '').trim();
+      const obsNome = (r.obs || '').match(/Nome do Vendedor:\s*(.+?)(?:\s*\|.*)?$/i);
+      const nome  = (vendNomeCache[cod] || r.nome_vendedor || (obsNome && obsNome[1]) || '').trim();
       const codP  = String(r.cod_plano || r.plano || '').trim();
       const ident = String(r.identificador || '').trim();
       const desconto = parseBrNum(r.valor_desconto || r.desconto || r.vl_desconto || '0');
@@ -2619,7 +2627,10 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
         if (!doc || !docMap[doc]) continue;
         const cd       = String(r.credito_debito || '').trim().toUpperCase();
         const forma    = cd === 'D' ? 'Cartão Débito' : 'Cartão Crédito';
-        const bandeira = (r.descricao_bandeira || r.bandeira || '').trim();
+        // Normaliza a bandeira para o nome canônico (ex.: portal Tommy manda
+        // "VISA ELECTRON"/"MAESTRO" → "Visa"/"Maestro") para casar com o extrato Rede.
+        const bandeiraRaw = (r.descricao_bandeira || r.bandeira || '').trim();
+        const bandeira    = extractBandeira(bandeiraRaw) || bandeiraRaw;
         const valor    = parseBrNum(r.valor || '0');
         if (valor === 0) continue;
         const sign     = docMap[doc].valor < 0 ? -1 : 1;
@@ -2635,6 +2646,36 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
           docFormaMap[doc] = [...nonCard, ...cartoesEntries];
         }
       }
+    }
+
+    // -- Estratégia 5: Fallback per-doc para docs sem forma após Estratégias 1-4 --
+    // Garante que nenhum documento fique fora do formasPagamento (zerando a diferença "vs líquido")
+    {
+      let filled = 0;
+      for (const r of movRows) {
+        const doc = String(r.documento || '').trim();
+        if (!doc || !docMap[doc] || docFormaMap[doc]) continue;
+        const sign = docMap[doc].valor < 0 ? -1 : 1;
+        const FAL = [
+          { field: 'total_dinheiro',          label: 'Dinheiro' },
+          { field: 'total_cartao',             label: 'Cartão' },
+          { field: 'total_pix',                label: 'PIX' },
+          { field: 'total_cheque',             label: 'Cheque' },
+          { field: 'total_crediario',          label: 'Crediário' },
+          { field: 'total_convenio',           label: 'Convênio' },
+          { field: 'total_cheque_prazo',       label: 'Cheque Prazo' },
+          { field: 'total_deposito_bancario',  label: 'Depósito Bancário' },
+        ];
+        const formas = [];
+        for (const { field, label } of FAL) {
+          const val = parseBrNum(r[field] || '0');
+          if (val !== 0) formas.push({ forma: label, bandeira: '', valor: sign * val });
+        }
+        if (!formas.length) formas.push({ forma: 'Outros', bandeira: '', valor: docMap[doc].valor });
+        docFormaMap[doc] = formas;
+        filled++;
+      }
+      if (filled) console.log(`[conferencia-caixa] Estrategia5 fallback: ${filled} doc(s) sem forma preenchidos via total_*`);
     }
 
     // -- Agregar formasPagamento: forma → bandeiras → docs --
@@ -3737,6 +3778,147 @@ app.get('/api/microvix/produtos-raw', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/debug/tommy-catalog → diagnóstico completo do catálogo Tommy
+app.get('/api/debug/tommy-catalog', requireAdmin, async (req, res) => {
+  try {
+    const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpjRaw = lojas['tommy'];
+    const cnpj    = (cnpjRaw || '').replace(/\D/g, '');
+    const chave   = process.env.MICROVIX_CHAVE_TOMMY || process.env.MICROVIX_CHAVE || '';
+    const chaveSource = process.env.MICROVIX_CHAVE_TOMMY ? 'MICROVIX_CHAVE_TOMMY' : 'MICROVIX_CHAVE (fallback)';
+
+    const result = {
+      env: {
+        MICROVIX_LOJAS_tommy: cnpjRaw || '(não mapeado)',
+        cnpj_limpo: cnpj || '(vazio)',
+        chave_usada: chave ? chave.slice(0, 8) + '...' : '(não definida)',
+        chave_source: chaveSource,
+        MICROVIX_CHAVE_TOMMY_definida: !!process.env.MICROVIX_CHAVE_TOMMY,
+      },
+    };
+
+    if (!cnpj) {
+      return res.json({ ...result, status: 'ERRO', erro: 'Tommy não mapeado em MICROVIX_LOJAS' });
+    }
+    if (!chave) {
+      return res.json({ ...result, status: 'ERRO', erro: 'Nenhuma chave Microvix disponível' });
+    }
+
+    const { fetchProdutos } = require('./services/microvix');
+    const rows = await fetchProdutos(cnpj, chave, 0);
+
+    result.status = rows.length > 0 ? 'OK' : 'VAZIO';
+    result.total_rows = rows.length;
+    result.fields = rows[0] ? Object.keys(rows[0]) : [];
+    result.sample = rows.slice(0, 3);
+
+    // Verifica se setor/marca estão presentes
+    const comSetor = rows.filter(r => r.desc_setor).length;
+    const comMarca = rows.filter(r => r.desc_marca).length;
+    result.stats = { com_setor: comSetor, com_marca: comMarca, sem_setor: rows.length - comSetor };
+
+    // Verifica se o catálogo em memória tem dados Tommy
+    const catalogSize = _catalogCache ? Object.keys(_catalogCache).length : 0;
+    result.catalog_cache = { total_entradas: catalogSize, cache_ativo: !!_catalogCache };
+
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ status: 'ERRO', erro: e.message, stack: e.stack?.split('\n').slice(0,5) });
+  }
+});
+
+// GET /api/debug/cmv-campos?board=delrey&dtIni=2026-06-01&dtFin=2026-06-01
+// Mostra todos os campos de custo disponíveis no LinxMovimento e LinxMovimentoItens
+app.get('/api/debug/cmv-campos', requireAdmin, async (req, res) => {
+  try {
+    const board  = req.query.board  || 'delrey';
+    const dtIni  = req.query.dtIni  || new Date().toISOString().slice(0,10);
+    const dtFin  = req.query.dtFin  || dtIni;
+    const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj   = (lojas[board] || '').replace(/\D/g,'');
+    const chave  = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado` });
+
+    const { fetchMovimento, fetchMovimentoItens } = require('./services/microvix');
+    const [mov, itens] = await Promise.all([
+      fetchMovimento(cnpj, dtIni, dtFin, chave).catch(e => ({ error: e.message })),
+      fetchMovimentoItens(cnpj, dtIni, dtFin, chave).catch(e => ({ error: e.message })),
+    ]);
+
+    const custoCampos = /custo|preco_custo|preco_tabela|preco_unit|valor_unit/i;
+
+    const movSample   = Array.isArray(mov)   ? mov.find(r => r.operacao === 'S') || mov[0] : mov;
+    const itensSample = Array.isArray(itens) ? itens[0] : itens;
+
+    const movCustoFields   = movSample   && !movSample.error   ? Object.entries(movSample).filter(([k]) => custoCampos.test(k))   : [];
+    const itensCustoFields = itensSample && !itensSample.error ? Object.entries(itensSample).filter(([k]) => custoCampos.test(k)) : [];
+
+    res.json({
+      board, dtIni, dtFin,
+      LinxMovimento: {
+        total_rows: Array.isArray(mov) ? mov.length : 0,
+        todos_campos: Array.isArray(mov) && mov[0] ? Object.keys(mov[0]) : [],
+        campos_custo: Object.fromEntries(movCustoFields),
+        sample_s: movSample && !movSample.error ? movSample : null,
+      },
+      LinxMovimentoItens: {
+        total_rows: Array.isArray(itens) ? itens.length : 0,
+        todos_campos: Array.isArray(itens) && itens[0] ? Object.keys(itens[0]) : [],
+        campos_custo: Object.fromEntries(itensCustoFields),
+        sample: itensSample && !itensSample.error ? itensSample : null,
+      },
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/debug/desconto-vendedor?board=contagem&dtIni=2026-06-01&dtFin=2026-06-11&cod=88
+// Mostra o cálculo de desconto item a item para um vendedor específico
+app.get('/api/debug/desconto-vendedor', requireAdmin, async (req, res) => {
+  try {
+    const { board = 'contagem', dtIni, dtFin, cod } = req.query;
+    if (!dtIni || !dtFin || !cod) return res.status(400).json({ error: 'board, dtIni, dtFin, cod obrigatórios' });
+    const lojas     = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj      = (lojas[board] || '').replace(/\D/g,'');
+    const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const parseBR   = s => { const t = String(s||'').trim(); return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
+    const { fetchMovimento } = require('./services/microvix');
+    const rows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
+
+    let totalBruto = 0, totalDesc = 0, docsSeen = new Set();
+    const itens = [];
+    for (const r of rows) {
+      if (r.cancelado === 'S' || r.cancelado === '1') continue;
+      if ((r.operacao||'').trim().toUpperCase() !== 'S') continue;
+      if (String(r.cod_vendedor||'').trim() !== String(cod).trim()) continue;
+      const qty       = parseBR(r.quantidade||'1');
+      const vlrUnit   = parseBR(r.preco_tabela_epoca||r.preco_unitario||'0');
+      const descItem  = parseBR(r.desconto_item||'0');
+      const descTotal = parseBR(r.desconto_total_item||'0');
+      const vlrDesc   = parseBR(r.desconto_item||r.desconto_total_item||'0');
+      totalBruto += vlrUnit * qty;
+      totalDesc  += vlrDesc * qty;
+      itens.push({
+        doc: r.documento, qty, vlrUnit,
+        desconto_item: descItem, desconto_total_item: descTotal,
+        vlrDesc_usado: vlrDesc,
+        bruto_linha: vlrUnit * qty,
+        desc_linha: vlrDesc * qty,
+        isNewDoc: !docsSeen.has(r.documento),
+      });
+      docsSeen.add(r.documento);
+    }
+    res.json({
+      board, cod, dtIni, dtFin,
+      totalBruto: totalBruto.toFixed(2),
+      totalDesc: totalDesc.toFixed(2),
+      pctDesc: totalBruto > 0 ? (totalDesc/totalBruto*100).toFixed(1)+'%' : '0%',
+      totalDocs: docsSeen.size,
+      totalItens: itens.length,
+      itens: itens.slice(0, 30),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/microvix/produtos-xml?board=delrey  → retorna resposta RAW do Microvix para diagnóstico
 app.get('/api/microvix/produtos-xml', requireAdmin, async (req, res) => {
   try {
@@ -3823,8 +4005,12 @@ app.get('/api/catalog-status', requireAdmin, async (req, res) => {
     mid:   allKeys.filter(k => k.length >= 4 && k.length <= 7).slice(0, 5),
     long:  allKeys.filter(k => k.length >= 8).slice(0, 5),
   };
+  const portais = [...new Set(entries.map(([,v]) => v.portal).filter(Boolean))];
+  const buildingFor = _catalogWarmPromise ? Math.round((Date.now() - _catalogWarmStartAt) / 1000) : null;
   res.json({ cached: !!_catalogCache, size, ageMin, withMarca, withSetor,
              pctMarca: size ? ((withMarca/size)*100).toFixed(1)+'%' : '0%',
+             portais_no_cache: portais,
+             building: !!_catalogWarmPromise, buildingForSec: buildingFor,
              rawFields: _catalogRawFields, rawSample: _catalogRawSample,
              keysSample, sampleWith, sampleWithout });
 });
@@ -3839,29 +4025,38 @@ app.get('/api/catalog-lookup', requireAdmin, (req, res) => {
   res.json({ cacheSize: _catalogCache ? Object.keys(_catalogCache).length : 0, result });
 });
 
-// ── GET /api/catalog-warm — força construção do catálogo e reporta resultado ─
-app.get('/api/catalog-warm', requireAdmin, async (req, res) => {
-  _catalogCache = null; _catalogCacheAt = 0;
+// ── GET /api/catalog-warm — dispara rebuild em background e responde imediatamente ────
+// Acesse /api/catalog-status para checar quando terminar
+// Aceita também ?token=CATALOG_WARM_SECRET para uso em tarefas agendadas (sem sessão)
+app.get('/api/catalog-warm', (req, res, next) => {
+  const secret = process.env.CATALOG_WARM_SECRET;
+  if (secret && req.query.token === secret) return next();
+  return requireAdmin(req, res, next);
+}, async (req, res) => {
+  _catalogCache = null; _catalogCacheAt = 0; _catalogWarmPromise = null;
   const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-  const { fetchProdutos, fetchServicos, parseBrNum } = require('./services/microvix');
-  const firstBoard = Object.keys(lojas)[0];
-  if (!firstBoard) return res.status(400).json({ error: 'Nenhuma loja configurada' });
-  const cnpj  = lojas[firstBoard].replace(/\D/g, '');
-  const chave = process.env[`MICROVIX_CHAVE_${firstBoard.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-  try {
-    const t0 = Date.now();
-    const [prodRows, svcRows] = await Promise.all([
-      fetchProdutos(cnpj, chave, 0).catch(e => ({ error: e.message })),
-      fetchServicos(cnpj, chave, 0).catch(e => ({ error: e.message })),
-    ]);
-    const prodError = Array.isArray(prodRows) ? null : prodRows.error;
-    const svcError  = Array.isArray(svcRows)  ? null : svcRows.error;
-    const prodCount = Array.isArray(prodRows) ? prodRows.length : 0;
-    const svcCount  = Array.isArray(svcRows)  ? svcRows.length  : 0;
-    const sampleProd = Array.isArray(prodRows) && prodRows[0] ? Object.keys(prodRows[0]) : [];
-    const ms = Date.now() - t0;
-    res.json({ ms, prodCount, svcCount, prodError, svcError, prodFields: sampleProd, sampleProd: (Array.isArray(prodRows) ? prodRows.slice(0,2) : []) });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+  // Dispara build em background (sem await — o build leva 60-120s)
+  _catalogWarmStartAt = Date.now();
+  _catalogWarmPromise = _buildCatalog(lojas)
+    .then(cat => { console.log(`[Catalog] rebuild manual concluído: ${Object.keys(cat).length} entradas`); })
+    .catch(e  => { console.warn('[Catalog] rebuild manual erro:', e.message); })
+    .finally(() => { _catalogWarmPromise = null; });
+  res.json({
+    ok: true,
+    message: 'Rebuild iniciado em background. Acesse /api/catalog-status em ~2 minutos para verificar.',
+    dica: 'portais_incluidos aparecerá em /api/catalog-status quando concluir',
+  });
+});
+
+// ── GET /api/promo-cache-clear — limpa cache de promoções para forçar rebusca ──
+app.get('/api/promo-cache-clear', (req, res, next) => {
+  const secret = process.env.CATALOG_WARM_SECRET;
+  if (secret && req.query.token === secret) return next();
+  return requireAdmin(req, res, next);
+}, (req, res) => {
+  const keys = Object.keys(_promoCache);
+  keys.forEach(k => delete _promoCache[k]);
+  res.json({ ok: true, cleared: keys.length, msg: 'Cache de promoções limpo — próxima conferência rebusca tudo.' });
 });
 
 // ── Cache de resultados de marcas (vendas + estoque) ─────────────────────────
@@ -4150,9 +4345,22 @@ const TRANS_RESULT_TTL = 30 * 60 * 1000;
 let _catalogCache = null;
 let _catalogCacheAt = 0;
 let _catalogWarmPromise = null;  // Promise compartilhada — callers concorrentes aguardam a mesma
+let _catalogWarmStartAt = 0;    // Timestamp de início do build atual
 let _catalogRawFields = [];      // campos brutos do LinxProdutos (para diagnóstico)
 let _catalogRawSample = null;    // amostra bruta (1 produto)
 const CATALOG_TTL = 6 * 60 * 60 * 1000;
+
+// Cache de promoções — válido até meia-noite do dia atual
+const _promoCache = {};  // key: cnpj → { rows, date }
+function _promoCacheKey(cnpj) { return String(cnpj).replace(/\D/g, ''); }
+function _promoIsValid(cnpj) {
+  const c = _promoCache[_promoCacheKey(cnpj)];
+  return c && c.date === new Date().toISOString().slice(0, 10);
+}
+function _promoGet(cnpj) { return _promoCache[_promoCacheKey(cnpj)]?.rows || []; }
+function _promoSet(cnpj, rows) {
+  _promoCache[_promoCacheKey(cnpj)] = { rows, date: new Date().toISOString().slice(0, 10) };
+}
 
 // ── Índice compacto ref→cores (para /api/cadastro-produto/check) ────────────
 // Persiste no MongoDB → sobrevive a restarts; muito menor que o catálogo completo
@@ -4189,7 +4397,7 @@ async function _getRefColorIndex() {
 async function _buildRefColorIndex() {
   const { buildRequest, postRequest, parseCsv } = require('./services/microvix');
   const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-  const boards = Object.keys(lojas).filter(b => b !== 'site');
+  const boards = Object.keys(lojas).filter(b => b !== 'site' && b !== 'tommy');
   if (!boards.length) return {};
 
   const board = boards[0]; // catálogo é único para todas as lojas Surfers
@@ -4297,8 +4505,14 @@ async function _loadCatalogMongo() {
 async function _getCatalog(lojas) {
   if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
 
-  // Inicia rebuild em background se ainda não está rodando
+  // Inicia rebuild em background se ainda não está rodando (ou se travou há mais de 10min)
+  const warmStuck = _catalogWarmPromise && (Date.now() - _catalogWarmStartAt > 600_000);
+  if (warmStuck) {
+    console.warn('[Catalog] build travado há >10min — descartando e retornando cache vazio');
+    _catalogWarmPromise = null;
+  }
   if (!_catalogWarmPromise) {
+    _catalogWarmStartAt = Date.now();
     _catalogWarmPromise = _buildCatalog(lojas).finally(() => { _catalogWarmPromise = null; });
   }
 
@@ -4317,13 +4531,16 @@ async function _getCatalog(lojas) {
     } catch (e) { console.warn('[Catalog] MongoDB load:', e.message); }
   }
 
-  // Sem MongoDB e sem cache: aguarda o build
-  return _catalogWarmPromise;
+  // Sem MongoDB e sem cache: aguarda o build com timeout de 10min para não bloquear
+  return Promise.race([
+    _catalogWarmPromise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error('catalog build timeout')), 600_000)),
+  ]).catch(() => ({}));
 }
 
 async function _buildCatalog(lojas) {
   const { fetchServicos, buildRequest, postRequest, parseCsv, parseBrNum } = require('./services/microvix');
-  // Catálogo é único para todas as lojas Surfers — busca apenas de uma loja representativa
+  // Inclui Tommy — tem CNPJ próprio, então seenSources vai buscá-lo como catálogo separado
   const boards = Object.keys(lojas).filter(b => b !== 'site');
   if (!boards.length) return {};
   const mainBoard = boards[0];  // todas as lojas compartilham o mesmo catálogo
@@ -4349,7 +4566,7 @@ async function _buildCatalog(lojas) {
           { id: 'dt_update_fim',    valor: today },
         ], chave);
         let raw;
-        try { raw = await postRequest(body, 60_000); } catch (e) { console.warn(`[Catalog/${board}] pág`, page, e.message); break; }
+        try { raw = await postRequest(body, 30_000); } catch (e) { console.warn(`[Catalog/${board}] pág`, page, e.message); break; }
         if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) break;
         const rows = parseCsv(raw);
         if (!_catalogRawFields.length && rows.length) {
@@ -4369,7 +4586,9 @@ async function _buildCatalog(lojas) {
             marca:       (r.desc_marca    || '').trim(),
             linha:       (r.desc_colecao  || '').trim(),
             desc_cor:    (r.desc_cor      || '').trim(),
+            ncm:         (r.cod_ncm || r.ncm || '').toString().replace(/\.0+$/, '').trim(),
             preco_venda: parseBrNum(r.preco_venda || r.preco || r.preco_cheio || '0'),
+            portal:      (r.portal        || '').toString().trim(),
           };
           const mergeEntry = (key) => {
             if (!map[key]) { map[key] = entry; return; }
@@ -4377,6 +4596,7 @@ async function _buildCatalog(lojas) {
             if (!map[key].setor       && entry.setor)       map[key].setor       = entry.setor;
             if (!map[key].linha       && entry.linha)       map[key].linha       = entry.linha;
             if (!map[key].nomeBase    && entry.nomeBase)    map[key].nomeBase    = entry.nomeBase;
+            if (!map[key].ncm         && entry.ncm)         map[key].ncm         = entry.ncm;
             if (!map[key].preco_venda && entry.preco_venda) map[key].preco_venda = entry.preco_venda;
           };
           if (cod)                                      mergeEntry(cod);
@@ -4399,19 +4619,25 @@ async function _buildCatalog(lojas) {
       return boardCount;
     }
 
-    // Agrupa boards por chave Microvix — busca um representante por sistema distinto
+    // Agrupa boards por (chave + CNPJ) — busca um representante por catálogo distinto.
+    // O catálogo Microvix (LinxProdutos) é por empresa/CNPJ sob uma chave; lojas que
+    // compartilham os dois compartilham o mesmo catálogo. Tommy é outra empresa (CNPJ
+    // próprio) mesmo usando a chave padrão, então precisa ser buscado à parte — não basta
+    // distinguir pela chave.
     const defaultChave = process.env.MICROVIX_CHAVE || '';
-    const seenChaves = new Set();
+    const seenSources = new Set();
     const representantes = [];
     for (const b of boards) {
       const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || defaultChave;
-      if (!seenChaves.has(chave)) { seenChaves.add(chave); representantes.push(b); }
+      const cnpj  = (lojas[b] || '').replace(/\D/g, '');
+      if (!cnpj) continue;
+      const source = `${chave}|${cnpj}`;
+      if (!seenSources.has(source)) { seenSources.add(source); representantes.push(b); }
     }
-    let totalProd = 0;
-    for (const b of representantes) {
-      const n = await fetchBoard(b).catch(e => { console.warn(`[Catalog/${b}] erro:`, e.message); return 0; });
-      totalProd += n;
-    }
+    const counts = await Promise.all(
+      representantes.map(b => fetchBoard(b).catch(e => { console.warn(`[Catalog/${b}] erro:`, e.message); return 0; }))
+    );
+    const totalProd = counts.reduce((s, n) => s + n, 0);
 
     console.log(`[Catalog] ${totalProd} produtos → ${Object.keys(map).length} entradas (via ${representantes.join(',')})`);
     _catalogCache   = map;
@@ -5451,6 +5677,165 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
       needsMappingCount: result.filter(r => r._status === 'needs_cor').length,
       _idxRefs:          Object.keys(idx).length,
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── AI fuzzy match de referências do fornecedor contra catálogo Microvix ──────
+app.post('/api/cadastro-produto/ai-match', requireAdmin, async (req, res) => {
+  try {
+    const { refs } = req.body;
+    if (!Array.isArray(refs) || !refs.length) return res.status(400).json({ error: 'refs deve ser array não vazio' });
+    // Aceita tanto strings simples quanto objetos { ref, desc }
+    const refItems = refs.map(r => typeof r === 'string' ? { ref: r, desc: '' } : r);
+
+    const Anthropic = require('@anthropic-ai/sdk');
+    const client = new Anthropic.default({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+
+    const [idx, catalog] = await Promise.all([
+      Promise.race([_getRefColorIndex(), new Promise(r => setTimeout(() => r(null), 15_000))]).catch(() => null),
+      Promise.race([_getCatalog(lojas),  new Promise(r => setTimeout(() => r({}),  15_000))]).catch(() => ({})),
+    ]);
+
+    if (!idx || !Object.keys(idx).length) {
+      return res.json({ matches: refItems.map(r => ({ supplierRef: r.ref, suggestedRef: null, error: 'catálogo não disponível' })) });
+    }
+
+    const catalogRefs = Object.keys(idx);
+    const norm = s => (s || '').toString().replace(/\.0+$/, '').trim().toUpperCase();
+
+    // String similarity: Jaro-Winkler simplificado + bonus de prefixo
+    function similarity(a, b) {
+      a = norm(a); b = norm(b);
+      if (!a || !b) return 0;
+      if (a === b) return 1;
+      const maxDist = Math.floor(Math.max(a.length, b.length) / 2) - 1;
+      if (maxDist < 0) return 0;
+      const aMatches = new Array(a.length).fill(false);
+      const bMatches = new Array(b.length).fill(false);
+      let matches = 0, transpositions = 0;
+      for (let i = 0; i < a.length; i++) {
+        const start = Math.max(0, i - maxDist);
+        const end   = Math.min(i + maxDist + 1, b.length);
+        for (let j = start; j < end; j++) {
+          if (bMatches[j] || a[i] !== b[j]) continue;
+          aMatches[i] = bMatches[j] = true;
+          matches++;
+          break;
+        }
+      }
+      if (!matches) return 0;
+      let k = 0;
+      for (let i = 0; i < a.length; i++) {
+        if (!aMatches[i]) continue;
+        while (!bMatches[k]) k++;
+        if (a[i] !== b[k]) transpositions++;
+        k++;
+      }
+      const jaro = (matches/a.length + matches/b.length + (matches - transpositions/2)/matches) / 3;
+      // Winkler prefix bonus
+      let prefix = 0;
+      for (let i = 0; i < Math.min(4, a.length, b.length); i++) { if (a[i] === b[i]) prefix++; else break; }
+      return jaro + prefix * 0.1 * (1 - jaro);
+    }
+
+    // Para cada ref do fornecedor, seleciona os top 15 candidatos do catálogo
+    function topCandidates(supplierRef, n = 15) {
+      const sn = norm(supplierRef);
+      return catalogRefs
+        .map(r => ({ r, s: similarity(sn, r) }))
+        .sort((a, b) => b.s - a.s)
+        .slice(0, n)
+        .filter(x => x.s > 0.3)
+        .map(x => x.r);
+    }
+
+    // Processa em batches de 20 refs por chamada Claude
+    const BATCH = 20;
+    const results = [];
+
+    for (let i = 0; i < refItems.length; i += BATCH) {
+      const batch = refItems.slice(i, i + BATCH);
+      const batchData = batch.map(item => {
+        const refNorm  = norm(item.ref);
+        const descNorm = norm(item.desc || '');
+        // Candidatos da ref + candidatos da descrição (para casos como Converse onde a ref vem na desc)
+        const candFromRef  = topCandidates(refNorm);
+        const candFromDesc = descNorm ? topCandidates(descNorm) : [];
+        const candidates   = [...new Set([...candFromRef, ...candFromDesc])].slice(0, 20);
+        return { ref: refNorm, desc: descNorm || undefined, candidates };
+      });
+
+      // Log para debug
+      console.log('[AI Match] batchData:', JSON.stringify(batchData.map(b => ({ ref: b.ref, desc: b.desc, nCandidates: b.candidates.length, topCand: b.candidates.slice(0,3) })), null, 2));
+
+      // Numera os itens para matching por índice (robusto contra variações de string)
+      const numberedData = batchData.map((item, idx) => ({ idx, ...item }));
+
+      // Setores disponíveis para sugestão
+      const setoresDisp = [...new Set(Object.values(catalog).map(e => e.setor).filter(Boolean))].sort();
+
+      const prompt = `Você recebe uma lista numerada de produtos de fornecedor, cada um com campo "ref" e/ou "desc", e uma lista de candidatos do catálogo Microvix.
+A referência pode estar em "ref" ou embutida em "desc" (ex: pedidos Converse onde a ref fica na descrição).
+A referência pode também estar combinada com a cor no mesmo campo (ex: "VN0A5KQZBA2" onde "VN0A5KQZ" é a ref e "BA2" é a cor).
+Identifique o candidato que melhor corresponde a cada produto.
+
+Além do match de referência, sugira o SETOR baseado na descrição do produto.
+Setores disponíveis no catálogo: ${setoresDisp.join(', ') || 'Calçados, Vestuário, Acessórios'}
+
+Responda SOMENTE com um array JSON, um objeto por produto, NA MESMA ORDEM da entrada, sem texto adicional:
+[{"idx":0,"match":"REF_CATALOGO_OU_NULL","source":"ref","setor":"Calçados"},{"idx":1,"match":null,"source":"ref","setor":"Vestuário"},...]
+
+Regras:
+- "match": código exato do catálogo que melhor corresponde, ou null se nenhum serve
+- "source": "ref" se achou pela ref, "desc" se achou pela descrição
+- "setor": setor mais adequado para o produto baseado na descrição; use um dos setores da lista acima ou null se não conseguir determinar
+- Mantenha a ordem e quantidade exata dos itens de entrada
+
+Dados:
+${JSON.stringify(numberedData, null, 2)}`;
+
+      const msg = await client.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: prompt }],
+      });
+      const text = msg.content.find(b => b.type === 'text')?.text || '';
+      console.log('[AI Match] resposta Claude completa:', text);
+
+      try {
+        const jsonMatch = text.match(/\[[\s\S]*\]/);
+        if (!jsonMatch) throw new Error('sem JSON array na resposta: ' + text.slice(0, 200));
+        const parsed = JSON.parse(jsonMatch[0]);
+        for (const m of parsed) {
+          const bd = batchData[m.idx ?? parsed.indexOf(m)];
+          results.push({ supplierRef: bd?.ref ?? '', suggestedRef: m.match || null, source: m.source || 'ref', aiSetor: m.setor || null });
+        }
+      } catch (parseErr) {
+        console.warn('[AI Match] parse error:', parseErr.message, '| texto:', text.slice(0, 300));
+        for (const bd of batchData) {
+          results.push({ supplierRef: bd.ref, suggestedRef: null, error: 'parse error' });
+        }
+      }
+    }
+
+    // Enriquece com setor e cores do catálogo para a ref sugerida
+    const normCat = s => (s || '').toString().replace(/\.0+$/, '').trim().toUpperCase();
+    const ordered = refItems.map((item, i) => {
+      const r = results[i] || { supplierRef: item.ref, suggestedRef: null };
+      if (r.suggestedRef) {
+        const catEntry = catalog[r.suggestedRef] || catalog[normCat(r.suggestedRef)] || {};
+        r.catalogSetor = catEntry.setor || r.aiSetor || null;
+        r.catalogNcm   = catEntry.ncm   || null;
+        r.catalogCores = idx[r.suggestedRef] || idx[normCat(r.suggestedRef)] || [];
+      } else if (r.aiSetor) {
+        r.catalogSetor = r.aiSetor;
+      }
+      return r;
+    });
+
+    res.json({ matches: ordered });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -7178,29 +7563,39 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
     const BOARDS  = ['delrey','minas','contagem','estacao','tommy','surfers'];
     const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
 
-    const { fetchMovimento } = require('./services/microvix');
+    const { fetchMovimento, fetchVendedores } = require('./services/microvix');
 
-    // Busca todas as lojas em paralelo
+    // Busca todas as lojas em paralelo (movimento + vendedores para resolver nomes)
     const resultados = await Promise.all(BOARDS.map(async board => {
       const cnpj = lojas[board];
       if (!cnpj) return { board, erro: 'não configurada' };
       const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
       const cnpjClean = cnpj.replace(/\D/g,'');
       try {
-        const rows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
-        return { board, cnpjClean, rows: Array.isArray(rows) ? rows : [] };
+        const [rows, vendRows] = await Promise.all([
+          fetchMovimento(cnpj, dtIni, dtFin, chave),
+          fetchVendedores(cnpjClean, chave).catch(() => []),
+        ]);
+        const vendNomes = {};
+        for (const v of (Array.isArray(vendRows) ? vendRows : [])) {
+          const cod = String(v.cod_vendedor || '').trim();
+          const nom = (v.nome_vendedor || v.nome || '').trim();
+          if (cod && nom) vendNomes[cod] = nom;
+        }
+        return { board, cnpjClean, rows: Array.isArray(rows) ? rows : [], vendNomes };
       } catch (e) {
-        return { board, erro: e.message, rows: [] };
+        return { board, erro: e.message, rows: [], vendNomes: {} };
       }
     }));
 
     const porLoja     = {};
     const porVendedor = {};
 
-    for (const { board, cnpjClean, rows, erro } of resultados) {
+    for (const { board, cnpjClean, rows, erro, vendNomes } of resultados) {
       if (erro) { porLoja[board] = { board, erro }; continue; }
 
       const loja = { board, vlrLiquido:0, vlrBruto:0, vlrDesconto:0, vlrCusto:0, qtdItens:0 };
+      const seenDocs = new Set();
 
       for (const r of rows) {
         const rowCnpj = (r.cnpj_emp||r.cnpj||'').replace(/\D/g,'');
@@ -7208,33 +7603,49 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
         if (r.cancelado === 'S' || r.cancelado === '1') continue;
         if ((r.soma_relatorio||'S').toUpperCase() === 'N') continue;
         const op    = (r.operacao||'').trim().toUpperCase();
-        if (op !== 'S') continue;
+        if (op !== 'S' && op !== 'DS') continue;
         const serie = String(r.serie||r.serie_documento||'').trim();
-        if (serie === '999' || serie === '4') continue;
+        if (serie === '999') continue;
+        if (serie === '4' && op !== 'DS') continue;
 
+        const sign     = op === 'DS' ? -1 : 1;
         const qty      = parseBR(r.quantidade||'1');
         const vlrUnit  = parseBR(r.preco_tabela_epoca||r.preco_unitario||'0');
-        const vlrLiq   = parseBR(r.preco_unitario||r.valor_liquido||'0');
         const vlrDesc  = parseBR(r.desconto_item||r.desconto_total_item||'0');
         const vlrCusto = parseBR(r.custo_medio_epoca||r.preco_custo||'0');
 
-        loja.vlrLiquido  += vlrLiq  * qty;
-        loja.vlrBruto    += vlrUnit * qty;
-        loja.vlrDesconto += vlrDesc * qty;
-        loja.vlrCusto    += vlrCusto * qty;
-        loja.qtdItens    += 1;
+        // Bruto, desconto e custo: por item (campos granulares por linha)
+        loja.vlrBruto    += sign * vlrUnit * qty;
+        loja.vlrDesconto += sign * vlrDesc * qty;
+        loja.vlrCusto    += sign * vlrCusto * qty;
+        loja.qtdItens    += sign;
 
-        // Vendedor
+        // Vendedor — bruto/desconto/qtd por item (antes do seenDocs)
         const cod  = String(r.cod_vendedor||'').trim();
         if (cod) {
           const obsNome = (r.obs||'').match(/Nome do Vendedor:\s*(.+?)(?:\s*\|.*)?$/i);
-          const nome    = (r.nome_vendedor || (obsNome && obsNome[1]) || cod).trim();
+          const nome    = (vendNomes[cod] || r.nome_vendedor || (obsNome && obsNome[1]) || cod).trim();
           const vkey    = `${board}::${cod}`;
           if (!porVendedor[vkey]) porVendedor[vkey] = { board, cod, nome, vlrLiquido:0, vlrBruto:0, vlrDesconto:0, qtdItens:0 };
-          porVendedor[vkey].vlrLiquido  += vlrLiq  * qty;
-          porVendedor[vkey].vlrBruto    += vlrUnit * qty;
-          porVendedor[vkey].vlrDesconto += vlrDesc * qty;
-          porVendedor[vkey].qtdItens    += 1;
+          porVendedor[vkey].vlrBruto    += sign * vlrUnit * qty;
+          porVendedor[vkey].vlrDesconto += sign * vlrDesc * qty;
+          porVendedor[vkey].qtdItens    += sign;
+        }
+
+        // Venda líquida: por documento (igual ao sync de Performance Mensal)
+        // total_* repete o valor total do doc em cada item — deduplica com seenDocs
+        const doc = String(r.documento||'').trim();
+        if (!doc || seenDocs.has(doc)) continue;
+        seenDocs.add(doc);
+        const vlrLiq = ['total_cartao','total_dinheiro','total_pix','total_cheque',
+                        'total_crediario','total_convenio','total_cheque_prazo','total_deposito_bancario']
+          .reduce((s, k) => s + parseBR(r[k]||'0'), 0)
+          || parseBR(r.valor_total||r.total_liquido||'0');
+        loja.vlrLiquido += sign * vlrLiq;
+
+        // vlrLiquido do vendedor: por documento (após seenDocs)
+        if (cod && porVendedor[`${board}::${cod}`]) {
+          porVendedor[`${board}::${cod}`].vlrLiquido += sign * vlrLiq;
         }
       }
 
@@ -7300,8 +7711,9 @@ app.get('/api/conferencia/rede-extrato', requireAuth, async (req, res) => {
 async function getConferenciaRevisoesCol() {
   if (!mongoDb) throw new Error('MongoDB não conectado');
   const col = mongoDb.collection('confRevisoes');
-  // Garante índice único em doc+board
+  // Garante índice único em doc+board e índice por data para queries de período
   await col.createIndex({ doc: 1, board: 1 }, { unique: true, background: true }).catch(() => {});
+  await col.createIndex({ data: 1, board: 1 }, { background: true }).catch(() => {});
   return col;
 }
 
@@ -7365,6 +7777,115 @@ app.get('/api/conferencia/reprovadas', requireEscritorioOrAdmin, async (req, res
       byVend[key].vendas.push(r);
     }
     res.json(Object.values(byVend).sort((a, b) => b.valorCobrar - a.valorCobrar));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Saldo Reserva (cobrança antecipada não lançada no Microvix) ──────────────
+async function getSaldoReservaCol() {
+  if (!mongoDb) throw new Error('MongoDB não conectado');
+  const col = mongoDb.collection('confSaldoReserva');
+  await col.createIndex({ board: 1, mod: 1, bandeira: 1 }, { unique: true, background: true }).catch(() => {});
+  return col;
+}
+
+// GET /api/conferencia/saldo-reserva?board=X
+app.get('/api/conferencia/saldo-reserva', requireAuth, async (req, res) => {
+  try {
+    const { board } = req.query;
+    if (!board) return res.status(400).json({ error: 'board obrigatório' });
+    const col   = await getSaldoReservaCol();
+    const docs  = await col.find({ board }).toArray();
+    // retorna map: { 'crédito::visa': { valor, obs, updatedBy, updatedAt } }
+    const map = {};
+    for (const d of docs) map[d.mod + '::' + d.bandeira] = { valor: d.valor, obs: d.obs || '', updatedBy: d.updatedBy, updatedAt: d.updatedAt };
+    res.json(map);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/conferencia/saldo-reserva
+app.post('/api/conferencia/saldo-reserva', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { board, mod, bandeira, valor, obs } = req.body;
+    if (!board || !mod) return res.status(400).json({ error: 'board e mod obrigatórios' });
+    const col = await getSaldoReservaCol();
+    const updatedBy = req.session?.user?.username || 'sistema';
+    const v = parseFloat(valor) || 0;
+    if (v <= 0) {
+      await col.deleteOne({ board, mod, bandeira: bandeira || '' });
+    } else {
+      await col.updateOne(
+        { board, mod, bandeira: bandeira || '' },
+        { $set: { board, mod, bandeira: bandeira || '', valor: v, obs: obs || '', updatedBy, updatedAt: new Date() } },
+        { upsert: true }
+      );
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/conferencia/debug-doc?board=X&date=Y&doc=Z  — diagnóstico de formas de um doc específico
+app.get('/api/conferencia/debug-doc', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { board, date, doc } = req.query;
+    if (!board || !date) return res.status(400).json({ error: 'board e date obrigatórios' });
+    const result = await _buildConferenciaVendas(board, date, date);
+    const vendas = result.vendas || [];
+    if (doc) {
+      const venda = vendas.find(v => String(v.doc) === String(doc));
+      if (!venda) return res.json({ error: `doc ${doc} não encontrado`, totalVendas: result.totalVendas, qtd: vendas.length });
+      const sumFormas = venda.formas.reduce((s, f) => s + f.valor, 0);
+      return res.json({
+        doc:        venda.doc,
+        valorTotal: +venda.valorTotal.toFixed(2),
+        sumFormas:  +sumFormas.toFixed(2),
+        gap:        +(venda.valorTotal - sumFormas).toFixed(2),
+        formas:     venda.formas.map(f => ({ forma: f.forma, bandeira: f.bandeira||'—', valor: +f.valor.toFixed(2) })),
+        desconto:   venda.desconto,
+        itens:      venda.itens.map(i => ({ cod: i.cod_produto, desc: i.descricao, vlrBruto: +i.vlrBruto.toFixed(2), vlrLiquido: +i.vlrLiquido.toFixed(2), vlrDesconto: +i.vlrDesconto.toFixed(2) })),
+      });
+    }
+    // Sem doc: retorna sumário por forma e docsComGap
+    return res.json({
+      totalVendas: +result.totalVendas.toFixed(2),
+      qtdVendas:   result.qtdVendas,
+      porForma:    result.porForma.map(f => ({ forma: f.forma, bandeira: f.bandeira||'—', total: +f.total.toFixed(2) })),
+      docsComGap:  result.docsComGap || [],
+    });
+  } catch (e) { res.status(500).json({ error: e.message, stack: e.stack }); }
+});
+
+// ── Confirmações Manuais (PIX direto, Cielo, etc.) ──────────────────────────
+async function getConfirmacoesManualCol() {
+  if (!mongoDb) throw new Error('MongoDB não conectado');
+  const col = mongoDb.collection('confConfirmacoesManual');
+  await col.createIndex({ board: 1, date: 1 }, { unique: true, background: true }).catch(() => {});
+  return col;
+}
+
+// GET /api/conferencia/confirmacoes-manuais?board=X&date=Y
+app.get('/api/conferencia/confirmacoes-manuais', requireAuth, async (req, res) => {
+  try {
+    const { board, date } = req.query;
+    if (!board || !date) return res.status(400).json({ error: 'board e date obrigatórios' });
+    const col = await getConfirmacoesManualCol();
+    const doc = await col.findOne({ board, date });
+    res.json(doc ? { entries: doc.entries || {}, updatedBy: doc.updatedBy, updatedAt: doc.updatedAt } : { entries: {} });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/conferencia/confirmacoes-manuais
+app.post('/api/conferencia/confirmacoes-manuais', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { board, date, entries } = req.body;
+    if (!board || !date) return res.status(400).json({ error: 'board e date obrigatórios' });
+    const col  = await getConfirmacoesManualCol();
+    const updatedBy = req.session?.user?.username || 'sistema';
+    await col.updateOne(
+      { board, date },
+      { $set: { board, date, entries: entries || {}, updatedBy, updatedAt: new Date() } },
+      { upsert: true }
+    );
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -7433,6 +7954,10 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
             fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchVendedores,
             fetchProdutosPromocoes, parseBrNum } = require('./services/microvix');
 
+    const promoPromise = _promoIsValid(cnpj)
+      ? Promise.resolve(_promoGet(cnpj))
+      : fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave).then(rows => { _promoSet(cnpj, rows); return rows; }).catch(() => []);
+
     const [movRows, planoRows, cartoesRows, planosCatalog, bandeirasCatalog, vendedoresRows, promoRows, catalog] = await Promise.all([
       fetchMovimento(cnpj, dtIni, dtFin, chave),
       fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave).catch(() => []),
@@ -7440,13 +7965,14 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       fetchLinxPlanos(cnpj, chave).catch(() => []),
       fetchLinxPlanosBandeiras(cnpj, chave).catch(() => []),
       fetchVendedores(cnpj, chave).catch(() => []),
-      fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave).catch(() => []),
+      promoPromise,
       _getCatalog(lojas).catch(() => ({})),
     ]);
 
     const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
 
     // Mapa de preços promocionais: cod_produto → preco_promocao
+<<<<<<< HEAD
     // O Microvix pode retornar o campo com diferentes nomes dependendo da versão
     const promoMap = {};
     for (const p of (Array.isArray(promoRows) ? promoRows : [])) {
@@ -7456,6 +7982,21 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
         p.preco_venda_promo || p.preco_venda || p.valor || '0'
       );
       if (cod && preco > 0) promoMap[cod] = preco;
+=======
+    // Filtra apenas promoções vigentes hoje (API retorna range amplo)
+    // Datas da API vêm em DD/MM/YYYY HH:MM:SS — parser manual para evitar interpretação MM/DD
+    const parseBRDt = s => { const m = String(s||'').match(/(\d{2})\/(\d{2})\/(\d{4})/); return m ? new Date(+m[3], +m[2]-1, +m[1]) : null; };
+    const agora = new Date();
+    const promoMap = {};
+    for (const p of (Array.isArray(promoRows) ? promoRows : [])) {
+      const cod   = String(p.cod_produto || '').trim();
+      const preco = parseBR(p.preco_promocao || '0');
+      if (!cod || preco <= 0) continue;
+      const inicio = parseBRDt(p.data_inicio_promocao);
+      const fim2   = parseBRDt(p.data_termino_promocao);
+      if (inicio && fim2 && (agora < inicio || agora > fim2)) continue;
+      promoMap[cod] = preco;
+>>>>>>> 68f82364473145eed5d3d5c756557cfed8452c60
     }
 
     // Catálogos
@@ -7518,6 +8059,8 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       if ((r.soma_relatorio || 'S').toUpperCase() === 'N') continue;
       const op    = (r.operacao || '').trim().toUpperCase();
       if (op !== 'S' && op !== 'DS') continue;
+      // tipo_transacao 'J' sem documento = ajuste de balanço/estoque (Tommy: FALTA BALANÇO)
+      if ((r.tipo_transacao || '').trim().toUpperCase() === 'J' && String(r.documento || '').trim() === '0') continue;
       const serie = String(r.serie || r.serie_documento || '').trim();
       if (serie === '999') continue;
       // Série 4: processa normalmente — pós-filtro vai remover os de total positivo (transferências internas)
@@ -7590,16 +8133,29 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
           precoPromocao: precoPromo,
         });
 
-        if (!emPromocao && descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {
-          // Só alerta desconto excessivo se o produto NÃO está em promoção
+        // Se tem preço promo: desconto é relativo ao preço promo, não ao de tabela
+        // Vendeu >= promo → ok. Vendeu < promo → alerta com diferença.
+        const vlrLiqUnit   = vlrLiq; // preço unitário vendido
+        const baseDesconto = emPromocao ? precoPromo : vlrUnit; // base para cálculo de desconto
+        const abaixoPromo  = emPromocao && vlrLiqUnit < precoPromo && vlrLiqUnit > 0;
+        const descAjustado = emPromocao ? Math.max(0, (precoPromo - vlrLiqUnit) * qty) : vlrDesc * qty;
+        const percAjustado = baseDesconto > 0 && descAjustado > 0 ? (descAjustado / (baseDesconto * qty)) * 100 : 0;
+
+        if (abaixoPromo) {
+          docMap[doc].alertas.push({
+            tipo: 'desconto_item',
+            msg:  `"${(r.descricao || r.referencia || codProd || '').trim()}" vendido abaixo do preço promo (R$${vlrLiqUnit.toFixed(2)} < R$${precoPromo.toFixed(2)})`,
+          });
+        } else if (!emPromocao && descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {
           docMap[doc].alertas.push({
             tipo: 'desconto_item',
             msg:  `"${(r.descricao || r.referencia || codProd || '').trim()}" ${percItem.toFixed(1)}% desc (máx ${descontoMaxItem}%)`,
           });
         }
-        // Alerta: marca sem desconto permitido
-        const marcaItem = (catInfo.marca || '').trim().toUpperCase();
-        if (marcasSemDesconto.length && marcaItem && marcasSemDesconto.includes(marcaItem) && vlrDesc > 0) {
+        // Alerta: marca sem desconto — não dispara se tem promo e vendeu >= promo
+        const marcaItem    = (catInfo.marca || '').trim().toUpperCase();
+        const cobertoPelaPromo = emPromocao && !abaixoPromo;
+        if (marcasSemDesconto.length && marcaItem && marcasSemDesconto.includes(marcaItem) && vlrDesc > 0 && !cobertoPelaPromo) {
           docMap[doc].alertas.push({
             tipo: 'marca_sem_desconto',
             msg:  `"${(r.descricao || r.referencia || codProd || '').trim()}" (${catInfo.marca}) não permite desconto`,
@@ -7610,14 +8166,17 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
 
     // Alertas de desconto por venda e totais de desconto
     for (const d of Object.values(docMap)) {
-      const totalBruto = d.itens.reduce((s, i) => s + i.vlrBruto, 0);
-      const totalDesc  = d.itens.reduce((s, i) => s + i.vlrDesconto, 0);
+      const totalBruto   = d.itens.reduce((s, i) => s + i.vlrBruto, 0);
+      const totalDesc    = d.itens.reduce((s, i) => s + i.vlrDesconto, 0);
+      const totalLiquido = d.itens.reduce((s, i) => s + i.vlrLiquido, 0);
+      // Vendas com líquido > bruto (ex: acréscimo de parcelamento) não geram alertas de desconto
+      const liquidoAcimaBruto = totalLiquido > totalBruto + 0.01;
       if (totalDesc > 0 || totalBruto > 0) {
         d.desconto = {
           valor: +totalDesc.toFixed(2),
           perc:  totalBruto > 0 ? +((totalDesc / totalBruto) * 100).toFixed(1) : 0,
         };
-        if (descontoMaxVenda < 100 && totalBruto > 0 && totalDesc > 0) {
+        if (!liquidoAcimaBruto && descontoMaxVenda < 100 && totalBruto > 0 && totalDesc > 0) {
           const percV = (totalDesc / totalBruto) * 100;
           if (percV > descontoMaxVenda) {
             d.alertas.push({
@@ -7625,6 +8184,10 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
               msg:  `Desconto total ${percV.toFixed(1)}% na venda (máx ${descontoMaxVenda}%)`,
             });
           }
+        }
+        // Remove alertas de item gerados anteriormente se líquido > bruto
+        if (liquidoAcimaBruto) {
+          d.alertas = d.alertas.filter(a => a.tipo !== 'desconto_item' && a.tipo !== 'marca_sem_desconto');
         }
       }
     }
@@ -7662,7 +8225,10 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       if (!doc || !docMap[doc]) continue;
       const cd       = String(r.credito_debito || '').trim().toUpperCase();
       const forma    = cd === 'D' ? 'Cartão Débito' : 'Cartão Crédito';
-      const bandeira = (r.descricao_bandeira || r.bandeira || '').trim();
+      // Normaliza a bandeira para o nome canônico (portal Tommy manda nomes verbosos
+      // como "VISA ELECTRON"/"MAESTRO") para casar com o extrato Rede.
+      const bandeiraRaw = (r.descricao_bandeira || r.bandeira || '').trim();
+      const bandeira    = extractBandeira(bandeiraRaw) || bandeiraRaw;
       const valor    = parseBR(r.valor || '0');
       if (valor === 0) continue;
       const sign = docMap[doc].valorTotal < 0 ? -1 : 1;
@@ -7700,6 +8266,51 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       if (!docFormaMap[doc]) docFormaMap[doc] = [];
       docFormaMap[doc].push({ forma: 'PIX', bandeira: '', descPlano: 'PIX', valor: sign * vlrPix, tipoTrans: '' });
       docMap[doc].formas = docFormaMap[doc];
+      // Quando LinxMovimentoPlanos reporta Dinheiro com o valor cheio (inclui o PIX),
+      // o fallback PIX duplica o valor. Detecta e corrige deduzindo o PIX do Dinheiro.
+      const sumComPix = docFormaMap[doc].reduce((s, f) => s + f.valor, 0);
+      const excesso   = +(sumComPix - docMap[doc].valorTotal).toFixed(2);
+      if (excesso > 0.02) {
+        let restante = excesso;
+        for (const f of docFormaMap[doc]) {
+          if (/dinheiro|esp[eé]cie/i.test(f.forma) && f.valor > 0) {
+            const deduz = Math.min(f.valor, restante);
+            f.valor    = +(f.valor - deduz).toFixed(2);
+            restante   = +(restante - deduz).toFixed(2);
+            if (restante <= 0.01) break;
+          }
+        }
+        // Remove formas zeradas
+        docMap[doc].formas = docFormaMap[doc].filter(f => Math.abs(f.valor) > 0.01);
+        docFormaMap[doc]   = docMap[doc].formas;
+      }
+    }
+
+    // ── Desconto no total da venda: redistribui proporcionalmente nos itens ──
+    for (const d of Object.values(docMap)) {
+      if (!d.formas.length || d.itens.length === 0) continue;
+      const sumFormas = +d.formas.reduce((s, f) => s + f.valor, 0).toFixed(2);
+      const descTotal = +(d.valorTotal - sumFormas).toFixed(2);
+      if (descTotal <= 0.02) continue;
+      const totalBruto = d.itens.reduce((s, i) => s + i.vlrBruto, 0);
+      if (totalBruto > 0) {
+        let distribuido = 0;
+        for (let i = 0; i < d.itens.length; i++) {
+          const it = d.itens[i];
+          const descItem = i < d.itens.length - 1
+            ? +(descTotal * (it.vlrBruto / totalBruto)).toFixed(2)
+            : +(descTotal - distribuido).toFixed(2);
+          it.vlrDesconto = +(it.vlrDesconto + descItem).toFixed(2);
+          it.vlrLiquido  = +(it.vlrLiquido  - descItem).toFixed(2);
+          distribuido += descItem;
+        }
+      }
+      d.valorTotal = sumFormas;
+      const totalDescItens = d.itens.reduce((s, i) => s + i.vlrDesconto, 0);
+      d.desconto = {
+        valor: +totalDescItens.toFixed(2),
+        perc:  totalBruto > 0 ? +((totalDescItens / totalBruto) * 100).toFixed(1) : 0,
+      };
     }
 
     // ── Alertas: parcela mínima ─────────────────────────────────────────────
@@ -7717,8 +8328,8 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
           return mP ? parseInt(mP[1]) : 1;
         })();
         if (nP <= 1) continue;
-        const vlrPlano = parseBR(r.total || r.valor || r.valor_plano || '0');
-        const vlrParc  = vlrPlano / nP;
+        const vlrLiqVenda = Math.abs(docMap[doc].valorTotal || 0);
+        const vlrParc     = vlrLiqVenda > 0 ? vlrLiqVenda / nP : parseBR(r.total || r.valor || r.valor_plano || '0') / nP;
         if (vlrParc < parcelaMin && vlrParc > 0) {
           docMap[doc].alertas.push({
             tipo: 'parcela_minima',
@@ -7737,16 +8348,21 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
         const temParcelado = d.formas.some(f =>
           f.tipoTrans === 'C' && (f.parcelas || 1) > 1
         );
-        if (temParcelado) {
-          const parcInfo = d.formas
-            .filter(f => f.tipoTrans === 'C' && (f.parcelas || 1) > 1)
-            .map(f => `${f.bandeira || f.forma} ${f.parcelas}x`)
-            .join(', ');
-          d.alertas.push({
-            tipo: 'desconto_parcelado',
-            msg:  `Desconto de R$ ${d.desconto.valor.toFixed(2).replace('.',',')} concedido em venda parcelada (${parcInfo})`,
-          });
-        }
+        if (!temParcelado) continue;
+        // Não alerta se todos os itens com desconto estão cobertos por promoção
+        // (vendido >= preço promo → promoção se aplica também em parcelado)
+        const itensCobertos = d.itens.every(it =>
+          it.vlrDesconto <= 0 || (it.emPromocao && it.precoPromocao && it.vlrLiquido / it.quantidade >= it.precoPromocao)
+        );
+        if (itensCobertos) continue;
+        const parcInfo = d.formas
+          .filter(f => f.tipoTrans === 'C' && (f.parcelas || 1) > 1)
+          .map(f => `${f.bandeira || f.forma} ${f.parcelas}x`)
+          .join(', ');
+        d.alertas.push({
+          tipo: 'desconto_parcelado',
+          msg:  `Desconto de R$ ${d.desconto.valor.toFixed(2).replace('.',',')} concedido em venda parcelada (${parcInfo})`,
+        });
       }
     }
 
@@ -7799,6 +8415,30 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       porVendedor[key].vendas.push(v);
     }
 
+    // Diagnóstico: docs onde sum(formas.valor) ≠ valorTotal
+    const docsComGap = vendas
+      .map(v => {
+        const sumF = +v.formas.reduce((s, f) => s + f.valor, 0).toFixed(2);
+        const gap  = +(v.valorTotal - sumF).toFixed(2);
+        if (Math.abs(gap) < 0.02) return null;
+        return {
+          doc:        v.doc,
+          hora:       v.hora,
+          vendedor:   v.vendedor,
+          valorTotal: +v.valorTotal.toFixed(2),
+          sumFormas:  sumF,
+          gap,
+          formas: v.formas.map(f => ({ forma: f.forma, bandeira: f.bandeira, valor: +f.valor.toFixed(2) })),
+        };
+      })
+      .filter(Boolean);
+
+    if (docsComGap.length) {
+      console.log(`[conferencia/vendas] ${board} ${dtIni}: ${docsComGap.length} doc(s) com gap forma×total →`,
+        docsComGap.map(g => `doc ${g.doc}: total=${g.valorTotal} formas=${g.sumFormas} gap=${g.gap} formas=[${g.formas.map(f=>`${f.forma}/${f.bandeira}:${f.valor}`).join(',')}]`).join(' | ')
+      );
+    }
+
     return {
       board, dtIni, dtFin, regra,
       totalVendas: vendas.reduce((s, v) => s + v.valorTotal, 0),
@@ -7807,6 +8447,7 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       vendas,
       porForma:    Object.values(porForma).sort((a, b) => b.total - a.total),
       porVendedor: Object.values(porVendedor).sort((a, b) => b.total - a.total),
+      docsComGap,
     };
 }
 
@@ -8073,11 +8714,13 @@ app.get('/api/certificados/alertas', requireAuth, async (req, res) => {
 });
 
 // ── Start ──────────────────────────────────────────────────────────────────
+// Porta abre imediatamente — MongoDB conecta em background para não bloquear o health check do Render
+app.listen(PORT, () => {
+  console.log(`\n✅  Gestão de Lojas → http://localhost:${PORT}\n`);
+});
+
 initMongo()
   .then(() => {
-    app.listen(PORT, () => {
-      console.log(`\n✅  Gestão de Lojas → http://localhost:${PORT}\n`);
-    });
 
     // ── Cron: fechamento de caixa — diário 08:00 Brasília, sincroniza d-1 ──
     if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
@@ -8373,5 +9016,5 @@ initMongo()
   })
   .catch(err => {
     console.error('Falha ao conectar MongoDB:', err.message);
-    process.exit(1);
+    // Não encerra o processo — servidor já está ouvindo na porta
   });
