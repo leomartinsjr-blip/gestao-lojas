@@ -43,6 +43,10 @@ async function initMongo() {
     serverSelectionTimeoutMS: 10000,
     tls: true,
     tlsAllowInvalidCertificates: false,
+    maxPoolSize: 10,        // M0 suporta 500 conexões totais; 10 é seguro para múltiplos workers
+    minPoolSize: 1,
+    maxIdleTimeMS: 30000,   // fecha conexões ociosas após 30s
+    connectTimeoutMS: 15000,
   });
   await client.connect();
   mongoDb = client.db('gestao_lojas');
