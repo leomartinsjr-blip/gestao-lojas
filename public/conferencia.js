@@ -17,7 +17,7 @@
 
   fetch('/api/me').then(r=>r.json()).then(u => { $('userLabel').textContent = u.label||u.username||''; }).catch(()=>{});
 
-  // ── Catálogo: botão warm + status ─────────────────────────────────────────
+  // ── Catálogo: status + rebuild manual ────────────────────────────────────
   (function() {
     const btn   = $('btnCatalogWarm');
     const label = $('catalogWarmLabel');
@@ -25,27 +25,33 @@
     if (!btn) return;
 
     let polling = null;
+    let _lastData = null;
 
     function setSpinning(on) {
       icon.style.animation = on ? 'spin 1s linear infinite' : '';
     }
 
     function showStatus(data) {
+      _lastData = data;
       if (data.building) {
         label.textContent = `Atualizando… ${data.buildingForSec || 0}s`;
         btn.style.borderColor = 'var(--cf-primary)';
         btn.style.color = 'var(--cf-primary)';
+        btn.title = 'Catálogo sendo reconstruído';
         setSpinning(true);
+        if (!polling) polling = setInterval(fetchStatus, 3000);
       } else if (data.cached && data.size > 0) {
         label.textContent = `Catálogo: ${data.size.toLocaleString('pt-BR')} itens`;
         btn.style.borderColor = 'var(--cf-green)';
         btn.style.color = 'var(--cf-green)';
+        btn.title = 'Catálogo carregado — clique para forçar atualização';
         setSpinning(false);
         clearInterval(polling); polling = null;
       } else {
-        label.textContent = 'Catálogo vazio';
+        label.textContent = 'Catálogo vazio — clique para carregar';
         btn.style.borderColor = 'var(--cf-alert)';
         btn.style.color = 'var(--cf-alert)';
+        btn.title = 'Catálogo não carregado — clique para iniciar';
         setSpinning(false);
         clearInterval(polling); polling = null;
       }
@@ -55,24 +61,24 @@
       fetch('/api/catalog-status').then(r => r.ok ? r.json() : null).then(d => { if (d) showStatus(d); }).catch(() => {});
     }
 
-    function startPolling() {
-      clearInterval(polling);
-      polling = setInterval(fetchStatus, 3000);
-    }
-
     btn.addEventListener('click', () => {
-      if (polling) return;
+      // Se já está carregando, não faz nada
+      if (_lastData?.building) return;
+      // Se catálogo está ok e clicou sem intenção de forçar, ignora
+      if (_lastData?.cached && _lastData?.size > 0) {
+        if (!confirm('Catálogo já carregado. Forçar atualização?')) return;
+      }
       label.textContent = 'Iniciando…';
       btn.style.borderColor = 'var(--cf-primary)';
       btn.style.color = 'var(--cf-primary)';
       setSpinning(true);
       fetch('/api/catalog-warm')
         .then(r => r.json())
-        .then(d => { if (d.ok) startPolling(); })
+        .then(d => { if (d.ok) { _lastData = { building: true }; fetchStatus(); } })
         .catch(() => { label.textContent = 'Erro'; setSpinning(false); });
     });
 
-    // Carrega status ao abrir
+    // Apenas exibe o status atual — não aciona rebuild
     fetchStatus();
   })();
 
