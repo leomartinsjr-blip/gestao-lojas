@@ -7699,10 +7699,14 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
 });
 
 // ── Extrato Rede (mensal) ─────────────────────────────────────────────────────
+let _redeExtratoColReady = false;
 async function getRedeExtratoCol() {
   if (!mongoDb) throw new Error('MongoDB não conectado');
   const col = mongoDb.collection('confRedeExtrato');
-  await col.createIndex({ board: 1, date: 1 }, { unique: true, background: true }).catch(() => {});
+  if (!_redeExtratoColReady) {
+    await col.createIndex({ board: 1, date: 1 }, { unique: true, background: true }).catch(() => {});
+    _redeExtratoColReady = true;
+  }
   return col;
 }
 
@@ -7738,12 +7742,16 @@ app.get('/api/conferencia/rede-extrato', requireAuth, async (req, res) => {
 });
 
 // ── Conferência Revisão helpers ──────────────────────────────────────────────
+let _conferenciaRevisoesColReady = false;
 async function getConferenciaRevisoesCol() {
   if (!mongoDb) throw new Error('MongoDB não conectado');
   const col = mongoDb.collection('confRevisoes');
-  // Garante índice único em doc+board e índice por data para queries de período
-  await col.createIndex({ doc: 1, board: 1 }, { unique: true, background: true }).catch(() => {});
-  await col.createIndex({ data: 1, board: 1 }, { background: true }).catch(() => {});
+  // Cria índices apenas uma vez por ciclo de vida do servidor
+  if (!_conferenciaRevisoesColReady) {
+    await col.createIndex({ doc: 1, board: 1 }, { unique: true, background: true }).catch(() => {});
+    await col.createIndex({ data: 1, board: 1 }, { background: true }).catch(() => {});
+    _conferenciaRevisoesColReady = true;
+  }
   return col;
 }
 
@@ -7811,10 +7819,14 @@ app.get('/api/conferencia/reprovadas', requireEscritorioOrAdmin, async (req, res
 });
 
 // ── Saldo Reserva (cobrança antecipada não lançada no Microvix) ──────────────
+let _saldoReservaColReady = false;
 async function getSaldoReservaCol() {
   if (!mongoDb) throw new Error('MongoDB não conectado');
   const col = mongoDb.collection('confSaldoReserva');
-  await col.createIndex({ board: 1, mod: 1, bandeira: 1 }, { unique: true, background: true }).catch(() => {});
+  if (!_saldoReservaColReady) {
+    await col.createIndex({ board: 1, mod: 1, bandeira: 1 }, { unique: true, background: true }).catch(() => {});
+    _saldoReservaColReady = true;
+  }
   return col;
 }
 
@@ -7885,10 +7897,14 @@ app.get('/api/conferencia/debug-doc', requireEscritorioOrAdmin, async (req, res)
 });
 
 // ── Confirmações Manuais (PIX direto, Cielo, etc.) ──────────────────────────
+let _confirmacoesManualColReady = false;
 async function getConfirmacoesManualCol() {
   if (!mongoDb) throw new Error('MongoDB não conectado');
   const col = mongoDb.collection('confConfirmacoesManual');
-  await col.createIndex({ board: 1, date: 1 }, { unique: true, background: true }).catch(() => {});
+  if (!_confirmacoesManualColReady) {
+    await col.createIndex({ board: 1, date: 1 }, { unique: true, background: true }).catch(() => {});
+    _confirmacoesManualColReady = true;
+  }
   return col;
 }
 
