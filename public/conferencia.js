@@ -827,15 +827,34 @@
         const mod   = inp.dataset.reservaMod;
         const band  = inp.dataset.reservaBand;
         const val   = parseFloat(inp.value) || 0;
-        if (val > 0) _saldoReserva[key] = { valor: val, obs: '' };
+        const obs   = _saldoReserva[key]?.obs || '';
+        if (val > 0) _saldoReserva[key] = { valor: val, obs };
         else delete _saldoReserva[key];
         const confBtn = el.querySelector('#concConfirmar');
         if (confBtn) confBtn.disabled = !concAllOk();
         clearTimeout(_saldoReservaSaveTimer);
         _saldoReservaSaveTimer = setTimeout(async () => {
           try {
-            await api('POST', '/api/conferencia/saldo-reserva', { board: _rotinaBoard, mod, bandeira: band, valor: val });
+            await api('POST', '/api/conferencia/saldo-reserva', { board: _rotinaBoard, mod, bandeira: band, valor: val, obs });
           } catch(e) { console.warn('Erro ao salvar saldo reserva:', e.message); }
+        }, 800);
+      });
+    });
+
+    // Inputs de observação do saldo reserva
+    el.querySelectorAll('input[data-reserva-obs-key]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const key  = inp.dataset.reservaObsKey;
+        const mod  = inp.dataset.reservaMod;
+        const band = inp.dataset.reservaBand;
+        const obs  = inp.value.trim();
+        const val  = _saldoReserva[key]?.valor || 0;
+        if (_saldoReserva[key]) _saldoReserva[key].obs = obs;
+        clearTimeout(_saldoReservaSaveTimer);
+        _saldoReservaSaveTimer = setTimeout(async () => {
+          try {
+            await api('POST', '/api/conferencia/saldo-reserva', { board: _rotinaBoard, mod, bandeira: band, valor: val, obs });
+          } catch(e) { console.warn('Erro ao salvar obs reserva:', e.message); }
         }, 800);
       });
     });
@@ -1156,9 +1175,10 @@
       })() : '';
       // Campo reserva: aparece quando Rede > Microvix (diff > 0)
       const reservaField = d > 0.10 ? (
-        '<div style="margin-top:4px;display:flex;align-items:center;gap:4px">' +
+        '<div style="margin-top:4px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">' +
           '<span style="font-size:10px;color:var(--cf-muted)">reserva:</span>' +
-          '<input type="number" step="0.01" min="0" data-reserva-key="' + esc(k) + '" data-reserva-mod="' + esc(entry.mod) + '" data-reserva-band="' + esc(entry.bandeira||'') + '" value="' + (reserva > 0 ? reserva.toFixed(2) : '') + '" placeholder="0,00" title="' + esc(reservaObs) + '" style="width:80px;text-align:right;padding:2px 4px;border-radius:4px;border:1px solid var(--cf-border);background:var(--cf-input,var(--cf-card));color:inherit;font-size:11px;font-family:inherit">' +
+          '<input type="number" step="0.01" min="0" data-reserva-key="' + esc(k) + '" data-reserva-mod="' + esc(entry.mod) + '" data-reserva-band="' + esc(entry.bandeira||'') + '" value="' + (reserva > 0 ? reserva.toFixed(2) : '') + '" placeholder="0,00" style="width:80px;text-align:right;padding:2px 4px;border-radius:4px;border:1px solid var(--cf-border);background:var(--cf-input,var(--cf-card));color:inherit;font-size:11px;font-family:inherit">' +
+          '<input type="text" data-reserva-obs-key="' + esc(k) + '" data-reserva-mod="' + esc(entry.mod) + '" data-reserva-band="' + esc(entry.bandeira||'') + '" value="' + esc(reservaObs) + '" placeholder="observação (ex: venda em aberto)" style="flex:1;min-width:140px;padding:2px 4px;border-radius:4px;border:1px solid var(--cf-border);background:var(--cf-input,var(--cf-card));color:inherit;font-size:11px;font-family:inherit">' +
         '</div>'
       ) : '';
       const diffDisplay = okComReserva
