@@ -293,9 +293,14 @@
     if (_data) render(_data);
   }));
 
+  let _buscarAbort = null;
   async function buscarVendas() {
     const board=$('vBoard').value, dtIni=$('vDtIni').value, dtFin=$('vDtFin').value;
     if (!board||!dtIni||!dtFin) return alert('Preencha loja e período.');
+    // Cancela busca anterior se ainda estiver em andamento
+    if (_buscarAbort) { _buscarAbort.abort(); _buscarAbort = null; }
+    const abort = new AbortController();
+    _buscarAbort = abort;
     const btn=$('vBuscarBtn');
     btn.disabled=true;
     btn.innerHTML='<span class="spinner"></span> Buscando…';
@@ -304,9 +309,10 @@
     $('vResult').innerHTML = '';
     const alertRowReset = $('vAlertRow'); if (alertRowReset) { alertRowReset.innerHTML = ''; alertRowReset.style.display = 'none'; }
     try {
-      [_data] = await Promise.all([
-        api('GET', `/api/conferencia/vendas?board=${board}&dtIni=${dtIni}&dtFin=${dtFin}`),
-      ]);
+      const r = await fetch(`/api/conferencia/vendas?board=${board}&dtIni=${dtIni}&dtFin=${dtFin}`, { signal: abort.signal });
+      if (!r.ok) { const e = await r.json().catch(()=>({})); throw new Error(e.error||r.statusText); }
+      _data = await r.json();
+      _buscarAbort = null;
       // Carrega revisões salvas para o período/board
       try {
         const revisoes = await api('GET', `/api/conferencia/revisoes?board=${board}&dtIni=${dtIni}&dtFin=${dtFin}`);
@@ -326,10 +332,13 @@
       _confirmacoesManual = {}; _saldoReserva = {};
       render(_data);
     } catch(e) {
+      if (e.name === 'AbortError') return; // busca cancelada pelo usuário
       $('vResult').innerHTML = `<div class="cf-empty" style="color:${P('alert')}">⚠ ${esc(e.message)}</div>`;
     } finally {
-      btn.disabled=false;
-      btn.innerHTML='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Buscar';
+      if (!abort.signal.aborted) {
+        btn.disabled=false;
+        btn.innerHTML='<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Buscar';
+      }
     }
   }
 

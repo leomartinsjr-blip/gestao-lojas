@@ -4391,6 +4391,25 @@ function _promoSet(cnpj, rows) {
   _promoCache[_promoCacheKey(cnpj)] = { rows, date: new Date().toISOString().slice(0, 10) };
 }
 
+// Cache de planos/bandeiras/vendedores — dados estáticos, TTL 1h por CNPJ
+const _staticMicrovixCache = {}; // key: `${tipo}:${cnpj}` → { rows, at }
+const _STATIC_TTL = 60 * 60 * 1000; // 1h
+function _staticGet(tipo, cnpj) {
+  const k = `${tipo}:${String(cnpj).replace(/\D/g,'')}`;
+  const c = _staticMicrovixCache[k];
+  return (c && Date.now() - c.at < _STATIC_TTL) ? c.rows : null;
+}
+function _staticSet(tipo, cnpj, rows) {
+  _staticMicrovixCache[`${tipo}:${String(cnpj).replace(/\D/g,'')}`] = { rows, at: Date.now() };
+}
+async function _cachedFetch(tipo, cnpj, fn) {
+  const cached = _staticGet(tipo, cnpj);
+  if (cached) return cached;
+  const rows = await fn();
+  _staticSet(tipo, cnpj, rows);
+  return rows;
+}
+
 // ── Índice compacto ref→cores (para /api/cadastro-produto/check) ────────────
 // Persiste no MongoDB → sobrevive a restarts; muito menor que o catálogo completo
 let _refColorIndex    = null;   // { "REF123": ["AZUL","PRETO"], ... }
@@ -8007,9 +8026,9 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       fetchMovimento(cnpj, dtIni, dtFin, chave).catch(e => { throw e; }), // propaga erro mas com timeout já garantido no postRequest
       fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave).catch(() => []),
       fetchMovimentoCartoes(cnpj, dtIni, dtFin, chave).catch(() => []),
-      fetchLinxPlanos(cnpj, chave).catch(() => []),
-      fetchLinxPlanosBandeiras(cnpj, chave).catch(() => []),
-      fetchVendedores(cnpj, chave).catch(() => []),
+      _cachedFetch('planos', cnpj, () => fetchLinxPlanos(cnpj, chave)).catch(() => []),
+      _cachedFetch('bandeiras', cnpj, () => fetchLinxPlanosBandeiras(cnpj, chave)).catch(() => []),
+      _cachedFetch('vendedores', cnpj, () => fetchVendedores(cnpj, chave)).catch(() => []),
       promoPromise,
       Promise.race([_getCatalog(lojas), new Promise(r => setTimeout(() => r({}), 20_000))]).catch(() => ({})),
     ]);
