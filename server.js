@@ -4015,6 +4015,30 @@ app.get('/api/catalog-status', requireAdmin, async (req, res) => {
              keysSample, sampleWith, sampleWithout });
 });
 
+// ── GET /api/microvix/promo-lookup?board=delrey&cod=727526 — checa se produto está em promoção ──
+app.get('/api/microvix/promo-lookup', requireAdmin, async (req, res) => {
+  try {
+    const { fetchProdutosPromocoes } = require('./services/microvix');
+    const board = req.query.board || 'delrey';
+    const cod   = String(req.query.cod || '').trim();
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = (lojas[board] || '').replace(/\D/g, '');
+    if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado` });
+    const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const hoje  = new Date().toISOString().slice(0, 10);
+    const rows  = await fetchProdutosPromocoes(cnpj, hoje, hoje, chave);
+    const parseBRDt = s => { const m = String(s||'').match(/(\d{2})\/(\d{2})\/(\d{4})/); return m ? new Date(+m[3], +m[2]-1, +m[1]) : null; };
+    const agora = new Date();
+    const vigentes = rows.filter(p => {
+      const ini = parseBRDt(p.data_inicio_promocao);
+      const fim = parseBRDt(p.data_termino_promocao);
+      return !ini || !fim || (agora >= ini && agora <= fim);
+    });
+    const hit = cod ? vigentes.filter(p => String(p.cod_produto||'').trim() === cod) : [];
+    res.json({ total_promo: rows.length, vigentes: vigentes.length, cod_buscado: cod, encontrado: hit.length > 0, registros: hit });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/catalog-lookup?codes=880204,884901 — checa códigos no catálogo ──
 app.get('/api/catalog-lookup', requireAdmin, (req, res) => {
   const codes = String(req.query.codes || '').split(',').map(c => c.replace(/\.0+$/, '').trim()).filter(Boolean);
