@@ -2859,8 +2859,9 @@ app.get('/api/caixa-resumo', requireAuth, async (req, res) => {
   const [yr, mo] = month.split('-').map(Number);
   const daysInMonth = new Date(yr, mo, 0).getDate();
   const currentMonth = `${nowBRT.getUTCFullYear()}-${String(nowBRT.getUTCMonth()+1).padStart(2,'0')}`;
+  // d-1: só conta até ontem — hoje ainda não pode ter caixa fechado
   const daysSoFar = month === currentMonth
-    ? Math.min(nowBRT.getUTCDate(), daysInMonth)
+    ? Math.max(0, Math.min(nowBRT.getUTCDate() - 1, daysInMonth))
     : (month < currentMonth ? daysInMonth : 0);
 
   const result = {};
