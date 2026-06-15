@@ -3708,6 +3708,21 @@ app.get('/api/microvix/estoque-raw', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/microvix/promocoes-raw?board=delrey  → debug: campos e amostra do LinxProdutosPromocoes
+app.get('/api/microvix/promocoes-raw', requireAdmin, async (req, res) => {
+  try {
+    const { fetchProdutosPromocoes } = require('./services/microvix');
+    const board = req.query.board || 'delrey';
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = (lojas[board] || '').replace(/\D/g, '');
+    if (!cnpj) return res.status(400).json({ error: `Board "${board}" não mapeado` });
+    const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const hoje  = new Date().toISOString().slice(0, 10);
+    const rows  = await fetchProdutosPromocoes(cnpj, hoje, hoje, chave);
+    res.json({ total: rows.length, fields: rows[0] ? Object.keys(rows[0]) : [], sample: rows.slice(0, 5) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/microvix/produtos-raw?board=delrey  → debug: campos do catálogo LinxProdutos
 app.get('/api/microvix/produtos-raw', requireAdmin, async (req, res) => {
   try {
@@ -7432,10 +7447,14 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
     const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
 
     // Mapa de preços promocionais: cod_produto → preco_promocao
+    // O Microvix pode retornar o campo com diferentes nomes dependendo da versão
     const promoMap = {};
     for (const p of (Array.isArray(promoRows) ? promoRows : [])) {
-      const cod   = String(p.cod_produto || '').trim();
-      const preco = parseBR(p.preco_promocao || '0');
+      const cod   = String(p.cod_produto || p.codigo_produto || p.codigo || '').trim();
+      const preco = parseBR(
+        p.preco_promocao || p.preco_venda_promocao || p.preco_promo ||
+        p.preco_venda_promo || p.preco_venda || p.valor || '0'
+      );
       if (cod && preco > 0) promoMap[cod] = preco;
     }
 
