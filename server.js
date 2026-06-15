@@ -40,13 +40,14 @@ let mongoDb = null;
 async function initMongo() {
   if (!MONGODB_URI) return;
   const client = new MongoClient(MONGODB_URI, {
-    serverSelectionTimeoutMS: 10000,
+    serverSelectionTimeoutMS: 5000,   // falha rápido se Atlas estiver fora
     tls: true,
     tlsAllowInvalidCertificates: false,
     maxPoolSize: 10,        // M0 suporta 500 conexões totais; 10 é seguro para múltiplos workers
     minPoolSize: 1,
     maxIdleTimeMS: 30000,   // fecha conexões ociosas após 30s
-    connectTimeoutMS: 15000,
+    connectTimeoutMS: 8000,
+    socketTimeoutMS: 15000, // operação individual não pode demorar mais que 15s
   });
   await client.connect();
   mongoDb = client.db('gestao_lojas');
@@ -8736,9 +8737,13 @@ app.get('/api/certificados/alertas', requireAuth, async (req, res) => {
 
 // ── Start ──────────────────────────────────────────────────────────────────
 // Porta abre imediatamente — MongoDB conecta em background para não bloquear o health check do Render
-app.listen(PORT, () => {
+const _server = app.listen(PORT, () => {
   console.log(`\n✅  Gestão de Lojas → http://localhost:${PORT}\n`);
 });
+// Timeout global: qualquer request que demore mais de 55s recebe erro
+// (Microvix tem 45s max, então 55s cobre o pior caso + overhead)
+_server.timeout      = 55_000;
+_server.keepAliveTimeout = 65_000;
 
 initMongo()
   .then(() => {
