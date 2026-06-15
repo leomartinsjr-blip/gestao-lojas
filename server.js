@@ -8095,16 +8095,29 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
           precoPromocao: precoPromo,
         });
 
-        if (!emPromocao && descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {
-          // Só alerta desconto excessivo se o produto NÃO está em promoção
+        // Se tem preço promo: desconto é relativo ao preço promo, não ao de tabela
+        // Vendeu >= promo → ok. Vendeu < promo → alerta com diferença.
+        const vlrLiqUnit   = vlrLiq; // preço unitário vendido
+        const baseDesconto = emPromocao ? precoPromo : vlrUnit; // base para cálculo de desconto
+        const abaixoPromo  = emPromocao && vlrLiqUnit < precoPromo && vlrLiqUnit > 0;
+        const descAjustado = emPromocao ? Math.max(0, (precoPromo - vlrLiqUnit) * qty) : vlrDesc * qty;
+        const percAjustado = baseDesconto > 0 && descAjustado > 0 ? (descAjustado / (baseDesconto * qty)) * 100 : 0;
+
+        if (abaixoPromo) {
+          docMap[doc].alertas.push({
+            tipo: 'desconto_item',
+            msg:  `"${(r.descricao || r.referencia || codProd || '').trim()}" vendido abaixo do preço promo (R$${vlrLiqUnit.toFixed(2)} < R$${precoPromo.toFixed(2)})`,
+          });
+        } else if (!emPromocao && descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {
           docMap[doc].alertas.push({
             tipo: 'desconto_item',
             msg:  `"${(r.descricao || r.referencia || codProd || '').trim()}" ${percItem.toFixed(1)}% desc (máx ${descontoMaxItem}%)`,
           });
         }
-        // Alerta: marca sem desconto permitido
-        const marcaItem = (catInfo.marca || '').trim().toUpperCase();
-        if (marcasSemDesconto.length && marcaItem && marcasSemDesconto.includes(marcaItem) && vlrDesc > 0) {
+        // Alerta: marca sem desconto — não dispara se tem promo e vendeu >= promo
+        const marcaItem    = (catInfo.marca || '').trim().toUpperCase();
+        const cobertoPelaPromo = emPromocao && !abaixoPromo;
+        if (marcasSemDesconto.length && marcaItem && marcasSemDesconto.includes(marcaItem) && vlrDesc > 0 && !cobertoPelaPromo) {
           docMap[doc].alertas.push({
             tipo: 'marca_sem_desconto',
             msg:  `"${(r.descricao || r.referencia || codProd || '').trim()}" (${catInfo.marca}) não permite desconto`,
@@ -8115,14 +8128,17 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
 
     // Alertas de desconto por venda e totais de desconto
     for (const d of Object.values(docMap)) {
-      const totalBruto = d.itens.reduce((s, i) => s + i.vlrBruto, 0);
-      const totalDesc  = d.itens.reduce((s, i) => s + i.vlrDesconto, 0);
+      const totalBruto   = d.itens.reduce((s, i) => s + i.vlrBruto, 0);
+      const totalDesc    = d.itens.reduce((s, i) => s + i.vlrDesconto, 0);
+      const totalLiquido = d.itens.reduce((s, i) => s + i.vlrLiquido, 0);
+      // Vendas com líquido > bruto (ex: acréscimo de parcelamento) não geram alertas de desconto
+      const liquidoAcimaBruto = totalLiquido > totalBruto + 0.01;
       if (totalDesc > 0 || totalBruto > 0) {
         d.desconto = {
           valor: +totalDesc.toFixed(2),
           perc:  totalBruto > 0 ? +((totalDesc / totalBruto) * 100).toFixed(1) : 0,
         };
-        if (descontoMaxVenda < 100 && totalBruto > 0 && totalDesc > 0) {
+        if (!liquidoAcimaBruto && descontoMaxVenda < 100 && totalBruto > 0 && totalDesc > 0) {
           const percV = (totalDesc / totalBruto) * 100;
           if (percV > descontoMaxVenda) {
             d.alertas.push({
@@ -8130,6 +8146,10 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
               msg:  `Desconto total ${percV.toFixed(1)}% na venda (máx ${descontoMaxVenda}%)`,
             });
           }
+        }
+        // Remove alertas de item gerados anteriormente se líquido > bruto
+        if (liquidoAcimaBruto) {
+          d.alertas = d.alertas.filter(a => a.tipo !== 'desconto_item' && a.tipo !== 'marca_sem_desconto');
         }
       }
     }
@@ -8290,16 +8310,21 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
         const temParcelado = d.formas.some(f =>
           f.tipoTrans === 'C' && (f.parcelas || 1) > 1
         );
-        if (temParcelado) {
-          const parcInfo = d.formas
-            .filter(f => f.tipoTrans === 'C' && (f.parcelas || 1) > 1)
-            .map(f => `${f.bandeira || f.forma} ${f.parcelas}x`)
-            .join(', ');
-          d.alertas.push({
-            tipo: 'desconto_parcelado',
-            msg:  `Desconto de R$ ${d.desconto.valor.toFixed(2).replace('.',',')} concedido em venda parcelada (${parcInfo})`,
-          });
-        }
+        if (!temParcelado) continue;
+        // Não alerta se todos os itens com desconto estão cobertos por promoção
+        // (vendido >= preço promo → promoção se aplica também em parcelado)
+        const itensCobertos = d.itens.every(it =>
+          it.vlrDesconto <= 0 || (it.emPromocao && it.precoPromocao && it.vlrLiquido / it.quantidade >= it.precoPromocao)
+        );
+        if (itensCobertos) continue;
+        const parcInfo = d.formas
+          .filter(f => f.tipoTrans === 'C' && (f.parcelas || 1) > 1)
+          .map(f => `${f.bandeira || f.forma} ${f.parcelas}x`)
+          .join(', ');
+        d.alertas.push({
+          tipo: 'desconto_parcelado',
+          msg:  `Desconto de R$ ${d.desconto.valor.toFixed(2).replace('.',',')} concedido em venda parcelada (${parcInfo})`,
+        });
       }
     }
 
