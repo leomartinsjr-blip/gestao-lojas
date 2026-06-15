@@ -1022,7 +1022,9 @@
       const r = rede[k]?.total || 0;
       const m = mx[k]?.total  || 0;
       const reserva = _saldoReserva[k]?.valor || 0;
-      const diff = Math.abs(r - m - reserva);
+      const d0 = r - m;
+      const reservaEf = d0 > 0.10 ? Math.min(reserva, d0) : 0;
+      const diff = Math.abs(d0 - reservaEf);
       if (diff > 0.10) return false;
     }
     if (!keys.size) return false;
@@ -1107,7 +1109,9 @@
       const bandLabel = entry.bandeira || '—';
       const reserva    = _saldoReserva[k]?.valor || 0;
       const reservaObs = _saldoReserva[k]?.obs   || '';
-      const dComReserva = +(d - reserva).toFixed(2);
+      // Reserva só reduz excedente positivo da Rede — nunca aprofunda déficit
+      const reservaEfetiva = d > 0.10 ? Math.min(reserva, d) : 0;
+      const dComReserva = +(d - reservaEfetiva).toFixed(2);
       const okComReserva = Math.abs(dComReserva) <= 0.10;
       const rowCls   = onlyRede ? 'only-rede' : onlyMx ? 'only-microvix' : okComReserva ? 'ok' : 'nok';
 
