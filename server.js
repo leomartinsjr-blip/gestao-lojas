@@ -7926,11 +7926,17 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
     const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
 
     // Mapa de preços promocionais: cod_produto → preco_promocao
+    // Filtra apenas promoções vigentes hoje (API retorna range amplo)
+    const agora = new Date();
     const promoMap = {};
     for (const p of (Array.isArray(promoRows) ? promoRows : [])) {
       const cod   = String(p.cod_produto || '').trim();
       const preco = parseBR(p.preco_promocao || '0');
-      if (cod && preco > 0) promoMap[cod] = preco;
+      if (!cod || preco <= 0) continue;
+      const inicio = p.data_inicio_promocao ? new Date(p.data_inicio_promocao) : null;
+      const fim2   = p.data_termino_promocao ? new Date(p.data_termino_promocao) : null;
+      if (inicio && fim2 && (agora < inicio || agora > fim2)) continue;
+      promoMap[cod] = preco;
     }
 
     // Catálogos

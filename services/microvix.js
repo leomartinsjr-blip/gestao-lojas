@@ -408,24 +408,14 @@ async function fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave) {
   const hoje = new Date().toISOString().slice(0, 10);
   const fim  = dtFin || hoje;
 
-  // Variações a tentar, da mais simples para a mais restritiva
+  // data_vig_inicial/data_vig_fim filtram pelo intervalo da promoção em si,
+  // não pela data de consulta — usar range amplo e filtrar no cliente.
   const tentativas = [
-    // 1. Só ativa, sem datas
-    [{ id: 'promocao_ativa', valor: 'S' }],
-    // 2. Ativa, datas de cadastro amplas, vigência = hoje
     [
       { id: 'data_cad_inicial', valor: '2000-01-01' },
-      { id: 'data_cad_fim',     valor: hoje },
-      { id: 'data_vig_inicial', valor: hoje },
-      { id: 'data_vig_fim',     valor: hoje },
-      { id: 'promocao_ativa',   valor: 'S' },
-    ],
-    // 3. Ativa, datas de vigência cobrindo o período pedido
-    [
-      { id: 'data_cad_inicial', valor: '2000-01-01' },
-      { id: 'data_cad_fim',     valor: fim },
-      { id: 'data_vig_inicial', valor: dtIni || hoje },
-      { id: 'data_vig_fim',     valor: fim },
+      { id: 'data_cad_fim',     valor: '2099-12-31' },
+      { id: 'data_vig_inicial', valor: '2000-01-01' },
+      { id: 'data_vig_fim',     valor: '2050-12-31' },
       { id: 'promocao_ativa',   valor: 'S' },
     ],
   ];
