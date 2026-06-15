@@ -4540,7 +4540,7 @@ async function _buildCatalog(lojas) {
           { id: 'dt_update_fim',    valor: today },
         ], chave);
         let raw;
-        try { raw = await postRequest(body, 60_000); } catch (e) { console.warn(`[Catalog/${board}] pág`, page, e.message); break; }
+        try { raw = await postRequest(body, 30_000); } catch (e) { console.warn(`[Catalog/${board}] pág`, page, e.message); break; }
         if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) break;
         const rows = parseCsv(raw);
         if (!_catalogRawFields.length && rows.length) {
@@ -4608,11 +4608,10 @@ async function _buildCatalog(lojas) {
       const source = `${chave}|${cnpj}`;
       if (!seenSources.has(source)) { seenSources.add(source); representantes.push(b); }
     }
-    let totalProd = 0;
-    for (const b of representantes) {
-      const n = await fetchBoard(b).catch(e => { console.warn(`[Catalog/${b}] erro:`, e.message); return 0; });
-      totalProd += n;
-    }
+    const counts = await Promise.all(
+      representantes.map(b => fetchBoard(b).catch(e => { console.warn(`[Catalog/${b}] erro:`, e.message); return 0; }))
+    );
+    const totalProd = counts.reduce((s, n) => s + n, 0);
 
     console.log(`[Catalog] ${totalProd} produtos → ${Object.keys(map).length} entradas (via ${representantes.join(',')})`);
     _catalogCache   = map;
