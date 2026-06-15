@@ -40,14 +40,13 @@ let mongoDb = null;
 async function initMongo() {
   if (!MONGODB_URI) return;
   const client = new MongoClient(MONGODB_URI, {
-    serverSelectionTimeoutMS: 5000,   // falha rápido se Atlas estiver fora
+    serverSelectionTimeoutMS: 30000,  // tempo para encontrar primário no Atlas (cold start pode ser lento)
     tls: true,
     tlsAllowInvalidCertificates: false,
     maxPoolSize: 10,        // M0 suporta 500 conexões totais; 10 é seguro para múltiplos workers
     minPoolSize: 1,
     maxIdleTimeMS: 30000,   // fecha conexões ociosas após 30s
-    connectTimeoutMS: 8000,
-    socketTimeoutMS: 15000, // operação individual não pode demorar mais que 15s
+    connectTimeoutMS: 30000,
   });
   await client.connect();
   mongoDb = client.db('gestao_lojas');
