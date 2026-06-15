@@ -4810,7 +4810,7 @@ async function _buildTransResult(boards, lojas, dias) {
 
   // Busca catálogo (setor, marca) em paralelo com estoque/movimento
   const [catalog] = await Promise.all([
-    _getCatalog(lojas),
+    Promise.race([_getCatalog(lojas), new Promise(r => setTimeout(() => r({}), 20_000))]).catch(() => ({})),
     Promise.all(boards.map(async board => {
     const cnpj  = lojas[board].replace(/\D/g, '');
     const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
@@ -7989,14 +7989,14 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       : fetchProdutosPromocoes(cnpj, dtIni, dtFin, chave).then(rows => { _promoSet(cnpj, rows); return rows; }).catch(() => []);
 
     const [movRows, planoRows, cartoesRows, planosCatalog, bandeirasCatalog, vendedoresRows, promoRows, catalog] = await Promise.all([
-      fetchMovimento(cnpj, dtIni, dtFin, chave),
+      fetchMovimento(cnpj, dtIni, dtFin, chave).catch(e => { throw e; }), // propaga erro mas com timeout já garantido no postRequest
       fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave).catch(() => []),
       fetchMovimentoCartoes(cnpj, dtIni, dtFin, chave).catch(() => []),
       fetchLinxPlanos(cnpj, chave).catch(() => []),
       fetchLinxPlanosBandeiras(cnpj, chave).catch(() => []),
       fetchVendedores(cnpj, chave).catch(() => []),
       promoPromise,
-      _getCatalog(lojas).catch(() => ({})),
+      Promise.race([_getCatalog(lojas), new Promise(r => setTimeout(() => r({}), 20_000))]).catch(() => ({})),
     ]);
 
     const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
