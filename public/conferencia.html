@@ -388,6 +388,8 @@ td.muted  { color: var(--cf-muted); }
 .btn-reprovada { border-color:var(--cf-alert); color:var(--cf-alert); background:transparent; }
 .btn-reprovada.active { background:var(--cf-alert); color:#fff; }
 .btn-voltar { font-size:11px; padding:3px 10px; border-radius:5px; border:1px solid var(--cf-border); color:var(--cf-muted); background:transparent; cursor:pointer; font-family:inherit; font-weight:600; transition:.15s; }
+.rep-chip { font-size:11px; padding:3px 9px; border-radius:20px; border:1px solid var(--cf-border); color:var(--cf-muted); background:var(--cf-card2); cursor:pointer; font-family:inherit; font-weight:600; transition:.15s; white-space:nowrap; }
+.rep-chip:hover { border-color:var(--cf-alert); color:var(--cf-alert); }
 .btn-voltar:hover { border-color:var(--cf-muted); color:var(--cf-text); }
 
 /* ── Modal ──────────────────────────────────────────────────── */
@@ -759,27 +761,27 @@ td.muted  { color: var(--cf-muted); }
 </div><!-- /cf-content -->
 
 <!-- ══ MODAL REPROVAÇÃO ══════════════════════════════════════════════════ -->
-<div class="cf-modal-overlay" id="modalReprovacao">
-  <div class="cf-modal">
-    <div>
-      <div class="cf-modal-title">Reprovar Venda</div>
-      <div class="cf-modal-sub" id="modalRepSubtitle"></div>
-    </div>
-    <div id="modalRepAlertas" style="background:#FF616108;border:1px solid #FF616130;border-radius:8px;padding:10px 12px;font-size:11px;line-height:1.6;color:var(--cf-muted)"></div>
-    <div class="cf-modal-field">
-      <label>Valor a Cobrar (R$)</label>
-      <input type="number" id="modalRepValorCobrar" min="0" step="0.01" placeholder="0,00"/>
-    </div>
-    <div class="cf-modal-field">
-      <label>Observação <span style="color:var(--cf-alert)">*</span></label>
-      <textarea id="modalRepObs" rows="3" placeholder="Descreva o motivo da reprovação…"></textarea>
-    </div>
-    <div class="cf-modal-actions">
-      <button class="btn-cancel" id="modalRepCancelar">Cancelar</button>
-      <button class="btn-danger" id="modalRepConfirmar">✗ Confirmar Reprovação</button>
-    </div>
+<!-- Modal de reprovação mantido apenas para compatibilidade (não abre mais) -->
+<div class="cf-modal-overlay" id="modalReprovacao" style="display:none!important"></div>
+
+<!-- Popover inline de reprovação -->
+<div id="repPopover" style="display:none;position:fixed;z-index:9990;width:300px;background:var(--cf-card);border:1px solid var(--cf-border);border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.45);padding:14px 14px 12px">
+  <div style="font-size:11px;font-weight:700;color:var(--cf-alert);margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">✗ Reprovar Venda</div>
+  <div id="repPopSubtitle" style="font-size:11px;color:var(--cf-muted);margin-bottom:10px"></div>
+  <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px" id="repPopChips">
+    <button class="rep-chip" data-txt="Desconto maior que o permitido">Desc. acima do limite</button>
+    <button class="rep-chip" data-txt="Desconto em venda parcelada">Desc. em parcelada</button>
+    <button class="rep-chip" data-txt="Desconto em marca que não permite desconto">Desc. em marca restrita</button>
+  </div>
+  <textarea id="repPopObs" rows="2" placeholder="Motivo da reprovação…" style="width:100%;box-sizing:border-box;background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:7px;color:var(--cf-text);font-size:12px;font-family:inherit;padding:7px 9px;resize:none;outline:none"></textarea>
+  <div style="display:flex;gap:7px;margin-top:8px;align-items:center">
+    <input type="number" id="repPopValorCobrar" min="0" step="0.01" placeholder="Valor a cobrar R$" style="flex:1;background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:7px;color:var(--cf-text);font-size:12px;font-family:inherit;padding:6px 9px;outline:none"/>
+    <button id="repPopConfirmar" style="background:var(--cf-alert);border:none;color:#fff;padding:7px 14px;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap">✗ Reprovar</button>
   </div>
 </div>
+
+<!-- Backdrop transparente para fechar o popover -->
+<div id="repPopBackdrop" style="display:none;position:fixed;inset:0;z-index:9989" id="repPopBackdrop"></div>
 
 <!-- Modal: importar extrato mensal Rede -->
 <div id="redeExtratoModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:9999;align-items:center;justify-content:center">

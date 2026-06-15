@@ -1586,7 +1586,7 @@
     });
     container.querySelectorAll('.btn-reprovada:not([data-bound])').forEach(btn => {
       btn.dataset.bound = '1';
-      btn.addEventListener('click', e => { e.stopPropagation(); abrirModalReprovacao(btn.dataset.doc, btn.dataset.board); });
+      btn.addEventListener('click', e => { e.stopPropagation(); abrirModalReprovacao(btn.dataset.doc, btn.dataset.board, btn); });
     });
     // Botão voltar — remove revisão
     container.querySelectorAll('.btn-voltar:not([data-bound])').forEach(btn => {
@@ -1625,40 +1625,65 @@
     } catch(e) { alert('Erro ao salvar revisão: ' + e.message); }
   }
 
-  // ── Modal de Reprovação ──────────────────────────────────────────────────
+  // ── Popover de Reprovação ────────────────────────────────────────────────
   let _modalDoc = null, _modalBoard = null;
   let _modalCloseCallback = null;
 
-  function abrirModalReprovacao(doc, board) {
+  function fecharRepPopover() {
+    $('repPopover').style.display   = 'none';
+    $('repPopBackdrop').style.display = 'none';
+  }
+
+  function abrirModalReprovacao(doc, board, anchorEl) {
     const venda = (_data?.vendas || []).find(v => v.doc === doc && (v.board === board || !v.board));
     if (!venda) return;
     _modalDoc = doc; _modalBoard = board;
     const rev = _revisoesMap[doc + '::' + board];
     const boardLabel = LOJA_LABEL[board] || board || '';
-    $('modalRepSubtitle').textContent = `${venda.vendedorNome || venda.vendedor || '—'} · ${boardLabel} · ${fmtR(venda.valorTotal)}`;
-    $('modalRepAlertas').innerHTML = (venda.alertas || []).map(a => `• ${esc(a.msg)}`).join('<br>') || '—';
-    // Pré-preenche valor a cobrar: soma dos vlrDesconto dos itens com alerta
-    const alertaItens = new Set((venda.alertas || []).filter(a => a.tipo === 'desconto_item').map(a => a.msg));
-    let vlrCobrar = rev?.valorCobrar ?? venda.itens?.filter(it => it.vlrDesconto > 0).reduce((s, it) => s + it.vlrDesconto, 0) ?? 0;
-    $('modalRepValorCobrar').value = vlrCobrar.toFixed(2);
-    $('modalRepObs').value = rev?.obs || '';
-    $('modalReprovacao').classList.add('open');
-    $('modalRepObs').focus();
+    $('repPopSubtitle').textContent = `${venda.vendedorNome || venda.vendedor || '—'} · ${boardLabel} · ${fmtR(venda.valorTotal)}`;
+    const vlrCobrar = rev?.valorCobrar ?? venda.itens?.filter(it => it.vlrDesconto > 0).reduce((s, it) => s + it.vlrDesconto, 0) ?? 0;
+    $('repPopValorCobrar').value = vlrCobrar > 0 ? vlrCobrar.toFixed(2) : '';
+    $('repPopObs').value = rev?.obs || '';
+    $('repPopObs').style.borderColor = '';
+
+    // Posiciona acima do botão clicado
+    const pop = $('repPopover');
+    pop.style.display = 'block';
+    const anchor = anchorEl || document.body;
+    const rect   = anchor.getBoundingClientRect();
+    const popH   = pop.offsetHeight || 220;
+    let top  = rect.top - popH - 8;
+    let left = rect.left;
+    if (top < 8) top = rect.bottom + 8;
+    if (left + 300 > window.innerWidth) left = window.innerWidth - 308;
+    pop.style.top  = top + 'px';
+    pop.style.left = left + 'px';
+
+    $('repPopBackdrop').style.display = 'block';
+    setTimeout(() => $('repPopObs').focus(), 50);
   }
 
-  $('modalRepCancelar').addEventListener('click', () => $('modalReprovacao').classList.remove('open'));
-  $('modalReprovacao').addEventListener('click', e => { if (e.target === $('modalReprovacao')) $('modalReprovacao').classList.remove('open'); });
-  $('modalRepConfirmar').addEventListener('click', async () => {
-    const obs = $('modalRepObs').value.trim();
-    if (!obs) { $('modalRepObs').focus(); $('modalRepObs').style.borderColor = 'var(--cf-alert)'; return; }
-    $('modalRepObs').style.borderColor = '';
-    const valorCobrar = parseFloat($('modalRepValorCobrar').value) || 0;
-    $('modalRepConfirmar').disabled = true;
+  $('repPopBackdrop').addEventListener('click', fecharRepPopover);
+
+  document.querySelectorAll('.rep-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+      $('repPopObs').value = chip.dataset.txt;
+      $('repPopObs').style.borderColor = '';
+      $('repPopObs').focus();
+    });
+  });
+
+  $('repPopConfirmar').addEventListener('click', async () => {
+    const obs = $('repPopObs').value.trim();
+    if (!obs) { $('repPopObs').style.borderColor = 'var(--cf-alert)'; $('repPopObs').focus(); return; }
+    $('repPopObs').style.borderColor = '';
+    const valorCobrar = parseFloat($('repPopValorCobrar').value) || 0;
+    $('repPopConfirmar').disabled = true;
     try {
       await salvarRevisao(_modalDoc, _modalBoard, 'reprovada', obs, valorCobrar);
-      $('modalReprovacao').classList.remove('open');
+      fecharRepPopover();
     } catch(e) { alert('Erro: ' + e.message); }
-    finally { $('modalRepConfirmar').disabled = false; }
+    finally { $('repPopConfirmar').disabled = false; }
   });
 
   // ════════════════════════════════════════════════════════════════════════
