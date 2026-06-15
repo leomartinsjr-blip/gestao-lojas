@@ -8634,11 +8634,13 @@ app.get('/api/certificados/alertas', requireAuth, async (req, res) => {
 });
 
 // ── Start ──────────────────────────────────────────────────────────────────
+// Porta abre imediatamente — MongoDB conecta em background para não bloquear o health check do Render
+app.listen(PORT, () => {
+  console.log(`\n✅  Gestão de Lojas → http://localhost:${PORT}\n`);
+});
+
 initMongo()
   .then(() => {
-    app.listen(PORT, () => {
-      console.log(`\n✅  Gestão de Lojas → http://localhost:${PORT}\n`);
-    });
 
     // ── Cron: fechamento de caixa — diário 08:00 Brasília, sincroniza d-1 ──
     if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
@@ -8934,5 +8936,5 @@ initMongo()
   })
   .catch(err => {
     console.error('Falha ao conectar MongoDB:', err.message);
-    process.exit(1);
+    // Não encerra o processo — servidor já está ouvindo na porta
   });
