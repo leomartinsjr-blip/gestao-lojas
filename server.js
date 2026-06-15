@@ -4378,7 +4378,7 @@ let _catalogWarmPromise = null;  // Promise compartilhada — callers concorrent
 let _catalogWarmStartAt = 0;    // Timestamp de início do build atual
 let _catalogRawFields = [];      // campos brutos do LinxProdutos (para diagnóstico)
 let _catalogRawSample = null;    // amostra bruta (1 produto)
-const CATALOG_TTL = 6 * 60 * 60 * 1000;
+const CATALOG_TTL = 24 * 60 * 60 * 1000; // 24h — rebuild automático às 9h pelo cron
 
 // Cache de promoções — válido até meia-noite do dia atual
 const _promoCache = {};  // key: cnpj → { rows, date }
@@ -8921,6 +8921,13 @@ initMongo()
       cron.schedule('15 8 * * *', () => {
         console.log('[prewarm] Cron 08:15 — re-aquecendo cache de marcas');
         _prewarmMarcasCache().catch(e => console.warn('[prewarm cron]', e.message));
+      }, { timezone: 'America/Sao_Paulo' });
+      // Cron: rebuild do catálogo de produtos às 09:00 (TTL=24h, só uma vez por dia)
+      cron.schedule('0 9 * * *', () => {
+        console.log('[Catalog] Cron 09:00 — forçando rebuild do catálogo');
+        const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+        _catalogCache = null; _catalogCacheAt = 0; // invalida cache
+        _getCatalog(lojas).catch(e => console.warn('[Catalog cron]', e.message));
       }, { timezone: 'America/Sao_Paulo' });
     }
 
