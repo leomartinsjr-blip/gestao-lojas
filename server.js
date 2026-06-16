@@ -4563,6 +4563,10 @@ async function _getCatalog(lojas) {
     _catalogWarmStartAt = Date.now();
     _catalogWarmPromise = _buildCatalog(lojas).finally(() => { _catalogWarmPromise = null; });
   }
+  // Snapshot local: _catalogWarmPromise pode ser zerado pelo .finally() acima durante os
+  // awaits abaixo (ex: build termina rápido enquanto aguardamos o Mongo). Sem isso, o
+  // Promise.race no final racearia contra `null` e resolveria para null em vez do catálogo.
+  const buildPromise = _catalogWarmPromise;
 
   // Cache expirado mas existe: devolve imediatamente sem bloquear (rebuild acontece em background)
   if (_catalogCache) return _catalogCache;
@@ -4580,10 +4584,11 @@ async function _getCatalog(lojas) {
   }
 
   // Sem MongoDB e sem cache: aguarda o build com timeout de 10min para não bloquear
-  return Promise.race([
-    _catalogWarmPromise,
+  const result = await Promise.race([
+    buildPromise,
     new Promise((_, rej) => setTimeout(() => rej(new Error('catalog build timeout')), 600_000)),
   ]).catch(() => ({}));
+  return result || {};
 }
 
 async function _buildCatalog(lojas) {
