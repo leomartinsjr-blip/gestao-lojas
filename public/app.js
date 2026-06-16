@@ -3295,6 +3295,25 @@ async function _cadCheckAndExport(sec) {
             origCor, corMatch);
         }
       }
+
+      // Mostra hint "planilha: setor · cor · tam" na célula de descrição para facilitar match
+      const p = _cad.products[i];
+      if (p && tds[3]) {
+        const parts = [
+          p.desc_setor   ? `setor: ${p.desc_setor}`   : '',
+          p.desc_cor     ? `cor: ${p.desc_cor}`         : '',
+          p.desc_tamanho ? `tam: ${p.desc_tamanho}`     : '',
+        ].filter(Boolean);
+        const existing = tds[3].querySelector('.cad-planilha-hint');
+        if (existing) existing.remove();
+        if (parts.length) {
+          const hint = document.createElement('div');
+          hint.className = 'cad-planilha-hint';
+          hint.style.cssText = 'font-size:10px;color:var(--muted);margin-top:3px;opacity:.75';
+          hint.textContent = '📋 ' + parts.join(' · ');
+          tds[3].appendChild(hint);
+        }
+      }
     });
 
     sec.querySelectorAll('.cad-sku-sel').forEach(sel => {
