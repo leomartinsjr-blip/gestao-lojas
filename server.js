@@ -5828,17 +5828,31 @@ app.post('/api/cadastro-produto/parse-pdf', requireAdmin, _cadPdfUpload.single('
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Lista de setores e cores únicos do catálogo Microvix (para popular dropdowns no frontend)
+app.get('/api/cadastro-produto/catalogo-opts', requireAdmin, async (req, res) => {
+  try {
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const [catalog, idx] = await Promise.all([
+      Promise.race([_getCatalog(lojas), new Promise(r => setTimeout(() => r({}), 10_000))]).catch(() => ({})),
+      Promise.race([_getRefColorIndex(), new Promise(r => setTimeout(() => r(null), 10_000))]).catch(() => null),
+    ]);
+    const setores = [...new Set(Object.values(catalog).map(e => e.setor).filter(Boolean))].sort();
+    const cores   = idx ? [...new Set(Object.values(idx).flat())].sort() : [];
+    res.json({ setores, cores });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
   try {
     const { rows } = req.body;
     if (!Array.isArray(rows)) return res.status(400).json({ error: 'rows deve ser array' });
 
-    // Índice compacto ref→cores — carrega do MongoDB se disponível (instantâneo),
-    // ou aguarda até 15s pelo build inicial
-    const idx = await Promise.race([
-      _getRefColorIndex(),
-      new Promise(r => setTimeout(() => r(null), 15_000)),
-    ]).catch(() => null);
+    // Carrega índice ref→cores e catálogo completo (para fallback de cores por ref)
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const [idx, catalog] = await Promise.all([
+      Promise.race([_getRefColorIndex(), new Promise(r => setTimeout(() => r(null), 15_000))]).catch(() => null),
+      Promise.race([_getCatalog(lojas),  new Promise(r => setTimeout(() => r({}),  15_000))]).catch(() => ({})),
+    ]);
 
     if (!idx || !Object.keys(idx).length) {
       return res.json({
@@ -5849,6 +5863,15 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
     }
 
     const norm = s => (s || '').toString().replace(/\.0+$/, '').trim().toUpperCase();
+
+    // Fallback: coleta cores registradas no catálogo completo para uma dada ref
+    const coresDosCatalogo = (refNorm) => {
+      const cors = new Set();
+      for (const e of Object.values(catalog)) {
+        if (norm(e.referencia || '') === refNorm && e.desc_cor) cors.add(norm(e.desc_cor));
+      }
+      return [...cors].sort();
+    };
 
     // Retorna a cor conhecida mais longa que seja prefixo do candidato.
     // Strip de separadores iniciais: "-014" → "014"; "28CASA" → match "28".
@@ -5887,7 +5910,9 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
 
       // Lookup direto de ref
       if (ref && idx[ref]) {
-        const corsDisponiveis = idx[ref];
+        let corsDisponiveis = idx[ref];
+        // Fallback: se o índice tem a ref mas sem cores, busca no catálogo completo
+        if (!corsDisponiveis.length) corsDisponiveis = coresDosCatalogo(ref);
         if (!cor) return { ...r, _status: 'existing', _corsDisponiveis: corsDisponiveis, _corMatch: null };
         const corMatch = matchColor(cor, corsDisponiveis);
         return { ...r, _status: corMatch ? 'existing' : 'needs_cor', _corsDisponiveis: corsDisponiveis, _corMatch: corMatch };
@@ -6195,6 +6220,7 @@ app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
       { header: 'Url Vídeo (B2C)',                          key: 'b2c_video',      width: 16 },
       { header: 'Código Integracao OMS',                    key: 'oms',            width: 22 },
       { header: 'Produto Desativado',                       key: 'desativado',     width: 18 },
+      { header: 'Bloqueia atualização de preço franqueadora', key: 'bloqueia_preco', width: 36 },
     ];
 
     ws.columns = COLS;
@@ -6282,6 +6308,7 @@ app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
         b2c_video:     '',
         oms:           '',
         desativado:    '',
+        bloqueia_preco: '',
       });
     });
 

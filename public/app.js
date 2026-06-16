@@ -2544,7 +2544,18 @@ const _cad = {
   modeloRef: '{REF}', modeloDesc: '{NOME}',
   priceMode: 'markup', markup: 100, manualPrice: '',
   ncm: '', products: [], checkResult: [],
+  mxSetores: [], mxCores: [],
 };
+
+// Carrega setores e cores registrados no Microvix (lazy, uma vez por sessão)
+async function _cadLoadMxOpts() {
+  if (_cad.mxSetores.length) return;
+  try {
+    const r = await apiFetch('GET', '/api/cadastro-produto/catalogo-opts');
+    if (r.setores?.length) _cad.mxSetores = r.setores;
+    if (r.cores?.length)   _cad.mxCores   = r.cores;
+  } catch (_) {}
+}
 
 function _cadExtractCor(text) {
   const up = text.toUpperCase();
@@ -2731,6 +2742,7 @@ async function renderCadastroProdView() {
     `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>`,
     'Cadastro de Produto'
   );
+  _cadLoadMxOpts(); // carrega setores/cores do Microvix em background
   const body = document.getElementById('transBody');
   _cadRenderUpload(body);
 }
@@ -3117,8 +3129,10 @@ function _cadRefreshPrev(content) {
 }
 
 function _cadMkSetorSel(val, i) {
-  const extraOpts = val && !SETOR_OPTS.includes(val) ? [val] : [];
-  const opts = ['', ...SETOR_OPTS, ...extraOpts].map(s =>
+  // Usa setores do Microvix se já carregados, senão cai na lista interna
+  const baseOpts = _cad.mxSetores.length ? _cad.mxSetores : SETOR_OPTS;
+  const extraOpts = val && !baseOpts.includes(val) ? [val] : [];
+  const opts = ['', ...baseOpts, ...extraOpts].map(s =>
     `<option value="${s}"${val === s ? ' selected' : ''}>${s || '— setor —'}</option>`).join('');
   return `<select class="cad-ci cad-ci-sel" data-f="desc_setor" data-i="${i}">${opts}</select>`;
 }
