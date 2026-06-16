@@ -224,7 +224,7 @@
       } else if (entry.fechado) {
         badgeClass = 'cx-day-badge--fechado';
         badgeText  = 'Fechado';
-      } else if (entry.vendasOk || entry.cartoesOk || entry.vendedoresOk || entry.alertasTickedCount > 0) {
+      } else if (entry.vendasOk || entry.cartoesOk || entry.alertasTickedCount > 0) {
         badgeClass = 'cx-day-badge--parcial';
         badgeText  = 'Em conferência';
       } else {
@@ -243,7 +243,6 @@
         ? `<div style="display:flex;gap:3px;margin-top:4px">
             <span title="Vendas"    style="font-size:10px">${entry.vendasOk    ? '✅' : '⬜'}</span>
             <span title="Cartões"   style="font-size:10px">${entry.cartoesOk   ? '✅' : '⬜'}</span>
-            <span title="Vendedores"style="font-size:10px">${entry.vendedoresOk? '✅' : '⬜'}</span>
            </div>`
         : '';
 
@@ -513,7 +512,7 @@
       el.style.display = 'none'; el.innerHTML = ''; return;
     }
 
-    const { vendas, totalAlertas, porVendedor } = data;
+    const { vendas } = data;
     const st = _rotinaStatus;
     const board = _rotinaBoard;
     const date  = _rotinaDate;
@@ -523,9 +522,11 @@
     const alertasRevisados = alertasComVenda.length === 0 ||
       alertasComVenda.every(v => !!_revisoesMap[v.doc + '::' + (v.board || board)]);
     const canVendas = alertasRevisados && !st.vendasOk && !st.fechado;
-    const canCartoes = st.vendasOk && !st.cartoesOk && !st.fechado;
-    const canVendedores = st.vendasOk && st.cartoesOk && !st.vendedoresOk && !st.fechado;
-    const canFechar = st.vendasOk && st.cartoesOk && st.vendedoresOk && !st.fechado;
+    // Cartões só libera quando a conciliação bate 100% (rede × Microvix, considerando
+    // reserva/pgt. anterior e confirmações manuais) — concAllOk() é a mesma checagem
+    // usada pelo botão "Confirmar Cartões" dentro da tabela de conciliação.
+    const canCartoes = st.vendasOk && !st.cartoesOk && !st.fechado && concAllOk();
+    const canFechar = st.vendasOk && st.cartoesOk && !st.fechado;
 
     function stepIco(done, num) {
       return done ? '✅' : `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--cf-card);border:1.5px solid var(--cf-border);font-size:10px;font-weight:700;color:var(--cf-muted)">${num}</span>`;
@@ -538,7 +539,6 @@
 
     const s1Done = st.vendasOk;
     const s2Done = st.cartoesOk;
-    const s3Done = st.vendedoresOk;
 
     el.innerHTML = `
       <div class="rotina-bar">
@@ -578,22 +578,6 @@
               : `<button class="rotina-step-btn btn-undo" id="rBtnCartoesUndo">↩</button>`}
           </div>
 
-          <span class="rotina-arrow">›</span>
-
-          <!-- Step 3: Vendedores -->
-          <div class="rotina-step ${s3Done ? 'done' : canVendedores ? 'active' : 'locked'}">
-            <span class="rotina-step-ico">${stepIco(s3Done, 3)}</span>
-            <div class="rotina-step-info">
-              <span class="rotina-step-label">Vendedores</span>
-              <span class="rotina-step-sub">${s3Done
-                ? stepSub(true, st.vendedoresOkBy, st.vendedoresOkTs)
-                : 'Conferir totais'}</span>
-            </div>
-            ${!s3Done
-              ? `<button class="rotina-step-btn btn-ok" id="rBtnVendedores" ${canVendedores?'':'disabled'}>✓ Confirmar</button>`
-              : `<button class="rotina-step-btn btn-undo" id="rBtnVendedoresUndo">↩</button>`}
-          </div>
-
         </div>
 
         <!-- Fechar o dia -->
@@ -605,49 +589,7 @@
                 Fechar o Dia
               </button>`}
         </div>
-      </div>
-
-      ${(canVendedores || s3Done) ? (() => {
-        const vends = (porVendedor || []);
-        const totalLiq = vends.reduce((s,v) => s + v.total, 0);
-        const totalQtd = vends.reduce((s,v) => s + v.qtd, 0);
-        return `<div class="conc-box" style="margin-top:10px">
-          <div class="conc-hdr">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            Passo 3 — Vendedores
-            ${s3Done ? '<span class="conc-badge ok" style="margin-left:8px">✅ Confirmado</span>' : '<span class="conc-badge nok" style="margin-left:8px">Pendente</span>'}
-          </div>
-          <div class="conc-body" style="padding:0">
-            <table class="conc-tbl" style="width:100%">
-              <thead><tr>
-                <th>Vendedor</th>
-                <th class="num">Qtd Vendas</th>
-                <th class="num">Total Líquido</th>
-                <th class="num">% do Total</th>
-              </tr></thead>
-              <tbody>
-                ${vends.length === 0
-                  ? `<tr><td colspan="4" style="text-align:center;color:var(--cf-muted);padding:16px">Nenhum vendedor encontrado</td></tr>`
-                  : vends.map(v => {
-                    const pct = totalLiq > 0 ? (v.total / totalLiq * 100).toFixed(1) : '0.0';
-                    return `<tr>
-                      <td style="font-weight:600">${esc(v.label)}</td>
-                      <td class="num"><span class="badge badge-di">${v.qtd}</span></td>
-                      <td class="num" style="font-weight:700">${fmtR(v.total)}</td>
-                      <td class="num" style="color:var(--cf-muted)">${pct}%</td>
-                    </tr>`;
-                  }).join('')}
-              </tbody>
-              <tfoot><tr style="border-top:2px solid var(--cf-border)">
-                <td style="font-weight:700;color:var(--cf-muted)">TOTAL</td>
-                <td class="num" style="font-weight:700">${totalQtd}</td>
-                <td class="num" style="font-weight:800;color:var(--cf-text)">${fmtR(totalLiq)}</td>
-                <td class="num">100%</td>
-              </tr></tfoot>
-            </table>
-          </div>
-        </div>`;
-      })() : ''}`;
+      </div>`;
 
     el.style.display = 'block';
 
@@ -666,8 +608,6 @@
     if ($('rBtnVendasUndo'))    $('rBtnVendasUndo').onclick   = () => rotinaAction('setVendasOk', false, 'rBtnVendasUndo');
     if ($('rBtnCartoes'))       $('rBtnCartoes').onclick      = () => rotinaAction('setCartoesOk', true, 'rBtnCartoes');
     if ($('rBtnCartoesUndo'))   $('rBtnCartoesUndo').onclick  = () => rotinaAction('setCartoesOk', false, 'rBtnCartoesUndo');
-    if ($('rBtnVendedores'))    $('rBtnVendedores').onclick   = () => rotinaAction('setVendedoresOk', true, 'rBtnVendedores');
-    if ($('rBtnVendedoresUndo'))$('rBtnVendedoresUndo').onclick= () => rotinaAction('setVendedoresOk', false, 'rBtnVendedoresUndo');
     if ($('rBtnFechar'))        $('rBtnFechar').onclick       = async () => {
       if (!confirm(`Fechar o dia ${date.split('-').reverse().join('/')} para ${board}?`)) return;
       const btn = $('rBtnFechar');
@@ -756,6 +696,7 @@
       </div>`;
 
     el.style.display = 'block';
+    syncCartoesStepperBtn();
 
     // Drag & drop + click no dropzone
     const drop = el.querySelector('.conc-drop');
@@ -809,6 +750,7 @@
         // Habilita/desabilita botão confirmar
         const confBtn = el.querySelector('#concConfirmar');
         if (confBtn) confBtn.disabled = !concAllOk();
+        syncCartoesStepperBtn();
 
         // Salva no servidor com debounce
         clearTimeout(_confManualSaveTimer);
@@ -832,6 +774,7 @@
         else delete _saldoReserva[key];
         const confBtn = el.querySelector('#concConfirmar');
         if (confBtn) confBtn.disabled = !concAllOk();
+        syncCartoesStepperBtn();
         clearTimeout(_saldoReservaSaveTimer);
         _saldoReservaSaveTimer = setTimeout(async () => {
           try {
@@ -1067,6 +1010,13 @@
       if (Math.abs(confirmado - row.valor) > 0.10) return false;
     }
     return true;
+  }
+
+  // Mantém o botão "✓ Confirmar" do passo 2 (no topo, fora da tabela de conciliação)
+  // em sincronia com concAllOk() — ele só pode habilitar quando a conciliação bate 100%.
+  function syncCartoesStepperBtn() {
+    const btn = document.getElementById('rBtnCartoes');
+    if (btn) btn.disabled = !concAllOk();
   }
 
   function buildOutrosAgrupado() {

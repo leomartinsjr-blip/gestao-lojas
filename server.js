@@ -2816,8 +2816,8 @@ app.post('/api/caixa-fechar', requireAuth, async (req, res) => {
   const key = `${board}:${date}`;
   if (!db.caixaStatus[key]) db.caixaStatus[key] = { alertasTicked: [], vendasOk: false, cartoesOk: false, vendedoresOk: false, fechado: false };
   const entry = db.caixaStatus[key];
-  if (!entry.vendasOk || !entry.cartoesOk || !entry.vendedoresOk)
-    return res.status(400).json({ error: 'Conclua os 3 passos da rotina (Vendas, Cartões, Vendedores) antes de fechar.' });
+  if (!entry.vendasOk || !entry.cartoesOk)
+    return res.status(400).json({ error: 'Conclua os passos da rotina (Vendas, Cartões) antes de fechar.' });
   entry.fechado = true;
   entry.fechadoBy = user.name || user.login;
   entry.fechadoTs = new Date().toISOString();
