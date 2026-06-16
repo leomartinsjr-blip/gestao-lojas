@@ -5069,6 +5069,22 @@ function buildTotalSheet(isAdmin) {
   const today   = new Date();
   const todayStr= `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
 
+  // ── Check: soma das metas diárias dos vendedores tem que bater com a meta da loja ──
+  // Detecta o caso de admissão/desligamento/férias marcado errado (ou esquecido), que faz
+  // o divisor (nActive) não corresponder a quem de fato está recebendo fatia da meta naquele dia.
+  const empGoals = PD.metaLoja > 0 ? emps.map(e => computeSellerDayGoals(e.id)) : null;
+  const metaCheckIssues = [];
+  if (empGoals) {
+    for (let d = 1; d <= days; d++) {
+      const dateStr   = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const w         = PD.weights[dateStr] ?? defW;
+      const metaOficial = PD.metaLoja * w / 100;
+      const sumIndiv  = empGoals.reduce((s, g) => s + (g?.[dateStr]?.goal || 0), 0);
+      const diff      = +(sumIndiv - metaOficial).toFixed(2);
+      if (Math.abs(diff) > 0.05) metaCheckIssues.push({ d, dateStr, metaOficial, sumIndiv, diff });
+    }
+  }
+
   let rows = [], metaAccum = 0, realAccum = 0;
   for (let d = 1; d <= days; d++) {
     const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
@@ -5123,6 +5139,12 @@ function buildTotalSheet(isAdmin) {
         </div>
       </div>
       ${isAdmin ? `<div class="ds-weight-hint-row"><span class="ds-weight-hint">· Clique em <strong>Peso%</strong> para ajustar (global — vale p/ todas as lojas)</span></div>` : ''}
+      ${isAdmin && metaCheckIssues.length > 0 ? `
+        <div style="margin-top:8px;padding:8px 12px;border:1px solid var(--down);border-radius:6px;background:color-mix(in srgb, var(--down) 12%, transparent);font-size:12.5px;color:var(--down)">
+          ⚠️ A soma das metas diárias dos vendedores não bate com a meta da loja em ${metaCheckIssues.length} dia(s):
+          ${metaCheckIssues.map(i => `dia ${i.d} (vendedores ${fBRL(i.sumIndiv)} vs loja ${fBRL(i.metaOficial)}, diff ${i.diff > 0 ? '+' : ''}${fBRL(i.diff)})`).join(' · ')}.
+          Verifique férias/admissão/desligamento dos vendedores nesses dias.
+        </div>` : ''}
     </div>
     <div class="ds-table-wrap"><table class="ds-table">
       <thead>
