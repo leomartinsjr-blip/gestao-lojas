@@ -2675,12 +2675,7 @@ function _cadBuildProducts() {
     }
     if (!p.referencia && !p.nome) return [];
     const txt   = (p.referencia || '') + ' ' + (p.nome || '');
-    // Se o setor da planilha é um valor interno válido usa direto; senão normaliza via suggest
-    // (ex: "BONÉ" → "Acessórios", "VESTUÁRIO" → "Moda Masculina" etc.)
-    const rawSetor = (p.desc_setor || '').trim();
-    const setor = SETOR_OPTS.includes(rawSetor)
-      ? rawSetor
-      : (rawSetor ? _cadSuggestSetor([rawSetor, txt]) : _cadSuggestSetor([txt]));
+    const setor = (p.desc_setor || '').trim() || _cadSuggestSetor([txt]);
     const custo = p.preco_custo || '';
 
     // Se a coluna foi mapeada diretamente, usa o valor bruto (01K, Y28, 7.0, etc.)
@@ -3122,7 +3117,8 @@ function _cadRefreshPrev(content) {
 }
 
 function _cadMkSetorSel(val, i) {
-  const opts = ['', ...SETOR_OPTS].map(s =>
+  const extraOpts = val && !SETOR_OPTS.includes(val) ? [val] : [];
+  const opts = ['', ...SETOR_OPTS, ...extraOpts].map(s =>
     `<option value="${s}"${val === s ? ' selected' : ''}>${s || '— setor —'}</option>`).join('');
   return `<select class="cad-ci cad-ci-sel" data-f="desc_setor" data-i="${i}">${opts}</select>`;
 }
