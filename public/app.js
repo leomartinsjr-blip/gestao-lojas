@@ -3296,23 +3296,21 @@ async function _cadCheckAndExport(sec) {
         }
       }
 
-      // Mostra hint "planilha: setor · cor · tam" na célula de descrição para facilitar match
+      // Mostra o valor da planilha abaixo de cada coluna respectiva para facilitar match
       const p = _cad.products[i];
-      if (p && tds[3]) {
-        const parts = [
-          p.desc_setor   ? `setor: ${p.desc_setor}`   : '',
-          p.desc_cor     ? `cor: ${p.desc_cor}`         : '',
-          p.desc_tamanho ? `tam: ${p.desc_tamanho}`     : '',
-        ].filter(Boolean);
-        const existing = tds[3].querySelector('.cad-planilha-hint');
-        if (existing) existing.remove();
-        if (parts.length) {
+      if (p) {
+        const addHint = (td, val) => {
+          if (!td || !val) return;
+          td.querySelector('.cad-planilha-hint')?.remove();
           const hint = document.createElement('div');
           hint.className = 'cad-planilha-hint';
-          hint.style.cssText = 'font-size:10px;color:var(--muted);margin-top:3px;opacity:.75';
-          hint.textContent = '📋 ' + parts.join(' · ');
-          tds[3].appendChild(hint);
-        }
+          hint.style.cssText = 'font-size:10px;color:var(--muted);margin-top:3px;opacity:.75;white-space:nowrap';
+          hint.textContent = val;
+          td.appendChild(hint);
+        };
+        addHint(tds[4], p.desc_setor   || '');
+        addHint(tds[5], p.desc_cor     || '');
+        addHint(tds[6], p.desc_tamanho || '');
       }
     });
 
