@@ -43,7 +43,10 @@ async function initMongo() {
     serverSelectionTimeoutMS: 30000,  // tempo para encontrar primário no Atlas (cold start pode ser lento)
     tls: true,
     tlsAllowInvalidCertificates: false,
-    maxPoolSize: 10,        // M0 suporta 500 conexões totais; 10 é seguro para múltiplos workers
+    maxPoolSize: 20,        // M0 suporta 500 conexões totais; o salvamento do catálogo em chunks
+                            // (services/_saveCatalogMongo) usa várias conexões em paralelo — 10 era
+                            // pouco e deixava outras operações (ex: conferência) na fila por dezenas
+                            // de segundos até o gateway do Render cortar com 502
     minPoolSize: 1,
     maxIdleTimeMS: 30000,   // fecha conexões ociosas após 30s
     connectTimeoutMS: 30000,
@@ -4513,25 +4516,30 @@ async function _saveCatalogMongo(map) {
   const numChunks = Math.ceil(total / CATALOG_CHUNK_SIZE);
   const col = mongoDb.collection('catalog');
 
-  // Salva cada chunk em paralelo
-  const ops = [];
-  for (let i = 0; i < numChunks; i++) {
-    const chunk = Object.fromEntries(entries.slice(i * CATALOG_CHUNK_SIZE, (i + 1) * CATALOG_CHUNK_SIZE));
-    ops.push(col.replaceOne(
-      { _id: `fullCatalog_${i}` },
-      { _id: `fullCatalog_${i}`, data: chunk, updatedAt },
-      { upsert: true }
-    ));
+  // Salva os chunks com concorrência limitada — disparar tudo de uma vez (32+ writes de
+  // 3-4MB em paralelo) monopolizava o pool de conexões do Mongo e deixava outras operações
+  // do app (ex: conferência de caixa) na fila por dezenas de segundos.
+  const CONCURRENCY = 4;
+  for (let i = 0; i < numChunks; i += CONCURRENCY) {
+    const batch = [];
+    for (let j = i; j < Math.min(i + CONCURRENCY, numChunks); j++) {
+      const chunk = Object.fromEntries(entries.slice(j * CATALOG_CHUNK_SIZE, (j + 1) * CATALOG_CHUNK_SIZE));
+      batch.push(col.replaceOne(
+        { _id: `fullCatalog_${j}` },
+        { _id: `fullCatalog_${j}`, data: chunk, updatedAt },
+        { upsert: true }
+      ));
+    }
+    await Promise.all(batch);
   }
   // Remove chunks antigos que não existem mais (se o catálogo encolheu)
-  ops.push(col.deleteMany({ _id: { $regex: /^fullCatalog_/, $gt: `fullCatalog_${numChunks - 1}` } }));
+  await col.deleteMany({ _id: { $regex: /^fullCatalog_/, $gt: `fullCatalog_${numChunks - 1}` } });
   // Salva metadado com número de chunks
-  ops.push(col.replaceOne(
+  await col.replaceOne(
     { _id: 'fullCatalog_meta' },
     { _id: 'fullCatalog_meta', numChunks, total, updatedAt },
     { upsert: true }
-  ));
-  await Promise.all(ops);
+  );
   console.log(`[Catalog] Salvo no MongoDB: ${total} entradas em ${numChunks} chunks`);
 }
 
