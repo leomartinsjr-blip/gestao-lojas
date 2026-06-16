@@ -2675,7 +2675,12 @@ function _cadBuildProducts() {
     }
     if (!p.referencia && !p.nome) return [];
     const txt   = (p.referencia || '') + ' ' + (p.nome || '');
-    const setor = p.desc_setor || _cadSuggestSetor([txt]);
+    // Se o setor da planilha é um valor interno válido usa direto; senão normaliza via suggest
+    // (ex: "BONÉ" → "Acessórios", "VESTUÁRIO" → "Moda Masculina" etc.)
+    const rawSetor = (p.desc_setor || '').trim();
+    const setor = SETOR_OPTS.includes(rawSetor)
+      ? rawSetor
+      : (rawSetor ? _cadSuggestSetor([rawSetor, txt]) : _cadSuggestSetor([txt]));
     const custo = p.preco_custo || '';
 
     // Se a coluna foi mapeada diretamente, usa o valor bruto (01K, Y28, 7.0, etc.)
