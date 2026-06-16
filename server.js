@@ -6068,12 +6068,30 @@ ${JSON.stringify(numberedData, null, 2)}`;
 
     // Enriquece com setor e cores do catálogo para a ref sugerida
     const normCat = s => (s || '').toString().replace(/\.0+$/, '').trim().toUpperCase();
+
+    // Índice case-insensitive ref → {setor, ncm} para cobrir diferenças de casing entre
+    // _buildCatalog (sem toUpperCase) e _buildRefColorIndex (com toUpperCase)
+    const refMeta = {};
+    for (const [key, entry] of Object.entries(catalog)) {
+      const k = normCat(key);
+      if (!refMeta[k]) refMeta[k] = { setor: entry.setor || '', ncm: entry.ncm || '' };
+      // também indexa pelo campo referencia dentro do entry (para entries keyed by cod)
+      if (entry.referencia) {
+        const kr = normCat(entry.referencia);
+        if (!refMeta[kr]) refMeta[kr] = { setor: entry.setor || '', ncm: entry.ncm || '' };
+        else {
+          if (!refMeta[kr].setor && entry.setor) refMeta[kr].setor = entry.setor;
+          if (!refMeta[kr].ncm   && entry.ncm)   refMeta[kr].ncm   = entry.ncm;
+        }
+      }
+    }
+
     const ordered = refItems.map((item, i) => {
       const r = results[i] || { supplierRef: item.ref, suggestedRef: null };
       if (r.suggestedRef) {
-        const catEntry = catalog[r.suggestedRef] || catalog[normCat(r.suggestedRef)] || {};
-        r.catalogSetor = catEntry.setor || r.aiSetor || null;
-        r.catalogNcm   = catEntry.ncm   || null;
+        const meta = refMeta[normCat(r.suggestedRef)] || {};
+        r.catalogSetor = meta.setor || r.aiSetor || null;
+        r.catalogNcm   = meta.ncm   || null;
         r.catalogCores = idx[r.suggestedRef] || idx[normCat(r.suggestedRef)] || [];
       } else if (r.aiSetor) {
         r.catalogSetor = r.aiSetor;

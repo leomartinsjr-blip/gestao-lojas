@@ -2645,8 +2645,8 @@ function _cadAutoMatch(headers) {
     nome:         ['nome','descricao','produto','item','descbasica','desc'],
     cod_barra:    ['codbarra','ean','barra','barcode','gtin'],
     desc_marca:   ['marca','brand','fabricante'],
-    desc_setor:   ['setor','departamento','categoria','grupo'],
-    desc_cor:     ['cor','color','colour'],
+    desc_setor:   ['setor','departamento','categoria','grupo','tipo','divisao','divisao','secao','classe','segmento','colecao'],
+    desc_cor:     ['cor','color','colour','descricaocor','codcor','codigocor'],
     desc_tamanho: ['tamanho','tam','size','grade'],
     preco_custo:  ['precocusto','custo','pcusto','fob','custoproduto','precofob'],
     preco_venda:  ['precovenda','preco','pvenda','price','vlvenda'],
@@ -3370,15 +3370,18 @@ async function _cadAiMatch(sec) {
       }
 
       // ── Cor do catálogo ──
-      const catalogCores = Array.isArray(m.catalogCores) ? m.catalogCores : [];
-      const origCor = p._origCor;
-      const corMatch = catalogCores.find(c => c.toUpperCase() === origCor.toUpperCase()) || catalogCores[0] || origCor;
+      const catalogCores = (Array.isArray(m.catalogCores) ? m.catalogCores : []).filter(Boolean);
+      const origCor = (p._origCor || '').trim();
+      const corMatch = catalogCores.find(c => c.toUpperCase() === origCor.toUpperCase())
+                    || catalogCores[0]
+                    || origCor
+                    || '';
       if (corMatch) p.desc_cor = corMatch;
       if (tds[5]) {
         const corInput = catalogCores.length
           ? `<select class="cad-ci cad-ci-sel" data-f="desc_cor" data-i="${i}">
                <option value="">— cor —</option>
-               ${catalogCores.map(c => `<option value="${_escHtml(c)}"${c===corMatch?' selected':''}>${_escHtml(c)}</option>`).join('')}
+               ${catalogCores.map(c => `<option value="${_escHtml(c)}"${c.toUpperCase()===corMatch.toUpperCase()?' selected':''}>${_escHtml(c)}</option>`).join('')}
              </select>`
           : `<input class="cad-ci cad-ci-sm" data-f="desc_cor" data-i="${i}" value="${_escHtml(corMatch)}" style="width:90px">`;
         const sameCorOrig = !origCor || corMatch.toUpperCase() === origCor.toUpperCase();
