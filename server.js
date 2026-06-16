@@ -8536,7 +8536,12 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
     for (const d of Object.values(docMap)) {
       if (!d.formas.length || d.itens.length === 0) continue;
       const sumFormas = +d.formas.reduce((s, f) => s + f.valor, 0).toFixed(2);
-      const descTotal = +(d.valorTotal - sumFormas).toFixed(2);
+      // Em docs negativos (troca/devolução) o "desconto" aparece invertido: o valor calculado
+      // pelos itens (preço cheio) é mais negativo que as formas de pagamento (valor líquido
+      // realmente pago/devolvido). Multiplica pelo sinal do doc para tratar os dois casos
+      // com a mesma lógica de distribuição abaixo.
+      const signDoc   = d.valorTotal < 0 ? -1 : 1;
+      const descTotal = +(signDoc * (d.valorTotal - sumFormas)).toFixed(2);
       if (descTotal <= 0.02) continue;
       const totalBruto = d.itens.reduce((s, i) => s + i.vlrBruto, 0);
       if (totalBruto > 0) {
