@@ -2519,7 +2519,8 @@ const CORES_CAD = ['PRETO','BRANCO','AZUL','VERMELHO','VERDE','AMARELO','LARANJA
   'MENTA','CORAL','TURQUESA','VINHO','DOURADO','PRATA','OFF WHITE','NATURAL',
   'BLACK','WHITE','BLUE','RED','GREEN','YELLOW','ORANGE','PINK','PURPLE','GREY','GRAY','BROWN','BEIGE'];
 const TAMS_LETRA = ['GGG','GG','XS/S','S/M','M/L','L/XL','PP','XS','S','M','L','XL','XXL','XXXL','P','G','U'];
-const TAMS_NUM   = ['33','34','35','36','37','38','39','40','41','42','43','44','45','46'];
+const TAMS_NUM   = ['33','34','35','36','37','38','39','40','41','42','43','44','45','46',
+                    '6 7/8','7','7 1/8','7 1/4','7 3/8','7 1/2','7 5/8','7 3/4','7 7/8','8'];
 
 const SETOR_OPTS = ['Moda Masculina','Moda Feminina','Infantil','Calçados','Acessórios','TS Basica','Regata','Moda'];
 const LINHA_OPTS = ['Unisex','Masculino','Feminino','Infantil'];
@@ -2597,9 +2598,13 @@ function _cadSuggestSetor(texts) {
 }
 
 // Remove prefixo de quantidade do formato "QTD/TAMANHO" (ex: "1/35" → "35", "2/M" → "M")
+// Preserva frações de chapéu como "1/4", "3/8", "7/8" (denominador em [2,4,8] e numerador < denominador)
 function _cadCleanTamanho(v) {
-  const m = v.match(/^\d+\/(.+)$/);
-  return m ? m[1].trim() : v;
+  const m = v.match(/^(\d+)\/(.+)$/);
+  if (!m) return v;
+  const num = parseInt(m[1]), den = parseInt(m[2]);
+  if ([2, 4, 8].includes(den) && !isNaN(num) && num < den) return v;
+  return m[2].trim();
 }
 
 function _cadSuggestNcm(setor, textos) {
@@ -2677,7 +2682,11 @@ function _cadBuildProducts() {
     // sem filtrar pela lista interna de cores/tamanhos conhecidos.
     // O filtro é só para extração de texto livre onde o valor pode conter ruído.
     // "/" não é separador: S/M é um tamanho único, não dois. Usa só ,;|+ e espaço.
-    const splitRaw = v => v.split(/[,;\s|+]+/).map(s => s.trim()).filter(Boolean);
+    // Protege tamanhos fracionários tipo "7 1/4", "6 7/8" antes de separar por espaço
+    const splitRaw = v => {
+      const s = v.replace(/(\d)\s+(\d\/\d+)/g, '$1\x00$2');
+      return s.split(/[,;\s|+]+/).map(t => t.replace(/\x00/g, ' ').trim()).filter(Boolean);
+    };
     const hasMappedCor = !!(p.desc_cor      && _cad.mapping.desc_cor);
     const hasMappedTam = !!(p.desc_tamanho  && _cad.mapping.desc_tamanho);
 
