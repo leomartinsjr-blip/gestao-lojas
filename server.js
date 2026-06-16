@@ -7912,8 +7912,8 @@ async function getRedeExtratoCol() {
   if (!mongoDb) throw new Error('MongoDB não conectado');
   const col = mongoDb.collection('confRedeExtrato');
   if (!_redeExtratoColReady) {
-    await col.createIndex({ board: 1, date: 1 }, { unique: true, background: true }).catch(() => {});
     _redeExtratoColReady = true;
+    col.createIndex({ board: 1, date: 1 }, { unique: true, background: true }).catch(() => {});
   }
   return col;
 }
@@ -7954,11 +7954,15 @@ let _conferenciaRevisoesColReady = false;
 async function getConferenciaRevisoesCol() {
   if (!mongoDb) throw new Error('MongoDB não conectado');
   const col = mongoDb.collection('confRevisoes');
-  // Cria índices apenas uma vez por ciclo de vida do servidor
+  // Cria índices apenas uma vez por ciclo de vida do servidor, sem bloquear a requisição:
+  // se a coleção já tiver muitos documentos acumulados, o createIndex(unique) pode demorar
+  // dezenas de segundos (scan completo p/ validar unicidade) e o gateway do Render mata a
+  // conexão com 502 antes do Mongo responder. Marca ready de imediato e deixa o índice
+  // terminar de construir em background — não precisamos dele pronto para servir leituras.
   if (!_conferenciaRevisoesColReady) {
-    await col.createIndex({ doc: 1, board: 1 }, { unique: true, background: true }).catch(() => {});
-    await col.createIndex({ data: 1, board: 1 }, { background: true }).catch(() => {});
     _conferenciaRevisoesColReady = true;
+    col.createIndex({ doc: 1, board: 1 }, { unique: true, background: true }).catch(() => {});
+    col.createIndex({ data: 1, board: 1 }, { background: true }).catch(() => {});
   }
   return col;
 }
@@ -8032,8 +8036,8 @@ async function getSaldoReservaCol() {
   if (!mongoDb) throw new Error('MongoDB não conectado');
   const col = mongoDb.collection('confSaldoReserva');
   if (!_saldoReservaColReady) {
-    await col.createIndex({ board: 1, mod: 1, bandeira: 1 }, { unique: true, background: true }).catch(() => {});
     _saldoReservaColReady = true;
+    col.createIndex({ board: 1, mod: 1, bandeira: 1 }, { unique: true, background: true }).catch(() => {});
   }
   return col;
 }
@@ -8110,8 +8114,8 @@ async function getConfirmacoesManualCol() {
   if (!mongoDb) throw new Error('MongoDB não conectado');
   const col = mongoDb.collection('confConfirmacoesManual');
   if (!_confirmacoesManualColReady) {
-    await col.createIndex({ board: 1, date: 1 }, { unique: true, background: true }).catch(() => {});
     _confirmacoesManualColReady = true;
+    col.createIndex({ board: 1, date: 1 }, { unique: true, background: true }).catch(() => {});
   }
   return col;
 }
@@ -8887,9 +8891,13 @@ app.post('/api/conferencia/conciliacao-rede', requireEscritorioOrAdmin, async (r
 // CERTIFICADOS DIGITAIS
 // ════════════════════════════════════════════════════════════════════════════
 
+let _certColReady = false;
 async function getCertCol() {
   const col = mongoDb.collection('certificados');
-  await col.createIndex({ id: 1 }, { unique: true, background: true }).catch(() => {});
+  if (!_certColReady) {
+    _certColReady = true;
+    col.createIndex({ id: 1 }, { unique: true, background: true }).catch(() => {});
+  }
   return col;
 }
 
