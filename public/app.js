@@ -3530,8 +3530,9 @@ function _cadUpdateExportActions(sec) {
   const existingCount = cr.filter(r => r?._status === 'existing').length;
   const pendingCount  = cr.filter(r => r?._status === 'needs_cor' || r?._status === 'needs_tam').length;
 
+  // Exporta: novos + needs_cor sem cor selecionada (usa cor da planilha)
   const exportRows = _cad.products
-    .filter((_, i) => cr[i]?._status === 'new')
+    .filter((_, i) => cr[i]?._status === 'new' || cr[i]?._status === 'needs_cor')
     .map(p => ({
       referencia:   p._ref_final  || p.referencia || '',
       nome:         p._desc_final || p.nome       || '',
@@ -3557,7 +3558,7 @@ function _cadUpdateExportActions(sec) {
         <span class="cad-summary-num">${existingCount}</span><span class="cad-summary-lbl">já no Microvix</span>
       </div>
       ${pendingCount > 0 ? `<div class="cad-summary-card cad-summary-warn" style="padding:.4rem .8rem;min-width:70px">
-        <span class="cad-summary-num">${pendingCount}</span><span class="cad-summary-lbl">escolher cor</span>
+        <span class="cad-summary-num">${pendingCount}</span><span class="cad-summary-lbl">cor da planilha</span>
       </div>` : ''}
     </div>
     <div style="display:flex;gap:.4rem;align-items:center">
@@ -3565,10 +3566,10 @@ function _cadUpdateExportActions(sec) {
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </button>
       <button class="trans-calc-btn" id="cadAiMatchBtn" style="background:#3a1f6e;border-color:#6e40c9">✦ Sugerir Match com IA</button>
-      ${newCount > 0
+      ${exportRows.length > 0
         ? `<button class="trans-calc-btn" id="cadExportBtn">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 16 12 21 17 16"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
-            Baixar cadastro Microvix (${newCount} produtos)
+            Baixar cadastro Microvix (${exportRows.length} produtos)
           </button>`
         : `<span style="color:#3FB950;font-size:.8rem">✓ Todos já estão no Microvix</span>`}
     </div>`;
