@@ -5509,6 +5509,191 @@ app.post('/api/transferencias/export', requireAdmin, async (req, res) => {
   }
 });
 
+// POST /api/perf/export — gera Excel de Performance Mensal (uma aba por loja) (ExcelJS)
+app.post('/api/perf/export', requireAdmin, async (req, res) => {
+  try {
+    const { stores = [] } = req.body || {};
+    if (!stores.length) return res.status(400).json({ error: 'Sem dados' });
+
+    const ExcelJS = require('exceljs');
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Gestão Lojas';
+    wb.created = new Date();
+
+    const today = new Date().toLocaleDateString('pt-BR');
+    const hex2argb = hex => 'FF' + (hex || '#8B949E').replace('#', '').toUpperCase();
+
+    const COR_HEADER_BG = 'FF1F2937';
+    const COR_HEADER_FG = 'FFFFFFFF';
+    const COR_TITLE_BG  = 'FF111827';
+    const COR_ZEBRA     = 'FFF3F4F6';
+    const COR_TOTAL_BG  = 'FFE5E7EB';
+    const COR_BORDER    = 'FFD1D5DB';
+    const COR_KPI_BG    = 'FFF9FAFB';
+    const COR_POS       = 'FF15803D'; // verde
+    const COR_NEG       = 'FFB91C1C'; // vermelho
+    const COR_NEUTRAL   = 'FF9CA3AF';
+    const COR_PROJ      = 'FFB45309'; // âmbar
+
+    const histYears = [2022, 2023, 2024, 2025];
+    const headers = ['Mês', '2022', 'Δ', '2023', 'Δ', '2024', 'Δ', '2025 (ref)', 'Δ', '2026', 'Δ 26/25', 'Δ 26/24', 'Δ 26/23', 'Δ 26/22'];
+    const colWidths = [13, 11, 8, 11, 8, 11, 8, 12, 8, 12, 10, 10, 10, 10];
+
+    const pctCell = (cell, v, bold = false) => {
+      cell.value = v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`;
+      cell.font = { size: bold ? 9 : 8, bold, color: { argb: v == null ? COR_NEUTRAL : (v >= 0 ? COR_POS : COR_NEG) } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    };
+
+    for (const store of stores) {
+      const sheetName = (store.label || store.key).slice(0, 31);
+      const ws = wb.addWorksheet(sheetName, {
+        pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+                     margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
+        headerFooter: { oddHeader: `&L&B${sheetName.toUpperCase()}&R&BData: ${today}` },
+      });
+      ws.properties.tabColor = { argb: hex2argb(store.color) };
+      ws.columns = colWidths.map(w => ({ width: w }));
+
+      let r = 1;
+
+      // Título
+      ws.mergeCells(r, 1, r, headers.length);
+      const titleCell = ws.getCell(r, 1);
+      titleCell.value = `PERFORMANCE MENSAL — ${sheetName.toUpperCase()}  |  Data: ${today}`;
+      titleCell.font = { bold: true, size: 13, color: { argb: COR_HEADER_FG } };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_TITLE_BG } };
+      titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+      ws.getRow(r).height = 24;
+      r++;
+
+      // KPIs
+      const kpis = store.kpis || {};
+      const fmtBRLs = n => n == null ? '—' : 'R$ ' + Math.round(n).toLocaleString('pt-BR');
+      const fmtPcts = n => n == null ? '—' : `${n > 0 ? '+' : ''}${n.toFixed(1)}%`;
+      const kpiRows = [
+        ['Total 2025 (referência)', fmtBRLs(kpis.total25)],
+        [`Acumulado ${kpis.acumuladoLabel || ''}`, fmtBRLs(kpis.acumulado)],
+        ['Média últimos 3 meses', `${fmtPcts(kpis.mediaUltimos3)}${kpis.mediaDetalhe ? `  (${kpis.mediaDetalhe})` : ''}`],
+        ['Projeção 2026 (ano)', `${fmtBRLs(kpis.projecaoAno)}  (${fmtPcts(kpis.pProj)} vs 2025)`],
+      ];
+      kpiRows.forEach(([label, value]) => {
+        ws.mergeCells(r, 1, r, 4);
+        ws.mergeCells(r, 5, r, headers.length);
+        const lc = ws.getCell(r, 1);
+        lc.value = label;
+        lc.font = { bold: true, size: 9, color: { argb: 'FF374151' } };
+        lc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_KPI_BG } };
+        lc.alignment = { vertical: 'middle' };
+        const vc = ws.getCell(r, 5);
+        vc.value = value;
+        vc.font = { size: 9 };
+        vc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_KPI_BG } };
+        vc.alignment = { vertical: 'middle' };
+        ws.getRow(r).height = 16;
+        r++;
+      });
+      r++; // linha em branco
+
+      // Cabeçalho da tabela
+      const headerRowNum = r;
+      headers.forEach((h, i) => {
+        const cell = ws.getCell(headerRowNum, i + 1);
+        cell.value = h;
+        cell.font = { bold: true, size: 9, color: { argb: COR_HEADER_FG } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_HEADER_BG } };
+        cell.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'center' };
+        cell.border = { bottom: { style: 'medium', color: { argb: COR_BORDER } } };
+      });
+      ws.getRow(headerRowNum).height = 18;
+      ws.views = [{ state: 'frozen', xSplit: 0, ySplit: headerRowNum }];
+      r++;
+
+      // Linhas mensais
+      (store.rows || []).forEach((row, idx) => {
+        const rowNum = r;
+        const bg = idx % 2 === 1 ? COR_ZEBRA : 'FFFFFFFF';
+        let c = 1;
+
+        const mesCell = ws.getCell(rowNum, c++);
+        mesCell.value = row.isProj ? `${row.mes} (proj)` : row.mes;
+        mesCell.font = { size: 9, italic: !!row.isProj, color: { argb: row.isProj ? COR_PROJ : 'FF111827' } };
+        mesCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+        mesCell.alignment = { vertical: 'middle' };
+
+        histYears.forEach((y, j) => {
+          const vCell = ws.getCell(rowNum, c++);
+          vCell.value = row.h[j] == null ? '—' : Math.round(row.h[j]);
+          if (row.h[j] != null) vCell.numFmt = '#,##0';
+          vCell.font = { size: 9 };
+          vCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+          vCell.alignment = { horizontal: 'right', vertical: 'middle' };
+          const dCell = ws.getCell(rowNum, c++);
+          pctCell(dCell, row.deltas[j]);
+          dCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+        });
+
+        const v26Cell = ws.getCell(rowNum, c++);
+        v26Cell.value = row.v26 == null ? '—' : Math.round(row.v26);
+        if (row.v26 != null) v26Cell.numFmt = '#,##0';
+        v26Cell.font = { size: 9, bold: true, color: { argb: row.isProj ? COR_PROJ : 'FF111827' } };
+        v26Cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+        v26Cell.alignment = { horizontal: 'right', vertical: 'middle' };
+
+        [row.d2625, row.d2624, row.d2623, row.d2622].forEach(d => {
+          const dCell = ws.getCell(rowNum, c++);
+          pctCell(dCell, d);
+          dCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+        });
+
+        ws.getRow(rowNum).height = 15;
+        ws.getRow(rowNum).eachCell(cell => {
+          cell.border = { left: { style: 'thin', color: { argb: COR_BORDER } }, right: { style: 'thin', color: { argb: COR_BORDER } } };
+        });
+        r++;
+      });
+
+      // Linha de totais
+      const totRowNum = r;
+      const tot = store.totals || {};
+      let c = 1;
+      const totMesCell = ws.getCell(totRowNum, c++);
+      totMesCell.value = 'TOTAL';
+      histYears.forEach((y, j) => {
+        const vCell = ws.getCell(totRowNum, c++);
+        vCell.value = Math.round(tot[y] || 0);
+        vCell.numFmt = '#,##0';
+        vCell.alignment = { horizontal: 'right', vertical: 'middle' };
+        const dCell = ws.getCell(totRowNum, c++);
+        pctCell(dCell, (tot.totDeltas || [])[j], true);
+      });
+      const v26TotCell = ws.getCell(totRowNum, c++);
+      v26TotCell.value = Math.round(tot.v26 || 0);
+      v26TotCell.numFmt = '#,##0';
+      v26TotCell.alignment = { horizontal: 'right', vertical: 'middle' };
+      [tot.tot2625, tot.tot2624, tot.tot2623, tot.tot2622].forEach(d => {
+        const dCell = ws.getCell(totRowNum, c++);
+        pctCell(dCell, d, true);
+      });
+      ws.getRow(totRowNum).eachCell(cell => {
+        cell.font = cell.font ? { ...cell.font, bold: true } : { bold: true, size: 9 };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_TOTAL_BG } };
+        cell.border = { top: { style: 'medium', color: { argb: 'FF000000' } } };
+      });
+      ws.getRow(totRowNum).getCell(1).font = { bold: true, size: 9, color: { argb: 'FF111827' } };
+      ws.getRow(totRowNum).height = 18;
+    }
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="performance-surfers-${today.replace(/\//g,'-')}.xlsx"`);
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) {
+    console.error('[export/perf]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── CADASTRO DE PRODUTO ─────────────────────────────────────────────────
 
 // Marcas extraídas do catálogo de produtos (LinxProdutos, já funciona)

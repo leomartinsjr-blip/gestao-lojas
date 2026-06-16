@@ -2055,7 +2055,10 @@ function calcPerfMetrics(k, curMonthOverride = null) {
   const d26 = PERF_2026[k].slice(); // cópia para não mutar o original
   if (curMonthOverride !== null) d26[PERF_CUR] = curMonthOverride;
   const yoyReal = d26.map((v,i) => v !== null && d25[i] !== null && d25[i] !== 0 ? (v - d25[i]) / d25[i] * 100 : null);
-  const last3      = PERF_LAST3.map(i => yoyReal[i]);
+  // Até o dia 15 (sem ritmo do mês atual): usa os 3 últimos meses fechados.
+  // Após o dia 15 (curMonthOverride != null): usa os 2 últimos meses fechados + projeção por ritmo do mês atual.
+  const last3idx    = curMonthOverride !== null ? [PERF_CUR-2, PERF_CUR-1, PERF_CUR] : PERF_LAST3;
+  const last3      = last3idx.map(i => yoyReal[i]);
   const last3valid = last3.filter(v => v !== null);
   const avgD       = last3valid.length > 0 ? last3valid.reduce((a,b) => a+b, 0) / last3valid.length : 0;
   const proj    = PERF_MONTHS.map((_,i) => {
@@ -2068,7 +2071,7 @@ function calcPerfMetrics(k, curMonthOverride = null) {
   const projRest = proj.slice(PERF_CUR).reduce((a,v) => a+(v||0), 0);
   const projTotal = realAcum + projRest;
   const total25 = d25.reduce((a,b) => a+(b||0), 0);
-  return { d25, d26, yoyReal, yoyFull, last3, avgD, proj, realAcum, projTotal, total25, curMonthOverride };
+  return { d25, d26, yoyReal, yoyFull, last3, last3idx, avgD, proj, realAcum, projTotal, total25, curMonthOverride };
 }
 
 let perfChart = null, perfAnnualChart = null;
@@ -4356,7 +4359,11 @@ function renderPerfStore(k) {
   const cls   = n => n >= 0 ? 'pf-pos' : 'pf-neg';
 
   // ── KPI badges ──────────────────────────────────────────────────────────
+  const exportBtnHtml = k === 'surfers'
+    ? `<button id="perfExportBtn" class="trans-export-btn" style="margin-bottom:10px">↓ Exportar Excel (todas as lojas)</button>`
+    : '';
   const kpiHtml = `
+    ${exportBtnHtml}
     <div class="perf-kpis">
       <div class="perf-kpi">
         <div class="perf-kpi-label">Total 2025</div>
@@ -4371,7 +4378,7 @@ function renderPerfStore(k) {
       <div class="perf-kpi" style="border-color:${m.avgD < -10 ? '#F85149' : 'var(--border)'}">
         <div class="perf-kpi-label">Média últimos 3 meses</div>
         <div class="perf-kpi-value ${cls(m.avgD)}">${sign(m.avgD)}${m.avgD.toFixed(1)}%</div>
-        <div class="perf-kpi-sub">${PERF_LAST3.map((idx,j) => m.last3[j] !== null ? `${PERF_MONTHS[idx]} ${m.last3[j].toFixed(1)}%` : null).filter(Boolean).join(' · ')}</div>
+        <div class="perf-kpi-sub">${m.last3idx.map((idx,j) => m.last3[j] !== null ? `${PERF_MONTHS[idx]}${idx === PERF_CUR ? ' (proj)' : ''} ${m.last3[j].toFixed(1)}%` : null).filter(Boolean).join(' · ')}</div>
       </div>
       <div class="perf-kpi" style="border-color:#D2992255">
         <div class="perf-kpi-label">Projeção 2026 (ano)</div>
@@ -4460,6 +4467,9 @@ function renderPerfStore(k) {
       <div class="perf-chart-wrap"><canvas id="perfChartCanvas"></canvas></div>
     </div>`;
 
+  const perfExportBtn = body.querySelector('#perfExportBtn');
+  if (perfExportBtn) perfExportBtn.addEventListener('click', _exportPerfExcel);
+
   if (perfChart)       { perfChart.destroy();       perfChart = null; }
   if (perfAnnualChart) { perfAnnualChart.destroy(); perfAnnualChart = null; }
 
@@ -4508,8 +4518,8 @@ function renderPerfStore(k) {
   const barProj = PERF_MONTHS.map((_,i) => i >= PERF_CUR ? m.proj[i] : null);
   const lineReal = PERF_MONTHS.map((_,i) => i < PERF_CUR ? m.yoyReal[i] : null);
   const lineProj = PERF_MONTHS.map((_,i) => i >= PERF_CUR ? m.yoyFull[i] : null);
-  const ptColor  = PERF_MONTHS.map((_,i) => PERF_LAST3.includes(i) ? '#D29922' : (m.yoyReal[i]>=0?'#3FB950':'#F85149'));
-  const ptSize   = PERF_MONTHS.map((_,i) => PERF_LAST3.includes(i) ? 7 : 3);
+  const ptColor  = PERF_MONTHS.map((_,i) => m.last3idx.includes(i) ? '#D29922' : (m.yoyReal[i]>=0?'#3FB950':'#F85149'));
+  const ptSize   = PERF_MONTHS.map((_,i) => m.last3idx.includes(i) ? 7 : 3);
 
   const gridC = 'rgba(48,54,61,.6)';
   const tickC = { color: '#8B949E', maxRotation: 0 };
@@ -4561,6 +4571,81 @@ function renderPerfStore(k) {
       }
     }
   });
+}
+
+// ── Export Excel (Performance Mensal — Total Surfers + todas as lojas) ─────
+function _buildPerfStorePayload(k) {
+  const curProj = computeCurMonthProj(k);
+  const m = calcPerfMetrics(k, curProj);
+  const sign = n => n > 0 ? '+' : '';
+
+  const histYears = [2022, 2023, 2024, 2025];
+  let colTotals = { 2022:0, 2023:0, 2024:0, 2025:0, v26:0 };
+  const rows = PERF_MONTHS.map((mn, i) => {
+    const h = histYears.map(y => PERF_HIST[k][y][i]);
+    const real = m.d26[i];
+    const proj = m.proj[i];
+    const v26  = real !== null ? real : proj;
+    const isProj = (real === null || i === PERF_CUR) && v26 !== null;
+    histYears.forEach(y => { colTotals[y] += PERF_HIST[k][y][i] || 0; });
+    if (v26 !== null) colTotals.v26 += v26;
+    const deltas = histYears.map((y,j) => j === 0 || h[j] === null || h[j-1] === null || h[j-1] === 0 ? null : (h[j] - h[j-1]) / h[j-1] * 100);
+    const d2625  = v26 !== null && h[3] !== null && h[3] !== 0 ? (v26 - h[3]) / h[3] * 100 : null;
+    const d2624  = v26 !== null && h[2] !== null && h[2] !== 0 ? (v26 - h[2]) / h[2] * 100 : null;
+    const d2623  = v26 !== null && h[1] !== null && h[1] !== 0 ? (v26 - h[1]) / h[1] * 100 : null;
+    const d2622  = v26 !== null && h[0] !== null && h[0] !== 0 ? (v26 - h[0]) / h[0] * 100 : null;
+    return { mes: mn, isProj, h, deltas, v26, d2625, d2624, d2623, d2622 };
+  });
+  const totDeltas = histYears.map((y,j) => j === 0 || colTotals[histYears[j-1]] === 0 ? null : (colTotals[y]-colTotals[histYears[j-1]])/colTotals[histYears[j-1]]*100);
+  const tot2625 = colTotals[2025] !== 0 ? (colTotals.v26 - colTotals[2025]) / colTotals[2025] * 100 : null;
+  const tot2624 = colTotals[2024] !== 0 ? (colTotals.v26 - colTotals[2024]) / colTotals[2024] * 100 : null;
+  const tot2623 = colTotals[2023] !== 0 ? (colTotals.v26 - colTotals[2023]) / colTotals[2023] * 100 : null;
+  const tot2622 = colTotals[2022] !== 0 ? (colTotals.v26 - colTotals[2022]) / colTotals[2022] * 100 : null;
+
+  const pProj = (m.projTotal - m.total25) / m.total25 * 100;
+  return {
+    key: k,
+    label: BOARDS[k]?.label || k,
+    color: BOARDS[k]?.color || '#8B949E',
+    kpis: {
+      total25: m.total25,
+      acumulado: m.realAcum,
+      acumuladoLabel: `Jan–${PERF_MONTHS[PERF_CUR-1]}/26`,
+      mediaUltimos3: m.avgD,
+      mediaDetalhe: m.last3idx.map((idx,j) => m.last3[j] !== null ? `${PERF_MONTHS[idx]}${idx === PERF_CUR ? ' (proj)' : ''} ${sign(m.last3[j])}${m.last3[j].toFixed(1)}%` : null).filter(Boolean).join(' · '),
+      projecaoAno: m.projTotal,
+      pProj,
+    },
+    rows,
+    totals: { ...colTotals, totDeltas, tot2625, tot2624, tot2623, tot2622 },
+  };
+}
+
+async function _exportPerfExcel() {
+  const btn = document.getElementById('perfExportBtn');
+  const origText = btn?.textContent;
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = '↓ Gerando...'; }
+    const stores = ['surfers', ...SURFERS_STORES].map(_buildPerfStorePayload);
+    const res = await fetch('/api/perf/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stores }),
+    });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || res.status); }
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const today = new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
+    a.href = url;
+    a.download = `performance-surfers-${today}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('Erro ao exportar: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
+  }
 }
 
 function initPerfModal() {
