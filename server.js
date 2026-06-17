@@ -6236,13 +6236,14 @@ FORMATO DE SAÍDA — retorne APENAS JSON válido, sem texto extra:
   ]
 }`;
 
-    const response = await client.messages.create({
+    const stream = await client.messages.stream({
       model: 'claude-sonnet-4-6',
       max_tokens: 32000,
       system: systemPrompt,
       messages: [{ role: 'user', content: `Arquivo do fornecedor:\n\n${rawContent}` }],
     });
 
+    const response = await stream.finalMessage();
     let txt = response.content[0]?.text || '';
     const m = txt.match(/```(?:json)?\s*([\s\S]*?)```/) || txt.match(/(\{[\s\S]*\})/s);
     if (m) txt = m[1];
