@@ -2834,8 +2834,30 @@ async function _cadAiSuggest(body) {
     fd.append('file', _cad.file);
     const res = await fetch('/api/cadastro-produto/ai-suggest', { method: 'POST', body: fd });
     if (!res.ok) throw new Error(await res.text());
-    const data = await res.json();
-    if (data.error) throw new Error(data.error);
+    const data = await new Promise((resolve, reject) => {
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      function pump() {
+        reader.read().then(({ done, value }) => {
+          if (value) buf += decoder.decode(value, { stream: !done });
+          const lines = buf.split('\n');
+          buf = lines.pop();
+          for (const line of lines) {
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const msg = JSON.parse(line.slice(6));
+              if (msg.error) return reject(new Error(msg.error));
+              if (msg.done) return resolve(msg.result);
+            } catch (_) {}
+          }
+          if (done) return reject(new Error('Resposta da IA incompleta'));
+          pump();
+        }).catch(reject);
+      }
+      pump();
+    });
+    if (!data) throw new Error('Sem resposta da IA');
 
     const prods = (data.produtos || []);
     if (!prods.length) throw new Error('Nenhum produto encontrado no arquivo');
