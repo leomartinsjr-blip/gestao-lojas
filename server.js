@@ -6296,7 +6296,7 @@ app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
         qtd_compra:    '',
         localizacao:   '',
         observacao:    '',
-        cod_barra:     r.cod_barra   || '',
+        cod_barra:     '',
         caracterist:   '',
         status:        0,
         b2c_desc:      '',
