@@ -6237,8 +6237,8 @@ FORMATO DE SAÍDA — retorne APENAS JSON válido, sem texto extra:
 }`;
 
     const response = await client.messages.create({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 8192,
+      model: 'claude-sonnet-4-6',
+      max_tokens: 32000,
       system: systemPrompt,
       messages: [{ role: 'user', content: `Arquivo do fornecedor:\n\n${rawContent}` }],
     });
