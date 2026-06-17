@@ -3089,13 +3089,14 @@ app.post('/api/boletas', requireAuth, async (req, res) => {
   try {
     const { board } = req.body;
     if (!board || !BOARDS.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
-    if (!req.body.nome?.trim()) return res.status(400).json({ error: 'Nome obrigatório' });
+    const origemVal = req.body.origem === 'loja' ? 'loja' : 'cliente';
+    if (origemVal === 'cliente' && !req.body.nome?.trim()) return res.status(400).json({ error: 'Nome obrigatório' });
     const db = await readDB();
     if (!db.boletas)   db.boletas   = [];
     if (!db.boletaSeq) db.boletaSeq = {};
     if (!db.boletaSeq[board]) db.boletaSeq[board] = 0;
     db.boletaSeq[board]++;
-    const fields = ['nome','cpf','endereco','numeroEnd','compl','bairro','cep','cidade','tel','email',
+    const fields = ['origem','nome','cpf','endereco','numeroEnd','compl','bairro','cep','cidade','tel','email',
                     'produto','tamanho','ref','codigo','cor','fabricante','doc','dataCompra','defeito','dataEntregue'];
     const boleta = { id: nextId(db), numero: db.boletaSeq[board], board, status: 'pendente',
                      createdAt: new Date().toISOString(),
@@ -3114,7 +3115,7 @@ app.patch('/api/boletas/:id', requireAuth, async (req, res) => {
     const db = await readDB();
     const b  = (db.boletas || []).find(x => x.id === id);
     if (!b) return res.status(404).json({ error: 'Boleta não encontrada' });
-    const fields = ['nome','cpf','endereco','numeroEnd','compl','bairro','cep','cidade','tel','email',
+    const fields = ['origem','nome','cpf','endereco','numeroEnd','compl','bairro','cep','cidade','tel','email',
                     'produto','tamanho','ref','codigo','cor','fabricante','doc','dataCompra','defeito','dataEntregue'];
     fields.forEach(f => { if (f in req.body) b[f] = req.body[f] || null; });
     if (req.body.status) {

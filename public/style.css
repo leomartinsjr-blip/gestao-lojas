@@ -2378,6 +2378,12 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .bol-btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--text);
   border-radius: .375rem; padding: 6px 16px; font-size: .83rem; cursor: pointer; transition: border-color .15s; }
 .bol-btn-secondary:hover { border-color: #58A6FF; }
+.bol-origem-btn { background: transparent; border: 1px solid var(--border); color: var(--muted);
+  border-radius: .375rem; padding: 5px 14px; font-size: .82rem; cursor: pointer; transition: all .15s; }
+.bol-origem-btn.bol-origem-active { border-color: #58A6FF; color: #58A6FF; background: rgba(88,166,255,.1); }
+.bol-origem-btn:hover:not(.bol-origem-active) { border-color: var(--text); color: var(--text); }
+.bol-origem-tag-loja { display:inline-block; background: rgba(255,193,7,.15); color: #FFC107;
+  border: 1px solid rgba(255,193,7,.4); border-radius: .375rem; padding: 3px 10px; font-size: .8rem; font-weight: 600; }
 .bol-btn-edit { background: transparent; border: 1px solid #58A6FF; color: #58A6FF;
   border-radius: .375rem; padding: 5px 14px; font-size: .8rem; cursor: pointer; }
 .bol-btn-del  { background: transparent; border: 1px solid var(--down); color: var(--down);

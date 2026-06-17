@@ -9341,22 +9341,24 @@ function _boletaDetailHtml(b, isAdmin) {
       </div>
     </div>
     <div class="bol-detail-body">
-      <div class="bol-detail-section">
+      ${b.origem === 'loja'
+        ? `<div class="bol-detail-section"><div class="bol-detail-section-title">Origem</div><div class="bol-detail-row"><span class="bol-origem-tag-loja">Identificado em Loja</span></div></div>`
+        : `<div class="bol-detail-section">
         <div class="bol-detail-section-title">Cliente</div>
         ${row('Nome', b.nome)} ${row('CPF', b.cpf)} ${row('Tel', b.tel)} ${row('Email', b.email)}
         ${row('Endereço', [b.endereco, b.numeroEnd, b.compl].filter(Boolean).join(', '))}
         ${row('Bairro', b.bairro)} ${row('CEP', b.cep)} ${row('Cidade', b.cidade)}
-      </div>
+      </div>`}
       <div class="bol-detail-section">
         <div class="bol-detail-section-title">Produto</div>
         ${row('Produto', b.produto)} ${row('Tamanho', b.tamanho)} ${row('Cor', b.cor)}
         ${row('Ref', b.ref)} ${row('Código', b.codigo)} ${row('Fabricante', b.fabricante)}
-        ${row('Doc', b.doc)} ${row('Data da Compra', fDate(b.dataCompra))}
+        ${row('Doc', b.doc)} ${b.origem !== 'loja' ? row('Data da Compra', fDate(b.dataCompra)) : ''}
       </div>
       <div class="bol-detail-section">
         <div class="bol-detail-section-title">Defeito & Prazo</div>
         ${row('Defeito', b.defeito)}
-        ${row('Data Entregue', fDate(b.dataEntregue))}
+        ${row(b.origem === 'loja' ? 'Data de Identificação' : 'Data Entregue', fDate(b.dataEntregue))}
         ${row('Prazo', b.dataEntregue ? `30 dias → vence em ${fDate(new Date(new Date(b.dataEntregue).setDate(new Date(b.dataEntregue).getDate()+30)).toISOString().slice(0,10))}` : null)}
         ${b.status==='resolvido' ? row('Resolvida em', fDate(b.resolvedAt?.slice(0,10))+' por '+(b.resolvedBy||'—')) : ''}
       </div>
@@ -9379,7 +9381,7 @@ function _boletaDetailHtml(b, isAdmin) {
           return `<div class="cd-stage" style="opacity:.4"><div class="cd-stage-hdr"><span class="cd-stage-title cd-stage-pending">${title}</span><span style="font-size:.75rem;color:var(--muted)">Aguardando envio à fábrica</span></div></div>`;
         }
         const today = new Date().toISOString().slice(0,10);
-        return stageDone('Cliente → Loja (Recebido)', ['Entrada: '+fD(b.dataEntregue||b.createdAt?.slice(0,10))]) +
+        return stageDone(b.origem==='loja' ? 'Identificado em Loja' : 'Cliente → Loja (Recebido)', ['Entrada: '+fD(b.dataEntregue||b.createdAt?.slice(0,10))]) +
           (b.ressarcimento
             ? stageDone('Loja → Cliente (Ressarcimento)', [fD(b.ressarcimento.data), b.ressarcimento.tipo?'Tipo: '+b.ressarcimento.tipo:null, b.ressarcimento.obs||null])
             : stagePending('Loja → Cliente (Ressarcimento)', 'cdRessBtn', 'cdRessForm')) +
@@ -9518,12 +9520,22 @@ function _boletaCompraConstraints(dataEntregue) {
 function _boletaFormHtml(boleta, isAdmin, userBoard) {
   const v = (field) => boleta?.[field] || '';
   const board = boleta?.board || (isAdmin ? NF_STORES_BOL[0] : userBoard);
+  const origem = boleta?.origem || 'cliente';
+  const isLoja = origem === 'loja';
   const cc = _boletaCompraConstraints(v('dataEntregue'));
   return `<div class="bol-form">
     <div class="bol-form-section">
+      <div class="bol-form-section-title">Origem do Defeito</div>
+      <div style="display:flex;gap:.5rem;margin-bottom:.25rem">
+        <button type="button" class="bol-origem-btn${!isLoja?' bol-origem-active':''}" data-origem="cliente">Veio de Cliente</button>
+        <button type="button" class="bol-origem-btn${isLoja?' bol-origem-active':''}" data-origem="loja">Identificado em Loja</button>
+      </div>
+      <input type="hidden" name="origem" value="${origem}">
+    </div>
+    <div class="bol-form-section bol-cliente-section"${isLoja?' style="display:none"':''}>
       <div class="bol-form-section-title">Cliente</div>
       <div class="bol-form-grid">
-        <div class="bol-fg bol-span3"><label>Nome *</label><input type="text" name="nome" class="bol-input" value="${v('nome')}" required></div>
+        <div class="bol-fg bol-span3"><label>Nome${!isLoja?' *':''}</label><input type="text" name="nome" class="bol-input" value="${v('nome')}"></div>
         <div class="bol-fg"><label>CPF</label><input type="text" name="cpf" class="bol-input" value="${v('cpf')}"></div>
         <div class="bol-fg bol-span2"><label>Endereço</label><input type="text" name="endereco" class="bol-input" value="${v('endereco')}"></div>
         <div class="bol-fg"><label>Nº</label><input type="text" name="numeroEnd" class="bol-input" value="${v('numeroEnd')}"></div>
@@ -9545,14 +9557,20 @@ function _boletaFormHtml(boleta, isAdmin, userBoard) {
         <div class="bol-fg"><label>Código</label><input type="text" name="codigo" class="bol-input" value="${v('codigo')}"></div>
         <div class="bol-fg"><label>Fabricante</label><input type="text" name="fabricante" class="bol-input" value="${v('fabricante')}"></div>
         <div class="bol-fg"><label>Doc</label><input type="text" name="doc" class="bol-input" value="${v('doc')}"></div>
-        <div class="bol-fg"><label>Data da Compra *</label><input type="date" name="dataCompra" class="bol-input" value="${v('dataCompra')}" min="${cc.min}" max="${cc.max}" required></div>
+        <div class="bol-fg bol-data-compra-wrap"${isLoja?' style="display:none"':''}>
+          <label>Data da Compra *</label>
+          <input type="date" name="dataCompra" class="bol-input" value="${v('dataCompra')}" min="${cc.min}" max="${cc.max}">
+        </div>
       </div>
     </div>
     <div class="bol-form-section">
       <div class="bol-form-section-title">Defeito & Prazo</div>
       <div class="bol-form-grid">
         <div class="bol-fg bol-span4"><label>Defeito *</label><textarea name="defeito" class="bol-input" rows="3" required>${v('defeito')}</textarea></div>
-        <div class="bol-fg bol-span2"><label>Data Entregue ao cliente * <small>(início do prazo de 30 dias)</small></label><input type="date" name="dataEntregue" class="bol-input" value="${v('dataEntregue')}" required></div>
+        <div class="bol-fg bol-span2">
+          <label class="bol-data-entregue-lbl">${isLoja ? 'Data de Identificação *' : 'Data Entregue ao cliente * <small>(início do prazo de 30 dias)</small>'}</label>
+          <input type="date" name="dataEntregue" class="bol-input" value="${v('dataEntregue')}" required>
+        </div>
         ${isAdmin ? `<div class="bol-fg bol-span2"><label>Loja *</label><select name="board" class="bol-input">
           ${NF_STORES_BOL.map(b=>`<option value="${b}"${b===board?' selected':''}>${BOARDS[b]?.label||b}</option>`).join('')}
         </select></div>` : `<input type="hidden" name="board" value="${userBoard}">`}
@@ -9569,10 +9587,33 @@ function _initBoletaForm(body, boleta, isAdmin, userBoard) {
   body.querySelector('#bolFormCancelBtn').addEventListener('click', () =>
     boleta ? _renderBoletasModal('view', boleta.id) : _renderBoletasModal('list', null));
 
+  const origemInput      = body.querySelector('[name="origem"]');
+  const clienteSection   = body.querySelector('.bol-cliente-section');
+  const dataCompraWrap   = body.querySelector('.bol-data-compra-wrap');
+  const dataEntregueLbl  = body.querySelector('.bol-data-entregue-lbl');
   const dataEntregueInput = body.querySelector('[name="dataEntregue"]');
   const dataCompraInput   = body.querySelector('[name="dataCompra"]');
+
+  function applyOrigem(origem) {
+    const isLoja = origem === 'loja';
+    origemInput.value = origem;
+    if (clienteSection)  clienteSection.style.display  = isLoja ? 'none' : '';
+    if (dataCompraWrap)  dataCompraWrap.style.display  = isLoja ? 'none' : '';
+    if (dataEntregueLbl) dataEntregueLbl.innerHTML     = isLoja
+      ? 'Data de Identificação *'
+      : 'Data Entregue ao cliente * <small>(início do prazo de 30 dias)</small>';
+    body.querySelectorAll('.bol-origem-btn').forEach(btn => {
+      btn.classList.toggle('bol-origem-active', btn.dataset.origem === origem);
+    });
+  }
+
+  body.querySelectorAll('.bol-origem-btn').forEach(btn => {
+    btn.addEventListener('click', () => applyOrigem(btn.dataset.origem));
+  });
+
   if (dataEntregueInput && dataCompraInput) {
     dataEntregueInput.addEventListener('change', () => {
+      if (origemInput.value === 'loja') return;
       const cc = _boletaCompraConstraints(dataEntregueInput.value);
       dataCompraInput.min = cc.min;
       dataCompraInput.max = cc.max;
@@ -9584,11 +9625,12 @@ function _initBoletaForm(body, boleta, isAdmin, userBoard) {
   body.querySelector('#bolFormSaveBtn').addEventListener('click', async () => {
     const data = {};
     body.querySelectorAll('[name]').forEach(el => { data[el.name] = el.value.trim(); });
-    if (!data.nome) { toast('Nome é obrigatório', true); return; }
+    const isLoja = data.origem === 'loja';
+    if (!isLoja && !data.nome) { toast('Nome é obrigatório', true); return; }
     if (!data.produto) { toast('Produto é obrigatório', true); return; }
-    if (!data.dataCompra) { toast('Data da Compra é obrigatória', true); return; }
-    if (!data.dataEntregue) { toast('Data entregue é obrigatória', true); return; }
-    if (data.dataCompra && data.dataEntregue) {
+    if (!isLoja && !data.dataCompra) { toast('Data da Compra é obrigatória', true); return; }
+    if (!data.dataEntregue) { toast(isLoja ? 'Data de Identificação é obrigatória' : 'Data entregue é obrigatória', true); return; }
+    if (!isLoja && data.dataCompra && data.dataEntregue) {
       const diffDays = Math.round((new Date(data.dataEntregue + 'T12:00:00') - new Date(data.dataCompra + 'T12:00:00')) / 86400000);
       if (diffDays < 0) { toast('Data da compra não pode ser posterior à data de entrega', true); return; }
       if (diffDays > 90) { toast('Data da compra deve ser no máximo 90 dias antes da entrega ao cliente', true); return; }
