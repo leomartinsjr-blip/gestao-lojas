@@ -6254,7 +6254,7 @@ app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
         unidade:       'UN',
         multiplo:      '1',
         moeda:         '',
-        custo_icms:    r.preco_custo || '',
+        custo_icms:    (() => { const v = parseFloat(String(r.preco_custo||'').replace(/\./g,'').replace(',','.')); return isNaN(v) || v === 0 ? '' : v.toFixed(2).replace('.',','); })(),
         desconto:      '',
         acrescimo:     '',
         ipi:           '',
