@@ -6136,6 +6136,121 @@ app.post('/api/catalog/rebuild-refcolor', requireAdmin, async (req, res) => {
   res.json({ ok: true, message: 'Rebuild iniciado em background' });
 });
 
+app.post('/api/cadastro-produto/ai-suggest', requireAdmin, _cadPdfUpload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+    const Anthropic = require('@anthropic-ai/sdk');
+    const client = new Anthropic.default({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const ext = (req.file.originalname.split('.').pop() || '').toLowerCase();
+    let rawContent = '';
+
+    if (ext === 'pdf') {
+      const pdfParse = require('pdf-parse');
+      const data = await pdfParse(req.file.buffer);
+      rawContent = data.text;
+    } else {
+      const XLSX = require('xlsx');
+      const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      rawContent = rows.slice(0, 300).map(r => r.join('\t')).join('\n');
+    }
+
+    if (rawContent.length > 24000) rawContent = rawContent.slice(0, 24000) + '\n[... truncado ...]';
+
+    const systemPrompt = `Você é um assistente especializado em cadastro de produtos para o sistema Microvix de uma loja de surf/streetwear.
+Analise o arquivo do fornecedor e extraia TODOS os produtos/SKUs.
+
+REGRAS DE SETOR (aplicar sempre):
+- Camiseta, T-Shirt, Tshirt, Camiseta Regular, Camiseta Oversized → "TS Basica"
+- Regata → "Regata"
+- Calçados, Tênis, Tenis, Sandália, Bota, Sneaker → "Calçados"
+- Boné, Bone, Cap → "Acessórios"
+- Short, Shorts → "Shorts"
+- Calça, Jeans, Denim → "Calças"
+- Moletom, Agasalho → "Moletom"
+- Cinto → "Acessórios"
+- Outros → "Moda"
+
+REGRAS POR FORNECEDOR:
+
+VANS (Excel - colunas: Categoria, Descrição do modelo, Codigo Global/Sku, CodProduto, PDV, CUSTO, Grade):
+- Referência: campo CodProduto
+- O campo "Codigo Global/Sku" contém ref+cor+sufixo concatenados: ex "VN00066XY28CASA" → ref=VN00066X, cor=Y28, CASA=descartar (sempre 4 letras maiúsculas no fim)
+- Nome: Descrição do modelo
+- Tamanho: Grade — "AA03" vira "U"; "1/39;2/40;2/41;1/42" = gerar 1 SKU por tamanho (separados por ;, formato qtd/tam)
+- Custo: coluna CUSTO (número direto, ex: 90.9)
+- Preço venda: coluna PDV
+
+OAKLEY (Excel - colunas: MATERIAL, PRODUTO, COR, TAM BR, DESC COR, PDV, CUSTO NF, CATEGORIA, NCM, EAN):
+- Referência: MATERIAL
+- Nome: PRODUTO
+- Cor código: COR; Cor nome: DESC COR
+- Tamanho: TAM BR (número BR)
+- Custo: CUSTO NF (já com impostos)
+- Preço venda: PDV (remover "R$" se necessário)
+- Setor: CATEGORIA
+- NCM: NCM; EAN: EAN
+
+NEW ERA (Excel - colunas: Produto, Cor, Nome Cor, Descrição, Tamanho, custo, Preço de Varejo, Classif. Fiscal (NCM), Código de Barra):
+- Referência: Produto
+- Nome: Descrição
+- Cor código: Cor; Cor nome: Nome Cor
+- Tamanho: Tamanho (U, 7 1/4, 7 3/8...)
+- Custo: custo (arredondar para 2 casas — pode vir como float sujo tipo 107.66000000000001)
+- Preço venda: Preço de Varejo
+- NCM: Classif. Fiscal (NCM); EAN: Código de Barra
+
+MCD / OUTSIDE CO (PDF - Proposta de Venda da Outside Co):
+- Produto: linha com formato "CÓDIGO - NOME" (ex: "12722844X - CAMISETA OVERSIZED MCD DOURADO")
+- Cor: linha seguinte "Cor: BBB - BRANCO" (código - nome)
+- Grade: colunas G1/G2/G3 (oversized), P/M/G/GG (regular), 38/40/42... (calças) — gerar 1 SKU por tamanho
+- Custo: coluna Unitário *** APLICAR DESCONTO 13%: custo_real = unitario × 0.87 ***
+- Preço venda: não disponível — retornar null
+
+CONVERSE (PDF - Pedido de Venda Converse/Cooper Shoes):
+- Linha de produto: "CÓDIGO NOME_COM_COR" (ex: "CT00010002 CHUCK TAYLOR ALL STAR PRETO/CRU/PRETO")
+- A cor está embutida no nome (última parte após o modelo base)
+- Grade de tamanhos: linha "33|34|35|36|37|38" com quantidades na linha seguinte — gerar 1 SKU por tamanho
+- Custo: campo GRADE PREÇO ou PREÇO (ex: R$ 126,80)
+- Preço venda: campo PREÇO SUGERIDO
+- Setor: Calçados
+
+FORMATO DE SAÍDA — retorne APENAS JSON válido, sem texto extra:
+{
+  "fornecedor": "nome do fornecedor detectado",
+  "produtos": [
+    {
+      "referencia": "código",
+      "nome": "descrição sem cor",
+      "cor": "nome da cor em PT (ex: PRETO, MARINHO)",
+      "cod_cor": "código se houver (ex: 01K)",
+      "tamanho": "tamanho (ex: 38, M, U, 7 1/4)",
+      "setor": "setor normalizado",
+      "custo": 0.00,
+      "preco_venda": 0.00,
+      "ncm": "NCM ou null",
+      "ean": "EAN ou null"
+    }
+  ]
+}`;
+
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 8192,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: `Arquivo do fornecedor:\n\n${rawContent}` }],
+    });
+
+    let txt = response.content[0]?.text || '';
+    const m = txt.match(/```(?:json)?\s*([\s\S]*?)```/) || txt.match(/(\{[\s\S]*\})/s);
+    if (m) txt = m[1];
+    const parsed = JSON.parse(txt.trim());
+    res.json(parsed);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
   try {
     const { rows } = req.body;

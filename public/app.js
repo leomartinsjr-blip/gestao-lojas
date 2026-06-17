@@ -2772,6 +2772,9 @@ function _cadRenderUpload(body) {
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           Analisar arquivo
         </button>
+        <button class="trans-calc-btn" id="cadAiSuggestBtn" ${_cad.file ? '' : 'disabled'} style="align-self:flex-end;background:#3a1f6e;border-color:#6e40c9">
+          ✦ Sugerir com IA
+        </button>
       </div>
       <div class="cad-hint" style="margin-top:.5rem;color:var(--muted)">Fornecedor, marca, coleção e formato de código de barras são informados diretamente na tela de importação do Microvix.</div>
       <div id="cadContent" style="margin-top:1.25rem"></div>
@@ -2782,8 +2785,10 @@ function _cadRenderUpload(body) {
     _cad.file = fi.files[0] || null;
     body.querySelector('#cadFileName').textContent = _cad.file ? _cad.file.name : 'Escolher .xls / .xlsx / .pdf';
     body.querySelector('#cadAnalyzeBtn').disabled = !_cad.file;
+    body.querySelector('#cadAiSuggestBtn').disabled = !_cad.file;
   });
   body.querySelector('#cadAnalyzeBtn').addEventListener('click', () => _cadParseFile(body));
+  body.querySelector('#cadAiSuggestBtn').addEventListener('click', () => _cadAiSuggest(body));
 }
 
 
@@ -2815,6 +2820,73 @@ async function _cadParseFile(body) {
     _cadRenderConfigAndMapping(content);
   } catch (e) {
     content.innerHTML = `<div class="trans-error">Erro ao ler arquivo: ${_escHtml(e.message)}</div>`;
+  }
+}
+
+async function _cadAiSuggest(body) {
+  const content = body.querySelector('#cadContent');
+  const btn = body.querySelector('#cadAiSuggestBtn');
+  const origText = btn.textContent;
+  btn.disabled = true; btn.textContent = '✦ Analisando com IA…';
+  content.innerHTML = '<div class="trans-loading">A IA está lendo o pedido e mapeando os produtos…</div>';
+  try {
+    const fd = new FormData();
+    fd.append('file', _cad.file);
+    const res = await fetch('/api/cadastro-produto/ai-suggest', { method: 'POST', body: fd });
+    if (!res.ok) throw new Error(await res.text());
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+
+    const prods = (data.produtos || []);
+    if (!prods.length) throw new Error('Nenhum produto encontrado no arquivo');
+
+    _cad.fornecedor = data.fornecedor || '';
+
+    _cad.products = prods.map(p => {
+      const custo = parseFloat(p.custo) || 0;
+      const preco = parseFloat(p.preco_venda) || 0;
+      const setor = (() => {
+        if (!p.setor) return _cadSuggestSetor([p.nome || '']);
+        const n = (p.setor).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        if (/camiseta|t-shirt|tshirt/.test(n)) return 'TS Basica';
+        return p.setor;
+      })();
+      return {
+        referencia:   p.referencia || '',
+        nome:         p.nome || '',
+        desc_cor:     p.cor || '',
+        cod_cor:      p.cod_cor || '',
+        desc_tamanho: p.tamanho || '',
+        desc_setor:   setor,
+        cod_barra:    p.ean || '',
+        _ref_final:   p.referencia || '',
+        _desc_final:  p.nome || '',
+        _custo:       custo ? custo.toFixed(2) : '',
+        _preco:       preco ? preco.toFixed(2) : '',
+        _ncm:         p.ncm || _cadSuggestNcm(setor, [p.nome || '']),
+        _origRef:     p.referencia || '',
+        _origSetor:   p.setor || '',
+        _origCor:     p.cor || '',
+        _origTam:     p.tamanho || '',
+        _aiSuggested: true,
+      };
+    });
+
+    // Carrega NCM options para os selects
+    if (!_cad.ncmOptions) _cadLoadMxOpts();
+
+    const sec = document.createElement('div');
+    sec.className = 'cad-prod-section';
+    content.innerHTML = '';
+    if (_cad.fornecedor) {
+      content.innerHTML = `<div style="color:var(--muted);font-size:.8rem;margin-bottom:.5rem">✦ IA detectou fornecedor: <strong style="color:var(--text)">${_escHtml(_cad.fornecedor)}</strong> · ${prods.length} SKUs extraídos</div>`;
+    }
+    content.appendChild(sec);
+    _cadRenderProdSection(sec);
+  } catch (e) {
+    content.innerHTML = `<div class="trans-error">Erro: ${_escHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = origText;
   }
 }
 
