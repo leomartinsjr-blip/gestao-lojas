@@ -6241,32 +6241,30 @@ FORMATO DE SAÍDA — retorne APENAS JSON válido, sem texto extra:
     res.setHeader('X-Accel-Buffering', 'no');
     res.flushHeaders();
 
-    const stream = await client.messages.stream({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 32000,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: `Arquivo do fornecedor:\n\n${rawContent}` }],
-    });
+    const keepalive = setInterval(() => { try { res.write(': ping\n\n'); } catch (_) {} }, 20000);
 
-    stream.on('text', (text) => {
-      res.write(`data: ${JSON.stringify({ chunk: text })}\n\n`);
-    });
-
-    const response = await stream.finalMessage();
-    let txt = response.content[0]?.text || '';
-    const m = txt.match(/```(?:json)?\s*([\s\S]*?)```/) || txt.match(/(\{[\s\S]*\})/s);
-    if (m) txt = m[1];
+    let aiResult;
     try {
-      const parsed = JSON.parse(txt.trim());
-      res.write(`data: ${JSON.stringify({ done: true, result: parsed })}\n\n`);
-    } catch (parseErr) {
-      res.write(`data: ${JSON.stringify({ error: 'JSON inválido na resposta da IA: ' + parseErr.message })}\n\n`);
+      const stream = await client.messages.stream({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 8000,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: `Arquivo do fornecedor:\n\n${rawContent}` }],
+      });
+      const response = await stream.finalMessage();
+      let txt = response.content[0]?.text || '';
+      const m = txt.match(/```(?:json)?\s*([\s\S]*?)```/) || txt.match(/(\{[\s\S]*\})/s);
+      if (m) txt = m[1];
+      aiResult = JSON.parse(txt.trim());
+    } finally {
+      clearInterval(keepalive);
     }
+
+    res.write(`data: ${JSON.stringify({ done: true, result: aiResult })}\n\n`);
     res.end();
   } catch (e) {
     if (!res.headersSent) return res.status(500).json({ error: e.message });
-    res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
-    res.end();
+    try { res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`); res.end(); } catch (_) {}
   }
 });
 
