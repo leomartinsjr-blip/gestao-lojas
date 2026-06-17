@@ -2687,8 +2687,14 @@ function _cadBuildProducts() {
     if (!p.referencia && !p.nome) return [];
     const txt   = (p.referencia || '') + ' ' + (p.nome || '');
     const rawSetor = (p.desc_setor || '').trim();
-    const suggestedSetor = _cadSuggestSetor([rawSetor, txt].filter(Boolean));
-    const setor = suggestedSetor !== 'Moda' ? suggestedSetor : (rawSetor || 'Moda');
+    const setor = (() => {
+      if (rawSetor) {
+        const n = rawSetor.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        if (/camiseta|t-shirt|tshirt/.test(n)) return 'TS Basica';
+        return rawSetor;
+      }
+      return _cadSuggestSetor([txt]);
+    })();
     const custo = p.preco_custo || '';
 
     // Se a coluna foi mapeada diretamente, usa o valor bruto (01K, Y28, 7.0, etc.)
