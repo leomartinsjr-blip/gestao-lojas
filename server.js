@@ -6139,8 +6139,8 @@ app.post('/api/catalog/rebuild-refcolor', requireAdmin, async (req, res) => {
 app.post('/api/cadastro-produto/ai-suggest', requireAdmin, _cadPdfUpload.single('file'), async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
-    const Anthropic = require('@anthropic-ai/sdk');
-    const client = new Anthropic.default({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const { default: Anthropic } = require('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
     const ext = (req.file.originalname.split('.').pop() || '').toLowerCase();
     let rawContent = '';
@@ -6236,6 +6236,11 @@ FORMATO DE SAÍDA — retorne APENAS JSON válido, sem texto extra:
   ]
 }`;
 
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
+
     const stream = await client.messages.stream({
       model: 'claude-sonnet-4-6',
       max_tokens: 32000,
@@ -6243,13 +6248,26 @@ FORMATO DE SAÍDA — retorne APENAS JSON válido, sem texto extra:
       messages: [{ role: 'user', content: `Arquivo do fornecedor:\n\n${rawContent}` }],
     });
 
+    stream.on('text', (text) => {
+      res.write(`data: ${JSON.stringify({ chunk: text })}\n\n`);
+    });
+
     const response = await stream.finalMessage();
     let txt = response.content[0]?.text || '';
     const m = txt.match(/```(?:json)?\s*([\s\S]*?)```/) || txt.match(/(\{[\s\S]*\})/s);
     if (m) txt = m[1];
-    const parsed = JSON.parse(txt.trim());
-    res.json(parsed);
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    try {
+      const parsed = JSON.parse(txt.trim());
+      res.write(`data: ${JSON.stringify({ done: true, result: parsed })}\n\n`);
+    } catch (parseErr) {
+      res.write(`data: ${JSON.stringify({ error: 'JSON inválido na resposta da IA: ' + parseErr.message })}\n\n`);
+    }
+    res.end();
+  } catch (e) {
+    if (!res.headersSent) return res.status(500).json({ error: e.message });
+    res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
+    res.end();
+  }
 });
 
 app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
