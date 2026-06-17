@@ -2686,7 +2686,9 @@ function _cadBuildProducts() {
     }
     if (!p.referencia && !p.nome) return [];
     const txt   = (p.referencia || '') + ' ' + (p.nome || '');
-    const setor = (p.desc_setor || '').trim() || _cadSuggestSetor([txt]);
+    const rawSetor = (p.desc_setor || '').trim();
+    const suggestedSetor = _cadSuggestSetor([rawSetor, txt].filter(Boolean));
+    const setor = suggestedSetor !== 'Moda' ? suggestedSetor : (rawSetor || 'Moda');
     const custo = p.preco_custo || '';
 
     // Se a coluna foi mapeada diretamente, usa o valor bruto (01K, Y28, 7.0, etc.)
