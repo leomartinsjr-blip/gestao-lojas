@@ -6136,7 +6136,12 @@ app.post('/api/catalog/rebuild-refcolor', requireAdmin, async (req, res) => {
   res.json({ ok: true, message: 'Rebuild iniciado em background' });
 });
 
-app.post('/api/cadastro-produto/ai-suggest', requireAdmin, _cadPdfUpload.single('file'), async (req, res) => {
+app.post('/api/cadastro-produto/ai-suggest', requireAdmin, (req, res, next) => {
+  _cadPdfUpload.single('file')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: `Upload error: ${err.message}` });
+    next();
+  });
+}, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
     const { default: Anthropic } = require('@anthropic-ai/sdk');

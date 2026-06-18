@@ -2833,7 +2833,11 @@ async function _cadAiSuggest(body) {
     const fd = new FormData();
     fd.append('file', _cad.file);
     const httpRes = await fetch('/api/cadastro-produto/ai-suggest', { method: 'POST', body: fd });
-    const data = await httpRes.json();
+    const rawText = await httpRes.text();
+    let data;
+    try { data = JSON.parse(rawText); } catch (_) {
+      throw new Error(`Servidor retornou resposta inválida (${httpRes.status}): ${rawText.slice(0, 200)}`);
+    }
     if (!httpRes.ok) throw new Error(data.error || httpRes.statusText);
     if (!data) throw new Error('Sem resposta da IA');
 
