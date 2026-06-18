@@ -3486,3 +3486,7 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .dre-hist-table td { padding: .32rem .5rem; border-bottom: 1px solid rgba(48,54,61,.5); text-align: right; font-variant-numeric: tabular-nums; }
 .dre-hist-table td:first-child { text-align: left; color: #E6EDF3; }
 .dre-hist-table tr:hover td { background: rgba(88,166,255,.04); }
+.dre-mx-badge { font-size: .68rem; color: #3FB950; background: rgba(63,185,80,.1); border: 1px solid rgba(63,185,80,.25); border-radius: .3rem; padding: .1rem .4rem; margin-left: .4rem; font-weight: 600; }
+.dre-mx-apply-row { padding: .1rem 0 .3rem; }
+.dre-mx-apply { font-size: .72rem; color: #58A6FF; background: none; border: 1px dashed rgba(88,166,255,.35); border-radius: .35rem; padding: .15rem .55rem; cursor: pointer; }
+.dre-mx-apply:hover { background: rgba(88,166,255,.08); }

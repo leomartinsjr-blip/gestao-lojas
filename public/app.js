@@ -11574,7 +11574,7 @@ async function initStandalone() {
 
 // ── DRE ─────────────────────────────────────────────────────────────────────
 
-const DR = { loja: 'delrey', ano: new Date().getFullYear(), mes: new Date().getMonth() + 1, tab: 'resultado', monthly: {}, config: {}, receita_auto: 0 };
+const DR = { loja: 'delrey', ano: new Date().getFullYear(), mes: new Date().getMonth() + 1, tab: 'resultado', monthly: {}, config: {}, receita_microvix: null, cmv_microvix: null };
 
 function dreLojas() {
   return Object.entries(BOARDS).filter(([k]) => !['admin','escritorio','surfers'].includes(k));
@@ -11582,7 +11582,7 @@ function dreLojas() {
 
 function dreCalc(monthly, config, receita_auto) {
   const m = monthly || {}, c = config || {};
-  const receita_bruta = m.receita_bruta != null ? m.receita_bruta : receita_auto;
+  const receita_bruta = m.receita_bruta != null ? m.receita_bruta : (DR.receita_microvix || 0);
 
   // Deduções
   const simples = m.simples_abs != null ? m.simples_abs : receita_bruta * ((c.simples_pct || 0) / 100);
@@ -11591,7 +11591,7 @@ function dreCalc(monthly, config, receita_auto) {
   const receita_liquida = receita_bruta - total_deducoes;
 
   // Custos das vendas
-  const cmv = m.cmv_abs != null ? m.cmv_abs : receita_bruta * ((c.cmv_pct || 0) / 100);
+  const cmv = m.cmv_abs != null ? m.cmv_abs : (DR.cmv_microvix != null ? DR.cmv_microvix : receita_bruta * ((c.cmv_pct || 0) / 100));
   const embalagens = m.embalagens || 0;
   const total_custos = cmv + embalagens;
   const lucro_bruto = receita_liquida - total_custos;
@@ -11694,7 +11694,10 @@ function renderDreResultado(body) {
     return `<input class="dre-inp" data-field="${field}" type="number" step="0.01" value="${val != null ? val : ''}" placeholder="0,00">`;
   }
 
-  const receita_auto_flag = m.receita_bruta == null;
+  const receita_mx_flag = m.receita_bruta == null && DR.receita_microvix != null;
+  const cmv_mx_flag     = m.cmv_abs == null && DR.cmv_microvix != null;
+
+  const fmtBRL = v => v != null ? 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
 
   body.innerHTML = `<div class="dre-resultado">
     <div class="dre-table-wrap">
@@ -11745,16 +11748,22 @@ function renderDreResultado(body) {
       </table>
     </div>
     <div class="dre-inputs">
-      <div class="dre-inp-section">Receita</div>
-      <div class="dre-inp-row">
-        <label class="${receita_auto_flag ? 'dre-inp-auto' : ''}">Receita Bruta ${receita_auto_flag ? '(vsales)' : ''}</label>
-        ${inp('receita_bruta', m.receita_bruta, receita_auto_flag)}
+      <div class="dre-inp-section">Receita
+        ${DR.receita_microvix != null ? `<span class="dre-mx-badge">Microvix: ${fmtBRL(DR.receita_microvix)}</span>` : ''}
       </div>
+      <div class="dre-inp-row">
+        <label class="${receita_mx_flag ? 'dre-inp-auto' : ''}">Receita Bruta ${receita_mx_flag ? '(Microvix)' : ''}</label>
+        ${inp('receita_bruta', m.receita_bruta, receita_mx_flag)}
+      </div>
+      ${DR.receita_microvix != null && m.receita_bruta != null ? `<div class="dre-mx-apply-row"><button class="dre-mx-apply" id="dreApplyReceita">← Usar Microvix (${fmtBRL(DR.receita_microvix)})</button></div>` : ''}
       <div class="dre-inp-section">Deduções</div>
       <div class="dre-inp-row"><label>SIMPLES (R$) <small style="font-size:.7rem;color:var(--muted)">${DR.config?.simples_pct || 0}%</small></label>${inp('simples_abs', m.simples_abs)}</div>
       <div class="dre-inp-row"><label>ICMS Difal</label>${inp('icms_difal', m.icms_difal)}</div>
-      <div class="dre-inp-section">Custos</div>
-      <div class="dre-inp-row"><label>CMV (R$) <small style="font-size:.7rem;color:var(--muted)">${DR.config?.cmv_pct || 0}%</small></label>${inp('cmv_abs', m.cmv_abs)}</div>
+      <div class="dre-inp-section">Custos
+        ${DR.cmv_microvix != null ? `<span class="dre-mx-badge">Microvix: ${fmtBRL(DR.cmv_microvix)}</span>` : ''}
+      </div>
+      <div class="dre-inp-row"><label>CMV (R$) ${cmv_mx_flag ? '<span class="dre-inp-auto">(Microvix)</span>' : `<small style="font-size:.7rem;color:var(--muted)">${DR.config?.cmv_pct || 0}%</small>`}</label>${inp('cmv_abs', m.cmv_abs, cmv_mx_flag)}</div>
+      ${DR.cmv_microvix != null && m.cmv_abs != null ? `<div class="dre-mx-apply-row"><button class="dre-mx-apply" id="dreApplyCmv">← Usar Microvix (${fmtBRL(DR.cmv_microvix)})</button></div>` : ''}
       <div class="dre-inp-row"><label>Embalagens</label>${inp('embalagens', m.embalagens)}</div>
       <div class="dre-inp-section">Salários</div>
       <div class="dre-inp-row"><label>Salários Fixos <small style="font-size:.7rem;color:var(--muted)">(config)</small></label>${inp('salarios_fixos', m.salarios_fixos)}</div>
@@ -11781,6 +11790,15 @@ function renderDreResultado(body) {
       </div>
     </div>
   </div>`;
+
+  body.querySelector('#dreApplyReceita')?.addEventListener('click', () => {
+    DR.monthly.receita_bruta = null;
+    renderDreResultado(body);
+  });
+  body.querySelector('#dreApplyCmv')?.addEventListener('click', () => {
+    DR.monthly.cmv_abs = null;
+    renderDreResultado(body);
+  });
 
   // Live recalc on input change
   body.querySelectorAll('.dre-inp').forEach(inp => {
@@ -11928,7 +11946,8 @@ async function loadDreData() {
     const data = await apiFetch('GET', `/api/dre/${DR.ano}/${DR.mes}/${DR.loja}`);
     DR.monthly = data.monthly || {};
     DR.config  = data.config  || {};
-    DR.receita_auto = data.receita_auto || 0;
+    DR.receita_microvix = data.receita_microvix;
+    DR.cmv_microvix     = data.cmv_microvix;
     renderDreTab();
   } catch(e) {
     body.innerHTML = `<div style="padding:2rem;color:#F85149">Erro: ${e.message}</div>`;

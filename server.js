@@ -9227,20 +9227,49 @@ app.get('/api/dre/:ano/:mes/:loja', requireAdmin, async (req, res) => {
       mongoDb.collection('dre_config').findOne({ loja }),
     ]);
 
-    // Auto-compute receita_bruta from vsales (manually recorded daily sales)
-    const db = await readDB();
-    const board = loja;
-    const emps = (db.employees || []).filter(e => e.board === board && !e.inativo);
-    let receita_auto = 0;
-    for (const emp of emps) {
-      const key = `${y}-${pad(m)}-${board}-${emp.id}`;
-      const vsData = db.vsales?.[key];
-      if (vsData?.entries) {
-        for (const day of Object.values(vsData.entries)) receita_auto += (day.value || 0);
+    // Fetch receita + CMV from conferência (Microvix) for the full month
+    let receita_microvix = null, cmv_microvix = null;
+    try {
+      const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+      const cnpj   = lojas[loja];
+      if (cnpj) {
+        const chave  = process.env[`MICROVIX_CHAVE_${loja.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+        const dtIni  = `${y}-${pad(m)}-01`;
+        const lastDay = new Date(y, m, 0).getDate();
+        const dtFin  = `${y}-${pad(m)}-${String(lastDay).padStart(2,'0')}`;
+        const { fetchMovimento } = require('./services/microvix');
+        const rows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
+        const cnpjClean = cnpj.replace(/\D/g, '');
+        const parseBR = s => { const t = String(s||'').trim(); return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
+        const seenDocs = new Set();
+        let vlrLiquido = 0, vlrCusto = 0;
+        for (const r of (Array.isArray(rows) ? rows : [])) {
+          if ((r.cnpj_emp||r.cnpj||'').replace(/\D/g,'') !== cnpjClean) continue;
+          if (r.cancelado === 'S' || r.cancelado === '1') continue;
+          if ((r.soma_relatorio||'S').toUpperCase() === 'N') continue;
+          const op = (r.operacao||'').trim().toUpperCase();
+          if (op !== 'S' && op !== 'DS') continue;
+          const serie = String(r.serie||r.serie_documento||'').trim();
+          if (serie === '999') continue;
+          if (serie === '4' && op !== 'DS') continue;
+          const sign = op === 'DS' ? -1 : 1;
+          const qty  = parseBR(r.quantidade||'1');
+          vlrCusto  += sign * parseBR(r.custo_medio_epoca||r.preco_custo||'0') * qty;
+          const doc = String(r.documento||'').trim();
+          if (!doc || seenDocs.has(doc)) continue;
+          seenDocs.add(doc);
+          const vlrLiq = ['total_cartao','total_dinheiro','total_pix','total_cheque',
+                          'total_crediario','total_convenio','total_cheque_prazo','total_deposito_bancario']
+            .reduce((s, k) => s + parseBR(r[k]||'0'), 0)
+            || parseBR(r.valor_total||r.total_liquido||'0');
+          vlrLiquido += sign * vlrLiq;
+        }
+        receita_microvix = Math.round(vlrLiquido * 100) / 100;
+        cmv_microvix     = Math.round(vlrCusto   * 100) / 100;
       }
-    }
+    } catch(e) { console.warn('[DRE/microvix]', e.message); }
 
-    res.json({ monthly: monthly || { loja, ano: y, mes: m }, config: config || { loja }, receita_auto: Math.round(receita_auto * 100) / 100 });
+    res.json({ monthly: monthly || { loja, ano: y, mes: m }, config: config || { loja }, receita_microvix, cmv_microvix });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
