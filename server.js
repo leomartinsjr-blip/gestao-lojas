@@ -6236,65 +6236,44 @@ FORMATO DE SAÍDA — retorne APENAS JSON válido, sem texto extra:
   ]
 }`;
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders();
+    console.log('[AI Suggest] iniciando — arquivo:', req.file.originalname, 'content length:', rawContent.length);
 
-    const sseSend = (obj) => { try { res.write(`data: ${JSON.stringify(obj)}\n\n`); } catch (_) {} };
-    const keepalive = setInterval(() => { try { res.write(': ping\n\n'); } catch (_) {} }, 20000);
+    const response = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 16000,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: `Arquivo do fornecedor:\n\n${rawContent}` }],
+    });
 
-    try {
-      console.log('[AI Suggest] iniciando — arquivo:', req.file.originalname, 'content length:', rawContent.length);
+    console.log('[AI Suggest] stop_reason:', response.stop_reason, 'output_tokens:', response.usage?.output_tokens);
 
-      const stream = await client.messages.stream({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 16000,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: `Arquivo do fornecedor:\n\n${rawContent}` }],
-      });
-      const response = await stream.finalMessage();
-
-      console.log('[AI Suggest] stop_reason:', response.stop_reason, 'output_tokens:', response.usage?.output_tokens);
-
-      if (response.stop_reason === 'max_tokens') {
-        sseSend({ error: 'Arquivo muito grande para processar de uma vez. Divida o pedido em partes menores (máx ~150 linhas).' });
-        res.end(); return;
-      }
-
-      let txt = response.content[0]?.text || '';
-      console.log('[AI Suggest] resposta raw (primeiros 300):', txt.slice(0, 300));
-
-      // Extrai JSON da resposta (pode vir em bloco de código)
-      const mCode = txt.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (mCode) {
-        txt = mCode[1];
-      } else {
-        const mObj = txt.match(/\{[\s\S]*\}/);
-        if (mObj) txt = mObj[0];
-      }
-
-      let aiResult;
-      try {
-        aiResult = JSON.parse(txt.trim());
-      } catch (parseErr) {
-        console.error('[AI Suggest] JSON.parse falhou:', parseErr.message, '\ntxt:', txt.slice(0, 500));
-        sseSend({ error: `IA retornou JSON inválido: ${parseErr.message}` });
-        res.end(); return;
-      }
-
-      sseSend({ done: true, result: aiResult });
-      res.end();
-    } catch (e) {
-      console.error('[AI Suggest] erro:', e.message);
-      sseSend({ error: e.message });
-      res.end();
-    } finally {
-      clearInterval(keepalive);
+    if (response.stop_reason === 'max_tokens') {
+      return res.status(422).json({ error: 'Arquivo muito grande para processar de uma vez. Divida o pedido em partes menores (máx ~150 linhas).' });
     }
+
+    let txt = response.content[0]?.text || '';
+    console.log('[AI Suggest] resposta raw (primeiros 300):', txt.slice(0, 300));
+
+    const mCode = txt.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (mCode) {
+      txt = mCode[1];
+    } else {
+      const mObj = txt.match(/\{[\s\S]*\}/);
+      if (mObj) txt = mObj[0];
+    }
+
+    let aiResult;
+    try {
+      aiResult = JSON.parse(txt.trim());
+    } catch (parseErr) {
+      console.error('[AI Suggest] JSON.parse falhou:', parseErr.message, '\ntxt:', txt.slice(0, 500));
+      return res.status(500).json({ error: `IA retornou resposta inválida: ${parseErr.message}` });
+    }
+
+    res.json(aiResult);
   } catch (e) {
-    if (!res.headersSent) return res.status(500).json({ error: e.message });
-    try { res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`); res.end(); } catch (_) {}
+    console.error('[AI Suggest] erro:', e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 
