@@ -9187,6 +9187,74 @@ app.get('/api/certificados/alertas', requireAuth, async (req, res) => {
 });
 
 // ── Start ──────────────────────────────────────────────────────────────────
+// ── DRE ─────────────────────────────────────────────────────────────────────
+
+app.get('/api/dre/config/:loja', requireAdmin, async (req, res) => {
+  try {
+    const cfg = await mongoDb.collection('dre_config').findOne({ loja: req.params.loja });
+    res.json(cfg || { loja: req.params.loja });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/dre/config/:loja', requireAdmin, async (req, res) => {
+  try {
+    const doc = { ...req.body, loja: req.params.loja, updatedAt: new Date() };
+    delete doc._id;
+    await mongoDb.collection('dre_config').replaceOne({ loja: req.params.loja }, doc, { upsert: true });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/dre/historico/:loja', requireAdmin, async (req, res) => {
+  try {
+    const docs = await mongoDb.collection('dre_monthly')
+      .find({ loja: req.params.loja })
+      .sort({ ano: -1, mes: -1 })
+      .limit(24)
+      .toArray();
+    res.json(docs);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/dre/:ano/:mes/:loja', requireAdmin, async (req, res) => {
+  try {
+    const { ano, mes, loja } = req.params;
+    const y = parseInt(ano), m = parseInt(mes);
+    const pad = n => String(n).padStart(2, '0');
+
+    const [monthly, config] = await Promise.all([
+      mongoDb.collection('dre_monthly').findOne({ loja, ano: y, mes: m }),
+      mongoDb.collection('dre_config').findOne({ loja }),
+    ]);
+
+    // Auto-compute receita_bruta from vsales (manually recorded daily sales)
+    const db = await readDB();
+    const board = loja;
+    const emps = (db.employees || []).filter(e => e.board === board && !e.inativo);
+    let receita_auto = 0;
+    for (const emp of emps) {
+      const key = `${y}-${pad(m)}-${board}-${emp.id}`;
+      const vsData = db.vsales?.[key];
+      if (vsData?.entries) {
+        for (const day of Object.values(vsData.entries)) receita_auto += (day.value || 0);
+      }
+    }
+
+    res.json({ monthly: monthly || { loja, ano: y, mes: m }, config: config || { loja }, receita_auto: Math.round(receita_auto * 100) / 100 });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/dre/:ano/:mes/:loja', requireAdmin, async (req, res) => {
+  try {
+    const { ano, mes, loja } = req.params;
+    const y = parseInt(ano), m = parseInt(mes);
+    const doc = { ...req.body, loja, ano: y, mes: m, updatedAt: new Date() };
+    delete doc._id;
+    await mongoDb.collection('dre_monthly').replaceOne({ loja, ano: y, mes: m }, doc, { upsert: true });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // Porta abre imediatamente — MongoDB conecta em background para não bloquear o health check do Render
 const _server = app.listen(PORT, () => {
   console.log(`\n✅  Gestão de Lojas → http://localhost:${PORT}\n`);

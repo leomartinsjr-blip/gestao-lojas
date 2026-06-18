@@ -82,7 +82,7 @@ function applyUserPermissions(user) {
   document.getElementById('userChip').textContent = user.label || user.username;
   const isAdmin = userIsAdmin(user);
   const isSupervisor = !user.board && !isAdmin;
-  const ids = ['funcBtn','campanhasBtn','usersBtn','perfBtn','transBtn','folhaBtn'];
+  const ids = ['funcBtn','campanhasBtn','usersBtn','perfBtn','transBtn','folhaBtn','dreBtn'];
   ids.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = isAdmin ? 'flex' : 'none';
@@ -11572,6 +11572,418 @@ async function initStandalone() {
   _loadIndeva();
 }
 
+// ── DRE ─────────────────────────────────────────────────────────────────────
+
+const DR = { loja: 'delrey', ano: new Date().getFullYear(), mes: new Date().getMonth() + 1, tab: 'resultado', monthly: {}, config: {}, receita_auto: 0 };
+
+function dreLojas() {
+  return Object.entries(BOARDS).filter(([k]) => !['admin','escritorio','surfers'].includes(k));
+}
+
+function dreCalc(monthly, config, receita_auto) {
+  const m = monthly || {}, c = config || {};
+  const receita_bruta = m.receita_bruta != null ? m.receita_bruta : receita_auto;
+
+  // Deduções
+  const simples = m.simples_abs != null ? m.simples_abs : receita_bruta * ((c.simples_pct || 0) / 100);
+  const icms_difal = m.icms_difal || 0;
+  const total_deducoes = simples + icms_difal;
+  const receita_liquida = receita_bruta - total_deducoes;
+
+  // Custos das vendas
+  const cmv = m.cmv_abs != null ? m.cmv_abs : receita_bruta * ((c.cmv_pct || 0) / 100);
+  const embalagens = m.embalagens || 0;
+  const total_custos = cmv + embalagens;
+  const lucro_bruto = receita_liquida - total_custos;
+
+  // Salários
+  const staff = c.staff || [];
+  const salarios_fixos = m.salarios_fixos != null ? m.salarios_fixos : staff.reduce((s, e) => s + (parseFloat(e.fixo) || 0) * (parseInt(e.qnt) || 1), 0);
+  const comissoes = m.comissoes != null ? m.comissoes : receita_bruta * ((c.comissao_pct || 0) / 100);
+  const encargos = m.encargos != null ? m.encargos : (salarios_fixos + comissoes) * ((c.encargos_pct || 0) / 100);
+  const escritorio = m.escritorio != null ? m.escritorio : (salarios_fixos + comissoes + encargos) * ((c.escritorio_pct || 0) / 100);
+  const premiacoes = m.premiacoes || 0;
+  const total_salarios = salarios_fixos + comissoes + encargos + escritorio + premiacoes;
+
+  // Ponto comercial
+  const aluguel_min = m.aluguel_min != null ? m.aluguel_min : (c.aluguel_min || 0);
+  const aluguel_pct = m.aluguel_pct || 0;
+  const condominio  = m.condominio  != null ? m.condominio  : (c.condominio  || 0);
+  const fpp         = m.fpp         != null ? m.fpp         : (c.fpp         || 0);
+  const ar_cond     = m.ar_cond     != null ? m.ar_cond     : (c.ar_cond     || 0);
+  const iptu        = m.iptu        != null ? m.iptu        : (c.iptu        || 0);
+  const energia     = m.energia     != null ? m.energia     : (c.energia     || 0);
+  const total_ponto = aluguel_min + aluguel_pct + condominio + fpp + ar_cond + iptu + energia;
+
+  // Administrativo
+  const caixinha    = m.caixinha    || 0;
+  const sistema_erp = m.sistema_erp != null ? m.sistema_erp : (c.sistema_erp || 0);
+  const contab      = m.contab      != null ? m.contab      : (c.contab      || 0);
+  const seguro      = m.seguro      || 0;
+  const plano_saude = m.plano_saude != null ? m.plano_saude : (c.plano_saude || 0);
+  const diversas    = m.diversas    || 0;
+  const telefone    = m.telefone    != null ? m.telefone    : (c.telefone    || 0);
+  const total_adm   = caixinha + sistema_erp + contab + seguro + plano_saude + diversas + telefone;
+
+  // Marketing
+  const publicidade = m.publicidade || 0;
+
+  // Financeiro operacional
+  const desc_maquineta = m.desc_maquineta != null ? m.desc_maquineta : receita_bruta * ((c.desc_maquineta_pct || 0) / 100);
+  const tarifa_rede    = m.tarifa_rede || 0;
+  const total_fin_op   = desc_maquineta + tarifa_rede;
+
+  const total_despesas = total_salarios + total_ponto + total_adm + publicidade + total_fin_op;
+  const resultado_op   = lucro_bruto - total_despesas;
+
+  // Resultado financeiro (abaixo da linha)
+  const juros       = m.juros       || 0;
+  const emprestimos = m.emprestimos || 0;
+  const resultado_fin = juros + emprestimos;
+
+  const resultado_liq = resultado_op - resultado_fin;
+
+  return {
+    receita_bruta, simples, icms_difal, total_deducoes, receita_liquida,
+    cmv, embalagens, total_custos, lucro_bruto,
+    salarios_fixos, comissoes, encargos, escritorio, premiacoes, total_salarios,
+    aluguel_min, aluguel_pct, condominio, fpp, ar_cond, iptu, energia, total_ponto,
+    caixinha, sistema_erp, contab, seguro, plano_saude, diversas, telefone, total_adm,
+    publicidade, desc_maquineta, tarifa_rede, total_fin_op,
+    total_despesas, resultado_op, juros, emprestimos, resultado_fin, resultado_liq,
+  };
+}
+
+function dreR(v) {
+  if (v == null || isNaN(v) || v === 0) return '<span class="dre-zero">—</span>';
+  const fmt = Math.abs(v).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return `<span class="${v < 0 ? 'dre-neg' : 'dre-pos'}">${v < 0 ? '-' : ''}R$ ${fmt}</span>`;
+}
+function dreP(v, base) {
+  if (!base) return '';
+  const pct = (v / base * 100).toFixed(1);
+  return `<span class="${v < 0 ? 'dre-neg' : 'dre-zero'}">${pct}%</span>`;
+}
+
+function renderDreResultado(body) {
+  const c = dreCalc(DR.monthly, DR.config, DR.receita_auto);
+  const rb = c.receita_bruta;
+
+  function row(label, val, { cls = '', sub = false, pct = true } = {}) {
+    const trCls = ['dre-row', sub ? 'dre-sub' : '', cls].filter(Boolean).join(' ');
+    return `<tr class="${trCls}">
+      <td class="dre-lbl">${label}</td>
+      <td class="dre-val">${dreR(val)}</td>
+      <td class="dre-pct">${pct && rb ? dreP(val, rb) : ''}</td>
+    </tr>`;
+  }
+  function section(label) {
+    return `<tr><td colspan="3" class="dre-section">${label}</td></tr>`;
+  }
+  function total(label, val, { cls = '' } = {}) {
+    return `<tr class="dre-total ${cls}"><td class="dre-lbl">${label}</td><td class="dre-val">${dreR(val)}</td><td class="dre-pct">${rb ? dreP(val, rb) : ''}</td></tr>`;
+  }
+
+  // Monthly variable inputs
+  const m = DR.monthly || {};
+  function inp(field, val, auto = false) {
+    const v = val != null ? val : '';
+    return `<input class="dre-inp${auto ? ' auto-val' : ''}" data-field="${field}" type="number" step="0.01" value="${typeof val === 'number' ? val.toFixed(2) : ''}" placeholder="${auto ? '(auto)' : '0,00'}">`;
+  }
+  function inpPct(field, val) {
+    return `<input class="dre-inp" data-field="${field}" type="number" step="0.01" value="${val != null ? val : ''}" placeholder="0,00">`;
+  }
+
+  const receita_auto_flag = m.receita_bruta == null;
+
+  body.innerHTML = `<div class="dre-resultado">
+    <div class="dre-table-wrap">
+      <table class="dre-table">
+        ${section('(+) RECEITA OPERACIONAL')}
+        ${row('Venda de Produtos', c.receita_bruta)}
+        ${section('(-) DEDUÇÕES DA RECEITA')}
+        ${row('SIMPLES Nacional', -c.simples, { sub: true })}
+        ${row('ICMS Difal', -c.icms_difal, { sub: true })}
+        ${total('(=) RECEITA LÍQUIDA', c.receita_liquida)}
+        ${section('(-) CUSTOS DAS VENDAS')}
+        ${row('CMV', -c.cmv, { sub: true })}
+        ${row('Embalagens', -c.embalagens, { sub: true })}
+        ${total('(=) LUCRO BRUTO', c.lucro_bruto)}
+        ${section('(-) DESPESAS OPERACIONAIS')}
+        ${row('SALÁRIOS', -c.total_salarios)}
+        ${row('Salários Fixos', -c.salarios_fixos, { sub: true })}
+        ${row('Comissões', -c.comissoes, { sub: true })}
+        ${row('Encargos', -c.encargos, { sub: true })}
+        ${row('Escritório', -c.escritorio, { sub: true })}
+        ${row('Premiações', -c.premiacoes, { sub: true })}
+        ${row('PONTO COMERCIAL', -c.total_ponto)}
+        ${row('Aluguel Mínimo', -c.aluguel_min, { sub: true })}
+        ${row('Aluguel Percentual', -c.aluguel_pct, { sub: true })}
+        ${row('Condomínio', -c.condominio, { sub: true })}
+        ${row('FPP', -c.fpp, { sub: true })}
+        ${row('Ar Condicionado', -c.ar_cond, { sub: true })}
+        ${row('IPTU', -c.iptu, { sub: true })}
+        ${row('Energia Elétrica', -c.energia, { sub: true })}
+        ${row('ADMINISTRATIVO', -c.total_adm)}
+        ${row('Caixinha', -c.caixinha, { sub: true })}
+        ${row('Sistema ERP', -c.sistema_erp, { sub: true })}
+        ${row('Contabilidade', -c.contab, { sub: true })}
+        ${row('Seguro', -c.seguro, { sub: true })}
+        ${row('Plano de Saúde', -c.plano_saude, { sub: true })}
+        ${row('Despesas Diversas', -c.diversas, { sub: true })}
+        ${row('Telefone/Internet', -c.telefone, { sub: true })}
+        ${row('MARKETING', -c.publicidade)}
+        ${row('Publicidade', -c.publicidade, { sub: true })}
+        ${row('DESPESAS FINANCEIRAS', -c.total_fin_op)}
+        ${row('Desconto Maquineta', -c.desc_maquineta, { sub: true })}
+        ${row('Tarifa Rede', -c.tarifa_rede, { sub: true })}
+        ${total('(=) RESULTADO OPERACIONAL', c.resultado_op)}
+        ${section('(-) RESULTADO FINANCEIRO')}
+        ${row('Juros', -c.juros, { sub: true })}
+        ${row('Empréstimos', -c.emprestimos, { sub: true })}
+        ${total('(=) RESULTADO LÍQUIDO', c.resultado_liq, { cls: 'dre-resultado-liq' })}
+      </table>
+    </div>
+    <div class="dre-inputs">
+      <div class="dre-inp-section">Receita</div>
+      <div class="dre-inp-row">
+        <label class="${receita_auto_flag ? 'dre-inp-auto' : ''}">Receita Bruta ${receita_auto_flag ? '(vsales)' : ''}</label>
+        ${inp('receita_bruta', m.receita_bruta, receita_auto_flag)}
+      </div>
+      <div class="dre-inp-section">Deduções</div>
+      <div class="dre-inp-row"><label>SIMPLES (R$) <small style="font-size:.7rem;color:var(--muted)">${DR.config?.simples_pct || 0}%</small></label>${inp('simples_abs', m.simples_abs)}</div>
+      <div class="dre-inp-row"><label>ICMS Difal</label>${inp('icms_difal', m.icms_difal)}</div>
+      <div class="dre-inp-section">Custos</div>
+      <div class="dre-inp-row"><label>CMV (R$) <small style="font-size:.7rem;color:var(--muted)">${DR.config?.cmv_pct || 0}%</small></label>${inp('cmv_abs', m.cmv_abs)}</div>
+      <div class="dre-inp-row"><label>Embalagens</label>${inp('embalagens', m.embalagens)}</div>
+      <div class="dre-inp-section">Salários</div>
+      <div class="dre-inp-row"><label>Salários Fixos <small style="font-size:.7rem;color:var(--muted)">(config)</small></label>${inp('salarios_fixos', m.salarios_fixos)}</div>
+      <div class="dre-inp-row"><label>Comissões <small style="font-size:.7rem;color:var(--muted)">${DR.config?.comissao_pct || 0}%</small></label>${inp('comissoes', m.comissoes)}</div>
+      <div class="dre-inp-row"><label>Encargos <small style="font-size:.7rem;color:var(--muted)">${DR.config?.encargos_pct || 0}%</small></label>${inp('encargos', m.encargos)}</div>
+      <div class="dre-inp-row"><label>Escritório <small style="font-size:.7rem;color:var(--muted)">${DR.config?.escritorio_pct || 0}%</small></label>${inp('escritorio', m.escritorio)}</div>
+      <div class="dre-inp-row"><label>Premiações</label>${inp('premiacoes', m.premiacoes)}</div>
+      <div class="dre-inp-section">Ponto Comercial</div>
+      <div class="dre-inp-row"><label>Aluguel Mínimo <small style="font-size:.7rem;color:var(--muted)">(config)</small></label>${inp('aluguel_min', m.aluguel_min)}</div>
+      <div class="dre-inp-row"><label>Aluguel Percentual</label>${inp('aluguel_pct', m.aluguel_pct)}</div>
+      <div class="dre-inp-section">Administrativo</div>
+      <div class="dre-inp-row"><label>Caixinha</label>${inp('caixinha', m.caixinha)}</div>
+      <div class="dre-inp-row"><label>Despesas Diversas</label>${inp('diversas', m.diversas)}</div>
+      <div class="dre-inp-row"><label>Seguro</label>${inp('seguro', m.seguro)}</div>
+      <div class="dre-inp-section">Financeiro</div>
+      <div class="dre-inp-row"><label>Desconto Maquineta <small style="font-size:.7rem;color:var(--muted)">${DR.config?.desc_maquineta_pct || 0}%</small></label>${inp('desc_maquineta', m.desc_maquineta)}</div>
+      <div class="dre-inp-row"><label>Tarifa Rede</label>${inp('tarifa_rede', m.tarifa_rede)}</div>
+      <div class="dre-inp-row"><label>Publicidade</label>${inp('publicidade', m.publicidade)}</div>
+      <div class="dre-inp-section">Resultado Financeiro</div>
+      <div class="dre-inp-row"><label>Juros</label>${inp('juros', m.juros)}</div>
+      <div class="dre-inp-row"><label>Empréstimos</label>${inp('emprestimos', m.emprestimos)}</div>
+      <div class="dre-save-bar">
+        <button class="dre-save-btn" id="dreSaveBtn">Salvar</button>
+      </div>
+    </div>
+  </div>`;
+
+  // Live recalc on input change
+  body.querySelectorAll('.dre-inp').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const v = parseFloat(inp.value);
+      DR.monthly[inp.dataset.field] = isNaN(v) ? null : v;
+      renderDreResultado(body);
+    });
+  });
+
+  body.querySelector('#dreSaveBtn').addEventListener('click', async () => {
+    try {
+      await apiFetch('PUT', `/api/dre/${DR.ano}/${DR.mes}/${DR.loja}`, DR.monthly);
+      toast('DRE salva ✓');
+    } catch(e) { toast('Erro: ' + e.message, true); }
+  });
+}
+
+function renderDreConfig(body) {
+  const c = DR.config || {};
+  const staff = c.staff || [];
+
+  function cfgRow(label, field, pct = false) {
+    const v = c[field] != null ? c[field] : '';
+    return `<div class="dre-config-row">
+      <label>${label}</label>
+      <input class="dre-config-inp" data-cfield="${field}" type="number" step="${pct ? '0.01' : '1'}" value="${v}" placeholder="0">
+    </div>`;
+  }
+
+  body.innerHTML = `<div class="dre-config">
+    <div class="dre-config-grid">
+      <div class="dre-config-section">
+        <div class="dre-config-section-title">Taxas (%)</div>
+        ${cfgRow('SIMPLES (%)', 'simples_pct', true)}
+        ${cfgRow('CMV (%)', 'cmv_pct', true)}
+        ${cfgRow('Comissão (%)', 'comissao_pct', true)}
+        ${cfgRow('Encargos sobre Folha (%)', 'encargos_pct', true)}
+        ${cfgRow('Escritório rateio (%)', 'escritorio_pct', true)}
+        ${cfgRow('Desconto Maquineta (%)', 'desc_maquineta_pct', true)}
+        <div class="dre-config-section-title" style="margin-top:1rem">Ponto Comercial</div>
+        ${cfgRow('Aluguel Mínimo', 'aluguel_min')}
+        ${cfgRow('Condomínio', 'condominio')}
+        ${cfgRow('FPP', 'fpp')}
+        ${cfgRow('Ar Condicionado', 'ar_cond')}
+        ${cfgRow('IPTU', 'iptu')}
+        ${cfgRow('Energia Elétrica', 'energia')}
+      </div>
+      <div class="dre-config-section">
+        <div class="dre-config-section-title">Administrativo</div>
+        ${cfgRow('Sistema ERP', 'sistema_erp')}
+        ${cfgRow('Contabilidade', 'contab')}
+        ${cfgRow('Plano de Saúde', 'plano_saude')}
+        ${cfgRow('Telefone/Internet', 'telefone')}
+        <div class="dre-config-section-title" style="margin-top:1rem">Quadro de Pessoal (Padrão)</div>
+        <table class="dre-staff-table">
+          <thead><tr><th>Qnt</th><th>Função</th><th>Salário Fixo</th><th></th></tr></thead>
+          <tbody id="dreStaffBody">
+            ${staff.map((e, i) => `<tr>
+              <td><input type="number" data-si="${i}" data-sk="qnt" value="${e.qnt || 1}" min="1" style="width:45px"></td>
+              <td><input type="text" data-si="${i}" data-sk="funcao" value="${e.funcao || ''}"></td>
+              <td><input type="number" data-si="${i}" data-sk="fixo" value="${e.fixo || 0}" step="0.01"></td>
+              <td><button class="dre-staff-del-btn" data-si="${i}">✕</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <button class="dre-staff-add-btn" id="dreStaffAdd">+ Linha</button>
+      </div>
+    </div>
+    <div class="dre-save-bar">
+      <button class="dre-save-btn" id="dreConfigSaveBtn">Salvar Configuração</button>
+    </div>
+  </div>`;
+
+  body.querySelectorAll('.dre-config-inp').forEach(inp => {
+    inp.addEventListener('change', () => {
+      DR.config[inp.dataset.cfield] = parseFloat(inp.value) || 0;
+    });
+  });
+
+  function wireStaff() {
+    body.querySelectorAll('[data-si]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const i = parseInt(inp.dataset.si);
+        const k = inp.dataset.sk;
+        if (!DR.config.staff) DR.config.staff = [];
+        if (!DR.config.staff[i]) DR.config.staff[i] = {};
+        DR.config.staff[i][k] = k === 'funcao' ? inp.value : (parseFloat(inp.value) || 0);
+      });
+    });
+    body.querySelectorAll('.dre-staff-del-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const i = parseInt(btn.dataset.si);
+        DR.config.staff.splice(i, 1);
+        renderDreConfig(body);
+      });
+    });
+  }
+  wireStaff();
+
+  body.querySelector('#dreStaffAdd').addEventListener('click', () => {
+    if (!DR.config.staff) DR.config.staff = [];
+    DR.config.staff.push({ qnt: 1, funcao: '', fixo: 0 });
+    renderDreConfig(body);
+  });
+
+  body.querySelector('#dreConfigSaveBtn').addEventListener('click', async () => {
+    try {
+      await apiFetch('PUT', `/api/dre/config/${DR.loja}`, DR.config);
+      toast('Configuração salva ✓');
+    } catch(e) { toast('Erro: ' + e.message, true); }
+  });
+}
+
+function renderDreHistorico(body) {
+  body.innerHTML = `<div class="dre-historico"><p style="color:var(--muted);font-size:.82rem">Carregando…</p></div>`;
+  apiFetch('GET', `/api/dre/historico/${DR.loja}`).then(docs => {
+    if (!docs.length) { body.innerHTML = `<div class="dre-historico"><p style="color:var(--muted);font-size:.82rem">Nenhum registro salvo.</p></div>`; return; }
+    const rows = docs.map(doc => {
+      const cfg = DR.config || {};
+      const c = dreCalc(doc, cfg, 0);
+      const mesLabel = `${MONTHS_PT[doc.mes - 1].slice(0,3)}/${String(doc.ano).slice(2)}`;
+      return `<tr>
+        <td>${mesLabel}</td>
+        <td>${dreR(c.receita_bruta)}</td>
+        <td>${dreR(c.lucro_bruto)}</td>
+        <td>${dreR(c.resultado_op)}</td>
+        <td>${dreR(c.resultado_liq)}</td>
+        <td>${c.receita_bruta ? (c.resultado_liq / c.receita_bruta * 100).toFixed(1) + '%' : '—'}</td>
+      </tr>`;
+    }).join('');
+    body.innerHTML = `<div class="dre-historico">
+      <table class="dre-hist-table">
+        <thead><tr><th style="text-align:left">Mês</th><th>Receita</th><th>Lucro Bruto</th><th>Resultado Op.</th><th>Resultado Líq.</th><th>Margem</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }).catch(e => { body.innerHTML = `<div class="dre-historico"><p style="color:#F85149">Erro: ${e.message}</p></div>`; });
+}
+
+async function loadDreData() {
+  const body = document.getElementById('dreBody');
+  body.innerHTML = `<div style="padding:2rem;color:var(--muted);font-size:.82rem">Carregando…</div>`;
+  try {
+    const data = await apiFetch('GET', `/api/dre/${DR.ano}/${DR.mes}/${DR.loja}`);
+    DR.monthly = data.monthly || {};
+    DR.config  = data.config  || {};
+    DR.receita_auto = data.receita_auto || 0;
+    renderDreTab();
+  } catch(e) {
+    body.innerHTML = `<div style="padding:2rem;color:#F85149">Erro: ${e.message}</div>`;
+  }
+}
+
+function renderDreTab() {
+  const body = document.getElementById('dreBody');
+  document.querySelectorAll('.dre-tab').forEach(t => t.classList.toggle('active', t.dataset.dtab === DR.tab));
+  if (DR.tab === 'resultado') renderDreResultado(body);
+  else if (DR.tab === 'config') renderDreConfig(body);
+  else renderDreHistorico(body);
+}
+
+function openDreModal() {
+  document.getElementById('dreOverlay').classList.remove('hidden');
+  _updateDreMesLabel();
+  loadDreData();
+}
+function closeDreModal() {
+  document.getElementById('dreOverlay').classList.add('hidden');
+}
+function _updateDreMesLabel() {
+  document.getElementById('dreMesLabel').textContent = `${MONTHS_PT[DR.mes - 1]} ${DR.ano}`;
+}
+
+function initDreModal() {
+  document.getElementById('dreBtn').addEventListener('click', openDreModal);
+  document.getElementById('dreClose').addEventListener('click', closeDreModal);
+  document.getElementById('dreOverlay').addEventListener('click', e => { if (e.target.id === 'dreOverlay') closeDreModal(); });
+
+  // Populate loja select
+  const sel = document.getElementById('dreLojaSelect');
+  dreLojas().forEach(([k, v]) => {
+    const opt = document.createElement('option');
+    opt.value = k; opt.textContent = v.label;
+    sel.appendChild(opt);
+  });
+  sel.value = DR.loja;
+  sel.addEventListener('change', () => { DR.loja = sel.value; loadDreData(); });
+
+  document.getElementById('drePrev').addEventListener('click', () => {
+    DR.mes--; if (DR.mes < 1) { DR.mes = 12; DR.ano--; }
+    _updateDreMesLabel(); loadDreData();
+  });
+  document.getElementById('dreNext').addEventListener('click', () => {
+    DR.mes++; if (DR.mes > 12) { DR.mes = 1; DR.ano++; }
+    _updateDreMesLabel(); loadDreData();
+  });
+
+  document.querySelectorAll('.dre-tab').forEach(btn => {
+    btn.addEventListener('click', () => { DR.tab = btn.dataset.dtab; renderDreTab(); });
+  });
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
 function init() {
   if (window.INDEVA_STANDALONE) { initStandalone(); return; }
@@ -11588,6 +12000,7 @@ function init() {
   initLojaAcaoModal();
   initBoletasModal();
   initUsersModal();
+  initDreModal();
   document.getElementById('logoutBtn').addEventListener('click', logout);
   document.getElementById('btnPrev').addEventListener('click', () => navigate(-1));
   document.getElementById('btnNext').addEventListener('click', () => navigate(1));

@@ -3419,3 +3419,70 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .cad-wiz-prow { display: flex; align-items: baseline; gap: .6rem; }
 .cad-wiz-plbl { font-size: .72rem; color: var(--muted); min-width: 110px; flex-shrink: 0; }
 .cad-wiz-pval { font-size: .85rem; color: #E6EDF3; }
+
+/* ── DRE ── */
+.dre-panel { max-width: 960px !important; }
+.dre-hdr { flex-wrap: wrap; gap: .5rem; }
+.dre-hdr-controls { display: flex; align-items: center; gap: .5rem; }
+.dre-loja-select { font-size: .82rem; }
+.dre-month-nav { display: flex; align-items: center; gap: .35rem; }
+.dre-month-lbl { font-size: .88rem; font-weight: 600; color: #E6EDF3; white-space: nowrap; min-width: 110px; text-align: center; }
+.dre-tab-bar { display: flex; gap: 0; border-bottom: 1px solid #30363D; padding: 0 1.25rem; flex-shrink: 0; }
+.dre-tab { background: none; border: none; border-bottom: 2px solid transparent; color: var(--muted); font-size: .82rem; font-weight: 600; padding: .55rem .9rem; cursor: pointer; transition: color .15s, border-color .15s; }
+.dre-tab.active { color: #58A6FF; border-bottom-color: #58A6FF; }
+.dre-tab:hover:not(.active) { color: #E6EDF3; }
+/* resultado */
+.dre-resultado { display: grid; grid-template-columns: 1fr 340px; gap: 1.25rem; padding: 1.25rem; min-height: 0; }
+.dre-table-wrap { overflow-y: auto; }
+.dre-table { width: 100%; border-collapse: collapse; font-size: .83rem; }
+.dre-table td { padding: .32rem .5rem; border-bottom: 1px solid rgba(48,54,61,.5); }
+.dre-table .dre-section { font-size: .72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; padding-top: .9rem; padding-bottom: .15rem; border-bottom: none; }
+.dre-table .dre-total { font-weight: 700; font-size: .88rem; border-top: 1px solid #30363D; border-bottom: 2px solid #30363D; }
+.dre-table .dre-total td { padding-top: .45rem; padding-bottom: .45rem; }
+.dre-table .dre-resultado-liq { background: rgba(88,166,255,.08); border-radius: .4rem; }
+.dre-table .dre-resultado-liq td { border-color: #388BFD; }
+.dre-table .dre-sub td:first-child { padding-left: 1.25rem; color: var(--muted); font-size: .8rem; }
+.dre-lbl { color: #E6EDF3; }
+.dre-val { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.dre-pct { text-align: right; font-size: .75rem; color: var(--muted); padding-left: 0 !important; }
+.dre-pos { color: #3FB950; }
+.dre-neg { color: #F85149; }
+.dre-zero { color: var(--muted); }
+/* inputs sidebar */
+.dre-inputs { display: flex; flex-direction: column; gap: 0; overflow-y: auto; }
+.dre-inp-section { font-size: .7rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; padding: .75rem .1rem .25rem; border-bottom: 1px solid #21262D; }
+.dre-inp-row { display: flex; align-items: center; justify-content: space-between; gap: .5rem; padding: .28rem 0; border-bottom: 1px solid rgba(48,54,61,.35); }
+.dre-inp-row label { font-size: .78rem; color: var(--muted); flex: 1; }
+.dre-inp-row label.dre-inp-auto { font-style: italic; }
+.dre-inp { width: 100px; font-size: .8rem; background: #0D1117; border: 1px solid #30363D; border-radius: .35rem; color: #E6EDF3; padding: .22rem .45rem; text-align: right; }
+.dre-inp:focus { outline: none; border-color: #388BFD; }
+.dre-inp.auto-val { border-color: transparent; background: rgba(63,185,80,.06); color: #3FB950; }
+.dre-save-bar { display: flex; justify-content: flex-end; gap: .5rem; padding: .75rem 0 0; margin-top: auto; }
+.dre-save-btn { font-size: .82rem; font-weight: 600; padding: .42rem 1.1rem; border-radius: .5rem; cursor: pointer; background: #1F6FEB; border: 1px solid #388BFD; color: #fff; transition: background .15s; }
+.dre-save-btn:hover { background: #388BFD; }
+/* config */
+.dre-config { padding: 1.25rem; overflow-y: auto; }
+.dre-config-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+.dre-config-section { display: flex; flex-direction: column; gap: .1rem; }
+.dre-config-section-title { font-size: .72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .07em; padding-bottom: .4rem; border-bottom: 1px solid #21262D; margin-bottom: .3rem; }
+.dre-config-row { display: flex; align-items: center; gap: .5rem; padding: .2rem 0; }
+.dre-config-row label { font-size: .78rem; color: var(--muted); flex: 1; }
+.dre-config-inp { width: 110px; font-size: .8rem; background: #0D1117; border: 1px solid #30363D; border-radius: .35rem; color: #E6EDF3; padding: .22rem .45rem; text-align: right; }
+.dre-config-inp:focus { outline: none; border-color: #388BFD; }
+.dre-staff-table { width: 100%; border-collapse: collapse; margin-top: .35rem; font-size: .78rem; }
+.dre-staff-table th { font-size: .7rem; color: var(--muted); font-weight: 600; padding: .2rem .3rem; text-align: left; border-bottom: 1px solid #30363D; }
+.dre-staff-table td { padding: .2rem .3rem; }
+.dre-staff-table input { background: #0D1117; border: 1px solid #30363D; border-radius: .3rem; color: #E6EDF3; padding: .18rem .35rem; font-size: .76rem; }
+.dre-staff-table input[type=number] { width: 70px; text-align: right; }
+.dre-staff-table input[type=text]   { width: 120px; }
+.dre-staff-add-btn { font-size: .75rem; color: #58A6FF; background: none; border: 1px dashed rgba(88,166,255,.4); border-radius: .35rem; padding: .2rem .6rem; cursor: pointer; margin-top: .3rem; }
+.dre-staff-del-btn { font-size: .75rem; color: var(--muted); background: none; border: none; cursor: pointer; padding: 0 .2rem; }
+.dre-staff-del-btn:hover { color: #F85149; }
+/* historico */
+.dre-historico { padding: 1.25rem; overflow-y: auto; }
+.dre-hist-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.dre-hist-table th { font-size: .72rem; color: var(--muted); font-weight: 600; padding: .35rem .5rem; border-bottom: 1px solid #30363D; text-align: right; }
+.dre-hist-table th:first-child { text-align: left; }
+.dre-hist-table td { padding: .32rem .5rem; border-bottom: 1px solid rgba(48,54,61,.5); text-align: right; font-variant-numeric: tabular-nums; }
+.dre-hist-table td:first-child { text-align: left; color: #E6EDF3; }
+.dre-hist-table tr:hover td { background: rgba(88,166,255,.04); }
