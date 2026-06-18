@@ -2830,89 +2830,31 @@ async function _cadAiSuggest(body) {
   btn.disabled = true; btn.textContent = '✦ Analisando com IA…';
   content.innerHTML = '<div class="trans-loading">A IA está lendo o pedido e mapeando os produtos…</div>';
   try {
+    // 1) Lê o arquivo localmente
+    if (!window.XLSX) throw new Error('Biblioteca Excel não carregada. Recarregue a página.');
+    const buf2 = await _cad.file.arrayBuffer();
+    const wb = window.XLSX.read(buf2, { type: 'array' });
+    const sh = wb.Sheets[wb.SheetNames[0]];
+    const sheetData = window.XLSX.utils.sheet_to_json(sh, { header: 1, defval: '' });
+    if (sheetData.length < 2) throw new Error('Planilha vazia ou sem dados');
+    _cad.headers = sheetData[0].map(h => String(h ?? '').trim());
+    _cad.rawRows = sheetData.slice(1).filter(r => r.some(c => c != null && c !== ''));
+    if (!_cad.rawRows.length) throw new Error('Nenhuma linha de dados encontrada');
+
+    // 2) Pede à IA apenas o mapeamento de colunas (chamada rápida, sem timeout)
     const fd = new FormData();
     fd.append('file', _cad.file);
     const httpRes = await fetch('/api/cadastro-produto/ai-suggest', { method: 'POST', body: fd });
-    if (!httpRes.ok) {
-      const txt = await httpRes.text();
-      let msg; try { msg = JSON.parse(txt).error; } catch (_) { msg = txt.slice(0, 300); }
-      throw new Error(msg || httpRes.statusText);
-    }
-    const data = await new Promise((resolve, reject) => {
-      const reader = httpRes.body.getReader();
-      const decoder = new TextDecoder();
-      let buf = '';
-      let settled = false;
-      const done = (fn, val) => { if (!settled) { settled = true; fn(val); } };
-      function pump() {
-        reader.read().then(({ done: streamDone, value }) => {
-          if (value) buf += decoder.decode(value, { stream: true });
-          // Processa todas as linhas completas
-          let nl;
-          while ((nl = buf.indexOf('\n')) !== -1) {
-            const line = buf.slice(0, nl).trimEnd();
-            buf = buf.slice(nl + 1);
-            if (!line.startsWith('data: ')) continue;
-            try {
-              const msg = JSON.parse(line.slice(6));
-              if (msg.error) { done(reject, new Error(msg.error)); return; }
-              if (msg.done)  { done(resolve, msg.result); return; }
-            } catch (_) {}
-          }
-          if (streamDone) { done(reject, new Error('Servidor fechou a conexão sem retornar resultado')); return; }
-          pump();
-        }).catch(e => done(reject, e));
-      }
-      pump();
+    const resJson = await httpRes.json().catch(async () => {
+      throw new Error(`Resposta inválida do servidor (${httpRes.status})`);
     });
-    if (!data) throw new Error('Sem resposta da IA');
+    if (!httpRes.ok) throw new Error(resJson.error || httpRes.statusText);
 
-    const prods = (data.produtos || []);
-    if (!prods.length) throw new Error('Nenhum produto encontrado no arquivo');
-
-    _cad.fornecedor = data.fornecedor || '';
-
-    _cad.products = prods.map(p => {
-      const custo = parseFloat(p.custo) || 0;
-      const preco = parseFloat(p.preco_venda) || 0;
-      const setor = (() => {
-        if (!p.setor) return _cadSuggestSetor([p.nome || '']);
-        const n = (p.setor).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-        if (/camiseta|t-shirt|tshirt/.test(n)) return 'TS Basica';
-        return p.setor;
-      })();
-      return {
-        referencia:   p.referencia || '',
-        nome:         p.nome || '',
-        desc_cor:     p.cor || '',
-        cod_cor:      p.cod_cor || '',
-        desc_tamanho: p.tamanho || '',
-        desc_setor:   setor,
-        cod_barra:    p.ean || '',
-        _ref_final:   p.referencia || '',
-        _desc_final:  p.nome || '',
-        _custo:       custo ? custo.toFixed(2) : '',
-        _preco:       preco ? preco.toFixed(2) : '',
-        _ncm:         p.ncm || _cadSuggestNcm(setor, [p.nome || '']),
-        _origRef:     p.referencia || '',
-        _origSetor:   p.setor || '',
-        _origCor:     p.cor || '',
-        _origTam:     p.tamanho || '',
-        _aiSuggested: true,
-      };
-    });
-
-    // Carrega NCM options para os selects
-    if (!_cad.ncmOptions) _cadLoadMxOpts();
-
-    const sec = document.createElement('div');
-    sec.className = 'cad-prod-section';
-    content.innerHTML = '';
-    if (_cad.fornecedor) {
-      content.innerHTML = `<div style="color:var(--muted);font-size:.8rem;margin-bottom:.5rem">✦ IA detectou fornecedor: <strong style="color:var(--text)">${_escHtml(_cad.fornecedor)}</strong> · ${prods.length} SKUs extraídos</div>`;
-    }
-    content.appendChild(sec);
-    _cadRenderProdSection(sec);
+    // 3) Aplica mapeamento e abre o wizard com colunas pré-selecionadas
+    _cad.mapping = resJson.mapping || {};
+    _cad._wizStep = 0;
+    _cadRenderConfigAndMapping(content);
+    content.scrollIntoView({ behavior: 'smooth', block: 'start' });
   } catch (e) {
     content.innerHTML = `<div class="trans-error">Erro: ${_escHtml(e.message)}</div>`;
   } finally {

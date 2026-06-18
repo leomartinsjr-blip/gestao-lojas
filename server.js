@@ -6241,62 +6241,58 @@ FORMATO DE SAÍDA — retorne APENAS JSON válido, sem texto extra:
   ]
 }`;
 
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('X-Accel-Buffering', 'no');
-    res.flushHeaders();
+    // Envia apenas cabeçalhos + 5 amostras para a IA mapear colunas (rápido)
+    const headers = rawContent.split('\n')[0].split('\t');
+    const sampleRows = rawContent.split('\n').slice(1, 6);
+    const tablePreview = [headers.join(' | '), ...sampleRows.map(r => r.split('\t').join(' | '))].join('\n');
 
-    const sseSend = (obj) => { try { res.write(`data: ${JSON.stringify(obj)}\n\n`); } catch (_) {} };
-    const keepalive = setInterval(() => { try { res.write(': ping\n\n'); } catch (_) {} }, 15000);
+    const mapPrompt = `Você recebe os cabeçalhos e amostras de uma planilha de pedido de fornecedor.
+Mapeie cada coluna para o campo Microvix correto.
 
-    try {
-      console.log('[AI Suggest] iniciando — arquivo:', req.file.originalname, 'content length:', rawContent.length);
+Cabeçalhos: ${JSON.stringify(headers)}
 
-      const response = await client.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 16000,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: `Arquivo do fornecedor:\n\n${rawContent}` }],
-      });
+Amostra:
+${tablePreview}
 
-      console.log('[AI Suggest] stop_reason:', response.stop_reason, 'output_tokens:', response.usage?.output_tokens);
+Campos Microvix:
+- "referencia": código de referência/SKU do produto
+- "nome": nome ou descrição do produto
+- "cod_barra": código de barras EAN
+- "desc_marca": marca
+- "desc_setor": setor/departamento/categoria
+- "desc_cor": cor (nome)
+- "cod_cor": código da cor
+- "desc_tamanho": tamanho/grade
+- "preco_custo": preço de custo
+- "preco_venda": preço de venda
 
-      if (response.stop_reason === 'max_tokens') {
-        sseSend({ error: 'Arquivo muito grande. Divida o pedido em partes menores (máx ~150 linhas).' });
-        return;
-      }
+Responda SOMENTE com JSON, sem texto extra. Use null se não houver coluna correspondente:
+{"referencia":"nome_exato_coluna","nome":"nome_exato_coluna","cod_barra":null,...}`;
 
-      let txt = response.content[0]?.text || '';
-      console.log('[AI Suggest] resposta raw (primeiros 300):', txt.slice(0, 300));
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 512,
+      messages: [{ role: 'user', content: mapPrompt }],
+    });
 
-      const mCode = txt.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (mCode) {
-        txt = mCode[1];
-      } else {
-        const mObj = txt.match(/\{[\s\S]*\}/);
-        if (mObj) txt = mObj[0];
-      }
+    let txt = response.content[0]?.text || '';
+    const m = txt.match(/\{[\s\S]*\}/);
+    if (m) txt = m[0];
 
-      let aiResult;
-      try {
-        aiResult = JSON.parse(txt.trim());
-      } catch (parseErr) {
-        console.error('[AI Suggest] JSON.parse falhou:', parseErr.message, '\ntxt:', txt.slice(0, 500));
-        sseSend({ error: `IA retornou resposta inválida: ${parseErr.message}` });
-        return;
-      }
+    let rawMap;
+    try { rawMap = JSON.parse(txt.trim()); }
+    catch (e) { return res.status(500).json({ error: `IA retornou JSON inválido: ${e.message}` }); }
 
-      sseSend({ done: true, result: aiResult });
-    } catch (e) {
-      console.error('[AI Suggest] erro:', e.message);
-      sseSend({ error: e.message });
-    } finally {
-      clearInterval(keepalive);
-      res.end();
+    // Filtra apenas colunas que existem de fato na planilha
+    const mapping = {};
+    for (const [key, col] of Object.entries(rawMap)) {
+      if (col && headers.includes(col)) mapping[key] = col;
     }
+
+    res.json({ mapping, headers, totalRows: rawContent.split('\n').length - 1 });
   } catch (e) {
-    if (!res.headersSent) return res.status(500).json({ error: e.message });
-    try { res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`); res.end(); } catch (_) {}
+    console.error('[AI Suggest]', e.message);
+    res.status(500).json({ error: e.message });
   }
 });
 
