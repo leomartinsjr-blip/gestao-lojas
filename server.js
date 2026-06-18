@@ -6241,44 +6241,62 @@ FORMATO DE SAÍDA — retorne APENAS JSON válido, sem texto extra:
   ]
 }`;
 
-    console.log('[AI Suggest] iniciando — arquivo:', req.file.originalname, 'content length:', rawContent.length);
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('X-Accel-Buffering', 'no');
+    res.flushHeaders();
 
-    const response = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 16000,
-      system: systemPrompt,
-      messages: [{ role: 'user', content: `Arquivo do fornecedor:\n\n${rawContent}` }],
-    });
+    const sseSend = (obj) => { try { res.write(`data: ${JSON.stringify(obj)}\n\n`); } catch (_) {} };
+    const keepalive = setInterval(() => { try { res.write(': ping\n\n'); } catch (_) {} }, 15000);
 
-    console.log('[AI Suggest] stop_reason:', response.stop_reason, 'output_tokens:', response.usage?.output_tokens);
-
-    if (response.stop_reason === 'max_tokens') {
-      return res.status(422).json({ error: 'Arquivo muito grande para processar de uma vez. Divida o pedido em partes menores (máx ~150 linhas).' });
-    }
-
-    let txt = response.content[0]?.text || '';
-    console.log('[AI Suggest] resposta raw (primeiros 300):', txt.slice(0, 300));
-
-    const mCode = txt.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (mCode) {
-      txt = mCode[1];
-    } else {
-      const mObj = txt.match(/\{[\s\S]*\}/);
-      if (mObj) txt = mObj[0];
-    }
-
-    let aiResult;
     try {
-      aiResult = JSON.parse(txt.trim());
-    } catch (parseErr) {
-      console.error('[AI Suggest] JSON.parse falhou:', parseErr.message, '\ntxt:', txt.slice(0, 500));
-      return res.status(500).json({ error: `IA retornou resposta inválida: ${parseErr.message}` });
-    }
+      console.log('[AI Suggest] iniciando — arquivo:', req.file.originalname, 'content length:', rawContent.length);
 
-    res.json(aiResult);
+      const response = await client.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 16000,
+        system: systemPrompt,
+        messages: [{ role: 'user', content: `Arquivo do fornecedor:\n\n${rawContent}` }],
+      });
+
+      console.log('[AI Suggest] stop_reason:', response.stop_reason, 'output_tokens:', response.usage?.output_tokens);
+
+      if (response.stop_reason === 'max_tokens') {
+        sseSend({ error: 'Arquivo muito grande. Divida o pedido em partes menores (máx ~150 linhas).' });
+        return;
+      }
+
+      let txt = response.content[0]?.text || '';
+      console.log('[AI Suggest] resposta raw (primeiros 300):', txt.slice(0, 300));
+
+      const mCode = txt.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (mCode) {
+        txt = mCode[1];
+      } else {
+        const mObj = txt.match(/\{[\s\S]*\}/);
+        if (mObj) txt = mObj[0];
+      }
+
+      let aiResult;
+      try {
+        aiResult = JSON.parse(txt.trim());
+      } catch (parseErr) {
+        console.error('[AI Suggest] JSON.parse falhou:', parseErr.message, '\ntxt:', txt.slice(0, 500));
+        sseSend({ error: `IA retornou resposta inválida: ${parseErr.message}` });
+        return;
+      }
+
+      sseSend({ done: true, result: aiResult });
+    } catch (e) {
+      console.error('[AI Suggest] erro:', e.message);
+      sseSend({ error: e.message });
+    } finally {
+      clearInterval(keepalive);
+      res.end();
+    }
   } catch (e) {
-    console.error('[AI Suggest] erro:', e.message);
-    res.status(500).json({ error: e.message });
+    if (!res.headersSent) return res.status(500).json({ error: e.message });
+    try { res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`); res.end(); } catch (_) {}
   }
 });
 

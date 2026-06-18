@@ -2833,12 +2833,38 @@ async function _cadAiSuggest(body) {
     const fd = new FormData();
     fd.append('file', _cad.file);
     const httpRes = await fetch('/api/cadastro-produto/ai-suggest', { method: 'POST', body: fd });
-    const rawText = await httpRes.text();
-    let data;
-    try { data = JSON.parse(rawText); } catch (_) {
-      throw new Error(`Servidor retornou resposta inválida (${httpRes.status}): ${rawText.slice(0, 200)}`);
+    if (!httpRes.ok) {
+      const txt = await httpRes.text();
+      let msg; try { msg = JSON.parse(txt).error; } catch (_) { msg = txt.slice(0, 300); }
+      throw new Error(msg || httpRes.statusText);
     }
-    if (!httpRes.ok) throw new Error(data.error || httpRes.statusText);
+    const data = await new Promise((resolve, reject) => {
+      const reader = httpRes.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      let settled = false;
+      const done = (fn, val) => { if (!settled) { settled = true; fn(val); } };
+      function pump() {
+        reader.read().then(({ done: streamDone, value }) => {
+          if (value) buf += decoder.decode(value, { stream: true });
+          // Processa todas as linhas completas
+          let nl;
+          while ((nl = buf.indexOf('\n')) !== -1) {
+            const line = buf.slice(0, nl).trimEnd();
+            buf = buf.slice(nl + 1);
+            if (!line.startsWith('data: ')) continue;
+            try {
+              const msg = JSON.parse(line.slice(6));
+              if (msg.error) { done(reject, new Error(msg.error)); return; }
+              if (msg.done)  { done(resolve, msg.result); return; }
+            } catch (_) {}
+          }
+          if (streamDone) { done(reject, new Error('Servidor fechou a conexão sem retornar resultado')); return; }
+          pump();
+        }).catch(e => done(reject, e));
+      }
+      pump();
+    });
     if (!data) throw new Error('Sem resposta da IA');
 
     const prods = (data.produtos || []);
