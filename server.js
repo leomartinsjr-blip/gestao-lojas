@@ -6154,7 +6154,7 @@ app.post('/api/cadastro-produto/ai-suggest', requireAdmin, _cadPdfUpload.single(
       const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
       const ws = wb.Sheets[wb.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
-      rawContent = rows.slice(0, 300).map(r => r.join('\t')).join('\n');
+      rawContent = rows.slice(0, 200).map(r => r.join('\t')).join('\n');
     }
 
     if (rawContent.length > 24000) rawContent = rawContent.slice(0, 24000) + '\n[... truncado ...]';
@@ -6247,14 +6247,19 @@ FORMATO DE SAÍDA — retorne APENAS JSON válido, sem texto extra:
     try {
       const stream = await client.messages.stream({
         model: 'claude-sonnet-4-6',
-        max_tokens: 8000,
+        max_tokens: 16000,
         system: systemPrompt,
         messages: [{ role: 'user', content: `Arquivo do fornecedor:\n\n${rawContent}` }],
       });
       const response = await stream.finalMessage();
+
+      if (response.stop_reason === 'max_tokens') {
+        throw new Error('Arquivo muito grande para processar de uma vez. Divida o pedido em partes menores (máx ~200 linhas).');
+      }
+
       let txt = response.content[0]?.text || '';
-      const m = txt.match(/```(?:json)?\s*([\s\S]*?)```/) || txt.match(/(\{[\s\S]*\})/s);
-      if (m) txt = m[1];
+      const m = txt.match(/```(?:json)?\s*([\s\S]*?)```/) || txt.match(/\{[\s\S]*\}/);
+      if (m) txt = m[0].replace(/^```(?:json)?\s*/, '').replace(/```\s*$/, '');
       aiResult = JSON.parse(txt.trim());
     } finally {
       clearInterval(keepalive);
