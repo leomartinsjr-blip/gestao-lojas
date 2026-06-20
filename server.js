@@ -4164,6 +4164,7 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
         if (op !== 'S' && op !== 'DS') continue;
         if (serie === '999') continue;
         if (serie === '4' && op !== 'DS') continue;
+        if (serie === 'J') continue;
         const sign = op === 'DS' ? -1 : 1;
 
         const cod      = String(row.cod_produto || '').replace(/\.0+$/, '').trim();
