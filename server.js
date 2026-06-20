@@ -4159,8 +4159,11 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
         if (row.cancelado === 'S' || row.cancelado === '1') continue;
         if (row.excluido  === 'S') continue;
         if (row.soma_relatorio === 'N') continue;
-        const op = (row.operacao || '').toUpperCase();
+        const op    = (row.operacao || '').toUpperCase();
+        const serie = String(row.serie || row.serie_documento || row.num_serie || '').trim();
         if (op !== 'S' && op !== 'DS') continue;
+        if (serie === '999') continue;
+        if (serie === '4' && op !== 'DS') continue;
         const sign = op === 'DS' ? -1 : 1;
 
         const cod      = String(row.cod_produto || '').replace(/\.0+$/, '').trim();
