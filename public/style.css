@@ -2848,17 +2848,10 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   .dia-store-label { gap: .2rem; font-size: .72rem; }
   .dia-chevron { font-size: .58rem; width: .5rem; }
 
-  /* ── Performance Mensal: esconde Meta Mês (2), TM (7) ── */
-  /* Visível: Vendedor · Realizado · % Meta · Projeção · PA */
-  .dash-table .dash-th:nth-child(2),
-  .dash-table td:nth-child(2),
-  .dash-table .dash-th:nth-child(7),
-  .dash-table td:nth-child(7) { display: none; }
-
   .dash-th { padding: .3rem .4rem; font-size: .67rem; }
   .dash-td { padding: .3rem .4rem; font-size: .75rem; }
   .dash-th:not(:first-child) { min-width: 52px; }
-  .dash-td-name { max-width: 90px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dash-td-name { max-width: none; white-space: nowrap; }
   .dash-store-hdr td { padding: .28rem .4rem; font-size: .68rem; }
 
   /* ── Meta Semanal: esconde % Meta (4), Projeção (5), Prêmio (8) — Meta (2) fica visível ── */
