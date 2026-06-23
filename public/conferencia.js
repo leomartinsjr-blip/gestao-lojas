@@ -508,8 +508,12 @@
   function renderRotina(data) {
     const el = $('vRotina');
     if (!el) return;
-    if (!_rotinaStatus || !_rotinaBoard || !_rotinaDate) {
+    if (!_rotinaBoard || !_rotinaDate) {
       el.style.display = 'none'; el.innerHTML = ''; return;
+    }
+    // Usa status padrão se a API falhou (garante que a barra sempre aparece)
+    if (!_rotinaStatus) {
+      _rotinaStatus = { alertasTicked: [], vendasOk: false, cartoesOk: false, vendedoresOk: false, fechado: false };
     }
 
     const { vendas } = data;
