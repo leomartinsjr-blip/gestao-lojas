@@ -320,9 +320,9 @@
       } catch(_) { _revisoesMap = {}; }
       // Carrega status da rotina (só para loja+dia único)
       if (board !== 'all' && dtIni === dtFin) {
+        _rotinaBoard = board; _rotinaDate = dtIni;
         try {
           _rotinaStatus = await api('GET', `/api/caixa-status?board=${board}&date=${dtIni}`);
-          _rotinaBoard = board; _rotinaDate = dtIni;
         } catch(_) { _rotinaStatus = null; }
       } else {
         _rotinaStatus = null; _rotinaBoard = null; _rotinaDate = null;
