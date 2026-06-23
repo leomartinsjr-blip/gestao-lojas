@@ -521,12 +521,14 @@
     const alertasComVenda = vendas.filter(v => v.alertas?.length);
     const alertasRevisados = alertasComVenda.length === 0 ||
       alertasComVenda.every(v => !!_revisoesMap[v.doc + '::' + (v.board || board)]);
+    const semVendas = vendas.length === 0;
     const canVendas = alertasRevisados && !st.vendasOk && !st.fechado;
     // Cartões só libera quando a conciliação bate 100% (rede × Microvix, considerando
     // reserva/pgt. anterior e confirmações manuais) — concAllOk() é a mesma checagem
     // usada pelo botão "Confirmar Cartões" dentro da tabela de conciliação.
-    const canCartoes = st.vendasOk && !st.cartoesOk && !st.fechado && concAllOk();
-    const canFechar = st.vendasOk && st.cartoesOk && !st.fechado;
+    // Dias sem vendas pulam a etapa de cartões (não há extrato da Rede para conciliar).
+    const canCartoes = !semVendas && st.vendasOk && !st.cartoesOk && !st.fechado && concAllOk();
+    const canFechar = st.vendasOk && (st.cartoesOk || semVendas) && !st.fechado;
 
     function stepIco(done, num) {
       return done ? '✅' : `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--cf-card);border:1.5px solid var(--cf-border);font-size:10px;font-weight:700;color:var(--cf-muted)">${num}</span>`;
@@ -564,19 +566,28 @@
 
           <span class="rotina-arrow">›</span>
 
-          <!-- Step 2: Cartões -->
-          <div class="rotina-step ${s2Done ? 'done' : canCartoes ? 'active' : 'locked'}">
-            <span class="rotina-step-ico">${stepIco(s2Done, 2)}</span>
-            <div class="rotina-step-info">
-              <span class="rotina-step-label">Cartões</span>
-              <span class="rotina-step-sub">${s2Done
-                ? stepSub(true, st.cartoesOkBy, st.cartoesOkTs)
-                : 'Conciliar com extrato'}</span>
-            </div>
-            ${!s2Done
-              ? `<button class="rotina-step-btn btn-ok" id="rBtnCartoes" ${canCartoes?'':'disabled'}>✓ Confirmar</button>`
-              : `<button class="rotina-step-btn btn-undo" id="rBtnCartoesUndo">↩</button>`}
-          </div>
+          <!-- Step 2: Cartões (pulado quando não há vendas no dia) -->
+          ${semVendas
+            ? `<div class="rotina-step done" style="opacity:.5">
+                <span class="rotina-step-ico">✅</span>
+                <div class="rotina-step-info">
+                  <span class="rotina-step-label">Cartões</span>
+                  <span class="rotina-step-sub" style="font-style:italic">sem vendas — pulado</span>
+                </div>
+              </div>`
+            : `<div class="rotina-step ${s2Done ? 'done' : canCartoes ? 'active' : 'locked'}">
+                <span class="rotina-step-ico">${stepIco(s2Done, 2)}</span>
+                <div class="rotina-step-info">
+                  <span class="rotina-step-label">Cartões</span>
+                  <span class="rotina-step-sub">${s2Done
+                    ? stepSub(true, st.cartoesOkBy, st.cartoesOkTs)
+                    : 'Conciliar com extrato'}</span>
+                </div>
+                ${!s2Done
+                  ? `<button class="rotina-step-btn btn-ok" id="rBtnCartoes" ${canCartoes?'':'disabled'}>✓ Confirmar</button>`
+                  : `<button class="rotina-step-btn btn-undo" id="rBtnCartoesUndo">↩</button>`}
+              </div>`
+          }
 
         </div>
 
