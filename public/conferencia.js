@@ -632,7 +632,7 @@
       const btn = $('rBtnFechar');
       btn.disabled = true; btn.textContent = '…';
       try {
-        const res = await api('POST', '/api/caixa-fechar', { board, date });
+        const res = await api('POST', '/api/caixa-fechar', { board, date, qtdVendas: (data.qtdVendas ?? 0) });
         _rotinaStatus = res.status;
         renderRotina(_data);
         // Atualiza cards de caixa
