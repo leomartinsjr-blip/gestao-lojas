@@ -449,7 +449,11 @@
     }
 
     const el = $('vResult');
-    if (!qtdVendas) { el.innerHTML = '<div class="cf-empty">Nenhuma venda encontrada no período.</div>'; return; }
+    if (!qtdVendas) {
+      el.innerHTML = '<div class="cf-empty">Nenhuma venda encontrada no período.</div>';
+      renderRotina(data);
+      return;
+    }
 
     if (_grupo === 'forma')    { el.innerHTML = renderGrupos(porForma,    totalVendas, 'blue');   bindDrills(el); return; }
     if (_grupo === 'vendedor') { el.innerHTML = renderGrupos(porVendedor, totalVendas, 'purple'); bindDrills(el); return; }
