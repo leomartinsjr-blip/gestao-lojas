@@ -989,6 +989,11 @@
     const rede = buildRedeAgrupado();
     const mx   = buildMicrovixAgrupado();
     const keys = new Set([...Object.keys(rede), ...Object.keys(mx)]);
+    if (!keys.size) return false;
+
+    // Acumula diferença total (signed) entre Rede e Microvix após reserva/pgt.anterior
+    // Positivo = rede recebeu mais que Microvix; negativo = Microvix > rede (ex: Cielo link)
+    let totalCardDiff = 0;
     for (const k of keys) {
       const r = rede[k]?.total || 0;
       const m = mx[k]?.total  || 0;
@@ -997,19 +1002,22 @@
       let reservaEf = 0;
       if (d0 > 0.10)  reservaEf =  Math.min(reserva,  d0);
       if (d0 < -0.10) reservaEf = -Math.min(reserva, -d0);
-      const diff = Math.abs(d0 - reservaEf);
-      if (diff > 0.10) return false;
+      totalCardDiff += (d0 - reservaEf);
     }
-    if (!keys.size) return false;
-    // Verifica confirmações manuais (linha com valor=0 sem preenchimento = OK)
+
+    // Confirmações manuais (Cielo link/portal, PIX direto etc.) compensam a diferença restante
     const manualRows = buildManualRows();
+    let totalManual = 0;
     for (const row of manualRows) {
-      const confirmado = parseFloat(_confirmacoesManual[row.key] ?? '');
+      const val = parseFloat(_confirmacoesManual[row.key] ?? '');
       const preenchido = _confirmacoesManual[row.key] !== undefined && _confirmacoesManual[row.key] !== '';
-      if (row.valor <= 0.01 && !preenchido) continue; // R$0 sem preencher = OK
-      if (Math.abs(confirmado - row.valor) > 0.10) return false;
+      // Se Microvix tem valor próprio para essa forma, exige confirmação preenchida
+      if (row.valor > 0.01 && !preenchido) return false;
+      totalManual += (isNaN(val) ? 0 : val);
     }
-    return true;
+
+    // A soma das confirmações manuais deve cobrir a diferença restante dos cartões
+    return Math.abs(totalCardDiff + totalManual) <= 0.10;
   }
 
   // Mantém o botão "✓ Confirmar" do passo 2 (no topo, fora da tabela de conciliação)
@@ -1066,6 +1074,10 @@
         rows.push({ key: o.manualKey, label: o.label, valor: o.total });
       }
     }
+
+    // Diferença de caixa: ajuste livre (positivo ou negativo) para fechar o dia
+    rows.push({ key: 'diff_caixa', label: 'Diferença de Caixa', valor: 0, isAjuste: true });
+
     return rows;
   }
 
@@ -1167,27 +1179,38 @@
     // Linhas de confirmação manual (PIX direto, Cielo, etc.)
     const manualRows = buildManualRows();
     const manualRowsHtml = manualRows.map(row => {
-      totalOutros += row.valor;
+      if (!row.isAjuste) totalOutros += row.valor;
       const confirmado = parseFloat(_confirmacoesManual[row.key] || 0);
-      const diff = +(confirmado - row.valor).toFixed(2);
-      const ok   = Math.abs(diff) <= 0.10;
-      const semValor = row.valor <= 0.01;
-      const diffHtml = semValor && confirmado === 0
-        ? '<span style="color:var(--cf-green)">&#10003;</span>'
-        : confirmado === 0
-          ? '<span style="color:var(--cf-alert);font-size:11px">pendente</span>'
-          : ok
-            ? '<span style="color:var(--cf-green)">&#10003;</span>'
-            : '<span style="color:var(--cf-alert)">' + (diff > 0 ? '+' : '') + fmtR(diff) + '</span>';
-      const rowOk = ok || (semValor && confirmado === 0);
-      return `<tr class="` + (rowOk ? 'ok' : 'nok') + `" style="background:var(--cf-card2)">
-        <td colspan="2" style="font-style:italic;font-size:12px">` + esc(row.label) + ` <span style="font-size:10px;color:var(--cf-muted)">(confirmação manual)</span></td>
+
+      let diffHtml, rowOk;
+      if (row.isAjuste) {
+        // Diferença de caixa: qualquer valor é aceito; se preenchido mostra em laranja (aviso)
+        rowOk = true;
+        diffHtml = confirmado !== 0
+          ? '<span style="color:#e6a817;font-weight:700">' + (confirmado > 0 ? '+' : '') + fmtR(confirmado) + '</span>'
+          : '<span style="color:var(--cf-green)">&#10003;</span>';
+      } else {
+        const diff = +(confirmado - row.valor).toFixed(2);
+        const ok   = Math.abs(diff) <= 0.10;
+        const semValor = row.valor <= 0.01;
+        diffHtml = semValor && confirmado === 0
+          ? '<span style="color:var(--cf-green)">&#10003;</span>'
+          : confirmado === 0
+            ? '<span style="color:var(--cf-alert);font-size:11px">pendente</span>'
+            : ok
+              ? '<span style="color:var(--cf-green)">&#10003;</span>'
+              : '<span style="color:var(--cf-alert)">' + (diff > 0 ? '+' : '') + fmtR(diff) + '</span>';
+        rowOk = ok || (semValor && confirmado === 0);
+      }
+
+      return `<tr class="` + (rowOk ? 'ok' : 'nok') + `" style="background:var(--cf-card2)${row.isAjuste ? ';border-top:1px dashed var(--cf-border)' : ''}">
+        <td colspan="2" style="font-style:italic;font-size:12px">` + esc(row.label) + ` <span style="font-size:10px;color:var(--cf-muted)">${row.isAjuste ? '(ajuste para fechar)' : '(confirmação manual)'}</span></td>
         <td class="num" style="color:var(--cf-muted)">—</td>
-        <td class="num">` + fmtR(row.valor) + `</td>
+        <td class="num" style="color:var(--cf-muted)">—</td>
         <td class="num">
-          <input type="number" step="0.01" min="0"
+          <input type="number" step="0.01" ` + (row.isAjuste ? '' : 'min="0"') + `
             data-manual-key="` + esc(row.key) + `"
-            value="` + (confirmado > 0 ? confirmado.toFixed(2) : '') + `"
+            value="` + (confirmado !== 0 ? confirmado.toFixed(2) : '') + `"
             placeholder="0,00"
             style="width:90px;text-align:right;padding:2px 4px;border-radius:4px;border:1px solid var(--cf-border);background:var(--cf-input,var(--cf-card));color:inherit;font-size:12px;font-family:inherit">
           ` + diffHtml + `
