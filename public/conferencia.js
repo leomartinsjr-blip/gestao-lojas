@@ -2550,14 +2550,11 @@
     const dtFin  = $('cmvDtFin').value;
     if (!board || !dtIni || !dtFin) return alert('Preencha loja e período.');
 
-    const dtIniBR = dtIni.split('-').reverse().join('/');
-    const dtFinBR = dtFin.split('-').reverse().join('/');
-
     $('cmvResult').innerHTML = `<div class="cf-empty"><span class="spinner"></span> Buscando dados Microvix…</div>`;
     $('cmvXlsBtn').style.display = 'none';
 
     try {
-      const data = await fetch(`/api/conferencia/cmv-itens?board=${board}&dtIni=${encodeURIComponent(dtIniBR)}&dtFin=${encodeURIComponent(dtFinBR)}`)
+      const data = await fetch(`/api/conferencia/cmv-itens?board=${board}&dtIni=${encodeURIComponent(dtIni)}&dtFin=${encodeURIComponent(dtFin)}`)
         .then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.error || r.statusText); }); return r.json(); });
 
       _lastData = data;
