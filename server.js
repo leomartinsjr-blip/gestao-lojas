@@ -9030,6 +9030,86 @@ app.get('/api/conferencia/debug', requireEscritorioOrAdmin, async (req, res) => 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/conferencia/cmv-itens?board=minas&dtIni=DD/MM/YYYY&dtFin=DD/MM/YYYY
+// Retorna custo por produto (da API Microvix) para comparar com relatório Microvix portal
+app.get('/api/conferencia/cmv-itens', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { board, dtIni, dtFin } = req.query;
+    if (!board || !dtIni || !dtFin) return res.status(400).json({ error: 'board, dtIni e dtFin obrigatórios' });
+
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const cnpj  = lojas[board];
+    if (!cnpj) return res.status(400).json({ error: `Loja "${board}" não configurada` });
+
+    const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const cnpjClean = cnpj.replace(/\D/g, '');
+    const parseBR   = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
+
+    const { fetchMovimento } = require('./services/microvix');
+    const rows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
+    if (!Array.isArray(rows)) return res.status(500).json({ error: 'Erro ao buscar dados Microvix' });
+
+    const itens = {};
+    let totalCusto = 0, totalVenda = 0;
+
+    for (const r of rows) {
+      const rowCnpj = (r.cnpj_emp||r.cnpj||'').replace(/\D/g,'');
+      if (!rowCnpj || rowCnpj !== cnpjClean) continue;
+      if (r.cancelado === 'S' || r.cancelado === '1') continue;
+      if ((r.soma_relatorio||'S').toUpperCase() === 'N') continue;
+      const op = (r.operacao||'').trim().toUpperCase();
+      if (op !== 'S' && op !== 'DS') continue;
+      const serie = String(r.serie||r.serie_documento||'').trim();
+      if (serie === '999') continue;
+      if (serie === '4' && op !== 'DS') continue;
+
+      const sign    = op === 'DS' ? -1 : 1;
+      const qty     = parseBR(r.quantidade||'1');
+      const custo   = parseBR(r.custo_medio_epoca||r.preco_custo||'0');
+      const vlrUnit = parseBR(r.preco_tabela_epoca||r.preco_unitario||'0');
+      const vlrDesc = parseBR(r.desconto_item||r.desconto_total_item||'0');
+      const vlrLiq  = Math.max(0, vlrUnit - vlrDesc);
+
+      const cod  = String(r.cod_produto||'').trim();
+      const desc = String(r.descricao||r.descricao_produto||'').trim();
+      const key  = cod || desc;
+      if (!key) continue;
+
+      if (!itens[key]) itens[key] = { cod, desc, qty: 0, custoTotal: 0, vendaTotal: 0, custo_unit_api: custo };
+      itens[key].qty        += sign * qty;
+      itens[key].custoTotal += sign * custo * qty;
+      itens[key].vendaTotal += sign * vlrLiq * qty;
+
+      totalCusto += sign * custo * qty;
+      totalVenda += sign * vlrLiq * qty;
+    }
+
+    const lista = Object.values(itens)
+      .filter(i => i.qty !== 0)
+      .map(i => ({
+        cod:          i.cod,
+        desc:         i.desc,
+        qty:          +i.qty.toFixed(0),
+        custo_unit:   +i.custo_unit_api.toFixed(2),
+        custo_total:  +i.custoTotal.toFixed(2),
+        venda_total:  +i.vendaTotal.toFixed(2),
+        cmv_pct:      i.vendaTotal > 0 ? +(i.custoTotal / i.vendaTotal * 100).toFixed(2) : null,
+      }))
+      .sort((a, b) => b.custo_total - a.custo_total);
+
+    res.json({
+      board, dtIni, dtFin,
+      total_custo:  +totalCusto.toFixed(2),
+      total_venda:  +totalVenda.toFixed(2),
+      cmv_pct:      totalVenda > 0 ? +(totalCusto / totalVenda * 100).toFixed(2) : null,
+      qtd_itens:    lista.length,
+      itens:        lista,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/conferencia/conciliacao-rede
 // Recebe arquivo da Rede (Excel/CSV) e cruza com LinxMovimentoCartoes do Microvix
 app.post('/api/conferencia/conciliacao-rede', requireEscritorioOrAdmin, async (req, res) => {

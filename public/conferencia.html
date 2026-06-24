@@ -606,6 +606,10 @@ td.muted  { color: var(--cf-muted); }
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>
       Taxas
     </button>
+    <button class="cf-tab" data-tab="cmv-itens">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+      CMV Itens
+    </button>
   </nav>
   <div class="cf-topbar-right">
     <button id="btnCatalogWarm" title="Atualizar catálogo de produtos"
@@ -756,6 +760,40 @@ td.muted  { color: var(--cf-muted); }
     </button>
   </div>
   <div id="rResult"></div>
+</div>
+
+<!-- ══ CMV ITENS ══════════════════════════════════════════════════════════ -->
+<div class="cf-panel" id="tab-cmv-itens">
+  <div class="cf-filter-bar">
+    <div class="cf-fg"><label>Loja</label>
+      <select id="cmvBoard">
+        <option value="minas">Minas</option>
+        <option value="estacao">Estação</option>
+        <option value="contagem">Contagem</option>
+        <option value="delrey">Del Rey</option>
+        <option value="tommy">Tommy</option>
+        <option value="surfers">Surfers</option>
+      </select>
+    </div>
+    <div class="cf-fg"><label>De</label><input type="date" id="cmvDtIni"/></div>
+    <div class="cf-fg"><label>Até</label><input type="date" id="cmvDtFin"/></div>
+    <div class="cf-fg"><label>Filtro</label>
+      <select id="cmvFiltro">
+        <option value="todos">Todos os itens</option>
+        <option value="acima50">CMV acima de 50%</option>
+        <option value="acima70">CMV acima de 70%</option>
+        <option value="brinde">Brindes (venda ≤ R$1)</option>
+      </select>
+    </div>
+    <button class="btn-primary" id="cmvBuscarBtn">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      Buscar
+    </button>
+    <button id="cmvXlsBtn" style="display:none;background:var(--cf-card2);border:1px solid var(--cf-border);color:var(--cf-muted);padding:5px 12px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">
+      ↓ XLS
+    </button>
+  </div>
+  <div id="cmvResult"></div>
 </div>
 
 </div><!-- /cf-content -->

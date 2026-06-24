@@ -2525,3 +2525,131 @@
     } finally { btn.disabled=false; }
   });
 })();
+
+// ════════════════════════════════════════════════════════════════════════
+// CMV ITENS — comparação produto a produto API vs relatório Microvix
+// ════════════════════════════════════════════════════════════════════════
+(function() {
+  const fmtR = v => 'R$ ' + (+v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtP = v => v == null ? '—' : (+v).toFixed(1) + '%';
+  const P    = k => getComputedStyle(document.documentElement).getPropertyValue(`--cf-${k}`).trim();
+
+  const $ = id => document.getElementById(id);
+
+  // Preenche datas padrão: 1º do mês atual até hoje
+  const today = new Date();
+  const y = today.getFullYear(), m = String(today.getMonth()+1).padStart(2,'0'), d = String(today.getDate()).padStart(2,'0');
+  $('cmvDtIni').value = `${y}-${m}-01`;
+  $('cmvDtFin').value = `${y}-${m}-${d}`;
+
+  let _lastData = null;
+
+  $('cmvBuscarBtn').addEventListener('click', async () => {
+    const board  = $('cmvBoard').value;
+    const dtIni  = $('cmvDtIni').value;
+    const dtFin  = $('cmvDtFin').value;
+    if (!board || !dtIni || !dtFin) return alert('Preencha loja e período.');
+
+    const dtIniBR = dtIni.split('-').reverse().join('/');
+    const dtFinBR = dtFin.split('-').reverse().join('/');
+
+    $('cmvResult').innerHTML = `<div class="cf-empty"><span class="spinner"></span> Buscando dados Microvix…</div>`;
+    $('cmvXlsBtn').style.display = 'none';
+
+    try {
+      const data = await fetch(`/api/conferencia/cmv-itens?board=${board}&dtIni=${encodeURIComponent(dtIniBR)}&dtFin=${encodeURIComponent(dtFinBR)}`)
+        .then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.error || r.statusText); }); return r.json(); });
+
+      _lastData = data;
+      renderCmvItens(data);
+      $('cmvXlsBtn').style.display = '';
+    } catch(e) {
+      $('cmvResult').innerHTML = `<div class="cf-empty" style="color:var(--cf-alert)">⚠ ${e.message}</div>`;
+    }
+  });
+
+  $('cmvFiltro').addEventListener('change', () => { if (_lastData) renderCmvItens(_lastData); });
+
+  $('cmvXlsBtn').addEventListener('click', () => {
+    if (!_lastData) return;
+    exportCsv(_lastData);
+  });
+
+  function renderCmvItens(data) {
+    const filtro = $('cmvFiltro').value;
+    let itens = data.itens;
+
+    if (filtro === 'acima50') itens = itens.filter(i => i.cmv_pct != null && i.cmv_pct > 50);
+    else if (filtro === 'acima70') itens = itens.filter(i => i.cmv_pct != null && i.cmv_pct > 70);
+    else if (filtro === 'brinde') itens = itens.filter(i => i.venda_total <= 1);
+
+    const cmvColor = pct => {
+      if (pct == null) return 'var(--cf-muted)';
+      if (pct > 70) return 'var(--cf-alert)';
+      if (pct > 50) return 'var(--cf-accent)';
+      return 'var(--cf-green)';
+    };
+
+    const rows = itens.map(i => {
+      const isBrinde = i.venda_total <= 1 && i.custo_total > 0;
+      const pctStr   = fmtP(i.cmv_pct);
+      const col      = cmvColor(i.cmv_pct);
+      return `<tr style="${isBrinde ? 'background:rgba(248,81,73,.07)' : ''}">
+        <td style="font-size:11px;color:var(--cf-muted)">${i.cod}</td>
+        <td style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${i.desc}">${i.desc}${isBrinde ? ' <span style="font-size:10px;background:rgba(248,81,73,.2);color:var(--cf-alert);padding:1px 5px;border-radius:4px;font-weight:700">BRINDE</span>' : ''}</td>
+        <td class="num" style="font-size:11px">${i.qty}</td>
+        <td class="num">${fmtR(i.custo_unit)}</td>
+        <td class="num" style="font-weight:700">${fmtR(i.custo_total)}</td>
+        <td class="num">${fmtR(i.venda_total)}</td>
+        <td class="num" style="font-weight:800;color:${col}">${pctStr}</td>
+      </tr>`;
+    }).join('');
+
+    $('cmvResult').innerHTML = `
+      <div style="display:flex;gap:20px;margin-bottom:16px;flex-wrap:wrap">
+        <div style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:10px;padding:12px 20px;min-width:160px">
+          <div style="font-size:10px;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Custo Total API</div>
+          <div style="font-size:20px;font-weight:800;margin-top:4px">${fmtR(data.total_custo)}</div>
+        </div>
+        <div style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:10px;padding:12px 20px;min-width:160px">
+          <div style="font-size:10px;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Venda Líquida API</div>
+          <div style="font-size:20px;font-weight:800;margin-top:4px">${fmtR(data.total_venda)}</div>
+        </div>
+        <div style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:10px;padding:12px 20px;min-width:140px">
+          <div style="font-size:10px;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700">CMV%</div>
+          <div style="font-size:20px;font-weight:800;margin-top:4px;color:${cmvColor(data.cmv_pct)}">${fmtP(data.cmv_pct)}</div>
+        </div>
+        <div style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:10px;padding:12px 20px;min-width:140px">
+          <div style="font-size:10px;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Produtos</div>
+          <div style="font-size:20px;font-weight:800;margin-top:4px">${itens.length} / ${data.qtd_itens}</div>
+        </div>
+      </div>
+      <table class="cf-tbl">
+        <thead><tr>
+          <th style="width:70px">Código</th>
+          <th>Descrição</th>
+          <th class="num" style="width:50px">Qtd</th>
+          <th class="num" style="width:100px">Custo Unit.</th>
+          <th class="num" style="width:110px">Custo Total</th>
+          <th class="num" style="width:110px">Venda Líq.</th>
+          <th class="num" style="width:80px">CMV%</th>
+        </tr></thead>
+        <tbody>${rows || `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--cf-muted)">Nenhum item encontrado</td></tr>`}</tbody>
+      </table>`;
+  }
+
+  function exportCsv(data) {
+    const lines = ['Código\tDescrição\tQtd\tCusto Unit.\tCusto Total\tVenda Líq.\tCMV%'];
+    for (const i of data.itens) {
+      lines.push([i.cod, i.desc, i.qty,
+        String(i.custo_unit).replace('.',','),
+        String(i.custo_total).replace('.',','),
+        String(i.venda_total).replace('.',','),
+        i.cmv_pct != null ? String(i.cmv_pct).replace('.',',') : ''
+      ].join('\t'));
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/tab-separated-values;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `cmv-itens-${data.board}-${data.dtIni.replace(/\//g,'-')}.tsv`; a.click();
+  }
+})();
