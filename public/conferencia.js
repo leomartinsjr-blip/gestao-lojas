@@ -2653,28 +2653,30 @@
         const pctVenda = (m.venda_total / totalVenda * 100).toFixed(1);
         const expandId = `cmv-setor-${idx}`;
 
-        // Linhas de setor (ocultas por padrão)
-        const setorRows = (m.setores || []).map(s => {
+        // Linhas de setor (ocultas por padrão, ordenadas do maior % do total para menor)
+        const setoresSorted = [...(m.setores || [])].sort((a, b) => b.venda_total - a.venda_total);
+        const setorRows = setoresSorted.map(s => {
           const sc  = cmvColor(s.cmv_pct);
           const spv = (s.venda_total / totalVenda * 100).toFixed(1);
+          const badge = s.cmv_pct != null
+            ? `<span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:800;background:${sc}22;color:${sc};min-width:46px;text-align:center">${fmtP(s.cmv_pct)}</span>`
+            : '—';
           return `<tr class="cmv-setor-row" data-marca="${idx}" style="display:none;background:var(--cf-card2)">
             <td style="padding-left:32px;font-size:11px;color:var(--cf-muted)">↳ ${s.setor}</td>
             <td class="num" style="font-size:11px">${s.qtd_itens}</td>
             <td class="num" style="font-size:11px">${fmtR(s.custo_total)}</td>
             <td class="num" style="font-size:11px">${fmtR(s.venda_total)}</td>
-            <td style="font-size:11px;color:var(--cf-muted);text-align:right;padding-right:8px">${spv}%</td>
-            <td style="padding:0 12px">
-              <div style="display:flex;align-items:center;gap:6px">
-                <div style="flex:1;height:4px;background:var(--cf-border);border-radius:2px">
-                  <div style="height:100%;width:${Math.max(2,Math.round((s.cmv_pct||0)/maxCmv*100))}%;background:${sc};border-radius:2px"></div>
-                </div>
-                <span style="font-weight:700;color:${sc};min-width:38px;text-align:right;font-size:11px">${fmtP(s.cmv_pct)}</span>
-              </div>
-            </td>
+            <td class="num"><span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;background:rgba(99,179,237,.1);color:#63b3ed">${spv}%</span></td>
+            <td style="padding:4px 12px;text-align:right">${badge}</td>
           </tr>`;
         }).join('');
 
-        const hasSetores = (m.setores || []).length > 1;
+        // Badge CMV grande e destacado para a linha de marca
+        const cmvBadge = m.cmv_pct != null
+          ? `<span style="display:inline-block;padding:3px 12px;border-radius:8px;font-size:14px;font-weight:900;letter-spacing:.3px;background:${col}22;color:${col};min-width:56px;text-align:center">${fmtP(m.cmv_pct)}</span>`
+          : '—';
+
+        const hasSetores = setoresSorted.length > 1;
         return `<tr data-expand="${expandId}" style="cursor:${hasSetores?'pointer':'default'}" title="${hasSetores?'Clique para expandir setores':''}">
           <td style="font-weight:700;font-size:13px">
             ${hasSetores ? `<span style="font-size:10px;color:var(--cf-muted);margin-right:6px" id="arr-${idx}">▶</span>` : '<span style="display:inline-block;width:16px"></span>'}
@@ -2683,15 +2685,8 @@
           <td class="num">${m.qtd_itens}</td>
           <td class="num">${fmtR(m.custo_total)}</td>
           <td class="num">${fmtR(m.venda_total)}</td>
-          <td class="num" style="font-size:11px;color:var(--cf-muted)">${pctVenda}%</td>
-          <td style="padding:0 12px">
-            <div style="display:flex;align-items:center;gap:8px">
-              <div style="flex:1;height:6px;background:var(--cf-card2);border-radius:3px">
-                <div style="height:100%;width:${barW}%;background:${col};border-radius:3px"></div>
-              </div>
-              <span style="font-weight:800;color:${col};min-width:42px;text-align:right">${fmtP(m.cmv_pct)}</span>
-            </div>
-          </td>
+          <td class="num"><span style="display:inline-block;padding:2px 10px;border-radius:6px;font-size:12px;font-weight:800;background:rgba(99,179,237,.15);color:#63b3ed">${pctVenda}%</span></td>
+          <td style="padding:4px 12px;text-align:right">${cmvBadge}</td>
         </tr>${setorRows}`;
       }).join('');
 
@@ -2702,7 +2697,7 @@
           <th class="num" style="width:115px">Custo Total</th>
           <th class="num" style="width:115px">Venda Líq.</th>
           <th class="num" style="width:60px">% Venda</th>
-          <th style="width:200px">CMV%</th>
+          <th style="width:120px;text-align:right;padding-right:12px">CMV%</th>
         </tr></thead>
         <tbody>${marcaRows || `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--cf-muted)">Nenhuma marca encontrada</td></tr>`}</tbody>
       </table>`;
