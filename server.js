@@ -9422,6 +9422,22 @@ app.put('/api/dre/:ano/:mes/:loja', requireAdmin, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── POST /api/seed-weights-tmp (TEMPORÁRIO — remover após uso) ────────────────
+// Exemplo: POST /api/seed-weights-tmp?secret=GL2026SEED  body: { year, month, weights }
+app.post('/api/seed-weights-tmp', async (req, res) => {
+  if (req.query.secret !== 'GL2026SEED') return res.status(403).json({ error: 'Forbidden' });
+  try {
+    const { year, month, weights } = req.body;
+    if (!year || !month || !weights) return res.status(400).json({ error: 'year, month e weights obrigatórios' });
+    const key = monthKey(parseInt(year), parseInt(month));
+    const db  = await readDB();
+    if (!db.globalWeights) db.globalWeights = {};
+    db.globalWeights[key] = weights;
+    await writeDB(db);
+    res.json({ ok: true, key, qtd: Object.keys(weights).length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Porta abre imediatamente — MongoDB conecta em background para não bloquear o health check do Render
 const _server = app.listen(PORT, () => {
   console.log(`\n✅  Gestão de Lojas → http://localhost:${PORT}\n`);
