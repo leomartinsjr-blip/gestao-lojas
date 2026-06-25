@@ -8064,6 +8064,7 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
         const serie = String(r.serie||r.serie_documento||'').trim();
         if (serie === '999') continue;
         if (serie === '4' && op !== 'DS') continue;
+        if (serie === 'J') continue;
 
         const sign     = op === 'DS' ? -1 : 1;
         const qty      = parseBR(r.quantidade||'1');
@@ -9062,6 +9063,7 @@ app.get('/api/conferencia/cmv-itens', requireEscritorioOrAdmin, async (req, res)
       const serie = String(r.serie||r.serie_documento||'').trim();
       if (serie === '999') continue;
       if (serie === '4' && op !== 'DS') continue;
+      if (serie === 'J') continue;
 
       const sign    = op === 'DS' ? -1 : 1;
       const qty     = parseBR(r.quantidade||'1');
@@ -9339,6 +9341,7 @@ app.get('/api/dre/:ano/:mes/:loja', requireAdmin, async (req, res) => {
           const serie = String(r.serie||r.serie_documento||'').trim();
           if (serie === '999') continue;
           if (serie === '4' && op !== 'DS') continue;
+          if (serie === 'J') continue;
           const sign = op === 'DS' ? -1 : 1;
           const qty  = parseBR(r.quantidade||'1');
           vlrCusto  += sign * parseBR(r.custo_medio_epoca||r.preco_custo||'0') * qty;
