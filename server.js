@@ -9039,26 +9039,36 @@ app.get('/api/conferencia/cmv-itens', requireEscritorioOrAdmin, async (req, res)
     if (!board || !dtIni || !dtFin) return res.status(400).json({ error: 'board, dtIni e dtFin obrigatórios' });
 
     const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-    const cnpj  = lojas[board];
-    if (!cnpj) return res.status(400).json({ error: `Loja "${board}" não configurada` });
+    const SURFERS_BOARDS = ['delrey','minas','contagem','estacao','site'];
+    const targetBoards   = board === 'surfers' ? SURFERS_BOARDS : [board];
 
-    const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-    const cnpjClean = cnpj.replace(/\D/g, '');
-    const parseBR   = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
+    // Valida que todos os boards existem
+    for (const b of targetBoards) {
+      if (!lojas[b]) return res.status(400).json({ error: `Loja "${b}" não configurada` });
+    }
+
+    const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
 
     const { fetchMovimento } = require('./services/microvix');
-    const [rows, catalog] = await Promise.all([
-      fetchMovimento(cnpj, dtIni, dtFin, chave),
+    const [allRowsNested, catalog] = await Promise.all([
+      Promise.all(targetBoards.map(b => {
+        const c = lojas[b];
+        const k = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+        return fetchMovimento(c, dtIni, dtFin, k).then(r => Array.isArray(r) ? r : []);
+      })),
       _getCatalog(lojas).catch(() => ({})),
     ]);
-    if (!Array.isArray(rows)) return res.status(500).json({ error: 'Erro ao buscar dados Microvix' });
+    const rows = allRowsNested.flat();
+
+    // Conjunto de CNPJs válidos para filtrar linhas
+    const validCnpjs = new Set(targetBoards.map(b => lojas[b].replace(/\D/g,'')));
 
     const itens = {};
     let totalCusto = 0, totalVenda = 0;
 
     for (const r of rows) {
       const rowCnpj = (r.cnpj_emp||r.cnpj||'').replace(/\D/g,'');
-      if (!rowCnpj || rowCnpj !== cnpjClean) continue;
+      if (!rowCnpj || !validCnpjs.has(rowCnpj)) continue;
       if (r.cancelado === 'S' || r.cancelado === '1') continue;
       if ((r.soma_relatorio||'S').toUpperCase() === 'N') continue;
       const op = (r.operacao||'').trim().toUpperCase();
