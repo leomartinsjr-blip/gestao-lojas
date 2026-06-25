@@ -5627,7 +5627,12 @@ function closeWeightsModal() {
 async function saveWeights() {
   const inputs  = document.querySelectorAll('.wg-input');
   const weights = {};
-  inputs.forEach(inp => { weights[inp.dataset.date] = parseFloat(inp.value) || 0; });
+  let total = 0;
+  inputs.forEach(inp => { const v = parseFloat(inp.value) || 0; weights[inp.dataset.date] = v; total += v; });
+  if (Math.abs(total - 100) >= 0.05) {
+    toast(`A soma dos pesos é ${total.toFixed(2)}% — precisa ser exatamente 100% para salvar.`, true);
+    return;
+  }
   try {
     await apiFetch('POST', `/api/weights/${PD.year}/${PD.month}`, { weights });
     PD.weights = weights;
