@@ -2542,8 +2542,9 @@
   $('cmvDtIni').value = `${y}-${m}-01`;
   $('cmvDtFin').value = `${y}-${m}-${d}`;
 
-  let _lastData = null;
-  let _cmvView  = 'marca'; // 'marca' | 'itens'
+  let _lastData  = null;
+  let _cmvView   = 'marca'; // 'marca' | 'itens'
+  let _cmvSort   = 'cmv';   // 'cmv' | 'venda'
 
   $('cmvBuscarBtn').addEventListener('click', async () => {
     const board  = $('cmvBoard').value;
@@ -2568,12 +2569,12 @@
 
   $('cmvFiltro').addEventListener('change', () => { if (_lastData) renderCmvItens(_lastData); });
 
-  // Toggle vista marca / itens via delegação (botões criados dinamicamente)
+  // Toggle vista e ordenação via delegação (botões criados dinamicamente)
   document.addEventListener('click', e => {
-    const btn = e.target.closest('[data-cmv-view]');
-    if (!btn || !_lastData) return;
-    _cmvView = btn.dataset.cmvView;
-    renderCmvItens(_lastData);
+    const btnV = e.target.closest('[data-cmv-view]');
+    if (btnV && _lastData) { _cmvView = btnV.dataset.cmvView; renderCmvItens(_lastData); return; }
+    const btnS = e.target.closest('[data-cmv-sort]');
+    if (btnS && _lastData) { _cmvSort = btnS.dataset.cmvSort; renderCmvItens(_lastData); }
   });
 
   $('cmvXlsBtn').addEventListener('click', () => {
@@ -2614,16 +2615,23 @@
           <div style="font-size:10px;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Produtos</div>
           <div style="font-size:18px;font-weight:800">${data.qtd_itens}</div>
         </div>
-        <div style="margin-left:auto;display:flex;gap:6px">
+        <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
           <button data-cmv-view="marca" style="padding:5px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid var(--cf-border);background:${_cmvView==='marca'?'var(--cf-primary)':'var(--cf-card2)'};color:${_cmvView==='marca'?'#fff':'var(--cf-muted)'}">Por Marca</button>
           <button data-cmv-view="itens" style="padding:5px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid var(--cf-border);background:${_cmvView==='itens'?'var(--cf-primary)':'var(--cf-card2)'};color:${_cmvView==='itens'?'#fff':'var(--cf-muted)'}">Por Item</button>
+          <div style="width:1px;background:var(--cf-border);margin:0 2px"></div>
+          <button data-cmv-sort="cmv"   style="padding:5px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid ${_cmvSort==='cmv'?'var(--cf-primary)':'var(--cf-border)'};background:var(--cf-card2);color:${_cmvSort==='cmv'?'var(--cf-primary)':'var(--cf-muted)'}">↑ CMV%</button>
+          <button data-cmv-sort="venda" style="padding:5px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid ${_cmvSort==='venda'?'var(--cf-primary)':'var(--cf-border)'};background:var(--cf-card2);color:${_cmvSort==='venda'?'var(--cf-primary)':'var(--cf-muted)'}">↓ Venda</button>
         </div>
       </div>`;
 
     let tableHtml = '';
 
     if (_cmvView === 'marca') {
-      const marcas = (data.marcas || []);
+      const marcas = [...(data.marcas || [])].sort((a, b) =>
+        _cmvSort === 'venda'
+          ? b.venda_total - a.venda_total
+          : (a.cmv_pct ?? 999) - (b.cmv_pct ?? 999)
+      );
       const maxCmv = Math.max(...marcas.map(m => m.cmv_pct || 0), 0.01);
       const marcaRows = marcas.map(m => {
         const col = cmvColor(m.cmv_pct);
