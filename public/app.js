@@ -691,12 +691,24 @@ function renderDashboard() {
     dayRow.appendChild(dayCard);
     leftCol.appendChild(dayRow);
 
-    function _updateDayCard() {
+    async function _updateDayCard() {
       const d = DASH_DAY.refDate;
       const lbl = d === todayStr ? `Hoje · ${d.slice(8)}/${d.slice(5,7)}` : `${d.slice(8)}/${d.slice(5,7)}`;
       document.getElementById('dayCardLabel').textContent = lbl;
       document.getElementById('dayCardPrev').disabled = d <= monthStart;
       document.getElementById('dayCardNext').disabled = d >= cutoff;
+      // Se o dia exibido pertence a um mês diferente do visualizado, carrega pesos desse mês
+      const cardYear  = parseInt(d.slice(0, 4));
+      const cardMonth = parseInt(d.slice(5, 7));
+      if (cardYear !== S.year || cardMonth !== S.month) {
+        if (!DASH_DAY.weightsKey || DASH_DAY.weightsKey !== `${cardYear}-${cardMonth}`) {
+          [DASH_DAY.weights, DASH_DAY.dailySalesMeta] = await Promise.all([
+            apiFetch('GET', `/api/weights/${cardYear}/${cardMonth}`).catch(() => ({})),
+            apiFetch('GET', `/api/dailysales-meta/${cardYear}/${cardMonth}`).catch(() => ({})),
+          ]);
+          DASH_DAY.weightsKey = `${cardYear}-${cardMonth}`;
+        }
+      }
       _renderDayCardBody(document.getElementById('dayCardBody'), d);
     }
 
@@ -1347,11 +1359,22 @@ function _renderDashFolgas(body) {
 function _renderDayCardBody(body, dateStr) {
   const fV = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const daysInMonth = new Date(S.year, S.month, 0).getDate();
+  // Usa o mês/ano do próprio dateStr (não do mês visualizado)
+  const cardYear  = parseInt(dateStr.slice(0, 4));
+  const cardMonth = parseInt(dateStr.slice(5, 7));
+  const daysInMonth = new Date(cardYear, cardMonth, 0).getDate();
   const defW = +(100 / daysInMonth).toFixed(6);
-  const dayWeight = S.weights[dateStr] ?? defW;
+  // Pesos: usa S.weights se o mês bate, senão DASH_DAY.weights (carregado para o mês do card)
+  const cardWeights = (cardYear === S.year && cardMonth === S.month)
+    ? S.weights
+    : (DASH_DAY.weights || {});
+  const dayWeight = cardWeights[dateStr] ?? defW;
 
-  const vendedores = S.employees.filter(e => isVend(e));
+  const vendedores = S.employees.filter(e =>
+    isVend(e) &&
+    (!e.admissao     || e.admissao     <= dateStr) &&
+    (!e.desligamento || e.desligamento >= dateStr)
+  );
   const byBoard = {};
   for (const emp of vendedores) {
     if (!byBoard[emp.board]) byBoard[emp.board] = [];
@@ -1381,7 +1404,10 @@ function _renderDayCardBody(body, dateStr) {
     let storeTotalVal = 0, storeTotalMeta = 0, storeTotalPecas = 0, storeTotalAtend = 0;
     const vendorRowsHtml = [];
 
-    const metaLoja = S.dailySalesMeta?.[bk] || 0;
+    const _cardDailySalesMeta = (cardYear === S.year && cardMonth === S.month)
+      ? S.dailySalesMeta
+      : (DASH_DAY.dailySalesMeta || {});
+    const metaLoja = _cardDailySalesMeta?.[bk] || 0;
 
     for (const emp of emps) {
       const vsale   = S.vsales[emp.id] || { meta: { mensal: 0 }, entries: {} };
