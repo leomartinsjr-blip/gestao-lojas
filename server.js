@@ -9075,10 +9075,11 @@ app.get('/api/conferencia/cmv-itens', requireEscritorioOrAdmin, async (req, res)
       const key  = cod || desc;
       if (!key) continue;
 
-      if (!itens[key]) itens[key] = { cod, desc, qty: 0, custoTotal: 0, vendaTotal: 0, custo_unit_api: custo };
+      if (!itens[key]) itens[key] = { cod, desc, qty: 0, custoTotal: 0, vendaTotal: 0, custo_unit_api: custo, series: new Set() };
       itens[key].qty        += sign * qty;
       itens[key].custoTotal += sign * custo * qty;
       itens[key].vendaTotal += sign * vlrLiq * qty;
+      itens[key].series.add(serie);
 
       totalCusto += sign * custo * qty;
       totalVenda += sign * vlrLiq * qty;
@@ -9094,6 +9095,7 @@ app.get('/api/conferencia/cmv-itens', requireEscritorioOrAdmin, async (req, res)
         custo_total:  +i.custoTotal.toFixed(2),
         venda_total:  +i.vendaTotal.toFixed(2),
         cmv_pct:      i.vendaTotal > 0 ? +(i.custoTotal / i.vendaTotal * 100).toFixed(2) : null,
+        series:       [...i.series].join(','),
       }))
       .sort((a, b) => b.custo_total - a.custo_total);
 

@@ -2588,17 +2588,24 @@
     };
 
     const rows = itens.map(i => {
-      const isBrinde = i.venda_total <= 1 && i.custo_total > 0;
-      const pctStr   = fmtP(i.cmv_pct);
-      const col      = cmvColor(i.cmv_pct);
-      return `<tr style="${isBrinde ? 'background:rgba(248,81,73,.07)' : ''}">
+      const isBrinde  = i.venda_total <= 1 && i.custo_total > 0;
+      const isSuspeito = i.cmv_pct != null && Math.abs(i.cmv_pct - 100) < 0.1;
+      const pctStr    = fmtP(i.cmv_pct);
+      const col       = cmvColor(i.cmv_pct);
+      const bg = isBrinde ? 'background:rgba(248,81,73,.07)' : isSuspeito ? 'background:rgba(210,153,34,.07)' : '';
+      return `<tr style="${bg}">
         <td style="font-size:11px;color:var(--cf-muted)">${i.cod}</td>
-        <td style="font-size:12px;max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${i.desc}">${i.desc}${isBrinde ? ' <span style="font-size:10px;background:rgba(248,81,73,.2);color:var(--cf-alert);padding:1px 5px;border-radius:4px;font-weight:700">BRINDE</span>' : ''}</td>
+        <td style="font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${i.desc}">
+          ${i.desc}
+          ${isBrinde   ? '<span style="font-size:10px;background:rgba(248,81,73,.2);color:var(--cf-alert);padding:1px 5px;border-radius:4px;font-weight:700;margin-left:4px">BRINDE</span>' : ''}
+          ${isSuspeito ? '<span style="font-size:10px;background:rgba(210,153,34,.2);color:#d2993a;padding:1px 5px;border-radius:4px;font-weight:700;margin-left:4px">⚠ CMV=100%</span>' : ''}
+        </td>
         <td class="num" style="font-size:11px">${i.qty}</td>
         <td class="num">${fmtR(i.custo_unit)}</td>
         <td class="num" style="font-weight:700">${fmtR(i.custo_total)}</td>
         <td class="num">${fmtR(i.venda_total)}</td>
         <td class="num" style="font-weight:800;color:${col}">${pctStr}</td>
+        <td style="font-size:11px;color:var(--cf-muted);text-align:center">${i.series||'—'}</td>
       </tr>`;
     }).join('');
 
@@ -2630,6 +2637,7 @@
           <th class="num" style="width:110px">Custo Total</th>
           <th class="num" style="width:110px">Venda Líq.</th>
           <th class="num" style="width:80px">CMV%</th>
+          <th style="width:60px;text-align:center">Série</th>
         </tr></thead>
         <tbody>${rows || `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--cf-muted)">Nenhum item encontrado</td></tr>`}</tbody>
       </table>`;
