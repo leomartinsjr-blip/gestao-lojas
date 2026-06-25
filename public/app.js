@@ -4825,7 +4825,13 @@ async function loadAndRenderDaily(board) {
   body.innerHTML = '<div style="text-align:center;padding:2.5rem;color:var(--muted)">Carregando…</div>';
   try {
     const allEmps = await apiFetch('GET', '/api/employees');
-    PD.employees  = allEmps.filter(e => e.board === board && isVend(e));
+    // Exclui vendedores desligados ANTES do primeiro dia do mês visualizado
+    const _firstOfMonth = `${PD.year}-${String(PD.month).padStart(2,'0')}-01`;
+    PD.employees  = allEmps.filter(e =>
+      e.board === board &&
+      isVend(e) &&
+      (!e.desligamento || e.desligamento >= _firstOfMonth)
+    );
     PD.weights       = await apiFetch('GET', `/api/weights/${PD.year}/${PD.month}`);
     PD.fluxo         = await apiFetch('GET', `/api/storefluxo/${PD.year}/${PD.month}/${board}`);
     PD.boardSettings = await apiFetch('GET', '/api/board-settings');
