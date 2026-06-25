@@ -9047,7 +9047,10 @@ app.get('/api/conferencia/cmv-itens', requireEscritorioOrAdmin, async (req, res)
     const parseBR   = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
 
     const { fetchMovimento } = require('./services/microvix');
-    const rows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
+    const [rows, catalog] = await Promise.all([
+      fetchMovimento(cnpj, dtIni, dtFin, chave),
+      _getCatalog(lojas).catch(() => ({})),
+    ]);
     if (!Array.isArray(rows)) return res.status(500).json({ error: 'Erro ao buscar dados Microvix' });
 
     const itens = {};
@@ -9077,7 +9080,11 @@ app.get('/api/conferencia/cmv-itens', requireEscritorioOrAdmin, async (req, res)
       const key  = cod || desc;
       if (!key) continue;
 
-      if (!itens[key]) itens[key] = { cod, desc, qty: 0, custoTotal: 0, vendaTotal: 0, custo_unit_api: custo, series: new Set() };
+      if (!itens[key]) {
+        const cat  = catalog[cod] || {};
+        const marca = (cat.marca || cat.desc_marca || r.desc_marca || '').trim() || '(sem marca)';
+        itens[key] = { cod, desc, marca, qty: 0, custoTotal: 0, vendaTotal: 0, custo_unit_api: custo, series: new Set() };
+      }
       itens[key].qty        += sign * qty;
       itens[key].custoTotal += sign * custo * qty;
       itens[key].vendaTotal += sign * vlrLiq * qty;
@@ -9092,6 +9099,7 @@ app.get('/api/conferencia/cmv-itens', requireEscritorioOrAdmin, async (req, res)
       .map(i => ({
         cod:          i.cod,
         desc:         i.desc,
+        marca:        i.marca,
         qty:          +i.qty.toFixed(0),
         custo_unit:   +i.custo_unit_api.toFixed(2),
         custo_total:  +i.custoTotal.toFixed(2),
@@ -9101,12 +9109,26 @@ app.get('/api/conferencia/cmv-itens', requireEscritorioOrAdmin, async (req, res)
       }))
       .sort((a, b) => b.custo_total - a.custo_total);
 
+    // Agrupamento sintético por marca
+    const porMarca = {};
+    for (const i of lista) {
+      const m = i.marca || '(sem marca)';
+      if (!porMarca[m]) porMarca[m] = { marca: m, qtd_itens: 0, custo_total: 0, venda_total: 0 };
+      porMarca[m].qtd_itens  += Math.abs(i.qty);
+      porMarca[m].custo_total += i.custo_total;
+      porMarca[m].venda_total += i.venda_total;
+    }
+    const marcas = Object.values(porMarca)
+      .map(m => ({ ...m, cmv_pct: m.venda_total > 0 ? +(m.custo_total / m.venda_total * 100).toFixed(2) : null }))
+      .sort((a, b) => (a.cmv_pct ?? 999) - (b.cmv_pct ?? 999));
+
     res.json({
       board, dtIni, dtFin,
       total_custo:  +totalCusto.toFixed(2),
       total_venda:  +totalVenda.toFixed(2),
       cmv_pct:      totalVenda > 0 ? +(totalCusto / totalVenda * 100).toFixed(2) : null,
       qtd_itens:    lista.length,
+      marcas,
       itens:        lista,
     });
   } catch (e) {

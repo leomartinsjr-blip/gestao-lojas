@@ -2543,6 +2543,7 @@
   $('cmvDtFin').value = `${y}-${m}-${d}`;
 
   let _lastData = null;
+  let _cmvView  = 'marca'; // 'marca' | 'itens'
 
   $('cmvBuscarBtn').addEventListener('click', async () => {
     const board  = $('cmvBoard').value;
@@ -2567,6 +2568,14 @@
 
   $('cmvFiltro').addEventListener('change', () => { if (_lastData) renderCmvItens(_lastData); });
 
+  // Toggle vista marca / itens via delegação (botões criados dinamicamente)
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('[data-cmv-view]');
+    if (!btn || !_lastData) return;
+    _cmvView = btn.dataset.cmvView;
+    renderCmvItens(_lastData);
+  });
+
   $('cmvXlsBtn').addEventListener('click', () => {
     if (!_lastData) return;
     exportCsv(_lastData);
@@ -2587,60 +2596,100 @@
       return 'var(--cf-green)';
     };
 
-    const rows = itens.map(i => {
-      const isBrinde  = i.venda_total <= 1 && i.custo_total > 0;
-      const isSuspeito = i.cmv_pct != null && Math.abs(i.cmv_pct - 100) < 0.1;
-      const pctStr    = fmtP(i.cmv_pct);
-      const col       = cmvColor(i.cmv_pct);
-      const bg = isBrinde ? 'background:rgba(248,81,73,.07)' : isSuspeito ? 'background:rgba(210,153,34,.07)' : '';
-      return `<tr style="${bg}">
-        <td style="font-size:11px;color:var(--cf-muted)">${i.cod}</td>
-        <td style="font-size:12px;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${i.desc}">
-          ${i.desc}
-          ${isBrinde   ? '<span style="font-size:10px;background:rgba(248,81,73,.2);color:var(--cf-alert);padding:1px 5px;border-radius:4px;font-weight:700;margin-left:4px">BRINDE</span>' : ''}
-          ${isSuspeito ? '<span style="font-size:10px;background:rgba(210,153,34,.2);color:#d2993a;padding:1px 5px;border-radius:4px;font-weight:700;margin-left:4px">⚠ CMV=100%</span>' : ''}
-        </td>
-        <td class="num" style="font-size:11px">${i.qty}</td>
-        <td class="num">${fmtR(i.custo_unit)}</td>
-        <td class="num" style="font-weight:700">${fmtR(i.custo_total)}</td>
-        <td class="num">${fmtR(i.venda_total)}</td>
-        <td class="num" style="font-weight:800;color:${col}">${pctStr}</td>
-        <td style="font-size:11px;color:var(--cf-muted);text-align:center">${i.series||'—'}</td>
-      </tr>`;
-    }).join('');
-
-    $('cmvResult').innerHTML = `
-      <div style="display:flex;gap:20px;margin-bottom:16px;flex-wrap:wrap">
-        <div style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:10px;padding:12px 20px;min-width:160px">
-          <div style="font-size:10px;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Custo Total API</div>
-          <div style="font-size:20px;font-weight:800;margin-top:4px">${fmtR(data.total_custo)}</div>
+    const kpiHtml = `
+      <div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <div style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:10px;padding:10px 18px">
+          <div style="font-size:10px;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Custo Total</div>
+          <div style="font-size:18px;font-weight:800">${fmtR(data.total_custo)}</div>
         </div>
-        <div style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:10px;padding:12px 20px;min-width:160px">
-          <div style="font-size:10px;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Venda Líquida API</div>
-          <div style="font-size:20px;font-weight:800;margin-top:4px">${fmtR(data.total_venda)}</div>
+        <div style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:10px;padding:10px 18px">
+          <div style="font-size:10px;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Venda Líquida</div>
+          <div style="font-size:18px;font-weight:800">${fmtR(data.total_venda)}</div>
         </div>
-        <div style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:10px;padding:12px 20px;min-width:140px">
+        <div style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:10px;padding:10px 18px">
           <div style="font-size:10px;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700">CMV%</div>
-          <div style="font-size:20px;font-weight:800;margin-top:4px;color:${cmvColor(data.cmv_pct)}">${fmtP(data.cmv_pct)}</div>
+          <div style="font-size:18px;font-weight:800;color:${cmvColor(data.cmv_pct)}">${fmtP(data.cmv_pct)}</div>
         </div>
-        <div style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:10px;padding:12px 20px;min-width:140px">
+        <div style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:10px;padding:10px 18px">
           <div style="font-size:10px;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Produtos</div>
-          <div style="font-size:20px;font-weight:800;margin-top:4px">${itens.length} / ${data.qtd_itens}</div>
+          <div style="font-size:18px;font-weight:800">${data.qtd_itens}</div>
         </div>
-      </div>
-      <table class="cf-tbl">
+        <div style="margin-left:auto;display:flex;gap:6px">
+          <button data-cmv-view="marca" style="padding:5px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid var(--cf-border);background:${_cmvView==='marca'?'var(--cf-primary)':'var(--cf-card2)'};color:${_cmvView==='marca'?'#fff':'var(--cf-muted)'}">Por Marca</button>
+          <button data-cmv-view="itens" style="padding:5px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid var(--cf-border);background:${_cmvView==='itens'?'var(--cf-primary)':'var(--cf-card2)'};color:${_cmvView==='itens'?'#fff':'var(--cf-muted)'}">Por Item</button>
+        </div>
+      </div>`;
+
+    let tableHtml = '';
+
+    if (_cmvView === 'marca') {
+      const marcas = (data.marcas || []);
+      const maxCmv = Math.max(...marcas.map(m => m.cmv_pct || 0), 0.01);
+      const marcaRows = marcas.map(m => {
+        const col = cmvColor(m.cmv_pct);
+        const barW = Math.max(2, Math.round((m.cmv_pct || 0) / maxCmv * 100));
+        return `<tr>
+          <td style="font-weight:700;font-size:13px">${m.marca}</td>
+          <td class="num">${m.qtd_itens}</td>
+          <td class="num">${fmtR(m.custo_total)}</td>
+          <td class="num">${fmtR(m.venda_total)}</td>
+          <td style="width:180px;padding:0 12px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="flex:1;height:6px;background:var(--cf-card2);border-radius:3px">
+                <div style="height:100%;width:${barW}%;background:${col};border-radius:3px"></div>
+              </div>
+              <span style="font-weight:800;color:${col};min-width:42px;text-align:right">${fmtP(m.cmv_pct)}</span>
+            </div>
+          </td>
+        </tr>`;
+      }).join('');
+      tableHtml = `<table class="cf-tbl">
         <thead><tr>
-          <th style="width:70px">Código</th>
+          <th>Marca</th>
+          <th class="num" style="width:60px">Itens</th>
+          <th class="num" style="width:120px">Custo Total</th>
+          <th class="num" style="width:120px">Venda Líq.</th>
+          <th style="width:200px">CMV%</th>
+        </tr></thead>
+        <tbody>${marcaRows || `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--cf-muted)">Nenhuma marca encontrada</td></tr>`}</tbody>
+      </table>`;
+    } else {
+      const rows = itens.map(i => {
+        const isBrinde   = i.venda_total <= 1 && i.custo_total > 0;
+        const isSuspeito = i.cmv_pct != null && Math.abs(i.cmv_pct - 100) < 0.1;
+        const col        = cmvColor(i.cmv_pct);
+        const bg = isBrinde ? 'background:rgba(248,81,73,.07)' : isSuspeito ? 'background:rgba(210,153,34,.07)' : '';
+        return `<tr style="${bg}">
+          <td style="font-size:11px;color:var(--cf-muted)">${i.cod}</td>
+          <td style="font-size:11px;color:var(--cf-muted)">${i.marca||''}</td>
+          <td style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${i.desc}">
+            ${i.desc}
+            ${isBrinde   ? '<span style="font-size:10px;background:rgba(248,81,73,.2);color:var(--cf-alert);padding:1px 5px;border-radius:4px;font-weight:700;margin-left:4px">BRINDE</span>' : ''}
+            ${isSuspeito ? '<span style="font-size:10px;background:rgba(210,153,34,.2);color:#d2993a;padding:1px 5px;border-radius:4px;font-weight:700;margin-left:4px">⚠ CMV=100%</span>' : ''}
+          </td>
+          <td class="num" style="font-size:11px">${i.qty}</td>
+          <td class="num" style="font-weight:700">${fmtR(i.custo_total)}</td>
+          <td class="num">${fmtR(i.venda_total)}</td>
+          <td class="num" style="font-weight:800;color:${col}">${fmtP(i.cmv_pct)}</td>
+          <td style="font-size:11px;color:var(--cf-muted);text-align:center">${i.series||'—'}</td>
+        </tr>`;
+      }).join('');
+      tableHtml = `<table class="cf-tbl">
+        <thead><tr>
+          <th style="width:65px">Código</th>
+          <th style="width:90px">Marca</th>
           <th>Descrição</th>
-          <th class="num" style="width:50px">Qtd</th>
-          <th class="num" style="width:100px">Custo Unit.</th>
+          <th class="num" style="width:45px">Qtd</th>
           <th class="num" style="width:110px">Custo Total</th>
           <th class="num" style="width:110px">Venda Líq.</th>
-          <th class="num" style="width:80px">CMV%</th>
-          <th style="width:60px;text-align:center">Série</th>
+          <th class="num" style="width:75px">CMV%</th>
+          <th style="width:55px;text-align:center">Série</th>
         </tr></thead>
-        <tbody>${rows || `<tr><td colspan="7" style="text-align:center;padding:24px;color:var(--cf-muted)">Nenhum item encontrado</td></tr>`}</tbody>
+        <tbody>${rows || `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--cf-muted)">Nenhum item encontrado</td></tr>`}</tbody>
       </table>`;
+    }
+
+    $('cmvResult').innerHTML = kpiHtml + tableHtml;
   }
 
   function exportCsv(data) {
