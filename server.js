@@ -9049,12 +9049,18 @@ app.get('/api/conferencia/cmv-itens', requireEscritorioOrAdmin, async (req, res)
 
     const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
 
-    const { fetchMovimento } = require('./services/microvix');
-    const [allRowsNested, catalog] = await Promise.all([
+    const { fetchMovimento, fetchEstoque } = require('./services/microvix');
+    const today = new Date().toISOString().slice(0, 10);
+    const [allRowsNested, allEstoqueNested, catalog] = await Promise.all([
       Promise.all(targetBoards.map(b => {
         const c = lojas[b];
         const k = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
         return fetchMovimento(c, dtIni, dtFin, k).then(r => Array.isArray(r) ? r : []);
+      })),
+      Promise.all(targetBoards.map(b => {
+        const c = lojas[b];
+        const k = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+        return fetchEstoque(c, k, today).catch(() => []);
       })),
       _getCatalog(lojas).catch(() => ({})),
     ]);
@@ -9121,31 +9127,54 @@ app.get('/api/conferencia/cmv-itens', requireEscritorioOrAdmin, async (req, res)
       }))
       .sort((a, b) => b.custo_total - a.custo_total);
 
+    // Estoque atual por cod_produto (soma todas as lojas)
+    const estoqueQty = {};
+    for (const row of allEstoqueNested.flat()) {
+      const cod = String(row.cod_produto || '').trim();
+      if (!cod) continue;
+      const qty = parseBR(row.quantidade || row.saldo || row.qtd || '0');
+      estoqueQty[cod] = (estoqueQty[cod] || 0) + qty;
+    }
+
+    // Nº de meses do período consultado (mínimo 1)
+    const msToDate = s => { const p = String(s).trim(); if (p.includes('-')) return new Date(p); const [d,m,y] = p.split('/'); return new Date(`${y}-${m}-${d}`); };
+    const d1 = msToDate(dtIni), d2 = msToDate(dtFin);
+    const mesesPeriodo = Math.max(1, (d2 - d1) / (1000 * 60 * 60 * 24 * 30.44));
+
     // Agrupamento sintético por marca → setor
     const porMarca = {};
     for (const i of lista) {
       const m = i.marca || '(sem marca)';
       const s = i.setor || '(sem setor)';
-      if (!porMarca[m]) porMarca[m] = { marca: m, qtd_itens: 0, custo_total: 0, venda_total: 0, setores: {} };
-      porMarca[m].qtd_itens   += Math.abs(i.qty);
+      if (!porMarca[m]) porMarca[m] = { marca: m, qtd_itens: 0, custo_total: 0, venda_total: 0, qty_vendida: 0, qty_estoque: 0, setores: {} };
+      const absQty = Math.abs(i.qty);
+      porMarca[m].qtd_itens   += absQty;
       porMarca[m].custo_total += i.custo_total;
       porMarca[m].venda_total += i.venda_total;
+      porMarca[m].qty_vendida += absQty;
+      porMarca[m].qty_estoque += (estoqueQty[i.cod] || 0);
       if (!porMarca[m].setores[s]) porMarca[m].setores[s] = { setor: s, qtd_itens: 0, custo_total: 0, venda_total: 0 };
-      porMarca[m].setores[s].qtd_itens   += Math.abs(i.qty);
+      porMarca[m].setores[s].qtd_itens   += absQty;
       porMarca[m].setores[s].custo_total += i.custo_total;
       porMarca[m].setores[s].venda_total += i.venda_total;
     }
     const marcas = Object.values(porMarca)
-      .map(m => ({
-        marca:       m.marca,
-        qtd_itens:   m.qtd_itens,
-        custo_total: +m.custo_total.toFixed(2),
-        venda_total: +m.venda_total.toFixed(2),
-        cmv_pct:     m.venda_total > 0 ? +(m.custo_total / m.venda_total * 100).toFixed(2) : null,
-        setores:     Object.values(m.setores)
-          .map(s => ({ ...s, custo_total: +s.custo_total.toFixed(2), venda_total: +s.venda_total.toFixed(2), cmv_pct: s.venda_total > 0 ? +(s.custo_total / s.venda_total * 100).toFixed(2) : null }))
-          .sort((a, b) => (a.cmv_pct ?? 999) - (b.cmv_pct ?? 999)),
-      }))
+      .map(m => {
+        const mediaVendaMensal = m.qty_vendida / mesesPeriodo;
+        const estoque_meses    = mediaVendaMensal > 0 ? +(m.qty_estoque / mediaVendaMensal).toFixed(1) : null;
+        return {
+          marca:          m.marca,
+          qtd_itens:      m.qtd_itens,
+          custo_total:    +m.custo_total.toFixed(2),
+          venda_total:    +m.venda_total.toFixed(2),
+          cmv_pct:        m.venda_total > 0 ? +(m.custo_total / m.venda_total * 100).toFixed(2) : null,
+          qty_estoque:    +m.qty_estoque.toFixed(0),
+          estoque_meses,
+          setores:        Object.values(m.setores)
+            .map(s => ({ ...s, custo_total: +s.custo_total.toFixed(2), venda_total: +s.venda_total.toFixed(2), cmv_pct: s.venda_total > 0 ? +(s.custo_total / s.venda_total * 100).toFixed(2) : null }))
+            .sort((a, b) => (a.cmv_pct ?? 999) - (b.cmv_pct ?? 999)),
+        };
+      })
       .sort((a, b) => (a.cmv_pct ?? 999) - (b.cmv_pct ?? 999));
 
     res.json({

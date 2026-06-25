@@ -2532,6 +2532,11 @@
 (function() {
   const fmtR = v => 'R$ ' + (+v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtP = v => v == null ? '—' : (+v).toFixed(1) + '%';
+  const fmtEstMeses = v => {
+    if (v == null || v <= 0) return '<span style="color:var(--cf-muted)">—</span>';
+    const col = v <= 1 ? '#f85149' : v <= 2 ? '#d2993a' : v <= 4 ? '#63b3ed' : 'var(--cf-green)';
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:800;background:${col}22;color:${col}">${(+v).toFixed(1)}m</span>`;
+  };
   const P    = k => getComputedStyle(document.documentElement).getPropertyValue(`--cf-${k}`).trim();
 
   const $ = id => document.getElementById(id);
@@ -2686,6 +2691,7 @@
           <td class="num">${fmtR(m.custo_total)}</td>
           <td class="num">${fmtR(m.venda_total)}</td>
           <td class="num"><span style="display:inline-block;padding:2px 10px;border-radius:6px;font-size:12px;font-weight:800;background:rgba(99,179,237,.15);color:#63b3ed">${pctVenda}%</span></td>
+          <td class="num">${fmtEstMeses(m.estoque_meses)}</td>
           <td style="padding:4px 12px;text-align:right">${cmvBadge}</td>
         </tr>${setorRows}`;
       }).join('');
@@ -2697,6 +2703,7 @@
           <th class="num" style="width:115px">Custo Total</th>
           <th class="num" style="width:115px">Venda Líq.</th>
           <th class="num" style="width:60px">% Venda</th>
+          <th class="num" style="width:80px">Est. Meses</th>
           <th style="width:120px;text-align:right;padding-right:12px">CMV%</th>
         </tr></thead>
         <tbody>${marcaRows || `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--cf-muted)">Nenhuma marca encontrada</td></tr>`}</tbody>
