@@ -2569,12 +2569,24 @@
 
   $('cmvFiltro').addEventListener('change', () => { if (_lastData) renderCmvItens(_lastData); });
 
-  // Toggle vista e ordenação via delegação (botões criados dinamicamente)
+  // Toggle vista, ordenação e expand setores via delegação
   document.addEventListener('click', e => {
     const btnV = e.target.closest('[data-cmv-view]');
     if (btnV && _lastData) { _cmvView = btnV.dataset.cmvView; renderCmvItens(_lastData); return; }
     const btnS = e.target.closest('[data-cmv-sort]');
-    if (btnS && _lastData) { _cmvSort = btnS.dataset.cmvSort; renderCmvItens(_lastData); }
+    if (btnS && _lastData) { _cmvSort = btnS.dataset.cmvSort; renderCmvItens(_lastData); return; }
+    // Expand/collapse setores de uma marca
+    const row = e.target.closest('tr[data-expand]');
+    if (row) {
+      const id  = row.dataset.expand;
+      const idx = id.split('-').pop();
+      const arr = document.getElementById(`arr-${idx}`);
+      const open = arr && arr.textContent === '▼';
+      document.querySelectorAll(`.cmv-setor-row[data-marca="${idx}"]`).forEach(r => {
+        r.style.display = open ? 'none' : '';
+      });
+      if (arr) arr.textContent = open ? '▶' : '▼';
+    }
   });
 
   $('cmvXlsBtn').addEventListener('click', () => {
@@ -2632,16 +2644,47 @@
           ? b.venda_total - a.venda_total
           : (a.cmv_pct ?? 999) - (b.cmv_pct ?? 999)
       );
+      const totalVenda = data.total_venda || 1;
       const maxCmv = Math.max(...marcas.map(m => m.cmv_pct || 0), 0.01);
-      const marcaRows = marcas.map(m => {
-        const col = cmvColor(m.cmv_pct);
-        const barW = Math.max(2, Math.round((m.cmv_pct || 0) / maxCmv * 100));
-        return `<tr>
-          <td style="font-weight:700;font-size:13px">${m.marca}</td>
+
+      const marcaRows = marcas.map((m, idx) => {
+        const col   = cmvColor(m.cmv_pct);
+        const barW  = Math.max(2, Math.round((m.cmv_pct || 0) / maxCmv * 100));
+        const pctVenda = (m.venda_total / totalVenda * 100).toFixed(1);
+        const expandId = `cmv-setor-${idx}`;
+
+        // Linhas de setor (ocultas por padrão)
+        const setorRows = (m.setores || []).map(s => {
+          const sc  = cmvColor(s.cmv_pct);
+          const spv = (s.venda_total / totalVenda * 100).toFixed(1);
+          return `<tr class="cmv-setor-row" data-marca="${idx}" style="display:none;background:var(--cf-card2)">
+            <td style="padding-left:32px;font-size:11px;color:var(--cf-muted)">↳ ${s.setor}</td>
+            <td class="num" style="font-size:11px">${s.qtd_itens}</td>
+            <td class="num" style="font-size:11px">${fmtR(s.custo_total)}</td>
+            <td class="num" style="font-size:11px">${fmtR(s.venda_total)}</td>
+            <td style="font-size:11px;color:var(--cf-muted);text-align:right;padding-right:8px">${spv}%</td>
+            <td style="padding:0 12px">
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="flex:1;height:4px;background:var(--cf-border);border-radius:2px">
+                  <div style="height:100%;width:${Math.max(2,Math.round((s.cmv_pct||0)/maxCmv*100))}%;background:${sc};border-radius:2px"></div>
+                </div>
+                <span style="font-weight:700;color:${sc};min-width:38px;text-align:right;font-size:11px">${fmtP(s.cmv_pct)}</span>
+              </div>
+            </td>
+          </tr>`;
+        }).join('');
+
+        const hasSetores = (m.setores || []).length > 1;
+        return `<tr data-expand="${expandId}" style="cursor:${hasSetores?'pointer':'default'}" title="${hasSetores?'Clique para expandir setores':''}">
+          <td style="font-weight:700;font-size:13px">
+            ${hasSetores ? `<span style="font-size:10px;color:var(--cf-muted);margin-right:6px" id="arr-${idx}">▶</span>` : '<span style="display:inline-block;width:16px"></span>'}
+            ${m.marca}
+          </td>
           <td class="num">${m.qtd_itens}</td>
           <td class="num">${fmtR(m.custo_total)}</td>
           <td class="num">${fmtR(m.venda_total)}</td>
-          <td style="width:180px;padding:0 12px">
+          <td class="num" style="font-size:11px;color:var(--cf-muted)">${pctVenda}%</td>
+          <td style="padding:0 12px">
             <div style="display:flex;align-items:center;gap:8px">
               <div style="flex:1;height:6px;background:var(--cf-card2);border-radius:3px">
                 <div style="height:100%;width:${barW}%;background:${col};border-radius:3px"></div>
@@ -2649,17 +2692,19 @@
               <span style="font-weight:800;color:${col};min-width:42px;text-align:right">${fmtP(m.cmv_pct)}</span>
             </div>
           </td>
-        </tr>`;
+        </tr>${setorRows}`;
       }).join('');
+
       tableHtml = `<table class="cf-tbl">
         <thead><tr>
           <th>Marca</th>
-          <th class="num" style="width:60px">Itens</th>
-          <th class="num" style="width:120px">Custo Total</th>
-          <th class="num" style="width:120px">Venda Líq.</th>
+          <th class="num" style="width:55px">Itens</th>
+          <th class="num" style="width:115px">Custo Total</th>
+          <th class="num" style="width:115px">Venda Líq.</th>
+          <th class="num" style="width:60px">% Venda</th>
           <th style="width:200px">CMV%</th>
         </tr></thead>
-        <tbody>${marcaRows || `<tr><td colspan="5" style="text-align:center;padding:24px;color:var(--cf-muted)">Nenhuma marca encontrada</td></tr>`}</tbody>
+        <tbody>${marcaRows || `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--cf-muted)">Nenhuma marca encontrada</td></tr>`}</tbody>
       </table>`;
     } else {
       const rows = itens.map(i => {

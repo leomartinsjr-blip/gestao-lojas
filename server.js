@@ -9091,9 +9091,10 @@ app.get('/api/conferencia/cmv-itens', requireEscritorioOrAdmin, async (req, res)
       if (!key) continue;
 
       if (!itens[key]) {
-        const cat  = catalog[cod] || {};
+        const cat   = catalog[cod] || {};
         const marca = (cat.marca || cat.desc_marca || r.desc_marca || '').trim() || '(sem marca)';
-        itens[key] = { cod, desc, marca, qty: 0, custoTotal: 0, vendaTotal: 0, custo_unit_api: custo, series: new Set() };
+        const setor = (cat.setor || cat.desc_setor || r.desc_setor || '').trim() || '(sem setor)';
+        itens[key] = { cod, desc, marca, setor, qty: 0, custoTotal: 0, vendaTotal: 0, custo_unit_api: custo, series: new Set() };
       }
       itens[key].qty        += sign * qty;
       itens[key].custoTotal += sign * custo * qty;
@@ -9110,6 +9111,7 @@ app.get('/api/conferencia/cmv-itens', requireEscritorioOrAdmin, async (req, res)
         cod:          i.cod,
         desc:         i.desc,
         marca:        i.marca,
+        setor:        i.setor,
         qty:          +i.qty.toFixed(0),
         custo_unit:   +i.custo_unit_api.toFixed(2),
         custo_total:  +i.custoTotal.toFixed(2),
@@ -9119,17 +9121,31 @@ app.get('/api/conferencia/cmv-itens', requireEscritorioOrAdmin, async (req, res)
       }))
       .sort((a, b) => b.custo_total - a.custo_total);
 
-    // Agrupamento sintético por marca
+    // Agrupamento sintético por marca → setor
     const porMarca = {};
     for (const i of lista) {
       const m = i.marca || '(sem marca)';
-      if (!porMarca[m]) porMarca[m] = { marca: m, qtd_itens: 0, custo_total: 0, venda_total: 0 };
-      porMarca[m].qtd_itens  += Math.abs(i.qty);
+      const s = i.setor || '(sem setor)';
+      if (!porMarca[m]) porMarca[m] = { marca: m, qtd_itens: 0, custo_total: 0, venda_total: 0, setores: {} };
+      porMarca[m].qtd_itens   += Math.abs(i.qty);
       porMarca[m].custo_total += i.custo_total;
       porMarca[m].venda_total += i.venda_total;
+      if (!porMarca[m].setores[s]) porMarca[m].setores[s] = { setor: s, qtd_itens: 0, custo_total: 0, venda_total: 0 };
+      porMarca[m].setores[s].qtd_itens   += Math.abs(i.qty);
+      porMarca[m].setores[s].custo_total += i.custo_total;
+      porMarca[m].setores[s].venda_total += i.venda_total;
     }
     const marcas = Object.values(porMarca)
-      .map(m => ({ ...m, cmv_pct: m.venda_total > 0 ? +(m.custo_total / m.venda_total * 100).toFixed(2) : null }))
+      .map(m => ({
+        marca:       m.marca,
+        qtd_itens:   m.qtd_itens,
+        custo_total: +m.custo_total.toFixed(2),
+        venda_total: +m.venda_total.toFixed(2),
+        cmv_pct:     m.venda_total > 0 ? +(m.custo_total / m.venda_total * 100).toFixed(2) : null,
+        setores:     Object.values(m.setores)
+          .map(s => ({ ...s, custo_total: +s.custo_total.toFixed(2), venda_total: +s.venda_total.toFixed(2), cmv_pct: s.venda_total > 0 ? +(s.custo_total / s.venda_total * 100).toFixed(2) : null }))
+          .sort((a, b) => (a.cmv_pct ?? 999) - (b.cmv_pct ?? 999)),
+      }))
       .sort((a, b) => (a.cmv_pct ?? 999) - (b.cmv_pct ?? 999));
 
     res.json({
