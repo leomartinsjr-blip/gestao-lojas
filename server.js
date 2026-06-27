@@ -9209,14 +9209,33 @@ app.get('/api/conferencia/vendas-vendedor', requireEscritorioOrAdmin, async (req
     const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
     const BOARD_LABEL = { minas:'Minas', estacao:'Estação', contagem:'Contagem', delrey:'Del Rey', tommy:'Tommy', surfers:'Surfers', site:'Site' };
 
-    const { fetchMovimento } = require('./services/microvix');
+    const { fetchMovimento, fetchVendedores } = require('./services/microvix');
 
-    const allRowsNested = await Promise.all(targetBoards.map(b => {
-      const cnpj = lojas[b];
-      const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
-      return fetchMovimento(cnpj, dtIni, dtFin, chave).then(r => Array.isArray(r) ? r.map(row => ({ ...row, _board: b })) : []);
-    }));
+    // Busca movimentos, catálogo e vendedores em paralelo
+    const [allRowsNested, allVendNested, catalog] = await Promise.all([
+      Promise.all(targetBoards.map(b => {
+        const cnpj  = lojas[b];
+        const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+        return fetchMovimento(cnpj, dtIni, dtFin, chave).then(r => Array.isArray(r) ? r.map(row => ({ ...row, _board: b })) : []);
+      })),
+      Promise.all(targetBoards.map(b => {
+        const cnpj  = lojas[b];
+        const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+        return fetchVendedores(cnpj, chave).catch(() => []);
+      })),
+      _getCatalog(lojas).catch(() => ({})),
+    ]);
     const rows = allRowsNested.flat();
+
+    // Monta cache cod_vendedor → nome (todos os boards)
+    const vendNomeCache = {};
+    for (const vRows of allVendNested) {
+      for (const v of vRows) {
+        const cod  = String(v.cod_vendedor || v.codigo || '').trim();
+        const nome = (v.nome_vendedor || v.nome || '').trim();
+        if (cod && nome) vendNomeCache[cod] = nome;
+      }
+    }
 
     const validCnpjs = new Set(targetBoards.map(b => lojas[b].replace(/\D/g,'')));
 
@@ -9244,10 +9263,11 @@ app.get('/api/conferencia/vendas-vendedor', requireEscritorioOrAdmin, async (req
       const lojaBoard  = r._board || targetBoards[0];
       const lojaLabel  = BOARD_LABEL[lojaBoard] || lojaBoard;
       const vendCod    = String(r.cod_vendedor||'').trim();
-      const vendNome   = (r.nome_vendedor||r.vendedor||'').trim() || `Vendedor ${vendCod||'?'}`;
-      const marca      = (r.desc_marca||r.marca||'(sem marca)').trim();
+      const vendNome   = vendNomeCache[vendCod] || (r.nome_vendedor||r.vendedor||'').trim() || `Vendedor ${vendCod||'?'}`;
       const cod        = String(r.cod_produto||'').trim();
-      const desc       = String(r.descricao||r.descricao_produto||'').trim();
+      const cat        = catalog[cod] || {};
+      const marca      = (cat.marca || r.desc_marca || r.marca || '(sem marca)').trim();
+      const desc       = (cat.nomeBase || r.descricao || r.descricao_produto || '').trim();
       const itemKey    = cod || desc;
       if (!itemKey) continue;
 
