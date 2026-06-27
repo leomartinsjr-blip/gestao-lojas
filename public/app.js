@@ -4775,7 +4775,10 @@ async function _exportPerfExcel() {
   const origText = btn?.textContent;
   try {
     if (btn) { btn.disabled = true; btn.textContent = '↓ Gerando...'; }
-    const stores = ['surfers', ...SURFERS_STORES].map(_buildPerfStorePayload);
+    const exportStores = PD.board === 'total'
+      ? ['total', 'surfers', ..._ALL_STORES_FOR_TOTAL]
+      : ['surfers', ...SURFERS_STORES];
+    const stores = exportStores.map(_buildPerfStorePayload);
     const res = await fetch('/api/perf/export', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
