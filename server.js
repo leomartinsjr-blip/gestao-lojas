@@ -9191,6 +9191,106 @@ app.get('/api/conferencia/cmv-itens', requireEscritorioOrAdmin, async (req, res)
   }
 });
 
+// GET /api/conferencia/vendas-vendedor?board=surfers&dtIni=YYYY-MM-DD&dtFin=YYYY-MM-DD
+// Retorna itens vendidos agrupados por loja → vendedor → marca → item
+app.get('/api/conferencia/vendas-vendedor', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { board, dtIni, dtFin } = req.query;
+    if (!board || !dtIni || !dtFin) return res.status(400).json({ error: 'board, dtIni e dtFin obrigatórios' });
+
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const SURFERS_BOARDS = ['delrey','minas','contagem','estacao','site'];
+    const targetBoards   = board === 'surfers' ? SURFERS_BOARDS : [board];
+
+    for (const b of targetBoards) {
+      if (!lojas[b]) return res.status(400).json({ error: `Loja "${b}" não configurada` });
+    }
+
+    const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
+    const BOARD_LABEL = { minas:'Minas', estacao:'Estação', contagem:'Contagem', delrey:'Del Rey', tommy:'Tommy', surfers:'Surfers', site:'Site' };
+
+    const { fetchMovimento } = require('./services/microvix');
+
+    const allRowsNested = await Promise.all(targetBoards.map(b => {
+      const cnpj = lojas[b];
+      const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+      return fetchMovimento(cnpj, dtIni, dtFin, chave).then(r => Array.isArray(r) ? r.map(row => ({ ...row, _board: b })) : []);
+    }));
+    const rows = allRowsNested.flat();
+
+    const validCnpjs = new Set(targetBoards.map(b => lojas[b].replace(/\D/g,'')));
+
+    // loja → vendedor → marca → item_key
+    const tree = {};
+
+    for (const r of rows) {
+      const rowCnpj = (r.cnpj_emp||r.cnpj||'').replace(/\D/g,'');
+      if (!rowCnpj || !validCnpjs.has(rowCnpj)) continue;
+      if (r.cancelado === 'S' || r.cancelado === '1') continue;
+      if ((r.soma_relatorio||'S').toUpperCase() === 'N') continue;
+      const op = (r.operacao||'').trim().toUpperCase();
+      if (op !== 'S' && op !== 'DS') continue;
+      const serie = String(r.serie||r.serie_documento||'').trim();
+      if (serie === '999') continue;
+      if (serie === '4' && op !== 'DS') continue;
+      if (serie === 'J') continue;
+
+      const sign    = op === 'DS' ? -1 : 1;
+      const qty     = parseBR(r.quantidade||'1');
+      const vlrUnit = parseBR(r.preco_tabela_epoca||r.preco_unitario||'0');
+      const vlrDesc = parseBR(r.desconto_item||r.desconto_total_item||'0');
+      const vlrLiq  = Math.max(0, vlrUnit - vlrDesc);
+
+      const lojaBoard  = r._board || targetBoards[0];
+      const lojaLabel  = BOARD_LABEL[lojaBoard] || lojaBoard;
+      const vendCod    = String(r.cod_vendedor||'').trim();
+      const vendNome   = (r.nome_vendedor||r.vendedor||'').trim() || `Vendedor ${vendCod||'?'}`;
+      const marca      = (r.desc_marca||r.marca||'(sem marca)').trim();
+      const cod        = String(r.cod_produto||'').trim();
+      const desc       = String(r.descricao||r.descricao_produto||'').trim();
+      const itemKey    = cod || desc;
+      if (!itemKey) continue;
+
+      if (!tree[lojaBoard]) tree[lojaBoard] = { label: lojaLabel, vendedores: {} };
+      const T = tree[lojaBoard];
+      if (!T.vendedores[vendCod]) T.vendedores[vendCod] = { cod: vendCod, nome: vendNome, marcas: {} };
+      const V = T.vendedores[vendCod];
+      if (!V.marcas[marca]) V.marcas[marca] = { marca, itens: {} };
+      const M = V.marcas[marca];
+      if (!M.itens[itemKey]) M.itens[itemKey] = { cod, desc, marca, qty: 0, venda_total: 0 };
+      M.itens[itemKey].qty        += sign * qty;
+      M.itens[itemKey].venda_total += sign * vlrLiq * qty;
+    }
+
+    // Serializa para lista plana ordenada: loja / vendedor / marca / item
+    const resultado = [];
+    for (const [, loja] of Object.entries(tree).sort((a,b) => a[0].localeCompare(b[0]))) {
+      for (const [, vend] of Object.entries(loja.vendedores).sort((a,b) => a[1].nome.localeCompare(b[1].nome))) {
+        for (const [, marc] of Object.entries(vend.marcas).sort((a,b) => a[0].localeCompare(b[0]))) {
+          const itens = Object.values(marc.itens)
+            .filter(i => i.qty !== 0)
+            .sort((a,b) => b.venda_total - a.venda_total);
+          for (const it of itens) {
+            resultado.push({
+              loja:        loja.label,
+              vendedor:    vend.nome,
+              marca:       marc.marca,
+              cod:         it.cod,
+              desc:        it.desc,
+              qty:         +it.qty.toFixed(0),
+              venda_total: +it.venda_total.toFixed(2),
+            });
+          }
+        }
+      }
+    }
+
+    res.json({ board, dtIni, dtFin, total: resultado.length, rows: resultado });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/conferencia/conciliacao-rede
 // Recebe arquivo da Rede (Excel/CSV) e cruza com LinxMovimentoCartoes do Microvix
 app.post('/api/conferencia/conciliacao-rede', requireEscritorioOrAdmin, async (req, res) => {

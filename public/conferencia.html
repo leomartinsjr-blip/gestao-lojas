@@ -792,8 +792,48 @@ td.muted  { color: var(--cf-muted); }
     <button id="cmvXlsBtn" style="display:none;background:var(--cf-card2);border:1px solid var(--cf-border);color:var(--cf-muted);padding:5px 12px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">
       ↓ XLS
     </button>
+    <button id="cmvVendedorBtn" style="background:var(--cf-card2);border:1px solid var(--cf-border);color:var(--cf-muted);padding:5px 12px;border-radius:8px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:5px">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+      Por Vendedor
+    </button>
   </div>
   <div id="cmvResult"></div>
+</div>
+
+<!-- ══ MODAL VENDAS POR VENDEDOR ════════════════════════════════════════════ -->
+<div id="vvModal" style="display:none;position:fixed;inset:0;z-index:9900;background:rgba(0,0,0,.6);backdrop-filter:blur(2px)">
+  <div style="position:absolute;inset:32px;background:var(--cf-card);border:1px solid var(--cf-border);border-radius:14px;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 16px 64px rgba(0,0,0,.5)">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--cf-border);flex-shrink:0">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--cf-primary)" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+      <span style="font-weight:800;font-size:14px">Vendas por Vendedor</span>
+      <div style="display:flex;align-items:center;gap:8px;margin-left:16px">
+        <label style="font-size:11px;color:var(--cf-muted)">Loja</label>
+        <select id="vvBoard" style="background:var(--cf-card2);border:1px solid var(--cf-border);color:var(--cf-text);padding:4px 8px;border-radius:7px;font-size:12px;font-family:inherit">
+          <option value="minas">Minas</option>
+          <option value="estacao">Estação</option>
+          <option value="contagem">Contagem</option>
+          <option value="delrey">Del Rey</option>
+          <option value="tommy">Tommy</option>
+          <option value="surfers">Surfers</option>
+        </select>
+        <label style="font-size:11px;color:var(--cf-muted)">De</label>
+        <input type="date" id="vvDtIni" style="background:var(--cf-card2);border:1px solid var(--cf-border);color:var(--cf-text);padding:4px 8px;border-radius:7px;font-size:12px;font-family:inherit"/>
+        <label style="font-size:11px;color:var(--cf-muted)">Até</label>
+        <input type="date" id="vvDtFin" style="background:var(--cf-card2);border:1px solid var(--cf-border);color:var(--cf-text);padding:4px 8px;border-radius:7px;font-size:12px;font-family:inherit"/>
+        <button id="vvBuscarBtn" style="background:var(--cf-primary);border:none;color:#fff;padding:5px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;display:flex;align-items:center;gap:5px">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          Buscar
+        </button>
+        <button id="vvXlsBtn" style="display:none;background:var(--cf-card2);border:1px solid var(--cf-border);color:var(--cf-muted);padding:5px 10px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;font-family:inherit">↓ XLS</button>
+      </div>
+      <button id="vvCloseBtn" style="margin-left:auto;background:none;border:none;color:var(--cf-muted);cursor:pointer;font-size:18px;line-height:1;padding:4px 8px;border-radius:6px" title="Fechar">✕</button>
+    </div>
+    <!-- Body -->
+    <div id="vvBody" style="flex:1;overflow:auto;padding:16px 20px">
+      <div style="color:var(--cf-muted);text-align:center;padding:40px">Escolha a loja e o período e clique em Buscar.</div>
+    </div>
+  </div>
 </div>
 
 </div><!-- /cf-content -->
