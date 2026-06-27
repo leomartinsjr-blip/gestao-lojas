@@ -17,21 +17,43 @@ const pad = n => String(n).padStart(2, '0');
 let me = null;
 let apiData = null;
 let stockData = null;
-let stockMap = {};   // marca.toUpperCase() → estoque entry
-let viewMode = 'marca'; // 'marca' | 'setor' | 'vendedor'
+let stockMap = {};
+let viewMode = 'marca'; // 'marca' | 'setor' | 'vendedor' | 'ticket'
 const expanded = new Set();
 let _vvData = null;
+let _tkData = null;
 
-// Elementos da view Por Vendedor
 const $ = id => document.getElementById(id);
 
+function _hideAltViews() {
+  $('vvControls').style.display  = 'none';
+  $('tkControls').style.display  = 'none';
+  $('vvResult').style.display    = 'none';
+  $('tkResult').style.display    = 'none';
+  $('vvResult').innerHTML = '';
+  $('tkResult').innerHTML = '';
+}
+
 function setVendedorView(active) {
-  $('mxMainControls').style.display  = active ? 'none' : 'contents';
-  $('vvControls').style.display      = active ? 'flex'  : 'none';
-  $('summaryStrip').style.display    = active ? 'none' : ($('summaryStrip').dataset.wasVisible === '1' ? '' : 'none');
-  $('brandList').style.display       = active ? 'none' : '';
-  $('vvResult').style.display        = active ? ''     : 'none';
+  $('mxMainControls').style.display = active ? 'none' : 'contents';
+  $('vvControls').style.display     = active ? 'flex' : 'none';
+  $('tkControls').style.display     = 'none';
+  $('summaryStrip').style.display   = active ? 'none' : ($('summaryStrip').dataset.wasVisible === '1' ? '' : 'none');
+  $('brandList').style.display      = active ? 'none' : '';
+  $('vvResult').style.display       = active ? ''     : 'none';
+  $('tkResult').style.display       = 'none';
   if (!active) { $('vvResult').innerHTML = ''; }
+}
+
+function setTicketView(active) {
+  $('mxMainControls').style.display = active ? 'none' : 'contents';
+  $('tkControls').style.display     = active ? 'flex' : 'none';
+  $('vvControls').style.display     = 'none';
+  $('summaryStrip').style.display   = active ? 'none' : ($('summaryStrip').dataset.wasVisible === '1' ? '' : 'none');
+  $('brandList').style.display      = active ? 'none' : '';
+  $('tkResult').style.display       = active ? ''     : 'none';
+  $('vvResult').style.display       = 'none';
+  if (!active) { $('tkResult').innerHTML = ''; }
 }
 
 async function init() {
@@ -60,10 +82,20 @@ async function init() {
     vvBoard.innerHTML = `<option value="${me.board}">${me.board}</option>`;
   }
 
-  // Data padrão do Por Vendedor = hoje
+  // Data padrão = hoje para Por Vendedor e Por Ticket
   const td = new Date().toISOString().slice(0, 10);
-  $('vvDtIni').value = td;
-  $('vvDtFin').value = td;
+  $('vvDtIni').value = td; $('vvDtFin').value = td;
+  $('tkDtIni').value = td; $('tkDtFin').value = td;
+
+  // Preenche tkBoard igual ao vvBoard
+  const tkBoard = $('tkBoard');
+  if (isAdmin) {
+    tkBoard.innerHTML =
+      '<option value="surfers">Total Surfers</option>' +
+      Object.entries(STORE_BOARDS).map(([k,v]) => `<option value="${k}">${v.label}</option>`).join('');
+  } else if (me.board) {
+    tkBoard.innerHTML = `<option value="${me.board}">${me.board}</option>`;
+  }
 
   setShortcut('30d');
 
@@ -73,9 +105,14 @@ async function init() {
   $('searchBtn').addEventListener('click', fetchData);
 
   document.querySelectorAll('.mx-inp').forEach(inp =>
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter' && viewMode !== 'vendedor') fetchData(); }));
+    inp.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      if (viewMode === 'vendedor') fetchVendedor();
+      else if (viewMode === 'ticket') fetchTicket();
+      else fetchData();
+    }));
 
-  // Toggle Por Marca / Por Setor / Por Vendedor
+  // Toggle Por Marca / Por Setor / Por Vendedor / Por Ticket
   document.querySelectorAll('.mx-view-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       viewMode = btn.dataset.view;
@@ -83,19 +120,20 @@ async function init() {
       expanded.clear();
       if (viewMode === 'vendedor') {
         setVendedorView(true);
+      } else if (viewMode === 'ticket') {
+        setTicketView(true);
       } else {
         setVendedorView(false);
+        setTicketView(false);
         if (apiData) render();
       }
     });
   });
 
-  // Por Vendedor — buscar
+  // Por Vendedor — buscar / XLS
   $('vvSearchBtn').addEventListener('click', fetchVendedor);
   $('vvDtIni').addEventListener('keydown', e => { if (e.key === 'Enter') fetchVendedor(); });
   $('vvDtFin').addEventListener('keydown', e => { if (e.key === 'Enter') fetchVendedor(); });
-
-  // Por Vendedor — XLS
   $('vvXlsBtn').addEventListener('click', () => {
     if (!_vvData) return;
     const lines = ['Loja\tVendedor\tMarca\tCódigo\tDescrição\tQtd\tValor Líq.'];
@@ -106,6 +144,25 @@ async function init() {
     const blob = new Blob([lines.join('\n')], { type: 'text/tab-separated-values;charset=utf-8' });
     const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
     a.download = `vendas-vendedor-${_vvData.board}-${_vvData.dtIni}.tsv`; a.click();
+  });
+
+  // Por Ticket — buscar / XLS
+  $('tkSearchBtn').addEventListener('click', fetchTicket);
+  $('tkDtIni').addEventListener('keydown', e => { if (e.key === 'Enter') fetchTicket(); });
+  $('tkDtFin').addEventListener('keydown', e => { if (e.key === 'Enter') fetchTicket(); });
+  $('tkXlsBtn').addEventListener('click', () => {
+    if (!_tkData) return;
+    const fmtD = s => s ? s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(0,4) : '';
+    const lines = ['Loja\tData\tHora\tDoc\tVendedor\tFormas\tDesconto\tTotal'];
+    for (const v of _tkData.vendas) {
+      const formas = (v.formas||[]).map(f => f.forma+(f.bandeira?' '+f.bandeira:'')+(f.parcelas>1?' '+f.parcelas+'x':'')).join(' / ');
+      lines.push([v.board||'', fmtD(v.data), v.hora||'', v.doc, v.vendedor||'', formas,
+        String(v.desconto?.valor||0).replace('.',','),
+        String(v.valorTotal).replace('.',',')].join('\t'));
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/tab-separated-values;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `vendas-ticket-${$('tkBoard').value}-${$('tkDtIni').value}.tsv`; a.click();
   });
 }
 
@@ -216,6 +273,180 @@ function setShortcut(s) {
   document.getElementById('dtIni').value = ini;
   document.getElementById('dtFin').value = fin;
 }
+
+// ── Por Ticket ──────────────────────────────────────────────────────────────
+
+async function fetchTicket() {
+  const board = $('tkBoard').value;
+  const dtIni = $('tkDtIni').value;
+  const dtFin = $('tkDtFin').value;
+  if (!board || !dtIni || !dtFin) return;
+
+  const btn = $('tkSearchBtn');
+  btn.disabled = true;
+  $('tkXlsBtn').style.display = 'none';
+  $('tkResult').innerHTML = '<div class="mx-state">Buscando...</div>';
+
+  try {
+    const res = await fetch(`/api/conferencia/vendas?board=${encodeURIComponent(board)}&dtIni=${dtIni}&dtFin=${dtFin}`);
+    if (!res.ok) throw new Error(await res.text());
+    _tkData = await res.json();
+    renderTicket(_tkData);
+    if (_tkData.vendas?.length) $('tkXlsBtn').style.display = '';
+  } catch (e) {
+    $('tkResult').innerHTML = `<div class="mx-state" style="color:#ef4444">Erro: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+const LOJA_LABEL_MX = {
+  delrey:'Del Rey', minas:'Minas', contagem:'Contagem', estacao:'Estação',
+  tommy:'Tommy', lez:'Lez a Lez', site:'Site', surfers:'Total Surfers',
+};
+
+function renderTicket(data) {
+  const fmtD = s => s ? s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(0,4) : '—';
+  const fmtR = v => 'R$ ' + (+v||0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const esc  = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  const vendas = data.vendas || [];
+  if (!vendas.length) {
+    $('tkResult').innerHTML = '<div class="mx-state">Nenhuma venda encontrada no período.</div>';
+    return;
+  }
+
+  const rows = vendas.map((v, idx) => {
+    const formas = (v.formas||[]).map(f =>
+      `<span style="background:#21262d;border:1px solid #30363d;border-radius:4px;padding:2px 7px;font-size:.73rem;white-space:nowrap">${esc(f.forma)}${f.bandeira?' · '+esc(f.bandeira):''}${f.parcelas>1?' · '+f.parcelas+'x':''} <strong>${fmtR(f.valor)}</strong></span>`
+    ).join(' ');
+    const lojaLabel = LOJA_LABEL_MX[v.board] || esc(v.board||'');
+    const descVal = v.desconto?.valor||0;
+    const zebra = idx%2===1 ? '#0d1117' : 'transparent';
+    return `<tr class="tk-row" data-idx="${idx}" style="cursor:pointer;background:${zebra}">
+      <td style="padding:.4rem .6rem;font-weight:700;white-space:nowrap">${fmtD(v.data)}</td>
+      <td style="padding:.4rem .6rem;color:#8b949e;white-space:nowrap">${esc(v.hora||'—')}</td>
+      <td style="padding:.4rem .6rem;font-family:monospace;font-size:.78rem">${esc(v.doc)}</td>
+      <td style="padding:.4rem .6rem;font-size:.8rem;color:#8b949e">${esc(lojaLabel)}</td>
+      <td style="padding:.4rem .6rem">${esc(v.vendedor||'—')}</td>
+      <td style="padding:.4rem .6rem"><div style="display:flex;gap:4px;flex-wrap:wrap">${formas}</div></td>
+      <td style="padding:.4rem .6rem;text-align:right;color:#DC2626;font-weight:700">${descVal>0?fmtR(descVal):'<span style="color:#4b5563">—</span>'}</td>
+      <td style="padding:.4rem .6rem;text-align:right;font-weight:800">${fmtR(v.valorTotal)}</td>
+    </tr>`;
+  }).join('');
+
+  const total = vendas.reduce((s,v)=>s+(v.valorTotal||0),0);
+  const totalDesc = vendas.reduce((s,v)=>s+(v.desconto?.valor||0),0);
+
+  $('tkResult').innerHTML = `
+    <div style="font-size:.78rem;color:#8b949e;margin-bottom:.5rem;padding:.25rem 0">
+      ${vendas.length} venda${vendas.length!==1?'s':''} · Total: <strong style="color:#e6edf3">${fmtR(total)}</strong>${totalDesc>0?' · Desc.: <strong style="color:#DC2626">'+fmtR(totalDesc)+'</strong>':''}
+    </div>
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+      <thead><tr style="background:#0d1117;position:sticky;top:0">
+        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Data</th>
+        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Hora</th>
+        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Doc</th>
+        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Loja</th>
+        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Vendedor</th>
+        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Pagamento</th>
+        <th style="text-align:right;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d;width:100px">Desconto</th>
+        <th style="text-align:right;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d;width:110px">Total</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+
+  $('tkResult').querySelectorAll('.tk-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const v = vendas[+row.dataset.idx];
+      if (v) abrirTicketModal(v, fmtD, fmtR, esc);
+    });
+  });
+}
+
+function abrirTicketModal(v, fmtD, fmtR, esc) {
+  const lojaLabel = LOJA_LABEL_MX[v.board] || (v.board||'');
+  const itens = v.itens || [];
+
+  const itensHtml = itens.length === 0
+    ? '<div style="color:#8b949e;font-size:.82rem">Sem itens detalhados.</div>'
+    : `<table style="width:100%;border-collapse:collapse;font-size:.78rem">
+        <thead><tr style="background:#0d1117">
+          <th style="text-align:left;padding:.35rem .5rem;color:#8b949e;border-bottom:1px solid #21262d">Produto</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;border-bottom:1px solid #21262d;width:40px">Qtd</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;border-bottom:1px solid #21262d;width:90px">Tabela</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;border-bottom:1px solid #21262d;width:90px">Promo</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;border-bottom:1px solid #21262d;width:90px">Bruto</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;border-bottom:1px solid #21262d;width:80px">Desc.</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;border-bottom:1px solid #21262d;width:45px">%</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;border-bottom:1px solid #21262d;width:95px">Líquido</th>
+        </tr></thead>
+        <tbody>${itens.map((it, idx) => {
+          const liq = it.vlrLiquido ?? (it.vlrBruto - it.vlrDesconto);
+          const vlrLiqUnit = it.quantidade > 0 ? liq / it.quantidade : liq;
+          const baseDescPct = (it.emPromocao && it.precoPromocao) ? it.precoPromocao : it.vlrUnitario;
+          const percDesc = baseDescPct > 0 ? ((baseDescPct - vlrLiqUnit) / baseDescPct * 100) : 0;
+          const nome = it.nome || it.descricao || it.cod_produto || '';
+          const tags = [
+            it.cod_produto ? `<span style="background:#1f2937;border-radius:3px;padding:1px 5px;font-size:.68rem;color:#6b7280">${esc(it.cod_produto)}</span>` : '',
+            it.referencia  ? `<span style="background:#1f2937;border-radius:3px;padding:1px 5px;font-size:.68rem;color:#6b7280">Ref ${esc(it.referencia)}</span>` : '',
+            it.marca        ? `<span style="background:#1e3a5f;border-radius:3px;padding:1px 5px;font-size:.68rem;color:#93c5fd">${esc(it.marca)}</span>` : '',
+          ].filter(Boolean).join(' ');
+          const zebra = idx%2===1 ? '#0d1117' : 'transparent';
+          const promoCell = it.emPromocao && it.precoPromocao
+            ? `<span style="color:#2dd4bf;font-weight:700">${fmtR(it.precoPromocao)}</span>` : '—';
+          return `<tr style="background:${zebra}">
+            <td style="padding:.32rem .5rem">
+              <div style="font-weight:600;color:#e6edf3">${esc(nome)}</div>
+              <div style="margin-top:2px">${tags}</div>
+            </td>
+            <td style="padding:.32rem .5rem;text-align:right">${it.quantidade}</td>
+            <td style="padding:.32rem .5rem;text-align:right">${fmtR(it.vlrUnitario||0)}</td>
+            <td style="padding:.32rem .5rem;text-align:right">${promoCell}</td>
+            <td style="padding:.32rem .5rem;text-align:right">${fmtR(it.vlrBruto||0)}</td>
+            <td style="padding:.32rem .5rem;text-align:right;color:#DC2626">${it.vlrDesconto>0?fmtR(it.vlrDesconto):'—'}</td>
+            <td style="padding:.32rem .5rem;text-align:right;color:#DC2626;font-size:.72rem">${percDesc>0.05?percDesc.toFixed(1)+'%':'—'}</td>
+            <td style="padding:.32rem .5rem;text-align:right;font-weight:700">${fmtR(liq)}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+
+  const formasHtml = (v.formas||[]).map(f =>
+    `<span style="background:#21262d;border:1px solid #30363d;border-radius:6px;padding:4px 12px;font-size:.8rem">
+      ${esc(f.forma)}${f.bandeira?' · '+esc(f.bandeira):''}${f.parcelas>1?' · '+f.parcelas+'x':''} <strong>${fmtR(f.valor)}</strong>
+    </span>`
+  ).join('');
+
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;z-index:9000;background:#00000088;display:flex;align-items:center;justify-content:center;padding:16px';
+  modal.innerHTML = `
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:14px;width:100%;max-width:860px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 64px #00000060">
+      <div style="display:flex;align-items:center;gap:12px;padding:18px 22px;border-bottom:1px solid #30363d;flex-shrink:0">
+        <div style="flex:1">
+          <div style="font-size:16px;font-weight:800;color:#e6edf3">Doc ${esc(v.doc)} &nbsp;·&nbsp; ${esc(v.vendedor||'—')}</div>
+          <div style="font-size:12px;color:#8b949e;margin-top:2px">${esc(lojaLabel)} &nbsp;·&nbsp; ${fmtD(v.data)} ${esc(v.hora||'')} &nbsp;·&nbsp; Total: <strong style="color:#e6edf3">${fmtR(v.valorTotal)}</strong></div>
+        </div>
+        <button id="tkModalClose" style="background:none;border:none;cursor:pointer;font-size:20px;color:#8b949e;padding:4px 8px;border-radius:6px;line-height:1">✕</button>
+      </div>
+      <div style="overflow-y:auto;padding:20px 22px;flex:1">
+        <div style="margin-bottom:16px">
+          <div style="font-size:11px;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Formas de Pagamento</div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">${formasHtml}</div>
+        </div>
+        <div style="font-size:11px;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Itens</div>
+        <div style="overflow-x:auto">${itensHtml}</div>
+      </div>
+    </div>`;
+
+  document.body.appendChild(modal);
+  modal.querySelector('#tkModalClose').onclick = () => modal.remove();
+  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+  const onEsc = e => { if (e.key === 'Escape') { modal.remove(); document.removeEventListener('keydown', onEsc); } };
+  document.addEventListener('keydown', onEsc);
+}
+
+// ── Dados de Marcas/Setor ────────────────────────────────────────────────────
 
 async function fetchData() {
   const dtIni = document.getElementById('dtIni').value;

@@ -197,11 +197,29 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
       <button id="vvXlsBtn" style="display:none;background:#21262d;border:1px solid #30363d;color:#8b949e;padding:.32rem .85rem;border-radius:6px;font-size:.82rem;font-weight:600;cursor:pointer">↓ XLS</button>
     </div>
 
+    <!-- Controles exclusivos da view Por Ticket -->
+    <div id="tkControls" style="display:none;align-items:center;gap:.5rem;flex-wrap:wrap">
+      <select id="tkBoard" class="mx-sel">
+        <option value="minas">Minas</option>
+        <option value="estacao">Estação</option>
+        <option value="contagem">Contagem</option>
+        <option value="delrey">Del Rey</option>
+        <option value="tommy">Tommy</option>
+        <option value="surfers">Surfers</option>
+      </select>
+      <input type="date" id="tkDtIni" class="mx-inp">
+      <span style="color:#8b949e;font-size:.8rem">até</span>
+      <input type="date" id="tkDtFin" class="mx-inp">
+      <button class="mx-search-btn" id="tkSearchBtn">Buscar</button>
+      <button id="tkXlsBtn" style="display:none;background:#21262d;border:1px solid #30363d;color:#8b949e;padding:.32rem .85rem;border-radius:6px;font-size:.82rem;font-weight:600;cursor:pointer">↓ XLS</button>
+    </div>
+
     <!-- Toggle sempre visível -->
     <div class="mx-view-toggle">
       <button class="mx-view-btn active" data-view="marca">Por Marca</button>
       <button class="mx-view-btn" data-view="setor">Por Setor</button>
       <button class="mx-view-btn" data-view="vendedor">Por Vendedor</button>
+      <button class="mx-view-btn" data-view="ticket">Por Ticket</button>
     </div>
   </div>
 </header>
@@ -232,6 +250,7 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
   </div>
   <div id="brandList"></div>
   <div id="vvResult" style="display:none"></div>
+  <div id="tkResult" style="display:none"></div>
 </div>
 
 <script src="marcas.js"></script>
