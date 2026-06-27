@@ -10,6 +10,7 @@ const BOARDS = {
   lez:        { label: 'LEZ A LEZ',    color: '#F472B6' },
   site:       { label: 'SITE',         color: '#A78BFA' },
   surfers:    { label: 'TOTAL SURFERS', color: '#F97316' },
+  total:      { label: 'TOTAL GERAL',   color: '#E2E8F0' },
 };
 
 
@@ -1968,7 +1969,7 @@ function openImg(url) {
 
 // ── Performance dashboard data ─────────────────────────────────────────────
 const PERF_MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-const PERF_AVAIL  = new Set(['surfers','delrey','minas','contagem','estacao','tommy','lez','site']);
+const PERF_AVAIL  = new Set(['total','surfers','delrey','minas','contagem','estacao','tommy','lez','site']);
 const SURFERS_STORES = ['delrey','minas','contagem','estacao','site'];
 const _brtNow     = new Date(Date.now() - 3 * 60 * 60 * 1000);
 const PERF_CUR    = _brtNow.getUTCMonth(); // mês corrente BRT (0=Jan … 11=Dez)
@@ -2024,6 +2025,15 @@ const PERF_HIST = {
     2025:[  7250,  8164,  6220, 17022,  8773,  4470,  4023,  6752,  4518,  6647,  7270, 10362],
   },
 };
+// Total Geral = soma de todos os ALL_STORES (del rey + minas + contagem + estação + tommy + lez + site)
+const _ALL_STORES_FOR_TOTAL = ['delrey','minas','contagem','estacao','tommy','lez','site'];
+PERF_HIST.total = {};
+for (const y of [2022,2023,2024,2025]) {
+  PERF_HIST.total[y] = Array.from({length:12}, (_,i) =>
+    _ALL_STORES_FOR_TOTAL.reduce((s,b) => s + (PERF_HIST[b]?.[y]?.[i] || 0), 0)
+  );
+}
+
 const PERF_2026 = {
   surfers:  [383139,345885,413975,396776,null,null,null,null,null,null,null,null],
   delrey:   [134642,119759,128296,128061,null,null,null,null,null,null,null,null],
@@ -2034,6 +2044,11 @@ const PERF_2026 = {
   lez:      [112699, 57373, 49583, 81151,70185,null,null,null,null,null,null,null],
   site:     [  5233,  2730,  5931, 10500,null,null,null,null,null,null,null,null],
 };
+// Computa total geral 2026 como soma dos stores; null se todos os stores daquele mês são null
+PERF_2026.total = Array.from({length:12}, (_,i) => {
+  const vals = _ALL_STORES_FOR_TOTAL.map(b => PERF_2026[b][i]);
+  return vals.every(v => v === null) ? null : vals.reduce((s,v) => s + (v||0), 0);
+});
 
 function fmtBRL(n)  { if (n === null || n === undefined) return '—'; return 'R$ ' + Math.round(n).toLocaleString('pt-BR'); }
 function fmtBRLk(n) {
@@ -2064,7 +2079,7 @@ function computeCurMonthProj(board) {
     wAccum += (S.weights[ds] ?? defW);
   }
   if (wAccum === 0) return null;
-  const boards = board === 'surfers' ? SURFERS_STORES : [board];
+  const boards = board === 'total' ? _ALL_STORES_FOR_TOTAL : board === 'surfers' ? SURFERS_STORES : [board];
   let realized = 0;
   for (const emp of S.employees) {
     if (!boards.includes(emp.board) || !isVend(emp)) continue;
@@ -2117,6 +2132,15 @@ function _perfActiveView() {
 
 const _perfFetched = {};
 async function fetchMissingPerfData(board) {
+  if (board === 'total') {
+    // Busca dados faltantes de cada store individual e recalcula o total
+    await Promise.all(_ALL_STORES_FOR_TOTAL.map(b => fetchMissingPerfData(b)));
+    PERF_2026.total = Array.from({length:12}, (_,i) => {
+      const vals = _ALL_STORES_FOR_TOTAL.map(b => PERF_2026[b][i]);
+      return vals.every(v => v === null) ? null : vals.reduce((s,v) => s + (v||0), 0);
+    });
+    return;
+  }
   if (!PERF_2026[board]) return;
   for (let i = 0; i < PERF_CUR; i++) {
     if (PERF_2026[board][i] !== null) continue;
@@ -2132,7 +2156,7 @@ async function fetchMissingPerfData(board) {
 
 async function openPerfModal() {
   document.getElementById('perfOverlay').classList.remove('hidden');
-  const defaultStore = S.user?.board ? S.user.board : 'surfers';
+  const defaultStore = S.user?.board ? S.user.board : 'total';
   PD.board = defaultStore;
   PD.year  = S.year;
   PD.month = S.month;
@@ -4442,7 +4466,7 @@ function buildPerfTabs() {
   const tabs = document.getElementById('perfStoreTabs');
   tabs.innerHTML = '';
   const isAdmin = !S.user?.board;
-  const show = isAdmin ? ['surfers', ...ALL_STORES] : [S.user.board];
+  const show = isAdmin ? ['total', 'surfers', ...ALL_STORES] : [S.user.board];
   if (show.length <= 1) return;
   show.forEach(k => {
     const btn = document.createElement('button');
