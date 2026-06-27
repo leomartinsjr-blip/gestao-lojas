@@ -8326,11 +8326,15 @@ function _renderNFActive(body, board, refresh) {
     ` : '';
     const currentUser = S.user?.label || S.user?.username;
     const canDelete = isAdmin || (!isAdmin && item.addedBy === currentUser);
+    const addedDate = item.addedAt
+      ? (() => { const d = new Date(item.addedAt); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; })()
+      : '';
     return `
     <div class="nf-item" data-id="${item.id}">
       <label class="nf-chk-label" style="${!showChk ? 'pointer-events:none;opacity:.35' : ''}">
         ${showChk ? `<input type="checkbox" class="nf-chk" data-id="${item.id}">` : '<span style="width:14px;flex-shrink:0;display:inline-block"></span>'}
         <span class="nf-item-text" title="${_escHtml(item.text)}">${_escHtml(item.text)}</span>
+        ${addedDate ? `<span style="font-size:.7rem;color:var(--muted);white-space:nowrap;margin-left:4px">${addedDate}</span>` : ''}
       </label>
       ${_nfStatusChip(item.status)}
       ${adminActions}
