@@ -353,14 +353,15 @@ function renderTicket(data) {
             it.cod_produto ? `<span style="background:#1a1f28;border-radius:3px;padding:1px 5px;font-size:.67rem;color:#6b7280">${esc(it.cod_produto)}</span>` : '',
             it.referencia  ? `<span style="background:#1a1f28;border-radius:3px;padding:1px 5px;font-size:.67rem;color:#6b7280">Ref ${esc(it.referencia)}</span>` : '',
             it.marca       ? `<span style="background:#162032;border-radius:3px;padding:1px 5px;font-size:.67rem;color:#60a5fa">${esc(it.marca)}</span>` : '',
+            it.setor       ? `<span style="background:#1a2a1a;border-radius:3px;padding:1px 5px;font-size:.67rem;color:#6ee7b7">${esc(it.setor)}</span>` : '',
           ].filter(Boolean).join(' ');
           const zb = i%2===1 ? 'background:#060a0f' : '';
           const promoCell = it.emPromocao && it.precoPromocao
             ? `<span style="color:#2dd4bf;font-weight:700">${fmtR(it.precoPromocao)}</span>` : '—';
           return `<tr style="${zb}">
-            <td style="padding:.3rem .5rem">
-              <div style="font-weight:600;color:#e6edf3">${esc(nome)}</div>
-              ${tags ? `<div style="margin-top:2px">${tags}</div>` : ''}
+            <td style="padding:.4rem .5rem">
+              <div style="font-weight:700;font-size:.85rem;color:#e6edf3;letter-spacing:.01em">${esc(nome)}</div>
+              ${tags ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">${tags}</div>` : ''}
             </td>
             <td style="padding:.3rem .5rem;text-align:right">${it.quantidade}</td>
             <td style="padding:.3rem .5rem;text-align:right">${fmtR(it.vlrUnitario||0)}</td>
@@ -387,9 +388,6 @@ function renderTicket(data) {
     </tr>
     <tr class="tk-detail" data-idx="${idx}" style="display:none">
       <td colspan="9" style="padding:.75rem 1rem 1rem 2.5rem;background:#0a0e14;border-bottom:2px solid #30363d">
-        <div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Formas de Pagamento</div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${formasBlock}</div>
-        <div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Itens</div>
         <div style="overflow-x:auto">${itensBlock}</div>
       </td>
     </tr>`;

@@ -8418,6 +8418,18 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
       });
     }
 
+    if (board === 'surfers') {
+      const surferBoards = ['delrey','minas','contagem','estacao','site'];
+      const results = await Promise.allSettled(surferBoards.map(b => _buildConferenciaVendas(b, dtIni, dtFin)));
+      const allVendas = [];
+      for (const r of results) {
+        if (r.status === 'fulfilled' && Array.isArray(r.value?.vendas)) allVendas.push(...r.value.vendas);
+      }
+      allVendas.sort((a, b) => (a.data + a.hora).localeCompare(b.data + b.hora));
+      const totalVendas = allVendas.reduce((s, v) => s + v.valorTotal, 0);
+      return res.json({ board: 'surfers', dtIni, dtFin, totalVendas, qtdVendas: allVendas.length, vendas: allVendas, porForma: [], porVendedor: [] });
+    }
+
     const result = await _buildConferenciaVendas(board, dtIni, dtFin);
     return res.json(result);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -8593,6 +8605,7 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
           nome:         (catInfo.nome || catInfo.nomeBase || '').trim(),
           colecao:      (catInfo.linha || '').trim(),
           marca:        (catInfo.marca || '').trim(),
+          setor:        (catInfo.setor || r.desc_setor || '').trim(),
           quantidade:   qty,
           vlrUnitario:  +vlrUnit.toFixed(2),
           vlrBruto:     +vlrBruto.toFixed(2),
