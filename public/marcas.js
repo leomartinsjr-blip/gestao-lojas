@@ -18,8 +18,21 @@ let me = null;
 let apiData = null;
 let stockData = null;
 let stockMap = {};   // marca.toUpperCase() → estoque entry
-let viewMode = 'marca'; // 'marca' | 'setor'
+let viewMode = 'marca'; // 'marca' | 'setor' | 'vendedor'
 const expanded = new Set();
+let _vvData = null;
+
+// Elementos da view Por Vendedor
+const $ = id => document.getElementById(id);
+
+function setVendedorView(active) {
+  $('mxMainControls').style.display  = active ? 'none' : 'contents';
+  $('vvControls').style.display      = active ? 'flex'  : 'none';
+  $('summaryStrip').style.display    = active ? 'none' : ($('summaryStrip').dataset.wasVisible === '1' ? '' : 'none');
+  $('brandList').style.display       = active ? 'none' : '';
+  $('vvResult').style.display        = active ? ''     : 'none';
+  if (!active) { $('vvResult').innerHTML = ''; }
+}
 
 async function init() {
   const r = await fetch('/api/me');
@@ -27,7 +40,7 @@ async function init() {
   me = await r.json();
 
   const isAdmin = !me.board || me.board === 'escritorio';
-  const boardSel = document.getElementById('boardSel');
+  const boardSel = $('boardSel');
   if (isAdmin) {
     boardSel.style.display = '';
     boardSel.innerHTML =
@@ -36,25 +49,146 @@ async function init() {
         `<option value="${k}">${v.label}</option>`).join('');
   }
 
+  // Preenche vvBoard igual ao boardSel
+  const vvBoard = $('vvBoard');
+  if (isAdmin) {
+    vvBoard.innerHTML =
+      '<option value="surfers">Total Surfers</option>' +
+      Object.entries(STORE_BOARDS).map(([k,v]) =>
+        `<option value="${k}">${v.label}</option>`).join('');
+  } else if (me.board) {
+    vvBoard.innerHTML = `<option value="${me.board}">${me.board}</option>`;
+  }
+
+  // Data padrão do Por Vendedor = hoje
+  const td = new Date().toISOString().slice(0, 10);
+  $('vvDtIni').value = td;
+  $('vvDtFin').value = td;
+
   setShortcut('30d');
 
   document.querySelectorAll('[data-s]').forEach(btn =>
     btn.addEventListener('click', () => setShortcut(btn.dataset.s)));
 
-  document.getElementById('searchBtn').addEventListener('click', fetchData);
+  $('searchBtn').addEventListener('click', fetchData);
 
   document.querySelectorAll('.mx-inp').forEach(inp =>
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') fetchData(); }));
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter' && viewMode !== 'vendedor') fetchData(); }));
 
-  // Toggle Por Marca / Por Setor
+  // Toggle Por Marca / Por Setor / Por Vendedor
   document.querySelectorAll('.mx-view-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       viewMode = btn.dataset.view;
       document.querySelectorAll('.mx-view-btn').forEach(b => b.classList.toggle('active', b.dataset.view === viewMode));
       expanded.clear();
-      if (apiData) render();
+      if (viewMode === 'vendedor') {
+        setVendedorView(true);
+      } else {
+        setVendedorView(false);
+        if (apiData) render();
+      }
     });
   });
+
+  // Por Vendedor — buscar
+  $('vvSearchBtn').addEventListener('click', fetchVendedor);
+  $('vvDtIni').addEventListener('keydown', e => { if (e.key === 'Enter') fetchVendedor(); });
+  $('vvDtFin').addEventListener('keydown', e => { if (e.key === 'Enter') fetchVendedor(); });
+
+  // Por Vendedor — XLS
+  $('vvXlsBtn').addEventListener('click', () => {
+    if (!_vvData) return;
+    const lines = ['Loja\tVendedor\tMarca\tCódigo\tDescrição\tQtd\tValor Líq.'];
+    for (const row of _vvData.rows) {
+      lines.push([row.loja, row.vendedor, row.marca, row.cod, row.desc, row.qty,
+        String(row.venda_total).replace('.', ',')].join('\t'));
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/tab-separated-values;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `vendas-vendedor-${_vvData.board}-${_vvData.dtIni}.tsv`; a.click();
+  });
+}
+
+async function fetchVendedor() {
+  const board = $('vvBoard').value;
+  const dtIni = $('vvDtIni').value;
+  const dtFin = $('vvDtFin').value;
+  if (!board || !dtIni || !dtFin) return;
+
+  const btn = $('vvSearchBtn');
+  btn.disabled = true;
+  $('vvXlsBtn').style.display = 'none';
+  $('vvResult').innerHTML = '<div class="mx-state"><div class="mx-spinner"></div><br>Buscando vendas…</div>';
+
+  try {
+    const data = await fetch(
+      `/api/conferencia/vendas-vendedor?board=${board}&dtIni=${encodeURIComponent(dtIni)}&dtFin=${encodeURIComponent(dtFin)}`
+    ).then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.error || r.statusText); }); return r.json(); });
+
+    _vvData = data;
+    renderVendedor(data);
+    $('vvXlsBtn').style.display = '';
+  } catch (e) {
+    $('vvResult').innerHTML = `<div class="mx-error">${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderVendedor(data) {
+  const fmtR = v => 'R$ ' + (+v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  if (!data.rows || !data.rows.length) {
+    $('vvResult').innerHTML = '<div class="mx-state">Nenhuma venda encontrada no período.</div>';
+    return;
+  }
+
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:.82rem">
+    <thead><tr style="background:#0d1117">
+      <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Loja</th>
+      <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Vendedor</th>
+      <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Marca</th>
+      <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Código</th>
+      <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Descrição</th>
+      <th style="text-align:right;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d;width:45px">Qtd</th>
+      <th style="text-align:right;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d;width:110px">Valor Líq.</th>
+    </tr></thead><tbody>`;
+
+  let prevLoja = null, prevVend = null;
+  for (const row of data.rows) {
+    const isNewLoja = row.loja !== prevLoja;
+    const isNewVend = isNewLoja || row.vendedor !== prevVend;
+
+    if (isNewLoja) {
+      html += `<tr style="background:#161b22">
+        <td colspan="7" style="padding:.55rem .7rem;font-weight:800;font-size:.78rem;color:#58a6ff;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #30363d">${row.loja}</td>
+      </tr>`;
+      prevLoja = row.loja; prevVend = null;
+    }
+    if (isNewVend) {
+      html += `<tr style="background:#0f1419">
+        <td></td>
+        <td colspan="6" style="padding:.45rem .6rem;font-weight:700;color:#e6edf3;border-bottom:1px solid #1a1f26">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2" style="margin-right:5px;vertical-align:middle"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+          ${row.vendedor}
+        </td>
+      </tr>`;
+      prevVend = row.vendedor;
+    }
+
+    html += `<tr style="border-bottom:1px solid #1a1f26" onmouseover="this.style.background='#1c2128'" onmouseout="this.style.background=''">
+      <td></td>
+      <td></td>
+      <td style="padding:.38rem .6rem;color:#8b949e;font-size:.78rem">${row.marca}</td>
+      <td style="padding:.38rem .6rem;color:#8b949e;font-size:.78rem">${row.cod || '—'}</td>
+      <td style="padding:.38rem .6rem;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${row.desc}">${row.desc}</td>
+      <td style="padding:.38rem .6rem;text-align:right;font-variant-numeric:tabular-nums">${row.qty}</td>
+      <td style="padding:.38rem .6rem;text-align:right;font-weight:700;color:#58a6ff;font-variant-numeric:tabular-nums">${fmtR(row.venda_total)}</td>
+    </tr>`;
+  }
+
+  html += '</tbody></table>';
+  $('vvResult').innerHTML = html;
 }
 
 function setShortcut(s) {

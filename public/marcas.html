@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Vendas por Marca</title>
+<title>Produtos Vendidos</title>
 <link rel="icon" type="image/jpeg" href="favicon.jpg">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
@@ -160,28 +160,49 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
 
 <header class="mx-header">
   <button class="mx-back" onclick="history.back()">← Voltar</button>
-  <span class="mx-title">Vendas por Marca</span>
+  <span class="mx-title">Produtos Vendidos</span>
 
   <div class="mx-controls">
-    <div style="display:flex;gap:.3rem;align-items:center">
-      <input type="date" id="dtIni" class="mx-inp">
-      <span style="color:#8b949e;font-size:.8rem">até</span>
-      <input type="date" id="dtFin" class="mx-inp">
-    </div>
-
-    <div class="mx-shortcuts-row">
-      <button class="mx-shortcut" data-s="mes">Este mês</button>
-      <button class="mx-shortcut" data-s="mesant">Mês ant.</button>
-      <button class="mx-shortcut" data-s="30d">30 dias</button>
-      <button class="mx-shortcut" data-s="3m">3 meses</button>
-      <select id="boardSel" class="mx-sel" style="display:none"></select>
-      <div class="mx-view-toggle">
-        <button class="mx-view-btn active" data-view="marca">Por Marca</button>
-        <button class="mx-view-btn" data-view="setor">Por Setor</button>
+    <!-- Controles de período (marca / setor) -->
+    <div id="mxMainControls" style="display:contents">
+      <div style="display:flex;gap:.3rem;align-items:center">
+        <input type="date" id="dtIni" class="mx-inp">
+        <span style="color:#8b949e;font-size:.8rem">até</span>
+        <input type="date" id="dtFin" class="mx-inp">
       </div>
+      <div class="mx-shortcuts-row">
+        <button class="mx-shortcut" data-s="mes">Este mês</button>
+        <button class="mx-shortcut" data-s="mesant">Mês ant.</button>
+        <button class="mx-shortcut" data-s="30d">30 dias</button>
+        <button class="mx-shortcut" data-s="3m">3 meses</button>
+        <select id="boardSel" class="mx-sel" style="display:none"></select>
+      </div>
+      <button class="mx-search-btn" id="searchBtn">Buscar</button>
     </div>
 
-    <button class="mx-search-btn" id="searchBtn">Buscar</button>
+    <!-- Controles exclusivos da view Por Vendedor -->
+    <div id="vvControls" style="display:none;align-items:center;gap:.5rem;flex-wrap:wrap">
+      <select id="vvBoard" class="mx-sel">
+        <option value="minas">Minas</option>
+        <option value="estacao">Estação</option>
+        <option value="contagem">Contagem</option>
+        <option value="delrey">Del Rey</option>
+        <option value="tommy">Tommy</option>
+        <option value="surfers">Surfers</option>
+      </select>
+      <input type="date" id="vvDtIni" class="mx-inp">
+      <span style="color:#8b949e;font-size:.8rem">até</span>
+      <input type="date" id="vvDtFin" class="mx-inp">
+      <button class="mx-search-btn" id="vvSearchBtn">Buscar</button>
+      <button id="vvXlsBtn" style="display:none;background:#21262d;border:1px solid #30363d;color:#8b949e;padding:.32rem .85rem;border-radius:6px;font-size:.82rem;font-weight:600;cursor:pointer">↓ XLS</button>
+    </div>
+
+    <!-- Toggle sempre visível -->
+    <div class="mx-view-toggle">
+      <button class="mx-view-btn active" data-view="marca">Por Marca</button>
+      <button class="mx-view-btn" data-view="setor">Por Setor</button>
+      <button class="mx-view-btn" data-view="vendedor">Por Vendedor</button>
+    </div>
   </div>
 </header>
 
@@ -210,6 +231,7 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
     Selecione o período e clique em <strong>Buscar</strong>.
   </div>
   <div id="brandList"></div>
+  <div id="vvResult" style="display:none"></div>
 </div>
 
 <script src="marcas.js"></script>
