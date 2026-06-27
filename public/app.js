@@ -4508,7 +4508,7 @@ function renderPerfStore(k) {
   const cls   = n => n >= 0 ? 'pf-pos' : 'pf-neg';
 
   // ── KPI badges ──────────────────────────────────────────────────────────
-  const exportBtnHtml = k === 'surfers'
+  const exportBtnHtml = (k === 'surfers' || k === 'total')
     ? `<button id="perfExportBtn" class="trans-export-btn" style="margin-bottom:10px">↓ Exportar Excel (todas as lojas)</button>`
     : '';
   const kpiHtml = `
