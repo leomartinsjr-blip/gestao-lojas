@@ -317,21 +317,81 @@ function renderTicket(data) {
   }
 
   const rows = vendas.map((v, idx) => {
-    const formas = (v.formas||[]).map(f =>
+    const formasChips = (v.formas||[]).map(f =>
       `<span style="background:#21262d;border:1px solid #30363d;border-radius:4px;padding:2px 7px;font-size:.73rem;white-space:nowrap">${esc(f.forma)}${f.bandeira?' · '+esc(f.bandeira):''}${f.parcelas>1?' · '+f.parcelas+'x':''} <strong>${fmtR(f.valor)}</strong></span>`
     ).join(' ');
     const lojaLabel = LOJA_LABEL_MX[v.board] || esc(v.board||'');
     const descVal = v.desconto?.valor||0;
-    const zebra = idx%2===1 ? '#0d1117' : 'transparent';
-    return `<tr class="tk-row" data-idx="${idx}" style="cursor:pointer;background:${zebra}">
+    const itens = v.itens || [];
+    const hasItens = itens.length > 0;
+    const zebra = idx%2===1 ? 'background:#0d1117' : '';
+
+    // Linha de detalhe (accordion)
+    const formasBlock = (v.formas||[]).map(f =>
+      `<span style="background:#21262d;border:1px solid #30363d;border-radius:6px;padding:4px 12px;font-size:.8rem">${esc(f.forma)}${f.bandeira?' · '+esc(f.bandeira):''}${f.parcelas>1?' · '+f.parcelas+'x':''} <strong>${fmtR(f.valor)}</strong></span>`
+    ).join('');
+
+    const itensBlock = !hasItens ? '<div style="color:#8b949e;font-size:.82rem;padding:.5rem 0">Sem itens detalhados.</div>' :
+      `<table style="width:100%;border-collapse:collapse;font-size:.78rem;margin-top:.5rem">
+        <thead><tr style="background:#060a0f">
+          <th style="text-align:left;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d">Produto</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:40px">Qtd</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:88px">Tabela</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:88px">Promo</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:88px">Bruto</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:78px">Desc.</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:42px">%</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:90px">Líquido</th>
+        </tr></thead>
+        <tbody>${itens.map((it, i) => {
+          const liq = it.vlrLiquido ?? (it.vlrBruto - it.vlrDesconto);
+          const vlrLiqUnit = it.quantidade > 0 ? liq / it.quantidade : liq;
+          const baseDesc = (it.emPromocao && it.precoPromocao) ? it.precoPromocao : it.vlrUnitario;
+          const percDesc = baseDesc > 0 ? ((baseDesc - vlrLiqUnit) / baseDesc * 100) : 0;
+          const nome = it.nome || it.descricao || it.cod_produto || '';
+          const tags = [
+            it.cod_produto ? `<span style="background:#1a1f28;border-radius:3px;padding:1px 5px;font-size:.67rem;color:#6b7280">${esc(it.cod_produto)}</span>` : '',
+            it.referencia  ? `<span style="background:#1a1f28;border-radius:3px;padding:1px 5px;font-size:.67rem;color:#6b7280">Ref ${esc(it.referencia)}</span>` : '',
+            it.marca       ? `<span style="background:#162032;border-radius:3px;padding:1px 5px;font-size:.67rem;color:#60a5fa">${esc(it.marca)}</span>` : '',
+          ].filter(Boolean).join(' ');
+          const zb = i%2===1 ? 'background:#060a0f' : '';
+          const promoCell = it.emPromocao && it.precoPromocao
+            ? `<span style="color:#2dd4bf;font-weight:700">${fmtR(it.precoPromocao)}</span>` : '—';
+          return `<tr style="${zb}">
+            <td style="padding:.3rem .5rem">
+              <div style="font-weight:600;color:#e6edf3">${esc(nome)}</div>
+              ${tags ? `<div style="margin-top:2px">${tags}</div>` : ''}
+            </td>
+            <td style="padding:.3rem .5rem;text-align:right">${it.quantidade}</td>
+            <td style="padding:.3rem .5rem;text-align:right">${fmtR(it.vlrUnitario||0)}</td>
+            <td style="padding:.3rem .5rem;text-align:right">${promoCell}</td>
+            <td style="padding:.3rem .5rem;text-align:right">${fmtR(it.vlrBruto||0)}</td>
+            <td style="padding:.3rem .5rem;text-align:right;color:#DC2626">${it.vlrDesconto>0?fmtR(it.vlrDesconto):'—'}</td>
+            <td style="padding:.3rem .5rem;text-align:right;color:#DC2626;font-size:.71rem">${percDesc>0.05?percDesc.toFixed(1)+'%':'—'}</td>
+            <td style="padding:.3rem .5rem;text-align:right;font-weight:700">${fmtR(liq)}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+
+    return `
+    <tr class="tk-row" data-idx="${idx}" style="cursor:pointer;${zebra};border-top:1px solid #21262d">
+      <td style="padding:.4rem .35rem;width:18px;color:#4b5563;font-size:.75rem">▶</td>
       <td style="padding:.4rem .6rem;font-weight:700;white-space:nowrap">${fmtD(v.data)}</td>
       <td style="padding:.4rem .6rem;color:#8b949e;white-space:nowrap">${esc(v.hora||'—')}</td>
       <td style="padding:.4rem .6rem;font-family:monospace;font-size:.78rem">${esc(v.doc)}</td>
       <td style="padding:.4rem .6rem;font-size:.8rem;color:#8b949e">${esc(lojaLabel)}</td>
       <td style="padding:.4rem .6rem">${esc(v.vendedor||'—')}</td>
-      <td style="padding:.4rem .6rem"><div style="display:flex;gap:4px;flex-wrap:wrap">${formas}</div></td>
-      <td style="padding:.4rem .6rem;text-align:right;color:#DC2626;font-weight:700">${descVal>0?fmtR(descVal):'<span style="color:#4b5563">—</span>'}</td>
+      <td style="padding:.4rem .6rem"><div style="display:flex;gap:4px;flex-wrap:wrap">${formasChips}</div></td>
+      <td style="padding:.4rem .6rem;text-align:right;color:#DC2626;font-weight:700">${descVal>0?fmtR(descVal):'<span style="color:#374151">—</span>'}</td>
       <td style="padding:.4rem .6rem;text-align:right;font-weight:800">${fmtR(v.valorTotal)}</td>
+    </tr>
+    <tr class="tk-detail" data-idx="${idx}" style="display:none">
+      <td colspan="9" style="padding:.75rem 1rem 1rem 2.5rem;background:#0a0e14;border-bottom:2px solid #30363d">
+        <div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Formas de Pagamento</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">${formasBlock}</div>
+        <div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Itens</div>
+        <div style="overflow-x:auto">${itensBlock}</div>
+      </td>
     </tr>`;
   }).join('');
 
@@ -344,7 +404,8 @@ function renderTicket(data) {
     </div>
     <div style="overflow-x:auto">
     <table style="width:100%;border-collapse:collapse;font-size:.82rem">
-      <thead><tr style="background:#0d1117;position:sticky;top:0">
+      <thead><tr style="background:#0d1117">
+        <th style="width:18px;padding:0"></th>
         <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Data</th>
         <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Hora</th>
         <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Doc</th>
@@ -359,91 +420,16 @@ function renderTicket(data) {
 
   $('tkResult').querySelectorAll('.tk-row').forEach(row => {
     row.addEventListener('click', () => {
-      const v = vendas[+row.dataset.idx];
-      if (v) abrirTicketModal(v, fmtD, fmtR, esc);
+      const idx = row.dataset.idx;
+      const detail = $('tkResult').querySelector(`.tk-detail[data-idx="${idx}"]`);
+      if (!detail) return;
+      const open = detail.style.display === '';
+      detail.style.display = open ? 'none' : '';
+      const chevron = row.querySelector('td:first-child');
+      if (chevron) chevron.textContent = open ? '▶' : '▼';
+      row.style.background = open ? (idx%2===1?'#0d1117':'') : '#111827';
     });
   });
-}
-
-function abrirTicketModal(v, fmtD, fmtR, esc) {
-  const lojaLabel = LOJA_LABEL_MX[v.board] || (v.board||'');
-  const itens = v.itens || [];
-
-  const itensHtml = itens.length === 0
-    ? '<div style="color:#8b949e;font-size:.82rem">Sem itens detalhados.</div>'
-    : `<table style="width:100%;border-collapse:collapse;font-size:.78rem">
-        <thead><tr style="background:#0d1117">
-          <th style="text-align:left;padding:.35rem .5rem;color:#8b949e;border-bottom:1px solid #21262d">Produto</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;border-bottom:1px solid #21262d;width:40px">Qtd</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;border-bottom:1px solid #21262d;width:90px">Tabela</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;border-bottom:1px solid #21262d;width:90px">Promo</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;border-bottom:1px solid #21262d;width:90px">Bruto</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;border-bottom:1px solid #21262d;width:80px">Desc.</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;border-bottom:1px solid #21262d;width:45px">%</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;border-bottom:1px solid #21262d;width:95px">Líquido</th>
-        </tr></thead>
-        <tbody>${itens.map((it, idx) => {
-          const liq = it.vlrLiquido ?? (it.vlrBruto - it.vlrDesconto);
-          const vlrLiqUnit = it.quantidade > 0 ? liq / it.quantidade : liq;
-          const baseDescPct = (it.emPromocao && it.precoPromocao) ? it.precoPromocao : it.vlrUnitario;
-          const percDesc = baseDescPct > 0 ? ((baseDescPct - vlrLiqUnit) / baseDescPct * 100) : 0;
-          const nome = it.nome || it.descricao || it.cod_produto || '';
-          const tags = [
-            it.cod_produto ? `<span style="background:#1f2937;border-radius:3px;padding:1px 5px;font-size:.68rem;color:#6b7280">${esc(it.cod_produto)}</span>` : '',
-            it.referencia  ? `<span style="background:#1f2937;border-radius:3px;padding:1px 5px;font-size:.68rem;color:#6b7280">Ref ${esc(it.referencia)}</span>` : '',
-            it.marca        ? `<span style="background:#1e3a5f;border-radius:3px;padding:1px 5px;font-size:.68rem;color:#93c5fd">${esc(it.marca)}</span>` : '',
-          ].filter(Boolean).join(' ');
-          const zebra = idx%2===1 ? '#0d1117' : 'transparent';
-          const promoCell = it.emPromocao && it.precoPromocao
-            ? `<span style="color:#2dd4bf;font-weight:700">${fmtR(it.precoPromocao)}</span>` : '—';
-          return `<tr style="background:${zebra}">
-            <td style="padding:.32rem .5rem">
-              <div style="font-weight:600;color:#e6edf3">${esc(nome)}</div>
-              <div style="margin-top:2px">${tags}</div>
-            </td>
-            <td style="padding:.32rem .5rem;text-align:right">${it.quantidade}</td>
-            <td style="padding:.32rem .5rem;text-align:right">${fmtR(it.vlrUnitario||0)}</td>
-            <td style="padding:.32rem .5rem;text-align:right">${promoCell}</td>
-            <td style="padding:.32rem .5rem;text-align:right">${fmtR(it.vlrBruto||0)}</td>
-            <td style="padding:.32rem .5rem;text-align:right;color:#DC2626">${it.vlrDesconto>0?fmtR(it.vlrDesconto):'—'}</td>
-            <td style="padding:.32rem .5rem;text-align:right;color:#DC2626;font-size:.72rem">${percDesc>0.05?percDesc.toFixed(1)+'%':'—'}</td>
-            <td style="padding:.32rem .5rem;text-align:right;font-weight:700">${fmtR(liq)}</td>
-          </tr>`;
-        }).join('')}</tbody>
-      </table>`;
-
-  const formasHtml = (v.formas||[]).map(f =>
-    `<span style="background:#21262d;border:1px solid #30363d;border-radius:6px;padding:4px 12px;font-size:.8rem">
-      ${esc(f.forma)}${f.bandeira?' · '+esc(f.bandeira):''}${f.parcelas>1?' · '+f.parcelas+'x':''} <strong>${fmtR(f.valor)}</strong>
-    </span>`
-  ).join('');
-
-  const modal = document.createElement('div');
-  modal.style.cssText = 'position:fixed;inset:0;z-index:9000;background:#00000088;display:flex;align-items:center;justify-content:center;padding:16px';
-  modal.innerHTML = `
-    <div style="background:#161b22;border:1px solid #30363d;border-radius:14px;width:100%;max-width:860px;max-height:90vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 64px #00000060">
-      <div style="display:flex;align-items:center;gap:12px;padding:18px 22px;border-bottom:1px solid #30363d;flex-shrink:0">
-        <div style="flex:1">
-          <div style="font-size:16px;font-weight:800;color:#e6edf3">Doc ${esc(v.doc)} &nbsp;·&nbsp; ${esc(v.vendedor||'—')}</div>
-          <div style="font-size:12px;color:#8b949e;margin-top:2px">${esc(lojaLabel)} &nbsp;·&nbsp; ${fmtD(v.data)} ${esc(v.hora||'')} &nbsp;·&nbsp; Total: <strong style="color:#e6edf3">${fmtR(v.valorTotal)}</strong></div>
-        </div>
-        <button id="tkModalClose" style="background:none;border:none;cursor:pointer;font-size:20px;color:#8b949e;padding:4px 8px;border-radius:6px;line-height:1">✕</button>
-      </div>
-      <div style="overflow-y:auto;padding:20px 22px;flex:1">
-        <div style="margin-bottom:16px">
-          <div style="font-size:11px;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Formas de Pagamento</div>
-          <div style="display:flex;gap:8px;flex-wrap:wrap">${formasHtml}</div>
-        </div>
-        <div style="font-size:11px;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Itens</div>
-        <div style="overflow-x:auto">${itensHtml}</div>
-      </div>
-    </div>`;
-
-  document.body.appendChild(modal);
-  modal.querySelector('#tkModalClose').onclick = () => modal.remove();
-  modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
-  const onEsc = e => { if (e.key === 'Escape') { modal.remove(); document.removeEventListener('keydown', onEsc); } };
-  document.addEventListener('keydown', onEsc);
 }
 
 // ── Dados de Marcas/Setor ────────────────────────────────────────────────────
