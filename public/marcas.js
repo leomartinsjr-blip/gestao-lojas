@@ -83,7 +83,8 @@ async function init() {
   }
 
   // Data padrão = hoje para Por Vendedor e Por Ticket
-  const td = new Date().toISOString().slice(0, 10);
+  const _now = new Date();
+  const td = `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
   $('vvDtIni').value = td; $('vvDtFin').value = td;
   $('tkDtIni').value = td; $('tkDtFin').value = td;
 
@@ -263,12 +264,12 @@ function setShortcut(s) {
     fin = `${ly}-${pad(lm)}-${pad(lastDay)}`;
   } else if (s === '30d') {
     const d30 = new Date(today); d30.setDate(d30.getDate() - 30);
-    ini = d30.toISOString().slice(0, 10);
-    fin = today.toISOString().slice(0, 10);
+    ini = `${d30.getFullYear()}-${pad(d30.getMonth()+1)}-${pad(d30.getDate())}`;
+    fin = `${y}-${pad(m)}-${pad(d)}`;
   } else if (s === '3m') {
     const d3m = new Date(today); d3m.setMonth(d3m.getMonth() - 3);
-    ini = d3m.toISOString().slice(0, 10);
-    fin = today.toISOString().slice(0, 10);
+    ini = `${d3m.getFullYear()}-${pad(d3m.getMonth()+1)}-${pad(d3m.getDate())}`;
+    fin = `${y}-${pad(m)}-${pad(d)}`;
   }
   document.getElementById('dtIni').value = ini;
   document.getElementById('dtFin').value = fin;
