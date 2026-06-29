@@ -683,6 +683,7 @@ function renderDashboard() {
           <button class="dash-wk-btn" id="dayCardPrev" title="Dia anterior">&#8592;</button>
           <span class="dash-wk-label" id="dayCardLabel"></span>
           <button class="dash-wk-btn" id="dayCardNext" title="Próximo dia">&#8594;</button>
+          <button class="dash-wk-btn dash-fds-btn" id="dayCardFds" title="Último final de semana (Sex–Dom)">FDS</button>
         </div>
       </div>
       <div class="main-card-body" id="dayCardBody"></div>
@@ -693,6 +694,29 @@ function renderDashboard() {
     leftCol.appendChild(dayRow);
 
     async function _updateDayCard() {
+      const fdsBtnEl = document.getElementById('dayCardFds');
+      if (DASH_DAY.mode === 'weekend') {
+        const dates = _lastWeekendDates();
+        const fri = dates[0], sun = dates[2];
+        const friYear = parseInt(fri.slice(0, 4)), friMonth = parseInt(fri.slice(5, 7));
+        if (friYear !== S.year || friMonth !== S.month) {
+          if (!DASH_DAY.weightsKey || DASH_DAY.weightsKey !== `${friYear}-${friMonth}`) {
+            [DASH_DAY.weights, DASH_DAY.dailySalesMeta] = await Promise.all([
+              apiFetch('GET', `/api/weights/${friYear}/${friMonth}`).catch(() => ({})),
+              apiFetch('GET', `/api/dailysales-meta/${friYear}/${friMonth}`).catch(() => ({})),
+            ]);
+            DASH_DAY.weightsKey = `${friYear}-${friMonth}`;
+          }
+        }
+        const month = sun.slice(5, 7);
+        document.getElementById('dayCardLabel').textContent = `Sex-Dom · ${fri.slice(8)}-${sun.slice(8)}/${month}`;
+        document.getElementById('dayCardPrev').disabled = true;
+        document.getElementById('dayCardNext').disabled = true;
+        fdsBtnEl.classList.add('dash-fds-active');
+        _renderWeekendCardBody(document.getElementById('dayCardBody'), dates);
+        return;
+      }
+      fdsBtnEl.classList.remove('dash-fds-active');
       const d = DASH_DAY.refDate;
       const lbl = d === todayStr ? `Hoje · ${d.slice(8)}/${d.slice(5,7)}` : `${d.slice(8)}/${d.slice(5,7)}`;
       document.getElementById('dayCardLabel').textContent = lbl;
@@ -714,6 +738,7 @@ function renderDashboard() {
     }
 
     document.getElementById('dayCardPrev').addEventListener('click', () => {
+      DASH_DAY.mode = 'day';
       const d = new Date(DASH_DAY.refDate + 'T00:00:00');
       d.setDate(d.getDate() - 1);
       DASH_DAY.refDate = `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
@@ -721,10 +746,15 @@ function renderDashboard() {
       _updateDayCard();
     });
     document.getElementById('dayCardNext').addEventListener('click', () => {
+      DASH_DAY.mode = 'day';
       const d = new Date(DASH_DAY.refDate + 'T00:00:00');
       d.setDate(d.getDate() + 1);
       DASH_DAY.refDate = `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
       if (DASH_DAY.refDate > cutoff) DASH_DAY.refDate = cutoff;
+      _updateDayCard();
+    });
+    document.getElementById('dayCardFds').addEventListener('click', () => {
+      DASH_DAY.mode = DASH_DAY.mode === 'weekend' ? 'day' : 'weekend';
       _updateDayCard();
     });
 
@@ -1505,6 +1535,162 @@ function _renderDayCardBody(body, dateStr) {
     const grandConv = (grandFluxo > 0 && grandAtend > 0) ? grandAtend / grandFluxo * 100 : null;
     const gPctCls   = grandPct  == null ? '' : grandPct  >= 100 ? 'dia-pct-ok'  : grandPct  >= 70 ? 'dia-pct-warn'  : 'dia-pct-bad';
     const gConvCls  = grandConv == null ? '' : grandConv >= 30  ? 'dia-conv-ok' : grandConv >= 15 ? 'dia-conv-warn' : 'dia-conv-bad';
+    body.insertAdjacentHTML('beforeend', `
+      <div class="dia-row dia-grand-total">
+        <span class="dia-name">TOTAL GERAL</span>
+        <span class="dia-val">${grandVal > 0 ? fV(grandVal) : '—'}</span>
+        <span class="dia-meta">${grandMeta > 0 ? fV(grandMeta) : '—'}</span>
+        <span class="dia-pa">${grandPa != null ? grandPa.toFixed(2) : '—'}</span>
+        <span class="dia-pct ${gPctCls}">${grandPct != null ? grandPct.toFixed(1) + '%' : '—'}</span>
+      </div>`);
+  }
+}
+
+function _lastWeekendDates() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dow = today.getDay(); // 0=Dom, 1=Seg, ..., 5=Sex, 6=Sáb
+  const daysToLastSun = dow === 0 ? 7 : dow;
+  const sun = new Date(today); sun.setDate(today.getDate() - daysToLastSun);
+  const sat = new Date(sun);   sat.setDate(sun.getDate() - 1);
+  const fri = new Date(sun);   fri.setDate(sun.getDate() - 2);
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  return [fmt(fri), fmt(sat), fmt(sun)];
+}
+
+function _renderWeekendCardBody(body, dates) {
+  const fV = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  function _getWeight(dateStr) {
+    const yr = parseInt(dateStr.slice(0, 4));
+    const mo = parseInt(dateStr.slice(5, 7));
+    const defW = +(100 / new Date(yr, mo, 0).getDate()).toFixed(6);
+    const weights = (yr === S.year && mo === S.month) ? S.weights : (DASH_DAY.weights || {});
+    return weights[dateStr] ?? defW;
+  }
+
+  function _getMetaLoja(dateStr, bk) {
+    const yr = parseInt(dateStr.slice(0, 4));
+    const mo = parseInt(dateStr.slice(5, 7));
+    const dsm = (yr === S.year && mo === S.month) ? S.dailySalesMeta : (DASH_DAY.dailySalesMeta || {});
+    return dsm?.[bk] || 0;
+  }
+
+  const vendedores = S.employees.filter(e => isVend(e));
+  const byBoard = {};
+  for (const emp of vendedores) {
+    if (!byBoard[emp.board]) byBoard[emp.board] = [];
+    byBoard[emp.board].push(emp);
+  }
+
+  body.innerHTML = `
+    <div class="dia-col-hdr">
+      <span></span>
+      <span>Realizado</span>
+      <span>Meta FDS</span>
+      <span>PA</span>
+      <span>%</span>
+    </div>`;
+
+  let anyData = false;
+  let grandVal = 0, grandMeta = 0, grandPecas = 0, grandAtend = 0;
+
+  for (const [bk, bc] of visibleBoards()) {
+    const emps = (byBoard[bk] || []).filter(e => {
+      const vsale = S.vsales[e.id] || {};
+      return (vsale.meta?.mensal || 0) > 0 || dates.some(d => (vsale.entries?.[d]?.value || 0) > 0);
+    });
+    if (!emps.length) continue;
+
+    anyData = true;
+    let storeTotalVal = 0, storeTotalMeta = 0, storeTotalPecas = 0, storeTotalAtend = 0;
+    const vendorRowsHtml = [];
+
+    for (const emp of emps) {
+      const vsale = S.vsales[emp.id] || { meta: { mensal: 0 }, entries: {} };
+      let empVal = 0, empMeta = 0, empPecas = 0, empAtend = 0;
+
+      for (const d of dates) {
+        const entry = vsale.entries?.[d] || {};
+        empVal   += entry.value || 0;
+        empPecas += entry.pecas || 0;
+        empAtend += entry.atendimentos || 0;
+        empMeta  += sellerDayGoal({
+          dateStr:          d,
+          dayWeight:        _getWeight(d),
+          metaLoja:         _getMetaLoja(d, bk),
+          onVacation:       (vsale.meta?.vacationDays || []).includes(d),
+          boardVendors:     byBoard[bk],
+          vsalesForMonth:   S.vsales,
+          individualMensal: vsale.meta?.mensal || 0,
+        }).goal;
+      }
+
+      storeTotalVal   += empVal;
+      storeTotalMeta  += empMeta;
+      storeTotalPecas += empPecas;
+      storeTotalAtend += empAtend;
+
+      const pa     = empAtend > 0 ? empPecas / empAtend : null;
+      const pct    = empMeta  > 0 ? empVal   / empMeta  * 100 : null;
+      const pctCls = pct == null ? '' : pct >= 100 ? 'dia-pct-ok' : pct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
+      vendorRowsHtml.push(`
+        <div class="dia-row dia-vendor-row">
+          <span class="dia-name">${emp.apelido || emp.name.split(' ')[0]}</span>
+          <span class="dia-val">${empVal > 0 ? fV(empVal) : '—'}</span>
+          <span class="dia-meta">${empMeta > 0 ? fV(empMeta) : '—'}</span>
+          <span class="dia-pa">${pa != null ? pa.toFixed(2) : '—'}</span>
+          <span class="dia-pct ${pctCls}">${pct != null ? pct.toFixed(1) + '%' : '—'}</span>
+        </div>`);
+    }
+
+    grandVal   += storeTotalVal;
+    grandMeta  += storeTotalMeta;
+    grandPecas += storeTotalPecas;
+    grandAtend += storeTotalAtend;
+
+    const storePa  = storeTotalAtend > 0 ? storeTotalPecas / storeTotalAtend : null;
+    const storePct = storeTotalMeta  > 0 ? storeTotalVal   / storeTotalMeta  * 100 : null;
+    const sPctCls  = storePct == null ? '' : storePct >= 100 ? 'dia-pct-ok' : storePct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
+    const isAdmin  = !S.user?.board;
+    const isExp    = !isAdmin || _dayCardExpanded.has(bk);
+
+    const storeRow = document.createElement('div');
+    storeRow.className = 'dia-row dia-store-row' + (isExp ? ' dia-store-expanded' : '');
+    storeRow.innerHTML = `
+      <span class="dia-name dia-store-label">
+        ${isAdmin ? `<span class="dia-chevron">${isExp ? '▾' : '▸'}</span>` : ''}
+        <span class="dash-store-dot" style="background:${bc.color}"></span>
+        ${bc.label}
+      </span>
+      <span class="dia-val">${storeTotalVal > 0 ? fV(storeTotalVal) : '—'}</span>
+      <span class="dia-meta">${storeTotalMeta > 0 ? fV(storeTotalMeta) : '—'}</span>
+      <span class="dia-pa">${storePa != null ? storePa.toFixed(2) : '—'}</span>
+      <span class="dia-pct ${sPctCls}">${storePct != null ? storePct.toFixed(1) + '%' : '—'}</span>`;
+    if (isAdmin) {
+      storeRow.style.cursor = 'pointer';
+      storeRow.addEventListener('click', () => {
+        if (_dayCardExpanded.has(bk)) _dayCardExpanded.delete(bk);
+        else _dayCardExpanded.add(bk);
+        _renderWeekendCardBody(body, dates);
+      });
+    }
+    body.appendChild(storeRow);
+
+    if (isExp) {
+      const wrap = document.createElement('div');
+      wrap.innerHTML = vendorRowsHtml.join('');
+      while (wrap.firstChild) body.appendChild(wrap.firstChild);
+    }
+  }
+
+  if (!anyData) {
+    body.insertAdjacentHTML('beforeend',
+      '<div style="padding:.85rem 1rem;font-size:.78rem;color:var(--muted)">Sem lançamentos para este período.</div>');
+  } else {
+    const grandPa  = grandAtend > 0 ? grandPecas / grandAtend : null;
+    const grandPct = grandMeta  > 0 ? grandVal   / grandMeta  * 100 : null;
+    const gPctCls  = grandPct  == null ? '' : grandPct  >= 100 ? 'dia-pct-ok' : grandPct  >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
     body.insertAdjacentHTML('beforeend', `
       <div class="dia-row dia-grand-total">
         <span class="dia-name">TOTAL GERAL</span>
@@ -6518,7 +6704,7 @@ const PA_THRESHOLD          = 1.80;
 
 let WK = { refDate: null, cache: {} };
 let DASH_WEEK = { refDate: null };
-let DASH_DAY  = { refDate: null };
+let DASH_DAY  = { refDate: null, mode: 'day' };
 let _dayCardTimer = null;
 const _dayCardExpanded  = new Set(); // lojas expandidas no card diário
 const _perfExpanded     = new Set(); // lojas expandidas em Performance Mensal (admin)

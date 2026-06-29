@@ -1965,6 +1965,9 @@ body {
 .dash-wk-nav { display: flex; align-items: center; gap: .5rem; }
 .dash-wk-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text2); border-radius: .35rem; width: 1.6rem; height: 1.6rem; cursor: pointer; font-size: .9rem; display: flex; align-items: center; justify-content: center; transition: background .15s, border-color .15s, color .15s; padding: 0; }
 .dash-wk-btn:hover { background: #1e2430; border-color: #58A6FF; color: #fff; }
+.dash-wk-btn:disabled { opacity: .35; cursor: default; pointer-events: none; }
+.dash-fds-btn { width: auto !important; padding: 0 .45rem !important; font-size: .67rem !important; font-weight: 700; letter-spacing: .03em; }
+.dash-fds-active { background: #1e2430 !important; border-color: #58A6FF !important; color: #58A6FF !important; }
 .dash-wk-label { font-size: .78rem; color: var(--text); font-weight: 600; white-space: nowrap; }
 
 /* ── Folgas calendar ──────────────────────────────────────────────────── */
