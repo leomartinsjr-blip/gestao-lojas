@@ -1454,6 +1454,7 @@ function _renderDayCardBody(body, dateStr) {
         boardVendors:    byBoard[bk],
         vsalesForMonth:  S.vsales,
         individualMensal: vsale.meta?.mensal || 0,
+        isOmni:          !!emp.omniChannel,
       }).goal;
       const pa      = atend > 0 ? pecas / atend : null;
       const pct     = metaDia > 0 ? valor / metaDia * 100 : null;
@@ -1623,6 +1624,7 @@ function _renderWeekendCardBody(body, dates) {
           boardVendors:     byBoard[bk],
           vsalesForMonth:   S.vsales,
           individualMensal: vsale.meta?.mensal || 0,
+          isOmni:           !!emp.omniChannel,
         }).goal;
       }
 
@@ -5189,15 +5191,19 @@ function _dsHelpers() {
 // === Fonte única da meta diária de um vendedor ===
 // Toda tela (Faturamento Diário, planilha de detalhe, cálculo da semana) deve
 // usar esta função para evitar divergência de fórmula entre elas.
+//   • canal Omni (isOmni)      → 0 (soma no total da loja, mas não recebe fatia da meta)
 //   • dia de férias            → 0
 //   • loja com metaLoja        → metaLoja * peso / 100 / nAtivos
 //   • sem metaLoja (fallback)  → meta mensal individual * peso / 100
-// nAtivos = vendedores da loja ativos no dia (admitidos, não demitidos, não de férias).
+// nAtivos = vendedores da loja ativos no dia (admitidos, não demitidos, não de férias,
+// não canal Omni — Omni não participa da divisão da meta dos demais).
 // Retorna { goal, nActive, isVacation }.
-function sellerDayGoal({ dateStr, dayWeight, metaLoja, onVacation, boardVendors, vsalesForMonth, individualMensal }) {
+function sellerDayGoal({ dateStr, dayWeight, metaLoja, onVacation, boardVendors, vsalesForMonth, individualMensal, isOmni }) {
+  if (isOmni) return { goal: 0, nActive: 0, isVacation: false };
   if (onVacation) return { goal: 0, nActive: 0, isVacation: true };
   if (metaLoja > 0) {
     const nActive = Math.max(1, (boardVendors || []).filter(e =>
+      !e.omniChannel &&
       (!e.admissao     || e.admissao     <= dateStr) &&
       (!e.desligamento || e.desligamento >= dateStr) &&
       !((vsalesForMonth?.[e.id]?.meta?.vacationDays) || []).includes(dateStr)
@@ -5223,6 +5229,7 @@ function computeSellerDayGoals(empId) {
       onVacation:     vacSet.has(dateStr),
       boardVendors:   PD.employees,
       vsalesForMonth: PD.allVsales,
+      isOmni:         !!PD.employees.find(e => e.id === empId)?.omniChannel,
     });
   }
   return goals;
@@ -5311,7 +5318,10 @@ function buildVendedorSheet(emp, isAdmin) {
           <span class="ds-meta-seg-val" id="dsMetaSuperVal">${superMetaVal}</span>
         </div>
       </div>
-      ${isAdmin && PD.metaLoja > 0 ? `<div class="ds-weight-hint-row"><span class="ds-weight-hint">· Clique em <strong>Part%</strong> para marcar/desmarcar férias do dia${vacDays.length > 0 ? ` · <span style="color:var(--down)">${vacDays.length} dia(s) de férias</span>` : ''}</span></div>` : ''}
+      ${isAdmin && PD.metaLoja > 0 ? (emp.omniChannel
+        ? `<div class="ds-weight-hint-row"><span class="ds-weight-hint">· Canal Omni: vendas somam no total da loja, mas não recebe fatia da meta</span></div>`
+        : `<div class="ds-weight-hint-row"><span class="ds-weight-hint">· Clique em <strong>Part%</strong> para marcar/desmarcar férias do dia${vacDays.length > 0 ? ` · <span style="color:var(--down)">${vacDays.length} dia(s) de férias</span>` : ''}</span></div>`
+      ) : ''}
       ${isAdmin && !PD.metaLoja ? `<div class="ds-weight-hint-row"><span class="ds-weight-hint">· Configure a <strong>Meta da Loja</strong> na aba TOTAL para calcular metas automaticamente</span></div>` : ''}
     </div>
     <div class="ds-table-wrap"><table class="ds-table">
@@ -5340,7 +5350,7 @@ function buildVendedorSheet(emp, isAdmin) {
     const pCls   = r.pctAting != null ? (r.pctAting >= 100 ? 'pf-pos' : r.pctAting >= 80 ? 'ds-warn' : 'pf-neg') : '';
     const dCls   = r.desvio != null ? (r.desvio >= 0 ? 'pf-pos' : 'pf-neg') : '';
     const partPct = r.dayInfo
-      ? (isVac ? '0.00%' : `${(100 / r.dayInfo.nActive).toFixed(2)}%`)
+      ? (r.dayInfo.nActive > 0 ? `${(100 / r.dayInfo.nActive).toFixed(2)}%` : '0.00%')
       : r.w.toFixed(2) + '%';
     const tr = document.createElement('tr');
     tr.className = trCls; tr.dataset.date = r.dateStr;
@@ -5348,7 +5358,7 @@ function buildVendedorSheet(emp, isAdmin) {
       <td class="ds-td-dia">${r.d}<small class="ds-dow">${r.DAY_S[r.dow]}</small></td>
       <td class="ds-td-meta">${mensal > 0 ? fBRL(r.metaDia)    : '—'}</td>
       <td class="ds-td-meta">${mensal > 0 ? fBRL(r.metaAccum)  : '—'}</td>
-      <td class="ds-td-peso${isAdmin && PD.metaLoja > 0 ? ' ds-editable' : ''}" data-date="${r.dateStr}" style="${isVac ? 'color:var(--down)' : ''}">${partPct}</td>
+      <td class="ds-td-peso${isAdmin && PD.metaLoja > 0 && !emp.omniChannel ? ' ds-editable' : ''}" data-date="${r.dateStr}" style="${isVac ? 'color:var(--down)' : ''}">${partPct}</td>
       <td class="ds-td-pct ${pCls}">${r.pctAting != null ? fPct(r.pctAting) : '—'}</td>
       <td class="${dCls}">${r.desvio != null ? fBRL(r.desvio) : '—'}</td>
       <td class="ds-td-edit ds-td-fillable${r.entry ? ' ds-has-val' : ''}${syncActive ? ' ds-sync-cell' : ''}" data-field="value"        data-date="${r.dateStr}">${r.entry ? fBRL(r.valor) : '<span class="ds-empty">—</span>'}</td>
@@ -6885,6 +6895,7 @@ function calcWeekKpis(emp, week, extraData) {
       boardVendors,
       vsalesForMonth,
       individualMensal: mk === curKey ? mensal : (extraData?.[mk]?.vsales?.[emp.id]?.meta?.mensal || 0),
+      isOmni:           !!emp.omniChannel,
     }).goal;
   }
   // check manual meta override from current AND extra months
@@ -7352,6 +7363,7 @@ function openFuncForm(id) {
   document.getElementById('funcBanco').value         = emp?.banco         || '';
   document.getElementById('funcConta').value         = emp?.conta         || '';
   document.getElementById('funcIsVendedor').checked = emp ? emp.isVendedor !== false : true;
+  document.getElementById('funcOmniChannel').checked = !!emp?.omniChannel;
   document.getElementById('funcInativo').checked = !!emp?.inativo;
   document.getElementById('funcDesligamento').value = emp?.desligamento || '';
   document.getElementById('funcDesligamentoWrap').style.display = emp?.inativo ? '' : 'none';
@@ -7441,6 +7453,7 @@ async function saveFuncionario() {
   const banco        = document.getElementById('funcBanco').value.trim();
   const conta        = document.getElementById('funcConta').value.trim();
   const isVendedor = document.getElementById('funcIsVendedor').checked;
+  const omniChannel = document.getElementById('funcOmniChannel').checked;
   const inativo   = document.getElementById('funcInativo').checked;
   const desligamento = document.getElementById('funcDesligamento').value;
   const fotoRemoved  = !FE.newPhotoFile && !FE.currentPhotoUrl && !!FE.editingId;
@@ -7455,7 +7468,7 @@ async function saveFuncionario() {
   const btn = document.getElementById('funcSaveBtn');
   btn.disabled = true;
   try {
-    const body = { name, apelido, board, cpf, nascimento, microvixCod, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento, supervisedBoards };
+    const body = { name, apelido, board, cpf, nascimento, microvixCod, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, omniChannel, inativo, desligamento, supervisedBoards };
     if (fotoRemoved) body.foto = '';
     let emp;
     if (FE.editingId) {

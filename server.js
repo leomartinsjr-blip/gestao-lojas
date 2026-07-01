@@ -847,7 +847,7 @@ app.get('/api/employees/photos', requireAuth, async (req, res) => {
 // ── POST /api/employees ────────────────────────────────────────────────────
 app.post('/api/employees', requireAuth, async (req, res) => {
   try {
-    const { name, board, cpf, nascimento, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento, apelido, microvixCod, supervisedBoards } = req.body;
+    const { name, board, cpf, nascimento, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, omniChannel, inativo, desligamento, apelido, microvixCod, supervisedBoards } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
     if (!nascimento) return res.status(400).json({ error: 'Data de nascimento obrigatória' });
     const db = await readDB();
@@ -868,6 +868,7 @@ app.post('/api/employees', requireAuth, async (req, res) => {
       salarioFixo: parseFloat(salarioFixo) || 0, quebraCaixa: parseFloat(quebraCaixa) || 0,
       banco: banco || '', conta: conta || '',
       isVendedor: isVendedor !== false,
+      omniChannel: omniChannel === true || omniChannel === 'true',
       inativo: inativo === true || inativo === 'true',
       desligamento: desligamento || '',
       supervisedBoards: Array.isArray(supervisedBoards) ? supervisedBoards : [],
@@ -882,7 +883,7 @@ app.post('/api/employees', requireAuth, async (req, res) => {
 app.put('/api/employees/:id', requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { name, board, cpf, nascimento, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento, apelido, microvixCod, foto, supervisedBoards } = req.body;
+    const { name, board, cpf, nascimento, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, omniChannel, inativo, desligamento, apelido, microvixCod, foto, supervisedBoards } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
     if (!nascimento) return res.status(400).json({ error: 'Data de nascimento obrigatória' });
     const db  = await readDB();
@@ -906,6 +907,7 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
       salarioFixo: parseFloat(salarioFixo) || 0, quebraCaixa: parseFloat(quebraCaixa) || 0,
       banco: banco || '', conta: conta || '',
       isVendedor: isVendedor !== false,
+      omniChannel: omniChannel === true || omniChannel === 'true',
       inativo: inativo === true || inativo === 'true',
       desligamento: desligamento || '',
       supervisedBoards: Array.isArray(supervisedBoards) ? supervisedBoards : (db.employees[idx].supervisedBoards || []),
@@ -1287,11 +1289,13 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
     }
 
     function sellerDayGoal(empId, ds) {
+      // Canal Omni: soma no total da loja, mas não recebe fatia da meta nem participa da divisão
+      if (emps.find(e => e.id === empId)?.omniChannel) return 0;
       const vac = vsMap[empId]?.meta?.vacationDays || [];
       if (metaLoja > 0) {
         if (vac.includes(ds)) return 0;
         const w = gWeights[ds] ?? defW;
-        const nActive = emps.filter(e => !(vsMap[e.id]?.meta?.vacationDays || []).includes(ds)).length;
+        const nActive = emps.filter(e => !e.omniChannel && !(vsMap[e.id]?.meta?.vacationDays || []).includes(ds)).length;
         return nActive > 0 ? (metaLoja * w / 100) / nActive : 0;
       }
       return (vsMap[empId]?.meta?.mensal || 0) * (gWeights[ds] ?? defW) / 100;
