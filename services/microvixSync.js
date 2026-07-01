@@ -121,6 +121,8 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
   const rows = await fetchMovimento(cnpjClean, dtIni, dtFin, chave);
   console.log(`[Microvix/${board}] ${rows.length} linhas de movimento (${dtIni} → ${dtFin})`);
 
+  const warnings = [];
+
   if (!rows.length) return 0;
 
   // 3. Aggregate by vendor + date (skip cancelled)
@@ -130,7 +132,13 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
 
     const codVend  = String(row.cod_vendedor || '').trim();
     const vendNorm = vendMap[codVend];
-    if (!vendNorm) continue;
+    if (!vendNorm) {
+      warnings.push({
+        tipo: 'cod_vendedor_nao_mapeado', cod_vendedor: codVend,
+        documento: row.documento, data: row.data_documento, valor: row.valor_total,
+      });
+      continue;
+    }
 
     const dateStr = parseDate(row.data_documento);
     if (!dateStr) continue;
@@ -147,6 +155,7 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
   // 4. Match employees and write
   if (!db.vsales) db.vsales = {};
   let updated = 0;
+  const covered = new Set(); // "empId||date" seen in this sync run, for orphan cleanup below
 
   for (const entry of Object.values(agg)) {
     const { codVend, vendNorm, date, value, pecas, docs, retDocs } = entry;
@@ -161,9 +170,14 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
     );
     if (!emp) {
       console.warn(`[Microvix/${board}] Vendedor não encontrado: cod=${codVend} nome="${vendNorm}"`);
+      warnings.push({
+        tipo: 'funcionario_nao_encontrado', cod_vendedor: codVend, nome: vendNorm,
+        data: date, valor: value.toFixed(2),
+      });
       continue;
     }
 
+    covered.add(`${emp.id}||${date}`);
     const vsKey = `${year}-${pad(month)}-${board}-${emp.id}`;
     if (!db.vsales[vsKey]) db.vsales[vsKey] = { meta: { mensal: 0 }, entries: {} };
     db.vsales[vsKey].entries[date] = {
@@ -174,6 +188,27 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
     };
     updated++;
   }
+
+  // 5. Limpa entradas órfãs: funcionário ativo sem nenhuma venda do Microvix numa
+  // data do intervalo sincronizado não deve manter um valor antigo preso pra sempre
+  // (o sync só escreve quando acha venda; sem isso, cancelamentos/estornos nunca
+  // são refletidos se o dia inteiro do vendedor deixar de existir no Microvix).
+  const activeEmps = employees.filter(e => e.board === board && !e.inativo);
+  for (let d = new Date(dtIni + 'T00:00:00Z'); d <= new Date(dtFin + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1)) {
+    const ds = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+    const vsMonth = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}`;
+    for (const emp of activeEmps) {
+      if (covered.has(`${emp.id}||${ds}`)) continue;
+      const vsKey = `${vsMonth}-${board}-${emp.id}`;
+      if (db.vsales[vsKey]?.entries?.[ds]) {
+        delete db.vsales[vsKey].entries[ds];
+        console.log(`[Microvix/${board}] Removida entrada órfã: ${emp.name} ${ds}`);
+      }
+    }
+  }
+
+  if (!db.microvixSyncWarnings) db.microvixSyncWarnings = {};
+  db.microvixSyncWarnings[board] = { at: new Date().toISOString(), warnings };
 
   return updated;
 }
@@ -342,8 +377,8 @@ async function runSync30Dias(readDB, writeDB) {
   }
 }
 
-function getStatus() {
-  return { lastSync, lastError, running, lastSync30d, runningHoje, running30d };
+function getStatus(db) {
+  return { lastSync, lastError, running, lastSync30d, runningHoje, running30d, warnings: db?.microvixSyncWarnings || {} };
 }
 
 function setLastSync(val) {

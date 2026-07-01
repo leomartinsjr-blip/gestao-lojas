@@ -3191,8 +3191,9 @@ const MX_INTERVAL_MS    = parseInt(process.env.MICROVIX_INTERVAL_MIN    || '5') 
 const MX_INTERVAL_30D_MS = 24 * 60 * 60 * 1000; // conferência 30d: 1× por dia
 
 // GET  /api/microvix/status  → last sync info
-app.get('/api/microvix/status', requireAuth, (req, res) => {
-  res.json(getStatus());
+app.get('/api/microvix/status', requireAuth, async (req, res) => {
+  const db = await readDB();
+  res.json(getStatus(db));
 });
 
 // POST /api/microvix/sync    → manual trigger
