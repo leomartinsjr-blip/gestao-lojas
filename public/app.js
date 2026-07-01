@@ -8525,11 +8525,14 @@ function renderCaixaCard(container) {
 
     const daysInMonth = new Date(S.year, S.month, 0).getDate();
     const today = new Date();
+    const todayTrunc = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const isCurrentMonth = today.getFullYear() === S.year && (today.getMonth()+1) === S.month;
     const todayDay = isCurrentMonth ? today.getDate() : -1;
     const DAY_NAMES = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
     const pad = n => String(n).padStart(2,'0');
     const fmtCur = v => (v === 0 || v === undefined || v === null) ? '—' : `R$ ${Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    // A partir de jul/2026 o saldo (carry-over) aparece em todo dia já ocorrido, mesmo sem movimento; antes disso mantém a regra antiga (só mostra se houve movimento no dia)
+    const carryDisplayFrom = S.year > 2026 || (S.year === 2026 && S.month >= 7);
 
     let totalCaixa = 0, totalSangria = 0, totalDeposito = 0;
     const rows = [];
@@ -8541,11 +8544,12 @@ function renderCaixaCard(container) {
       const deposito = entry.deposito ?? 0;
       saldoAcum += caixa - sangria - deposito;
       totalCaixa += caixa; totalSangria += sangria; totalDeposito += deposito;
-      rows.push({ d, dow: DAY_NAMES[dt.getDay()], caixa, sangria, deposito, saldo: saldoAcum });
+      rows.push({ d, dow: DAY_NAMES[dt.getDay()], caixa, sangria, deposito, saldo: saldoAcum, dt });
     }
     const totalSaldo = saldoAcum; // saldo acumulado incluindo carry-over do mês anterior
     const sc = s => s > 0 ? 'pos' : s < 0 ? 'neg' : 'zero';
     const hasData = r => r.caixa > 0 || r.sangria > 0 || r.deposito > 0;
+    const showSaldo = r => carryDisplayFrom ? r.dt <= todayTrunc : hasData(r);
     const dash = `<span style="color:var(--muted)">—</span>`;
 
     targetBody.innerHTML = `
@@ -8558,7 +8562,7 @@ function renderCaixaCard(container) {
               <td class="caixa-td-val${isAdmin?' caixa-deposito-cell':''}" ${isAdmin?`data-field="caixa" data-day="${r.d}" style="cursor:pointer" title="Clique para editar"`:''}>${r.caixa > 0 ? fmtCur(r.caixa) : dash}</td>
               <td class="caixa-td-val${isAdmin?' caixa-deposito-cell':''}" ${isAdmin?`data-field="sangria" data-day="${r.d}" style="cursor:pointer" title="Clique para editar"`:''}>${r.sangria > 0 ? fmtCur(r.sangria) : dash}</td>
               <td class="caixa-td-val caixa-deposito-cell" data-field="deposito" data-day="${r.d}" style="cursor:pointer">${r.deposito > 0 ? fmtCur(r.deposito) : dash}</td>
-              <td class="caixa-td-saldo ${!hasData(r) ? 'zero' : sc(r.saldo)}">${!hasData(r) ? dash : fmtCur(r.saldo)}</td>
+              <td class="caixa-td-saldo ${!showSaldo(r) ? 'zero' : sc(r.saldo)}">${!showSaldo(r) ? dash : fmtCur(r.saldo)}</td>
             </tr>`).join('')}</tbody>
           <tfoot><tr class="caixa-total-row">
             <td>Total</td>
