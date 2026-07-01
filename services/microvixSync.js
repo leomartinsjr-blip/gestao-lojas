@@ -67,6 +67,9 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
       }
       if (siteCod && String(row.cod_vendedor || '').trim() !== siteCod) continue;
       if (row.cancelado === 'S' || row.cancelado === '1') continue;
+      // Só venda (S) ou devolução (DS) contam — entrada de mercadoria (E), ajuste (J) etc. não são vendas
+      const rowOp = (row.operacao || '').trim().toUpperCase();
+      if (rowOp !== 'S' && rowOp !== 'DS') continue;
       // Ignora reservas B2C sem NF emitida (documento=0 = ainda não faturado)
       if (!parseInt(row.documento || '0')) continue;
       const dateStr = parseDate(row.data_documento);
@@ -129,6 +132,9 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
   const agg = {};
   for (const row of rows) {
     if (row.cancelado === 'S' || row.cancelado === '1') continue;
+    // Só venda (S) ou devolução (DS) contam — entrada de mercadoria (E), ajuste (J) etc. não são vendas
+    const rowOp = (row.operacao || '').trim().toUpperCase();
+    if (rowOp !== 'S' && rowOp !== 'DS') continue;
 
     const codVend  = String(row.cod_vendedor || '').trim();
     const vendNorm = vendMap[codVend];
@@ -275,11 +281,15 @@ async function runSyncRetroativo(readDB, writeDB, dtIni, dtFin, boards) {
     const db        = await readDB();
     const employees = db.employees || [];
     let totalUpdated = 0;
+    const warningsByBoard = {};
 
     for (const [board, cnpj] of Object.entries(targets)) {
       try {
         const updated = await syncStore(board, cnpj, dtIni, dtFin, employees, db);
         totalUpdated += updated;
+        // Captura os warnings desta rodada antes que outro sync (ex: o intervalo
+        // automático rodando em paralelo) sobrescreva db.microvixSyncWarnings[board]
+        warningsByBoard[board] = db.microvixSyncWarnings?.[board]?.warnings || [];
         console.log(`[Microvix] Retroativo ${board}: ${updated} entradas atualizadas`);
       } catch (err) {
         console.error(`[Microvix/${board}] Erro retroativo:`, err.message);
@@ -287,7 +297,7 @@ async function runSyncRetroativo(readDB, writeDB, dtIni, dtFin, boards) {
     }
 
     await writeDB(db);
-    const result = { at: new Date().toISOString(), updated: totalUpdated, dtIni, dtFin, boards: Object.keys(targets) };
+    const result = { at: new Date().toISOString(), updated: totalUpdated, dtIni, dtFin, boards: Object.keys(targets), warnings: warningsByBoard };
     lastSync  = result;
     lastError = null;
     console.log(`[Microvix] Sync retroativo OK — ${totalUpdated} entradas atualizadas`);
