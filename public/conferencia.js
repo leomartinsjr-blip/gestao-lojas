@@ -128,6 +128,15 @@
   cxMonthEl.value = hoje.slice(0,7);
   cxMonthEl.addEventListener('change', () => loadCxView());
 
+  function _shiftCxMonth(delta) {
+    const [y, m] = cxMonthEl.value.split('-').map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    cxMonthEl.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    loadCxView();
+  }
+  $('cxMonthPrev').addEventListener('click', () => _shiftCxMonth(-1));
+  $('cxMonthNext').addEventListener('click', () => _shiftCxMonth(1));
+
   $('cxBackBtn').addEventListener('click', () => {
     _cxStore = null;
     loadCxView();

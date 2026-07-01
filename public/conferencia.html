@@ -420,6 +420,7 @@ td.muted  { color: var(--cf-muted); }
   padding:5px 10px; border-radius:8px; font-size:12px; font-family:inherit;
 }
 .cx-month-input:focus { outline:none; border-color:var(--cf-primary); }
+.cx-month-nav { display:flex; align-items:center; gap:6px; }
 .cx-store-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:10px; }
 .cx-store-card {
   background:var(--cf-card); border:1px solid var(--cf-border); border-radius:10px;
@@ -643,7 +644,15 @@ td.muted  { color: var(--cf-muted); }
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           Extrato Rede
         </button>
-        <input type="month" id="cxMonth" class="cx-month-input"/>
+        <div class="cx-month-nav">
+          <button id="cxMonthPrev" class="cx-back-btn" title="Mês anterior">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <input type="month" id="cxMonth" class="cx-month-input"/>
+          <button id="cxMonthNext" class="cx-back-btn" title="Mês seguinte">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+        </div>
       </div>
     </div>
     <div id="cxBody"></div>
