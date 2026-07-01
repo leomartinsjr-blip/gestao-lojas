@@ -8288,9 +8288,23 @@ function renderPendenciasCard(container) {
 
 // ── Reunião Mensal ────────────────────────────────────────────────────────
 
+// Item continua ativo (não resolvido) em todo mês a partir de quando foi criado,
+// até ser marcado/arquivado — não desaparece só porque o mês virou.
+const _mtgCarriedOver = (x, year, month) =>
+  !x.archived && (x.year < year || (x.year === year && x.month <= month));
+
+// Item aparece no histórico do mês em que foi de fato resolvido (archivedAt),
+// não do mês em que foi criado — assim pautas antigas resolvidas agora ficam no mês atual.
+const _mtgArchivedInMonth = (x, year, month) => {
+  if (!x.archived) return false;
+  const d = x.archivedAt ? new Date(x.archivedAt) : null;
+  if (d && !isNaN(d)) return d.getFullYear() === year && (d.getMonth() + 1) === month;
+  return x.year === year && x.month === month; // fallback p/ itens antigos sem archivedAt
+};
+
 function _renderMeetingActive(body, board, isAdmin, refresh) {
   const items = (S.meetingItems || []).filter(x =>
-    x.board === board && x.year === S.year && x.month === S.month && !x.archived
+    x.board === board && _mtgCarriedOver(x, S.year, S.month)
   );
   if (!items.length) {
     body.innerHTML = '<div style="padding:.75rem 0;color:var(--muted);font-size:.8rem;text-align:center">Nenhum item</div>';
@@ -8361,7 +8375,7 @@ function _renderMeetingActive(body, board, isAdmin, refresh) {
 
 function _renderMeetingHistory(body, board, isAdmin, refresh) {
   const items = (S.meetingItems || []).filter(x =>
-    x.board === board && x.year === S.year && x.month === S.month && x.archived
+    x.board === board && _mtgArchivedInMonth(x, S.year, S.month)
   ).sort((a, b) => (b.archivedAt || '').localeCompare(a.archivedAt || ''));
 
   if (!items.length) {
@@ -8401,12 +8415,11 @@ function _renderMeetingHistory(body, board, isAdmin, refresh) {
     if (clearAll) {
       clearAll.addEventListener('click', async () => {
         const toDelete = (S.meetingItems || []).filter(x =>
-          x.board === board && x.year === S.year && x.month === S.month && x.archived
+          x.board === board && _mtgArchivedInMonth(x, S.year, S.month)
         );
         await Promise.all(toDelete.map(x => apiFetch('DELETE', `/api/meeting-items/${x.id}`).catch(() => {})));
-        S.meetingItems = S.meetingItems.filter(x =>
-          !(x.board === board && x.year === S.year && x.month === S.month && x.archived)
-        );
+        const toDeleteIds = new Set(toDelete.map(x => x.id));
+        S.meetingItems = S.meetingItems.filter(x => !toDeleteIds.has(x.id));
         _renderMeetingHistory(body, board, isAdmin, refresh);
         refresh();
       });
@@ -8433,7 +8446,7 @@ function renderMeetingCard(container) {
     return `<div class="nf-tabs">
       ${visibleStores.map(b => {
         const pending = (S.meetingItems || []).filter(x =>
-          x.board === b && x.year === S.year && x.month === S.month && !x.archived
+          x.board === b && _mtgCarriedOver(x, S.year, S.month)
         ).length;
         return `<button class="nf-tab${b === activeBoard ? ' active' : ''}" data-board="${b}"
           style="--nf-tab-color:${BOARDS[b]?.color || '#8B949E'}">
@@ -8488,7 +8501,7 @@ function renderMeetingCard(container) {
 
   function refresh() {
     const archived = (S.meetingItems || []).filter(x =>
-      x.board === activeBoard && x.year === S.year && x.month === S.month && x.archived
+      x.board === activeBoard && _mtgArchivedInMonth(x, S.year, S.month)
     );
     if (archived.length > 0) {
       histBtn.style.display = '';
