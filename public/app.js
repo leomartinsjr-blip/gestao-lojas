@@ -5942,10 +5942,8 @@ function _renderFolgasActiveTab() {
   const atBody    = document.getElementById('folgasAtestadosBody');
   const ferBody   = document.getElementById('folgasFeriasBody');
   const toolbar   = document.getElementById('folgasToolbar');
-  const addBtn    = document.getElementById('folgasAddEmpBtn');
 
   [tableWrap, atBody, ferBody].forEach(el => el?.classList.add('hidden'));
-  addBtn && (addBtn.style.display = FC.tab === 'calendario' ? '' : 'none');
 
   if (FC.tab === 'calendario') {
     tableWrap?.classList.remove('hidden');
@@ -5965,7 +5963,6 @@ function updateFolgasLabel() {
 
 function updateFolgasFilterAndForm() {
   const filterSel = document.getElementById('folgasBoardFilter');
-  const boardSel  = document.getElementById('folgasEmpBoard');
   const isAdmin   = !S.user?.board;
 
   if (isAdmin) {
@@ -5973,12 +5970,8 @@ function updateFolgasFilterAndForm() {
     filterSel.innerHTML = '<option value="">Todas as lojas</option>' +
       Object.entries(BOARDS).map(([k,v]) =>
         `<option value="${k}" ${FC.filterBoard===k?'selected':''}>${v.label}</option>`).join('');
-    boardSel.style.display = '';
-    boardSel.innerHTML = Object.entries(BOARDS)
-      .map(([k,v]) => `<option value="${k}">${v.label}</option>`).join('');
   } else {
     filterSel.style.display = 'none';
-    boardSel.style.display  = 'none';
   }
 }
 
@@ -5998,7 +5991,7 @@ function renderFolgasTable() {
 
   if (emps.length === 0) {
     table.innerHTML = `<tbody><tr class="folgas-empty-row"><td colspan="${daysInMonth+1}">
-      Nenhum funcionário cadastrado.<br>Clique em <strong>+ Funcionário</strong> para adicionar.
+      Nenhum funcionário cadastrado.<br>Cadastre em <strong>Cadastro de Funcionários</strong>.
     </td></tr></tbody>`;
     return;
   }
@@ -6657,37 +6650,6 @@ function initFolgasModal() {
     });
   });
 
-  // Add employee form
-  const addBtn    = document.getElementById('folgasAddEmpBtn');
-  const form      = document.getElementById('folgasAddForm');
-  const nameInp   = document.getElementById('folgasEmpName');
-  const confirmBtn= document.getElementById('folgasAddConfirm');
-  const cancelBtn = document.getElementById('folgasAddCancel');
-
-  addBtn.addEventListener('click', () => {
-    form.classList.toggle('hidden');
-    if (!form.classList.contains('hidden')) nameInp.focus();
-  });
-  cancelBtn.addEventListener('click', () => {
-    form.classList.add('hidden'); nameInp.value = '';
-  });
-  const doAddEmp = async () => {
-    const name  = nameInp.value.trim();
-    const board = S.user?.board || document.getElementById('folgasEmpBoard').value;
-    if (!name || !board) return;
-    confirmBtn.disabled = true;
-    try {
-      const emp = await apiFetch('POST', '/api/employees', { name, board });
-      FC.employees.push(emp);
-      renderFolgasTable();
-      nameInp.value = '';
-      form.classList.add('hidden');
-      toast(`"${name}" adicionado ✓`);
-    } catch (e) { toast('Erro: ' + e.message, true); }
-    finally { confirmBtn.disabled = false; }
-  };
-  confirmBtn.addEventListener('click', doAddEmp);
-  nameInp.addEventListener('keydown', e => { if (e.key === 'Enter') doAddEmp(); });
 }
 
 // ── Metas Semanais ─────────────────────────────────────────────────────────
