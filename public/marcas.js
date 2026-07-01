@@ -17,9 +17,44 @@ const pad = n => String(n).padStart(2, '0');
 let me = null;
 let apiData = null;
 let stockData = null;
-let stockMap = {};   // marca.toUpperCase() → estoque entry
-let viewMode = 'marca'; // 'marca' | 'setor'
+let stockMap = {};
+let viewMode = 'marca'; // 'marca' | 'setor' | 'vendedor' | 'ticket'
 const expanded = new Set();
+let _vvData = null;
+let _tkData = null;
+
+const $ = id => document.getElementById(id);
+
+function _hideAltViews() {
+  $('vvControls').style.display  = 'none';
+  $('tkControls').style.display  = 'none';
+  $('vvResult').style.display    = 'none';
+  $('tkResult').style.display    = 'none';
+  $('vvResult').innerHTML = '';
+  $('tkResult').innerHTML = '';
+}
+
+function setVendedorView(active) {
+  $('mxMainControls').style.display = active ? 'none' : 'contents';
+  $('vvControls').style.display     = active ? 'flex' : 'none';
+  $('tkControls').style.display     = 'none';
+  $('summaryStrip').style.display   = active ? 'none' : ($('summaryStrip').dataset.wasVisible === '1' ? '' : 'none');
+  $('brandList').style.display      = active ? 'none' : '';
+  $('vvResult').style.display       = active ? ''     : 'none';
+  $('tkResult').style.display       = 'none';
+  if (!active) { $('vvResult').innerHTML = ''; }
+}
+
+function setTicketView(active) {
+  $('mxMainControls').style.display = active ? 'none' : 'contents';
+  $('tkControls').style.display     = active ? 'flex' : 'none';
+  $('vvControls').style.display     = 'none';
+  $('summaryStrip').style.display   = active ? 'none' : ($('summaryStrip').dataset.wasVisible === '1' ? '' : 'none');
+  $('brandList').style.display      = active ? 'none' : '';
+  $('tkResult').style.display       = active ? ''     : 'none';
+  $('vvResult').style.display       = 'none';
+  if (!active) { $('tkResult').innerHTML = ''; }
+}
 
 async function init() {
   const r = await fetch('/api/me');
@@ -27,7 +62,7 @@ async function init() {
   me = await r.json();
 
   const isAdmin = !me.board || me.board === 'escritorio';
-  const boardSel = document.getElementById('boardSel');
+  const boardSel = $('boardSel');
   if (isAdmin) {
     boardSel.style.display = '';
     boardSel.innerHTML =
@@ -36,25 +71,182 @@ async function init() {
         `<option value="${k}">${v.label}</option>`).join('');
   }
 
+  // Preenche vvBoard igual ao boardSel
+  const vvBoard = $('vvBoard');
+  if (isAdmin) {
+    vvBoard.innerHTML =
+      '<option value="surfers">Total Surfers</option>' +
+      Object.entries(STORE_BOARDS).map(([k,v]) =>
+        `<option value="${k}">${v.label}</option>`).join('');
+  } else if (me.board) {
+    vvBoard.innerHTML = `<option value="${me.board}">${me.board}</option>`;
+  }
+
+  // Data padrão = hoje para Por Vendedor e Por Ticket
+  const _now = new Date();
+  const td = `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}-${String(_now.getDate()).padStart(2,'0')}`;
+  $('vvDtIni').value = td; $('vvDtFin').value = td;
+  $('tkDtIni').value = td; $('tkDtFin').value = td;
+
+  // Preenche tkBoard igual ao vvBoard
+  const tkBoard = $('tkBoard');
+  if (isAdmin) {
+    tkBoard.innerHTML =
+      '<option value="surfers">Total Surfers</option>' +
+      Object.entries(STORE_BOARDS).map(([k,v]) => `<option value="${k}">${v.label}</option>`).join('');
+  } else if (me.board) {
+    tkBoard.innerHTML = `<option value="${me.board}">${me.board}</option>`;
+  }
+
   setShortcut('30d');
 
   document.querySelectorAll('[data-s]').forEach(btn =>
     btn.addEventListener('click', () => setShortcut(btn.dataset.s)));
 
-  document.getElementById('searchBtn').addEventListener('click', fetchData);
+  $('searchBtn').addEventListener('click', fetchData);
 
   document.querySelectorAll('.mx-inp').forEach(inp =>
-    inp.addEventListener('keydown', e => { if (e.key === 'Enter') fetchData(); }));
+    inp.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      if (viewMode === 'vendedor') fetchVendedor();
+      else if (viewMode === 'ticket') fetchTicket();
+      else fetchData();
+    }));
 
-  // Toggle Por Marca / Por Setor
+  // Toggle Por Marca / Por Setor / Por Vendedor / Por Ticket
   document.querySelectorAll('.mx-view-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       viewMode = btn.dataset.view;
       document.querySelectorAll('.mx-view-btn').forEach(b => b.classList.toggle('active', b.dataset.view === viewMode));
       expanded.clear();
-      if (apiData) render();
+      if (viewMode === 'vendedor') {
+        setVendedorView(true);
+      } else if (viewMode === 'ticket') {
+        setTicketView(true);
+      } else {
+        setVendedorView(false);
+        setTicketView(false);
+        if (apiData) render();
+      }
     });
   });
+
+  // Por Vendedor — buscar / XLS
+  $('vvSearchBtn').addEventListener('click', fetchVendedor);
+  $('vvDtIni').addEventListener('keydown', e => { if (e.key === 'Enter') fetchVendedor(); });
+  $('vvDtFin').addEventListener('keydown', e => { if (e.key === 'Enter') fetchVendedor(); });
+  $('vvXlsBtn').addEventListener('click', () => {
+    if (!_vvData) return;
+    const lines = ['Loja\tVendedor\tMarca\tCódigo\tDescrição\tQtd\tValor Líq.'];
+    for (const row of _vvData.rows) {
+      lines.push([row.loja, row.vendedor, row.marca, row.cod, row.desc, row.qty,
+        String(row.venda_total).replace('.', ',')].join('\t'));
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/tab-separated-values;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `vendas-vendedor-${_vvData.board}-${_vvData.dtIni}.tsv`; a.click();
+  });
+
+  // Por Ticket — buscar / XLS
+  $('tkSearchBtn').addEventListener('click', fetchTicket);
+  $('tkDtIni').addEventListener('keydown', e => { if (e.key === 'Enter') fetchTicket(); });
+  $('tkDtFin').addEventListener('keydown', e => { if (e.key === 'Enter') fetchTicket(); });
+  $('tkXlsBtn').addEventListener('click', () => {
+    if (!_tkData) return;
+    const fmtD = s => s ? s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(0,4) : '';
+    const lines = ['Loja\tData\tHora\tDoc\tVendedor\tFormas\tDesconto\tTotal'];
+    for (const v of _tkData.vendas) {
+      const formas = (v.formas||[]).map(f => f.forma+(f.bandeira?' '+f.bandeira:'')+(f.parcelas>1?' '+f.parcelas+'x':'')).join(' / ');
+      lines.push([v.board||'', fmtD(v.data), v.hora||'', v.doc, v.vendedor||'', formas,
+        String(v.desconto?.valor||0).replace('.',','),
+        String(v.valorTotal).replace('.',',')].join('\t'));
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/tab-separated-values;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `vendas-ticket-${$('tkBoard').value}-${$('tkDtIni').value}.tsv`; a.click();
+  });
+}
+
+async function fetchVendedor() {
+  const board = $('vvBoard').value;
+  const dtIni = $('vvDtIni').value;
+  const dtFin = $('vvDtFin').value;
+  if (!board || !dtIni || !dtFin) return;
+
+  const btn = $('vvSearchBtn');
+  btn.disabled = true;
+  $('vvXlsBtn').style.display = 'none';
+  $('vvResult').innerHTML = '<div class="mx-state"><div class="mx-spinner"></div><br>Buscando vendas…</div>';
+
+  try {
+    const data = await fetch(
+      `/api/conferencia/vendas-vendedor?board=${board}&dtIni=${encodeURIComponent(dtIni)}&dtFin=${encodeURIComponent(dtFin)}`
+    ).then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.error || r.statusText); }); return r.json(); });
+
+    _vvData = data;
+    renderVendedor(data);
+    $('vvXlsBtn').style.display = '';
+  } catch (e) {
+    $('vvResult').innerHTML = `<div class="mx-error">${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function renderVendedor(data) {
+  const fmtR = v => 'R$ ' + (+v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  if (!data.rows || !data.rows.length) {
+    $('vvResult').innerHTML = '<div class="mx-state">Nenhuma venda encontrada no período.</div>';
+    return;
+  }
+
+  let html = `<table style="width:100%;border-collapse:collapse;font-size:.82rem">
+    <thead><tr style="background:#0d1117">
+      <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Loja</th>
+      <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Vendedor</th>
+      <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Marca</th>
+      <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Código</th>
+      <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Descrição</th>
+      <th style="text-align:right;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d;width:45px">Qtd</th>
+      <th style="text-align:right;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d;width:110px">Valor Líq.</th>
+    </tr></thead><tbody>`;
+
+  let prevLoja = null, prevVend = null;
+  for (const row of data.rows) {
+    const isNewLoja = row.loja !== prevLoja;
+    const isNewVend = isNewLoja || row.vendedor !== prevVend;
+
+    if (isNewLoja) {
+      html += `<tr style="background:#161b22">
+        <td colspan="7" style="padding:.55rem .7rem;font-weight:800;font-size:.78rem;color:#58a6ff;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #30363d">${row.loja}</td>
+      </tr>`;
+      prevLoja = row.loja; prevVend = null;
+    }
+    if (isNewVend) {
+      html += `<tr style="background:#0f1419">
+        <td></td>
+        <td colspan="6" style="padding:.45rem .6rem;font-weight:700;color:#e6edf3;border-bottom:1px solid #1a1f26">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2" style="margin-right:5px;vertical-align:middle"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+          ${row.vendedor}
+        </td>
+      </tr>`;
+      prevVend = row.vendedor;
+    }
+
+    html += `<tr style="border-bottom:1px solid #1a1f26" onmouseover="this.style.background='#1c2128'" onmouseout="this.style.background=''">
+      <td></td>
+      <td></td>
+      <td style="padding:.38rem .6rem;color:#8b949e;font-size:.78rem">${row.marca}</td>
+      <td style="padding:.38rem .6rem;color:#8b949e;font-size:.78rem">${row.cod || '—'}</td>
+      <td style="padding:.38rem .6rem;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${row.desc}">${row.desc}</td>
+      <td style="padding:.38rem .6rem;text-align:right;font-variant-numeric:tabular-nums">${row.qty}</td>
+      <td style="padding:.38rem .6rem;text-align:right;font-weight:700;color:#58a6ff;font-variant-numeric:tabular-nums">${fmtR(row.venda_total)}</td>
+    </tr>`;
+  }
+
+  html += '</tbody></table>';
+  $('vvResult').innerHTML = html;
 }
 
 function setShortcut(s) {
@@ -72,16 +264,174 @@ function setShortcut(s) {
     fin = `${ly}-${pad(lm)}-${pad(lastDay)}`;
   } else if (s === '30d') {
     const d30 = new Date(today); d30.setDate(d30.getDate() - 30);
-    ini = d30.toISOString().slice(0, 10);
-    fin = today.toISOString().slice(0, 10);
+    ini = `${d30.getFullYear()}-${pad(d30.getMonth()+1)}-${pad(d30.getDate())}`;
+    fin = `${y}-${pad(m)}-${pad(d)}`;
   } else if (s === '3m') {
     const d3m = new Date(today); d3m.setMonth(d3m.getMonth() - 3);
-    ini = d3m.toISOString().slice(0, 10);
-    fin = today.toISOString().slice(0, 10);
+    ini = `${d3m.getFullYear()}-${pad(d3m.getMonth()+1)}-${pad(d3m.getDate())}`;
+    fin = `${y}-${pad(m)}-${pad(d)}`;
   }
   document.getElementById('dtIni').value = ini;
   document.getElementById('dtFin').value = fin;
 }
+
+// ── Por Ticket ──────────────────────────────────────────────────────────────
+
+async function fetchTicket() {
+  const board = $('tkBoard').value;
+  const dtIni = $('tkDtIni').value;
+  const dtFin = $('tkDtFin').value;
+  if (!board || !dtIni || !dtFin) return;
+
+  const btn = $('tkSearchBtn');
+  btn.disabled = true;
+  $('tkXlsBtn').style.display = 'none';
+  $('tkResult').innerHTML = '<div class="mx-state">Buscando...</div>';
+
+  try {
+    const res = await fetch(`/api/conferencia/vendas?board=${encodeURIComponent(board)}&dtIni=${dtIni}&dtFin=${dtFin}`);
+    if (!res.ok) throw new Error(await res.text());
+    _tkData = await res.json();
+    renderTicket(_tkData);
+    if (_tkData.vendas?.length) $('tkXlsBtn').style.display = '';
+  } catch (e) {
+    $('tkResult').innerHTML = `<div class="mx-state" style="color:#ef4444">Erro: ${e.message}</div>`;
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+const LOJA_LABEL_MX = {
+  delrey:'Del Rey', minas:'Minas', contagem:'Contagem', estacao:'Estação',
+  tommy:'Tommy', lez:'Lez a Lez', site:'Site', surfers:'Total Surfers',
+};
+
+function renderTicket(data) {
+  const fmtD = s => s ? s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(0,4) : '—';
+  const fmtR = v => 'R$ ' + (+v||0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
+  const esc  = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+
+  const vendas = data.vendas || [];
+  if (!vendas.length) {
+    $('tkResult').innerHTML = '<div class="mx-state">Nenhuma venda encontrada no período.</div>';
+    return;
+  }
+
+  const rows = vendas.map((v, idx) => {
+    const formasChips = (v.formas||[]).map(f =>
+      `<span style="background:#21262d;border:1px solid #30363d;border-radius:4px;padding:2px 7px;font-size:.73rem;white-space:nowrap">${esc(f.forma)}${f.bandeira?' · '+esc(f.bandeira):''}${f.parcelas>1?' · '+f.parcelas+'x':''} <strong>${fmtR(f.valor)}</strong></span>`
+    ).join(' ');
+    const lojaLabel = LOJA_LABEL_MX[v.board] || esc(v.board||'');
+    const descVal = v.desconto?.valor||0;
+    const itens = v.itens || [];
+    const hasItens = itens.length > 0;
+    const zebra = idx%2===1 ? 'background:#0d1117' : '';
+
+    // Linha de detalhe (accordion)
+    const formasBlock = (v.formas||[]).map(f =>
+      `<span style="background:#21262d;border:1px solid #30363d;border-radius:6px;padding:4px 12px;font-size:.8rem">${esc(f.forma)}${f.bandeira?' · '+esc(f.bandeira):''}${f.parcelas>1?' · '+f.parcelas+'x':''} <strong>${fmtR(f.valor)}</strong></span>`
+    ).join('');
+
+    const itensBlock = !hasItens ? '<div style="color:#8b949e;font-size:.82rem;padding:.5rem 0">Sem itens detalhados.</div>' :
+      `<table style="width:100%;border-collapse:collapse;font-size:.78rem;margin-top:.5rem">
+        <thead><tr style="background:#060a0f">
+          <th style="text-align:left;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d">Produto</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:40px">Qtd</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:88px">Tabela</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:88px">Promo</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:88px">Bruto</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:78px">Desc.</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:42px">%</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:90px">Líquido</th>
+        </tr></thead>
+        <tbody>${itens.map((it, i) => {
+          const liq = it.vlrLiquido ?? (it.vlrBruto - it.vlrDesconto);
+          const vlrLiqUnit = it.quantidade > 0 ? liq / it.quantidade : liq;
+          const baseDesc = (it.emPromocao && it.precoPromocao) ? it.precoPromocao : it.vlrUnitario;
+          const percDesc = baseDesc > 0 ? ((baseDesc - vlrLiqUnit) / baseDesc * 100) : 0;
+          const nome = it.nome || it.descricao || it.cod_produto || '';
+          const tags = [
+            it.cod_produto ? `<span style="background:#1a1f28;border-radius:3px;padding:1px 5px;font-size:.67rem;color:#6b7280">${esc(it.cod_produto)}</span>` : '',
+            it.referencia  ? `<span style="background:#1a1f28;border-radius:3px;padding:1px 5px;font-size:.67rem;color:#6b7280">Ref ${esc(it.referencia)}</span>` : '',
+            it.marca       ? `<span style="background:#162032;border-radius:3px;padding:1px 5px;font-size:.67rem;color:#60a5fa">${esc(it.marca)}</span>` : '',
+            it.setor       ? `<span style="background:#1a2a1a;border-radius:3px;padding:1px 5px;font-size:.67rem;color:#6ee7b7">${esc(it.setor)}</span>` : '',
+          ].filter(Boolean).join(' ');
+          const zb = i%2===1 ? 'background:#060a0f' : '';
+          const promoCell = it.emPromocao && it.precoPromocao
+            ? `<span style="color:#2dd4bf;font-weight:700">${fmtR(it.precoPromocao)}</span>` : '—';
+          return `<tr style="${zb}">
+            <td style="padding:.4rem .5rem">
+              <div style="font-weight:700;font-size:.85rem;color:#e6edf3;letter-spacing:.01em">${esc(nome)}</div>
+              ${tags ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">${tags}</div>` : ''}
+            </td>
+            <td style="padding:.3rem .5rem;text-align:right">${it.quantidade}</td>
+            <td style="padding:.3rem .5rem;text-align:right">${fmtR(it.vlrUnitario||0)}</td>
+            <td style="padding:.3rem .5rem;text-align:right">${promoCell}</td>
+            <td style="padding:.3rem .5rem;text-align:right">${fmtR(it.vlrBruto||0)}</td>
+            <td style="padding:.3rem .5rem;text-align:right;color:#DC2626">${it.vlrDesconto>0?fmtR(it.vlrDesconto):'—'}</td>
+            <td style="padding:.3rem .5rem;text-align:right;color:#DC2626;font-size:.71rem">${percDesc>0.05?percDesc.toFixed(1)+'%':'—'}</td>
+            <td style="padding:.3rem .5rem;text-align:right;font-weight:700">${fmtR(liq)}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+
+    return `
+    <tr class="tk-row" data-idx="${idx}" style="cursor:pointer;${zebra};border-top:1px solid #21262d">
+      <td style="padding:.4rem .35rem;width:18px;color:#4b5563;font-size:.75rem">▶</td>
+      <td style="padding:.4rem .6rem;font-weight:700;white-space:nowrap">${fmtD(v.data)}</td>
+      <td style="padding:.4rem .6rem;color:#8b949e;white-space:nowrap">${esc(v.hora||'—')}</td>
+      <td style="padding:.4rem .6rem;font-family:monospace;font-size:.78rem">${esc(v.doc)}</td>
+      <td style="padding:.4rem .6rem;font-size:.8rem;color:#8b949e">${esc(lojaLabel)}</td>
+      <td style="padding:.4rem .6rem">${esc(v.vendedor||'—')}</td>
+      <td style="padding:.4rem .6rem"><div style="display:flex;gap:4px;flex-wrap:wrap">${formasChips}</div></td>
+      <td style="padding:.4rem .6rem;text-align:right;color:#DC2626;font-weight:700">${descVal>0?fmtR(descVal):'<span style="color:#374151">—</span>'}</td>
+      <td style="padding:.4rem .6rem;text-align:right;font-weight:800">${fmtR(v.valorTotal)}</td>
+    </tr>
+    <tr class="tk-detail" data-idx="${idx}" style="display:none">
+      <td colspan="9" style="padding:.75rem 1rem 1rem 2.5rem;background:#0a0e14;border-bottom:2px solid #30363d">
+        <div style="overflow-x:auto">${itensBlock}</div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const total = vendas.reduce((s,v)=>s+(v.valorTotal||0),0);
+  const totalDesc = vendas.reduce((s,v)=>s+(v.desconto?.valor||0),0);
+
+  $('tkResult').innerHTML = `
+    <div style="font-size:.78rem;color:#8b949e;margin-bottom:.5rem;padding:.25rem 0">
+      ${vendas.length} venda${vendas.length!==1?'s':''} · Total: <strong style="color:#e6edf3">${fmtR(total)}</strong>${totalDesc>0?' · Desc.: <strong style="color:#DC2626">'+fmtR(totalDesc)+'</strong>':''}
+    </div>
+    <div style="overflow-x:auto">
+    <table style="width:100%;border-collapse:collapse;font-size:.82rem">
+      <thead><tr style="background:#0d1117">
+        <th style="width:18px;padding:0"></th>
+        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Data</th>
+        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Hora</th>
+        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Doc</th>
+        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Loja</th>
+        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Vendedor</th>
+        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Pagamento</th>
+        <th style="text-align:right;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d;width:100px">Desconto</th>
+        <th style="text-align:right;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d;width:110px">Total</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>`;
+
+  $('tkResult').querySelectorAll('.tk-row').forEach(row => {
+    row.addEventListener('click', () => {
+      const idx = row.dataset.idx;
+      const detail = $('tkResult').querySelector(`.tk-detail[data-idx="${idx}"]`);
+      if (!detail) return;
+      const open = detail.style.display === '';
+      detail.style.display = open ? 'none' : '';
+      const chevron = row.querySelector('td:first-child');
+      if (chevron) chevron.textContent = open ? '▶' : '▼';
+      row.style.background = open ? (idx%2===1?'#0d1117':'') : '#111827';
+    });
+  });
+}
+
+// ── Dados de Marcas/Setor ────────────────────────────────────────────────────
 
 async function fetchData() {
   const dtIni = document.getElementById('dtIni').value;

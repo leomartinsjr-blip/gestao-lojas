@@ -128,6 +128,15 @@
   cxMonthEl.value = hoje.slice(0,7);
   cxMonthEl.addEventListener('change', () => loadCxView());
 
+  function _shiftCxMonth(delta) {
+    const [y, m] = cxMonthEl.value.split('-').map(Number);
+    const d = new Date(y, m - 1 + delta, 1);
+    cxMonthEl.value = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    loadCxView();
+  }
+  $('cxMonthPrev').addEventListener('click', () => _shiftCxMonth(-1));
+  $('cxMonthNext').addEventListener('click', () => _shiftCxMonth(1));
+
   $('cxBackBtn').addEventListener('click', () => {
     _cxStore = null;
     loadCxView();
@@ -224,7 +233,7 @@
       } else if (entry.fechado) {
         badgeClass = 'cx-day-badge--fechado';
         badgeText  = 'Fechado';
-      } else if (entry.vendasOk || entry.cartoesOk || entry.vendedoresOk || entry.alertasTickedCount > 0) {
+      } else if (entry.vendasOk || entry.cartoesOk || entry.alertasTickedCount > 0) {
         badgeClass = 'cx-day-badge--parcial';
         badgeText  = 'Em conferência';
       } else {
@@ -243,7 +252,6 @@
         ? `<div style="display:flex;gap:3px;margin-top:4px">
             <span title="Vendas"    style="font-size:10px">${entry.vendasOk    ? '✅' : '⬜'}</span>
             <span title="Cartões"   style="font-size:10px">${entry.cartoesOk   ? '✅' : '⬜'}</span>
-            <span title="Vendedores"style="font-size:10px">${entry.vendedoresOk? '✅' : '⬜'}</span>
            </div>`
         : '';
 
@@ -321,9 +329,9 @@
       } catch(_) { _revisoesMap = {}; }
       // Carrega status da rotina (só para loja+dia único)
       if (board !== 'all' && dtIni === dtFin) {
+        _rotinaBoard = board; _rotinaDate = dtIni;
         try {
           _rotinaStatus = await api('GET', `/api/caixa-status?board=${board}&date=${dtIni}`);
-          _rotinaBoard = board; _rotinaDate = dtIni;
         } catch(_) { _rotinaStatus = null; }
       } else {
         _rotinaStatus = null; _rotinaBoard = null; _rotinaDate = null;
@@ -450,7 +458,11 @@
     }
 
     const el = $('vResult');
-    if (!qtdVendas) { el.innerHTML = '<div class="cf-empty">Nenhuma venda encontrada no período.</div>'; return; }
+    if (!qtdVendas) {
+      el.innerHTML = '<div class="cf-empty">Nenhuma venda encontrada no período.</div>';
+      renderRotina(data);
+      return;
+    }
 
     if (_grupo === 'forma')    { el.innerHTML = renderGrupos(porForma,    totalVendas, 'blue');   bindDrills(el); return; }
     if (_grupo === 'vendedor') { el.innerHTML = renderGrupos(porVendedor, totalVendas, 'purple'); bindDrills(el); return; }
@@ -509,11 +521,15 @@
   function renderRotina(data) {
     const el = $('vRotina');
     if (!el) return;
-    if (!_rotinaStatus || !_rotinaBoard || !_rotinaDate) {
+    if (!_rotinaBoard || !_rotinaDate) {
       el.style.display = 'none'; el.innerHTML = ''; return;
     }
+    // Usa status padrão se a API falhou (garante que a barra sempre aparece)
+    if (!_rotinaStatus) {
+      _rotinaStatus = { alertasTicked: [], vendasOk: false, cartoesOk: false, vendedoresOk: false, fechado: false };
+    }
 
-    const { vendas, totalAlertas, porVendedor } = data;
+    const { vendas } = data;
     const st = _rotinaStatus;
     const board = _rotinaBoard;
     const date  = _rotinaDate;
@@ -522,10 +538,14 @@
     const alertasComVenda = vendas.filter(v => v.alertas?.length);
     const alertasRevisados = alertasComVenda.length === 0 ||
       alertasComVenda.every(v => !!_revisoesMap[v.doc + '::' + (v.board || board)]);
+    const semVendas = vendas.length === 0;
     const canVendas = alertasRevisados && !st.vendasOk && !st.fechado;
-    const canCartoes = st.vendasOk && !st.cartoesOk && !st.fechado;
-    const canVendedores = st.vendasOk && st.cartoesOk && !st.vendedoresOk && !st.fechado;
-    const canFechar = st.vendasOk && st.cartoesOk && st.vendedoresOk && !st.fechado;
+    // Cartões só libera quando a conciliação bate 100% (rede × Microvix, considerando
+    // reserva/pgt. anterior e confirmações manuais) — concAllOk() é a mesma checagem
+    // usada pelo botão "Confirmar Cartões" dentro da tabela de conciliação.
+    // Dias sem vendas pulam a etapa de cartões (não há extrato da Rede para conciliar).
+    const canCartoes = !semVendas && st.vendasOk && !st.cartoesOk && !st.fechado && concAllOk();
+    const canFechar = st.vendasOk && (st.cartoesOk || semVendas) && !st.fechado;
 
     function stepIco(done, num) {
       return done ? '✅' : `<span style="display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--cf-card);border:1.5px solid var(--cf-border);font-size:10px;font-weight:700;color:var(--cf-muted)">${num}</span>`;
@@ -538,7 +558,6 @@
 
     const s1Done = st.vendasOk;
     const s2Done = st.cartoesOk;
-    const s3Done = st.vendedoresOk;
 
     el.innerHTML = `
       <div class="rotina-bar">
@@ -564,35 +583,28 @@
 
           <span class="rotina-arrow">›</span>
 
-          <!-- Step 2: Cartões -->
-          <div class="rotina-step ${s2Done ? 'done' : canCartoes ? 'active' : 'locked'}">
-            <span class="rotina-step-ico">${stepIco(s2Done, 2)}</span>
-            <div class="rotina-step-info">
-              <span class="rotina-step-label">Cartões</span>
-              <span class="rotina-step-sub">${s2Done
-                ? stepSub(true, st.cartoesOkBy, st.cartoesOkTs)
-                : 'Conciliar com extrato'}</span>
-            </div>
-            ${!s2Done
-              ? `<button class="rotina-step-btn btn-ok" id="rBtnCartoes" ${canCartoes?'':'disabled'}>✓ Confirmar</button>`
-              : `<button class="rotina-step-btn btn-undo" id="rBtnCartoesUndo">↩</button>`}
-          </div>
-
-          <span class="rotina-arrow">›</span>
-
-          <!-- Step 3: Vendedores -->
-          <div class="rotina-step ${s3Done ? 'done' : canVendedores ? 'active' : 'locked'}">
-            <span class="rotina-step-ico">${stepIco(s3Done, 3)}</span>
-            <div class="rotina-step-info">
-              <span class="rotina-step-label">Vendedores</span>
-              <span class="rotina-step-sub">${s3Done
-                ? stepSub(true, st.vendedoresOkBy, st.vendedoresOkTs)
-                : 'Conferir totais'}</span>
-            </div>
-            ${!s3Done
-              ? `<button class="rotina-step-btn btn-ok" id="rBtnVendedores" ${canVendedores?'':'disabled'}>✓ Confirmar</button>`
-              : `<button class="rotina-step-btn btn-undo" id="rBtnVendedoresUndo">↩</button>`}
-          </div>
+          <!-- Step 2: Cartões (pulado quando não há vendas no dia) -->
+          ${semVendas
+            ? `<div class="rotina-step done" style="opacity:.5">
+                <span class="rotina-step-ico">✅</span>
+                <div class="rotina-step-info">
+                  <span class="rotina-step-label">Cartões</span>
+                  <span class="rotina-step-sub" style="font-style:italic">sem vendas — pulado</span>
+                </div>
+              </div>`
+            : `<div class="rotina-step ${s2Done ? 'done' : canCartoes ? 'active' : 'locked'}">
+                <span class="rotina-step-ico">${stepIco(s2Done, 2)}</span>
+                <div class="rotina-step-info">
+                  <span class="rotina-step-label">Cartões</span>
+                  <span class="rotina-step-sub">${s2Done
+                    ? stepSub(true, st.cartoesOkBy, st.cartoesOkTs)
+                    : 'Conciliar com extrato'}</span>
+                </div>
+                ${!s2Done
+                  ? `<button class="rotina-step-btn btn-ok" id="rBtnCartoes" ${canCartoes?'':'disabled'}>✓ Confirmar</button>`
+                  : `<button class="rotina-step-btn btn-undo" id="rBtnCartoesUndo">↩</button>`}
+              </div>`
+          }
 
         </div>
 
@@ -605,49 +617,7 @@
                 Fechar o Dia
               </button>`}
         </div>
-      </div>
-
-      ${(canVendedores || s3Done) ? (() => {
-        const vends = (porVendedor || []);
-        const totalLiq = vends.reduce((s,v) => s + v.total, 0);
-        const totalQtd = vends.reduce((s,v) => s + v.qtd, 0);
-        return `<div class="conc-box" style="margin-top:10px">
-          <div class="conc-hdr">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-            Passo 3 — Vendedores
-            ${s3Done ? '<span class="conc-badge ok" style="margin-left:8px">✅ Confirmado</span>' : '<span class="conc-badge nok" style="margin-left:8px">Pendente</span>'}
-          </div>
-          <div class="conc-body" style="padding:0">
-            <table class="conc-tbl" style="width:100%">
-              <thead><tr>
-                <th>Vendedor</th>
-                <th class="num">Qtd Vendas</th>
-                <th class="num">Total Líquido</th>
-                <th class="num">% do Total</th>
-              </tr></thead>
-              <tbody>
-                ${vends.length === 0
-                  ? `<tr><td colspan="4" style="text-align:center;color:var(--cf-muted);padding:16px">Nenhum vendedor encontrado</td></tr>`
-                  : vends.map(v => {
-                    const pct = totalLiq > 0 ? (v.total / totalLiq * 100).toFixed(1) : '0.0';
-                    return `<tr>
-                      <td style="font-weight:600">${esc(v.label)}</td>
-                      <td class="num"><span class="badge badge-di">${v.qtd}</span></td>
-                      <td class="num" style="font-weight:700">${fmtR(v.total)}</td>
-                      <td class="num" style="color:var(--cf-muted)">${pct}%</td>
-                    </tr>`;
-                  }).join('')}
-              </tbody>
-              <tfoot><tr style="border-top:2px solid var(--cf-border)">
-                <td style="font-weight:700;color:var(--cf-muted)">TOTAL</td>
-                <td class="num" style="font-weight:700">${totalQtd}</td>
-                <td class="num" style="font-weight:800;color:var(--cf-text)">${fmtR(totalLiq)}</td>
-                <td class="num">100%</td>
-              </tr></tfoot>
-            </table>
-          </div>
-        </div>`;
-      })() : ''}`;
+      </div>`;
 
     el.style.display = 'block';
 
@@ -666,14 +636,12 @@
     if ($('rBtnVendasUndo'))    $('rBtnVendasUndo').onclick   = () => rotinaAction('setVendasOk', false, 'rBtnVendasUndo');
     if ($('rBtnCartoes'))       $('rBtnCartoes').onclick      = () => rotinaAction('setCartoesOk', true, 'rBtnCartoes');
     if ($('rBtnCartoesUndo'))   $('rBtnCartoesUndo').onclick  = () => rotinaAction('setCartoesOk', false, 'rBtnCartoesUndo');
-    if ($('rBtnVendedores'))    $('rBtnVendedores').onclick   = () => rotinaAction('setVendedoresOk', true, 'rBtnVendedores');
-    if ($('rBtnVendedoresUndo'))$('rBtnVendedoresUndo').onclick= () => rotinaAction('setVendedoresOk', false, 'rBtnVendedoresUndo');
     if ($('rBtnFechar'))        $('rBtnFechar').onclick       = async () => {
       if (!confirm(`Fechar o dia ${date.split('-').reverse().join('/')} para ${board}?`)) return;
       const btn = $('rBtnFechar');
       btn.disabled = true; btn.textContent = '…';
       try {
-        const res = await api('POST', '/api/caixa-fechar', { board, date });
+        const res = await api('POST', '/api/caixa-fechar', { board, date, qtdVendas: (data.qtdVendas ?? 0) });
         _rotinaStatus = res.status;
         renderRotina(_data);
         // Atualiza cards de caixa
@@ -756,6 +724,7 @@
       </div>`;
 
     el.style.display = 'block';
+    syncCartoesStepperBtn();
 
     // Drag & drop + click no dropzone
     const drop = el.querySelector('.conc-drop');
@@ -809,6 +778,7 @@
         // Habilita/desabilita botão confirmar
         const confBtn = el.querySelector('#concConfirmar');
         if (confBtn) confBtn.disabled = !concAllOk();
+        syncCartoesStepperBtn();
 
         // Salva no servidor com debounce
         clearTimeout(_confManualSaveTimer);
@@ -827,15 +797,35 @@
         const mod   = inp.dataset.reservaMod;
         const band  = inp.dataset.reservaBand;
         const val   = parseFloat(inp.value) || 0;
-        if (val > 0) _saldoReserva[key] = { valor: val, obs: '' };
+        const obs   = _saldoReserva[key]?.obs || '';
+        if (val > 0) _saldoReserva[key] = { valor: val, obs };
         else delete _saldoReserva[key];
         const confBtn = el.querySelector('#concConfirmar');
         if (confBtn) confBtn.disabled = !concAllOk();
+        syncCartoesStepperBtn();
         clearTimeout(_saldoReservaSaveTimer);
         _saldoReservaSaveTimer = setTimeout(async () => {
           try {
-            await api('POST', '/api/conferencia/saldo-reserva', { board: _rotinaBoard, mod, bandeira: band, valor: val });
+            await api('POST', '/api/conferencia/saldo-reserva', { board: _rotinaBoard, mod, bandeira: band, valor: val, obs });
           } catch(e) { console.warn('Erro ao salvar saldo reserva:', e.message); }
+        }, 800);
+      });
+    });
+
+    // Inputs de observação do saldo reserva
+    el.querySelectorAll('input[data-reserva-obs-key]').forEach(inp => {
+      inp.addEventListener('input', () => {
+        const key  = inp.dataset.reservaObsKey;
+        const mod  = inp.dataset.reservaMod;
+        const band = inp.dataset.reservaBand;
+        const obs  = inp.value.trim();
+        const val  = _saldoReserva[key]?.valor || 0;
+        if (_saldoReserva[key]) _saldoReserva[key].obs = obs;
+        clearTimeout(_saldoReservaSaveTimer);
+        _saldoReservaSaveTimer = setTimeout(async () => {
+          try {
+            await api('POST', '/api/conferencia/saldo-reserva', { board: _rotinaBoard, mod, bandeira: band, valor: val, obs });
+          } catch(e) { console.warn('Erro ao salvar obs reserva:', e.message); }
         }, 800);
       });
     });
@@ -1027,25 +1017,42 @@
     const rede = buildRedeAgrupado();
     const mx   = buildMicrovixAgrupado();
     const keys = new Set([...Object.keys(rede), ...Object.keys(mx)]);
+    if (!keys.size) return false;
+
+    // Acumula diferença total (signed) entre Rede e Microvix após reserva/pgt.anterior
+    // Positivo = rede recebeu mais que Microvix; negativo = Microvix > rede (ex: Cielo link)
+    let totalCardDiff = 0;
     for (const k of keys) {
       const r = rede[k]?.total || 0;
       const m = mx[k]?.total  || 0;
       const reserva = _saldoReserva[k]?.valor || 0;
       const d0 = r - m;
-      const reservaEf = d0 > 0.10 ? Math.min(reserva, d0) : 0;
-      const diff = Math.abs(d0 - reservaEf);
-      if (diff > 0.10) return false;
+      let reservaEf = 0;
+      if (d0 > 0.10)  reservaEf =  Math.min(reserva,  d0);
+      if (d0 < -0.10) reservaEf = -Math.min(reserva, -d0);
+      totalCardDiff += (d0 - reservaEf);
     }
-    if (!keys.size) return false;
-    // Verifica confirmações manuais (linha com valor=0 sem preenchimento = OK)
+
+    // Confirmações manuais (Cielo link/portal, PIX direto etc.) compensam a diferença restante
     const manualRows = buildManualRows();
+    let totalManual = 0;
     for (const row of manualRows) {
-      const confirmado = parseFloat(_confirmacoesManual[row.key] ?? '');
+      const val = parseFloat(_confirmacoesManual[row.key] ?? '');
       const preenchido = _confirmacoesManual[row.key] !== undefined && _confirmacoesManual[row.key] !== '';
-      if (row.valor <= 0.01 && !preenchido) continue; // R$0 sem preencher = OK
-      if (Math.abs(confirmado - row.valor) > 0.10) return false;
+      // Se Microvix tem valor próprio para essa forma, exige confirmação preenchida
+      if (row.valor > 0.01 && !preenchido) return false;
+      totalManual += (isNaN(val) ? 0 : val);
     }
-    return true;
+
+    // A soma das confirmações manuais deve cobrir a diferença restante dos cartões
+    return Math.abs(totalCardDiff + totalManual) <= 0.10;
+  }
+
+  // Mantém o botão "✓ Confirmar" do passo 2 (no topo, fora da tabela de conciliação)
+  // em sincronia com concAllOk() — ele só pode habilitar quando a conciliação bate 100%.
+  function syncCartoesStepperBtn() {
+    const btn = document.getElementById('rBtnCartoes');
+    if (btn) btn.disabled = !concAllOk();
   }
 
   function buildOutrosAgrupado() {
@@ -1095,6 +1102,10 @@
         rows.push({ key: o.manualKey, label: o.label, valor: o.total });
       }
     }
+
+    // Diferença de caixa: ajuste livre (positivo ou negativo) para fechar o dia
+    rows.push({ key: 'diff_caixa', label: 'Diferença de Caixa', valor: 0, isAjuste: true });
+
     return rows;
   }
 
@@ -1118,8 +1129,10 @@
       const bandLabel = entry.bandeira || '—';
       const reserva    = _saldoReserva[k]?.valor || 0;
       const reservaObs = _saldoReserva[k]?.obs   || '';
-      // Reserva só reduz excedente positivo da Rede — nunca aprofunda déficit
-      const reservaEfetiva = d > 0.10 ? Math.min(reserva, d) : 0;
+      // Reserva reduz excedente positivo (Rede > Microvix) ou justifica déficit (Microvix > Rede)
+      let reservaEfetiva = 0;
+      if (d > 0.10)  reservaEfetiva =  Math.min(reserva,  d);
+      if (d < -0.10) reservaEfetiva = -Math.min(reserva, -d);
       const dComReserva = +(d - reservaEfetiva).toFixed(2);
       const okComReserva = Math.abs(dComReserva) <= 0.10;
       const rowCls   = onlyRede ? 'only-rede' : onlyMx ? 'only-microvix' : okComReserva ? 'ok' : 'nok';
@@ -1154,11 +1167,14 @@
         rows2 += '</table></td></tr>';
         return rows2;
       })() : '';
-      // Campo reserva: aparece quando Rede > Microvix (diff > 0)
-      const reservaField = d > 0.10 ? (
-        '<div style="margin-top:4px;display:flex;align-items:center;gap:4px">' +
-          '<span style="font-size:10px;color:var(--cf-muted)">reserva:</span>' +
-          '<input type="number" step="0.01" min="0" data-reserva-key="' + esc(k) + '" data-reserva-mod="' + esc(entry.mod) + '" data-reserva-band="' + esc(entry.bandeira||'') + '" value="' + (reserva > 0 ? reserva.toFixed(2) : '') + '" placeholder="0,00" title="' + esc(reservaObs) + '" style="width:80px;text-align:right;padding:2px 4px;border-radius:4px;border:1px solid var(--cf-border);background:var(--cf-input,var(--cf-card));color:inherit;font-size:11px;font-family:inherit">' +
+      // Campo reserva: aparece quando há diferença em qualquer sentido
+      const reservaLabel = d < -0.10 ? 'pgt. anterior:' : 'reserva:';
+      const reservaPlaceholderObs = d < -0.10 ? 'ex: pagamento recebido em 13/06' : 'ex: venda em aberto';
+      const reservaField = Math.abs(d) > 0.10 ? (
+        '<div style="margin-top:4px;display:flex;align-items:center;gap:4px;flex-wrap:wrap">' +
+          '<span style="font-size:10px;color:var(--cf-muted)">' + reservaLabel + '</span>' +
+          '<input type="number" step="0.01" min="0" data-reserva-key="' + esc(k) + '" data-reserva-mod="' + esc(entry.mod) + '" data-reserva-band="' + esc(entry.bandeira||'') + '" value="' + (reserva > 0 ? reserva.toFixed(2) : '') + '" placeholder="0,00" style="width:80px;text-align:right;padding:2px 4px;border-radius:4px;border:1px solid var(--cf-border);background:var(--cf-input,var(--cf-card));color:inherit;font-size:11px;font-family:inherit">' +
+          '<input type="text" data-reserva-obs-key="' + esc(k) + '" data-reserva-mod="' + esc(entry.mod) + '" data-reserva-band="' + esc(entry.bandeira||'') + '" value="' + esc(reservaObs) + '" placeholder="' + reservaPlaceholderObs + '" style="flex:1;min-width:140px;padding:2px 4px;border-radius:4px;border:1px solid var(--cf-border);background:var(--cf-input,var(--cf-card));color:inherit;font-size:11px;font-family:inherit">' +
         '</div>'
       ) : '';
       const diffDisplay = okComReserva
@@ -1191,27 +1207,38 @@
     // Linhas de confirmação manual (PIX direto, Cielo, etc.)
     const manualRows = buildManualRows();
     const manualRowsHtml = manualRows.map(row => {
-      totalOutros += row.valor;
+      if (!row.isAjuste) totalOutros += row.valor;
       const confirmado = parseFloat(_confirmacoesManual[row.key] || 0);
-      const diff = +(confirmado - row.valor).toFixed(2);
-      const ok   = Math.abs(diff) <= 0.10;
-      const semValor = row.valor <= 0.01;
-      const diffHtml = semValor && confirmado === 0
-        ? '<span style="color:var(--cf-green)">&#10003;</span>'
-        : confirmado === 0
-          ? '<span style="color:var(--cf-alert);font-size:11px">pendente</span>'
-          : ok
-            ? '<span style="color:var(--cf-green)">&#10003;</span>'
-            : '<span style="color:var(--cf-alert)">' + (diff > 0 ? '+' : '') + fmtR(diff) + '</span>';
-      const rowOk = ok || (semValor && confirmado === 0);
-      return `<tr class="` + (rowOk ? 'ok' : 'nok') + `" style="background:var(--cf-card2)">
-        <td colspan="2" style="font-style:italic;font-size:12px">` + esc(row.label) + ` <span style="font-size:10px;color:var(--cf-muted)">(confirmação manual)</span></td>
+
+      let diffHtml, rowOk;
+      if (row.isAjuste) {
+        // Diferença de caixa: qualquer valor é aceito; se preenchido mostra em laranja (aviso)
+        rowOk = true;
+        diffHtml = confirmado !== 0
+          ? '<span style="color:#e6a817;font-weight:700">' + (confirmado > 0 ? '+' : '') + fmtR(confirmado) + '</span>'
+          : '<span style="color:var(--cf-green)">&#10003;</span>';
+      } else {
+        const diff = +(confirmado - row.valor).toFixed(2);
+        const ok   = Math.abs(diff) <= 0.10;
+        const semValor = row.valor <= 0.01;
+        diffHtml = semValor && confirmado === 0
+          ? '<span style="color:var(--cf-green)">&#10003;</span>'
+          : confirmado === 0
+            ? '<span style="color:var(--cf-alert);font-size:11px">pendente</span>'
+            : ok
+              ? '<span style="color:var(--cf-green)">&#10003;</span>'
+              : '<span style="color:var(--cf-alert)">' + (diff > 0 ? '+' : '') + fmtR(diff) + '</span>';
+        rowOk = ok || (semValor && confirmado === 0);
+      }
+
+      return `<tr class="` + (rowOk ? 'ok' : 'nok') + `" style="background:var(--cf-card2)${row.isAjuste ? ';border-top:1px dashed var(--cf-border)' : ''}">
+        <td colspan="2" style="font-style:italic;font-size:12px">` + esc(row.label) + ` <span style="font-size:10px;color:var(--cf-muted)">${row.isAjuste ? '(ajuste para fechar)' : '(confirmação manual)'}</span></td>
         <td class="num" style="color:var(--cf-muted)">—</td>
-        <td class="num">` + fmtR(row.valor) + `</td>
+        <td class="num" style="color:var(--cf-muted)">—</td>
         <td class="num">
-          <input type="number" step="0.01" min="0"
+          <input type="number" step="0.01" ` + (row.isAjuste ? '' : 'min="0"') + `
             data-manual-key="` + esc(row.key) + `"
-            value="` + (confirmado > 0 ? confirmado.toFixed(2) : '') + `"
+            value="` + (confirmado !== 0 ? confirmado.toFixed(2) : '') + `"
             placeholder="0,00"
             style="width:90px;text-align:right;padding:2px 4px;border-radius:4px;border:1px solid var(--cf-border);background:var(--cf-input,var(--cf-card));color:inherit;font-size:12px;font-family:inherit">
           ` + diffHtml + `
@@ -2506,4 +2533,242 @@
       status.textContent = '⚠ ' + e.message;
     } finally { btn.disabled=false; }
   });
+})();
+
+// ════════════════════════════════════════════════════════════════════════
+// CMV ITENS — comparação produto a produto API vs relatório Microvix
+// ════════════════════════════════════════════════════════════════════════
+(function() {
+  const fmtR = v => 'R$ ' + (+v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtP = v => v == null ? '—' : (+v).toFixed(1) + '%';
+  const fmtEstMeses = v => {
+    if (v == null || v <= 0) return '<span style="color:var(--cf-muted)">—</span>';
+    const col = v <= 1 ? '#f85149' : v <= 2 ? '#d2993a' : v <= 4 ? '#63b3ed' : 'var(--cf-green)';
+    return `<span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:800;background:${col}22;color:${col}">${(+v).toFixed(1)}m</span>`;
+  };
+  const P    = k => getComputedStyle(document.documentElement).getPropertyValue(`--cf-${k}`).trim();
+
+  const $ = id => document.getElementById(id);
+
+  // Preenche datas padrão: 1º do mês atual até hoje
+  const today = new Date();
+  const y = today.getFullYear(), m = String(today.getMonth()+1).padStart(2,'0'), d = String(today.getDate()).padStart(2,'0');
+  $('cmvDtIni').value = `${y}-${m}-01`;
+  $('cmvDtFin').value = `${y}-${m}-${d}`;
+
+  let _lastData  = null;
+  let _cmvView   = 'marca'; // 'marca' | 'itens'
+  let _cmvSort   = 'cmv';   // 'cmv' | 'venda'
+
+  $('cmvBuscarBtn').addEventListener('click', async () => {
+    const board  = $('cmvBoard').value;
+    const dtIni  = $('cmvDtIni').value;
+    const dtFin  = $('cmvDtFin').value;
+    if (!board || !dtIni || !dtFin) return alert('Preencha loja e período.');
+
+    $('cmvResult').innerHTML = `<div class="cf-empty"><span class="spinner"></span> Buscando dados Microvix…</div>`;
+    $('cmvXlsBtn').style.display = 'none';
+
+    try {
+      const data = await fetch(`/api/conferencia/cmv-itens?board=${board}&dtIni=${encodeURIComponent(dtIni)}&dtFin=${encodeURIComponent(dtFin)}`)
+        .then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.error || r.statusText); }); return r.json(); });
+
+      _lastData = data;
+      renderCmvItens(data);
+      $('cmvXlsBtn').style.display = '';
+    } catch(e) {
+      $('cmvResult').innerHTML = `<div class="cf-empty" style="color:var(--cf-alert)">⚠ ${e.message}</div>`;
+    }
+  });
+
+  $('cmvFiltro').addEventListener('change', () => { if (_lastData) renderCmvItens(_lastData); });
+
+  // Toggle vista, ordenação e expand setores via delegação
+  document.addEventListener('click', e => {
+    const btnV = e.target.closest('[data-cmv-view]');
+    if (btnV && _lastData) { _cmvView = btnV.dataset.cmvView; renderCmvItens(_lastData); return; }
+    const btnS = e.target.closest('[data-cmv-sort]');
+    if (btnS && _lastData) { _cmvSort = btnS.dataset.cmvSort; renderCmvItens(_lastData); return; }
+    // Expand/collapse setores de uma marca
+    const row = e.target.closest('tr[data-expand]');
+    if (row) {
+      const id  = row.dataset.expand;
+      const idx = id.split('-').pop();
+      const arr = document.getElementById(`arr-${idx}`);
+      const open = arr && arr.textContent === '▼';
+      document.querySelectorAll(`.cmv-setor-row[data-marca="${idx}"]`).forEach(r => {
+        r.style.display = open ? 'none' : '';
+      });
+      if (arr) arr.textContent = open ? '▶' : '▼';
+    }
+  });
+
+  $('cmvXlsBtn').addEventListener('click', () => {
+    if (!_lastData) return;
+    exportCsv(_lastData);
+  });
+
+  function renderCmvItens(data) {
+    const filtro = $('cmvFiltro').value;
+    let itens = data.itens;
+
+    if (filtro === 'acima50') itens = itens.filter(i => i.cmv_pct != null && i.cmv_pct > 50);
+    else if (filtro === 'acima70') itens = itens.filter(i => i.cmv_pct != null && i.cmv_pct > 70);
+    else if (filtro === 'brinde') itens = itens.filter(i => i.venda_total <= 1);
+
+    const cmvColor = pct => {
+      if (pct == null) return 'var(--cf-muted)';
+      if (pct > 70) return 'var(--cf-alert)';
+      if (pct > 50) return 'var(--cf-accent)';
+      return 'var(--cf-green)';
+    };
+
+    const kpiHtml = `
+      <div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;align-items:center">
+        <div style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:10px;padding:10px 18px">
+          <div style="font-size:10px;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Custo Total</div>
+          <div style="font-size:18px;font-weight:800">${fmtR(data.total_custo)}</div>
+        </div>
+        <div style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:10px;padding:10px 18px">
+          <div style="font-size:10px;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Venda Líquida</div>
+          <div style="font-size:18px;font-weight:800">${fmtR(data.total_venda)}</div>
+        </div>
+        <div style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:10px;padding:10px 18px">
+          <div style="font-size:10px;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700">CMV%</div>
+          <div style="font-size:18px;font-weight:800;color:${cmvColor(data.cmv_pct)}">${fmtP(data.cmv_pct)}</div>
+        </div>
+        <div style="background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:10px;padding:10px 18px">
+          <div style="font-size:10px;color:var(--cf-muted);text-transform:uppercase;letter-spacing:.5px;font-weight:700">Produtos</div>
+          <div style="font-size:18px;font-weight:800">${data.qtd_itens}</div>
+        </div>
+        <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+          <button data-cmv-view="marca" style="padding:5px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid var(--cf-border);background:${_cmvView==='marca'?'var(--cf-primary)':'var(--cf-card2)'};color:${_cmvView==='marca'?'#fff':'var(--cf-muted)'}">Por Marca</button>
+          <button data-cmv-view="itens" style="padding:5px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid var(--cf-border);background:${_cmvView==='itens'?'var(--cf-primary)':'var(--cf-card2)'};color:${_cmvView==='itens'?'#fff':'var(--cf-muted)'}">Por Item</button>
+          <div style="width:1px;background:var(--cf-border);margin:0 2px"></div>
+          <button data-cmv-sort="cmv"   style="padding:5px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid ${_cmvSort==='cmv'?'var(--cf-primary)':'var(--cf-border)'};background:var(--cf-card2);color:${_cmvSort==='cmv'?'var(--cf-primary)':'var(--cf-muted)'}">↑ CMV%</button>
+          <button data-cmv-sort="venda" style="padding:5px 14px;border-radius:8px;font-size:11px;font-weight:700;cursor:pointer;font-family:inherit;border:1px solid ${_cmvSort==='venda'?'var(--cf-primary)':'var(--cf-border)'};background:var(--cf-card2);color:${_cmvSort==='venda'?'var(--cf-primary)':'var(--cf-muted)'}">↓ Venda</button>
+        </div>
+      </div>`;
+
+    let tableHtml = '';
+
+    if (_cmvView === 'marca') {
+      const marcas = [...(data.marcas || [])].sort((a, b) =>
+        _cmvSort === 'venda'
+          ? b.venda_total - a.venda_total
+          : (a.cmv_pct ?? 999) - (b.cmv_pct ?? 999)
+      );
+      const totalVenda = data.total_venda || 1;
+      const maxCmv = Math.max(...marcas.map(m => m.cmv_pct || 0), 0.01);
+
+      const marcaRows = marcas.map((m, idx) => {
+        const col   = cmvColor(m.cmv_pct);
+        const barW  = Math.max(2, Math.round((m.cmv_pct || 0) / maxCmv * 100));
+        const pctVenda = (m.venda_total / totalVenda * 100).toFixed(1);
+        const expandId = `cmv-setor-${idx}`;
+
+        // Linhas de setor (ocultas por padrão, ordenadas do maior % do total para menor)
+        const setoresSorted = [...(m.setores || [])].sort((a, b) => b.venda_total - a.venda_total);
+        const setorRows = setoresSorted.map(s => {
+          const sc  = cmvColor(s.cmv_pct);
+          const spv = (s.venda_total / totalVenda * 100).toFixed(1);
+          const badge = s.cmv_pct != null
+            ? `<span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:800;background:${sc}22;color:${sc};min-width:46px;text-align:center">${fmtP(s.cmv_pct)}</span>`
+            : '—';
+          return `<tr class="cmv-setor-row" data-marca="${idx}" style="display:none;background:var(--cf-card2)">
+            <td style="padding-left:32px;font-size:11px;color:var(--cf-muted)">↳ ${s.setor}</td>
+            <td class="num" style="font-size:11px">${s.qtd_itens}</td>
+            <td class="num" style="font-size:11px">${fmtR(s.custo_total)}</td>
+            <td class="num" style="font-size:11px">${fmtR(s.venda_total)}</td>
+            <td class="num"><span style="display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;background:rgba(99,179,237,.1);color:#63b3ed">${spv}%</span></td>
+            <td style="padding:4px 12px;text-align:right">${badge}</td>
+          </tr>`;
+        }).join('');
+
+        // Badge CMV grande e destacado para a linha de marca
+        const cmvBadge = m.cmv_pct != null
+          ? `<span style="display:inline-block;padding:3px 12px;border-radius:8px;font-size:14px;font-weight:900;letter-spacing:.3px;background:${col}22;color:${col};min-width:56px;text-align:center">${fmtP(m.cmv_pct)}</span>`
+          : '—';
+
+        const hasSetores = setoresSorted.length > 1;
+        return `<tr data-expand="${expandId}" style="cursor:${hasSetores?'pointer':'default'}" title="${hasSetores?'Clique para expandir setores':''}">
+          <td style="font-weight:700;font-size:13px">
+            ${hasSetores ? `<span style="font-size:10px;color:var(--cf-muted);margin-right:6px" id="arr-${idx}">▶</span>` : '<span style="display:inline-block;width:16px"></span>'}
+            ${m.marca}
+          </td>
+          <td class="num">${m.qtd_itens}</td>
+          <td class="num">${fmtR(m.custo_total)}</td>
+          <td class="num">${fmtR(m.venda_total)}</td>
+          <td class="num"><span style="display:inline-block;padding:2px 10px;border-radius:6px;font-size:12px;font-weight:800;background:rgba(99,179,237,.15);color:#63b3ed">${pctVenda}%</span></td>
+          <td class="num">${fmtEstMeses(m.estoque_meses)}</td>
+          <td style="padding:4px 12px;text-align:right">${cmvBadge}</td>
+        </tr>${setorRows}`;
+      }).join('');
+
+      tableHtml = `<table class="cf-tbl">
+        <thead><tr>
+          <th>Marca</th>
+          <th class="num" style="width:55px">Itens</th>
+          <th class="num" style="width:115px">Custo Total</th>
+          <th class="num" style="width:115px">Venda Líq.</th>
+          <th class="num" style="width:60px">% Venda</th>
+          <th class="num" style="width:80px">Est. Meses</th>
+          <th style="width:120px;text-align:right;padding-right:12px">CMV%</th>
+        </tr></thead>
+        <tbody>${marcaRows || `<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--cf-muted)">Nenhuma marca encontrada</td></tr>`}</tbody>
+      </table>`;
+    } else {
+      const rows = itens.map(i => {
+        const isBrinde   = i.venda_total <= 1 && i.custo_total > 0;
+        const isSuspeito = i.cmv_pct != null && Math.abs(i.cmv_pct - 100) < 0.1;
+        const col        = cmvColor(i.cmv_pct);
+        const bg = isBrinde ? 'background:rgba(248,81,73,.07)' : isSuspeito ? 'background:rgba(210,153,34,.07)' : '';
+        return `<tr style="${bg}">
+          <td style="font-size:11px;color:var(--cf-muted)">${i.cod}</td>
+          <td style="font-size:11px;color:var(--cf-muted)">${i.marca||''}</td>
+          <td style="font-size:12px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${i.desc}">
+            ${i.desc}
+            ${isBrinde   ? '<span style="font-size:10px;background:rgba(248,81,73,.2);color:var(--cf-alert);padding:1px 5px;border-radius:4px;font-weight:700;margin-left:4px">BRINDE</span>' : ''}
+            ${isSuspeito ? '<span style="font-size:10px;background:rgba(210,153,34,.2);color:#d2993a;padding:1px 5px;border-radius:4px;font-weight:700;margin-left:4px">⚠ CMV=100%</span>' : ''}
+          </td>
+          <td class="num" style="font-size:11px">${i.qty}</td>
+          <td class="num" style="font-weight:700">${fmtR(i.custo_total)}</td>
+          <td class="num">${fmtR(i.venda_total)}</td>
+          <td class="num" style="font-weight:800;color:${col}">${fmtP(i.cmv_pct)}</td>
+          <td style="font-size:11px;color:var(--cf-muted);text-align:center">${i.series||'—'}</td>
+        </tr>`;
+      }).join('');
+      tableHtml = `<table class="cf-tbl">
+        <thead><tr>
+          <th style="width:65px">Código</th>
+          <th style="width:90px">Marca</th>
+          <th>Descrição</th>
+          <th class="num" style="width:45px">Qtd</th>
+          <th class="num" style="width:110px">Custo Total</th>
+          <th class="num" style="width:110px">Venda Líq.</th>
+          <th class="num" style="width:75px">CMV%</th>
+          <th style="width:55px;text-align:center">Série</th>
+        </tr></thead>
+        <tbody>${rows || `<tr><td colspan="8" style="text-align:center;padding:24px;color:var(--cf-muted)">Nenhum item encontrado</td></tr>`}</tbody>
+      </table>`;
+    }
+
+    $('cmvResult').innerHTML = kpiHtml + tableHtml;
+  }
+
+  function exportCsv(data) {
+    const lines = ['Código\tDescrição\tQtd\tCusto Unit.\tCusto Total\tVenda Líq.\tCMV%'];
+    for (const i of data.itens) {
+      lines.push([i.cod, i.desc, i.qty,
+        String(i.custo_unit).replace('.',','),
+        String(i.custo_total).replace('.',','),
+        String(i.venda_total).replace('.',','),
+        i.cmv_pct != null ? String(i.cmv_pct).replace('.',',') : ''
+      ].join('\t'));
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/tab-separated-values;charset=utf-8' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `cmv-itens-${data.board}-${data.dtIni.replace(/\//g,'-')}.tsv`; a.click();
+  }
+
 })();

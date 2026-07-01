@@ -43,7 +43,10 @@ async function initMongo() {
     serverSelectionTimeoutMS: 30000,  // tempo para encontrar primário no Atlas (cold start pode ser lento)
     tls: true,
     tlsAllowInvalidCertificates: false,
-    maxPoolSize: 10,        // M0 suporta 500 conexões totais; 10 é seguro para múltiplos workers
+    maxPoolSize: 20,        // M0 suporta 500 conexões totais; o salvamento do catálogo em chunks
+                            // (services/_saveCatalogMongo) usa várias conexões em paralelo — 10 era
+                            // pouco e deixava outras operações (ex: conferência) na fila por dezenas
+                            // de segundos até o gateway do Render cortar com 502
     minPoolSize: 1,
     maxIdleTimeMS: 30000,   // fecha conexões ociosas após 30s
     connectTimeoutMS: 30000,
@@ -844,7 +847,7 @@ app.get('/api/employees/photos', requireAuth, async (req, res) => {
 // ── POST /api/employees ────────────────────────────────────────────────────
 app.post('/api/employees', requireAuth, async (req, res) => {
   try {
-    const { name, board, cpf, nascimento, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento, apelido, microvixCod, supervisedBoards } = req.body;
+    const { name, board, cpf, nascimento, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, omniChannel, inativo, desligamento, apelido, microvixCod, supervisedBoards } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
     if (!nascimento) return res.status(400).json({ error: 'Data de nascimento obrigatória' });
     const db = await readDB();
@@ -865,6 +868,7 @@ app.post('/api/employees', requireAuth, async (req, res) => {
       salarioFixo: parseFloat(salarioFixo) || 0, quebraCaixa: parseFloat(quebraCaixa) || 0,
       banco: banco || '', conta: conta || '',
       isVendedor: isVendedor !== false,
+      omniChannel: omniChannel === true || omniChannel === 'true',
       inativo: inativo === true || inativo === 'true',
       desligamento: desligamento || '',
       supervisedBoards: Array.isArray(supervisedBoards) ? supervisedBoards : [],
@@ -879,7 +883,7 @@ app.post('/api/employees', requireAuth, async (req, res) => {
 app.put('/api/employees/:id', requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { name, board, cpf, nascimento, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento, apelido, microvixCod, foto, supervisedBoards } = req.body;
+    const { name, board, cpf, nascimento, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, omniChannel, inativo, desligamento, apelido, microvixCod, foto, supervisedBoards } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
     if (!nascimento) return res.status(400).json({ error: 'Data de nascimento obrigatória' });
     const db  = await readDB();
@@ -903,6 +907,7 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
       salarioFixo: parseFloat(salarioFixo) || 0, quebraCaixa: parseFloat(quebraCaixa) || 0,
       banco: banco || '', conta: conta || '',
       isVendedor: isVendedor !== false,
+      omniChannel: omniChannel === true || omniChannel === 'true',
       inativo: inativo === true || inativo === 'true',
       desligamento: desligamento || '',
       supervisedBoards: Array.isArray(supervisedBoards) ? supervisedBoards : (db.employees[idx].supervisedBoards || []),
@@ -1284,11 +1289,13 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
     }
 
     function sellerDayGoal(empId, ds) {
+      // Canal Omni: soma no total da loja, mas não recebe fatia da meta nem participa da divisão
+      if (emps.find(e => e.id === empId)?.omniChannel) return 0;
       const vac = vsMap[empId]?.meta?.vacationDays || [];
       if (metaLoja > 0) {
         if (vac.includes(ds)) return 0;
         const w = gWeights[ds] ?? defW;
-        const nActive = emps.filter(e => !(vsMap[e.id]?.meta?.vacationDays || []).includes(ds)).length;
+        const nActive = emps.filter(e => !e.omniChannel && !(vsMap[e.id]?.meta?.vacationDays || []).includes(ds)).length;
         return nActive > 0 ? (metaLoja * w / 100) / nActive : 0;
       }
       return (vsMap[empId]?.meta?.mensal || 0) * (gWeights[ds] ?? defW) / 100;
@@ -2813,8 +2820,9 @@ app.post('/api/caixa-fechar', requireAuth, async (req, res) => {
   const key = `${board}:${date}`;
   if (!db.caixaStatus[key]) db.caixaStatus[key] = { alertasTicked: [], vendasOk: false, cartoesOk: false, vendedoresOk: false, fechado: false };
   const entry = db.caixaStatus[key];
-  if (!entry.vendasOk || !entry.cartoesOk || !entry.vendedoresOk)
-    return res.status(400).json({ error: 'Conclua os 3 passos da rotina (Vendas, Cartões, Vendedores) antes de fechar.' });
+  const semVendas = req.body.qtdVendas === 0;
+  if (!entry.vendasOk || (!entry.cartoesOk && !semVendas))
+    return res.status(400).json({ error: 'Conclua os passos da rotina (Vendas, Cartões) antes de fechar.' });
   entry.fechado = true;
   entry.fechadoBy = user.name || user.login;
   entry.fechadoTs = new Date().toISOString();
@@ -3086,13 +3094,14 @@ app.post('/api/boletas', requireAuth, async (req, res) => {
   try {
     const { board } = req.body;
     if (!board || !BOARDS.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
-    if (!req.body.nome?.trim()) return res.status(400).json({ error: 'Nome obrigatório' });
+    const origemVal = req.body.origem === 'loja' ? 'loja' : 'cliente';
+    if (origemVal === 'cliente' && !req.body.nome?.trim()) return res.status(400).json({ error: 'Nome obrigatório' });
     const db = await readDB();
     if (!db.boletas)   db.boletas   = [];
     if (!db.boletaSeq) db.boletaSeq = {};
     if (!db.boletaSeq[board]) db.boletaSeq[board] = 0;
     db.boletaSeq[board]++;
-    const fields = ['nome','cpf','endereco','numeroEnd','compl','bairro','cep','cidade','tel','email',
+    const fields = ['origem','nome','cpf','endereco','numeroEnd','compl','bairro','cep','cidade','tel','email',
                     'produto','tamanho','ref','codigo','cor','fabricante','doc','dataCompra','defeito','dataEntregue'];
     const boleta = { id: nextId(db), numero: db.boletaSeq[board], board, status: 'pendente',
                      createdAt: new Date().toISOString(),
@@ -3111,7 +3120,7 @@ app.patch('/api/boletas/:id', requireAuth, async (req, res) => {
     const db = await readDB();
     const b  = (db.boletas || []).find(x => x.id === id);
     if (!b) return res.status(404).json({ error: 'Boleta não encontrada' });
-    const fields = ['nome','cpf','endereco','numeroEnd','compl','bairro','cep','cidade','tel','email',
+    const fields = ['origem','nome','cpf','endereco','numeroEnd','compl','bairro','cep','cidade','tel','email',
                     'produto','tamanho','ref','codigo','cor','fabricante','doc','dataCompra','defeito','dataEntregue'];
     fields.forEach(f => { if (f in req.body) b[f] = req.body[f] || null; });
     if (req.body.status) {
@@ -3186,8 +3195,9 @@ const MX_INTERVAL_MS    = parseInt(process.env.MICROVIX_INTERVAL_MIN    || '5') 
 const MX_INTERVAL_30D_MS = 24 * 60 * 60 * 1000; // conferência 30d: 1× por dia
 
 // GET  /api/microvix/status  → last sync info
-app.get('/api/microvix/status', requireAuth, (req, res) => {
-  res.json(getStatus());
+app.get('/api/microvix/status', requireAuth, async (req, res) => {
+  const db = await readDB();
+  res.json(getStatus(db));
 });
 
 // POST /api/microvix/sync    → manual trigger
@@ -4155,8 +4165,12 @@ app.get('/api/relatorio-marcas', requireAuth, async (req, res) => {
         if (row.cancelado === 'S' || row.cancelado === '1') continue;
         if (row.excluido  === 'S') continue;
         if (row.soma_relatorio === 'N') continue;
-        const op = (row.operacao || '').toUpperCase();
+        const op    = (row.operacao || '').toUpperCase();
+        const serie = String(row.serie || row.serie_documento || row.num_serie || '').trim();
         if (op !== 'S' && op !== 'DS') continue;
+        if (serie === '999') continue;
+        if (serie === '4' && op !== 'DS') continue;
+        if (serie === 'J') continue;
         const sign = op === 'DS' ? -1 : 1;
 
         const cod      = String(row.cod_produto || '').replace(/\.0+$/, '').trim();
@@ -4513,25 +4527,30 @@ async function _saveCatalogMongo(map) {
   const numChunks = Math.ceil(total / CATALOG_CHUNK_SIZE);
   const col = mongoDb.collection('catalog');
 
-  // Salva cada chunk em paralelo
-  const ops = [];
-  for (let i = 0; i < numChunks; i++) {
-    const chunk = Object.fromEntries(entries.slice(i * CATALOG_CHUNK_SIZE, (i + 1) * CATALOG_CHUNK_SIZE));
-    ops.push(col.replaceOne(
-      { _id: `fullCatalog_${i}` },
-      { _id: `fullCatalog_${i}`, data: chunk, updatedAt },
-      { upsert: true }
-    ));
+  // Salva os chunks com concorrência limitada — disparar tudo de uma vez (32+ writes de
+  // 3-4MB em paralelo) monopolizava o pool de conexões do Mongo e deixava outras operações
+  // do app (ex: conferência de caixa) na fila por dezenas de segundos.
+  const CONCURRENCY = 4;
+  for (let i = 0; i < numChunks; i += CONCURRENCY) {
+    const batch = [];
+    for (let j = i; j < Math.min(i + CONCURRENCY, numChunks); j++) {
+      const chunk = Object.fromEntries(entries.slice(j * CATALOG_CHUNK_SIZE, (j + 1) * CATALOG_CHUNK_SIZE));
+      batch.push(col.replaceOne(
+        { _id: `fullCatalog_${j}` },
+        { _id: `fullCatalog_${j}`, data: chunk, updatedAt },
+        { upsert: true }
+      ));
+    }
+    await Promise.all(batch);
   }
   // Remove chunks antigos que não existem mais (se o catálogo encolheu)
-  ops.push(col.deleteMany({ _id: { $regex: /^fullCatalog_/, $gt: `fullCatalog_${numChunks - 1}` } }));
+  await col.deleteMany({ _id: { $regex: /^fullCatalog_/, $gt: `fullCatalog_${numChunks - 1}` } });
   // Salva metadado com número de chunks
-  ops.push(col.replaceOne(
+  await col.replaceOne(
     { _id: 'fullCatalog_meta' },
     { _id: 'fullCatalog_meta', numChunks, total, updatedAt },
     { upsert: true }
-  ));
-  await Promise.all(ops);
+  );
   console.log(`[Catalog] Salvo no MongoDB: ${total} entradas em ${numChunks} chunks`);
 }
 
@@ -4563,6 +4582,10 @@ async function _getCatalog(lojas) {
     _catalogWarmStartAt = Date.now();
     _catalogWarmPromise = _buildCatalog(lojas).finally(() => { _catalogWarmPromise = null; });
   }
+  // Snapshot local: _catalogWarmPromise pode ser zerado pelo .finally() acima durante os
+  // awaits abaixo (ex: build termina rápido enquanto aguardamos o Mongo). Sem isso, o
+  // Promise.race no final racearia contra `null` e resolveria para null em vez do catálogo.
+  const buildPromise = _catalogWarmPromise;
 
   // Cache expirado mas existe: devolve imediatamente sem bloquear (rebuild acontece em background)
   if (_catalogCache) return _catalogCache;
@@ -4580,10 +4603,11 @@ async function _getCatalog(lojas) {
   }
 
   // Sem MongoDB e sem cache: aguarda o build com timeout de 10min para não bloquear
-  return Promise.race([
-    _catalogWarmPromise,
+  const result = await Promise.race([
+    buildPromise,
     new Promise((_, rej) => setTimeout(() => rej(new Error('catalog build timeout')), 600_000)),
   ]).catch(() => ({}));
+  return result || {};
 }
 
 async function _buildCatalog(lojas) {
@@ -5509,6 +5533,191 @@ app.post('/api/transferencias/export', requireAdmin, async (req, res) => {
   }
 });
 
+// POST /api/perf/export — gera Excel de Performance Mensal (uma aba por loja) (ExcelJS)
+app.post('/api/perf/export', requireAdmin, async (req, res) => {
+  try {
+    const { stores = [] } = req.body || {};
+    if (!stores.length) return res.status(400).json({ error: 'Sem dados' });
+
+    const ExcelJS = require('exceljs');
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Gestão Lojas';
+    wb.created = new Date();
+
+    const today = new Date().toLocaleDateString('pt-BR');
+    const hex2argb = hex => 'FF' + (hex || '#8B949E').replace('#', '').toUpperCase();
+
+    const COR_HEADER_BG = 'FF1F2937';
+    const COR_HEADER_FG = 'FFFFFFFF';
+    const COR_TITLE_BG  = 'FF111827';
+    const COR_ZEBRA     = 'FFF3F4F6';
+    const COR_TOTAL_BG  = 'FFE5E7EB';
+    const COR_BORDER    = 'FFD1D5DB';
+    const COR_KPI_BG    = 'FFF9FAFB';
+    const COR_POS       = 'FF15803D'; // verde
+    const COR_NEG       = 'FFB91C1C'; // vermelho
+    const COR_NEUTRAL   = 'FF9CA3AF';
+    const COR_PROJ      = 'FFB45309'; // âmbar
+
+    const histYears = [2022, 2023, 2024, 2025];
+    const headers = ['Mês', '2022', 'Δ', '2023', 'Δ', '2024', 'Δ', '2025 (ref)', 'Δ', '2026', 'Δ 26/25', 'Δ 26/24', 'Δ 26/23', 'Δ 26/22'];
+    const colWidths = [13, 11, 8, 11, 8, 11, 8, 12, 8, 12, 10, 10, 10, 10];
+
+    const pctCell = (cell, v, bold = false) => {
+      cell.value = v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`;
+      cell.font = { size: bold ? 9 : 8, bold, color: { argb: v == null ? COR_NEUTRAL : (v >= 0 ? COR_POS : COR_NEG) } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+    };
+
+    for (const store of stores) {
+      const sheetName = (store.label || store.key).slice(0, 31);
+      const ws = wb.addWorksheet(sheetName, {
+        pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+                     margins: { left: 0.4, right: 0.4, top: 0.5, bottom: 0.5, header: 0.2, footer: 0.2 } },
+        headerFooter: { oddHeader: `&L&B${sheetName.toUpperCase()}&R&BData: ${today}` },
+      });
+      ws.properties.tabColor = { argb: hex2argb(store.color) };
+      ws.columns = colWidths.map(w => ({ width: w }));
+
+      let r = 1;
+
+      // Título
+      ws.mergeCells(r, 1, r, headers.length);
+      const titleCell = ws.getCell(r, 1);
+      titleCell.value = `PERFORMANCE MENSAL — ${sheetName.toUpperCase()}  |  Data: ${today}`;
+      titleCell.font = { bold: true, size: 13, color: { argb: COR_HEADER_FG } };
+      titleCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_TITLE_BG } };
+      titleCell.alignment = { vertical: 'middle', horizontal: 'left' };
+      ws.getRow(r).height = 24;
+      r++;
+
+      // KPIs
+      const kpis = store.kpis || {};
+      const fmtBRLs = n => n == null ? '—' : 'R$ ' + Math.round(n).toLocaleString('pt-BR');
+      const fmtPcts = n => n == null ? '—' : `${n > 0 ? '+' : ''}${n.toFixed(1)}%`;
+      const kpiRows = [
+        ['Total 2025 (referência)', fmtBRLs(kpis.total25)],
+        [`Acumulado ${kpis.acumuladoLabel || ''}`, fmtBRLs(kpis.acumulado)],
+        ['Média últimos 3 meses', `${fmtPcts(kpis.mediaUltimos3)}${kpis.mediaDetalhe ? `  (${kpis.mediaDetalhe})` : ''}`],
+        ['Projeção 2026 (ano)', `${fmtBRLs(kpis.projecaoAno)}  (${fmtPcts(kpis.pProj)} vs 2025)`],
+      ];
+      kpiRows.forEach(([label, value]) => {
+        ws.mergeCells(r, 1, r, 4);
+        ws.mergeCells(r, 5, r, headers.length);
+        const lc = ws.getCell(r, 1);
+        lc.value = label;
+        lc.font = { bold: true, size: 9, color: { argb: 'FF374151' } };
+        lc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_KPI_BG } };
+        lc.alignment = { vertical: 'middle' };
+        const vc = ws.getCell(r, 5);
+        vc.value = value;
+        vc.font = { size: 9 };
+        vc.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_KPI_BG } };
+        vc.alignment = { vertical: 'middle' };
+        ws.getRow(r).height = 16;
+        r++;
+      });
+      r++; // linha em branco
+
+      // Cabeçalho da tabela
+      const headerRowNum = r;
+      headers.forEach((h, i) => {
+        const cell = ws.getCell(headerRowNum, i + 1);
+        cell.value = h;
+        cell.font = { bold: true, size: 9, color: { argb: COR_HEADER_FG } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_HEADER_BG } };
+        cell.alignment = { vertical: 'middle', horizontal: i === 0 ? 'left' : 'center' };
+        cell.border = { bottom: { style: 'medium', color: { argb: COR_BORDER } } };
+      });
+      ws.getRow(headerRowNum).height = 18;
+      ws.views = [{ state: 'frozen', xSplit: 0, ySplit: headerRowNum }];
+      r++;
+
+      // Linhas mensais
+      (store.rows || []).forEach((row, idx) => {
+        const rowNum = r;
+        const bg = idx % 2 === 1 ? COR_ZEBRA : 'FFFFFFFF';
+        let c = 1;
+
+        const mesCell = ws.getCell(rowNum, c++);
+        mesCell.value = row.isProj ? `${row.mes} (proj)` : row.mes;
+        mesCell.font = { size: 9, italic: !!row.isProj, color: { argb: row.isProj ? COR_PROJ : 'FF111827' } };
+        mesCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+        mesCell.alignment = { vertical: 'middle' };
+
+        histYears.forEach((y, j) => {
+          const vCell = ws.getCell(rowNum, c++);
+          vCell.value = row.h[j] == null ? '—' : Math.round(row.h[j]);
+          if (row.h[j] != null) vCell.numFmt = '#,##0';
+          vCell.font = { size: 9 };
+          vCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+          vCell.alignment = { horizontal: 'right', vertical: 'middle' };
+          const dCell = ws.getCell(rowNum, c++);
+          pctCell(dCell, row.deltas[j]);
+          dCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+        });
+
+        const v26Cell = ws.getCell(rowNum, c++);
+        v26Cell.value = row.v26 == null ? '—' : Math.round(row.v26);
+        if (row.v26 != null) v26Cell.numFmt = '#,##0';
+        v26Cell.font = { size: 9, bold: true, color: { argb: row.isProj ? COR_PROJ : 'FF111827' } };
+        v26Cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+        v26Cell.alignment = { horizontal: 'right', vertical: 'middle' };
+
+        [row.d2625, row.d2624, row.d2623, row.d2622].forEach(d => {
+          const dCell = ws.getCell(rowNum, c++);
+          pctCell(dCell, d);
+          dCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+        });
+
+        ws.getRow(rowNum).height = 15;
+        ws.getRow(rowNum).eachCell(cell => {
+          cell.border = { left: { style: 'thin', color: { argb: COR_BORDER } }, right: { style: 'thin', color: { argb: COR_BORDER } } };
+        });
+        r++;
+      });
+
+      // Linha de totais
+      const totRowNum = r;
+      const tot = store.totals || {};
+      let c = 1;
+      const totMesCell = ws.getCell(totRowNum, c++);
+      totMesCell.value = 'TOTAL';
+      histYears.forEach((y, j) => {
+        const vCell = ws.getCell(totRowNum, c++);
+        vCell.value = Math.round(tot[y] || 0);
+        vCell.numFmt = '#,##0';
+        vCell.alignment = { horizontal: 'right', vertical: 'middle' };
+        const dCell = ws.getCell(totRowNum, c++);
+        pctCell(dCell, (tot.totDeltas || [])[j], true);
+      });
+      const v26TotCell = ws.getCell(totRowNum, c++);
+      v26TotCell.value = Math.round(tot.v26 || 0);
+      v26TotCell.numFmt = '#,##0';
+      v26TotCell.alignment = { horizontal: 'right', vertical: 'middle' };
+      [tot.tot2625, tot.tot2624, tot.tot2623, tot.tot2622].forEach(d => {
+        const dCell = ws.getCell(totRowNum, c++);
+        pctCell(dCell, d, true);
+      });
+      ws.getRow(totRowNum).eachCell(cell => {
+        cell.font = cell.font ? { ...cell.font, bold: true } : { bold: true, size: 9 };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_TOTAL_BG } };
+        cell.border = { top: { style: 'medium', color: { argb: 'FF000000' } } };
+      });
+      ws.getRow(totRowNum).getCell(1).font = { bold: true, size: 9, color: { argb: 'FF111827' } };
+      ws.getRow(totRowNum).height = 18;
+    }
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="performance-surfers-${today.replace(/\//g,'-')}.xlsx"`);
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) {
+    console.error('[export/perf]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── CADASTRO DE PRODUTO ─────────────────────────────────────────────────
 
 // Marcas extraídas do catálogo de produtos (LinxProdutos, já funciona)
@@ -5630,17 +5839,31 @@ app.post('/api/cadastro-produto/parse-pdf', requireAdmin, _cadPdfUpload.single('
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Lista de setores e cores únicos do catálogo Microvix (para popular dropdowns no frontend)
+app.get('/api/cadastro-produto/catalogo-opts', requireAdmin, async (req, res) => {
+  try {
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const [catalog, idx] = await Promise.all([
+      Promise.race([_getCatalog(lojas), new Promise(r => setTimeout(() => r({}), 10_000))]).catch(() => ({})),
+      Promise.race([_getRefColorIndex(), new Promise(r => setTimeout(() => r(null), 10_000))]).catch(() => null),
+    ]);
+    const setores = [...new Set(Object.values(catalog).map(e => e.setor).filter(Boolean))].sort();
+    const cores   = idx ? [...new Set(Object.values(idx).flat())].sort() : [];
+    res.json({ setores, cores });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
   try {
     const { rows } = req.body;
     if (!Array.isArray(rows)) return res.status(400).json({ error: 'rows deve ser array' });
 
-    // Índice compacto ref→cores — carrega do MongoDB se disponível (instantâneo),
-    // ou aguarda até 15s pelo build inicial
-    const idx = await Promise.race([
-      _getRefColorIndex(),
-      new Promise(r => setTimeout(() => r(null), 15_000)),
-    ]).catch(() => null);
+    // Carrega índice ref→cores e catálogo completo (para fallback de cores por ref)
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const [idx, catalog] = await Promise.all([
+      Promise.race([_getRefColorIndex(), new Promise(r => setTimeout(() => r(null), 15_000))]).catch(() => null),
+      Promise.race([_getCatalog(lojas),  new Promise(r => setTimeout(() => r({}),  15_000))]).catch(() => ({})),
+    ]);
 
     if (!idx || !Object.keys(idx).length) {
       return res.json({
@@ -5651,6 +5874,15 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
     }
 
     const norm = s => (s || '').toString().replace(/\.0+$/, '').trim().toUpperCase();
+
+    // Fallback: coleta cores registradas no catálogo completo para uma dada ref
+    const coresDosCatalogo = (refNorm) => {
+      const cors = new Set();
+      for (const e of Object.values(catalog)) {
+        if (norm(e.referencia || '') === refNorm && e.desc_cor) cors.add(norm(e.desc_cor));
+      }
+      return [...cors].sort();
+    };
 
     // Retorna a cor conhecida mais longa que seja prefixo do candidato.
     // Strip de separadores iniciais: "-014" → "014"; "28CASA" → match "28".
@@ -5689,7 +5921,9 @@ app.post('/api/cadastro-produto/check', requireAdmin, async (req, res) => {
 
       // Lookup direto de ref
       if (ref && idx[ref]) {
-        const corsDisponiveis = idx[ref];
+        let corsDisponiveis = idx[ref];
+        // Fallback: se o índice tem a ref mas sem cores, busca no catálogo completo
+        if (!corsDisponiveis.length) corsDisponiveis = coresDosCatalogo(ref);
         if (!cor) return { ...r, _status: 'existing', _corsDisponiveis: corsDisponiveis, _corMatch: null };
         const corMatch = matchColor(cor, corsDisponiveis);
         return { ...r, _status: corMatch ? 'existing' : 'needs_cor', _corsDisponiveis: corsDisponiveis, _corMatch: corMatch };
@@ -5870,12 +6104,30 @@ ${JSON.stringify(numberedData, null, 2)}`;
 
     // Enriquece com setor e cores do catálogo para a ref sugerida
     const normCat = s => (s || '').toString().replace(/\.0+$/, '').trim().toUpperCase();
+
+    // Índice case-insensitive ref → {setor, ncm} para cobrir diferenças de casing entre
+    // _buildCatalog (sem toUpperCase) e _buildRefColorIndex (com toUpperCase)
+    const refMeta = {};
+    for (const [key, entry] of Object.entries(catalog)) {
+      const k = normCat(key);
+      if (!refMeta[k]) refMeta[k] = { setor: entry.setor || '', ncm: entry.ncm || '' };
+      // também indexa pelo campo referencia dentro do entry (para entries keyed by cod)
+      if (entry.referencia) {
+        const kr = normCat(entry.referencia);
+        if (!refMeta[kr]) refMeta[kr] = { setor: entry.setor || '', ncm: entry.ncm || '' };
+        else {
+          if (!refMeta[kr].setor && entry.setor) refMeta[kr].setor = entry.setor;
+          if (!refMeta[kr].ncm   && entry.ncm)   refMeta[kr].ncm   = entry.ncm;
+        }
+      }
+    }
+
     const ordered = refItems.map((item, i) => {
       const r = results[i] || { supplierRef: item.ref, suggestedRef: null };
       if (r.suggestedRef) {
-        const catEntry = catalog[r.suggestedRef] || catalog[normCat(r.suggestedRef)] || {};
-        r.catalogSetor = catEntry.setor || r.aiSetor || null;
-        r.catalogNcm   = catEntry.ncm   || null;
+        const meta = refMeta[normCat(r.suggestedRef)] || {};
+        r.catalogSetor = meta.setor || r.aiSetor || null;
+        r.catalogNcm   = meta.ncm   || null;
         r.catalogCores = idx[r.suggestedRef] || idx[normCat(r.suggestedRef)] || [];
       } else if (r.aiSetor) {
         r.catalogSetor = r.aiSetor;
@@ -5892,6 +6144,166 @@ app.post('/api/catalog/rebuild-refcolor', requireAdmin, async (req, res) => {
   _refColorIndex = null; _refColorIdxAt = 0; _refColorIdxPromise = null;
   _buildRefColorIndex().catch(e => console.warn('[RefColor rebuild]', e.message));
   res.json({ ok: true, message: 'Rebuild iniciado em background' });
+});
+
+app.post('/api/cadastro-produto/ai-suggest', requireAdmin, (req, res, next) => {
+  _cadPdfUpload.single('file')(req, res, (err) => {
+    if (err) return res.status(400).json({ error: `Upload error: ${err.message}` });
+    next();
+  });
+}, async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Nenhum arquivo enviado' });
+    const { default: Anthropic } = require('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const ext = (req.file.originalname.split('.').pop() || '').toLowerCase();
+    let rawContent = '';
+
+    if (ext === 'pdf') {
+      const pdfParse = require('pdf-parse');
+      const data = await pdfParse(req.file.buffer);
+      rawContent = data.text;
+    } else {
+      const XLSX = require('xlsx');
+      const wb = XLSX.read(req.file.buffer, { type: 'buffer' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      rawContent = rows.slice(0, 200).map(r => r.join('\t')).join('\n');
+    }
+
+    if (rawContent.length > 24000) rawContent = rawContent.slice(0, 24000) + '\n[... truncado ...]';
+
+    const systemPrompt = `Você é um assistente especializado em cadastro de produtos para o sistema Microvix de uma loja de surf/streetwear.
+Analise o arquivo do fornecedor e extraia TODOS os produtos/SKUs.
+
+REGRAS DE SETOR (aplicar sempre):
+- Camiseta, T-Shirt, Tshirt, Camiseta Regular, Camiseta Oversized → "TS Basica"
+- Regata → "Regata"
+- Calçados, Tênis, Tenis, Sandália, Bota, Sneaker → "Calçados"
+- Boné, Bone, Cap → "Acessórios"
+- Short, Shorts → "Shorts"
+- Calça, Jeans, Denim → "Calças"
+- Moletom, Agasalho → "Moletom"
+- Cinto → "Acessórios"
+- Outros → "Moda"
+
+REGRAS POR FORNECEDOR:
+
+VANS (Excel - colunas: Categoria, Descrição do modelo, Codigo Global/Sku, CodProduto, PDV, CUSTO, Grade):
+- Referência: campo CodProduto
+- O campo "Codigo Global/Sku" contém ref+cor+sufixo concatenados: ex "VN00066XY28CASA" → ref=VN00066X, cor=Y28, CASA=descartar (sempre 4 letras maiúsculas no fim)
+- Nome: Descrição do modelo
+- Tamanho: Grade — "AA03" vira "U"; "1/39;2/40;2/41;1/42" = gerar 1 SKU por tamanho (separados por ;, formato qtd/tam)
+- Custo: coluna CUSTO (número direto, ex: 90.9)
+- Preço venda: coluna PDV
+
+OAKLEY (Excel - colunas: MATERIAL, PRODUTO, COR, TAM BR, DESC COR, PDV, CUSTO NF, CATEGORIA, NCM, EAN):
+- Referência: MATERIAL
+- Nome: PRODUTO
+- Cor código: COR; Cor nome: DESC COR
+- Tamanho: TAM BR (número BR)
+- Custo: CUSTO NF (já com impostos)
+- Preço venda: PDV (remover "R$" se necessário)
+- Setor: CATEGORIA
+- NCM: NCM; EAN: EAN
+
+NEW ERA (Excel - colunas: Produto, Cor, Nome Cor, Descrição, Tamanho, custo, Preço de Varejo, Classif. Fiscal (NCM), Código de Barra):
+- Referência: Produto
+- Nome: Descrição
+- Cor código: Cor; Cor nome: Nome Cor
+- Tamanho: Tamanho (U, 7 1/4, 7 3/8...)
+- Custo: custo (arredondar para 2 casas — pode vir como float sujo tipo 107.66000000000001)
+- Preço venda: Preço de Varejo
+- NCM: Classif. Fiscal (NCM); EAN: Código de Barra
+
+MCD / OUTSIDE CO (PDF - Proposta de Venda da Outside Co):
+- Produto: linha com formato "CÓDIGO - NOME" (ex: "12722844X - CAMISETA OVERSIZED MCD DOURADO")
+- Cor: linha seguinte "Cor: BBB - BRANCO" (código - nome)
+- Grade: colunas G1/G2/G3 (oversized), P/M/G/GG (regular), 38/40/42... (calças) — gerar 1 SKU por tamanho
+- Custo: coluna Unitário *** APLICAR DESCONTO 13%: custo_real = unitario × 0.87 ***
+- Preço venda: não disponível — retornar null
+
+CONVERSE (PDF - Pedido de Venda Converse/Cooper Shoes):
+- Linha de produto: "CÓDIGO NOME_COM_COR" (ex: "CT00010002 CHUCK TAYLOR ALL STAR PRETO/CRU/PRETO")
+- A cor está embutida no nome (última parte após o modelo base)
+- Grade de tamanhos: linha "33|34|35|36|37|38" com quantidades na linha seguinte — gerar 1 SKU por tamanho
+- Custo: campo GRADE PREÇO ou PREÇO (ex: R$ 126,80)
+- Preço venda: campo PREÇO SUGERIDO
+- Setor: Calçados
+
+FORMATO DE SAÍDA — retorne APENAS JSON válido, sem texto extra:
+{
+  "fornecedor": "nome do fornecedor detectado",
+  "produtos": [
+    {
+      "referencia": "código",
+      "nome": "descrição sem cor",
+      "cor": "nome da cor em PT (ex: PRETO, MARINHO)",
+      "cod_cor": "código se houver (ex: 01K)",
+      "tamanho": "tamanho (ex: 38, M, U, 7 1/4)",
+      "setor": "setor normalizado",
+      "custo": 0.00,
+      "preco_venda": 0.00,
+      "ncm": "NCM ou null",
+      "ean": "EAN ou null"
+    }
+  ]
+}`;
+
+    // Envia apenas cabeçalhos + 5 amostras para a IA mapear colunas (rápido)
+    const headers = rawContent.split('\n')[0].split('\t');
+    const sampleRows = rawContent.split('\n').slice(1, 6);
+    const tablePreview = [headers.join(' | '), ...sampleRows.map(r => r.split('\t').join(' | '))].join('\n');
+
+    const mapPrompt = `Você recebe os cabeçalhos e amostras de uma planilha de pedido de fornecedor.
+Mapeie cada coluna para o campo Microvix correto.
+
+Cabeçalhos: ${JSON.stringify(headers)}
+
+Amostra:
+${tablePreview}
+
+Campos Microvix:
+- "referencia": código de referência/SKU do produto
+- "nome": nome ou descrição do produto
+- "cod_barra": código de barras EAN
+- "desc_marca": marca
+- "desc_setor": setor/departamento/categoria
+- "desc_cor": cor (nome)
+- "cod_cor": código da cor
+- "desc_tamanho": tamanho/grade
+- "preco_custo": preço de custo
+- "preco_venda": preço de venda
+
+Responda SOMENTE com JSON, sem texto extra. Use null se não houver coluna correspondente:
+{"referencia":"nome_exato_coluna","nome":"nome_exato_coluna","cod_barra":null,...}`;
+
+    const response = await client.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 512,
+      messages: [{ role: 'user', content: mapPrompt }],
+    });
+
+    let txt = response.content[0]?.text || '';
+    const m = txt.match(/\{[\s\S]*\}/);
+    if (m) txt = m[0];
+
+    let rawMap;
+    try { rawMap = JSON.parse(txt.trim()); }
+    catch (e) { return res.status(500).json({ error: `IA retornou JSON inválido: ${e.message}` }); }
+
+    // Filtra apenas colunas que existem de fato na planilha
+    const mapping = {};
+    for (const [key, col] of Object.entries(rawMap)) {
+      if (col && headers.includes(col)) mapping[key] = col;
+    }
+
+    res.json({ mapping, headers, totalRows: rawContent.split('\n').length - 1 });
+  } catch (e) {
+    console.error('[AI Suggest]', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
@@ -5979,6 +6391,7 @@ app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
       { header: 'Url Vídeo (B2C)',                          key: 'b2c_video',      width: 16 },
       { header: 'Código Integracao OMS',                    key: 'oms',            width: 22 },
       { header: 'Produto Desativado',                       key: 'desativado',     width: 18 },
+      { header: 'Bloqueia atualização de preço franqueadora', key: 'bloqueia_preco', width: 36 },
     ];
 
     ws.columns = COLS;
@@ -5999,11 +6412,11 @@ app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
         forn_excl:     '',
         comprador:     '',
         empresa:       '',
-        contabiliza:   'Sim',
+        contabiliza:   'Não',
         indisponivel:  'Não',
         setor:         r.desc_setor  || '',
         linha:         r.linha       || '',
-        marca:         r.desc_marca  || '',
+        marca:         '',
         colecao:       r.colecao     || '',
         espessura:     '',
         classificacao: '',
@@ -6012,7 +6425,7 @@ app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
         unidade:       'UN',
         multiplo:      '1',
         moeda:         '',
-        custo_icms:    r.preco_custo || '',
+        custo_icms:    (() => { const s = String(r.preco_custo||'').trim(); const v = parseFloat(s.includes(',') ? s.replace(/\./g,'').replace(',','.') : s); return isNaN(v) || v === 0 ? '' : v.toFixed(2).replace('.',','); })(),
         desconto:      '',
         acrescimo:     '',
         ipi:           '',
@@ -6021,7 +6434,7 @@ app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
         subst_trib:    '',
         dif_icms:      '',
         markup:        r.markup      || '',
-        preco_venda:   r.preco_venda || '',
+        preco_venda:   (() => { const s = String(r.preco_venda||'').trim(); const v = parseFloat(s.includes(',') ? s.replace(/\./g,'').replace(',','.') : s); return isNaN(v) || v === 0 ? '' : v.toFixed(2).replace('.',','); })(),
         perm_desc:     'Sim',
         comissao:      '',
         conf_trib:     '',
@@ -6035,8 +6448,8 @@ app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
         catalogo:      '',
         desc_catalogo: '',
         loja_virtual:  '',
-        exige_ctrl:    'Sim',
-        tipo_ctrl:     'Por Cor e Tamanho',
+        exige_ctrl:    '',
+        tipo_ctrl:     '',
         tam_ctrl:      '',
         peso_bruto:    '',
         peso_liq:      '',
@@ -6054,9 +6467,9 @@ app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
         qtd_compra:    '',
         localizacao:   '',
         observacao:    '',
-        cod_barra:     r.cod_barra   || '',
+        cod_barra:     '',
         caracterist:   '',
-        status:        'Ativo',
+        status:        0,
         b2c_desc:      '',
         b2c_garantia:  '',
         b2c_tags:      '',
@@ -6066,6 +6479,7 @@ app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
         b2c_video:     '',
         oms:           '',
         desativado:    '',
+        bloqueia_preco: '',
       });
     });
 
@@ -7655,6 +8069,7 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
         const serie = String(r.serie||r.serie_documento||'').trim();
         if (serie === '999') continue;
         if (serie === '4' && op !== 'DS') continue;
+        if (serie === 'J') continue;
 
         const sign     = op === 'DS' ? -1 : 1;
         const qty      = parseBR(r.quantidade||'1');
@@ -7722,8 +8137,8 @@ async function getRedeExtratoCol() {
   if (!mongoDb) throw new Error('MongoDB não conectado');
   const col = mongoDb.collection('confRedeExtrato');
   if (!_redeExtratoColReady) {
-    await col.createIndex({ board: 1, date: 1 }, { unique: true, background: true }).catch(() => {});
     _redeExtratoColReady = true;
+    col.createIndex({ board: 1, date: 1 }, { unique: true, background: true }).catch(() => {});
   }
   return col;
 }
@@ -7764,11 +8179,15 @@ let _conferenciaRevisoesColReady = false;
 async function getConferenciaRevisoesCol() {
   if (!mongoDb) throw new Error('MongoDB não conectado');
   const col = mongoDb.collection('confRevisoes');
-  // Cria índices apenas uma vez por ciclo de vida do servidor
+  // Cria índices apenas uma vez por ciclo de vida do servidor, sem bloquear a requisição:
+  // se a coleção já tiver muitos documentos acumulados, o createIndex(unique) pode demorar
+  // dezenas de segundos (scan completo p/ validar unicidade) e o gateway do Render mata a
+  // conexão com 502 antes do Mongo responder. Marca ready de imediato e deixa o índice
+  // terminar de construir em background — não precisamos dele pronto para servir leituras.
   if (!_conferenciaRevisoesColReady) {
-    await col.createIndex({ doc: 1, board: 1 }, { unique: true, background: true }).catch(() => {});
-    await col.createIndex({ data: 1, board: 1 }, { background: true }).catch(() => {});
     _conferenciaRevisoesColReady = true;
+    col.createIndex({ doc: 1, board: 1 }, { unique: true, background: true }).catch(() => {});
+    col.createIndex({ data: 1, board: 1 }, { background: true }).catch(() => {});
   }
   return col;
 }
@@ -7842,8 +8261,8 @@ async function getSaldoReservaCol() {
   if (!mongoDb) throw new Error('MongoDB não conectado');
   const col = mongoDb.collection('confSaldoReserva');
   if (!_saldoReservaColReady) {
-    await col.createIndex({ board: 1, mod: 1, bandeira: 1 }, { unique: true, background: true }).catch(() => {});
     _saldoReservaColReady = true;
+    col.createIndex({ board: 1, mod: 1, bandeira: 1 }, { unique: true, background: true }).catch(() => {});
   }
   return col;
 }
@@ -7920,8 +8339,8 @@ async function getConfirmacoesManualCol() {
   if (!mongoDb) throw new Error('MongoDB não conectado');
   const col = mongoDb.collection('confConfirmacoesManual');
   if (!_confirmacoesManualColReady) {
-    await col.createIndex({ board: 1, date: 1 }, { unique: true, background: true }).catch(() => {});
     _confirmacoesManualColReady = true;
+    col.createIndex({ board: 1, date: 1 }, { unique: true, background: true }).catch(() => {});
   }
   return col;
 }
@@ -8002,6 +8421,18 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
         vendas: allVendas,
         porForma: [], porVendedor: [],
       });
+    }
+
+    if (board === 'surfers') {
+      const surferBoards = ['delrey','minas','contagem','estacao','site'];
+      const results = await Promise.allSettled(surferBoards.map(b => _buildConferenciaVendas(b, dtIni, dtFin)));
+      const allVendas = [];
+      for (const r of results) {
+        if (r.status === 'fulfilled' && Array.isArray(r.value?.vendas)) allVendas.push(...r.value.vendas);
+      }
+      allVendas.sort((a, b) => (a.data + a.hora).localeCompare(b.data + b.hora));
+      const totalVendas = allVendas.reduce((s, v) => s + v.valorTotal, 0);
+      return res.json({ board: 'surfers', dtIni, dtFin, totalVendas, qtdVendas: allVendas.length, vendas: allVendas, porForma: [], porVendedor: [] });
     }
 
     const result = await _buildConferenciaVendas(board, dtIni, dtFin);
@@ -8179,6 +8610,7 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
           nome:         (catInfo.nome || catInfo.nomeBase || '').trim(),
           colecao:      (catInfo.linha || '').trim(),
           marca:        (catInfo.marca || '').trim(),
+          setor:        (catInfo.setor || r.desc_setor || '').trim(),
           quantidade:   qty,
           vlrUnitario:  +vlrUnit.toFixed(2),
           vlrBruto:     +vlrBruto.toFixed(2),
@@ -8346,7 +8778,12 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
     for (const d of Object.values(docMap)) {
       if (!d.formas.length || d.itens.length === 0) continue;
       const sumFormas = +d.formas.reduce((s, f) => s + f.valor, 0).toFixed(2);
-      const descTotal = +(d.valorTotal - sumFormas).toFixed(2);
+      // Em docs negativos (troca/devolução) o "desconto" aparece invertido: o valor calculado
+      // pelos itens (preço cheio) é mais negativo que as formas de pagamento (valor líquido
+      // realmente pago/devolvido). Multiplica pelo sinal do doc para tratar os dois casos
+      // com a mesma lógica de distribuição abaixo.
+      const signDoc   = d.valorTotal < 0 ? -1 : 1;
+      const descTotal = +(signDoc * (d.valorTotal - sumFormas)).toFixed(2);
       if (descTotal <= 0.02) continue;
       const totalBruto = d.itens.reduce((s, i) => s + i.vlrBruto, 0);
       if (totalBruto > 0) {
@@ -8612,6 +9049,286 @@ app.get('/api/conferencia/debug', requireEscritorioOrAdmin, async (req, res) => 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/conferencia/cmv-itens?board=minas&dtIni=DD/MM/YYYY&dtFin=DD/MM/YYYY
+// Retorna custo por produto (da API Microvix) para comparar com relatório Microvix portal
+app.get('/api/conferencia/cmv-itens', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { board, dtIni, dtFin } = req.query;
+    if (!board || !dtIni || !dtFin) return res.status(400).json({ error: 'board, dtIni e dtFin obrigatórios' });
+
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const SURFERS_BOARDS = ['delrey','minas','contagem','estacao','site'];
+    const targetBoards   = board === 'surfers' ? SURFERS_BOARDS : [board];
+
+    // Valida que todos os boards existem
+    for (const b of targetBoards) {
+      if (!lojas[b]) return res.status(400).json({ error: `Loja "${b}" não configurada` });
+    }
+
+    const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
+
+    const { fetchMovimento, fetchEstoque } = require('./services/microvix');
+    const today = new Date().toISOString().slice(0, 10);
+    const [allRowsNested, allEstoqueNested, catalog] = await Promise.all([
+      Promise.all(targetBoards.map(b => {
+        const c = lojas[b];
+        const k = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+        return fetchMovimento(c, dtIni, dtFin, k).then(r => Array.isArray(r) ? r : []);
+      })),
+      Promise.all(targetBoards.map(b => {
+        const c = lojas[b];
+        const k = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+        return fetchEstoque(c, k, today).catch(() => []);
+      })),
+      _getCatalog(lojas).catch(() => ({})),
+    ]);
+    const rows = allRowsNested.flat();
+
+    // Conjunto de CNPJs válidos para filtrar linhas
+    const validCnpjs = new Set(targetBoards.map(b => lojas[b].replace(/\D/g,'')));
+
+    const itens = {};
+    let totalCusto = 0, totalVenda = 0;
+
+    for (const r of rows) {
+      const rowCnpj = (r.cnpj_emp||r.cnpj||'').replace(/\D/g,'');
+      if (!rowCnpj || !validCnpjs.has(rowCnpj)) continue;
+      if (r.cancelado === 'S' || r.cancelado === '1') continue;
+      if ((r.soma_relatorio||'S').toUpperCase() === 'N') continue;
+      const op = (r.operacao||'').trim().toUpperCase();
+      if (op !== 'S' && op !== 'DS') continue;
+      const serie = String(r.serie||r.serie_documento||'').trim();
+      if (serie === '999') continue;
+      if (serie === '4' && op !== 'DS') continue;
+      if (serie === 'J') continue;
+
+      const sign    = op === 'DS' ? -1 : 1;
+      const qty     = parseBR(r.quantidade||'1');
+      const custo   = parseBR(r.custo_medio_epoca||r.preco_custo||'0');
+      const vlrUnit = parseBR(r.preco_tabela_epoca||r.preco_unitario||'0');
+      const vlrDesc = parseBR(r.desconto_item||r.desconto_total_item||'0');
+      const vlrLiq  = Math.max(0, vlrUnit - vlrDesc);
+
+      const cod  = String(r.cod_produto||'').trim();
+      const desc = String(r.descricao||r.descricao_produto||'').trim();
+      const key  = cod || desc;
+      if (!key) continue;
+
+      if (!itens[key]) {
+        const cat   = catalog[cod] || {};
+        const marca = (cat.marca || cat.desc_marca || r.desc_marca || '').trim() || '(sem marca)';
+        const setor = (cat.setor || cat.desc_setor || r.desc_setor || '').trim() || '(sem setor)';
+        itens[key] = { cod, desc, marca, setor, qty: 0, custoTotal: 0, vendaTotal: 0, custo_unit_api: custo, series: new Set() };
+      }
+      itens[key].qty        += sign * qty;
+      itens[key].custoTotal += sign * custo * qty;
+      itens[key].vendaTotal += sign * vlrLiq * qty;
+      itens[key].series.add(serie);
+
+      totalCusto += sign * custo * qty;
+      totalVenda += sign * vlrLiq * qty;
+    }
+
+    const lista = Object.values(itens)
+      .filter(i => i.qty !== 0)
+      .map(i => ({
+        cod:          i.cod,
+        desc:         i.desc,
+        marca:        i.marca,
+        setor:        i.setor,
+        qty:          +i.qty.toFixed(0),
+        custo_unit:   +i.custo_unit_api.toFixed(2),
+        custo_total:  +i.custoTotal.toFixed(2),
+        venda_total:  +i.vendaTotal.toFixed(2),
+        cmv_pct:      i.vendaTotal > 0 ? +(i.custoTotal / i.vendaTotal * 100).toFixed(2) : null,
+        series:       [...i.series].join(','),
+      }))
+      .sort((a, b) => b.custo_total - a.custo_total);
+
+    // Estoque atual por cod_produto (soma todas as lojas)
+    const estoqueQty = {};
+    for (const row of allEstoqueNested.flat()) {
+      const cod = String(row.cod_produto || '').trim();
+      if (!cod) continue;
+      const qty = parseBR(row.quantidade || row.saldo || row.qtd || '0');
+      estoqueQty[cod] = (estoqueQty[cod] || 0) + qty;
+    }
+
+    // Nº de meses do período consultado (mínimo 1)
+    const msToDate = s => { const p = String(s).trim(); if (p.includes('-')) return new Date(p); const [d,m,y] = p.split('/'); return new Date(`${y}-${m}-${d}`); };
+    const d1 = msToDate(dtIni), d2 = msToDate(dtFin);
+    const mesesPeriodo = Math.max(1, (d2 - d1) / (1000 * 60 * 60 * 24 * 30.44));
+
+    // Agrupamento sintético por marca → setor
+    const porMarca = {};
+    for (const i of lista) {
+      const m = i.marca || '(sem marca)';
+      const s = i.setor || '(sem setor)';
+      if (!porMarca[m]) porMarca[m] = { marca: m, qtd_itens: 0, custo_total: 0, venda_total: 0, qty_vendida: 0, qty_estoque: 0, setores: {} };
+      const absQty = Math.abs(i.qty);
+      porMarca[m].qtd_itens   += absQty;
+      porMarca[m].custo_total += i.custo_total;
+      porMarca[m].venda_total += i.venda_total;
+      porMarca[m].qty_vendida += absQty;
+      porMarca[m].qty_estoque += (estoqueQty[i.cod] || 0);
+      if (!porMarca[m].setores[s]) porMarca[m].setores[s] = { setor: s, qtd_itens: 0, custo_total: 0, venda_total: 0 };
+      porMarca[m].setores[s].qtd_itens   += absQty;
+      porMarca[m].setores[s].custo_total += i.custo_total;
+      porMarca[m].setores[s].venda_total += i.venda_total;
+    }
+    const marcas = Object.values(porMarca)
+      .map(m => {
+        const mediaVendaMensal = m.qty_vendida / mesesPeriodo;
+        const estoque_meses    = mediaVendaMensal > 0 ? +(m.qty_estoque / mediaVendaMensal).toFixed(1) : null;
+        return {
+          marca:          m.marca,
+          qtd_itens:      m.qtd_itens,
+          custo_total:    +m.custo_total.toFixed(2),
+          venda_total:    +m.venda_total.toFixed(2),
+          cmv_pct:        m.venda_total > 0 ? +(m.custo_total / m.venda_total * 100).toFixed(2) : null,
+          qty_estoque:    +m.qty_estoque.toFixed(0),
+          estoque_meses,
+          setores:        Object.values(m.setores)
+            .map(s => ({ ...s, custo_total: +s.custo_total.toFixed(2), venda_total: +s.venda_total.toFixed(2), cmv_pct: s.venda_total > 0 ? +(s.custo_total / s.venda_total * 100).toFixed(2) : null }))
+            .sort((a, b) => (a.cmv_pct ?? 999) - (b.cmv_pct ?? 999)),
+        };
+      })
+      .sort((a, b) => (a.cmv_pct ?? 999) - (b.cmv_pct ?? 999));
+
+    res.json({
+      board, dtIni, dtFin,
+      total_custo:  +totalCusto.toFixed(2),
+      total_venda:  +totalVenda.toFixed(2),
+      cmv_pct:      totalVenda > 0 ? +(totalCusto / totalVenda * 100).toFixed(2) : null,
+      qtd_itens:    lista.length,
+      marcas,
+      itens:        lista,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/conferencia/vendas-vendedor?board=surfers&dtIni=YYYY-MM-DD&dtFin=YYYY-MM-DD
+// Retorna itens vendidos agrupados por loja → vendedor → marca → item
+app.get('/api/conferencia/vendas-vendedor', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { board, dtIni, dtFin } = req.query;
+    if (!board || !dtIni || !dtFin) return res.status(400).json({ error: 'board, dtIni e dtFin obrigatórios' });
+
+    const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const SURFERS_BOARDS = ['delrey','minas','contagem','estacao','site'];
+    const targetBoards   = board === 'surfers' ? SURFERS_BOARDS : [board];
+
+    for (const b of targetBoards) {
+      if (!lojas[b]) return res.status(400).json({ error: `Loja "${b}" não configurada` });
+    }
+
+    const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
+    const BOARD_LABEL = { minas:'Minas', estacao:'Estação', contagem:'Contagem', delrey:'Del Rey', tommy:'Tommy', surfers:'Surfers', site:'Site' };
+
+    const { fetchMovimento, fetchVendedores } = require('./services/microvix');
+
+    // Busca movimentos, catálogo e vendedores em paralelo
+    const [allRowsNested, allVendNested, catalog] = await Promise.all([
+      Promise.all(targetBoards.map(b => {
+        const cnpj  = lojas[b];
+        const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+        return fetchMovimento(cnpj, dtIni, dtFin, chave).then(r => Array.isArray(r) ? r.map(row => ({ ...row, _board: b })) : []);
+      })),
+      Promise.all(targetBoards.map(b => {
+        const cnpj  = lojas[b];
+        const chave = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+        return fetchVendedores(cnpj, chave).catch(() => []);
+      })),
+      _getCatalog(lojas).catch(() => ({})),
+    ]);
+    const rows = allRowsNested.flat();
+
+    // Monta cache cod_vendedor → nome (todos os boards)
+    const vendNomeCache = {};
+    for (const vRows of allVendNested) {
+      for (const v of vRows) {
+        const cod  = String(v.cod_vendedor || v.codigo || '').trim();
+        const nome = (v.nome_vendedor || v.nome || '').trim();
+        if (cod && nome) vendNomeCache[cod] = nome;
+      }
+    }
+
+    const validCnpjs = new Set(targetBoards.map(b => lojas[b].replace(/\D/g,'')));
+
+    // loja → vendedor → marca → item_key
+    const tree = {};
+
+    for (const r of rows) {
+      const rowCnpj = (r.cnpj_emp||r.cnpj||'').replace(/\D/g,'');
+      if (!rowCnpj || !validCnpjs.has(rowCnpj)) continue;
+      if (r.cancelado === 'S' || r.cancelado === '1') continue;
+      if ((r.soma_relatorio||'S').toUpperCase() === 'N') continue;
+      const op = (r.operacao||'').trim().toUpperCase();
+      if (op !== 'S' && op !== 'DS') continue;
+      const serie = String(r.serie||r.serie_documento||'').trim();
+      if (serie === '999') continue;
+      if (serie === '4' && op !== 'DS') continue;
+      if (serie === 'J') continue;
+
+      const sign    = op === 'DS' ? -1 : 1;
+      const qty     = parseBR(r.quantidade||'1');
+      const vlrUnit = parseBR(r.preco_tabela_epoca||r.preco_unitario||'0');
+      const vlrDesc = parseBR(r.desconto_item||r.desconto_total_item||'0');
+      const vlrLiq  = Math.max(0, vlrUnit - vlrDesc);
+
+      const lojaBoard  = r._board || targetBoards[0];
+      const lojaLabel  = BOARD_LABEL[lojaBoard] || lojaBoard;
+      const vendCod    = String(r.cod_vendedor||'').trim();
+      const vendNome   = vendNomeCache[vendCod] || (r.nome_vendedor||r.vendedor||'').trim() || `Vendedor ${vendCod||'?'}`;
+      const cod        = String(r.cod_produto||'').trim();
+      const cat        = catalog[cod] || {};
+      const marca      = (cat.marca || r.desc_marca || r.marca || '(sem marca)').trim();
+      const desc       = (cat.nomeBase || r.descricao || r.descricao_produto || '').trim();
+      const itemKey    = cod || desc;
+      if (!itemKey) continue;
+
+      if (!tree[lojaBoard]) tree[lojaBoard] = { label: lojaLabel, vendedores: {} };
+      const T = tree[lojaBoard];
+      if (!T.vendedores[vendCod]) T.vendedores[vendCod] = { cod: vendCod, nome: vendNome, marcas: {} };
+      const V = T.vendedores[vendCod];
+      if (!V.marcas[marca]) V.marcas[marca] = { marca, itens: {} };
+      const M = V.marcas[marca];
+      if (!M.itens[itemKey]) M.itens[itemKey] = { cod, desc, marca, qty: 0, venda_total: 0 };
+      M.itens[itemKey].qty        += sign * qty;
+      M.itens[itemKey].venda_total += sign * vlrLiq * qty;
+    }
+
+    // Serializa para lista plana ordenada: loja / vendedor / marca / item
+    const resultado = [];
+    for (const [, loja] of Object.entries(tree).sort((a,b) => a[0].localeCompare(b[0]))) {
+      for (const [, vend] of Object.entries(loja.vendedores).sort((a,b) => a[1].nome.localeCompare(b[1].nome))) {
+        for (const [, marc] of Object.entries(vend.marcas).sort((a,b) => a[0].localeCompare(b[0]))) {
+          const itens = Object.values(marc.itens)
+            .filter(i => i.qty !== 0)
+            .sort((a,b) => b.venda_total - a.venda_total);
+          for (const it of itens) {
+            resultado.push({
+              loja:        loja.label,
+              vendedor:    vend.nome,
+              marca:       marc.marca,
+              cod:         it.cod,
+              desc:        it.desc,
+              qty:         +it.qty.toFixed(0),
+              venda_total: +it.venda_total.toFixed(2),
+            });
+          }
+        }
+      }
+    }
+
+    res.json({ board, dtIni, dtFin, total: resultado.length, rows: resultado });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // POST /api/conferencia/conciliacao-rede
 // Recebe arquivo da Rede (Excel/CSV) e cruza com LinxMovimentoCartoes do Microvix
 app.post('/api/conferencia/conciliacao-rede', requireEscritorioOrAdmin, async (req, res) => {
@@ -8692,9 +9409,13 @@ app.post('/api/conferencia/conciliacao-rede', requireEscritorioOrAdmin, async (r
 // CERTIFICADOS DIGITAIS
 // ════════════════════════════════════════════════════════════════════════════
 
+let _certColReady = false;
 async function getCertCol() {
   const col = mongoDb.collection('certificados');
-  await col.createIndex({ id: 1 }, { unique: true, background: true }).catch(() => {});
+  if (!_certColReady) {
+    _certColReady = true;
+    col.createIndex({ id: 1 }, { unique: true, background: true }).catch(() => {});
+  }
   return col;
 }
 
@@ -8770,6 +9491,120 @@ app.get('/api/certificados/alertas', requireAuth, async (req, res) => {
 });
 
 // ── Start ──────────────────────────────────────────────────────────────────
+// ── DRE ─────────────────────────────────────────────────────────────────────
+
+app.get('/api/dre/config/:loja', requireAdmin, async (req, res) => {
+  try {
+    const cfg = await mongoDb.collection('dre_config').findOne({ loja: req.params.loja });
+    res.json(cfg || { loja: req.params.loja });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/dre/config/:loja', requireAdmin, async (req, res) => {
+  try {
+    const doc = { ...req.body, loja: req.params.loja, updatedAt: new Date() };
+    delete doc._id;
+    await mongoDb.collection('dre_config').replaceOne({ loja: req.params.loja }, doc, { upsert: true });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/dre/historico/:loja', requireAdmin, async (req, res) => {
+  try {
+    const docs = await mongoDb.collection('dre_monthly')
+      .find({ loja: req.params.loja })
+      .sort({ ano: -1, mes: -1 })
+      .limit(24)
+      .toArray();
+    res.json(docs);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/dre/:ano/:mes/:loja', requireAdmin, async (req, res) => {
+  try {
+    const { ano, mes, loja } = req.params;
+    const y = parseInt(ano), m = parseInt(mes);
+    const pad = n => String(n).padStart(2, '0');
+
+    const [monthly, config] = await Promise.all([
+      mongoDb.collection('dre_monthly').findOne({ loja, ano: y, mes: m }),
+      mongoDb.collection('dre_config').findOne({ loja }),
+    ]);
+
+    // Fetch receita + CMV from conferência (Microvix) for the full month
+    let receita_microvix = null, cmv_microvix = null;
+    try {
+      const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+      const cnpj   = lojas[loja];
+      if (cnpj) {
+        const chave  = process.env[`MICROVIX_CHAVE_${loja.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+        const dtIni  = `${y}-${pad(m)}-01`;
+        const lastDay = new Date(y, m, 0).getDate();
+        const dtFin  = `${y}-${pad(m)}-${String(lastDay).padStart(2,'0')}`;
+        const { fetchMovimento } = require('./services/microvix');
+        const rows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
+        const cnpjClean = cnpj.replace(/\D/g, '');
+        const parseBR = s => { const t = String(s||'').trim(); return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
+        const seenDocs = new Set();
+        let vlrLiquido = 0, vlrCusto = 0;
+        for (const r of (Array.isArray(rows) ? rows : [])) {
+          if ((r.cnpj_emp||r.cnpj||'').replace(/\D/g,'') !== cnpjClean) continue;
+          if (r.cancelado === 'S' || r.cancelado === '1') continue;
+          if ((r.soma_relatorio||'S').toUpperCase() === 'N') continue;
+          const op = (r.operacao||'').trim().toUpperCase();
+          if (op !== 'S' && op !== 'DS') continue;
+          const serie = String(r.serie||r.serie_documento||'').trim();
+          if (serie === '999') continue;
+          if (serie === '4' && op !== 'DS') continue;
+          if (serie === 'J') continue;
+          const sign = op === 'DS' ? -1 : 1;
+          const qty  = parseBR(r.quantidade||'1');
+          vlrCusto  += sign * parseBR(r.custo_medio_epoca||r.preco_custo||'0') * qty;
+          const doc = String(r.documento||'').trim();
+          if (!doc || seenDocs.has(doc)) continue;
+          seenDocs.add(doc);
+          const vlrLiq = ['total_cartao','total_dinheiro','total_pix','total_cheque',
+                          'total_crediario','total_convenio','total_cheque_prazo','total_deposito_bancario']
+            .reduce((s, k) => s + parseBR(r[k]||'0'), 0)
+            || parseBR(r.valor_total||r.total_liquido||'0');
+          vlrLiquido += sign * vlrLiq;
+        }
+        receita_microvix = Math.round(vlrLiquido * 100) / 100;
+        cmv_microvix     = Math.round(vlrCusto   * 100) / 100;
+      }
+    } catch(e) { console.warn('[DRE/microvix]', e.message); }
+
+    res.json({ monthly: monthly || { loja, ano: y, mes: m }, config: config || { loja }, receita_microvix, cmv_microvix });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/dre/:ano/:mes/:loja', requireAdmin, async (req, res) => {
+  try {
+    const { ano, mes, loja } = req.params;
+    const y = parseInt(ano), m = parseInt(mes);
+    const doc = { ...req.body, loja, ano: y, mes: m, updatedAt: new Date() };
+    delete doc._id;
+    await mongoDb.collection('dre_monthly').replaceOne({ loja, ano: y, mes: m }, doc, { upsert: true });
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/seed-weights-tmp (TEMPORÁRIO — remover após uso) ────────────────
+// Exemplo: POST /api/seed-weights-tmp?secret=GL2026SEED  body: { year, month, weights }
+app.post('/api/seed-weights-tmp', async (req, res) => {
+  if (req.query.secret !== 'GL2026SEED') return res.status(403).json({ error: 'Forbidden' });
+  try {
+    const { year, month, weights } = req.body;
+    if (!year || !month || !weights) return res.status(400).json({ error: 'year, month e weights obrigatórios' });
+    const key = monthKey(parseInt(year), parseInt(month));
+    const db  = await readDB();
+    if (!db.globalWeights) db.globalWeights = {};
+    db.globalWeights[key] = weights;
+    await writeDB(db);
+    res.json({ ok: true, key, qtd: Object.keys(weights).length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Porta abre imediatamente — MongoDB conecta em background para não bloquear o health check do Render
 const _server = app.listen(PORT, () => {
   console.log(`\n✅  Gestão de Lojas → http://localhost:${PORT}\n`);

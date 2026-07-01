@@ -10,6 +10,7 @@ const BOARDS = {
   lez:        { label: 'LEZ A LEZ',    color: '#F472B6' },
   site:       { label: 'SITE',         color: '#A78BFA' },
   surfers:    { label: 'TOTAL SURFERS', color: '#F97316' },
+  total:      { label: 'TOTAL GERAL',   color: '#E2E8F0' },
 };
 
 
@@ -93,6 +94,8 @@ function applyUserPermissions(user) {
   const indevaEl = document.getElementById('indevaBtn');
   if (indevaEl) indevaEl.style.display = indevaVisible ? '' : 'none';
 
+  const dreEl = document.getElementById('dreBtn');
+  if (dreEl) dreEl.style.display = (user.username === 'leonardo') ? 'flex' : 'none';
   const conferenciaEl = document.getElementById('conferenciaBtn');
   if (conferenciaEl) conferenciaEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
   const certificadosEl = document.getElementById('certificadosBtn');
@@ -680,6 +683,7 @@ function renderDashboard() {
           <button class="dash-wk-btn" id="dayCardPrev" title="Dia anterior">&#8592;</button>
           <span class="dash-wk-label" id="dayCardLabel"></span>
           <button class="dash-wk-btn" id="dayCardNext" title="Próximo dia">&#8594;</button>
+          <button class="dash-wk-btn dash-fds-btn" id="dayCardFds" title="Último final de semana (Sex–Dom)">FDS</button>
         </div>
       </div>
       <div class="main-card-body" id="dayCardBody"></div>
@@ -689,16 +693,52 @@ function renderDashboard() {
     dayRow.appendChild(dayCard);
     leftCol.appendChild(dayRow);
 
-    function _updateDayCard() {
+    async function _updateDayCard() {
+      const fdsBtnEl = document.getElementById('dayCardFds');
+      if (DASH_DAY.mode === 'weekend') {
+        const dates = _lastWeekendDates();
+        const fri = dates[0], sun = dates[2];
+        const friYear = parseInt(fri.slice(0, 4)), friMonth = parseInt(fri.slice(5, 7));
+        if (friYear !== S.year || friMonth !== S.month) {
+          if (!DASH_DAY.weightsKey || DASH_DAY.weightsKey !== `${friYear}-${friMonth}`) {
+            [DASH_DAY.weights, DASH_DAY.dailySalesMeta] = await Promise.all([
+              apiFetch('GET', `/api/weights/${friYear}/${friMonth}`).catch(() => ({})),
+              apiFetch('GET', `/api/dailysales-meta/${friYear}/${friMonth}`).catch(() => ({})),
+            ]);
+            DASH_DAY.weightsKey = `${friYear}-${friMonth}`;
+          }
+        }
+        const month = sun.slice(5, 7);
+        document.getElementById('dayCardLabel').textContent = `Sex-Dom · ${fri.slice(8)}-${sun.slice(8)}/${month}`;
+        document.getElementById('dayCardPrev').disabled = true;
+        document.getElementById('dayCardNext').disabled = true;
+        fdsBtnEl.classList.add('dash-fds-active');
+        _renderWeekendCardBody(document.getElementById('dayCardBody'), dates);
+        return;
+      }
+      fdsBtnEl.classList.remove('dash-fds-active');
       const d = DASH_DAY.refDate;
       const lbl = d === todayStr ? `Hoje · ${d.slice(8)}/${d.slice(5,7)}` : `${d.slice(8)}/${d.slice(5,7)}`;
       document.getElementById('dayCardLabel').textContent = lbl;
       document.getElementById('dayCardPrev').disabled = d <= monthStart;
       document.getElementById('dayCardNext').disabled = d >= cutoff;
+      // Se o dia exibido pertence a um mês diferente do visualizado, carrega pesos desse mês
+      const cardYear  = parseInt(d.slice(0, 4));
+      const cardMonth = parseInt(d.slice(5, 7));
+      if (cardYear !== S.year || cardMonth !== S.month) {
+        if (!DASH_DAY.weightsKey || DASH_DAY.weightsKey !== `${cardYear}-${cardMonth}`) {
+          [DASH_DAY.weights, DASH_DAY.dailySalesMeta] = await Promise.all([
+            apiFetch('GET', `/api/weights/${cardYear}/${cardMonth}`).catch(() => ({})),
+            apiFetch('GET', `/api/dailysales-meta/${cardYear}/${cardMonth}`).catch(() => ({})),
+          ]);
+          DASH_DAY.weightsKey = `${cardYear}-${cardMonth}`;
+        }
+      }
       _renderDayCardBody(document.getElementById('dayCardBody'), d);
     }
 
     document.getElementById('dayCardPrev').addEventListener('click', () => {
+      DASH_DAY.mode = 'day';
       const d = new Date(DASH_DAY.refDate + 'T00:00:00');
       d.setDate(d.getDate() - 1);
       DASH_DAY.refDate = `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
@@ -706,10 +746,15 @@ function renderDashboard() {
       _updateDayCard();
     });
     document.getElementById('dayCardNext').addEventListener('click', () => {
+      DASH_DAY.mode = 'day';
       const d = new Date(DASH_DAY.refDate + 'T00:00:00');
       d.setDate(d.getDate() + 1);
       DASH_DAY.refDate = `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
       if (DASH_DAY.refDate > cutoff) DASH_DAY.refDate = cutoff;
+      _updateDayCard();
+    });
+    document.getElementById('dayCardFds').addEventListener('click', () => {
+      DASH_DAY.mode = DASH_DAY.mode === 'weekend' ? 'day' : 'weekend';
       _updateDayCard();
     });
 
@@ -1345,11 +1390,22 @@ function _renderDashFolgas(body) {
 function _renderDayCardBody(body, dateStr) {
   const fV = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  const daysInMonth = new Date(S.year, S.month, 0).getDate();
+  // Usa o mês/ano do próprio dateStr (não do mês visualizado)
+  const cardYear  = parseInt(dateStr.slice(0, 4));
+  const cardMonth = parseInt(dateStr.slice(5, 7));
+  const daysInMonth = new Date(cardYear, cardMonth, 0).getDate();
   const defW = +(100 / daysInMonth).toFixed(6);
-  const dayWeight = S.weights[dateStr] ?? defW;
+  // Pesos: usa S.weights se o mês bate, senão DASH_DAY.weights (carregado para o mês do card)
+  const cardWeights = (cardYear === S.year && cardMonth === S.month)
+    ? S.weights
+    : (DASH_DAY.weights || {});
+  const dayWeight = cardWeights[dateStr] ?? defW;
 
-  const vendedores = S.employees.filter(e => isVend(e));
+  const vendedores = S.employees.filter(e =>
+    isVend(e) &&
+    (!e.admissao     || e.admissao     <= dateStr) &&
+    (!e.desligamento || e.desligamento >= dateStr)
+  );
   const byBoard = {};
   for (const emp of vendedores) {
     if (!byBoard[emp.board]) byBoard[emp.board] = [];
@@ -1379,7 +1435,10 @@ function _renderDayCardBody(body, dateStr) {
     let storeTotalVal = 0, storeTotalMeta = 0, storeTotalPecas = 0, storeTotalAtend = 0;
     const vendorRowsHtml = [];
 
-    const metaLoja = S.dailySalesMeta?.[bk] || 0;
+    const _cardDailySalesMeta = (cardYear === S.year && cardMonth === S.month)
+      ? S.dailySalesMeta
+      : (DASH_DAY.dailySalesMeta || {});
+    const metaLoja = _cardDailySalesMeta?.[bk] || 0;
 
     for (const emp of emps) {
       const vsale   = S.vsales[emp.id] || { meta: { mensal: 0 }, entries: {} };
@@ -1395,6 +1454,7 @@ function _renderDayCardBody(body, dateStr) {
         boardVendors:    byBoard[bk],
         vsalesForMonth:  S.vsales,
         individualMensal: vsale.meta?.mensal || 0,
+        isOmni:          !!emp.omniChannel,
       }).goal;
       const pa      = atend > 0 ? pecas / atend : null;
       const pct     = metaDia > 0 ? valor / metaDia * 100 : null;
@@ -1476,6 +1536,163 @@ function _renderDayCardBody(body, dateStr) {
     const grandConv = (grandFluxo > 0 && grandAtend > 0) ? grandAtend / grandFluxo * 100 : null;
     const gPctCls   = grandPct  == null ? '' : grandPct  >= 100 ? 'dia-pct-ok'  : grandPct  >= 70 ? 'dia-pct-warn'  : 'dia-pct-bad';
     const gConvCls  = grandConv == null ? '' : grandConv >= 30  ? 'dia-conv-ok' : grandConv >= 15 ? 'dia-conv-warn' : 'dia-conv-bad';
+    body.insertAdjacentHTML('beforeend', `
+      <div class="dia-row dia-grand-total">
+        <span class="dia-name">TOTAL GERAL</span>
+        <span class="dia-val">${grandVal > 0 ? fV(grandVal) : '—'}</span>
+        <span class="dia-meta">${grandMeta > 0 ? fV(grandMeta) : '—'}</span>
+        <span class="dia-pa">${grandPa != null ? grandPa.toFixed(2) : '—'}</span>
+        <span class="dia-pct ${gPctCls}">${grandPct != null ? grandPct.toFixed(1) + '%' : '—'}</span>
+      </div>`);
+  }
+}
+
+function _lastWeekendDates() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const dow = today.getDay(); // 0=Dom, 1=Seg, ..., 5=Sex, 6=Sáb
+  const daysToLastSun = dow === 0 ? 7 : dow;
+  const sun = new Date(today); sun.setDate(today.getDate() - daysToLastSun);
+  const sat = new Date(sun);   sat.setDate(sun.getDate() - 1);
+  const fri = new Date(sun);   fri.setDate(sun.getDate() - 2);
+  const fmt = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  return [fmt(fri), fmt(sat), fmt(sun)];
+}
+
+function _renderWeekendCardBody(body, dates) {
+  const fV = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  function _getWeight(dateStr) {
+    const yr = parseInt(dateStr.slice(0, 4));
+    const mo = parseInt(dateStr.slice(5, 7));
+    const defW = +(100 / new Date(yr, mo, 0).getDate()).toFixed(6);
+    const weights = (yr === S.year && mo === S.month) ? S.weights : (DASH_DAY.weights || {});
+    return weights[dateStr] ?? defW;
+  }
+
+  function _getMetaLoja(dateStr, bk) {
+    const yr = parseInt(dateStr.slice(0, 4));
+    const mo = parseInt(dateStr.slice(5, 7));
+    const dsm = (yr === S.year && mo === S.month) ? S.dailySalesMeta : (DASH_DAY.dailySalesMeta || {});
+    return dsm?.[bk] || 0;
+  }
+
+  const vendedores = S.employees.filter(e => isVend(e));
+  const byBoard = {};
+  for (const emp of vendedores) {
+    if (!byBoard[emp.board]) byBoard[emp.board] = [];
+    byBoard[emp.board].push(emp);
+  }
+
+  body.innerHTML = `
+    <div class="dia-col-hdr">
+      <span></span>
+      <span>Realizado</span>
+      <span>Meta FDS</span>
+      <span>PA</span>
+      <span>%</span>
+    </div>`;
+
+  let anyData = false;
+  let grandVal = 0, grandMeta = 0, grandPecas = 0, grandAtend = 0;
+
+  for (const [bk, bc] of visibleBoards()) {
+    const emps = (byBoard[bk] || []).filter(e => {
+      const vsale = S.vsales[e.id] || {};
+      return (vsale.meta?.mensal || 0) > 0 || dates.some(d => (vsale.entries?.[d]?.value || 0) > 0);
+    });
+    if (!emps.length) continue;
+
+    anyData = true;
+    let storeTotalVal = 0, storeTotalMeta = 0, storeTotalPecas = 0, storeTotalAtend = 0;
+    const vendorRowsHtml = [];
+
+    for (const emp of emps) {
+      const vsale = S.vsales[emp.id] || { meta: { mensal: 0 }, entries: {} };
+      let empVal = 0, empMeta = 0, empPecas = 0, empAtend = 0;
+
+      for (const d of dates) {
+        const entry = vsale.entries?.[d] || {};
+        empVal   += entry.value || 0;
+        empPecas += entry.pecas || 0;
+        empAtend += entry.atendimentos || 0;
+        empMeta  += sellerDayGoal({
+          dateStr:          d,
+          dayWeight:        _getWeight(d),
+          metaLoja:         _getMetaLoja(d, bk),
+          onVacation:       (vsale.meta?.vacationDays || []).includes(d),
+          boardVendors:     byBoard[bk],
+          vsalesForMonth:   S.vsales,
+          individualMensal: vsale.meta?.mensal || 0,
+          isOmni:           !!emp.omniChannel,
+        }).goal;
+      }
+
+      storeTotalVal   += empVal;
+      storeTotalMeta  += empMeta;
+      storeTotalPecas += empPecas;
+      storeTotalAtend += empAtend;
+
+      const pa     = empAtend > 0 ? empPecas / empAtend : null;
+      const pct    = empMeta  > 0 ? empVal   / empMeta  * 100 : null;
+      const pctCls = pct == null ? '' : pct >= 100 ? 'dia-pct-ok' : pct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
+      vendorRowsHtml.push(`
+        <div class="dia-row dia-vendor-row">
+          <span class="dia-name">${emp.apelido || emp.name.split(' ')[0]}</span>
+          <span class="dia-val">${empVal > 0 ? fV(empVal) : '—'}</span>
+          <span class="dia-meta">${empMeta > 0 ? fV(empMeta) : '—'}</span>
+          <span class="dia-pa">${pa != null ? pa.toFixed(2) : '—'}</span>
+          <span class="dia-pct ${pctCls}">${pct != null ? pct.toFixed(1) + '%' : '—'}</span>
+        </div>`);
+    }
+
+    grandVal   += storeTotalVal;
+    grandMeta  += storeTotalMeta;
+    grandPecas += storeTotalPecas;
+    grandAtend += storeTotalAtend;
+
+    const storePa  = storeTotalAtend > 0 ? storeTotalPecas / storeTotalAtend : null;
+    const storePct = storeTotalMeta  > 0 ? storeTotalVal   / storeTotalMeta  * 100 : null;
+    const sPctCls  = storePct == null ? '' : storePct >= 100 ? 'dia-pct-ok' : storePct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
+    const isAdmin  = !S.user?.board;
+    const isExp    = !isAdmin || _dayCardExpanded.has(bk);
+
+    const storeRow = document.createElement('div');
+    storeRow.className = 'dia-row dia-store-row' + (isExp ? ' dia-store-expanded' : '');
+    storeRow.innerHTML = `
+      <span class="dia-name dia-store-label">
+        ${isAdmin ? `<span class="dia-chevron">${isExp ? '▾' : '▸'}</span>` : ''}
+        <span class="dash-store-dot" style="background:${bc.color}"></span>
+        ${bc.label}
+      </span>
+      <span class="dia-val">${storeTotalVal > 0 ? fV(storeTotalVal) : '—'}</span>
+      <span class="dia-meta">${storeTotalMeta > 0 ? fV(storeTotalMeta) : '—'}</span>
+      <span class="dia-pa">${storePa != null ? storePa.toFixed(2) : '—'}</span>
+      <span class="dia-pct ${sPctCls}">${storePct != null ? storePct.toFixed(1) + '%' : '—'}</span>`;
+    if (isAdmin) {
+      storeRow.style.cursor = 'pointer';
+      storeRow.addEventListener('click', () => {
+        if (_dayCardExpanded.has(bk)) _dayCardExpanded.delete(bk);
+        else _dayCardExpanded.add(bk);
+        _renderWeekendCardBody(body, dates);
+      });
+    }
+    body.appendChild(storeRow);
+
+    if (isExp) {
+      const wrap = document.createElement('div');
+      wrap.innerHTML = vendorRowsHtml.join('');
+      while (wrap.firstChild) body.appendChild(wrap.firstChild);
+    }
+  }
+
+  if (!anyData) {
+    body.insertAdjacentHTML('beforeend',
+      '<div style="padding:.85rem 1rem;font-size:.78rem;color:var(--muted)">Sem lançamentos para este período.</div>');
+  } else {
+    const grandPa  = grandAtend > 0 ? grandPecas / grandAtend : null;
+    const grandPct = grandMeta  > 0 ? grandVal   / grandMeta  * 100 : null;
+    const gPctCls  = grandPct  == null ? '' : grandPct  >= 100 ? 'dia-pct-ok' : grandPct  >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
     body.insertAdjacentHTML('beforeend', `
       <div class="dia-row dia-grand-total">
         <span class="dia-name">TOTAL GERAL</span>
@@ -1940,7 +2157,7 @@ function openImg(url) {
 
 // ── Performance dashboard data ─────────────────────────────────────────────
 const PERF_MONTHS = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
-const PERF_AVAIL  = new Set(['surfers','delrey','minas','contagem','estacao','tommy','lez','site']);
+const PERF_AVAIL  = new Set(['total','surfers','delrey','minas','contagem','estacao','tommy','lez','site']);
 const SURFERS_STORES = ['delrey','minas','contagem','estacao','site'];
 const _brtNow     = new Date(Date.now() - 3 * 60 * 60 * 1000);
 const PERF_CUR    = _brtNow.getUTCMonth(); // mês corrente BRT (0=Jan … 11=Dez)
@@ -1996,6 +2213,15 @@ const PERF_HIST = {
     2025:[  7250,  8164,  6220, 17022,  8773,  4470,  4023,  6752,  4518,  6647,  7270, 10362],
   },
 };
+// Total Geral = soma de todos os ALL_STORES (del rey + minas + contagem + estação + tommy + lez + site)
+const _ALL_STORES_FOR_TOTAL = ['delrey','minas','contagem','estacao','tommy','lez','site'];
+PERF_HIST.total = {};
+for (const y of [2022,2023,2024,2025]) {
+  PERF_HIST.total[y] = Array.from({length:12}, (_,i) =>
+    _ALL_STORES_FOR_TOTAL.reduce((s,b) => s + (PERF_HIST[b]?.[y]?.[i] || 0), 0)
+  );
+}
+
 const PERF_2026 = {
   surfers:  [383139,345885,413975,396776,null,null,null,null,null,null,null,null],
   delrey:   [134642,119759,128296,128061,null,null,null,null,null,null,null,null],
@@ -2006,6 +2232,11 @@ const PERF_2026 = {
   lez:      [112699, 57373, 49583, 81151,70185,null,null,null,null,null,null,null],
   site:     [  5233,  2730,  5931, 10500,null,null,null,null,null,null,null,null],
 };
+// Computa total geral 2026 como soma dos stores; null se todos os stores daquele mês são null
+PERF_2026.total = Array.from({length:12}, (_,i) => {
+  const vals = _ALL_STORES_FOR_TOTAL.map(b => PERF_2026[b][i]);
+  return vals.every(v => v === null) ? null : vals.reduce((s,v) => s + (v||0), 0);
+});
 
 function fmtBRL(n)  { if (n === null || n === undefined) return '—'; return 'R$ ' + Math.round(n).toLocaleString('pt-BR'); }
 function fmtBRLk(n) {
@@ -2036,7 +2267,7 @@ function computeCurMonthProj(board) {
     wAccum += (S.weights[ds] ?? defW);
   }
   if (wAccum === 0) return null;
-  const boards = board === 'surfers' ? SURFERS_STORES : [board];
+  const boards = board === 'total' ? _ALL_STORES_FOR_TOTAL : board === 'surfers' ? SURFERS_STORES : [board];
   let realized = 0;
   for (const emp of S.employees) {
     if (!boards.includes(emp.board) || !isVend(emp)) continue;
@@ -2055,7 +2286,10 @@ function calcPerfMetrics(k, curMonthOverride = null) {
   const d26 = PERF_2026[k].slice(); // cópia para não mutar o original
   if (curMonthOverride !== null) d26[PERF_CUR] = curMonthOverride;
   const yoyReal = d26.map((v,i) => v !== null && d25[i] !== null && d25[i] !== 0 ? (v - d25[i]) / d25[i] * 100 : null);
-  const last3      = PERF_LAST3.map(i => yoyReal[i]);
+  // Até o dia 15 (sem ritmo do mês atual): usa os 3 últimos meses fechados.
+  // Após o dia 15 (curMonthOverride != null): usa os 2 últimos meses fechados + projeção por ritmo do mês atual.
+  const last3idx    = curMonthOverride !== null ? [PERF_CUR-2, PERF_CUR-1, PERF_CUR] : PERF_LAST3;
+  const last3      = last3idx.map(i => yoyReal[i]);
   const last3valid = last3.filter(v => v !== null);
   const avgD       = last3valid.length > 0 ? last3valid.reduce((a,b) => a+b, 0) / last3valid.length : 0;
   const proj    = PERF_MONTHS.map((_,i) => {
@@ -2068,7 +2302,7 @@ function calcPerfMetrics(k, curMonthOverride = null) {
   const projRest = proj.slice(PERF_CUR).reduce((a,v) => a+(v||0), 0);
   const projTotal = realAcum + projRest;
   const total25 = d25.reduce((a,b) => a+(b||0), 0);
-  return { d25, d26, yoyReal, yoyFull, last3, avgD, proj, realAcum, projTotal, total25, curMonthOverride };
+  return { d25, d26, yoyReal, yoyFull, last3, last3idx, avgD, proj, realAcum, projTotal, total25, curMonthOverride };
 }
 
 let perfChart = null, perfAnnualChart = null;
@@ -2086,6 +2320,15 @@ function _perfActiveView() {
 
 const _perfFetched = {};
 async function fetchMissingPerfData(board) {
+  if (board === 'total') {
+    // Busca dados faltantes de cada store individual e recalcula o total
+    await Promise.all(_ALL_STORES_FOR_TOTAL.map(b => fetchMissingPerfData(b)));
+    PERF_2026.total = Array.from({length:12}, (_,i) => {
+      const vals = _ALL_STORES_FOR_TOTAL.map(b => PERF_2026[b][i]);
+      return vals.every(v => v === null) ? null : vals.reduce((s,v) => s + (v||0), 0);
+    });
+    return;
+  }
   if (!PERF_2026[board]) return;
   for (let i = 0; i < PERF_CUR; i++) {
     if (PERF_2026[board][i] !== null) continue;
@@ -2101,7 +2344,7 @@ async function fetchMissingPerfData(board) {
 
 async function openPerfModal() {
   document.getElementById('perfOverlay').classList.remove('hidden');
-  const defaultStore = S.user?.board ? S.user.board : 'surfers';
+  const defaultStore = S.user?.board ? S.user.board : 'total';
   PD.board = defaultStore;
   PD.year  = S.year;
   PD.month = S.month;
@@ -2516,7 +2759,8 @@ const CORES_CAD = ['PRETO','BRANCO','AZUL','VERMELHO','VERDE','AMARELO','LARANJA
   'MENTA','CORAL','TURQUESA','VINHO','DOURADO','PRATA','OFF WHITE','NATURAL',
   'BLACK','WHITE','BLUE','RED','GREEN','YELLOW','ORANGE','PINK','PURPLE','GREY','GRAY','BROWN','BEIGE'];
 const TAMS_LETRA = ['GGG','GG','XS/S','S/M','M/L','L/XL','PP','XS','S','M','L','XL','XXL','XXXL','P','G','U'];
-const TAMS_NUM   = ['33','34','35','36','37','38','39','40','41','42','43','44','45','46'];
+const TAMS_NUM   = ['33','34','35','36','37','38','39','40','41','42','43','44','45','46',
+                    '6 7/8','7','7 1/8','7 1/4','7 3/8','7 1/2','7 5/8','7 3/4','7 7/8','8'];
 
 const SETOR_OPTS = ['Moda Masculina','Moda Feminina','Infantil','Calçados','Acessórios','TS Basica','Regata','Moda'];
 const LINHA_OPTS = ['Unisex','Masculino','Feminino','Infantil'];
@@ -2540,7 +2784,18 @@ const _cad = {
   modeloRef: '{REF}', modeloDesc: '{NOME}',
   priceMode: 'markup', markup: 100, manualPrice: '',
   ncm: '', products: [], checkResult: [],
+  mxSetores: [], mxCores: [],
 };
+
+// Carrega setores e cores registrados no Microvix (lazy, uma vez por sessão)
+async function _cadLoadMxOpts() {
+  if (_cad.mxSetores.length) return;
+  try {
+    const r = await apiFetch('GET', '/api/cadastro-produto/catalogo-opts');
+    if (r.setores?.length) _cad.mxSetores = r.setores;
+    if (r.cores?.length)   _cad.mxCores   = r.cores;
+  } catch (_) {}
+}
 
 function _cadExtractCor(text) {
   const up = text.toUpperCase();
@@ -2594,9 +2849,13 @@ function _cadSuggestSetor(texts) {
 }
 
 // Remove prefixo de quantidade do formato "QTD/TAMANHO" (ex: "1/35" → "35", "2/M" → "M")
+// Preserva frações de chapéu como "1/4", "3/8", "7/8" (denominador em [2,4,8] e numerador < denominador)
 function _cadCleanTamanho(v) {
-  const m = v.match(/^\d+\/(.+)$/);
-  return m ? m[1].trim() : v;
+  const m = v.match(/^(\d+)\/(.+)$/);
+  if (!m) return v;
+  const num = parseInt(m[1]), den = parseInt(m[2]);
+  if ([2, 4, 8].includes(den) && !isNaN(num) && num < den) return v;
+  return m[2].trim();
 }
 
 function _cadSuggestNcm(setor, textos) {
@@ -2642,8 +2901,8 @@ function _cadAutoMatch(headers) {
     nome:         ['nome','descricao','produto','item','descbasica','desc'],
     cod_barra:    ['codbarra','ean','barra','barcode','gtin'],
     desc_marca:   ['marca','brand','fabricante'],
-    desc_setor:   ['setor','departamento','categoria','grupo'],
-    desc_cor:     ['cor','color','colour'],
+    desc_setor:   ['setor','departamento','categoria','grupo','tipo','divisao','divisao','secao','classe','segmento','colecao'],
+    desc_cor:     ['cor','color','colour','descricaocor','codcor','codigocor'],
     desc_tamanho: ['tamanho','tam','size','grade'],
     preco_custo:  ['precocusto','custo','pcusto','fob','custoproduto','precofob'],
     preco_venda:  ['precovenda','preco','pvenda','price','vlvenda'],
@@ -2667,14 +2926,26 @@ function _cadBuildProducts() {
     }
     if (!p.referencia && !p.nome) return [];
     const txt   = (p.referencia || '') + ' ' + (p.nome || '');
-    const setor = p.desc_setor || _cadSuggestSetor([txt]);
+    const rawSetor = (p.desc_setor || '').trim();
+    const setor = (() => {
+      if (rawSetor) {
+        const n = rawSetor.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+        if (/camiseta|t-shirt|tshirt/.test(n)) return 'TS Basica';
+        return rawSetor;
+      }
+      return _cadSuggestSetor([txt]);
+    })();
     const custo = p.preco_custo || '';
 
     // Se a coluna foi mapeada diretamente, usa o valor bruto (01K, Y28, 7.0, etc.)
     // sem filtrar pela lista interna de cores/tamanhos conhecidos.
     // O filtro é só para extração de texto livre onde o valor pode conter ruído.
     // "/" não é separador: S/M é um tamanho único, não dois. Usa só ,;|+ e espaço.
-    const splitRaw = v => v.split(/[,;\s|+]+/).map(s => s.trim()).filter(Boolean);
+    // Protege tamanhos fracionários tipo "7 1/4", "6 7/8" antes de separar por espaço
+    const splitRaw = v => {
+      const s = v.replace(/(\d)\s+(\d\/\d+)/g, '$1\x00$2');
+      return s.split(/[,;\s|+]+/).map(t => t.replace(/\x00/g, ' ').trim()).filter(Boolean);
+    };
     const hasMappedCor = !!(p.desc_cor      && _cad.mapping.desc_cor);
     const hasMappedTam = !!(p.desc_tamanho  && _cad.mapping.desc_tamanho);
 
@@ -2719,6 +2990,7 @@ async function renderCadastroProdView() {
     `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>`,
     'Cadastro de Produto'
   );
+  _cadLoadMxOpts(); // carrega setores/cores do Microvix em background
   const body = document.getElementById('transBody');
   _cadRenderUpload(body);
 }
@@ -2740,6 +3012,9 @@ function _cadRenderUpload(body) {
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           Analisar arquivo
         </button>
+        <button class="trans-calc-btn" id="cadAiSuggestBtn" ${_cad.file ? '' : 'disabled'} style="align-self:flex-end;background:#3a1f6e;border-color:#6e40c9">
+          ✦ Sugerir com IA
+        </button>
       </div>
       <div class="cad-hint" style="margin-top:.5rem;color:var(--muted)">Fornecedor, marca, coleção e formato de código de barras são informados diretamente na tela de importação do Microvix.</div>
       <div id="cadContent" style="margin-top:1.25rem"></div>
@@ -2750,8 +3025,10 @@ function _cadRenderUpload(body) {
     _cad.file = fi.files[0] || null;
     body.querySelector('#cadFileName').textContent = _cad.file ? _cad.file.name : 'Escolher .xls / .xlsx / .pdf';
     body.querySelector('#cadAnalyzeBtn').disabled = !_cad.file;
+    body.querySelector('#cadAiSuggestBtn').disabled = !_cad.file;
   });
   body.querySelector('#cadAnalyzeBtn').addEventListener('click', () => _cadParseFile(body));
+  body.querySelector('#cadAiSuggestBtn').addEventListener('click', () => _cadAiSuggest(body));
 }
 
 
@@ -2783,6 +3060,45 @@ async function _cadParseFile(body) {
     _cadRenderConfigAndMapping(content);
   } catch (e) {
     content.innerHTML = `<div class="trans-error">Erro ao ler arquivo: ${_escHtml(e.message)}</div>`;
+  }
+}
+
+async function _cadAiSuggest(body) {
+  const content = body.querySelector('#cadContent');
+  const btn = body.querySelector('#cadAiSuggestBtn');
+  const origText = btn.textContent;
+  btn.disabled = true; btn.textContent = '✦ Analisando com IA…';
+  content.innerHTML = '<div class="trans-loading">A IA está lendo o pedido e mapeando os produtos…</div>';
+  try {
+    // 1) Lê o arquivo localmente
+    if (!window.XLSX) throw new Error('Biblioteca Excel não carregada. Recarregue a página.');
+    const buf2 = await _cad.file.arrayBuffer();
+    const wb = window.XLSX.read(buf2, { type: 'array' });
+    const sh = wb.Sheets[wb.SheetNames[0]];
+    const sheetData = window.XLSX.utils.sheet_to_json(sh, { header: 1, defval: '' });
+    if (sheetData.length < 2) throw new Error('Planilha vazia ou sem dados');
+    _cad.headers = sheetData[0].map(h => String(h ?? '').trim());
+    _cad.rawRows = sheetData.slice(1).filter(r => r.some(c => c != null && c !== ''));
+    if (!_cad.rawRows.length) throw new Error('Nenhuma linha de dados encontrada');
+
+    // 2) Pede à IA apenas o mapeamento de colunas (chamada rápida, sem timeout)
+    const fd = new FormData();
+    fd.append('file', _cad.file);
+    const httpRes = await fetch('/api/cadastro-produto/ai-suggest', { method: 'POST', body: fd });
+    const resJson = await httpRes.json().catch(async () => {
+      throw new Error(`Resposta inválida do servidor (${httpRes.status})`);
+    });
+    if (!httpRes.ok) throw new Error(resJson.error || httpRes.statusText);
+
+    // 3) Aplica mapeamento e abre o wizard com colunas pré-selecionadas
+    _cad.mapping = resJson.mapping || {};
+    _cad._wizStep = 0;
+    _cadRenderConfigAndMapping(content);
+    content.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (e) {
+    content.innerHTML = `<div class="trans-error">Erro: ${_escHtml(e.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = origText;
   }
 }
 
@@ -3105,7 +3421,10 @@ function _cadRefreshPrev(content) {
 }
 
 function _cadMkSetorSel(val, i) {
-  const opts = ['', ...SETOR_OPTS].map(s =>
+  // Usa setores do Microvix se já carregados, senão cai na lista interna
+  const baseOpts = _cad.mxSetores.length ? _cad.mxSetores : SETOR_OPTS;
+  const extraOpts = val && !baseOpts.includes(val) ? [val] : [];
+  const opts = ['', ...baseOpts, ...extraOpts].map(s =>
     `<option value="${s}"${val === s ? ' selected' : ''}>${s || '— setor —'}</option>`).join('');
   return `<select class="cad-ci cad-ci-sel" data-f="desc_setor" data-i="${i}">${opts}</select>`;
 }
@@ -3282,6 +3601,23 @@ async function _cadCheckAndExport(sec) {
             origCor, corMatch);
         }
       }
+
+      // Mostra o valor da planilha abaixo de cada coluna respectiva para facilitar match
+      const p = _cad.products[i];
+      if (p) {
+        const addHint = (td, val) => {
+          if (!td || !val) return;
+          td.querySelector('.cad-planilha-hint')?.remove();
+          const hint = document.createElement('div');
+          hint.className = 'cad-planilha-hint';
+          hint.style.cssText = 'font-size:10px;color:var(--muted);margin-top:3px;opacity:.75;white-space:nowrap';
+          hint.textContent = val;
+          td.appendChild(hint);
+        };
+        addHint(tds[4], p.desc_setor   || '');
+        addHint(tds[5], p.desc_cor     || '');
+        addHint(tds[6], p.desc_tamanho || '');
+      }
     });
 
     sec.querySelectorAll('.cad-sku-sel').forEach(sel => {
@@ -3367,15 +3703,18 @@ async function _cadAiMatch(sec) {
       }
 
       // ── Cor do catálogo ──
-      const catalogCores = Array.isArray(m.catalogCores) ? m.catalogCores : [];
-      const origCor = p._origCor;
-      const corMatch = catalogCores.find(c => c.toUpperCase() === origCor.toUpperCase()) || catalogCores[0] || origCor;
+      const catalogCores = (Array.isArray(m.catalogCores) ? m.catalogCores : []).filter(Boolean);
+      const origCor = (p._origCor || '').trim();
+      const corMatch = catalogCores.find(c => c.toUpperCase() === origCor.toUpperCase())
+                    || catalogCores[0]
+                    || origCor
+                    || '';
       if (corMatch) p.desc_cor = corMatch;
       if (tds[5]) {
         const corInput = catalogCores.length
           ? `<select class="cad-ci cad-ci-sel" data-f="desc_cor" data-i="${i}">
                <option value="">— cor —</option>
-               ${catalogCores.map(c => `<option value="${_escHtml(c)}"${c===corMatch?' selected':''}>${_escHtml(c)}</option>`).join('')}
+               ${catalogCores.map(c => `<option value="${_escHtml(c)}"${c.toUpperCase()===corMatch.toUpperCase()?' selected':''}>${_escHtml(c)}</option>`).join('')}
              </select>`
           : `<input class="cad-ci cad-ci-sm" data-f="desc_cor" data-i="${i}" value="${_escHtml(corMatch)}" style="width:90px">`;
         const sameCorOrig = !origCor || corMatch.toUpperCase() === origCor.toUpperCase();
@@ -3483,8 +3822,9 @@ function _cadUpdateExportActions(sec) {
   const existingCount = cr.filter(r => r?._status === 'existing').length;
   const pendingCount  = cr.filter(r => r?._status === 'needs_cor' || r?._status === 'needs_tam').length;
 
+  // Exporta: novos + needs_cor sem cor selecionada (usa cor da planilha)
   const exportRows = _cad.products
-    .filter((_, i) => cr[i]?._status === 'new')
+    .filter((_, i) => cr[i]?._status === 'new' || cr[i]?._status === 'needs_cor')
     .map(p => ({
       referencia:   p._ref_final  || p.referencia || '',
       nome:         p._desc_final || p.nome       || '',
@@ -3510,7 +3850,7 @@ function _cadUpdateExportActions(sec) {
         <span class="cad-summary-num">${existingCount}</span><span class="cad-summary-lbl">já no Microvix</span>
       </div>
       ${pendingCount > 0 ? `<div class="cad-summary-card cad-summary-warn" style="padding:.4rem .8rem;min-width:70px">
-        <span class="cad-summary-num">${pendingCount}</span><span class="cad-summary-lbl">escolher cor</span>
+        <span class="cad-summary-num">${pendingCount}</span><span class="cad-summary-lbl">cor da planilha</span>
       </div>` : ''}
     </div>
     <div style="display:flex;gap:.4rem;align-items:center">
@@ -3518,10 +3858,10 @@ function _cadUpdateExportActions(sec) {
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </button>
       <button class="trans-calc-btn" id="cadAiMatchBtn" style="background:#3a1f6e;border-color:#6e40c9">✦ Sugerir Match com IA</button>
-      ${newCount > 0
+      ${exportRows.length > 0
         ? `<button class="trans-calc-btn" id="cadExportBtn">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 16 12 21 17 16"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
-            Baixar cadastro Microvix (${newCount} produtos)
+            Baixar cadastro Microvix (${exportRows.length} produtos)
           </button>`
         : `<span style="color:#3FB950;font-size:.8rem">✓ Todos já estão no Microvix</span>`}
     </div>`;
@@ -4314,7 +4654,7 @@ function buildPerfTabs() {
   const tabs = document.getElementById('perfStoreTabs');
   tabs.innerHTML = '';
   const isAdmin = !S.user?.board;
-  const show = isAdmin ? ['surfers', ...ALL_STORES] : [S.user.board];
+  const show = isAdmin ? ['total', 'surfers', ...ALL_STORES] : [S.user.board];
   if (show.length <= 1) return;
   show.forEach(k => {
     const btn = document.createElement('button');
@@ -4356,7 +4696,11 @@ function renderPerfStore(k) {
   const cls   = n => n >= 0 ? 'pf-pos' : 'pf-neg';
 
   // ── KPI badges ──────────────────────────────────────────────────────────
+  const exportBtnHtml = (k === 'surfers' || k === 'total')
+    ? `<button id="perfExportBtn" class="trans-export-btn" style="margin-bottom:10px">↓ Exportar Excel (todas as lojas)</button>`
+    : '';
   const kpiHtml = `
+    ${exportBtnHtml}
     <div class="perf-kpis">
       <div class="perf-kpi">
         <div class="perf-kpi-label">Total 2025</div>
@@ -4371,7 +4715,7 @@ function renderPerfStore(k) {
       <div class="perf-kpi" style="border-color:${m.avgD < -10 ? '#F85149' : 'var(--border)'}">
         <div class="perf-kpi-label">Média últimos 3 meses</div>
         <div class="perf-kpi-value ${cls(m.avgD)}">${sign(m.avgD)}${m.avgD.toFixed(1)}%</div>
-        <div class="perf-kpi-sub">${PERF_LAST3.map((idx,j) => m.last3[j] !== null ? `${PERF_MONTHS[idx]} ${m.last3[j].toFixed(1)}%` : null).filter(Boolean).join(' · ')}</div>
+        <div class="perf-kpi-sub">${m.last3idx.map((idx,j) => m.last3[j] !== null ? `${PERF_MONTHS[idx]}${idx === PERF_CUR ? ' (proj)' : ''} ${m.last3[j].toFixed(1)}%` : null).filter(Boolean).join(' · ')}</div>
       </div>
       <div class="perf-kpi" style="border-color:#D2992255">
         <div class="perf-kpi-label">Projeção 2026 (ano)</div>
@@ -4460,6 +4804,9 @@ function renderPerfStore(k) {
       <div class="perf-chart-wrap"><canvas id="perfChartCanvas"></canvas></div>
     </div>`;
 
+  const perfExportBtn = body.querySelector('#perfExportBtn');
+  if (perfExportBtn) perfExportBtn.addEventListener('click', _exportPerfExcel);
+
   if (perfChart)       { perfChart.destroy();       perfChart = null; }
   if (perfAnnualChart) { perfAnnualChart.destroy(); perfAnnualChart = null; }
 
@@ -4508,8 +4855,8 @@ function renderPerfStore(k) {
   const barProj = PERF_MONTHS.map((_,i) => i >= PERF_CUR ? m.proj[i] : null);
   const lineReal = PERF_MONTHS.map((_,i) => i < PERF_CUR ? m.yoyReal[i] : null);
   const lineProj = PERF_MONTHS.map((_,i) => i >= PERF_CUR ? m.yoyFull[i] : null);
-  const ptColor  = PERF_MONTHS.map((_,i) => PERF_LAST3.includes(i) ? '#D29922' : (m.yoyReal[i]>=0?'#3FB950':'#F85149'));
-  const ptSize   = PERF_MONTHS.map((_,i) => PERF_LAST3.includes(i) ? 7 : 3);
+  const ptColor  = PERF_MONTHS.map((_,i) => m.last3idx.includes(i) ? '#D29922' : (m.yoyReal[i]>=0?'#3FB950':'#F85149'));
+  const ptSize   = PERF_MONTHS.map((_,i) => m.last3idx.includes(i) ? 7 : 3);
 
   const gridC = 'rgba(48,54,61,.6)';
   const tickC = { color: '#8B949E', maxRotation: 0 };
@@ -4561,6 +4908,84 @@ function renderPerfStore(k) {
       }
     }
   });
+}
+
+// ── Export Excel (Performance Mensal — Total Surfers + todas as lojas) ─────
+function _buildPerfStorePayload(k) {
+  const curProj = computeCurMonthProj(k);
+  const m = calcPerfMetrics(k, curProj);
+  const sign = n => n > 0 ? '+' : '';
+
+  const histYears = [2022, 2023, 2024, 2025];
+  let colTotals = { 2022:0, 2023:0, 2024:0, 2025:0, v26:0 };
+  const rows = PERF_MONTHS.map((mn, i) => {
+    const h = histYears.map(y => PERF_HIST[k][y][i]);
+    const real = m.d26[i];
+    const proj = m.proj[i];
+    const v26  = real !== null ? real : proj;
+    const isProj = (real === null || i === PERF_CUR) && v26 !== null;
+    histYears.forEach(y => { colTotals[y] += PERF_HIST[k][y][i] || 0; });
+    if (v26 !== null) colTotals.v26 += v26;
+    const deltas = histYears.map((y,j) => j === 0 || h[j] === null || h[j-1] === null || h[j-1] === 0 ? null : (h[j] - h[j-1]) / h[j-1] * 100);
+    const d2625  = v26 !== null && h[3] !== null && h[3] !== 0 ? (v26 - h[3]) / h[3] * 100 : null;
+    const d2624  = v26 !== null && h[2] !== null && h[2] !== 0 ? (v26 - h[2]) / h[2] * 100 : null;
+    const d2623  = v26 !== null && h[1] !== null && h[1] !== 0 ? (v26 - h[1]) / h[1] * 100 : null;
+    const d2622  = v26 !== null && h[0] !== null && h[0] !== 0 ? (v26 - h[0]) / h[0] * 100 : null;
+    return { mes: mn, isProj, h, deltas, v26, d2625, d2624, d2623, d2622 };
+  });
+  const totDeltas = histYears.map((y,j) => j === 0 || colTotals[histYears[j-1]] === 0 ? null : (colTotals[y]-colTotals[histYears[j-1]])/colTotals[histYears[j-1]]*100);
+  const tot2625 = colTotals[2025] !== 0 ? (colTotals.v26 - colTotals[2025]) / colTotals[2025] * 100 : null;
+  const tot2624 = colTotals[2024] !== 0 ? (colTotals.v26 - colTotals[2024]) / colTotals[2024] * 100 : null;
+  const tot2623 = colTotals[2023] !== 0 ? (colTotals.v26 - colTotals[2023]) / colTotals[2023] * 100 : null;
+  const tot2622 = colTotals[2022] !== 0 ? (colTotals.v26 - colTotals[2022]) / colTotals[2022] * 100 : null;
+
+  const pProj = (m.projTotal - m.total25) / m.total25 * 100;
+  return {
+    key: k,
+    label: BOARDS[k]?.label || k,
+    color: BOARDS[k]?.color || '#8B949E',
+    kpis: {
+      total25: m.total25,
+      acumulado: m.realAcum,
+      acumuladoLabel: `Jan–${PERF_MONTHS[PERF_CUR-1]}/26`,
+      mediaUltimos3: m.avgD,
+      mediaDetalhe: m.last3idx.map((idx,j) => m.last3[j] !== null ? `${PERF_MONTHS[idx]}${idx === PERF_CUR ? ' (proj)' : ''} ${sign(m.last3[j])}${m.last3[j].toFixed(1)}%` : null).filter(Boolean).join(' · '),
+      projecaoAno: m.projTotal,
+      pProj,
+    },
+    rows,
+    totals: { ...colTotals, totDeltas, tot2625, tot2624, tot2623, tot2622 },
+  };
+}
+
+async function _exportPerfExcel() {
+  const btn = document.getElementById('perfExportBtn');
+  const origText = btn?.textContent;
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = '↓ Gerando...'; }
+    const exportStores = PD.board === 'total'
+      ? ['total', 'surfers', ..._ALL_STORES_FOR_TOTAL]
+      : ['surfers', ...SURFERS_STORES];
+    const stores = exportStores.map(_buildPerfStorePayload);
+    const res = await fetch('/api/perf/export', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ stores }),
+    });
+    if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || res.status); }
+    const blob = await res.blob();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
+    const today = new Date().toLocaleDateString('pt-BR').replace(/\//g,'-');
+    a.href = url;
+    a.download = `performance-surfers-${today}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert('Erro ao exportar: ' + e.message);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = origText; }
+  }
 }
 
 function initPerfModal() {
@@ -4641,7 +5066,13 @@ async function loadAndRenderDaily(board) {
   body.innerHTML = '<div style="text-align:center;padding:2.5rem;color:var(--muted)">Carregando…</div>';
   try {
     const allEmps = await apiFetch('GET', '/api/employees');
-    PD.employees  = allEmps.filter(e => e.board === board && isVend(e));
+    // Exclui vendedores desligados ANTES do primeiro dia do mês visualizado
+    const _firstOfMonth = `${PD.year}-${String(PD.month).padStart(2,'0')}-01`;
+    PD.employees  = allEmps.filter(e =>
+      e.board === board &&
+      isVend(e) &&
+      (!e.desligamento || e.desligamento >= _firstOfMonth)
+    );
     PD.weights       = await apiFetch('GET', `/api/weights/${PD.year}/${PD.month}`);
     PD.fluxo         = await apiFetch('GET', `/api/storefluxo/${PD.year}/${PD.month}/${board}`);
     PD.boardSettings = await apiFetch('GET', '/api/board-settings');
@@ -4760,15 +5191,19 @@ function _dsHelpers() {
 // === Fonte única da meta diária de um vendedor ===
 // Toda tela (Faturamento Diário, planilha de detalhe, cálculo da semana) deve
 // usar esta função para evitar divergência de fórmula entre elas.
+//   • canal Omni (isOmni)      → 0 (soma no total da loja, mas não recebe fatia da meta)
 //   • dia de férias            → 0
 //   • loja com metaLoja        → metaLoja * peso / 100 / nAtivos
 //   • sem metaLoja (fallback)  → meta mensal individual * peso / 100
-// nAtivos = vendedores da loja ativos no dia (admitidos, não demitidos, não de férias).
+// nAtivos = vendedores da loja ativos no dia (admitidos, não demitidos, não de férias,
+// não canal Omni — Omni não participa da divisão da meta dos demais).
 // Retorna { goal, nActive, isVacation }.
-function sellerDayGoal({ dateStr, dayWeight, metaLoja, onVacation, boardVendors, vsalesForMonth, individualMensal }) {
+function sellerDayGoal({ dateStr, dayWeight, metaLoja, onVacation, boardVendors, vsalesForMonth, individualMensal, isOmni }) {
+  if (isOmni) return { goal: 0, nActive: 0, isVacation: false };
   if (onVacation) return { goal: 0, nActive: 0, isVacation: true };
   if (metaLoja > 0) {
     const nActive = Math.max(1, (boardVendors || []).filter(e =>
+      !e.omniChannel &&
       (!e.admissao     || e.admissao     <= dateStr) &&
       (!e.desligamento || e.desligamento >= dateStr) &&
       !((vsalesForMonth?.[e.id]?.meta?.vacationDays) || []).includes(dateStr)
@@ -4794,6 +5229,7 @@ function computeSellerDayGoals(empId) {
       onVacation:     vacSet.has(dateStr),
       boardVendors:   PD.employees,
       vsalesForMonth: PD.allVsales,
+      isOmni:         !!PD.employees.find(e => e.id === empId)?.omniChannel,
     });
   }
   return goals;
@@ -4882,7 +5318,10 @@ function buildVendedorSheet(emp, isAdmin) {
           <span class="ds-meta-seg-val" id="dsMetaSuperVal">${superMetaVal}</span>
         </div>
       </div>
-      ${isAdmin && PD.metaLoja > 0 ? `<div class="ds-weight-hint-row"><span class="ds-weight-hint">· Clique em <strong>Part%</strong> para marcar/desmarcar férias do dia${vacDays.length > 0 ? ` · <span style="color:var(--down)">${vacDays.length} dia(s) de férias</span>` : ''}</span></div>` : ''}
+      ${isAdmin && PD.metaLoja > 0 ? (emp.omniChannel
+        ? `<div class="ds-weight-hint-row"><span class="ds-weight-hint">· Canal Omni: vendas somam no total da loja, mas não recebe fatia da meta</span></div>`
+        : `<div class="ds-weight-hint-row"><span class="ds-weight-hint">· Clique em <strong>Part%</strong> para marcar/desmarcar férias do dia${vacDays.length > 0 ? ` · <span style="color:var(--down)">${vacDays.length} dia(s) de férias</span>` : ''}</span></div>`
+      ) : ''}
       ${isAdmin && !PD.metaLoja ? `<div class="ds-weight-hint-row"><span class="ds-weight-hint">· Configure a <strong>Meta da Loja</strong> na aba TOTAL para calcular metas automaticamente</span></div>` : ''}
     </div>
     <div class="ds-table-wrap"><table class="ds-table">
@@ -4911,7 +5350,7 @@ function buildVendedorSheet(emp, isAdmin) {
     const pCls   = r.pctAting != null ? (r.pctAting >= 100 ? 'pf-pos' : r.pctAting >= 80 ? 'ds-warn' : 'pf-neg') : '';
     const dCls   = r.desvio != null ? (r.desvio >= 0 ? 'pf-pos' : 'pf-neg') : '';
     const partPct = r.dayInfo
-      ? (isVac ? '0.00%' : `${(100 / r.dayInfo.nActive).toFixed(2)}%`)
+      ? (r.dayInfo.nActive > 0 ? `${(100 / r.dayInfo.nActive).toFixed(2)}%` : '0.00%')
       : r.w.toFixed(2) + '%';
     const tr = document.createElement('tr');
     tr.className = trCls; tr.dataset.date = r.dateStr;
@@ -4919,7 +5358,7 @@ function buildVendedorSheet(emp, isAdmin) {
       <td class="ds-td-dia">${r.d}<small class="ds-dow">${r.DAY_S[r.dow]}</small></td>
       <td class="ds-td-meta">${mensal > 0 ? fBRL(r.metaDia)    : '—'}</td>
       <td class="ds-td-meta">${mensal > 0 ? fBRL(r.metaAccum)  : '—'}</td>
-      <td class="ds-td-peso${isAdmin && PD.metaLoja > 0 ? ' ds-editable' : ''}" data-date="${r.dateStr}" style="${isVac ? 'color:var(--down)' : ''}">${partPct}</td>
+      <td class="ds-td-peso${isAdmin && PD.metaLoja > 0 && !emp.omniChannel ? ' ds-editable' : ''}" data-date="${r.dateStr}" style="${isVac ? 'color:var(--down)' : ''}">${partPct}</td>
       <td class="ds-td-pct ${pCls}">${r.pctAting != null ? fPct(r.pctAting) : '—'}</td>
       <td class="${dCls}">${r.desvio != null ? fBRL(r.desvio) : '—'}</td>
       <td class="ds-td-edit ds-td-fillable${r.entry ? ' ds-has-val' : ''}${syncActive ? ' ds-sync-cell' : ''}" data-field="value"        data-date="${r.dateStr}">${r.entry ? fBRL(r.valor) : '<span class="ds-empty">—</span>'}</td>
@@ -4984,6 +5423,22 @@ function buildTotalSheet(isAdmin) {
   const today   = new Date();
   const todayStr= `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
 
+  // ── Check: soma das metas diárias dos vendedores tem que bater com a meta da loja ──
+  // Detecta o caso de admissão/desligamento/férias marcado errado (ou esquecido), que faz
+  // o divisor (nActive) não corresponder a quem de fato está recebendo fatia da meta naquele dia.
+  const empGoals = PD.metaLoja > 0 ? emps.map(e => computeSellerDayGoals(e.id)) : null;
+  const metaCheckIssues = [];
+  if (empGoals) {
+    for (let d = 1; d <= days; d++) {
+      const dateStr   = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const w         = PD.weights[dateStr] ?? defW;
+      const metaOficial = PD.metaLoja * w / 100;
+      const sumIndiv  = empGoals.reduce((s, g) => s + (g?.[dateStr]?.goal || 0), 0);
+      const diff      = +(sumIndiv - metaOficial).toFixed(2);
+      if (Math.abs(diff) > 0.05) metaCheckIssues.push({ d, dateStr, metaOficial, sumIndiv, diff });
+    }
+  }
+
   let rows = [], metaAccum = 0, realAccum = 0;
   for (let d = 1; d <= days; d++) {
     const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
@@ -5038,6 +5493,12 @@ function buildTotalSheet(isAdmin) {
         </div>
       </div>
       ${isAdmin ? `<div class="ds-weight-hint-row"><span class="ds-weight-hint">· Clique em <strong>Peso%</strong> para ajustar (global — vale p/ todas as lojas)</span></div>` : ''}
+      ${isAdmin && metaCheckIssues.length > 0 ? `
+        <div style="margin-top:8px;padding:8px 12px;border:1px solid var(--down);border-radius:6px;background:color-mix(in srgb, var(--down) 12%, transparent);font-size:12.5px;color:var(--down)">
+          ⚠️ A soma das metas diárias dos vendedores não bate com a meta da loja em ${metaCheckIssues.length} dia(s):
+          ${metaCheckIssues.map(i => `dia ${i.d} (vendedores ${fBRL(i.sumIndiv)} vs loja ${fBRL(i.metaOficial)}, diff ${i.diff > 0 ? '+' : ''}${fBRL(i.diff)})`).join(' · ')}.
+          Verifique férias/admissão/desligamento dos vendedores nesses dias.
+        </div>` : ''}
     </div>
     <div class="ds-table-wrap"><table class="ds-table">
       <thead>
@@ -5415,7 +5876,12 @@ function closeWeightsModal() {
 async function saveWeights() {
   const inputs  = document.querySelectorAll('.wg-input');
   const weights = {};
-  inputs.forEach(inp => { weights[inp.dataset.date] = parseFloat(inp.value) || 0; });
+  let total = 0;
+  inputs.forEach(inp => { const v = parseFloat(inp.value) || 0; weights[inp.dataset.date] = v; total += v; });
+  if (Math.abs(total - 100) >= 0.05) {
+    toast(`A soma dos pesos é ${total.toFixed(2)}% — precisa ser exatamente 100% para salvar.`, true);
+    return;
+  }
   try {
     await apiFetch('POST', `/api/weights/${PD.year}/${PD.month}`, { weights });
     PD.weights = weights;
@@ -6248,7 +6714,7 @@ const PA_THRESHOLD          = 1.80;
 
 let WK = { refDate: null, cache: {} };
 let DASH_WEEK = { refDate: null };
-let DASH_DAY  = { refDate: null };
+let DASH_DAY  = { refDate: null, mode: 'day' };
 let _dayCardTimer = null;
 const _dayCardExpanded  = new Set(); // lojas expandidas no card diário
 const _perfExpanded     = new Set(); // lojas expandidas em Performance Mensal (admin)
@@ -6429,6 +6895,7 @@ function calcWeekKpis(emp, week, extraData) {
       boardVendors,
       vsalesForMonth,
       individualMensal: mk === curKey ? mensal : (extraData?.[mk]?.vsales?.[emp.id]?.meta?.mensal || 0),
+      isOmni:           !!emp.omniChannel,
     }).goal;
   }
   // check manual meta override from current AND extra months
@@ -6896,6 +7363,7 @@ function openFuncForm(id) {
   document.getElementById('funcBanco').value         = emp?.banco         || '';
   document.getElementById('funcConta').value         = emp?.conta         || '';
   document.getElementById('funcIsVendedor').checked = emp ? emp.isVendedor !== false : true;
+  document.getElementById('funcOmniChannel').checked = !!emp?.omniChannel;
   document.getElementById('funcInativo').checked = !!emp?.inativo;
   document.getElementById('funcDesligamento').value = emp?.desligamento || '';
   document.getElementById('funcDesligamentoWrap').style.display = emp?.inativo ? '' : 'none';
@@ -6985,6 +7453,7 @@ async function saveFuncionario() {
   const banco        = document.getElementById('funcBanco').value.trim();
   const conta        = document.getElementById('funcConta').value.trim();
   const isVendedor = document.getElementById('funcIsVendedor').checked;
+  const omniChannel = document.getElementById('funcOmniChannel').checked;
   const inativo   = document.getElementById('funcInativo').checked;
   const desligamento = document.getElementById('funcDesligamento').value;
   const fotoRemoved  = !FE.newPhotoFile && !FE.currentPhotoUrl && !!FE.editingId;
@@ -6999,7 +7468,7 @@ async function saveFuncionario() {
   const btn = document.getElementById('funcSaveBtn');
   btn.disabled = true;
   try {
-    const body = { name, apelido, board, cpf, nascimento, microvixCod, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, inativo, desligamento, supervisedBoards };
+    const body = { name, apelido, board, cpf, nascimento, microvixCod, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, omniChannel, inativo, desligamento, supervisedBoards };
     if (fotoRemoved) body.foto = '';
     let emp;
     if (FE.editingId) {
@@ -8083,11 +8552,15 @@ function _renderNFActive(body, board, refresh) {
     ` : '';
     const currentUser = S.user?.label || S.user?.username;
     const canDelete = isAdmin || (!isAdmin && item.addedBy === currentUser);
+    const addedDate = item.addedAt
+      ? (() => { const d = new Date(item.addedAt); return `${String(d.getDate()).padStart(2,'0')}/${String(d.getMonth()+1).padStart(2,'0')}/${d.getFullYear()}`; })()
+      : '';
     return `
     <div class="nf-item" data-id="${item.id}">
       <label class="nf-chk-label" style="${!showChk ? 'pointer-events:none;opacity:.35' : ''}">
         ${showChk ? `<input type="checkbox" class="nf-chk" data-id="${item.id}">` : '<span style="width:14px;flex-shrink:0;display:inline-block"></span>'}
         <span class="nf-item-text" title="${_escHtml(item.text)}">${_escHtml(item.text)}</span>
+        ${addedDate ? `<span style="font-size:.7rem;color:var(--muted);white-space:nowrap;margin-left:4px">${addedDate}</span>` : ''}
       </label>
       ${_nfStatusChip(item.status)}
       ${adminActions}
@@ -9193,22 +9666,24 @@ function _boletaDetailHtml(b, isAdmin) {
       </div>
     </div>
     <div class="bol-detail-body">
-      <div class="bol-detail-section">
+      ${b.origem === 'loja'
+        ? `<div class="bol-detail-section"><div class="bol-detail-section-title">Origem</div><div class="bol-detail-row"><span class="bol-origem-tag-loja">Identificado em Loja</span></div></div>`
+        : `<div class="bol-detail-section">
         <div class="bol-detail-section-title">Cliente</div>
         ${row('Nome', b.nome)} ${row('CPF', b.cpf)} ${row('Tel', b.tel)} ${row('Email', b.email)}
         ${row('Endereço', [b.endereco, b.numeroEnd, b.compl].filter(Boolean).join(', '))}
         ${row('Bairro', b.bairro)} ${row('CEP', b.cep)} ${row('Cidade', b.cidade)}
-      </div>
+      </div>`}
       <div class="bol-detail-section">
         <div class="bol-detail-section-title">Produto</div>
         ${row('Produto', b.produto)} ${row('Tamanho', b.tamanho)} ${row('Cor', b.cor)}
         ${row('Ref', b.ref)} ${row('Código', b.codigo)} ${row('Fabricante', b.fabricante)}
-        ${row('Doc', b.doc)} ${row('Data da Compra', fDate(b.dataCompra))}
+        ${row('Doc', b.doc)} ${b.origem !== 'loja' ? row('Data da Compra', fDate(b.dataCompra)) : ''}
       </div>
       <div class="bol-detail-section">
         <div class="bol-detail-section-title">Defeito & Prazo</div>
         ${row('Defeito', b.defeito)}
-        ${row('Data Entregue', fDate(b.dataEntregue))}
+        ${row(b.origem === 'loja' ? 'Data de Identificação' : 'Data Entregue', fDate(b.dataEntregue))}
         ${row('Prazo', b.dataEntregue ? `30 dias → vence em ${fDate(new Date(new Date(b.dataEntregue).setDate(new Date(b.dataEntregue).getDate()+30)).toISOString().slice(0,10))}` : null)}
         ${b.status==='resolvido' ? row('Resolvida em', fDate(b.resolvedAt?.slice(0,10))+' por '+(b.resolvedBy||'—')) : ''}
       </div>
@@ -9231,7 +9706,7 @@ function _boletaDetailHtml(b, isAdmin) {
           return `<div class="cd-stage" style="opacity:.4"><div class="cd-stage-hdr"><span class="cd-stage-title cd-stage-pending">${title}</span><span style="font-size:.75rem;color:var(--muted)">Aguardando envio à fábrica</span></div></div>`;
         }
         const today = new Date().toISOString().slice(0,10);
-        return stageDone('Cliente → Loja (Recebido)', ['Entrada: '+fD(b.dataEntregue||b.createdAt?.slice(0,10))]) +
+        return stageDone(b.origem==='loja' ? 'Identificado em Loja' : 'Cliente → Loja (Recebido)', ['Entrada: '+fD(b.dataEntregue||b.createdAt?.slice(0,10))]) +
           (b.ressarcimento
             ? stageDone('Loja → Cliente (Ressarcimento)', [fD(b.ressarcimento.data), b.ressarcimento.tipo?'Tipo: '+b.ressarcimento.tipo:null, b.ressarcimento.obs||null])
             : stagePending('Loja → Cliente (Ressarcimento)', 'cdRessBtn', 'cdRessForm')) +
@@ -9370,12 +9845,22 @@ function _boletaCompraConstraints(dataEntregue) {
 function _boletaFormHtml(boleta, isAdmin, userBoard) {
   const v = (field) => boleta?.[field] || '';
   const board = boleta?.board || (isAdmin ? NF_STORES_BOL[0] : userBoard);
+  const origem = boleta?.origem || 'cliente';
+  const isLoja = origem === 'loja';
   const cc = _boletaCompraConstraints(v('dataEntregue'));
   return `<div class="bol-form">
     <div class="bol-form-section">
+      <div class="bol-form-section-title">Origem do Defeito</div>
+      <div style="display:flex;gap:.5rem;margin-bottom:.25rem">
+        <button type="button" class="bol-origem-btn${!isLoja?' bol-origem-active':''}" data-origem="cliente">Veio de Cliente</button>
+        <button type="button" class="bol-origem-btn${isLoja?' bol-origem-active':''}" data-origem="loja">Identificado em Loja</button>
+      </div>
+      <input type="hidden" name="origem" value="${origem}">
+    </div>
+    <div class="bol-form-section bol-cliente-section"${isLoja?' style="display:none"':''}>
       <div class="bol-form-section-title">Cliente</div>
       <div class="bol-form-grid">
-        <div class="bol-fg bol-span3"><label>Nome *</label><input type="text" name="nome" class="bol-input" value="${v('nome')}" required></div>
+        <div class="bol-fg bol-span3"><label>Nome${!isLoja?' *':''}</label><input type="text" name="nome" class="bol-input" value="${v('nome')}"></div>
         <div class="bol-fg"><label>CPF</label><input type="text" name="cpf" class="bol-input" value="${v('cpf')}"></div>
         <div class="bol-fg bol-span2"><label>Endereço</label><input type="text" name="endereco" class="bol-input" value="${v('endereco')}"></div>
         <div class="bol-fg"><label>Nº</label><input type="text" name="numeroEnd" class="bol-input" value="${v('numeroEnd')}"></div>
@@ -9397,14 +9882,20 @@ function _boletaFormHtml(boleta, isAdmin, userBoard) {
         <div class="bol-fg"><label>Código</label><input type="text" name="codigo" class="bol-input" value="${v('codigo')}"></div>
         <div class="bol-fg"><label>Fabricante</label><input type="text" name="fabricante" class="bol-input" value="${v('fabricante')}"></div>
         <div class="bol-fg"><label>Doc</label><input type="text" name="doc" class="bol-input" value="${v('doc')}"></div>
-        <div class="bol-fg"><label>Data da Compra *</label><input type="date" name="dataCompra" class="bol-input" value="${v('dataCompra')}" min="${cc.min}" max="${cc.max}" required></div>
+        <div class="bol-fg bol-data-compra-wrap"${isLoja?' style="display:none"':''}>
+          <label>Data da Compra *</label>
+          <input type="date" name="dataCompra" class="bol-input" value="${v('dataCompra')}" min="${cc.min}" max="${cc.max}">
+        </div>
       </div>
     </div>
     <div class="bol-form-section">
       <div class="bol-form-section-title">Defeito & Prazo</div>
       <div class="bol-form-grid">
         <div class="bol-fg bol-span4"><label>Defeito *</label><textarea name="defeito" class="bol-input" rows="3" required>${v('defeito')}</textarea></div>
-        <div class="bol-fg bol-span2"><label>Data Entregue ao cliente * <small>(início do prazo de 30 dias)</small></label><input type="date" name="dataEntregue" class="bol-input" value="${v('dataEntregue')}" required></div>
+        <div class="bol-fg bol-span2">
+          <label class="bol-data-entregue-lbl">${isLoja ? 'Data de Identificação *' : 'Data Entregue ao cliente * <small>(início do prazo de 30 dias)</small>'}</label>
+          <input type="date" name="dataEntregue" class="bol-input" value="${v('dataEntregue')}" required>
+        </div>
         ${isAdmin ? `<div class="bol-fg bol-span2"><label>Loja *</label><select name="board" class="bol-input">
           ${NF_STORES_BOL.map(b=>`<option value="${b}"${b===board?' selected':''}>${BOARDS[b]?.label||b}</option>`).join('')}
         </select></div>` : `<input type="hidden" name="board" value="${userBoard}">`}
@@ -9421,10 +9912,33 @@ function _initBoletaForm(body, boleta, isAdmin, userBoard) {
   body.querySelector('#bolFormCancelBtn').addEventListener('click', () =>
     boleta ? _renderBoletasModal('view', boleta.id) : _renderBoletasModal('list', null));
 
+  const origemInput      = body.querySelector('[name="origem"]');
+  const clienteSection   = body.querySelector('.bol-cliente-section');
+  const dataCompraWrap   = body.querySelector('.bol-data-compra-wrap');
+  const dataEntregueLbl  = body.querySelector('.bol-data-entregue-lbl');
   const dataEntregueInput = body.querySelector('[name="dataEntregue"]');
   const dataCompraInput   = body.querySelector('[name="dataCompra"]');
+
+  function applyOrigem(origem) {
+    const isLoja = origem === 'loja';
+    origemInput.value = origem;
+    if (clienteSection)  clienteSection.style.display  = isLoja ? 'none' : '';
+    if (dataCompraWrap)  dataCompraWrap.style.display  = isLoja ? 'none' : '';
+    if (dataEntregueLbl) dataEntregueLbl.innerHTML     = isLoja
+      ? 'Data de Identificação *'
+      : 'Data Entregue ao cliente * <small>(início do prazo de 30 dias)</small>';
+    body.querySelectorAll('.bol-origem-btn').forEach(btn => {
+      btn.classList.toggle('bol-origem-active', btn.dataset.origem === origem);
+    });
+  }
+
+  body.querySelectorAll('.bol-origem-btn').forEach(btn => {
+    btn.addEventListener('click', () => applyOrigem(btn.dataset.origem));
+  });
+
   if (dataEntregueInput && dataCompraInput) {
     dataEntregueInput.addEventListener('change', () => {
+      if (origemInput.value === 'loja') return;
       const cc = _boletaCompraConstraints(dataEntregueInput.value);
       dataCompraInput.min = cc.min;
       dataCompraInput.max = cc.max;
@@ -9436,11 +9950,12 @@ function _initBoletaForm(body, boleta, isAdmin, userBoard) {
   body.querySelector('#bolFormSaveBtn').addEventListener('click', async () => {
     const data = {};
     body.querySelectorAll('[name]').forEach(el => { data[el.name] = el.value.trim(); });
-    if (!data.nome) { toast('Nome é obrigatório', true); return; }
+    const isLoja = data.origem === 'loja';
+    if (!isLoja && !data.nome) { toast('Nome é obrigatório', true); return; }
     if (!data.produto) { toast('Produto é obrigatório', true); return; }
-    if (!data.dataCompra) { toast('Data da Compra é obrigatória', true); return; }
-    if (!data.dataEntregue) { toast('Data entregue é obrigatória', true); return; }
-    if (data.dataCompra && data.dataEntregue) {
+    if (!isLoja && !data.dataCompra) { toast('Data da Compra é obrigatória', true); return; }
+    if (!data.dataEntregue) { toast(isLoja ? 'Data de Identificação é obrigatória' : 'Data entregue é obrigatória', true); return; }
+    if (!isLoja && data.dataCompra && data.dataEntregue) {
       const diffDays = Math.round((new Date(data.dataEntregue + 'T12:00:00') - new Date(data.dataCompra + 'T12:00:00')) / 86400000);
       if (diffDays < 0) { toast('Data da compra não pode ser posterior à data de entrega', true); return; }
       if (diffDays > 90) { toast('Data da compra deve ser no máximo 90 dias antes da entrega ao cliente', true); return; }
@@ -11330,6 +11845,437 @@ async function initStandalone() {
   _loadIndeva();
 }
 
+// ── DRE ─────────────────────────────────────────────────────────────────────
+
+const DR = { loja: 'delrey', ano: new Date().getFullYear(), mes: new Date().getMonth() + 1, tab: 'resultado', monthly: {}, config: {}, receita_microvix: null, cmv_microvix: null };
+
+function dreLojas() {
+  return Object.entries(BOARDS).filter(([k]) => !['admin','escritorio','surfers'].includes(k));
+}
+
+function dreCalc(monthly, config, receita_auto) {
+  const m = monthly || {}, c = config || {};
+  const receita_bruta = m.receita_bruta != null ? m.receita_bruta : (DR.receita_microvix || 0);
+
+  // Deduções
+  const simples = m.simples_abs != null ? m.simples_abs : receita_bruta * ((c.simples_pct || 0) / 100);
+  const icms_difal = m.icms_difal || 0;
+  const total_deducoes = simples + icms_difal;
+  const receita_liquida = receita_bruta - total_deducoes;
+
+  // Custos das vendas
+  const cmv = m.cmv_abs != null ? m.cmv_abs : (DR.cmv_microvix != null ? DR.cmv_microvix : receita_bruta * ((c.cmv_pct || 0) / 100));
+  const embalagens = m.embalagens || 0;
+  const total_custos = cmv + embalagens;
+  const lucro_bruto = receita_liquida - total_custos;
+
+  // Salários
+  const staff = c.staff || [];
+  const salarios_fixos = m.salarios_fixos != null ? m.salarios_fixos : staff.reduce((s, e) => s + (parseFloat(e.fixo) || 0) * (parseInt(e.qnt) || 1), 0);
+  const comissoes = m.comissoes != null ? m.comissoes : receita_bruta * ((c.comissao_pct || 0) / 100);
+  const encargos = m.encargos != null ? m.encargos : (salarios_fixos + comissoes) * ((c.encargos_pct || 0) / 100);
+  const escritorio = m.escritorio != null ? m.escritorio : (salarios_fixos + comissoes + encargos) * ((c.escritorio_pct || 0) / 100);
+  const premiacoes = m.premiacoes || 0;
+  const total_salarios = salarios_fixos + comissoes + encargos + escritorio + premiacoes;
+
+  // Ponto comercial
+  const aluguel_min = m.aluguel_min != null ? m.aluguel_min : (c.aluguel_min || 0);
+  const aluguel_pct = m.aluguel_pct || 0;
+  const condominio  = m.condominio  != null ? m.condominio  : (c.condominio  || 0);
+  const fpp         = m.fpp         != null ? m.fpp         : (c.fpp         || 0);
+  const ar_cond     = m.ar_cond     != null ? m.ar_cond     : (c.ar_cond     || 0);
+  const iptu        = m.iptu        != null ? m.iptu        : (c.iptu        || 0);
+  const energia     = m.energia     != null ? m.energia     : (c.energia     || 0);
+  const total_ponto = aluguel_min + aluguel_pct + condominio + fpp + ar_cond + iptu + energia;
+
+  // Administrativo
+  const caixinha    = m.caixinha    || 0;
+  const sistema_erp = m.sistema_erp != null ? m.sistema_erp : (c.sistema_erp || 0);
+  const contab      = m.contab      != null ? m.contab      : (c.contab      || 0);
+  const seguro      = m.seguro      || 0;
+  const plano_saude = m.plano_saude != null ? m.plano_saude : (c.plano_saude || 0);
+  const diversas    = m.diversas    || 0;
+  const telefone    = m.telefone    != null ? m.telefone    : (c.telefone    || 0);
+  const total_adm   = caixinha + sistema_erp + contab + seguro + plano_saude + diversas + telefone;
+
+  // Marketing
+  const publicidade = m.publicidade || 0;
+
+  // Financeiro operacional
+  const desc_maquineta = m.desc_maquineta != null ? m.desc_maquineta : receita_bruta * ((c.desc_maquineta_pct || 0) / 100);
+  const tarifa_rede    = m.tarifa_rede || 0;
+  const total_fin_op   = desc_maquineta + tarifa_rede;
+
+  const total_despesas = total_salarios + total_ponto + total_adm + publicidade + total_fin_op;
+  const resultado_op   = lucro_bruto - total_despesas;
+
+  // Resultado financeiro (abaixo da linha)
+  const juros       = m.juros       || 0;
+  const emprestimos = m.emprestimos || 0;
+  const resultado_fin = juros + emprestimos;
+
+  const resultado_liq = resultado_op - resultado_fin;
+
+  return {
+    receita_bruta, simples, icms_difal, total_deducoes, receita_liquida,
+    cmv, embalagens, total_custos, lucro_bruto,
+    salarios_fixos, comissoes, encargos, escritorio, premiacoes, total_salarios,
+    aluguel_min, aluguel_pct, condominio, fpp, ar_cond, iptu, energia, total_ponto,
+    caixinha, sistema_erp, contab, seguro, plano_saude, diversas, telefone, total_adm,
+    publicidade, desc_maquineta, tarifa_rede, total_fin_op,
+    total_despesas, resultado_op, juros, emprestimos, resultado_fin, resultado_liq,
+  };
+}
+
+function dreR(v) {
+  if (v == null || isNaN(v) || v === 0) return '<span class="dre-zero">—</span>';
+  const fmt = Math.abs(v).toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+  return `<span class="${v < 0 ? 'dre-neg' : 'dre-pos'}">${v < 0 ? '-' : ''}R$ ${fmt}</span>`;
+}
+function dreP(v, base) {
+  if (!base) return '';
+  const pct = (v / base * 100).toFixed(1);
+  return `<span class="${v < 0 ? 'dre-neg' : 'dre-zero'}">${pct}%</span>`;
+}
+
+function renderDreResultado(body) {
+  const c = dreCalc(DR.monthly, DR.config, DR.receita_auto);
+  const rb = c.receita_bruta;
+
+  function row(label, val, { cls = '', sub = false, pct = true } = {}) {
+    const trCls = ['dre-row', sub ? 'dre-sub' : '', cls].filter(Boolean).join(' ');
+    return `<tr class="${trCls}">
+      <td class="dre-lbl">${label}</td>
+      <td class="dre-val">${dreR(val)}</td>
+      <td class="dre-pct">${pct && rb ? dreP(val, rb) : ''}</td>
+    </tr>`;
+  }
+  function section(label) {
+    return `<tr><td colspan="3" class="dre-section">${label}</td></tr>`;
+  }
+  function total(label, val, { cls = '' } = {}) {
+    return `<tr class="dre-total ${cls}"><td class="dre-lbl">${label}</td><td class="dre-val">${dreR(val)}</td><td class="dre-pct">${rb ? dreP(val, rb) : ''}</td></tr>`;
+  }
+
+  // Monthly variable inputs
+  const m = DR.monthly || {};
+  function inp(field, val, auto = false) {
+    const v = val != null ? val : '';
+    return `<input class="dre-inp${auto ? ' auto-val' : ''}" data-field="${field}" type="number" step="0.01" value="${typeof val === 'number' ? val.toFixed(2) : ''}" placeholder="${auto ? '(auto)' : '0,00'}">`;
+  }
+  function inpPct(field, val) {
+    return `<input class="dre-inp" data-field="${field}" type="number" step="0.01" value="${val != null ? val : ''}" placeholder="0,00">`;
+  }
+
+  const receita_mx_flag = m.receita_bruta == null && DR.receita_microvix != null;
+  const cmv_mx_flag     = m.cmv_abs == null && DR.cmv_microvix != null;
+
+  const fmtBRL = v => v != null ? 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+
+  body.innerHTML = `<div class="dre-resultado">
+    <div class="dre-table-wrap">
+      <table class="dre-table">
+        ${section('(+) RECEITA OPERACIONAL')}
+        ${row('Venda de Produtos', c.receita_bruta)}
+        ${section('(-) DEDUÇÕES DA RECEITA')}
+        ${row('SIMPLES Nacional', -c.simples, { sub: true })}
+        ${row('ICMS Difal', -c.icms_difal, { sub: true })}
+        ${total('(=) RECEITA LÍQUIDA', c.receita_liquida)}
+        ${section('(-) CUSTOS DAS VENDAS')}
+        ${row('CMV', -c.cmv, { sub: true })}
+        ${row('Embalagens', -c.embalagens, { sub: true })}
+        ${total('(=) LUCRO BRUTO', c.lucro_bruto)}
+        ${section('(-) DESPESAS OPERACIONAIS')}
+        ${row('SALÁRIOS', -c.total_salarios)}
+        ${row('Salários Fixos', -c.salarios_fixos, { sub: true })}
+        ${row('Comissões', -c.comissoes, { sub: true })}
+        ${row('Encargos', -c.encargos, { sub: true })}
+        ${row('Escritório', -c.escritorio, { sub: true })}
+        ${row('Premiações', -c.premiacoes, { sub: true })}
+        ${row('PONTO COMERCIAL', -c.total_ponto)}
+        ${row('Aluguel Mínimo', -c.aluguel_min, { sub: true })}
+        ${row('Aluguel Percentual', -c.aluguel_pct, { sub: true })}
+        ${row('Condomínio', -c.condominio, { sub: true })}
+        ${row('FPP', -c.fpp, { sub: true })}
+        ${row('Ar Condicionado', -c.ar_cond, { sub: true })}
+        ${row('IPTU', -c.iptu, { sub: true })}
+        ${row('Energia Elétrica', -c.energia, { sub: true })}
+        ${row('ADMINISTRATIVO', -c.total_adm)}
+        ${row('Caixinha', -c.caixinha, { sub: true })}
+        ${row('Sistema ERP', -c.sistema_erp, { sub: true })}
+        ${row('Contabilidade', -c.contab, { sub: true })}
+        ${row('Seguro', -c.seguro, { sub: true })}
+        ${row('Plano de Saúde', -c.plano_saude, { sub: true })}
+        ${row('Despesas Diversas', -c.diversas, { sub: true })}
+        ${row('Telefone/Internet', -c.telefone, { sub: true })}
+        ${row('MARKETING', -c.publicidade)}
+        ${row('Publicidade', -c.publicidade, { sub: true })}
+        ${row('DESPESAS FINANCEIRAS', -c.total_fin_op)}
+        ${row('Desconto Maquineta', -c.desc_maquineta, { sub: true })}
+        ${row('Tarifa Rede', -c.tarifa_rede, { sub: true })}
+        ${total('(=) RESULTADO OPERACIONAL', c.resultado_op)}
+        ${section('(-) RESULTADO FINANCEIRO')}
+        ${row('Juros', -c.juros, { sub: true })}
+        ${row('Empréstimos', -c.emprestimos, { sub: true })}
+        ${total('(=) RESULTADO LÍQUIDO', c.resultado_liq, { cls: 'dre-resultado-liq' })}
+      </table>
+    </div>
+    <div class="dre-inputs">
+      <div class="dre-inp-section">Receita
+        ${DR.receita_microvix != null ? `<span class="dre-mx-badge">Microvix: ${fmtBRL(DR.receita_microvix)}</span>` : ''}
+      </div>
+      <div class="dre-inp-row">
+        <label class="${receita_mx_flag ? 'dre-inp-auto' : ''}">Receita Bruta ${receita_mx_flag ? '(Microvix)' : ''}</label>
+        ${inp('receita_bruta', m.receita_bruta, receita_mx_flag)}
+      </div>
+      ${DR.receita_microvix != null && m.receita_bruta != null ? `<div class="dre-mx-apply-row"><button class="dre-mx-apply" id="dreApplyReceita">← Usar Microvix (${fmtBRL(DR.receita_microvix)})</button></div>` : ''}
+      <div class="dre-inp-section">Deduções</div>
+      <div class="dre-inp-row"><label>SIMPLES (R$) <small style="font-size:.7rem;color:var(--muted)">${DR.config?.simples_pct || 0}%</small></label>${inp('simples_abs', m.simples_abs)}</div>
+      <div class="dre-inp-row"><label>ICMS Difal</label>${inp('icms_difal', m.icms_difal)}</div>
+      <div class="dre-inp-section">Custos
+        ${DR.cmv_microvix != null ? `<span class="dre-mx-badge">Microvix: ${fmtBRL(DR.cmv_microvix)}</span>` : ''}
+      </div>
+      <div class="dre-inp-row"><label>CMV (R$) ${cmv_mx_flag ? '<span class="dre-inp-auto">(Microvix)</span>' : `<small style="font-size:.7rem;color:var(--muted)">${DR.config?.cmv_pct || 0}%</small>`}</label>${inp('cmv_abs', m.cmv_abs, cmv_mx_flag)}</div>
+      ${DR.cmv_microvix != null && m.cmv_abs != null ? `<div class="dre-mx-apply-row"><button class="dre-mx-apply" id="dreApplyCmv">← Usar Microvix (${fmtBRL(DR.cmv_microvix)})</button></div>` : ''}
+      <div class="dre-inp-row"><label>Embalagens</label>${inp('embalagens', m.embalagens)}</div>
+      <div class="dre-inp-section">Salários</div>
+      <div class="dre-inp-row"><label>Salários Fixos <small style="font-size:.7rem;color:var(--muted)">(config)</small></label>${inp('salarios_fixos', m.salarios_fixos)}</div>
+      <div class="dre-inp-row"><label>Comissões <small style="font-size:.7rem;color:var(--muted)">${DR.config?.comissao_pct || 0}%</small></label>${inp('comissoes', m.comissoes)}</div>
+      <div class="dre-inp-row"><label>Encargos <small style="font-size:.7rem;color:var(--muted)">${DR.config?.encargos_pct || 0}%</small></label>${inp('encargos', m.encargos)}</div>
+      <div class="dre-inp-row"><label>Escritório <small style="font-size:.7rem;color:var(--muted)">${DR.config?.escritorio_pct || 0}%</small></label>${inp('escritorio', m.escritorio)}</div>
+      <div class="dre-inp-row"><label>Premiações</label>${inp('premiacoes', m.premiacoes)}</div>
+      <div class="dre-inp-section">Ponto Comercial</div>
+      <div class="dre-inp-row"><label>Aluguel Mínimo <small style="font-size:.7rem;color:var(--muted)">(config)</small></label>${inp('aluguel_min', m.aluguel_min)}</div>
+      <div class="dre-inp-row"><label>Aluguel Percentual</label>${inp('aluguel_pct', m.aluguel_pct)}</div>
+      <div class="dre-inp-section">Administrativo</div>
+      <div class="dre-inp-row"><label>Caixinha</label>${inp('caixinha', m.caixinha)}</div>
+      <div class="dre-inp-row"><label>Despesas Diversas</label>${inp('diversas', m.diversas)}</div>
+      <div class="dre-inp-row"><label>Seguro</label>${inp('seguro', m.seguro)}</div>
+      <div class="dre-inp-section">Financeiro</div>
+      <div class="dre-inp-row"><label>Desconto Maquineta <small style="font-size:.7rem;color:var(--muted)">${DR.config?.desc_maquineta_pct || 0}%</small></label>${inp('desc_maquineta', m.desc_maquineta)}</div>
+      <div class="dre-inp-row"><label>Tarifa Rede</label>${inp('tarifa_rede', m.tarifa_rede)}</div>
+      <div class="dre-inp-row"><label>Publicidade</label>${inp('publicidade', m.publicidade)}</div>
+      <div class="dre-inp-section">Resultado Financeiro</div>
+      <div class="dre-inp-row"><label>Juros</label>${inp('juros', m.juros)}</div>
+      <div class="dre-inp-row"><label>Empréstimos</label>${inp('emprestimos', m.emprestimos)}</div>
+      <div class="dre-save-bar">
+        <button class="dre-save-btn" id="dreSaveBtn">Salvar</button>
+      </div>
+    </div>
+  </div>`;
+
+  body.querySelector('#dreApplyReceita')?.addEventListener('click', () => {
+    DR.monthly.receita_bruta = null;
+    renderDreResultado(body);
+  });
+  body.querySelector('#dreApplyCmv')?.addEventListener('click', () => {
+    DR.monthly.cmv_abs = null;
+    renderDreResultado(body);
+  });
+
+  // Live recalc on input change
+  body.querySelectorAll('.dre-inp').forEach(inp => {
+    inp.addEventListener('input', () => {
+      const v = parseFloat(inp.value);
+      DR.monthly[inp.dataset.field] = isNaN(v) ? null : v;
+      renderDreResultado(body);
+    });
+  });
+
+  body.querySelector('#dreSaveBtn').addEventListener('click', async () => {
+    try {
+      await apiFetch('PUT', `/api/dre/${DR.ano}/${DR.mes}/${DR.loja}`, DR.monthly);
+      toast('DRE salva ✓');
+    } catch(e) { toast('Erro: ' + e.message, true); }
+  });
+}
+
+function renderDreConfig(body) {
+  const c = DR.config || {};
+  const staff = c.staff || [];
+
+  function cfgRow(label, field, pct = false) {
+    const v = c[field] != null ? c[field] : '';
+    return `<div class="dre-config-row">
+      <label>${label}</label>
+      <input class="dre-config-inp" data-cfield="${field}" type="number" step="${pct ? '0.01' : '1'}" value="${v}" placeholder="0">
+    </div>`;
+  }
+
+  body.innerHTML = `<div class="dre-config">
+    <div class="dre-config-grid">
+      <div class="dre-config-section">
+        <div class="dre-config-section-title">Taxas (%)</div>
+        ${cfgRow('SIMPLES (%)', 'simples_pct', true)}
+        ${cfgRow('CMV (%)', 'cmv_pct', true)}
+        ${cfgRow('Comissão (%)', 'comissao_pct', true)}
+        ${cfgRow('Encargos sobre Folha (%)', 'encargos_pct', true)}
+        ${cfgRow('Escritório rateio (%)', 'escritorio_pct', true)}
+        ${cfgRow('Desconto Maquineta (%)', 'desc_maquineta_pct', true)}
+        <div class="dre-config-section-title" style="margin-top:1rem">Ponto Comercial</div>
+        ${cfgRow('Aluguel Mínimo', 'aluguel_min')}
+        ${cfgRow('Condomínio', 'condominio')}
+        ${cfgRow('FPP', 'fpp')}
+        ${cfgRow('Ar Condicionado', 'ar_cond')}
+        ${cfgRow('IPTU', 'iptu')}
+        ${cfgRow('Energia Elétrica', 'energia')}
+      </div>
+      <div class="dre-config-section">
+        <div class="dre-config-section-title">Administrativo</div>
+        ${cfgRow('Sistema ERP', 'sistema_erp')}
+        ${cfgRow('Contabilidade', 'contab')}
+        ${cfgRow('Plano de Saúde', 'plano_saude')}
+        ${cfgRow('Telefone/Internet', 'telefone')}
+        <div class="dre-config-section-title" style="margin-top:1rem">Quadro de Pessoal (Padrão)</div>
+        <table class="dre-staff-table">
+          <thead><tr><th>Qnt</th><th>Função</th><th>Salário Fixo</th><th></th></tr></thead>
+          <tbody id="dreStaffBody">
+            ${staff.map((e, i) => `<tr>
+              <td><input type="number" data-si="${i}" data-sk="qnt" value="${e.qnt || 1}" min="1" style="width:45px"></td>
+              <td><input type="text" data-si="${i}" data-sk="funcao" value="${e.funcao || ''}"></td>
+              <td><input type="number" data-si="${i}" data-sk="fixo" value="${e.fixo || 0}" step="0.01"></td>
+              <td><button class="dre-staff-del-btn" data-si="${i}">✕</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+        <button class="dre-staff-add-btn" id="dreStaffAdd">+ Linha</button>
+      </div>
+    </div>
+    <div class="dre-save-bar">
+      <button class="dre-save-btn" id="dreConfigSaveBtn">Salvar Configuração</button>
+    </div>
+  </div>`;
+
+  body.querySelectorAll('.dre-config-inp').forEach(inp => {
+    inp.addEventListener('change', () => {
+      DR.config[inp.dataset.cfield] = parseFloat(inp.value) || 0;
+    });
+  });
+
+  function wireStaff() {
+    body.querySelectorAll('[data-si]').forEach(inp => {
+      inp.addEventListener('change', () => {
+        const i = parseInt(inp.dataset.si);
+        const k = inp.dataset.sk;
+        if (!DR.config.staff) DR.config.staff = [];
+        if (!DR.config.staff[i]) DR.config.staff[i] = {};
+        DR.config.staff[i][k] = k === 'funcao' ? inp.value : (parseFloat(inp.value) || 0);
+      });
+    });
+    body.querySelectorAll('.dre-staff-del-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const i = parseInt(btn.dataset.si);
+        DR.config.staff.splice(i, 1);
+        renderDreConfig(body);
+      });
+    });
+  }
+  wireStaff();
+
+  body.querySelector('#dreStaffAdd').addEventListener('click', () => {
+    if (!DR.config.staff) DR.config.staff = [];
+    DR.config.staff.push({ qnt: 1, funcao: '', fixo: 0 });
+    renderDreConfig(body);
+  });
+
+  body.querySelector('#dreConfigSaveBtn').addEventListener('click', async () => {
+    try {
+      await apiFetch('PUT', `/api/dre/config/${DR.loja}`, DR.config);
+      toast('Configuração salva ✓');
+    } catch(e) { toast('Erro: ' + e.message, true); }
+  });
+}
+
+function renderDreHistorico(body) {
+  body.innerHTML = `<div class="dre-historico"><p style="color:var(--muted);font-size:.82rem">Carregando…</p></div>`;
+  apiFetch('GET', `/api/dre/historico/${DR.loja}`).then(docs => {
+    if (!docs.length) { body.innerHTML = `<div class="dre-historico"><p style="color:var(--muted);font-size:.82rem">Nenhum registro salvo.</p></div>`; return; }
+    const rows = docs.map(doc => {
+      const cfg = DR.config || {};
+      const c = dreCalc(doc, cfg, 0);
+      const mesLabel = `${MONTHS_PT[doc.mes - 1].slice(0,3)}/${String(doc.ano).slice(2)}`;
+      return `<tr>
+        <td>${mesLabel}</td>
+        <td>${dreR(c.receita_bruta)}</td>
+        <td>${dreR(c.lucro_bruto)}</td>
+        <td>${dreR(c.resultado_op)}</td>
+        <td>${dreR(c.resultado_liq)}</td>
+        <td>${c.receita_bruta ? (c.resultado_liq / c.receita_bruta * 100).toFixed(1) + '%' : '—'}</td>
+      </tr>`;
+    }).join('');
+    body.innerHTML = `<div class="dre-historico">
+      <table class="dre-hist-table">
+        <thead><tr><th style="text-align:left">Mês</th><th>Receita</th><th>Lucro Bruto</th><th>Resultado Op.</th><th>Resultado Líq.</th><th>Margem</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+  }).catch(e => { body.innerHTML = `<div class="dre-historico"><p style="color:#F85149">Erro: ${e.message}</p></div>`; });
+}
+
+async function loadDreData() {
+  const body = document.getElementById('dreBody');
+  body.innerHTML = `<div style="padding:2rem;color:var(--muted);font-size:.82rem">Carregando…</div>`;
+  try {
+    const data = await apiFetch('GET', `/api/dre/${DR.ano}/${DR.mes}/${DR.loja}`);
+    DR.monthly = data.monthly || {};
+    DR.config  = data.config  || {};
+    DR.receita_microvix = data.receita_microvix;
+    DR.cmv_microvix     = data.cmv_microvix;
+    renderDreTab();
+  } catch(e) {
+    body.innerHTML = `<div style="padding:2rem;color:#F85149">Erro: ${e.message}</div>`;
+  }
+}
+
+function renderDreTab() {
+  const body = document.getElementById('dreBody');
+  document.querySelectorAll('.dre-tab').forEach(t => t.classList.toggle('active', t.dataset.dtab === DR.tab));
+  if (DR.tab === 'resultado') renderDreResultado(body);
+  else if (DR.tab === 'config') renderDreConfig(body);
+  else renderDreHistorico(body);
+}
+
+function openDreModal() {
+  document.getElementById('dreOverlay').classList.remove('hidden');
+  _updateDreMesLabel();
+  loadDreData();
+}
+function closeDreModal() {
+  document.getElementById('dreOverlay').classList.add('hidden');
+}
+function _updateDreMesLabel() {
+  document.getElementById('dreMesLabel').textContent = `${MONTHS_PT[DR.mes - 1]} ${DR.ano}`;
+}
+
+function initDreModal() {
+  document.getElementById('dreBtn').addEventListener('click', openDreModal);
+  document.getElementById('dreClose').addEventListener('click', closeDreModal);
+  document.getElementById('dreOverlay').addEventListener('click', e => { if (e.target.id === 'dreOverlay') closeDreModal(); });
+
+  // Populate loja select
+  const sel = document.getElementById('dreLojaSelect');
+  dreLojas().forEach(([k, v]) => {
+    const opt = document.createElement('option');
+    opt.value = k; opt.textContent = v.label;
+    sel.appendChild(opt);
+  });
+  sel.value = DR.loja;
+  sel.addEventListener('change', () => { DR.loja = sel.value; loadDreData(); });
+
+  document.getElementById('drePrev').addEventListener('click', () => {
+    DR.mes--; if (DR.mes < 1) { DR.mes = 12; DR.ano--; }
+    _updateDreMesLabel(); loadDreData();
+  });
+  document.getElementById('dreNext').addEventListener('click', () => {
+    DR.mes++; if (DR.mes > 12) { DR.mes = 1; DR.ano++; }
+    _updateDreMesLabel(); loadDreData();
+  });
+
+  document.querySelectorAll('.dre-tab').forEach(btn => {
+    btn.addEventListener('click', () => { DR.tab = btn.dataset.dtab; renderDreTab(); });
+  });
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
 function init() {
   if (window.INDEVA_STANDALONE) { initStandalone(); return; }
@@ -11346,6 +12292,7 @@ function init() {
   initLojaAcaoModal();
   initBoletasModal();
   initUsersModal();
+  initDreModal();
   document.getElementById('logoutBtn').addEventListener('click', logout);
   document.getElementById('btnPrev').addEventListener('click', () => navigate(-1));
   document.getElementById('btnNext').addEventListener('click', () => navigate(1));
