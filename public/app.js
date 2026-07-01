@@ -1002,7 +1002,7 @@ function renderDashboard() {
     }
   }
 
-  if (isAdmin && [...visible].length > 1 && grandValor > 0) {
+  if (isAdmin && [...visible].length > 1 && (grandValor > 0 || grandMeta > 0)) {
     const gMetaAccum = grandMeta * perfWeightAccum / 100;
     const gPctMeta = grandMeta > 0 ? grandValor / grandMeta * 100 : null;
     const gProj  = (grandValor > 0 && gMetaAccum > 0) ? grandValor / gMetaAccum * grandMeta : null;
