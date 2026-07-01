@@ -918,7 +918,8 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
 });
 
 // ── DELETE /api/employees/:id ──────────────────────────────────────────────
-app.delete('/api/employees/:id', requireAuth, async (req, res) => {
+// Exclusão definitiva do cadastro (apaga histórico ligado ao id) — só admin.
+app.delete('/api/employees/:id', requireAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const db = await readDB();

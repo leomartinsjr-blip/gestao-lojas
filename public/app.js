@@ -5987,9 +5987,10 @@ function renderFolgasTable() {
   const today = new Date();
   const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
   const daysInMonth = new Date(FC.year, FC.month, 0).getDate();
-  const emps = FC.filterBoard
+  const emps = (FC.filterBoard
     ? FC.employees.filter(e => e.board === FC.filterBoard)
-    : FC.employees;
+    : FC.employees
+  ).filter(e => !e.inativo);
 
   // Folga lookup: "empId-date" → folgaId
   const fMap = {};
@@ -6023,7 +6024,6 @@ function renderFolgasTable() {
           <span class="emp-dot" style="background:${color}"></span>
           <span class="emp-name">${emp.name}</span>
           ${!S.user?.board ? `<span class="emp-store">${storeLabel}</span>` : ''}
-          <button class="emp-del-btn" data-id="${emp.id}" title="Remover">✕</button>
         </div>
       </td>`;
     for (let d = 1; d <= daysInMonth; d++) {
@@ -6051,10 +6051,6 @@ function renderFolgasTable() {
         td.dataset.fid ? parseInt(td.dataset.fid) : null, td));
   });
 
-  // Delete employee
-  table.querySelectorAll('.emp-del-btn').forEach(btn => {
-    btn.addEventListener('click', e => { e.stopPropagation(); deleteEmployee(parseInt(btn.dataset.id)); });
-  });
 }
 
 async function toggleFolga(empId, date, existingFid, cell) {
@@ -6077,18 +6073,6 @@ async function toggleFolga(empId, date, existingFid, cell) {
       cell.innerHTML = `<span style="color:${color}">●</span>`;
       cell.dataset.fid = f.id;
     }
-  } catch (e) { toast('Erro: ' + e.message, true); }
-}
-
-async function deleteEmployee(id) {
-  const emp = FC.employees.find(e => e.id === id);
-  if (!emp) return;
-  if (!confirm(`Remover funcionário "${emp.name}"?`)) return;
-  try {
-    await apiFetch('DELETE', `/api/employees/${id}`);
-    FC.employees = FC.employees.filter(e => e.id !== id);
-    FC.folgas    = FC.folgas.filter(f => f.employeeId !== id);
-    renderFolgasTable();
   } catch (e) { toast('Erro: ' + e.message, true); }
 }
 
