@@ -1621,10 +1621,10 @@ app.get('/api/excel-vendedor/:year/:month/:board', requireAuth, async (req, res)
         { key:'atcli', width:12 }, { key:'cad', width:11 },
       ];
       ws.pageSetup = {
-        orientation: 'landscape', paperSize: 9, // A4
-        fitToPage: true, fitToWidth: 1, fitToHeight: 0,
-        horizontalCentered: true,
-        margins: { left:0.3, right:0.3, top:0.5, bottom:0.4, header:0.2, footer:0.2 },
+        orientation: 'portrait', paperSize: 9, // A4
+        fitToPage: true, fitToWidth: 1, fitToHeight: 1,
+        horizontalCentered: true, verticalCentered: true,
+        margins: { left:0.25, right:0.25, top:0.3, bottom:0.3, header:0.15, footer:0.15 },
         printTitlesRow: '1:2',
       };
       const numWeeks = days.length / 7;
