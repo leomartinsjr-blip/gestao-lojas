@@ -1620,6 +1620,16 @@ app.get('/api/excel-vendedor/:year/:month/:board', requireAuth, async (req, res)
         { key:'pa', width:8 }, { key:'pm', width:8 }, { key:'pct', width:9 },
         { key:'atcli', width:12 }, { key:'cad', width:11 },
       ];
+      ws.pageSetup = {
+        orientation: 'landscape', paperSize: 9, // A4
+        fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+        horizontalCentered: true,
+        margins: { left:0.3, right:0.3, top:0.5, bottom:0.4, header:0.2, footer:0.2 },
+        printTitlesRow: '1:2',
+      };
+      const numWeeks = days.length / 7;
+      const lastRow  = 2 + days.length + numWeeks; // 2 header rows + dias + linhas de total semana
+      ws.pageSetup.printArea = `A1:K${lastRow}`;
 
       ws.mergeCells('A1:K1');
       const title = ws.getCell('A1');
