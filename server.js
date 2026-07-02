@@ -1593,11 +1593,12 @@ app.get('/api/excel-vendedor/:year/:month/:board', requireAuth, async (req, res)
       return (db.vsales?.[vsKeyFor(empId)]?.meta?.mensal || 0) * w / 100;
     }
 
-    // Intervalo sáb→sex que cobre o mês inteiro em semanas completas
+    // Intervalo dom→sáb que cobre o mês inteiro em semanas completas
+    // (mesma convenção de semana — Domingo a Sábado — usada em getWeekForDate/Meta Semanal)
     const rangeStart = new Date(y, m - 1, 1);
-    while (rangeStart.getDay() !== 6) rangeStart.setDate(rangeStart.getDate() - 1);
+    while (rangeStart.getDay() !== 0) rangeStart.setDate(rangeStart.getDate() - 1);
     const rangeEnd = new Date(y, m, 0);
-    while (rangeEnd.getDay() !== 5) rangeEnd.setDate(rangeEnd.getDate() + 1);
+    while (rangeEnd.getDay() !== 6) rangeEnd.setDate(rangeEnd.getDate() + 1);
     const days = [];
     for (let d = new Date(rangeStart); d <= rangeEnd; d.setDate(d.getDate() + 1)) days.push(new Date(d));
 
@@ -1658,7 +1659,7 @@ app.get('/api/excel-vendedor/:year/:month/:board', requireAuth, async (req, res)
         mc.numFmt = fmtBRL;
         for (let c = 1; c <= 11; c++) row.getCell(c).border = thinBorder;
         r++;
-        if (d.getDay() === 5) { // sexta = fecha a semana
+        if (d.getDay() === 6) { // sábado = fecha a semana (dom-sáb)
           const wr = ws.getRow(r);
           wr.getCell(1).value = 'TOTAL SEMANA';
           const tc = wr.getCell(3);
