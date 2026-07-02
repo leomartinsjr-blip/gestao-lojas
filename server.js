@@ -1535,6 +1535,149 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
   } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/excel-vendedor/:year/:month/:board — Fechamento Vendedor p/ impressão ──
+// Uma aba por vendedor, no layout de controle manual (DATA/T/META/VENDA/ITENS/
+// TICKETS/P.A/P.M/%/AT CLIENTES/CADASTROS), com META diária já calculada pela
+// mesma fonte única do sistema (metaLoja/pesos/férias) e total semanal (sáb–sex).
+app.get('/api/excel-vendedor/:year/:month/:board', requireAuth, async (req, res) => {
+  try {
+    const { year, month, board } = req.params;
+    const user = req.session.user;
+    const isAdminOrEscritorio = !user.board || user.board === 'escritorio';
+    if (!isAdminOrEscritorio && user.board !== board) return res.status(403).json({ error: 'Sem acesso' });
+
+    const y = parseInt(year), m = parseInt(month);
+    const db  = await readDB();
+    const pad = n => String(n).padStart(2, '0');
+    const DAY_PT    = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+    const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                       'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const BOARD_NAMES = { delrey:'Del Rey', minas:'Minas', contagem:'Contagem',
+                          estacao:'Estação', tommy:'Tommy', lez:'Lez' };
+    const storeName = BOARD_NAMES[board] || board;
+
+    const isVendedor = e => e.isVendedor !== false;
+    const firstOfMonth = `${y}-${pad(m)}-01`;
+    const emps = (db.employees || []).filter(e => e.board === board && isVendedor(e) &&
+      (!e.desligamento || e.desligamento >= firstOfMonth));
+
+    // Config (metaLoja/pesos) por mês, com cache — dias de semanas incompletas
+    // no início/fim do mês (sáb–sex) usam a config do mês a que realmente pertencem.
+    const cfgCache = {};
+    function monthCfg(yy, mm) {
+      const k = `${yy}-${pad(mm)}`;
+      if (cfgCache[k]) return cfgCache[k];
+      const dsKey   = `${yy}-${pad(mm)}-${board}`;
+      const metaLoja = db.dailySales?.[dsKey]?.meta?.mensal || 0;
+      const gWeights = (db.globalWeights || {})[k] || {};
+      const N = new Date(yy, mm, 0).getDate();
+      cfgCache[k] = { metaLoja, gWeights, defW: 100 / N };
+      return cfgCache[k];
+    }
+
+    function sellerDayGoal(empId, dateObj) {
+      const yy = dateObj.getFullYear(), mm = dateObj.getMonth() + 1, dd = dateObj.getDate();
+      const ds = `${yy}-${pad(mm)}-${pad(dd)}`;
+      const emp = emps.find(e => e.id === empId);
+      if (emp?.omniChannel) return 0;
+      const vsKeyFor = eid => `${yy}-${pad(mm)}-${board}-${eid}`;
+      const vac = db.vsales?.[vsKeyFor(empId)]?.meta?.vacationDays || [];
+      if (vac.includes(ds)) return 0;
+      const { metaLoja, gWeights, defW } = monthCfg(yy, mm);
+      const w = gWeights[ds] ?? defW;
+      if (metaLoja > 0) {
+        const nActive = emps.filter(e => !e.omniChannel &&
+          !(db.vsales?.[vsKeyFor(e.id)]?.meta?.vacationDays || []).includes(ds)).length;
+        return nActive > 0 ? (metaLoja * w / 100) / nActive : 0;
+      }
+      return (db.vsales?.[vsKeyFor(empId)]?.meta?.mensal || 0) * w / 100;
+    }
+
+    // Intervalo sáb→sex que cobre o mês inteiro em semanas completas
+    const rangeStart = new Date(y, m - 1, 1);
+    while (rangeStart.getDay() !== 6) rangeStart.setDate(rangeStart.getDate() - 1);
+    const rangeEnd = new Date(y, m, 0);
+    while (rangeEnd.getDay() !== 5) rangeEnd.setDate(rangeEnd.getDate() + 1);
+    const days = [];
+    for (let d = new Date(rangeStart); d <= rangeEnd; d.setDate(d.getDate() + 1)) days.push(new Date(d));
+
+    const HEADS = ['DATA','T','META','VENDA','ITENS','TICKETS','P.A','P.M','%','AT CLIENTES','CADASTROS'];
+    const fmtBRL = '#,##0.00';
+    const titleFill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FF1C2333' } };
+    const titleFont = { bold:true, color:{ argb:'FFFFFFFF' }, size:11, name:'Calibri' };
+    const hdrFill   = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFE8EAED' } };
+    const hdrFont   = { bold:true, size:10, name:'Calibri' };
+    const totFill   = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFF0F4FA' } };
+    const totFont   = { bold:true, size:10, name:'Calibri' };
+    const thinBorder = { top:{style:'thin',color:{argb:'FFD0D7DE'}}, left:{style:'thin',color:{argb:'FFD0D7DE'}},
+                          bottom:{style:'thin',color:{argb:'FFD0D7DE'}}, right:{style:'thin',color:{argb:'FFD0D7DE'}} };
+
+    function buildSheet(wb, sheetName, empId) {
+      const ws = wb.addWorksheet(sheetName, { views:[{ state:'frozen', ySplit:2 }] });
+      ws.columns = [
+        { key:'data', width:11 }, { key:'t', width:6 }, { key:'meta', width:13 },
+        { key:'venda', width:13 }, { key:'itens', width:9 }, { key:'tickets', width:10 },
+        { key:'pa', width:8 }, { key:'pm', width:8 }, { key:'pct', width:9 },
+        { key:'atcli', width:12 }, { key:'cad', width:11 },
+      ];
+
+      ws.mergeCells('A1:K1');
+      const title = ws.getCell('A1');
+      title.value = `LOJA ${storeName.toUpperCase()} — ${MONTHS_PT[m-1].toUpperCase()}/${y}`;
+      title.fill = titleFill; title.font = titleFont;
+      title.alignment = { horizontal:'center', vertical:'middle' };
+      ws.getRow(1).height = 20;
+
+      const hrow = ws.getRow(2);
+      hrow.height = 18;
+      HEADS.forEach((h, i) => {
+        const cell = hrow.getCell(i + 1);
+        cell.value = h; cell.fill = hdrFill; cell.font = hdrFont;
+        cell.alignment = { horizontal:'center', vertical:'middle', wrapText:true };
+        cell.border = thinBorder;
+      });
+
+      let r = 3, weekStartRow = 3;
+      days.forEach(d => {
+        const row = ws.getRow(r);
+        row.getCell(1).value = `${pad(d.getDate())}/${pad(d.getMonth()+1)}`;
+        row.getCell(2).value = DAY_PT[d.getDay()];
+        const meta = sellerDayGoal(empId, d);
+        const mc = row.getCell(3);
+        mc.value = meta > 0 ? +meta.toFixed(2) : null;
+        mc.numFmt = fmtBRL;
+        for (let c = 1; c <= 11; c++) row.getCell(c).border = thinBorder;
+        r++;
+        if (d.getDay() === 5) { // sexta = fecha a semana
+          const wr = ws.getRow(r);
+          wr.getCell(1).value = 'TOTAL SEMANA';
+          const tc = wr.getCell(3);
+          tc.value = { formula: `SUM(C${weekStartRow}:C${r-1})` };
+          tc.numFmt = fmtBRL;
+          for (let c = 1; c <= 11; c++) {
+            wr.getCell(c).fill = totFill; wr.getCell(c).font = totFont;
+            wr.getCell(c).border = thinBorder;
+          }
+          r++;
+          weekStartRow = r;
+        }
+      });
+    }
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Gestão Lojas'; wb.created = new Date();
+    wb.calcProperties = { fullCalcOnLoad: true };
+    for (const emp of emps)
+      buildSheet(wb, (emp.apelido || emp.name).slice(0, 31), emp.id);
+    if (!emps.length) wb.addWorksheet('Sem vendedores');
+
+    res.setHeader('Content-Disposition', `attachment; filename="fechamento-vendedor-${board}-${pad(m)}-${y}.xlsx"`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
+});
+
 // ── POST /api/excel/:year/:month/:board — upload fechamento ───────────────
 app.post('/api/excel/:year/:month/:board', requireAuth, excelUpload.single('file'), async (req, res) => {
   try {

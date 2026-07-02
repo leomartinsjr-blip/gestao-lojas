@@ -10006,6 +10006,7 @@ function _renderLojaAcaoModal() {
       <button class="la-tab${_lojaAcaoTab==='retirada'?' active':''}" data-tab="retirada">💰 Retirada Colaborador</button>
       <button class="la-tab${_lojaAcaoTab==='adiantamento'?' active':''}" data-tab="adiantamento">💵 Adiantamento</button>
       <button class="la-tab${_lojaAcaoTab==='dados'?' active':''}" data-tab="dados">📋 Dados p/ Folha</button>
+      <button class="la-tab${_lojaAcaoTab==='fechvend'?' active':''}" data-tab="fechvend">🖨️ Fechamento Vendedor</button>
     </div>
     <div id="la-tab-body"></div>`;
   body.querySelectorAll('.la-tab').forEach(btn => btn.addEventListener('click', () => {
@@ -10028,9 +10029,48 @@ function _renderLojaAcaoTab() {
   } else if (_lojaAcaoTab === 'adiantamento') {
     if (!S.user?.board) _renderAdiantamentoAdminView(body);
     else _renderAdiantamentoLojaView(body);
+  } else if (_lojaAcaoTab === 'fechvend') {
+    _renderFechVendedorLojaAcaoView(body);
   } else {
     _renderDadosLojaAcaoView(body);
   }
+}
+
+function _renderFechVendedorLojaAcaoView(body) {
+  const STORE_BOARDS = Object.keys(BOARDS).filter(b => b && b !== 'escritorio');
+  const userBoard = S.user?.board;
+
+  function monthLink(board, year, month) {
+    const label = `${MONTHS_PT[month-1]} ${year}`;
+    return `<div class="fv-card">
+      <div class="fv-card-hdr">
+        <span class="fv-card-title">${_escHtml(BOARDS[board]?.label || board)} — ${label}</span>
+      </div>
+      <p class="fv-card-desc">Uma aba por vendedor, com a meta diária e o total semanal já calculados. As demais colunas (Venda, Itens, Tickets, etc.) ficam em branco para preenchimento manual e impressão na loja.</p>
+      <a class="ds-excel-btn ds-excel-down" href="/api/excel-vendedor/${year}/${month}/${board}" download>⬇ Baixar Fechamento Vendedor</a>
+    </div>`;
+  }
+
+  if (userBoard) {
+    body.innerHTML = monthLink(userBoard, S.year, S.month);
+    return;
+  }
+
+  // Admin: seletor de loja
+  let filterBoard = STORE_BOARDS[0] || '';
+  function render() {
+    body.innerHTML = `<div style="padding:.75rem 1.25rem .25rem">
+      <div class="req-board-chips">
+        ${STORE_BOARDS.map(b =>
+          `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'#8B949E'}">${BOARDS[b]?.label||b}</button>`).join('')}
+      </div>
+    </div>
+    <div id="fvContent">${monthLink(filterBoard, S.year, S.month)}</div>`;
+    body.querySelectorAll('.req-board-chip').forEach(btn => btn.addEventListener('click', () => {
+      filterBoard = btn.dataset.b; render();
+    }));
+  }
+  render();
 }
 
 function _renderReqLojaView(body) {

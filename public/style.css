@@ -3229,6 +3229,11 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .la-tab { padding: .35rem .9rem; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: .82rem; cursor: pointer; transition: all .15s; }
 .la-tab:hover { background: var(--hover-bg, rgba(255,255,255,.04)); color: var(--text); }
 .la-tab.active { background: rgba(88,166,255,.12); color: #58A6FF; border-color: rgba(88,166,255,.4); font-weight: 600; }
+/* ── Fechamento Vendedor (Loja em Ação) ── */
+.fv-card { margin: 1rem 1.25rem 1.5rem; padding: 1rem 1.1rem; border: 1px solid var(--border); border-radius: 8px; }
+.fv-card-hdr { margin-bottom: .4rem; }
+.fv-card-title { font-size: .95rem; font-weight: 700; color: var(--text); }
+.fv-card-desc { font-size: .8rem; color: var(--muted); margin: 0 0 .85rem; line-height: 1.4; }
 /* ── Retirada Colaborador ── */
 .ret-form-wrap { padding: 1rem 1.25rem 1.5rem; max-height: calc(100vh - 160px); overflow-y: auto; }
 .ret-field { margin-bottom: .85rem; }
