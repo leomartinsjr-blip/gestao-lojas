@@ -8942,18 +8942,26 @@ function renderCaixaCard(container) {
       data = await apiFetch('GET', `/api/caixa/${S.year}/${S.month}/${board}`);
     } catch(e) { targetBody.innerHTML = '<div style="padding:.75rem;color:var(--down);font-size:.8rem">Erro ao carregar</div>'; return; }
 
-    // Busca saldo de fechamento do mês anterior para carry-over
-    const prevYear  = S.month === 1 ? S.year - 1 : S.year;
-    const prevMonth = S.month === 1 ? 12 : S.month - 1;
+    // Busca saldo acumulado de TODOS os meses anteriores para carry-over
+    // (não só o mês passado — senão o saldo herdado de meses mais antigos se perde na virada)
     let saldoAcum = 0;
-    try {
-      const prevData  = await apiFetch('GET', `/api/caixa/${prevYear}/${prevMonth}/${board}`);
-      const prevDays  = new Date(prevYear, prevMonth, 0).getDate();
-      for (let d = 1; d <= prevDays; d++) {
-        const e = prevData[d] || {};
-        saldoAcum += (e.caixa ?? 0) - (e.sangria ?? 0) - (e.deposito ?? 0);
+    {
+      let cy = S.month === 1 ? S.year - 1 : S.year;
+      let cm = S.month === 1 ? 12 : S.month - 1;
+      for (let i = 0; i < 36; i++) { // limite de segurança: 3 anos pra trás
+        let prevData;
+        try { prevData = await apiFetch('GET', `/api/caixa/${cy}/${cm}/${board}`); }
+        catch(_) { break; }
+        if (!prevData || Object.keys(prevData).length === 0) break; // sem dados = início do histórico
+        const prevDays = new Date(cy, cm, 0).getDate();
+        for (let d = 1; d <= prevDays; d++) {
+          const e = prevData[d] || {};
+          saldoAcum += (e.caixa ?? 0) - (e.sangria ?? 0) - (e.deposito ?? 0);
+        }
+        cm -= 1;
+        if (cm < 1) { cm = 12; cy -= 1; }
       }
-    } catch(_) { /* sem carry-over */ }
+    }
 
     const daysInMonth = new Date(S.year, S.month, 0).getDate();
     const today = new Date();
