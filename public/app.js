@@ -5217,20 +5217,23 @@ function sellerDayGoal({ dateStr, dayWeight, metaLoja, onVacation, boardVendors,
 function computeSellerDayGoals(empId) {
   const { year, month } = PD;
   if (!PD.metaLoja) return null;
+  const emp    = PD.employees.find(e => e.id === empId);
   const days   = new Date(year, month, 0).getDate();
   const defW   = +(100 / days).toFixed(6);
   const vacSet = new Set(PD.allVsales[empId]?.meta?.vacationDays || []);
   const goals  = {};
   for (let d = 1; d <= days; d++) {
     const dateStr = `${year}-${String(month).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+    // Fora da janela de admissão/desligamento do próprio vendedor → sem meta naquele dia
+    const empActiveOnDate = (!emp?.admissao || dateStr >= emp.admissao) && (!emp?.desligamento || dateStr <= emp.desligamento);
     goals[dateStr] = sellerDayGoal({
       dateStr,
       dayWeight:      PD.weights[dateStr] ?? defW,
       metaLoja:       PD.metaLoja,
-      onVacation:     vacSet.has(dateStr),
+      onVacation:     vacSet.has(dateStr) || !empActiveOnDate,
       boardVendors:   PD.employees,
       vsalesForMonth: PD.allVsales,
-      isOmni:         !!PD.employees.find(e => e.id === empId)?.omniChannel,
+      isOmni:         !!emp?.omniChannel,
     });
   }
   return goals;
@@ -6827,6 +6830,11 @@ function calcWeekKpis(emp, week, extraData) {
   // Usa a lista completa (não filtrada por "inativo no mês atual") para que vendedores
   // desligados/inativos hoje continuem contando como ativos nas semanas passadas em que trabalharam.
   const boardVendors = (S.allEmployees || S.employees).filter(e => e.board === emp.board && isVend(e));
+  // Dia fora da janela de admissão/desligamento do PRÓPRIO vendedor → sem meta naquele dia
+  // (sellerDayGoal só zera por férias; sem isso, um vendedor desligado no meio da semana
+  // continuava recebendo fatia da meta nos dias após sair, só porque o divisor nActive
+  // dos outros dias ainda usa a mesma fórmula).
+  const empActiveOnDate = ds => (!emp.admissao || ds >= emp.admissao) && (!emp.desligamento || ds <= emp.desligamento);
   let weekWeightSum = 0;
   let autoMeta = 0;
   for (const ds of dates) {
@@ -6850,7 +6858,7 @@ function calcWeekKpis(emp, week, extraData) {
       dateStr: ds,
       dayWeight,
       metaLoja,
-      onVacation:       empVacDays.has(ds),
+      onVacation:       empVacDays.has(ds) || !empActiveOnDate(ds),
       boardVendors,
       vsalesForMonth,
       individualMensal: mk === curKey ? mensal : (extraData?.[mk]?.vsales?.[emp.id]?.meta?.mensal || 0),
