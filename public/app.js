@@ -6759,8 +6759,10 @@ function getWeeksInMonth(year, month) {
 async function loadMonthData(year, month) {
   const key = `${year}-${String(month).padStart(2,'0')}`;
   if (WK.cache[key]) return WK.cache[key];
+  // Usa a lista completa (não filtrada pelo mês atual da tela) para não deixar de buscar
+  // as vendas de um vendedor que está inativo hoje mas trabalhou no mês sendo consultado.
   const [emps, weights, weeklyMetas, dailySalesMeta] = await Promise.all([
-    Promise.resolve(S.employees),
+    Promise.resolve(S.allEmployees || S.employees),
     apiFetch('GET', `/api/weights/${year}/${month}`).catch(() => ({})),
     apiFetch('GET', `/api/weekly-metas/${year}/${month}`).catch(() => ({})),
     apiFetch('GET', `/api/dailysales-meta/${year}/${month}`).catch(() => ({})),
