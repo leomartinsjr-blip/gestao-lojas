@@ -1711,7 +1711,7 @@ function _renderDashWeekBody(body, week, extraData) {
   const fDec = v => v == null ? '—' : v.toFixed(2);
 
   const isAdmin = !S.user?.board;
-  const vendedores = S.employees.filter(e => isVend(e));
+  const vendedores = weekEligibleEmployees(week).filter(e => isVend(e));
   const byBoard = {};
   for (const emp of vendedores) {
     if (!byBoard[emp.board]) byBoard[emp.board] = [];
@@ -6777,6 +6777,16 @@ async function loadMonthData(year, month) {
   return data;
 }
 
+// Funcionários elegíveis para uma semana específica (admissão/desligamento), independente
+// do mês que está aberto na tela — evita que vendedores hoje inativos somem em semanas
+// passadas em que trabalhavam, ou que ex-funcionários antigos voltem a aparecer em semanas futuras.
+function weekEligibleEmployees(week) {
+  return (S.allEmployees || S.employees).filter(e =>
+    (!e.admissao     || e.admissao     <= week.endStr) &&
+    (!e.desligamento || e.desligamento >= week.startStr)
+  );
+}
+
 function calcWeekKpis(emp, week, extraData) {
   const curKey = `${S.year}-${String(S.month).padStart(2,'0')}`;
   const vsale  = S.vsales[emp.id] || { meta: { mensal: 0 }, entries: {} };
@@ -7005,8 +7015,9 @@ async function renderWeeklyModal() {
   const body = document.getElementById('weeklyBody');
   body.innerHTML = '';
 
+  const weekEmps = weekEligibleEmployees(week);
   const byBoard = {};
-  for (const emp of S.employees) {
+  for (const emp of weekEmps) {
     if (!byBoard[emp.board]) byBoard[emp.board] = [];
     byBoard[emp.board].push(emp);
   }
@@ -7018,7 +7029,7 @@ async function renderWeeklyModal() {
   const pendingCelebrations = [];
 
   for (const [bk, bc] of visibleBoards()) {
-    const emps = S.employees.filter(e => e.board === bk && (isVend(e) || e.cargo?.toLowerCase().includes('gerente')));
+    const emps = weekEmps.filter(e => e.board === bk && (isVend(e) || e.cargo?.toLowerCase().includes('gerente')));
     if (emps.length === 0) continue;
 
     const section = document.createElement('div');
