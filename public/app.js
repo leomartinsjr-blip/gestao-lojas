@@ -436,6 +436,7 @@ async function loadData() {
 
     const emps     = init.employees || [];
     const _mk = `${S.year}-${String(S.month).padStart(2,'0')}`;
+    S.allEmployees = emps; // lista completa (sem filtro de inativo), usada em cálculos que cruzam meses (ex: Meta Semanal)
     S.employees    = emps.filter(e => {
       if (!e.inativo) return true;
       // Inativo com vendas no mês visualizado: preserva no histórico
@@ -6813,7 +6814,9 @@ function calcWeekKpis(emp, week, extraData) {
 
   // Weight sum + autoMeta: soma das metas diárias reais do vendedor,
   // usando a fonte única sellerDayGoal (dia de férias → 0).
-  const boardVendors = S.employees.filter(e => e.board === emp.board && isVend(e));
+  // Usa a lista completa (não filtrada por "inativo no mês atual") para que vendedores
+  // desligados/inativos hoje continuem contando como ativos nas semanas passadas em que trabalharam.
+  const boardVendors = (S.allEmployees || S.employees).filter(e => e.board === emp.board && isVend(e));
   let weekWeightSum = 0;
   let autoMeta = 0;
   for (const ds of dates) {
