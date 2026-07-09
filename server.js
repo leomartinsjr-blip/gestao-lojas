@@ -8368,11 +8368,69 @@ app.post('/api/conferencia/revisao', requireEscritorioOrAdmin, async (req, res) 
     if (status === 'reprovada' && !obs) return res.status(400).json({ error: 'Observação obrigatória para reprovação' });
     if (!['conferida', 'reprovada'].includes(status)) return res.status(400).json({ error: 'status inválido' });
     const col = await getConferenciaRevisoesCol();
+    const existing = await col.findOne({ doc, board });
     const updatedBy = req.session?.user?.username || 'desconhecido';
     const updatedAt = new Date();
     const docSave = { doc, board, data, dtIni, dtFin, vendedorCod, vendedorNome, valorTotal, valorCobrar: valorCobrar || 0, status, obs: obs || '', alertas: alertas || [], updatedBy, updatedAt };
+    // Preserva o histórico de pedido/resposta de justificativa ao confirmar/reprovar depois dele
+    if (existing?.justificativa) docSave.justificativa = existing.justificativa;
     await col.replaceOne({ doc, board }, docSave, { upsert: true });
     res.json(docSave);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/conferencia/solicitar-justificativa — escritório pede que a gerente da loja
+// justifique o desconto de uma venda; tira a venda da fila normal (status aguardando_justificativa)
+app.post('/api/conferencia/solicitar-justificativa', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { doc, board, data, dtIni, dtFin, vendedorCod, vendedorNome, valorTotal, alertas, pergunta } = req.body;
+    if (!doc || !board) return res.status(400).json({ error: 'doc e board obrigatórios' });
+    const col = await getConferenciaRevisoesCol();
+    const updatedBy = req.session?.user?.username || 'desconhecido';
+    const updatedAt = new Date();
+    const docSave = {
+      doc, board, data, dtIni, dtFin, vendedorCod, vendedorNome, valorTotal, valorCobrar: 0,
+      status: 'aguardando_justificativa', obs: '', alertas: alertas || [], updatedBy, updatedAt,
+      justificativa: { pergunta: pergunta || '', perguntaPor: updatedBy, perguntaEm: updatedAt, resposta: null, respostaEm: null },
+    };
+    await col.replaceOne({ doc, board }, docSave, { upsert: true });
+    res.json(docSave);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/conferencia/justificativas-pendentes?board=X — vendas aguardando resposta da gerente da loja
+app.get('/api/conferencia/justificativas-pendentes', requireAuth, async (req, res) => {
+  try {
+    const user = req.session.user;
+    const isEscritorio = !user.board || user.board === 'escritorio';
+    const board = isEscritorio ? req.query.board : user.board;
+    if (!board) return res.status(400).json({ error: 'board obrigatório' });
+    if (!isEscritorio && req.query.board && req.query.board !== user.board) return res.status(403).json({ error: 'Sem acesso' });
+    const col = await getConferenciaRevisoesCol();
+    const pendentes = await col.find({ board, status: 'aguardando_justificativa' }).toArray();
+    res.json(pendentes);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/conferencia/justificativa-resposta — gerente responde o pedido; some da fila dela
+// e volta destacada para o escritório revisar (status justificativa_respondida)
+app.post('/api/conferencia/justificativa-resposta', requireAuth, async (req, res) => {
+  try {
+    const { doc, board, resposta } = req.body;
+    if (!doc || !board || !String(resposta || '').trim()) return res.status(400).json({ error: 'doc, board e resposta obrigatórios' });
+    const user = req.session.user;
+    const isEscritorio = !user.board || user.board === 'escritorio';
+    if (!isEscritorio && user.board !== board) return res.status(403).json({ error: 'Sem acesso' });
+    const col = await getConferenciaRevisoesCol();
+    const existing = await col.findOne({ doc, board });
+    if (!existing || existing.status !== 'aguardando_justificativa') return res.status(404).json({ error: 'Pedido de justificativa não encontrado' });
+    await col.updateOne({ doc, board }, { $set: {
+      status: 'justificativa_respondida',
+      'justificativa.resposta': resposta.trim(),
+      'justificativa.respostaEm': new Date(),
+      'justificativa.respondidoPor': user.username,
+    } });
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

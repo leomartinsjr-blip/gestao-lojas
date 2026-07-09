@@ -469,25 +469,43 @@
 
     // Filtro: só alertas
     const vendasFiltradas = _filtroSoAlertas ? vendas.filter(v => v.alertas?.length) : vendas;
+    const revOf = v => _revisoesMap[v.doc + '::' + (v.board || $('vBoard').value)];
 
     // Separa pendentes (sem revisão) de revisadas — mostra todas as vendas
-    const pendentes = vendasFiltradas.filter(v => !_revisoesMap[v.doc + '::' + (v.board || $('vBoard').value)]);
-    const revisadas = vendasFiltradas.filter(v =>  _revisoesMap[v.doc + '::' + (v.board || $('vBoard').value)]);
+    const pendentes   = vendasFiltradas.filter(v => !revOf(v));
+    const aguardando  = vendasFiltradas.filter(v => revOf(v)?.status === 'aguardando_justificativa');
+    const respondidas = vendasFiltradas.filter(v => revOf(v)?.status === 'justificativa_respondida');
+    const revisadas   = vendasFiltradas.filter(v => ['conferida', 'reprovada'].includes(revOf(v)?.status));
 
     const hdr = _filtroSoAlertas
       ? `<span style="color:var(--cf-red)">${pendentes.length} venda(s) com alerta</span> <button id="btnLimparFiltro" style="font-size:10px;margin-left:8px;padding:2px 8px;border-radius:5px;border:1px solid var(--cf-border);background:transparent;color:var(--cf-muted);cursor:pointer">✕ limpar filtro</button>`
       : `${pendentes.length} de ${qtdVendas} vendas`;
 
     el.innerHTML = `
+      ${respondidas.length ? `
+      <div class="sales-card" style="margin-bottom:12px;border:1px solid var(--cf-primary);background:#4493F812">
+        <div class="sales-card-hdr" style="color:var(--cf-primary)">📩 ${respondidas.length} justificativa(s) recebida(s) — revisar</div>
+        ${tabelaVendas(respondidas)}
+      </div>` : ''}
       <div class="sales-card">
         <div class="sales-card-hdr">${hdr}</div>
         ${tabelaVendas(pendentes)}
       </div>
+      ${aguardando.length ? `
+      <div class="sales-card" style="margin-top:12px;opacity:.85">
+        <div class="sales-card-hdr" style="cursor:pointer;user-select:none" id="aguardandoToggle">
+          <span>⏳ ${aguardando.length} aguardando resposta da gerente</span>
+          <span id="aguardandoChevron" style="font-size:11px;color:${P('muted')}">▼ mostrar</span>
+        </div>
+        <div id="aguardandoBody" style="display:none">
+          ${tabelaVendas(aguardando)}
+        </div>
+      </div>` : ''}
       ${revisadas.length ? `
       <div class="sales-card" style="margin-top:12px;opacity:.85">
         <div class="sales-card-hdr" style="cursor:pointer;user-select:none" id="revisadasToggle">
-          <span>✅ ${revisadas.filter(v=>_revisoesMap[v.doc+'::' +(v.board||$('vBoard').value)]?.status==='conferida').length} conferida(s)
-          &nbsp;·&nbsp; ❌ ${revisadas.filter(v=>_revisoesMap[v.doc+'::'+(v.board||$('vBoard').value)]?.status==='reprovada').length} reprovada(s)</span>
+          <span>✅ ${revisadas.filter(v=>revOf(v)?.status==='conferida').length} conferida(s)
+          &nbsp;·&nbsp; ❌ ${revisadas.filter(v=>revOf(v)?.status==='reprovada').length} reprovada(s)</span>
           <span id="revisadasChevron" style="font-size:11px;color:${P('muted')}">▼ mostrar</span>
         </div>
         <div id="revisadasBody" style="display:none">
@@ -499,6 +517,19 @@
 
     const btnLimpar = $('btnLimparFiltro');
     if (btnLimpar) btnLimpar.onclick = () => { _filtroSoAlertas = false; render(_data); };
+
+    // Toggle mostrar/ocultar aguardando
+    const togAg = $('aguardandoToggle');
+    if (togAg) {
+      togAg.addEventListener('click', () => {
+        const body = $('aguardandoBody');
+        const chev = $('aguardandoChevron');
+        const open = body.style.display === 'none';
+        body.style.display = open ? 'block' : 'none';
+        chev.textContent = open ? '▲ ocultar' : '▼ mostrar';
+        if (open) bindDrills(body);
+      });
+    }
 
     // Toggle mostrar/ocultar revisadas
     const tog = $('revisadasToggle');
@@ -534,10 +565,11 @@
     const board = _rotinaBoard;
     const date  = _rotinaDate;
 
-    // Check 1: todos os alertas foram revisados?
+    // Check 1: todos os alertas foram revisados? (aguardando/recebida ainda não conta —
+    // a decisão final de conferir/reprovar só acontece depois da resposta da gerente)
     const alertasComVenda = vendas.filter(v => v.alertas?.length);
     const alertasRevisados = alertasComVenda.length === 0 ||
-      alertasComVenda.every(v => !!_revisoesMap[v.doc + '::' + (v.board || board)]);
+      alertasComVenda.every(v => ['conferida','reprovada'].includes(_revisoesMap[v.doc + '::' + (v.board || board)]?.status));
     const semVendas = vendas.length === 0;
     const canVendas = alertasRevisados && !st.vendasOk && !st.fechado;
     // Cartões só libera quando a conciliação bate 100% (rede × Microvix, considerando
@@ -1387,14 +1419,26 @@
     const rev   = _revisoesMap[key];
     const cAct  = rev?.status === 'conferida' ? ' active' : '';
     const rAct  = rev?.status === 'reprovada' ? ' active' : '';
+    const aguardando = rev?.status === 'aguardando_justificativa';
+    const respondida = rev?.status === 'justificativa_respondida';
     const voltarBtn = rev
       ? `<button class="btn-voltar" data-doc="${esc(v.doc)}" data-board="${esc(board)}" title="Remover revisão e voltar para pendentes">↩ Voltar</button>`
+      : '';
+    const justBtn = aguardando
+      ? `<span style="font-size:11px;color:var(--cf-muted);padding:3px 0">⏳ Aguardando resposta da gerente</span>`
+      : `<button class="btn-justificar" data-doc="${esc(v.doc)}" data-board="${esc(board)}" title="Enviar para a gerente justificar o desconto">📩 Justificar c/ gerente</button>`;
+    const respostaBox = respondida
+      ? `<div style="margin-top:10px;padding:10px 12px;border:1px solid #4493F860;background:#4493F815;border-radius:8px">
+          <div style="font-size:11px;font-weight:700;color:var(--cf-primary);margin-bottom:4px">📩 Resposta da gerente</div>
+          <div style="font-size:12px;color:var(--cf-text);white-space:pre-wrap">${esc(rev.justificativa?.resposta || '')}</div>
+        </div>`
       : '';
     return `<div class="revisao-btns">
       <button class="btn-conferida${cAct}" data-doc="${esc(v.doc)}" data-board="${esc(board)}">✓ Conferida</button>
       <button class="btn-reprovada${rAct}" data-doc="${esc(v.doc)}" data-board="${esc(board)}">✗ Reprovada</button>
+      ${justBtn}
       ${voltarBtn}
-    </div>`;
+    </div>${respostaBox}`;
   }
 
   function accentClass(v) {
@@ -1553,7 +1597,13 @@
     const statusBadge = rev
       ? (rev.status === 'conferida'
           ? '<span style="background:#3FB95020;color:var(--cf-green);border:1px solid var(--cf-green);border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700">✅ Conferida</span>'
-          : '<span style="background:#ef444420;color:var(--cf-red);border:1px solid var(--cf-red);border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700">❌ Reprovada</span>')
+          : rev.status === 'reprovada'
+          ? '<span style="background:#ef444420;color:var(--cf-red);border:1px solid var(--cf-red);border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700">❌ Reprovada</span>'
+          : rev.status === 'aguardando_justificativa'
+          ? '<span style="background:#E3B34120;color:var(--cf-accent);border:1px solid var(--cf-accent);border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700">⏳ Aguardando gerente</span>'
+          : rev.status === 'justificativa_respondida'
+          ? '<span style="background:#4493F820;color:var(--cf-primary);border:1px solid var(--cf-primary);border-radius:6px;padding:2px 10px;font-size:11px;font-weight:700">📩 Justificativa recebida</span>'
+          : '')
       : '';
 
     const modal = document.createElement('div');
@@ -1634,6 +1684,15 @@
       btn.dataset.bound = '1';
       btn.addEventListener('click', e => { e.stopPropagation(); abrirModalReprovacao(btn.dataset.doc, btn.dataset.board, btn); });
     });
+    container.querySelectorAll('.btn-justificar:not([data-bound])').forEach(btn => {
+      btn.dataset.bound = '1';
+      btn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const { doc, board } = btn.dataset;
+        const pergunta = prompt('Observação para a gerente sobre o motivo do pedido (opcional):', '') || '';
+        await solicitarJustificativa(doc, board, pergunta);
+      });
+    });
     // Botão voltar — remove revisão
     container.querySelectorAll('.btn-voltar:not([data-bound])').forEach(btn => {
       btn.dataset.bound = '1';
@@ -1669,6 +1728,23 @@
       fecharModalVenda();
       render(_data);
     } catch(e) { alert('Erro ao salvar revisão: ' + e.message); }
+  }
+
+  async function solicitarJustificativa(doc, board, pergunta) {
+    const venda = (_data?.vendas || []).find(v => v.doc === doc && (v.board === board || !v.board));
+    const body = {
+      doc, board: board || $('vBoard').value,
+      data: venda?.data, dtIni: $('vDtIni').value, dtFin: $('vDtFin').value,
+      vendedorCod: venda?.vendedorCod, vendedorNome: venda?.vendedorNome,
+      valorTotal: venda?.valorTotal, alertas: venda?.alertas || [], pergunta,
+    };
+    if (!venda) { fecharModalVenda(); return; }
+    try {
+      const saved = await api('POST', '/api/conferencia/solicitar-justificativa', body);
+      _revisoesMap[doc + '::' + (board || $('vBoard').value)] = saved;
+      fecharModalVenda();
+      render(_data);
+    } catch(e) { alert('Erro ao enviar para a gerente: ' + e.message); }
   }
 
   // ── Popover de Reprovação ────────────────────────────────────────────────

@@ -127,11 +127,76 @@ async function checkAuth() {
     updateLabel();
     loadData();
     initMicrovixSync();
+    checkJustificativasPendentes();
     if (S.user.mustChangePassword) showChangePasswordModal();
     if (new URLSearchParams(location.search).get('gestao') === '1') openTransModal();
   } catch {
     showLogin();
   }
+}
+
+// ── Justificativa de desconto (pedido do escritório à gerente da loja) ─────
+async function checkJustificativasPendentes() {
+  const banner = document.getElementById('justBanner');
+  if (!banner) return;
+  const isStore = S.user?.board && S.user.board !== 'escritorio';
+  if (!isStore) { banner.classList.add('hidden'); return; }
+  try {
+    const pendentes = await apiFetch('GET', `/api/conferencia/justificativas-pendentes?board=${encodeURIComponent(S.user.board)}`);
+    S._justPendentes = pendentes;
+    if (pendentes.length) {
+      document.getElementById('justBannerText').textContent =
+        `${pendentes.length} venda${pendentes.length > 1 ? 's' : ''} com desconto precisa${pendentes.length > 1 ? 'm' : ''} da sua justificativa`;
+      banner.classList.remove('hidden');
+    } else {
+      banner.classList.add('hidden');
+    }
+  } catch { banner.classList.add('hidden'); }
+}
+
+function renderJustModal() {
+  const body = document.getElementById('justModalBody');
+  const pendentes = S._justPendentes || [];
+  if (!pendentes.length) {
+    body.innerHTML = '<p style="color:var(--muted)">Nenhuma justificativa pendente.</p>';
+    return;
+  }
+  body.innerHTML = pendentes.map((p, i) => `
+    <div style="border:1px solid var(--border);border-radius:.5rem;padding:.85rem 1rem;margin-bottom:.75rem">
+      <div style="font-weight:700;margin-bottom:.15rem">Doc ${p.doc} · ${p.vendedorNome || p.vendedorCod || ''}</div>
+      <div style="font-size:.8rem;color:var(--muted);margin-bottom:.5rem">${p.data || ''} · Total: R$ ${Number(p.valorTotal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+      ${p.justificativa?.pergunta ? `<div style="font-size:.82rem;background:var(--surface2);border-radius:.4rem;padding:.5rem .65rem;margin-bottom:.6rem">"${p.justificativa.pergunta}"</div>` : ''}
+      <textarea data-just-doc="${p.doc}" data-just-board="${p.board}" placeholder="Explique o motivo do desconto..." style="width:100%;min-height:70px;resize:vertical;font-family:inherit;font-size:.85rem;padding:.5rem;border-radius:.4rem;border:1px solid var(--border);background:var(--surface);color:var(--text)"></textarea>
+      <button data-just-send="${i}" style="margin-top:.5rem;padding:.35rem .9rem;border-radius:.4rem;border:none;background:#F85149;color:#fff;font-weight:600;cursor:pointer;font-size:.82rem">Enviar resposta</button>
+    </div>`).join('');
+
+  body.querySelectorAll('[data-just-send]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const idx = btn.dataset.justSend;
+      const ta = body.querySelector(`textarea[data-just-doc="${pendentes[idx].doc}"][data-just-board="${pendentes[idx].board}"]`);
+      const resposta = ta.value.trim();
+      if (!resposta) { ta.focus(); ta.style.borderColor = '#F85149'; return; }
+      btn.disabled = true; btn.textContent = 'Enviando…';
+      try {
+        await apiFetch('POST', '/api/conferencia/justificativa-resposta', { doc: pendentes[idx].doc, board: pendentes[idx].board, resposta });
+        await checkJustificativasPendentes();
+        renderJustModal();
+      } catch (e) {
+        alert('Erro ao enviar resposta: ' + e.message);
+        btn.disabled = false; btn.textContent = 'Enviar resposta';
+      }
+    });
+  });
+}
+
+function initJustificativaModal() {
+  const banner  = document.getElementById('justBanner');
+  const overlay = document.getElementById('justOverlay');
+  if (!banner || !overlay) return;
+  document.getElementById('justBannerOpen')?.addEventListener('click', () => { renderJustModal(); overlay.classList.remove('hidden'); });
+  document.getElementById('justBannerClose')?.addEventListener('click', () => banner.classList.add('hidden'));
+  document.getElementById('justModalClose')?.addEventListener('click', () => overlay.classList.add('hidden'));
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.add('hidden'); });
 }
 
 // ── Microvix sync button ───────────────────────────────────────────────────
@@ -212,6 +277,7 @@ function initLoginForm() {
       S._loginJustHappened = true;
       updateLabel();
       loadData();
+      checkJustificativasPendentes();
       if (S.user.mustChangePassword) showChangePasswordModal();
     } catch (err) {
       let msg = 'Usuário ou senha incorretos';
@@ -12324,6 +12390,7 @@ function init() {
   initBoletasModal();
   initUsersModal();
   initDreModal();
+  initJustificativaModal();
   document.getElementById('logoutBtn').addEventListener('click', logout);
   document.getElementById('btnPrev').addEventListener('click', () => navigate(-1));
   document.getElementById('btnNext').addEventListener('click', () => navigate(1));
