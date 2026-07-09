@@ -596,6 +596,21 @@ function sumVendas(empId) {
     .reduce((s,[,e]) => s + (e.value||0), 0));
 }
 
+// Fração do mês em que o funcionário esteve ativo (admissão/desligamento no meio do mês).
+// Salário fixo e garantia mínima são valores cheios do mês — precisam ser proporcionais
+// aos dias corridos em que o funcionário efetivamente esteve na folha.
+function fatorProporcionalMes(emp) {
+  const mk         = monthKey();
+  const monthStart = `${mk}-01`;
+  const lastDay    = new Date(FP.year, FP.month, 0).getDate();
+  const monthEnd   = `${mk}-${String(lastDay).padStart(2,'0')}`;
+  const ini = (emp.admissao    && emp.admissao    > monthStart) ? emp.admissao    : monthStart;
+  const fim = (emp.desligamento && emp.desligamento < monthEnd)  ? emp.desligamento : monthEnd;
+  if (ini > fim) return 0;
+  const diasTrabalhados = Math.round((new Date(fim + 'T12:00:00') - new Date(ini + 'T12:00:00')) / 86400000) + 1;
+  return Math.max(0, Math.min(1, diasTrabalhados / lastDay));
+}
+
 function defaultEntry(emp) {
   const cfg  = FP.folhaConfig[FP.board] || {};
   const ecfg = getEmpCfg(emp);
@@ -607,7 +622,7 @@ function defaultEntry(emp) {
 
   // ── Sócio — pró-labore + complemento + comissão por loja ──
   if (tipo === 'socio') {
-    const proLabore   = r2(ecfg.salarioFixo || 0);
+    const proLabore   = r2((ecfg.salarioFixo || 0) * fatorProporcionalMes(emp));
     const complemento = 0;
     const sBoards     = emp.supervisedBoards || [];
     const totalVendas = r2(FP.supervisorVendaMap[emp.id] || 0);
@@ -638,7 +653,7 @@ function defaultEntry(emp) {
 
   // ── Supervisor — cálculo por loja ──
   if (tipo === 'supervisor') {
-    const fixo      = r2(ecfg.salarioFixo || 0);
+    const fixo      = r2((ecfg.salarioFixo || 0) * fatorProporcionalMes(emp));
     const sBoards   = emp.supervisedBoards || [];
     const totalVendas = r2(FP.supervisorVendaMap[emp.id] || 0);
     const totalMeta   = r2(FP.supervisorMetaMap[emp.id]  || 0);
@@ -675,7 +690,7 @@ function defaultEntry(emp) {
 
   // ── Caixa ──
   if (tipo === 'caixa') {
-    const fixo      = r2(cfg.salarioFixoCaixa || ecfg.salarioFixo || 0);
+    const fixo      = r2((cfg.salarioFixoCaixa || ecfg.salarioFixo || 0) * fatorProporcionalMes(emp));
     const quebra    = r2(cfg.quebraCaixa      || ecfg.quebraCaixa  || 0);
     const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);
     const comissaoLoja = ecfg.comissaoVR > 0 ? r2(vendaLoja * ecfg.comissaoVR / 100) : 0;
@@ -704,15 +719,17 @@ function defaultEntry(emp) {
   const dsr = (du + df) > 0 ? r2(comissaoTotal * df / (du + df)) : 0;
   const comissaoContab = r2(comissaoTotal - dsr - premio);
 
+  const fatorMes = fatorProporcionalMes(emp);
+
   const fixo = (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
-    ? r2(ecfg.salarioFixo || 0)
+    ? r2((ecfg.salarioFixo || 0) * fatorMes)
     : 0;
 
   const gm = tipo === 'gerente'
-    ? r2(cfg.garantiaMinimaGerente    || cfg.garantiaMinima || 0)
+    ? r2((cfg.garantiaMinimaGerente    || cfg.garantiaMinima || 0) * fatorMes)
     : (tipo === 'sub' || tipo === 'gvend')
-      ? r2(cfg.garantiaMinimaSubGerente || cfg.garantiaMinima || 0)
-      : r2(cfg.garantiaMinima || 0);
+      ? r2((cfg.garantiaMinimaSubGerente || cfg.garantiaMinima || 0) * fatorMes)
+      : r2((cfg.garantiaMinima || 0) * fatorMes);
   const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);
   let comissaoLoja = 0;
   if (ecfg.comissaoVR > 0 || (tipo === 'sub' && (ecfg.comissaoVRSemMeta || ecfg.comissaoVRMeta2 || ecfg.comissaoVRSuper))) {
