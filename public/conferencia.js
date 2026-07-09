@@ -1737,6 +1737,7 @@
       data: venda?.data, dtIni: $('vDtIni').value, dtFin: $('vDtFin').value,
       vendedorCod: venda?.vendedorCod, vendedorNome: venda?.vendedorNome,
       valorTotal: venda?.valorTotal, alertas: venda?.alertas || [], pergunta,
+      itens: venda?.itens || [], formas: venda?.formas || [],
     };
     if (!venda) { fecharModalVenda(); return; }
     try {

@@ -8383,14 +8383,15 @@ app.post('/api/conferencia/revisao', requireEscritorioOrAdmin, async (req, res) 
 // justifique o desconto de uma venda; tira a venda da fila normal (status aguardando_justificativa)
 app.post('/api/conferencia/solicitar-justificativa', requireEscritorioOrAdmin, async (req, res) => {
   try {
-    const { doc, board, data, dtIni, dtFin, vendedorCod, vendedorNome, valorTotal, alertas, pergunta } = req.body;
+    const { doc, board, data, dtIni, dtFin, vendedorCod, vendedorNome, valorTotal, alertas, pergunta, itens, formas } = req.body;
     if (!doc || !board) return res.status(400).json({ error: 'doc e board obrigatórios' });
     const col = await getConferenciaRevisoesCol();
     const updatedBy = req.session?.user?.username || 'desconhecido';
     const updatedAt = new Date();
     const docSave = {
       doc, board, data, dtIni, dtFin, vendedorCod, vendedorNome, valorTotal, valorCobrar: 0,
-      status: 'aguardando_justificativa', obs: '', alertas: alertas || [], updatedBy, updatedAt,
+      status: 'aguardando_justificativa', obs: '', alertas: alertas || [], itens: itens || [], formas: formas || [],
+      updatedBy, updatedAt,
       justificativa: { pergunta: pergunta || '', perguntaPor: updatedBy, perguntaEm: updatedAt, resposta: null, respostaEm: null },
     };
     await col.replaceOne({ doc, board }, docSave, { upsert: true });

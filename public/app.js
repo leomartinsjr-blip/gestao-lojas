@@ -161,10 +161,41 @@ function renderJustModal() {
     body.innerHTML = '<p style="color:var(--muted)">Nenhuma justificativa pendente.</p>';
     return;
   }
+  const fmtRS = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
+
+  const formasHtml = p => (p.formas || []).length
+    ? `<div style="display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.6rem">${p.formas.map(f =>
+        `<span style="background:var(--surface2);border:1px solid var(--border);border-radius:.35rem;padding:.2rem .6rem;font-size:.78rem">${f.forma || ''}${f.bandeira ? ' · ' + f.bandeira : ''} <strong>${fmtRS(f.valor)}</strong>${f.parcelas > 1 ? ' · ' + f.parcelas + 'x' : ''}</span>`
+      ).join('')}</div>`
+    : '';
+
+  const itensHtml = p => (p.itens || []).length
+    ? `<table style="width:100%;border-collapse:collapse;margin-bottom:.7rem;font-size:.78rem">
+        <thead><tr style="color:var(--muted);text-align:left">
+          <th style="padding:.2rem .3rem">Produto</th><th style="padding:.2rem .3rem">Qtd</th>
+          <th style="padding:.2rem .3rem">Preço</th><th style="padding:.2rem .3rem">Desc.</th>
+          <th style="padding:.2rem .3rem">Total</th>
+        </tr></thead>
+        <tbody>${p.itens.map(it => {
+          const liq = it.vlrLiquido ?? ((it.vlrBruto || 0) - (it.vlrDesconto || 0));
+          const temDesc = (it.vlrDesconto || 0) > 0;
+          return `<tr style="border-top:1px solid var(--border)">
+            <td style="padding:.25rem .3rem">${it.nome || it.descricao || it.cod_produto || ''}</td>
+            <td style="padding:.25rem .3rem">${it.quantidade}x</td>
+            <td style="padding:.25rem .3rem">${fmtRS(it.vlrUnitario)}</td>
+            <td style="padding:.25rem .3rem${temDesc ? ';color:#F85149;font-weight:600' : ''}">${temDesc ? fmtRS(it.vlrDesconto) : '—'}</td>
+            <td style="padding:.25rem .3rem;font-weight:600">${fmtRS(liq)}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`
+    : '';
+
   body.innerHTML = pendentes.map((p, i) => `
     <div style="border:1px solid var(--border);border-radius:.5rem;padding:.85rem 1rem;margin-bottom:.75rem">
       <div style="font-weight:700;margin-bottom:.15rem">Doc ${p.doc} · ${p.vendedorNome || p.vendedorCod || ''}</div>
-      <div style="font-size:.8rem;color:var(--muted);margin-bottom:.5rem">${p.data || ''} · Total: R$ ${Number(p.valorTotal || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2 })}</div>
+      <div style="font-size:.8rem;color:var(--muted);margin-bottom:.5rem">${p.data || ''} · Total: ${fmtRS(p.valorTotal)}</div>
+      ${formasHtml(p)}
+      ${itensHtml(p)}
       ${p.justificativa?.pergunta ? `<div style="font-size:.82rem;background:var(--surface2);border-radius:.4rem;padding:.5rem .65rem;margin-bottom:.6rem">"${p.justificativa.pergunta}"</div>` : ''}
       <textarea data-just-doc="${p.doc}" data-just-board="${p.board}" placeholder="Explique o motivo do desconto..." style="width:100%;min-height:70px;resize:vertical;font-family:inherit;font-size:.85rem;padding:.5rem;border-radius:.4rem;border:1px solid var(--border);background:var(--surface);color:var(--text)"></textarea>
       <button data-just-send="${i}" style="margin-top:.5rem;padding:.35rem .9rem;border-radius:.4rem;border:none;background:#F85149;color:#fff;font-weight:600;cursor:pointer;font-size:.82rem">Enviar resposta</button>
@@ -197,6 +228,10 @@ function initJustificativaModal() {
   document.getElementById('justBannerClose')?.addEventListener('click', () => banner.classList.add('hidden'));
   document.getElementById('justModalClose')?.addEventListener('click', () => overlay.classList.add('hidden'));
   overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.add('hidden'); });
+
+  // A tela fica aberta o dia inteiro na loja — sem isso, um pedido enviado pelo
+  // escritório só apareceria se a gerente relogasse ou recarregasse a página.
+  setInterval(checkJustificativasPendentes, 2 * 60_000);
 }
 
 // ── Microvix sync button ───────────────────────────────────────────────────
