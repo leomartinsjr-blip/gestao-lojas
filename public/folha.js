@@ -599,17 +599,18 @@ function sumVendas(empId) {
 // Fração do mês em que o funcionário esteve ativo (admissão/desligamento no meio do mês).
 // Salário fixo e garantia mínima são valores cheios do mês — precisam ser proporcionais
 // aos dias corridos em que o funcionário efetivamente esteve na folha.
-function fatorProporcionalMes(emp) {
+function proporcaoMes(emp) {
   const mk         = monthKey();
   const monthStart = `${mk}-01`;
   const lastDay    = new Date(FP.year, FP.month, 0).getDate();
   const monthEnd   = `${mk}-${String(lastDay).padStart(2,'0')}`;
   const ini = (emp.admissao    && emp.admissao    > monthStart) ? emp.admissao    : monthStart;
   const fim = (emp.desligamento && emp.desligamento < monthEnd)  ? emp.desligamento : monthEnd;
-  if (ini > fim) return 0;
-  const diasTrabalhados = Math.round((new Date(fim + 'T12:00:00') - new Date(ini + 'T12:00:00')) / 86400000) + 1;
-  return Math.max(0, Math.min(1, diasTrabalhados / lastDay));
+  if (ini > fim) return { fator: 0, dias: 0, totalDias: lastDay };
+  const dias = Math.round((new Date(fim + 'T12:00:00') - new Date(ini + 'T12:00:00')) / 86400000) + 1;
+  return { fator: Math.max(0, Math.min(1, dias / lastDay)), dias, totalDias: lastDay };
 }
+function fatorProporcionalMes(emp) { return proporcaoMes(emp).fator; }
 
 function defaultEntry(emp) {
   const cfg  = FP.folhaConfig[FP.board] || {};
@@ -787,6 +788,11 @@ function buildEmpForm(emp, entry) {
   const du   = FP.mensal.diasUteis        || 22;
   const df   = FP.mensal.domingosFeriados || 4;
 
+  const propMes   = proporcaoMes(emp);
+  const fatorNota = propMes.fator < 0.999
+    ? ` <span style="font-size:.7rem;color:#d29922">· proporcional: ${propMes.dias}/${propMes.totalDias} dias (${(propMes.fator*100).toFixed(0)}%)</span>`
+    : '';
+
   const inp = (id, v, extra='') =>
     `<input type="number" step="0.01" id="${id}" value="${r2(v).toFixed(2)}" ${extra} onchange="onFieldChange(${emp.id})">`;
   const inpRO = (id, v) =>
@@ -826,7 +832,7 @@ function buildEmpForm(emp, entry) {
 
   if (tipo === 'caixa') {
     provRows = `
-      <div class="fp-field"><label>Salário Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}</div>
+      <div class="fp-field"><label>Salário Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}${fatorNota}</div>
       <div class="fp-field"><label>Quebra de Caixa (R$)</label>${inp(`fp-quebra-${emp.id}`, e.quebra)}</div>`;
     if ((ecfg.comissaoVR || 0) > 0) provRows += _comLojaRow();
     if (ecfg.recebePremiaoLoja) {
@@ -846,7 +852,7 @@ function buildEmpForm(emp, entry) {
     const totalMeta   = r2(FP.supervisorMetaMap[emp.id]  || 0);
     const pctTotal    = totalMeta > 0 ? `${r2(totalVendas/totalMeta*100).toFixed(1)}% da meta total` : 'sem meta';
     provRows += `
-      <div class="fp-field"><label>Pró-Labore (R$)</label>${inp(`fp-proLabore-${emp.id}`, e.proLabore || 0)}</div>
+      <div class="fp-field"><label>Pró-Labore (R$)</label>${inp(`fp-proLabore-${emp.id}`, e.proLabore || 0)}${fatorNota}</div>
       <div class="fp-field"><label>Complemento (R$)</label>${inp(`fp-complemento-${emp.id}`, e.complemento || 0)}</div>`;
     lojaComissoes.forEach(lj => {
       const bi = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase(), color: '#8b949e' };
@@ -873,7 +879,7 @@ function buildEmpForm(emp, entry) {
     const totalVendas = r2(FP.supervisorVendaMap[emp.id] || 0);
     const totalMeta   = r2(FP.supervisorMetaMap[emp.id]  || 0);
     const pctTotal    = totalMeta > 0 ? `${r2(totalVendas/totalMeta*100).toFixed(1)}% da meta total` : 'sem meta';
-    provRows += `<div class="fp-field"><label>Salário Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}</div>`;
+    provRows += `<div class="fp-field"><label>Salário Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}${fatorNota}</div>`;
     lojaComissoes.forEach(lj => {
       const bi = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase(), color: '#8b949e' };
       provRows += `<div class="fp-field fp-field-inline">
@@ -896,7 +902,7 @@ function buildEmpForm(emp, entry) {
     const pctDisplay = e.pctMeta > 0 ? `${r2(e.pctMeta).toFixed(1)}% da meta` : 'sem meta';
 
     if (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
-      provRows += `<div class="fp-field"><label>Salário Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}</div>`;
+      provRows += `<div class="fp-field"><label>Salário Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}${fatorNota}</div>`;
 
     provRows += `
       <div class="fp-field fp-field-inline">
@@ -939,9 +945,13 @@ function buildEmpForm(emp, entry) {
         ? (cfg.garantiaMinimaSubGerente || cfg.garantiaMinima || 0)
         : (cfg.garantiaMinima || 0);
     if (gmMin > 0) {
-      const gmNote = (tipo === 'gvend' || tipo === 'sub')
-        ? `mín: ${brl(gmMin)} (fixo + comissão própria)`
-        : `mín: ${brl(gmMin)}`;
+      const gmMinEfetiva = r2(gmMin * propMes.fator);
+      const gmBase = (tipo === 'gvend' || tipo === 'sub')
+        ? `mín: ${brl(gmMinEfetiva)} (fixo + comissão própria)`
+        : `mín: ${brl(gmMinEfetiva)}`;
+      const gmNote = propMes.fator < 0.999
+        ? `${gmBase} <span style="color:#d29922">(proporcional: ${propMes.dias}/${propMes.totalDias} dias de ${brl(gmMin)})</span>`
+        : gmBase;
       provRows += `<div class="fp-field"><label>GM (R$)</label>${inp(`fp-gm-${emp.id}`, e.gmComplement)}
         <span style="font-size:.72rem;color:#8b949e">${gmNote}</span></div>`;
     }
