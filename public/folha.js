@@ -691,8 +691,9 @@ function defaultEntry(emp) {
 
   // ── Caixa ──
   if (tipo === 'caixa') {
-    const fixo      = r2((cfg.salarioFixoCaixa || ecfg.salarioFixo || 0) * fatorProporcionalMes(emp));
-    const quebra    = r2(cfg.quebraCaixa      || ecfg.quebraCaixa  || 0);
+    const fator     = fatorProporcionalMes(emp);
+    const fixo      = r2((cfg.salarioFixoCaixa || ecfg.salarioFixo || 0) * fator);
+    const quebra    = r2((cfg.quebraCaixa      || ecfg.quebraCaixa  || 0) * fator);
     const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);
     const comissaoLoja = ecfg.comissaoVR > 0 ? r2(vendaLoja * ecfg.comissaoVR / 100) : 0;
     const prov   = r2(fixo + quebra + comissaoLoja);
@@ -833,7 +834,7 @@ function buildEmpForm(emp, entry) {
   if (tipo === 'caixa') {
     provRows = `
       <div class="fp-field"><label>Salário Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}${fatorNota}</div>
-      <div class="fp-field"><label>Quebra de Caixa (R$)</label>${inp(`fp-quebra-${emp.id}`, e.quebra)}</div>`;
+      <div class="fp-field"><label>Quebra de Caixa (R$)</label>${inp(`fp-quebra-${emp.id}`, e.quebra)}${fatorNota}</div>`;
     if ((ecfg.comissaoVR || 0) > 0) provRows += _comLojaRow();
     if (ecfg.recebePremiaoLoja) {
       const semGerDetC  = FP.premiacaoSemanalGerDetalhe[emp.id] || [];
