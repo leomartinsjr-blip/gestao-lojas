@@ -169,26 +169,58 @@ function renderJustModal() {
       ).join('')}</div>`
     : '';
 
-  const itensHtml = p => (p.itens || []).length
-    ? `<table style="width:100%;border-collapse:collapse;margin-bottom:.7rem;font-size:.78rem">
-        <thead><tr style="color:var(--muted);text-align:left">
-          <th style="padding:.2rem .3rem">Produto</th><th style="padding:.2rem .3rem">Qtd</th>
-          <th style="padding:.2rem .3rem">Preço</th><th style="padding:.2rem .3rem">Desc.</th>
-          <th style="padding:.2rem .3rem">Total</th>
-        </tr></thead>
-        <tbody>${p.itens.map(it => {
+  const discPct = pct => `<span style="display:inline-block;background:#F8514920;color:#F85149;border-radius:5px;padding:2px 8px;font-size:.68rem;font-weight:800;margin-left:6px">${pct.toFixed(1)}%</span>`;
+
+  const itensHtml = p => {
+    const itens = p.itens || [];
+    if (!itens.length) return '';
+    const totalBruto = itens.reduce((s, i) => s + (i.vlrBruto || 0), 0);
+    const totalDesc  = itens.reduce((s, i) => s + (i.vlrDesconto || 0), 0);
+    const totalLiq   = itens.reduce((s, i) => s + (i.vlrLiquido ?? ((i.vlrBruto || 0) - (i.vlrDesconto || 0))), 0);
+    const th = txt => `<th style="padding:7px 10px;font-size:.62rem;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:.4px;border-bottom:1px solid var(--border);text-align:left;background:var(--surface)">${txt}</th>`;
+    return `<table style="width:100%;border-collapse:collapse;margin-bottom:.7rem;font-size:.78rem">
+        <thead><tr>${th('Produto')}${th('Qtd')}${th('Tabela')}${th('Promo')}${th('Bruto')}${th('Desc.')}${th('%')}${th('Líquido')}</tr></thead>
+        <tbody>${itens.map((it, idx) => {
           const liq = it.vlrLiquido ?? ((it.vlrBruto || 0) - (it.vlrDesconto || 0));
           const temDesc = (it.vlrDesconto || 0) > 0;
-          return `<tr style="border-top:1px solid var(--border)">
-            <td style="padding:.25rem .3rem">${it.nome || it.descricao || it.cod_produto || ''}</td>
-            <td style="padding:.25rem .3rem">${it.quantidade}x</td>
-            <td style="padding:.25rem .3rem">${fmtRS(it.vlrUnitario)}</td>
-            <td style="padding:.25rem .3rem${temDesc ? ';color:#F85149;font-weight:600' : ''}">${temDesc ? fmtRS(it.vlrDesconto) : '—'}</td>
-            <td style="padding:.25rem .3rem;font-weight:600">${fmtRS(liq)}</td>
+          const vlrLiqUnit = it.quantidade > 0 ? liq / it.quantidade : liq;
+          const baseDescPct = (it.emPromocao && it.precoPromocao) ? it.precoPromocao : it.vlrUnitario;
+          const percDesc = baseDescPct > 0 ? ((baseDescPct - vlrLiqUnit) / baseDescPct * 100) : 0;
+          const promoCell = it.emPromocao && it.precoPromocao
+            ? `<span style="color:#2dd4bf;font-weight:700">${fmtRS(it.precoPromocao)}</span>` : '—';
+          const cod = it.cod_produto || '', ref = it.referencia || '', marc = it.marca || '', col = it.colecao || '';
+          const nome = it.nome || it.descricao || cod;
+          const tag = (bg, fg, txt) => `<span style="background:${bg};color:${fg};font-size:.62rem;font-weight:600;padding:2px 7px;border-radius:4px;white-space:nowrap">${txt}</span>`;
+          const tags = [
+            cod  ? tag('#DBEAFE', '#1D4ED8', cod)         : '',
+            ref  ? tag('#EDE9FE', '#6D28D9', 'Ref ' + ref) : '',
+            marc ? tag('#D1FAE5', '#065F46', marc)         : '',
+            col  ? tag('#FEF3C7', '#92400E', col)          : '',
+          ].filter(Boolean).join(' ');
+          const zebra = idx % 2 === 1 ? 'var(--surface2)' : 'var(--surface)';
+          return `<tr style="background:${zebra};${temDesc ? 'border-left:3px solid var(--warn)' : ''}">
+            <td style="padding:9px 10px;border-bottom:1px solid var(--border)">
+              <span style="font-weight:600;display:block">${nome}</span>
+              ${tags ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:5px">${tags}</div>` : ''}
+            </td>
+            <td style="padding:9px 10px;border-bottom:1px solid var(--border)">${it.quantidade}x</td>
+            <td style="padding:9px 10px;border-bottom:1px solid var(--border)">${fmtRS(it.vlrUnitario)}</td>
+            <td style="padding:9px 10px;border-bottom:1px solid var(--border)">${promoCell}</td>
+            <td style="padding:9px 10px;border-bottom:1px solid var(--border)">${fmtRS(it.vlrBruto)}</td>
+            <td style="padding:9px 10px;border-bottom:1px solid var(--border);${temDesc ? 'color:#F85149;font-weight:700' : 'color:var(--muted)'}">${temDesc ? fmtRS(it.vlrDesconto) : '—'}</td>
+            <td style="padding:9px 10px;border-bottom:1px solid var(--border)">${percDesc > 0.05 ? discPct(percDesc) : '—'}</td>
+            <td style="padding:9px 10px;border-bottom:1px solid var(--border);font-weight:700">${fmtRS(liq)}</td>
           </tr>`;
         }).join('')}</tbody>
-      </table>`
-    : '';
+        <tfoot><tr>
+          <td colspan="4" style="padding:10px;font-size:.68rem;color:var(--muted);background:var(--surface)">Total</td>
+          <td style="padding:10px;font-weight:700;background:var(--surface)">${fmtRS(totalBruto)}</td>
+          <td style="padding:10px;font-weight:700;color:var(--warn);background:var(--surface)">${totalDesc > 0 ? fmtRS(totalDesc) : '—'}</td>
+          <td style="padding:10px;background:var(--surface)">${totalDesc > 0 && totalBruto > 0 ? discPct(totalDesc / totalBruto * 100) : '—'}</td>
+          <td style="padding:10px;font-weight:800;background:var(--surface)">${fmtRS(totalLiq)}</td>
+        </tr></tfoot>
+      </table>`;
+  };
 
   body.innerHTML = pendentes.map((p, i) => `
     <div style="border:1px solid var(--border);border-radius:.5rem;padding:.85rem 1rem;margin-bottom:.75rem">
