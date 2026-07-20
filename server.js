@@ -276,6 +276,10 @@ function writeUsers(users) {
 const BOARDS   = ['admin','escritorio','delrey','minas','contagem','estacao','tommy','lez'];
 const SECTIONS = ['performance','estoque_marca','estoque_grupo','pauta','pendencias'];
 
+// CFOPs de saída sem venda real (bonificação/doação de mercadoria) — não representam
+// dinheiro recebido nem venda; excluídos do Fechamento e da Conferência de Caixa.
+const CFOP_SEM_RECEITA = new Set(['5910', '6910']);
+
 function monthKey(y, m) { return `${y}-${String(m).padStart(2,'0')}`; }
 function cardKey(y, m, board, section) { return `${monthKey(y,m)}-${board}-${section}`; }
 
@@ -2469,6 +2473,7 @@ async function syncCaixaBoard(board, year, month, dayOnly = null) {
       const serie = String(r.serie || r.serie_documento || r.num_serie || '').trim();
       if (serie === '999') continue;
       if (serie === '4' && r.operacao !== 'DS') continue;
+      if (CFOP_SEM_RECEITA.has(String(r.id_cfop || '').trim())) continue;
       const doc = String(r.documento || '').trim();
       if (!doc || seenDocs.has(doc)) continue;
       seenDocs.add(doc);
@@ -2661,6 +2666,8 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       const serie = String(r.serie || r.serie_documento || r.num_serie || '').trim();
       if (serie === '999') continue;
       if (serie === '4' && operacao !== 'DS') continue;
+      // CFOPs de saída sem venda real (bonificação/doação) — não conta como venda
+      if (CFOP_SEM_RECEITA.has(String(r.id_cfop || '').trim())) continue;
       const doc = String(r.documento || '').trim();
       if (!doc || seenDocs.has(doc)) continue;
       seenDocs.add(doc);
