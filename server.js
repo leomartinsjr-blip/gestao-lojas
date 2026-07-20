@@ -2514,14 +2514,12 @@ async function syncCaixaBoard(board, year, month, dayOnly = null) {
   if (!db.caixa[key]) db.caixa[key] = {};
   for (let d = startDay; d <= endDay; d++) {
     const prev = db.caixa[key][d] || {};
-    if (caixaByDay[d] !== undefined || sangriaByDay[d] !== undefined) {
-      db.caixa[key][d] = {
-        ...prev,
-        caixa:    caixaByDay[d]   !== undefined ? caixaByDay[d]   : (prev.caixa   ?? 0),
-        sangria:  sangriaByDay[d] !== undefined ? sangriaByDay[d] : (prev.sangria ?? 0),
-        syncedAt: new Date().toISOString(),
-      };
-    }
+    db.caixa[key][d] = {
+      ...prev,
+      caixa:    caixaByDay[d]   ?? 0,
+      sangria:  sangriaByDay[d] ?? 0,
+      syncedAt: new Date().toISOString(),
+    };
   }
   await writeDB(db);
 
