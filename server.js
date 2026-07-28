@@ -2470,6 +2470,7 @@ async function syncCaixaBoard(board, year, month, dayOnly = null) {
       if (rowCnpj && rowCnpj !== cnpjClean) continue;
       if (r.cancelado === 'S' || r.cancelado === '1') continue;
       if (r.operacao !== 'S' && r.operacao !== 'DS') continue;
+      if ((r.soma_relatorio || 'S').toUpperCase() === 'N') continue;
       const serie = String(r.serie || r.serie_documento || r.num_serie || '').trim();
       if (serie === '999') continue;
       if (serie === '4' && r.operacao !== 'DS') continue;
@@ -2659,6 +2660,7 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       if (r.cancelado === 'S' || r.cancelado === '1') continue;
       const operacao = (r.operacao || '').trim().toUpperCase();
       if (operacao !== 'S' && operacao !== 'DS') continue;
+      if ((r.soma_relatorio || 'S').toUpperCase() === 'N') continue;
       // tipo_transacao 'J' sem documento = ajuste de balanço/estoque (Tommy: FALTA BALANÇO)
       if ((r.tipo_transacao || '').trim().toUpperCase() === 'J' && String(r.documento || '').trim() === '0') continue;
       const serie = String(r.serie || r.serie_documento || r.num_serie || '').trim();
@@ -3157,12 +3159,13 @@ app.get('/api/microvix/caixa-debug', requireAdmin, async (req, res) => {
       const isWrongOp  = r.operacao !== 'S' && r.operacao !== 'DS';
       const isSerie999 = serie === '999';
       const isSerie4S  = serie === '4' && !isDev;
+      const isNotSummed = (r.soma_relatorio || 'S').toUpperCase() === 'N';
       const isDup   = seenDocs.has(doc);
       const val     = parseBrNum(r.total_dinheiro || '0');
       const sign    = isDev ? -1 : 1;
       const cnpjMatch = !rowCnpj || rowCnpj === cnpjClean;
-      const counted = cnpjMatch && !isCancelled && !isWrongOp && !isSerie999 && !isSerie4S && !isDup && val !== 0;
-      dinheiroRows.push({ doc, serie, data_documento: r.data_documento, cnpj_emp: r.cnpj_emp, cancelado: r.cancelado, operacao: r.operacao, total_dinheiro: r.total_dinheiro, _cnpjMatch: cnpjMatch, _isDup: isDup, _isCancelled: isCancelled, _isDev: isDev, _isSerie999: isSerie999, _isSerie4S: isSerie4S, _counted: counted });
+      const counted = cnpjMatch && !isCancelled && !isWrongOp && !isSerie999 && !isSerie4S && !isNotSummed && !isDup && val !== 0;
+      dinheiroRows.push({ doc, serie, data_documento: r.data_documento, cnpj_emp: r.cnpj_emp, cancelado: r.cancelado, operacao: r.operacao, total_dinheiro: r.total_dinheiro, soma_relatorio: r.soma_relatorio, _cnpjMatch: cnpjMatch, _isDup: isDup, _isCancelled: isCancelled, _isDev: isDev, _isSerie999: isSerie999, _isSerie4S: isSerie4S, _isNotSummed: isNotSummed, _counted: counted });
       if (counted) { seenDocs.add(doc); totalDinheiro += sign * val; }
       else if (!isDup) seenDocs.add(doc);
     }
