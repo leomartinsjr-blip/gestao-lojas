@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>Certificados Digitais · Gestão de Lojas</title>
+<title>Certificados & Seguros · Gestão de Lojas</title>
 <link rel="stylesheet" href="/style.css"/>
 <style>
 :root {
@@ -48,6 +48,18 @@ body {
 
 /* ── Layout ── */
 .page { max-width: 860px; margin: 0 auto; padding: 28px 20px 60px; }
+
+/* ── Tabs ── */
+.cf-tabs { display: flex; gap: 6px; margin-bottom: 18px; border-bottom: 1px solid var(--cf-border); }
+.cf-tab {
+  background: none; border: none; color: var(--cf-muted); font-family: inherit;
+  font-size: 13px; font-weight: 600; padding: 9px 16px; cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  display: inline-flex; align-items: center; gap: 6px;
+  transition: color .15s, border-color .15s;
+}
+.cf-tab:hover { color: var(--cf-text); }
+.cf-tab.active { color: var(--cf-primary); border-bottom-color: var(--cf-primary); }
 
 /* ── Summary cards ── */
 .summary-grid {
@@ -192,6 +204,10 @@ textarea.cf-input { height: auto; min-height: 60px; resize: vertical; padding: 8
 </div>
 
 <div class="page">
+  <div class="cf-tabs">
+    <button class="cf-tab active" id="tabCert" onclick="switchMode('cert')">🔐 Certificados</button>
+    <button class="cf-tab" id="tabSeguro" onclick="switchMode('seguro')">🛡️ Seguros</button>
+  </div>
   <div id="summaryGrid" class="summary-grid"></div>
   <div class="toolbar">
     <input type="text" id="searchInput" class="cf-input" placeholder="Buscar loja ou tipo…"/>
@@ -235,14 +251,17 @@ textarea.cf-input { height: auto; min-height: 60px; resize: vertical; padding: 8
       </div>
       <div class="form-group">
         <label>Tipo</label>
-        <select id="fTipo" class="cf-select">
-          <option>e-CNPJ A1</option>
-          <option>e-CNPJ A3</option>
-          <option>e-CPF A1</option>
-          <option>e-CPF A3</option>
-          <option>e-NFe A1</option>
-          <option>e-NFe A3</option>
-        </select>
+        <select id="fTipo" class="cf-select"></select>
+      </div>
+    </div>
+    <div class="form-row" id="seguroExtraFields" style="display:none">
+      <div class="form-group">
+        <label>Seguradora</label>
+        <input type="text" id="fSeguradora" class="cf-input" placeholder="Ex: Porto Seguro"/>
+      </div>
+      <div class="form-group">
+        <label>Apólice</label>
+        <input type="text" id="fApolice" class="cf-input" placeholder="Nº da apólice"/>
       </div>
     </div>
     <div class="form-group">
@@ -264,12 +283,32 @@ textarea.cf-input { height: auto; min-height: 60px; resize: vertical; padding: 8
 <script>
 const LOJAS_COLORS = { 'Del Rey':'#4AA3FF','Minas':'#a78bfa','Contagem':'#34d399','Estação':'#FF9A4A','Tommy':'#2dd4bf','Surfers':'#FF6161' };
 
-let certs = [];
+const MODES = {
+  cert: {
+    api: '/api/certificados',
+    label: 'Certificado',
+    labelPlural: 'Certificados',
+    tipos: ['e-CNPJ A1','e-CNPJ A3','e-CPF A1','e-CPF A3','e-NFe A1','e-NFe A3'],
+    extra: false,
+  },
+  seguro: {
+    api: '/api/seguros',
+    label: 'Seguro',
+    labelPlural: 'Seguros',
+    tipos: ['Seguro Empresarial','Seguro Incêndio/Roubo','Seguro Responsabilidade Civil','Seguro Frota/Veículos','Seguro Equipamentos','Outros'],
+    extra: true,
+  },
+};
+
+let mode = 'cert';
+let dataByMode = { cert: [], seguro: [] };
 let filter = 'all';
 let search = '';
 let editId = null;
 
 const today = new Date(); today.setHours(0,0,0,0);
+function items() { return dataByMode[mode]; }
+function cfg()   { return MODES[mode]; }
 
 function daysDiff(val) {
   const d = new Date(val + 'T12:00:00'); d.setHours(0,0,0,0);
@@ -300,24 +339,38 @@ async function api(method, url, body) {
   return r.json();
 }
 
-async function loadCerts() {
-  certs = await api('GET', '/api/certificados');
+async function loadData() {
+  dataByMode[mode] = await api('GET', cfg().api);
   render();
 }
 
+async function switchMode(m) {
+  if (m === mode) return;
+  mode = m;
+  document.getElementById('tabCert').classList.toggle('active', m === 'cert');
+  document.getElementById('tabSeguro').classList.toggle('active', m === 'seguro');
+  document.getElementById('searchInput').value = '';
+  filter = 'all'; search = '';
+  document.getElementById('filterSelect').value = 'all';
+  document.getElementById('searchInput').placeholder = `Buscar loja ou tipo de ${cfg().label.toLowerCase()}…`;
+  document.getElementById('btnNovo').innerHTML =
+    `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Novo ${cfg().label}`;
+  await loadData();
+}
+
 function filtered() {
-  return certs.filter(c => {
+  return items().filter(c => {
     const days = daysDiff(c.validade);
     const st = statusOf(days);
     const q = search.toLowerCase();
     return (filter === 'all' || st === filter)
-      && (!q || c.loja.toLowerCase().includes(q) || (c.tipo||'').toLowerCase().includes(q) || (c.obs||'').toLowerCase().includes(q));
+      && (!q || c.loja.toLowerCase().includes(q) || (c.tipo||'').toLowerCase().includes(q) || (c.obs||'').toLowerCase().includes(q) || (c.seguradora||'').toLowerCase().includes(q));
   }).sort((a,b) => daysDiff(a.validade) - daysDiff(b.validade));
 }
 
 function counts() {
   const r = { expired:0, critical:0, warning:0, ok:0 };
-  certs.forEach(c => r[statusOf(daysDiff(c.validade))]++);
+  items().forEach(c => r[statusOf(daysDiff(c.validade))]++);
   return r;
 }
 
@@ -339,12 +392,12 @@ function render() {
   ).join('');
 
   // Section title
-  document.getElementById('sectionTitle').textContent = `Certificados (${list.length})`;
+  document.getElementById('sectionTitle').textContent = `${cfg().labelPlural} (${list.length})`;
 
   // List
   const listEl = document.getElementById('certList');
   if (!list.length) {
-    listEl.innerHTML = '<div class="cf-empty">Nenhum certificado encontrado</div>';
+    listEl.innerHTML = `<div class="cf-empty">Nenhum ${cfg().label.toLowerCase()} encontrado</div>`;
     return;
   }
   listEl.innerHTML = list.map(c => {
@@ -354,11 +407,12 @@ function render() {
     const audit = c.atualizadoPor
       ? `Atualizado por ${esc(c.atualizadoPor)} · ${new Date(c.atualizadoEm).toLocaleDateString('pt-BR')}`
       : c.criadoPor ? `Cadastrado por ${esc(c.criadoPor)} · ${new Date(c.criadoEm).toLocaleDateString('pt-BR')}` : '';
+    const metaExtra = [c.seguradora, c.apolice ? `Apólice ${c.apolice}` : ''].filter(Boolean).map(esc).join(' · ');
     return `<div class="cert-card ${st}">
       <div style="width:3px;height:36px;border-radius:2px;background:${cor};flex-shrink:0"></div>
       <div class="cert-info">
         <div class="cert-loja">${esc(c.loja)}</div>
-        <div class="cert-meta">${esc(c.tipo)}</div>
+        <div class="cert-meta">${esc(c.tipo)}${metaExtra ? ' · ' + metaExtra : ''}</div>
         ${c.obs ? `<div class="cert-obs">📝 ${esc(c.obs)}</div>` : ''}
         ${audit ? `<div class="cert-audit">${audit}</div>` : ''}
       </div>
@@ -380,25 +434,35 @@ document.getElementById('searchInput').addEventListener('input', e => { search =
 document.getElementById('filterSelect').addEventListener('change', e => { filter = e.target.value; render(); });
 
 // ── Modal ──
+function populateTipoOptions(selected) {
+  const sel = document.getElementById('fTipo');
+  sel.innerHTML = cfg().tipos.map(t => `<option${t===selected?' selected':''}>${t}</option>`).join('');
+}
 function openAdd() {
   editId = null;
-  document.getElementById('modalTitle').textContent = 'Novo certificado';
+  document.getElementById('modalTitle').textContent = 'Novo ' + cfg().label.toLowerCase();
+  populateTipoOptions(cfg().tipos[0]);
   document.getElementById('fLoja').value = '';
-  document.getElementById('fTipo').value = 'e-CNPJ A1';
   document.getElementById('fValidade').value = '';
   document.getElementById('fObs').value = '';
+  document.getElementById('fSeguradora').value = '';
+  document.getElementById('fApolice').value = '';
+  document.getElementById('seguroExtraFields').style.display = cfg().extra ? '' : 'none';
   document.getElementById('modalErr').textContent = '';
   document.getElementById('modalOverlay').style.display = 'flex';
 }
 function openEdit(id) {
-  const c = certs.find(x => x.id === id);
+  const c = items().find(x => x.id === id);
   if (!c) return;
   editId = id;
-  document.getElementById('modalTitle').textContent = 'Editar certificado';
-  document.getElementById('fLoja').value    = c.loja    || '';
-  document.getElementById('fTipo').value    = c.tipo    || 'e-CNPJ A1';
-  document.getElementById('fValidade').value= c.validade|| '';
-  document.getElementById('fObs').value     = c.obs     || '';
+  document.getElementById('modalTitle').textContent = 'Editar ' + cfg().label.toLowerCase();
+  populateTipoOptions(c.tipo || cfg().tipos[0]);
+  document.getElementById('fLoja').value       = c.loja       || '';
+  document.getElementById('fValidade').value   = c.validade   || '';
+  document.getElementById('fObs').value        = c.obs        || '';
+  document.getElementById('fSeguradora').value = c.seguradora || '';
+  document.getElementById('fApolice').value    = c.apolice    || '';
+  document.getElementById('seguroExtraFields').style.display = cfg().extra ? '' : 'none';
   document.getElementById('modalErr').textContent = '';
   document.getElementById('modalOverlay').style.display = 'flex';
 }
@@ -411,23 +475,26 @@ document.querySelector('.modal-actions .cf-btn:first-child')?.addEventListener('
 });
 
 async function salvarCert() {
-  const loja    = document.getElementById('fLoja').value.trim();
-  const tipo    = document.getElementById('fTipo').value;
-  const validade= document.getElementById('fValidade').value;
-  const obs     = document.getElementById('fObs').value.trim();
-  const errEl   = document.getElementById('modalErr');
+  const loja       = document.getElementById('fLoja').value.trim();
+  const tipo       = document.getElementById('fTipo').value;
+  const validade   = document.getElementById('fValidade').value;
+  const obs        = document.getElementById('fObs').value.trim();
+  const seguradora = document.getElementById('fSeguradora').value.trim();
+  const apolice    = document.getElementById('fApolice').value.trim();
+  const errEl      = document.getElementById('modalErr');
   if (!loja)    { errEl.textContent = 'Selecione a loja.'; return; }
   if (!validade){ errEl.textContent = 'Informe a data de vencimento.'; return; }
   errEl.textContent = '';
   const btn = document.getElementById('btnSalvar');
   btn.disabled = true; btn.textContent = 'Salvando…';
+  const body = cfg().extra ? { loja, tipo, validade, obs, seguradora, apolice } : { loja, tipo, validade, obs };
   try {
     if (editId) {
-      const upd = await api('PUT', `/api/certificados/${editId}`, { loja, tipo, validade, obs });
-      certs = certs.map(c => c.id === editId ? upd : c);
+      const upd = await api('PUT', `${cfg().api}/${editId}`, body);
+      dataByMode[mode] = items().map(c => c.id === editId ? upd : c);
     } else {
-      const novo = await api('POST', '/api/certificados', { loja, tipo, validade, obs });
-      certs.push(novo);
+      const novo = await api('POST', cfg().api, body);
+      items().push(novo);
     }
     document.getElementById('modalOverlay').style.display = 'none';
     render();
@@ -439,25 +506,29 @@ async function salvarCert() {
 }
 
 async function deleteCert(id, loja) {
-  if (!confirm(`Remover certificado de ${loja}?`)) return;
+  if (!confirm(`Remover ${cfg().label.toLowerCase()} de ${loja}?`)) return;
   try {
-    await api('DELETE', `/api/certificados/${id}`);
-    certs = certs.filter(c => c.id !== id);
+    await api('DELETE', `${cfg().api}/${id}`);
+    dataByMode[mode] = items().filter(c => c.id !== id);
     render();
   } catch(e) { alert('Erro: ' + e.message); }
 }
 
 // ── Export CSV ──
 document.getElementById('btnExport').addEventListener('click', () => {
-  const rows = [['Loja','Tipo','Vencimento','Status','Dias','Observação','Cadastrado por']];
+  const rows = cfg().extra
+    ? [['Loja','Tipo','Seguradora','Apólice','Vencimento','Status','Dias','Observação','Cadastrado por']]
+    : [['Loja','Tipo','Vencimento','Status','Dias','Observação','Cadastrado por']];
   filtered().forEach(c => {
     const days = daysDiff(c.validade);
-    rows.push([c.loja, c.tipo, c.validade, statusOf(days), days, c.obs||'', c.criadoPor||'']);
+    rows.push(cfg().extra
+      ? [c.loja, c.tipo, c.seguradora||'', c.apolice||'', c.validade, statusOf(days), days, c.obs||'', c.criadoPor||'']
+      : [c.loja, c.tipo, c.validade, statusOf(days), days, c.obs||'', c.criadoPor||'']);
   });
   const csv = rows.map(r => r.map(v => '"'+String(v).replace(/"/g,'""')+'"').join(';')).join('\n');
   const a = document.createElement('a');
   a.href = 'data:text/csv;charset=utf-8,' + encodeURIComponent(csv);
-  a.download = 'certificados.csv';
+  a.download = `${mode === 'seguro' ? 'seguros' : 'certificados'}.csv`;
   a.click();
 });
 
@@ -468,7 +539,7 @@ fetch('/api/me').then(r=>r.json()).then(u => {
   document.getElementById('userLabel').textContent = u.label || u.username || '';
 }).catch(()=>{});
 
-loadCerts();
+loadData();
 </script>
 </body>
 </html>

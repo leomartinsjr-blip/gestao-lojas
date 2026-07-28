@@ -9712,6 +9712,90 @@ app.get('/api/certificados/alertas', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ════════════════════════════════════════════════════════════════════════════
+// SEGUROS
+// ════════════════════════════════════════════════════════════════════════════
+
+let _seguroColReady = false;
+async function getSeguroCol() {
+  const col = mongoDb.collection('seguros');
+  if (!_seguroColReady) {
+    _seguroColReady = true;
+    col.createIndex({ id: 1 }, { unique: true, background: true }).catch(() => {});
+  }
+  return col;
+}
+
+// GET /api/seguros
+app.get('/api/seguros', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const col = await getSeguroCol();
+    const docs = await col.find({}).sort({ validade: 1 }).toArray();
+    res.json(docs);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/seguros
+app.post('/api/seguros', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { loja, tipo, seguradora, apolice, validade, obs } = req.body;
+    if (!loja || !validade) return res.status(400).json({ error: 'loja e validade são obrigatórios' });
+    const col = await getSeguroCol();
+    const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    const doc = {
+      id, loja, tipo: tipo || 'Seguro Empresarial', seguradora: seguradora || '', apolice: apolice || '',
+      validade, obs: obs || '',
+      criadoPor: req.session?.user?.username || '?',
+      criadoEm: new Date().toISOString(),
+      atualizadoPor: null, atualizadoEm: null,
+    };
+    await col.insertOne(doc);
+    res.json(doc);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/seguros/:id
+app.put('/api/seguros/:id', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { loja, tipo, seguradora, apolice, validade, obs } = req.body;
+    const col = await getSeguroCol();
+    const upd = {
+      ...(loja       !== undefined && { loja }),
+      ...(tipo       !== undefined && { tipo }),
+      ...(seguradora !== undefined && { seguradora }),
+      ...(apolice    !== undefined && { apolice }),
+      ...(validade   !== undefined && { validade }),
+      ...(obs        !== undefined && { obs }),
+      atualizadoPor: req.session?.user?.username || '?',
+      atualizadoEm: new Date().toISOString(),
+    };
+    const r = await col.findOneAndUpdate({ id: req.params.id }, { $set: upd }, { returnDocument: 'after' });
+    if (!r) return res.status(404).json({ error: 'não encontrado' });
+    res.json(r);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/seguros/:id
+app.delete('/api/seguros/:id', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const col = await getSeguroCol();
+    await col.deleteOne({ id: req.params.id });
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/seguros/alertas — retorna seguros vencidos ou próximos (para notif no login)
+app.get('/api/seguros/alertas', requireAuth, async (req, res) => {
+  try {
+    const col = await getSeguroCol();
+    const dias = parseInt(req.query.dias) || 30;
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const limite = new Date(hoje); limite.setDate(limite.getDate() + dias);
+    const docs = await col.find({ validade: { $lte: limite.toISOString().slice(0,10) } }).sort({ validade: 1 }).toArray();
+    res.json(docs);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Start ──────────────────────────────────────────────────────────────────
 // ── DRE ─────────────────────────────────────────────────────────────────────
 

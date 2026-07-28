@@ -660,22 +660,31 @@ async function loadData() {
         setTimeout(() => document.getElementById('anivWarnOverlay').classList.remove('hidden'), 600);
       }
 
-      // Aviso certificados digitais vencendo (só admin/escritório)
+      // Aviso certificados digitais / seguros vencendo (só admin/escritório)
       const isAdminOrEsc = !S.user?.board || S.user?.board === 'escritorio' || S.user?.role === 'admin';
       if (isAdminOrEsc) {
         try {
-          const certAlertas = await apiFetch('GET', '/api/certificados/alertas?dias=30');
-          if (certAlertas?.length) {
-            const certWarnEl = document.getElementById('certWarnOverlay');
-            const certMsgEl  = document.getElementById('certWarnMsg');
+          const [certAlertas, seguroAlertas] = await Promise.all([
+            apiFetch('GET', '/api/certificados/alertas?dias=30').catch(() => []),
+            apiFetch('GET', '/api/seguros/alertas?dias=30').catch(() => []),
+          ]);
+          const itens = [
+            ...(certAlertas||[]).map(c => ({ ...c, _origem: 'Certificado' })),
+            ...(seguroAlertas||[]).map(c => ({ ...c, _origem: 'Seguro' })),
+          ].sort((a,b) => a.validade.localeCompare(b.validade));
+          if (itens.length) {
+            const certWarnEl   = document.getElementById('certWarnOverlay');
+            const certMsgEl    = document.getElementById('certWarnMsg');
+            const certTitleEl  = document.getElementById('certWarnTitle');
             if (certWarnEl && certMsgEl) {
-              const linhas = certAlertas.map(c => {
+              if (certTitleEl) certTitleEl.textContent = (certAlertas?.length && seguroAlertas?.length) ? 'Certificados & Seguros' : (seguroAlertas?.length ? 'Seguros' : 'Certificados Digitais');
+              const linhas = itens.map(c => {
                 const days = Math.round((new Date(c.validade + 'T12:00:00') - new Date().setHours(0,0,0,0)) / 86400000);
                 const status = days < 0 ? `<span style="color:#F85149">VENCIDO há ${Math.abs(days)}d</span>`
                              : days === 0 ? `<span style="color:#F85149">vence HOJE</span>`
                              : days <= 15  ? `<span style="color:#E3B341">vence em ${days}d</span>`
                              : `<span style="color:#4493F8">vence em ${days}d</span>`;
-                return `<strong>${_escHtml(c.loja)}</strong> · ${_escHtml(c.tipo||'')} — ${status}`;
+                return `<strong>${_escHtml(c.loja)}</strong> · ${_escHtml(c._origem)}: ${_escHtml(c.tipo||'')} — ${status}`;
               }).join('<br>');
               certMsgEl.innerHTML = linhas;
               setTimeout(() => certWarnEl.classList.remove('hidden'), anivHoje.length ? 1200 : 700);
