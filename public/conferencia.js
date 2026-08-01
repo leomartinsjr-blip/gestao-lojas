@@ -2191,18 +2191,27 @@
 
   // Mapeamento completo das formas do Microvix → bandeira + modalidade + parcelas
   // Baseado no FaturamentoPorPlanos exportado
-  const _C10 = [1,2,3,4,5,6,7,8,9,10];
+  // Contrato Rede vai até 12x
+  const MAX_PARCELAS = 12;
+  const _C12 = Array.from({ length: MAX_PARCELAS }, (_, i) => i + 1);
   // Débito habilitado em todas as bandeiras: a Rede reporta débito direto em
   // Visa/Mastercard (não só via Visa Electron/Maestro).
   const TAXAS_BANDEIRAS = [
-    { id: 'mastercard', label: 'Mastercard',    credito: _C10, debito: true  },
-    { id: 'visa',       label: 'Visa',          credito: _C10, debito: true  },
-    { id: 'elo',        label: 'Elo',           credito: _C10, debito: true  },
-    { id: 'amex',       label: 'Amex',          credito: _C10, debito: true  },
-    { id: 'maestro',    label: 'Maestro',       credito: _C10, debito: true  },
-    { id: 'visa_elec',  label: 'Visa Electron', credito: _C10, debito: true  },
-    { id: 'hipercard',  label: 'Hipercard',     credito: _C10, debito: true  },
-    { id: 'diners',     label: 'Diners',        credito: _C10, debito: true  },
+    { id: 'mastercard', label: 'Mastercard',    credito: _C12, debito: true  },
+    { id: 'visa',       label: 'Visa',          credito: _C12, debito: true  },
+    { id: 'elo',        label: 'Elo',           credito: _C12, debito: true  },
+    { id: 'amex',       label: 'Amex',          credito: _C12, debito: true  },
+    { id: 'maestro',    label: 'Maestro',       credito: _C12, debito: true  },
+    { id: 'visa_elec',  label: 'Visa Electron', credito: _C12, debito: true  },
+    { id: 'hipercard',  label: 'Hipercard',     credito: _C12, debito: true  },
+    { id: 'diners',     label: 'Diners',        credito: _C12, debito: true  },
+    { id: 'cabal',      label: 'Cabal',         credito: _C12, debito: true  },
+    { id: 'sicredi',    label: 'Sicredi',       credito: _C12, debito: true  },
+    { id: 'sorocred',   label: 'Sorocred',      credito: _C12, debito: true  },
+    { id: 'banescard',  label: 'Banescard',     credito: _C12, debito: true  },
+    { id: 'jcb',        label: 'JCB',           credito: _C12, debito: true  },
+    { id: 'credz',      label: 'Credz',         credito: _C12, debito: true  },
+    { id: 'cup',        label: 'Cup',           credito: _C12, debito: true  },
     { id: 'pix',        label: 'PIX',           credito: [],   debito: false, pix: true },
   ];
 
@@ -2218,8 +2227,7 @@
     if (!el) return;
 
     // Encontra o máximo de parcelas para montar o cabeçalho
-    const maxParc = 10;
-    const parcs   = Array.from({length: maxParc}, (_, i) => i + 1);
+    const parcs = _C12.slice();
 
     const colHeaders = `
       <th class="bandeira-hdr">Bandeira</th>
@@ -2258,6 +2266,17 @@
           <thead><tr>${colHeaders}</tr></thead>
           <tbody>${rows}</tbody>
         </table>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;margin-top:14px;padding:10px 14px;background:var(--cf-card2);border:1px solid var(--cf-border);border-radius:8px;flex-wrap:wrap">
+        <span style="font-size:11px;font-weight:700;color:var(--cf-text)">Tarifa máxima do PIX</span>
+        <span style="font-size:11px;color:var(--cf-muted)">R$</span>
+        <input class="taxa-input${(taxasData.pix||{}).max !== undefined ? ' filled' : ''}"
+               data-band="pix" data-key="max" style="width:74px"
+               value="${(taxasData.pix||{}).max !== undefined ? taxasData.pix.max : ''}"
+               placeholder="—" type="text" inputmode="decimal">
+        <span style="font-size:11px;color:var(--cf-muted)">
+          teto por transação — o PIX é cobrado como % até esse limite. Deixe em branco se não há teto.
+        </span>
       </div>
       <div style="font-size:11px;color:var(--cf-muted);margin-top:12px">
         💡 Valores em % · Taxa <strong>total</strong> descontada (MDR + recebimento automático), como no extrato da Rede ·

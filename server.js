@@ -8196,11 +8196,14 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
     // db.confTaxas = { mastercard: { debito: 0.72, '1': 2.76, '2': 3.62, ... }, pix: { pix: 0 } }
     const confTaxas = (await readDB()).confTaxas || {};
 
+    const MAX_PARCELAS = 12; // contrato Rede vai até 12x
+
     // Bandeira canônica → id usado na aba Taxas
     const BAND_ID = {
       'Mastercard': 'mastercard', 'Visa': 'visa', 'Elo': 'elo', 'Amex': 'amex',
       'Maestro': 'maestro', 'Visa Electron': 'visa_elec', 'Hipercard': 'hipercard',
-      'Diners': 'diners',
+      'Diners': 'diners', 'Cabal': 'cabal', 'Sicredi': 'sicredi', 'Sorocred': 'sorocred',
+      'Banescard': 'banescard', 'JCB': 'jcb', 'Credz': 'credz', 'Cup': 'cup',
     };
     // Compatibilidade: antes o débito de Visa/Master só podia ser cadastrado nas
     // linhas Visa Electron/Maestro. Só entra quando a linha própria está em branco.
@@ -8216,34 +8219,43 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
       if (/AMEX|AMERICAN EXPRESS/.test(d)) return 'Amex';
       if (/HIPERCARD|HIPER/.test(d))       return 'Hipercard';
       if (/DINERS/.test(d))                return 'Diners';
+      if (/CABAL/.test(d))                 return 'Cabal';
+      if (/SICREDI/.test(d))               return 'Sicredi';
+      if (/SOROCRED/.test(d))              return 'Sorocred';
+      if (/BANESCARD/.test(d))             return 'Banescard';
+      if (/\bJCB\b/.test(d))               return 'JCB';
+      if (/CREDZ/.test(d))                 return 'Credz';
+      if (/\bCUP\b|UNION\s*PAY/.test(d))   return 'Cup';
       if (/ALELO/.test(d))                 return 'Alelo';
       if (/SODEXO/.test(d))                return 'Sodexo';
       if (/\bVR\b/.test(d))                return 'VR';
       return '';
     }
 
-    // Retorna { taxa, bandId, key, label } — taxa null quando não há cadastro
+    const num = v => (v !== undefined && v !== null && v !== '' && Number.isFinite(+v)) ? +v : null;
+
+    // Retorna { taxa, label, mod, teto } — taxa null quando não há cadastro.
+    // teto = tarifa máxima por transação em R$ (o PIX da Rede é % até um limite).
     function resolveTaxa({ isPix, debito, bandeira, parcelas }) {
       if (isPix) {
-        const t = confTaxas.pix && confTaxas.pix.pix;
-        return { taxa: Number.isFinite(+t) && t !== '' ? +t : null, label: 'PIX', mod: 'PIX' };
+        const pix = confTaxas.pix || {};
+        return { taxa: num(pix.pix), label: 'PIX', mod: 'PIX', teto: num(pix.max) };
       }
       const bandId = BAND_ID[bandeira] || '';
       const label  = bandeira || 'Sem bandeira';
-      if (!bandId) return { taxa: null, label, mod: debito ? 'Débito' : 'Crédito' };
+      if (!bandId) return { taxa: null, label, mod: debito ? 'Débito' : 'Crédito', teto: null };
       if (debito) {
         const ids = [bandId, BAND_DEBITO_ALIAS[bandId]].filter(Boolean);
         for (const id of ids) {
-          const t = confTaxas[id] && confTaxas[id].debito;
-          if (Number.isFinite(+t) && t !== '' && t !== undefined) return { taxa: +t, label, mod: 'Débito' };
+          const t = num(confTaxas[id] && confTaxas[id].debito);
+          if (t !== null) return { taxa: t, label, mod: 'Débito', teto: null };
         }
-        return { taxa: null, label, mod: 'Débito' };
+        return { taxa: null, label, mod: 'Débito', teto: null };
       }
-      const p = Math.min(Math.max(parseInt(parcelas) || 1, 1), 10);
-      const t = confTaxas[bandId] && confTaxas[bandId][String(p)];
+      const p = Math.min(Math.max(parseInt(parcelas) || 1, 1), MAX_PARCELAS);
       return {
-        taxa: Number.isFinite(+t) && t !== '' && t !== undefined ? +t : null,
-        label, mod: `Crédito ${p}x`,
+        taxa: num(confTaxas[bandId] && confTaxas[bandId][String(p)]),
+        label, mod: `Crédito ${p}x`, teto: null,
       };
     }
 
@@ -8361,6 +8373,7 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
       // pois não informa parcelamento (seria tratado como 1x e subestimaria a taxa).
       const pagamentos  = [];
       const docsComCard = new Set();
+      const docsComPix  = new Set();
 
       for (const r of planoRows) {
         const rowCnpj = (r.cnpj_emp||r.cnpj||'').replace(/\D/g,'');
@@ -8385,11 +8398,28 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
         })();
 
         if (isCard) docsComCard.add(doc);
+        if (isPix)  docsComPix.add(doc);
         pagamentos.push({
           isPix, debito: tipoT === 'D',
           bandeira: isCard ? extractBandeira(descP) : '',
           parcelas, valor: docSign[doc] * valor,
         });
+      }
+
+      // Fallback PIX: LinxMovimentoPlanos nem sempre devolve a entrada de PIX
+      // separada — lê total_pix do LinxMovimento (total_* repete por item, dedup por doc)
+      const pixPorDoc = {};
+      for (const r of rows) {
+        const rowCnpj = (r.cnpj_emp||r.cnpj||'').replace(/\D/g,'');
+        if (!rowCnpj || rowCnpj !== cnpjClean) continue;
+        const doc = String(r.documento||'').trim();
+        if (!doc || docSign[doc] === undefined || docsComPix.has(doc)) continue;
+        if (pixPorDoc[doc] !== undefined) continue;
+        const vlrPix = parseBR(r.total_pix||'0');
+        if (vlrPix !== 0) pixPorDoc[doc] = vlrPix;
+      }
+      for (const [doc, vlrPix] of Object.entries(pixPorDoc)) {
+        pagamentos.push({ isPix: true, debito: false, bandeira: '', parcelas: 1, valor: docSign[doc] * vlrPix });
       }
 
       for (const r of cartoesRows) {
@@ -8409,8 +8439,12 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
       }
 
       for (const p of pagamentos) {
-        const { taxa, label, mod } = resolveTaxa(p);
-        const vlrTaxa = taxa === null ? 0 : p.valor * (taxa / 100);
+        const { taxa, label, mod, teto } = resolveTaxa(p);
+        let vlrTaxa = taxa === null ? 0 : p.valor * (taxa / 100);
+        // Tarifa com teto por transação (PIX): limita o módulo, preservando o sinal
+        if (taxa !== null && teto !== null && Math.abs(vlrTaxa) > teto) {
+          vlrTaxa = (vlrTaxa < 0 ? -1 : 1) * teto;
+        }
         loja.vlrCartao += p.valor;
         loja.vlrTaxa   += vlrTaxa;
         if (taxa === null) loja.vlrCartaoSemTaxa += p.valor;
