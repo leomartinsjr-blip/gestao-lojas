@@ -1832,6 +1832,9 @@
     }
   }
 
+  // Ordenação escolhida na tabela de margem — persiste entre buscas
+  let _margemSort = { key: 'margemPerc', dir: 'desc' };
+
   function renderDashboard({ porLoja, porVendedor, porTaxa, taxasCadastradas }) {
     const lojas = porLoja.filter(l => !l.erro);
     const taxaRows = porTaxa || [];
@@ -1878,11 +1881,22 @@
       const taxa = l.taxaPercLiquido || 0;
       return {
         ...l, cmv, taxa,
+        loja:       LOJA_LABEL[l.board] || l.board,
         custoOper:  cmv + taxa,
         margemPerc: 100 - cmv - taxa,
         margemVlr:  l.vlrLiquido - l.vlrCusto - (l.vlrTaxa || 0),
       };
-    }).sort((a,b) => b.margemPerc - a.margemPerc);
+    });
+
+    // Ordena pela coluna escolhida (_margemSort persiste entre buscas)
+    function ordenarMargem() {
+      const { key, dir } = _margemSort;
+      const sinal = dir === 'asc' ? 1 : -1;
+      margemLojas.sort((a,b) => typeof a[key] === 'string'
+        ? sinal * String(a[key]).localeCompare(String(b[key]), 'pt-BR')
+        : sinal * ((a[key]||0) - (b[key]||0)));
+    }
+    ordenarMargem();
 
     const totCmvP    = tot.vlrLiquido > 0 ? tot.vlrCusto / tot.vlrLiquido * 100 : 0;
     const totTaxaP   = tot.vlrLiquido > 0 ? tot.vlrTaxa  / tot.vlrLiquido * 100 : 0;
@@ -1899,11 +1913,11 @@
     const semDados = l => (l.vlrCartao || 0) === 0;
     const algumSemDados = margemLojas.some(semDados);
 
-    const margemRows = margemLojas.map(l => `
+    const margemBodyHtml = () => margemLojas.map(l => `
       <tr>
         <td style="font-weight:700">
           <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${LOJA_COLORS[l.board]||P('primary')};margin-right:7px"></span>
-          ${esc(LOJA_LABEL[l.board]||l.board)}
+          ${esc(l.loja)}
         </td>
         <td class="num">${fmtR(l.vlrLiquido)}</td>
         <td class="num" style="color:${P('muted')}">${(l.percDesconto||0).toFixed(1)}%</td>
@@ -1917,25 +1931,34 @@
         <td class="num" style="font-weight:700">${fmtR(l.margemVlr)}</td>
       </tr>`).join('');
 
+    const MARGEM_COLS = [
+      { key:'loja',       label:'Loja',          num:false },
+      { key:'vlrLiquido', label:'Venda Líquida', num:true  },
+      { key:'percDesconto',label:'% Desc.<sup>*</sup>', num:true, title:'Desconto concedido sobre o valor bruto' },
+      { key:'cmv',        label:'CMV %',         num:true  },
+      { key:'taxa',       label:'Taxa %',        num:true  },
+      { key:'custoOper',  label:'CMV + Taxa',    num:true  },
+      { key:'margemPerc', label:'Margem %',      num:true  },
+      { key:'margemVlr',  label:'Margem R$',     num:true  },
+    ];
+    const margemHeadHtml = () => MARGEM_COLS.map(c => {
+      const ativo = _margemSort.key === c.key;
+      const seta  = ativo ? (_margemSort.dir === 'asc' ? ' ▲' : ' ▼') : '';
+      return `<th${c.num ? ' class="num"' : ''} data-sort="${c.key}"
+        title="${esc(c.title || 'Clique para ordenar')}"
+        style="cursor:pointer;user-select:none;${ativo ? 'color:var(--cf-primary)' : ''}">${c.label}${seta}</th>`;
+    }).join('');
+
     const margemHtml = `
       <div class="panel-card" style="margin-bottom:20px">
         <div class="panel-card-hdr">
           <span class="panel-card-title">Margem por Loja</span>
           <span class="panel-card-meta">venda líquida − CMV − taxa de maquineta · antes de aluguel, folha e impostos</span>
         </div>
-        <table class="cf-tbl">
-          <thead><tr>
-            <th>Loja</th>
-            <th class="num">Venda Líquida</th>
-            <th class="num" title="Desconto concedido sobre o valor bruto">% Desc.<sup>*</sup></th>
-            <th class="num">CMV %</th>
-            <th class="num">Taxa %</th>
-            <th class="num">CMV + Taxa</th>
-            <th class="num">Margem %</th>
-            <th class="num">Margem R$</th>
-          </tr></thead>
-          <tbody>${margemRows || `<tr><td colspan="8" style="text-align:center;color:${P('muted')};padding:24px;font-size:12px">Sem vendas no período</td></tr>`}</tbody>
-          ${margemRows ? `<tfoot><tr style="border-top:2px solid var(--cf-border)">
+        <table class="cf-tbl" id="margemTbl">
+          <thead><tr id="margemHead">${margemHeadHtml()}</tr></thead>
+          <tbody id="margemBody">${margemLojas.length ? margemBodyHtml() : `<tr><td colspan="8" style="text-align:center;color:${P('muted')};padding:24px;font-size:12px">Sem vendas no período</td></tr>`}</tbody>
+          ${margemLojas.length ? `<tfoot><tr style="border-top:2px solid var(--cf-border)">
             <td style="font-weight:800">Consolidado</td>
             <td class="num" style="font-weight:700">${fmtR(tot.vlrLiquido)}</td>
             <td class="num" style="color:${P('muted')}">${percDescGeral.toFixed(1)}%</td>
@@ -2126,6 +2149,25 @@
       </div>
       ${taxaPanelHtml}
       ${errosHtml}`;
+
+    // Ordenação por clique no cabeçalho da tabela de margem
+    const margemHead = $('margemHead');
+    if (margemHead && margemLojas.length) {
+      margemHead.addEventListener('click', e => {
+        const th = e.target.closest('th[data-sort]');
+        if (!th) return;
+        const k = th.dataset.sort;
+        if (_margemSort.key === k) {
+          _margemSort.dir = _margemSort.dir === 'desc' ? 'asc' : 'desc';
+        } else {
+          // Texto começa A→Z; número começa do maior
+          _margemSort = { key: k, dir: k === 'loja' ? 'asc' : 'desc' };
+        }
+        ordenarMargem();
+        $('margemBody').innerHTML = margemBodyHtml();
+        margemHead.innerHTML = margemHeadHtml();
+      });
+    }
   }
 
   // ════════════════════════════════════════════════════════════════════════
