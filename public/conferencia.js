@@ -1869,6 +1869,90 @@
         ${kpiCard('purple', svgUser(),  (porVendedor||[]).length, 'Vendedores Ativos', 'com desconto registrado', '')}
       </div>`;
 
+    // ── Margem por loja ───────────────────────────────────────────────────
+    // CMV% e Taxa% são ambos sobre a venda líquida, então somam. O % de desconto
+    // é sobre o bruto — fica na tabela como indicador, fora da soma.
+    const comVenda = lojas.filter(l => l.vlrLiquido > 0);
+    const margemLojas = comVenda.map(l => {
+      const cmv  = l.cmvPerc || 0;
+      const taxa = l.taxaPercLiquido || 0;
+      return {
+        ...l, cmv, taxa,
+        custoOper:  cmv + taxa,
+        margemPerc: 100 - cmv - taxa,
+        margemVlr:  l.vlrLiquido - l.vlrCusto - (l.vlrTaxa || 0),
+      };
+    }).sort((a,b) => b.margemPerc - a.margemPerc);
+
+    const totCmvP    = tot.vlrLiquido > 0 ? tot.vlrCusto / tot.vlrLiquido * 100 : 0;
+    const totTaxaP   = tot.vlrLiquido > 0 ? tot.vlrTaxa  / tot.vlrLiquido * 100 : 0;
+    const totMargemP = 100 - totCmvP - totTaxaP;
+    const totMargemV = tot.vlrLiquido - tot.vlrCusto - tot.vlrTaxa;
+
+    // Cor da margem relativa à média da rede: destaca quem puxa para cima/baixo
+    const corMargem = m => m >= totMargemP + 1.5 ? P('green')
+                        : m <= totMargemP - 1.5 ? P('alert')
+                        : P('accent');
+
+    // Loja com venda mas sem nenhum cartão/PIX é quase sempre falha na busca das
+    // formas de pagamento — sinaliza, senão ela aparece como a mais rentável.
+    const semDados = l => (l.vlrCartao || 0) === 0;
+    const algumSemDados = margemLojas.some(semDados);
+
+    const margemRows = margemLojas.map(l => `
+      <tr>
+        <td style="font-weight:700">
+          <span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${LOJA_COLORS[l.board]||P('primary')};margin-right:7px"></span>
+          ${esc(LOJA_LABEL[l.board]||l.board)}
+        </td>
+        <td class="num">${fmtR(l.vlrLiquido)}</td>
+        <td class="num" style="color:${P('muted')}">${(l.percDesconto||0).toFixed(1)}%</td>
+        <td class="num">${l.cmv.toFixed(1)}%</td>
+        <td class="num"${semDados(l) ? ` style="color:${P('accent')}" title="Sem dados de cartão/PIX no período"` : ''}>${semDados(l) ? '—' : l.taxa.toFixed(2)+'%'}</td>
+        <td class="num" style="font-weight:700">${l.custoOper.toFixed(1)}%</td>
+        <td class="num" style="font-weight:800;color:${semDados(l) ? P('muted') : corMargem(l.margemPerc)}"
+            ${semDados(l) ? 'title="Margem superestimada: a taxa de maquineta não entrou no cálculo"' : ''}>
+          ${l.margemPerc.toFixed(1)}%${semDados(l) ? ' <sup style="color:'+P('accent')+'">⚠</sup>' : ''}
+        </td>
+        <td class="num" style="font-weight:700">${fmtR(l.margemVlr)}</td>
+      </tr>`).join('');
+
+    const margemHtml = `
+      <div class="panel-card" style="margin-bottom:20px">
+        <div class="panel-card-hdr">
+          <span class="panel-card-title">Margem por Loja</span>
+          <span class="panel-card-meta">venda líquida − CMV − taxa de maquineta · antes de aluguel, folha e impostos</span>
+        </div>
+        <table class="cf-tbl">
+          <thead><tr>
+            <th>Loja</th>
+            <th class="num">Venda Líquida</th>
+            <th class="num" title="Desconto concedido sobre o valor bruto">% Desc.<sup>*</sup></th>
+            <th class="num">CMV %</th>
+            <th class="num">Taxa %</th>
+            <th class="num">CMV + Taxa</th>
+            <th class="num">Margem %</th>
+            <th class="num">Margem R$</th>
+          </tr></thead>
+          <tbody>${margemRows || `<tr><td colspan="8" style="text-align:center;color:${P('muted')};padding:24px;font-size:12px">Sem vendas no período</td></tr>`}</tbody>
+          ${margemRows ? `<tfoot><tr style="border-top:2px solid var(--cf-border)">
+            <td style="font-weight:800">Consolidado</td>
+            <td class="num" style="font-weight:700">${fmtR(tot.vlrLiquido)}</td>
+            <td class="num" style="color:${P('muted')}">${percDescGeral.toFixed(1)}%</td>
+            <td class="num" style="font-weight:700">${totCmvP.toFixed(1)}%</td>
+            <td class="num" style="font-weight:700">${totTaxaP.toFixed(2)}%</td>
+            <td class="num" style="font-weight:800">${(totCmvP+totTaxaP).toFixed(1)}%</td>
+            <td class="num" style="font-weight:800">${totMargemP.toFixed(1)}%</td>
+            <td class="num" style="font-weight:800">${fmtR(totMargemV)}</td>
+          </tr></tfoot>` : ''}
+        </table>
+        <div style="font-size:10px;color:${P('muted')};padding:8px 0 2px">
+          <sup>*</sup> CMV%, Taxa% e Margem% são sobre a venda líquida e por isso somam.
+          O % de desconto é sobre o valor bruto — está aqui como indicador, fora da soma.
+          ${algumSemDados ? `<br><span style="color:${P('accent')}">⚠ Loja marcada com ⚠ teve venda mas nenhum cartão/PIX no período — provável falha na consulta ao Microvix, e a margem dela está superestimada.</span>` : ''}
+        </div>
+      </div>`;
+
     // ── Horizontal bar helper ─────────────────────────────────────────────
     const maxDesc = Math.max(...lojas.map(l=>l.percDesconto), 0.01);
     const maxCmv  = Math.max(...lojas.map(l=>l.cmvPerc),      0.01);
@@ -2006,6 +2090,7 @@
 
     $('dResult').innerHTML = `
       ${kpiHtml}
+      ${margemHtml}
       <div class="cf-grid2 wide-left">
         <div class="col-stack">
           <div class="panel-card">
