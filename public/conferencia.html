@@ -112,6 +112,10 @@ body {
   margin-bottom: 18px;
 }
 @media (max-width: 900px) { .kpi-row { grid-template-columns: repeat(2,1fr); } }
+/* linha com 5 KPIs (dashboard: inclui taxa de maquineta) */
+.kpi-row.kpi-5 { grid-template-columns: repeat(5, 1fr); }
+@media (max-width: 1400px) { .kpi-row.kpi-5 { grid-template-columns: repeat(3,1fr); } }
+@media (max-width: 900px)  { .kpi-row.kpi-5 { grid-template-columns: repeat(2,1fr); } }
 /* breakdown cards (formas + vendedor) ocupam 2 colunas cada */
 .kpi-bk-card { grid-column: span 2; }
 @media (max-width: 900px) { .kpi-bk-card { grid-column: span 2; } }
@@ -209,7 +213,9 @@ body {
 .hbar-top  { display: flex; align-items: baseline; justify-content: space-between; }
 .hbar-label { font-size: 12px; font-weight: 700; }
 .hbar-value { font-size: 14px; font-weight: 800; }
-.hbar-sub   { font-size: 10px; color: var(--cf-muted); }
+.hbar-sub   { font-size: 11px; color: #99A4B2; line-height: 1.5; }
+/* destaca os valores dentro do sublabel (R$, %) — o resto fica como legenda */
+.hbar-sub b { color: var(--cf-text); font-weight: 700; }
 .hbar-track { height: 7px; background: var(--cf-card2); border-radius: 4px; overflow: hidden; }
 .hbar-fill  { height: 100%; border-radius: 4px; transition: width .5s ease; }
 
@@ -751,8 +757,8 @@ td.muted  { color: var(--cf-muted); }
 <div class="cf-panel" id="tab-taxas">
   <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
     <div>
-      <div style="font-weight:800;font-size:14px">Taxas de Cartão (MDR)</div>
-      <div style="font-size:11px;color:var(--cf-muted);margin-top:3px">Cadastre as taxas cobradas por bandeira e parcelas. Use ponto ou vírgula. Ex: 2,17</div>
+      <div style="font-weight:800;font-size:14px">Taxas de Cartão</div>
+      <div style="font-size:11px;color:var(--cf-muted);margin-top:3px">Cadastre a taxa <strong>total</strong> descontada por bandeira e parcelas — MDR + recebimento automático. Use ponto ou vírgula. Ex: 5,54</div>
     </div>
     <button class="btn-primary" id="salvarTaxasBtn" style="margin-left:auto">💾 Salvar Taxas</button>
   </div>

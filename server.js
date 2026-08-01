@@ -8159,7 +8159,7 @@ app.put('/api/conferencia/regras', requireEscritorioOrAdmin, async (req, res) =>
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/conferencia/taxas — retorna tabela de taxas MDR por bandeira/parcelas
+// GET /api/conferencia/taxas — retorna tabela de taxas de cartão por bandeira/parcelas
 app.get('/api/conferencia/taxas', requireEscritorioOrAdmin, async (req, res) => {
   try {
     const db = await readDB();
@@ -8188,18 +8188,77 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
     const BOARDS  = ['delrey','minas','contagem','estacao','tommy','surfers'];
     const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
 
-    const { fetchMovimento, fetchVendedores } = require('./services/microvix');
+    const { fetchMovimento, fetchVendedores, fetchMovimentoPlanos, fetchMovimentoCartoes } = require('./services/microvix');
 
-    // Busca todas as lojas em paralelo (movimento + vendedores para resolver nomes)
+    // ── Taxas de maquineta cadastradas na aba Taxas ──────────────────────────
+    // São a taxa TOTAL descontada pela adquirente (MDR + recebimento automático),
+    // não só o MDR — logo vlrTaxa já é o desconto real da maquineta.
+    // db.confTaxas = { mastercard: { debito: 0.72, '1': 2.76, '2': 3.62, ... }, pix: { pix: 0 } }
+    const confTaxas = (await readDB()).confTaxas || {};
+
+    // Bandeira canônica → id usado na aba Taxas
+    const BAND_ID = {
+      'Mastercard': 'mastercard', 'Visa': 'visa', 'Elo': 'elo', 'Amex': 'amex',
+      'Maestro': 'maestro', 'Visa Electron': 'visa_elec', 'Hipercard': 'hipercard',
+      'Diners': 'diners',
+    };
+    // Compatibilidade: antes o débito de Visa/Master só podia ser cadastrado nas
+    // linhas Visa Electron/Maestro. Só entra quando a linha própria está em branco.
+    const BAND_DEBITO_ALIAS = { visa: 'visa_elec', mastercard: 'maestro' };
+
+    // Mesma normalização usada na aba Vendas (desc_plano → bandeira canônica)
+    function extractBandeira(descPlano) {
+      const d = (descPlano || '').toUpperCase();
+      if (/MAESTRO/.test(d))               return 'Maestro';
+      if (/MASTER/.test(d))                return 'Mastercard';
+      if (/VISA/.test(d))                  return 'Visa';
+      if (/\bELO\b/.test(d))               return 'Elo';
+      if (/AMEX|AMERICAN EXPRESS/.test(d)) return 'Amex';
+      if (/HIPERCARD|HIPER/.test(d))       return 'Hipercard';
+      if (/DINERS/.test(d))                return 'Diners';
+      if (/ALELO/.test(d))                 return 'Alelo';
+      if (/SODEXO/.test(d))                return 'Sodexo';
+      if (/\bVR\b/.test(d))                return 'VR';
+      return '';
+    }
+
+    // Retorna { taxa, bandId, key, label } — taxa null quando não há cadastro
+    function resolveTaxa({ isPix, debito, bandeira, parcelas }) {
+      if (isPix) {
+        const t = confTaxas.pix && confTaxas.pix.pix;
+        return { taxa: Number.isFinite(+t) && t !== '' ? +t : null, label: 'PIX', mod: 'PIX' };
+      }
+      const bandId = BAND_ID[bandeira] || '';
+      const label  = bandeira || 'Sem bandeira';
+      if (!bandId) return { taxa: null, label, mod: debito ? 'Débito' : 'Crédito' };
+      if (debito) {
+        const ids = [bandId, BAND_DEBITO_ALIAS[bandId]].filter(Boolean);
+        for (const id of ids) {
+          const t = confTaxas[id] && confTaxas[id].debito;
+          if (Number.isFinite(+t) && t !== '' && t !== undefined) return { taxa: +t, label, mod: 'Débito' };
+        }
+        return { taxa: null, label, mod: 'Débito' };
+      }
+      const p = Math.min(Math.max(parseInt(parcelas) || 1, 1), 10);
+      const t = confTaxas[bandId] && confTaxas[bandId][String(p)];
+      return {
+        taxa: Number.isFinite(+t) && t !== '' && t !== undefined ? +t : null,
+        label, mod: `Crédito ${p}x`,
+      };
+    }
+
+    // Busca todas as lojas em paralelo (movimento + vendedores + formas de pagamento)
     const resultados = await Promise.all(BOARDS.map(async board => {
       const cnpj = lojas[board];
       if (!cnpj) return { board, erro: 'não configurada' };
       const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
       const cnpjClean = cnpj.replace(/\D/g,'');
       try {
-        const [rows, vendRows] = await Promise.all([
+        const [rows, vendRows, planoRows, cartoesRows] = await Promise.all([
           fetchMovimento(cnpj, dtIni, dtFin, chave),
           fetchVendedores(cnpjClean, chave).catch(() => []),
+          fetchMovimentoPlanos(cnpj, dtIni, dtFin, chave).catch(() => []),
+          fetchMovimentoCartoes(cnpj, dtIni, dtFin, chave).catch(() => []),
         ]);
         const vendNomes = {};
         for (const v of (Array.isArray(vendRows) ? vendRows : [])) {
@@ -8207,20 +8266,30 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
           const nom = (v.nome_vendedor || v.nome || '').trim();
           if (cod && nom) vendNomes[cod] = nom;
         }
-        return { board, cnpjClean, rows: Array.isArray(rows) ? rows : [], vendNomes };
+        return {
+          board, cnpjClean,
+          rows:        Array.isArray(rows)        ? rows        : [],
+          planoRows:   Array.isArray(planoRows)   ? planoRows   : [],
+          cartoesRows: Array.isArray(cartoesRows) ? cartoesRows : [],
+          vendNomes,
+        };
       } catch (e) {
-        return { board, erro: e.message, rows: [], vendNomes: {} };
+        return { board, erro: e.message, rows: [], planoRows: [], cartoesRows: [], vendNomes: {} };
       }
     }));
 
-    const porLoja     = {};
-    const porVendedor = {};
+    const porLoja      = {};
+    const porVendedor  = {};
+    const taxaGlobal   = {}; // `${label}::${mod}` → { bandeira, mod, taxa, valor, vlrTaxa, semTaxa }
 
-    for (const { board, cnpjClean, rows, erro, vendNomes } of resultados) {
+    for (const { board, cnpjClean, rows, planoRows, cartoesRows, erro, vendNomes } of resultados) {
       if (erro) { porLoja[board] = { board, erro }; continue; }
 
-      const loja = { board, vlrLiquido:0, vlrBruto:0, vlrDesconto:0, vlrCusto:0, qtdItens:0 };
+      const loja = { board, vlrLiquido:0, vlrBruto:0, vlrDesconto:0, vlrCusto:0, qtdItens:0,
+                     vlrCartao:0, vlrTaxa:0, vlrCartaoSemTaxa:0 };
       const seenDocs = new Set();
+      const docSign  = {}; // documento válido da loja → sinal (+1 venda, -1 devolução)
+      const identMap = {}; // identificador → documento (LinxMovimentoPlanos usa identificador)
 
       for (const r of rows) {
         const rowCnpj = (r.cnpj_emp||r.cnpj||'').replace(/\D/g,'');
@@ -8235,6 +8304,17 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
         if (serie === 'J') continue;
 
         const sign     = op === 'DS' ? -1 : 1;
+
+        // Registra os documentos válidos da loja para cruzar com as formas de pagamento
+        {
+          const d0 = String(r.documento||'').trim();
+          const i0 = String(r.identificador||'').trim();
+          if (d0) {
+            docSign[d0] = sign;
+            if (i0 && !identMap[i0]) identMap[i0] = d0;
+          }
+        }
+
         const qty      = parseBR(r.quantidade||'1');
         const vlrUnit  = parseBR(r.preco_tabela_epoca||r.preco_unitario||'0');
         const vlrDesc  = parseBR(r.desconto_item||r.desconto_total_item||'0');
@@ -8275,8 +8355,77 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
         }
       }
 
+      // ── Taxas de maquineta ──────────────────────────────────────────────
+      // Fonte primária: LinxMovimentoPlanos (traz desc_plano + qtde_parcelas).
+      // LinxMovimentoCartoes entra só como fallback nos docs sem cartão nos planos,
+      // pois não informa parcelamento (seria tratado como 1x e subestimaria a taxa).
+      const pagamentos  = [];
+      const docsComCard = new Set();
+
+      for (const r of planoRows) {
+        const rowCnpj = (r.cnpj_emp||r.cnpj||'').replace(/\D/g,'');
+        if (rowCnpj && rowCnpj !== cnpjClean) continue;
+        const ident = String(r.identificador||'').trim();
+        const doc   = (ident && identMap[ident]) || String(r.documento||'').trim();
+        if (!doc || docSign[doc] === undefined) continue;
+
+        const descP = (r.desc_plano||'').trim();
+        const tipoT = (r.tipo_transacao||'').trim().toUpperCase();
+        const forma = (r.forma_pgto||'').trim();
+        const isPix = /pix/i.test(forma) || /\bPIX\b/.test(descP.toUpperCase());
+        const isCard= !isPix && (tipoT === 'C' || tipoT === 'D');
+        if (!isPix && !isCard) continue;
+
+        const valor = parseBR(r.total || r.valor || r.valor_plano || '0');
+        if (valor === 0) continue;
+
+        const parcelas = parseInt(r.qtde_parcelas || '') || (() => {
+          const m = descP.toUpperCase().match(/\b(\d+)\s*X\b/);
+          return m ? parseInt(m[1]) : 1;
+        })();
+
+        if (isCard) docsComCard.add(doc);
+        pagamentos.push({
+          isPix, debito: tipoT === 'D',
+          bandeira: isCard ? extractBandeira(descP) : '',
+          parcelas, valor: docSign[doc] * valor,
+        });
+      }
+
+      for (const r of cartoesRows) {
+        const rowCnpj = (r.cnpj_emp||r.cnpj||'').replace(/\D/g,'');
+        if (rowCnpj && rowCnpj !== cnpjClean) continue;
+        const doc = String(r.cupomfiscal || r.documento || '').trim();
+        if (!doc || docSign[doc] === undefined || docsComCard.has(doc)) continue;
+        const valor = parseBR(r.valor || r.valor_total || '0');
+        if (valor === 0) continue;
+        const cd          = String(r.credito_debito||'').trim().toUpperCase();
+        const bandeiraRaw = (r.descricao_bandeira || r.bandeira || r.desc_bandeira || '').trim();
+        pagamentos.push({
+          isPix: false, debito: cd === 'D',
+          bandeira: extractBandeira(bandeiraRaw) || bandeiraRaw,
+          parcelas: 1, valor: docSign[doc] * valor,
+        });
+      }
+
+      for (const p of pagamentos) {
+        const { taxa, label, mod } = resolveTaxa(p);
+        const vlrTaxa = taxa === null ? 0 : p.valor * (taxa / 100);
+        loja.vlrCartao += p.valor;
+        loja.vlrTaxa   += vlrTaxa;
+        if (taxa === null) loja.vlrCartaoSemTaxa += p.valor;
+
+        const gk = `${label}::${mod}`;
+        if (!taxaGlobal[gk]) taxaGlobal[gk] = { bandeira: label, mod, taxa, valor: 0, vlrTaxa: 0, semTaxa: taxa === null };
+        taxaGlobal[gk].valor   += p.valor;
+        taxaGlobal[gk].vlrTaxa += vlrTaxa;
+      }
+
       loja.percDesconto = loja.vlrBruto > 0 ? (loja.vlrDesconto / loja.vlrBruto) * 100 : 0;
       loja.cmvPerc      = loja.vlrLiquido > 0 ? (loja.vlrCusto / loja.vlrLiquido) * 100 : 0;
+      // % efetivo da taxa sobre o que passou na maquineta e sobre a venda líquida
+      loja.taxaPercCartao  = loja.vlrCartao  > 0 ? (loja.vlrTaxa / loja.vlrCartao)  * 100 : 0;
+      loja.taxaPercLiquido = loja.vlrLiquido > 0 ? (loja.vlrTaxa / loja.vlrLiquido) * 100 : 0;
       porLoja[board] = loja;
     }
 
@@ -8286,10 +8435,25 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
       percDesconto: v.vlrBruto > 0 ? (v.vlrDesconto / v.vlrBruto) * 100 : 0,
     }));
 
+    // Consolidado de taxas por bandeira/modalidade (todas as lojas)
+    const porTaxa = Object.values(taxaGlobal)
+      .filter(t => Math.abs(t.valor) > 0.005)
+      .map(t => ({
+        bandeira: t.bandeira,
+        mod:      t.mod,
+        taxa:     t.taxa,
+        valor:    +t.valor.toFixed(2),
+        vlrTaxa:  +t.vlrTaxa.toFixed(2),
+        semTaxa:  t.semTaxa,
+      }))
+      .sort((a,b) => b.valor - a.valor);
+
     res.json({
       dtIni, dtFin,
       porLoja:     Object.values(porLoja),
       porVendedor: vendedores.sort((a,b) => b.percDesconto - a.percDesconto).slice(0, 20),
+      porTaxa,
+      taxasCadastradas: Object.keys(confTaxas).length > 0,
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

@@ -1832,8 +1832,9 @@
     }
   }
 
-  function renderDashboard({ porLoja, porVendedor }) {
+  function renderDashboard({ porLoja, porVendedor, porTaxa, taxasCadastradas }) {
     const lojas = porLoja.filter(l => !l.erro);
+    const taxaRows = porTaxa || [];
 
     // Totais consolidados
     const tot = lojas.reduce((s,l) => ({
@@ -1841,18 +1842,29 @@
       vlrBruto:    s.vlrBruto    + l.vlrBruto,
       vlrDesconto: s.vlrDesconto + l.vlrDesconto,
       vlrCusto:    s.vlrCusto    + l.vlrCusto,
-    }), { vlrLiquido:0, vlrBruto:0, vlrDesconto:0, vlrCusto:0 });
+      vlrCartao:   s.vlrCartao   + (l.vlrCartao||0),
+      vlrTaxa:     s.vlrTaxa     + (l.vlrTaxa||0),
+      vlrSemTaxa:  s.vlrSemTaxa  + (l.vlrCartaoSemTaxa||0),
+    }), { vlrLiquido:0, vlrBruto:0, vlrDesconto:0, vlrCusto:0, vlrCartao:0, vlrTaxa:0, vlrSemTaxa:0 });
 
     const cmvGeral    = tot.vlrLiquido > 0 ? (tot.vlrCusto / tot.vlrLiquido * 100) : 0;
     const percDescGeral = tot.vlrBruto > 0 ? (tot.vlrDesconto / tot.vlrBruto * 100) : 0;
-    const cmvColor    = cmvGeral > 60 ? 'alert' : cmvGeral > 45 ? 'amber' : 'green';
-    const descColor   = percDescGeral > 8 ? 'alert' : percDescGeral > 4 ? 'amber' : 'green';
+    const cmvColor    = cmvGeral > 60 ? 'red' : cmvGeral > 45 ? 'amber' : 'green';
+    const descColor   = percDescGeral > 8 ? 'red' : percDescGeral > 4 ? 'amber' : 'green';
+
+    // Taxa de maquineta
+    const taxaPercCartao  = tot.vlrCartao  > 0 ? (tot.vlrTaxa / tot.vlrCartao  * 100) : 0;
+    const taxaPercLiquido = tot.vlrLiquido > 0 ? (tot.vlrTaxa / tot.vlrLiquido * 100) : 0;
+    const semTaxaPerc     = tot.vlrCartao  > 0 ? (tot.vlrSemTaxa / tot.vlrCartao * 100) : 0;
+    const taxaBadge       = tot.vlrSemTaxa > 0.01 ? `${semTaxaPerc.toFixed(0)}% s/ taxa` : '';
 
     // ── KPI row ──────────────────────────────────────────────────────────
     const kpiHtml = `
-      <div class="kpi-row" style="margin-bottom:20px">
+      <div class="kpi-row kpi-5" style="margin-bottom:20px">
         ${kpiCard('blue',   svgMoney(), fmtR(tot.vlrLiquido),  'Vendas Líquidas',  lojas.length + ' lojas', '')}
         ${kpiCard(descColor,svgTag(),   fmtR(tot.vlrDesconto), 'Desconto Total',   percDescGeral.toFixed(1) + '% sobre bruto', '')}
+        ${kpiCard('teal',   svgPct(),   fmtR(tot.vlrTaxa),     'Taxa de Maquineta',
+                  `${taxaPercCartao.toFixed(2)}% de ${fmtR(tot.vlrCartao)} em cartão/PIX`, '', taxaBadge)}
         ${kpiCard(cmvColor, svgBox(),   cmvGeral.toFixed(1) + '%', 'CMV Geral', fmtR(tot.vlrCusto) + ' de custo', '')}
         ${kpiCard('purple', svgUser(),  (porVendedor||[]).length, 'Vendedores Ativos', 'com desconto registrado', '')}
       </div>`;
@@ -1862,6 +1874,7 @@
     const maxCmv  = Math.max(...lojas.map(l=>l.cmvPerc),      0.01);
     const maxVD   = Math.max(...(porVendedor||[]).map(v=>v.percDesconto), 0.01);
 
+    // sublabel aceita HTML (use <b> para destacar valores) — escape nos dados dinâmicos
     function hbar(label, sublabel, pct, maxPct, color, valueStr) {
       const w = Math.max(2, Math.round((pct / maxPct) * 100));
       const alertCol = pct > maxPct * 0.75 ? P('alert') : pct > maxPct * 0.4 ? P('accent') : P('green');
@@ -1871,7 +1884,7 @@
             <span class="hbar-label">${esc(label)}</span>
             <span class="hbar-value" style="color:${alertCol}">${valueStr}</span>
           </div>
-          ${sublabel ? `<div class="hbar-sub">${esc(sublabel)}</div>` : ''}
+          ${sublabel ? `<div class="hbar-sub">${sublabel}</div>` : ''}
           <div class="hbar-track">
             <div class="hbar-fill" style="width:${w}%;background:${color}"></div>
           </div>
@@ -1882,7 +1895,7 @@
     const lojasDesc = [...lojas].sort((a,b)=>b.percDesconto-a.percDesconto);
     const descLojaRows = lojasDesc.map(l =>
       hbar(LOJA_LABEL[l.board]||l.board,
-           `${fmtR(l.vlrDesconto)} em ${fmtR(l.vlrBruto)} bruto`,
+           `<b>${fmtR(l.vlrDesconto)}</b> em <b>${fmtR(l.vlrBruto)}</b> bruto`,
            l.percDesconto, maxDesc,
            LOJA_COLORS[l.board]||P('primary'),
            l.percDesconto.toFixed(1)+'%')
@@ -1892,11 +1905,75 @@
     const lojasCmv = [...lojas].sort((a,b)=>b.cmvPerc-a.cmvPerc);
     const cmvLojaRows = lojasCmv.map(l =>
       hbar(LOJA_LABEL[l.board]||l.board,
-           `Custo ${fmtR(l.vlrCusto)} / Venda ${fmtR(l.vlrLiquido)}`,
+           `Custo <b>${fmtR(l.vlrCusto)}</b> / Venda <b>${fmtR(l.vlrLiquido)}</b>`,
            l.cmvPerc, maxCmv,
            LOJA_COLORS[l.board]||P('primary'),
            l.cmvPerc.toFixed(1)+'%')
     ).join('');
+
+    // ── Taxa de maquineta por loja ────────────────────────────────────────
+    const maxTaxa = Math.max(...lojas.map(l => l.taxaPercCartao||0), 0.01);
+    const lojasTaxa = [...lojas].filter(l => (l.vlrCartao||0) > 0)
+                                .sort((a,b) => (b.taxaPercCartao||0) - (a.taxaPercCartao||0));
+    const taxaLojaRows = lojasTaxa.map(l =>
+      hbar(LOJA_LABEL[l.board]||l.board,
+           `<b>${fmtR(l.vlrTaxa)}</b> de taxa em <b>${fmtR(l.vlrCartao)}</b> · <b>${(l.taxaPercLiquido||0).toFixed(2)}%</b> da venda líquida`
+             + ((l.vlrCartaoSemTaxa||0) > 0.01
+                ? ` · <span style="color:${P('accent')}">⚠ ${fmtR(l.vlrCartaoSemTaxa)} sem taxa cadastrada</span>` : ''),
+           l.taxaPercCartao||0, maxTaxa,
+           LOJA_COLORS[l.board]||P('primary'),
+           (l.taxaPercCartao||0).toFixed(2)+'%')
+    ).join('') || `<div style="color:${P('muted')};font-size:12px;padding:14px 0">Nenhum pagamento em cartão/PIX no período.</div>`;
+
+    // ── Detalhamento por bandeira/modalidade ──────────────────────────────
+    const totTaxaValor = taxaRows.reduce((s,t) => s + t.valor, 0);
+    const taxaDetRows = taxaRows.map(t => `
+      <tr${t.semTaxa ? ` style="background:${P('accent')}0c"` : ''}>
+        <td style="font-weight:600">${esc(t.bandeira)}</td>
+        <td><span style="font-size:10px;font-weight:700;color:${P('muted')}">${esc(t.mod)}</span></td>
+        <td class="num">${fmtR(t.valor)}</td>
+        <td class="num" style="color:${P('muted')}">${totTaxaValor > 0 ? (t.valor/totTaxaValor*100).toFixed(1)+'%' : '—'}</td>
+        <td class="num">${t.semTaxa
+            ? `<span style="color:${P('accent')};font-weight:700" title="Taxa não cadastrada na aba Taxas">não cadastrada</span>`
+            : `<span style="font-weight:700">${(+t.taxa).toFixed(2)}%</span>`}</td>
+        <td class="num" style="font-weight:800;color:${t.semTaxa ? P('muted') : '#14B8A6'}">${t.semTaxa ? '—' : fmtR(t.vlrTaxa)}</td>
+      </tr>`).join('');
+
+    const taxaAvisoHtml = !taxasCadastradas
+      ? `<div style="margin-top:10px;padding:9px 13px;background:${P('accent')}12;border-left:3px solid ${P('accent')};border-radius:6px;font-size:11px;color:${P('accent')}">
+           Nenhuma taxa cadastrada — preencha a aba <strong>Taxas</strong> para o cálculo do desconto de maquineta.
+         </div>`
+      : (tot.vlrSemTaxa > 0.01
+        ? `<div style="margin-top:10px;padding:9px 13px;background:${P('accent')}12;border-left:3px solid ${P('accent')};border-radius:6px;font-size:11px;color:${P('accent')}">
+             ${fmtR(tot.vlrSemTaxa)} (${semTaxaPerc.toFixed(1)}%) do volume de cartão/PIX está sem taxa cadastrada — o total de taxa está subestimado.
+           </div>`
+        : '');
+
+    const taxaPanelHtml = `
+      <div class="cf-grid2 wide-left" style="margin-top:16px">
+        <div class="panel-card">
+          <div class="panel-card-hdr">
+            <span class="panel-card-title">Taxa de Maquineta por Loja</span>
+            <span class="panel-card-meta">% sobre volume em cartão/PIX</span>
+          </div>
+          <div class="panel-card-body">${taxaLojaRows}</div>
+        </div>
+        <div class="panel-card">
+          <div class="panel-card-hdr">
+            <span class="panel-card-title">Taxas por Bandeira</span>
+            <span class="panel-card-meta">total: ${fmtR(tot.vlrTaxa)}</span>
+          </div>
+          <table class="cf-tbl">
+            <thead><tr>
+              <th>Bandeira</th><th>Modalidade</th>
+              <th class="num">Volume</th><th class="num">Mix</th>
+              <th class="num">Taxa</th><th class="num">Desconto</th>
+            </tr></thead>
+            <tbody>${taxaDetRows || `<tr><td colspan="6" style="text-align:center;color:${P('muted')};padding:24px;font-size:12px">Nenhum pagamento em cartão/PIX no período</td></tr>`}</tbody>
+          </table>
+        </div>
+      </div>
+      ${taxaAvisoHtml}`;
 
     // ── Top vendedores ────────────────────────────────────────────────────
     const topVend = (porVendedor||[]).slice(0,15);
@@ -1959,6 +2036,7 @@
           </table>
         </div>
       </div>
+      ${taxaPanelHtml}
       ${errosHtml}`;
   }
 
@@ -2114,15 +2192,17 @@
   // Mapeamento completo das formas do Microvix → bandeira + modalidade + parcelas
   // Baseado no FaturamentoPorPlanos exportado
   const _C10 = [1,2,3,4,5,6,7,8,9,10];
+  // Débito habilitado em todas as bandeiras: a Rede reporta débito direto em
+  // Visa/Mastercard (não só via Visa Electron/Maestro).
   const TAXAS_BANDEIRAS = [
-    { id: 'mastercard', label: 'Mastercard',    credito: _C10, debito: false },
-    { id: 'visa',       label: 'Visa',          credito: _C10, debito: false },
+    { id: 'mastercard', label: 'Mastercard',    credito: _C10, debito: true  },
+    { id: 'visa',       label: 'Visa',          credito: _C10, debito: true  },
     { id: 'elo',        label: 'Elo',           credito: _C10, debito: true  },
-    { id: 'amex',       label: 'Amex',          credito: _C10, debito: false },
+    { id: 'amex',       label: 'Amex',          credito: _C10, debito: true  },
     { id: 'maestro',    label: 'Maestro',       credito: _C10, debito: true  },
     { id: 'visa_elec',  label: 'Visa Electron', credito: _C10, debito: true  },
-    { id: 'hipercard',  label: 'Hipercard',     credito: _C10, debito: false },
-    { id: 'diners',     label: 'Diners',        credito: _C10, debito: false },
+    { id: 'hipercard',  label: 'Hipercard',     credito: _C10, debito: true  },
+    { id: 'diners',     label: 'Diners',        credito: _C10, debito: true  },
     { id: 'pix',        label: 'PIX',           credito: [],   debito: false, pix: true },
   ];
 
@@ -2180,7 +2260,11 @@
         </table>
       </div>
       <div style="font-size:11px;color:var(--cf-muted);margin-top:12px">
-        💡 Valores em % · Deixe em branco se não utiliza aquela bandeira/parcela · Utilize vírgula ou ponto decimal
+        💡 Valores em % · Taxa <strong>total</strong> descontada (MDR + recebimento automático), como no extrato da Rede ·
+        Deixe em branco se não utiliza aquela bandeira/parcela · Utilize vírgula ou ponto decimal
+      </div>
+      <div style="font-size:11px;color:var(--cf-muted);margin-top:6px">
+        O Dashboard usa estas taxas para calcular o desconto de maquineta — o que ficar em branco aparece lá como “não cadastrada”.
       </div>`;
 
     // Destaca inputs preenchidos em tempo real
