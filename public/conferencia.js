@@ -1864,7 +1864,7 @@
         ${kpiCard('blue',   svgMoney(), fmtR(tot.vlrLiquido),  'Vendas Líquidas',  lojas.length + ' lojas', '')}
         ${kpiCard(descColor,svgTag(),   fmtR(tot.vlrDesconto), 'Desconto Total',   percDescGeral.toFixed(1) + '% sobre bruto', '')}
         ${kpiCard('teal',   svgPct(),   fmtR(tot.vlrTaxa),     'Taxa de Maquineta',
-                  `${taxaPercCartao.toFixed(2)}% de ${fmtR(tot.vlrCartao)} em cartão/PIX`, '', taxaBadge)}
+                  `${taxaPercLiquido.toFixed(2)}% da venda líquida · ${taxaPercCartao.toFixed(2)}% do cartão`, '', taxaBadge)}
         ${kpiCard(cmvColor, svgBox(),   cmvGeral.toFixed(1) + '%', 'CMV Geral', fmtR(tot.vlrCusto) + ' de custo', '')}
         ${kpiCard('purple', svgUser(),  (porVendedor||[]).length, 'Vendedores Ativos', 'com desconto registrado', '')}
       </div>`;
@@ -1912,17 +1912,20 @@
     ).join('');
 
     // ── Taxa de maquineta por loja ────────────────────────────────────────
-    const maxTaxa = Math.max(...lojas.map(l => l.taxaPercCartao||0), 0.01);
+    // Medida sobre a venda líquida (não sobre o volume de cartão): assim as lojas
+    // ficam comparáveis independente de quanto cada uma vende em dinheiro.
+    const maxTaxa = Math.max(...lojas.map(l => l.taxaPercLiquido||0), 0.01);
     const lojasTaxa = [...lojas].filter(l => (l.vlrCartao||0) > 0)
-                                .sort((a,b) => (b.taxaPercCartao||0) - (a.taxaPercCartao||0));
+                                .sort((a,b) => (b.taxaPercLiquido||0) - (a.taxaPercLiquido||0));
     const taxaLojaRows = lojasTaxa.map(l =>
       hbar(LOJA_LABEL[l.board]||l.board,
-           `<b>${fmtR(l.vlrTaxa)}</b> de taxa em <b>${fmtR(l.vlrCartao)}</b> · <b>${(l.taxaPercLiquido||0).toFixed(2)}%</b> da venda líquida`
+           `<b>${fmtR(l.vlrTaxa)}</b> de taxa em <b>${fmtR(l.vlrLiquido)}</b> de venda líquida`
+             + ` · <b>${fmtR(l.vlrCartao)}</b> em cartão/PIX (${(l.taxaPercCartao||0).toFixed(2)}%)`
              + ((l.vlrCartaoSemTaxa||0) > 0.01
                 ? ` · <span style="color:${P('accent')}">⚠ ${fmtR(l.vlrCartaoSemTaxa)} sem taxa cadastrada</span>` : ''),
-           l.taxaPercCartao||0, maxTaxa,
+           l.taxaPercLiquido||0, maxTaxa,
            LOJA_COLORS[l.board]||P('primary'),
-           (l.taxaPercCartao||0).toFixed(2)+'%')
+           (l.taxaPercLiquido||0).toFixed(2)+'%')
     ).join('') || `<div style="color:${P('muted')};font-size:12px;padding:14px 0">Nenhum pagamento em cartão/PIX no período.</div>`;
 
     // ── Detalhamento por bandeira/modalidade ──────────────────────────────
@@ -1954,7 +1957,7 @@
         <div class="panel-card">
           <div class="panel-card-hdr">
             <span class="panel-card-title">Taxa de Maquineta por Loja</span>
-            <span class="panel-card-meta">% sobre volume em cartão/PIX</span>
+            <span class="panel-card-meta">% sobre venda líquida</span>
           </div>
           <div class="panel-card-body">${taxaLojaRows}</div>
         </div>
