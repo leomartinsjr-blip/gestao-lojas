@@ -1860,6 +1860,52 @@ app.delete('/api/campaigns/:id', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/campaigns/:id/ranking-lojas ──────────────────────────────────
+// Ranking de campanha cujo KPI é da loja (% desconto, CMV+taxa), calculado a
+// partir do Microvix no período. Os dados vêm da Conferência, mas aqui o acesso
+// é de qualquer usuário autenticado que participe da campanha — por isso a rota
+// devolve só os números da campanha, nunca o dashboard inteiro.
+// usaTaxa: só nesses o volume de cartão importa — num ranking de desconto puro
+// avisar "sem dados de cartão" seria ruído.
+const CAMPAIGN_KPIS_LOJA = {
+  desconto_pct: { calc: l => l.percDesconto || 0,                            usaTaxa: false },
+  cmv_taxa_pct: { calc: l => (l.cmvPerc || 0) + (l.taxaPercLiquido || 0),    usaTaxa: true  },
+};
+app.get('/api/campaigns/:id/ranking-lojas', requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const db = await readDB();
+    const camp = (db.campaigns || []).find(c => c.id === id);
+    if (!camp) return res.status(404).json({ error: 'Campanha não encontrada' });
+
+    const kpiDef = CAMPAIGN_KPIS_LOJA[camp.kpi];
+    if (!kpiDef) return res.status(400).json({ error: 'KPI da campanha não é por loja' });
+
+    // Usuário de loja só vê campanha da qual participa
+    const board = req.session.user.board;
+    if (board && camp.scope !== 'rede' && !(camp.stores || []).includes(board)) {
+      return res.status(403).json({ error: 'Sem permissão' });
+    }
+
+    const { porLoja } = await computeConferenciaDashboard(camp.startDate, camp.endDate);
+    const participa = b => camp.scope === 'rede' || (camp.stores || []).includes(b);
+
+    const ranking = porLoja
+      .filter(l => !l.erro && participa(l.board) && l.vlrLiquido > 0)
+      .map(l => ({
+        board:      l.board,
+        kpiValue:   kpiDef.calc(l),
+        vlrLiquido: l.vlrLiquido,
+        // só quando a taxa entra no KPI: sem cartão ela não somou e o valor fica otimista
+        semCartao:  kpiDef.usaTaxa && (l.vlrCartao || 0) === 0,
+      }));
+
+    // Nestes KPIs menor é melhor
+    ranking.sort((a, b) => a.kpiValue - b.kpiValue);
+    res.json({ kpi: camp.kpi, menorMelhor: true, ranking });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/nf-items ─────────────────────────────────────────────────────
 app.get('/api/nf-items', requireAuth, async (req, res) => {
   try {
@@ -8177,13 +8223,11 @@ app.put('/api/conferencia/taxas', requireEscritorioOrAdmin, async (req, res) => 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// GET /api/conferencia/dashboard?dtIni=2026-06-01&dtFin=2026-06-08
-// Consolida todas as lojas: ranking de desconto por loja, por vendedor e CMV
-app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res) => {
-  try {
-    const { dtIni, dtFin } = req.query;
-    if (!dtIni || !dtFin) return res.status(400).json({ error: 'dtIni e dtFin obrigatórios' });
-
+// Consolida todas as lojas no período: desconto e CMV por loja e por vendedor,
+// mais a taxa de maquineta. Usado pelo dashboard da Conferência e pelo ranking
+// de campanhas por loja.
+async function computeConferenciaDashboard(dtIni, dtFin) {
+  { // bloco só preserva a indentação de quando isto era o try da rota
     const lojas   = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const BOARDS  = ['delrey','minas','contagem','estacao','tommy','surfers'];
     const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
@@ -8482,13 +8526,22 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
       }))
       .sort((a,b) => b.valor - a.valor);
 
-    res.json({
+    return {
       dtIni, dtFin,
       porLoja:     Object.values(porLoja),
       porVendedor: vendedores.sort((a,b) => b.percDesconto - a.percDesconto).slice(0, 20),
       porTaxa,
       taxasCadastradas: Object.keys(confTaxas).length > 0,
-    });
+    };
+  }
+}
+
+// GET /api/conferencia/dashboard?dtIni=2026-06-01&dtFin=2026-06-08
+app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { dtIni, dtFin } = req.query;
+    if (!dtIni || !dtFin) return res.status(400).json({ error: 'dtIni e dtFin obrigatórios' });
+    res.json(await computeConferenciaDashboard(dtIni, dtFin));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -1253,18 +1253,26 @@ function renderDashboard() {
     const singleMonth = camp.startDate.slice(0,7) === curMonthPrefix &&
                         camp.endDate.slice(0,7)   === curMonthPrefix;
 
+    const campPorLoja = isKpiLoja(camp.kpi);
+
     function _buildCampCard(ranking) {
       const top5     = ranking.slice(0, 5);
       const maxVal   = top5.length ? Math.max(...top5.map(r => r.kpiValue), 0.001) : 0.001;
       const medals   = ['🥇','🥈','🥉'];
       const rowsHtml = top5.map((r, i) => {
-        const pct   = maxVal > 0 ? (r.kpiValue / maxVal * 100) : 0;
-        const color = BOARDS[r.emp.board]?.color || '#8B949E';
-        const name  = r.emp.apelido || r.emp.name.split(' ')[0];
+        // KPI de loja: menor é melhor, então a barra cheia é o 1º colocado
+        const pct   = campPorLoja
+          ? (r.kpiValue > 0 ? (top5[0].kpiValue / r.kpiValue) * 100 : 100)
+          : (maxVal > 0 ? (r.kpiValue / maxVal * 100) : 0);
+        const board = campPorLoja ? r.board : r.emp.board;
+        const color = BOARDS[board]?.color || '#8B949E';
+        const name  = campPorLoja
+          ? (BOARDS[board]?.label || board)
+          : (r.emp.apelido || r.emp.name.split(' ')[0]);
         return `<div class="camp-dash-row">
           <span class="camp-dash-pos">${i < 3 ? medals[i] : `#${i+1}`}</span>
           <span class="camp-dash-name">${name}</span>
-          <div class="camp-dash-bar-wrap"><div class="camp-dash-bar" style="width:${pct.toFixed(1)}%;background:${color}"></div></div>
+          <div class="camp-dash-bar-wrap"><div class="camp-dash-bar" style="width:${Math.min(100, pct).toFixed(1)}%;background:${color}"></div></div>
           <span class="camp-dash-val">${formatKpiValue(camp.kpi, r.kpiValue)}</span>
         </div>`;
       }).join('');
@@ -1272,8 +1280,9 @@ function renderDashboard() {
         ${rowsHtml || '<div style="color:var(--muted);font-size:.8rem;padding:.5rem 0">Sem dados no período</div>'}`;
     }
 
-    // Ranking inicial: só S.vsales (rápido, sempre disponível)
-    const campEmps = S.employees.filter(e =>
+    // Ranking inicial: só S.vsales (rápido, sempre disponível).
+    // KPI de loja não vem de S.vsales — fica vazio e é buscado no backend abaixo.
+    const campEmps = campPorLoja ? [] : S.employees.filter(e =>
       isVend(e) && !e.inativo && (camp.scope === 'rede' || camp.stores.includes(e.board))
     );
     const quickRanking = campEmps.map(emp => {
@@ -1313,19 +1322,28 @@ function renderDashboard() {
         </span>
         <span class="main-card-sub">${campFmt(camp.startDate)} → ${campFmt(camp.endDate)}</span>
       </div>
-      <div class="main-card-body" id="campDashBody">${_buildCampCard(quickRanking)}</div>
+      <div class="main-card-body" id="campDashBody">${campPorLoja
+        ? `<div class="camp-dash-kpi-lbl">${KPI_LABELS[camp.kpi] || camp.kpi}</div>
+           <div style="color:var(--muted);font-size:.8rem;padding:.5rem 0">Calculando…</div>`
+        : _buildCampCard(quickRanking)}</div>
     `;
     campDashCard.addEventListener('click', () => {
       openCampanhasModal();
       setTimeout(() => renderCampaignRanking(camp), 60);
     });
 
-    // Se a campanha span mais de 1 mês, busca dados completos em background
-    if (!singleMonth) {
+    // KPI de loja sempre busca; os demais só quando a campanha passa de 1 mês
+    if (campPorLoja || !singleMonth) {
       calcCampaignRanking(camp).then(fullRanking => {
         const bodyEl = campDashCard.querySelector('#campDashBody');
         if (bodyEl) bodyEl.innerHTML = _buildCampCard(fullRanking);
-      }).catch(() => {});
+      }).catch(() => {
+        const bodyEl = campDashCard.querySelector('#campDashBody');
+        if (bodyEl && campPorLoja) {
+          bodyEl.innerHTML = `<div class="camp-dash-kpi-lbl">${KPI_LABELS[camp.kpi] || camp.kpi}</div>
+            <div style="color:var(--muted);font-size:.8rem;padding:.5rem 0">Não foi possível calcular</div>`;
+        }
+      });
     }
   }
 
@@ -7734,13 +7752,21 @@ const KPI_LABELS = {
   pa:           'PA (peças/ticket)',
   atendimentos: 'Atendimentos',
   pecas:        'Peças',
+  desconto_pct: '% de Desconto (loja)',
+  cmv_taxa_pct: 'CMV + Taxa (loja)',
 };
+
+// KPIs apurados por loja (vêm da Conferência, não de S.vsales) e onde
+// MENOR é melhor — o ranking desses é invertido.
+const KPIS_POR_LOJA = new Set(['desconto_pct', 'cmv_taxa_pct']);
+const isKpiLoja = kpi => KPIS_POR_LOJA.has(kpi);
 
 function formatKpiValue(kpi, val) {
   if (val === null || val === undefined) return '—';
   if (kpi === 'vendas')    return 'R$ ' + val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (kpi === 'pa')        return val.toFixed(2);
   if (kpi === 'pct_meta')  return val.toFixed(1) + '%';
+  if (isKpiLoja(kpi))      return val.toFixed(2) + '%';
   return Math.round(val).toLocaleString('pt-BR');
 }
 
@@ -7756,7 +7782,16 @@ function _campMonthsInRange(startDate, endDate) {
   return months;
 }
 
+// Ranking de campanha com KPI de loja — apurado no backend a partir do Microvix.
+// Devolve { board, kpiValue, semCartao } já ordenado (menor é melhor).
+async function calcCampaignRankingLojas(campaign) {
+  const data = await apiFetch('GET', `/api/campaigns/${campaign.id}/ranking-lojas`);
+  return data.ranking || [];
+}
+
 async function calcCampaignRanking(campaign) {
+  if (isKpiLoja(campaign.kpi)) return calcCampaignRankingLojas(campaign);
+
   const emps = S.employees.filter(e =>
     isVend(e) &&
     (campaign.scope === 'rede' || campaign.stores.includes(e.board))
@@ -7922,25 +7957,42 @@ async function renderCampaignRanking(campaign) {
   `;
   document.getElementById('campBackBtn').addEventListener('click', renderCampanhasPanel);
 
-  const ranking = await calcCampaignRanking(campaign);
+  let ranking;
+  try {
+    ranking = await calcCampaignRanking(campaign);
+  } catch (e) {
+    const listEl = body.querySelector('.camp-rank-list');
+    if (listEl) listEl.innerHTML = `<div class="camp-empty">Erro ao calcular: ${e.message}</div>`;
+    return;
+  }
+  const porLoja = isKpiLoja(campaign.kpi);
   const maxVal = ranking.length ? Math.max(...ranking.map(r => r.kpiValue), 0.001) : 0.001;
   const medals = ['🥇','🥈','🥉'];
 
   const rowsHtml = ranking.map((r, i) => {
-    const pct   = maxVal > 0 ? (r.kpiValue / maxVal * 100) : 0;
+    // Nos KPIs de loja menor é melhor: a barra cheia é o melhor colocado
+    const pct   = porLoja
+      ? (r.kpiValue > 0 ? (ranking[0].kpiValue / r.kpiValue) * 100 : 100)
+      : (maxVal > 0 ? (r.kpiValue / maxVal * 100) : 0);
     const medal = i < 3 ? medals[i] : `#${i + 1}`;
-    const color = BOARDS[r.emp.board]?.color || '#8B949E';
-    const store = BOARDS[r.emp.board]?.label || r.emp.board;
-    const name  = r.emp.apelido || r.emp.name.split(' ')[0];
+    const board = porLoja ? r.board : r.emp.board;
+    const color = BOARDS[board]?.color || '#8B949E';
+    const store = BOARDS[board]?.label || board;
+    const name  = porLoja ? store : (r.emp.apelido || r.emp.name.split(' ')[0]);
+    const sub   = porLoja
+      ? (r.semCartao
+          ? '<span style="color:var(--warn,#E3B341)">⚠ sem dados de cartão</span>'
+          : `${fmtBRL(r.vlrLiquido || 0)} de venda líquida`)
+      : store;
     return `
       <div class="camp-rank-row">
         <div class="camp-rank-pos">${medal}</div>
         <div class="camp-rank-info">
           <div class="camp-rank-name">${name}</div>
-          <div class="camp-rank-store" style="color:${color}">${store}</div>
+          <div class="camp-rank-store" style="color:${color}">${sub}</div>
         </div>
         <div class="camp-rank-bar-wrap">
-          <div class="camp-rank-bar" style="width:${pct.toFixed(1)}%;background:${color}"></div>
+          <div class="camp-rank-bar" style="width:${Math.min(100, pct).toFixed(1)}%;background:${color}"></div>
         </div>
         <div class="camp-rank-val">${formatKpiValue(campaign.kpi, r.kpiValue)}</div>
       </div>`;
@@ -7980,6 +8032,11 @@ function renderCampaignForm(campaign) {
             ).join('')}
           </select>
         </div>
+        <div class="camp-form-field camp-field-wide" id="campKpiHint"
+             style="${isKpiLoja(campaign?.kpi) ? '' : 'display:none'};font-size:.75rem;color:var(--muted);line-height:1.5">
+          Este KPI é apurado <strong>por loja</strong> (dados da Conferência), não por vendedor —
+          o ranking compara as lojas participantes e <strong>vence a de menor valor</strong>.
+        </div>
         <div class="camp-form-field camp-field-wide">
           <label>Abrangência</label>
           <div class="camp-scope-toggle">
@@ -8010,6 +8067,11 @@ function renderCampaignForm(campaign) {
       </div>
     </div>
   `;
+
+  // Mostra o aviso quando o KPI escolhido é apurado por loja
+  document.getElementById('campKpi').addEventListener('change', e => {
+    document.getElementById('campKpiHint').style.display = isKpiLoja(e.target.value) ? '' : 'none';
+  });
 
   // Toggle store selector based on scope
   body.querySelectorAll('input[name="campScope"]').forEach(radio => {
@@ -11829,10 +11891,14 @@ function _openIndevaCampanhasOverlay() {
     return Math.round(v).toString();
   };
 
-  const activeCamps = (S.campaigns||[]).filter(c =>
+  const todasAtivas = (S.campaigns||[]).filter(c =>
     c.startDate <= today && c.endDate >= today &&
     (c.scope === 'rede' || (c.stores||[]).includes(board))
   );
+  // Esta tela ranqueia vendedor a partir de S.vsales; campanha com KPI de loja
+  // é apurada no backend e não tem como ser montada aqui.
+  const activeCamps = todasAtivas.filter(c => !isKpiLoja(c.kpi));
+  const soPorLoja   = !activeCamps.length && todasAtivas.length > 0;
 
   const overlay = document.createElement('div');
   overlay.className = 'ig-overlay';
@@ -11840,7 +11906,11 @@ function _openIndevaCampanhasOverlay() {
   if (!activeCamps.length) {
     overlay.innerHTML = `<div class="ig-modal ig-modal-v2">
       <div class="ig-hdr"><div class="ig-hdr-info"><div class="ig-emp-name">Campanha</div></div><button class="ig-close">✕</button></div>
-      <div class="ig-tab-body"><div style="color:var(--muted);text-align:center;padding:2rem;font-size:.9rem">Nenhuma campanha ativa.</div></div>
+      <div class="ig-tab-body"><div style="color:var(--muted);text-align:center;padding:2rem;font-size:.9rem">${
+        soPorLoja
+          ? 'A campanha ativa é apurada por loja — veja o ranking em Campanhas.'
+          : 'Nenhuma campanha ativa.'
+      }</div></div>
     </div>`;
   } else {
     const camp = activeCamps[0];
