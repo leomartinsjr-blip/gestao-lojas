@@ -7724,12 +7724,13 @@ app.get('/api/folha/:year/:month/export', requireAuth, async (req, res) => {
 
       // Sheet TOTAL para a loja
       const totalSheet = wb.addWorksheet(`TOTAL-${bk.toUpperCase()}`);
-      totalSheet.addRow(['FUNCIONÁRIO', 'BANCO', 'AG', 'CONTA', 'INSS', 'TOTAL LÍQUIDO', 'PROVENTOS']);
-      let totalLiq = 0, totalProv = 0;
+      totalSheet.addRow(['FUNCIONÁRIO', 'BANCO', 'AG', 'CONTA', 'INSS', 'TOTAL LÍQUIDO', 'PROVENTOS', 'POR FORA', 'TOTAL GERAL']);
+      let totalLiq = 0, totalProv = 0, totalFora = 0;
 
       for (const emp of lojaEmps) {
         const entry = lojaData.entries[emp.id];
         if (!entry) continue;
+        const fora = Number(entry.totalFora) || 0;
         totalSheet.addRow([
           emp.apelido || emp.name,
           emp.banco || '',
@@ -7738,11 +7739,15 @@ app.get('/api/folha/:year/:month/export', requireAuth, async (req, res) => {
           bFmt(entry.inss),
           bFmt(entry.liquido),
           bFmt(entry.proventos),
+          fora ? bFmt(fora) : '',
+          bFmt((entry.liquido || 0) + fora),
         ]);
         totalLiq  += (entry.liquido  || 0);
         totalProv += (entry.proventos || 0);
+        totalFora += fora;
       }
-      totalSheet.addRow(['TOTAL', '', '', '', '', bFmt(totalLiq), bFmt(totalProv)]);
+      totalSheet.addRow(['TOTAL', '', '', '', '', bFmt(totalLiq), bFmt(totalProv),
+                         bFmt(totalFora), bFmt(totalLiq + totalFora)]);
 
       // Sheet por funcionário
       for (const emp of lojaEmps) {
@@ -7802,6 +7807,17 @@ app.get('/api/folha/:year/:month/export', requireAuth, async (req, res) => {
 
         ws.addRow([]);
         ws.addRow(['LÍQUIDO', '', bFmt(entry.liquido)]);
+
+        // Pagamento por fora — só na planilha interna, nunca na contabilidade
+        const foraRows = (entry.fora || []).filter(f => Number(f.valor));
+        if (foraRows.length) {
+          ws.addRow([]);
+          ws.addRow(['POR FORA (não declarado)', '', 'VALOR']);
+          for (const f of foraRows) ws.addRow([f.nome || 'COMPLEMENTO', '', bFmt(f.valor)]);
+          ws.addRow(['TOTAL POR FORA', '', bFmt(entry.totalFora)]);
+          ws.addRow([]);
+          ws.addRow(['TOTAL GERAL', '', bFmt((entry.liquido || 0) + (Number(entry.totalFora) || 0))]);
+        }
       }
     }
 
@@ -7884,7 +7900,9 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
         const entry = lojaData.entries[emp.id];
         if (!entry) continue;
 
-        const fixo      = r2(entry.fixo          || 0);
+        // Valores DECLARADOS: o que é pago por fora já foi abatido do componente
+        // de origem (fixoDeclarado / comissaoContab) e de entry.proventos.
+        const fixo      = r2(entry.fixoDeclarado != null ? entry.fixoDeclarado : (entry.fixo || 0));
         const qcx       = r2(entry.quebra         || 0);
         const comissoes = r2(entry.comissaoContab || 0);
         const dsr       = r2(entry.dsr            || 0);

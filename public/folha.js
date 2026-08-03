@@ -24,6 +24,70 @@ function cargoTipo(cargo) {
   return 'vendedor';
 }
 
+// ── Pagamento por fora ────────────────────────────────────────────────────
+// Linhas que o funcionário recebe mas que NÃO são declaradas na contabilidade.
+// Cada linha abate de um componente declarado (comissão, fixo ou "outros"),
+// para que a planilha de contabilidade continue batendo coluna a coluna.
+function foraOrigemOpts(tipo) {
+  if (tipo === 'caixa')    return { fixo: 'Salário fixo', outros: 'Outros' };
+  if (tipo === 'socio')    return { comissao: 'Comissão', fixo: 'Pró-labore', outros: 'Outros' };
+  if (tipo === 'vendedor') return { comissao: 'Comissão', outros: 'Outros' };
+  return { comissao: 'Comissão', fixo: 'Salário fixo', outros: 'Outros' };
+}
+function foraOrigemDefault(tipo) { return tipo === 'caixa' ? 'fixo' : 'comissao'; }
+
+function foraBreakdown(entry, tipo) {
+  const opts = foraOrigemOpts(tipo);
+  let com = 0, fixo = 0, outros = 0;
+  for (const f of (entry?.fora || [])) {
+    const v = r2(f.valor);
+    if (!v) continue;
+    const org = opts[f.origem] ? f.origem : foraOrigemDefault(tipo);
+    if      (org === 'fixo')   fixo   += v;
+    else if (org === 'outros') outros += v;
+    else                       com    += v;
+  }
+  return { com: r2(com), fixo: r2(fixo), outros: r2(outros), total: r2(com + fixo + outros) };
+}
+
+function foraDe(empId) {
+  const emp = FP.employees.find(e => e.id === empId);
+  return foraBreakdown(FP.folha[FP.board]?.entries?.[empId], cargoTipo(emp?.cargo));
+}
+
+// defaultEntry não conhece o "por fora" (é decisão manual, não valor calculado).
+// Depois de recalcular uma entry, reaplica o abatimento: proventos e líquido
+// passam a ser os valores DECLARADOS e totalGeral é o que o funcionário recebe.
+function applyFora(entry, emp, fora) {
+  if (!fora?.length) return entry;
+  const tipo = entry.tipo || cargoTipo(emp.cargo);
+  const ecfg = getEmpCfg(emp);
+  entry.fora = fora;
+  const fb = foraBreakdown(entry, tipo);
+
+  entry.proventosBruto = r2(entry.proventos);
+  entry.proventos      = r2(entry.proventosBruto - fb.total);
+  entry.foraComissao = fb.com;    entry.foraFixo  = fb.fixo;
+  entry.foraOutros   = fb.outros; entry.totalFora = fb.total;
+  entry.comissaoDeclarada = r2((entry.comissaoTotal || 0) - fb.com);
+  entry.fixoDeclarado     = r2((tipo === 'socio' ? (entry.proLabore || 0) : (entry.fixo || 0)) - fb.fixo);
+
+  if (entry.comissaoContab != null) {
+    const du = FP.mensal.diasUteis || 22, df = FP.mensal.domingosFeriados || 4;
+    entry.dsr            = (du + df) > 0 ? r2(entry.comissaoDeclarada * df / (du + df)) : 0;
+    entry.comissaoContab = r2(entry.comissaoDeclarada - entry.dsr - (entry.premio || 0));
+  }
+
+  entry.inss = r2(entry.proventos * (ecfg.inssRate || 0) / 100);
+  entry.vt   = r2(entry.proventos * (ecfg.vtRate   || 0) / 100);
+  entry.totalDescontos = r2((entry.valeCompras || 0) + (entry.adiantamento || 0)
+    + entry.inss + (entry.irpf || 0) + entry.vt + (entry.arredondamento || 0)
+    + (entry.extrasDesc || []).reduce((s, x) => s + r2(x.valor), 0));
+  entry.liquido    = r2(entry.proventos - entry.totalDescontos);
+  entry.totalGeral = r2(entry.liquido + fb.total);
+  return entry;
+}
+
 // ── Config efetiva do funcionário (folha prevalece sobre cadastro) ─────────
 function getEmpCfg(emp) {
   const fc = FP.empConfig[emp.id] || {};
@@ -226,7 +290,7 @@ function boardEmps(board) {
 
 function buildTotalForm(emps) {
   if (!emps.length) return '<div style="padding:2rem;color:#8b949e;text-align:center">Nenhum funcionário nesta loja.</div>';
-  let totalProv = 0, totalDesc = 0, totalLiq = 0;
+  let totalProv = 0, totalDesc = 0, totalLiq = 0, totalFora = 0;
 
   // ── Acumuladores para o resumo de custos ──────────────────────────────────
   // fixoAll  = salário fixo + quebra de caixa + pró-labore + complemento (sócio)
@@ -252,11 +316,13 @@ function buildTotalForm(emps) {
       : r2(FP.premiacaoSemanal[emp.id] || 0);
     const calcPremGer = (_ct === 'gvend' || _ct === 'sub' || _ecfg.recebePremiaoLoja) ? r2(FP.premiacaoSemanalGer[emp.id] || 0) : 0;
     if (calcPrem !== r2(entry.premiacao || 0) || calcPremGer !== r2(entry.premiacaoBalanco || 0)) {
-      entry = defaultEntry(emp);
+      entry = applyFora(defaultEntry(emp), emp, entry.fora);
     }
+    const _fb = foraBreakdown(entry, _ct);
     totalProv += entry.proventos      || 0;
     totalDesc += entry.totalDescontos || 0;
     totalLiq  += entry.liquido        || 0;
+    totalFora += _fb.total;
 
     // fixo — componente varia por cargo
     let empFixo = 0;
@@ -298,6 +364,8 @@ function buildTotalForm(emps) {
       <td style="padding:.4rem .5rem;text-align:right;color:#e6edf3">${brl(entry.proventos||0)}</td>
       <td style="padding:.4rem .5rem;text-align:right;color:#f85149">${brl(entry.totalDescontos||0)}</td>
       <td style="padding:.4rem .5rem;text-align:right;color:#3fb950;font-weight:600">${brl(entry.liquido||0)}</td>
+      <td style="padding:.4rem .5rem;text-align:right;color:${_fb.total>0?'#d29922':'#484f58'}">${brl(_fb.total)}</td>
+      <td style="padding:.4rem .5rem;text-align:right;color:#e6edf3;font-weight:600">${brl(r2((entry.liquido||0)+_fb.total))}</td>
     </tr>`;
   }).join('');
 
@@ -312,8 +380,10 @@ function buildTotalForm(emps) {
   extrasTotal          = r2(extrasTotal);
   feriadoTotal         = r2(feriadoTotal);
   comSup                 = r2(comSup);
+  totalFora              = r2(totalFora);
   const totalPremiacoes  = r2(premiacaoTotal + premiacaoLojaTotal + extrasTotal + feriadoTotal);
-  const totalResumo      = r2(fixoAll + comVend + comSup + comLoja + gmTotal + totalPremiacoes);
+  const totalBruto       = r2(fixoAll + comVend + comSup + comLoja + gmTotal + totalPremiacoes);
+  const totalResumo      = r2(totalBruto - totalFora);
   const totalProvR       = r2(totalProv);
   const diff             = r2(totalProvR - totalResumo);
   const confOk           = Math.abs(diff) < 0.02;
@@ -365,8 +435,14 @@ function buildTotalForm(emps) {
           <td></td>
         </tr>
         ${premSubHtml ? `<tr><td colspan="3" style="padding:0 0 .3rem">${premSubHtml}</td></tr>` : ''}` : ''}
+        ${totalFora > 0 ? `
+        <tr style="border-bottom:1px solid #1a1f26">
+          <td style="padding:.35rem .5rem;color:#d29922;font-size:.82rem">(−) Pago por fora (não declarado)</td>
+          <td style="padding:.35rem .5rem;text-align:right;color:#d29922;white-space:nowrap">− ${brl(totalFora)}</td>
+          <td></td>
+        </tr>` : ''}
         <tr style="border-top:2px solid #30363d;background:#0d1117">
-          <td style="padding:.5rem .5rem;color:#58a6ff;font-weight:700;font-size:.85rem">TOTAL PROVENTOS</td>
+          <td style="padding:.5rem .5rem;color:#58a6ff;font-weight:700;font-size:.85rem">TOTAL PROVENTOS${totalFora > 0 ? ' (contabilidade)' : ''}</td>
           <td style="padding:.5rem .5rem;text-align:right;color:#58a6ff;font-weight:700;font-size:.9rem;white-space:nowrap">${brl(totalResumo)}${pct(totalResumo)}</td>
           <td style="padding:.5rem .5rem;font-size:.75rem;white-space:nowrap">
             ${confOk
@@ -374,6 +450,12 @@ function buildTotalForm(emps) {
               : `<span style="color:#f85149" title="Diferença: ${brl(diff)}">⚠ diferença ${brl(diff)}</span>`}
           </td>
         </tr>
+        ${totalFora > 0 ? `
+        <tr style="background:#0d1117">
+          <td style="padding:.5rem .5rem;color:#d29922;font-weight:700;font-size:.85rem">TOTAL GERAL (contab. + por fora)</td>
+          <td style="padding:.5rem .5rem;text-align:right;color:#d29922;font-weight:700;font-size:.9rem;white-space:nowrap">${brl(totalBruto)}${pct(totalBruto)}</td>
+          <td></td>
+        </tr>` : ''}
       </tbody>
     </table>
   </div>`;
@@ -388,6 +470,8 @@ function buildTotalForm(emps) {
           <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;font-size:.73rem;text-transform:uppercase;font-weight:600">Proventos</th>
           <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;font-size:.73rem;text-transform:uppercase;font-weight:600">Descontos</th>
           <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;font-size:.73rem;text-transform:uppercase;font-weight:600">Líquido</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#d29922;font-size:.73rem;text-transform:uppercase;font-weight:600">Por Fora</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;font-size:.73rem;text-transform:uppercase;font-weight:600">Total Geral</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
@@ -397,6 +481,8 @@ function buildTotalForm(emps) {
           <td style="padding:.5rem .5rem;text-align:right;color:#e6edf3;font-weight:700">${brl(r2(totalProv))}</td>
           <td style="padding:.5rem .5rem;text-align:right;color:#f85149;font-weight:700">${brl(r2(totalDesc))}</td>
           <td style="padding:.5rem .5rem;text-align:right;color:#3fb950;font-weight:700">${brl(r2(totalLiq))}</td>
+          <td style="padding:.5rem .5rem;text-align:right;color:#d29922;font-weight:700">${brl(totalFora)}</td>
+          <td style="padding:.5rem .5rem;text-align:right;color:#e6edf3;font-weight:700">${brl(r2(totalLiq + totalFora))}</td>
         </tr>
       </tfoot>
     </table>
@@ -917,6 +1003,7 @@ function buildEmpForm(emp, entry) {
         <span class="fp-total-inline" id="fp-totalCom-${emp.id}">${brl(e.comissaoTotal)}</span>
         <span style="font-size:.7rem;color:#8b949e;margin-left:.3rem">${pctDisplay}</span>
       </div>
+      <div id="fp-declHint-${emp.id}" style="font-size:.72rem;color:#d29922;padding:0 0 .25rem .2rem"></div>
       <div class="fp-split-box">
         <div class="fp-split-title" style="cursor:pointer;user-select:none"
           onclick="(function(el){const c=el.nextElementSibling;const open=c.style.display!=='none';c.style.display=open?'none':'block';el.querySelector('.fp-split-arrow').textContent=open?'▶':'▼';})(this)">
@@ -1032,12 +1119,30 @@ function buildEmpForm(emp, entry) {
         </div>
       </div>
     </div>
+    <div class="fp-fora-box">
+      <div class="fp-fora-head">
+        <span class="fp-fora-title">Pagamento por fora</span>
+        <span class="fp-fora-note">não entra na exportação para a contabilidade</span>
+        <span class="fp-fora-total" id="val-fora-${emp.id}">${brl(foraBreakdown(e, tipo).total)}</span>
+      </div>
+      <div id="fora-rows-${emp.id}">${buildForaRows(emp.id, e.fora || [], tipo)}</div>
+      <button class="fp-add-extra" onclick="addFora(${emp.id})">+ Adicionar linha por fora</button>
+      <div class="fp-fora-hint" id="fora-hint-${emp.id}"></div>
+    </div>
     <div class="fp-liquido-bar">
       <div>
         <div class="fp-liquido-label">LÍQUIDO A RECEBER</div>
+        <div style="font-size:.72rem;color:#8b949e" id="liquido-note-${emp.id}"></div>
         ${emp.banco?`<div style="font-size:.72rem;color:#8b949e">Banco ${emp.banco} · Cta ${emp.conta||'—'}</div>`:''}
       </div>
       <span class="fp-liquido-val" id="val-liquido-${emp.id}">${brl(e.liquido)}</span>
+    </div>
+    <div class="fp-geral-bar" id="geral-bar-${emp.id}" style="display:none">
+      <div>
+        <div class="fp-geral-label">TOTAL GERAL A RECEBER</div>
+        <div style="font-size:.72rem;color:#484f58" id="geral-detail-${emp.id}"></div>
+      </div>
+      <span class="fp-geral-val" id="val-totalgeral-${emp.id}">${brl(e.liquido)}</span>
     </div>
     ${buildEmpCfgSection(emp, ecfg, tipo)}
   </div>`;
@@ -1165,7 +1270,7 @@ async function fpSaveEmpCfg(empId) {
     FP.empConfig[empId] = cfg;
     // Sempre recalcula via defaultEntry após mudança de config — garante
     // que premiacaoBalanco, comissão e demais derivados reflitam o novo config
-    const entry = defaultEntry(emp);
+    const entry = applyFora(defaultEntry(emp), emp, FP.folha[FP.board]?.entries?.[empId]?.fora);
     if (FP.folha[FP.board]?.entries?.[empId]) FP.folha[FP.board].entries[empId] = entry;
     document.getElementById('fpEmpForms').innerHTML = buildEmpForm(emp, entry);
     attachFormListeners(empId);
@@ -1203,6 +1308,82 @@ function buildExtraRows(empId, extras, type) {
   }).join('');
 }
 
+function buildForaRows(empId, fora, tipo) {
+  if (!fora.length)
+    return `<div class="fp-fora-empty">Nenhum valor por fora — tudo vai para a contabilidade.</div>`;
+  const opts = foraOrigemOpts(tipo);
+  return fora.map((f, i) => {
+    const org = opts[f.origem] ? f.origem : foraOrigemDefault(tipo);
+    return `<div class="fp-fora-row">
+      <input type="text" placeholder="Descrição (ex.: complemento comissão)" value="${f.nome||''}"
+        onchange="onForaField(${empId},${i},'nome',this.value)">
+      <span style="font-size:.7rem;color:#8b949e">abate de</span>
+      <select onchange="onForaField(${empId},${i},'origem',this.value);onForaChange(${empId})">
+        ${Object.entries(opts).map(([k,l]) =>
+          `<option value="${k}"${k===org?' selected':''}>${l}</option>`).join('')}
+      </select>
+      <input type="number" step="0.01" placeholder="0.00" value="${r2(f.valor).toFixed(2)}"
+        onchange="onForaField(${empId},${i},'valor',this.value);onForaChange(${empId})">
+      <button class="fp-extra-btn" onclick="removeFora(${empId},${i})">×</button>
+    </div>`;
+  }).join('');
+}
+
+function ensureEntry(empId) {
+  const board = FP.board;
+  if (!FP.folha[board]) FP.folha[board] = { entries: {} };
+  if (!FP.folha[board].entries) FP.folha[board].entries = {};
+  if (!FP.folha[board].entries[empId])
+    FP.folha[board].entries[empId] = defaultEntry(FP.employees.find(e => e.id === empId));
+  return FP.folha[board].entries[empId];
+}
+
+function addFora(empId) {
+  const emp   = FP.employees.find(e => e.id === empId);
+  const tipo  = cargoTipo(emp?.cargo);
+  const entry = ensureEntry(empId);
+  if (!entry.fora) entry.fora = [];
+  entry.fora.push({ nome: '', valor: 0, origem: foraOrigemDefault(tipo) });
+  FP.dirty = true;
+  refreshFora(empId);
+}
+
+function removeFora(empId, idx) {
+  FP.folha[FP.board]?.entries?.[empId]?.fora?.splice(idx, 1);
+  FP.dirty = true;
+  refreshFora(empId);
+  onForaChange(empId);
+}
+
+function onForaField(empId, idx, field, value) {
+  const arr = FP.folha[FP.board]?.entries?.[empId]?.fora;
+  if (arr?.[idx]) arr[idx][field] = field === 'valor' ? r2(parseFloat(value)||0) : value;
+  FP.dirty = true;
+}
+
+function refreshFora(empId) {
+  const emp = FP.employees.find(e => e.id === empId);
+  const arr = FP.folha[FP.board]?.entries?.[empId]?.fora || [];
+  const c   = document.getElementById(`fora-rows-${empId}`);
+  if (c) c.innerHTML = buildForaRows(empId, arr, cargoTipo(emp?.cargo));
+  recalc(empId);
+}
+
+// Ao mudar o "por fora" da comissão, o DSR declarado precisa acompanhar a
+// comissão declarada (mesma fórmula de defaultEntry, sobre a base menor).
+function onForaChange(empId) {
+  const emp   = FP.employees.find(e => e.id === empId);
+  const tipo  = cargoTipo(emp?.cargo);
+  const dsrEl = document.getElementById(`fp-dsr-${empId}`);
+  if (dsrEl && tipo !== 'caixa' && tipo !== 'socio' && tipo !== 'supervisor') {
+    const g  = id => { const el = document.getElementById(id); return el ? r2(parseFloat(el.value)||0) : 0; };
+    const du = FP.mensal.diasUteis || 22, df = FP.mensal.domingosFeriados || 4;
+    const comDecl = r2(g(`fp-vendas-${empId}`) * g(`fp-comPct-${empId}`) / 100 - foraDe(empId).com);
+    dsrEl.value = ((du + df) > 0 ? r2(comDecl * df / (du + df)) : 0).toFixed(2);
+  }
+  onFieldChange(empId);
+}
+
 // ── Recalc ─────────────────────────────────────────────────────────────────
 function recalc(empId) {
   const g     = id => { const el=document.getElementById(id); return el?r2(parseFloat(el.value)||0):0; };
@@ -1211,6 +1392,7 @@ function recalc(empId) {
   const entry = FP.folha[FP.board]?.entries?.[empId] || {};
   const du    = FP.mensal.diasUteis        || 22;
   const df    = FP.mensal.domingosFeriados || 4;
+  const fb    = foraBreakdown(entry, tipo);
 
   let proventos = 0;
 
@@ -1238,18 +1420,28 @@ function recalc(empId) {
 
     const dsrVal    = g(`fp-dsr-${empId}`);
     const premioVal = g(`fp-premio-${empId}`);
-    const comContab = r2(comTotal - dsrVal - premioVal);
+    // Comissão declarada = total − parcela paga por fora
+    const comDecl   = r2(comTotal - fb.com);
+    const comContab = r2(comDecl - dsrVal - premioVal);
 
     const comEl = document.getElementById(`fp-comissao-${empId}`);
     if (comEl) comEl.value = comContab.toFixed(2);
 
+    const declEl = document.getElementById(`fp-declHint-${empId}`);
+    if (declEl) {
+      declEl.innerHTML = fb.com > 0
+        ? `↳ contabilidade: <strong>${brl(comDecl)}</strong> · por fora: <strong>${brl(fb.com)}</strong>` +
+          (comDecl < 0 ? ` <span style="color:#f85149">⚠ por fora maior que a comissão</span>` : '')
+        : '';
+    }
+
     const checkEl = document.getElementById(`fp-splitCheck-${empId}`);
     if (checkEl) {
       const soma = r2(comContab + dsrVal + premioVal);
-      const ok   = Math.abs(soma - comTotal) < 0.02;
+      const ok   = Math.abs(soma - comDecl) < 0.02;
       checkEl.innerHTML = ok
-        ? `<span style="color:#3fb950;font-size:.75rem">✓ ${brl(comContab)} + ${brl(dsrVal)} + ${brl(premioVal)} = ${brl(comTotal)}</span>`
-        : `<span style="color:#f85149;font-size:.75rem">⚠ soma ${brl(soma)} ≠ ${brl(comTotal)}</span>`;
+        ? `<span style="color:#3fb950;font-size:.75rem">✓ ${brl(comContab)} + ${brl(dsrVal)} + ${brl(premioVal)} = ${brl(comDecl)}</span>`
+        : `<span style="color:#f85149;font-size:.75rem">⚠ soma ${brl(soma)} ≠ ${brl(comDecl)}</span>`;
     }
 
     proventos = r2(g(`fp-fixo-${empId}`) + comTotal + g(`fp-comLoja-${empId}`) + g(`fp-gm-${empId}`)
@@ -1259,17 +1451,42 @@ function recalc(empId) {
   proventos = r2(proventos + g(`fp-feriado-${empId}`)
     + (entry.extras||[]).reduce((s,ex)=>s+r2(ex.valor),0));
 
+  // Proventos declarados = bruto − tudo que é pago por fora
+  const proventosDecl = r2(proventos - fb.total);
+
   const descontos = r2(
     g(`fp-valeCompras-${empId}`) + g(`fp-adiantamento-${empId}`) +
     g(`fp-inss-${empId}`) + g(`fp-irpf-${empId}`) + g(`fp-vt-${empId}`) + g(`fp-arred-${empId}`) +
     (entry.extrasDesc||[]).reduce((s,ex)=>s+r2(ex.valor),0)
   );
 
-  const liquido = r2(proventos - descontos);
+  const liquido = r2(proventosDecl - descontos);
   const set = (id,v) => { const el=document.getElementById(id); if(el) el.textContent=brl(v); };
-  set(`val-proventos-${empId}`, proventos);
+  set(`val-proventos-${empId}`, proventosDecl);
   set(`val-desc-${empId}`, descontos);
   set(`val-liquido-${empId}`, liquido);
+  set(`val-fora-${empId}`, fb.total);
+  set(`val-totalgeral-${empId}`, r2(liquido + fb.total));
+
+  const noteEl = document.getElementById(`liquido-note-${empId}`);
+  if (noteEl) noteEl.textContent = fb.total > 0 ? 'valor declarado na contabilidade' : '';
+
+  const barEl = document.getElementById(`geral-bar-${empId}`);
+  if (barEl) barEl.style.display = fb.total > 0 ? 'flex' : 'none';
+  const detEl = document.getElementById(`geral-detail-${empId}`);
+  if (detEl) detEl.textContent = fb.total > 0
+    ? `${brl(liquido)} contabilidade + ${brl(fb.total)} por fora` : '';
+
+  const hintEl = document.getElementById(`fora-hint-${empId}`);
+  if (hintEl) {
+    const parts = [];
+    if (fb.com    > 0) parts.push(`Comissão: ${brl(fb.com)} fora da contabilidade`);
+    if (fb.fixo   > 0) parts.push(`${tipo==='socio'?'Pró-labore':'Salário fixo'}: ${brl(fb.fixo)} fora da contabilidade`);
+    if (fb.outros > 0) parts.push(`Outros: ${brl(fb.outros)} fora da contabilidade`);
+    hintEl.innerHTML = parts.length
+      ? `${parts.join(' · ')}<br>Proventos bruto ${brl(proventos)} → declarado ${brl(proventosDecl)}`
+      : '';
+  }
 }
 
 function attachFormListeners(empId) {
@@ -1295,6 +1512,15 @@ function saveEntryFromForm(empId) {
 
   const extProv = (prev.extras||[]).reduce((s,ex)=>s+r2(ex.valor),0);
   const extDesc = (prev.extrasDesc||[]).reduce((s,ex)=>s+r2(ex.valor),0);
+  const fb      = foraBreakdown(prev, tipo);
+  // Campos do "por fora" gravados junto da entry — proventos/líquido são
+  // sempre os valores DECLARADOS; totalGeral é o que o funcionário recebe.
+  const foraFields = (declaradoBase, comissaoTotal) => ({
+    fora: prev.fora || [],
+    foraComissao: fb.com, foraFixo: fb.fixo, foraOutros: fb.outros, totalFora: fb.total,
+    fixoDeclarado:     r2(declaradoBase - fb.fixo),
+    comissaoDeclarada: r2((comissaoTotal || 0) - fb.com),
+  });
 
   if (tipo === 'socio' || tipo === 'supervisor') {
     const sBoards = emp?.supervisedBoards || [];
@@ -1309,26 +1535,29 @@ function saveEntryFromForm(empId) {
     const complemento = tipo === 'socio' ? g(`fp-complemento-${empId}`) : 0;
     const fixo    = tipo === 'supervisor' ? g(`fp-fixo-${empId}`) : 0;
     const feriado = g(`fp-feriado-${empId}`);
-    const proventos = r2((tipo === 'socio' ? proLabore + complemento : fixo) + comissaoTotal + feriado + extProv);
+    const proventosBruto = r2((tipo === 'socio' ? proLabore + complemento : fixo) + comissaoTotal + feriado + extProv);
+    const proventos = r2(proventosBruto - fb.total);
     const totalDesc = r2(g(`fp-valeCompras-${empId}`) + g(`fp-adiantamento-${empId}`) +
       g(`fp-inss-${empId}`) + g(`fp-irpf-${empId}`) + g(`fp-vt-${empId}`) + g(`fp-arred-${empId}`) + extDesc);
+    const liquido = r2(proventos - totalDesc);
     FP.folha[FP.board].entries[empId] = {
       ...prev, tipo, proLabore, complemento, fixo, lojaComissoes, comissaoTotal,
       vendas: prev.vendas, meta: prev.meta, pctMeta: prev.pctMeta,
       faixaLabel: prev.faixaLabel, comissaoPct: prev.comissaoPct,
-      feriado, proventos,
+      feriado, proventos, proventosBruto,
+      ...foraFields(tipo === 'socio' ? proLabore : fixo, comissaoTotal),
       valeCompras: g(`fp-valeCompras-${empId}`), adiantamento: g(`fp-adiantamento-${empId}`),
       inss: g(`fp-inss-${empId}`), irpf: g(`fp-irpf-${empId}`),
       vt: g(`fp-vt-${empId}`), arredondamento: g(`fp-arred-${empId}`),
-      totalDescontos: totalDesc, liquido: r2(proventos - totalDesc),
+      totalDescontos: totalDesc, liquido, totalGeral: r2(liquido + fb.total),
     };
     return;
   }
 
-  let proventos=0, comissaoTotal=0, comissaoContab=0, dsr=0, premio=0;
+  let proventosBruto=0, comissaoTotal=0, comissaoContab=0, dsr=0, premio=0;
 
   if (tipo === 'caixa') {
-    proventos = r2(g(`fp-fixo-${empId}`) + g(`fp-quebra-${empId}`)
+    proventosBruto = r2(g(`fp-fixo-${empId}`) + g(`fp-quebra-${empId}`)
       + g(`fp-comLoja-${empId}`) + g(`fp-premiacaoBalanco-${empId}`) + g(`fp-feriado-${empId}`) + extProv);
   } else {
     const vendas  = g(`fp-vendas-${empId}`);
@@ -1336,12 +1565,13 @@ function saveEntryFromForm(empId) {
     comissaoTotal  = r2(vendas * comPct / 100);
     dsr            = g(`fp-dsr-${empId}`);
     premio         = g(`fp-premio-${empId}`);
-    comissaoContab = r2(comissaoTotal - dsr - premio);
-    proventos = r2(g(`fp-fixo-${empId}`) + comissaoTotal
+    comissaoContab = r2(comissaoTotal - fb.com - dsr - premio);
+    proventosBruto = r2(g(`fp-fixo-${empId}`) + comissaoTotal
       + g(`fp-comLoja-${empId}`) + g(`fp-gm-${empId}`)
       + g(`fp-premiacao-${empId}`) + g(`fp-premiacaoBalanco-${empId}`)
       + g(`fp-feriado-${empId}`) + extProv);
   }
+  const proventos = r2(proventosBruto - fb.total);
 
   const totalDesc = r2(g(`fp-valeCompras-${empId}`) + g(`fp-adiantamento-${empId}`)
     + g(`fp-inss-${empId}`) + g(`fp-irpf-${empId}`) + g(`fp-vt-${empId}`)
@@ -1360,7 +1590,8 @@ function saveEntryFromForm(empId) {
     premiacao:         g(`fp-premiacao-${empId}`),
     premiacaoBalanco:  g(`fp-premiacaoBalanco-${empId}`),
     feriado:           g(`fp-feriado-${empId}`),
-    proventos,
+    proventos, proventosBruto,
+    ...foraFields(g(`fp-fixo-${empId}`), comissaoTotal),
     valeCompras:    g(`fp-valeCompras-${empId}`),
     adiantamento:   g(`fp-adiantamento-${empId}`),
     inss:           g(`fp-inss-${empId}`),
@@ -1369,6 +1600,7 @@ function saveEntryFromForm(empId) {
     arredondamento: g(`fp-arred-${empId}`),
     totalDescontos: totalDesc,
     liquido: r2(proventos - totalDesc),
+    totalGeral: r2(proventos - totalDesc + fb.total),
   };
 }
 
@@ -1417,8 +1649,11 @@ function fpGerar() {
   const board = FP.board;
   if (!FP.folha[board]) FP.folha[board] = {};
   if (!FP.folha[board].entries) FP.folha[board].entries = {};
-  for (const emp of boardEmps(board))
-    FP.folha[board].entries[emp.id] = defaultEntry(emp);
+  for (const emp of boardEmps(board)) {
+    // "por fora" é decisão manual, não valor calculado — sobrevive ao Gerar
+    const fora = FP.folha[board].entries[emp.id]?.fora;
+    FP.folha[board].entries[emp.id] = applyFora(defaultEntry(emp), emp, fora);
+  }
   FP.dirty = true;
   renderPanel();
   toast('Folha gerada.');
@@ -1431,7 +1666,8 @@ function fpGerarEmp(empId) {
   if (hasData && !confirm(`Recalcular a folha de ${emp.apelido || emp.name}? Os valores editados manualmente serão perdidos.`)) return;
   if (!FP.folha[FP.board]) FP.folha[FP.board] = {};
   if (!FP.folha[FP.board].entries) FP.folha[FP.board].entries = {};
-  FP.folha[FP.board].entries[empId] = defaultEntry(emp);
+  const fora = FP.folha[FP.board].entries[empId]?.fora;
+  FP.folha[FP.board].entries[empId] = applyFora(defaultEntry(emp), emp, fora);
   FP.dirty = true;
   selectEmp(empId);
   toast(`Folha de ${emp.apelido || emp.name} recalculada.`);
@@ -1551,10 +1787,24 @@ function buildRecibo(emp, entry, mes, origin) {
   const cols = `<colgroup><col style="width:54%"><col style="width:16%"><col style="width:11%"><col style="width:19%"></colgroup>`;
   const tbl  = `border-collapse:collapse;width:100%;border:1px solid #000;font-size:10pt;`;
 
+  // ── Pagamento por fora ──
+  // O bloco de proventos mostra os valores DECLARADOS (o complemento sai em
+  // bloco próprio, com TOTAL GERAL no fim) — assim o recibo sempre fecha.
+  const foraLinhas = (entry.fora || []).filter(f => num(f.valor));
+  const totalFora  = num(foraLinhas.reduce((s, f) => s + num(f.valor), 0));
+  const abateCom   = !(tipo === 'socio' || tipo === 'supervisor'); // comissão em linha única
+  const fixoBase   = tipo === 'socio' ? entry.proLabore : entry.fixo;
+  const fixoDecl   = num(entry.fixoDeclarado != null ? entry.fixoDeclarado : fixoBase);
+  const comDecl    = num(abateCom && entry.comissaoDeclarada != null
+    ? entry.comissaoDeclarada : entry.comissaoTotal);
+  // Sobra do "por fora" que não abateu nenhuma linha específica (origem "Outros",
+  // ou comissão de sócio/supervisor, que é rateada entre várias lojas)
+  const foraResto  = num(totalFora - num(entry.foraFixo) - (abateCom ? num(entry.foraComissao) : 0));
+
   // ── Proventos ──
   let prov = '';
   if (tipo === 'caixa') {
-    prov += tr('SALÁRIO FIXO',    entry.fixo   || 0, entry.fixo);
+    prov += tr('SALÁRIO FIXO',    fixoDecl, fixoDecl);
     prov += tr('QUEBRA DE CAIXA', entry.quebra || 0, entry.quebra);
     if (num(entry.comissaoLoja) > 0)
       prov += tr('COMISSÃO LOJA', entry.comissaoLoja, entry.vendaLoja,
@@ -1570,9 +1820,9 @@ function buildRecibo(emp, entry, mes, origin) {
     }
   } else if (tipo === 'supervisor' || tipo === 'socio') {
     if (tipo === 'supervisor' && num(entry.fixo) > 0)
-      prov += tr('SALÁRIO FIXO', entry.fixo, entry.fixo);
+      prov += tr('SALÁRIO FIXO', fixoDecl, fixoDecl);
     if (tipo === 'socio') {
-      prov += tr('PRÓ-LABORE', entry.proLabore || 0, entry.proLabore || 0);
+      prov += tr('PRÓ-LABORE', fixoDecl, fixoDecl);
       if (num(entry.complemento) > 0)
         prov += tr('COMPLEMENTO', entry.complemento, entry.complemento);
     }
@@ -1585,7 +1835,7 @@ function buildRecibo(emp, entry, mes, origin) {
     });
   } else {
     if (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
-      prov += tr('SALÁRIO FIXO', entry.fixo || 0, entry.fixo);
+      prov += tr('SALÁRIO FIXO', fixoDecl, fixoDecl);
     const faixaColors = {'SEM META':'#888','META 1':'#b8860b','META 2':'#2e7d32','SUPER META':'#00838f'};
     const faixaLbl   = entry.faixaLabel || '—';
     const faixaClr   = faixaColors[faixaLbl] || '#888';
@@ -1603,7 +1853,7 @@ function buildRecibo(emp, entry, mes, origin) {
       `<td style="padding:1px 5px 2px">${tipo === 'gerente' ? 'VENDAS LOJA' : (tipo === 'gvend' || tipo === 'sub') ? 'VENDAS PRÓPRIAS' : 'VENDAS'}</td>` +
       `<td style="padding:1px 5px 2px;text-align:right">${num(entry.vendas) ? `<strong>${fmt(num(entry.vendas))}</strong>` : ''}</td>` +
       `<td></td>` +
-      `<td style="padding:1px 5px 2px;text-align:right;white-space:nowrap">${money(entry.comissaoTotal)}</td>` +
+      `<td style="padding:1px 5px 2px;text-align:right;white-space:nowrap">${money(comDecl)}</td>` +
       `</tr>`;
     const gm = tipo === 'gerente'
       ? r2(cfg.garantiaMinimaGerente || cfg.garantiaMinima || 0)
@@ -1646,6 +1896,8 @@ function buildRecibo(emp, entry, mes, origin) {
     if (num(ex.valor) !== 0)
       prov += tr((ex.nome || 'OUTROS').toUpperCase(), ex.valor, ex.valor);
   });
+  if (foraResto > 0.004)
+    prov += tr('(−) COMPLEMENTO PAGO À PARTE', -foraResto);
 
   // ── Descontos ──
   let desc = '';
@@ -1707,6 +1959,26 @@ function buildRecibo(emp, entry, mes, origin) {
     </tr>
   </tbody>
 </table>
+${totalFora > 0 ? `
+<table style="${tbl}border-top:none;border-bottom:none;margin-top:-1px">
+  ${cols}
+  <tbody>
+    ${gap}
+    ${foraLinhas.map(f => tr((f.nome || 'COMPLEMENTO').toUpperCase(), f.valor)).join('')}
+    ${gap}
+  </tbody>
+  ${totRow('TOTAL COMPLEMENTO', totalFora, '#d3d3d3')}
+</table>
+
+<table style="${tbl}border-top:none;border-bottom:none;margin-top:-1px">
+  ${cols}
+  <tbody>
+    <tr style="background:#bdbdbd">
+      <td colspan="3" style="padding:5px 5px;font-weight:700;font-size:11pt">TOTAL GERAL</td>
+      <td style="padding:5px;text-align:right;font-weight:700;font-size:11pt;white-space:nowrap">R$&nbsp;${fmt(num(entry.liquido) + totalFora)}</td>
+    </tr>
+  </tbody>
+</table>` : ''}
 
 <table style="${tbl}border-top:none;margin-top:-1px">
   <tr>
