@@ -1788,8 +1788,9 @@ function buildRecibo(emp, entry, mes, origin) {
   const tbl  = `border-collapse:collapse;width:100%;border:1px solid #000;font-size:10pt;`;
 
   // ── Pagamento por fora ──
-  // O bloco de proventos mostra os valores DECLARADOS (o complemento sai em
-  // bloco próprio, com TOTAL GERAL no fim) — assim o recibo sempre fecha.
+  // O complemento entra como linha destacada logo abaixo da linha que ele abate
+  // (salário fixo / vendas próprias), para o colaborador conferir na hora:
+  // declarado + complemento = valor cheio. PROVENTOS é o total cheio.
   const foraLinhas = (entry.fora || []).filter(f => num(f.valor));
   const totalFora  = num(foraLinhas.reduce((s, f) => s + num(f.valor), 0));
   const abateCom   = !(tipo === 'socio' || tipo === 'supervisor'); // comissão em linha única
@@ -1797,14 +1798,25 @@ function buildRecibo(emp, entry, mes, origin) {
   const fixoDecl   = num(entry.fixoDeclarado != null ? entry.fixoDeclarado : fixoBase);
   const comDecl    = num(abateCom && entry.comissaoDeclarada != null
     ? entry.comissaoDeclarada : entry.comissaoTotal);
-  // Sobra do "por fora" que não abateu nenhuma linha específica (origem "Outros",
-  // ou comissão de sócio/supervisor, que é rateada entre várias lojas)
-  const foraResto  = num(totalFora - num(entry.foraFixo) - (abateCom ? num(entry.foraComissao) : 0));
+
+  const foraOrgDe  = f => {
+    const opts = foraOrigemOpts(tipo);
+    const o = opts[f.origem] ? f.origem : foraOrigemDefault(tipo);
+    // sócio/supervisor: comissão é rateada entre lojas, não há linha única a abater
+    return (o === 'comissao' && !abateCom) ? 'outros' : o;
+  };
+  // Complemento com linha de origem visível → soma nos proventos junto com ela
+  const complRows = org => foraLinhas.filter(f => foraOrgDe(f) === org)
+    .map(f => tr((f.nome || 'COMPLEMENTO').toUpperCase(), f.valor, '', '', false, '#fef9c3'))
+    .join('');
+  // Origem "Outros" já está embutida nas linhas cheias acima — vira nota de rodapé
+  const foraMemo = foraLinhas.filter(f => foraOrgDe(f) === 'outros');
 
   // ── Proventos ──
   let prov = '';
   if (tipo === 'caixa') {
     prov += tr('SALÁRIO FIXO',    fixoDecl, fixoDecl);
+    prov += complRows('fixo');
     prov += tr('QUEBRA DE CAIXA', entry.quebra || 0, entry.quebra);
     if (num(entry.comissaoLoja) > 0)
       prov += tr('COMISSÃO LOJA', entry.comissaoLoja, entry.vendaLoja,
@@ -1819,10 +1831,13 @@ function buildRecibo(emp, entry, mes, origin) {
       }
     }
   } else if (tipo === 'supervisor' || tipo === 'socio') {
-    if (tipo === 'supervisor' && num(entry.fixo) > 0)
+    if (tipo === 'supervisor' && num(entry.fixo) > 0) {
       prov += tr('SALÁRIO FIXO', fixoDecl, fixoDecl);
+      prov += complRows('fixo');
+    }
     if (tipo === 'socio') {
       prov += tr('PRÓ-LABORE', fixoDecl, fixoDecl);
+      prov += complRows('fixo');
       if (num(entry.complemento) > 0)
         prov += tr('COMPLEMENTO', entry.complemento, entry.complemento);
     }
@@ -1834,8 +1849,10 @@ function buildRecibo(emp, entry, mes, origin) {
           num(lj.comissaoPct) ? fmt(lj.comissaoPct) + '%' : '');
     });
   } else {
-    if (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
+    if (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend') {
       prov += tr('SALÁRIO FIXO', fixoDecl, fixoDecl);
+      prov += complRows('fixo');
+    }
     const faixaColors = {'SEM META':'#888','META 1':'#b8860b','META 2':'#2e7d32','SUPER META':'#00838f'};
     const faixaLbl   = entry.faixaLabel || '—';
     const faixaClr   = faixaColors[faixaLbl] || '#888';
@@ -1855,6 +1872,7 @@ function buildRecibo(emp, entry, mes, origin) {
       `<td></td>` +
       `<td style="padding:1px 5px 2px;text-align:right;white-space:nowrap">${money(comDecl)}</td>` +
       `</tr>`;
+    prov += complRows('comissao');
     const gm = tipo === 'gerente'
       ? r2(cfg.garantiaMinimaGerente || cfg.garantiaMinima || 0)
       : (tipo === 'sub' || tipo === 'gvend')
@@ -1896,8 +1914,10 @@ function buildRecibo(emp, entry, mes, origin) {
     if (num(ex.valor) !== 0)
       prov += tr((ex.nome || 'OUTROS').toUpperCase(), ex.valor, ex.valor);
   });
-  if (foraResto > 0.004)
-    prov += tr('(−) COMPLEMENTO PAGO À PARTE', -foraResto);
+  if (foraMemo.length)
+    prov += `<tr><td colspan="4" style="padding:2px 5px 0;font-size:8pt;font-style:italic;color:#555">` +
+      foraMemo.map(f => `${f.nome || 'complemento'}: ${money(f.valor)} pago à parte (já incluso acima)`).join('  ·  ') +
+      `</td></tr>`;
 
   // ── Descontos ──
   let desc = '';
@@ -1941,7 +1961,7 @@ function buildRecibo(emp, entry, mes, origin) {
 <table style="${tbl}border-top:none;border-bottom:none;margin-top:-1px">
   ${cols}
   <tbody>${gap}${prov}${gap}</tbody>
-  ${totRow('PROVENTOS', entry.proventos, '#d3d3d3')}
+  ${totRow('PROVENTOS', num(entry.proventos) + totalFora, '#d3d3d3')}
 </table>
 
 <table style="${tbl}border-top:none;border-bottom:none;margin-top:-1px">
@@ -1953,32 +1973,21 @@ function buildRecibo(emp, entry, mes, origin) {
 <table style="${tbl}border-top:none;border-bottom:none;margin-top:-1px">
   ${cols}
   <tbody>
+    ${totalFora > 0 ? `
+    <tr style="background:#e8e8e8">
+      <td colspan="3" style="padding:4px 5px;font-weight:700">LÍQUIDO CONTABILIDADE</td>
+      <td style="padding:4px 5px;text-align:right;font-weight:700;white-space:nowrap">R$&nbsp;${fmt(num(entry.liquido))}</td>
+    </tr>
+    <tr style="background:#bdbdbd;border-top:1px solid #000">
+      <td colspan="3" style="padding:5px 5px;font-weight:700;font-size:11pt">LÍQUIDO TOTAL</td>
+      <td style="padding:5px;text-align:right;font-weight:700;font-size:11pt;white-space:nowrap">R$&nbsp;${fmt(num(entry.liquido) + totalFora)}</td>
+    </tr>` : `
     <tr style="background:#bdbdbd">
       <td colspan="3" style="padding:5px 5px;font-weight:700;font-size:11pt">LÍQUIDO</td>
       <td style="padding:5px;text-align:right;font-weight:700;font-size:11pt;white-space:nowrap">R$&nbsp;${fmt(num(entry.liquido))}</td>
-    </tr>
+    </tr>`}
   </tbody>
 </table>
-${totalFora > 0 ? `
-<table style="${tbl}border-top:none;border-bottom:none;margin-top:-1px">
-  ${cols}
-  <tbody>
-    ${gap}
-    ${foraLinhas.map(f => tr((f.nome || 'COMPLEMENTO').toUpperCase(), f.valor)).join('')}
-    ${gap}
-  </tbody>
-  ${totRow('TOTAL COMPLEMENTO', totalFora, '#d3d3d3')}
-</table>
-
-<table style="${tbl}border-top:none;border-bottom:none;margin-top:-1px">
-  ${cols}
-  <tbody>
-    <tr style="background:#bdbdbd">
-      <td colspan="3" style="padding:5px 5px;font-weight:700;font-size:11pt">TOTAL GERAL</td>
-      <td style="padding:5px;text-align:right;font-weight:700;font-size:11pt;white-space:nowrap">R$&nbsp;${fmt(num(entry.liquido) + totalFora)}</td>
-    </tr>
-  </tbody>
-</table>` : ''}
 
 <table style="${tbl}border-top:none;margin-top:-1px">
   <tr>
