@@ -7535,7 +7535,9 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
           const isGVend  = (/g\.?\s*vend/.test(tipo) || /gerente\s+vend/.test(tipo)) && !/^sub/.test(tipo);
           const isSubGer = /^sub/.test(tipo) && /gerente/.test(tipo);
           const empCfg   = folhaEmpCfgMap[emp.id] || {};
-          const useStorePremio = isGer || isGVend || isSubGer || empCfg.recebePremiaoLoja;
+          // Sub-gerente NÃO recebe prêmio de loja por padrão — é vendedor com
+          // comissionamento sobre a loja. Só recebe se marcar a flag no config.
+          const useStorePremio = isGer || isGVend || empCfg.recebePremiaoLoja;
           const storePremioVal = empCfg.premioLojaValor > 0 ? empCfg.premioLojaValor : PREMIO_GER_W;
 
           // Verifica se o funcionário trabalhou todos os dias da semana
@@ -7570,7 +7572,7 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
             return true;
           })();
 
-          // Prêmio de loja para gerente, sub-gerente e funcionários com flag no config
+          // Prêmio de loja para gerente, gerente vendedor e funcionários com flag no config
           if (useStorePremio && trabalhouSemanaInteira) {
             let val = 0;
             if (storeHitMeta) val += storePremioVal;
@@ -7778,7 +7780,8 @@ app.get('/api/folha/:year/:month/export', requireAuth, async (req, res) => {
           addProv('DSR', entry.dsr);
           addProv('PRÊMIO', entry.premio);
           if (entry.fixo) addProv('SALÁRIO FIXO', entry.fixo);
-          if (entry.comissaoLoja) addProv('COMISSÃO LOJA', entry.comissaoLoja);
+          // No sub-gerente a comissão da loja já está dentro de COMISSÃO CONTAB + DSR + PRÊMIO
+          if (entry.comissaoLoja && entry.tipo !== 'sub') addProv('COMISSÃO LOJA', entry.comissaoLoja);
           if (entry.gmComplement) addProv('GARANTIA SURFERS', entry.gmComplement);
         }
         if (entry.feriado) addProv('FERIADO', entry.feriado);

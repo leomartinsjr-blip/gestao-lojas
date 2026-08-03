@@ -36,6 +36,20 @@ function foraOrigemOpts(tipo) {
 }
 function foraOrigemDefault(tipo) { return tipo === 'caixa' ? 'fixo' : 'comissao'; }
 
+// Recebe comissão sobre o total da loja? O sub-gerente pode ter faixas próprias
+// (comissaoVRSemMeta/Meta2/Super) mesmo com comissaoVR — meta 1 — zerada.
+function temComissaoLoja(tipo, ecfg) {
+  return (ecfg.comissaoVR || 0) > 0 ||
+    (tipo === 'sub' && !!(ecfg.comissaoVRSemMeta || ecfg.comissaoVRMeta2 || ecfg.comissaoVRSuper));
+}
+
+// Base da divisão para contabilidade (comissão contab + DSR + prêmio).
+// Sub-gerente é vendedor com comissionamento sobre a loja: a comissão da loja
+// entra na mesma divisão da comissão própria e portanto também gera DSR.
+function baseDivisaoContab(tipo, comissao, comissaoLoja) {
+  return r2(comissao + (tipo === 'sub' ? r2(comissaoLoja || 0) : 0));
+}
+
 function foraBreakdown(entry, tipo) {
   const opts = foraOrigemOpts(tipo);
   let com = 0, fixo = 0, outros = 0;
@@ -74,8 +88,9 @@ function applyFora(entry, emp, fora) {
 
   if (entry.comissaoContab != null) {
     const du = FP.mensal.diasUteis || 22, df = FP.mensal.domingosFeriados || 4;
-    entry.dsr            = (du + df) > 0 ? r2(entry.comissaoDeclarada * df / (du + df)) : 0;
-    entry.comissaoContab = r2(entry.comissaoDeclarada - entry.dsr - (entry.premio || 0));
+    const base = baseDivisaoContab(tipo, entry.comissaoDeclarada, entry.comissaoLoja);
+    entry.dsr            = (du + df) > 0 ? r2(base * df / (du + df)) : 0;
+    entry.comissaoContab = r2(base - entry.dsr - (entry.premio || 0));
   }
 
   entry.inss = r2(entry.proventos * (ecfg.inssRate || 0) / 100);
@@ -314,7 +329,7 @@ function buildTotalForm(emps) {
     const calcPrem = _ct === 'gerente'
       ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
       : r2(FP.premiacaoSemanal[emp.id] || 0);
-    const calcPremGer = (_ct === 'gvend' || _ct === 'sub' || _ecfg.recebePremiaoLoja) ? r2(FP.premiacaoSemanalGer[emp.id] || 0) : 0;
+    const calcPremGer = (_ct === 'gvend' || _ecfg.recebePremiaoLoja) ? r2(FP.premiacaoSemanalGer[emp.id] || 0) : 0;
     if (calcPrem !== r2(entry.premiacao || 0) || calcPremGer !== r2(entry.premiacaoBalanco || 0)) {
       entry = applyFora(defaultEntry(emp), emp, entry.fora);
     }
@@ -527,7 +542,7 @@ function selectEmp(empId) {
   const calcPrem = _ct2 === 'gerente'
     ? r2(FP.premiacaoSemanalGer[empId] || 0)
     : r2(FP.premiacaoSemanal[empId] || 0);
-  const calcPremGer2 = (_ct2 === 'gvend' || _ct2 === 'sub' || _ecfg2.recebePremiaoLoja) ? r2(FP.premiacaoSemanalGer[empId] || 0) : 0;
+  const calcPremGer2 = (_ct2 === 'gvend' || _ecfg2.recebePremiaoLoja) ? r2(FP.premiacaoSemanalGer[empId] || 0) : 0;
   if (calcPrem !== r2(entry.premiacao || 0)) {
     entry = { ...entry, premiacao: calcPrem };
   }
@@ -801,12 +816,6 @@ function defaultEntry(emp) {
 
   const comissaoTotal = r2(vendas * comissaoPct / 100);
 
-  // DSR = (comissaoContab + prêmio) / du × df  →  equivale a comissaoTotal × df / (du + df)
-  const premio = r2((tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
-    ? (cfg.premioGerente || 0) : (cfg.premioVendedor || 0));
-  const dsr = (du + df) > 0 ? r2(comissaoTotal * df / (du + df)) : 0;
-  const comissaoContab = r2(comissaoTotal - dsr - premio);
-
   const fatorMes = fatorProporcionalMes(emp);
 
   const fixo = (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
@@ -820,7 +829,7 @@ function defaultEntry(emp) {
       : r2((cfg.garantiaMinima || 0) * fatorMes);
   const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);
   let comissaoLoja = 0;
-  if (ecfg.comissaoVR > 0 || (tipo === 'sub' && (ecfg.comissaoVRSemMeta || ecfg.comissaoVRMeta2 || ecfg.comissaoVRSuper))) {
+  if (temComissaoLoja(tipo, ecfg)) {
     if (tipo === 'sub') {
       const lojaEcfg = {
         comissaoSemMeta: ecfg.comissaoVRSemMeta || ecfg.comissaoVR || 0,
@@ -836,6 +845,13 @@ function defaultEntry(emp) {
     }
   }
 
+  // DSR = (comissaoContab + prêmio) / du × df  →  equivale a base × df / (du + df)
+  const baseContab = baseDivisaoContab(tipo, comissaoTotal, comissaoLoja);
+  const premio = r2((tipo === 'gerente' || tipo === 'gvend')
+    ? (cfg.premioGerente || 0) : (cfg.premioVendedor || 0));
+  const dsr = (du + df) > 0 ? r2(baseContab * df / (du + df)) : 0;
+  const comissaoContab = r2(baseContab - dsr - premio);
+
   const baseGm = fixo + comissaoTotal;
   const gmComplement = r2(Math.max(0, gm - baseGm));
 
@@ -843,7 +859,7 @@ function defaultEntry(emp) {
   const premiacao = _tipo === 'gerente'
     ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
     : r2(FP.premiacaoSemanal[emp.id] || 0);
-  const premiacaoBalanco = (_tipo === 'gvend' || _tipo === 'sub' || ecfg.recebePremiaoLoja)
+  const premiacaoBalanco = (_tipo === 'gvend' || ecfg.recebePremiaoLoja)
     ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
     : 0;
 
@@ -987,6 +1003,8 @@ function buildEmpForm(emp, entry) {
     </div>`;
   } else {
     const pctDisplay = e.pctMeta > 0 ? `${r2(e.pctMeta).toFixed(1)}% da meta` : 'sem meta';
+    // Sub-gerente divide comissão própria + comissão da loja; demais, só a própria
+    const baseLabel = tipo === 'sub' ? 'comissão própria + loja' : 'total';
 
     if (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
       provRows += `<div class="fp-field"><label>Salário Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}${fatorNota}</div>`;
@@ -1007,16 +1025,16 @@ function buildEmpForm(emp, entry) {
       <div class="fp-split-box">
         <div class="fp-split-title" style="cursor:pointer;user-select:none"
           onclick="(function(el){const c=el.nextElementSibling;const open=c.style.display!=='none';c.style.display=open?'none':'block';el.querySelector('.fp-split-arrow').textContent=open?'▶':'▼';})(this)">
-          <span class="fp-split-arrow">▶</span> divisão para contabilidade
+          <span class="fp-split-arrow">▶</span> divisão para contabilidade${tipo === 'sub' ? ` <span style="font-weight:400;color:#8b949e">(${baseLabel})</span>` : ''}
         </div>
         <div style="display:none">
           <div class="fp-field fp-split-row">
             <label>Comissão (contab)</label>${inpRO(`fp-comissao-${emp.id}`, e.comissaoContab)}
-            <span class="fp-split-hint">= Total − DSR − Prêmio</span>
+            <span class="fp-split-hint">= ${baseLabel} − DSR − Prêmio</span>
           </div>
           <div class="fp-field fp-split-row">
             <label>DSR (R$)</label>${inp(`fp-dsr-${emp.id}`, e.dsr)}
-            <span class="fp-split-hint">= total × ${df} ÷ ${du + df}</span>
+            <span class="fp-split-hint">= ${baseLabel} × ${df} ÷ ${du + df}</span>
           </div>
           <div class="fp-field fp-split-row">
             <label>Prêmio (R$)</label>${inp(`fp-premio-${emp.id}`, e.premio)}
@@ -1025,7 +1043,7 @@ function buildEmpForm(emp, entry) {
         </div>
       </div>`;
 
-    if ((ecfg.comissaoVR || 0) > 0) provRows += _comLojaRow();
+    if (temComissaoLoja(tipo, ecfg)) provRows += _comLojaRow();
 
     const gmMin = tipo === 'gerente'
       ? (cfg.garantiaMinimaGerente    || cfg.garantiaMinima || 0)
@@ -1062,13 +1080,16 @@ function buildEmpForm(emp, entry) {
         provRows += `<div class="fp-field"><label>Premiação Vendedor (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
           <span style="font-size:.7rem;color:#484f58">${semVendHint}</span></div>`;
       }
-      const semGerDet2  = FP.premiacaoSemanalGerDetalhe[emp.id] || [];
-      const semGerCalc2 = r2(FP.premiacaoSemanalGer[emp.id] || 0);
-      const semGerHint2 = semGerDet2.length
-        ? semGerDet2.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
-        : semGerCalc2 > 0 ? `calculado: ${brl(semGerCalc2)}` : 'nenhuma meta semanal encontrada';
-      provRows += `<div class="fp-field"><label>Premiação da Loja (R$)</label>${inp(`fp-premiacaoBalanco-${emp.id}`, e.premiacaoBalanco || 0)}
-        <span style="font-size:.7rem;color:#484f58">${semGerHint2}</span></div>`;
+      // Sub-gerente não recebe prêmio de loja por padrão — só com a flag no config
+      if (tipo === 'gvend' || ecfg.recebePremiaoLoja) {
+        const semGerDet2  = FP.premiacaoSemanalGerDetalhe[emp.id] || [];
+        const semGerCalc2 = r2(FP.premiacaoSemanalGer[emp.id] || 0);
+        const semGerHint2 = semGerDet2.length
+          ? semGerDet2.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
+          : semGerCalc2 > 0 ? `calculado: ${brl(semGerCalc2)}` : 'nenhuma meta semanal encontrada';
+        provRows += `<div class="fp-field"><label>Premiação da Loja (R$)</label>${inp(`fp-premiacaoBalanco-${emp.id}`, e.premiacaoBalanco || 0)}
+          <span style="font-size:.7rem;color:#484f58">${semGerHint2}</span></div>`;
+      }
     } else {
       const semDetalhe = FP.premiacaoSemanalDetalhe[emp.id] || [];
       const semCalc    = r2(FP.premiacaoSemanal[emp.id] || 0);
@@ -1379,7 +1400,8 @@ function onForaChange(empId) {
     const g  = id => { const el = document.getElementById(id); return el ? r2(parseFloat(el.value)||0) : 0; };
     const du = FP.mensal.diasUteis || 22, df = FP.mensal.domingosFeriados || 4;
     const comDecl = r2(g(`fp-vendas-${empId}`) * g(`fp-comPct-${empId}`) / 100 - foraDe(empId).com);
-    dsrEl.value = ((du + df) > 0 ? r2(comDecl * df / (du + df)) : 0).toFixed(2);
+    const base    = baseDivisaoContab(tipo, comDecl, g(`fp-comLoja-${empId}`));
+    dsrEl.value = ((du + df) > 0 ? r2(base * df / (du + df)) : 0).toFixed(2);
   }
   onFieldChange(empId);
 }
@@ -1418,11 +1440,14 @@ function recalc(empId) {
     const totEl = document.getElementById(`fp-totalCom-${empId}`);
     if (totEl) totEl.textContent = brl(comTotal);
 
+    const comLoja   = g(`fp-comLoja-${empId}`);
     const dsrVal    = g(`fp-dsr-${empId}`);
     const premioVal = g(`fp-premio-${empId}`);
     // Comissão declarada = total − parcela paga por fora
     const comDecl   = r2(comTotal - fb.com);
-    const comContab = r2(comDecl - dsrVal - premioVal);
+    // Base da divisão contábil (no sub-gerente inclui a comissão da loja)
+    const baseContab = baseDivisaoContab(tipo, comDecl, comLoja);
+    const comContab = r2(baseContab - dsrVal - premioVal);
 
     const comEl = document.getElementById(`fp-comissao-${empId}`);
     if (comEl) comEl.value = comContab.toFixed(2);
@@ -1438,13 +1463,13 @@ function recalc(empId) {
     const checkEl = document.getElementById(`fp-splitCheck-${empId}`);
     if (checkEl) {
       const soma = r2(comContab + dsrVal + premioVal);
-      const ok   = Math.abs(soma - comDecl) < 0.02;
+      const ok   = Math.abs(soma - baseContab) < 0.02;
       checkEl.innerHTML = ok
-        ? `<span style="color:#3fb950;font-size:.75rem">✓ ${brl(comContab)} + ${brl(dsrVal)} + ${brl(premioVal)} = ${brl(comDecl)}</span>`
-        : `<span style="color:#f85149;font-size:.75rem">⚠ soma ${brl(soma)} ≠ ${brl(comDecl)}</span>`;
+        ? `<span style="color:#3fb950;font-size:.75rem">✓ ${brl(comContab)} + ${brl(dsrVal)} + ${brl(premioVal)} = ${brl(baseContab)}</span>`
+        : `<span style="color:#f85149;font-size:.75rem">⚠ soma ${brl(soma)} ≠ ${brl(baseContab)}</span>`;
     }
 
-    proventos = r2(g(`fp-fixo-${empId}`) + comTotal + g(`fp-comLoja-${empId}`) + g(`fp-gm-${empId}`)
+    proventos = r2(g(`fp-fixo-${empId}`) + comTotal + comLoja + g(`fp-gm-${empId}`)
       + g(`fp-premiacao-${empId}`) + g(`fp-premiacaoBalanco-${empId}`));
   }
 
@@ -1565,7 +1590,7 @@ function saveEntryFromForm(empId) {
     comissaoTotal  = r2(vendas * comPct / 100);
     dsr            = g(`fp-dsr-${empId}`);
     premio         = g(`fp-premio-${empId}`);
-    comissaoContab = r2(comissaoTotal - fb.com - dsr - premio);
+    comissaoContab = r2(baseDivisaoContab(tipo, r2(comissaoTotal - fb.com), g(`fp-comLoja-${empId}`)) - dsr - premio);
     proventosBruto = r2(g(`fp-fixo-${empId}`) + comissaoTotal
       + g(`fp-comLoja-${empId}`) + g(`fp-gm-${empId}`)
       + g(`fp-premiacao-${empId}`) + g(`fp-premiacaoBalanco-${empId}`)
@@ -1886,7 +1911,7 @@ function buildRecibo(emp, entry, mes, origin) {
     // Premiação: vendedor usa detalhe individual; gerente usa detalhe gerente; gvend ambos
     const _pTipo = tipo;
     const semDetVend = (_pTipo !== 'gerente') ? (FP.premiacaoSemanalDetalhe[emp.id] || []) : [];
-    const semDetGer  = (_pTipo === 'gerente' || _pTipo === 'gvend' || _pTipo === 'sub' || ecfg.recebePremiaoLoja) ? (FP.premiacaoSemanalGerDetalhe[emp.id] || []) : [];
+    const semDetGer  = (_pTipo === 'gerente' || _pTipo === 'gvend' || ecfg.recebePremiaoLoja) ? (FP.premiacaoSemanalGerDetalhe[emp.id] || []) : [];
     const premTotal = num(entry.premiacao);
     if (premTotal > 0) {
       const semSumVend = semDetVend.reduce((s, x) => s + num(x.valor), 0);
