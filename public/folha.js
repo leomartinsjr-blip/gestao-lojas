@@ -43,6 +43,30 @@ function temComissaoLoja(tipo, ecfg) {
     (tipo === 'sub' && !!(ecfg.comissaoVRSemMeta || ecfg.comissaoVRMeta2 || ecfg.comissaoVRSuper));
 }
 
+// Prêmio de loja do supervisor/sócio, quebrado por loja supervisionada.
+// O detalhe semanal vem do servidor já marcado com o board de origem.
+function premiacaoLojaPorBoard(empId, boards) {
+  const det = FP.premiacaoSemanalGerDetalhe[empId] || [];
+  return boards.map(b => {
+    const semanas = det.filter(d => d.board === b);
+    return { board: b, valor: r2(semanas.reduce((s, d) => s + r2(d.valor), 0)), semanas };
+  });
+}
+
+// Premiação semanal calculada pelo servidor. Serve de referência para detectar
+// quando o valor gravado foi ajustado à mão — nesse caso a entry ganha a flag
+// premiacaoManual e deixa de ser sobrescrita ao trocar de aba.
+function premiacaoCalculada(emp) {
+  if (!emp) return { premiacao: 0, premiacaoBalanco: 0 };
+  const t    = cargoTipo(emp.cargo);
+  const ecfg = getEmpCfg(emp);
+  const ger  = r2(FP.premiacaoSemanalGer[emp.id] || 0);
+  return {
+    premiacao:        t === 'gerente' ? ger : r2(FP.premiacaoSemanal[emp.id] || 0),
+    premiacaoBalanco: (t === 'gvend' || ecfg.recebePremiaoLoja) ? ger : 0,
+  };
+}
+
 // Base da divisão para contabilidade (comissão contab + DSR + prêmio).
 // Sub-gerente é vendedor com comissionamento sobre a loja: a comissão da loja
 // entra na mesma divisão da comissão própria e portanto também gera DSR.
@@ -330,7 +354,8 @@ function buildTotalForm(emps) {
       ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
       : r2(FP.premiacaoSemanal[emp.id] || 0);
     const calcPremGer = (_ct === 'gvend' || _ecfg.recebePremiaoLoja) ? r2(FP.premiacaoSemanalGer[emp.id] || 0) : 0;
-    if (calcPrem !== r2(entry.premiacao || 0) || calcPremGer !== r2(entry.premiacaoBalanco || 0)) {
+    if (!entry.premiacaoManual &&
+        (calcPrem !== r2(entry.premiacao || 0) || calcPremGer !== r2(entry.premiacaoBalanco || 0))) {
       entry = applyFora(defaultEntry(emp), emp, entry.fora);
     }
     const _fb = foraBreakdown(entry, _ct);
@@ -536,13 +561,16 @@ function selectEmp(empId) {
   });
   const emp   = FP.employees.find(e => e.id === empId);
   let entry = FP.folha[FP.board]?.entries?.[empId] || defaultEntry(emp);
-  // Sempre aplica o valor calculado pelo servidor para premiação semanal
+  // Aplica o valor calculado pelo servidor para premiação semanal — exceto se o
+  // valor gravado foi ajustado à mão (premiacaoManual), que tem prioridade.
   const _ct2   = cargoTipo(emp.cargo);
   const _ecfg2 = getEmpCfg(emp);
-  const calcPrem = _ct2 === 'gerente'
-    ? r2(FP.premiacaoSemanalGer[empId] || 0)
-    : r2(FP.premiacaoSemanal[empId] || 0);
-  const calcPremGer2 = (_ct2 === 'gvend' || _ecfg2.recebePremiaoLoja) ? r2(FP.premiacaoSemanalGer[empId] || 0) : 0;
+  const calcPrem = entry.premiacaoManual ? r2(entry.premiacao || 0)
+    : _ct2 === 'gerente'
+      ? r2(FP.premiacaoSemanalGer[empId] || 0)
+      : r2(FP.premiacaoSemanal[empId] || 0);
+  const calcPremGer2 = entry.premiacaoManual ? r2(entry.premiacaoBalanco || 0)
+    : (_ct2 === 'gvend' || _ecfg2.recebePremiaoLoja) ? r2(FP.premiacaoSemanalGer[empId] || 0) : 0;
   if (calcPrem !== r2(entry.premiacao || 0)) {
     entry = { ...entry, premiacao: calcPrem };
   }
@@ -735,11 +763,13 @@ function defaultEntry(emp) {
       return { board: b, vendas: venda, comissaoPct: faixa.comPct, comissao: r2(venda * faixa.comPct / 100) };
     });
     const comissaoTotal = r2(lojaComissoes.reduce((s, l) => s + l.comissao, 0));
-    const proventos = r2(proLabore + complemento + comissaoTotal);
+    const premiacaoLojas    = ecfg.recebePremiaoLoja ? premiacaoLojaPorBoard(emp.id, sBoards) : [];
+    const premiacaoBalanco  = r2(premiacaoLojas.reduce((s, l) => s + l.valor, 0));
+    const proventos = r2(proLabore + complemento + comissaoTotal + premiacaoBalanco);
     const inss = r2(proventos * (ecfg.inssRate || 0) / 100);
     const vt   = r2(proventos * (ecfg.vtRate   || 0) / 100);
     return {
-      tipo, proLabore, complemento, lojaComissoes,
+      tipo, proLabore, complemento, lojaComissoes, premiacaoLojas, premiacaoBalanco,
       vendas: totalVendas, meta: totalMeta,
       pctMeta: totalMeta > 0 ? r2(totalVendas / totalMeta * 100) : 0,
       faixaLabel: faixa.label, comissaoPct: faixa.comPct,
@@ -766,11 +796,13 @@ function defaultEntry(emp) {
       return { board: b, vendas: venda, comissaoPct: faixa.comPct, comissao: r2(venda * faixa.comPct / 100) };
     });
     const comissaoTotal = r2(lojaComissoes.reduce((s, l) => s + l.comissao, 0));
-    const proventos = r2(fixo + comissaoTotal);
+    const premiacaoLojas    = ecfg.recebePremiaoLoja ? premiacaoLojaPorBoard(emp.id, sBoards) : [];
+    const premiacaoBalanco  = r2(premiacaoLojas.reduce((s, l) => s + l.valor, 0));
+    const proventos = r2(fixo + comissaoTotal + premiacaoBalanco);
     const inss = r2(proventos * (ecfg.inssRate || 0) / 100);
     const vt   = r2(proventos * (ecfg.vtRate   || 0) / 100);
     return {
-      tipo, fixo, lojaComissoes,
+      tipo, fixo, lojaComissoes, premiacaoLojas, premiacaoBalanco,
       vendas: totalVendas, meta: totalMeta, pctMeta,
       faixaLabel: faixa.label, comissaoPct: faixa.comPct,
       comissaoTotal, feriado: 0,
@@ -931,6 +963,32 @@ function buildEmpForm(emp, entry) {
     </div>`;
   };
 
+  // Prêmio de loja do supervisor/sócio: uma linha por loja supervisionada
+  const _premLojaRows = () => {
+    if (!ecfg.recebePremiaoLoja) return '';
+    const sBoards = emp.supervisedBoards || [];
+    const lojas = e.premiacaoLojas || premiacaoLojaPorBoard(emp.id, sBoards);
+    if (!lojas.length) return '';
+    const total = r2(lojas.reduce((s, l) => s + r2(l.valor), 0));
+    let html = `<div class="fp-field" style="border-top:1px solid #30363d;padding-top:.5rem;margin-top:.25rem">
+      <label style="font-weight:600">Premiação da Loja</label></div>`;
+    lojas.forEach(lj => {
+      const bi   = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase(), color: '#8b949e' };
+      const hint = (lj.semanas || []).length
+        ? (lj.semanas || []).map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
+        : 'nenhuma semana com meta batida';
+      html += `<div class="fp-field">
+        <label style="color:${bi.color}">${bi.label} (R$)</label>${inp(`fp-premLoja-${emp.id}-${lj.board}`, lj.valor)}
+        <span style="font-size:.7rem;color:#484f58">${hint}</span></div>`;
+    });
+    html += `<div class="fp-field fp-field-inline">
+      <label style="font-weight:600">Total Premiação</label>
+      <span></span><span></span><span></span><span></span>
+      <span class="fp-total-inline" id="fp-premLojaTotal-${emp.id}">${brl(total)}</span>
+    </div>`;
+    return html;
+  };
+
   let provRows = '';
 
   if (tipo === 'caixa') {
@@ -975,6 +1033,7 @@ function buildEmpForm(emp, entry) {
       <span class="fp-total-inline" id="fp-supComTotal-${emp.id}">${brl(e.comissaoTotal||0)}</span>
       <span style="font-size:.7rem;color:#8b949e;margin-left:.3rem">${pctTotal}</span>
     </div>`;
+    provRows += _premLojaRows();
   } else if (tipo === 'supervisor') {
     const lojaComissoes = e.lojaComissoes || (emp.supervisedBoards || []).map(b => ({
       board: b, vendas: r2(FP.lojaVendaMap[b]||0), comissaoPct: e.comissaoPct||0, comissao: 0,
@@ -1001,6 +1060,7 @@ function buildEmpForm(emp, entry) {
       <span class="fp-total-inline" id="fp-supComTotal-${emp.id}">${brl(e.comissaoTotal||0)}</span>
       <span style="font-size:.7rem;color:#8b949e;margin-left:.3rem">${pctTotal}</span>
     </div>`;
+    provRows += _premLojaRows();
   } else {
     const pctDisplay = e.pctMeta > 0 ? `${r2(e.pctMeta).toFixed(1)}% da meta` : 'sem meta';
     // Sub-gerente divide comissão própria + comissão da loja; demais, só a própria
@@ -1418,18 +1478,18 @@ function recalc(empId) {
 
   let proventos = 0;
 
-  if (tipo === 'socio') {
+  if (tipo === 'socio' || tipo === 'supervisor') {
     const sBoards = emp?.supervisedBoards || [];
     const comTotal = r2(sBoards.reduce((s, b) => s + g(`fp-supCom-${empId}-${b}`), 0));
     const totEl = document.getElementById(`fp-supComTotal-${empId}`);
     if (totEl) totEl.textContent = brl(comTotal);
-    proventos = r2(g(`fp-proLabore-${empId}`) + g(`fp-complemento-${empId}`) + comTotal);
-  } else if (tipo === 'supervisor') {
-    const sBoards = emp?.supervisedBoards || [];
-    const comTotal = r2(sBoards.reduce((s, b) => s + g(`fp-supCom-${empId}-${b}`), 0));
-    const totEl = document.getElementById(`fp-supComTotal-${empId}`);
-    if (totEl) totEl.textContent = brl(comTotal);
-    proventos = r2(g(`fp-fixo-${empId}`) + comTotal);
+    const premTotal = r2(sBoards.reduce((s, b) => s + g(`fp-premLoja-${empId}-${b}`), 0));
+    const premEl = document.getElementById(`fp-premLojaTotal-${empId}`);
+    if (premEl) premEl.textContent = brl(premTotal);
+    const base = tipo === 'socio'
+      ? r2(g(`fp-proLabore-${empId}`) + g(`fp-complemento-${empId}`))
+      : g(`fp-fixo-${empId}`);
+    proventos = r2(base + comTotal + premTotal);
   } else if (tipo === 'caixa') {
     proventos = g(`fp-fixo-${empId}`) + g(`fp-quebra-${empId}`) + g(`fp-comLoja-${empId}`) + g(`fp-premiacaoBalanco-${empId}`);
   } else {
@@ -1556,17 +1616,25 @@ function saveEntryFromForm(empId) {
       comissao:    g(`fp-supCom-${empId}-${b}`),
     }));
     const comissaoTotal = r2(lojaComissoes.reduce((s, l) => s + l.comissao, 0));
+    const premiacaoLojas = sBoards
+      .map(b => ({ board: b, valor: g(`fp-premLoja-${empId}-${b}`),
+                   semanas: (prev.premiacaoLojas || []).find(l => l.board === b)?.semanas || [] }))
+      .filter(l => l.valor !== 0 || (prev.premiacaoLojas || []).some(p => p.board === l.board));
+    const premiacaoBalanco = r2(premiacaoLojas.reduce((s, l) => s + l.valor, 0));
     const proLabore   = tipo === 'socio' ? g(`fp-proLabore-${empId}`)   : 0;
     const complemento = tipo === 'socio' ? g(`fp-complemento-${empId}`) : 0;
     const fixo    = tipo === 'supervisor' ? g(`fp-fixo-${empId}`) : 0;
     const feriado = g(`fp-feriado-${empId}`);
-    const proventosBruto = r2((tipo === 'socio' ? proLabore + complemento : fixo) + comissaoTotal + feriado + extProv);
+    const proventosBruto = r2((tipo === 'socio' ? proLabore + complemento : fixo)
+      + comissaoTotal + premiacaoBalanco + feriado + extProv);
     const proventos = r2(proventosBruto - fb.total);
     const totalDesc = r2(g(`fp-valeCompras-${empId}`) + g(`fp-adiantamento-${empId}`) +
       g(`fp-inss-${empId}`) + g(`fp-irpf-${empId}`) + g(`fp-vt-${empId}`) + g(`fp-arred-${empId}`) + extDesc);
     const liquido = r2(proventos - totalDesc);
     FP.folha[FP.board].entries[empId] = {
       ...prev, tipo, proLabore, complemento, fixo, lojaComissoes, comissaoTotal,
+      premiacaoLojas, premiacaoBalanco,
+      premiacaoManual: premiacaoBalanco !== premiacaoCalculada(emp).premiacaoBalanco,
       vendas: prev.vendas, meta: prev.meta, pctMeta: prev.pctMeta,
       faixaLabel: prev.faixaLabel, comissaoPct: prev.comissaoPct,
       feriado, proventos, proventosBruto,
@@ -1598,6 +1666,13 @@ function saveEntryFromForm(empId) {
   }
   const proventos = r2(proventosBruto - fb.total);
 
+  // Ajuste manual da premiação tem prioridade sobre o valor calculado pelo servidor
+  const premiacao        = g(`fp-premiacao-${empId}`);
+  const premiacaoBalanco = g(`fp-premiacaoBalanco-${empId}`);
+  const _calc            = premiacaoCalculada(emp);
+  const premiacaoManual  = premiacao !== _calc.premiacao
+    || premiacaoBalanco !== _calc.premiacaoBalanco;
+
   const totalDesc = r2(g(`fp-valeCompras-${empId}`) + g(`fp-adiantamento-${empId}`)
     + g(`fp-inss-${empId}`) + g(`fp-irpf-${empId}`) + g(`fp-vt-${empId}`)
     + g(`fp-arred-${empId}`) + extDesc);
@@ -1612,8 +1687,7 @@ function saveEntryFromForm(empId) {
     comissaoTotal, comissaoContab, dsr, premio,
     comissaoLoja:      g(`fp-comLoja-${empId}`),
     gmComplement:      g(`fp-gm-${empId}`),
-    premiacao:         g(`fp-premiacao-${empId}`),
-    premiacaoBalanco:  g(`fp-premiacaoBalanco-${empId}`),
+    premiacao, premiacaoBalanco, premiacaoManual,
     feriado:           g(`fp-feriado-${empId}`),
     proventos, proventosBruto,
     ...foraFields(g(`fp-fixo-${empId}`), comissaoTotal),

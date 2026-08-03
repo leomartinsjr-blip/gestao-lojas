@@ -7414,14 +7414,16 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
 
     // ── Premiação semanal — calcula para semanas cujo último dia está dentro do mês ──
     const PREMIO_VEND_W = 80, PREMIO_GER_W = 250, PREMIO_PA_W = 50, PA_THR = 1.80;
-    const weeklyMetasMonth = (db.weeklyMetas || {})[mk] || {};
-    const globalWeights    = (db.globalWeights || {})[mk] || {};
-    const daysInMonth      = new Date(year, month, 0).getDate();
     const todayStr   = new Date().toISOString().slice(0, 10);
     const lastDay    = new Date(year, month, 0);
     const padD       = n => String(n).padStart(2,'0');
     const lastDayStr = `${year}-${padD(month)}-${padD(lastDay.getDate())}`;
     const monthStart = `${year}-${padD(month)}-01`;
+    // A primeira semana do mês pode começar até 6 dias antes (domingo do mês anterior)
+    const rangeStart = (() => {
+      const d = new Date(monthStart + 'T12:00:00'); d.setDate(d.getDate() - 6);
+      return `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
+    })();
 
     // ── Ausências (férias/atestados) → mapa de dias bloqueados por funcionário ──
     // Usado para excluir funcionários que não trabalharam a semana inteira da premiação semanal
@@ -7435,7 +7437,7 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       const empAus  = ausencias.filter(a =>
         ['ferias','atestado'].includes(a.tipo) &&
         _normName(a.colaborador) === empNorm &&
-        a.dataFim >= monthStart && a.dataInicio <= lastDayStr
+        a.dataFim >= rangeStart && a.dataInicio <= lastDayStr
       );
       if (!empAus.length) continue;
       const days = new Set();
@@ -7444,7 +7446,7 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
         const fim = new Date(a.dataFim    + 'T12:00:00');
         while (cur <= fim) {
           const ds = cur.toISOString().slice(0,10);
-          if (ds >= monthStart && ds <= lastDayStr) days.add(ds);
+          if (ds >= rangeStart && ds <= lastDayStr) days.add(ds);
           cur.setDate(cur.getDate() + 1);
         }
       }
@@ -7469,19 +7471,74 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       boardEmpsMap[emp.board].push(emp);
     }
 
-    // Sum of day-weights for a week interval (only days within the month)
-    const calcWeekWeightSum = (ws, we) => {
-      const defaultW = 100 / daysInMonth;
-      let sum = 0;
-      const d = new Date(ws + 'T12:00:00');
-      const end = new Date(we + 'T12:00:00');
+    // Supervisor/sócio recebe o prêmio de CADA loja que supervisiona, não só o da
+    // loja onde está cadastrado — por isso não sai de boardEmpsMap (que agrupa por
+    // emp.board), e sim de supervisedBoards.
+    const isSupervisorLike = emp => /supervisor|sócio|socio/i.test(emp.cargo || '');
+    const supervisoresPorLoja = {};
+    for (const emp of employees) {
+      if (!isSupervisorLike(emp)) continue;
+      if (!(folhaEmpCfgMap[emp.id] || {}).recebePremiaoLoja) continue;
+      for (const b of (emp.supervisedBoards || [])) {
+        if (!supervisoresPorLoja[b]) supervisoresPorLoja[b] = [];
+        supervisoresPorLoja[b].push(emp);
+      }
+    }
+
+    // ── Semanas que cruzam dois meses ─────────────────────────────────────────
+    // A semana domingo-sábado pode começar no mês anterior (ex.: 28/06 – 04/07).
+    // Vendas, PA e meta têm que ser avaliados sobre a semana INTEIRA, como a tela
+    // Meta Semanal faz. Antes só os dias do mês corrente entravam: a meta caía
+    // proporcionalmente e a loja "batia meta" numa semana em que não bateu.
+    const mkOf     = ds  => ds.slice(0, 7);
+    const daysInMk = mkX => { const [y2, m2] = mkX.split('-').map(Number); return new Date(y2, m2, 0).getDate(); };
+    const dayWeight = ds => {
+      const w = (db.globalWeights || {})[mkOf(ds)] || {};
+      return w[ds] !== undefined ? w[ds] : 100 / daysInMk(mkOf(ds));
+    };
+    const weekDays = (ws, we) => {
+      const out = [];
+      const d = new Date(ws + 'T12:00:00'), end = new Date(we + 'T12:00:00');
       while (d <= end) {
-        const ds = `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
-        if (ds >= monthStart && ds <= lastDayStr)
-          sum += globalWeights[ds] !== undefined ? globalWeights[ds] : defaultW;
+        out.push(`${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`);
         d.setDate(d.getDate() + 1);
       }
-      return sum;
+      return out;
+    };
+    // Meta manual da semana pode estar gravada sob o mês do início OU o do fim
+    const manualWeekMeta = (ws, we, empId) => {
+      const metas = db.weeklyMetas || {};
+      for (const mkX of new Set([mkOf(ws), mkOf(we)])) {
+        const v = metas[mkX]?.[ws]?.[empId]?.meta || 0;
+        if (v > 0) return v;
+      }
+      return 0;
+    };
+    // Vendas/peças/atendimentos da semana, buscando cada dia no vsales do seu mês
+    const empWeekAgg = (empId, board, dias) => {
+      let value = 0, pecas = 0, atend = 0;
+      for (const ds of dias) {
+        const e = vsalesAll[`${mkOf(ds)}-${board}-${empId}`]?.entries?.[ds];
+        if (e) { value += e.value || 0; pecas += e.pecas || 0; atend += e.atendimentos || 0; }
+      }
+      return { value, pecas, atend };
+    };
+    // Meta automática: cada dia usa a meta mensal e o peso do SEU mês
+    const empWeekMetaAuto = (empId, board, dias) => dias.reduce((s, ds) => {
+      const mensal = vsalesAll[`${mkOf(ds)}-${board}-${empId}`]?.meta?.mensal || 0;
+      return s + mensal * dayWeight(ds) / 100;
+    }, 0);
+    const empWeekMeta = (empId, board, ws, we, dias) => {
+      const manual = manualWeekMeta(ws, we, empId);
+      return manual > 0 ? manual : empWeekMetaAuto(empId, board, dias);
+    };
+    // Dias de férias marcados via Part%, unindo os meses tocados pela semana
+    const vacDaysOf = (empId, board, dias) => {
+      const set = new Set();
+      for (const mkX of new Set(dias.map(mkOf))) {
+        for (const d of (vsalesAll[`${mkX}-${board}-${empId}`]?.meta?.vacationDays || [])) set.add(d);
+      }
+      return set;
     };
 
     // Generate all Sunday-based weeks overlapping the month + any manual-meta weeks
@@ -7509,22 +7566,18 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       // inclui semana apenas se o último dia está dentro do mês e a semana já terminou
       if (weStr > lastDayStr || weStr >= todayStr) continue;
 
-      const weekData = weeklyMetasMonth[weekStart] || {};
-      const wws = calcWeekWeightSum(weekStart, weStr);
+      const dias = weekDays(weekStart, weStr);
 
       for (const board of Object.keys(boardEmpsMap)) {
         const bEmps = boardEmpsMap[board];
         let storeSales = 0, storePecas = 0, storeAtend = 0, storeMeta = 0;
         for (const emp of bEmps) {
           if (!isVend(emp)) continue;
-          const vs = vsalesAll[`${mk}-${board}-${emp.id}`] || {};
-          const we2 = Object.entries(vs.entries||{}).filter(([d]) => d>=weekStart && d<=weStr);
-          storeSales += we2.reduce((s,[,e]) => s+(e.value||0), 0);
-          storePecas += we2.reduce((s,[,e]) => s+(e.pecas||0), 0);
-          storeAtend += we2.reduce((s,[,e]) => s+(e.atendimentos||0), 0);
-          const mMeta = weekData[emp.id]?.meta || 0;
-          const mMensal = vs.meta?.mensal || 0;
-          storeMeta += mMeta > 0 ? mMeta : (wws > 0 ? mMensal * wws / 100 : 0);
+          const agg = empWeekAgg(emp.id, board, dias);
+          storeSales += agg.value;
+          storePecas += agg.pecas;
+          storeAtend += agg.atend;
+          storeMeta  += empWeekMeta(emp.id, board, weekStart, weStr, dias);
         }
         const storeHitMeta = storeMeta > 0 && storeSales >= storeMeta;
         const storeHitPA   = storeAtend > 0 && (storePecas/storeAtend) >= PA_THR;
@@ -7537,40 +7590,33 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
           const empCfg   = folhaEmpCfgMap[emp.id] || {};
           // Sub-gerente NÃO recebe prêmio de loja por padrão — é vendedor com
           // comissionamento sobre a loja. Só recebe se marcar a flag no config.
-          const useStorePremio = isGer || isGVend || empCfg.recebePremiaoLoja;
+          // Supervisor/sócio sai do laço dedicado abaixo (uma linha por loja supervisionada).
+          const useStorePremio = !isSupervisorLike(emp) &&
+            (isGer || isGVend || empCfg.recebePremiaoLoja);
           const storePremioVal = empCfg.premioLojaValor > 0 ? empCfg.premioLojaValor : PREMIO_GER_W;
 
           // Verifica se o funcionário trabalhou todos os dias da semana
           // Regra: % diário zerado (férias, admissão no meio, desligamento) = não trabalhou = sem prêmio
-          const vsEmp = vsalesAll[`${mk}-${board}-${emp.id}`] || {};
-          const vacSet = new Set(vsEmp.meta?.vacationDays || []);
+          const vacSet = vacDaysOf(emp.id, board, dias);
 
-          // Se admissão não estiver cadastrada, usa primeira entrada de vsales do mês como fallback
-          // (detecta funcionários que começaram no meio do mês sem data de admissão preenchida)
+          // Se admissão não estiver cadastrada, usa a primeira entrada de vsales
+          // da semana como fallback (detecta quem começou no meio do mês sem data)
           let effectiveAdmissao = emp.admissao || null;
           if (!effectiveAdmissao) {
-            const allEntryDates = Object.keys(vsEmp.entries || {})
-              .filter(d => d >= monthStart && d <= lastDayStr)
+            const allEntryDates = [...new Set(dias.map(mkOf))]
+              .flatMap(mkX => Object.keys(vsalesAll[`${mkX}-${board}-${emp.id}`]?.entries || {}))
               .sort();
             if (allEntryDates.length > 0) effectiveAdmissao = allEntryDates[0];
           }
 
           const ausenciaDias = ausenciaDiasMap[emp.id] || new Set();
-          const trabalhouSemanaInteira = (() => {
-            const d = new Date(weekStart + 'T12:00:00');
-            const end = new Date(weStr + 'T12:00:00');
-            while (d <= end) {
-              const ds = `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
-              if (ds >= monthStart && ds <= lastDayStr) {
-                if (vacSet.has(ds))        return false; // férias via toggle Part%
-                if (ausenciaDias.has(ds))  return false; // férias/atestado via calendário
-                if (effectiveAdmissao && ds < effectiveAdmissao) return false;
-                if (emp.desligamento  && ds > emp.desligamento)  return false;
-              }
-              d.setDate(d.getDate() + 1);
-            }
+          const trabalhouSemanaInteira = dias.every(ds => {
+            if (vacSet.has(ds))       return false; // férias via toggle Part%
+            if (ausenciaDias.has(ds)) return false; // férias/atestado via calendário
+            if (effectiveAdmissao && ds < effectiveAdmissao) return false;
+            if (emp.desligamento  && ds > emp.desligamento)  return false;
             return true;
-          })();
+          });
 
           // Prêmio de loja para gerente, gerente vendedor e funcionários com flag no config
           if (useStorePremio && trabalhouSemanaInteira) {
@@ -7579,26 +7625,40 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
             if (storeHitMeta && storeHitPA) val += PREMIO_PA_W;
             if (val > 0) {
               premiacaoSemanalGer[emp.id] += val;
-              premiacaoSemanalGerDetalhe[emp.id].push({ label: semLabel, valor: val });
+              premiacaoSemanalGerDetalhe[emp.id].push({ label: semLabel, valor: val, board });
             }
           }
 
           // Prêmio individual para vendedor, gerente vendedor e sub-gerente
           if (isGVend || isSubGer || (!isGer && isVend(emp))) {
             if (!trabalhouSemanaInteira) continue;
-            const we2 = Object.entries(vsEmp.entries||{}).filter(([d]) => d>=weekStart && d<=weStr);
-            const empSales = we2.reduce((s,[,e]) => s+(e.value||0), 0);
-            const empPecas = we2.reduce((s,[,e]) => s+(e.pecas||0), 0);
-            const empAtend = we2.reduce((s,[,e]) => s+(e.atendimentos||0), 0);
-            const mMeta   = weekData[emp.id]?.meta || 0;
-            const mMensal = vsEmp.meta?.mensal || 0;
-            const empMeta = mMeta > 0 ? mMeta : (wws > 0 ? mMensal * wws / 100 : 0);
+            const { value: empSales, pecas: empPecas, atend: empAtend } =
+              empWeekAgg(emp.id, board, dias);
+            const empMeta = empWeekMeta(emp.id, board, weekStart, weStr, dias);
             if (empMeta > 0 && empSales >= empMeta) {
               let val = PREMIO_VEND_W;
               if (empAtend > 0 && (empPecas/empAtend) >= PA_THR) val += PREMIO_PA_W;
               premiacaoSemanal[emp.id] += val;
               premiacaoSemanalDetalhe[emp.id].push({ label: semLabel, valor: val });
             }
+          }
+        }
+
+        // Prêmio de loja do supervisor/sócio: uma linha por loja supervisionada
+        // que bateu a meta na semana. Sem adicional de PA (regra do gerente).
+        if (storeHitMeta) {
+          for (const sup of (supervisoresPorLoja[board] || [])) {
+            const ausSup = ausenciaDiasMap[sup.id] || new Set();
+            const vacSup = vacDaysOf(sup.id, sup.board, dias);
+            const trabalhou = dias.every(ds =>
+              !vacSup.has(ds) && !ausSup.has(ds) &&
+              !(sup.admissao     && ds < sup.admissao) &&
+              !(sup.desligamento && ds > sup.desligamento));
+            if (!trabalhou) continue;
+            const supCfg = folhaEmpCfgMap[sup.id] || {};
+            const val = supCfg.premioLojaValor > 0 ? supCfg.premioLojaValor : PREMIO_GER_W;
+            premiacaoSemanalGer[sup.id] += val;
+            premiacaoSemanalGerDetalhe[sup.id].push({ label: semLabel, valor: val, board });
           }
         }
       }
