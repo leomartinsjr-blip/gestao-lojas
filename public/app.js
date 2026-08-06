@@ -692,6 +692,55 @@ async function loadData() {
           }
         } catch(_) {}
       }
+
+      // Aviso contratos de experiência vencendo em até 3 dias
+      const CONTRATO_AVISO_DIAS = 3;
+      const hojeZero = new Date(); hojeZero.setHours(0,0,0,0);
+      const contratoAlertas = [];
+      for (const e of warnEmps) {
+        if (e.inativo || !e.admissao || !(e.contrato1 || e.contrato2)) continue;
+        const vencEm = dias => {
+          if (!dias) return null;
+          const d = new Date(e.admissao + 'T00:00:00');
+          d.setDate(d.getDate() + dias);
+          return d;
+        };
+        const etapas = [
+          { etapa: '1º contrato', venc: vencEm(e.contrato1), acao: 'prorrogar ou desligar' },
+          { etapa: '2º contrato', acao: 'efetivar ou desligar',
+            venc: e.contrato1 && e.contrato2 ? vencEm(e.contrato1 + e.contrato2) : null },
+        ];
+        for (const et of etapas) {
+          if (!et.venc) continue;
+          const dias = Math.round((et.venc - hojeZero) / 86400000);
+          if (dias < 0 || dias > CONTRATO_AVISO_DIAS) continue;
+          contratoAlertas.push({ ...et, emp: e, dias });
+        }
+      }
+      if (contratoAlertas.length) {
+        const contratoWarnEl  = document.getElementById('contratoWarnOverlay');
+        const contratoMsgEl   = document.getElementById('contratoWarnMsg');
+        const contratoTitleEl = document.getElementById('contratoWarnTitle');
+        if (contratoWarnEl && contratoMsgEl) {
+          if (contratoTitleEl) {
+            contratoTitleEl.textContent = contratoAlertas.length > 1
+              ? 'Contratos de experiência vencendo' : 'Contrato de experiência vencendo';
+          }
+          contratoAlertas.sort((a, b) => a.dias - b.dias);
+          contratoMsgEl.innerHTML = contratoAlertas.map(a => {
+            const nome  = _escHtml(a.emp.apelido || a.emp.name);
+            const loja  = BOARDS[a.emp.board]?.label || a.emp.board || '';
+            const vStr  = `${_pad(a.venc.getDate())}/${_pad(a.venc.getMonth()+1)}`;
+            const prazo = a.dias === 0
+              ? `<span style="color:#F85149">vence HOJE (${vStr})</span>`
+              : `<span style="color:#E3B341">vence em ${a.dias} dia${a.dias > 1 ? 's' : ''} (${vStr})</span>`;
+            return `<strong>${nome}</strong>${loja ? ` <span style="opacity:.7">(${_escHtml(loja)})</span>` : ''}`
+                 + ` · ${a.etapa} ${prazo}<br>`
+                 + `<span style="opacity:.7;font-size:.9em">→ ${a.acao}</span>`;
+          }).join('<br><br>');
+          setTimeout(() => contratoWarnEl.classList.remove('hidden'), 1600);
+        }
+      }
     }
   } catch (e) {
     if (e.message.includes('401') || e.message.includes('autenticado')) { showLogin(); return; }
