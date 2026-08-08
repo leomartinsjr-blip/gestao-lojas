@@ -1969,6 +1969,8 @@ body {
 .dash-fds-btn { width: auto !important; padding: 0 .45rem !important; font-size: .67rem !important; font-weight: 700; letter-spacing: .03em; }
 .dash-fds-active { background: #1e2430 !important; border-color: #58A6FF !important; color: #58A6FF !important; }
 .dash-wk-label { font-size: .78rem; color: var(--text); font-weight: 600; white-space: nowrap; }
+/* Dia futuro: só a Meta Dia existe, Realizado vem vazio */
+.dash-wk-label--future { color: #8B949E; font-style: italic; }
 
 /* ── Folgas calendar ──────────────────────────────────────────────────── */
 .folga-cal { padding: .5rem .6rem .65rem; }
@@ -1997,6 +1999,9 @@ body {
 .comp-td-num { text-align: right; font-variant-numeric: tabular-nums; color: var(--text2); font-size: .78rem; }
 .comp-row-cur { background: rgba(88,166,255,.06); }
 .comp-row-cur:hover { background: rgba(88,166,255,.1); }
+.comp-row-surfers { background: rgba(249,115,22,.07) !important; border-top: 1px solid var(--border2); }
+.comp-row-surfers:hover { background: rgba(249,115,22,.12) !important; }
+.comp-row-surfers .comp-td-name { color: #F97316; }
 .comp-val-cur { color: var(--text) !important; font-weight: 700; }
 .comp-divider { border-top: 1px solid var(--border); margin: .6rem 0 .2rem; }
 

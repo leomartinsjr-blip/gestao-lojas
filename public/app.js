@@ -856,9 +856,14 @@ function renderDashboard() {
 
   // ── CARD: Faturamento Diário ─────────────────────────────────────────────
   {
-    if (!DASH_DAY.refDate || DASH_DAY.refDate > cutoff) DASH_DAY.refDate = cutoff;
     const pad2 = n => String(n).padStart(2, '0');
     const monthStart = `${S.year}-${pad2(S.month)}-01`;
+    // Navegação vai até o fim do mês: dias futuros não têm Realizado, mas a
+    // Meta Dia é calculável (peso do dia + meta da loja), então dá para consultar.
+    const monthEnd = `${S.year}-${pad2(S.month)}-${pad2(daysInMonth)}`;
+    // Abre sempre no cutoff (hoje / último dia com dados); só reposiciona se o
+    // dia guardado não pertence ao mês visualizado.
+    if (!DASH_DAY.refDate || DASH_DAY.refDate < monthStart || DASH_DAY.refDate > monthEnd) DASH_DAY.refDate = cutoff;
 
     const dayCard = document.createElement('div');
     dayCard.className = 'main-card';
@@ -911,9 +916,12 @@ function renderDashboard() {
       fdsBtnEl.classList.remove('dash-fds-active');
       const d = DASH_DAY.refDate;
       const lbl = d === todayStr ? `Hoje · ${d.slice(8)}/${d.slice(5,7)}` : `${d.slice(8)}/${d.slice(5,7)}`;
-      document.getElementById('dayCardLabel').textContent = lbl;
+      const lblEl = document.getElementById('dayCardLabel');
+      lblEl.textContent = lbl;
+      lblEl.classList.toggle('dash-wk-label--future', d > cutoff);
+      lblEl.title = d > cutoff ? 'Dia futuro — só a Meta Dia está disponível' : '';
       document.getElementById('dayCardPrev').disabled = d <= monthStart;
-      document.getElementById('dayCardNext').disabled = d >= cutoff;
+      document.getElementById('dayCardNext').disabled = d >= monthEnd;
       // Se o dia exibido pertence a um mês diferente do visualizado, carrega pesos desse mês
       const cardYear  = parseInt(d.slice(0, 4));
       const cardMonth = parseInt(d.slice(5, 7));
@@ -942,7 +950,7 @@ function renderDashboard() {
       const d = new Date(DASH_DAY.refDate + 'T00:00:00');
       d.setDate(d.getDate() + 1);
       DASH_DAY.refDate = `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
-      if (DASH_DAY.refDate > cutoff) DASH_DAY.refDate = cutoff;
+      if (DASH_DAY.refDate > monthEnd) DASH_DAY.refDate = monthEnd;
       _updateDayCard();
     });
     document.getElementById('dayCardFds').addEventListener('click', () => {
@@ -2283,45 +2291,86 @@ async function _loadCompCard(body) {
   const mesLabel = MONTHS_PT[mi].slice(0,3) + '/' + String(S.year).slice(2);
   const lyLabel  = MONTHS_PT[mi].slice(0,3) + '/' + String(S.year - 1).slice(2);
 
+  // Uma linha por loja — projeção do mês vs. mesmo mês do ano anterior
+  const rows = STORE_KEYS.map(k => {
+    const real  = realized[k];
+    const proj  = wAccum > 0 && real > 0 ? real / wAccum * 100 : (real || null);
+    const ly    = PERF_HIST[k]?.[S.year - 1]?.[mi] || null;
+    return { k, bc: BOARDS[k], proj, ly, delta: proj && ly ? (proj - ly) / ly * 100 : null };
+  });
+
+  const sumOf = (list, f) => list.reduce((s, r) => s + (r[f] || 0), 0);
+  const sumProj = sumOf(rows, 'proj'), sumLY = sumOf(rows, 'ly');
+
+  // Subtotal Surfers (Del Rey + Minas + Contagem + Estação + Site) — só quando
+  // todas as lojas do grupo estão visíveis, senão o subtotal seria enganoso.
+  const showSurfers = SURFERS_STORES.every(k => STORE_KEYS.includes(k));
+  const surfRows = rows.filter(r => SURFERS_STORES.includes(r.k));
+  const surfProj = sumOf(surfRows, 'proj'), surfLY = sumOf(surfRows, 'ly');
+
+  // Ordenação: sem coluna ativa mantém a ordem padrão das lojas
+  if (COMP_SORT.col) {
+    rows.sort((a, b) => {
+      if (COMP_SORT.col === 'name') return COMP_SORT.dir * a.bc.label.localeCompare(b.bc.label, 'pt-BR');
+      const ka = a[COMP_SORT.col], kb = b[COMP_SORT.col];
+      if (ka == null && kb == null) return 0;
+      if (ka == null) return 1;   // sem dado sempre no fim
+      if (kb == null) return -1;
+      return COMP_SORT.dir * (ka - kb);
+    });
+  }
+
+  const COMP_COLS = [
+    { key:'name',  label:'Loja',              cls:'' },
+    { key:'proj',  label:`${mesLabel} proj.`, cls:'comp-th-r' },
+    { key:'ly',    label:lyLabel,             cls:'comp-th-r' },
+    { key:'delta', label:'Δ% a.a.',           cls:'comp-th-r' },
+  ];
+  const headHtml = COMP_COLS.map(c => {
+    const active = COMP_SORT.col === c.key;
+    const arr = active ? (COMP_SORT.dir > 0 ? '↑' : '↓') : '⇅';
+    return `<th class="comp-th ${c.cls} dash-th-sort" data-col="${c.key}">${c.label}<span class="sort-arr${active?' sort-arr-on':''}">${arr}</span></th>`;
+  }).join('');
+
+  const subtotalRow = (label, color, p, l, cls) => {
+    const d   = p && l ? (p - l) / l * 100 : null;
+    const dCls = d == null ? '' : d >= 0 ? 'kpi-pos' : 'kpi-neg';
+    return `<tr class="comp-row ${cls}">
+      <td class="comp-td comp-td-name"${color ? ` style="border-left:3px solid ${color};padding-left:.5rem"` : ''}><strong>${label}</strong></td>
+      <td class="comp-td comp-td-num comp-val-cur">${fV(p || null)}</td>
+      <td class="comp-td comp-td-num">${fV(l || null)}</td>
+      <td class="comp-td comp-td-num ${dCls}">${fPct(d)}</td>
+    </tr>`;
+  };
+
   let html = `<table class="comp-table">
-    <thead><tr class="comp-thead-tr">
-      <th class="comp-th">Loja</th>
-      <th class="comp-th comp-th-r">${mesLabel} proj.</th>
-      <th class="comp-th comp-th-r">${lyLabel}</th>
-      <th class="comp-th comp-th-r">Δ% a.a.</th>
-    </tr></thead><tbody>`;
+    <thead><tr class="comp-thead-tr">${headHtml}</tr></thead><tbody>`;
 
-  let sumProj = 0, sumLY = 0;
-
-  for (const k of STORE_KEYS) {
-    const bc      = BOARDS[k];
-    const real    = realized[k];
-    const proj    = wAccum > 0 && real > 0 ? real / wAccum * 100 : (real || null);
-    const lyVal   = PERF_HIST[k]?.[S.year - 1]?.[mi] || null;
-    const delta   = proj && lyVal ? (proj - lyVal) / lyVal * 100 : null;
-    const dCls    = delta == null ? '' : delta >= 0 ? 'kpi-pos' : 'kpi-neg';
-
-    if (proj)  sumProj += proj;
-    if (lyVal) sumLY   += lyVal;
-
+  for (const r of rows) {
+    const dCls = r.delta == null ? '' : r.delta >= 0 ? 'kpi-pos' : 'kpi-neg';
     html += `<tr class="comp-row">
-      <td class="comp-td comp-td-name" style="border-left:3px solid ${bc.color};padding-left:.5rem"><strong>${bc.label}</strong></td>
-      <td class="comp-td comp-td-num comp-val-cur">${fV(proj)}</td>
-      <td class="comp-td comp-td-num">${fV(lyVal)}</td>
-      <td class="comp-td comp-td-num ${dCls}">${fPct(delta)}</td>
+      <td class="comp-td comp-td-name" style="border-left:3px solid ${r.bc.color};padding-left:.5rem"><strong>${r.bc.label}</strong></td>
+      <td class="comp-td comp-td-num comp-val-cur">${fV(r.proj)}</td>
+      <td class="comp-td comp-td-num">${fV(r.ly)}</td>
+      <td class="comp-td comp-td-num ${dCls}">${fPct(r.delta)}</td>
     </tr>`;
   }
 
-  const totDelta = sumProj && sumLY ? (sumProj - sumLY) / sumLY * 100 : null;
-  const totDCls  = totDelta == null ? '' : totDelta >= 0 ? 'kpi-pos' : 'kpi-neg';
-  html += `<tr class="comp-row comp-row-cur">
-    <td class="comp-td comp-td-name"><strong>TOTAL</strong></td>
-    <td class="comp-td comp-td-num comp-val-cur">${fV(sumProj || null)}</td>
-    <td class="comp-td comp-td-num">${fV(sumLY || null)}</td>
-    <td class="comp-td comp-td-num ${totDCls}">${fPct(totDelta)}</td>
-  </tr></tbody></table>`;
+  if (showSurfers) html += subtotalRow(BOARDS.surfers.label, BOARDS.surfers.color, surfProj, surfLY, 'comp-row-surfers');
+  html += subtotalRow('TOTAL', null, sumProj, sumLY, 'comp-row-cur');
+  html += '</tbody></table>';
 
   body.innerHTML = html;
+
+  body.querySelectorAll('.dash-th-sort').forEach(th => {
+    th.addEventListener('click', () => {
+      const col = th.dataset.col;
+      if (COMP_SORT.col !== col)      { COMP_SORT.col = col; COMP_SORT.dir = col === 'name' ? 1 : -1; }
+      else if (COMP_SORT.dir === -1)  { COMP_SORT.dir = 1; }
+      else                            { COMP_SORT.col = null; COMP_SORT.dir = 1; } // 3º clique volta à ordem padrão
+      _loadCompCard(body);
+    });
+  });
 }
 
 
@@ -6909,7 +6958,9 @@ function _startDayCardAutoRefresh() {
       }
       const isCurrentMo = S.year === now.getFullYear() && S.month === now.getMonth() + 1;
       const cutoff = isCurrentMo ? todayStr : (lastFilled || todayStr);
-      if (DASH_DAY.refDate > cutoff) DASH_DAY.refDate = cutoff;
+      // Não puxa de volta se o usuário navegou para um dia futuro do mês
+      const monthEnd = `${S.year}-${pad(S.month)}-${pad(new Date(S.year, S.month, 0).getDate())}`;
+      if (DASH_DAY.refDate > monthEnd) DASH_DAY.refDate = monthEnd;
       // Re-renderiza só o body do card diário
       const body = document.getElementById('dayCardBody');
       const lbl  = document.getElementById('dayCardLabel');
@@ -6919,14 +6970,17 @@ function _startDayCardAutoRefresh() {
       if (lbl) {
         const d = DASH_DAY.refDate;
         lbl.textContent = d === todayStr ? `Hoje · ${d.slice(8)}/${d.slice(5,7)}` : `${d.slice(8)}/${d.slice(5,7)}`;
+        lbl.classList.toggle('dash-wk-label--future', d > cutoff);
       }
-      if (btnN) btnN.disabled = DASH_DAY.refDate >= cutoff;
+      if (btnN) btnN.disabled = DASH_DAY.refDate >= monthEnd;
     } catch (e) {
       console.warn('[DayCard] Refresh error:', e.message);
     }
   }, INTERVAL);
 }
 let DASH_SORT = { col: null, dir: 1 };
+// Ordenação do card Comparativo por Loja (col null = ordem padrão das lojas)
+let COMP_SORT = { col: null, dir: 1 };
 const META_ACHIEVED = new Set();
 
 // Returns { startStr, endStr, label } for the Sun–Sat week containing dateStr
