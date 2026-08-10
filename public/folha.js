@@ -784,10 +784,13 @@ function selectEmp(empId) {
       : r2(FP.premiacaoSemanal[empId] || 0);
   const calcPremGer2 = entry.premiacaoManual ? r2(entry.premiacaoBalanco || 0)
     : (_ct2 === 'gvend' || _ecfg2.recebePremiaoLoja) ? r2(FP.premiacaoSemanalGer[empId] || 0) : 0;
-  if (calcPrem !== r2(entry.premiacao || 0)) {
+  // Em folha encerrada o que está gravado é o que foi pago — a premiação
+  // recalculada pelo servidor não substitui o histórico.
+  const encerrada = !!FP.folha[FP.board]?.encerrada;
+  if (!encerrada && calcPrem !== r2(entry.premiacao || 0)) {
     entry = { ...entry, premiacao: calcPrem };
   }
-  if (calcPremGer2 !== r2(entry.premiacaoBalanco || 0)) {
+  if (!encerrada && calcPremGer2 !== r2(entry.premiacaoBalanco || 0)) {
     entry = { ...entry, premiacaoBalanco: calcPremGer2 };
   }
   document.getElementById('fpEmpForms').innerHTML = buildEmpForm(emp, entry);
@@ -1330,7 +1333,9 @@ function buildEmpForm(emp, entry) {
     // Sub-gerente divide comissão própria + comissão da loja; demais, só a própria
     const baseLabel = tipo === 'sub' ? 'comissão própria + loja' : 'total';
 
-    const vendComFixo = tipo === 'vendedor' && ecfg.vendedorComFixo;
+    // A linha aparece pela config atual OU porque a entry salva já tem valor —
+    // assim uma folha antiga nunca perde de vista o que foi pago nela.
+    const vendComFixo = tipo === 'vendedor' && (ecfg.vendedorComFixo || r2(e.fixo || 0) > 0);
 
     if (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend' || vendComFixo)
       provRows += `<div class="fp-field"><label>Salário Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}${fatorNota}</div>`;
@@ -1378,6 +1383,13 @@ function buildEmpForm(emp, entry) {
         : (tipo === 'sub' || tipo === 'gvend')
           ? (cfg.garantiaMinimaSubGerente || cfg.garantiaMinima || 0)
           : (cfg.garantiaMinima || 0);
+    // GM salva na entry mantém a linha visível mesmo que a regra atual não a
+    // gere mais — do contrário o valor sumiria da tela e do próximo save.
+    const gmSalva = r2(e.gmComplement || 0);
+    if (gmMin <= 0 && gmSalva > 0) {
+      provRows += `<div class="fp-field"><label>GM (R$)</label>${inp(`fp-gm-${emp.id}`, gmSalva)}
+        <span style="font-size:.72rem;color:#d29922">valor da folha — a regra atual não gera GM para este cargo</span></div>`;
+    }
     if (gmMin > 0) {
       const gmMinEfetiva = r2(gmMin * propMes.fator);
       const gmBase = (tipo === 'gvend' || tipo === 'sub')
@@ -1567,8 +1579,7 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
     ? `<div class="fp-emp-cfg-row fp-emp-cfg-row--check" title="Paga salário fixo + comissão. Sem complemento de garantia mínima.">
         <label>Fixo + comissão?</label>
         <input type="checkbox" id="ec-vendedorComFixo-${emp.id}"${ecfg.vendedorComFixo ? ' checked' : ''}
-          style="width:16px;height:16px;accent-color:#3fb950;cursor:pointer"
-          onchange="fpSaveEmpCfg(${emp.id})">
+          style="width:16px;height:16px;accent-color:#3fb950;cursor:pointer">
       </div>`
     : '';
 
@@ -1637,6 +1648,13 @@ async function fpSaveEmpCfg(empId) {
   try {
     await apiFetch(`/api/folha/empconfig/${empId}`, 'POST', cfg);
     FP.empConfig[empId] = cfg;
+    // Folha encerrada é histórico: a config passa a valer para os próximos
+    // meses, mas a entry fechada não é recalculada nem reescrita.
+    if (FP.folha[FP.board]?.encerrada) {
+      selectEmp(empId);
+      toast('Configuração salva ✓ — folha encerrada, valores deste mês mantidos.', 'warn', 6000);
+      return;
+    }
     // Sempre recalcula via defaultEntry após mudança de config — garante
     // que premiacaoBalanco, comissão e demais derivados reflitam o novo config
     const entry = applyFora(defaultEntry(emp), emp, FP.folha[FP.board]?.entries?.[empId]?.fora);
@@ -1878,13 +1896,30 @@ function onFieldChange(empId) {
 }
 
 function saveEntryFromForm(empId) {
-  const g    = id => { const el=document.getElementById(id); return el?r2(parseFloat(el.value)||0):0; };
   const emp  = FP.employees.find(e=>e.id===empId);
   const tipo = cargoTipo(emp?.cargo);
 
   if (!FP.folha[FP.board]) FP.folha[FP.board] = { entries:{} };
   if (!FP.folha[FP.board].entries) FP.folha[FP.board].entries = {};
   const prev = FP.folha[FP.board].entries[empId] || {};
+
+  // Vários campos só existem no formulário sob condição (GM, salário fixo,
+  // premiação, comissão de loja…). Se a linha não está na tela, o valor já
+  // gravado é preservado — campo ausente nunca pode zerar histórico.
+  const CAMPO_ENTRY = {
+    fixo: 'fixo', quebra: 'quebra', vendas: 'vendas', comPct: 'comissaoPct',
+    comLoja: 'comissaoLoja', gm: 'gmComplement', premiacao: 'premiacao',
+    premiacaoBalanco: 'premiacaoBalanco', feriado: 'feriado', dsr: 'dsr',
+    premio: 'premio', proLabore: 'proLabore', complemento: 'complemento',
+    valeCompras: 'valeCompras', adiantamento: 'adiantamento', inss: 'inss',
+    irpf: 'irpf', vt: 'vt', arred: 'arredondamento',
+  };
+  const g = id => {
+    const el = document.getElementById(id);
+    if (el) return r2(parseFloat(el.value) || 0);
+    const campo = CAMPO_ENTRY[String(id).replace(/^fp-/, '').replace(new RegExp(`-${empId}$`), '')];
+    return campo ? r2(prev[campo] || 0) : 0;
+  };
 
   const extProv = (prev.extras||[]).reduce((s,ex)=>s+r2(ex.valor),0);
   const extDesc = (prev.extrasDesc||[]).reduce((s,ex)=>s+r2(ex.valor),0);
@@ -2037,6 +2072,10 @@ function refreshExtras(empId, type) {
 // ── Gerar ──────────────────────────────────────────────────────────────────
 function fpGerar() {
   const board = FP.board;
+  if (FP.folha[board]?.encerrada) {
+    toast('Folha encerrada — reabra antes de gerar. O histórico não é recalculado.', true, 6000);
+    return;
+  }
   if (!FP.folha[board]) FP.folha[board] = {};
   if (!FP.folha[board].entries) FP.folha[board].entries = {};
   for (const emp of boardEmps(board)) {
@@ -2061,6 +2100,10 @@ function fpGerar() {
 function fpGerarEmp(empId) {
   const emp = FP.employees.find(e => e.id === empId);
   if (!emp) return;
+  if (FP.folha[FP.board]?.encerrada) {
+    toast('Folha encerrada — reabra antes de recalcular. O histórico não é alterado.', true, 6000);
+    return;
+  }
   const hasData = !!(FP.folha[FP.board]?.entries?.[empId]);
   if (hasData && !confirm(`Recalcular a folha de ${emp.apelido || emp.name}? Os valores editados manualmente serão perdidos.`)) return;
   if (!FP.folha[FP.board]) FP.folha[FP.board] = {};

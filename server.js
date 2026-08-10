@@ -7916,17 +7916,27 @@ app.post('/api/folha/:year/:month', requireAuth, async (req, res) => {
     const db    = await readDB();
     if (!db.folhas) db.folhas = {};
     if (!db.folhas[mk]) db.folhas[mk] = {};
+    const bloqueadas = [];
     for (const [board, boardData] of Object.entries(req.body || {})) {
       if (!boardData) continue;
       if (!db.folhas[mk][board]) db.folhas[mk][board] = {};
-      if (boardData.entries) {
+      // Folha encerrada é histórico: nenhuma entry pode ser reescrita enquanto
+      // ela estiver fechada. A única gravação aceita é a própria reabertura
+      // (encerrada: false), que precisa vir explícita no mesmo payload.
+      const estaEncerrada = db.folhas[mk][board].encerrada === true;
+      const reabrindo     = boardData.encerrada === false;
+      if (boardData.entries && estaEncerrada && !reabrindo) {
+        bloqueadas.push(board);
+      } else if (boardData.entries) {
         if (!db.folhas[mk][board].entries) db.folhas[mk][board].entries = {};
         Object.assign(db.folhas[mk][board].entries, boardData.entries);
       }
       if ('encerrada' in boardData) db.folhas[mk][board].encerrada = boardData.encerrada;
     }
     await writeDB(db);
-    res.json({ ok: true });
+    if (bloqueadas.length)
+      console.warn(`[folha ${mk}] gravação recusada — folha encerrada: ${bloqueadas.join(', ')}`);
+    res.json({ ok: true, bloqueadas });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
