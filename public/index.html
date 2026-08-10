@@ -169,6 +169,13 @@
         <path d="M7 11V7a5 5 0 0110 0v4"/>
       </svg><span class="btn-label">Certificados</span>
     </a>
+    <button id="dadosLojasBtn" class="folgas-topbar-btn" title="Dados das Lojas — CNPJ, IE, IM e endereços">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="2" y="4" width="20" height="16" rx="2"/>
+        <circle cx="8" cy="10" r="2"/><path d="M4.5 17.5a3.5 3.5 0 0 1 7 0"/>
+        <line x1="15" y1="9" x2="19" y2="9"/><line x1="15" y1="13" x2="19" y2="13"/>
+      </svg><span class="btn-label">Dados Lojas</span>
+    </button>
     <a href="/conferencia" target="_blank" id="conferenciaBtn" class="folgas-topbar-btn" style="display:none" title="Conferência de Caixa">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="2" y="3" width="20" height="14" rx="2"/>
@@ -682,6 +689,31 @@
       <button class="folgas-close-btn" id="campanhasClose" title="Fechar">✕</button>
     </div>
     <div class="perf-body" id="campanhasBody"></div>
+  </div>
+</div>
+
+<!-- DADOS DAS LOJAS MODAL -->
+<div id="dadosLojasOverlay" class="perf-overlay hidden">
+  <div class="perf-panel" style="max-width:1040px">
+    <div class="perf-hdr">
+      <span class="perf-hdr-title">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="4" width="20" height="16" rx="2"/>
+          <circle cx="8" cy="10" r="2"/><path d="M4.5 17.5a3.5 3.5 0 0 1 7 0"/>
+          <line x1="15" y1="9" x2="19" y2="9"/><line x1="15" y1="13" x2="19" y2="13"/>
+        </svg>
+        Dados Lojas
+      </span>
+      <input type="search" id="dlSearch" class="folgas-filter" placeholder="Buscar loja, CNPJ, IE, endereço…" style="width:auto;flex:1;min-width:160px;max-width:300px">
+      <div style="display:flex;align-items:center;gap:.5rem;margin-left:auto">
+        <span id="dlMeta" class="dl-meta"></span>
+        <button id="dlEditBtn" class="add-item-btn" style="display:none">Editar</button>
+        <button id="dlSaveBtn" class="add-item-btn" style="display:none">Salvar</button>
+        <button id="dlCancelBtn" class="dl-ghost-btn" style="display:none">Cancelar</button>
+      </div>
+      <button class="folgas-close-btn" id="dadosLojasClose" title="Fechar">✕</button>
+    </div>
+    <div class="perf-body" id="dadosLojasBody"></div>
   </div>
 </div>
 

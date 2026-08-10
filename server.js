@@ -1185,6 +1185,143 @@ app.put('/api/board-settings/:board', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── DADOS DAS LOJAS (CNPJ / IE / IM / endereços) ──────────────────────────
+// Texto livre: blocos separados por linha em branco, um por empresa/filial.
+// Serve de conteúdo inicial enquanto ninguém salvou nada.
+const DADOS_LOJAS_SEED = `Razão Social: LMJ COMERCIO DE ARTIGOS DO VESTUARIO EIRELI - EPP
+CNPJ: 28.519.094/0001-29
+IE: 003032074.00-48
+IM: 1.044.066/001-4
+Av. Presidente Carlos Luz, 3001, Loja 3051 - Bairro: Caiçara - Cep: 31250-010 - Belo Horizonte/MG
+Tel.: (31) 3415 8692 – (31) 9 7181 8026
+Insta: @SurfersConceptStore
+
+Razão Social: LMJ COMERCIO DE ARTIGOS DO VESTUARIO EIRELI - EPP
+CNPJ: 28.519.094/0002-00
+IE: 003032074.01-29
+IM: 1.044.066/002-2
+Av. Del Rey, 111, sala 505 - Bloco A - Bairro: Caiçara - Cep: 30775-240 - Belo Horizonte/MG
+Tel.: (31) 3317 8692
+Insta: @lojasurfers
+
+Razão Social: LMJ COMERCIO DE ARTIGOS DO VESTUARIO EIRELI - EPP
+CNPJ: 28.519.094/0003-90
+IE: 003032074.02-00
+IM: 72097281-0
+Av. Severino Ballesteros Rodrigues, 850, Loja 2112 - Bairro: Cabral - Cep: 32.146-025 - Contagem/MG
+Tel.: (31) 2557-5415 – (31) 9 8586-5615
+Insta: @surfers.contagem
+
+Razão Social: JDG COMERCIO DE ARTIGOS DO VESTUARIO EIRELI
+CNPJ: 32.473.768/0001-79
+IE: 003355950.00-44
+IM: 1.125.819/001-4
+Av. Cristiano Machado, 4000, Loja 148 - Bairro: União - Cep: 31.160-900 - Belo Horizonte/MG
+Tel.: (31) 3789-8692 – (31) 9 8423-6975
+Insta: @surfers_minas
+
+Razão Social: JDG COMERCIO DE ARTIGOS DO VESTUARIO EIRELI - EPP
+CNPJ: 32.473.768/0002-50
+IE: 0033559500125
+IM: 11258190022
+Av. Del Rey, 111, sala 505 - Bloco A - Bairro: Caiçara - Cep: 30775-240 - Belo Horizonte/MG
+Insta: @lojasurfers
+
+Razão Social: PV COMERCIO DE ARTIGOS DO VESTUARIO EIRELI - EPP
+CNPJ: 35.041.602/0001-71
+IE: 0035581630097
+IM: 72107199-0
+Av. Severino Ballesteros Rodrigues, 850, Loja 2028 - Bairro: Cabral - Cep: 32.146-025 - Contagem/MG
+Tel.: (31) 2557-5415
+Insta: @surfers.contagem
+
+Razão Social: PV COMERCIO DE ARTIGOS DO VESTUARIO EIRELI - EPP
+CNPJ: 35.041.602/0002-52
+IE: 0035581630178
+IM: 11819990014
+Av. Del Rey, 111, sala 505 - Bloco A - Bairro: Caiçara - Cep: 30775-240 - Belo Horizonte/MG
+Tel.: (31) 3317 8692
+Insta: @lojasurfers
+
+Razão Social: PV COMERCIO DE ARTIGOS DO VESTUARIO EIRELI - EPP
+CNPJ: 35.041.602/0003-33
+IE: 0035581630259
+IM: 11819990014
+Av. Presidente Carlos Luz, 3001, Loja 3051 - Bairro: Caiçara - Cep: 31250-010 - Belo Horizonte/MG
+Tel.: (31) 3415 8392 – (31) 9 7181 8026
+Insta: @SurfersConceptStore
+
+Razão Social: TTS COMÉRCIO DE ARTIGOS DO VESTUÁRIO LTDA FILIAL
+Nome Fantasia: SURFER'S BEACHCULTURE
+CNPJ: 11.106.478/0002-06
+IE: 0013781050181
+IM: 2454760023
+Av. Cristiano Machado, 11833, Loja 2076 - Bairro: Vila Clóris - Cep: 31.744-007 - Belo Horizonte/MG
+Tel.: (31) 3118 9638 – (31) 9369-7984
+Insta: @Surfersestacaobh
+
+Razão Social: TRIBE COMÉRCIO DE ARTIGOS DO VESTUÁRIO LTDA
+Nome Fantasia: TRIBE CONCEPT STORE
+CNPJ: 10.209.859/0001-69
+IE: 0010813080088
+IM: 227702/001-4
+Av. Presidente Carlos Luz, 3001, Loja 3111, Piso 3 - Bairro: Caiçara - Cep: 31250-010 - Belo Horizonte/MG
+Tel.: (31) 3415-7284
+
+Razão Social: TRIBE COMÉRCIO DE ARTIGOS DO VESTUÁRIO LTDA FILIAL
+Nome Fantasia: TRIBE
+CNPJ: 10.209.859/0002-40
+Av. Otacilio Campelo Ribeiro, 2801, Loja 288 - Bairro: Eldorado - Cep: 35702-153 - Sete Lagoas/MG
+Tel.: (31) 3773-5547
+
+Razão Social: TRIBE COMERCIO DE ARTIGOS DO VESTUARIO LTDA - ME
+CNPJ: 10.209.859/0003-20
+IE: 001081308.02-40
+Av. Del Rey, 111 - Bloco A - Sala 505 - Bairro: Caiçara - Cep: 30775-240 - Belo Horizonte/MG
+Tel.: (31) 3889-8560
+
+Razão Social: LF COMÉRCIO DE ARTIGOS DO VESTUÁRIO
+Nome Fantasia: LEZ A LEZ
+CNPJ: 44.602.345/0001-90
+IE: 44559930023
+IM: 13556500018
+Av. Presidente Carlos Luz, 3001, Loja 3111, Piso 3 - Bairro: Caiçara - Cep: 31250-010 - Belo Horizonte/MG
+Tel.: (31) 3656-6388
+
+Razão Social: 3L COMÉRCIO DE ARTIGOS DO VESTUÁRIO
+Nome Fantasia: TOMMY HILFIGER
+CNPJ: 60.509.746/0001-57
+IE: 51800000073
+IM: 16563040013
+Av. Presidente Carlos Luz, 3001, Loja 2026, Piso 2 - Bairro: Caiçara - Cep: 31250-010 - Belo Horizonte/MG
+Tel.: (31) 3568-0061`;
+
+// ── GET /api/dados-lojas ──────────────────────────────────────────────────
+app.get('/api/dados-lojas', requireAuth, async (req, res) => {
+  try {
+    const db = await readDB();
+    const d  = db.dadosLojas;
+    if (!d || !String(d.text || '').trim())
+      return res.json({ text: DADOS_LOJAS_SEED, updatedAt: null, updatedBy: null, seed: true });
+    res.json({ text: d.text, updatedAt: d.updatedAt || null, updatedBy: d.updatedBy || null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── PUT /api/dados-lojas ──────────────────────────────────────────────────
+app.put('/api/dados-lojas', requireAdmin, async (req, res) => {
+  try {
+    const text = String(req.body?.text ?? '');
+    const db = await readDB();
+    db.dadosLojas = {
+      text,
+      updatedAt: new Date().toISOString(),
+      updatedBy: req.session.user.username,
+    };
+    await writeDB(db);
+    res.json({ ok: true, ...db.dadosLojas });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/vsales/:year/:month/:board/:empId ─────────────────────────────
 app.get('/api/vsales/:year/:month/:board/:empId', requireAuth, async (req, res) => {
   try {

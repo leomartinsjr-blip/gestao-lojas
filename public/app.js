@@ -8246,6 +8246,176 @@ function initCampanhasModal() {
   });
 }
 
+// ── Dados das Lojas (CNPJ / IE / IM / endereços) ──────────────────────────
+const DL = { text: '', meta: null, editing: false, draft: '', loaded: false };
+
+// Cada empresa é um bloco separado por linha em branco.
+function _dlParseBlocks(text) {
+  return String(text || '')
+    .split(/\n\s*\n/)
+    .map(b => b.replace(/\s+$/, ''))
+    .filter(b => b.trim())
+    .map(raw => {
+      const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+      const take = re => {
+        const l = lines.find(x => re.test(x));
+        return l ? l.replace(re, '').trim() : '';
+      };
+      const razao    = take(/^raz[ãa]o\s+social\s*:/i);
+      const fantasia = take(/^nome\s+fantasia\s*:/i);
+      return {
+        raw,
+        title: fantasia || razao || lines[0] || '—',
+        sub:   fantasia ? razao : '',
+        rows:  lines.filter(l => !/^(raz[ãa]o\s+social|nome\s+fantasia)\s*:/i.test(l)),
+        hay:   (raw + ' ' + raw.replace(/\D+/g, ' ')).toLowerCase(),
+      };
+    });
+}
+
+async function _dlCopy(txt, msg) {
+  try {
+    await navigator.clipboard.writeText(txt);
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand('copy'); } finally { ta.remove(); }
+  }
+  toast(msg || 'Copiado!');
+}
+
+function _dlRenderCard(b) {
+  const rows = b.rows.map(line => {
+    const m = line.match(/^([A-Za-zÀ-ÿ.\s]{2,20}?)\s*:\s*(.+)$/);
+    if (!m) return `<div class="dl-free">${_escHtml(line)}</div>`;
+    const label = m[1].replace(/\.$/, '');
+    const val   = m[2];
+    const isDoc = /^(cnpj|ie|im)$/i.test(label);
+    return `<div class="dl-row">
+      <span class="dl-label">${_escHtml(label)}</span>
+      <span class="dl-val${isDoc ? ' dl-doc dl-copyable' : ''}"${isDoc ? ` data-copy="${_escHtml(val)}"` : ''}>${_escHtml(val)}</span>
+    </div>`;
+  }).join('');
+  return `<div class="dl-card">
+    <div class="dl-card-hdr">
+      <div style="flex:1;min-width:0">
+        <div class="dl-card-title">${_escHtml(b.title)}</div>
+        ${b.sub ? `<div class="dl-card-sub">${_escHtml(b.sub)}</div>` : ''}
+      </div>
+      <button class="dl-copy-btn" data-copy-all="1" title="Copiar bloco inteiro">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="9" y="9" width="13" height="13" rx="2"/>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+        </svg>
+      </button>
+    </div>
+    <div class="dl-card-body">${rows}</div>
+  </div>`;
+}
+
+function renderDadosLojas() {
+  const body     = document.getElementById('dadosLojasBody');
+  const searchEl = document.getElementById('dlSearch');
+  const isAdmin  = userIsAdmin(S.user);
+
+  document.getElementById('dlEditBtn').style.display   = (!DL.editing && isAdmin) ? '' : 'none';
+  document.getElementById('dlSaveBtn').style.display   = DL.editing ? '' : 'none';
+  document.getElementById('dlCancelBtn').style.display = DL.editing ? '' : 'none';
+  searchEl.style.display = DL.editing ? 'none' : '';
+
+  const meta = document.getElementById('dlMeta');
+  if (DL.editing)            meta.textContent = '';
+  else if (DL.meta?.updatedAt) meta.textContent = 'Atualizado em ' + new Date(DL.meta.updatedAt).toLocaleDateString('pt-BR')
+                                                 + (DL.meta.updatedBy ? ' · ' + DL.meta.updatedBy : '');
+  else                       meta.textContent = '';
+
+  if (DL.editing) {
+    body.innerHTML = `
+      <textarea id="dlTextarea" class="dl-textarea" spellcheck="false"></textarea>
+      <div class="dl-hint">Separe cada empresa/filial por uma <strong>linha em branco</strong>.
+        Linhas no formato <code>Rótulo: valor</code> viram campos do cartão —
+        use <code>Razão Social:</code>, <code>Nome Fantasia:</code>, <code>CNPJ:</code>, <code>IE:</code>, <code>IM:</code>.
+        Qualquer outra linha aparece como texto livre.</div>`;
+    const ta = document.getElementById('dlTextarea');
+    ta.value = DL.draft;
+    ta.focus();
+    return;
+  }
+
+  const q = searchEl.value.trim().toLowerCase();
+  let blocks = _dlParseBlocks(DL.text);
+  if (q) {
+    const qNum = q.replace(/\D+/g, '');
+    blocks = blocks.filter(b => b.hay.includes(q) || (qNum.length >= 3 && b.hay.includes(qNum)));
+  }
+
+  if (!blocks.length) {
+    body.innerHTML = `<div class="dl-empty">${DL.text.trim() ? 'Nenhuma loja encontrada.' : 'Nenhum dado cadastrado ainda.'}</div>`;
+    return;
+  }
+  body.innerHTML = `<div class="dl-grid">${blocks.map(_dlRenderCard).join('')}</div>`;
+  body.querySelectorAll('.dl-card').forEach((card, i) => {
+    card.querySelector('[data-copy-all]').addEventListener('click', () => _dlCopy(blocks[i].raw, 'Dados copiados!'));
+    card.querySelectorAll('.dl-copyable').forEach(el => {
+      el.addEventListener('click', () => _dlCopy(el.dataset.copy, el.previousElementSibling.textContent + ' copiado!'));
+    });
+  });
+}
+
+async function openDadosLojasModal() {
+  document.getElementById('dadosLojasOverlay').classList.remove('hidden');
+  DL.editing = false;
+  document.getElementById('dlSearch').value = '';
+  if (!DL.loaded) {
+    document.getElementById('dadosLojasBody').innerHTML = '<div class="dl-empty">Carregando…</div>';
+    try {
+      const d = await apiFetch('GET', '/api/dados-lojas');
+      DL.text = d.text || '';
+      DL.meta = { updatedAt: d.updatedAt, updatedBy: d.updatedBy };
+      DL.loaded = true;
+    } catch (e) {
+      document.getElementById('dadosLojasBody').innerHTML = `<div class="dl-empty">Erro ao carregar: ${_escHtml(e.message)}</div>`;
+      return;
+    }
+  }
+  renderDadosLojas();
+}
+
+function closeDadosLojasModal() {
+  document.getElementById('dadosLojasOverlay').classList.add('hidden');
+}
+
+function initDadosLojasModal() {
+  document.getElementById('dadosLojasBtn').addEventListener('click', openDadosLojasModal);
+  document.getElementById('dadosLojasClose').addEventListener('click', closeDadosLojasModal);
+  document.getElementById('dadosLojasOverlay').addEventListener('click', e => {
+    if (e.target === document.getElementById('dadosLojasOverlay') && !DL.editing) closeDadosLojasModal();
+  });
+  document.getElementById('dlSearch').addEventListener('input', renderDadosLojas);
+
+  document.getElementById('dlEditBtn').addEventListener('click', () => {
+    DL.draft = DL.text; DL.editing = true; renderDadosLojas();
+  });
+  document.getElementById('dlCancelBtn').addEventListener('click', () => {
+    DL.editing = false; renderDadosLojas();
+  });
+  document.getElementById('dlSaveBtn').addEventListener('click', async () => {
+    const btn = document.getElementById('dlSaveBtn');
+    const txt = document.getElementById('dlTextarea').value;
+    btn.disabled = true;
+    try {
+      const r = await apiFetch('PUT', '/api/dados-lojas', { text: txt });
+      DL.text = txt;
+      DL.meta = { updatedAt: r.updatedAt, updatedBy: r.updatedBy };
+      DL.editing = false;
+      renderDadosLojas();
+      toast('Dados das lojas salvos!');
+    } catch (e) { toast('Erro ao salvar: ' + e.message, true); }
+    finally { btn.disabled = false; }
+  });
+}
+
 // Vendedor = campo isVendedor marcado no cadastro do colaborador
 function isVend(e) {
   return e.isVendedor !== false;
@@ -12634,6 +12804,7 @@ function init() {
   initWeeklyModal();
   initFuncionariosModal();
   initCampanhasModal();
+  initDadosLojasModal();
   initIndevaModal();
   initLojaAcaoModal();
   initBoletasModal();
