@@ -2430,6 +2430,42 @@ app.patch('/api/retiradas/:id/status', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Adiantamentos × folha ─────────────────────────────────────────────────
+// Solicitações antigas foram gravadas só com o nome do colaborador. Para não
+// perder o vínculo, compara nome normalizado contra apelido e nome completo.
+function _adiNorm(s) {
+  return String(s || '').trim().toUpperCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ');
+}
+function _adiNomeIgual(emp, nome) {
+  const n = _adiNorm(nome);
+  return !!n && (_adiNorm(emp.apelido) === n || _adiNorm(emp.name) === n);
+}
+
+// Adiantamentos de um mês agrupados por colaborador.
+// Entram os aprovados e os já pagos, pela data da solicitação (mês cheio).
+function adiantamentosDoMes(db, year, month) {
+  const mk       = `${year}-${String(month).padStart(2, '0')}`;
+  const CONTAM   = ['aprovado', 'pago'];
+  const porEmp   = {};
+  const semVinculo = [];
+  for (const a of (db.adiantamentos || [])) {
+    if (!CONTAM.includes(a.status)) continue;
+    if (!String(a.createdAt || '').startsWith(mk)) continue;
+    const emp = a.empId
+      ? (db.employees || []).find(e => e.id === a.empId)
+      : (db.employees || []).find(e => e.board === a.board && _adiNomeIgual(e, a.colaborador));
+    if (!emp) { semVinculo.push({ id: a.id, board: a.board, colaborador: a.colaborador, valor: a.valor }); continue; }
+    if (!porEmp[emp.id]) porEmp[emp.id] = { total: 0, itens: [] };
+    porEmp[emp.id].total = Math.round((porEmp[emp.id].total + (a.valor || 0)) * 100) / 100;
+    porEmp[emp.id].itens.push({
+      id: a.id, valor: a.valor, status: a.status,
+      data: String(a.createdAt).slice(0, 10), observacao: a.observacao || '',
+    });
+  }
+  return { porEmp, semVinculo };
+}
+
 // ── GET /api/adiantamentos ────────────────────────────────────────────────
 app.get('/api/adiantamentos', requireAuth, async (req, res) => {
   try {
@@ -2456,9 +2492,13 @@ app.post('/api/adiantamentos', requireAuth, async (req, res) => {
     if (!v || v <= 0) return res.status(400).json({ error: 'Valor inválido' });
     const db = await readDB();
     if (!db.adiantamentos) db.adiantamentos = [];
+    // Vínculo com o colaborador: a folha usa o empId; o nome fica só como rótulo
+    const empId = parseInt(req.body.empId) ||
+      (db.employees || []).find(e => e.board === board && !e.inativo &&
+        _adiNomeIgual(e, colaborador))?.id || null;
     const item = {
       id:          nextId(db),
-      board,
+      board, empId,
       colaborador: colaborador.trim(),
       valor:       parseFloat(v.toFixed(2)),
       observacao:  (observacao || '').trim(),
@@ -7842,6 +7882,10 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       premiacaoSemanalGer,
       premiacaoSemanalGerDetalhe,
       prevExtras,
+      ...(() => {
+        const { porEmp, semVinculo } = adiantamentosDoMes(db, year, month);
+        return { adiantamentos: porEmp, adiantamentosSemVinculo: semVinculo };
+      })(),
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });

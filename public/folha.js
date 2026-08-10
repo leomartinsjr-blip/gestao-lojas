@@ -388,6 +388,7 @@ let FP = {
   supervisorVendaMap: {}, supervisorMetaMap: {},
   premiacaoSemanal: {}, premiacaoSemanalDetalhe: {},
   premiacaoSemanalGer: {}, premiacaoSemanalGerDetalhe: {}, prevExtras: {},
+  adiantamentos: {}, adiantamentosSemVinculo: [],
   activeEmpId: null, dirty: false,
 };
 
@@ -437,6 +438,8 @@ async function loadPeriod() {
     FP.premiacaoSemanalGer        = d.premiacaoSemanalGer        || {};
     FP.premiacaoSemanalGerDetalhe = d.premiacaoSemanalGerDetalhe || {};
     FP.prevExtras              = d.prevExtras              || {};
+    FP.adiantamentos           = d.adiantamentos           || {};
+    FP.adiantamentosSemVinculo = d.adiantamentosSemVinculo || [];
     FP.mensal = {
       diasUteis:        d.folhaMensal?.diasUteis        || 22,
       domingosFeriados: d.folhaMensal?.domingosFeriados || 4,
@@ -965,10 +968,37 @@ function proporcaoMes(emp) {
 }
 function fatorProporcionalMes(emp) { return proporcaoMes(emp).fator; }
 
+// Adiantamentos solicitados no Loja em Ação e já aprovados/pagos no mês.
+// Vêm do servidor agrupados por colaborador; ao gerar a folha viram o desconto.
+function adiantamentoDoMes(emp) {
+  return r2(FP.adiantamentos?.[emp.id]?.total || 0);
+}
+function adiantamentoItens(emp) {
+  return FP.adiantamentos?.[emp.id]?.itens || [];
+}
+
+// Rastro do valor: mostra de qual solicitação do Loja em Ação ele veio, e
+// avisa quando o valor da folha foi editado à mão e não bate mais.
+function adiNota(emp) {
+  const itens = adiantamentoItens(emp);
+  if (!itens.length) return '';
+  const total = adiantamentoDoMes(emp);
+  const det   = itens.map(i => {
+    const [, m, d] = i.data.split('-');
+    return `${d}/${m} ${brl(i.valor)}${i.status === 'aprovado' ? ' (aprovado)' : ''}`;
+  }).join(' · ');
+  const atual = r2(FP.folha[FP.board]?.entries?.[emp.id]?.adiantamento ?? total);
+  const dif   = Math.abs(atual - total) > 0.005
+    ? `<br><span style="color:#d29922">⚠ folha com ${brl(atual)} — editado à mão</span>` : '';
+  return `<span style="font-size:.7rem;color:#484f58">Loja em Ação: ${det}${dif}</span>`;
+}
+
 function defaultEntry(emp) {
   const cfg  = FP.folhaConfig[FP.board] || {};
   const ecfg = getEmpCfg(emp);
   const tipo = cargoTipo(emp.cargo);
+  // Adiantamento do Loja em Ação já aprovado/pago no mês — desconto automático
+  const adi  = adiantamentoDoMes(emp);
   const du   = FP.mensal.diasUteis        || 22;
   const df   = FP.mensal.domingosFeriados || 4;
 
@@ -1000,10 +1030,10 @@ function defaultEntry(emp) {
       comissaoTotal, feriado: 0,
       extras:     (FP.prevExtras[emp.id]?.extras     || []).map(x => ({ ...x, _prev: true })),
       proventos,
-      valeCompras: 0, adiantamento: 0, inss, irpf: 0, vt,
+      valeCompras: 0, adiantamento: adi, inss, irpf: 0, vt,
       arredondamento: 0,
       extrasDesc: (FP.prevExtras[emp.id]?.extrasDesc || []).map(x => ({ ...x, _prev: true })),
-      totalDescontos: r2(inss + vt), liquido: r2(proventos - inss - vt),
+      totalDescontos: r2(inss + vt + adi), liquido: r2(proventos - inss - vt - adi),
     };
   }
 
@@ -1032,10 +1062,10 @@ function defaultEntry(emp) {
       comissaoTotal, feriado: 0,
       extras:     (FP.prevExtras[emp.id]?.extras     || []).map(x => ({ ...x, _prev: true })),
       proventos,
-      valeCompras: 0, adiantamento: 0, inss, irpf: 0, vt,
+      valeCompras: 0, adiantamento: adi, inss, irpf: 0, vt,
       arredondamento: 0,
       extrasDesc: (FP.prevExtras[emp.id]?.extrasDesc || []).map(x => ({ ...x, _prev: true })),
-      totalDescontos: r2(inss + vt), liquido: r2(proventos - inss - vt),
+      totalDescontos: r2(inss + vt + adi), liquido: r2(proventos - inss - vt - adi),
     };
   }
 
@@ -1059,9 +1089,9 @@ function defaultEntry(emp) {
     return {
       tipo, fixo, quebra, comissaoLoja, vendaLoja, feriado: 0, extras: [],
       proventos: prov,
-      valeCompras: 0, adiantamento: 0, inss, irpf: 0, vt,
+      valeCompras: 0, adiantamento: adi, inss, irpf: 0, vt,
       arredondamento: 0, extrasDesc: [],
-      totalDescontos: r2(inss+vt), liquido: r2(prov-inss-vt),
+      totalDescontos: r2(inss+vt+adi), liquido: r2(prov-inss-vt-adi),
     };
   }
 
@@ -1141,10 +1171,10 @@ function defaultEntry(emp) {
     feriado: 0,
     extras:     (FP.prevExtras[emp.id]?.extras     || []).map(x => ({ ...x, _prev: true })),
     proventos,
-    valeCompras: 0, adiantamento: 0, inss, irpf: 0, vt,
+    valeCompras: 0, adiantamento: adi, inss, irpf: 0, vt,
     arredondamento: 0,
     extrasDesc: (FP.prevExtras[emp.id]?.extrasDesc || []).map(x => ({ ...x, _prev: true })),
-    totalDescontos: r2(inss+vt), liquido: r2(proventos-inss-vt),
+    totalDescontos: r2(inss+vt+adi), liquido: r2(proventos-inss-vt-adi),
   };
 }
 
@@ -1406,7 +1436,7 @@ function buildEmpForm(emp, entry) {
 
   const descRows = `
     <div class="fp-field"><label>Vale Compras (R$)</label>${inp(`fp-valeCompras-${emp.id}`, e.valeCompras)}</div>
-    <div class="fp-field"><label>Adiantamento (R$)</label>${inp(`fp-adiantamento-${emp.id}`, e.adiantamento)}</div>
+    <div class="fp-field"><label>Adiantamento (R$)</label>${inp(`fp-adiantamento-${emp.id}`, e.adiantamento)}${adiNota(emp)}</div>
     <div class="fp-field"><label>INSS (R$)</label>${inp(`fp-inss-${emp.id}`, e.inss)}</div>
     <div class="fp-field"><label>IR FP (R$)</label>${inp(`fp-irpf-${emp.id}`, e.irpf)}</div>
     <div class="fp-field"><label>Vale Transporte (R$)</label>${inp(`fp-vt-${emp.id}`, e.vt)}</div>
@@ -2016,7 +2046,16 @@ function fpGerar() {
   }
   FP.dirty = true;
   renderPanel();
-  toast('Folha gerada.');
+
+  // Adiantamento cujo colaborador não existe mais no cadastro não entra em
+  // nenhuma entry — avisa para não sumir em silêncio do desconto.
+  const orfaos = (FP.adiantamentosSemVinculo || []).filter(a => a.board === board);
+  if (orfaos.length) {
+    const nomes = orfaos.map(a => `${a.colaborador} (${brl(a.valor)})`).join(', ');
+    toast(`Folha gerada. ⚠ Adiantamento sem colaborador no cadastro: ${nomes} — lance à mão.`, 'warn', 9000);
+  } else {
+    toast('Folha gerada.');
+  }
 }
 
 function fpGerarEmp(empId) {
@@ -2396,9 +2435,9 @@ async function apiFetch(url, method='GET', body) {
 }
 
 let _toast;
-function toast(msg, err) {
+function toast(msg, err, ms = 3000) {
   const el = document.getElementById('fpToast');
   el.textContent = msg; el.style.display = 'block';
-  el.style.borderColor = err?'#f85149':'#3fb950';
-  clearTimeout(_toast); _toast = setTimeout(()=>el.style.display='none', 3000);
+  el.style.borderColor = err === 'warn' ? '#d29922' : err ? '#f85149' : '#3fb950';
+  clearTimeout(_toast); _toast = setTimeout(()=>el.style.display='none', ms);
 }

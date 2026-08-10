@@ -11046,7 +11046,7 @@ function _renderAdiantamentoLojaView(body) {
               <span class="adi-emp-nome">${nome}</span>
               <div class="adi-emp-valor-wrap">
                 <span class="adi-brl-prefix">R$</span>
-                <input type="number" class="adi-valor-input" data-nome="${nome}" step="0.01" min="0.01" placeholder="0,00">
+                <input type="number" class="adi-valor-input" data-nome="${nome}" data-emp="${e.id}" step="0.01" min="0.01" placeholder="0,00">
               </div>
             </div>`;
           }).join('')}
@@ -11064,7 +11064,7 @@ function _renderAdiantamentoLojaView(body) {
         const solicitacoes = [];
         body.querySelectorAll('.adi-valor-input').forEach(input => {
           const valor = parseFloat(input.value) || 0;
-          if (valor > 0) solicitacoes.push({ colaborador: input.dataset.nome, valor });
+          if (valor > 0) solicitacoes.push({ colaborador: input.dataset.nome, empId: parseInt(input.dataset.emp) || null, valor });
         });
 
         if (!solicitacoes.length) { toast('Informe o valor de pelo menos um funcionário', true); return; }
@@ -11130,7 +11130,7 @@ function _renderAdiAdminLancar(content, onSuccess) {
                 <span class="adi-emp-nome">${nome}</span>
                 <div class="adi-emp-valor-wrap">
                   <span class="adi-brl-prefix">R$</span>
-                  <input type="number" class="adi-valor-input" data-nome="${nome}" step="0.01" min="0.01" placeholder="0,00">
+                  <input type="number" class="adi-valor-input" data-nome="${nome}" data-emp="${e.id}" step="0.01" min="0.01" placeholder="0,00">
                 </div>
               </div>`;
             }).join('')
@@ -11155,7 +11155,7 @@ function _renderAdiAdminLancar(content, onSuccess) {
         const solicitacoes = [];
         content.querySelectorAll('.adi-valor-input').forEach(input => {
           const valor = parseFloat(input.value) || 0;
-          if (valor > 0) solicitacoes.push({ colaborador: input.dataset.nome, valor });
+          if (valor > 0) solicitacoes.push({ colaborador: input.dataset.nome, empId: parseInt(input.dataset.emp) || null, valor });
         });
         if (!solicitacoes.length) { toast('Informe o valor de pelo menos um funcionário', true); return; }
         submitBtn.disabled = true;
