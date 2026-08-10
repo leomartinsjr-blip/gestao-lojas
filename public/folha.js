@@ -37,10 +37,14 @@ function cargoTipo(cargo) {
 // Linhas que o funcionário recebe mas que NÃO são declaradas na contabilidade.
 // Cada linha abate de um componente declarado (comissão, fixo ou "outros"),
 // para que a planilha de contabilidade continue batendo coluna a coluna.
-function foraOrigemOpts(tipo) {
+// temFixo: vendedor no regime fixo + comissão também pode ter parte do
+// salário fixo paga por fora — comissionista puro não tem fixo a abater.
+function foraOrigemOpts(tipo, temFixo = false) {
   if (tipo === 'caixa')    return { fixo: 'Salário fixo', outros: 'Outros' };
   if (tipo === 'socio')    return { comissao: 'Comissão', fixo: 'Pró-labore', outros: 'Outros' };
-  if (tipo === 'vendedor') return { comissao: 'Comissão', outros: 'Outros' };
+  if (tipo === 'vendedor') return temFixo
+    ? { comissao: 'Comissão', fixo: 'Salário fixo', outros: 'Outros' }
+    : { comissao: 'Comissão', outros: 'Outros' };
   return { comissao: 'Comissão', fixo: 'Salário fixo', outros: 'Outros' };
 }
 function foraOrigemDefault(tipo) { return tipo === 'caixa' ? 'fixo' : 'comissao'; }
@@ -278,7 +282,7 @@ function baseDivisaoContab(tipo, comissao, comissaoLoja) {
 }
 
 function foraBreakdown(entry, tipo) {
-  const opts = foraOrigemOpts(tipo);
+  const opts = foraOrigemOpts(tipo, r2(entry?.fixo || 0) > 0);
   let com = 0, fixo = 0, outros = 0;
   for (const f of (entry?.fora || [])) {
     const v = r2(f.valor);
@@ -347,6 +351,9 @@ function getEmpCfg(emp) {
     vtRate:             v(fc.vtRate,             emp.vtRate             || 0),
     maxVT:              v(fc.maxVT,              emp.maxVT              || 0),
     recebePremiaoLoja:   fc.recebePremiaoLoja  || false,
+    // Vendedor no regime fixo + comissão: ganha salário fixo e não recebe
+    // complemento de garantia mínima — o fixo já é o piso dele.
+    vendedorComFixo:     fc.vendedorComFixo != null ? !!fc.vendedorComFixo : !!emp.vendedorComFixo,
     premioLojaValor:     v(fc.premioLojaValor,     0),
     comissaoVRSemMeta:   v(fc.comissaoVRSemMeta,   0),
     comissaoVRMeta2:     v(fc.comissaoVRMeta2,     0),
@@ -843,6 +850,11 @@ function fpOpenCfg(board) {
         <div class="fp-cfg-field"><label>Prêmio Gerente (R$)</label>
           <input type="number" step="0.01" id="cfg-premioGerente" value="${f2(cfg.premioGerente)}">
         </div>
+        <div class="fp-cfg-field" style="grid-column:1/-1;margin-bottom:0">
+          <label>Prêmio Vendedor Fixo + Comissão (R$)</label>
+          <input type="number" step="0.01" id="cfg-premioVendedorMisto" value="${f2(cfg.premioVendedorMisto)}">
+          <span style="font-size:.72rem;color:#484f58">usado no lugar do Prêmio Vendedor para quem está no regime fixo + comissão</span>
+        </div>
       </div>
       <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid #30363d;display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem">
         <div class="fp-cfg-field" style="margin-bottom:0">
@@ -906,6 +918,7 @@ async function fpSaveConfig() {
     salarioFixoCaixa:         g('cfg-fixoCaixa'),
     quebraCaixa:              g('cfg-quebraCaixa'),
     premioVendedor:           g('cfg-premioVendedor'),
+    premioVendedorMisto:      g('cfg-premioVendedorMisto'),
     premioGerente:            g('cfg-premioGerente'),
   };
   try {
@@ -1053,15 +1066,19 @@ function defaultEntry(emp) {
 
   const fatorMes = fatorProporcionalMes(emp);
 
-  const fixo = (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
+  const vendComFixo = tipo === 'vendedor' && ecfg.vendedorComFixo;
+
+  const fixo = (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend' || vendComFixo)
     ? r2((ecfg.salarioFixo || 0) * fatorMes)
     : 0;
 
-  const gm = tipo === 'gerente'
-    ? r2((cfg.garantiaMinimaGerente    || cfg.garantiaMinima || 0) * fatorMes)
-    : (tipo === 'sub' || tipo === 'gvend')
-      ? r2((cfg.garantiaMinimaSubGerente || cfg.garantiaMinima || 0) * fatorMes)
-      : r2((cfg.garantiaMinima || 0) * fatorMes);
+  // Vendedor no regime fixo + comissão não tem garantia mínima: o fixo é o piso
+  const gm = vendComFixo ? 0
+    : tipo === 'gerente'
+      ? r2((cfg.garantiaMinimaGerente    || cfg.garantiaMinima || 0) * fatorMes)
+      : (tipo === 'sub' || tipo === 'gvend')
+        ? r2((cfg.garantiaMinimaSubGerente || cfg.garantiaMinima || 0) * fatorMes)
+        : r2((cfg.garantiaMinima || 0) * fatorMes);
   const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);
   let comissaoLoja = 0;
   if (temComissaoLoja(tipo, ecfg)) {
@@ -1082,8 +1099,11 @@ function defaultEntry(emp) {
 
   // DSR = (comissaoContab + prêmio) / du × df  →  equivale a base × df / (du + df)
   const baseContab = baseDivisaoContab(tipo, comissaoTotal, comissaoLoja);
+  // Comissionista misto (fixo + comissão) tem prêmio próprio, diferente do puro
   const premio = r2((tipo === 'gerente' || tipo === 'gvend')
-    ? (cfg.premioGerente || 0) : (cfg.premioVendedor || 0));
+    ? (cfg.premioGerente || 0)
+    : vendComFixo ? (cfg.premioVendedorMisto || 0)
+    : (cfg.premioVendedor || 0));
   const dsr = (du + df) > 0 ? r2(baseContab * df / (du + df)) : 0;
   const comissaoContab = r2(baseContab - dsr - premio);
 
@@ -1269,7 +1289,9 @@ function buildEmpForm(emp, entry) {
     // Sub-gerente divide comissão própria + comissão da loja; demais, só a própria
     const baseLabel = tipo === 'sub' ? 'comissão própria + loja' : 'total';
 
-    if (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
+    const vendComFixo = tipo === 'vendedor' && ecfg.vendedorComFixo;
+
+    if (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend' || vendComFixo)
       provRows += `<div class="fp-field"><label>Salário Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}${fatorNota}</div>`;
 
     provRows += `
@@ -1308,11 +1330,13 @@ function buildEmpForm(emp, entry) {
 
     if (temComissaoLoja(tipo, ecfg)) provRows += _comLojaRow();
 
-    const gmMin = tipo === 'gerente'
-      ? (cfg.garantiaMinimaGerente    || cfg.garantiaMinima || 0)
-      : (tipo === 'sub' || tipo === 'gvend')
-        ? (cfg.garantiaMinimaSubGerente || cfg.garantiaMinima || 0)
-        : (cfg.garantiaMinima || 0);
+    // Vendedor com fixo não tem GM — o salário fixo já é o piso
+    const gmMin = vendComFixo ? 0
+      : tipo === 'gerente'
+        ? (cfg.garantiaMinimaGerente    || cfg.garantiaMinima || 0)
+        : (tipo === 'sub' || tipo === 'gvend')
+          ? (cfg.garantiaMinimaSubGerente || cfg.garantiaMinima || 0)
+          : (cfg.garantiaMinima || 0);
     if (gmMin > 0) {
       const gmMinEfetiva = r2(gmMin * propMes.fator);
       const gmBase = (tipo === 'gvend' || tipo === 'sub')
@@ -1409,7 +1433,7 @@ function buildEmpForm(emp, entry) {
         <span class="fp-fora-note">não entra na exportação para a contabilidade</span>
         <span class="fp-fora-total" id="val-fora-${emp.id}">${brl(foraBreakdown(e, tipo).total)}</span>
       </div>
-      <div id="fora-rows-${emp.id}">${buildForaRows(emp.id, e.fora || [], tipo)}</div>
+      <div id="fora-rows-${emp.id}">${buildForaRows(emp.id, e.fora || [], tipo, r2(e.fixo || 0) > 0)}</div>
       <button class="fp-add-extra" onclick="addFora(${emp.id})">+ Adicionar linha por fora</button>
       <div class="fp-fora-hint" id="fora-hint-${emp.id}"></div>
     </div>
@@ -1479,7 +1503,8 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
         row('Com. Loja Meta 2 (%)', `ec-comissaoVRMeta2-${emp.id}`,   ecfg.comissaoVRMeta2) +
         row('Com. Loja S.Meta (%)', `ec-comissaoVRSuper-${emp.id}`,   ecfg.comissaoVRSuper)
       : '') +
-      (tipo === 'sub' || tipo === 'gvend' ? row('Salário Fixo (R$)', `ec-salarioFixo-${emp.id}`, ecfg.salarioFixo) : '') +
+      (tipo === 'sub' || tipo === 'gvend' || tipo === 'vendedor'
+        ? row('Salário Fixo (R$)', `ec-salarioFixo-${emp.id}`, ecfg.salarioFixo) : '') +
       row('INSS (%)',           `ec-inssRate-${emp.id}`,        ecfg.inssRate) +
       row('VT (%)',             `ec-vtRate-${emp.id}`,          ecfg.vtRate) +
       row('MAX. VT (R$)',       `ec-maxVT-${emp.id}`,           ecfg.maxVT);
@@ -1491,6 +1516,16 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
       style="width:16px;height:16px;accent-color:#3fb950;cursor:pointer">
   </div>` + row('Valor prêm. loja/sem. (R$)', `ec-premioLojaValor-${emp.id}`, ecfg.premioLojaValor);
 
+  // Vendedor pode ser comissionista puro (com garantia mínima) ou fixo + comissão
+  const chkVendFixo = tipo === 'vendedor'
+    ? `<div class="fp-emp-cfg-row fp-emp-cfg-row--check" title="Paga salário fixo + comissão. Sem complemento de garantia mínima.">
+        <label>Fixo + comissão?</label>
+        <input type="checkbox" id="ec-vendedorComFixo-${emp.id}"${ecfg.vendedorComFixo ? ' checked' : ''}
+          style="width:16px;height:16px;accent-color:#3fb950;cursor:pointer"
+          onchange="fpSaveEmpCfg(${emp.id})">
+      </div>`
+    : '';
+
   return `
   <div class="fp-emp-cfg-wrap">
     <div class="fp-emp-cfg-toggle" onclick="fpToggleEmpCfg(${emp.id})">
@@ -1499,7 +1534,7 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
       <span id="empCfgArrow-${emp.id}" style="margin-left:auto;font-size:.75rem">▼</span>
     </div>
     <div class="fp-emp-cfg" id="empCfg-${emp.id}">
-      <div class="fp-emp-cfg-grid">${fields}${chkPremiaoLoja}</div>
+      <div class="fp-emp-cfg-grid">${fields}${chkVendFixo}${chkPremiaoLoja}</div>
       <div class="fp-emp-cfg-actions">
         <button class="fp-btn primary" onclick="fpSaveEmpCfg(${emp.id})">Salvar</button>
         ${hasFolha ? `<button class="fp-btn" onclick="fpClearEmpCfg(${emp.id})">Resetar para cadastro</button>` : ''}
@@ -1545,7 +1580,10 @@ async function fpSaveEmpCfg(empId) {
       cfg.comissaoVRMeta2   = g(`ec-comissaoVRMeta2-${empId}`);
       cfg.comissaoVRSuper   = g(`ec-comissaoVRSuper-${empId}`);
     }
-    if (tipo === 'sub' || tipo === 'gvend') cfg.salarioFixo  = g(`ec-salarioFixo-${empId}`);
+    if (tipo === 'sub' || tipo === 'gvend' || tipo === 'vendedor')
+      cfg.salarioFixo = g(`ec-salarioFixo-${empId}`);
+    if (tipo === 'vendedor')
+      cfg.vendedorComFixo = document.getElementById(`ec-vendedorComFixo-${empId}`)?.checked || false;
   }
   cfg.recebePremiaoLoja = document.getElementById(`ec-recebePremiaoLoja-${empId}`)?.checked || false;
   cfg.premioLojaValor   = g(`ec-premioLojaValor-${empId}`);
@@ -1593,10 +1631,10 @@ function buildExtraRows(empId, extras, type) {
   }).join('');
 }
 
-function buildForaRows(empId, fora, tipo) {
+function buildForaRows(empId, fora, tipo, temFixo = false) {
   if (!fora.length)
     return `<div class="fp-fora-empty">Nenhum valor por fora — tudo vai para a contabilidade.</div>`;
-  const opts = foraOrigemOpts(tipo);
+  const opts = foraOrigemOpts(tipo, temFixo);
   return fora.map((f, i) => {
     const org = opts[f.origem] ? f.origem : foraOrigemDefault(tipo);
     return `<div class="fp-fora-row">
@@ -1650,7 +1688,8 @@ function refreshFora(empId) {
   const emp = FP.employees.find(e => e.id === empId);
   const arr = FP.folha[FP.board]?.entries?.[empId]?.fora || [];
   const c   = document.getElementById(`fora-rows-${empId}`);
-  if (c) c.innerHTML = buildForaRows(empId, arr, cargoTipo(emp?.cargo));
+  const fixoAtual = r2(FP.folha[FP.board]?.entries?.[empId]?.fixo || 0);
+  if (c) c.innerHTML = buildForaRows(empId, arr, cargoTipo(emp?.cargo), fixoAtual > 0);
   recalc(empId);
 }
 
@@ -2105,7 +2144,7 @@ function buildRecibo(emp, entry, mes, origin) {
     ? entry.comissaoDeclarada : entry.comissaoTotal);
 
   const foraOrgDe  = f => {
-    const opts = foraOrigemOpts(tipo);
+    const opts = foraOrigemOpts(tipo, num(entry.fixo) > 0);
     const o = opts[f.origem] ? f.origem : foraOrigemDefault(tipo);
     // sócio/supervisor: comissão é rateada entre lojas, não há linha única a abater
     return (o === 'comissao' && !abateCom) ? 'outros' : o;
@@ -2169,7 +2208,8 @@ function buildRecibo(emp, entry, mes, origin) {
       prov += tr('PREM. META LOJA', entry.premiacaoBalanco);
     }
   } else {
-    if (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend') {
+    // Vendedor só entra aqui quando está no regime fixo + comissão
+    if (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend' || num(entry.fixo) > 0) {
       prov += tr('SALÁRIO FIXO', fixoDecl, fixoDecl);
       prov += complRows('fixo');
     }
