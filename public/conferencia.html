@@ -386,6 +386,33 @@ td.muted  { color: var(--cf-muted); }
 .rf input { background: var(--cf-card2); border: 1px solid var(--cf-border); color: var(--cf-text); padding: 7px 10px; border-radius: 7px; font-size: 13px; width: 100%; }
 .rf input:focus { outline: none; border-color: var(--cf-primary); }
 
+/* ── Campanhas promocionais ── */
+.camp-colecoes { background: var(--cf-card); border: 1px solid var(--cf-border); border-radius: var(--r); padding: 14px 16px; margin-bottom: 16px; }
+.camp-col-head { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+.camp-colecoes textarea { width: 100%; min-height: 96px; resize: vertical; background: var(--cf-card2); border: 1px solid var(--cf-border); color: var(--cf-text); border-radius: 7px; padding: 8px 10px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; line-height: 1.55; }
+.camp-colecoes textarea:focus { outline: none; border-color: var(--cf-primary); }
+.camp-card { background: var(--cf-card); border: 1px solid var(--cf-border); border-left: 3px solid var(--cf-primary); border-radius: var(--r); padding: 14px 16px; margin-bottom: 12px; }
+.camp-card.off { border-left-color: var(--cf-border); opacity: .6; }
+.camp-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.camp-card-head input[type=text].camp-nome { flex: 1; min-width: 180px; background: transparent; border: none; border-bottom: 1px solid var(--cf-border); color: var(--cf-text); font-size: 13px; font-weight: 700; padding: 3px 2px; font-family: inherit; }
+.camp-card-head input[type=text].camp-nome:focus { outline: none; border-bottom-color: var(--cf-primary); }
+.camp-chk { display: flex; align-items: center; gap: 5px; font-size: 11px; color: var(--cf-muted); cursor: pointer; white-space: nowrap; }
+.camp-chk input { width: 14px; height: 14px; accent-color: var(--cf-primary); cursor: pointer; }
+.camp-del { background: transparent; border: 1px solid var(--cf-border); color: var(--cf-muted); border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer; font-family: inherit; }
+.camp-del:hover { color: var(--cf-red, #ef4444); border-color: var(--cf-red, #ef4444); }
+.camp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 10px 12px; }
+.camp-sec { grid-column: 1 / -1; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px; color: var(--cf-muted); border-bottom: 1px solid var(--cf-border); padding-bottom: 3px; margin-top: 6px; }
+.camp-f { display: flex; flex-direction: column; gap: 4px; }
+.camp-f label { font-size: 10px; color: var(--cf-muted); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+.camp-f input, .camp-f select { background: var(--cf-card2); border: 1px solid var(--cf-border); color: var(--cf-text); padding: 6px 9px; border-radius: 7px; font-size: 12px; width: 100%; font-family: inherit; }
+.camp-f input:focus, .camp-f select:focus { outline: none; border-color: var(--cf-primary); }
+.camp-f .camp-hint { font-size: 10px; color: var(--cf-muted); }
+.camp-lojas { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px; }
+.camp-add { background: transparent; border: 1px dashed var(--cf-border); color: var(--cf-primary); border-radius: var(--r); padding: 10px 16px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; width: 100%; }
+.camp-add:hover { border-color: var(--cf-primary); }
+.camp-empty { color: var(--cf-muted); font-size: 12px; padding: 18px; text-align: center; }
+.di-tag.di-camp { background: #2dd4bf22; color: #2dd4bf; border-color: #2dd4bf55; }
+
 /* ── Revisão Buttons ────────────────────────────────────────── */
 .revisao-btns { display:flex; gap:6px; margin-top:6px; }
 .btn-conferida, .btn-reprovada { font-size:11px; padding:3px 10px; border-radius:5px; border:1px solid; cursor:pointer; font-family:inherit; font-weight:600; transition:.15s; }
@@ -611,6 +638,10 @@ td.muted  { color: var(--cf-muted); }
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93A10 10 0 0 0 4.93 19.07M19.07 4.93l-1.41 1.41M18.36 18.36l-1.41-1.41M5.64 5.64l1.41 1.41M5.64 18.36l1.41-1.41"/></svg>
       Regras
     </button>
+    <button class="cf-tab" data-tab="campanhas">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+      Campanhas
+    </button>
     <button class="cf-tab" data-tab="taxas">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>
       Taxas
@@ -751,6 +782,31 @@ td.muted  { color: var(--cf-muted); }
     <button class="btn-primary" id="salvarRegrasBtn" style="margin-left:auto">💾 Salvar Regras</button>
   </div>
   <div class="regras-grid" id="regrasGrid"></div>
+</div>
+
+<!-- ══ CAMPANHAS ══════════════════════════════════════════════════════════ -->
+<div class="cf-panel" id="tab-campanhas">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+    <div>
+      <div style="font-weight:800;font-size:14px">Campanhas Promocionais</div>
+      <div style="font-size:11px;color:var(--cf-muted);margin-top:3px">Itens cobertos por uma campanha vigente não geram alerta de desconto. Campo em branco não filtra.</div>
+    </div>
+    <button class="btn-primary" id="salvarCampanhasBtn" style="margin-left:auto">💾 Salvar</button>
+  </div>
+
+  <div class="camp-colecoes">
+    <div class="camp-col-head">
+      <div>
+        <div style="font-weight:700;font-size:12px">Ordem das coleções</div>
+        <div style="font-size:10px;color:var(--cf-muted);margin-top:2px">Uma por linha, da <strong>mais antiga para a mais nova</strong>. É essa ordem que faz o "até WINTER 25" funcionar.</div>
+      </div>
+      <span id="colecoesCount" style="margin-left:auto;font-size:10px;color:var(--cf-muted)"></span>
+    </div>
+    <textarea id="colecoesTxt" spellcheck="false" placeholder="WINTER 23&#10;SUMMER 24&#10;WINTER 24&#10;SUMMER 25&#10;WINTER 25"></textarea>
+  </div>
+
+  <div id="campanhasList"></div>
+  <button class="camp-add" id="addCampanhaBtn">+ Nova campanha</button>
 </div>
 
 <!-- ══ TAXAS ══════════════════════════════════════════════════════════════ -->

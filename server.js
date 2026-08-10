@@ -9063,6 +9063,136 @@ app.post('/api/conferencia/confirmacoes-manuais', requireEscritorioOrAdmin, asyn
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Campanhas promocionais da conferência ─────────────────────────────────
+// Uma campanha autoriza, para os itens que casam com o filtro, o desconto que
+// os alertas normalmente acusariam. Ex.: "compra 1 leve 2" libera 50% nas
+// t-shirts até a coleção WINTER 25; "chinelo Mizuno a 200" libera a marca que
+// não aceita desconto desde que o preço unitário fique em pelo menos R$ 200.
+function _campNorm(s) {
+  return String(s || '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+}
+
+// Lista vazia não restringe. Aceita curinga "*" (ex.: "WINTER*").
+function _campMatchLista(lista, valor) {
+  if (!Array.isArray(lista) || !lista.length) return true;
+  const v = _campNorm(valor);
+  if (!v) return false;
+  return lista.some(p => {
+    const pn = _campNorm(p);
+    if (!pn) return false;
+    if (!pn.includes('*')) return pn === v;
+    const re = new RegExp('^' + pn.split('*')
+      .map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$');
+    return re.test(v);
+  });
+}
+
+// "até WINTER 25" usa a ordem cadastrada em db.confColecoes (mais antiga →
+// mais nova). Coleção fora da lista não é liberada — na dúvida, alerta.
+function _campColecaoOk(filtro, colecaoItem, ordem) {
+  if (Array.isArray(filtro.colecoes) && filtro.colecoes.length)
+    return _campMatchLista(filtro.colecoes, colecaoItem);
+  if (!filtro.colecaoAte) return true;
+  const lista   = Array.isArray(ordem) ? ordem : [];
+  const idxAte  = lista.findIndex(c => _campNorm(c) === _campNorm(filtro.colecaoAte));
+  const idxItem = lista.findIndex(c => _campNorm(c) === _campNorm(colecaoItem));
+  if (idxAte < 0 || idxItem < 0) return false;
+  return idxItem <= idxAte;
+}
+
+// Primeira campanha vigente que cobre o item (ou null)
+function _campanhaDoItem(campanhas, ordem, ctx) {
+  if (!Array.isArray(campanhas) || !campanhas.length) return null;
+  return campanhas.find(c => {
+    if (c.ativa === false) return false;
+    if (c.inicio && ctx.data && ctx.data < c.inicio) return false;
+    if (c.fim    && ctx.data && ctx.data > c.fim)    return false;
+    if (Array.isArray(c.lojas) && c.lojas.length && !c.lojas.includes(ctx.board)) return false;
+    const f = c.filtro || {};
+    if (!_campMatchLista(f.marcas,  ctx.marca)) return false;
+    if (!_campMatchLista(f.setores, ctx.setor)) return false;
+    if (Array.isArray(f.refs) && f.refs.length &&
+        !_campMatchLista(f.refs, ctx.referencia) && !_campMatchLista(f.refs, ctx.cod)) return false;
+    if (f.descContem && !_campNorm(ctx.descricao).includes(_campNorm(f.descContem))) return false;
+    if (!_campColecaoOk(f, ctx.colecao, ordem)) return false;
+    return true;
+  }) || null;
+}
+
+// A campanha cobre o item, mas o preço praticado atende ao que ela permite?
+// Condições preenchidas são cumulativas; campanha sem condição libera o item.
+function _campanhaLibera(camp, { precoUnit, percDesc }) {
+  const p = camp?.permite || {};
+  let ok = true;
+  if (p.precoMinimo != null && p.precoMinimo !== '' && +p.precoMinimo > 0)
+    ok = ok && precoUnit >= +p.precoMinimo - 0.005;
+  if (p.descontoMaxItem != null && p.descontoMaxItem !== '')
+    ok = ok && percDesc <= +p.descontoMaxItem + 0.05;
+  return ok;
+}
+
+// GET /api/conferencia/colecoes — ordem cronológica das coleções
+app.get('/api/conferencia/colecoes', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    res.json(db.confColecoes || []);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/conferencia/colecoes — body: ["WINTER 23","SUMMER 24",...] (antiga → nova)
+app.put('/api/conferencia/colecoes', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const lista = Array.isArray(req.body) ? req.body : (req.body?.colecoes || []);
+    const db = await readDB();
+    db.confColecoes = lista.map(c => String(c).trim()).filter(Boolean);
+    await writeDB(db);
+    res.json({ ok: true, colecoes: db.confColecoes });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/conferencia/campanhas
+app.get('/api/conferencia/campanhas', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    res.json(db.confCampanhas || []);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/conferencia/campanhas — body: [ {nome, ativa, inicio, fim, lojas[], filtro{}, permite{}}, ... ]
+app.put('/api/conferencia/campanhas', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const arr = Array.isArray(req.body) ? req.body : (req.body?.campanhas || []);
+    const db  = await readDB();
+    const norm = s => String(s || '').trim();
+    const tags = v => (Array.isArray(v) ? v : String(v || '').split(','))
+      .map(x => String(x).trim()).filter(Boolean);
+    const numOrNull = v => (v === '' || v == null || isNaN(parseFloat(v))) ? null : parseFloat(v);
+    db.confCampanhas = arr.map(c => ({
+      id:     c.id || nextId(db),
+      nome:   norm(c.nome) || 'Campanha',
+      ativa:  c.ativa !== false,
+      inicio: norm(c.inicio), fim: norm(c.fim),
+      lojas:  tags(c.lojas),
+      filtro: {
+        marcas:     tags(c.filtro?.marcas),
+        setores:    tags(c.filtro?.setores),
+        refs:       tags(c.filtro?.refs),
+        colecoes:   tags(c.filtro?.colecoes),
+        colecaoAte: norm(c.filtro?.colecaoAte),
+        descContem: norm(c.filtro?.descContem),
+      },
+      permite: {
+        descontoMaxItem: numOrNull(c.permite?.descontoMaxItem),
+        precoMinimo:     numOrNull(c.permite?.precoMinimo),
+      },
+      updatedBy: req.session.user.username,
+      updatedAt: new Date().toISOString(),
+    }));
+    await writeDB(db);
+    res.json({ ok: true, campanhas: db.confCampanhas });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // Função extraída para reuso no board=all
 async function _buildConferenciaVendas(board, dtIni, dtFin) {
   const db    = await readDB();
@@ -9077,9 +9207,12 @@ async function _buildConferenciaVendas(board, dtIni, dtFin) {
   const cnpj  = lojas[board];
   if (!cnpj) throw new Error(`Loja "${board}" não configurada`);
 
+  // Campanhas promocionais: liberam itens dos alertas de desconto
+  const promoCfg = { campanhas: db.confCampanhas || [], colecoes: db.confColecoes || [] };
+
   // Reutiliza todo o código do handler movendo req/res para fora
   // Chama o handler interno via _buildConferenciaVendasCore
-  return _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMin, descontoMaxItem, descontoMaxVenda, descontoSomenteAVista, marcasSemDesconto, cnpj);
+  return _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMin, descontoMaxItem, descontoMaxVenda, descontoSomenteAVista, marcasSemDesconto, cnpj, promoCfg);
 }
 
 // GET /api/conferencia/vendas?board=delrey&dtIni=2026-06-01&dtFin=2026-06-08
@@ -9131,7 +9264,9 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMin, descontoMaxItem, descontoMaxVenda, descontoSomenteAVista, marcasSemDesconto, cnpj) {
+async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMin, descontoMaxItem, descontoMaxVenda, descontoSomenteAVista, marcasSemDesconto, cnpj, promoCfg = {}) {
+    const campanhas    = Array.isArray(promoCfg.campanhas) ? promoCfg.campanhas : [];
+    const colecaoOrdem = Array.isArray(promoCfg.colecoes)  ? promoCfg.colecoes  : [];
     const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
     const cnpjClean = cnpj.replace(/\D/g, '');
@@ -9294,6 +9429,21 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
         const emPromocao   = !!precoPromo;
 
         const catInfo = catalog[codProd] || {};
+
+        // Campanha promocional que cobre este item, se houver
+        const _descItem = (catInfo.nome || catInfo.nomeBase || r.descricao || r.nome_produto || '').trim();
+        const _percItem = vlrBruto > 0 && vlrDesc > 0 ? (vlrDesc / vlrBruto) * 100 : 0;
+        const camp = _campanhaDoItem(campanhas, colecaoOrdem, {
+          board, data: docMap[doc].data,
+          marca:      (catInfo.marca  || '').trim(),
+          setor:      (catInfo.setor  || r.desc_setor || '').trim(),
+          colecao:    (catInfo.linha  || '').trim(),
+          referencia: (catInfo.referencia || r.referencia || '').trim(),
+          cod:        codProd,
+          descricao:  _descItem,
+        });
+        const campOk = camp ? _campanhaLibera(camp, { precoUnit: vlrLiq, percDesc: _percItem }) : false;
+
         docMap[doc].itens.push({
           cod_produto:  codProd,
           referencia:   (catInfo.referencia || r.referencia || '').trim(),
@@ -9310,6 +9460,8 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
           percDesconto: +percItem.toFixed(1),
           emPromocao,
           precoPromocao: precoPromo,
+          campanha:     camp ? camp.nome : null,
+          campanhaOk:   campOk,
         });
 
         // Se tem preço promo: desconto é relativo ao preço promo, não ao de tabela
@@ -9320,12 +9472,14 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
         const descAjustado = emPromocao ? Math.max(0, (precoPromo - vlrLiqUnit) * qty) : vlrDesc * qty;
         const percAjustado = baseDesconto > 0 && descAjustado > 0 ? (descAjustado / (baseDesconto * qty)) * 100 : 0;
 
-        if (abaixoPromo) {
+        // campOk = campanha vigente cobre o item e o preço praticado respeita o
+        // que ela permite → o desconto foi autorizado, não vira alerta.
+        if (abaixoPromo && !campOk) {
           docMap[doc].alertas.push({
             tipo: 'desconto_item',
             msg:  `"${(r.descricao || r.referencia || codProd || '').trim()}" vendido abaixo do preço promo (R$${vlrLiqUnit.toFixed(2)} < R$${precoPromo.toFixed(2)})`,
           });
-        } else if (!emPromocao && descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {
+        } else if (!emPromocao && !campOk && descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {
           docMap[doc].alertas.push({
             tipo: 'desconto_item',
             msg:  `"${(r.descricao || r.referencia || codProd || '').trim()}" ${percItem.toFixed(1)}% desc (máx ${descontoMaxItem}%)`,
@@ -9333,7 +9487,7 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
         }
         // Alerta: marca sem desconto — não dispara se tem promo e vendeu >= promo
         const marcaItem    = (catInfo.marca || '').trim().toUpperCase();
-        const cobertoPelaPromo = emPromocao && !abaixoPromo;
+        const cobertoPelaPromo = (emPromocao && !abaixoPromo) || campOk;
         if (marcasSemDesconto.length && marcaItem && marcasSemDesconto.includes(marcaItem) && vlrDesc > 0 && !cobertoPelaPromo) {
           docMap[doc].alertas.push({
             tipo: 'marca_sem_desconto',
@@ -9355,12 +9509,18 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
           valor: +totalDesc.toFixed(2),
           perc:  totalBruto > 0 ? +((totalDesc / totalBruto) * 100).toFixed(1) : 0,
         };
-        if (!liquidoAcimaBruto && descontoMaxVenda < 100 && totalBruto > 0 && totalDesc > 0) {
-          const percV = (totalDesc / totalBruto) * 100;
+        // O % da venda ignora os itens liberados por campanha — senão um
+        // "compra 1 leve 2" estouraria o limite da venda inteira.
+        const livres     = d.itens.filter(i => !i.campanhaOk);
+        const brutoLivre = livres.reduce((s, i) => s + i.vlrBruto,    0);
+        const descLivre  = livres.reduce((s, i) => s + i.vlrDesconto, 0);
+        if (!liquidoAcimaBruto && descontoMaxVenda < 100 && brutoLivre > 0 && descLivre > 0) {
+          const percV = (descLivre / brutoLivre) * 100;
           if (percV > descontoMaxVenda) {
+            const nota = livres.length < d.itens.length ? ' — fora os itens em campanha' : '';
             d.alertas.push({
               tipo: 'desconto_venda',
-              msg:  `Desconto total ${percV.toFixed(1)}% na venda (máx ${descontoMaxVenda}%)`,
+              msg:  `Desconto total ${percV.toFixed(1)}% na venda (máx ${descontoMaxVenda}%)${nota}`,
             });
           }
         }
@@ -9536,7 +9696,8 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
         // Não alerta se todos os itens com desconto estão cobertos por promoção
         // (vendido >= preço promo → promoção se aplica também em parcelado)
         const itensCobertos = d.itens.every(it =>
-          it.vlrDesconto <= 0 || (it.emPromocao && it.precoPromocao && it.vlrLiquido / it.quantidade >= it.precoPromocao)
+          it.vlrDesconto <= 0 || it.campanhaOk ||
+          (it.emPromocao && it.precoPromocao && it.vlrLiquido / it.quantidade >= it.precoPromocao)
         );
         if (itensCobertos) continue;
         const parcInfo = d.formas

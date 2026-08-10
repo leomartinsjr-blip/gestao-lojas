@@ -1527,6 +1527,7 @@
                 ref  ? `<span class="di-tag di-ref">Ref ${esc(ref)}</span>` : '',
                 marc ? `<span class="di-tag di-marca">${esc(marc)}</span>`  : '',
                 col  ? `<span class="di-tag di-col">${esc(col)}</span>`     : '',
+                it.campanhaOk ? `<span class="di-tag di-camp" title="Desconto autorizado por campanha — não gera alerta">🏷 ${esc(it.campanha)}</span>` : '',
               ].filter(Boolean).join('');
 
               return `<tr class="${[temDesc?'has-disc':'', zebra].filter(Boolean).join(' ')}">
@@ -2314,6 +2315,171 @@
   });
 
   loadRegras();
+
+  // ════════════════════════════════════════════════════════════════════════
+  // CAMPANHAS PROMOCIONAIS
+  // ════════════════════════════════════════════════════════════════════════
+  // Uma campanha autoriza o desconto dos itens que casam com o filtro, para
+  // que a venda não caia como alerta. O filtro é cumulativo: campo em branco
+  // não restringe, campo preenchido precisa casar.
+  let campanhasData = [], colecoesData = [];
+
+  const _tagsStr = v => Array.isArray(v) ? v.join(', ') : (v || '');
+  // esc() não escapa aspas — em atributo value="" isso quebraria o HTML
+  const _escA    = s => esc(s ?? '').replace(/"/g, '&quot;');
+
+  async function loadCampanhas() {
+    try {
+      [campanhasData, colecoesData] = await Promise.all([
+        api('GET', '/api/conferencia/campanhas'),
+        api('GET', '/api/conferencia/colecoes'),
+      ]);
+      if (!Array.isArray(campanhasData)) campanhasData = [];
+      if (!Array.isArray(colecoesData))  colecoesData  = [];
+      $('colecoesTxt').value = colecoesData.join('\n');
+      renderCampanhas();
+    } catch (e) { console.warn('Erro ao carregar campanhas:', e.message); }
+  }
+
+  function _campColecaoOpts(sel) {
+    return ['<option value="">— sem limite de coleção —</option>']
+      .concat(colecoesData.map(c => `<option value="${_escA(c)}"${_campNormEq(c, sel) ? ' selected' : ''}>${esc(c)}</option>`))
+      .join('');
+  }
+  const _campNormEq = (a, b) => String(a || '').trim().toUpperCase() === String(b || '').trim().toUpperCase();
+
+  function renderCampanhas() {
+    $('colecoesCount').textContent = colecoesData.length
+      ? `${colecoesData.length} coleções · mais nova: ${colecoesData[colecoesData.length - 1]}` : '';
+    const wrap = $('campanhasList');
+    if (!campanhasData.length) {
+      wrap.innerHTML = '<div class="camp-empty">Nenhuma campanha cadastrada. Toda venda com desconto acima do limite continua alertando.</div>';
+      return;
+    }
+    wrap.innerHTML = campanhasData.map((c, i) => {
+      const f = c.filtro || {}, p = c.permite || {};
+      const lojas = Array.isArray(c.lojas) ? c.lojas : [];
+      return `
+      <div class="camp-card${c.ativa === false ? ' off' : ''}">
+        <div class="camp-card-head">
+          <input type="text" class="camp-nome" data-idx="${i}" data-path="nome"
+                 value="${_escA(c.nome)}" placeholder="Nome da campanha">
+          <label class="camp-chk"><input type="checkbox" data-idx="${i}" data-path="ativa" data-type="bool"
+            ${c.ativa === false ? '' : 'checked'}>Ativa</label>
+          <button class="camp-del" data-del="${i}">Remover</button>
+        </div>
+        <div class="camp-grid">
+          <div class="camp-sec">Vigência e lojas</div>
+          <div class="camp-f"><label>Início</label>
+            <input type="date" data-idx="${i}" data-path="inicio" value="${_escA(c.inicio)}"></div>
+          <div class="camp-f"><label>Fim</label>
+            <input type="date" data-idx="${i}" data-path="fim" value="${_escA(c.fim)}"></div>
+          <div class="camp-lojas">${LOJAS.map(b => `
+            <label class="camp-chk"><input type="checkbox" data-idx="${i}" data-loja="${b}"
+              ${lojas.includes(b) ? 'checked' : ''}>${LOJA_LABEL[b]}</label>`).join('')}
+            <span class="camp-hint" style="font-size:10px;color:var(--cf-muted)">nenhuma marcada = todas as lojas</span>
+          </div>
+
+          <div class="camp-sec">Quais itens a campanha cobre</div>
+          <div class="camp-f"><label>Marcas</label>
+            <input type="text" data-idx="${i}" data-path="filtro.marcas" data-type="tags"
+              value="${_escA(_tagsStr(f.marcas))}" placeholder="ex: MIZUNO">
+            <span class="camp-hint">vírgula separa · * é curinga</span></div>
+          <div class="camp-f"><label>Setores</label>
+            <input type="text" data-idx="${i}" data-path="filtro.setores" data-type="tags"
+              value="${_escA(_tagsStr(f.setores))}" placeholder="ex: T-SHIRT*"></div>
+          <div class="camp-f"><label>Referências / códigos</label>
+            <input type="text" data-idx="${i}" data-path="filtro.refs" data-type="tags"
+              value="${_escA(_tagsStr(f.refs))}" placeholder="ex: 12345, 67890"></div>
+          <div class="camp-f"><label>Descrição contém</label>
+            <input type="text" data-idx="${i}" data-path="filtro.descContem"
+              value="${_escA(f.descContem)}" placeholder="ex: CHINELO"></div>
+          <div class="camp-f"><label>Coleção até</label>
+            <select data-idx="${i}" data-path="filtro.colecaoAte">${_campColecaoOpts(f.colecaoAte)}</select>
+            <span class="camp-hint">essa coleção e todas anteriores</span></div>
+          <div class="camp-f"><label>Ou coleções específicas</label>
+            <input type="text" data-idx="${i}" data-path="filtro.colecoes" data-type="tags"
+              value="${_escA(_tagsStr(f.colecoes))}" placeholder="ex: WINTER 25, WINTER 24">
+            <span class="camp-hint">se preenchido, ignora o "até"</span></div>
+
+          <div class="camp-sec">O que a campanha autoriza</div>
+          <div class="camp-f"><label>Desconto máx. por item (%)</label>
+            <input type="number" min="0" max="100" step="0.1" data-idx="${i}" data-path="permite.descontoMaxItem"
+              data-type="num" value="${p.descontoMaxItem ?? ''}" placeholder="ex: 50 (compra 1 leve 2)"></div>
+          <div class="camp-f"><label>Preço mínimo por item (R$)</label>
+            <input type="number" min="0" step="0.01" data-idx="${i}" data-path="permite.precoMinimo"
+              data-type="num" value="${p.precoMinimo ?? ''}" placeholder="ex: 200,00"></div>
+          <div class="camp-f" style="grid-column:1/-1">
+            <span class="camp-hint">Os dois preenchidos = as duas condições precisam valer. Nenhum = libera qualquer desconto nos itens do filtro.</span></div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  function _campSet(obj, path, val) {
+    const parts = path.split('.');
+    let o = obj;
+    for (let k = 0; k < parts.length - 1; k++) { if (!o[parts[k]]) o[parts[k]] = {}; o = o[parts[k]]; }
+    o[parts[parts.length - 1]] = val;
+  }
+
+  // Grava direto no estado a cada digitação — assim adicionar/remover campanha
+  // não perde o que já foi preenchido nas outras.
+  $('campanhasList').addEventListener('input', e => {
+    const el = e.target, { idx, path, type, loja } = el.dataset;
+    if (idx == null) return;
+    const c = campanhasData[+idx];
+    if (!c) return;
+    if (loja) {
+      const set = new Set(Array.isArray(c.lojas) ? c.lojas : []);
+      el.checked ? set.add(loja) : set.delete(loja);
+      c.lojas = LOJAS.filter(b => set.has(b));
+      return;
+    }
+    if (!path) return;
+    if (type === 'bool')      _campSet(c, path, el.checked);
+    else if (type === 'tags') _campSet(c, path, el.value.split(',').map(s => s.trim()).filter(Boolean));
+    else if (type === 'num')  _campSet(c, path, el.value === '' ? null : parseFloat(el.value));
+    else                      _campSet(c, path, el.value);
+  });
+  $('campanhasList').addEventListener('click', e => {
+    const del = e.target.dataset.del;
+    if (del == null) return;
+    if (!confirm(`Remover a campanha "${campanhasData[+del]?.nome || ''}"?`)) return;
+    campanhasData.splice(+del, 1);
+    renderCampanhas();
+  });
+
+  $('addCampanhaBtn').addEventListener('click', () => {
+    campanhasData.push({
+      nome: 'Nova campanha', ativa: true, inicio: '', fim: '', lojas: [],
+      filtro: { marcas: [], setores: [], refs: [], colecoes: [], colecaoAte: '', descContem: '' },
+      permite: { descontoMaxItem: null, precoMinimo: null },
+    });
+    renderCampanhas();
+    $('campanhasList').lastElementChild?.querySelector('.camp-nome')?.select();
+  });
+
+  $('colecoesTxt').addEventListener('input', () => {
+    colecoesData = $('colecoesTxt').value.split('\n').map(s => s.trim()).filter(Boolean);
+    $('colecoesCount').textContent = colecoesData.length
+      ? `${colecoesData.length} coleções · mais nova: ${colecoesData[colecoesData.length - 1]}` : '';
+  });
+
+  $('salvarCampanhasBtn').addEventListener('click', async () => {
+    const btn = $('salvarCampanhasBtn');
+    btn.disabled = true; btn.textContent = 'Salvando…';
+    try {
+      await api('PUT', '/api/conferencia/colecoes',  colecoesData);
+      const salvas = await api('PUT', '/api/conferencia/campanhas', campanhasData);
+      campanhasData = salvas.campanhas || campanhasData;
+      renderCampanhas();
+      btn.innerHTML = '✅ Salvo';
+      setTimeout(() => { btn.innerHTML = '💾 Salvar'; btn.disabled = false; }, 1500);
+    } catch (e) { alert('Erro: ' + e.message); btn.innerHTML = '💾 Salvar'; btn.disabled = false; }
+  });
+
+  loadCampanhas();
 
   // ════════════════════════════════════════════════════════════════════════
   // TAXAS DE CARTÃO
