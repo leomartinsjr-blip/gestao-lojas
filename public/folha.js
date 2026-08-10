@@ -850,10 +850,17 @@ function fpOpenCfg(board) {
         <div class="fp-cfg-field"><label>Prêmio Gerente (R$)</label>
           <input type="number" step="0.01" id="cfg-premioGerente" value="${f2(cfg.premioGerente)}">
         </div>
-        <div class="fp-cfg-field" style="grid-column:1/-1;margin-bottom:0">
-          <label>Prêmio Vendedor Fixo + Comissão (R$)</label>
-          <input type="number" step="0.01" id="cfg-premioVendedorMisto" value="${f2(cfg.premioVendedorMisto)}">
-          <span style="font-size:.72rem;color:#484f58">usado no lugar do Prêmio Vendedor para quem está no regime fixo + comissão</span>
+        <div style="grid-column:1/-1;margin-top:.4rem;padding-top:.7rem;border-top:1px solid #30363d">
+          <div style="font-size:.75rem;color:#8b949e;font-weight:600;margin-bottom:.55rem">Vendedor no regime fixo + comissão</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
+            <div class="fp-cfg-field" style="margin-bottom:0"><label>Salário Fixo (R$)</label>
+              <input type="number" step="0.01" id="cfg-salarioFixoVendedor" value="${f2(cfg.salarioFixoVendedor)}">
+            </div>
+            <div class="fp-cfg-field" style="margin-bottom:0"><label>Prêmio (R$)</label>
+              <input type="number" step="0.01" id="cfg-premioVendedorMisto" value="${f2(cfg.premioVendedorMisto)}">
+            </div>
+          </div>
+          <span style="font-size:.72rem;color:#484f58;display:block;margin-top:.4rem">aplicado a quem está com "Fixo + comissão?" marcado · valor preenchido no colaborador tem prioridade</span>
         </div>
       </div>
       <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid #30363d;display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem">
@@ -918,6 +925,7 @@ async function fpSaveConfig() {
     salarioFixoCaixa:         g('cfg-fixoCaixa'),
     quebraCaixa:              g('cfg-quebraCaixa'),
     premioVendedor:           g('cfg-premioVendedor'),
+    salarioFixoVendedor:      g('cfg-salarioFixoVendedor'),
     premioVendedorMisto:      g('cfg-premioVendedorMisto'),
     premioGerente:            g('cfg-premioGerente'),
   };
@@ -1068,9 +1076,12 @@ function defaultEntry(emp) {
 
   const vendComFixo = tipo === 'vendedor' && ecfg.vendedorComFixo;
 
-  const fixo = (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend' || vendComFixo)
+  // Vendedor misto: o fixo padrão vem da loja; valor no colaborador tem prioridade
+  const fixo = (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend')
     ? r2((ecfg.salarioFixo || 0) * fatorMes)
-    : 0;
+    : vendComFixo
+      ? r2((ecfg.salarioFixo || cfg.salarioFixoVendedor || 0) * fatorMes)
+      : 0;
 
   // Vendedor no regime fixo + comissão não tem garantia mínima: o fixo é o piso
   const gm = vendComFixo ? 0
@@ -1503,8 +1514,13 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
         row('Com. Loja Meta 2 (%)', `ec-comissaoVRMeta2-${emp.id}`,   ecfg.comissaoVRMeta2) +
         row('Com. Loja S.Meta (%)', `ec-comissaoVRSuper-${emp.id}`,   ecfg.comissaoVRSuper)
       : '') +
-      (tipo === 'sub' || tipo === 'gvend' || tipo === 'vendedor'
+      (tipo === 'sub' || tipo === 'gvend'
         ? row('Salário Fixo (R$)', `ec-salarioFixo-${emp.id}`, ecfg.salarioFixo) : '') +
+      (tipo === 'vendedor'
+        ? `<div class="fp-emp-cfg-row" title="Deixe 0 para usar o Salário Fixo cadastrado na loja (Configurar → Vendedor no regime fixo + comissão)">
+             <label>Salário Fixo (R$) <span style="color:#484f58;font-weight:400">0 = usa o da loja</span></label>
+             ${inp(`ec-salarioFixo-${emp.id}`, ecfg.salarioFixo)}
+           </div>` : '') +
       row('INSS (%)',           `ec-inssRate-${emp.id}`,        ecfg.inssRate) +
       row('VT (%)',             `ec-vtRate-${emp.id}`,          ecfg.vtRate) +
       row('MAX. VT (R$)',       `ec-maxVT-${emp.id}`,           ecfg.maxVT);
