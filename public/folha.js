@@ -10,6 +10,15 @@ const BOARDS_INFO = {
   site:     { label: 'SITE',      color: '#A78BFA' },
 };
 const STORE_BOARDS = Object.keys(BOARDS_INFO);
+
+// Lojas que não pagam pelo próprio caixa — mapeia loja → loja que efetivamente
+// paga. Usado no rateio do supervisor/sócio: as lojas de um mesmo pagador são
+// somadas e os descontos abatem do total do grupo, não de uma loja só.
+// Loja ausente daqui paga por si mesma.
+const BOARD_PAGADOR = {
+  contagem: 'minas',
+};
+function pagadorDe(board) { return BOARD_PAGADOR[board] || board; }
 const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
@@ -51,6 +60,200 @@ function premiacaoLojaPorBoard(empId, boards) {
     const semanas = det.filter(d => d.board === b);
     return { board: b, valor: r2(semanas.reduce((s, d) => s + r2(d.valor), 0)), semanas };
   });
+}
+
+// ── Rateio do supervisor/sócio entre as lojas supervisionadas ─────────────
+// Bruto por loja: 1/N do salário fixo (ou pró-labore) + a comissão e a
+// premiação geradas por ela. Feriado e extras ficam na loja-base (onde o
+// colaborador é lotado), assim como a sobra de centavos da divisão do fixo.
+function calcRateioLojas(emp, tipo, v) {
+  const boards = emp?.supervisedBoards || [];
+  if (!boards.length) return [];
+  const baseBoard = boards.includes(emp.board) ? emp.board : boards[0];
+  const fixoTotal = r2(v.fixo || 0);
+  const fixoUn    = r2(fixoTotal / boards.length);
+
+  const rows = boards.map(b => {
+    const comissao  = r2((v.lojaComissoes  || []).find(l => l.board === b)?.comissao || 0);
+    const premiacao = r2((v.premiacaoLojas || []).find(l => l.board === b)?.valor    || 0);
+    const isBase    = b === baseBoard;
+    const outros    = isBase ? r2(v.outros || 0) : 0;
+    return { board: b, base: isBase, pagador: pagadorDe(b),
+             fixo: fixoUn, comissao, premiacao, outros,
+             bruto: r2(fixoUn + comissao + premiacao + outros) };
+  });
+
+  // Sobra da divisão do fixo (ex.: 2388,34 / 3) vai para a loja-base
+  const dif = r2(fixoTotal - r2(rows.reduce((s, r) => s + r.fixo, 0)));
+  if (dif !== 0) {
+    const rb = rows.find(r => r.base) || rows[0];
+    rb.fixo = r2(rb.fixo + dif); rb.bruto = r2(rb.bruto + dif);
+  }
+  return rows;
+}
+
+// Agrupa as lojas por quem efetivamente paga. Os descontos são do colaborador,
+// não da loja: abatem inteiros do grupo que paga a loja-base — daí o vale
+// compras sair do total Minas + Contagem, e não só da Minas.
+function calcRateioPagadores(emp, rows, descontos) {
+  if (!rows.length) return [];
+  const baseRow     = rows.find(r => r.base) || rows[0];
+  const basePagador = baseRow.pagador;
+  const grupos      = [];
+  rows.forEach(r => {
+    let g = grupos.find(x => x.pagador === r.pagador);
+    if (!g) { g = { pagador: r.pagador, boards: [], bruto: 0, descontos: 0, pagar: 0 }; grupos.push(g); }
+    g.boards.push(r.board);
+    g.bruto = r2(g.bruto + r.bruto);
+  });
+  grupos.forEach(g => {
+    g.descontos = g.pagador === basePagador ? r2(descontos || 0) : 0;
+    g.pagar     = r2(g.bruto - g.descontos);
+  });
+  return grupos;
+}
+
+function rateioSrcFromEntry(emp, e, tipo) {
+  const lojaComissoes  = e.lojaComissoes  || [];
+  const premiacaoLojas = e.premiacaoLojas || premiacaoLojaPorBoard(emp.id, emp.supervisedBoards || []);
+  // Folhas antigas podem ter só os totais gravados, sem a quebra por loja. O que
+  // não bater com o total vai para "Outros" na loja-base, para o rateio nunca
+  // fechar diferente dos proventos.
+  const sobraCom  = r2(r2(e.comissaoTotal     || 0) - r2(lojaComissoes.reduce((s, l) => s + r2(l.comissao || 0), 0)));
+  const sobraPrem = r2(r2(e.premiacaoBalanco  || 0) - r2(premiacaoLojas.reduce((s, l) => s + r2(l.valor    || 0), 0)));
+  return {
+    fixo: tipo === 'socio' ? r2((e.proLabore || 0) + (e.complemento || 0)) : r2(e.fixo || 0),
+    lojaComissoes, premiacaoLojas,
+    outros:    r2((e.feriado || 0) + (e.extras || []).reduce((s, ex) => s + r2(ex.valor), 0)
+                  + sobraCom + sobraPrem),
+    descontos: r2(e.totalDescontos || 0),
+  };
+}
+
+function rateioSrcFromDom(emp, tipo) {
+  const g = id => { const el = document.getElementById(id); return el ? r2(parseFloat(el.value) || 0) : 0; };
+  const id     = emp.id;
+  const boards = emp.supervisedBoards || [];
+  const entry  = FP.folha[FP.board]?.entries?.[id] || {};
+  return {
+    fixo: tipo === 'socio' ? r2(g(`fp-proLabore-${id}`) + g(`fp-complemento-${id}`)) : g(`fp-fixo-${id}`),
+    lojaComissoes:  boards.map(b => ({ board: b, comissao: g(`fp-supCom-${id}-${b}`)   })),
+    premiacaoLojas: boards.map(b => ({ board: b, valor:    g(`fp-premLoja-${id}-${b}`) })),
+    outros:    r2(g(`fp-feriado-${id}`) + (entry.extras || []).reduce((s, ex) => s + r2(ex.valor), 0)),
+    descontos: r2(g(`fp-valeCompras-${id}`) + g(`fp-adiantamento-${id}`) + g(`fp-inss-${id}`) +
+                  g(`fp-irpf-${id}`) + g(`fp-vt-${id}`) + g(`fp-arred-${id}`) +
+                  (entry.extrasDesc || []).reduce((s, ex) => s + r2(ex.valor), 0)),
+  };
+}
+
+const _biOf = b => BOARDS_INFO[b] || { label: b.toUpperCase(), color: '#8b949e' };
+
+// Tabela 1 — quanto cada loja gerou (bruto, sem descontos)
+function buildRateioLojasTbl(rows) {
+  const temPrem   = rows.some(r => r.premiacao !== 0);
+  const temOutros = rows.some(r => r.outros    !== 0);
+  const cell = (v, cls = '') => `<td class="fp-rateio-num ${cls}">${v === 0 ? '—' : brl(v)}</td>`;
+
+  let html = `<tr>
+    <th style="text-align:left">Loja</th>
+    <th>Fixo</th><th>Comissão</th>
+    ${temPrem   ? '<th>Premiação</th>' : ''}
+    ${temOutros ? '<th>Outros</th>'    : ''}
+    <th>Bruto</th>
+  </tr>`;
+
+  rows.forEach(r => {
+    const bi = _biOf(r.board);
+    html += `<tr>
+      <td class="fp-rateio-loja" style="color:${bi.color}">${bi.label}${r.base ? ' <span class="fp-rateio-base">base</span>' : ''}</td>
+      ${cell(r.fixo)}${cell(r.comissao)}
+      ${temPrem   ? cell(r.premiacao) : ''}
+      ${temOutros ? cell(r.outros)    : ''}
+      <td class="fp-rateio-num fp-rateio-pagar">${brl(r.bruto)}</td>
+    </tr>`;
+  });
+
+  const sum = k => r2(rows.reduce((s, r) => s + r[k], 0));
+  html += `<tr class="fp-rateio-tot">
+    <td style="text-align:left">TOTAL</td>
+    ${cell(sum('fixo'))}${cell(sum('comissao'))}
+    ${temPrem   ? cell(sum('premiacao')) : ''}
+    ${temOutros ? cell(sum('outros'))    : ''}
+    <td class="fp-rateio-num fp-rateio-pagar">${brl(sum('bruto'))}</td>
+  </tr>`;
+  return `<table class="fp-rateio-tbl">${html}</table>`;
+}
+
+// Tabela 2 — quem efetivamente paga, já com os descontos abatidos do grupo
+function buildRateioPagadoresTbl(grupos) {
+  const temDesc = grupos.some(g => g.descontos !== 0);
+  const cell = (v, cls = '') => `<td class="fp-rateio-num ${cls}">${v === 0 ? '—' : brl(v)}</td>`;
+
+  let html = `<tr>
+    <th style="text-align:left">Quem paga</th>
+    <th>Bruto</th>
+    ${temDesc ? '<th>Descontos</th>' : ''}
+    <th>A pagar</th>
+  </tr>`;
+
+  grupos.forEach(g => {
+    const bi = _biOf(g.pagador);
+    const cobre = g.boards.length > 1
+      ? ` <span class="fp-rateio-cobre">${g.boards.map(b => _biOf(b).label).join(' + ')}</span>` : '';
+    html += `<tr>
+      <td class="fp-rateio-loja" style="color:${bi.color}">${bi.label}${cobre}</td>
+      ${cell(g.bruto)}
+      ${temDesc ? cell(g.descontos, 'fp-rateio-desc') : ''}
+      <td class="fp-rateio-num fp-rateio-pagar">${brl(g.pagar)}</td>
+    </tr>`;
+  });
+
+  const sum = k => r2(grupos.reduce((s, g) => s + g[k], 0));
+  html += `<tr class="fp-rateio-tot">
+    <td style="text-align:left">TOTAL</td>
+    ${cell(sum('bruto'))}
+    ${temDesc ? cell(sum('descontos'), 'fp-rateio-desc') : ''}
+    <td class="fp-rateio-num fp-rateio-pagar">${brl(sum('pagar'))}</td>
+  </tr>`;
+  return `<table class="fp-rateio-tbl">${html}</table>`;
+}
+
+function buildRateioInner(rows, grupos) {
+  return buildRateioLojasTbl(rows) +
+    `<div class="fp-rateio-sub">Quem paga</div>` +
+    buildRateioPagadoresTbl(grupos);
+}
+
+function buildRateioBox(emp, e, tipo) {
+  if (tipo !== 'supervisor' && tipo !== 'socio') return '';
+  const src  = rateioSrcFromEntry(emp, e, tipo);
+  const rows = calcRateioLojas(emp, tipo, src);
+  if (rows.length < 2) return '';
+  const grupos = calcRateioPagadores(emp, rows, src.descontos);
+  const nota = `1/${rows.length} do ${tipo === 'socio' ? 'pró-labore' : 'salário fixo'} + comissão e premiação de cada loja`;
+  return `
+    <div class="fp-rateio-box">
+      <div class="fp-rateio-head">
+        <span class="fp-rateio-title">Rateio por loja</span>
+        <span class="fp-rateio-note">${nota}</span>
+        <span class="fp-rateio-total" id="val-rateio-${emp.id}"
+              title="Soma do que cada grupo paga, já com os descontos abatidos">${brl(r2(grupos.reduce((s, g) => s + g.pagar, 0)))}</span>
+      </div>
+      <div id="rateio-rows-${emp.id}">${buildRateioInner(rows, grupos)}</div>
+    </div>`;
+}
+
+function updateRateio(empId) {
+  const body = document.getElementById(`rateio-rows-${empId}`);
+  if (!body) return;
+  const emp    = FP.employees.find(x => x.id === empId);
+  const tipo   = cargoTipo(emp?.cargo);
+  const src    = rateioSrcFromDom(emp, tipo);
+  const rows   = calcRateioLojas(emp, tipo, src);
+  const grupos = calcRateioPagadores(emp, rows, src.descontos);
+  body.innerHTML = buildRateioInner(rows, grupos);
+  const tot = document.getElementById(`val-rateio-${empId}`);
+  if (tot) tot.textContent = brl(r2(grupos.reduce((s, g) => s + g.pagar, 0)));
 }
 
 // Premiação semanal calculada pelo servidor. Serve de referência para detectar
@@ -1225,6 +1428,7 @@ function buildEmpForm(emp, entry) {
       </div>
       <span class="fp-geral-val" id="val-totalgeral-${emp.id}">${brl(e.liquido)}</span>
     </div>
+    ${buildRateioBox(emp, e, tipo)}
     ${buildEmpCfgSection(emp, ecfg, tipo)}
   </div>`;
 }
@@ -1561,6 +1765,8 @@ function recalc(empId) {
   const detEl = document.getElementById(`geral-detail-${empId}`);
   if (detEl) detEl.textContent = fb.total > 0
     ? `${brl(liquido)} contabilidade + ${brl(fb.total)} por fora` : '';
+
+  updateRateio(empId);
 
   const hintEl = document.getElementById(`fora-hint-${empId}`);
   if (hintEl) {
@@ -1947,6 +2153,21 @@ function buildRecibo(emp, entry, mes, origin) {
         prov += tr(bi.label.toUpperCase(), lj.comissao, lj.vendas,
           num(lj.comissaoPct) ? fmt(lj.comissaoPct) + '%' : '');
     });
+    // Premiação de loja quebrada por loja supervisionada (fallback: total)
+    const premLojas = (entry.premiacaoLojas || []).filter(lj => num(lj.valor) > 0);
+    if (premLojas.length) {
+      premLojas.forEach(lj => {
+        const bi     = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase() };
+        const sem    = lj.semanas || [];
+        const semSum = sem.reduce((s, x) => s + num(x.valor), 0);
+        if (sem.length && Math.abs(semSum - num(lj.valor)) < 0.02)
+          sem.forEach(s => prov += tr(`PREM. ${bi.label.toUpperCase()} SEM. ${s.label}`, s.valor));
+        else
+          prov += tr(`PREM. LOJA ${bi.label.toUpperCase()}`, lj.valor);
+      });
+    } else if (num(entry.premiacaoBalanco) > 0) {
+      prov += tr('PREM. META LOJA', entry.premiacaoBalanco);
+    }
   } else {
     if (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend') {
       prov += tr('SALÁRIO FIXO', fixoDecl, fixoDecl);
