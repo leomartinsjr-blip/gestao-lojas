@@ -7847,12 +7847,17 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
     const prevMk    = `${prevYear}-${String(prevMonth).padStart(2,'0')}`;
     const prevFolha = (db.folhas || {})[prevMk] || {};
     const prevExtras = {};
+    // Ajuda de custo é valor fixo mensal — repete do mês anterior
+    const prevAjudaCusto = {};
     for (const boardData of Object.values(prevFolha)) {
       for (const [empId, entry] of Object.entries(boardData.entries || {})) {
         const extras     = (entry.extras     || []).filter(x => x.nome && x.valor);
         const extrasDesc = (entry.extrasDesc || []).filter(x => x.nome && x.valor);
         if (extras.length || extrasDesc.length)
           prevExtras[empId] = { extras, extrasDesc };
+        const ajuda = (entry.ajudaCustoLojas || []).filter(x => x.board && x.valor);
+        if (ajuda.length)
+          prevAjudaCusto[empId] = ajuda.map(x => ({ board: x.board, valor: x.valor }));
       }
     }
 
@@ -7882,6 +7887,7 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       premiacaoSemanalGer,
       premiacaoSemanalGerDetalhe,
       prevExtras,
+      prevAjudaCusto,
       ...(() => {
         const { porEmp, semVinculo } = adiantamentosDoMes(db, year, month);
         return { adiantamentos: porEmp, adiantamentosSemVinculo: semVinculo };
@@ -8038,8 +8044,9 @@ app.get('/api/folha/:year/:month/export', requireAuth, async (req, res) => {
         if (entry.feriado) addProv('FERIADO', entry.feriado);
         if (entry.feriado) addProv('FERIADO', entry.feriado);
         // Ajuda de custo do supervisor/sócio — uma linha por empresa
+        const AJUDA_LABEL = { site: 'ESCRITÓRIO', estacao: 'ESTAÇÃO', delrey: 'DEL REY', lez: 'LEZ A LEZ' };
         for (const aj of (entry.ajudaCustoLojas || [])) {
-          if (aj.valor) addProv(`AJUDA DE CUSTO ${(aj.board || '').toUpperCase()}`, aj.valor);
+          if (aj.valor) addProv(`AJUDA DE CUSTO ${AJUDA_LABEL[aj.board] || (aj.board || '').toUpperCase()}`, aj.valor);
         }
         for (const ex of (entry.extras || [])) {
           if (ex.nome && ex.valor) addProv(ex.nome, ex.valor);

@@ -66,12 +66,34 @@ function premiacaoLojaPorBoard(empId, boards) {
   });
 }
 
-// Ajuda de custo do supervisor/sócio, uma linha por loja supervisionada.
+// Empresas que pagam ajuda de custo: as lojas supervisionadas + o escritório
+// (board "site"), que não é loja supervisionada mas paga a sua parte.
+const AJUDA_BOARDS_EXTRA = ['site'];
+const AJUDA_BOARD_LABEL  = { site: 'ESCRITÓRIO' };
+function ajudaCustoBoards(emp) {
+  const sb = emp?.supervisedBoards || [];
+  return [...sb, ...AJUDA_BOARDS_EXTRA.filter(b => !sb.includes(b))];
+}
+
+// Ajuda de custo do supervisor/sócio, uma linha por empresa.
 // É valor manual — nunca calculado —, então é lido da entry já gravada e
-// sobrevive ao Gerar, como o "por fora".
+// sobrevive ao Gerar, como o "por fora". Mês sem nada lançado herda o valor do
+// mês anterior (é verba fixa): a herança só vale enquanto a folha do mês nunca
+// gravou ajuda — depois disso o que está na tela manda, inclusive zerado.
 function ajudaCustoPorBoard(empId, boards, prev) {
-  const salvo = (prev || FP.folha[FP.board]?.entries?.[empId] || {}).ajudaCustoLojas || [];
-  return boards.map(b => ({ board: b, valor: r2(salvo.find(l => l.board === b)?.valor || 0) }));
+  const entry = prev || FP.folha[FP.board]?.entries?.[empId] || {};
+  const doMes = entry.ajudaCustoLojas;
+  const herda = !doMes;
+  const salvo = doMes || FP.prevAjudaCusto[empId] || [];
+  return boards.map(b => {
+    const src   = salvo.find(l => l.board === b);
+    const valor = r2(src?.valor || 0);
+    // _prev marca "veio do mês anterior, ainda não conferido" — some assim que
+    // a entry é gravada pelo formulário
+    return valor !== 0 && (herda || src?._prev)
+      ? { board: b, valor, _prev: true }
+      : { board: b, valor };
+  });
 }
 function somaAjuda(lojas) { return r2((lojas || []).reduce((s, l) => s + r2(l.valor || 0), 0)); }
 
@@ -103,6 +125,15 @@ function calcRateioLojas(emp, tipo, v) {
     const rb = rows.find(r => r.base) || rows[0];
     rb.fixo = r2(rb.fixo + dif); rb.bruto = r2(rb.bruto + dif);
   }
+
+  // Empresa que só paga ajuda de custo (escritório) entra como linha própria —
+  // não divide o salário fixo, que é rateado só entre as lojas supervisionadas.
+  (v.ajudaCustoLojas || []).forEach(l => {
+    const ajuda = r2(l.valor || 0);
+    if (!ajuda || boards.includes(l.board)) return;
+    rows.push({ board: l.board, base: false, pagador: pagadorDe(l.board),
+                fixo: 0, comissao: 0, premiacao: 0, ajuda, outros: 0, bruto: ajuda });
+  });
   return rows;
 }
 
@@ -154,7 +185,7 @@ function rateioSrcFromDom(emp, tipo) {
     fixo: tipo === 'socio' ? r2(g(`fp-proLabore-${id}`) + g(`fp-complemento-${id}`)) : g(`fp-fixo-${id}`),
     lojaComissoes:   boards.map(b => ({ board: b, comissao: g(`fp-supCom-${id}-${b}`)   })),
     premiacaoLojas:  boards.map(b => ({ board: b, valor:    g(`fp-premLoja-${id}-${b}`) })),
-    ajudaCustoLojas: boards.map(b => ({ board: b, valor:    g(`fp-ajuda-${id}-${b}`)    })),
+    ajudaCustoLojas: ajudaCustoBoards(emp).map(b => ({ board: b, valor: g(`fp-ajuda-${id}-${b}`) })),
     outros:    r2(g(`fp-feriado-${id}`) + (entry.extras || []).reduce((s, ex) => s + r2(ex.valor), 0)),
     descontos: r2(g(`fp-valeCompras-${id}`) + g(`fp-adiantamento-${id}`) + g(`fp-inss-${id}`) +
                   g(`fp-irpf-${id}`) + g(`fp-vt-${id}`) + g(`fp-arred-${id}`) +
@@ -162,7 +193,10 @@ function rateioSrcFromDom(emp, tipo) {
   };
 }
 
-const _biOf = b => BOARDS_INFO[b] || { label: b.toUpperCase(), color: '#8b949e' };
+const _biOf = b => {
+  const bi = BOARDS_INFO[b] || { label: b.toUpperCase(), color: '#8b949e' };
+  return AJUDA_BOARD_LABEL[b] ? { ...bi, label: AJUDA_BOARD_LABEL[b] } : bi;
+};
 
 // Tabela 1 — quanto cada loja gerou (bruto, sem descontos)
 function buildRateioLojasTbl(rows) {
@@ -250,7 +284,8 @@ function buildRateioBox(emp, e, tipo) {
   const rows = calcRateioLojas(emp, tipo, src);
   if (rows.length < 2) return '';
   const grupos = calcRateioPagadores(emp, rows, src.descontos);
-  const nota = `1/${rows.length} do ${tipo === 'socio' ? 'pró-labore' : 'salário fixo'} + comissão, premiação` +
+  const nLojas = (emp.supervisedBoards || []).length || rows.length;
+  const nota = `1/${nLojas} do ${tipo === 'socio' ? 'pró-labore' : 'salário fixo'} + comissão, premiação` +
     (rows.some(r => (r.ajuda || 0) !== 0) ? ' e ajuda de custo' : '') + ' de cada loja';
   return `
     <div class="fp-rateio-box">
@@ -407,6 +442,7 @@ let FP = {
   supervisorVendaMap: {}, supervisorMetaMap: {},
   premiacaoSemanal: {}, premiacaoSemanalDetalhe: {},
   premiacaoSemanalGer: {}, premiacaoSemanalGerDetalhe: {}, prevExtras: {},
+  prevAjudaCusto: {},
   adiantamentos: {}, adiantamentosSemVinculo: [],
   activeEmpId: null, dirty: false,
 };
@@ -457,6 +493,7 @@ async function loadPeriod() {
     FP.premiacaoSemanalGer        = d.premiacaoSemanalGer        || {};
     FP.premiacaoSemanalGerDetalhe = d.premiacaoSemanalGerDetalhe || {};
     FP.prevExtras              = d.prevExtras              || {};
+    FP.prevAjudaCusto          = d.prevAjudaCusto          || {};
     FP.adiantamentos           = d.adiantamentos           || {};
     FP.adiantamentosSemVinculo = d.adiantamentosSemVinculo || [];
     FP.mensal = {
@@ -1046,7 +1083,7 @@ function defaultEntry(emp) {
     const premiacaoLojas    = ecfg.recebePremiaoLoja ? premiacaoLojaPorBoard(emp.id, sBoards) : [];
     const premiacaoBalanco  = r2(premiacaoLojas.reduce((s, l) => s + l.valor, 0));
     // Ajuda de custo é lançamento manual — sobrevive ao Gerar
-    const ajudaCustoLojas   = ajudaCustoPorBoard(emp.id, sBoards);
+    const ajudaCustoLojas   = ajudaCustoPorBoard(emp.id, ajudaCustoBoards(emp));
     const ajudaCustoTotal   = somaAjuda(ajudaCustoLojas);
     const baseEncargos = r2(proLabore + complemento + comissaoTotal + premiacaoBalanco);
     const proventos = r2(baseEncargos + ajudaCustoTotal);
@@ -1084,7 +1121,7 @@ function defaultEntry(emp) {
     const premiacaoLojas    = ecfg.recebePremiaoLoja ? premiacaoLojaPorBoard(emp.id, sBoards) : [];
     const premiacaoBalanco  = r2(premiacaoLojas.reduce((s, l) => s + l.valor, 0));
     // Ajuda de custo é lançamento manual — sobrevive ao Gerar
-    const ajudaCustoLojas   = ajudaCustoPorBoard(emp.id, sBoards);
+    const ajudaCustoLojas   = ajudaCustoPorBoard(emp.id, ajudaCustoBoards(emp));
     const ajudaCustoTotal   = somaAjuda(ajudaCustoLojas);
     const baseEncargos = r2(fixo + comissaoTotal + premiacaoBalanco);
     const proventos = r2(baseEncargos + ajudaCustoTotal);
@@ -1293,15 +1330,16 @@ function buildEmpForm(emp, entry) {
   const _ajudaCustoRows = () => {
     const sBoards = emp.supervisedBoards || [];
     if (!sBoards.length) return '';
-    const lojas = ajudaCustoPorBoard(emp.id, sBoards, e);
+    const lojas = ajudaCustoPorBoard(emp.id, ajudaCustoBoards(emp), e);
     const total = somaAjuda(lojas);
     let html = `<div class="fp-field" style="border-top:1px solid #30363d;padding-top:.5rem;margin-top:.25rem">
       <label style="font-weight:600">Ajuda de Custo</label>
-      <span style="font-size:.7rem;color:#484f58">valor por empresa — informado à mão</span></div>`;
+      <span style="font-size:.7rem;color:#484f58">valor fixo por empresa — repete todo mês</span></div>`;
     lojas.forEach(lj => {
-      const bi = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase(), color: '#8b949e' };
+      const bi = _biOf(lj.board);
       html += `<div class="fp-field">
-        <label style="color:${bi.color}">${bi.label} (R$)</label>${inp(`fp-ajuda-${emp.id}-${lj.board}`, lj.valor)}</div>`;
+        <label style="color:${bi.color}">${bi.label} (R$)</label>${inp(`fp-ajuda-${emp.id}-${lj.board}`, lj.valor)}
+        ${lj._prev ? '<span style="font-size:.7rem;color:#d29922">repetido do mês anterior</span>' : ''}</div>`;
     });
     html += `<div class="fp-field fp-field-inline">
       <label style="font-weight:600">Total Ajuda de Custo</label>
@@ -1850,7 +1888,7 @@ function recalc(empId) {
     const premTotal = r2(sBoards.reduce((s, b) => s + g(`fp-premLoja-${empId}-${b}`), 0));
     const premEl = document.getElementById(`fp-premLojaTotal-${empId}`);
     if (premEl) premEl.textContent = brl(premTotal);
-    const ajudaTotal = r2(sBoards.reduce((s, b) => s + g(`fp-ajuda-${empId}-${b}`), 0));
+    const ajudaTotal = r2(ajudaCustoBoards(emp).reduce((s, b) => s + g(`fp-ajuda-${empId}-${b}`), 0));
     const ajudaEl = document.getElementById(`fp-ajudaTotal-${empId}`);
     if (ajudaEl) ajudaEl.textContent = brl(ajudaTotal);
     const base = tipo === 'socio'
@@ -2009,8 +2047,9 @@ function saveEntryFromForm(empId) {
     const premiacaoBalanco = r2(premiacaoLojas.reduce((s, l) => s + l.valor, 0));
     // Ajuda de custo: campo manual por loja. Sem o form na tela, o valor já
     // gravado é preservado — campo ausente nunca pode zerar o que foi lançado.
-    const ajudaPrev = ajudaCustoPorBoard(empId, sBoards, prev);
-    const ajudaCustoLojas = sBoards.map((b, i) => ({
+    const ajudaBoards = ajudaCustoBoards(emp);
+    const ajudaPrev = ajudaCustoPorBoard(empId, ajudaBoards, prev);
+    const ajudaCustoLojas = ajudaBoards.map((b, i) => ({
       board: b,
       valor: document.getElementById(`fp-ajuda-${empId}-${b}`)
         ? g(`fp-ajuda-${empId}-${b}`) : ajudaPrev[i].valor,
@@ -2378,8 +2417,7 @@ function buildRecibo(emp, entry, mes, origin) {
     const ajudaLojas = (entry.ajudaCustoLojas || []).filter(lj => num(lj.valor) !== 0);
     if (ajudaLojas.length) {
       ajudaLojas.forEach(lj => {
-        const bi = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase() };
-        prov += tr(`AJUDA DE CUSTO ${bi.label.toUpperCase()}`, lj.valor);
+        prov += tr(`AJUDA DE CUSTO ${_biOf(lj.board).label.toUpperCase()}`, lj.valor);
       });
     } else if (num(entry.ajudaCustoTotal) !== 0) {
       prov += tr('AJUDA DE CUSTO', entry.ajudaCustoTotal);
