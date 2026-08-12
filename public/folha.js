@@ -15,23 +15,12 @@ const STORE_BOARDS = Object.keys(BOARDS_INFO);
 // paga. Usado no rateio do supervisor/sócio: as lojas de um mesmo pagador são
 // somadas e os descontos abatem do total do grupo, não de uma loja só.
 // Loja ausente daqui paga por si mesma.
+// A Estação paga tudo o que é dela; Contagem e escritório saem da Minas.
 const BOARD_PAGADOR = {
   contagem: 'minas',
-  estacao:  'minas',
   site:     'minas',
 };
 function pagadorDe(board) { return BOARD_PAGADOR[board] || board; }
-
-// Verbas que a própria loja banca, mesmo tendo outra loja como pagadora: a
-// Minas paga tudo de todas as empresas, menos o fixo, a comissão e a ajuda de
-// custo da Estação, que saem do caixa da Estação.
-const BOARD_PAGA_PROPRIO = {
-  estacao: ['fixo', 'comissao', 'ajuda'],
-};
-const RATEIO_VERBA_LABEL = {
-  fixo: 'fixo', comissao: 'comissão', premiacao: 'premiação',
-  ajuda: 'ajuda de custo', outros: 'outros',
-};
 const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
@@ -150,32 +139,19 @@ function calcRateioLojas(emp, tipo, v) {
   return rows;
 }
 
-// Agrupa por quem efetivamente paga, verba a verba: a loja que não banca a si
-// mesma manda o valor para a sua pagadora, exceto as verbas de
-// BOARD_PAGA_PROPRIO. Os descontos são do colaborador, não da loja: abatem
-// inteiros do grupo que paga a loja-base — daí o vale compras sair do total
-// Minas + Contagem, e não só da Minas.
-const RATEIO_VERBAS = ['fixo', 'comissao', 'premiacao', 'ajuda', 'outros'];
+// Agrupa as lojas por quem efetivamente paga. Os descontos são do colaborador,
+// não da loja: abatem inteiros do grupo que paga a loja-base — daí o vale
+// compras sair do total Minas + Contagem, e não só da Minas.
 function calcRateioPagadores(emp, rows, descontos) {
   if (!rows.length) return [];
   const baseRow     = rows.find(r => r.base) || rows[0];
   const basePagador = baseRow.pagador;
   const grupos      = [];
-  const addAo = (pagador, board, valor, verba) => {
-    if (!valor) return;
-    let g = grupos.find(x => x.pagador === pagador);
-    if (!g) { g = { pagador, boards: [], verbasProprias: [], bruto: 0, descontos: 0, pagar: 0 }; grupos.push(g); }
-    if (!g.boards.includes(board)) g.boards.push(board);
-    if (pagador === board && pagadorDe(board) !== board && !g.verbasProprias.includes(verba))
-      g.verbasProprias.push(verba);
-    g.bruto = r2(g.bruto + valor);
-  };
   rows.forEach(r => {
-    const proprias = BOARD_PAGA_PROPRIO[r.board] || [];
-    RATEIO_VERBAS.forEach(k => {
-      const v = r2(r[k] || 0);
-      addAo(proprias.includes(k) ? r.board : r.pagador, r.board, v, k);
-    });
+    let g = grupos.find(x => x.pagador === r.pagador);
+    if (!g) { g = { pagador: r.pagador, boards: [], bruto: 0, descontos: 0, pagar: 0 }; grupos.push(g); }
+    g.boards.push(r.board);
+    g.bruto = r2(g.bruto + r.bruto);
   });
   grupos.forEach(g => {
     g.descontos = g.pagador === basePagador ? r2(descontos || 0) : 0;
@@ -278,12 +254,8 @@ function buildRateioPagadoresTbl(grupos) {
 
   grupos.forEach(g => {
     const bi = _biOf(g.pagador);
-    // Grupo que cobre mais de uma empresa mostra quais; grupo que banca só
-    // parte das próprias verbas mostra quais verbas são essas.
-    const cobre = (g.verbasProprias || []).length
-      ? ` <span class="fp-rateio-cobre">só ${g.verbasProprias.map(v => RATEIO_VERBA_LABEL[v] || v).join(' + ')}</span>`
-      : g.boards.length > 1
-        ? ` <span class="fp-rateio-cobre">${g.boards.map(b => _biOf(b).label).join(' + ')}</span>` : '';
+    const cobre = g.boards.length > 1
+      ? ` <span class="fp-rateio-cobre">${g.boards.map(b => _biOf(b).label).join(' + ')}</span>` : '';
     html += `<tr>
       <td class="fp-rateio-loja" style="color:${bi.color}">${bi.label}${cobre}</td>
       ${cell(g.bruto)}
