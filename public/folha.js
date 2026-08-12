@@ -66,6 +66,15 @@ function premiacaoLojaPorBoard(empId, boards) {
   });
 }
 
+// Ajuda de custo do supervisor/sócio, uma linha por loja supervisionada.
+// É valor manual — nunca calculado —, então é lido da entry já gravada e
+// sobrevive ao Gerar, como o "por fora".
+function ajudaCustoPorBoard(empId, boards, prev) {
+  const salvo = (prev || FP.folha[FP.board]?.entries?.[empId] || {}).ajudaCustoLojas || [];
+  return boards.map(b => ({ board: b, valor: r2(salvo.find(l => l.board === b)?.valor || 0) }));
+}
+function somaAjuda(lojas) { return r2((lojas || []).reduce((s, l) => s + r2(l.valor || 0), 0)); }
+
 // ── Rateio do supervisor/sócio entre as lojas supervisionadas ─────────────
 // Bruto por loja: 1/N do salário fixo (ou pró-labore) + a comissão e a
 // premiação geradas por ela. Feriado e extras ficam na loja-base (onde o
@@ -78,13 +87,14 @@ function calcRateioLojas(emp, tipo, v) {
   const fixoUn    = r2(fixoTotal / boards.length);
 
   const rows = boards.map(b => {
-    const comissao  = r2((v.lojaComissoes  || []).find(l => l.board === b)?.comissao || 0);
-    const premiacao = r2((v.premiacaoLojas || []).find(l => l.board === b)?.valor    || 0);
+    const comissao  = r2((v.lojaComissoes   || []).find(l => l.board === b)?.comissao || 0);
+    const premiacao = r2((v.premiacaoLojas  || []).find(l => l.board === b)?.valor    || 0);
+    const ajuda     = r2((v.ajudaCustoLojas || []).find(l => l.board === b)?.valor    || 0);
     const isBase    = b === baseBoard;
     const outros    = isBase ? r2(v.outros || 0) : 0;
     return { board: b, base: isBase, pagador: pagadorDe(b),
-             fixo: fixoUn, comissao, premiacao, outros,
-             bruto: r2(fixoUn + comissao + premiacao + outros) };
+             fixo: fixoUn, comissao, premiacao, ajuda, outros,
+             bruto: r2(fixoUn + comissao + premiacao + ajuda + outros) };
   });
 
   // Sobra da divisão do fixo (ex.: 2388,34 / 3) vai para a loja-base
@@ -125,9 +135,10 @@ function rateioSrcFromEntry(emp, e, tipo) {
   // fechar diferente dos proventos.
   const sobraCom  = r2(r2(e.comissaoTotal     || 0) - r2(lojaComissoes.reduce((s, l) => s + r2(l.comissao || 0), 0)));
   const sobraPrem = r2(r2(e.premiacaoBalanco  || 0) - r2(premiacaoLojas.reduce((s, l) => s + r2(l.valor    || 0), 0)));
+  const ajudaCustoLojas = e.ajudaCustoLojas || [];
   return {
     fixo: tipo === 'socio' ? r2((e.proLabore || 0) + (e.complemento || 0)) : r2(e.fixo || 0),
-    lojaComissoes, premiacaoLojas,
+    lojaComissoes, premiacaoLojas, ajudaCustoLojas,
     outros:    r2((e.feriado || 0) + (e.extras || []).reduce((s, ex) => s + r2(ex.valor), 0)
                   + sobraCom + sobraPrem),
     descontos: r2(e.totalDescontos || 0),
@@ -141,8 +152,9 @@ function rateioSrcFromDom(emp, tipo) {
   const entry  = FP.folha[FP.board]?.entries?.[id] || {};
   return {
     fixo: tipo === 'socio' ? r2(g(`fp-proLabore-${id}`) + g(`fp-complemento-${id}`)) : g(`fp-fixo-${id}`),
-    lojaComissoes:  boards.map(b => ({ board: b, comissao: g(`fp-supCom-${id}-${b}`)   })),
-    premiacaoLojas: boards.map(b => ({ board: b, valor:    g(`fp-premLoja-${id}-${b}`) })),
+    lojaComissoes:   boards.map(b => ({ board: b, comissao: g(`fp-supCom-${id}-${b}`)   })),
+    premiacaoLojas:  boards.map(b => ({ board: b, valor:    g(`fp-premLoja-${id}-${b}`) })),
+    ajudaCustoLojas: boards.map(b => ({ board: b, valor:    g(`fp-ajuda-${id}-${b}`)    })),
     outros:    r2(g(`fp-feriado-${id}`) + (entry.extras || []).reduce((s, ex) => s + r2(ex.valor), 0)),
     descontos: r2(g(`fp-valeCompras-${id}`) + g(`fp-adiantamento-${id}`) + g(`fp-inss-${id}`) +
                   g(`fp-irpf-${id}`) + g(`fp-vt-${id}`) + g(`fp-arred-${id}`) +
@@ -155,14 +167,16 @@ const _biOf = b => BOARDS_INFO[b] || { label: b.toUpperCase(), color: '#8b949e' 
 // Tabela 1 — quanto cada loja gerou (bruto, sem descontos)
 function buildRateioLojasTbl(rows) {
   const temPrem   = rows.some(r => r.premiacao !== 0);
+  const temAjuda  = rows.some(r => (r.ajuda || 0) !== 0);
   const temOutros = rows.some(r => r.outros    !== 0);
   const cell = (v, cls = '') => `<td class="fp-rateio-num ${cls}">${v === 0 ? '—' : brl(v)}</td>`;
 
   let html = `<tr>
     <th style="text-align:left">Loja</th>
     <th>Fixo</th><th>Comissão</th>
-    ${temPrem   ? '<th>Premiação</th>' : ''}
-    ${temOutros ? '<th>Outros</th>'    : ''}
+    ${temPrem   ? '<th>Premiação</th>'     : ''}
+    ${temAjuda  ? '<th>Ajuda de custo</th>' : ''}
+    ${temOutros ? '<th>Outros</th>'        : ''}
     <th>Bruto</th>
   </tr>`;
 
@@ -171,17 +185,19 @@ function buildRateioLojasTbl(rows) {
     html += `<tr>
       <td class="fp-rateio-loja" style="color:${bi.color}">${bi.label}${r.base ? ' <span class="fp-rateio-base">base</span>' : ''}</td>
       ${cell(r.fixo)}${cell(r.comissao)}
-      ${temPrem   ? cell(r.premiacao) : ''}
-      ${temOutros ? cell(r.outros)    : ''}
+      ${temPrem   ? cell(r.premiacao)   : ''}
+      ${temAjuda  ? cell(r.ajuda || 0)  : ''}
+      ${temOutros ? cell(r.outros)      : ''}
       <td class="fp-rateio-num fp-rateio-pagar">${brl(r.bruto)}</td>
     </tr>`;
   });
 
-  const sum = k => r2(rows.reduce((s, r) => s + r[k], 0));
+  const sum = k => r2(rows.reduce((s, r) => s + (r[k] || 0), 0));
   html += `<tr class="fp-rateio-tot">
     <td style="text-align:left">TOTAL</td>
     ${cell(sum('fixo'))}${cell(sum('comissao'))}
     ${temPrem   ? cell(sum('premiacao')) : ''}
+    ${temAjuda  ? cell(sum('ajuda'))     : ''}
     ${temOutros ? cell(sum('outros'))    : ''}
     <td class="fp-rateio-num fp-rateio-pagar">${brl(sum('bruto'))}</td>
   </tr>`;
@@ -234,7 +250,8 @@ function buildRateioBox(emp, e, tipo) {
   const rows = calcRateioLojas(emp, tipo, src);
   if (rows.length < 2) return '';
   const grupos = calcRateioPagadores(emp, rows, src.descontos);
-  const nota = `1/${rows.length} do ${tipo === 'socio' ? 'pró-labore' : 'salário fixo'} + comissão e premiação de cada loja`;
+  const nota = `1/${rows.length} do ${tipo === 'socio' ? 'pró-labore' : 'salário fixo'} + comissão, premiação` +
+    (rows.some(r => (r.ajuda || 0) !== 0) ? ' e ajuda de custo' : '') + ' de cada loja';
   return `
     <div class="fp-rateio-box">
       <div class="fp-rateio-head">
@@ -324,8 +341,10 @@ function applyFora(entry, emp, fora) {
     entry.comissaoContab = r2(base - entry.dsr - (entry.premio || 0));
   }
 
-  entry.inss = r2(entry.proventos * (ecfg.inssRate || 0) / 100);
-  entry.vt   = r2(entry.proventos * (ecfg.vtRate   || 0) / 100);
+  // Ajuda de custo é verba indenizatória — fora da base de INSS/VT
+  const baseEnc = r2(entry.proventos - (entry.ajudaCustoTotal || 0));
+  entry.inss = r2(baseEnc * (ecfg.inssRate || 0) / 100);
+  entry.vt   = r2(baseEnc * (ecfg.vtRate   || 0) / 100);
   entry.totalDescontos = r2((entry.valeCompras || 0) + (entry.adiantamento || 0)
     + entry.inss + (entry.irpf || 0) + entry.vt + (entry.arredondamento || 0)
     + (entry.extrasDesc || []).reduce((s, x) => s + r2(x.valor), 0));
@@ -558,6 +577,7 @@ function buildTotalForm(emps) {
   let gmTotal = 0;
   let premiacaoTotal = 0, premiacaoLojaTotal = 0;
   let extrasTotal = 0, feriadoTotal = 0;
+  let ajudaCustoAll = 0;
 
   const rows = emps.map(emp => {
     let entry = FP.folha[FP.board]?.entries?.[emp.id] || defaultEntry(emp);
@@ -610,6 +630,7 @@ function buildTotalForm(emps) {
     premiacaoLojaTotal += entry.premiacaoBalanco || 0;
     extrasTotal      += (entry.extras || []).reduce((s, ex) => s + r2(ex.valor), 0);
     feriadoTotal     += entry.feriado           || 0;
+    ajudaCustoAll    += entry.ajudaCustoTotal   || 0;
 
     return `<tr style="border-bottom:1px solid #21262d">
       <td style="padding:.4rem .5rem;color:#e6edf3">${emp.apelido || emp.name.split(' ')[0]}</td>
@@ -634,8 +655,9 @@ function buildTotalForm(emps) {
   feriadoTotal         = r2(feriadoTotal);
   comSup                 = r2(comSup);
   totalFora              = r2(totalFora);
+  ajudaCustoAll          = r2(ajudaCustoAll);
   const totalPremiacoes  = r2(premiacaoTotal + premiacaoLojaTotal + extrasTotal + feriadoTotal);
-  const totalBruto       = r2(fixoAll + comVend + comSup + comLoja + gmTotal + totalPremiacoes);
+  const totalBruto       = r2(fixoAll + comVend + comSup + comLoja + gmTotal + totalPremiacoes + ajudaCustoAll);
   const totalResumo      = r2(totalBruto - totalFora);
   const totalProvR       = r2(totalProv);
   const diff             = r2(totalProvR - totalResumo);
@@ -688,6 +710,7 @@ function buildTotalForm(emps) {
           <td></td>
         </tr>
         ${premSubHtml ? `<tr><td colspan="3" style="padding:0 0 .3rem">${premSubHtml}</td></tr>` : ''}` : ''}
+        ${ajudaCustoAll > 0 ? custRow('Ajuda de custo', ajudaCustoAll) : ''}
         ${totalFora > 0 ? `
         <tr style="border-bottom:1px solid #1a1f26">
           <td style="padding:.35rem .5rem;color:#d29922;font-size:.82rem">(−) Pago por fora (não declarado)</td>
@@ -1022,11 +1045,16 @@ function defaultEntry(emp) {
     const comissaoTotal = r2(lojaComissoes.reduce((s, l) => s + l.comissao, 0));
     const premiacaoLojas    = ecfg.recebePremiaoLoja ? premiacaoLojaPorBoard(emp.id, sBoards) : [];
     const premiacaoBalanco  = r2(premiacaoLojas.reduce((s, l) => s + l.valor, 0));
-    const proventos = r2(proLabore + complemento + comissaoTotal + premiacaoBalanco);
-    const inss = r2(proventos * (ecfg.inssRate || 0) / 100);
-    const vt   = r2(proventos * (ecfg.vtRate   || 0) / 100);
+    // Ajuda de custo é lançamento manual — sobrevive ao Gerar
+    const ajudaCustoLojas   = ajudaCustoPorBoard(emp.id, sBoards);
+    const ajudaCustoTotal   = somaAjuda(ajudaCustoLojas);
+    const baseEncargos = r2(proLabore + complemento + comissaoTotal + premiacaoBalanco);
+    const proventos = r2(baseEncargos + ajudaCustoTotal);
+    const inss = r2(baseEncargos * (ecfg.inssRate || 0) / 100);
+    const vt   = r2(baseEncargos * (ecfg.vtRate   || 0) / 100);
     return {
       tipo, proLabore, complemento, lojaComissoes, premiacaoLojas, premiacaoBalanco,
+      ajudaCustoLojas, ajudaCustoTotal,
       vendas: totalVendas, meta: totalMeta,
       pctMeta: totalMeta > 0 ? r2(totalVendas / totalMeta * 100) : 0,
       faixaLabel: faixa.label, comissaoPct: faixa.comPct,
@@ -1055,11 +1083,16 @@ function defaultEntry(emp) {
     const comissaoTotal = r2(lojaComissoes.reduce((s, l) => s + l.comissao, 0));
     const premiacaoLojas    = ecfg.recebePremiaoLoja ? premiacaoLojaPorBoard(emp.id, sBoards) : [];
     const premiacaoBalanco  = r2(premiacaoLojas.reduce((s, l) => s + l.valor, 0));
-    const proventos = r2(fixo + comissaoTotal + premiacaoBalanco);
-    const inss = r2(proventos * (ecfg.inssRate || 0) / 100);
-    const vt   = r2(proventos * (ecfg.vtRate   || 0) / 100);
+    // Ajuda de custo é lançamento manual — sobrevive ao Gerar
+    const ajudaCustoLojas   = ajudaCustoPorBoard(emp.id, sBoards);
+    const ajudaCustoTotal   = somaAjuda(ajudaCustoLojas);
+    const baseEncargos = r2(fixo + comissaoTotal + premiacaoBalanco);
+    const proventos = r2(baseEncargos + ajudaCustoTotal);
+    const inss = r2(baseEncargos * (ecfg.inssRate || 0) / 100);
+    const vt   = r2(baseEncargos * (ecfg.vtRate   || 0) / 100);
     return {
       tipo, fixo, lojaComissoes, premiacaoLojas, premiacaoBalanco,
+      ajudaCustoLojas, ajudaCustoTotal,
       vendas: totalVendas, meta: totalMeta, pctMeta,
       faixaLabel: faixa.label, comissaoPct: faixa.comPct,
       comissaoTotal, feriado: 0,
@@ -1256,6 +1289,28 @@ function buildEmpForm(emp, entry) {
     return html;
   };
 
+  // Ajuda de custo do supervisor/sócio: valor manual, uma linha por empresa
+  const _ajudaCustoRows = () => {
+    const sBoards = emp.supervisedBoards || [];
+    if (!sBoards.length) return '';
+    const lojas = ajudaCustoPorBoard(emp.id, sBoards, e);
+    const total = somaAjuda(lojas);
+    let html = `<div class="fp-field" style="border-top:1px solid #30363d;padding-top:.5rem;margin-top:.25rem">
+      <label style="font-weight:600">Ajuda de Custo</label>
+      <span style="font-size:.7rem;color:#484f58">valor por empresa — informado à mão</span></div>`;
+    lojas.forEach(lj => {
+      const bi = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase(), color: '#8b949e' };
+      html += `<div class="fp-field">
+        <label style="color:${bi.color}">${bi.label} (R$)</label>${inp(`fp-ajuda-${emp.id}-${lj.board}`, lj.valor)}</div>`;
+    });
+    html += `<div class="fp-field fp-field-inline">
+      <label style="font-weight:600">Total Ajuda de Custo</label>
+      <span></span><span></span><span></span><span></span>
+      <span class="fp-total-inline" id="fp-ajudaTotal-${emp.id}">${brl(total)}</span>
+    </div>`;
+    return html;
+  };
+
   let provRows = '';
 
   if (tipo === 'caixa') {
@@ -1301,6 +1356,7 @@ function buildEmpForm(emp, entry) {
       <span style="font-size:.7rem;color:#8b949e;margin-left:.3rem">${pctTotal}</span>
     </div>`;
     provRows += _premLojaRows();
+    provRows += _ajudaCustoRows();
   } else if (tipo === 'supervisor') {
     const lojaComissoes = e.lojaComissoes || (emp.supervisedBoards || []).map(b => ({
       board: b, vendas: r2(FP.lojaVendaMap[b]||0), comissaoPct: e.comissaoPct||0, comissao: 0,
@@ -1328,6 +1384,7 @@ function buildEmpForm(emp, entry) {
       <span style="font-size:.7rem;color:#8b949e;margin-left:.3rem">${pctTotal}</span>
     </div>`;
     provRows += _premLojaRows();
+    provRows += _ajudaCustoRows();
   } else {
     const pctDisplay = e.pctMeta > 0 ? `${r2(e.pctMeta).toFixed(1)}% da meta` : 'sem meta';
     // Sub-gerente divide comissão própria + comissão da loja; demais, só a própria
@@ -1793,10 +1850,13 @@ function recalc(empId) {
     const premTotal = r2(sBoards.reduce((s, b) => s + g(`fp-premLoja-${empId}-${b}`), 0));
     const premEl = document.getElementById(`fp-premLojaTotal-${empId}`);
     if (premEl) premEl.textContent = brl(premTotal);
+    const ajudaTotal = r2(sBoards.reduce((s, b) => s + g(`fp-ajuda-${empId}-${b}`), 0));
+    const ajudaEl = document.getElementById(`fp-ajudaTotal-${empId}`);
+    if (ajudaEl) ajudaEl.textContent = brl(ajudaTotal);
     const base = tipo === 'socio'
       ? r2(g(`fp-proLabore-${empId}`) + g(`fp-complemento-${empId}`))
       : g(`fp-fixo-${empId}`);
-    proventos = r2(base + comTotal + premTotal);
+    proventos = r2(base + comTotal + premTotal + ajudaTotal);
   } else if (tipo === 'caixa') {
     proventos = g(`fp-fixo-${empId}`) + g(`fp-quebra-${empId}`) + g(`fp-comLoja-${empId}`) + g(`fp-premiacaoBalanco-${empId}`);
   } else {
@@ -1947,19 +2007,28 @@ function saveEntryFromForm(empId) {
                    semanas: (prev.premiacaoLojas || []).find(l => l.board === b)?.semanas || [] }))
       .filter(l => l.valor !== 0 || (prev.premiacaoLojas || []).some(p => p.board === l.board));
     const premiacaoBalanco = r2(premiacaoLojas.reduce((s, l) => s + l.valor, 0));
+    // Ajuda de custo: campo manual por loja. Sem o form na tela, o valor já
+    // gravado é preservado — campo ausente nunca pode zerar o que foi lançado.
+    const ajudaPrev = ajudaCustoPorBoard(empId, sBoards, prev);
+    const ajudaCustoLojas = sBoards.map((b, i) => ({
+      board: b,
+      valor: document.getElementById(`fp-ajuda-${empId}-${b}`)
+        ? g(`fp-ajuda-${empId}-${b}`) : ajudaPrev[i].valor,
+    }));
+    const ajudaCustoTotal = somaAjuda(ajudaCustoLojas);
     const proLabore   = tipo === 'socio' ? g(`fp-proLabore-${empId}`)   : 0;
     const complemento = tipo === 'socio' ? g(`fp-complemento-${empId}`) : 0;
     const fixo    = tipo === 'supervisor' ? g(`fp-fixo-${empId}`) : 0;
     const feriado = g(`fp-feriado-${empId}`);
     const proventosBruto = r2((tipo === 'socio' ? proLabore + complemento : fixo)
-      + comissaoTotal + premiacaoBalanco + feriado + extProv);
+      + comissaoTotal + premiacaoBalanco + ajudaCustoTotal + feriado + extProv);
     const proventos = r2(proventosBruto - fb.total);
     const totalDesc = r2(g(`fp-valeCompras-${empId}`) + g(`fp-adiantamento-${empId}`) +
       g(`fp-inss-${empId}`) + g(`fp-irpf-${empId}`) + g(`fp-vt-${empId}`) + g(`fp-arred-${empId}`) + extDesc);
     const liquido = r2(proventos - totalDesc);
     FP.folha[FP.board].entries[empId] = {
       ...prev, tipo, proLabore, complemento, fixo, lojaComissoes, comissaoTotal,
-      premiacaoLojas, premiacaoBalanco,
+      premiacaoLojas, premiacaoBalanco, ajudaCustoLojas, ajudaCustoTotal,
       premiacaoManual: premiacaoBalanco !== premiacaoCalculada(emp).premiacaoBalanco,
       vendas: prev.vendas, meta: prev.meta, pctMeta: prev.pctMeta,
       faixaLabel: prev.faixaLabel, comissaoPct: prev.comissaoPct,
@@ -2304,6 +2373,16 @@ function buildRecibo(emp, entry, mes, origin) {
       });
     } else if (num(entry.premiacaoBalanco) > 0) {
       prov += tr('PREM. META LOJA', entry.premiacaoBalanco);
+    }
+    // Ajuda de custo, uma linha por empresa (fallback: total)
+    const ajudaLojas = (entry.ajudaCustoLojas || []).filter(lj => num(lj.valor) !== 0);
+    if (ajudaLojas.length) {
+      ajudaLojas.forEach(lj => {
+        const bi = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase() };
+        prov += tr(`AJUDA DE CUSTO ${bi.label.toUpperCase()}`, lj.valor);
+      });
+    } else if (num(entry.ajudaCustoTotal) !== 0) {
+      prov += tr('AJUDA DE CUSTO', entry.ajudaCustoTotal);
     }
   } else {
     // Vendedor só entra aqui quando está no regime fixo + comissão

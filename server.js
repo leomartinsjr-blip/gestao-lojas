@@ -8037,6 +8037,10 @@ app.get('/api/folha/:year/:month/export', requireAuth, async (req, res) => {
         }
         if (entry.feriado) addProv('FERIADO', entry.feriado);
         if (entry.feriado) addProv('FERIADO', entry.feriado);
+        // Ajuda de custo do supervisor/sócio — uma linha por empresa
+        for (const aj of (entry.ajudaCustoLojas || [])) {
+          if (aj.valor) addProv(`AJUDA DE CUSTO ${(aj.board || '').toUpperCase()}`, aj.valor);
+        }
         for (const ex of (entry.extras || [])) {
           if (ex.nome && ex.valor) addProv(ex.nome, ex.valor);
         }
