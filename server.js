@@ -3578,6 +3578,9 @@ app.get('/api/historico', requireAuth, async (req, res) => {
 
 // ── Microvix sync routes ───────────────────────────────────────────────────
 const MX_INTERVAL_MS    = parseInt(process.env.MICROVIX_INTERVAL_MIN    || '5')  * 60 * 1000;
+// O sync de d-1 não precisa da mesma cadência do dia corrente: o dia anterior
+// já fechou e a conferência de 30 dias roda 1× por dia por cima dele.
+const MX_INTERVAL_D1_MS = parseInt(process.env.MICROVIX_INTERVAL_D1_MIN || '60') * 60 * 1000;
 const MX_INTERVAL_30D_MS = 24 * 60 * 60 * 1000; // conferência 30d: 1× por dia
 
 // GET  /api/microvix/status  → last sync info
@@ -3586,9 +3589,32 @@ app.get('/api/microvix/status', requireAuth, async (req, res) => {
   res.json(getStatus(db));
 });
 
+// GET /api/microvix/uso → consumo do dia na WebAPI (plano tem limite diário)
+app.get('/api/microvix/uso', requireAdmin, (req, res) => {
+  const { getUso } = require('./services/microvix');
+  const uso   = getUso();
+  const limite = parseInt(process.env.MICROVIX_LIMITE_DIA || '15000');
+  res.json({
+    ...uso, limite,
+    usoPct: limite ? Math.round(uso.requisicoes / limite * 100) : null,
+    intervalos: {
+      hojeMin: MX_INTERVAL_MS / 60000,
+      d1Min:   MX_INTERVAL_D1_MS / 60000,
+    },
+  });
+});
+
+// POST /api/microvix/cache/limpar → descarta o cache de respostas
+app.post('/api/microvix/cache/limpar', requireAdmin, (req, res) => {
+  const { limparCache } = require('./services/microvix');
+  res.json(limparCache());
+});
+
 // POST /api/microvix/sync    → manual trigger
 app.post('/api/microvix/sync', requireAuth, async (req, res) => {
   try {
+    // Sync manual é "quero ver agora": descarta o cache de respostas antes
+    require('./services/microvix').limparCache();
     const result = await runSync(readDB, writeDB);
     res.json({ ok: true, ...result });
   } catch (e) {
@@ -3601,6 +3627,9 @@ app.post('/api/microvix/sync-retroativo', requireAuth, async (req, res) => {
   try {
     const { de, ate, boards } = req.body || {};
     if (!de || !ate) return res.status(400).json({ error: 'Informe de e ate (YYYY-MM-DD)' });
+    // Retroativo costuma ser "corrigi algo no Microvix, roda de novo" — sem
+    // limpar o cache o período fechado voltaria da resposta guardada
+    require('./services/microvix').limparCache();
     const result = await runSyncRetroativo(readDB, writeDB, de, ate, boards);
     res.json({ ok: true, ...result });
   } catch (e) {
@@ -3658,7 +3687,7 @@ app.post('/api/microvix/raw', requireAuth, async (req, res) => {
 });
 
 // GET /api/microvix/raw      → TEMP debug (sem auth, remove depois)
-app.get('/api/microvix/raw', async (req, res) => {
+app.get('/api/microvix/raw', requireAdmin, async (req, res) => {
   try {
     const { fetchMovimento } = require('./services/microvix');
     const cnpj = req.query.cnpj || firstCnpj();
@@ -3676,7 +3705,7 @@ app.get('/api/microvix/raw', async (req, res) => {
 });
 
 // GET /api/microvix/lojas    → TEMP: testa LinxLojas (só chave, sem CNPJ)
-app.get('/api/microvix/lojas', async (req, res) => {
+app.get('/api/microvix/lojas', requireAdmin, async (req, res) => {
   const https = require('https');
   const chave = process.env.MICROVIX_CHAVE;
   const cnpj  = (process.env.MICROVIX_CNPJ || '').replace(/\D/g, '');
@@ -3710,7 +3739,7 @@ app.get('/api/microvix/lojas', async (req, res) => {
 
 // GET /api/microvix/teste → TEMP: envia XML customizável via query string
 // ?cmd=LinxMovimento&params=chave,cnpjEmp,dt_ini,dt_fin&ini=01/05/2026&fin=20/05/2026
-app.get('/api/microvix/teste', async (req, res) => {
+app.get('/api/microvix/teste', requireAdmin, async (req, res) => {
   const https = require('https');
   const chave  = process.env.MICROVIX_CHAVE;
   const cnpj   = (req.query.cnpj || firstCnpj() || '').replace(/\D/g, '');
@@ -3752,7 +3781,7 @@ ${pXml}
 });
 
 // GET /api/microvix/lojas-emp → TEMP: analisa empresa/deposito nos movimentos
-app.get('/api/microvix/lojas-emp', async (req, res) => {
+app.get('/api/microvix/lojas-emp', requireAdmin, async (req, res) => {
   try {
     const { fetchMovimento } = require('./services/microvix');
     const cnpj = process.env.MICROVIX_CNPJ;
@@ -3768,7 +3797,7 @@ app.get('/api/microvix/lojas-emp', async (req, res) => {
 });
 
 // GET /api/microvix/conferencia?de=2026-05-01&ate=2026-05-20&board=delrey
-app.get('/api/microvix/conferencia', async (req, res) => {
+app.get('/api/microvix/conferencia', requireAdmin, async (req, res) => {
   try {
     const { fetchMovimento, fetchVendedores, parseBrNum } = require('./services/microvix');
     const board  = req.query.board || 'delrey';
@@ -4820,24 +4849,26 @@ const REFCOLOR_TTL = 6 * 60 * 60 * 1000;
 async function _getRefColorIndex() {
   if (_refColorIndex && Date.now() - _refColorIdxAt < REFCOLOR_TTL) return _refColorIndex;
 
-  if (!_refColorIdxPromise)
-    _refColorIdxPromise = _buildRefColorIndex().finally(() => { _refColorIdxPromise = null; });
-
-  // Cache em memória existe mas expirou → devolve imediatamente (rebuild roda em background)
-  if (_refColorIndex) return _refColorIndex;
-
-  // Cold start: tenta carregar do MongoDB antes de aguardar o build
-  if (mongoDb) {
+  // Cold start: o MongoDB vem ANTES de disparar o rebuild — reiniciar o serviço
+  // não pode custar uma varredura do catálogo na WebAPI quando já existe cópia
+  // recente gravada (o plano da Microvix é limitado por requisições/dia).
+  if (!_refColorIndex && mongoDb) {
     try {
       const doc = await mongoDb.collection('catalog').findOne({ _id: 'refColor' });
       if (doc?.data && Object.keys(doc.data).length > 0) {
         _refColorIndex = doc.data;
         _refColorIdxAt = doc.updatedAt ? new Date(doc.updatedAt).getTime() : 0;
         console.log(`[RefColor] Carregado do MongoDB: ${Object.keys(_refColorIndex).length} refs`);
-        return _refColorIndex;
+        if (Date.now() - _refColorIdxAt < REFCOLOR_TTL) return _refColorIndex;
       }
     } catch(e) { console.warn('[RefColor] MongoDB load:', e.message); }
   }
+
+  if (!_refColorIdxPromise)
+    _refColorIdxPromise = _buildRefColorIndex().finally(() => { _refColorIdxPromise = null; });
+
+  // Cópia velha serve enquanto o rebuild roda em background
+  if (_refColorIndex) return _refColorIndex;
 
   return _refColorIdxPromise;
 }
@@ -4958,6 +4989,22 @@ async function _loadCatalogMongo() {
 async function _getCatalog(lojas) {
   if (_catalogCache && Date.now() - _catalogCacheAt < CATALOG_TTL) return _catalogCache;
 
+  // Cold start: o MongoDB vem ANTES de disparar o rebuild. Um catálogo inteiro
+  // custa dezenas de requisições por loja na WebAPI (plano limitado por dia);
+  // se a cópia gravada ainda está dentro do TTL, reiniciar não custa nada.
+  let doMongo = null;
+  if (!_catalogCache && mongoDb) {
+    try {
+      const loaded = await _loadCatalogMongo();
+      if (loaded && Object.keys(loaded.map).length > 0) {
+        doMongo         = loaded.map;
+        _catalogCache   = doMongo;
+        _catalogCacheAt = loaded.updatedAt ? new Date(loaded.updatedAt).getTime() : 0;
+        if (Date.now() - _catalogCacheAt < CATALOG_TTL) return doMongo;
+      }
+    } catch (e) { console.warn('[Catalog] MongoDB load:', e.message); }
+  }
+
   // Inicia rebuild em background se ainda não está rodando (ou se travou há mais de 10min)
   const warmStuck = _catalogWarmPromise && (Date.now() - _catalogWarmStartAt > 600_000);
   if (warmStuck) {
@@ -4973,20 +5020,9 @@ async function _getCatalog(lojas) {
   // Promise.race no final racearia contra `null` e resolveria para null em vez do catálogo.
   const buildPromise = _catalogWarmPromise;
 
-  // Cache expirado mas existe: devolve imediatamente sem bloquear (rebuild acontece em background)
+  // Cópia expirada (memória ou Mongo) serve enquanto o rebuild roda em background
   if (_catalogCache) return _catalogCache;
-
-  // Cold start: tenta carregar do MongoDB antes de aguardar o build completo
-  if (mongoDb) {
-    try {
-      const loaded = await _loadCatalogMongo();
-      if (loaded && Object.keys(loaded.map).length > 0) {
-        _catalogCache   = loaded.map;
-        _catalogCacheAt = loaded.updatedAt ? new Date(loaded.updatedAt).getTime() : 0;
-        return _catalogCache;
-      }
-    } catch (e) { console.warn('[Catalog] MongoDB load:', e.message); }
-  }
+  if (doMongo)       return doMongo;
 
   // Sem MongoDB e sem cache: aguarda o build com timeout de 10min para não bloquear
   const result = await Promise.race([
@@ -10803,7 +10839,7 @@ initMongo()
 
     // Auto-sync Microvix if credentials are set
     if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
-      console.log(`[Microvix] Auto-sync a cada ${MX_INTERVAL_MS / 60000} min`);
+      console.log(`[Microvix] Auto-sync: dia corrente a cada ${MX_INTERVAL_MS / 60000} min, d-1 a cada ${MX_INTERVAL_D1_MS / 60000} min`);
 
       const doSync    = () => runSync(readDB, writeDB).catch(e => console.error('[Microvix]', e.message));
       const doHoje    = () => runSyncHoje(readDB, writeDB).catch(e => console.error('[Microvix/hoje]', e.message));
@@ -10812,7 +10848,7 @@ initMongo()
       setTimeout(do30d, MX_INTERVAL_30D_MS);
       console.log('[Microvix/30d] Conferência 30 dias agendada — 1× por dia');
 
-      setInterval(doSync, MX_INTERVAL_MS);
+      setInterval(doSync, MX_INTERVAL_D1_MS);
       // doHoje defasado por metade do intervalo para nunca colidir com doSync
       setTimeout(() => setInterval(doHoje, MX_INTERVAL_MS), Math.floor(MX_INTERVAL_MS / 2));
       setInterval(do30d,  MX_INTERVAL_30D_MS);       // 30d: 1× por dia

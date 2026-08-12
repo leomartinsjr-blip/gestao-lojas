@@ -1,10 +1,104 @@
 // ── Microvix WebAPI client ─────────────────────────────────────────────────
 // Endpoint: POST https://webapi.microvix.com.br/1.0/api/integracao
 // Format: XML body → CSV response
-const https = require('https');
+const https  = require('https');
+const crypto = require('crypto');
 
 const MX_HOST = 'webapi.microvix.com.br';
 const MX_PATH = '/1.0/api/integracao';
+
+// ── Controle de consumo da WebAPI ──────────────────────────────────────────
+// O plano contratado limita requisições por dia (Lite = 15.000). Como toda
+// chamada passa por postRequest, o controle mora num ponto só:
+//   • dedupe   — chamadas idênticas ainda em voo viram uma requisição só
+//   • cache    — a mesma consulta repetida dentro do TTL reaproveita a resposta
+//   • contador — quanto saiu, por comando e por hora, para diagnóstico
+// O TTL sai do próprio corpo XML: cadastro quase não muda, movimento de dia
+// fechado nunca muda, e só o dia corrente precisa de janela curta.
+const CACHE_MAX_BYTES = parseInt(process.env.MICROVIX_CACHE_MB || '40') * 1024 * 1024;
+const CACHE_MAX_ENTRY = 6 * 1024 * 1024;
+
+const TTL_ESTATICO = 6 * 60 * 60 * 1000;  // vendedores, planos, marcas…
+const TTL_CATALOGO = 30 * 60 * 1000;      // produtos, serviços, clientes
+const TTL_ESTOQUE  = 10 * 60 * 1000;
+const TTL_FECHADO  = 30 * 60 * 1000;      // período que já terminou
+const TTL_HOJE     = parseInt(process.env.MICROVIX_TTL_HOJE_SEG || '60') * 1000;
+
+const CMD_ESTATICO = new Set(['LinxVendedores', 'LinxFuncionarios', 'LinxPlanos',
+  'LinxPlanosBandeiras', 'LinxMarcas', 'LinxSetores', 'LinxAcoesPromocionais']);
+const CMD_CATALOGO = new Set(['LinxProdutos', 'LinxServicos', 'LinxProdutosPromocoes',
+  'LinxClientesFornec']);
+
+function hojeBRT() { return new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString().slice(0, 10); }
+function horaBRT() { return String(new Date(Date.now() - 3 * 60 * 60 * 1000).getUTCHours()).padStart(2, '0'); }
+function comandoDe(body) { return (body.match(/<Name>([^<]+)<\/Name>/) || [])[1] || 'desconhecido'; }
+
+function ttlDoBody(body) {
+  const cmd = comandoDe(body);
+  if (CMD_ESTATICO.has(cmd))            return TTL_ESTATICO;
+  if (cmd === 'LinxProdutosInventario') return TTL_ESTOQUE;
+  if (CMD_CATALOGO.has(cmd))            return TTL_CATALOGO;
+  const fim = (body.match(/id="data_fim">([^<]+)</) || [])[1];
+  return (!fim || fim >= hojeBRT()) ? TTL_HOJE : TTL_FECHADO;
+}
+
+const _cache    = new Map();  // key → { raw, exp, bytes }  (ordem = LRU)
+const _inFlight = new Map();  // key → Promise<string>
+let   _cacheBytes = 0;
+
+const _uso = { dia: hojeBRT(), requisicoes: 0, cacheHits: 0, dedupe: 0, erros: 0,
+               porComando: {}, porHora: {} };
+
+function _rolarDia() {
+  const hoje = hojeBRT();
+  if (_uso.dia === hoje) return;
+  _uso.dia = hoje; _uso.requisicoes = 0; _uso.cacheHits = 0;
+  _uso.dedupe = 0; _uso.erros = 0; _uso.porComando = {}; _uso.porHora = {};
+}
+function _cmdStats(cmd) {
+  return _uso.porComando[cmd] || (_uso.porComando[cmd] = { req: 0, cache: 0, dedupe: 0 });
+}
+function _remover(key) {
+  const v = _cache.get(key);
+  if (!v) return;
+  _cacheBytes -= v.bytes;
+  _cache.delete(key);
+}
+function _guardar(key, raw, ttl) {
+  const bytes = Buffer.byteLength(raw);
+  if (bytes > CACHE_MAX_ENTRY) return;   // resposta gigante não vale o RAM
+  _remover(key);
+  _cache.set(key, { raw, exp: Date.now() + ttl, bytes });
+  _cacheBytes += bytes;
+  const agora = Date.now();
+  for (const [k, v] of _cache) if (v.exp <= agora) _remover(k);
+  while (_cacheBytes > CACHE_MAX_BYTES && _cache.size) _remover(_cache.keys().next().value);
+}
+
+// Snapshot do consumo do dia — alimenta GET /api/microvix/uso
+function getUso() {
+  _rolarDia();
+  const porComando = Object.entries(_uso.porComando)
+    .sort((a, b) => b[1].req - a[1].req)
+    .map(([cmd, v]) => ({ comando: cmd, ...v }));
+  const economizadas = _uso.cacheHits + _uso.dedupe;
+  const brutas       = _uso.requisicoes + economizadas;
+  return {
+    dia: _uso.dia,
+    requisicoes: _uso.requisicoes,          // o que realmente saiu para a Microvix
+    cacheHits: _uso.cacheHits, dedupe: _uso.dedupe, erros: _uso.erros,
+    economizadas,
+    semOtimizacao: brutas,
+    reducaoPct: brutas ? Math.round(economizadas / brutas * 100) : 0,
+    cacheEntradas: _cache.size,
+    cacheMB: Math.round(_cacheBytes / 1024 / 1024 * 10) / 10,
+    porComando, porHora: _uso.porHora,
+  };
+}
+function limparCache() {
+  _cache.clear(); _cacheBytes = 0;
+  return { limpo: true };
+}
 
 function buildRequest(command, cnpj, extraParams = [], chaveOverride) {
   const authUser = process.env.MICROVIX_AUTH_USER || 'linx_export';
@@ -31,7 +125,8 @@ ${paramXml}
 </LinxMicrovix>`;
 }
 
-function postRequest(body, timeoutMs = 45_000) {
+// Requisição de fato — sem cache nem contagem
+function postRaw(body, timeoutMs = 45_000) {
   return new Promise((resolve, reject) => {
     const buf = Buffer.from(body, 'utf-8');
     const opts = {
@@ -55,6 +150,47 @@ function postRequest(body, timeoutMs = 45_000) {
     req.write(buf);
     req.end();
   });
+}
+
+// Ponto único de saída para a Microvix: reaproveita resposta recente, junta
+// chamadas idênticas simultâneas e contabiliza o consumo do dia.
+// opts: { ttlMs } força um TTL, { force: true } ignora o cache (refresh manual).
+function postRequest(body, timeoutMs = 45_000, opts = {}) {
+  _rolarDia();
+  const cmd   = comandoDe(body);
+  const stats = _cmdStats(cmd);
+  const ttl   = opts.force ? 0 : (opts.ttlMs != null ? opts.ttlMs : ttlDoBody(body));
+  const key   = crypto.createHash('sha1').update(body).digest('hex');
+
+  if (ttl > 0) {
+    const hit = _cache.get(key);
+    if (hit && hit.exp > Date.now()) {
+      _cache.delete(key); _cache.set(key, hit);   // renova a posição no LRU
+      _uso.cacheHits++; stats.cache++;
+      return Promise.resolve(hit.raw);
+    }
+    if (hit) _remover(key);
+  }
+
+  const voando = _inFlight.get(key);
+  if (voando) { _uso.dedupe++; stats.dedupe++; return voando; }
+
+  _uso.requisicoes++; stats.req++;
+  const h = horaBRT(); _uso.porHora[h] = (_uso.porHora[h] || 0) + 1;
+
+  const p = postRaw(body, timeoutMs)
+    .then(raw => {
+      // Resposta de erro (XML) nunca vai para o cache — senão a falha gruda
+      const erro = raw.includes('<ResponseSuccess>False</ResponseSuccess>') || raw.trim().startsWith('<');
+      if (erro) _uso.erros++;
+      else if (ttl > 0) _guardar(key, raw, ttl);
+      return raw;
+    })
+    .catch(e => { _uso.erros++; throw e; })
+    .finally(() => _inFlight.delete(key));
+
+  _inFlight.set(key, p);
+  return p;
 }
 
 // Parse a single CSV line respecting quoted fields
@@ -459,4 +595,4 @@ async function fetchMovimentoAcoesPromocionais(cnpj, dtIni, dtFin, chave) {
   return parseCsv(raw);
 }
 
-module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchMovimentoCartoes, fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, fetchClientes, fetchProdutosPromocoes, fetchAcoesPromocionais, fetchMovimentoAcoesPromocionais, parseBrNum, buildRequest, postRequest, parseCsv };
+module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchMovimentoCartoes, fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, fetchClientes, fetchProdutosPromocoes, fetchAcoesPromocionais, fetchMovimentoAcoesPromocionais, parseBrNum, buildRequest, postRequest, parseCsv, getUso, limparCache };
