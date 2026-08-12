@@ -3589,19 +3589,81 @@ app.get('/api/microvix/status', requireAuth, async (req, res) => {
   res.json(getStatus(db));
 });
 
+// ── Consumo da WebAPI: contador que sobrevive a restart ────────────────────
+// A instância reinicia várias vezes ao dia, então o contador em memória sozinho
+// nunca fecharia o total do dia. O serviço acumula deltas; aqui eles viram $inc
+// numa doc por dia — vários restarts somam em vez de sobrescrever.
+const MX_USO_COL = 'microvixUso';
+const _mxCampoOk = s => String(s).replace(/[^A-Za-z0-9_]/g, '_');
+
+async function _flushUsoMicrovix() {
+  if (!mongoDb) return;
+  const deltas = require('./services/microvix').coletarDeltas();
+  for (const d of deltas) {
+    const inc = {
+      requisicoes: d.requisicoes, cacheHits: d.cacheHits,
+      dedupe: d.dedupe, erros: d.erros,
+    };
+    for (const [cmd, v] of Object.entries(d.porComando)) {
+      const c = _mxCampoOk(cmd);
+      inc[`porComando.${c}.req`]    = v.req;
+      inc[`porComando.${c}.cache`]  = v.cache;
+      inc[`porComando.${c}.dedupe`] = v.dedupe;
+    }
+    for (const [h, n] of Object.entries(d.porHora)) inc[`porHora.${h}`] = n;
+    await mongoDb.collection(MX_USO_COL).updateOne(
+      { _id: d.dia },
+      { $inc: inc, $set: { at: new Date() } },
+      { upsert: true },
+    );
+  }
+}
+
 // GET /api/microvix/uso → consumo do dia na WebAPI (plano tem limite diário)
-app.get('/api/microvix/uso', requireAdmin, (req, res) => {
+app.get('/api/microvix/uso', requireAdmin, async (req, res) => {
   const { getUso } = require('./services/microvix');
-  const uso   = getUso();
-  const limite = parseInt(process.env.MICROVIX_LIMITE_DIA || '15000');
-  res.json({
-    ...uso, limite,
-    usoPct: limite ? Math.round(uso.requisicoes / limite * 100) : null,
-    intervalos: {
-      hojeMin: MX_INTERVAL_MS / 60000,
-      d1Min:   MX_INTERVAL_D1_MS / 60000,
-    },
-  });
+  const memoria = getUso();
+  const limite  = parseInt(process.env.MICROVIX_LIMITE_DIA || '15000');
+  const intervalos = { hojeMin: MX_INTERVAL_MS / 60000, d1Min: MX_INTERVAL_D1_MS / 60000 };
+
+  // Sem MongoDB não há como somar os restarts — devolve só o processo atual
+  if (!mongoDb) {
+    return res.json({ ...memoria, persistido: false, limite,
+      usoPct: limite ? Math.round(memoria.requisicoes / limite * 100) : null, intervalos });
+  }
+
+  try {
+    await _flushUsoMicrovix();   // grava o que ainda está em memória antes de ler
+    const dia  = memoria.dia;
+    const col  = mongoDb.collection(MX_USO_COL);
+    const doc  = await col.findOne({ _id: dia }) || {};
+    const hist = await col.find({}, { projection: { requisicoes: 1, cacheHits: 1, dedupe: 1 } })
+      .sort({ _id: -1 }).limit(8).toArray();
+
+    const req_ = doc.requisicoes || 0, ch = doc.cacheHits || 0, dd = doc.dedupe || 0;
+    const economizadas = ch + dd;
+    const brutas       = req_ + economizadas;
+    const porComando = Object.entries(doc.porComando || {})
+      .map(([comando, v]) => ({ comando, req: v.req || 0, cache: v.cache || 0, dedupe: v.dedupe || 0 }))
+      .sort((a, b) => b.req - a.req);
+
+    res.json({
+      dia, persistido: true,
+      requisicoes: req_,               // total do dia, somando todos os restarts
+      cacheHits: ch, dedupe: dd, erros: doc.erros || 0,
+      economizadas, semOtimizacao: brutas,
+      reducaoPct: brutas ? Math.round(economizadas / brutas * 100) : 0,
+      limite, usoPct: limite ? Math.round(req_ / limite * 100) : null,
+      porComando, porHora: doc.porHora || {},
+      cacheEntradas: memoria.cacheEntradas, cacheMB: memoria.cacheMB,
+      desdeUltimoRestart: memoria.requisicoes,
+      historico: hist.map(h => ({ dia: h._id, requisicoes: h.requisicoes || 0,
+                                  economizadas: (h.cacheHits || 0) + (h.dedupe || 0) })),
+      intervalos,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // POST /api/microvix/cache/limpar → descarta o cache de respostas
@@ -10847,6 +10909,17 @@ initMongo()
 
       setTimeout(do30d, MX_INTERVAL_30D_MS);
       console.log('[Microvix/30d] Conferência 30 dias agendada — 1× por dia');
+
+      // Consumo do dia gravado a cada 2 min (e no shutdown) — sem isso o
+      // contador zeraria a cada restart e nunca fecharia o total do dia
+      setInterval(() => _flushUsoMicrovix().catch(e => console.warn('[Microvix/uso]', e.message)), 120_000);
+      for (const sinal of ['SIGTERM', 'SIGINT']) {
+        process.on(sinal, () => {
+          _flushUsoMicrovix()
+            .catch(e => console.warn('[Microvix/uso] flush final:', e.message))
+            .finally(() => process.exit(0));
+        });
+      }
 
       setInterval(doSync, MX_INTERVAL_D1_MS);
       // doHoje defasado por metade do intervalo para nunca colidir com doSync

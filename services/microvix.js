@@ -52,11 +52,41 @@ const _uso = { dia: hojeBRT(), requisicoes: 0, cacheHits: 0, dedupe: 0, erros: 0
 function _rolarDia() {
   const hoje = hojeBRT();
   if (_uso.dia === hoje) return;
+  // O delta do dia que terminou ainda não foi gravado — guarda antes de zerar
+  if (_temMovimento(_delta)) _deltasPendentes.push(_delta);
+  _delta = _novoDelta(hoje);
   _uso.dia = hoje; _uso.requisicoes = 0; _uso.cacheHits = 0;
   _uso.dedupe = 0; _uso.erros = 0; _uso.porComando = {}; _uso.porHora = {};
 }
-function _cmdStats(cmd) {
-  return _uso.porComando[cmd] || (_uso.porComando[cmd] = { req: 0, cache: 0, dedupe: 0 });
+function _cmdStats(alvo, cmd) {
+  return alvo[cmd] || (alvo[cmd] = { req: 0, cache: 0, dedupe: 0 });
+}
+
+// ── Delta para persistência ────────────────────────────────────────────────
+// O processo reinicia várias vezes por dia (a plataforma derruba a instância
+// ociosa), então o contador em memória sozinho nunca mostra o total do dia.
+// Cada incremento também entra num delta; quem consome grava com $inc no
+// MongoDB e some com ele — assim os pedaços de vários restarts se somam.
+function _novoDelta(dia) {
+  return { dia, requisicoes: 0, cacheHits: 0, dedupe: 0, erros: 0, porComando: {}, porHora: {} };
+}
+function _temMovimento(d) { return !!(d.requisicoes || d.cacheHits || d.dedupe || d.erros); }
+let _delta = _novoDelta(hojeBRT());
+const _deltasPendentes = [];
+
+function _contar(campo, cmd, sub) {
+  _uso[campo]++;   _delta[campo]++;
+  if (!sub) return;
+  _cmdStats(_uso.porComando,   cmd)[sub]++;
+  _cmdStats(_delta.porComando, cmd)[sub]++;
+}
+
+// Devolve tudo que ainda não foi gravado e zera — chamado pelo flush periódico
+function coletarDeltas() {
+  _rolarDia();
+  const out = _deltasPendentes.splice(0);
+  if (_temMovimento(_delta)) { out.push(_delta); _delta = _novoDelta(_uso.dia); }
+  return out;
 }
 function _remover(key) {
   const v = _cache.get(key);
@@ -157,36 +187,37 @@ function postRaw(body, timeoutMs = 45_000) {
 // opts: { ttlMs } força um TTL, { force: true } ignora o cache (refresh manual).
 function postRequest(body, timeoutMs = 45_000, opts = {}) {
   _rolarDia();
-  const cmd   = comandoDe(body);
-  const stats = _cmdStats(cmd);
-  const ttl   = opts.force ? 0 : (opts.ttlMs != null ? opts.ttlMs : ttlDoBody(body));
-  const key   = crypto.createHash('sha1').update(body).digest('hex');
+  const cmd = comandoDe(body);
+  const ttl = opts.force ? 0 : (opts.ttlMs != null ? opts.ttlMs : ttlDoBody(body));
+  const key = crypto.createHash('sha1').update(body).digest('hex');
 
   if (ttl > 0) {
     const hit = _cache.get(key);
     if (hit && hit.exp > Date.now()) {
       _cache.delete(key); _cache.set(key, hit);   // renova a posição no LRU
-      _uso.cacheHits++; stats.cache++;
+      _contar('cacheHits', cmd, 'cache');
       return Promise.resolve(hit.raw);
     }
     if (hit) _remover(key);
   }
 
   const voando = _inFlight.get(key);
-  if (voando) { _uso.dedupe++; stats.dedupe++; return voando; }
+  if (voando) { _contar('dedupe', cmd, 'dedupe'); return voando; }
 
-  _uso.requisicoes++; stats.req++;
-  const h = horaBRT(); _uso.porHora[h] = (_uso.porHora[h] || 0) + 1;
+  _contar('requisicoes', cmd, 'req');
+  const h = horaBRT();
+  _uso.porHora[h]   = (_uso.porHora[h]   || 0) + 1;
+  _delta.porHora[h] = (_delta.porHora[h] || 0) + 1;
 
   const p = postRaw(body, timeoutMs)
     .then(raw => {
       // Resposta de erro (XML) nunca vai para o cache — senão a falha gruda
       const erro = raw.includes('<ResponseSuccess>False</ResponseSuccess>') || raw.trim().startsWith('<');
-      if (erro) _uso.erros++;
+      if (erro) _contar('erros');
       else if (ttl > 0) _guardar(key, raw, ttl);
       return raw;
     })
-    .catch(e => { _uso.erros++; throw e; })
+    .catch(e => { _contar('erros'); throw e; })
     .finally(() => _inFlight.delete(key));
 
   _inFlight.set(key, p);
@@ -595,4 +626,4 @@ async function fetchMovimentoAcoesPromocionais(cnpj, dtIni, dtFin, chave) {
   return parseCsv(raw);
 }
 
-module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchMovimentoCartoes, fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, fetchClientes, fetchProdutosPromocoes, fetchAcoesPromocionais, fetchMovimentoAcoesPromocionais, parseBrNum, buildRequest, postRequest, parseCsv, getUso, limparCache };
+module.exports = { fetchMovimento, fetchMovimentoItens, fetchServicos, fetchVendedores, fetchFuncionarios, fetchEstoque, fetchProdutos, fetchMovimentoPlanos, fetchMovimentoCartoes, fetchLinxPlanos, fetchLinxPlanosBandeiras, fetchSangrias, fetchContasPagar, fetchMarcas, fetchSetores, fetchClientes, fetchProdutosPromocoes, fetchAcoesPromocionais, fetchMovimentoAcoesPromocionais, parseBrNum, buildRequest, postRequest, parseCsv, getUso, limparCache, coletarDeltas };
