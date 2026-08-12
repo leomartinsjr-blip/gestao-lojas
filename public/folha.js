@@ -2361,8 +2361,11 @@ function buildRecibo(emp, entry, mes, origin) {
   const complRows = org => foraLinhas.filter(f => foraOrgDe(f) === org)
     .map(f => tr((f.nome || 'COMPLEMENTO').toUpperCase(), f.valor, '', '', false, '#fef9c3'))
     .join('');
+  // Supervisor/sócio: proventos em blocos por empresa, com os valores cheios —
+  // não há linha de complemento a somar, todo "por fora" vira nota de rodapé.
+  const blocosPorLoja = tipo === 'supervisor' || tipo === 'socio';
   // Origem "Outros" já está embutida nas linhas cheias acima — vira nota de rodapé
-  const foraMemo = foraLinhas.filter(f => foraOrgDe(f) === 'outros');
+  const foraMemo = blocosPorLoja ? foraLinhas : foraLinhas.filter(f => foraOrgDe(f) === 'outros');
 
   // ── Proventos ──
   let prov = '';
@@ -2382,48 +2385,51 @@ function buildRecibo(emp, entry, mes, origin) {
         prov += tr('PREM. META LOJA', entry.premiacaoBalanco);
       }
     }
-  } else if (tipo === 'supervisor' || tipo === 'socio') {
-    if (tipo === 'supervisor' && num(entry.fixo) > 0) {
-      prov += tr('SALÁRIO FIXO', fixoDecl, fixoDecl);
-      prov += complRows('fixo');
-    }
-    if (tipo === 'socio') {
-      prov += tr('PRÓ-LABORE', fixoDecl, fixoDecl);
-      prov += complRows('fixo');
-      if (num(entry.complemento) > 0)
-        prov += tr('COMPLEMENTO', entry.complemento, entry.complemento);
-    }
-    const lojaComissoes = entry.lojaComissoes || [];
-    lojaComissoes.forEach(lj => {
-      const bi = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase() };
-      if (num(lj.vendas) > 0 || num(lj.comissao) > 0)
-        prov += tr(bi.label.toUpperCase(), lj.comissao, lj.vendas,
-          num(lj.comissaoPct) ? fmt(lj.comissaoPct) + '%' : '');
-    });
-    // Premiação de loja quebrada por loja supervisionada (fallback: total)
-    const premLojas = (entry.premiacaoLojas || []).filter(lj => num(lj.valor) > 0);
-    if (premLojas.length) {
-      premLojas.forEach(lj => {
-        const bi     = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase() };
-        const sem    = lj.semanas || [];
+  } else if (blocosPorLoja) {
+    // Um bloco por empresa: a comissão que ela gerou, a parte do fixo, a
+    // premiação e a ajuda de custo, fechando com o subtotal da empresa. Usa o
+    // mesmo cálculo do rateio da tela, então os subtotais nunca divergem dos
+    // proventos. Feriado, extras e o pró-labore-complemento saem soltos abaixo.
+    const _src   = rateioSrcFromEntry(emp, entry, tipo);
+    const _rows  = calcRateioLojas(emp, tipo, _src);
+    const sup    = emp.supervisedBoards || [];
+    // No sócio o rateio divide pró-labore + complemento juntos
+    const fixoLbl = tipo === 'socio' ? 'PRÓ-LABORE' : 'FIXO';
+    const subTr  = (label, val) =>
+      `<tr style="background:#e8e8e8">` +
+      `<td colspan="3" style="padding:2px 5px;text-align:right;font-weight:700">${label}</td>` +
+      `<td style="padding:2px 5px;text-align:right;font-weight:700;white-space:nowrap">${money(val)}</td>` +
+      `</tr>`;
+
+    // Empresa que só paga ajuda de custo (escritório) — linha solta no topo
+    _rows.filter(r => !sup.includes(r.board) && num(r.ajuda))
+      .forEach(r => prov += tr(`AJC ${_biOf(r.board).label.toUpperCase()}`, r.ajuda));
+
+    _rows.filter(r => sup.includes(r.board)).forEach(r => {
+      const bi  = _biOf(r.board);
+      const lj  = (entry.lojaComissoes || []).find(l => l.board === r.board) || {};
+      const pjl = (entry.premiacaoLojas || []).find(l => l.board === r.board) || {};
+      prov += gap;
+      prov += tr(bi.label.toUpperCase(), r.comissao, lj.vendas || 0,
+        num(lj.comissaoPct) ? fmt(lj.comissaoPct) + '%' : '', true, '#f0f0f0');
+      if (num(r.fixo)) prov += tr(fixoLbl, r.fixo);
+      if (num(r.premiacao)) {
+        const sem    = pjl.semanas || [];
         const semSum = sem.reduce((s, x) => s + num(x.valor), 0);
-        if (sem.length && Math.abs(semSum - num(lj.valor)) < 0.02)
-          sem.forEach(s => prov += tr(`PREM. ${bi.label.toUpperCase()} SEM. ${s.label}`, s.valor));
+        if (sem.length && Math.abs(semSum - num(r.premiacao)) < 0.02)
+          sem.forEach(s => prov += tr(`PREMIAÇÃO SEM. ${s.label}`, s.valor));
         else
-          prov += tr(`PREM. LOJA ${bi.label.toUpperCase()}`, lj.valor);
-      });
-    } else if (num(entry.premiacaoBalanco) > 0) {
-      prov += tr('PREM. META LOJA', entry.premiacaoBalanco);
-    }
-    // Ajuda de custo, uma linha por empresa (fallback: total)
-    const ajudaLojas = (entry.ajudaCustoLojas || []).filter(lj => num(lj.valor) !== 0);
-    if (ajudaLojas.length) {
-      ajudaLojas.forEach(lj => {
-        prov += tr(`AJUDA DE CUSTO ${_biOf(lj.board).label.toUpperCase()}`, lj.valor);
-      });
-    } else if (num(entry.ajudaCustoTotal) !== 0) {
-      prov += tr('AJUDA DE CUSTO', entry.ajudaCustoTotal);
-    }
+          prov += tr('PREMIAÇÃO', r.premiacao);
+      }
+      if (num(r.ajuda)) prov += tr('AJC', r.ajuda);
+      prov += subTr(bi.label.toUpperCase(), r2(r.fixo + r.comissao + r.premiacao + r.ajuda));
+    });
+    prov += gap;
+
+    // Sobra de folha antiga sem quebra por loja — mantém o recibo fechando
+    const _outrosSolto = r2(num(entry.feriado) + (entry.extras || []).reduce((s, x) => s + num(x.valor), 0));
+    const _sobra = r2(_src.outros - _outrosSolto);
+    if (num(_sobra)) prov += tr('OUTROS', _sobra);
   } else {
     // Vendedor só entra aqui quando está no regime fixo + comissão
     if (tipo === 'gerente' || tipo === 'sub' || tipo === 'gvend' || num(entry.fixo) > 0) {
