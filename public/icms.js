@@ -140,12 +140,27 @@ function render() {
     $('alertBox').style.display = 'block';
   } else {
     const alertas = (d.semXml || []).filter(x => x.relevante);
+    // Empresa cujo zip não foi enviado: vira uma linha de resumo, não uma
+    // enxurrada de avisos que esconde o que importa.
+    const semLote = (d.semXml || []).filter(x => !x.relevante && /nenhum XML da empresa/.test(x.observacao || ''));
+    const porEmp = {};
+    semLote.forEach(x => { porEmp[x.emp] = (porEmp[x.emp] || 0) + 1; });
+
+    let html = '';
     if (alertas.length) {
-      $('alertBox').className = 'mx-alert';
-      $('alertBox').innerHTML =
-        `<strong>${alertas.length} nota(s) com lançamento no Microvix mas sem XML no lote.</strong> ` +
-        'O imposto dessas não entrou no total.<br>' +
+      html += `<strong>${alertas.length} nota(s) desta empresa com lançamento no Microvix mas sem XML no lote.</strong> ` +
+        'O imposto dessas não entrou no total — provavelmente foram emitidas antes da janela que você baixou.<br>' +
         alertas.map(a => `${esc(a.doc)} — ${esc(a.fornecedor || '')} — lçto ${fData(a.dtLancamento)}`).join('<br>');
+    }
+    if (Object.keys(porEmp).length) {
+      if (html) html += '<br><br>';
+      html += '<strong>Empresas do relatório sem XML neste lote:</strong> ' +
+        Object.entries(porEmp).map(([e, n]) => `empresa ${esc(e)} (${n} notas)`).join(', ') +
+        '. Isso não afeta o total acima — apure cada empresa com o zip dela.';
+    }
+    if (html) {
+      $('alertBox').className = 'mx-alert';
+      $('alertBox').innerHTML = html;
       $('alertBox').style.display = 'block';
     }
   }

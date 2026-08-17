@@ -388,6 +388,10 @@ function calcularPorEmpresa(notas, cfg = {}) {
     });
   }
   const casados = new Set();   // índices já consumidos
+  // Empresas do relatório que têm XML no lote. Serve para separar a nota que
+  // realmente falta da nota cujo zip nem foi enviado — num relatório com
+  // várias empresas, a segunda situação é a maioria e afogaria a primeira.
+  const empsComXml = new Set();
 
   // Com mais de um candidato, o valor da nota desempata; o nome do fornecedor
   // é o segundo critério. Nada disso decide sozinho: o que sobrar ambíguo sai
@@ -454,6 +458,7 @@ function calcularPorEmpresa(notas, cfg = {}) {
       linha.difal = 0;
     } else if (lanc) {
       casados.add(lanc._i);
+      if (lanc.emp) empsComXml.add(lanc.emp);
       if (escolha.ambiguo) {
         linha.revisar.push({
           ref: `nota ${linha.doc}`,
@@ -489,13 +494,18 @@ function calcularPorEmpresa(notas, cfg = {}) {
         .map(l => {
           const doc = chaveDoc(l.nNF, l.serie);
           const interna = /TRANSFER/i.test(l.natOp || '');
+          // Empresa sem nenhum XML no lote: o zip dela não foi enviado, então
+          // não há o que alertar — é lacuna de upload, não de imposto.
+          const semLote = !!l.emp && empsComXml.size > 0 && !empsComXml.has(l.emp);
           return {
             doc,
             ...l,
-            relevante: !interna,
+            relevante: !interna && !semLote,
             observacao: interna
               ? 'transferência entre empresas do grupo — não gera diferencial'
-              : 'lançada no sistema mas sem XML no lote',
+              : semLote
+                ? `nenhum XML da empresa ${l.emp} foi enviado neste lote`
+                : 'lançada no sistema mas sem XML no lote',
           };
         })
     : [];
