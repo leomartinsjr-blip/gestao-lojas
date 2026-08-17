@@ -83,7 +83,7 @@ function applyUserPermissions(user) {
   document.getElementById('userChip').textContent = user.label || user.username;
   const isAdmin = userIsAdmin(user);
   const isSupervisor = !user.board && !isAdmin;
-  const ids = ['funcBtn','campanhasBtn','usersBtn','perfBtn','transBtn','folhaBtn','icmsBtn'];
+  const ids = ['funcBtn','campanhasBtn','usersBtn','perfBtn','transBtn','folhaBtn'];
   ids.forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = isAdmin ? 'flex' : 'none';
@@ -96,6 +96,8 @@ function applyUserPermissions(user) {
 
   const dreEl = document.getElementById('dreBtn');
   if (dreEl) dreEl.style.display = (user.username === 'leonardo') ? 'flex' : 'none';
+  const icmsEl = document.getElementById('icmsBtn');
+  if (icmsEl) icmsEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
   const conferenciaEl = document.getElementById('conferenciaBtn');
   if (conferenciaEl) conferenciaEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
   const certificadosEl = document.getElementById('certificadosBtn');

@@ -6989,7 +6989,7 @@ const _icmsUpload = multer({
   limits: { fileSize: 60 * 1024 * 1024, files: 40 },
 });
 
-app.get('/api/icms/empresas', requireAdmin, (req, res) => {
+app.get('/api/icms/empresas', requireEscritorioOrAdmin, (req, res) => {
   const { EMPRESAS, formatarCnpj } = require('./services/empresas');
   res.json(EMPRESAS.map(e => ({
     cnpj: e.cnpj,
@@ -7001,7 +7001,7 @@ app.get('/api/icms/empresas', requireAdmin, (req, res) => {
   })));
 });
 
-app.post('/api/icms/apurar', requireAdmin,
+app.post('/api/icms/apurar', requireEscritorioOrAdmin,
   _icmsUpload.fields([{ name: 'relatorio', maxCount: 12 }, { name: 'xmls', maxCount: 28 }]),
   async (req, res) => {
     try {
@@ -7065,7 +7065,7 @@ app.post('/api/icms/apurar', requireAdmin,
     }
   });
 
-app.post('/api/icms/exportar', requireAdmin, express.json({ limit: '20mb' }), async (req, res) => {
+app.post('/api/icms/exportar', requireEscritorioOrAdmin, express.json({ limit: '20mb' }), async (req, res) => {
   try {
     const { gerarXlsx } = require('./services/difalExport');
     const { resultado, competencia } = req.body || {};
@@ -7124,7 +7124,7 @@ app.post('/api/icms/estornar', requireAdmin, express.json(), async (req, res) =>
 
 // Resumo consolidado por CNPJ num intervalo de datas livre, com participação
 // por alíquota e alíquota efetiva sobre a base comprada.
-app.get('/api/icms/resumo', requireAdmin, async (req, res) => {
+app.get('/api/icms/resumo', requireEscritorioOrAdmin, async (req, res) => {
   try {
     const { resumo } = require('./services/icmsHistorico');
     const { buscarEmpresa, formatarCnpj } = require('./services/empresas');
@@ -7144,7 +7144,7 @@ app.get('/api/icms/resumo', requireAdmin, async (req, res) => {
   }
 });
 
-app.get('/api/icms/apuracoes', requireAdmin, async (req, res) => {
+app.get('/api/icms/apuracoes', requireEscritorioOrAdmin, async (req, res) => {
   try {
     const { listarApuracoes } = require('./services/icmsHistorico');
     res.json(await listarApuracoes(mongoDb, { cnpj: req.query.cnpj || null }));
@@ -7635,7 +7635,7 @@ app.get('/api/contas-pagar/status', requireAdmin, async (req, res) => {
 
 app.get('/folha',  (req, res) => res.sendFile(path.join(__dirname, 'public/folha.html')));
 app.get('/marcas', (req, res) => res.sendFile(path.join(__dirname, 'public/marcas.html')));
-app.get('/icms',   requireAdmin, (req, res) => res.sendFile(path.join(__dirname, 'public/icms.html')));
+app.get('/icms',   requireEscritorioOrAdmin, (req, res) => res.sendFile(path.join(__dirname, 'public/icms.html')));
 
 // GET /api/folha/config — configurações por loja (faixas de meta, GM, DSR, prêmios)
 app.get('/api/folha/config', requireAuth, async (req, res) => {
