@@ -308,6 +308,52 @@ ok('grupo "sem entrada" também oferece',
   montarPendencias(calcularPorEmpresa([{ xml: nfe({ nNF: '813', dhEmi: '2026-02-03', itens: [compra] }) }],
     { lancamentos: [], competencia: '2026-02' })).find(g2 => g2.tipo === 'sem-lancamento')?.acaoNota?.tipo === 'recusar');
 
+// ── Adiar para a competência seguinte ────────────────────────────────────────
+// Saída para quando a contabilidade lançou a nota em outro mês e não corrige.
+// Desmarcar não serviria: não guarda nada, e o imposto sumiria dos dois meses.
+console.log('\nAdiar para a competência seguinte');
+const xmlAdiada = nfe({ nNF: '815', dhEmi: '2026-02-16', itens: [compra] });
+const chaveAdiada = parseNFe(xmlAdiada).chave;
+const lancAdiada = [{ nNF: '815', serie: '1', dtLancamento: '2026-02-21' }];
+
+let origem = calcularPorEmpresa([{ xml: xmlAdiada }], {
+  lancamentos: lancAdiada, competencia: '2026-02', adiadas: { [chaveAdiada]: '2026-03' },
+});
+ok('adiada sai do total do mês de origem', perto(origem.totalGeral, 0));
+ok('adiada diz para onde foi',
+  origem.empresas[0].linhas[0].adiadaPara === '2026-03' && /adiada para 03\/2026/.test(origem.empresas[0].linhas[0].motivo));
+
+let go = montarPendencias(origem);
+ok('adiada tem grupo próprio', grupo(go, 'adiadas')?.qtd === 1);
+ok('adiada não vira "não gera diferencial"', !grupo(go, 'sem-diferencial'));
+ok('adiada oferece desfazer', grupo(go, 'adiadas')?.acaoNota?.tipo === 'cancelar-adiamento');
+
+// No destino ela entra sem lançamento nenhum: o lançamento ficou na origem.
+const guardadaAdiada = [{
+  doc: '815/1', chave: chaveAdiada, competenciaOrigem: '2026-02',
+  competenciaDestino: '2026-03', linha: calcularPorEmpresa([{ xml: xmlAdiada }],
+    { lancamentos: lancAdiada, competencia: '2026-02' }).empresas[0].linhas[0],
+}];
+let destino = calcularPorEmpresa([], {
+  lancamentos: [], transito: guardadaAdiada, competencia: '2026-03',
+});
+ok('adiada entra no mês de destino', perto(destino.totalGeral, 73.17), `total ${destino.totalGeral.toFixed(2)}`);
+ok('adiada no destino diz de onde veio', destino.empresas[0].linhas[0].adiadaDe === '2026-02');
+ok('adiada no destino tem grupo próprio', grupo(montarPendencias(destino), 'do-adiamento')?.qtd === 1);
+
+// Antes do destino chegar, ela fica parada sem virar alarme de trânsito velho.
+let antes = calcularPorEmpresa([], {
+  lancamentos: [], transito: guardadaAdiada, competencia: '2026-02',
+});
+ok('adiada não vira "trânsito parado há meses"', !grupo(montarPendencias(antes), 'transito-antigo'));
+
+// Mas se o mês de destino passou e ninguém apurou, aí sim é alarme.
+let vencida = calcularPorEmpresa([], {
+  lancamentos: [], transito: guardadaAdiada, competencia: '2026-05',
+});
+ok('adiada com destino vencido vira alarme',
+  grupo(montarPendencias(vencida), 'adiada-vencida')?.qtd === 1);
+
 // ── Aviso de cobertura do lote ───────────────────────────────────────────────
 console.log('\nCobertura do lote de XML');
 let cob = calcularPorEmpresa([{ xml: nfe({ nNF: '820', dhEmi: '2026-02-03', itens: [compra] }) }], {

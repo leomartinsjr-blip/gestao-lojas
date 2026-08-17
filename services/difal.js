@@ -443,6 +443,7 @@ function calcularPorEmpresa(notas, cfg = {}) {
 
   const limiteTransito = _limiteTransito(cfg.competencia, cfg.diasTransito);
   const recusadas = cfg.recusadas ? new Set(cfg.recusadas) : null;
+  const adiadas = cfg.adiadas || null;   // chave → competência de destino
 
   // Um relatório com várias empresas pode trazer o mesmo número/série duas
   // vezes — acontece nas transferências internas, que cada empresa numera por
@@ -578,6 +579,21 @@ function calcularPorEmpresa(notas, cfg = {}) {
       }
     }
 
+    // Nota empurrada à mão para a competência seguinte. Sai da conta deste mês
+    // e volta no destino — está guardada calculada, então nada se perde.
+    const destino = adiadas && linha.chave ? adiadas[linha.chave] : null;
+    if (destino && destino !== cfg.competencia && linha.incluida) {
+      const [ano, mes] = destino.split('-');
+      linha.incluida = false;
+      linha.adiadaPara = destino;
+      linha.motivo = `adiada para ${mes}/${ano}`;
+      linha.base4 = 0;
+      linha.base12 = 0;
+      linha.difal4 = 0;
+      linha.difal12 = 0;
+      linha.difal = 0;
+    }
+
     porCnpj.get(cnpj).linhas.push(linha);
   }
 
@@ -589,6 +605,7 @@ function calcularPorEmpresa(notas, cfg = {}) {
   if (lancados && cfg.transito && cfg.transito.length) {
     const guardadasPorDoc = new Map();
     for (const t of cfg.transito) {
+      if (t.competenciaDestino) continue;   // adiada não espera lançamento
       const k = t.doc || chaveDoc(t.linha && t.linha.nNF, t.linha && t.linha.serie);
       if (!guardadasPorDoc.has(k)) guardadasPorDoc.set(k, []);
       guardadasPorDoc.get(k).push(t);
@@ -625,7 +642,29 @@ function calcularPorEmpresa(notas, cfg = {}) {
       if (!porCnpj.has(cnpj)) porCnpj.set(cnpj, { cnpj, empresa: linha.empresa, linhas: [] });
       porCnpj.get(cnpj).linhas.push(linha);
     }
+  }
 
+  // ── Notas adiadas que chegaram no mês de destino ─────────────────────────
+  // Diferente do trânsito comum, estas não esperam lançamento nenhum: o
+  // lançamento já existiu, na competência de origem. Elas entram direto.
+  if (cfg.competencia && cfg.transito && cfg.transito.length) {
+    for (const t of cfg.transito) {
+      if (t._usada || t.competenciaDestino !== cfg.competencia || !t.linha) continue;
+      if (t.linha.chave && vistas.has(t.linha.chave)) continue;
+      t._usada = true;
+
+      const linha = _restaurarDoTransito(t.linha, t.competenciaOrigem);
+      delete linha.doTransito;
+      linha.adiadaDe = t.competenciaOrigem || null;
+      if (linha.chave) vistas.add(linha.chave);
+
+      const cnpj = linha.cnpjEmpresa;
+      if (!porCnpj.has(cnpj)) porCnpj.set(cnpj, { cnpj, empresa: linha.empresa, linhas: [] });
+      porCnpj.get(cnpj).linhas.push(linha);
+    }
+  }
+
+  if (cfg.transito && cfg.transito.length) {
     transitoNaoUsado.push(...cfg.transito.filter(t => !t._usada));
     cfg.transito.forEach(t => { delete t._usada; });
   }
@@ -841,6 +880,21 @@ function montarPendencias(resultado) {
     'ok',
     ACAO_RECUSAR);
 
+  add('adiadas',
+    'Empurradas para a competência seguinte',
+    null,
+    linhas.filter(l => l.adiadaPara)
+      .map(l => ({ ...desc(l), detalhe: `sai deste mês e entra em ${l.adiadaPara} — já está guardada calculada` })),
+    'ok',
+    { tipo: 'cancelar-adiamento', rotulo: 'Desfazer', confirmar: 'Desfazer o adiamento? A nota volta para a competência do lançamento.' });
+
+  add('do-adiamento',
+    'Vieram adiadas de uma competência anterior',
+    null,
+    linhas.filter(l => l.adiadaDe && l.incluida)
+      .map(l => ({ ...desc(l), detalhe: `lançada em ${l.adiadaDe}, adiada de propósito para este mês` })),
+    'ok');
+
   add('recusadas',
     'Marcadas como recusadas e devolvidas ao fornecedor',
     null,
@@ -862,7 +916,8 @@ function montarPendencias(resultado) {
   // Guardada há meses e o lançamento nunca apareceu. A essa altura já não é
   // trânsito: ou a nota foi recusada, ou alguém esqueceu de lançar.
   const antigas = (resultado.transitoNaoUsado || []).filter(t =>
-    resultado.competencia && t.competenciaOrigem
+    !t.competenciaDestino
+    && resultado.competencia && t.competenciaOrigem
     && _mesesEntre(t.competenciaOrigem, resultado.competencia) >= 2);
   add('transito-antigo',
     'Guardadas há dois meses ou mais e ainda sem entrada',
@@ -875,6 +930,21 @@ function montarPendencias(resultado) {
     'grave',
     ACAO_RECUSAR);
 
+  // Adiada cujo mês de destino já passou sem ninguém apurar. O imposto está
+  // parado: não entrou na origem, e o mês em que deveria entrar ficou para trás.
+  const adiadasVencidas = (resultado.transitoNaoUsado || []).filter(t =>
+    t.competenciaDestino && resultado.competencia
+    && _mesesEntre(t.competenciaDestino, resultado.competencia) > 0);
+  add('adiada-vencida',
+    'Adiadas para um mês que já passou e nunca foram apuradas',
+    'Apure a competência de destino delas — o imposto está parado desde lá',
+    adiadasVencidas.map(t => ({
+      ...desc(t.linha || {}),
+      chave: t.chave || (t.linha && t.linha.chave) || null,
+      detalhe: `adiada de ${t.competenciaOrigem} para ${t.competenciaDestino}`,
+    })),
+    'grave');
+
   add('outra-competencia',
     'Pertencem a outro mês',
     null,
@@ -885,7 +955,7 @@ function montarPendencias(resultado) {
   add('sem-diferencial',
     'Não geram diferencial por regra fiscal',
     null,
-    linhas.filter(l => !l.incluida && !l.jaApurada && !l.recusada &&
+    linhas.filter(l => !l.incluida && !l.jaApurada && !l.recusada && !l.adiadaPara &&
       !/(não consta|fora da competência|emitida em)/.test(l.motivo || ''))
       .map(l => ({ ...desc(l), detalhe: l.motivo })),
     'ok');

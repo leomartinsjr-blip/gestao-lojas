@@ -90,7 +90,11 @@ async function buscar(db, { cnpjs } = {}) {
   return docs.map(d => ({
     doc: d.doc,
     chave: d._id,
+    status: d.status || 'aguardando',
     competenciaOrigem: d.competenciaOrigem,
+    // Só as adiadas têm destino. Elas não esperam lançamento nenhum: entram
+    // direto na competência marcada.
+    competenciaDestino: d.competenciaDestino || null,
     guardadaEm: d.guardadaEm,
     linha: d.linha,
   }));
@@ -126,6 +130,80 @@ async function reativar(db, chave) {
   return { chave, status: 'aguardando' };
 }
 
+// "2026-02" → "2026-03"
+function proximaCompetencia(competencia) {
+  const [ano, mes] = String(competencia).split('-').map(Number);
+  if (!ano || !mes) throw new Error('Competência inválida');
+  return mes === 12 ? `${ano + 1}-01` : `${ano}-${String(mes + 1).padStart(2, '0')}`;
+}
+
+/**
+ * Empurra uma nota já lançada para a competência seguinte.
+ *
+ * O caminho normal é o corte pela data de entrada, e é ele que vale. Isto aqui
+ * existe para o caso em que a contabilidade lançou a nota em outro mês e não vai
+ * corrigir: sem uma saída, a nota teria de ser desmarcada — e desmarcar não
+ * guarda nada, o imposto dela simplesmente sumiria dos dois meses.
+ *
+ * A nota vai para o trânsito com destino marcado e volta sozinha lá, calculada
+ * do mesmo jeito que estava aqui.
+ */
+async function adiar(db, { chave, linha, competencia, motivo, usuario } = {}) {
+  if (!db) throw new Error('Banco indisponível');
+  if (!chave) throw new Error('Informe a chave da nota');
+  if (!competencia) throw new Error('Informe a competência');
+  if (!linha) throw new Error('Nota sem dados para guardar');
+
+  const destino = proximaCompetencia(competencia);
+  const col = await _col(db);
+  const agora = new Date();
+
+  await col.updateOne(
+    { _id: chave },
+    {
+      $set: {
+        cnpj: linha.cnpjEmpresa,
+        empresa: linha.empresa,
+        doc: `${String(linha.nNF).replace(/\D/g, '').replace(/^0+/, '')}/${String(linha.serie).replace(/\D/g, '').replace(/^0+/, '') || '0'}`,
+        nNF: linha.nNF,
+        serie: linha.serie,
+        dhEmi: linha.dhEmi || null,
+        fornecedor: linha.fornecedor,
+        vlrTotal: linha.vlrTotal || 0,
+        status: 'adiada',
+        competenciaOrigem: competencia,
+        competenciaDestino: destino,
+        motivoAdiamento: motivo || null,
+        linha,
+        adiadaEm: agora,
+        adiadaPor: usuario || null,
+      },
+      $setOnInsert: { guardadaEm: agora },
+    },
+    { upsert: true },
+  );
+  return { chave, competenciaDestino: destino };
+}
+
+/** Desfaz o adiamento: a nota volta a pertencer à competência do lançamento. */
+async function cancelarAdiamento(db, chave) {
+  if (!db) throw new Error('Banco indisponível');
+  const col = await _col(db);
+  const r = await col.deleteOne({ _id: chave, status: 'adiada' });
+  if (!r.deletedCount) throw new Error('Nota não está adiada');
+  return { chave, removida: true };
+}
+
+/** Chave → competência de destino, das notas adiadas. */
+async function adiamentos(db) {
+  if (!db) return {};
+  const col = await _col(db);
+  const docs = await col.find({ status: 'adiada' }).toArray();
+  const mapa = {};
+  for (const d of docs) mapa[d._id] = d.competenciaDestino;
+  return mapa;
+}
+
 /** As chaves marcadas como recusadas — o cálculo usa para não alarmar de novo. */
 async function chavesRecusadas(db) {
   if (!db) return [];
@@ -149,4 +227,9 @@ async function listar(db, { cnpj } = {}) {
   return col.find(cnpj ? { cnpj } : {}).sort({ dhEmi: 1 }).toArray();
 }
 
-module.exports = { guardar, buscar, consumir, listar, recusar, reativar, chavesRecusadas, COL };
+module.exports = {
+  guardar, buscar, consumir, listar,
+  recusar, reativar, chavesRecusadas,
+  adiar, cancelarAdiamento, adiamentos, proximaCompetencia,
+  COL,
+};

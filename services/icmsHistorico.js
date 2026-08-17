@@ -65,6 +65,9 @@ async function finalizar(db, { competencia, cnpj, empresa, linhas, usuario }) {
       dhEmi: l.dhEmi || null,
       fornecedor: l.fornecedor,
       ufOrigem: l.ufOrigem,
+      natOp: l.natOp || null,
+      // Guardado para a planilha poder ser refeita depois do mês fechado.
+      vlrTotal: l.vlrTotal || 0,
       base4: l.base4 || 0,
       base12: l.base12 || 0,
       difal4: l.difal4 || 0,
@@ -193,4 +196,18 @@ async function listarApuracoes(db, { cnpj } = {}) {
   return db.collection(COL_APURACOES).find(filtro).sort({ competencia: -1 }).toArray();
 }
 
-module.exports = { buscarApuradas, finalizar, estornar, resumo, listarApuracoes };
+/**
+ * As notas gravadas de uma competência já finalizada. Serve para reconferir
+ * meses fechados, quando a tela não tem mais o resultado em memória e os
+ * arquivos de origem já foram embora.
+ */
+async function notasDaCompetencia(db, { cnpj, competencia } = {}) {
+  if (!db) throw new Error('Banco indisponível');
+  if (!cnpj || !competencia) throw new Error('Informe a competência e o CNPJ');
+  const col = await _notas(db);
+  return col.find({ cnpj, competencia }).sort({ dtLancamento: 1, nNF: 1 }).toArray();
+}
+
+module.exports = {
+  buscarApuradas, finalizar, estornar, resumo, listarApuracoes, notasDaCompetencia,
+};

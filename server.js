@@ -7041,11 +7041,14 @@ app.post('/api/icms/apurar', requireEscritorioOrAdmin,
       // Notas já conferidas e marcadas como recusadas: não voltam para a fila
       // nem cobram conferência de novo, mesmo com o XML ainda no lote.
       const recusadas = await transitoSvc.chavesRecusadas(mongoDb);
+      // Notas empurradas à mão para outra competência: chave → mês de destino.
+      const adiadas = await transitoSvc.adiamentos(mongoDb);
 
       const resultado = calcularPorEmpresa(notas, {
         lancamentos,
         transito,
         recusadas,
+        adiadas,
         cnpjsProprios: cnpjsDoGrupo(),
         competencia: req.body.competencia || null,
       });
@@ -7167,6 +7170,67 @@ app.post('/api/icms/exportar', requireEscritorioOrAdmin, express.json({ limit: '
   }
 });
 
+// Refaz a planilha de uma competência já finalizada, a partir do que ficou
+// gravado. É a conferência tardia: meses depois, sem os arquivos de origem.
+// O que o histórico não guarda — itens com ST, notas que ficaram de fora, as
+// marcações de conferir — não volta, e a planilha diz isso em vez de sair com
+// as seções vazias como se não tivesse havido nenhuma.
+app.get('/api/icms/exportar-historico', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { notasDaCompetencia } = require('./services/icmsHistorico');
+    const { recalcularLinha, recalcularTotais } = require('./services/difal');
+    const { gerarXlsx } = require('./services/difalExport');
+    const { buscarEmpresa } = require('./services/empresas');
+
+    const { cnpj, competencia } = req.query;
+    const docs = await notasDaCompetencia(mongoDb, { cnpj, competencia });
+    if (!docs.length) return res.status(404).json({ error: 'Nenhuma nota gravada nessa competência' });
+
+    const cadastro = buscarEmpresa(cnpj);
+    const empresa = cadastro ? cadastro.razaoSocial : cnpj;
+
+    const linhas = docs.map(d => recalcularLinha({
+      chave: d._id,
+      doc: d.doc,
+      nNF: d.nNF,
+      serie: d.serie,
+      dhEmi: d.dhEmi,
+      dtLancamento: d.dtLancamento,
+      natOp: d.natOp || '',
+      fornecedor: d.fornecedor,
+      ufOrigem: d.ufOrigem,
+      cnpjEmpresa: d.cnpj,
+      empresa,
+      vlrTotal: d.vlrTotal || 0,
+      base4: d.base4 || 0,
+      base12: d.base12 || 0,
+      incluida: true,
+      motivo: '',
+      itensST: [],
+      itensFora: [],
+      revisar: [],
+      atencao: [],
+    }));
+
+    const resultado = recalcularTotais({
+      empresas: [{ cnpj, empresa, linhas, itensST: [] }],
+      totalGeral: 0,
+    });
+
+    const buf = await gerarXlsx(resultado, {
+      competencia: `${competencia.slice(5)}/${competencia.slice(0, 4)}`,
+      origem: 'historico',
+    });
+    const nome = `ICMS-diferencial-${competencia}-${cadastro ? cadastro.apelido : cnpj}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${nome.replace(/[^\w.-]/g, '_')}"`);
+    res.send(Buffer.from(buf));
+  } catch (e) {
+    console.error('[icms/exportar-historico]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // Finaliza a competência: grava as notas selecionadas no histórico. A partir
 // daí elas ficam travadas contra reapuração em qualquer outro período.
 app.post('/api/icms/finalizar', requireEscritorioOrAdmin, express.json({ limit: '20mb' }), async (req, res) => {
@@ -7229,6 +7293,37 @@ app.post('/api/icms/transito/reativar', requireEscritorioOrAdmin, express.json()
     res.json(r);
   } catch (e) {
     console.error('[icms/transito/reativar]', e.message);
+    res.status(400).json({ error: e.message });
+  }
+});
+
+// Empurra uma nota já lançada para a competência seguinte. Existe para quando a
+// contabilidade lançou em outro mês e não vai corrigir — desmarcar a nota na
+// tela não guardaria nada, e o imposto dela sumiria dos dois meses.
+app.post('/api/icms/transito/adiar', requireEscritorioOrAdmin, express.json({ limit: '2mb' }), async (req, res) => {
+  try {
+    const { adiar } = require('./services/icmsTransito');
+    const { chave, linha, competencia, motivo } = req.body || {};
+    if (!linha || linha.incluida === false) {
+      return res.status(400).json({ error: 'Só dá para adiar nota que está entrando na conta desta competência' });
+    }
+    const r = await adiar(mongoDb, {
+      chave, linha, competencia, motivo,
+      usuario: req.session.user?.name || req.session.user?.login || null,
+    });
+    res.json(r);
+  } catch (e) {
+    console.error('[icms/transito/adiar]', e.message);
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/icms/transito/cancelar-adiamento', requireEscritorioOrAdmin, express.json(), async (req, res) => {
+  try {
+    const { cancelarAdiamento } = require('./services/icmsTransito');
+    res.json(await cancelarAdiamento(mongoDb, (req.body || {}).chave));
+  } catch (e) {
+    console.error('[icms/transito/cancelar-adiamento]', e.message);
     res.status(400).json({ error: e.message });
   }
 });

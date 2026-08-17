@@ -66,7 +66,7 @@ function _tabelaNotas(ws, linha, notas, totais) {
     _data(ws.getCell(linha, 3), n.dtLancamento);
     ws.getCell(linha, 4).value = n.fornecedor;
     ws.getCell(linha, 5).value = n.ufOrigem;
-    [n.vlrTotal, n.base4 || null, n.base12 || null, d4 || null, d12 || null, d4 + d12]
+    [n.vlrTotal || null, n.base4 || null, n.base12 || null, d4 || null, d12 || null, d4 + d12]
       .forEach((v, i) => { const c = ws.getCell(linha, i + 6); if (v != null) { c.value = v; _num(c); } });
     linha++;
   }
@@ -136,7 +136,13 @@ async function gerarXlsx(resultado, meta = {}) {
       (meta.competencia ? `   —   competência ${meta.competencia}` : '');
     linha += 2;
 
-    ws.getCell(linha, 1).value = 'Base de cálculo lida do XML de cada nota. Só entram notas com lançamento no Microvix.';
+    // Refeita do histórico, a planilha só tem o que ficou gravado: as notas que
+    // entraram na conta. Dizer isso evita ler as seções vazias de ST e de notas
+    // fora do cálculo como se elas não tivessem existido.
+    ws.getCell(linha, 1).value = meta.origem === 'historico'
+      ? 'Refeita a partir da apuração já finalizada. Traz só as notas que entraram na conta — '
+        + 'itens com ST, notas fora do cálculo e marcações de conferência não ficam gravados.'
+      : 'Base de cálculo lida do XML de cada nota. Só entram notas com lançamento no Microvix.';
     ws.getCell(linha, 1).font = { italic: true, size: 9 };
     linha += 2;
 

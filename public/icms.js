@@ -183,6 +183,43 @@ function render() {
     b.addEventListener('click', () => abrirEdicao(b.dataset.incluir, null)));
   document.querySelectorAll('button[data-desfazer]').forEach(b =>
     b.addEventListener('click', () => desfazerAjuste(b.dataset.desfazer)));
+  document.querySelectorAll('button[data-adiar]').forEach(b =>
+    b.addEventListener('click', () => adiarNota(b.dataset.adiar, b.dataset.doc)));
+}
+
+// Empurra a nota para a competência seguinte. Só existe para o caso em que a
+// contabilidade lançou a nota em outro mês e não vai corrigir — o corte normal
+// é pela data de entrada, e é ele que vale.
+async function adiarNota(chave, doc) {
+  const comp = $('competencia').value;
+  if (!comp) return erro('Escolha a competência antes de adiar.');
+
+  const linha = resultado.empresas
+    .flatMap(e => e.linhas)
+    .find(l => l.chave === chave);
+  if (!linha) return erro('Nota não encontrada no resultado.');
+
+  const [ano, mes] = comp.split('-').map(Number);
+  const destino = mes === 12 ? `01/${ano + 1}` : `${String(mes + 1).padStart(2, '0')}/${ano}`;
+  if (!confirm(
+    `Adiar a nota ${doc} para ${destino}?\n\n` +
+    'Ela sai da conta deste mês e volta sozinha na próxima apuração, já calculada. ' +
+    'Use isso só quando a contabilidade lançou a nota em outro mês e não vai corrigir.',
+  )) return;
+
+  erro(null);
+  try {
+    const r = await fetch('/api/icms/transito/adiar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chave, linha, competencia: comp }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Não foi possível adiar');
+    await apurar();
+  } catch (e) {
+    erro(e.message);
+  }
 }
 
 // ── Recusar / reativar nota do trânsito ──────────────────────────────────────
@@ -356,7 +393,11 @@ function tabelaNotas(emp, t) {
         <td>${cel(d4)}</td>
         <td>${cel(d12)}</td>
         <td><b>${f4(d4 + d12)}</b></td>
-        <td><button class="mx-link" data-editar="${esc(n.doc)}" data-cnpj="${esc(emp.cnpj)}">conferir</button></td>
+        <td style="white-space:nowrap">
+          <button class="mx-link" data-editar="${esc(n.doc)}" data-cnpj="${esc(emp.cnpj)}">conferir</button>
+          ${n.chave ? `<button class="mx-link" data-adiar="${esc(n.chave)}" data-doc="${esc(n.doc)}"
+            style="margin-left:.5rem;color:#d29922">adiar</button>` : ''}
+        </td>
       </tr>
       ${n.ajuste ? `<tr class="${marcada ? '' : 'off'}"><td></td><td colspan="12" style="text-align:left;font-size:.72rem;color:#79c0ff">
         base ajustada à mão — original 4% ${f4(n.ajuste.base4Original)} / 12% ${f4(n.ajuste.base12Original)}
@@ -707,6 +748,8 @@ async function carregarHistorico() {
     box.innerHTML = renderHistorico(d);
     document.querySelectorAll('button[data-estorno]').forEach(b =>
       b.addEventListener('click', () => estornar(b.dataset.estorno, b.dataset.comp, b.dataset.nome)));
+    document.querySelectorAll('button[data-exportar]').forEach(b =>
+      b.addEventListener('click', () => exportarHistorico(b.dataset.exportar, b.dataset.comp)));
   } catch (e) {
     box.innerHTML = `<div class="mx-error">${esc(e.message)}</div>`;
   }
@@ -782,11 +825,31 @@ function renderHistorico(lista) {
         <td><b>${fBRL(a.difal)}</b></td>
         <td style="color:#3fb950">${fPct(base ? a.difal / base : 0)}</td>
         <td style="font-size:.7rem">${esc(a.finalizadaPor || '—')}<br>${a.finalizadaEm ? fData(String(a.finalizadaEm).slice(0, 10)) : ''}</td>
-        <td><button class="mx-link" data-estorno="${esc(a.cnpj)}" data-comp="${esc(a.competencia)}"
-              data-nome="${esc(apelidoDe(a.cnpj, a.empresa))}" style="color:#f85149">estornar</button></td>
+        <td style="white-space:nowrap">
+          <button class="mx-link" data-exportar="${esc(a.cnpj)}" data-comp="${esc(a.competencia)}">exportar</button>
+          <button class="mx-link" data-estorno="${esc(a.cnpj)}" data-comp="${esc(a.competencia)}"
+              data-nome="${esc(apelidoDe(a.cnpj, a.empresa))}" style="color:#f85149;margin-left:.5rem">estornar</button>
+        </td>
       </tr>`;
     }).join('')}
   </table></div>`;
+}
+
+// Refaz a planilha de um mês já fechado, direto do que foi gravado — sem
+// precisar dos arquivos de origem, que a essa altura já foram embora.
+async function exportarHistorico(cnpj, competencia) {
+  try {
+    const r = await fetch(`/api/icms/exportar-historico?cnpj=${encodeURIComponent(cnpj)}&competencia=${encodeURIComponent(competencia)}`);
+    if (!r.ok) throw new Error((await r.json()).error || 'Falha ao exportar');
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `ICMS-diferencial-${competencia}-${apelidoDe(cnpj, cnpj)}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) {
+    alert(e.message);
+  }
 }
 
 async function estornar(cnpj, competencia, nome) {
