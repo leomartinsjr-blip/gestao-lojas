@@ -442,6 +442,7 @@ function calcularPorEmpresa(notas, cfg = {}) {
     : null;
 
   const limiteTransito = _limiteTransito(cfg.competencia, cfg.diasTransito);
+  const recusadas = cfg.recusadas ? new Set(cfg.recusadas) : null;
 
   // Um relatório com várias empresas pode trazer o mesmo número/série duas
   // vezes — acontece nas transferências internas, que cada empresa numera por
@@ -513,10 +514,14 @@ function calcularPorEmpresa(notas, cfg = {}) {
     // devolvida ao fornecedor, ou ainda não foi importada.
     if (lancados && !lanc) {
       linha.semLancamento = true;
+      // Já sabemos que esta nunca vai ser lançada: alguém marcou como recusada
+      // e devolvida. Ela para de cobrar conferência e não volta para o trânsito.
+      linha.recusada = !!(recusadas && linha.chave && recusadas.has(linha.chave));
       // Emitida na virada do mês: a entrada cai na competência seguinte. Fica
       // marcada para ser guardada, porque o XML dela não vai poder ser baixado
       // de novo quando o lançamento chegar.
-      linha.emTransito = !!limiteTransito && !!linha.dhEmi && linha.dhEmi >= limiteTransito;
+      linha.emTransito = !linha.recusada
+        && !!limiteTransito && !!linha.dhEmi && linha.dhEmi >= limiteTransito;
 
       // Se a nota já não geraria diferencial por regra fiscal — devolução,
       // fornecedor de MG, ST —, a falta de lançamento não acrescenta nada.
@@ -531,14 +536,17 @@ function calcularPorEmpresa(notas, cfg = {}) {
           passos: linha.passos,
         };
         linha.incluida = false;
-        // O que se sabe com certeza é só que a nota não está no relatório do
-        // período. Pode ter sido recusada, pode ter sido lançada em outro mês.
-        // Afirmar "recusada" seria ir além do dado.
-        linha.motivo = linha.emTransito
-          ? `emitida em ${_dataBr(linha.dhEmi)}, no fim do mês — a entrada deve cair na competência seguinte`
-          : cfg.competencia && linha.dhEmi && !linha.dhEmi.startsWith(cfg.competencia)
-            ? `não consta no relatório do período (emitida em ${linha.dhEmi.slice(5, 7)}/${linha.dhEmi.slice(0, 4)})`
-            : 'não consta no relatório de lançamentos do período';
+        // Fora do caso em que alguém já conferiu e marcou como recusada, o que
+        // se sabe com certeza é só que a nota não está no relatório do período.
+        // Pode ter sido recusada, pode ter sido lançada em outro mês — afirmar
+        // "recusada" por conta própria seria ir além do dado.
+        linha.motivo = linha.recusada
+          ? 'recusada e devolvida ao fornecedor'
+          : linha.emTransito
+            ? `emitida em ${_dataBr(linha.dhEmi)}, no fim do mês — a entrada deve cair na competência seguinte`
+            : cfg.competencia && linha.dhEmi && !linha.dhEmi.startsWith(cfg.competencia)
+              ? `não consta no relatório do período (emitida em ${linha.dhEmi.slice(5, 7)}/${linha.dhEmi.slice(0, 4)})`
+              : 'não consta no relatório de lançamentos do período';
         linha.base4 = 0;
         linha.base12 = 0;
         linha.difal4 = 0;
@@ -725,6 +733,15 @@ function calcularPorEmpresa(notas, cfg = {}) {
   };
 }
 
+// Nota que nunca vai ser lançada não precisa ficar cobrando conferência todo
+// mês. Marcar como recusada a tira da fila sem apagar o registro — é o que
+// impede ela de voltar quando o mês da emissão for reapurado.
+const ACAO_RECUSAR = {
+  tipo: 'recusar',
+  rotulo: 'Recusada',
+  confirmar: 'Marcar como recusada e devolvida ao fornecedor? Ela sai da fila do trânsito e para de aparecer aqui.',
+};
+
 /**
  * Traduz o resultado em pendências, agrupadas pelo que precisa ser feito.
  * Cada grupo diz a situação em uma frase e lista as notas — a ideia é que
@@ -734,14 +751,19 @@ function calcularPorEmpresa(notas, cfg = {}) {
  */
 function montarPendencias(resultado) {
   const grupos = [];
-  const add = (tipo, titulo, acao, notas, gravidade = 'aviso') => {
-    if (notas.length) grupos.push({ tipo, titulo, acao, gravidade, qtd: notas.length, notas });
+  // `acaoNota` liga um botão por linha na tela; os grupos que não passam nada
+  // continuam sendo listas de leitura.
+  const add = (tipo, titulo, acao, notas, gravidade = 'aviso', acaoNota = null) => {
+    if (notas.length) grupos.push({ tipo, titulo, acao, gravidade, qtd: notas.length, notas, acaoNota });
   };
   const linhas = resultado.empresas.flatMap(e => e.linhas.map(l => ({ ...l, _empresa: e.empresa })));
   const semXml = resultado.semXml || [];
 
   const desc = l => ({
     doc: l.doc,
+    // A chave identifica a nota para as ações da tela — marcar como recusada,
+    // por exemplo. Sem ela o botão não teria o que mandar para o servidor.
+    chave: l.chave || null,
     fornecedor: l.fornecedor,
     valor: l.vlrTotal,
     dtLancamento: l.dtLancamento,
@@ -795,12 +817,14 @@ function montarPendencias(resultado) {
   add('sem-lancamento',
     'Têm XML, mas não têm entrada no Microvix',
     'Confira no Microvix: ou a nota foi recusada e devolvida, ou falta lançar',
-    linhas.filter(l => !l.jaApurada && !l.emTransito && /não consta no relatório de lançamentos/.test(l.motivo || ''))
+    linhas.filter(l => !l.jaApurada && !l.emTransito && !l.recusada
+      && /não consta no relatório de lançamentos/.test(l.motivo || ''))
       .map(l => ({
         ...desc(l),
         detalhe: [l.dhEmi ? `emitida em ${_dataBr(l.dhEmi)}` : '', l.natOp].filter(Boolean).join(' — '),
       })),
-    'grave');
+    'grave',
+    ACAO_RECUSAR);
 
   // Emitida na virada do mês e ainda sem entrada. Não é pendência de ninguém:
   // fica guardada e volta sozinha quando o lançamento aparecer. Separar isto do
@@ -814,7 +838,16 @@ function montarPendencias(resultado) {
         ...desc(l),
         detalhe: [l.dhEmi ? `emitida em ${_dataBr(l.dhEmi)}` : '', l.natOp].filter(Boolean).join(' — '),
       })),
-    'ok');
+    'ok',
+    ACAO_RECUSAR);
+
+  add('recusadas',
+    'Marcadas como recusadas e devolvidas ao fornecedor',
+    null,
+    linhas.filter(l => l.recusada)
+      .map(l => ({ ...desc(l), detalhe: 'não vai ser lançada — fora da fila do trânsito' })),
+    'ok',
+    { tipo: 'reativar', rotulo: 'Desfazer', confirmar: 'Tirar a marcação de recusada? A nota volta a esperar o lançamento.' });
 
   add('do-transito',
     'Voltaram do trânsito — XML lido em competência anterior',
@@ -836,9 +869,11 @@ function montarPendencias(resultado) {
     'Confira no Microvix: a essa altura ou a nota foi recusada, ou o lançamento ficou para trás',
     antigas.map(t => ({
       ...desc(t.linha || {}),
+      chave: t.chave || (t.linha && t.linha.chave) || null,
       detalhe: `sem entrada desde a apuração de ${t.competenciaOrigem}`,
     })),
-    'grave');
+    'grave',
+    ACAO_RECUSAR);
 
   add('outra-competencia',
     'Pertencem a outro mês',
@@ -850,7 +885,7 @@ function montarPendencias(resultado) {
   add('sem-diferencial',
     'Não geram diferencial por regra fiscal',
     null,
-    linhas.filter(l => !l.incluida && !l.jaApurada &&
+    linhas.filter(l => !l.incluida && !l.jaApurada && !l.recusada &&
       !/(não consta|fora da competência|emitida em)/.test(l.motivo || ''))
       .map(l => ({ ...desc(l), detalhe: l.motivo })),
     'ok');

@@ -34,7 +34,18 @@ async function guardar(db, { competencia, linhas, usuario } = {}) {
   const col = await _col(db);
   const agora = new Date();
 
-  const ops = linhas.filter(l => l.chave).map(l => ({
+  // Nota já marcada como recusada não volta para a fila. Sem isto, reapurar o
+  // mês da emissão a ressuscitaria toda vez: o XML dela continua no lote e o
+  // lançamento nunca vai existir. O filtro é feito antes do upsert de
+  // propósito — filtrar por status dentro dele daria erro de chave duplicada,
+  // porque o upsert tentaria inserir um _id que já existe.
+  const chaves = linhas.map(l => l.chave).filter(Boolean);
+  const recusadas = new Set(
+    (await col.find({ _id: { $in: chaves }, status: 'recusada' }, { projection: { _id: 1 } }).toArray())
+      .map(d => d._id),
+  );
+
+  const ops = linhas.filter(l => l.chave && !recusadas.has(l.chave)).map(l => ({
     updateOne: {
       filter: { _id: l.chave },
       update: {
@@ -52,15 +63,18 @@ async function guardar(db, { competencia, linhas, usuario } = {}) {
           atualizadaEm: agora,
           atualizadaPor: usuario || null,
         },
-        $setOnInsert: { guardadaEm: agora },
+        $setOnInsert: { guardadaEm: agora, status: 'aguardando' },
       },
       upsert: true,
     },
   }));
-  if (!ops.length) return { guardadas: 0 };
+  if (!ops.length) return { guardadas: 0, ignoradasRecusadas: recusadas.size };
 
   const r = await col.bulkWrite(ops, { ordered: false });
-  return { guardadas: (r.upsertedCount || 0) + (r.modifiedCount || 0) };
+  return {
+    guardadas: (r.upsertedCount || 0) + (r.modifiedCount || 0),
+    ignoradasRecusadas: recusadas.size,
+  };
 }
 
 /**
@@ -70,7 +84,8 @@ async function guardar(db, { competencia, linhas, usuario } = {}) {
 async function buscar(db, { cnpjs } = {}) {
   if (!db) return [];
   const col = await _col(db);
-  const filtro = cnpjs && cnpjs.length ? { cnpj: { $in: cnpjs } } : {};
+  const filtro = { status: { $ne: 'recusada' } };
+  if (cnpjs && cnpjs.length) filtro.cnpj = { $in: cnpjs };
   const docs = await col.find(filtro).toArray();
   return docs.map(d => ({
     doc: d.doc,
@@ -79,6 +94,44 @@ async function buscar(db, { cnpjs } = {}) {
     guardadaEm: d.guardadaEm,
     linha: d.linha,
   }));
+}
+
+/**
+ * Marca a nota como recusada e devolvida ao fornecedor. Ela sai da fila do
+ * trânsito e para de cobrar conferência, mas o registro fica: é o que impede
+ * ela de voltar quando o mês da emissão for reapurado, e o que permite
+ * desfazer se a marcação tiver sido engano.
+ */
+async function recusar(db, { chave, motivo, usuario } = {}) {
+  if (!db) throw new Error('Banco indisponível');
+  if (!chave) throw new Error('Informe a chave da nota');
+  const col = await _col(db);
+  const r = await col.updateOne(
+    { _id: chave },
+    { $set: { status: 'recusada', motivoRecusa: motivo || null, recusadaEm: new Date(), recusadaPor: usuario || null } },
+  );
+  if (!r.matchedCount) throw new Error('Nota não está no trânsito');
+  return { chave, status: 'recusada' };
+}
+
+/** Desfaz a marcação de recusada — a nota volta a esperar o lançamento. */
+async function reativar(db, chave) {
+  if (!db) throw new Error('Banco indisponível');
+  const col = await _col(db);
+  const r = await col.updateOne(
+    { _id: chave },
+    { $set: { status: 'aguardando' }, $unset: { motivoRecusa: '', recusadaEm: '', recusadaPor: '' } },
+  );
+  if (!r.matchedCount) throw new Error('Nota não está no trânsito');
+  return { chave, status: 'aguardando' };
+}
+
+/** As chaves marcadas como recusadas — o cálculo usa para não alarmar de novo. */
+async function chavesRecusadas(db) {
+  if (!db) return [];
+  const col = await _col(db);
+  const docs = await col.find({ status: 'recusada' }, { projection: { _id: 1 } }).toArray();
+  return docs.map(d => d._id);
 }
 
 /** Tira do trânsito as notas que já entraram numa apuração. */
@@ -96,4 +149,4 @@ async function listar(db, { cnpj } = {}) {
   return col.find(cnpj ? { cnpj } : {}).sort({ dhEmi: 1 }).toArray();
 }
 
-module.exports = { guardar, buscar, consumir, listar, COL };
+module.exports = { guardar, buscar, consumir, listar, recusar, reativar, chavesRecusadas, COL };

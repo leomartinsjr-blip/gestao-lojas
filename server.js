@@ -7038,10 +7038,14 @@ app.post('/api/icms/apurar', requireEscritorioOrAdmin,
       // Microvix só vai a 30 dias), então elas voltam daqui já calculadas.
       const transitoSvc = require('./services/icmsTransito');
       const transito = await transitoSvc.buscar(mongoDb, { cnpjs: cnpjsDoGrupo() });
+      // Notas já conferidas e marcadas como recusadas: não voltam para a fila
+      // nem cobram conferência de novo, mesmo com o XML ainda no lote.
+      const recusadas = await transitoSvc.chavesRecusadas(mongoDb);
 
       const resultado = calcularPorEmpresa(notas, {
         lancamentos,
         transito,
+        recusadas,
         cnpjsProprios: cnpjsDoGrupo(),
         competencia: req.body.competencia || null,
       });
@@ -7194,6 +7198,46 @@ app.post('/api/icms/finalizar', requireEscritorioOrAdmin, express.json({ limit: 
     res.json(r);
   } catch (e) {
     console.error('[icms/finalizar]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Trânsito entre competências ───────────────────────────────────────────
+// Nota recusada e devolvida ao fornecedor nunca vai ter lançamento. Marcar
+// isso a tira da fila sem apagar o registro — apagar faria ela voltar na
+// próxima vez que o mês da emissão fosse reapurado.
+app.post('/api/icms/transito/recusar', requireEscritorioOrAdmin, express.json(), async (req, res) => {
+  try {
+    const { recusar } = require('./services/icmsTransito');
+    const { chave, motivo } = req.body || {};
+    const r = await recusar(mongoDb, {
+      chave,
+      motivo,
+      usuario: req.session.user?.name || req.session.user?.login || null,
+    });
+    res.json(r);
+  } catch (e) {
+    console.error('[icms/transito/recusar]', e.message);
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.post('/api/icms/transito/reativar', requireEscritorioOrAdmin, express.json(), async (req, res) => {
+  try {
+    const { reativar } = require('./services/icmsTransito');
+    const r = await reativar(mongoDb, (req.body || {}).chave);
+    res.json(r);
+  } catch (e) {
+    console.error('[icms/transito/reativar]', e.message);
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.get('/api/icms/transito', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { listar } = require('./services/icmsTransito');
+    res.json(await listar(mongoDb, { cnpj: req.query.cnpj || null }));
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });

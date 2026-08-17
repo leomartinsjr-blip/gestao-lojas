@@ -142,6 +142,8 @@ function render() {
   $('pendencias').innerHTML = renderPendencias(d.pendencias || []);
   document.querySelectorAll('.mx-pend-hdr').forEach(h =>
     h.addEventListener('click', () => h.parentElement.classList.toggle('open')));
+  document.querySelectorAll('button[data-transito]').forEach(b =>
+    b.addEventListener('click', () => marcarTransito(b.dataset.transito, b.dataset.chave, b.dataset.confirmar)));
 
   $('empresas').innerHTML = d.empresas.map((e, i) => cardEmpresa(e, totais[i], i)).join('');
 
@@ -181,6 +183,27 @@ function render() {
     b.addEventListener('click', () => abrirEdicao(b.dataset.incluir, null)));
   document.querySelectorAll('button[data-desfazer]').forEach(b =>
     b.addEventListener('click', () => desfazerAjuste(b.dataset.desfazer)));
+}
+
+// ── Recusar / reativar nota do trânsito ──────────────────────────────────────
+// Depois de marcar, reapura em vez de mexer no resultado que está na tela: a
+// nota some de um grupo e aparece em outro, e quem sabe montar isso é o
+// servidor. Os arquivos já estão em memória, então é só refazer a chamada.
+async function marcarTransito(tipo, chave, confirmar) {
+  if (confirmar && !confirm(confirmar)) return;
+  erro(null);
+  try {
+    const r = await fetch(`/api/icms/transito/${tipo}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chave }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Não foi possível marcar a nota');
+    await apurar();
+  } catch (e) {
+    erro(e.message);
+  }
 }
 
 // ── Avisos sobre o lote ──────────────────────────────────────────────────────
@@ -280,13 +303,18 @@ function renderPendencias(grupos) {
       <div class="mx-pend-body">
         ${g.acao ? `<div class="mx-pend-acao">O que fazer: ${esc(g.acao)}</div>` : ''}
         <div class="mx-scroll"><table class="mx-t">
-          <tr><th>Nota</th><th>Fornecedor</th><th>Lçto</th><th>Valor</th><th>Situação</th></tr>
+          <tr><th>Nota</th><th>Fornecedor</th><th>Lçto</th><th>Valor</th><th>Situação</th>
+            ${g.acaoNota ? '<th></th>' : ''}</tr>
           ${g.notas.map(n => `<tr>
             <td>${esc(n.doc)}</td>
             <td style="text-align:left">${esc(n.fornecedor || '—')}</td>
             <td>${fData(n.dtLancamento)}</td>
             <td>${n.valor ? fBRL(n.valor) : '—'}</td>
             <td style="text-align:left">${esc(n.detalhe || '')}</td>
+            ${g.acaoNota ? `<td>${n.chave
+              ? `<button class="mx-btn ghost" style="font-size:.72rem;padding:.15rem .5rem" data-transito="${esc(g.acaoNota.tipo)}" data-chave="${esc(n.chave)}"
+                   data-confirmar="${esc(g.acaoNota.confirmar || '')}">${esc(g.acaoNota.rotulo)}</button>`
+              : ''}</td>` : ''}
           </tr>`).join('')}
         </table></div>
       </div>

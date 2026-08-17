@@ -275,6 +275,39 @@ ok('trânsito sem uso volta na lista', velho.transitoNaoUsado.length === 1);
 ok('trânsito parado há meses vira alarme',
   grupo(montarPendencias(velho), 'transito-antigo')?.qtd === 1);
 
+// ── Nota recusada ────────────────────────────────────────────────────────────
+// Nota devolvida ao fornecedor nunca vai ter lançamento. Marcada como recusada,
+// ela para de cobrar conferência e não volta para a fila do trânsito.
+console.log('\nNota recusada');
+const xmlRecusada = nfe({ nNF: '812', dhEmi: '2026-02-26', itens: [compra] });
+const chaveRecusada = parseNFe(xmlRecusada).chave;
+
+let semMarca = calcularPorEmpresa([{ xml: xmlRecusada }], { lancamentos: [], competencia: '2026-02' });
+ok('sem marcação, a nota fica em trânsito', linhasEmTransito(semMarca).length === 1);
+
+let comMarca = calcularPorEmpresa([{ xml: xmlRecusada }], {
+  lancamentos: [], competencia: '2026-02', recusadas: [chaveRecusada],
+});
+ok('recusada não volta para o trânsito', linhasEmTransito(comMarca).length === 0);
+ok('recusada não entra no total', perto(comMarca.totalGeral, 0));
+
+let gr = montarPendencias(comMarca);
+ok('recusada sai do grupo grave', !grupo(gr, 'sem-lancamento'));
+ok('recusada sai do grupo de trânsito', !grupo(gr, 'em-transito'));
+ok('recusada tem grupo próprio e informativo',
+  grupo(gr, 'recusadas')?.qtd === 1 && grupo(gr, 'recusadas')?.gravidade === 'ok');
+ok('recusada não vira "não gera diferencial"', !grupo(gr, 'sem-diferencial'));
+ok('grupo de recusadas oferece desfazer', grupo(gr, 'recusadas')?.acaoNota?.tipo === 'reativar');
+
+// A tela precisa da chave para saber o que mandar marcar.
+let gm = montarPendencias(semMarca);
+ok('linha em trânsito leva a chave da nota', grupo(gm, 'em-transito')?.notas[0].chave === chaveRecusada);
+ok('grupo em trânsito oferece marcar como recusada',
+  grupo(gm, 'em-transito')?.acaoNota?.tipo === 'recusar');
+ok('grupo "sem entrada" também oferece',
+  montarPendencias(calcularPorEmpresa([{ xml: nfe({ nNF: '813', dhEmi: '2026-02-03', itens: [compra] }) }],
+    { lancamentos: [], competencia: '2026-02' })).find(g2 => g2.tipo === 'sem-lancamento')?.acaoNota?.tipo === 'recusar');
+
 // ── Aviso de cobertura do lote ───────────────────────────────────────────────
 console.log('\nCobertura do lote de XML');
 let cob = calcularPorEmpresa([{ xml: nfe({ nNF: '820', dhEmi: '2026-02-03', itens: [compra] }) }], {
