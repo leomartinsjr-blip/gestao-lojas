@@ -101,6 +101,7 @@ table.mx-t tr.dup td{background:#2a1416}
   <div class="mx-controls">
     <button class="mx-btn ghost" id="tabApurar">Apurar</button>
     <button class="mx-btn ghost" id="tabResumo">Resumo</button>
+    <button class="mx-btn ghost" id="tabHistorico">Histórico</button>
     <span style="width:1px;height:20px;background:#30363d"></span>
     <input type="month" id="competencia" class="mx-inp">
     <button class="mx-btn" id="btnApurar" disabled>Apurar</button>
@@ -173,6 +174,14 @@ table.mx-t tr.dup td{background:#2a1416}
       <span class="mx-drop-d" style="margin-left:auto">Corte pela data de lançamento, sobre o que já foi finalizado.</span>
     </div>
     <div id="resumoBox"></div>
+  </div>
+
+  <div id="viewHistorico" style="display:none">
+    <div class="mx-filtro">
+      <span class="mx-drop-d">Competências já finalizadas, por loja. Só aparece aqui o que foi finalizado — apuração não finalizada não deixa rastro.</span>
+      <button class="mx-btn" id="btnHistorico" style="margin-left:auto">Atualizar</button>
+    </div>
+    <div id="historicoBox"></div>
   </div>
 </div>
 

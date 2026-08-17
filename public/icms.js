@@ -29,15 +29,16 @@ const selecao = new Set();      // chaves marcadas
 
 // ── Abas ─────────────────────────────────────────────────────────────────────
 function mostrarAba(qual) {
-  $('viewApurar').style.display = qual === 'apurar' ? 'block' : 'none';
-  $('viewResumo').style.display = qual === 'resumo' ? 'block' : 'none';
-  $('tabApurar').style.background = qual === 'apurar' ? '#1f6feb' : 'transparent';
-  $('tabResumo').style.background = qual === 'resumo' ? '#1f6feb' : 'transparent';
+  ['apurar', 'resumo', 'historico'].forEach(a => {
+    $('view' + a[0].toUpperCase() + a.slice(1)).style.display = qual === a ? 'block' : 'none';
+    $('tab' + a[0].toUpperCase() + a.slice(1)).style.background = qual === a ? '#1f6feb' : 'transparent';
+  });
   ['competencia', 'btnApurar', 'btnExportar', 'btnFinalizar'].forEach(id =>
     $(id).style.display = qual === 'apurar' ? '' : 'none');
 }
 $('tabApurar').addEventListener('click', () => mostrarAba('apurar'));
 $('tabResumo').addEventListener('click', () => { mostrarAba('resumo'); carregarResumo(); });
+$('tabHistorico').addEventListener('click', () => { mostrarAba('historico'); carregarHistorico(); });
 
 // ── Upload ───────────────────────────────────────────────────────────────────
 function ligarDrop(idDrop, idInput, idLista, guardar) {
@@ -449,6 +450,124 @@ function renderResumo(d) {
   </table></div>`;
 }
 
+// ── Histórico: competência × loja ────────────────────────────────────────────
+let empresasCad = [];
+
+async function carregarHistorico() {
+  const box = $('historicoBox');
+  box.innerHTML = '<div class="mx-state"><div class="mx-spinner"></div><div>Carregando…</div></div>';
+  try {
+    const r = await fetch('/api/icms/apuracoes');
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Falha ao carregar');
+    box.innerHTML = renderHistorico(d);
+    document.querySelectorAll('button[data-estorno]').forEach(b =>
+      b.addEventListener('click', () => estornar(b.dataset.estorno, b.dataset.comp, b.dataset.nome)));
+  } catch (e) {
+    box.innerHTML = `<div class="mx-error">${esc(e.message)}</div>`;
+  }
+}
+$('btnHistorico').addEventListener('click', carregarHistorico);
+
+function apelidoDe(cnpj, fallback) {
+  const c = empresasCad.find(e => e.cnpj === cnpj);
+  return c ? c.apelido : (fallback || cnpj);
+}
+
+function renderHistorico(lista) {
+  if (!lista.length) {
+    return '<div class="mx-state">Nada finalizado ainda.<br>' +
+      'O histórico começa a existir quando você finalizar a primeira competência.</div>';
+  }
+
+  // Matriz competência × empresa
+  const comps = [...new Set(lista.map(a => a.competencia))].sort().reverse();
+  const cnpjs = [...new Set(lista.map(a => a.cnpj))];
+  const celula = {};
+  lista.forEach(a => { celula[a.competencia + '|' + a.cnpj] = a; });
+
+  const totalPorCnpj = cnpjs.map(c => lista.filter(a => a.cnpj === c).reduce((s, a) => s + a.difal, 0));
+  const totalGeral = lista.reduce((s, a) => s + a.difal, 0);
+
+  return `
+  <div class="mx-summary" style="grid-template-columns:repeat(3,1fr)">
+    <div class="mx-sum-card"><div class="mx-sum-label">Total já apurado</div><div class="mx-sum-val blue">${fBRL(totalGeral)}</div></div>
+    <div class="mx-sum-card"><div class="mx-sum-label">Competências</div><div class="mx-sum-val">${comps.length}</div></div>
+    <div class="mx-sum-card"><div class="mx-sum-label">Notas</div><div class="mx-sum-val">${lista.reduce((s, a) => s + (a.qtdNotas || 0), 0)}</div></div>
+  </div>
+
+  <div class="mx-scroll"><table class="mx-t">
+    <tr>
+      <th>Competência</th>
+      ${cnpjs.map(c => `<th>${esc(apelidoDe(c, celula[comps[0] + '|' + c]?.empresa))}</th>`).join('')}
+      <th>Total do mês</th>
+    </tr>
+    ${comps.map(comp => {
+      const doMes = cnpjs.map(c => celula[comp + '|' + c]);
+      const tot = doMes.reduce((s, a) => s + (a ? a.difal : 0), 0);
+      return `<tr>
+        <td><b>${esc(comp)}</b></td>
+        ${doMes.map(a => a
+          ? `<td title="${a.qtdNotas} notas — finalizada por ${esc(a.finalizadaPor || '—')}">${fBRL(a.difal)}</td>`
+          : '<td style="color:#484f58">—</td>').join('')}
+        <td><b>${fBRL(tot)}</b></td>
+      </tr>`;
+    }).join('')}
+    <tr class="tot">
+      <td>Total</td>
+      ${totalPorCnpj.map(v => `<td>${fBRL(v)}</td>`).join('')}
+      <td>${fBRL(totalGeral)}</td>
+    </tr>
+  </table></div>
+
+  <div class="mx-sec">Detalhe das competências finalizadas</div>
+  <div class="mx-scroll"><table class="mx-t">
+    <tr>
+      <th>Competência</th><th>Empresa</th><th>Notas</th>
+      <th>Base 4%</th><th>Base 12%</th><th>DIFAL 4%</th><th>DIFAL 12%</th><th>Total</th>
+      <th>Alíq. efetiva</th><th>Finalizada</th><th></th>
+    </tr>
+    ${lista.map(a => {
+      const base = (a.base4 || 0) + (a.base12 || 0);
+      return `<tr>
+        <td>${esc(a.competencia)}</td>
+        <td style="text-align:left">${esc(apelidoDe(a.cnpj, a.empresa))}</td>
+        <td>${a.qtdNotas}</td>
+        <td>${fBRL(a.base4)}</td><td>${fBRL(a.base12)}</td>
+        <td>${fBRL(a.difal4)}</td><td>${fBRL(a.difal12)}</td>
+        <td><b>${fBRL(a.difal)}</b></td>
+        <td style="color:#3fb950">${fPct(base ? a.difal / base : 0)}</td>
+        <td style="font-size:.7rem">${esc(a.finalizadaPor || '—')}<br>${a.finalizadaEm ? fData(String(a.finalizadaEm).slice(0, 10)) : ''}</td>
+        <td><button class="mx-link" data-estorno="${esc(a.cnpj)}" data-comp="${esc(a.competencia)}"
+              data-nome="${esc(apelidoDe(a.cnpj, a.empresa))}" style="color:#f85149">estornar</button></td>
+      </tr>`;
+    }).join('')}
+  </table></div>`;
+}
+
+async function estornar(cnpj, competencia, nome) {
+  const ok = confirm(
+    `Estornar ${nome} — competência ${competencia}?\n\n` +
+    'As notas voltam a ficar disponíveis para reapuração. Faça isso só se a ' +
+    'apuração estiver errada e for refeita — se o imposto já foi recolhido, ' +
+    'estornar aqui não desfaz o pagamento.',
+  );
+  if (!ok) return;
+  try {
+    const r = await fetch('/api/icms/estornar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cnpj, competencia }),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Falha ao estornar');
+    alert(`${d.removidas} nota(s) liberadas para reapuração.`);
+    carregarHistorico();
+  } catch (e) {
+    alert(e.message);
+  }
+}
+
 // ── Boot ─────────────────────────────────────────────────────────────────────
 (async function init() {
   const r = await fetch('/api/me');
@@ -461,9 +580,9 @@ function renderResumo(d) {
   $('resAte').value = new Date().toISOString().slice(0, 10);
 
   try {
-    const emp = await (await fetch('/api/icms/empresas')).json();
+    empresasCad = await (await fetch('/api/icms/empresas')).json();
     $('resCnpj').innerHTML = '<option value="">Todas as empresas</option>' +
-      emp.filter(e => e.ativa).map(e => `<option value="${esc(e.cnpj)}">${esc(e.apelido)}</option>`).join('');
+      empresasCad.filter(e => e.ativa).map(e => `<option value="${esc(e.cnpj)}">${esc(e.apelido)}</option>`).join('');
   } catch { /* o seletor fica só com "todas" */ }
 
   mostrarAba('apurar');
