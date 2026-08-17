@@ -7033,8 +7033,15 @@ app.post('/api/icms/apurar', requireEscritorioOrAdmin,
         else notas.push(...lerXmlsDoZip(f.buffer));
       }
 
+      // Notas de competências anteriores que tinham XML mas ainda não tinham
+      // lançamento. O XML delas não pode mais ser baixado (a extração do
+      // Microvix só vai a 30 dias), então elas voltam daqui já calculadas.
+      const transitoSvc = require('./services/icmsTransito');
+      const transito = await transitoSvc.buscar(mongoDb, { cnpjs: cnpjsDoGrupo() });
+
       const resultado = calcularPorEmpresa(notas, {
         lancamentos,
+        transito,
         cnpjsProprios: cnpjsDoGrupo(),
         competencia: req.body.competencia || null,
       });
@@ -7094,12 +7101,38 @@ app.post('/api/icms/apurar', requireEscritorioOrAdmin,
         conferencia.competenciasNoArquivo = [...new Set(notasContabilidade.competencias)];
       }
 
+      // Guarda as notas que apareceram no XML mas ainda não têm entrada. É o
+      // que permite baixar cada XML uma vez só, no mês da emissão: quando o
+      // lançamento chegar na competência seguinte, a nota volta calculada.
+      const { linhasEmTransito } = require('./services/difal');
+      const emTransito = linhasEmTransito(resultado);
+      let guardadas = 0;
+      if (emTransito.length) {
+        try {
+          const r = await transitoSvc.guardar(mongoDb, {
+            competencia,
+            linhas: emTransito,
+            usuario: req.session.user?.name || req.session.user?.login || null,
+          });
+          guardadas = r.guardadas;
+        } catch (e) {
+          // Não guardar o trânsito não invalida a apuração que está na tela.
+          console.error('[icms/apurar] falha ao guardar trânsito:', e.message);
+        }
+      }
+
       // As pendências são montadas depois da marcação de duplicidade, para o
       // "já computada em" entrar junto.
       const { montarPendencias } = require('./services/difal');
 
       res.json({
         conferencia,
+        transito: {
+          guardadas,
+          emTransito: emTransito.length,
+          recuperadas: resultado.empresas
+            .reduce((s, e) => s + e.linhas.filter(l => l.doTransito).length, 0),
+        },
         competencia: req.body.competencia || null,
         periodos,
         duplicadas,
@@ -7150,6 +7183,14 @@ app.post('/api/icms/finalizar', requireEscritorioOrAdmin, express.json({ limit: 
       competencia, cnpj, empresa, linhas,
       usuario: req.session.user?.name || req.session.user?.login || null,
     });
+
+    // Nota que entrou numa apuração não está mais em trânsito.
+    try {
+      await require('./services/icmsTransito').consumir(mongoDb, linhas.map(l => l.chave));
+    } catch (e) {
+      console.error('[icms/finalizar] falha ao limpar trânsito:', e.message);
+    }
+
     res.json(r);
   } catch (e) {
     console.error('[icms/finalizar]', e.message);

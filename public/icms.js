@@ -8,7 +8,9 @@ const $ = id => document.getElementById(id);
 const ALIQ_INTERNA = 0.18;
 
 const fBRL = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const f4 = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+// Base e imposto em duas casas, como qualquer valor em real. As quatro casas
+// eram resíduo da planilha feita à mão, não precisão de verdade.
+const f4 = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const fPct = v => (Number(v || 0) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
 const fData = s => s ? String(s).slice(8, 10) + '/' + String(s).slice(5, 7) + '/' + String(s).slice(0, 4) : '—';
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -76,6 +78,7 @@ function erro(msg) {
 async function apurar() {
   erro(null);
   $('alertBox').style.display = 'none';
+  $('avisos').innerHTML = '';
   $('empresas').innerHTML = '';
   $('summaryStrip').style.display = 'none';
   $('stateBox').style.display = 'block';
@@ -134,6 +137,7 @@ function render() {
   $('btnExportar').disabled = notas === 0;
   $('btnFinalizar').disabled = notas === 0;
 
+  $('avisos').innerHTML = renderAvisos(d.avisos || []);
   $('conferencia').innerHTML = renderConferencia(d.conferencia);
   $('pendencias').innerHTML = renderPendencias(d.pendencias || []);
   document.querySelectorAll('.mx-pend-hdr').forEach(h =>
@@ -177,6 +181,22 @@ function render() {
     b.addEventListener('click', () => abrirEdicao(b.dataset.incluir, null)));
   document.querySelectorAll('button[data-desfazer]').forEach(b =>
     b.addEventListener('click', () => desfazerAjuste(b.dataset.desfazer)));
+}
+
+// ── Avisos sobre o lote ──────────────────────────────────────────────────────
+// Falam do que foi enviado, não de nota específica — por isso ficam acima da
+// conferência: é o que explica a diferença antes de ela aparecer no total.
+function renderAvisos(avisos) {
+  return avisos.map(a => `
+    <div class="mx-pend ${a.gravidade || 'aviso'}">
+      <div style="display:flex;align-items:center;gap:.6rem;padding:.6rem .9rem .2rem">
+        <span class="mx-pend-ico">${ICONE[a.gravidade] || '•'}</span>
+        <span class="mx-pend-tit">${esc(a.titulo)}</span>
+      </div>
+      <div style="font-size:.78rem;color:#8b949e;line-height:1.55;padding:0 .9rem .7rem 2.5rem">
+        ${esc(a.detalhe)}
+      </div>
+    </div>`).join('');
 }
 
 // ── Confronto com a contabilidade ────────────────────────────────────────────

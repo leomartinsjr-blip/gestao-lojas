@@ -10,6 +10,12 @@
 
 const ALIQ_INTERNA_PADRAO = 0.18;
 
+// Folga entre a emissão da nota e a entrada dela no sistema. Nota emitida nos
+// últimos dias da competência quase sempre é lançada no mês seguinte, porque a
+// mercadoria ainda está viajando. Isso não é nota recusada nem erro de
+// lançamento: é trânsito, e o imposto dela pertence ao mês que vem.
+const DIAS_TRANSITO = 8;
+
 // A planilha de recomposição (09-2025) calcula passo a passo e chega no fator
 // sem arredondar, então é esse o padrão:
 //   exclusão do ICMS interestadual → base × (1 − alq_origem)
@@ -356,6 +362,59 @@ function chaveDoc(nNF, serie) {
   return `${n}/${s}`;
 }
 
+// "2026-02-25" → "25/02/2026"
+function _dataBr(d) {
+  return d ? `${String(d).slice(8, 10)}/${String(d).slice(5, 7)}/${String(d).slice(0, 4)}` : '';
+}
+
+// A partir de que dia uma emissão já é considerada trânsito para o mês seguinte.
+// Sem competência não dá para dizer onde o mês termina, e aí ninguém é trânsito.
+function _limiteTransito(competencia, dias = DIAS_TRANSITO) {
+  if (!competencia) return null;
+  const [ano, mes] = String(competencia).split('-').map(Number);
+  if (!ano || !mes) return null;
+  const fim = new Date(Date.UTC(ano, mes, 0));        // último dia da competência
+  fim.setUTCDate(fim.getUTCDate() - dias);
+  return fim.toISOString().slice(0, 10);
+}
+
+// Quantos meses separam duas competências "YYYY-MM".
+function _mesesEntre(de, ate) {
+  const [ay, am] = String(de).split('-').map(Number);
+  const [by, bm] = String(ate).split('-').map(Number);
+  if (!ay || !am || !by || !bm) return 0;
+  return (by * 12 + bm) - (ay * 12 + am);
+}
+
+// Devolve a nota guardada em trânsito ao estado em que ela seria calculada
+// hoje: as bases voltam de `calculado`, que é onde elas foram parar quando a
+// nota foi zerada por não ter lançamento.
+function _restaurarDoTransito(guardada, origem) {
+  const l = JSON.parse(JSON.stringify(guardada));
+  if (l.calculado) {
+    l.base4 = l.calculado.base4 || 0;
+    l.base12 = l.calculado.base12 || 0;
+    l.difal4 = l.calculado.difal4 || 0;
+    l.difal12 = l.calculado.difal12 || 0;
+    l.difal = l.calculado.difal || 0;
+    l.passos = l.calculado.passos;
+    l.incluida = true;
+    l.motivo = '';
+    delete l.calculado;
+  }
+  // Nota que não gerava imposto volta do mesmo jeito, com o motivo original —
+  // o que ela evita é reaparecer no mês seguinte como "lançada sem XML".
+  delete l.semLancamento;
+  delete l.emTransito;
+  l.doTransito = { competencia: origem || null };
+  return l;
+}
+
+/** As notas que ficaram esperando o lançamento — é isto que o banco guarda. */
+function linhasEmTransito(resultado) {
+  return resultado.empresas.flatMap(e => e.linhas.filter(l => l.emTransito && l.chave));
+}
+
 /**
  * Apura por empresa. Cada CNPJ é contribuinte próprio, então o resultado sai
  * separado por destinatário, com o total geral apenas como soma de conferência.
@@ -369,11 +428,20 @@ function chaveDoc(nNF, serie) {
  *   vinda do Microvix — [{ nNF, serie, dtLancamento }]. É o filtro que separa
  *   o que foi lançado do que foi recusado e devolvido ao fornecedor. Sem ela,
  *   o XML sozinho não tem como saber a diferença, então todas entram.
+ *
+ * cfg.transito: notas de competências anteriores que tinham XML mas ainda não
+ *   tinham lançamento — [{ doc, competenciaOrigem, linha }]. Quando o
+ *   lançamento finalmente aparece, a nota volta daqui já calculada. É o que
+ *   permite baixar cada XML uma vez só, no mês da emissão: o relatório de XML
+ *   do Microvix só deixa extrair 30 dias, então o XML de uma nota emitida em
+ *   25/02 e lançada em 05/03 não pode mais ser baixado na apuração de março.
  */
 function calcularPorEmpresa(notas, cfg = {}) {
   const proprios = cfg.cnpjsProprios
     ? new Set(cfg.cnpjsProprios.map(c => String(c).replace(/\D/g, '')))
     : null;
+
+  const limiteTransito = _limiteTransito(cfg.competencia, cfg.diasTransito);
 
   // Um relatório com várias empresas pode trazer o mesmo número/série duas
   // vezes — acontece nas transferências internas, que cada empresa numera por
@@ -444,25 +512,38 @@ function calcularPorEmpresa(notas, cfg = {}) {
     // Nota sem lançamento correspondente não gera imposto: ou foi recusada e
     // devolvida ao fornecedor, ou ainda não foi importada.
     if (lancados && !lanc) {
+      linha.semLancamento = true;
+      // Emitida na virada do mês: a entrada cai na competência seguinte. Fica
+      // marcada para ser guardada, porque o XML dela não vai poder ser baixado
+      // de novo quando o lançamento chegar.
+      linha.emTransito = !!limiteTransito && !!linha.dhEmi && linha.dhEmi >= limiteTransito;
+
       // Se a nota já não geraria diferencial por regra fiscal — devolução,
       // fornecedor de MG, ST —, a falta de lançamento não acrescenta nada.
       // Sobrescrever o motivo aqui a transformaria em alarme falso, pedindo
       // conferência de uma nota que nunca deveria ter entrada mesmo.
       if (linha.incluida) {
+        // O que já foi calculado é guardado antes de zerar: é dele que a nota
+        // volta inteira quando o lançamento aparecer no mês seguinte.
+        linha.calculado = {
+          base4: linha.base4, base12: linha.base12,
+          difal4: linha.difal4, difal12: linha.difal12, difal: linha.difal,
+          passos: linha.passos,
+        };
         linha.incluida = false;
         // O que se sabe com certeza é só que a nota não está no relatório do
         // período. Pode ter sido recusada, pode ter sido lançada em outro mês.
         // Afirmar "recusada" seria ir além do dado.
-        linha.motivo = cfg.competencia && linha.dhEmi && !linha.dhEmi.startsWith(cfg.competencia)
-          ? `não consta no relatório do período (emitida em ${linha.dhEmi.slice(5, 7)}/${linha.dhEmi.slice(0, 4)})`
-          : 'não consta no relatório de lançamentos do período';
+        linha.motivo = linha.emTransito
+          ? `emitida em ${_dataBr(linha.dhEmi)}, no fim do mês — a entrada deve cair na competência seguinte`
+          : cfg.competencia && linha.dhEmi && !linha.dhEmi.startsWith(cfg.competencia)
+            ? `não consta no relatório do período (emitida em ${linha.dhEmi.slice(5, 7)}/${linha.dhEmi.slice(0, 4)})`
+            : 'não consta no relatório de lançamentos do período';
         linha.base4 = 0;
         linha.base12 = 0;
         linha.difal4 = 0;
         linha.difal12 = 0;
         linha.difal = 0;
-      } else {
-        linha.semLancamento = true;
       }
     } else if (lanc) {
       casados.add(lanc._i);
@@ -492,6 +573,55 @@ function calcularPorEmpresa(notas, cfg = {}) {
     porCnpj.get(cnpj).linhas.push(linha);
   }
 
+  // ── Notas que voltam do trânsito ─────────────────────────────────────────
+  // Lançamento sem XML no lote, mas com a nota guardada de uma competência
+  // anterior: ela volta já calculada. Sem isto o imposto dela se perderia,
+  // porque o XML não pode mais ser baixado.
+  const transitoNaoUsado = [];
+  if (lancados && cfg.transito && cfg.transito.length) {
+    const guardadasPorDoc = new Map();
+    for (const t of cfg.transito) {
+      const k = t.doc || chaveDoc(t.linha && t.linha.nNF, t.linha && t.linha.serie);
+      if (!guardadasPorDoc.has(k)) guardadasPorDoc.set(k, []);
+      guardadasPorDoc.get(k).push(t);
+    }
+
+    for (const l of [...lancados.values()].flat()) {
+      if (casados.has(l._i)) continue;
+      const guardadas = guardadasPorDoc.get(chaveDoc(l.nNF, l.serie));
+      if (!guardadas) continue;
+      // O XML no lote sempre ganha da cópia guardada: ele é o dado de origem.
+      const t = guardadas.find(x => !x._usada && x.linha && !vistas.has(x.linha.chave));
+      if (!t) continue;
+      t._usada = true;
+
+      const linha = _restaurarDoTransito(t.linha, t.competenciaOrigem);
+      linha.dtLancamento = l.dtLancamento || null;
+      casados.add(l._i);
+      if (l.emp) empsComXml.add(l.emp);
+      if (linha.chave) vistas.add(linha.chave);
+
+      // O corte é o mesmo do caminho normal: quem manda é a data de entrada.
+      if (cfg.competencia && l.dtLancamento && !l.dtLancamento.startsWith(cfg.competencia)) {
+        const [ano, mes] = l.dtLancamento.split('-');
+        linha.incluida = false;
+        linha.motivo = `lançada em ${mes}/${ano}, fora da competência`;
+        linha.base4 = 0;
+        linha.base12 = 0;
+        linha.difal4 = 0;
+        linha.difal12 = 0;
+        linha.difal = 0;
+      }
+
+      const cnpj = linha.cnpjEmpresa;
+      if (!porCnpj.has(cnpj)) porCnpj.set(cnpj, { cnpj, empresa: linha.empresa, linhas: [] });
+      porCnpj.get(cnpj).linhas.push(linha);
+    }
+
+    transitoNaoUsado.push(...cfg.transito.filter(t => !t._usada));
+    cfg.transito.forEach(t => { delete t._usada; });
+  }
+
   // Lançado no Microvix mas sem XML no lote. Em geral é imposto que ninguém
   // calculou e precisa aparecer — mas transferência entre lojas do grupo é
   // operação interna de MG, não gera diferencial, e o XML nem passa pela tela
@@ -518,6 +648,51 @@ function calcularPorEmpresa(notas, cfg = {}) {
         })
     : [];
 
+  // ── Avisos sobre o lote enviado ──────────────────────────────────────────
+  // O relatório de XML do Microvix só extrai 30 dias, então é fácil o lote
+  // começar depois das notas que foram lançadas no início da competência —
+  // elas foram emitidas no mês passado e o XML delas ficou no lote de lá.
+  // Comparar a emissão mais antiga do lote com a emissão dos lançamentos que
+  // ficaram sem XML mostra isso antes de a diferença aparecer na conferência.
+  const avisos = [];
+  const emissoesDoLote = [...porCnpj.values()]
+    .flatMap(e => e.linhas.filter(l => !l.doTransito && l.dhEmi).map(l => l.dhEmi));
+  const menorEmi = emissoesDoLote.length ? emissoesDoLote.sort()[0] : null;
+
+  const anterioresAoLote = semXml.filter(x =>
+    x.relevante && x.dtEmissao && menorEmi && x.dtEmissao < menorEmi);
+  if (anterioresAoLote.length) {
+    avisos.push({
+      tipo: 'lote-comeca-tarde',
+      gravidade: 'grave',
+      titulo: `${anterioresAoLote.length} nota(s) lançadas nesta competência foram emitidas antes do começo do seu lote de XML`,
+      detalhe: `A nota mais antiga do lote foi emitida em ${_dataBr(menorEmi)}, mas essas entraram com emissão anterior — o XML delas está no lote do mês passado. `
+        + 'Suba também aquele lote, ou lance a base à mão pelo ajuste manual. '
+        + 'A partir da competência seguinte isso se resolve sozinho: notas emitidas no fim do mês ficam guardadas e voltam quando o lançamento aparece.',
+    });
+  }
+
+  const guardadas = [...porCnpj.values()].flatMap(e => e.linhas.filter(l => l.emTransito));
+  if (guardadas.length) {
+    avisos.push({
+      tipo: 'em-transito',
+      gravidade: 'ok',
+      titulo: `${guardadas.length} nota(s) emitidas no fim do mês ficaram guardadas`,
+      detalhe: 'Elas ainda não têm entrada no Microvix. Ficam salvas já calculadas e entram sozinhas '
+        + 'na competência em que forem lançadas, sem precisar baixar o XML de novo.',
+    });
+  }
+
+  const recuperadas = [...porCnpj.values()].flatMap(e => e.linhas.filter(l => l.doTransito));
+  if (recuperadas.length) {
+    avisos.push({
+      tipo: 'do-transito',
+      gravidade: 'ok',
+      titulo: `${recuperadas.length} nota(s) voltaram do trânsito de competências anteriores`,
+      detalhe: 'O XML delas foi lido num mês anterior e o lançamento apareceu agora. Entraram nesta apuração.',
+    });
+  }
+
   const empresas = [...porCnpj.values()].map(e => {
     const incluidas = e.linhas.filter(l => l.incluida);
     const base4 = incluidas.reduce((s, l) => s + l.base4, 0);
@@ -543,6 +718,9 @@ function calcularPorEmpresa(notas, cfg = {}) {
     empresas,
     ignoradas,
     semXml,
+    avisos,
+    competencia: cfg.competencia || null,
+    transitoNaoUsado,
     totalGeral: empresas.reduce((s, e) => s + e.totais.difal, 0),
   };
 }
@@ -559,8 +737,6 @@ function montarPendencias(resultado) {
   const add = (tipo, titulo, acao, notas, gravidade = 'aviso') => {
     if (notas.length) grupos.push({ tipo, titulo, acao, gravidade, qtd: notas.length, notas });
   };
-  const _dataBr = d => (d ? String(d).slice(8, 10) + '/' + String(d).slice(5, 7) + '/' + String(d).slice(0, 4) : '');
-
   const linhas = resultado.empresas.flatMap(e => e.linhas.map(l => ({ ...l, _empresa: e.empresa })));
   const semXml = resultado.semXml || [];
 
@@ -619,17 +795,55 @@ function montarPendencias(resultado) {
   add('sem-lancamento',
     'Têm XML, mas não têm entrada no Microvix',
     'Confira no Microvix: ou a nota foi recusada e devolvida, ou falta lançar',
-    linhas.filter(l => !l.jaApurada && /não consta no relatório de lançamentos/.test(l.motivo || ''))
+    linhas.filter(l => !l.jaApurada && !l.emTransito && /não consta no relatório de lançamentos/.test(l.motivo || ''))
       .map(l => ({
         ...desc(l),
         detalhe: [l.dhEmi ? `emitida em ${_dataBr(l.dhEmi)}` : '', l.natOp].filter(Boolean).join(' — '),
       })),
     'grave');
 
+  // Emitida na virada do mês e ainda sem entrada. Não é pendência de ninguém:
+  // fica guardada e volta sozinha quando o lançamento aparecer. Separar isto do
+  // grupo de cima é o que faz a nota realmente atrasada parar de se esconder no
+  // meio das que estão só a caminho.
+  add('em-transito',
+    'Emitidas no fim do mês, ainda sem entrada — guardadas para a competência seguinte',
+    null,
+    linhas.filter(l => !l.jaApurada && l.emTransito)
+      .map(l => ({
+        ...desc(l),
+        detalhe: [l.dhEmi ? `emitida em ${_dataBr(l.dhEmi)}` : '', l.natOp].filter(Boolean).join(' — '),
+      })),
+    'ok');
+
+  add('do-transito',
+    'Voltaram do trânsito — XML lido em competência anterior',
+    null,
+    linhas.filter(l => l.doTransito && l.incluida)
+      .map(l => ({
+        ...desc(l),
+        detalhe: `XML lido na apuração de ${l.doTransito.competencia || 'competência anterior'}`,
+      })),
+    'ok');
+
+  // Guardada há meses e o lançamento nunca apareceu. A essa altura já não é
+  // trânsito: ou a nota foi recusada, ou alguém esqueceu de lançar.
+  const antigas = (resultado.transitoNaoUsado || []).filter(t =>
+    resultado.competencia && t.competenciaOrigem
+    && _mesesEntre(t.competenciaOrigem, resultado.competencia) >= 2);
+  add('transito-antigo',
+    'Guardadas há dois meses ou mais e ainda sem entrada',
+    'Confira no Microvix: a essa altura ou a nota foi recusada, ou o lançamento ficou para trás',
+    antigas.map(t => ({
+      ...desc(t.linha || {}),
+      detalhe: `sem entrada desde a apuração de ${t.competenciaOrigem}`,
+    })),
+    'grave');
+
   add('outra-competencia',
     'Pertencem a outro mês',
     null,
-    linhas.filter(l => !l.jaApurada && /(fora da competência|emitida em)/.test(l.motivo || ''))
+    linhas.filter(l => !l.jaApurada && !l.emTransito && /(fora da competência|emitida em)/.test(l.motivo || ''))
       .map(l => ({ ...desc(l), detalhe: l.motivo })),
     'ok');
 
@@ -702,7 +916,9 @@ module.exports = {
   calcularLote,
   calcularPorEmpresa,
   montarPendencias,
+  linhasEmTransito,
   chaveDoc,
+  DIAS_TRANSITO,
   fatorExato,
   FATORES_ARREDONDADOS,
   ALIQ_INTERNA_PADRAO,

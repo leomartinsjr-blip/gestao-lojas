@@ -216,6 +216,84 @@ res = calcularPorEmpresa([{ xml: nfe({ nNF: '704', itens: [{ cfop: '6949', vBC: 
 g = montarPendencias(res);
 ok('nota fora do cálculo não pede conferência', !grupo(g, 'conferir'));
 
+// ── Trânsito entre competências ──────────────────────────────────────────────
+// O relatório de XML do Microvix só extrai 30 dias: nota emitida no fim do mês
+// tem XML agora e lançamento só no mês que vem. Se ela não ficar guardada, o
+// imposto se perde nas duas apurações.
+console.log('\nTrânsito entre competências');
+const { linhasEmTransito } = require('../services/difal');
+
+// Fevereiro: a nota 810 foi emitida em 25/02 e ainda não tem entrada.
+let fev = calcularPorEmpresa([
+  { xml: nfe({ nNF: '810', dhEmi: '2026-02-25', itens: [compra] }) },
+  { xml: nfe({ nNF: '811', dhEmi: '2026-02-04', itens: [compra] }) },
+], { lancamentos: [], competencia: '2026-02' });
+
+const guardar = linhasEmTransito(fev);
+ok('emitida no fim do mês fica em trânsito', guardar.length === 1 && guardar[0].nNF === '810');
+ok('emitida no começo do mês continua alarmando',
+  fev.empresas[0].linhas.find(l => l.nNF === '811')?.emTransito !== true);
+ok('trânsito guarda a base já calculada', perto(guardar[0].calculado?.difal, 73.17));
+ok('trânsito não entra no total de fevereiro', perto(fev.totalGeral, 0));
+
+let gf = montarPendencias(fev);
+ok('trânsito sai do grupo grave', grupo(gf, 'sem-lancamento')?.qtd === 1);
+ok('trânsito tem grupo próprio e informativo',
+  grupo(gf, 'em-transito')?.qtd === 1 && grupo(gf, 'em-transito')?.gravidade === 'ok');
+
+// Março: o lançamento aparece, mas o XML não pode mais ser baixado.
+const guardado = [{ doc: '810/1', competenciaOrigem: '2026-02', linha: guardar[0] }];
+let mar = calcularPorEmpresa([], {
+  lancamentos: [{ nNF: '810', serie: '1', dtLancamento: '2026-03-05' }],
+  transito: guardado,
+  competencia: '2026-03',
+});
+ok('nota volta do trânsito quando o lançamento chega', perto(mar.totalGeral, 73.17),
+  `total ${mar.totalGeral.toFixed(2)}`);
+ok('nota que voltou some do "lançada sem XML"', mar.semXml.filter(x => x.relevante).length === 0);
+ok('nota que voltou diz de onde veio',
+  mar.empresas[0].linhas[0].doTransito?.competencia === '2026-02');
+ok('nota que voltou não fica marcada como em trânsito de novo',
+  linhasEmTransito(mar).length === 0);
+
+// O XML no lote manda: se ele veio, a cópia guardada não pode duplicar a nota.
+let dup = calcularPorEmpresa([{ xml: nfe({ nNF: '810', dhEmi: '2026-02-25', itens: [compra] }) }], {
+  lancamentos: [{ nNF: '810', serie: '1', dtLancamento: '2026-03-05' }],
+  transito: guardado,
+  competencia: '2026-03',
+});
+ok('XML no lote não duplica a nota guardada', perto(dup.totalGeral, 73.17),
+  `total ${dup.totalGeral.toFixed(2)}`);
+
+// Lançamento que nunca chega não pode ficar guardado para sempre.
+let velho = calcularPorEmpresa([], {
+  lancamentos: [],
+  transito: [{ doc: '999/1', competenciaOrigem: '2025-12', linha: { doc: '999 /1', nNF: '999', serie: '1', fornecedor: 'X' } }],
+  competencia: '2026-03',
+});
+ok('trânsito sem uso volta na lista', velho.transitoNaoUsado.length === 1);
+ok('trânsito parado há meses vira alarme',
+  grupo(montarPendencias(velho), 'transito-antigo')?.qtd === 1);
+
+// ── Aviso de cobertura do lote ───────────────────────────────────────────────
+console.log('\nCobertura do lote de XML');
+let cob = calcularPorEmpresa([{ xml: nfe({ nNF: '820', dhEmi: '2026-02-03', itens: [compra] }) }], {
+  lancamentos: [
+    { nNF: '820', serie: '1', dtEmissao: '2026-02-03', dtLancamento: '2026-02-05' },
+    { nNF: '821', serie: '1', dtEmissao: '2026-01-30', dtLancamento: '2026-02-02', natOp: 'COMPRA' },
+  ],
+  competencia: '2026-02',
+});
+const aviso = t => cob.avisos.find(a => a.tipo === t);
+ok('avisa que o lote começa depois das notas lançadas', !!aviso('lote-comeca-tarde'));
+ok('o aviso diz qual é a nota mais antiga do lote', /03\/02\/2026/.test(aviso('lote-comeca-tarde').detalhe));
+
+cob = calcularPorEmpresa([{ xml: nfe({ nNF: '830', dhEmi: '2026-02-03', itens: [compra] }) }], {
+  lancamentos: [{ nNF: '830', serie: '1', dtEmissao: '2026-02-03', dtLancamento: '2026-02-05' }],
+  competencia: '2026-02',
+});
+ok('lote completo não inventa aviso', !cob.avisos.find(a => a.tipo === 'lote-comeca-tarde'));
+
 // ── Ajustes manuais ──────────────────────────────────────────────────────────
 console.log('\nAjustes manuais');
 const ajustes = require('../services/icmsAjustes');

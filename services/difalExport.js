@@ -29,9 +29,24 @@ function _cabecalho(ws, linha, colunas) {
   });
 }
 
-function _moeda(cell) {
-  cell.numFmt = '#,##0.0000';
+// Base e imposto saem com duas casas, como qualquer valor em real. As quatro
+// casas vinham da planilha manual, onde eram só o resíduo da conta feita à mão.
+function _num(cell) {
+  cell.numFmt = '#,##0.00';
   cell.alignment = { horizontal: 'right' };
+}
+
+function _moeda(cell) {
+  cell.numFmt = 'R$ #,##0.00';
+  cell.alignment = { horizontal: 'right' };
+}
+
+// Data em célula de data de verdade, para o Excel poder ordenar e filtrar.
+function _data(cell, iso) {
+  if (!iso) return;
+  cell.value = new Date(`${iso}T00:00:00Z`);
+  cell.numFmt = 'dd/mm/yyyy';
+  cell.alignment = { horizontal: 'center' };
 }
 
 const COLUNAS_NOTA = ['DOC/SÉRIE', 'EMISSÃO', 'LÇTO', 'FORNECEDOR', 'UF', 'VLR.TOTAL',
@@ -47,12 +62,12 @@ function _tabelaNotas(ws, linha, notas, totais) {
     const d4 = n.passos[4].aPagar;
     const d12 = n.passos[12].aPagar;
     ws.getCell(linha, 1).value = n.doc;
-    ws.getCell(linha, 2).value = n.dhEmi || '';
-    ws.getCell(linha, 3).value = n.dtLancamento || '';
+    _data(ws.getCell(linha, 2), n.dhEmi);
+    _data(ws.getCell(linha, 3), n.dtLancamento);
     ws.getCell(linha, 4).value = n.fornecedor;
     ws.getCell(linha, 5).value = n.ufOrigem;
     [n.vlrTotal, n.base4 || null, n.base12 || null, d4 || null, d12 || null, d4 + d12]
-      .forEach((v, i) => { const c = ws.getCell(linha, i + 6); if (v != null) { c.value = v; _moeda(c); } });
+      .forEach((v, i) => { const c = ws.getCell(linha, i + 6); if (v != null) { c.value = v; _num(c); } });
     linha++;
   }
 
@@ -67,7 +82,7 @@ function _tabelaNotas(ws, linha, notas, totais) {
       const c = ws.getCell(linha, i + 2);
       c.value = v;
       c.font = { bold: true };
-      _moeda(c);
+      _num(c);
     });
   return linha + 2;
 }
@@ -86,7 +101,7 @@ function _quadroRecomposicao(ws, linha, totais) {
     if (!p.base) continue;
     ws.getCell(linha, 1).value = `${aliq}%`;
     [p.base, p.exclusaoInterestadual, p.inclusaoInterno, p.debito, p.credito, p.aPagar]
-      .forEach((v, i) => { const c = ws.getCell(linha, i + 2); c.value = v; _moeda(c); });
+      .forEach((v, i) => { const c = ws.getCell(linha, i + 2); c.value = v; _num(c); });
     linha++;
   }
   return linha + 1;
@@ -105,9 +120,11 @@ async function gerarXlsx(resultado, meta = {}) {
     const cadastro = buscarEmpresa(emp.cnpj);
     const nomeAba = (cadastro ? cadastro.aba || cadastro.apelido : emp.cnpj).slice(0, 31);
     const ws = wb.addWorksheet(nomeAba);
+    // A coluna 5 é UF na tabela de notas, mas é "DÉBITO TRIBUTÁRIO" no quadro
+    // de recomposição logo abaixo — por isso ela é larga apesar de caber "SP".
     ws.columns = [
-      { width: 15 }, { width: 11 }, { width: 11 }, { width: 34 }, { width: 5 },
-      { width: 13 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 13 },
+      { width: 15 }, { width: 12 }, { width: 12 }, { width: 34 }, { width: 16 },
+      { width: 15 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 15 }, { width: 15 },
     ];
 
     let linha = 1;
@@ -182,7 +199,7 @@ async function gerarXlsx(resultado, meta = {}) {
       ws.getCell(linha, 4).value = n.natOp;
       const cv2 = ws.getCell(linha, 5);
       cv2.value = n.vlrTotal;
-      _moeda(cv2);
+      _num(cv2);
       ws.getCell(linha, 6).value = n.motivo;
       linha++;
     }
@@ -216,11 +233,11 @@ async function gerarXlsx(resultado, meta = {}) {
     alertas.forEach((a, i) => {
       const l = i + 2;
       ws.getCell(l, 1).value = a.doc;
-      ws.getCell(l, 2).value = a.dtLancamento;
+      _data(ws.getCell(l, 2), a.dtLancamento);
       ws.getCell(l, 3).value = a.fornecedor;
       const c = ws.getCell(l, 4);
       c.value = a.vlrTotal;
-      _moeda(c);
+      _num(c);
       ws.getCell(l, 5).value = a.observacao;
     });
   }
