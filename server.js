@@ -7084,7 +7084,7 @@ app.post('/api/icms/exportar', requireEscritorioOrAdmin, express.json({ limit: '
 
 // Finaliza a competência: grava as notas selecionadas no histórico. A partir
 // daí elas ficam travadas contra reapuração em qualquer outro período.
-app.post('/api/icms/finalizar', requireAdmin, express.json({ limit: '20mb' }), async (req, res) => {
+app.post('/api/icms/finalizar', requireEscritorioOrAdmin, express.json({ limit: '20mb' }), async (req, res) => {
   try {
     const { finalizar } = require('./services/icmsHistorico');
     const { competencia, cnpj, empresa, linhas } = req.body || {};
@@ -7110,7 +7110,7 @@ app.post('/api/icms/finalizar', requireAdmin, express.json({ limit: '20mb' }), a
 });
 
 // Estorno: libera as notas de uma competência para reapuração.
-app.post('/api/icms/estornar', requireAdmin, express.json(), async (req, res) => {
+app.post('/api/icms/estornar', requireEscritorioOrAdmin, express.json(), async (req, res) => {
   try {
     const { estornar } = require('./services/icmsHistorico');
     const { competencia, cnpj } = req.body || {};
