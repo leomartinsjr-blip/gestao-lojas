@@ -9,12 +9,19 @@
 //
 // "ativa" marca quem compra hoje e portanto entra na apuração mensal. As
 // inativas ficam no cadastro porque ainda aparecem em notas antigas.
+//
+// "sistema" diz de onde saem o relatório de compras e os XMLs:
+//   microvix-surfers  o Microvix das Surfers, portal das 5 empresas do grupo
+//   microvix-tommy    a Tommy tem um Microvix próprio — mesmos formatos de
+//                     arquivo, então é só exportar de lá e subir junto
+//   outro             a Lez a Lez usa outro sistema; formato ainda não mapeado
 
 const EMPRESAS = [
   // ── LMJ ────────────────────────────────────────────────────────────────────
   {
     cnpj: '28519094000129',
     ativa: true,
+    sistema: 'microvix-surfers',
     razaoSocial: 'LMJ COMERCIO DE ARTIGOS DO VESTUARIO EIRELI - EPP',
     apelido: 'LMJ — Del Rey',
     aba: 'LMJ',
@@ -27,6 +34,7 @@ const EMPRESAS = [
   {
     cnpj: '28519094000200',
     ativa: true,
+    sistema: 'microvix-surfers',
     razaoSocial: 'LMJ COMERCIO DE ARTIGOS DO VESTUARIO EIRELI - EPP',
     apelido: 'LMJ — Del Rey 111 (filial)',
     aba: 'LMJ FL2',
@@ -39,6 +47,7 @@ const EMPRESAS = [
   {
     cnpj: '28519094000390',
     ativa: false,
+    sistema: 'microvix-surfers',
     razaoSocial: 'LMJ COMERCIO DE ARTIGOS DO VESTUARIO EIRELI - EPP',
     apelido: 'LMJ — Contagem',
     aba: null,
@@ -53,6 +62,7 @@ const EMPRESAS = [
   {
     cnpj: '32473768000179',
     ativa: true,
+    sistema: 'microvix-surfers',
     razaoSocial: 'JDG COMERCIO DE ARTIGOS DO VESTUARIO EIRELI',
     apelido: 'JDG — Minas Shopping',
     aba: 'JDG',
@@ -65,6 +75,7 @@ const EMPRESAS = [
   {
     cnpj: '32473768000250',
     ativa: false,
+    sistema: 'microvix-surfers',
     razaoSocial: 'JDG COMERCIO DE ARTIGOS DO VESTUARIO EIRELI - EPP',
     apelido: 'JDG — Del Rey 111 (filial)',
     aba: null,
@@ -79,6 +90,7 @@ const EMPRESAS = [
   {
     cnpj: '35041602000171',
     ativa: true,
+    sistema: 'microvix-surfers',
     razaoSocial: 'PV COMERCIO DE ARTIGOS DO VESTUARIO EIRELI - EPP',
     apelido: 'PV — Contagem',
     aba: 'PV',
@@ -91,6 +103,7 @@ const EMPRESAS = [
   {
     cnpj: '35041602000252',
     ativa: false,
+    sistema: 'microvix-surfers',
     razaoSocial: 'PV COMERCIO DE ARTIGOS DO VESTUARIO EIRELI - EPP',
     apelido: 'PV — Del Rey 111 (filial)',
     aba: null,
@@ -103,6 +116,7 @@ const EMPRESAS = [
   {
     cnpj: '35041602000333',
     ativa: false,
+    sistema: 'microvix-surfers',
     razaoSocial: 'PV COMERCIO DE ARTIGOS DO VESTUARIO EIRELI - EPP',
     apelido: 'PV — Del Rey',
     aba: null,
@@ -117,6 +131,7 @@ const EMPRESAS = [
   {
     cnpj: '11106478000206',
     ativa: true,
+    sistema: 'microvix-surfers',
     razaoSocial: 'TTS COMERCIO DE ARTIGOS DO VESTUARIO LTDA FILIAL',
     nomeFantasia: "SURFER'S BEACHCULTURE",
     apelido: 'TTS — Estação BH',
@@ -132,6 +147,7 @@ const EMPRESAS = [
   {
     cnpj: '10209859000169',
     ativa: false,
+    sistema: 'microvix-surfers',
     razaoSocial: 'TRIBE COMERCIO DE ARTIGOS DO VESTUARIO LTDA',
     nomeFantasia: 'TRIBE CONCEPT STORE',
     apelido: 'TRIBE — Del Rey',
@@ -144,6 +160,7 @@ const EMPRESAS = [
   {
     cnpj: '10209859000240',
     ativa: false,
+    sistema: 'microvix-surfers',
     razaoSocial: 'TRIBE COMERCIO DE ARTIGOS DO VESTUARIO LTDA FILIAL',
     nomeFantasia: 'TRIBE',
     apelido: 'TRIBE — Sete Lagoas',
@@ -156,6 +173,7 @@ const EMPRESAS = [
   {
     cnpj: '10209859000320',
     ativa: false,
+    sistema: 'microvix-surfers',
     razaoSocial: 'TRIBE COMERCIO DE ARTIGOS DO VESTUARIO LTDA - ME',
     apelido: 'TRIBE — Del Rey 111 (filial)',
     aba: null,
@@ -169,6 +187,7 @@ const EMPRESAS = [
   {
     cnpj: '44602345000190',
     ativa: true,
+    sistema: 'outro',
     razaoSocial: 'LF COMERCIO DE ARTIGOS DO VESTUARIO',
     nomeFantasia: 'LEZ A LEZ',
     apelido: 'LF — Lez a Lez',
@@ -183,6 +202,7 @@ const EMPRESAS = [
   {
     cnpj: '60509746000157',
     ativa: true,
+    sistema: 'microvix-tommy',
     razaoSocial: '3L COMERCIO DE ARTIGOS DO VESTUARIO',
     nomeFantasia: 'TOMMY HILFIGER',
     apelido: '3L — Tommy Hilfiger',
