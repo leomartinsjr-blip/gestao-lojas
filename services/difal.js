@@ -374,10 +374,38 @@ function calcularPorEmpresa(notas, cfg = {}) {
     ? new Set(cfg.cnpjsProprios.map(c => String(c).replace(/\D/g, '')))
     : null;
 
-  const lancados = cfg.lancamentos
-    ? new Map(cfg.lancamentos.map(l => [chaveDoc(l.nNF, l.serie), l]))
-    : null;
-  const casados = new Set();
+  // Um relatório com várias empresas pode trazer o mesmo número/série duas
+  // vezes — acontece nas transferências internas, que cada empresa numera por
+  // conta própria. Por isso o índice guarda uma lista, não um único registro.
+  let lancados = null;
+  if (cfg.lancamentos) {
+    lancados = new Map();
+    cfg.lancamentos.forEach((l, i) => {
+      const k = chaveDoc(l.nNF, l.serie);
+      if (!lancados.has(k)) lancados.set(k, []);
+      lancados.get(k).push({ ...l, _i: i });
+    });
+  }
+  const casados = new Set();   // índices já consumidos
+
+  // Com mais de um candidato, o valor da nota desempata; o nome do fornecedor
+  // é o segundo critério. Nada disso decide sozinho: o que sobrar ambíguo sai
+  // sinalizado em vez de virar número calado.
+  function escolherLancamento(candidatos, nfe) {
+    const livres = candidatos.filter(c => !casados.has(c._i));
+    const lista = livres.length ? livres : candidatos;
+    if (lista.length === 1) return { lanc: lista[0], ambiguo: false };
+
+    const porValor = lista.filter(c => Math.abs((c.vlrTotal || 0) - nfe.total.vNF) < 0.02);
+    if (porValor.length === 1) return { lanc: porValor[0], ambiguo: false };
+
+    const emit = (nfe.emit.nome || '').toUpperCase().slice(0, 12);
+    const porNome = (porValor.length ? porValor : lista)
+      .filter(c => (c.fornecedor || '').toUpperCase().startsWith(emit.slice(0, 8)));
+    if (porNome.length === 1) return { lanc: porNome[0], ambiguo: false };
+
+    return { lanc: (porValor[0] || lista[0]), ambiguo: true };
+  }
 
   const vistas = new Set();
   const ignoradas = [];
@@ -401,7 +429,9 @@ function calcularPorEmpresa(notas, cfg = {}) {
     }
 
     const doc = chaveDoc(nfe.nNF, nfe.serie);
-    const lanc = lancados ? lancados.get(doc) : null;
+    const candidatos = lancados ? lancados.get(doc) : null;
+    const escolha = candidatos && candidatos.length ? escolherLancamento(candidatos, nfe) : null;
+    const lanc = escolha ? escolha.lanc : null;
 
     const linha = calcularNota(nfe, cfg);
     linha.dtLancamento = (lanc && lanc.dtLancamento) || n.dtLancamento || null;
@@ -422,7 +452,15 @@ function calcularPorEmpresa(notas, cfg = {}) {
       linha.difal12 = 0;
       linha.difal = 0;
     } else if (lanc) {
-      casados.add(doc);
+      casados.add(lanc._i);
+      if (escolha.ambiguo) {
+        linha.revisar.push({
+          ref: `nota ${linha.doc}`,
+          cfop: '',
+          motivo: 'mais de um lançamento com este número/série — confira a qual empresa pertence',
+          valor: linha.vlrTotal,
+        });
+      }
       // Com relatórios de mais de um mês no lote, o lançamento é que define a
       // competência — não a presença da nota na lista.
       if (cfg.competencia && lanc.dtLancamento && !lanc.dtLancamento.startsWith(cfg.competencia)) {
@@ -445,9 +483,10 @@ function calcularPorEmpresa(notas, cfg = {}) {
   // operação interna de MG, não gera diferencial, e o XML nem passa pela tela
   // de entrada de NF-e. Sem essa distinção o alerta gritaria toda competência.
   const semXml = lancados
-    ? [...lancados.entries()]
-        .filter(([doc]) => !casados.has(doc))
-        .map(([doc, l]) => {
+    ? [...lancados.values()].flat()
+        .filter(l => !casados.has(l._i))
+        .map(l => {
+          const doc = chaveDoc(l.nNF, l.serie);
           const interna = /TRANSFER/i.test(l.natOp || '');
           return {
             doc,
