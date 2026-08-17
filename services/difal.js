@@ -49,8 +49,6 @@ const CFOP_EXCLUIDO = {
   '2202': 'devolução de venda',
   '1201': 'devolução de venda',
   '2201': 'devolução de venda',
-  '1411': 'devolução de venda com ST',
-  '2411': 'devolução de venda com ST',
   '5910': 'bonificação / brinde',
   '6910': 'bonificação / brinde',
   '5911': 'amostra grátis',
@@ -63,17 +61,16 @@ const CFOP_EXCLUIDO = {
   '6152': 'transferência',
   '5151': 'transferência',
   '6151': 'transferência',
-  '5409': 'transferência com ST',
-  '6409': 'transferência com ST',
-  '5403': 'venda com ST retida',
-  '6403': 'venda com ST retida',
-  '5405': 'venda com ST retida',
-  '6404': 'venda com ST retida',
 };
 
 // CST/CSOSN em que o ICMS já foi retido por substituição tributária.
 const CST_ST = new Set(['10', '30', '60', '70', '90']);
 const CSOSN_ST = new Set(['201', '202', '203', '500']);
+
+// CFOPs de operação com ST. Ficam fora de CFOP_EXCLUIDO de propósito: o item
+// precisa ser reconhecido como ST antes de ser descartado, senão ele some da
+// seção "itens com ST em Minas Gerais" do relatório.
+const CFOP_ST = new Set(['5403', '6403', '5405', '6404', '5409', '6409', '1411', '2411']);
 
 // ── Leitura do XML ───────────────────────────────────────────────────────────
 // A NF-e tem estrutura fixa e previsível; um leitor por escopo de tag resolve
@@ -201,6 +198,7 @@ function _itemTemST(item) {
   if (item.vICMSST > 0 || item.vICMSSTRet > 0) return true;
   if (item.cst && CST_ST.has(item.cst)) return true;
   if (item.csosn && CSOSN_ST.has(item.csosn)) return true;
+  if (CFOP_ST.has(item.cfop)) return true;
   return false;
 }
 
@@ -255,10 +253,9 @@ function calcularNota(nfe, cfg = {}) {
   for (const item of nfe.itens) {
     const ref = `item ${item.nItem} (${item.xProd.slice(0, 30)})`;
 
-    if (CFOP_EXCLUIDO[item.cfop]) {
-      r.itensFora.push({ ref, cfop: item.cfop, motivo: CFOP_EXCLUIDO[item.cfop], valor: item.vProd });
-      continue;
-    }
+    // O ST vem antes do CFOP: o item precisa ser reconhecido como ST para
+    // aparecer na seção própria do relatório, mesmo quando o CFOP já bastaria
+    // para descartá-lo.
     if (_itemTemST(item)) {
       // Guarda os campos da seção "ITENS COM ST EM MINAS GERAIS" da planilha.
       r.itensST.push({
@@ -273,6 +270,10 @@ function calcularNota(nfe, cfg = {}) {
         valor: item.vProd,
       });
       r.itensFora.push({ ref, cfop: item.cfop, motivo: 'ICMS-ST retido pelo fornecedor', valor: item.vProd });
+      continue;
+    }
+    if (CFOP_EXCLUIDO[item.cfop]) {
+      r.itensFora.push({ ref, cfop: item.cfop, motivo: CFOP_EXCLUIDO[item.cfop], valor: item.vProd });
       continue;
     }
     if (!CFOP_COMPRA.has(item.cfop)) {
