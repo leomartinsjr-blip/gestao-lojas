@@ -216,6 +216,66 @@ res = calcularPorEmpresa([{ xml: nfe({ nNF: '704', itens: [{ cfop: '6949', vBC: 
 g = montarPendencias(res);
 ok('nota fora do cálculo não pede conferência', !grupo(g, 'conferir'));
 
+// ── Ajustes manuais ──────────────────────────────────────────────────────────
+console.log('\nAjustes manuais');
+const ajustes = require('../services/icmsAjustes');
+const { recalcularLinha, recalcularTotais } = require('../services/difal');
+const refaz = l => recalcularLinha(l);
+
+function apuracaoBase() {
+  return calcularPorEmpresa([{ xml: nfe({ nNF: '900', itens: [{ cfop: '6102', vBC: 1000, pICMS: 12 }] }) }],
+    { lancamentos: [{ nNF: '900', serie: '1', dtLancamento: '2025-09-15' }] });
+}
+const CNPJ = '28519094000129';
+
+let a2 = apuracaoBase();
+ajustes.aplicar(a2, [{ cnpj: CNPJ, competencia: '2025-09', doc: '900 /1', tipo: 'edicao', base4: 0, base12: 500, motivo: 'divergência contabilidade' }], refaz);
+recalcularTotais(a2);
+ok('edição troca a base e refaz o imposto', perto(a2.totalGeral, 36.59), `total ${a2.totalGeral.toFixed(2)}`);
+ok('edição guarda o valor original', a2.empresas[0].linhas[0].ajuste.base12Original === 1000);
+
+a2 = apuracaoBase();
+ajustes.aplicar(a2, [{ cnpj: CNPJ, competencia: '2025-09', doc: '900 /1', tipo: 'exclusao', motivo: 'fora do período' }], refaz);
+recalcularTotais(a2);
+ok('exclusão manual zera a nota', perto(a2.totalGeral, 0));
+
+a2 = apuracaoBase();
+ajustes.aplicar(a2, [{ cnpj: CNPJ, competencia: '2025-09', doc: '999/1', tipo: 'manual', base4: 1000, base12: 0, fornecedor: 'X', motivo: 'sem XML' }], refaz);
+recalcularTotais(a2);
+ok('nota manual entra na conta', perto(a2.totalGeral, 73.17 + 170.73), `total ${a2.totalGeral.toFixed(2)}`);
+ok('nota manual fica marcada', a2.empresas[0].linhas.find(l => l.doc === '999/1')?.selecionada === true);
+
+a2 = apuracaoBase();
+ajustes.aplicar(a2, [{ cnpj: '00000000000000', competencia: '2025-09', doc: '900 /1', tipo: 'edicao', base12: 1, motivo: 'x' }], refaz);
+ok('ajuste de empresa ausente não some em silêncio', a2.ajustesOrfaos?.length === 1);
+
+// ── Confronto com a contabilidade ────────────────────────────────────────────
+console.log('\nConfronto com a contabilidade');
+const { conferir } = require('../services/recomposicaoContabilidade');
+
+const nossa = apuracaoBase();
+let cf = conferir(nossa, { notas: [{ competencia: '2025-09', aliquota: 12, nNF: '900', base: 1000, aPagar: 73.17 }] });
+ok('nota igual nos dois lados confere', cf.conferem.length === 1 && cf.divergentes.length === 0);
+ok('total fecha', cf.totais.bate);
+
+cf = conferir(nossa, { notas: [{ competencia: '2025-09', aliquota: 12, nNF: '900', base: 800, aPagar: 58.54 }] });
+ok('base diferente vira divergência', cf.divergentes.length === 1);
+ok('divergência mostra os dois valores',
+  perto(cf.divergentes[0].base12, 1000) && perto(cf.divergentes[0].deles.base12, 800));
+
+cf = conferir(nossa, { notas: [{ competencia: '2025-09', aliquota: 12, nNF: '777', base: 100, aPagar: 7.32 }] });
+ok('nota só nossa é apontada', cf.soNossas.length === 1);
+ok('nota só deles é apontada', cf.soDeles.length === 1);
+
+cf = conferir(nossa, {
+  notas: [
+    { competencia: '2025-09', aliquota: 12, nNF: '900', base: 600, aPagar: 43.90 },
+    { competencia: '2025-09', aliquota: 4, nNF: '900', base: 400, aPagar: 68.29 },
+  ],
+});
+ok('nota partida em duas alíquotas é somada antes de comparar',
+  perto(cf.divergentes[0]?.deles.base12 ?? 0, 600) && perto(cf.divergentes[0]?.deles.base4 ?? 0, 400));
+
 // ── Apuração completa, se vierem arquivos ────────────────────────────────────
 const args = process.argv.slice(2);
 const iEsp = args.indexOf('--esperado');

@@ -34,34 +34,62 @@ function _moeda(cell) {
   cell.alignment = { horizontal: 'right' };
 }
 
-function _blocoAliquota(ws, linha, titulo, notas, passosTotais, campoBase) {
-  _titulo(ws, linha, titulo);
-  linha++;
+const COLUNAS_NOTA = ['DOC/SÉRIE', 'EMISSÃO', 'LÇTO', 'FORNECEDOR', 'UF', 'VLR.TOTAL',
+  'BASE 4%', 'BASE 12%', 'DIFAL 4%', 'DIFAL 12%', 'TOTAL'];
 
-  _cabecalho(ws, linha, ['NOTA FISCAL', 'VALOR PRODUTO', 'EXCLUSÃO ICMS INTEREST.',
-    'INCLUSÃO ICMS INTERNO', 'DÉBITO TRIBUTÁRIO', 'CRÉDITO TRIBUTÁRIO', 'ICMS A PAGAR']);
+// Uma linha por nota, com as duas alíquotas lado a lado — o formato das
+// planilhas antigas de Y:\ADMINISTRATIVO\≠ ICMS.
+function _tabelaNotas(ws, linha, notas, totais) {
+  _cabecalho(ws, linha, COLUNAS_NOTA);
   linha++;
 
   for (const n of notas) {
-    const p = n.passos[campoBase];
-    ws.getCell(linha, 1).value = n.nNF;
-    [p.base, p.exclusaoInterestadual, p.inclusaoInterno, p.debito, p.credito, p.aPagar]
-      .forEach((v, i) => { const c = ws.getCell(linha, i + 2); c.value = v; _moeda(c); });
+    const d4 = n.passos[4].aPagar;
+    const d12 = n.passos[12].aPagar;
+    ws.getCell(linha, 1).value = n.doc;
+    ws.getCell(linha, 2).value = n.dhEmi || '';
+    ws.getCell(linha, 3).value = n.dtLancamento || '';
+    ws.getCell(linha, 4).value = n.fornecedor;
+    ws.getCell(linha, 5).value = n.ufOrigem;
+    [n.vlrTotal, n.base4 || null, n.base12 || null, d4 || null, d12 || null, d4 + d12]
+      .forEach((v, i) => { const c = ws.getCell(linha, i + 6); if (v != null) { c.value = v; _moeda(c); } });
     linha++;
   }
 
   const c1 = ws.getCell(linha, 1);
-  c1.value = 'TOTAL GERAL';
+  c1.value = 'TOTAL';
   c1.font = { bold: true };
-  [passosTotais.base, passosTotais.exclusaoInterestadual, passosTotais.inclusaoInterno,
-    passosTotais.debito, passosTotais.credito, passosTotais.aPagar]
+  [null, null, null, null,
+    totais.base4 + totais.base12, totais.base4, totais.base12,
+    totais.passos[4].aPagar, totais.passos[12].aPagar, totais.difal]
     .forEach((v, i) => {
+      if (v == null) return;
       const c = ws.getCell(linha, i + 2);
       c.value = v;
       c.font = { bold: true };
       _moeda(c);
     });
   return linha + 2;
+}
+
+// O caminho da recomposição fica num quadro de resumo, em vez de repetir os
+// cinco passos em cada linha de nota.
+function _quadroRecomposicao(ws, linha, totais) {
+  _titulo(ws, linha, 'RECOMPOSIÇÃO DA BASE', 7);
+  linha++;
+  _cabecalho(ws, linha, ['ALÍQ. ORIGEM', 'BASE', 'EXCLUSÃO ICMS INTEREST.',
+    'INCLUSÃO ICMS INTERNO', 'DÉBITO TRIBUTÁRIO', 'CRÉDITO TRIBUTÁRIO', 'ICMS A PAGAR']);
+  linha++;
+
+  for (const aliq of [4, 12]) {
+    const p = totais.passos[aliq];
+    if (!p.base) continue;
+    ws.getCell(linha, 1).value = `${aliq}%`;
+    [p.base, p.exclusaoInterestadual, p.inclusaoInterno, p.debito, p.credito, p.aPagar]
+      .forEach((v, i) => { const c = ws.getCell(linha, i + 2); c.value = v; _moeda(c); });
+    linha++;
+  }
+  return linha + 1;
 }
 
 /**
@@ -78,8 +106,8 @@ async function gerarXlsx(resultado, meta = {}) {
     const nomeAba = (cadastro ? cadastro.aba || cadastro.apelido : emp.cnpj).slice(0, 31);
     const ws = wb.addWorksheet(nomeAba);
     ws.columns = [
-      { width: 16 }, { width: 15 }, { width: 16 }, { width: 16 },
-      { width: 15 }, { width: 15 }, { width: 14 },
+      { width: 15 }, { width: 11 }, { width: 11 }, { width: 34 }, { width: 5 },
+      { width: 13 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 13 }, { width: 13 },
     ];
 
     let linha = 1;
@@ -100,23 +128,20 @@ async function gerarXlsx(resultado, meta = {}) {
       String(a.dtLancamento || a.dhEmi).localeCompare(String(b.dtLancamento || b.dhEmi)) ||
       String(a.nNF).localeCompare(String(b.nNF));
 
-    const notas12 = emp.incluidas.filter(n => n.base12 > 0).sort(porLancamento);
-    const notas4 = emp.incluidas.filter(n => n.base4 > 0).sort(porLancamento);
+    const notas = emp.incluidas
+      .filter(n => n.base4 > 0 || n.base12 > 0)
+      .sort(porLancamento);
 
-    if (notas12.length) {
-      linha = _blocoAliquota(ws, linha, 'QUANDO ALÍQUOTA INTERESTADUAL 12%', notas12, emp.totais.passos[12], 12);
-    }
-    if (notas4.length) {
-      linha = _blocoAliquota(ws, linha, 'QUANDO ALÍQUOTA INTERESTADUAL 4%', notas4, emp.totais.passos[4], 4);
-    }
+    linha = _tabelaNotas(ws, linha, notas, emp.totais);
+    linha = _quadroRecomposicao(ws, linha, emp.totais);
 
     // Total da empresa
-    ws.mergeCells(linha, 1, linha, 5);
+    ws.mergeCells(linha, 1, linha, 9);
     const ct = ws.getCell(linha, 1);
     ct.value = 'VALOR TOTAL A PAGAR';
     ct.font = { bold: true, size: 11 };
     ct.alignment = { horizontal: 'right' };
-    const cv = ws.getCell(linha, 7);
+    const cv = ws.getCell(linha, 11);
     cv.value = emp.totais.difal;
     cv.font = { bold: true, size: 11 };
     cv.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: AMARELO } };

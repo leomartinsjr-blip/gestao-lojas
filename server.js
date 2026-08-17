@@ -7002,7 +7002,11 @@ app.get('/api/icms/empresas', requireEscritorioOrAdmin, (req, res) => {
 });
 
 app.post('/api/icms/apurar', requireEscritorioOrAdmin,
-  _icmsUpload.fields([{ name: 'relatorio', maxCount: 12 }, { name: 'xmls', maxCount: 28 }]),
+  _icmsUpload.fields([
+    { name: 'relatorio', maxCount: 12 },
+    { name: 'xmls', maxCount: 28 },
+    { name: 'contabilidade', maxCount: 4 },
+  ]),
   async (req, res) => {
     try {
       const { parseRelatorio } = require('./services/notasCompraReport');
@@ -7041,15 +7045,53 @@ app.post('/api/icms/apurar', requireEscritorioOrAdmin,
       const chaves = resultado.empresas.flatMap(e => e.linhas.map(l => l.chave)).filter(Boolean);
       const apuradas = await buscarApuradas(mongoDb, chaves);
 
+      const competencia = req.body.competencia || null;
+
+      // Ajustes manuais entram antes da marcação de duplicidade, para que uma
+      // nota incluída à mão também seja travada contra reapuração.
+      if (competencia) {
+        const ajustesSvc = require('./services/icmsAjustes');
+        const { recalcularLinha, recalcularTotais } = require('./services/difal');
+        const ajustes = await ajustesSvc.listar(mongoDb, { competencia });
+        if (ajustes.length) {
+          ajustesSvc.aplicar(resultado, ajustes, l => recalcularLinha(l));
+          recalcularTotais(resultado);
+        }
+      }
+
       let duplicadas = 0;
       for (const emp of resultado.empresas) {
         for (const l of emp.linhas) {
           const anterior = l.chave && apuradas[l.chave];
           if (!anterior) { l.selecionada = l.incluida; continue; }
-          l.jaApurada = { competencia: anterior.competencia, em: anterior.apuradaEm };
-          l.selecionada = false;
-          if (l.incluida) duplicadas++;
+
+          // Reapurar o mesmo mês depois de finalizar não é duplicidade: é a
+          // mesma apuração sendo revista. A nota continua marcada, para o
+          // resultado poder ser conferido e exportado de novo.
+          const mesmaCompetencia = !!competencia && anterior.competencia === competencia;
+          l.jaApurada = {
+            competencia: anterior.competencia,
+            em: anterior.apuradaEm,
+            mesmaCompetencia,
+          };
+          l.selecionada = mesmaCompetencia ? l.incluida : false;
+          if (l.incluida && !mesmaCompetencia) duplicadas++;
         }
+      }
+
+      // Confronto com a planilha da contabilidade, se ela veio no upload.
+      let conferencia = null;
+      const arqContabilidade = (req.files && req.files.contabilidade) || [];
+      if (arqContabilidade.length) {
+        const { parseRecomposicao, conferir } = require('./services/recomposicaoContabilidade');
+        const notasContabilidade = { competencias: [], notas: [] };
+        for (const f of arqContabilidade) {
+          const lido = parseRecomposicao(f.buffer);
+          notasContabilidade.competencias.push(...lido.competencias);
+          notasContabilidade.notas.push(...lido.notas);
+        }
+        conferencia = conferir(resultado, notasContabilidade, { competencia });
+        conferencia.competenciasNoArquivo = [...new Set(notasContabilidade.competencias)];
       }
 
       // As pendências são montadas depois da marcação de duplicidade, para o
@@ -7057,6 +7099,7 @@ app.post('/api/icms/apurar', requireEscritorioOrAdmin,
       const { montarPendencias } = require('./services/difal');
 
       res.json({
+        conferencia,
         competencia: req.body.competencia || null,
         periodos,
         duplicadas,
@@ -7110,6 +7153,41 @@ app.post('/api/icms/finalizar', requireEscritorioOrAdmin, express.json({ limit: 
     res.json(r);
   } catch (e) {
     console.error('[icms/finalizar]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Ajustes manuais ───────────────────────────────────────────────────────
+// Editar a base de uma nota, incluir nota sem XML, ou tirar nota da conta.
+// Cada ajuste guarda o valor anterior e quem fez.
+app.get('/api/icms/ajustes', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { listar } = require('./services/icmsAjustes');
+    res.json(await listar(mongoDb, { cnpj: req.query.cnpj || null, competencia: req.query.competencia || null }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post('/api/icms/ajustes', requireEscritorioOrAdmin, express.json(), async (req, res) => {
+  try {
+    const { salvar } = require('./services/icmsAjustes');
+    const r = await salvar(mongoDb, {
+      ...req.body,
+      por: req.session.user?.name || req.session.user?.login || null,
+    });
+    res.json(r);
+  } catch (e) {
+    console.error('[icms/ajustes]', e.message);
+    res.status(400).json({ error: e.message });
+  }
+});
+
+app.delete('/api/icms/ajustes/:id', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { remover } = require('./services/icmsAjustes');
+    res.json(await remover(mongoDb, req.params.id));
+  } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });

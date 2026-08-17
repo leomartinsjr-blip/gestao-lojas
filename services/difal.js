@@ -604,9 +604,16 @@ function montarPendencias(resultado) {
 
   add('ja-computada',
     'Já computadas em competência anterior',
-    null,
-    linhas.filter(l => l.jaApurada)
+    'Não marque de novo, a não ser que a competência anterior tenha sido estornada',
+    linhas.filter(l => l.jaApurada && !l.jaApurada.mesmaCompetencia)
       .map(l => ({ ...desc(l), detalhe: `já computada em ${l.jaApurada.competencia}` })),
+    'grave');
+
+  add('ja-finalizada',
+    'Desta competência, já finalizadas',
+    null,
+    linhas.filter(l => l.jaApurada && l.jaApurada.mesmaCompetencia)
+      .map(l => ({ ...desc(l), detalhe: 'esta competência já foi finalizada' })),
     'ok');
 
   add('sem-lancamento',
@@ -647,9 +654,51 @@ function montarPendencias(resultado) {
   return grupos;
 }
 
+/**
+ * Refaz passos e diferencial de uma linha depois que a base foi alterada à mão.
+ * A fórmula vive num lugar só; quem ajusta base chama isto.
+ */
+function recalcularLinha(linha, cfg = {}) {
+  const aliqInterna = cfg.aliqInterna != null ? cfg.aliqInterna : ALIQ_INTERNA_PADRAO;
+  const fatores = cfg.fatores || { 4: fatorExato(4, aliqInterna), 12: fatorExato(12, aliqInterna) };
+  linha.base4 = Number(linha.base4) || 0;
+  linha.base12 = Number(linha.base12) || 0;
+  linha.passos = {
+    4: _passos(linha.base4, 0.04, aliqInterna),
+    12: _passos(linha.base12, 0.12, aliqInterna),
+  };
+  linha.difal4 = linha.base4 * fatores[4];
+  linha.difal12 = linha.base12 * fatores[12];
+  linha.difal = linha.difal4 + linha.difal12;
+  return linha;
+}
+
+/** Refaz os agregados por empresa depois de qualquer mexida nas linhas. */
+function recalcularTotais(resultado, cfg = {}) {
+  const aliqInterna = cfg.aliqInterna != null ? cfg.aliqInterna : ALIQ_INTERNA_PADRAO;
+  for (const e of resultado.empresas) {
+    e.incluidas = e.linhas.filter(l => l.incluida);
+    e.excluidas = e.linhas.filter(l => !l.incluida);
+    e.revisar = e.linhas.filter(l => l.revisar && l.revisar.length);
+    e.atencao = e.linhas.filter(l => l.atencao && l.atencao.length);
+    const base4 = e.incluidas.reduce((s, l) => s + l.base4, 0);
+    const base12 = e.incluidas.reduce((s, l) => s + l.base12, 0);
+    e.totais = {
+      base4,
+      base12,
+      passos: { 4: _passos(base4, 0.04, aliqInterna), 12: _passos(base12, 0.12, aliqInterna) },
+      difal: e.incluidas.reduce((s, l) => s + l.difal, 0),
+    };
+  }
+  resultado.totalGeral = resultado.empresas.reduce((s, e) => s + e.totais.difal, 0);
+  return resultado;
+}
+
 module.exports = {
   parseNFe,
   calcularNota,
+  recalcularLinha,
+  recalcularTotais,
   calcularLote,
   calcularPorEmpresa,
   montarPendencias,

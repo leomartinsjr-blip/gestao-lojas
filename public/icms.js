@@ -24,6 +24,7 @@ function passos(base, aliqOrigem) {
 
 let arquivosRel = [];
 let arquivosXml = [];
+let arquivosCont = [];
 let resultado = null;
 const selecao = new Set();      // chaves marcadas
 
@@ -62,6 +63,7 @@ function ligarDrop(idDrop, idInput, idLista, guardar) {
 }
 ligarDrop('dropRel', 'inpRel', 'relFiles', f => { arquivosRel = f; });
 ligarDrop('dropXml', 'inpXml', 'xmlFiles', f => { arquivosXml = f; });
+ligarDrop('dropCont', 'inpCont', 'contFiles', f => { arquivosCont = f; });
 
 function erro(msg) {
   const b = $('errorBox');
@@ -83,6 +85,7 @@ async function apurar() {
   const fd = new FormData();
   arquivosRel.forEach(f => fd.append('relatorio', f));
   arquivosXml.forEach(f => fd.append('xmls', f));
+  arquivosCont.forEach(f => fd.append('contabilidade', f));
   const comp = $('competencia').value;
   if (comp) fd.append('competencia', comp);
 
@@ -131,6 +134,7 @@ function render() {
   $('btnExportar').disabled = notas === 0;
   $('btnFinalizar').disabled = notas === 0;
 
+  $('conferencia').innerHTML = renderConferencia(d.conferencia);
   $('pendencias').innerHTML = renderPendencias(d.pendencias || []);
   document.querySelectorAll('.mx-pend-hdr').forEach(h =>
     h.addEventListener('click', () => h.parentElement.classList.toggle('open')));
@@ -166,6 +170,73 @@ function render() {
 
   document.querySelectorAll('button[data-finalizar]').forEach(b =>
     b.addEventListener('click', () => finalizarEmpresa(Number(b.dataset.finalizar))));
+
+  document.querySelectorAll('button[data-editar]').forEach(b =>
+    b.addEventListener('click', () => abrirEdicao(b.dataset.cnpj, b.dataset.editar)));
+  document.querySelectorAll('button[data-incluir]').forEach(b =>
+    b.addEventListener('click', () => abrirEdicao(b.dataset.incluir, null)));
+  document.querySelectorAll('button[data-desfazer]').forEach(b =>
+    b.addEventListener('click', () => desfazerAjuste(b.dataset.desfazer)));
+}
+
+// ── Confronto com a contabilidade ────────────────────────────────────────────
+function renderConferencia(c) {
+  if (!c) return '';
+
+  const linhas = (titulo, itens, colunas) => itens.length ? `
+    <div class="mx-sec">${titulo} (${itens.length})</div>
+    <div class="mx-scroll"><table class="mx-t">${colunas}</table></div>` : '';
+
+  return `
+  <div class="mx-conf">
+    <div class="mx-conf-topo">
+      <div>
+        <div class="mx-sum-label">Nosso cálculo</div>
+        <div class="mx-conf-num">${fBRL(c.totais.nosso)}</div>
+      </div>
+      <div>
+        <div class="mx-sum-label">Contabilidade</div>
+        <div class="mx-conf-num">${fBRL(c.totais.contabilidade)}</div>
+      </div>
+      <div>
+        <div class="mx-sum-label">Diferença</div>
+        <div class="mx-conf-num ${c.totais.bate ? 'mx-conf-ok' : 'mx-conf-dif'}">
+          ${c.totais.bate ? 'fecha' : fBRL(c.totais.diferenca)}
+        </div>
+      </div>
+      <div style="margin-left:auto;display:flex;gap:.4rem;flex-wrap:wrap">
+        <span class="mx-chip ok">${c.conferem.length} conferem</span>
+        ${c.divergentes.length ? `<span class="mx-chip dif">${c.divergentes.length} divergem</span>` : ''}
+        ${c.soNossas.length ? `<span class="mx-chip">${c.soNossas.length} só nossas</span>` : ''}
+        ${c.soDeles.length ? `<span class="mx-chip">${c.soDeles.length} só deles</span>` : ''}
+      </div>
+    </div>
+
+    ${linhas('Divergem', c.divergentes, `
+      <tr><th>Nota</th><th>Fornecedor</th><th>Base 4% nossa</th><th>Base 4% deles</th>
+        <th>Base 12% nossa</th><th>Base 12% deles</th><th>Nosso</th><th>Deles</th><th>Diferença</th></tr>
+      ${c.divergentes.map(d => `<tr>
+        <td>${esc(d.doc)}</td><td style="text-align:left">${esc((d.fornecedor || '').slice(0, 24))}</td>
+        <td>${f4(d.base4)}</td><td>${f4(d.deles.base4)}</td>
+        <td>${f4(d.base12)}</td><td>${f4(d.deles.base12)}</td>
+        <td>${f4(d.difal)}</td><td>${f4(d.deles.aPagar)}</td>
+        <td style="color:#f85149;font-weight:700">${f4(d.diferenca.aPagar)}</td>
+      </tr>`).join('')}`)}
+
+    ${linhas('Só no nosso cálculo — a contabilidade não tem', c.soNossas, `
+      <tr><th>Nota</th><th>Fornecedor</th><th>Base 4%</th><th>Base 12%</th><th>Valor</th></tr>
+      ${c.soNossas.map(d => `<tr>
+        <td>${esc(d.doc)}</td><td style="text-align:left">${esc((d.fornecedor || '').slice(0, 30))}</td>
+        <td>${f4(d.base4)}</td><td>${f4(d.base12)}</td><td>${f4(d.difal)}</td>
+      </tr>`).join('')}`)}
+
+    ${linhas('Só na contabilidade — não temos', c.soDeles, `
+      <tr><th>Nota</th><th>Base 4%</th><th>Base 12%</th><th>Valor</th></tr>
+      ${c.soDeles.map(d => `<tr>
+        <td>${esc(d.nNFOriginal || d.nNF)}</td>
+        <td>${f4(d.base4)}</td><td>${f4(d.base12)}</td><td>${f4(d.aPagar)}</td>
+      </tr>`).join('')}`)}
+  </div>`;
 }
 
 // ── Pendências ───────────────────────────────────────────────────────────────
@@ -202,41 +273,71 @@ function renderPendencias(grupos) {
     </div>`).join('');
 }
 
-function blocoAliquota(emp, aliq, t) {
+// Uma linha por nota, com as duas alíquotas lado a lado — o formato das
+// planilhas antigas. Nota que tem base nas duas aparece uma vez só.
+function tabelaNotas(emp, t) {
   const notas = emp.linhas
-    .filter(n => n.incluida && (aliq === 4 ? n.base4 : n.base12) > 0)
-    .sort((a, b) => String(a.dtLancamento || '').localeCompare(String(b.dtLancamento || '')));
-  if (!notas.length) return '';
-  const p = aliq === 4 ? t.p4 : t.p12;
+    .filter(n => n.incluida && (n.base4 > 0 || n.base12 > 0))
+    .sort((a, b) => String(a.dtLancamento || a.dhEmi || '').localeCompare(String(b.dtLancamento || b.dhEmi || '')));
+  if (!notas.length) return '<div class="mx-state">Nenhuma nota entrou no cálculo.</div>';
+
+  const cel = (v) => v > 0 ? f4(v) : '<span style="color:#484f58">—</span>';
 
   return `
-  <div class="mx-sec">Quando alíquota interestadual ${aliq}%</div>
   <div class="mx-scroll"><table class="mx-t">
     <tr>
-      <th class="sel"></th><th>Nota fiscal</th><th>Lçto</th><th>Base</th>
-      <th>Exclusão interest.</th><th>Inclusão interno</th>
-      <th>Débito</th><th>Crédito</th><th>ICMS a pagar</th>
+      <th class="sel"></th><th>Nota fiscal</th><th>Emissão</th><th>Lçto</th>
+      <th>Fornecedor</th><th>UF</th><th>Vlr. total</th>
+      <th>Base 4%</th><th>Base 12%</th><th>DIFAL 4%</th><th>DIFAL 12%</th><th>Total</th><th></th>
     </tr>
     ${notas.map(n => {
       const marcada = n.chave && selecao.has(n.chave);
-      const q = passos(aliq === 4 ? n.base4 : n.base12, aliq / 100);
-      return `<tr class="${marcada ? '' : 'off'} ${n.jaApurada ? 'dup' : ''}">
+      const d4 = passos(n.base4, 0.04).aPagar;
+      const d12 = passos(n.base12, 0.12).aPagar;
+      const dup = n.jaApurada && !n.jaApurada.mesmaCompetencia;
+      return `<tr class="${marcada ? '' : 'off'} ${dup ? 'dup' : ''}">
         <td class="sel"><input type="checkbox" data-chave="${esc(n.chave)}" ${marcada ? 'checked' : ''} ${n.chave ? '' : 'disabled'}></td>
-        <td>${esc(n.doc)}${n.jaApurada ? `<span class="mx-badge-dup">já apurada em ${esc(n.jaApurada.competencia)}</span>` : ''}</td>
+        <td>${esc(n.doc)}${dup ? `<span class="mx-badge-dup">já apurada em ${esc(n.jaApurada.competencia)}</span>` : ''}</td>
+        <td>${fData(n.dhEmi)}</td>
         <td>${fData(n.dtLancamento)}</td>
-        <td>${f4(q.base)}</td>
-        <td>${f4(q.exclusaoInterestadual)}</td>
-        <td>${f4(q.inclusaoInterno)}</td>
-        <td>${f4(q.debito)}</td>
-        <td>${f4(q.credito)}</td>
-        <td>${f4(q.aPagar)}</td>
-      </tr>`;
+        <td style="text-align:left">${esc((n.fornecedor || '').slice(0, 28))}</td>
+        <td>${esc(n.ufOrigem)}</td>
+        <td>${f4(n.vlrTotal)}</td>
+        <td>${cel(n.base4)}</td>
+        <td>${cel(n.base12)}</td>
+        <td>${cel(d4)}</td>
+        <td>${cel(d12)}</td>
+        <td><b>${f4(d4 + d12)}</b></td>
+        <td><button class="mx-link" data-editar="${esc(n.doc)}" data-cnpj="${esc(emp.cnpj)}">conferir</button></td>
+      </tr>
+      ${n.ajuste ? `<tr class="${marcada ? '' : 'off'}"><td></td><td colspan="12" style="text-align:left;font-size:.72rem;color:#79c0ff">
+        base ajustada à mão — original 4% ${f4(n.ajuste.base4Original)} / 12% ${f4(n.ajuste.base12Original)}
+        ${n.ajuste.motivo ? ` — ${esc(n.ajuste.motivo)}` : ''}
+        ${n.ajuste.por ? ` (${esc(n.ajuste.por)})` : ''}
+        <button class="mx-link" data-desfazer="${esc(n.ajuste._id || '')}" style="color:#f85149;margin-left:.5rem">desfazer</button>
+      </td></tr>` : ''}`;
     }).join('')}
     <tr class="tot">
-      <td class="sel"></td><td>Total marcado</td><td></td>
-      <td>${f4(p.base)}</td><td>${f4(p.exclusaoInterestadual)}</td><td>${f4(p.inclusaoInterno)}</td>
-      <td>${f4(p.debito)}</td><td>${f4(p.credito)}</td><td>${f4(p.aPagar)}</td>
+      <td class="sel"></td><td>Total marcado</td><td></td><td></td><td></td><td></td><td></td>
+      <td>${f4(t.base4)}</td><td>${f4(t.base12)}</td>
+      <td>${f4(t.p4.aPagar)}</td><td>${f4(t.p12.aPagar)}</td><td>${f4(t.difal)}</td><td></td>
     </tr>
+  </table></div>
+  <div style="margin-top:.5rem">
+    <button class="mx-link" data-incluir="${esc(emp.cnpj)}">+ incluir nota que não veio no lote</button>
+  </div>
+
+  <div class="mx-sec">Recomposição da base</div>
+  <div class="mx-scroll"><table class="mx-t">
+    <tr><th>Alíquota de origem</th><th>Base</th><th>Exclusão interest.</th>
+      <th>Inclusão interno</th><th>Débito</th><th>Crédito</th><th>ICMS a pagar</th></tr>
+    ${[[4, t.p4], [12, t.p12]].filter(([, p]) => p.base > 0).map(([a, p]) => `<tr>
+      <td>${a}%</td><td>${f4(p.base)}</td><td>${f4(p.exclusaoInterestadual)}</td>
+      <td>${f4(p.inclusaoInterno)}</td><td>${f4(p.debito)}</td><td>${f4(p.credito)}</td><td>${f4(p.aPagar)}</td>
+    </tr>`).join('')}
+    <tr class="tot"><td>Total</td><td>${f4(t.base4 + t.base12)}</td><td></td><td></td>
+      <td>${f4(t.p4.debito + t.p12.debito)}</td><td>${f4(t.p4.credito + t.p12.credito)}</td>
+      <td>${f4(t.difal)}</td></tr>
   </table></div>`;
 }
 
@@ -261,8 +362,7 @@ function cardEmpresa(emp, t, i) {
         <button class="mx-btn" data-finalizar="${i}" style="margin-left:auto;background:#238636;border-color:#2ea043"
           ${t.sel.length ? '' : 'disabled'}>Finalizar esta empresa</button>
       </div>
-      ${blocoAliquota(emp, 12, t)}
-      ${blocoAliquota(emp, 4, t)}
+      ${tabelaNotas(emp, t)}
 
       ${emp.itensST.length ? `
       <div class="mx-sec">Itens com ST em Minas Gerais</div>
@@ -295,6 +395,83 @@ function cardEmpresa(emp, t, i) {
       </table></div>
     </div>
   </div>`;
+}
+
+// ── Ajuste manual da base ────────────────────────────────────────────────────
+// O XML nem sempre é a última palavra: a contabilidade pode apontar divergência,
+// e nota lançada sem XML precisa entrar com a base digitada.
+function abrirEdicao(cnpj, doc) {
+  const comp = $('competencia').value;
+  if (!comp) return erro('Escolha a competência antes de ajustar uma nota.');
+
+  const emp = resultado.empresas.find(e => e.cnpj === cnpj);
+  const linha = doc ? emp.linhas.find(l => l.doc === doc) : null;
+  const novo = !linha;
+
+  const b4 = prompt(
+    `${novo ? 'Nova nota' : 'Nota ' + doc}\n\n` +
+    'Base de cálculo IMPORTADO (origem 4%).\n' +
+    'Deixe 0 se não houver.',
+    linha ? String(linha.base4 || 0) : '0',
+  );
+  if (b4 === null) return;
+
+  const b12 = prompt('Base de cálculo NACIONAL (origem 12%).\nDeixe 0 se não houver.',
+    linha ? String(linha.base12 || 0) : '0');
+  if (b12 === null) return;
+
+  let docFinal = doc;
+  let fornecedor = linha ? linha.fornecedor : '';
+  if (novo) {
+    docFinal = prompt('Número/série da nota (ex: 12345/1)');
+    if (!docFinal) return;
+    fornecedor = prompt('Fornecedor') || 'informado manualmente';
+  }
+
+  const motivo = prompt('Motivo do ajuste (fica registrado junto com o valor)');
+  if (!motivo) return erro('O ajuste precisa de um motivo — é o que permite auditar depois.');
+
+  const num = v => Number(String(v).replace(/\./g, '').replace(',', '.')) || 0;
+
+  salvarAjuste({
+    cnpj,
+    competencia: comp,
+    doc: docFinal,
+    tipo: novo ? 'manual' : 'edicao',
+    base4: num(b4),
+    base12: num(b12),
+    fornecedor,
+    ufOrigem: linha ? linha.ufOrigem : '',
+    dtLancamento: linha ? linha.dtLancamento : null,
+    motivo,
+  });
+}
+
+async function salvarAjuste(ajuste) {
+  try {
+    const r = await fetch('/api/icms/ajustes', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ajuste),
+    });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Falha ao salvar o ajuste');
+    await apurar();
+  } catch (e) {
+    erro(e.message);
+  }
+}
+
+async function desfazerAjuste(id) {
+  if (!id) return;
+  if (!confirm('Desfazer este ajuste e voltar ao valor lido do XML?')) return;
+  try {
+    const r = await fetch('/api/icms/ajustes/' + encodeURIComponent(id), { method: 'DELETE' });
+    if (!r.ok) throw new Error((await r.json()).error || 'Falha ao desfazer');
+    await apurar();
+  } catch (e) {
+    erro(e.message);
+  }
 }
 
 // ── Recorte do resultado com só o que está marcado ───────────────────────────
