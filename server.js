@@ -7270,12 +7270,13 @@ app.post('/api/icms/finalizar', requireEscritorioOrAdmin, express.json({ limit: 
 // Nota recusada e devolvida ao fornecedor nunca vai ter lançamento. Marcar
 // isso a tira da fila sem apagar o registro — apagar faria ela voltar na
 // próxima vez que o mês da emissão fosse reapurado.
-app.post('/api/icms/transito/recusar', requireEscritorioOrAdmin, express.json(), async (req, res) => {
+app.post('/api/icms/transito/recusar', requireEscritorioOrAdmin, express.json({ limit: '2mb' }), async (req, res) => {
   try {
     const { recusar } = require('./services/icmsTransito');
-    const { chave, motivo } = req.body || {};
+    const { chave, linha, motivo } = req.body || {};
     const r = await recusar(mongoDb, {
       chave,
+      linha,
       motivo,
       usuario: req.session.user?.name || req.session.user?.login || null,
     });

@@ -106,15 +106,34 @@ async function buscar(db, { cnpjs } = {}) {
  * ela de voltar quando o mês da emissão for reapurado, e o que permite
  * desfazer se a marcação tiver sido engano.
  */
-async function recusar(db, { chave, motivo, usuario } = {}) {
+async function recusar(db, { chave, linha, motivo, usuario } = {}) {
   if (!db) throw new Error('Banco indisponível');
   if (!chave) throw new Error('Informe a chave da nota');
   const col = await _col(db);
-  const r = await col.updateOne(
+
+  // Cria o registro se ele ainda não existe. Nem toda nota recusável passou
+  // pelo trânsito: a emitida no meio do mês sem entrada nunca foi guardada, e
+  // é justamente uma das que mais precisam ser marcadas.
+  const dados = { status: 'recusada', motivoRecusa: motivo || null, recusadaEm: new Date(), recusadaPor: usuario || null };
+  if (linha) {
+    Object.assign(dados, {
+      cnpj: linha.cnpjEmpresa,
+      empresa: linha.empresa,
+      doc: `${String(linha.nNF).replace(/\D/g, '').replace(/^0+/, '')}/${String(linha.serie).replace(/\D/g, '').replace(/^0+/, '') || '0'}`,
+      nNF: linha.nNF,
+      serie: linha.serie,
+      dhEmi: linha.dhEmi || null,
+      fornecedor: linha.fornecedor,
+      vlrTotal: linha.vlrTotal || 0,
+      linha,
+    });
+  }
+
+  await col.updateOne(
     { _id: chave },
-    { $set: { status: 'recusada', motivoRecusa: motivo || null, recusadaEm: new Date(), recusadaPor: usuario || null } },
+    { $set: dados, $setOnInsert: { guardadaEm: new Date() } },
+    { upsert: true },
   );
-  if (!r.matchedCount) throw new Error('Nota não está no trânsito');
   return { chave, status: 'recusada' };
 }
 

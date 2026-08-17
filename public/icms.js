@@ -143,7 +143,7 @@ function render() {
   document.querySelectorAll('.mx-pend-hdr').forEach(h =>
     h.addEventListener('click', () => h.parentElement.classList.toggle('open')));
   document.querySelectorAll('button[data-transito]').forEach(b =>
-    b.addEventListener('click', () => marcarTransito(b.dataset.transito, b.dataset.chave, b.dataset.confirmar)));
+    b.addEventListener('click', () => marcarTransito(b.dataset.transito, b.dataset.chave, b.dataset.confirmar, b)));
 
   $('empresas').innerHTML = d.empresas.map((e, i) => cardEmpresa(e, totais[i], i)).join('');
 
@@ -216,31 +216,129 @@ async function adiarNota(chave, doc) {
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'Não foi possível adiar');
-    await apurar();
+
+    // Igual à marcação de recusada: atualiza o que está na tela em vez de
+    // reenviar os zips. Aqui o total muda, então a empresa é recomputada.
+    // Guardado para o "Desfazer" conseguir devolver a nota ao estado anterior
+    // sem precisar reapurar.
+    linha._antesDoAdiamento = {
+      base4: linha.base4, base12: linha.base12,
+      difal4: linha.difal4, difal12: linha.difal12, difal: linha.difal,
+      motivo: linha.motivo,
+    };
+    linha.incluida = false;
+    linha.adiadaPara = d.competenciaDestino;
+    linha.motivo = `adiada para ${destino}`;
+    linha.base4 = 0; linha.base12 = 0;
+    linha.difal4 = 0; linha.difal12 = 0; linha.difal = 0;
+    selecao.delete(chave);
+    resultado.empresas.forEach(recomputarEmpresa);
+    tirarDasPendencias(chave);
+    porNasPendencias({
+      tipo: 'adiadas',
+      titulo: 'Empurradas para a competência seguinte',
+      gravidade: 'ok',
+      acaoNota: {
+        tipo: 'cancelar-adiamento',
+        rotulo: 'Desfazer',
+        confirmar: 'Desfazer o adiamento? A nota volta para a competência do lançamento.',
+      },
+    }, {
+      doc: linha.doc,
+      chave,
+      fornecedor: linha.fornecedor,
+      valor: linha.vlrTotal,
+      dtLancamento: linha.dtLancamento,
+      detalhe: `sai deste mês e entra em ${d.competenciaDestino} — já está guardada calculada`,
+    });
+    render();
   } catch (e) {
     erro(e.message);
   }
 }
 
 // ── Recusar / reativar nota do trânsito ──────────────────────────────────────
-// Depois de marcar, reapura em vez de mexer no resultado que está na tela: a
-// nota some de um grupo e aparece em outro, e quem sabe montar isso é o
-// servidor. Os arquivos já estão em memória, então é só refazer a chamada.
-async function marcarTransito(tipo, chave, confirmar) {
+// Depois de marcar, o resultado que já está na tela é atualizado no lugar —
+// reapurar reenviaria os zips inteiros, o que leva minutos e parece
+// travamento. A próxima apuração é que reorganiza os grupos de vez.
+async function marcarTransito(tipo, chave, confirmar, botao) {
   if (confirmar && !confirm(confirmar)) return;
   erro(null);
+
+  const linha = linhaPorChave(chave);
+  const rotulo = botao ? botao.textContent : '';
+  if (botao) { botao.disabled = true; botao.textContent = '…'; }
+
   try {
     const r = await fetch(`/api/icms/transito/${tipo}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ chave }),
+      body: JSON.stringify({ chave, linha }),
     });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'Não foi possível marcar a nota');
-    await apurar();
+
+    if (linha) {
+      if (tipo === 'recusar') { linha.recusada = true; linha.emTransito = false; }
+      if (tipo === 'reativar') { linha.recusada = false; }
+      if (tipo === 'cancelar-adiamento') {
+        delete linha.adiadaPara;
+        const antes = linha._antesDoAdiamento;
+        if (antes) {
+          Object.assign(linha, antes, { incluida: true });
+          delete linha._antesDoAdiamento;
+          if (linha.chave) selecao.add(linha.chave);
+        } else {
+          // Adiada numa sessão anterior: a base dela veio zerada do servidor e
+          // só volta recalculada. Melhor dizer isso do que deixar a nota sumir.
+          $('alertBox').textContent = `Adiamento da nota ${linha.doc} desfeito. `
+            + 'Reapure para ela voltar a contar nesta competência.';
+          $('alertBox').style.display = 'block';
+        }
+        resultado.empresas.forEach(recomputarEmpresa);
+      }
+    }
+    tirarDasPendencias(chave);
+    render();
   } catch (e) {
     erro(e.message);
+    if (botao) { botao.disabled = false; botao.textContent = rotulo; }
   }
+}
+
+const linhaPorChave = chave => (resultado
+  ? resultado.empresas.flatMap(e => e.linhas).find(l => l.chave === chave) || null
+  : null);
+
+// A nota sai da lista sem esperar a reapuração. Mexer no `resultado` em vez do
+// DOM é o que faz ela continuar fora depois de qualquer novo render().
+function tirarDasPendencias(chave) {
+  if (!resultado || !resultado.pendencias) return;
+  resultado.pendencias.forEach(g => {
+    g.notas = g.notas.filter(n => n.chave !== chave);
+    g.qtd = g.notas.length;
+  });
+  resultado.pendencias = resultado.pendencias.filter(g => g.qtd > 0);
+}
+
+// Refaz os agregados da empresa depois de uma nota mudar de estado na mão.
+function recomputarEmpresa(emp) {
+  emp.incluidas = emp.linhas.filter(l => l.incluida);
+  emp.excluidas = emp.linhas.filter(l => !l.incluida);
+}
+
+// Coloca a nota num grupo de pendência na hora, sem esperar a reapuração.
+// Serve para o adiamento não virar um caminho sem volta: o "Desfazer" precisa
+// estar à mão logo depois do clique, não só na próxima apuração.
+function porNasPendencias({ tipo, titulo, gravidade, acaoNota }, nota) {
+  resultado.pendencias = resultado.pendencias || [];
+  let g = resultado.pendencias.find(x => x.tipo === tipo);
+  if (!g) {
+    g = { tipo, titulo, acao: null, gravidade, qtd: 0, notas: [], acaoNota };
+    resultado.pendencias.push(g);
+  }
+  g.notas.push(nota);
+  g.qtd = g.notas.length;
 }
 
 // ── Avisos sobre o lote ──────────────────────────────────────────────────────
