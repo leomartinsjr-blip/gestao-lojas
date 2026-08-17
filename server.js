@@ -6982,9 +6982,11 @@ app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
 // Duas entradas: o "Relatório de Notas de Compra" do Microvix, que diz o que
 // deu entrada no sistema, e os XMLs da tela ENTRADA NF-E, que trazem a base de
 // cálculo por alíquota. Só o que consta no relatório vira imposto.
+// Folgado de propósito: dá para subir o ano inteiro de uma vez e depois só
+// trocar a competência, já que o corte é pela data de lançamento.
 const _icmsUpload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 60 * 1024 * 1024, files: 12 },
+  limits: { fileSize: 60 * 1024 * 1024, files: 40 },
 });
 
 app.get('/api/icms/empresas', requireAdmin, (req, res) => {
@@ -7000,7 +7002,7 @@ app.get('/api/icms/empresas', requireAdmin, (req, res) => {
 });
 
 app.post('/api/icms/apurar', requireAdmin,
-  _icmsUpload.fields([{ name: 'relatorio', maxCount: 4 }, { name: 'xmls', maxCount: 8 }]),
+  _icmsUpload.fields([{ name: 'relatorio', maxCount: 12 }, { name: 'xmls', maxCount: 28 }]),
   async (req, res) => {
     try {
       const { parseRelatorio } = require('./services/notasCompraReport');
