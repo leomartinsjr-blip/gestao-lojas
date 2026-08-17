@@ -195,6 +195,21 @@ g = montarPendencias(res);
 ok('nota com vários itens aparece uma vez só', grupo(g, 'conferir')?.qtd === 1,
   `veio ${grupo(g, 'conferir')?.qtd}`);
 
+// Nota que já não geraria imposto não vira alarme por falta de lançamento
+res = calcularPorEmpresa([
+  { xml: nfe({ nNF: '710', natOp: 'DEVOLUCAO', itens: [{ cfop: '2202', vBC: 100, pICMS: 12 }] }) },
+  { xml: nfe({ nNF: '711', uf: 'MG', itens: [{ cfop: '5102', vBC: 100, pICMS: 18 }] }) },
+  { xml: nfe({ nNF: '712', itens: [compra] }) },
+], { lancamentos: [] });
+g = montarPendencias(res);
+ok('devolução sem lançamento não vira alarme',
+  !grupo(g, 'sem-lancamento')?.notas.some(n => n.doc.includes('710')));
+ok('fornecedor de MG sem lançamento não vira alarme',
+  !grupo(g, 'sem-lancamento')?.notas.some(n => n.doc.includes('711')));
+ok('compra de verdade sem lançamento continua alarmando',
+  grupo(g, 'sem-lancamento')?.notas.some(n => n.doc.includes('712')));
+ok('as duas viram informativo', grupo(g, 'sem-diferencial')?.qtd === 2);
+
 // Nota excluída não deve pedir conferência de classificação
 res = calcularPorEmpresa([{ xml: nfe({ nNF: '704', itens: [{ cfop: '6949', vBC: 100, pICMS: 12 }] }) }],
   { lancamentos: [] });

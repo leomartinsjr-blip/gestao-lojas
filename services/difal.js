@@ -444,18 +444,26 @@ function calcularPorEmpresa(notas, cfg = {}) {
     // Nota sem lançamento correspondente não gera imposto: ou foi recusada e
     // devolvida ao fornecedor, ou ainda não foi importada.
     if (lancados && !lanc) {
-      linha.incluida = false;
-      // O que se sabe com certeza é só que a nota não está no relatório do
-      // período. Pode ter sido recusada, pode ter sido lançada em outro mês.
-      // Afirmar "recusada" seria ir além do dado.
-      linha.motivo = cfg.competencia && linha.dhEmi && !linha.dhEmi.startsWith(cfg.competencia)
-        ? `não consta no relatório do período (emitida em ${linha.dhEmi.slice(5, 7)}/${linha.dhEmi.slice(0, 4)})`
-        : 'não consta no relatório de lançamentos do período';
-      linha.base4 = 0;
-      linha.base12 = 0;
-      linha.difal4 = 0;
-      linha.difal12 = 0;
-      linha.difal = 0;
+      // Se a nota já não geraria diferencial por regra fiscal — devolução,
+      // fornecedor de MG, ST —, a falta de lançamento não acrescenta nada.
+      // Sobrescrever o motivo aqui a transformaria em alarme falso, pedindo
+      // conferência de uma nota que nunca deveria ter entrada mesmo.
+      if (linha.incluida) {
+        linha.incluida = false;
+        // O que se sabe com certeza é só que a nota não está no relatório do
+        // período. Pode ter sido recusada, pode ter sido lançada em outro mês.
+        // Afirmar "recusada" seria ir além do dado.
+        linha.motivo = cfg.competencia && linha.dhEmi && !linha.dhEmi.startsWith(cfg.competencia)
+          ? `não consta no relatório do período (emitida em ${linha.dhEmi.slice(5, 7)}/${linha.dhEmi.slice(0, 4)})`
+          : 'não consta no relatório de lançamentos do período';
+        linha.base4 = 0;
+        linha.base12 = 0;
+        linha.difal4 = 0;
+        linha.difal12 = 0;
+        linha.difal = 0;
+      } else {
+        linha.semLancamento = true;
+      }
     } else if (lanc) {
       casados.add(lanc._i);
       if (lanc.emp) empsComXml.add(lanc.emp);
