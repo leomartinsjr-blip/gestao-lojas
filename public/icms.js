@@ -1,0 +1,470 @@
+// ── Diferencial de alíquota de ICMS ─────────────────────────────────────────
+// O relatório do Microvix diz o que deu entrada; o XML diz a base de cálculo.
+// A tela junta os dois, deixa marcar nota a nota e, ao finalizar, trava as
+// notas contra reapuração — é o que impede pagar o mesmo imposto duas vezes.
+
+const $ = id => document.getElementById(id);
+
+const ALIQ_INTERNA = 0.18;
+
+const fBRL = v => 'R$ ' + Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const f4 = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+const fPct = v => (Number(v || 0) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+const fData = s => s ? String(s).slice(8, 10) + '/' + String(s).slice(5, 7) + '/' + String(s).slice(0, 4) : '—';
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// Mesma conta do servidor, para o total responder na hora ao desmarcar uma nota.
+function passos(base, aliqOrigem) {
+  const excl = base * (1 - aliqOrigem);
+  const incl = excl / (1 - ALIQ_INTERNA);
+  const deb = incl * ALIQ_INTERNA;
+  const cred = base * aliqOrigem;
+  return { base, exclusaoInterestadual: excl, inclusaoInterno: incl, debito: deb, credito: cred, aPagar: deb - cred };
+}
+
+let arquivosRel = [];
+let arquivosXml = [];
+let resultado = null;
+const selecao = new Set();      // chaves marcadas
+
+// ── Abas ─────────────────────────────────────────────────────────────────────
+function mostrarAba(qual) {
+  $('viewApurar').style.display = qual === 'apurar' ? 'block' : 'none';
+  $('viewResumo').style.display = qual === 'resumo' ? 'block' : 'none';
+  $('tabApurar').style.background = qual === 'apurar' ? '#1f6feb' : 'transparent';
+  $('tabResumo').style.background = qual === 'resumo' ? '#1f6feb' : 'transparent';
+  ['competencia', 'btnApurar', 'btnExportar', 'btnFinalizar'].forEach(id =>
+    $(id).style.display = qual === 'apurar' ? '' : 'none');
+}
+$('tabApurar').addEventListener('click', () => mostrarAba('apurar'));
+$('tabResumo').addEventListener('click', () => { mostrarAba('resumo'); carregarResumo(); });
+
+// ── Upload ───────────────────────────────────────────────────────────────────
+function ligarDrop(idDrop, idInput, idLista, guardar) {
+  const drop = $(idDrop);
+  const input = $(idInput);
+  drop.addEventListener('click', () => input.click());
+  input.addEventListener('change', () => aceitar([...input.files]));
+  ['dragenter', 'dragover'].forEach(ev =>
+    drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
+  ['dragleave', 'drop'].forEach(ev =>
+    drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
+  drop.addEventListener('drop', e => aceitar([...e.dataTransfer.files]));
+
+  function aceitar(files) {
+    if (!files.length) return;
+    guardar(files);
+    $(idLista).textContent = files.map(f => f.name).join(', ');
+    drop.classList.add('ok');
+    $('btnApurar').disabled = !(arquivosRel.length && arquivosXml.length);
+  }
+}
+ligarDrop('dropRel', 'inpRel', 'relFiles', f => { arquivosRel = f; });
+ligarDrop('dropXml', 'inpXml', 'xmlFiles', f => { arquivosXml = f; });
+
+function erro(msg) {
+  const b = $('errorBox');
+  if (!msg) { b.style.display = 'none'; return; }
+  b.innerHTML = esc(msg);
+  b.style.display = 'block';
+}
+
+// ── Apuração ─────────────────────────────────────────────────────────────────
+async function apurar() {
+  erro(null);
+  $('alertBox').style.display = 'none';
+  $('empresas').innerHTML = '';
+  $('summaryStrip').style.display = 'none';
+  $('stateBox').style.display = 'block';
+  $('stateBox').innerHTML = '<div class="mx-spinner"></div><div>Lendo os arquivos e apurando…</div>';
+  $('btnApurar').disabled = true;
+
+  const fd = new FormData();
+  arquivosRel.forEach(f => fd.append('relatorio', f));
+  arquivosXml.forEach(f => fd.append('xmls', f));
+  const comp = $('competencia').value;
+  if (comp) fd.append('competencia', comp);
+
+  try {
+    const r = await fetch('/api/icms/apurar', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Falha na apuração');
+    resultado = data;
+    selecao.clear();
+    data.empresas.forEach(e => e.linhas.forEach(l => { if (l.selecionada && l.chave) selecao.add(l.chave); }));
+    render();
+  } catch (e) {
+    erro(e.message);
+    $('stateBox').textContent = 'Não foi possível apurar.';
+  } finally {
+    $('btnApurar').disabled = !(arquivosRel.length && arquivosXml.length);
+  }
+}
+$('btnApurar').addEventListener('click', apurar);
+
+// ── Totais a partir da seleção ───────────────────────────────────────────────
+function totaisDe(emp) {
+  const sel = emp.linhas.filter(l => l.incluida && l.chave && selecao.has(l.chave));
+  const base4 = sel.reduce((s, l) => s + l.base4, 0);
+  const base12 = sel.reduce((s, l) => s + l.base12, 0);
+  const p4 = passos(base4, 0.04);
+  const p12 = passos(base12, 0.12);
+  return { sel, base4, base12, p4, p12, difal: p4.aPagar + p12.aPagar };
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function render() {
+  const d = resultado;
+  const totais = d.empresas.map(totaisDe);
+  const total = totais.reduce((s, t) => s + t.difal, 0);
+  const notas = totais.reduce((s, t) => s + t.sel.length, 0);
+  const fora = d.empresas.reduce((s, e) => s + e.excluidas.length, 0);
+  const conferir = d.empresas.reduce((s, e) => s + e.atencao.length + e.revisar.length, 0);
+
+  $('sumTotal').textContent = fBRL(total);
+  $('sumNotas').textContent = notas;
+  $('sumFora').textContent = fora;
+  $('sumConferir').textContent = conferir;
+  $('summaryStrip').style.display = 'grid';
+  $('stateBox').style.display = 'none';
+  $('btnExportar').disabled = notas === 0;
+  $('btnFinalizar').disabled = notas === 0;
+
+  if (d.duplicadas) {
+    $('alertBox').className = 'mx-alert dup';
+    $('alertBox').innerHTML =
+      `<strong>${d.duplicadas} nota(s) já foram apuradas em competência anterior.</strong> ` +
+      'Vieram desmarcadas e fora do total. Marcar de novo significa pagar o mesmo imposto duas vezes — ' +
+      'só faça isso se a apuração anterior tiver sido estornada.';
+    $('alertBox').style.display = 'block';
+  } else {
+    const alertas = (d.semXml || []).filter(x => x.relevante);
+    if (alertas.length) {
+      $('alertBox').className = 'mx-alert';
+      $('alertBox').innerHTML =
+        `<strong>${alertas.length} nota(s) com lançamento no Microvix mas sem XML no lote.</strong> ` +
+        'O imposto dessas não entrou no total.<br>' +
+        alertas.map(a => `${esc(a.doc)} — ${esc(a.fornecedor || '')} — lçto ${fData(a.dtLancamento)}`).join('<br>');
+      $('alertBox').style.display = 'block';
+    }
+  }
+
+  $('empresas').innerHTML = d.empresas.map((e, i) => cardEmpresa(e, totais[i], i)).join('');
+
+  document.querySelectorAll('.mx-emp-hdr').forEach(h =>
+    h.addEventListener('click', ev => {
+      if (ev.target.closest('input,button')) return;
+      h.parentElement.classList.toggle('open');
+    }));
+
+  document.querySelectorAll('input[data-chave]').forEach(cb =>
+    cb.addEventListener('change', () => {
+      const k = cb.dataset.chave;
+      if (cb.checked) selecao.add(k); else selecao.delete(k);
+      const abertas = [...document.querySelectorAll('.mx-emp.open')].map(el => el.dataset.i);
+      render();
+      abertas.forEach(i => document.querySelector(`.mx-emp[data-i="${i}"]`)?.classList.add('open'));
+    }));
+
+  document.querySelectorAll('button[data-todas]').forEach(b =>
+    b.addEventListener('click', () => {
+      const emp = d.empresas[Number(b.dataset.todas)];
+      const marcar = b.dataset.acao === 'marcar';
+      emp.linhas.filter(l => l.incluida && l.chave && !l.jaApurada).forEach(l => {
+        if (marcar) selecao.add(l.chave); else selecao.delete(l.chave);
+      });
+      const abertas = [...document.querySelectorAll('.mx-emp.open')].map(el => el.dataset.i);
+      render();
+      abertas.forEach(i => document.querySelector(`.mx-emp[data-i="${i}"]`)?.classList.add('open'));
+    }));
+
+  document.querySelectorAll('button[data-finalizar]').forEach(b =>
+    b.addEventListener('click', () => finalizarEmpresa(Number(b.dataset.finalizar))));
+}
+
+function blocoAliquota(emp, aliq, t) {
+  const notas = emp.linhas
+    .filter(n => n.incluida && (aliq === 4 ? n.base4 : n.base12) > 0)
+    .sort((a, b) => String(a.dtLancamento || '').localeCompare(String(b.dtLancamento || '')));
+  if (!notas.length) return '';
+  const p = aliq === 4 ? t.p4 : t.p12;
+
+  return `
+  <div class="mx-sec">Quando alíquota interestadual ${aliq}%</div>
+  <div class="mx-scroll"><table class="mx-t">
+    <tr>
+      <th class="sel"></th><th>Nota fiscal</th><th>Lçto</th><th>Base</th>
+      <th>Exclusão interest.</th><th>Inclusão interno</th>
+      <th>Débito</th><th>Crédito</th><th>ICMS a pagar</th>
+    </tr>
+    ${notas.map(n => {
+      const marcada = n.chave && selecao.has(n.chave);
+      const q = passos(aliq === 4 ? n.base4 : n.base12, aliq / 100);
+      return `<tr class="${marcada ? '' : 'off'} ${n.jaApurada ? 'dup' : ''}">
+        <td class="sel"><input type="checkbox" data-chave="${esc(n.chave)}" ${marcada ? 'checked' : ''} ${n.chave ? '' : 'disabled'}></td>
+        <td>${esc(n.doc)}${n.jaApurada ? `<span class="mx-badge-dup">já apurada em ${esc(n.jaApurada.competencia)}</span>` : ''}</td>
+        <td>${fData(n.dtLancamento)}</td>
+        <td>${f4(q.base)}</td>
+        <td>${f4(q.exclusaoInterestadual)}</td>
+        <td>${f4(q.inclusaoInterno)}</td>
+        <td>${f4(q.debito)}</td>
+        <td>${f4(q.credito)}</td>
+        <td>${f4(q.aPagar)}</td>
+      </tr>`;
+    }).join('')}
+    <tr class="tot">
+      <td class="sel"></td><td>Total marcado</td><td></td>
+      <td>${f4(p.base)}</td><td>${f4(p.exclusaoInterestadual)}</td><td>${f4(p.inclusaoInterno)}</td>
+      <td>${f4(p.debito)}</td><td>${f4(p.credito)}</td><td>${f4(p.aPagar)}</td>
+    </tr>
+  </table></div>`;
+}
+
+function cardEmpresa(emp, t, i) {
+  const conferir = [
+    ...emp.atencao.flatMap(l => l.atencao.map(a => ({ doc: l.doc, ...a }))),
+    ...emp.revisar.flatMap(l => l.revisar.map(a => ({ doc: l.doc, ...a }))),
+  ];
+
+  return `
+  <div class="mx-emp" data-i="${i}">
+    <div class="mx-emp-hdr">
+      <div class="mx-emp-nome">${esc(emp.empresa)}<span class="mx-emp-cnpj">${esc(emp.cnpj)}</span></div>
+      <div class="mx-emp-val">${fBRL(t.difal)}</div>
+      <div class="mx-emp-chev">▾</div>
+    </div>
+    <div class="mx-emp-body">
+      <div class="mx-selbar">
+        <span>${t.sel.length} de ${emp.incluidas.length} notas marcadas</span>
+        <button class="mx-link" data-todas="${i}" data-acao="marcar">marcar todas</button>
+        <button class="mx-link" data-todas="${i}" data-acao="desmarcar">desmarcar todas</button>
+        <button class="mx-btn" data-finalizar="${i}" style="margin-left:auto;background:#238636;border-color:#2ea043"
+          ${t.sel.length ? '' : 'disabled'}>Finalizar esta empresa</button>
+      </div>
+      ${blocoAliquota(emp, 12, t)}
+      ${blocoAliquota(emp, 4, t)}
+
+      ${emp.itensST.length ? `
+      <div class="mx-sec">Itens com ST em Minas Gerais</div>
+      <div class="mx-scroll"><table class="mx-t">
+        <tr><th>Nota</th><th>NCM</th><th>Base ICMS normal</th><th>ICMS interest.</th><th>IPI</th><th>Base ST</th><th>Valor ST</th></tr>
+        ${emp.itensST.map(it => `<tr>
+          <td>${esc(it.doc)}</td><td>${esc(it.ncm)}</td>
+          <td>${f4(it.baseIcmsNormal)}</td><td>${f4(it.icmsInterestadual)}</td>
+          <td>${f4(it.ipi)}</td><td>${f4(it.baseIcmsST)}</td><td>${f4(it.valorST)}</td>
+        </tr>`).join('')}
+      </table></div>` : ''}
+
+      ${conferir.length ? `
+      <div class="mx-sec">Conferir</div>
+      <div class="mx-scroll"><table class="mx-t">
+        <tr><th>Nota</th><th>Observação</th><th>CFOP</th><th>Valor</th></tr>
+        ${conferir.map(c => `<tr>
+          <td>${esc(c.doc)}</td><td style="text-align:left">${esc(c.motivo)}</td>
+          <td><span class="mx-tag warn">${esc(c.cfop)}</span></td><td>${f4(c.valor)}</td>
+        </tr>`).join('')}
+      </table></div>` : ''}
+
+      <div class="mx-sec">Notas que não entraram (${emp.excluidas.length})</div>
+      <div class="mx-scroll"><table class="mx-t">
+        <tr><th>Nota</th><th>Fornecedor</th><th>UF</th><th>Valor</th><th>Motivo</th></tr>
+        ${emp.excluidas.map(n => `<tr>
+          <td>${esc(n.doc)}</td><td>${esc(n.fornecedor)}</td><td>${esc(n.ufOrigem)}</td>
+          <td>${f4(n.vlrTotal)}</td><td style="text-align:left">${esc(n.motivo)}</td>
+        </tr>`).join('')}
+      </table></div>
+    </div>
+  </div>`;
+}
+
+// ── Recorte do resultado com só o que está marcado ───────────────────────────
+function resultadoMarcado() {
+  const empresas = resultado.empresas.map((e, i) => {
+    const t = totaisDe(e);
+    return {
+      ...e,
+      incluidas: t.sel,
+      linhas: e.linhas,
+      totais: { base4: t.base4, base12: t.base12, difal: t.difal, passos: { 4: t.p4, 12: t.p12 } },
+    };
+  });
+  return { ...resultado, empresas, totalGeral: empresas.reduce((s, e) => s + e.totais.difal, 0) };
+}
+
+// ── Export ───────────────────────────────────────────────────────────────────
+$('btnExportar').addEventListener('click', async () => {
+  if (!resultado) return;
+  $('btnExportar').disabled = true;
+  try {
+    const comp = $('competencia').value;
+    const r = await fetch('/api/icms/exportar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        resultado: resultadoMarcado(),
+        competencia: comp ? comp.slice(5) + '/' + comp.slice(0, 4) : null,
+      }),
+    });
+    if (!r.ok) throw new Error((await r.json()).error || 'Falha ao exportar');
+    const blob = await r.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `ICMS-diferencial-${comp || 'apuracao'}.xlsx`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch (e) {
+    erro(e.message);
+  } finally {
+    $('btnExportar').disabled = false;
+  }
+});
+
+// ── Finalizar ────────────────────────────────────────────────────────────────
+async function finalizarEmpresa(i) {
+  const emp = resultado.empresas[i];
+  const t = totaisDe(emp);
+  const comp = $('competencia').value;
+  if (!comp) return erro('Escolha a competência antes de finalizar.');
+  if (!t.sel.length) return erro('Nenhuma nota marcada nesta empresa.');
+
+  const ok = confirm(
+    `Finalizar ${emp.empresa}\n` +
+    `Competência ${comp}\n` +
+    `${t.sel.length} notas — ${fBRL(t.difal)}\n\n` +
+    'As notas ficam travadas contra reapuração em outros períodos. ' +
+    'Para desfazer é preciso estornar a competência.',
+  );
+  if (!ok) return;
+
+  try {
+    const r = await fetch('/api/icms/finalizar', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ competencia: comp, cnpj: emp.cnpj, empresa: emp.empresa, linhas: t.sel }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Falha ao finalizar');
+
+    let msg = `${data.registradas} nota(s) registradas.`;
+    if (data.duplicadas?.length) {
+      msg += ` ${data.duplicadas.length} já constavam e foram ignoradas: ` +
+        data.duplicadas.map(x => `${x.doc} (${x.competenciaAnterior})`).join(', ');
+    }
+    alert(msg);
+    await apurar();
+  } catch (e) {
+    erro(e.message);
+  }
+}
+
+$('btnFinalizar').addEventListener('click', () => {
+  if (!resultado) return;
+  if (resultado.empresas.length === 1) return finalizarEmpresa(0);
+  erro('Há mais de uma empresa no lote. Use o botão "Finalizar esta empresa" dentro de cada uma.');
+});
+
+// ── Resumo ───────────────────────────────────────────────────────────────────
+async function carregarResumo() {
+  const box = $('resumoBox');
+  box.innerHTML = '<div class="mx-state"><div class="mx-spinner"></div><div>Consultando…</div></div>';
+  const q = new URLSearchParams();
+  if ($('resDe').value) q.set('de', $('resDe').value);
+  if ($('resAte').value) q.set('ate', $('resAte').value);
+  if ($('resCnpj').value) q.set('cnpj', $('resCnpj').value);
+
+  try {
+    const r = await fetch('/api/icms/resumo?' + q);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Falha ao consultar');
+    box.innerHTML = renderResumo(d);
+  } catch (e) {
+    box.innerHTML = `<div class="mx-error">${esc(e.message)}</div>`;
+  }
+}
+$('btnResumo').addEventListener('click', carregarResumo);
+
+function barra(p4, p12) {
+  return `<div class="mx-barra">
+    <i style="width:${(p4 * 100).toFixed(1)}%;background:#a371f7"></i>
+    <i style="width:${(p12 * 100).toFixed(1)}%;background:#1f6feb"></i>
+  </div>
+  <div class="mx-leg">
+    <span><span class="mx-dot" style="background:#a371f7"></span>origem 4% — <b>${fPct(p4)}</b></span>
+    <span><span class="mx-dot" style="background:#1f6feb"></span>origem 12% — <b>${fPct(p12)}</b></span>
+  </div>`;
+}
+
+function renderResumo(d) {
+  if (!d.empresas.length) {
+    return '<div class="mx-state">Nada finalizado nesse período ainda.</div>';
+  }
+  const t = d.total;
+
+  return `
+  <div class="mx-summary" style="grid-template-columns:repeat(4,1fr)">
+    <div class="mx-sum-card"><div class="mx-sum-label">Total do diferencial</div><div class="mx-sum-val blue">${fBRL(t.difal)}</div></div>
+    <div class="mx-sum-card"><div class="mx-sum-label">Base comprada</div><div class="mx-sum-val">${fBRL(t.baseTotal)}</div></div>
+    <div class="mx-sum-card"><div class="mx-sum-label">Alíquota efetiva</div><div class="mx-sum-val" style="color:#3fb950">${fPct(t.aliquotaEfetiva)}</div></div>
+    <div class="mx-sum-card"><div class="mx-sum-label">Notas</div><div class="mx-sum-val">${t.qtdNotas}</div></div>
+  </div>
+
+  <div class="mx-emp" style="padding:.9rem">
+    <div class="mx-sec" style="margin-top:0">Participação por alíquota de origem — no imposto</div>
+    ${barra(t.participacao4, t.participacao12)}
+    <div class="mx-leg" style="margin-top:.5rem">
+      <span>4%: <b>${fBRL(t.difal4)}</b></span>
+      <span>12%: <b>${fBRL(t.difal12)}</b></span>
+    </div>
+    <div class="mx-sec">Participação por alíquota de origem — na base comprada</div>
+    ${barra(t.participacaoBase4, t.participacaoBase12)}
+    <div class="mx-leg" style="margin-top:.5rem">
+      <span>4%: <b>${fBRL(t.base4)}</b></span>
+      <span>12%: <b>${fBRL(t.base12)}</b></span>
+    </div>
+  </div>
+
+  <div class="mx-sec">Por empresa</div>
+  <div class="mx-scroll"><table class="mx-t">
+    <tr>
+      <th>Empresa</th><th>Competências</th><th>Notas</th>
+      <th>Base 4%</th><th>Base 12%</th><th>Base total</th>
+      <th>DIFAL 4%</th><th>DIFAL 12%</th><th>Total</th><th>% do grupo</th><th>Alíq. efetiva</th>
+    </tr>
+    ${d.empresas.map(e => `<tr>
+      <td>${esc(e.apelido)}<div style="font-size:.68rem;color:#8b949e">${esc(e.cnpjFormatado)}</div></td>
+      <td style="text-align:left;font-size:.7rem">${e.competencias.map(esc).join(', ')}</td>
+      <td>${e.qtdNotas}</td>
+      <td>${fBRL(e.base4)}</td><td>${fBRL(e.base12)}</td><td>${fBRL(e.baseTotal)}</td>
+      <td>${fBRL(e.difal4)}</td><td>${fBRL(e.difal12)}</td>
+      <td><b>${fBRL(e.difal)}</b></td>
+      <td>${fPct(t.difal ? e.difal / t.difal : 0)}</td>
+      <td style="color:#3fb950;font-weight:700">${fPct(e.aliquotaEfetiva)}</td>
+    </tr>`).join('')}
+    <tr class="tot">
+      <td>Total</td><td></td><td>${t.qtdNotas}</td>
+      <td>${fBRL(t.base4)}</td><td>${fBRL(t.base12)}</td><td>${fBRL(t.baseTotal)}</td>
+      <td>${fBRL(t.difal4)}</td><td>${fBRL(t.difal12)}</td><td>${fBRL(t.difal)}</td>
+      <td>100,00%</td><td style="color:#3fb950">${fPct(t.aliquotaEfetiva)}</td>
+    </tr>
+  </table></div>`;
+}
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+(async function init() {
+  const r = await fetch('/api/me');
+  if (!r.ok) { window.location.href = '/'; return; }
+
+  const hoje = new Date();
+  hoje.setMonth(hoje.getMonth() - 1);
+  $('competencia').value = hoje.toISOString().slice(0, 7);
+  $('resDe').value = hoje.getFullYear() + '-01-01';
+  $('resAte').value = new Date().toISOString().slice(0, 10);
+
+  try {
+    const emp = await (await fetch('/api/icms/empresas')).json();
+    $('resCnpj').innerHTML = '<option value="">Todas as empresas</option>' +
+      emp.filter(e => e.ativa).map(e => `<option value="${esc(e.cnpj)}">${esc(e.apelido)}</option>`).join('');
+  } catch { /* o seletor fica só com "todas" */ }
+
+  mostrarAba('apurar');
+})();
