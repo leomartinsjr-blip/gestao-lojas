@@ -6978,6 +6978,179 @@ app.post('/api/cadastro-produto/export', requireAdmin, async (req, res) => {
   }
 });
 
+// ── Diferencial de alíquota de ICMS (compras interestaduais) ──────────────
+// Duas entradas: o "Relatório de Notas de Compra" do Microvix, que diz o que
+// deu entrada no sistema, e os XMLs da tela ENTRADA NF-E, que trazem a base de
+// cálculo por alíquota. Só o que consta no relatório vira imposto.
+const _icmsUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 60 * 1024 * 1024, files: 12 },
+});
+
+app.get('/api/icms/empresas', requireAdmin, (req, res) => {
+  const { EMPRESAS, formatarCnpj } = require('./services/empresas');
+  res.json(EMPRESAS.map(e => ({
+    cnpj: e.cnpj,
+    cnpjFormatado: formatarCnpj(e.cnpj),
+    apelido: e.apelido,
+    razaoSocial: e.razaoSocial,
+    aba: e.aba,
+    ativa: e.ativa,
+  })));
+});
+
+app.post('/api/icms/apurar', requireAdmin,
+  _icmsUpload.fields([{ name: 'relatorio', maxCount: 4 }, { name: 'xmls', maxCount: 8 }]),
+  async (req, res) => {
+    try {
+      const { parseRelatorio } = require('./services/notasCompraReport');
+      const { calcularPorEmpresa } = require('./services/difal');
+      const { cnpjsDoGrupo } = require('./services/empresas');
+      const { lerXmlsDoZip } = require('./services/zipReader');
+
+      const relatorios = (req.files && req.files.relatorio) || [];
+      const pacotes = (req.files && req.files.xmls) || [];
+      if (!relatorios.length) return res.status(400).json({ error: 'Envie o Relatório de Notas de Compra' });
+      if (!pacotes.length) return res.status(400).json({ error: 'Envie o zip com os XMLs' });
+
+      const lancamentos = [];
+      const periodos = [];
+      for (const f of relatorios) {
+        const r = parseRelatorio(f.buffer.toString('utf8'));
+        lancamentos.push(...r.notas);
+        if (r.periodo) periodos.push(r.periodo);
+      }
+
+      const notas = [];
+      for (const f of pacotes) {
+        if (/\.xml$/i.test(f.originalname)) notas.push({ xml: f.buffer.toString('utf8') });
+        else notas.push(...lerXmlsDoZip(f.buffer));
+      }
+
+      const resultado = calcularPorEmpresa(notas, {
+        lancamentos,
+        cnpjsProprios: cnpjsDoGrupo(),
+        competencia: req.body.competencia || null,
+      });
+
+      // Nota já apurada antes não pode entrar de novo — senão o imposto é pago
+      // duas vezes. Vem desmarcada e sinalizada com a competência anterior.
+      const { buscarApuradas } = require('./services/icmsHistorico');
+      const chaves = resultado.empresas.flatMap(e => e.linhas.map(l => l.chave)).filter(Boolean);
+      const apuradas = await buscarApuradas(mongoDb, chaves);
+
+      let duplicadas = 0;
+      for (const emp of resultado.empresas) {
+        for (const l of emp.linhas) {
+          const anterior = l.chave && apuradas[l.chave];
+          if (!anterior) { l.selecionada = l.incluida; continue; }
+          l.jaApurada = { competencia: anterior.competencia, em: anterior.apuradaEm };
+          l.selecionada = false;
+          if (l.incluida) duplicadas++;
+        }
+      }
+
+      res.json({
+        competencia: req.body.competencia || null,
+        periodos,
+        duplicadas,
+        lidos: { relatorios: relatorios.length, xmls: notas.length, lancamentos: lancamentos.length },
+        ...resultado,
+      });
+    } catch (e) {
+      console.error('[icms/apurar]', e.message);
+      res.status(500).json({ error: e.message });
+    }
+  });
+
+app.post('/api/icms/exportar', requireAdmin, express.json({ limit: '20mb' }), async (req, res) => {
+  try {
+    const { gerarXlsx } = require('./services/difalExport');
+    const { resultado, competencia } = req.body || {};
+    if (!resultado || !resultado.empresas) return res.status(400).json({ error: 'Nada para exportar' });
+
+    const buf = await gerarXlsx(resultado, { competencia });
+    const nome = `ICMS-diferencial-${(competencia || '').replace('/', '-') || 'apuracao'}.xlsx`;
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${nome}"`);
+    res.send(Buffer.from(buf));
+  } catch (e) {
+    console.error('[icms/exportar]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Finaliza a competência: grava as notas selecionadas no histórico. A partir
+// daí elas ficam travadas contra reapuração em qualquer outro período.
+app.post('/api/icms/finalizar', requireAdmin, express.json({ limit: '20mb' }), async (req, res) => {
+  try {
+    const { finalizar } = require('./services/icmsHistorico');
+    const { competencia, cnpj, empresa, linhas } = req.body || {};
+    if (!competencia || !cnpj) return res.status(400).json({ error: 'Informe a competência e o CNPJ' });
+    if (!Array.isArray(linhas) || !linhas.length) return res.status(400).json({ error: 'Nenhuma nota selecionada' });
+
+    const semChave = linhas.filter(l => !l.chave);
+    if (semChave.length) {
+      return res.status(400).json({
+        error: `${semChave.length} nota(s) sem chave de NF-e. Sem a chave não dá para travar contra duplicidade.`,
+      });
+    }
+
+    const r = await finalizar(mongoDb, {
+      competencia, cnpj, empresa, linhas,
+      usuario: req.session.user?.name || req.session.user?.login || null,
+    });
+    res.json(r);
+  } catch (e) {
+    console.error('[icms/finalizar]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Estorno: libera as notas de uma competência para reapuração.
+app.post('/api/icms/estornar', requireAdmin, express.json(), async (req, res) => {
+  try {
+    const { estornar } = require('./services/icmsHistorico');
+    const { competencia, cnpj } = req.body || {};
+    if (!competencia || !cnpj) return res.status(400).json({ error: 'Informe a competência e o CNPJ' });
+    res.json(await estornar(mongoDb, { competencia, cnpj }));
+  } catch (e) {
+    console.error('[icms/estornar]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// Resumo consolidado por CNPJ num intervalo de datas livre, com participação
+// por alíquota e alíquota efetiva sobre a base comprada.
+app.get('/api/icms/resumo', requireAdmin, async (req, res) => {
+  try {
+    const { resumo } = require('./services/icmsHistorico');
+    const { buscarEmpresa, formatarCnpj } = require('./services/empresas');
+    const r = await resumo(mongoDb, {
+      de: req.query.de || null,
+      ate: req.query.ate || null,
+      cnpj: req.query.cnpj || null,
+    });
+    r.empresas = r.empresas.map(e => {
+      const cad = buscarEmpresa(e.cnpj);
+      return { ...e, apelido: cad ? cad.apelido : e.cnpj, cnpjFormatado: formatarCnpj(e.cnpj) };
+    });
+    res.json(r);
+  } catch (e) {
+    console.error('[icms/resumo]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.get('/api/icms/apuracoes', requireAdmin, async (req, res) => {
+  try {
+    const { listarApuracoes } = require('./services/icmsHistorico');
+    res.json(await listarApuracoes(mongoDb, { cnpj: req.query.cnpj || null }));
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── Global error handler (captura erros de multer e outros middlewares) ────
 app.use((err, req, res, next) => {
   const msg = err?.message || String(err) || 'Erro interno';
