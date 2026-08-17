@@ -539,11 +539,112 @@ function calcularPorEmpresa(notas, cfg = {}) {
   };
 }
 
+/**
+ * Traduz o resultado em pendências, agrupadas pelo que precisa ser feito.
+ * Cada grupo diz a situação em uma frase e lista as notas — a ideia é que
+ * ninguém precise interpretar código de CFOP para saber o que fazer.
+ *
+ * `acao: null` marca o grupo informativo, em que não há nada a fazer.
+ */
+function montarPendencias(resultado) {
+  const grupos = [];
+  const add = (tipo, titulo, acao, notas, gravidade = 'aviso') => {
+    if (notas.length) grupos.push({ tipo, titulo, acao, gravidade, qtd: notas.length, notas });
+  };
+  const _dataBr = d => (d ? String(d).slice(8, 10) + '/' + String(d).slice(5, 7) + '/' + String(d).slice(0, 4) : '');
+
+  const linhas = resultado.empresas.flatMap(e => e.linhas.map(l => ({ ...l, _empresa: e.empresa })));
+  const semXml = resultado.semXml || [];
+
+  const desc = l => ({
+    doc: l.doc,
+    fornecedor: l.fornecedor,
+    valor: l.vlrTotal,
+    dtLancamento: l.dtLancamento,
+    dhEmi: l.dhEmi || null,
+    natOp: l.natOp || '',
+    detalhe: l.detalhe || '',
+  });
+
+  // Uma nota pode disparar o mesmo aviso em vários itens; na lista ela aparece
+  // uma vez só.
+  const unicas = notas => {
+    const vistas = new Set();
+    return notas.filter(n => {
+      const k = `${n.doc}|${n.detalhe}`;
+      if (vistas.has(k)) return false;
+      vistas.add(k);
+      return true;
+    });
+  };
+
+  add('falta-xml',
+    'Lançadas no Microvix, mas o XML não veio no lote',
+    'Baixe o XML dessas notas e apure de novo — o imposto delas não está no total',
+    semXml.filter(x => x.relevante).map(desc),
+    'grave');
+
+  const porEmpresaSemZip = {};
+  semXml.filter(x => !x.relevante && /nenhum XML da empresa/.test(x.observacao || ''))
+    .forEach(x => { (porEmpresaSemZip[x.emp] = porEmpresaSemZip[x.emp] || []).push(desc(x)); });
+  for (const [emp, notas] of Object.entries(porEmpresaSemZip)) {
+    add('zip-faltando',
+      `Empresa ${emp} do relatório: nenhum XML enviado`,
+      `Suba o zip da empresa ${emp} para apurar essas notas — elas não afetam o total atual`,
+      notas);
+  }
+
+  add('ja-computada',
+    'Já computadas em competência anterior',
+    null,
+    linhas.filter(l => l.jaApurada)
+      .map(l => ({ ...desc(l), detalhe: `já computada em ${l.jaApurada.competencia}` })),
+    'ok');
+
+  add('sem-lancamento',
+    'Têm XML, mas não têm entrada no Microvix',
+    'Confira no Microvix: ou a nota foi recusada e devolvida, ou falta lançar',
+    linhas.filter(l => !l.jaApurada && /não consta no relatório de lançamentos/.test(l.motivo || ''))
+      .map(l => ({
+        ...desc(l),
+        detalhe: [l.dhEmi ? `emitida em ${_dataBr(l.dhEmi)}` : '', l.natOp].filter(Boolean).join(' — '),
+      })),
+    'grave');
+
+  add('outra-competencia',
+    'Pertencem a outro mês',
+    null,
+    linhas.filter(l => !l.jaApurada && /(fora da competência|emitida em)/.test(l.motivo || ''))
+      .map(l => ({ ...desc(l), detalhe: l.motivo })),
+    'ok');
+
+  add('sem-diferencial',
+    'Não geram diferencial por regra fiscal',
+    null,
+    linhas.filter(l => !l.incluida && !l.jaApurada &&
+      !/(não consta|fora da competência|emitida em)/.test(l.motivo || ''))
+      .map(l => ({ ...desc(l), detalhe: l.motivo })),
+    'ok');
+
+  // Só faz sentido conferir a classificação do que de fato entrou na conta.
+  const conferir = resultado.empresas.flatMap(e => [
+    ...e.atencao.filter(l => l.incluida).flatMap(l => l.atencao.map(a => ({ ...desc(l), detalhe: a.motivo }))),
+    ...e.revisar.filter(l => l.incluida).flatMap(l => l.revisar.map(a => ({ ...desc(l), detalhe: a.motivo }))),
+  ]);
+  add('conferir',
+    'Entraram no cálculo, mas merecem uma olhada',
+    'Confira se a classificação está certa antes de finalizar',
+    unicas(conferir));
+
+  return grupos;
+}
+
 module.exports = {
   parseNFe,
   calcularNota,
   calcularLote,
   calcularPorEmpresa,
+  montarPendencias,
   chaveDoc,
   fatorExato,
   FATORES_ARREDONDADOS,

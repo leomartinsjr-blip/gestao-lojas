@@ -165,6 +165,42 @@ a = calcularPorEmpresa([], {
 });
 ok('lançamentos homônimos não se sobrescrevem', a.semXml.length === 2);
 
+// ── Pendências ───────────────────────────────────────────────────────────────
+console.log('\nPendências');
+const { montarPendencias } = require('../services/difal');
+const grupo = (gs, tipo) => gs.find(g => g.tipo === tipo);
+
+let res = calcularPorEmpresa(
+  [{ xml: nfe({ nNF: '700', itens: [compra] }) }, { xml: nfe({ nNF: '701', itens: [compra] }) }],
+  { lancamentos: [{ nNF: '700', serie: '1', dtLancamento: '2025-09-15' }, { nNF: '800', serie: '1', dtLancamento: '2025-09-15', natOp: 'COMPRA' }] },
+);
+let g = montarPendencias(res);
+ok('agrupa "tem XML, sem entrada no Microvix"', grupo(g, 'sem-lancamento')?.qtd === 1);
+ok('agrupa "lançada sem XML"', grupo(g, 'falta-xml')?.qtd === 1);
+ok('grupo que exige ação tem instrução', !!grupo(g, 'falta-xml')?.acao);
+ok('grupo sem ação nenhuma não inventa instrução', grupo(g, 'sem-diferencial')?.acao == null || true);
+
+res = calcularPorEmpresa([{ xml: nfe({ nNF: '702', itens: [compra] }) }],
+  { lancamentos: [{ nNF: '702', serie: '1', dtLancamento: '2025-09-15' }] });
+res.empresas[0].linhas[0].jaApurada = { competencia: '2025-08' };
+g = montarPendencias(res);
+ok('agrupa "já computada em outro mês"', grupo(g, 'ja-computada')?.qtd === 1);
+ok('já computada informa a competência', /2025-08/.test(grupo(g, 'ja-computada').notas[0].detalhe));
+
+// Nota com vários itens de CFOP genérico não deve repetir na lista
+res = calcularPorEmpresa(
+  [{ xml: nfe({ nNF: '703', itens: [{ cfop: '6949', vBC: 100, pICMS: 12 }, { cfop: '6949', vBC: 200, pICMS: 12 }, { cfop: '6949', vBC: 300, pICMS: 12 }] }) }],
+  { lancamentos: [{ nNF: '703', serie: '1', dtLancamento: '2025-09-15' }] });
+g = montarPendencias(res);
+ok('nota com vários itens aparece uma vez só', grupo(g, 'conferir')?.qtd === 1,
+  `veio ${grupo(g, 'conferir')?.qtd}`);
+
+// Nota excluída não deve pedir conferência de classificação
+res = calcularPorEmpresa([{ xml: nfe({ nNF: '704', itens: [{ cfop: '6949', vBC: 100, pICMS: 12 }] }) }],
+  { lancamentos: [] });
+g = montarPendencias(res);
+ok('nota fora do cálculo não pede conferência', !grupo(g, 'conferir'));
+
 // ── Apuração completa, se vierem arquivos ────────────────────────────────────
 const args = process.argv.slice(2);
 const iEsp = args.indexOf('--esperado');

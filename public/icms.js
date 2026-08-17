@@ -131,39 +131,9 @@ function render() {
   $('btnExportar').disabled = notas === 0;
   $('btnFinalizar').disabled = notas === 0;
 
-  if (d.duplicadas) {
-    $('alertBox').className = 'mx-alert dup';
-    $('alertBox').innerHTML =
-      `<strong>${d.duplicadas} nota(s) já foram apuradas em competência anterior.</strong> ` +
-      'Vieram desmarcadas e fora do total. Marcar de novo significa pagar o mesmo imposto duas vezes — ' +
-      'só faça isso se a apuração anterior tiver sido estornada.';
-    $('alertBox').style.display = 'block';
-  } else {
-    const alertas = (d.semXml || []).filter(x => x.relevante);
-    // Empresa cujo zip não foi enviado: vira uma linha de resumo, não uma
-    // enxurrada de avisos que esconde o que importa.
-    const semLote = (d.semXml || []).filter(x => !x.relevante && /nenhum XML da empresa/.test(x.observacao || ''));
-    const porEmp = {};
-    semLote.forEach(x => { porEmp[x.emp] = (porEmp[x.emp] || 0) + 1; });
-
-    let html = '';
-    if (alertas.length) {
-      html += `<strong>${alertas.length} nota(s) desta empresa com lançamento no Microvix mas sem XML no lote.</strong> ` +
-        'O imposto dessas não entrou no total — provavelmente foram emitidas antes da janela que você baixou.<br>' +
-        alertas.map(a => `${esc(a.doc)} — ${esc(a.fornecedor || '')} — lçto ${fData(a.dtLancamento)}`).join('<br>');
-    }
-    if (Object.keys(porEmp).length) {
-      if (html) html += '<br><br>';
-      html += '<strong>Empresas do relatório sem XML neste lote:</strong> ' +
-        Object.entries(porEmp).map(([e, n]) => `empresa ${esc(e)} (${n} notas)`).join(', ') +
-        '. Isso não afeta o total acima — apure cada empresa com o zip dela.';
-    }
-    if (html) {
-      $('alertBox').className = 'mx-alert';
-      $('alertBox').innerHTML = html;
-      $('alertBox').style.display = 'block';
-    }
-  }
+  $('pendencias').innerHTML = renderPendencias(d.pendencias || []);
+  document.querySelectorAll('.mx-pend-hdr').forEach(h =>
+    h.addEventListener('click', () => h.parentElement.classList.toggle('open')));
 
   $('empresas').innerHTML = d.empresas.map((e, i) => cardEmpresa(e, totais[i], i)).join('');
 
@@ -196,6 +166,40 @@ function render() {
 
   document.querySelectorAll('button[data-finalizar]').forEach(b =>
     b.addEventListener('click', () => finalizarEmpresa(Number(b.dataset.finalizar))));
+}
+
+// ── Pendências ───────────────────────────────────────────────────────────────
+const ICONE = { grave: '⚠', aviso: '•', ok: '✓' };
+
+function renderPendencias(grupos) {
+  if (!grupos.length) return '';
+  // Os que exigem ação primeiro, e já abertos.
+  const ordenados = [...grupos].sort((a, b) =>
+    (b.acao ? 1 : 0) - (a.acao ? 1 : 0) ||
+    (b.gravidade === 'grave' ? 1 : 0) - (a.gravidade === 'grave' ? 1 : 0));
+
+  return ordenados.map(g => `
+    <div class="mx-pend ${g.gravidade} ${g.acao ? 'open' : ''}">
+      <div class="mx-pend-hdr">
+        <span class="mx-pend-ico">${ICONE[g.gravidade] || '•'}</span>
+        <span class="mx-pend-tit">${esc(g.titulo)}</span>
+        <span class="mx-pend-qtd">${g.qtd}</span>
+        <span class="mx-emp-chev">▾</span>
+      </div>
+      <div class="mx-pend-body">
+        ${g.acao ? `<div class="mx-pend-acao">O que fazer: ${esc(g.acao)}</div>` : ''}
+        <div class="mx-scroll"><table class="mx-t">
+          <tr><th>Nota</th><th>Fornecedor</th><th>Lçto</th><th>Valor</th><th>Situação</th></tr>
+          ${g.notas.map(n => `<tr>
+            <td>${esc(n.doc)}</td>
+            <td style="text-align:left">${esc(n.fornecedor || '—')}</td>
+            <td>${fData(n.dtLancamento)}</td>
+            <td>${n.valor ? fBRL(n.valor) : '—'}</td>
+            <td style="text-align:left">${esc(n.detalhe || '')}</td>
+          </tr>`).join('')}
+        </table></div>
+      </div>
+    </div>`).join('');
 }
 
 function blocoAliquota(emp, aliq, t) {

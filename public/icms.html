@@ -82,6 +82,25 @@ table.mx-t tr.dup td{background:#2a1416}
 .mx-selbar{display:flex;align-items:center;gap:.6rem;font-size:.75rem;color:#8b949e;margin:.5rem 0 .1rem}
 .mx-link{background:none;border:none;color:#58a6ff;font-size:.75rem;cursor:pointer;padding:0;text-decoration:underline}
 
+/* ── Pendências ── */
+.mx-pend{background:#161b22;border:1px solid #30363d;border-left-width:3px;border-radius:8px;margin-bottom:.6rem;overflow:hidden}
+.mx-pend.grave{border-left-color:#f85149}
+.mx-pend.aviso{border-left-color:#d29922}
+.mx-pend.ok{border-left-color:#30363d}
+.mx-pend-hdr{display:flex;align-items:center;gap:.6rem;padding:.6rem .9rem;cursor:pointer}
+.mx-pend-hdr:hover{background:#1c2128}
+.mx-pend-ico{font-size:.9rem;width:1rem;text-align:center}
+.mx-pend.grave .mx-pend-ico{color:#f85149}
+.mx-pend.aviso .mx-pend-ico{color:#d29922}
+.mx-pend.ok .mx-pend-ico{color:#3fb950}
+.mx-pend-tit{font-size:.85rem;font-weight:600;flex:1;min-width:0}
+.mx-pend-qtd{font-size:.75rem;color:#8b949e;background:#21262d;border:1px solid #30363d;border-radius:10px;padding:.05rem .5rem}
+.mx-pend-body{display:none;padding:0 .9rem .8rem}
+.mx-pend.open .mx-pend-body{display:block}
+.mx-pend.open .mx-emp-chev{transform:rotate(180deg)}
+.mx-pend-acao{font-size:.78rem;color:#e3b341;background:#2b2413;border:1px solid #d2992255;border-radius:6px;padding:.45rem .7rem;margin-bottom:.6rem}
+.mx-pend.grave .mx-pend-acao{color:#ffa198;background:#3d1418;border-color:#f8514955}
+
 /* ── Filtro do resumo ── */
 .mx-filtro{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:.7rem .9rem;margin-bottom:1.25rem}
 .mx-flabel{font-size:.78rem;color:#8b949e;display:flex;align-items:center;gap:.35rem}
@@ -139,6 +158,7 @@ table.mx-t tr.dup td{background:#2a1416}
 
   <div id="errorBox" class="mx-error" style="display:none"></div>
   <div id="alertBox" class="mx-alert" style="display:none"></div>
+  <div id="pendencias"></div>
 
   <div id="summaryStrip" class="mx-summary" style="display:none">
     <div class="mx-sum-card">

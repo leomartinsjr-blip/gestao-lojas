@@ -7052,10 +7052,15 @@ app.post('/api/icms/apurar', requireEscritorioOrAdmin,
         }
       }
 
+      // As pendências são montadas depois da marcação de duplicidade, para o
+      // "já computada em" entrar junto.
+      const { montarPendencias } = require('./services/difal');
+
       res.json({
         competencia: req.body.competencia || null,
         periodos,
         duplicadas,
+        pendencias: montarPendencias(resultado),
         lidos: { relatorios: relatorios.length, xmls: notas.length, lancamentos: lancamentos.length },
         ...resultado,
       });
