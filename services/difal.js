@@ -408,6 +408,23 @@ function _limiteTransito(competencia, dias = DIAS_TRANSITO) {
   return fim.toISOString().slice(0, 10);
 }
 
+// Fornecedor do relatório do Microvix e do XML raramente vêm escritos igual —
+// um traz o código interno, o outro a razão social completa. O começo do nome,
+// sem pontuação, é o que dá para comparar com segurança.
+function _mesmoFornecedor(a, b) {
+  const limpa = t => String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const x = limpa(a), y = limpa(b);
+  if (x.length < 6 || y.length < 6) return false;
+  const n = Math.min(10, x.length, y.length);
+  return x.slice(0, n) === y.slice(0, n);
+}
+
+function _diasEntre(a, b) {
+  const t1 = Date.parse(a + 'T00:00:00Z'), t2 = Date.parse(b + 'T00:00:00Z');
+  if (isNaN(t1) || isNaN(t2)) return Infinity;
+  return Math.abs(t1 - t2) / 86400000;
+}
+
 // Quantos meses separam duas competências "YYYY-MM".
 function _mesesEntre(de, ate) {
   const [ay, am] = String(de).split('-').map(Number);
@@ -725,6 +742,55 @@ function calcularPorEmpresa(notas, cfg = {}) {
         })
     : [];
 
+  // ── Mesma nota com o número digitado diferente ───────────────────────────
+  // Um dígito errado no lançamento faz a nota aparecer dos dois lados e inteira
+  // em lugar nenhum: o lançamento cai em "sem XML", o XML cai em "sem entrada",
+  // e o imposto não entra em nenhum dos dois. Fornecedor e valor idênticos são
+  // o que denuncia o par — nada disso é conclusão do código sozinho, então o
+  // resultado é um aviso para conferir, não um casamento automático.
+  const provaveisMesmaNota = [];
+  {
+    const orfaosXml = [...porCnpj.values()].flatMap(e => e.linhas)
+      .filter(l => l.semLancamento && !l.recusada && l.vlrTotal > 0);
+    const orfaosLanc = semXml.filter(x => x.relevante && x.vlrTotal > 0);
+
+    // Só o valor idêntico e o mesmo fornecedor abrem candidatura. A emissão
+    // decide a força: data igual dos dois lados é praticamente prova.
+    const confianca = (lanc, linha) => {
+      if (Math.abs(lanc.vlrTotal - linha.vlrTotal) >= 0.02) return null;
+      if (!_mesmoFornecedor(lanc.fornecedor, linha.fornecedor)) return null;
+      if (!lanc.dtEmissao || !linha.dhEmi) return 'media';
+      if (lanc.dtEmissao === linha.dhEmi) return 'alta';
+      return _diasEntre(lanc.dtEmissao, linha.dhEmi) <= 3 ? 'media' : null;
+    };
+
+    for (const lanc of orfaosLanc) {
+      const candidatas = orfaosXml
+        .map(linha => ({ linha, forca: confianca(lanc, linha) }))
+        .filter(c => c.forca);
+      if (candidatas.length !== 1) continue;
+
+      // O par tem de ser exclusivo dos dois lados. Dois valores iguais do mesmo
+      // fornecedor no mesmo mês existem, e aí adivinhar seria pior que calar.
+      const { linha, forca } = candidatas[0];
+      const outrosLanc = orfaosLanc.filter(o => o !== lanc && confianca(o, linha));
+      if (outrosLanc.length) continue;
+
+      provaveisMesmaNota.push({ lancamento: lanc, linha, forca });
+    }
+
+    for (const par of provaveisMesmaNota) {
+      par.lancamento.numeroDivergente = par.linha.doc;
+      par.linha.numeroDivergente = {
+        doc: par.lancamento.doc,
+        dtLancamento: par.lancamento.dtLancamento,
+        forca: par.forca,
+      };
+      // O lançamento existe; ela não está esperando entrada nenhuma.
+      par.linha.emTransito = false;
+    }
+  }
+
   // ── Avisos sobre o lote enviado ──────────────────────────────────────────
   // O relatório de XML do Microvix só extrai 30 dias, então é fácil o lote
   // começar depois das notas que foram lançadas no início da competência —
@@ -796,6 +862,13 @@ function calcularPorEmpresa(notas, cfg = {}) {
     ignoradas,
     semXml,
     avisos,
+    provaveisMesmaNota: provaveisMesmaNota.map(x => ({
+      docXml: x.linha.doc,
+      docLancamento: x.lancamento.doc,
+      fornecedor: x.linha.fornecedor,
+      valor: x.linha.vlrTotal,
+      forca: x.forca,
+    })),
     competencia: cfg.competencia || null,
     transitoNaoUsado,
     totalGeral: empresas.reduce((s, e) => s + e.totais.difal, 0),
@@ -853,10 +926,26 @@ function montarPendencias(resultado) {
     });
   };
 
+  // Vem antes de tudo: enquanto o par não é reconhecido, a mesma nota aparece
+  // em dois grupos graves e o diagnóstico fica por conta de quem lê.
+  add('numero-divergente',
+    'Mesma nota com número diferente entre o Microvix e o XML',
+    'Corrija o número no lançamento do Microvix e apure de novo — enquanto os dois não casarem, o imposto dela fica fora do total',
+    (resultado.provaveisMesmaNota || []).map(x => ({
+      doc: x.docXml,
+      chave: null,
+      fornecedor: x.fornecedor,
+      valor: x.valor,
+      dtLancamento: null,
+      detalhe: `no Microvix está lançada como ${x.docLancamento} — mesmo fornecedor e mesmo valor`
+        + (x.forca === 'alta' ? ', e a mesma data de emissão' : ''),
+    })),
+    'grave');
+
   add('falta-xml',
     'Lançadas no Microvix, mas o XML não veio no lote',
     'Baixe o XML dessas notas e apure de novo — o imposto delas não está no total',
-    semXml.filter(x => x.relevante).map(desc),
+    semXml.filter(x => x.relevante && !x.numeroDivergente).map(desc),
     'grave');
 
   const porEmpresaSemZip = {};
@@ -886,7 +975,7 @@ function montarPendencias(resultado) {
   add('sem-lancamento',
     'Têm XML, mas não têm entrada no Microvix',
     'Confira no Microvix: ou a nota foi recusada e devolvida, ou falta lançar',
-    linhas.filter(l => !l.jaApurada && !l.emTransito && !l.recusada
+    linhas.filter(l => !l.jaApurada && !l.emTransito && !l.recusada && !l.numeroDivergente
       && /não consta no relatório de lançamentos/.test(l.motivo || ''))
       .map(l => ({
         ...desc(l),

@@ -35,7 +35,8 @@ function icmsDoItem(it) {
     `<pICMS>${it.pICMS}</pICMS><vICMS>${(it.vBC * it.pICMS / 100).toFixed(2)}</vICMS></ICMS00>`;
 }
 
-function nfe({ nNF = '1', serie = '1', uf = 'SP', crt = '3', natOp = 'VENDA', dhEmi = '2025-09-10', itens = [] }) {
+function nfe({ nNF = '1', serie = '1', uf = 'SP', crt = '3', natOp = 'VENDA', dhEmi = '2025-09-10',
+  forn = 'FORNECEDOR TESTE', itens = [] }) {
   const chave = String(nNF).padStart(9, '0').repeat(5).slice(0, 44);
   const dets = itens.map((it, i) => `
     <det nItem="${i + 1}">
@@ -52,7 +53,7 @@ function nfe({ nNF = '1', serie = '1', uf = 'SP', crt = '3', natOp = 'VENDA', dh
     <infNFe Id="NFe${chave}" versao="4.00">
       <ide><nNF>${nNF}</nNF><serie>${serie}</serie><dhEmi>${dhEmi}T10:00:00-03:00</dhEmi>
         <natOp>${natOp}</natOp><tpNF>1</tpNF></ide>
-      <emit><CNPJ>11111111000111</CNPJ><xNome>FORNECEDOR TESTE</xNome>
+      <emit><CNPJ>11111111000111</CNPJ><xNome>${forn}</xNome>
         <enderEmit><UF>${uf}</UF></enderEmit><CRT>${crt}</CRT></emit>
       <dest><CNPJ>28519094000129</CNPJ><xNome>LMJ TESTE</xNome>
         <enderDest><UF>MG</UF></enderDest></dest>
@@ -345,6 +346,54 @@ ok('grupo em trânsito oferece marcar como recusada',
 ok('grupo "sem entrada" também oferece',
   montarPendencias(calcularPorEmpresa([{ xml: nfe({ nNF: '813', dhEmi: '2026-02-03', itens: [compra] }) }],
     { lancamentos: [], competencia: '2026-02' })).find(g2 => g2.tipo === 'sem-lancamento')?.acaoNota?.tipo === 'recusar');
+
+// ── Mesma nota com número digitado diferente ─────────────────────────────────
+// Um dígito errado no lançamento faz a nota aparecer em dois alarmes graves e
+// inteira em lugar nenhum. Fornecedor e valor iguais dos dois lados denunciam.
+console.log('\nNúmero divergente entre Microvix e XML');
+
+const NEW_BRASIL = { fornecedor: "NEW BRASIL ARTIGOS ESPORTIVOS LTDA", vlrTotal: 5425.68 };
+const notaOrfa = { cfop: "6102", vBC: 5425.68, pICMS: 12 };
+
+// O XML diz 436332; o lançamento foi digitado como 436232.
+let div = calcularPorEmpresa([{ xml: nfe({ nNF: "436332", serie: "1", dhEmi: "2026-01-19", forn: NEW_BRASIL.fornecedor, itens: [notaOrfa] }) }], {
+  lancamentos: [{ nNF: "436232", serie: "1", dtEmissao: "2026-01-19", dtLancamento: "2026-01-23", ...NEW_BRASIL }],
+  competencia: "2026-01",
+});
+ok("reconhece o par pelo fornecedor e pelo valor", div.provaveisMesmaNota.length === 1);
+ok("aponta os dois números",
+  div.provaveisMesmaNota[0].docXml === "436332 /1" && div.provaveisMesmaNota[0].docLancamento === "436232/1");
+ok("data de emissão igual dá confiança alta", div.provaveisMesmaNota[0].forca === "alta");
+
+let gd = montarPendencias(div);
+ok("vira um grupo só, com o diagnóstico", grupo(gd, "numero-divergente")?.qtd === 1);
+ok("sai do grupo \"lançada sem XML\"", !grupo(gd, "falta-xml"));
+ok("sai do grupo \"XML sem entrada\"", !grupo(gd, "sem-lancamento"));
+ok("não é casada sozinha — o imposto continua fora do total", perto(div.totalGeral, 0));
+
+// Fornecedor diferente com o mesmo valor não é par.
+div = calcularPorEmpresa([{ xml: nfe({ nNF: "436332", serie: "1", dhEmi: "2026-01-19", forn: NEW_BRASIL.fornecedor, itens: [notaOrfa] }) }], {
+  lancamentos: [{ nNF: "436232", serie: "1", dtEmissao: "2026-01-19", dtLancamento: "2026-01-23", fornecedor: "OUTRA EMPRESA LTDA", vlrTotal: 5425.68 }],
+  competencia: "2026-01",
+});
+ok("fornecedor diferente não vira par", div.provaveisMesmaNota.length === 0);
+
+// Mesmo valor e mesmo fornecedor em duas notas: adivinhar seria pior que calar.
+div = calcularPorEmpresa([
+  { xml: nfe({ nNF: "436332", serie: "1", dhEmi: "2026-01-19", forn: NEW_BRASIL.fornecedor, itens: [notaOrfa] }) },
+  { xml: nfe({ nNF: "436333", serie: "1", dhEmi: "2026-01-19", forn: NEW_BRASIL.fornecedor, itens: [notaOrfa] }) },
+], {
+  lancamentos: [{ nNF: "436232", serie: "1", dtEmissao: "2026-01-19", dtLancamento: "2026-01-23", ...NEW_BRASIL }],
+  competencia: "2026-01",
+});
+ok("par ambíguo não é sugerido", div.provaveisMesmaNota.length === 0);
+
+// Emissão distante derruba o par mesmo com valor igual.
+div = calcularPorEmpresa([{ xml: nfe({ nNF: "436332", serie: "1", dhEmi: "2026-01-02", forn: NEW_BRASIL.fornecedor, itens: [notaOrfa] }) }], {
+  lancamentos: [{ nNF: "436232", serie: "1", dtEmissao: "2026-01-19", dtLancamento: "2026-01-23", ...NEW_BRASIL }],
+  competencia: "2026-01",
+});
+ok("emissão distante não vira par", div.provaveisMesmaNota.length === 0);
 
 // ── Adiar para a competência seguinte ────────────────────────────────────────
 // Saída para quando a contabilidade lançou a nota em outro mês e não corrige.
