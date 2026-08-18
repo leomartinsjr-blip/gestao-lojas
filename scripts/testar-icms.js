@@ -20,10 +20,16 @@ function perto(a, b, tol = 0.005) { return Math.abs(a - b) < tol; }
 
 // ── Montagem de NF-e sintética ───────────────────────────────────────────────
 function icmsDoItem(it) {
-  if (it.csosn) return `<ICMSSN102><orig>0</orig><CSOSN>${it.csosn}</CSOSN></ICMSSN102>`;
+  if (it.csosn) {
+    return `<ICMSSN102><orig>0</orig><CSOSN>${it.csosn}</CSOSN>` +
+      (it.semST ? '<vBCSTRet>0.00</vBCSTRet><vICMSSTRet>0.00</vICMSSTRet>' : '') +
+      '</ICMSSN102>';
+  }
+  // semST: o fornecedor anuncia a ST no CST/CSOSN mas não retém nada.
   if (it.cst === '60') {
-    return `<ICMS60><orig>0</orig><CST>60</CST><vBCSTRet>${it.vBC}</vBCSTRet>` +
-      `<vICMSSTRet>${(it.vBC * 0.18).toFixed(2)}</vICMSSTRet></ICMS60>`;
+    const bc = it.semST ? 0 : it.vBC;
+    return `<ICMS60><orig>0</orig><CST>60</CST><vBCSTRet>${bc}</vBCSTRet>` +
+      `<vICMSSTRet>${(bc * 0.18).toFixed(2)}</vICMSSTRet></ICMS60>`;
   }
   return `<ICMS00><orig>${it.orig || 0}</orig><CST>00</CST><vBC>${it.vBC}</vBC>` +
     `<pICMS>${it.pICMS}</pICMS><vICMS>${(it.vBC * it.pICMS / 100).toFixed(2)}</vICMS></ICMS00>`;
@@ -34,7 +40,9 @@ function nfe({ nNF = '1', serie = '1', uf = 'SP', crt = '3', natOp = 'VENDA', dh
   const dets = itens.map((it, i) => `
     <det nItem="${i + 1}">
       <prod><cProd>P${i}</cProd><xProd>PRODUTO ${i}</xProd><NCM>${it.ncm || '61091000'}</NCM>
-        <CFOP>${it.cfop}</CFOP><vProd>${it.vBC}</vProd></prod>
+        <CFOP>${it.cfop}</CFOP><vProd>${it.vProd != null ? it.vProd : it.vBC}</vProd>${
+        ['vFrete', 'vSeg', 'vOutro', 'vDesc'].filter(c => it[c] != null)
+          .map(c => `<${c}>${it[c]}</${c}>`).join('')}</prod>
       <imposto><ICMS>${icmsDoItem(it)}</ICMS>
         <IPI><IPITrib><CST>50</CST><vIPI>${it.vIPI || '0.00'}</vIPI></IPITrib></IPI></imposto>
     </det>`).join('');
@@ -99,6 +107,36 @@ ok('nota com as duas alíquotas separa as bases',
 
 r = calc({ itens: [{ cfop: '6102', vBC: 1000, pICMS: 7 }] });
 ok('alíquota inesperada vai para revisão', r.revisar.length === 1);
+
+// ── ST anunciada mas não retida ──────────────────────────────────────────────
+// Fornecedor que põe CST 60 e retém zero. Descartar como ST faria a mercadoria
+// escapar dos dois lados: não paga ST porque ninguém recolheu, e não paga
+// diferencial porque a nota saiu da conta.
+console.log('\nST anunciada sem valor retido');
+
+r = calc({ crt: '2', itens: [{ cfop: '6102', vBC: 1000, cst: '60', semST: true }] });
+ok('CST 60 sem valor retido entra na conta', r.incluida && perto(r.base12, 1000) && perto(r.difal, 73.17));
+ok('e sai marcada para conferência', r.atencao.length === 1 && /sem valor retido/.test(r.atencao[0].motivo));
+
+r = calc({ itens: [{ cfop: '6403', vBC: 1000, cst: '60', semST: true }] });
+ok('CFOP de ST vale por si, mesmo sem valor', !r.incluida && r.itensST.length === 1);
+
+r = calc({ crt: '2', itens: [{ cfop: '6102', vBC: 1000, csosn: '500', semST: true }] });
+ok('CSOSN 500 sem valor retido também entra', r.incluida && perto(r.base12, 1000));
+
+// ── Frete, seguro e despesas na base ─────────────────────────────────────────
+// Sem ICMS destacado, a base é o valor da operação — não só o dos produtos.
+console.log('\nValor da operação na base do Simples');
+
+r = calc({ crt: '2', itens: [{ cfop: '6102', vBC: 0, vProd: 3038.84, vFrete: 40, cst: '60', semST: true }] });
+ok('frete entra na base quando não há ICMS destacado', perto(r.base12, 3078.84), `base ${r.base12}`);
+ok('e o imposto bate com o da contabilidade', perto(r.difal, 225.28, 0.01), `difal ${r.difal.toFixed(2)}`);
+
+r = calc({ crt: '2', itens: [{ cfop: '6102', vBC: 0, vProd: 1000, vFrete: 50, vSeg: 10, vOutro: 5, vDesc: 15, csosn: '102' }] });
+ok('seguro e despesas entram, desconto sai', perto(r.base12, 1050), `base ${r.base12}`);
+
+r = calc({ itens: [{ cfop: '6102', vBC: 1000, pICMS: 12, vFrete: 40 }] });
+ok('com ICMS destacado, o vBC manda e o frete não é somado de novo', perto(r.base12, 1000));
 
 // ── Passos da planilha de recomposição ───────────────────────────────────────
 console.log('\nPassos da recomposição');

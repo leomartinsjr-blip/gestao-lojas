@@ -129,6 +129,10 @@ function parseNFe(xmlString) {
       ncm: _texto(prod, 'NCM'),
       cfop: _texto(prod, 'CFOP'),
       vProd: _num(prod, 'vProd'),
+      vFrete: _num(prod, 'vFrete'),
+      vSeg: _num(prod, 'vSeg'),
+      vOutro: _num(prod, 'vOutro'),
+      vDesc: _num(prod, 'vDesc'),
       grupo,
       orig: _texto(icms, 'orig'),
       cst: _texto(icms, 'CST'),
@@ -200,11 +204,27 @@ function _passos(base, aliqOrigem, aliqInterna) {
   };
 }
 
+// O valor da operação: é sobre ele que a base é montada quando o fornecedor não
+// destaca ICMS. Frete, seguro e despesas entram; desconto sai. Numa nota com
+// ICMS destacado isso já vem pronto no vBC, por regra da própria NF-e.
+function _valorDaOperacao(item) {
+  return item.vProd + (item.vFrete || 0) + (item.vSeg || 0) + (item.vOutro || 0) - (item.vDesc || 0);
+}
+
+// ST declarada sem base e sem valor não é ST: o fornecedor pôs o CST mas não
+// reteve nada. Tratar como ST retida faria a mercadoria escapar dos dois lados
+// — não paga ST porque ninguém recolheu, e não paga diferencial porque a nota
+// foi descartada. Só o valor efetivamente retido prova a retenção.
+function _stSemValor(item) {
+  return !item.vICMSST && !item.vICMSSTRet && !item.vBCST && !item.vBCSTRet;
+}
+
 function _itemTemST(item) {
   if (item.vICMSST > 0 || item.vICMSSTRet > 0) return true;
-  if (item.cst && CST_ST.has(item.cst)) return true;
-  if (item.csosn && CSOSN_ST.has(item.csosn)) return true;
+  // O CFOP de operação com ST é do próprio emitente e vale por si.
   if (CFOP_ST.has(item.cfop)) return true;
+  if (item.cst && CST_ST.has(item.cst)) return !_stSemValor(item);
+  if (item.csosn && CSOSN_ST.has(item.csosn)) return !_stSemValor(item);
   return false;
 }
 
@@ -293,8 +313,18 @@ function calcularNota(nfe, cfg = {}) {
     }
 
     if (_isSimples(nfe, item)) {
-      // Sem ICMS destacado: usa o valor do produto como base, a 12%.
-      r.base12 += item.vBC || item.vProd;
+      // Sem ICMS destacado: a base é o valor da operação, tratada como 12%.
+      r.base12 += item.vBC || _valorDaOperacao(item);
+      // ST anunciada e não retida entrou na conta por decisão nossa, não por
+      // dado do fornecedor. Fica visível para conferência em vez de calada.
+      if ((item.cst && CST_ST.has(item.cst)) || (item.csosn && CSOSN_ST.has(item.csosn))) {
+        r.atencao.push({
+          ref,
+          cfop: item.cfop,
+          motivo: `CST/CSOSN de ST (${item.cst || item.csosn}) sem valor retido — entrou como operação normal`,
+          valor: item.vProd,
+        });
+      }
       continue;
     }
 
