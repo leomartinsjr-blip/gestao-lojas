@@ -1,13 +1,14 @@
 'use strict';
 
 const BOARDS_INFO = {
-  delrey:   { label: 'DEL REY',   color: '#58A6FF' },
-  minas:    { label: 'MINAS',     color: '#3FB950' },
-  contagem: { label: 'CONTAGEM',  color: '#D29922' },
-  estacao:  { label: 'ESTAÇÃO',   color: '#F85149' },
-  tommy:    { label: 'TOMMY',     color: '#22D3EE' },
-  lez:      { label: 'LEZ A LEZ', color: '#F472B6' },
-  site:     { label: 'SITE',      color: '#A78BFA' },
+  delrey:     { label: 'DEL REY',    color: '#58A6FF' },
+  minas:      { label: 'MINAS',      color: '#3FB950' },
+  contagem:   { label: 'CONTAGEM',   color: '#D29922' },
+  estacao:    { label: 'ESTAÇÃO',    color: '#F85149' },
+  tommy:      { label: 'TOMMY',      color: '#22D3EE' },
+  lez:        { label: 'LEZ A LEZ',  color: '#F472B6' },
+  site:       { label: 'SITE',       color: '#A78BFA' },
+  escritorio: { label: 'ESCRITÓRIO', color: '#64748B' },
 };
 const STORE_BOARDS = Object.keys(BOARDS_INFO);
 

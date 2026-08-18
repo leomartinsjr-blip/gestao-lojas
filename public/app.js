@@ -7569,7 +7569,6 @@ function openFuncForm(id) {
 
   const boardSel = document.getElementById('funcBoard');
   boardSel.innerHTML = Object.entries(BOARDS)
-    .filter(([k]) => k !== 'escritorio')
     .map(([k,v]) => `<option value="${k}" ${emp?.board === k ? 'selected' : ''}>${v.label}</option>`).join('');
   if (S.user?.board) { boardSel.value = S.user.board; boardSel.disabled = true; }
 
@@ -7758,7 +7757,7 @@ function initFuncionariosModal() {
   });
   document.getElementById('funcBoardFilter').innerHTML =
     '<option value="">Todas as lojas</option>' +
-    Object.entries(BOARDS).filter(([k]) => k !== 'escritorio')
+    Object.entries(BOARDS)
       .map(([k,v]) => `<option value="${k}">${v.label}</option>`).join('');
   document.getElementById('funcBoardFilter').addEventListener('change', renderFuncionariosTable);
   document.getElementById('funcShowInativo').addEventListener('change', renderFuncionariosTable);
@@ -8443,6 +8442,7 @@ const PENDENCIA_USERS = [
   { key: 'leonardo',   label: 'Leonardo',   color: '#58A6FF' },
   { key: 'ingrid',     label: 'Ingrid',     color: '#F78166' },
   { key: 'gustavo',    label: 'Gustavo',    color: '#E3B341' },
+  { key: 'laura',      label: 'Laura',      color: '#A78BFA' },
   { key: 'escritorio', label: 'Escritório', color: '#3FB950' },
 ];
 

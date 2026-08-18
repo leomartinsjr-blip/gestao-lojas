@@ -8651,6 +8651,7 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
     const BOARDS_LABEL = {
       delrey:'DEL REY', minas:'MINAS', contagem:'CONTAGEM',
       estacao:'ESTAÇÃO', tommy:'TOMMY', lez:'LEZ A LEZ',
+      escritorio:'ESCRITÓRIO',
     };
 
     const r2 = v => Math.round((parseFloat(v)||0)*100)/100;
