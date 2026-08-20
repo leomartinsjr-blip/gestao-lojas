@@ -22,6 +22,21 @@ const BOARD_PAGADOR = {
   site:     'minas',
 };
 function pagadorDe(board) { return BOARD_PAGADOR[board] || board; }
+
+// Lojas que pagam o prêmio semanal de meta pelo próprio caixa, na semana em que
+// a meta é batida. O dinheiro já chegou na mão do funcionário, então o prêmio
+// não entra em proventos nem na base de INSS/VT — a folha só mostra o valor,
+// pra loja conferir. Vale só para o prêmio semanal: o prêmio de loja/balanço
+// (premiacaoBalanco) continua sendo pago pela folha normalmente.
+// Sem a chave gravada no config da loja, vale este padrão.
+const PREMIACAO_NA_LOJA_PADRAO = ['estacao'];
+function premiacaoPagaNaLoja(board) {
+  const cfg = FP.folhaConfig[board] || {};
+  return cfg.premiacaoPagaNaLoja != null
+    ? !!cfg.premiacaoPagaNaLoja
+    : PREMIACAO_NA_LOJA_PADRAO.includes(board);
+}
+
 const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
@@ -319,13 +334,21 @@ function updateRateio(empId) {
 // quando o valor gravado foi ajustado à mão — nesse caso a entry ganha a flag
 // premiacaoManual e deixa de ser sobrescrita ao trocar de aba.
 function premiacaoCalculada(emp) {
-  if (!emp) return { premiacao: 0, premiacaoBalanco: 0 };
+  if (!emp) return { premiacao: 0, premiacaoBalanco: 0, premiacaoNaLoja: 0 };
   const t    = cargoTipo(emp.cargo);
   const ecfg = getEmpCfg(emp);
   const ger  = r2(FP.premiacaoSemanalGer[emp.id] || 0);
+  const sem  = t === 'gerente' ? ger : r2(FP.premiacaoSemanal[emp.id] || 0);
+  // Loja que paga o prêmio na semana: o valor sai da folha e vira só memória.
+  // Folha encerrada é histórico — o que foi pago naquele mês não se mexe.
+  // Sócio, supervisor e caixa não têm prêmio semanal na entry: não há o que tirar.
+  const temSemanal = !['socio', 'supervisor', 'caixa'].includes(t);
+  const naLoja = (temSemanal && premiacaoPagaNaLoja(emp.board)
+                  && !FP.folha[emp.board]?.encerrada) ? sem : 0;
   return {
-    premiacao:        t === 'gerente' ? ger : r2(FP.premiacaoSemanal[emp.id] || 0),
+    premiacao:        r2(sem - naLoja),
     premiacaoBalanco: (t === 'gvend' || ecfg.recebePremiaoLoja) ? ger : 0,
+    premiacaoNaLoja:  naLoja,
   };
 }
 
@@ -618,17 +641,18 @@ function buildTotalForm(emps) {
   let premiacaoTotal = 0, premiacaoLojaTotal = 0;
   let extrasTotal = 0, feriadoTotal = 0;
   let ajudaCustoAll = 0;
+  // Prêmio já pago pelo caixa da loja: fica fora do invariante acima de
+  // propósito — é memória de conferência, não custo da folha.
+  let premiacaoNaLojaAll = 0;
 
   const rows = emps.map(emp => {
     let entry = FP.folha[FP.board]?.entries?.[emp.id] || defaultEntry(emp);
     const _ct = cargoTipo(emp.cargo);
-    const _ecfg = getEmpCfg(emp);
-    const calcPrem = _ct === 'gerente'
-      ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
-      : r2(FP.premiacaoSemanal[emp.id] || 0);
-    const calcPremGer = (_ct === 'gvend' || _ecfg.recebePremiaoLoja) ? r2(FP.premiacaoSemanalGer[emp.id] || 0) : 0;
+    const _calc = premiacaoCalculada(emp);
     if (!entry.premiacaoManual &&
-        (calcPrem !== r2(entry.premiacao || 0) || calcPremGer !== r2(entry.premiacaoBalanco || 0))) {
+        (_calc.premiacao !== r2(entry.premiacao || 0)
+         || _calc.premiacaoBalanco !== r2(entry.premiacaoBalanco || 0)
+         || _calc.premiacaoNaLoja !== r2(entry.premiacaoNaLoja || 0))) {
       entry = applyFora(defaultEntry(emp), emp, entry.fora);
     }
     const _fb = foraBreakdown(entry, _ct);
@@ -671,6 +695,7 @@ function buildTotalForm(emps) {
     extrasTotal      += (entry.extras || []).reduce((s, ex) => s + r2(ex.valor), 0);
     feriadoTotal     += entry.feriado           || 0;
     ajudaCustoAll    += entry.ajudaCustoTotal   || 0;
+    premiacaoNaLojaAll += entry.premiacaoNaLoja || 0;
 
     return `<tr style="border-bottom:1px solid #21262d">
       <td style="padding:.4rem .5rem;color:#e6edf3">${emp.apelido || emp.name.split(' ')[0]}</td>
@@ -774,6 +799,11 @@ function buildTotalForm(emps) {
         </tr>` : ''}
       </tbody>
     </table>
+    ${premiacaoNaLojaAll > 0 ? `
+    <div style="border-top:1px solid #30363d;background:#12151b;padding:.5rem .75rem;display:flex;justify-content:space-between;align-items:center;gap:.75rem">
+      <span style="font-size:.78rem;color:#d29922">Premiação semanal paga pelo caixa da loja <span style="color:#484f58">— já quitada, fora dos proventos acima</span></span>
+      <span style="font-size:.83rem;color:#d29922;font-weight:600;white-space:nowrap">${brl(r2(premiacaoNaLojaAll))}</span>
+    </div>` : ''}
   </div>`;
 
   return `
@@ -839,14 +869,9 @@ function selectEmp(empId) {
   let entry = FP.folha[FP.board]?.entries?.[empId] || defaultEntry(emp);
   // Aplica o valor calculado pelo servidor para premiação semanal — exceto se o
   // valor gravado foi ajustado à mão (premiacaoManual), que tem prioridade.
-  const _ct2   = cargoTipo(emp.cargo);
-  const _ecfg2 = getEmpCfg(emp);
-  const calcPrem = entry.premiacaoManual ? r2(entry.premiacao || 0)
-    : _ct2 === 'gerente'
-      ? r2(FP.premiacaoSemanalGer[empId] || 0)
-      : r2(FP.premiacaoSemanal[empId] || 0);
-  const calcPremGer2 = entry.premiacaoManual ? r2(entry.premiacaoBalanco || 0)
-    : (_ct2 === 'gvend' || _ecfg2.recebePremiaoLoja) ? r2(FP.premiacaoSemanalGer[empId] || 0) : 0;
+  const _calc = premiacaoCalculada(emp);
+  const calcPrem     = entry.premiacaoManual ? r2(entry.premiacao || 0)        : _calc.premiacao;
+  const calcPremGer2 = entry.premiacaoManual ? r2(entry.premiacaoBalanco || 0) : _calc.premiacaoBalanco;
   // Em folha encerrada o que está gravado é o que foi pago — a premiação
   // recalculada pelo servidor não substitui o histórico.
   const encerrada = !!FP.folha[FP.board]?.encerrada;
@@ -856,6 +881,9 @@ function selectEmp(empId) {
   if (!encerrada && calcPremGer2 !== r2(entry.premiacaoBalanco || 0)) {
     entry = { ...entry, premiacaoBalanco: calcPremGer2 };
   }
+  // premiacaoNaLoja não é remendado aqui de propósito: enquanto a entry gravada
+  // não tiver o campo, o resumo da loja continua detectando a defasagem e
+  // recalculando os proventos por defaultEntry. Quem grava é saveEntryFromForm.
   document.getElementById('fpEmpForms').innerHTML = buildEmpForm(emp, entry);
   attachFormListeners(empId);
   recalc(empId);
@@ -931,6 +959,13 @@ function fpOpenCfg(board) {
           </div>
           <span style="font-size:.72rem;color:#484f58;display:block;margin-top:.4rem">aplicado a quem está com "Fixo + comissão?" marcado · valor preenchido no colaborador tem prioridade</span>
         </div>
+        <div style="grid-column:1/-1;margin-top:.4rem;padding-top:.7rem;border-top:1px solid #30363d">
+          <label style="display:flex;align-items:center;gap:.5rem;font-size:.8rem;color:#e6edf3;cursor:pointer">
+            <input type="checkbox" id="cfg-premiacaoPagaNaLoja"${premiacaoPagaNaLoja(board) ? ' checked' : ''}>
+            Premiação semanal paga pelo caixa da loja
+          </label>
+          <span style="font-size:.72rem;color:#484f58;display:block;margin-top:.4rem">a loja quita o prêmio de meta na própria semana · o valor sai dos proventos, do INSS/VT e do líquido, e a folha passa a exibir só para conferência · não afeta o prêmio de loja/balanço nem folha já encerrada</span>
+        </div>
       </div>
       <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid #30363d;display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem">
         <div class="fp-cfg-field" style="margin-bottom:0">
@@ -997,10 +1032,16 @@ async function fpSaveConfig() {
     salarioFixoVendedor:      g('cfg-salarioFixoVendedor'),
     premioVendedorMisto:      g('cfg-premioVendedorMisto'),
     premioGerente:            g('cfg-premioGerente'),
+    premiacaoPagaNaLoja:      !!document.getElementById('cfg-premiacaoPagaNaLoja')?.checked,
   };
   try {
     await apiFetch('/api/folha/config', 'POST', FP.folhaConfig);
     fpCloseConfig();
+    // Redesenha a aba aberta pra mudança de config aparecer na hora — trocar a
+    // premiação de "paga na folha" para "paga na loja" mexe no líquido.
+    if (board === FP.board) {
+      if (FP.activeEmpId) selectEmp(FP.activeEmpId); else selectTotal();
+    }
     toast('Configuração salva.');
   } catch(e) { toast('Erro: '+e.message, true); }
 }
@@ -1227,13 +1268,9 @@ function defaultEntry(emp) {
   const baseGm = fixo + comissaoTotal;
   const gmComplement = r2(Math.max(0, gm - baseGm));
 
-  const _tipo = cargoTipo(emp.cargo);
-  const premiacao = _tipo === 'gerente'
-    ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
-    : r2(FP.premiacaoSemanal[emp.id] || 0);
-  const premiacaoBalanco = (_tipo === 'gvend' || ecfg.recebePremiaoLoja)
-    ? r2(FP.premiacaoSemanalGer[emp.id] || 0)
-    : 0;
+  // premiacaoNaLoja é o prêmio semanal que a loja já pagou pelo caixa: fica de
+  // fora dos proventos (e portanto de INSS/VT e do líquido), só como memória.
+  const { premiacao, premiacaoBalanco, premiacaoNaLoja } = premiacaoCalculada(emp);
 
   const proventos = r2(fixo + comissaoTotal + comissaoLoja + gmComplement + premiacao + premiacaoBalanco);
   const inss = r2(proventos * (ecfg.inssRate || 0) / 100);
@@ -1243,7 +1280,7 @@ function defaultEntry(emp) {
     tipo, vendas, meta, pctMeta, faixaLabel, comissaoPct,
     comissaoTotal, comissaoContab, dsr, premio,
     comissaoLoja, vendaLoja, fixo, gm, gmComplement,
-    premiacao, premiacaoBalanco,
+    premiacao, premiacaoBalanco, premiacaoNaLoja,
     feriado: 0,
     extras:     (FP.prevExtras[emp.id]?.extras     || []).map(x => ({ ...x, _prev: true })),
     proventos,
@@ -1272,6 +1309,20 @@ function buildEmpForm(emp, entry) {
     `<input type="number" step="0.01" id="${id}" value="${r2(v).toFixed(2)}" ${extra} onchange="onFieldChange(${emp.id})">`;
   const inpRO = (id, v) =>
     `<input type="number" step="0.01" id="${id}" value="${r2(v).toFixed(2)}" readonly class="fp-readonly" tabindex="-1">`;
+
+  // Campo do prêmio semanal. Na loja que paga pelo caixa vira texto, não input:
+  // sem o elemento fp-premiacao-*, recalc e saveEntryFromForm leem zero e o
+  // prêmio fica naturalmente fora dos proventos, do INSS/VT e do líquido.
+  const premNaLoja = premiacaoPagaNaLoja(emp.board) && !FP.folha[FP.board]?.encerrada;
+  const premField = (label, hint) => premNaLoja
+    ? `<div class="fp-field"><label>${label}</label>
+         <div class="fp-prem-loja">
+           <span class="fp-prem-loja-val">${brl(e.premiacaoNaLoja ?? premiacaoCalculada(emp).premiacaoNaLoja)}</span>
+           <span class="fp-prem-loja-tag">pago na loja</span>
+         </div>
+         <span style="font-size:.7rem;color:#484f58">${hint}</span></div>`
+    : `<div class="fp-field"><label>${label}</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
+         <span style="font-size:.7rem;color:#484f58">${hint}</span></div>`;
 
   const faixaColor = {'SEM META':'#8b949e','META 1':'#d29922','META 2':'#3fb950','SUPER META':'#22d3ee','—':'#484f58'};
   const faixaBadge = label => {
@@ -1506,8 +1557,7 @@ function buildEmpForm(emp, entry) {
       const semGerHint = semGerDet.length
         ? semGerDet.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
         : semGerCalc > 0 ? `calculado: ${brl(semGerCalc)}` : 'nenhuma meta semanal encontrada';
-      provRows += `<div class="fp-field"><label>Premiação Gerente (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
-        <span style="font-size:.7rem;color:#484f58">${semGerHint}</span></div>`;
+      provRows += premField('Premiação Gerente (R$)', semGerHint);
     } else if (tipo === 'gvend' || tipo === 'sub' || ecfg.recebePremiaoLoja) {
       const semVendDet  = FP.premiacaoSemanalDetalhe[emp.id] || [];
       const semVendCalc = r2(FP.premiacaoSemanal[emp.id] || 0);
@@ -1515,8 +1565,7 @@ function buildEmpForm(emp, entry) {
         ? semVendDet.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
         : semVendCalc > 0 ? `calculado: ${brl(semVendCalc)}` : 'nenhuma meta semanal encontrada';
       if (tipo !== 'caixa') {
-        provRows += `<div class="fp-field"><label>Premiação Vendedor (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
-          <span style="font-size:.7rem;color:#484f58">${semVendHint}</span></div>`;
+        provRows += premField('Premiação Vendedor (R$)', semVendHint);
       }
       // Sub-gerente não recebe prêmio de loja por padrão — só com a flag no config
       if (tipo === 'gvend' || ecfg.recebePremiaoLoja) {
@@ -1534,8 +1583,7 @@ function buildEmpForm(emp, entry) {
       const semHint = semDetalhe.length
         ? semDetalhe.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
         : semCalc > 0 ? `calculado: ${brl(semCalc)}` : 'nenhuma meta semanal encontrada';
-      provRows += `<div class="fp-field"><label>Premiação (R$)</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
-        <span style="font-size:.7rem;color:#484f58">${semHint}</span></div>`;
+      provRows += premField('Premiação (R$)', semHint);
     }
   }
 
@@ -2125,6 +2173,7 @@ function saveEntryFromForm(empId) {
     comissaoLoja:      g(`fp-comLoja-${empId}`),
     gmComplement:      g(`fp-gm-${empId}`),
     premiacao, premiacaoBalanco, premiacaoManual,
+    premiacaoNaLoja:   _calc.premiacaoNaLoja,
     feriado:           g(`fp-feriado-${empId}`),
     proventos, proventosBruto,
     ...foraFields(g(`fp-fixo-${empId}`), comissaoTotal),
@@ -2481,6 +2530,21 @@ function buildRecibo(emp, entry, mes, origin) {
       } else {
         prov += tr(_pTipo === 'gerente' ? 'PREM. GERENTE' : _pTipo === 'gvend' ? 'PREM. VENDEDOR' : 'PREMIAÇÃO', entry.premiacao);
       }
+    }
+    // Prêmio que a loja já pagou pelo caixa: linha de memória, sem valor na
+    // coluna de proventos — o recibo quita só o que passa pela folha.
+    const premNaLojaRec = num(entry.premiacaoNaLoja);
+    if (premNaLojaRec > 0) {
+      // Gerente tem o semanal no detalhe de gerente; os demais, no de vendedor
+      const semDetNaLoja = _pTipo === 'gerente' ? semDetGer : semDetVend;
+      const semSumNaLoja = semDetNaLoja.reduce((s, x) => s + num(x.valor), 0);
+      const detNaLoja = semDetNaLoja.length && Math.abs(semSumNaLoja - premNaLojaRec) < 0.02
+        ? semDetNaLoja.map(s => `sem. ${s.label}: ${money(s.valor)}`).join('  ·  ')
+        : '';
+      prov += `<tr><td colspan="4" style="padding:2px 5px 0;font-size:8pt;font-style:italic;color:#555">` +
+        `premiação de meta ${money(premNaLojaRec)} paga pela loja na semana — não entra neste recibo` +
+        (detNaLoja ? `<br>${detNaLoja}` : '') +
+        `</td></tr>`;
     }
     if (num(entry.premiacaoBalanco) > 0) {
       const semSumGer = semDetGer.reduce((s, x) => s + num(x.valor), 0);
