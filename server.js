@@ -8727,6 +8727,13 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
         const vtDesc    = r2(entry.vt           || 0);
         const desc      = r2((entry.totalDescontos || 0) - vtDesc);
 
+        // Férias do mês vão para OBSERVAÇÕES: explicam por que fixo e comissão
+        // de loja saíram proporcionais, sem virar verba nenhuma na planilha.
+        const fer = entry.ferias;
+        const dm  = iso => iso ? `${iso.slice(8,10)}/${iso.slice(5,7)}` : '';
+        const obs = (fer?.ativo && fer.ini && fer.fim)
+          ? `Férias ${dm(fer.ini)} a ${dm(fer.fim)}` : '';
+
         const empRow = ws.addRow([
           emp.apelido || emp.name, emp.cargo,
           n2(fixo), n2(qcx), sf||null,
@@ -8734,7 +8741,7 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
           n2(gm)||null, n2(feriado)||null, n2(prem)||null,
           n2(tTotal), n2(verif), ok,
           n2(ad)||null, n2(vale)||null, n2(desc)||null, n2(vtVal)||null,
-          null, null, '',
+          null, null, obs,
         ]);
         empRow.getCell(14).font = { bold: true, color: { argb: ok==='OK'?'FF3FB950':'FFF85149' } };
         if (sf) empRow.getCell(5).font = { bold: true, color: { argb: 'FFD29922' } };

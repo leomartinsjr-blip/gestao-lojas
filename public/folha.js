@@ -697,8 +697,10 @@ function buildTotalForm(emps) {
     ajudaCustoAll    += entry.ajudaCustoTotal   || 0;
     premiacaoNaLojaAll += entry.premiacaoNaLoja || 0;
 
+    const _fer = feriasDe(emp);
     return `<tr style="border-bottom:1px solid #21262d">
-      <td style="padding:.4rem .5rem;color:#e6edf3">${emp.apelido || emp.name.split(' ')[0]}</td>
+      <td style="padding:.4rem .5rem;color:#e6edf3">${emp.apelido || emp.name.split(' ')[0]}${
+        _fer ? ` <span class="fp-ferias-badge">🌴 férias ${fmtDiaMes(_fer.ini)}–${fmtDiaMes(_fer.fim)}</span>` : ''}</td>
       <td style="padding:.4rem .5rem;color:#8b949e;font-size:.78rem">${emp.cargo}</td>
       <td style="padding:.4rem .5rem;text-align:right;color:#e6edf3">${brl(entry.proventos||0)}</td>
       <td style="padding:.4rem .5rem;text-align:right;color:#f85149">${brl(entry.totalDescontos||0)}</td>
@@ -1059,9 +1061,35 @@ function sumVendas(empId) {
     .reduce((s,[,e]) => s + (e.value||0), 0));
 }
 
-// Fração do mês em que o funcionário esteve ativo (admissão/desligamento no meio do mês).
-// Salário fixo e garantia mínima são valores cheios do mês — precisam ser proporcionais
-// aos dias corridos em que o funcionário efetivamente esteve na folha.
+// Férias do mês. Ficam gravadas na entry e por isso sobrevivem ao Gerar, como
+// o "por fora" — defaultEntry lê daqui para se recalcular sozinho.
+function feriasRaw(emp) {
+  return FP.folha[emp.board]?.entries?.[emp.id]?.ferias || null;
+}
+// Só conta para o cálculo quando está marcado e com período válido — desmarcar
+// preserva as datas digitadas, para poder religar sem redigitar.
+function feriasDe(emp) {
+  const f = feriasRaw(emp);
+  if (!f?.ativo || !f.ini || !f.fim || f.ini > f.fim) return null;
+  return f;
+}
+
+// '2026-09-05' → '05/09'
+function fmtDiaMes(iso) {
+  if (!iso) return '';
+  const [, m, d] = iso.split('-');
+  return `${d}/${m}`;
+}
+
+const _diasEntre = (a, b) =>
+  Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000) + 1;
+
+// Fração do mês em que o funcionário esteve presente na loja: recorta o mês
+// pela admissão/desligamento e desconta os dias de férias que caem dentro dessa
+// janela. Vale para o que é valor cheio do mês — salário fixo, quebra de caixa,
+// garantia mínima — e para a comissão sobre o total da loja, que a loja gerou
+// mesmo com a pessoa fora. A comissão sobre venda própria não usa isto: quem
+// não estava na loja não vendeu, então as vendas dele já vêm menores.
 function proporcaoMes(emp) {
   const mk         = monthKey();
   const monthStart = `${mk}-01`;
@@ -1069,11 +1097,96 @@ function proporcaoMes(emp) {
   const monthEnd   = `${mk}-${String(lastDay).padStart(2,'0')}`;
   const ini = (emp.admissao    && emp.admissao    > monthStart) ? emp.admissao    : monthStart;
   const fim = (emp.desligamento && emp.desligamento < monthEnd)  ? emp.desligamento : monthEnd;
-  if (ini > fim) return { fator: 0, dias: 0, totalDias: lastDay };
-  const dias = Math.round((new Date(fim + 'T12:00:00') - new Date(ini + 'T12:00:00')) / 86400000) + 1;
-  return { fator: Math.max(0, Math.min(1, dias / lastDay)), dias, totalDias: lastDay };
+  if (ini > fim) return { fator: 0, dias: 0, totalDias: lastDay, diasFerias: 0, ferias: null };
+
+  const diasAtivos = _diasEntre(ini, fim);
+  // Férias recortadas contra a janela do vínculo: dia fora dela não desconta duas vezes
+  const fer = feriasDe(emp);
+  let diasFerias = 0;
+  if (fer) {
+    const fIni = fer.ini > ini ? fer.ini : ini;
+    const fFim = fer.fim < fim ? fer.fim : fim;
+    if (fIni <= fFim) diasFerias = _diasEntre(fIni, fFim);
+  }
+  const dias = Math.max(0, diasAtivos - diasFerias);
+  return { fator: Math.max(0, Math.min(1, dias / lastDay)), dias, totalDias: lastDay,
+           diasFerias, ferias: fer };
 }
 function fatorProporcionalMes(emp) { return proporcaoMes(emp).fator; }
+
+// Bloco de férias do card. Vale para qualquer loja e qualquer cargo, e o
+// período é sempre dentro do mês da folha — férias que atravessa a virada é
+// lançada em cada mês com a sua parte.
+function buildFeriasBox(emp, e) {
+  const fer  = e.ferias || {};
+  const on   = !!fer.ativo;
+  const prop = proporcaoMes(emp);
+  const mk   = monthKey();
+  const last = new Date(FP.year, FP.month, 0).getDate();
+  const min  = `${mk}-01`;
+  const max  = `${mk}-${String(last).padStart(2, '0')}`;
+  const dInp = (id, v) =>
+    `<input type="date" id="${id}" value="${v || ''}" min="${min}" max="${max}"
+      onchange="onFeriasChange(${emp.id})" class="fp-ferias-date">`;
+
+  const invalido = on && fer.ini && fer.fim && fer.ini > fer.fim;
+  const resumo = on && prop.diasFerias > 0
+    ? `${prop.diasFerias} ${prop.diasFerias === 1 ? 'dia' : 'dias'} de férias · presente ${prop.dias}/${prop.totalDias} dias — fixo e comissão de loja a ${(prop.fator * 100).toFixed(0)}%`
+    : invalido ? '<span style="color:#f85149">início depois do fim — período ignorado</span>'
+    : on ? 'informe o período para descontar os dias'
+    : '';
+
+  return `
+    <div class="fp-ferias-box${on ? ' fp-ferias-on' : ''}">
+      <label class="fp-ferias-chk">
+        <input type="checkbox" id="fp-ferias-ativo-${emp.id}"${on ? ' checked' : ''}
+          onchange="onFeriasChange(${emp.id})">
+        <span>De férias neste mês</span>
+      </label>
+      ${on ? `
+      <span class="fp-ferias-periodo">
+        de ${dInp(`fp-ferias-ini-${emp.id}`, fer.ini)}
+        até ${dInp(`fp-ferias-fim-${emp.id}`, fer.fim)}
+      </span>` : ''}
+      ${resumo ? `<span class="fp-ferias-note">${resumo}</span>` : ''}
+    </div>`;
+}
+
+// Mudar férias altera o fixo, a garantia mínima e a comissão de loja — refaz a
+// entry inteira em vez de só recalcular a tela, senão os inputs ficam com os
+// valores antigos. Folha encerrada é histórico e não se recalcula.
+function onFeriasChange(empId) {
+  const emp = FP.employees.find(e => e.id === empId);
+  if (!emp) return;
+  if (FP.folha[FP.board]?.encerrada) {
+    toast('Folha encerrada — reabra antes de alterar férias.', true, 5000);
+    return;
+  }
+  saveEntryFromForm(empId);
+  const g = id => document.getElementById(id);
+  const ferias = {
+    ativo: !!g(`fp-ferias-ativo-${empId}`)?.checked,
+    ini:   g(`fp-ferias-ini-${empId}`)?.value || null,
+    fim:   g(`fp-ferias-fim-${empId}`)?.value || null,
+  };
+  const prev = FP.folha[FP.board].entries[empId] || {};
+  FP.folha[FP.board].entries[empId] = { ...prev, ferias };
+  const entry = applyFora(defaultEntry(emp), emp, prev.fora);
+  FP.folha[FP.board].entries[empId] = entry;
+  FP.dirty = true;
+  document.getElementById('fpEmpForms').innerHTML = buildEmpForm(emp, entry);
+  attachFormListeners(empId);
+  recalc(empId);
+}
+
+// Comissão da linha de vendas do card. No gerente ela incide sobre o total da
+// loja, então é comissão de loja e entra proporcional à presença; nos demais é
+// venda própria e vai cheia. defaultEntry, recalc e saveEntryFromForm refazem
+// essa conta cada um por si — todos passam por aqui para não divergirem.
+function comissaoDaLinhaVendas(emp, tipo, vendas, pct) {
+  const bruta = r2(vendas * pct / 100);
+  return tipo === 'gerente' ? r2(bruta * fatorProporcionalMes(emp)) : bruta;
+}
 
 // Adiantamentos solicitados no Loja em Ação e já aprovados/pagos no mês.
 // Vêm do servidor agrupados por colaborador; ao gerar a folha viram o desconto.
@@ -1113,15 +1226,19 @@ function defaultEntry(emp) {
 
   // ── Sócio — pró-labore + complemento + comissão por loja ──
   if (tipo === 'socio') {
-    const proLabore   = r2((ecfg.salarioFixo || 0) * fatorProporcionalMes(emp));
+    const fatorPresenca = fatorProporcionalMes(emp);
+    const proLabore   = r2((ecfg.salarioFixo || 0) * fatorPresenca);
     const complemento = 0;
     const sBoards     = emp.supervisedBoards || [];
     const totalVendas = r2(FP.supervisorVendaMap[emp.id] || 0);
     const totalMeta   = r2(FP.supervisorMetaMap[emp.id]  || 0);
+    // Faixa sai das vendas cheias: a loja bateu ou não bateu a meta independente
+    // de quem estava presente. Férias corta o pagamento, não o percentual.
     const faixa       = calcFaixa(ecfg, totalVendas, totalMeta);
     const lojaComissoes = sBoards.map(b => {
       const venda = r2(FP.lojaVendaMap[b] || 0);
-      return { board: b, vendas: venda, comissaoPct: faixa.comPct, comissao: r2(venda * faixa.comPct / 100) };
+      return { board: b, vendas: venda, comissaoPct: faixa.comPct,
+               comissao: r2(venda * faixa.comPct / 100 * fatorPresenca) };
     });
     const comissaoTotal = r2(lojaComissoes.reduce((s, l) => s + l.comissao, 0));
     const premiacaoLojas    = ecfg.recebePremiaoLoja ? premiacaoLojaPorBoard(emp.id, sBoards) : [];
@@ -1135,6 +1252,7 @@ function defaultEntry(emp) {
     const vt   = r2(baseEncargos * (ecfg.vtRate   || 0) / 100);
     return {
       tipo, proLabore, complemento, lojaComissoes, premiacaoLojas, premiacaoBalanco,
+      ferias: feriasRaw(emp),
       ajudaCustoLojas, ajudaCustoTotal,
       vendas: totalVendas, meta: totalMeta,
       pctMeta: totalMeta > 0 ? r2(totalVendas / totalMeta * 100) : 0,
@@ -1151,7 +1269,8 @@ function defaultEntry(emp) {
 
   // ── Supervisor — cálculo por loja ──
   if (tipo === 'supervisor') {
-    const fixo      = r2((ecfg.salarioFixo || 0) * fatorProporcionalMes(emp));
+    const fatorPresenca = fatorProporcionalMes(emp);
+    const fixo      = r2((ecfg.salarioFixo || 0) * fatorPresenca);
     const sBoards   = emp.supervisedBoards || [];
     const totalVendas = r2(FP.supervisorVendaMap[emp.id] || 0);
     const totalMeta   = r2(FP.supervisorMetaMap[emp.id]  || 0);
@@ -1159,7 +1278,8 @@ function defaultEntry(emp) {
     const pctMeta     = totalMeta > 0 ? r2(totalVendas / totalMeta * 100) : 0;
     const lojaComissoes = sBoards.map(b => {
       const venda = r2(FP.lojaVendaMap[b] || 0);
-      return { board: b, vendas: venda, comissaoPct: faixa.comPct, comissao: r2(venda * faixa.comPct / 100) };
+      return { board: b, vendas: venda, comissaoPct: faixa.comPct,
+               comissao: r2(venda * faixa.comPct / 100 * fatorPresenca) };
     });
     const comissaoTotal = r2(lojaComissoes.reduce((s, l) => s + l.comissao, 0));
     const premiacaoLojas    = ecfg.recebePremiaoLoja ? premiacaoLojaPorBoard(emp.id, sBoards) : [];
@@ -1173,6 +1293,7 @@ function defaultEntry(emp) {
     const vt   = r2(baseEncargos * (ecfg.vtRate   || 0) / 100);
     return {
       tipo, fixo, lojaComissoes, premiacaoLojas, premiacaoBalanco,
+      ferias: feriasRaw(emp),
       ajudaCustoLojas, ajudaCustoTotal,
       vendas: totalVendas, meta: totalMeta, pctMeta,
       faixaLabel: faixa.label, comissaoPct: faixa.comPct,
@@ -1199,12 +1320,14 @@ function defaultEntry(emp) {
     const fixo      = r2((cfg.salarioFixoCaixa || ecfg.salarioFixo || 0) * fator);
     const quebra    = r2((cfg.quebraCaixa      || ecfg.quebraCaixa  || 0) * fator);
     const vendaLoja = r2(FP.lojaVendaMap[FP.board] || 0);
-    const comissaoLoja = ecfg.comissaoVR > 0 ? r2(vendaLoja * ecfg.comissaoVR / 100) : 0;
+    // Comissão sobre o total da loja também é proporcional à presença
+    const comissaoLoja = ecfg.comissaoVR > 0 ? r2(vendaLoja * ecfg.comissaoVR / 100 * fator) : 0;
     const prov   = r2(fixo + quebra + comissaoLoja);
     const inss   = r2(prov * (ecfg.inssRate || 0) / 100);
     const vt     = r2(prov * (ecfg.vtRate   || 0) / 100);
     return {
       tipo, fixo, quebra, comissaoLoja, vendaLoja, feriado: 0, extras: [],
+      ferias: feriasRaw(emp),
       proventos: prov,
       valeCompras: 0, adiantamento: adi, inss, irpf: 0, vt,
       arredondamento: 0, extrasDesc: [],
@@ -1217,9 +1340,9 @@ function defaultEntry(emp) {
   const comissaoPct = faixa.comPct;
   const pctMeta     = meta > 0 ? r2(vendas / meta * 100) : 0;
 
-  const comissaoTotal = r2(vendas * comissaoPct / 100);
-
   const fatorMes = fatorProporcionalMes(emp);
+
+  const comissaoTotal = comissaoDaLinhaVendas(emp, tipo, vendas, comissaoPct);
 
   const vendComFixo = tipo === 'vendedor' && ecfg.vendedorComFixo;
 
@@ -1249,9 +1372,10 @@ function defaultEntry(emp) {
       };
       const metaLoja = r2(FP.lojaMetaMap[FP.board] || 0);
       const lojaFaixa = calcFaixa(lojaEcfg, vendaLoja, metaLoja);
-      comissaoLoja = r2(vendaLoja * lojaFaixa.comPct / 100);
+      // Comissão sobre o total da loja: proporcional aos dias de presença
+      comissaoLoja = r2(vendaLoja * lojaFaixa.comPct / 100 * fatorMes);
     } else {
-      comissaoLoja = r2(vendaLoja * ecfg.comissaoVR / 100);
+      comissaoLoja = r2(vendaLoja * ecfg.comissaoVR / 100 * fatorMes);
     }
   }
 
@@ -1278,6 +1402,7 @@ function defaultEntry(emp) {
 
   return {
     tipo, vendas, meta, pctMeta, faixaLabel, comissaoPct,
+    ferias: feriasRaw(emp),
     comissaoTotal, comissaoContab, dsr, premio,
     comissaoLoja, vendaLoja, fixo, gm, gmComplement,
     premiacao, premiacaoBalanco, premiacaoNaLoja,
@@ -1608,6 +1733,7 @@ function buildEmpForm(emp, entry) {
       <span>${emp.name} · ${emp.cargo}${ecfg.inssRate ? ` · INSS ${ecfg.inssRate}%` : ''}${ecfg.vtRate ? ` · VT ${ecfg.vtRate}%` : ''}${emp.banco ? ` · Banco ${emp.banco} / Cta ${emp.conta||'—'}` : ''}</span>
       <button class="fp-btn" style="padding:.2rem .6rem;font-size:.72rem;margin-left:auto" onclick="fpGerarEmp(${emp.id})" title="Recalcular só este colaborador">↺ Gerar</button>
     </div>
+    ${buildFeriasBox(emp, e)}
     <div class="fp-form-grid">
       <div class="fp-section">
         <div class="fp-section-title">Proventos</div>
@@ -1951,7 +2077,7 @@ function recalc(empId) {
   } else {
     const vendas   = g(`fp-vendas-${empId}`);
     const comPct   = g(`fp-comPct-${empId}`);
-    const comTotal = r2(vendas * comPct / 100);
+    const comTotal = comissaoDaLinhaVendas(emp, tipo, vendas, comPct);
 
     const totEl = document.getElementById(`fp-totalCom-${empId}`);
     if (totEl) totEl.textContent = brl(comTotal);
@@ -2140,7 +2266,7 @@ function saveEntryFromForm(empId) {
   } else {
     const vendas  = g(`fp-vendas-${empId}`);
     const comPct  = g(`fp-comPct-${empId}`);
-    comissaoTotal  = r2(vendas * comPct / 100);
+    comissaoTotal  = comissaoDaLinhaVendas(emp, tipo, vendas, comPct);
     dsr            = g(`fp-dsr-${empId}`);
     premio         = g(`fp-premio-${empId}`);
     comissaoContab = r2(baseDivisaoContab(tipo, r2(comissaoTotal - fb.com), g(`fp-comLoja-${empId}`)) - dsr - premio);
@@ -2604,6 +2730,10 @@ function buildRecibo(emp, entry, mes, origin) {
     </td>
   </tr>
   <tr><td colspan="3" style="text-align:center;padding:5px;border-top:1px solid #000;font-style:italic;font-size:9pt">"${rc.tagline}"</td></tr>
+  ${entry.ferias?.ativo && entry.ferias.ini && entry.ferias.fim ? `
+  <tr><td colspan="3" style="text-align:center;padding:4px;border-top:1px solid #000;font-size:9pt;font-weight:700">
+    FÉRIAS DE ${fmtDiaMes(entry.ferias.ini)} A ${fmtDiaMes(entry.ferias.fim)} — valores proporcionais aos dias trabalhados
+  </td></tr>` : ''}
 </table>
 
 <table style="${tbl}border-top:none;border-bottom:none;margin-top:-1px">
