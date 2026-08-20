@@ -2299,6 +2299,10 @@ body {
 .nf-clear-btn:hover { opacity: .7; }
 .nf-hist-item { opacity: .75; }
 .nf-hist-item-main { display: flex; flex-direction: column; gap: .2rem; flex: 1; min-width: 0; }
+.nf-hist-item-title { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; min-width: 0; }
+/* Nota recusada não desbota junto com as recebidas — fica legível e marcada */
+.nf-hist-item.nf-hist-recusada { opacity: 1; border-left: 2px solid #F85149; padding-left: .4rem; }
+.nf-hist-item.nf-hist-recusada .nf-item-text { text-decoration-color: #F85149; }
 .nf-hist-dates { display: flex; flex-wrap: wrap; gap: .25rem; align-items: center; }
 .nf-date-tag { font-size: .68rem; color: var(--muted); white-space: nowrap; }
 .nf-date-sep { font-size: .68rem; color: var(--muted); }

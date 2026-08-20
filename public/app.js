@@ -9082,14 +9082,21 @@ function _renderNFHistory(body, board, refresh) {
     ${isAdmin ? `<div class="nf-hist-header"><button class="nf-clear-btn" id="nfClearAll">Limpar tudo</button></div>` : ''}
     ${items.map(item => {
       const canRestore = isAdmin || item.addedBy === currentUser;
+      // Nota recusada arquivada é diferente de nota recebida: sem o chip as duas
+      // ficam idênticas no histórico. O ✓ verde do arquivamento também sai, que
+      // nesse caso lê como "recebida".
+      const naoReceber = item.status === 'não receber';
       return `
-      <div class="nf-item nf-checked nf-hist-item" data-id="${item.id}">
+      <div class="nf-item nf-checked nf-hist-item${naoReceber ? ' nf-hist-recusada' : ''}" data-id="${item.id}">
         <div class="nf-hist-item-main">
-          <span class="nf-item-text">${_escHtml(item.text)}</span>
+          <div class="nf-hist-item-title">
+            <span class="nf-item-text">${_escHtml(item.text)}</span>
+            ${naoReceber ? _nfStatusChip(item.status) : ''}
+          </div>
           <div class="nf-hist-dates">
             <span class="nf-date-tag">Criado ${_fmtNFDate(item.addedAt)} por ${_escHtml(item.addedBy)}</span>
             <span class="nf-date-sep">·</span>
-            <span class="nf-date-tag nf-date-archived">✓ Arquivado ${_fmtNFDate(item.archivedAt)} por ${_escHtml(item.archivedBy || item.addedBy)}</span>
+            <span class="nf-date-tag${naoReceber ? '' : ' nf-date-archived'}">${naoReceber ? '' : '✓ '}Arquivado ${_fmtNFDate(item.archivedAt)} por ${_escHtml(item.archivedBy || item.addedBy)}</span>
           </div>
         </div>
         <div style="display:flex;gap:.3rem;align-items:center;flex-shrink:0">
