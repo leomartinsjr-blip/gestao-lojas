@@ -707,8 +707,10 @@ async function loadData() {
           d.setDate(d.getDate() + dias);
           return d;
         };
+        // 2º contrato já cadastrado = prorrogação já decidida:
+        // não avisa no fim do 1º, só no vencimento final (1º + 2º)
         const etapas = [
-          { etapa: '1º contrato', venc: vencEm(e.contrato1), acao: 'prorrogar ou desligar' },
+          { etapa: '1º contrato', venc: e.contrato2 ? null : vencEm(e.contrato1), acao: 'prorrogar ou desligar' },
           { etapa: '2º contrato', acao: 'efetivar ou desligar',
             venc: e.contrato1 && e.contrato2 ? vencEm(e.contrato1 + e.contrato2) : null },
         ];
