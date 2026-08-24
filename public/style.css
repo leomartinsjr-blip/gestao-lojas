@@ -3233,6 +3233,52 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .req-action-btn:disabled { opacity: .5; cursor: default; }
 .req-del-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: .8rem; padding: .2rem .5rem; border-radius: 4px; cursor: pointer; }
 .req-del-btn:hover { border-color: #F85149; color: #F85149; }
+.req-embal-sub { font-size: .68rem; color: var(--muted); text-align: center; margin-top: -.3rem; }
+.req-embal-mod { font-size: .68rem; font-weight: 700; color: #58A6FF; min-height: .9rem; }
+
+/* ── Contagem de embalagens ─────────────────────────────────────────────── */
+.ct-dot { display:inline-flex;align-items:center;justify-content:center;background:#F85149;color:#fff;font-size:.62rem;font-weight:700;min-width:15px;height:15px;border-radius:999px;padding:0 4px;margin-left:5px;vertical-align:middle; }
+.ct-help { font-size: .78rem; color: var(--muted); line-height: 1.5; margin: 0 0 .9rem; }
+.ct-alert { font-size: .8rem; line-height: 1.5; padding: .6rem .85rem; border-radius: 7px; margin-bottom: .9rem; border: 1px solid; }
+.ct-alert-late { background: rgba(248,81,73,.08); border-color: rgba(248,81,73,.35); color: #F0A9A5; }
+.ct-alert-ok   { background: rgba(63,185,80,.07); border-color: rgba(63,185,80,.3);  color: #96D9A2; }
+.ct-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
+.ct-table { width: 100%; border-collapse: collapse; font-size: .8rem; min-width: 520px; }
+.ct-table th { background: var(--hover-bg, rgba(255,255,255,.03)); color: var(--muted); font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; text-align: right; padding: .5rem .7rem; white-space: nowrap; border-bottom: 1px solid var(--border); }
+.ct-table th:first-child { text-align: left; }
+.ct-table td { padding: .45rem .7rem; border-bottom: 1px solid var(--border); color: var(--text); }
+.ct-table tbody tr:last-child td { border-bottom: none; }
+.ct-table tbody tr:hover { background: var(--hover-bg, rgba(255,255,255,.02)); }
+.ct-nome { font-weight: 600; }
+.ct-cod { display: block; font-size: .66rem; color: var(--muted); font-weight: 400; letter-spacing: .03em; }
+.ct-num { text-align: right; white-space: nowrap; color: var(--muted); }
+.ct-cod-cell { font-variant-numeric: tabular-nums; }
+.ct-mod { font-variant-numeric: tabular-nums; }
+.ct-neg { color: #F85149; font-weight: 700; }
+.ct-pos { color: #58A6FF; font-weight: 700; }
+.ct-input { width: 82px; background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: .85rem; font-weight: 600; padding: .25rem .4rem; border-radius: 5px; text-align: right; }
+.ct-input:focus { outline: none; border-color: #58A6FF; }
+.ct-total { font-size: .8rem; color: var(--muted); margin-top: .7rem; }
+.ct-admin-sec { margin-bottom: 1.5rem; }
+.ct-ped-grupo { margin-bottom: 1rem; }
+.ct-ped-hdr { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; font-size: .82rem; font-weight: 700; color: var(--text); margin-bottom: .4rem; }
+.ct-ped-warn { font-size: .72rem; font-weight: 600; color: #E3B341; }
+.ct-ped-vazio { font-size: .78rem; color: var(--muted); padding: .3rem 0 .6rem; }
+.ct-status-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: .6rem; }
+.ct-status-card { border: 1px solid var(--border); border-radius: 8px; padding: .6rem .8rem; background: var(--hover-bg, rgba(255,255,255,.02)); }
+.ct-status-card.ct-status-late { border-color: rgba(248,81,73,.45); background: rgba(248,81,73,.06); }
+.ct-status-top { display: flex; align-items: center; gap: .4rem; font-size: .82rem; margin-bottom: .3rem; }
+.ct-status-line { font-size: .78rem; color: var(--text); }
+.ct-status-card.ct-status-late .ct-status-line { color: #F0A9A5; }
+.ct-status-sub { font-size: .7rem; color: var(--muted); margin-top: .2rem; }
+
+/* banner no topo do painel */
+.ct-banner { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; background: rgba(248,81,73,.08); border: 1px solid rgba(248,81,73,.35); border-radius: 9px; padding: .7rem 1rem; margin-bottom: 1rem; }
+.ct-banner-txt { flex: 1; min-width: 260px; font-size: .82rem; line-height: 1.5; color: #F0A9A5; }
+.ct-banner-txt b { color: #FF9A93; }
+.ct-banner-chip { display: inline-flex; align-items: center; gap: .3rem; background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: .72rem; font-weight: 600; padding: .1rem .5rem; border-radius: 999px; margin-left: .35rem; }
+.ct-banner-btn { background: #238636; border: 1px solid #2EA043; color: #fff; font-size: .8rem; font-weight: 600; padding: .4rem 1rem; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.ct-banner-btn:hover { background: #2EA043; }
 /* ── Loja em Ação — tabs ── */
 .la-tabs { display: flex; gap: .35rem; padding: .75rem 1.25rem .5rem; border-bottom: 1px solid var(--border); }
 .la-tab { padding: .35rem .9rem; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: .82rem; cursor: pointer; transition: all .15s; }

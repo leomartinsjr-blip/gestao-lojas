@@ -280,6 +280,104 @@ const SECTIONS = ['performance','estoque_marca','estoque_grupo','pauta','pendenc
 // dinheiro recebido nem venda; excluídos do Fechamento e da Conferência de Caixa.
 const CFOP_SEM_RECEITA = new Set(['5910', '6910']);
 
+// ── Embalagens: catálogo, mínimos e contagem quinzenal ──────────────────────
+// Fonte única do que cada loja conta e pede. A loja conta em PEÇAS (é o que ela
+// enxerga na prateleira); o pedido sai em MÓDULOS (caixa fechada do fornecedor),
+// arredondado pra cima. O mínimo e o tamanho do módulo são por loja, cadastrados
+// pelo admin — o catálogo abaixo é só o ponto de partida.
+const EMBAL_STORE_BOARDS = BOARDS.filter(b => b !== 'admin' && b !== 'escritorio');
+const EMBAL_DIAS_CONTAGEM = 15;
+
+// O pedido não sai loja a loja: as Surfers compram num pedido só, e Tommy e
+// Lez têm fornecedor próprio. O consolidado soma a falta das lojas do grupo.
+const EMBAL_GRUPOS = [
+  { key: 'surfers', label: 'Surfers',   boards: ['delrey', 'minas', 'contagem', 'estacao'] },
+  { key: 'tommy',   label: 'Tommy',     boards: ['tommy'] },
+  { key: 'lez',     label: 'Lez a Lez', boards: ['lez'] },
+];
+
+const EMBALAGENS_BASE = [
+  { key: 'sacola-papel-p',   nome: 'Sacola de Papel P' },
+  { key: 'sacola-papel-m',   nome: 'Sacola de Papel M' },
+  { key: 'sacola-papel-g',   nome: 'Sacola de Papel G' },
+  { key: 'sacola-plastico',  nome: 'Sacola de Plástico' },
+  { key: 'seda',             nome: 'Seda' },
+  { key: 'adesivo-presente', nome: 'Etiqueta Adesivo de Presente' },
+];
+
+// Itens que só existem na Tommy (catálogo Antilhas)
+const EMBALAGENS_EXTRA = {
+  tommy: [
+    { key: 'caixa-p',          nome: 'Caixa P (215x175x80)' },
+    { key: 'caixa-m',          nome: 'Caixa M (340x285x80)' },
+    { key: 'caixa-tf-g',       nome: 'CX Tampa/Fundo G (445x315x95)' },
+    { key: 'envelope-papel-m', nome: 'Envelope Papel M (300x70x400)' },
+  ],
+};
+
+// Códigos e peças/módulo do fornecedor, por loja. Só a Tommy tem catálogo
+// fechado hoje; nas demais o módulo nasce 1 (pede em peças) até o admin ajustar.
+const EMBALAGENS_FORNECEDOR = {
+  tommy: {
+    'sacola-papel-p':   { cod: 'IF00031', modulo: 25  },
+    'sacola-papel-m':   { cod: 'IF00228', modulo: 25  },
+    'sacola-papel-g':   { cod: 'IF00342', modulo: 25  },
+    'seda':             { cod: 'IF00344', modulo: 200 },
+    'adesivo-presente': { cod: 'IF00345', modulo: 1   },
+    'caixa-p':          { cod: 'IF00688', modulo: 50  },
+    'caixa-m':          { cod: 'IF00689', modulo: 25  },
+    'caixa-tf-g':       { cod: 'IF00690', modulo: 20  },
+    'envelope-papel-m': { cod: 'IF00343', modulo: 100 },
+  },
+};
+
+// Lista de itens da loja já com mínimo/módulo aplicados (config do admin vence
+// o padrão do fornecedor, que vence o fallback de 1 peça por módulo).
+function embalagensDaLoja(db, board) {
+  const cfg = (db.embalagemConfig || {})[board] || {};
+  const pad = EMBALAGENS_FORNECEDOR[board] || {};
+  return [...EMBALAGENS_BASE, ...(EMBALAGENS_EXTRA[board] || [])].map(it => ({
+    key:    it.key,
+    nome:   it.nome,
+    cod:    pad[it.key]?.cod || null,
+    min:    Math.max(0, Number(cfg[it.key]?.min) || 0),
+    modulo: Math.max(1, Number(cfg[it.key]?.modulo) || pad[it.key]?.modulo || 1),
+  }));
+}
+
+// Falta em peças → módulos a pedir, sempre arredondando pra cima (caixa fechada).
+function sugestaoEmbalagem(item, contado) {
+  const falta = Math.max(0, item.min - Math.max(0, Number(contado) || 0));
+  const modulos = falta > 0 ? Math.ceil(falta / item.modulo) : 0;
+  return { falta, modulos, pecas: modulos * item.modulo };
+}
+
+function addDias(dateStr, n) {
+  const d = new Date(`${dateStr}T12:00:00`);
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// Status da contagem quinzenal de uma loja: quando foi a última, quando vence a
+// próxima e há quantos dias está atrasada (nunca contou → atrasada desde já).
+function statusContagem(db, board) {
+  const ultima = (db.contagensEmbalagem || [])
+    .filter(c => c.board === board)
+    .sort((a, b) => (b.data || '').localeCompare(a.data || ''))[0] || null;
+  const hoje = todayBRT();
+  const proxima = ultima ? addDias(ultima.data, EMBAL_DIAS_CONTAGEM) : hoje;
+  const diasAtraso = Math.max(0, Math.round(
+    (new Date(`${hoje}T12:00:00`) - new Date(`${proxima}T12:00:00`)) / 86400000));
+  return {
+    board,
+    ultimaData: ultima?.data || null,
+    ultimaPor:  ultima?.createdBy || null,
+    proxima,
+    atrasada: !ultima || hoje >= proxima,
+    diasAtraso,
+  };
+}
+
 function monthKey(y, m) { return `${y}-${String(m).padStart(2,'0')}`; }
 function cardKey(y, m, board, section) { return `${monthKey(y,m)}-${board}-${section}`; }
 
@@ -752,6 +850,17 @@ app.get('/api/init', requireAuth, async (req, res) => {
     // Pendências — admin/escritorio only
     const pendencias = isAdminOrEscritorio ? (db.pendencias || []) : [];
 
+    // Embalagens: catálogo da loja + status da contagem quinzenal.
+    // Vem no init para o badge e o card de aviso não precisarem de outra chamada.
+    const embalBoards = isAdminOrEscritorio
+      ? EMBAL_STORE_BOARDS
+      : EMBAL_STORE_BOARDS.filter(b => isSupervisor ? userLojas.includes(b) : b === board);
+    const embalagens = { itens: {}, status: {}, diasContagem: EMBAL_DIAS_CONTAGEM };
+    for (const b of embalBoards) {
+      embalagens.itens[b]  = embalagensDaLoja(db, b);
+      embalagens.status[b] = statusContagem(db, b);
+    }
+
     // Indeva stats for this month
     const indevaResult = {};
     const today = todayBRT();
@@ -801,6 +910,7 @@ app.get('/api/init', requireAuth, async (req, res) => {
       boletas:      db.boletas      || [],
       meetingItems,
       pendencias,
+      embalagens,
       requisicoes,
       retiradas,
       adiantamentos,
@@ -2316,12 +2426,23 @@ app.post('/api/requisicoes', requireAuth, async (req, res) => {
   try {
     const board = req.session.user.board;
     if (!board) return res.status(400).json({ error: 'Apenas lojas podem criar requisições' });
-    const { embalagens, materiais, observacao } = req.body;
+    const { embalagens, materiais, observacao, contagemId } = req.body;
     const db = await readDB();
     if (!db.requisicoes) db.requisicoes = [];
+    // embalagens continua sendo { nome: peças } (formato antigo, usado no histórico).
+    // embalagensModulos guarda o pedido em caixa fechada, quando veio de uma contagem.
+    const itensLoja = new Map(embalagensDaLoja(db, board).map(i => [i.nome, i]));
+    const embalagensModulos = {};
+    for (const [nome, pecas] of Object.entries(embalagens || {})) {
+      const it = itensLoja.get(nome);
+      if (!it || it.modulo <= 1) continue;
+      embalagensModulos[nome] = { modulos: Math.ceil(pecas / it.modulo), modulo: it.modulo, cod: it.cod };
+    }
     const item = {
       id: nextId(db), board,
       embalagens: embalagens || {},
+      embalagensModulos,
+      contagemId: Number(contagemId) || null,
       materiais:  materiais  || [],
       observacao: (observacao || '').trim(),
       status:    'pendente',
@@ -2359,6 +2480,132 @@ app.delete('/api/requisicoes/:id', requireAdmin, async (req, res) => {
     db.requisicoes = (db.requisicoes || []).filter(x => x.id !== id);
     await writeDB(db);
     res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/embalagens ───────────────────────────────────────────────────
+// Loja: só o próprio catálogo + status. Admin/escritório: todas as lojas.
+app.get('/api/embalagens', requireAuth, async (req, res) => {
+  try {
+    const db = await readDB();
+    const { board } = req.session.user;
+    const isAdminOrEscritorio = !board || board === 'escritorio';
+    const boards = isAdminOrEscritorio
+      ? EMBAL_STORE_BOARDS
+      : EMBAL_STORE_BOARDS.filter(b => b === board);
+    const itens  = {}, status = {};
+    for (const b of boards) {
+      itens[b]  = embalagensDaLoja(db, b);
+      status[b] = statusContagem(db, b);
+    }
+    res.json({ itens, status, diasContagem: EMBAL_DIAS_CONTAGEM });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/embalagens/config/:board ────────────────────────────────────
+// Só o admin define mínimo e peças por módulo de cada item da loja.
+app.post('/api/embalagens/config/:board', requireAdmin, async (req, res) => {
+  try {
+    const board = req.params.board;
+    if (!EMBAL_STORE_BOARDS.includes(board))
+      return res.status(400).json({ error: 'Loja inválida' });
+    const db = await readDB();
+    if (!db.embalagemConfig) db.embalagemConfig = {};
+    const validKeys = new Set([...EMBALAGENS_BASE, ...(EMBALAGENS_EXTRA[board] || [])].map(i => i.key));
+    const cfg = {};
+    for (const [key, v] of Object.entries(req.body.config || {})) {
+      if (!validKeys.has(key)) continue;
+      cfg[key] = {
+        min:    Math.max(0, Math.round(Number(v?.min)    || 0)),
+        modulo: Math.max(1, Math.round(Number(v?.modulo) || 1)),
+      };
+    }
+    db.embalagemConfig[board] = cfg;
+    await writeDB(db);
+    res.json({ ok: true, itens: embalagensDaLoja(db, board) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/embalagens/contagem ─────────────────────────────────────────
+// A loja lança o que tem em peças; devolve a sugestão de pedido em módulos.
+// Não cria requisição — a loja revisa a sugestão e envia pelo fluxo normal.
+app.post('/api/embalagens/contagem', requireAuth, async (req, res) => {
+  try {
+    const board = req.session.user.board;
+    if (!board || !EMBAL_STORE_BOARDS.includes(board))
+      return res.status(400).json({ error: 'Apenas lojas podem lançar contagem' });
+    const db = await readDB();
+    if (!db.contagensEmbalagem) db.contagensEmbalagem = [];
+    const itens = embalagensDaLoja(db, board);
+    const contagem = {};
+    for (const it of itens) {
+      const v = req.body.contagem?.[it.key];
+      contagem[it.key] = Math.max(0, Math.round(Number(v) || 0));
+    }
+    const item = {
+      id: nextId(db), board,
+      data:      todayBRT(),
+      contagem,
+      createdAt: new Date().toISOString(),
+      createdBy: req.session.user.label || req.session.user.username,
+    };
+    db.contagensEmbalagem.push(item);
+    await writeDB(db);
+    res.json({
+      contagem: item,
+      status:   statusContagem(db, board),
+      sugestao: itens.map(it => ({ ...it, contado: contagem[it.key], ...sugestaoEmbalagem(it, contagem[it.key]) })),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/embalagens/pedido ────────────────────────────────────────────
+// Pedido consolidado por grupo de compra, a partir da última contagem de cada
+// loja. Só admin — é quem fecha o pedido com o fornecedor.
+app.get('/api/embalagens/pedido', requireAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const ultimaPorLoja = {};
+    for (const c of (db.contagensEmbalagem || [])) {
+      const at = ultimaPorLoja[c.board];
+      if (!at || (c.data || '') > (at.data || '')) ultimaPorLoja[c.board] = c;
+    }
+    const grupos = EMBAL_GRUPOS.map(g => {
+      const linhas = {};
+      for (const board of g.boards) {
+        const cont = ultimaPorLoja[board];
+        for (const it of embalagensDaLoja(db, board)) {
+          const s = cont ? sugestaoEmbalagem(it, cont.contagem?.[it.key]) : { falta: 0, modulos: 0, pecas: 0 };
+          if (!linhas[it.key]) linhas[it.key] = { key: it.key, nome: it.nome, cod: it.cod, modulo: it.modulo, porLoja: {}, pecas: 0 };
+          linhas[it.key].porLoja[board] = { contado: cont?.contagem?.[it.key] ?? null, min: it.min, ...s };
+          linhas[it.key].pecas += s.pecas;
+        }
+      }
+      // O pedido fecha em módulo do grupo, não somando módulo de cada loja
+      const itens = Object.values(linhas).map(l => ({
+        ...l, modulos: l.modulo > 1 ? Math.ceil(l.pecas / l.modulo) : l.pecas,
+      })).filter(l => l.pecas > 0);
+      return {
+        key: g.key, label: g.label, boards: g.boards, itens,
+        semContagem: g.boards.filter(b => !ultimaPorLoja[b]),
+        contagens: Object.fromEntries(g.boards.map(b => [b, ultimaPorLoja[b]?.data || null])),
+      };
+    });
+    res.json({ grupos });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/embalagens/contagens ─────────────────────────────────────────
+app.get('/api/embalagens/contagens', requireAuth, async (req, res) => {
+  try {
+    const db = await readDB();
+    const { board } = req.session.user;
+    const isAdminOrEscritorio = !board || board === 'escritorio';
+    const items = (db.contagensEmbalagem || [])
+      .filter(x => isAdminOrEscritorio || x.board === board)
+      .sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''))
+      .slice(0, 200);
+    res.json(items);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
