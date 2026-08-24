@@ -1799,7 +1799,19 @@ function _renderWeekendCardBody(body, dates) {
     return dsm?.[bk] || 0;
   }
 
-  const vendedores = S.employees.filter(e => isVend(e));
+  // Janela do período (Sex–Dom): só entra quem estava na casa em pelo menos um dos dias.
+  // Usa a lista completa (não filtrada por "inativo no mês atual"), igual à Meta Semanal,
+  // para que o divisor da meta continue certo em fins de semana já passados.
+  const _wkStart = dates.reduce((a, b) => (b < a ? b : a));
+  const _wkEnd   = dates.reduce((a, b) => (b > a ? b : a));
+  const _activeOn = (e, ds) =>
+    (!e.admissao     || e.admissao     <= ds) &&
+    (!e.desligamento || e.desligamento >= ds);
+  const vendedores = (S.allEmployees || S.employees).filter(e =>
+    isVend(e) &&
+    (!e.admissao     || e.admissao     <= _wkEnd) &&
+    (!e.desligamento || e.desligamento >= _wkStart)
+  );
   const byBoard = {};
   for (const emp of vendedores) {
     if (!byBoard[emp.board]) byBoard[emp.board] = [];
@@ -1842,7 +1854,11 @@ function _renderWeekendCardBody(body, dates) {
           dateStr:          d,
           dayWeight:        _getWeight(d),
           metaLoja:         _getMetaLoja(d, bk),
-          onVacation:       (vsale.meta?.vacationDays || []).includes(d),
+          // Dia fora da janela de admissão/desligamento do PRÓPRIO vendedor → sem meta naquele dia.
+          // sellerDayGoal só zera por férias; sem isso, quem não estava na casa no dia ainda
+          // recebia uma fatia da meta (e ela era somada no total da loja), enquanto o divisor
+          // nActive já o excluía — inflando a Meta FDS da loja.
+          onVacation:       (vsale.meta?.vacationDays || []).includes(d) || !_activeOn(emp, d),
           boardVendors:     byBoard[bk],
           vsalesForMonth:   S.vsales,
           individualMensal: vsale.meta?.mensal || 0,
