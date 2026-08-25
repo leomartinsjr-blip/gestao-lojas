@@ -303,22 +303,25 @@ const EMBAL_GRUPOS = [
   { key: 'lez',     label: 'Lez a Lez', boards: ['lez'] },
 ];
 
+// porTicket = quantas unidades do item saem por VENDA. Não é fatia de um bolo:
+// cada item tem o seu, e somar 1 não significa nada. Seda é o caso que deixa
+// isso claro — ela sai por PEÇA, então o padrão dela é o PA da loja.
 const EMBALAGENS_BASE = [
-  { key: 'sacola-papel-p',   nome: 'Sacola de Papel P' },
-  { key: 'sacola-papel-m',   nome: 'Sacola de Papel M' },
-  { key: 'sacola-papel-g',   nome: 'Sacola de Papel G' },
-  { key: 'sacola-plastico',  nome: 'Sacola de Plástico' },
-  { key: 'seda',             nome: 'Seda' },
-  { key: 'adesivo-presente', nome: 'Etiqueta Adesivo de Presente' },
+  { key: 'sacola-papel-p',   nome: 'Sacola de Papel P',            porTicket: 0.455 },
+  { key: 'sacola-papel-m',   nome: 'Sacola de Papel M',            porTicket: 0.455 },
+  { key: 'sacola-papel-g',   nome: 'Sacola de Papel G',            porTicket: 0.09  },
+  { key: 'sacola-plastico',  nome: 'Sacola de Plástico',           porTicket: 0     },
+  { key: 'seda',             nome: 'Seda',                         porPeca:   1     },
+  { key: 'adesivo-presente', nome: 'Etiqueta Adesivo de Presente', porTicket: 0     },
 ];
 
 // Itens que só existem na Tommy (catálogo Antilhas)
 const EMBALAGENS_EXTRA = {
   tommy: [
-    { key: 'caixa-p',          nome: 'Caixa P (215x175x80)' },
-    { key: 'caixa-m',          nome: 'Caixa M (340x285x80)' },
-    { key: 'caixa-tf-g',       nome: 'CX Tampa/Fundo G (445x315x95)' },
-    { key: 'envelope-papel-m', nome: 'Envelope Papel M (300x70x400)' },
+    { key: 'caixa-p',          nome: 'Caixa P (215x175x80)',          porTicket: 0 },
+    { key: 'caixa-m',          nome: 'Caixa M (340x285x80)',          porTicket: 0 },
+    { key: 'caixa-tf-g',       nome: 'CX Tampa/Fundo G (445x315x95)', porTicket: 0 },
+    { key: 'envelope-papel-m', nome: 'Envelope Papel M (300x70x400)', porTicket: 0 },
   ],
 };
 
@@ -386,17 +389,21 @@ function nivelTickets(db, board, ateDateStr) {
     if (partes.slice(2, -1).join('-') !== board) continue;
     for (const [ds, en] of Object.entries(vs.entries || {})) {
       if (ds < iniStr || ds > ateDateStr) continue;
-      porDia[ds] = (porDia[ds] || 0) + (en.atendimentos || 0);
+      if (!porDia[ds]) porDia[ds] = { tickets: 0, pecas: 0 };
+      porDia[ds].tickets += en.atendimentos || 0;
+      porDia[ds].pecas   += en.pecas || 0;
     }
   }
   const dias = Object.keys(porDia);
-  if (dias.length < 20) return null;   // pouco histórico → cai no mínimo manual
-  let tickets = 0, pesoIdx = 0;
+  if (dias.length < 20) return null;   // pouco histórico → cai no piso manual
+  let tickets = 0, pecas = 0, pesoIdx = 0;
   for (const ds of dias) {
-    tickets += porDia[ds];
+    tickets += porDia[ds].tickets;
+    pecas   += porDia[ds].pecas;
     pesoIdx += idx[parseInt(ds.slice(5, 7)) - 1];
   }
-  return pesoIdx > 0 ? tickets / pesoIdx : null;
+  if (!(pesoIdx > 0) || !tickets) return null;
+  return { nivel: tickets / pesoIdx, pa: pecas / tickets };
 }
 
 // Tickets previstos nos próximos N dias, andando pelo calendário.
@@ -414,19 +421,19 @@ function ticketsPrevistos(nivel, board, deDateStr, dias) {
   return total;
 }
 
-// Participação de cada item no consumo. Medida das contagens quando já houver
-// duas seguidas; até lá, usa a semente cadastrada (ou divide igual).
-function mixConsumo(db, board) {
-  const cfg = (db.embalagemConfig || {})[board] || {};
-  const itens = [...EMBALAGENS_BASE, ...(EMBALAGENS_EXTRA[board] || [])];
+// Consumo por venda de cada item. Vale o medido das contagens quando houver;
+// senão o que o admin cadastrou; senão o padrão de fábrica do catálogo — que já
+// vem preenchido para o sistema funcionar sem ninguém digitar nada.
+function fatorConsumo(db, board, pa) {
+  const cfg    = (db.embalagemConfig || {})[board] || {};
   const medido = (db.embalagemMix || {})[board];
   const out = {};
-  let somaCfg = 0;
-  for (const it of itens) somaCfg += Math.max(0, Number(cfg[it.key]?.share) || 0);
-  for (const it of itens) {
-    if (medido && medido[it.key] != null) out[it.key] = medido[it.key];
-    else if (somaCfg > 0) out[it.key] = (Math.max(0, Number(cfg[it.key]?.share) || 0)) / somaCfg;
-    else out[it.key] = null;   // sem semente → sem mínimo calculado
+  for (const it of [...EMBALAGENS_BASE, ...(EMBALAGENS_EXTRA[board] || [])]) {
+    const padrao = it.porPeca != null ? it.porPeca * (pa || 0) : (it.porTicket || 0);
+    const doAdmin = Number(cfg[it.key]?.porTicket);
+    out[it.key] = medido?.[it.key] != null ? medido[it.key]
+                : Number.isFinite(doAdmin) && doAdmin > 0 ? doAdmin
+                : padrao;
   }
   return out;
 }
@@ -447,25 +454,27 @@ function embalagensDaLoja(db, board, hoje) {
   const ref   = hoje || todayBRT();
   const lead  = embalLeadDias(db);
   const ciclo = EMBAL_DIAS_CONTAGEM;
-  const nivel = nivelTickets(db, board, ref);
-  const mix   = mixConsumo(db, board);
-  // Consumo previsto no horizonte (sazonal) e num mês comum (índice 1,00),
-  // este último só para sugerir ao admin um piso fixo coerente.
-  const prev  = nivel != null ? ticketsPrevistos(nivel, board, ref, ciclo + lead) : null;
-  const plano = nivel != null ? nivel * (ciclo + lead) : null;
+  const nv    = nivelTickets(db, board, ref);
+  const fator = fatorConsumo(db, board, nv?.pa);
+  const prev  = nv ? ticketsPrevistos(nv.nivel, board, ref, ciclo + lead) : null;
+  // Piso sugerido = consumo de UM CICLO num mês comum. É a linha do "estou
+  // ficando sem" — fica bem abaixo do alvo de propósito, senão alarmaria o
+  // tempo todo na baixa estação, quando o normal é a loja estar com pouco.
+  const plano = nv ? nv.nivel * ciclo : null;
 
   return [...EMBALAGENS_BASE, ...(EMBALAGENS_EXTRA[board] || [])].map(it => {
-    const share = mix[it.key];
+    const f = fator[it.key];
+    const ativo = prev != null && f > 0;
     return {
       key:    it.key,
       nome:   it.nome,
       cod:    pad[it.key]?.cod || null,
       min:    Math.max(0, Number(cfg[it.key]?.min) || 0),
       // piso sugerido = consumo de um mês comum, sem o empurrão sazonal
-      minSugerido: (plano != null && share != null) ? Math.ceil(plano * share) : null,
+      minSugerido: ativo ? Math.ceil(plano * f) : null,
       // alvo do pedido = consumo previsto no horizonte, com sazonalidade
-      cobertura:   (prev  != null && share != null) ? Math.ceil(prev  * share) : null,
-      share,
+      cobertura:   ativo ? Math.ceil(prev  * f) : null,
+      porTicket:   f,
       modulo: Math.max(1, Number(cfg[it.key]?.modulo) || pad[it.key]?.modulo || 1),
     };
   });
@@ -482,13 +491,14 @@ function alvoPedido(item) {
 function coberturaLoja(db, board, hoje) {
   const ref   = hoje || todayBRT();
   const lead  = embalLeadDias(db);
-  const nivel = nivelTickets(db, board, ref);
-  if (nivel == null) return { nivel: null, horizonte: EMBAL_DIAS_CONTAGEM + lead, previsto: null, indice: null };
+  const nv = nivelTickets(db, board, ref);
+  if (!nv) return { nivel: null, pa: null, horizonte: EMBAL_DIAS_CONTAGEM + lead, previsto: null, indice: null };
   const mesIdx = parseInt(ref.slice(5, 7)) - 1;
   return {
-    nivel,
+    nivel: nv.nivel,
+    pa:    nv.pa,
     horizonte: EMBAL_DIAS_CONTAGEM + lead,
-    previsto:  ticketsPrevistos(nivel, board, ref, EMBAL_DIAS_CONTAGEM + lead),
+    previsto:  ticketsPrevistos(nv.nivel, board, ref, EMBAL_DIAS_CONTAGEM + lead),
     indice:    indiceSazonal(board)[mesIdx],
   };
 }
@@ -2678,7 +2688,7 @@ app.post('/api/embalagens/config/:board', requireAdmin, async (req, res) => {
         // min = trava manual; 0 devolve o item para o cálculo automático
         min:    Math.max(0, Math.round(Number(v?.min)    || 0)),
         modulo: Math.max(1, Math.round(Number(v?.modulo) || 1)),
-        share:  Math.max(0, Number(v?.share) || 0),
+        porTicket: Math.max(0, Number(v?.porTicket) || 0),
       };
     }
     db.embalagemConfig[board] = cfg;
