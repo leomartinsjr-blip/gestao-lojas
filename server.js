@@ -335,6 +335,11 @@ const EMBALAGENS_CONSUMO_LOJA = {
   contagem: { seda: 0.15 },
   estacao:  { seda: 0.15 },
   lez:      { seda: 0.15 },
+  // Tommy quase não usa a P — o padrão do catálogo (0,455) veio do pedido da
+  // Surfers e não vale aqui. O peso foi para M e G. Estes três são chute com
+  // formato, não medição: somam 0,90 por venda, deixando 10% para caixa e
+  // envelope de presente. A medição das contagens substitui em dois ciclos.
+  tommy:    { 'sacola-papel-p': 0.05, 'sacola-papel-m': 0.60, 'sacola-papel-g': 0.25 },
 };
 
 // Códigos e peças/módulo do fornecedor, por loja. Só a Tommy tem catálogo
@@ -362,6 +367,7 @@ const EMBALAGENS_FORNECEDOR = {
 // dezembro junto. É isso que faz o pedido do fim do ano ficar grande sozinho,
 // sem ninguém lembrar de inflar.
 const EMBAL_HORIZONTE_PADRAO = 3;  // meses de cobertura do pedido
+const EMBAL_PISO_MESES_PADRAO = 2; // meses de estoque que a loja tem de ter na mão
 const EMBAL_JANELA_NIVEL = 120;    // dias de histórico usados para medir o nível
 
 // Meses de cobertura do pedido. Number(undefined) é NaN e NaN passa direto pelo
@@ -371,21 +377,48 @@ function embalHorizonteMeses(db) {
   return Number.isFinite(v) && v > 0 ? v : EMBAL_HORIZONTE_PADRAO;
 }
 
+// Meses de estoque que a loja precisa ter na mão. É o piso.
+function embalPisoMeses(db) {
+  const v = Number(db?.embalagemParams?.pisoMeses);
+  return Number.isFinite(v) && v > 0 ? v : EMBAL_PISO_MESES_PADRAO;
+}
+
 // Quanto cada mês pesa contra o dia médio do ano, do histórico real de vendas.
 // Cacheado: PERF_HIST é constante em runtime.
 const _sazonalCache = {};
-function indiceSazonal(board) {
-  if (_sazonalCache[board]) return _sazonalCache[board];
+
+// Curva crua de uma loja e quantos anos completos ela tem.
+function _curvaSazonal(board) {
   const DIAS_MES = [31,28,31,30,31,30,31,31,30,31,30,31];
   const soma = Array(12).fill(0), n = Array(12).fill(0);
+  let anos = 0;
   for (const ano of [2023, 2024, 2025]) {
     const v = PERF_HIST[board]?.[ano];
     if (!v || v.some(x => x == null || x === 0)) continue;
     const mediaDia = v.reduce((s, x, i) => s + x / DIAS_MES[i], 0) / 12;
     if (!mediaDia) continue;
+    anos++;
     v.forEach((x, i) => { soma[i] += (x / DIAS_MES[i]) / mediaDia; n[i]++; });
   }
-  const idx = soma.map((s, i) => (n[i] ? s / n[i] : 1));
+  return { curva: soma.map((s, i) => (n[i] ? s / n[i] : 1)), anos };
+}
+
+// Um ano sozinho não é sazonalidade, é o que aconteceu naquele ano. A Tommy,
+// por exemplo, só tem 2024 completo, e ali setembro deu 0,43 contra dezembro
+// 3,83 — distorção de loja nova, não estação. Com menos de dois anos a curva
+// entra pela média com a da rede, que tem três anos e o mesmo Natal.
+function indiceSazonal(board) {
+  if (_sazonalCache[board]) return _sazonalCache[board];
+  const propria = _curvaSazonal(board);
+  let idx;
+  if (propria.anos >= 2) {
+    idx = propria.curva;
+  } else {
+    const rede = _curvaSazonal('surfers').curva;
+    idx = propria.anos === 1
+      ? propria.curva.map((v, i) => (v + rede[i]) / 2)
+      : rede;
+  }
   _sazonalCache[board] = idx;
   return idx;
 }
@@ -543,10 +576,12 @@ function embalagensDaLoja(db, board, hoje, mesesOverride) {
   const nv    = nivelTickets(db, board, ref);
   const fator = fatorConsumo(db, board, nv?.pa);
   const prev  = nv ? ticketsPrevistosMeses(nv.nivel, board, ref, meses) : null;
-  // Piso sugerido = consumo de UM CICLO num mês comum. É a linha do "estou
-  // ficando sem" — fica bem abaixo do alvo de propósito, senão alarmaria o
-  // tempo todo na baixa estação, quando o normal é a loja estar com pouco.
-  const plano = nv ? nv.nivel * ciclo : null;
+  // Piso = os meses de estoque que a loja tem de ter na mão, medidos sobre o
+  // consumo PREVISTO desses meses, não sobre um mês médio. Assim ele já sobe
+  // antes de dezembro: 2 meses de dezembro é muito mais sacola que 2 meses de
+  // janeiro, e um piso de mês médio cobriria só 6 dias no pico.
+  const pisoM = embalPisoMeses(db);
+  const plano = nv ? ticketsPrevistosMeses(nv.nivel, board, ref, pisoM) : null;
 
   return [...EMBALAGENS_BASE, ...(EMBALAGENS_EXTRA[board] || [])].map(it => {
     const f = fator[it.key];
@@ -564,6 +599,7 @@ function embalagensDaLoja(db, board, hoje, mesesOverride) {
       minSugerido: sugerido,
       // só o gasto previsto no horizonte
       consumo:     ativo ? Math.ceil(prev * f) : null,
+      pisoMeses:   pisoM,
       // alvo = gastar os próximos N meses e AINDA terminar com o piso na mão
       cobertura:   ativo ? Math.ceil(prev * f) + (manual > 0 ? manual : (sugerido || 0)) : null,
       meses,
@@ -1126,7 +1162,7 @@ app.get('/api/init', requireAuth, async (req, res) => {
     const embalBoards = isAdminOrEscritorio
       ? EMBAL_STORE_BOARDS
       : EMBAL_STORE_BOARDS.filter(b => isSupervisor ? userLojas.includes(b) : b === board);
-    const embalagens = { itens: {}, status: {}, projecao: {}, diasContagem: EMBAL_DIAS_CONTAGEM, horizonteMeses: embalHorizonteMeses(db) };
+    const embalagens = { itens: {}, status: {}, projecao: {}, diasContagem: EMBAL_DIAS_CONTAGEM, horizonteMeses: embalHorizonteMeses(db), pisoMeses: embalPisoMeses(db) };
     for (const b of embalBoards) {
       embalagens.itens[b]    = embalagensDaLoja(db, b);
       embalagens.status[b]   = statusContagem(db, b);
@@ -2777,7 +2813,7 @@ app.get('/api/embalagens', requireAuth, async (req, res) => {
       status[b]   = statusContagem(db, b);
       projecao[b] = projecaoAnual(db, b);
     }
-    res.json({ itens, status, projecao, diasContagem: EMBAL_DIAS_CONTAGEM, horizonteMeses: embalHorizonteMeses(db) });
+    res.json({ itens, status, projecao, diasContagem: EMBAL_DIAS_CONTAGEM, horizonteMeses: embalHorizonteMeses(db), pisoMeses: embalPisoMeses(db) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2803,6 +2839,12 @@ app.post('/api/embalagens/config/:board', requireAdmin, async (req, res) => {
     }
     db.embalagemConfig[board] = cfg;
     // Lead time é da rede, não da loja — chega junto para não exigir outra tela
+    if (req.body.pisoMeses !== undefined) {
+      const v = Number(req.body.pisoMeses);
+      if (!Number.isFinite(v) || v <= 0 || v > 24)
+        return res.status(400).json({ error: 'Piso deve ser de 1 a 24 meses' });
+      db.embalagemParams = { ...(db.embalagemParams || {}), pisoMeses: v };
+    }
     if (req.body.horizonteMeses !== undefined) {
       const v = Number(req.body.horizonteMeses);
       if (!Number.isFinite(v) || v <= 0 || v > 24)

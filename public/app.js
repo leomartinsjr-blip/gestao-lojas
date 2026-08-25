@@ -10977,6 +10977,11 @@ function _renderContagemAdminView(body) {
         </div>
         <div class="ct-params">
           <label class="ct-param">
+            <span>Piso da loja</span>
+            <input type="number" class="ct-input" id="ctPiso" min="1" max="24" step="1" value="${S.embalagens?.pisoMeses ?? 2}">
+            <span class="ct-param-un">meses</span>
+          </label>
+          <label class="ct-param">
             <span>Cobertura do pedido</span>
             <input type="number" class="ct-input" id="ctLead" min="1" max="24" step="1" value="${S.embalagens?.horizonteMeses ?? 3}">
             <span class="ct-param-un">meses</span>
@@ -11014,12 +11019,16 @@ function _renderContagemAdminView(body) {
       btn.disabled = true;
       try {
         const horizonteMeses = parseFloat(body.querySelector('#ctLead')?.value);
+        const pisoMeses      = parseFloat(body.querySelector('#ctPiso')?.value);
         const r = await apiFetch('POST', `/api/embalagens/config/${sel}`, {
-          config, ...(Number.isFinite(horizonteMeses) ? { horizonteMeses } : {}),
+          config,
+          ...(Number.isFinite(horizonteMeses) ? { horizonteMeses } : {}),
+          ...(Number.isFinite(pisoMeses) ? { pisoMeses } : {}),
         });
         S.embalagens.itens[sel] = r.itens;
         if (r.projecao) { if (!S.embalagens.projecao) S.embalagens.projecao = {}; S.embalagens.projecao[sel] = r.projecao; }
         if (Number.isFinite(horizonteMeses)) S.embalagens.horizonteMeses = horizonteMeses;
+        if (Number.isFinite(pisoMeses)) S.embalagens.pisoMeses = pisoMeses;
         toast('Salvo ✓');
         render();
       } catch (e) { toast('Erro: ' + e.message, true); btn.disabled = false; }
