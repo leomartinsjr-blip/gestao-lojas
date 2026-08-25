@@ -2476,64 +2476,8 @@ const _brtNow     = new Date(Date.now() - 3 * 60 * 60 * 1000);
 const PERF_CUR    = _brtNow.getUTCMonth(); // mês corrente BRT (0=Jan … 11=Dez)
 const PERF_LAST3  = [PERF_CUR-3, PERF_CUR-2, PERF_CUR-1]; // últimos 3 meses completos
 
-const PERF_HIST = {
-  delrey: {
-    2022:[165385,168003,234286,266401,302791,322301,283809,281544,270658,273128,233726,702491],
-    2023:[231820,192965,260198,234835,267007,302000,278639,221782,254105,234534,241181,652603],
-    2024:[174910,178876,191244,173915,220048,274312,220773,233149,207684,236554,241121,593236],
-    2025:[150997,158402,162633,184631,213998,209802,173548,175903,143292,154790,187029,464571],
-  },
-  minas: {
-    2022:[101449,129106,130745,166964,198381,220050,201689,198955,191943,200837,180878,514329],
-    2023:[118853,105532,144239,181543,152731,215775,205750,168377,164027,167674,197156,505851],
-    2024:[135127,117994,127568,127094,227156,257343,193379,178546,157503,160880,175101,447639],
-    2025:[ 98983, 91461,105495,115230,150991,147786,126240,115365, 99045,118324,133660,302529],
-  },
-  contagem: {
-    2022:[ 75351,120411,103442,117390,127365,170520,144453,150177,159697,176077,141331,421069],
-    2023:[ 92988,100147,137226,154869,141846,243307,145699,145539,156978,185615,184176,507843],
-    2024:[105428,130652,165039,154035,168401,226380,184509,165067,139761,170188,183280,440048],
-    2025:[ 75089, 93885,121349,122032,134839,164378,109811,113459, 99929,115189,140320,375454],
-  },
-  estacao: {
-    2022:[ 71131,124643,124185,159666,204231,238665,186935,178579,198684,206929,174409,496569],
-    2023:[122651,122411,149445,196218,144786,288928,167382,157945,183392,197120,203826,594567],
-    2024:[109284,122665,133511,143844,188523,180783,158848,160592,130708,146317,155069,381802],
-    2025:[116994, 92631, 95410,132345,134779,146808,116226,110715,104962,121011,117370,302912],
-  },
-  surfers: {
-    2022:[458987,654226,655252,755422,933482,1072388,891175,917337,910954,881084,733117,2150188],
-    2023:[601218,573490,765679,810330,756129,1104006,830086,716896,785838,820049,853268,2263303],
-    2024:[569838,571629,639746,613434,829548, 972858,779656,756652,645706,726565,766957,1878674],
-    2025:[449313,444543,491107,571260,643380, 673244,529848,522194,451746,515961,585649,1455828],
-  },
-  tommy: {
-    2022:[null,null,null,null,null,null,null,null,null,null,null,null],
-    2023:[null,null,null,null,null,null,null,null,null,null,null,null],
-    2024:[ 70281, 67887, 71552, 96715, 94302,119344, 90020,124841, 54636, 75209,186100,503194],
-    2025:[  null,  null,  null,  null,  null,196540,133765,129143, 83279,106346,112430,251056],
-  },
-  lez: {
-    2022:[null,null,null,null,null,null,null,null,null,null,null,null],
-    2023:[null,null,null,null,null,null,null,null,null,null,null,null],
-    2024:[null,null,null,null,null,null,null,null,null,null,null,null],
-    2025:[null,null,null,null,null,null,null,77550,68753,83603,123697,207733],
-  },
-  site: {
-    2022:[ 45671,112063, 62594, 45001,100714,120852, 74289,108082, 89972, 24113,  2773, 15730],
-    2023:[ 34906, 52435, 74571, 42865, 49759, 53996, 32616, 23253, 27336, 35106, 26929,  2439],
-    2024:[ 45089, 21442, 22384, 14546, 25420, 34040, 22147, 19298, 10050, 12626, 12386, 15949],
-    2025:[  7250,  8164,  6220, 17022,  8773,  4470,  4023,  6752,  4518,  6647,  7270, 10362],
-  },
-};
-// Total Geral = soma de todos os ALL_STORES (del rey + minas + contagem + estação + tommy + lez + site)
-const _ALL_STORES_FOR_TOTAL = ['delrey','minas','contagem','estacao','tommy','lez','site'];
-PERF_HIST.total = {};
-for (const y of [2022,2023,2024,2025]) {
-  PERF_HIST.total[y] = Array.from({length:12}, (_,i) =>
-    _ALL_STORES_FOR_TOTAL.reduce((s,b) => s + (PERF_HIST[b]?.[y]?.[i] || 0), 0)
-  );
-}
+// PERF_HIST e _ALL_STORES_FOR_TOTAL vivem em public/perf-hist.js (carregado antes deste arquivo),
+// porque o servidor usa a mesma tabela para calcular o mínimo de embalagem.
 
 const PERF_2026 = {
   surfers:  [383139,345885,413975,396776,null,null,null,null,null,null,null,null],
@@ -10519,10 +10463,19 @@ function _embalStoreBoards() { return Object.keys(S.embalagens?.itens || {}); }
 
 // Falta em peças → módulos a pedir, arredondando pra cima (caixa fechada).
 // Espelha sugestaoEmbalagem() do server.
+// Espelha alvoPedido()/sugestaoEmbalagem() do server: a falta é medida contra o
+// ALVO (consumo previsto até a próxima entrega, já com sazonalidade), não contra
+// o piso. O piso serve só para o alerta da loja.
+function _embalAlvo(item) {
+  return item.cobertura != null ? Math.max(item.cobertura, item.min || 0) : (item.min || 0);
+}
 function _embalSugestao(item, contado) {
-  const falta = Math.max(0, (item.min || 0) - Math.max(0, Number(contado) || 0));
+  const tem   = Math.max(0, Number(contado) || 0);
+  const alvo  = _embalAlvo(item);
+  const falta = Math.max(0, alvo - tem);
   const modulos = falta > 0 ? Math.ceil(falta / (item.modulo || 1)) : 0;
-  return { falta, modulos, pecas: modulos * (item.modulo || 1) };
+  return { alvo, falta, modulos, pecas: modulos * (item.modulo || 1),
+           abaixoDoPiso: (item.min || 0) > 0 && tem < item.min };
 }
 
 function _fmtData(ds) {
@@ -10696,6 +10649,7 @@ function _renderContagemLojaView(body) {
       <tr data-key="${it.key}">
         <td class="ct-nome">${_escHtml(it.nome)}${it.cod ? `<span class="ct-cod">${_escHtml(it.cod)}</span>` : ''}</td>
         <td class="ct-num">${it.min || '—'}</td>
+        <td class="ct-num ct-alvo-col">${_embalAlvo(it) || '—'}</td>
         <td class="ct-num ct-mod">${it.modulo > 1 ? it.modulo : '—'}</td>
         <td><input type="number" class="ct-input" data-key="${it.key}" min="0" max="99999" placeholder="0"></td>
         <td class="ct-num ct-falta" data-key="${it.key}">—</td>
@@ -10708,11 +10662,11 @@ function _renderContagemLojaView(body) {
       <h3 class="req-form-title">Contagem de Embalagens — ${BOARDS[board]?.label || board}</h3>
     </div>
     ${_ctStatusLine(_embalStatus(board), dias)}
-    <p class="ct-help">Conte o que tem <b>em peças</b> e lance abaixo. O sistema compara com o mínimo da loja e sugere o pedido em <b>módulos</b> (caixa fechada), arredondando pra cima.</p>
+    <p class="ct-help">Conte o que tem <b>em peças</b> e lance abaixo. O <b>piso</b> é o número fixo da loja — abaixo dele você é avisado. O <b>alvo</b> é quanto o item vai gastar até a próxima entrega chegar, já contando a época do ano: por isso ele sobe em novembro, para dezembro não pegar ninguém sem sacola. O pedido é sugerido em <b>módulos</b> (caixa fechada), arredondando pra cima.</p>
     <div class="ct-table-wrap">
       <table class="ct-table">
         <thead><tr>
-          <th>Item</th><th>Mínimo</th><th>Pç/Módulo</th><th>Tenho (pç)</th><th>Falta</th><th>Pedir</th>
+          <th>Item</th><th>Piso</th><th>Alvo</th><th>Pç/Módulo</th><th>Tenho (pç)</th><th>Falta</th><th>Pedir</th>
         </tr></thead>
         <tbody>${linhas()}</tbody>
       </table>
@@ -10733,11 +10687,15 @@ function _renderContagemLojaView(body) {
       const s = _embalSugestao(it, inp.value);
       const tdF = body.querySelector(`.ct-falta[data-key="${it.key}"]`);
       const tdP = body.querySelector(`.ct-pedir[data-key="${it.key}"]`);
-      if (!preenchido || !it.min) {
+      const tr  = inp.closest('tr');
+      if (!preenchido || !s.alvo) {
         tdF.textContent = '—'; tdP.textContent = '—';
         tdF.classList.remove('ct-neg'); tdP.classList.remove('ct-pos');
+        tr?.classList.remove('ct-row-piso');
         return;
       }
+      // linha vermelha = abaixo do piso; falta laranja = só precisa repor p/ o alvo
+      tr?.classList.toggle('ct-row-piso', s.abaixoDoPiso);
       tdF.textContent = s.falta > 0 ? `${s.falta} pç` : 'ok';
       tdF.classList.toggle('ct-neg', s.falta > 0);
       tdP.textContent = s.modulos > 0
@@ -10748,8 +10706,8 @@ function _renderContagemLojaView(body) {
     });
     const resumo = body.querySelector('#ctResumo');
     resumo.textContent = totalItens
-      ? `${totalItens} ${totalItens === 1 ? 'item abaixo do mínimo' : 'itens abaixo do mínimo'} — vão para a sugestão de requisição.`
-      : 'Nenhum item abaixo do mínimo até aqui.';
+      ? `${totalItens} ${totalItens === 1 ? 'item precisa repor' : 'itens precisam repor'} — vão para a sugestão de requisição.`
+      : 'Nada a repor até aqui.';
   }
 
   body.querySelectorAll('.ct-input').forEach(inp => inp.addEventListener('input', recalc));
@@ -10830,6 +10788,25 @@ async function _renderPedidoConsolidado(el) {
           </tbody>
         </table>
       </div>
+      ${g.transferencias.length ? `
+        <div class="ct-transf">
+          <div class="ct-transf-hdr">↔ Antes de comprar — dá para remanejar entre lojas</div>
+          ${g.transferencias.map(t => `<div class="ct-transf-linha">
+            <span class="ct-transf-qtd">${t.qtd} pç</span>
+            <span class="ct-transf-item">${_escHtml(t.nome)}</span>
+            <span class="ct-transf-rota">
+              <span class="dash-store-dot" style="background:${BOARDS[t.de]?.color || '#8B949E'}"></span>${_escHtml(BOARDS[t.de]?.label || t.de)}
+              <span class="ct-transf-seta">→</span>
+              <span class="dash-store-dot" style="background:${BOARDS[t.para]?.color || '#8B949E'}"></span>${_escHtml(BOARDS[t.para]?.label || t.para)}
+            </span>
+          </div>`).join('')}
+        </div>` : ''}
+      ${(() => {
+        const c = Object.values(g.centro || {}).filter(x => x.alvo > 0);
+        if (!c.length) return '';
+        return `<div class="ct-centro">Precisa estar disponível para o grupo (soma das lojas):
+          ${c.map(x => `<span class="ct-centro-item">${_escHtml(x.nome)} <b>${x.alvo}</b></span>`).join('')}</div>`;
+      })()}
     </div>`;
   }).join('');
 
@@ -10875,22 +10852,39 @@ function _renderContagemAdminView(body) {
         <div class="req-board-chips">
           ${boards.map(b => `<button class="req-board-chip${sel === b ? ' active' : ''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color || '#8B949E'}">${_escHtml(BOARDS[b]?.label || b)}</button>`).join('')}
         </div>
+        <p class="ct-help">O <b>piso</b> é fixo e você define — é o alarme da loja. O <b>alvo</b> o sistema calcula sozinho a cada contagem, a partir das vendas e da época do ano, e é ele que dimensiona o pedido. O <b>% do consumo</b> diz quanto cada item pesa no total de sacola da loja.</p>
         <div class="ct-table-wrap">
           <table class="ct-table">
-            <thead><tr><th>Item</th><th>Cód. Fornecedor</th><th>Mínimo (pç)</th><th>Pç por Módulo</th></tr></thead>
+            <thead><tr>
+              <th>Item</th><th>Cód.</th><th>Piso (pç)</th><th>Sugerido</th>
+              <th>% consumo</th><th>Pç/Módulo</th><th>Alvo hoje</th>
+            </tr></thead>
             <tbody>
               ${itens.map(it => `
                 <tr>
                   <td class="ct-nome">${_escHtml(it.nome)}</td>
                   <td class="ct-num ct-cod-cell">${it.cod ? _escHtml(it.cod) : '—'}</td>
                   <td><input type="number" class="ct-input ct-cfg-min" data-key="${it.key}" min="0" max="99999" value="${it.min || 0}"></td>
+                  <td class="ct-num ct-sug">${it.minSugerido != null
+                      ? `<button type="button" class="ct-usar" data-key="${it.key}" data-v="${it.minSugerido}" title="Usar este valor como piso">${it.minSugerido}</button>`
+                      : '—'}</td>
+                  <td><input type="number" class="ct-input ct-cfg-share" data-key="${it.key}" min="0" max="100" step="0.5" value="${it.share != null ? +(it.share*100).toFixed(1) : ''}" placeholder="—"></td>
                   <td><input type="number" class="ct-input ct-cfg-mod" data-key="${it.key}" min="1" max="9999" value="${it.modulo || 1}"></td>
+                  <td class="ct-num ct-pos">${it.cobertura != null ? it.cobertura : '—'}</td>
                 </tr>`).join('')}
             </tbody>
           </table>
         </div>
+        <div class="ct-params">
+          <label class="ct-param">
+            <span>Lead time do chamado</span>
+            <input type="number" class="ct-input" id="ctLead" min="0" max="180" value="${S.embalagens?.leadDias ?? 30}">
+            <span class="ct-param-un">dias</span>
+          </label>
+          <span class="ct-param-nota">Vale para a rede toda. O alvo cobre ${S.embalagens?.diasContagem ?? 15} dias de ciclo + esse lead.</span>
+        </div>
         <div class="req-form-actions">
-          <button class="req-submit-btn" id="ctCfgSalvar">Salvar mínimos — ${_escHtml(BOARDS[sel]?.label || sel)}</button>
+          <button class="req-submit-btn" id="ctCfgSalvar">Salvar — ${_escHtml(BOARDS[sel]?.label || sel)}</button>
         </div>
       </div>
     </div>`;
@@ -10898,22 +10892,35 @@ function _renderContagemAdminView(body) {
     body.querySelectorAll('.req-board-chip').forEach(btn =>
       btn.addEventListener('click', () => { sel = btn.dataset.b; render(); }));
 
+    body.querySelectorAll('.ct-usar').forEach(btn => btn.addEventListener('click', () => {
+      const inp = body.querySelector(`.ct-cfg-min[data-key="${btn.dataset.key}"]`);
+      if (inp) { inp.value = btn.dataset.v; inp.focus(); }
+    }));
+
     _renderPedidoConsolidado(body.querySelector('#ctPedidoBody'));
 
     body.querySelector('#ctCfgSalvar')?.addEventListener('click', async () => {
       const config = {};
       body.querySelectorAll('.ct-cfg-min').forEach(inp => {
-        config[inp.dataset.key] = { min: parseInt(inp.value) || 0, modulo: 1 };
+        config[inp.dataset.key] = { min: parseInt(inp.value) || 0, modulo: 1, share: 0 };
       });
       body.querySelectorAll('.ct-cfg-mod').forEach(inp => {
         if (config[inp.dataset.key]) config[inp.dataset.key].modulo = Math.max(1, parseInt(inp.value) || 1);
       });
+      body.querySelectorAll('.ct-cfg-share').forEach(inp => {
+        // na tela em %, no banco em fração
+        if (config[inp.dataset.key]) config[inp.dataset.key].share = (parseFloat(inp.value) || 0) / 100;
+      });
       const btn = body.querySelector('#ctCfgSalvar');
       btn.disabled = true;
       try {
-        const r = await apiFetch('POST', `/api/embalagens/config/${sel}`, { config });
+        const leadDias = parseInt(body.querySelector('#ctLead')?.value);
+        const r = await apiFetch('POST', `/api/embalagens/config/${sel}`, {
+          config, ...(Number.isFinite(leadDias) ? { leadDias } : {}),
+        });
         S.embalagens.itens[sel] = r.itens;
-        toast('Mínimos salvos ✓');
+        if (Number.isFinite(leadDias)) S.embalagens.leadDias = leadDias;
+        toast('Salvo ✓');
         render();
       } catch (e) { toast('Erro: ' + e.message, true); btn.disabled = false; }
     });

@@ -11,6 +11,8 @@ const ExcelJS    = require('exceljs');
 const { MongoClient } = require('mongodb');
 const cron       = require('node-cron');
 const nodemailer = require('nodemailer');
+// Mesma tabela que o navegador carrega em <script src="/perf-hist.js">
+const { PERF_HIST } = require('./public/perf-hist.js');
 const crypto     = require('crypto');
 const { runSync, runSyncHoje, runSync30Dias, runSyncRetroativo, getStatus, setLastSync } = require('./services/microvixSync');
 const { syncCustomers, sendWhatsApp: zapiSend, applyTemplate: crmTemplate, runScheduledCampaigns } = require('./services/crmSync');
@@ -331,25 +333,171 @@ const EMBALAGENS_FORNECEDOR = {
   },
 };
 
-// Lista de itens da loja já com mínimo/módulo aplicados (config do admin vence
-// o padrão do fornecedor, que vence o fallback de 1 peça por módulo).
-function embalagensDaLoja(db, board) {
+// ── Mínimo dinâmico ─────────────────────────────────────────────────────────
+// O mínimo não é digitado: é o consumo previsto até a próxima entrega chegar.
+// Horizonte = ciclo de contagem + lead time do chamado. Como o horizonte anda
+// pelo calendário e o calendário tem dezembro, o mínimo sobe sozinho em
+// novembro — que é quando a sacola de dezembro precisa já estar na loja.
+const EMBAL_LEAD_PADRAO = 30;      // dias entre chamar e receber
+const EMBAL_JANELA_NIVEL = 120;    // dias de histórico usados para medir o nível
+
+// Lead time do chamado, em dias. Number(undefined) é NaN e NaN passa direto
+// pelo ??, então o fallback precisa ser por isFinite.
+function embalLeadDias(db) {
+  const v = Number(db?.embalagemParams?.leadDias);
+  return Number.isFinite(v) && v >= 0 ? v : EMBAL_LEAD_PADRAO;
+}
+
+// Quanto cada mês pesa contra o dia médio do ano, do histórico real de vendas.
+// Cacheado: PERF_HIST é constante em runtime.
+const _sazonalCache = {};
+function indiceSazonal(board) {
+  if (_sazonalCache[board]) return _sazonalCache[board];
+  const DIAS_MES = [31,28,31,30,31,30,31,31,30,31,30,31];
+  const soma = Array(12).fill(0), n = Array(12).fill(0);
+  for (const ano of [2023, 2024, 2025]) {
+    const v = PERF_HIST[board]?.[ano];
+    if (!v || v.some(x => x == null || x === 0)) continue;
+    const mediaDia = v.reduce((s, x, i) => s + x / DIAS_MES[i], 0) / 12;
+    if (!mediaDia) continue;
+    v.forEach((x, i) => { soma[i] += (x / DIAS_MES[i]) / mediaDia; n[i]++; });
+  }
+  const idx = soma.map((s, i) => (n[i] ? s / n[i] : 1));
+  _sazonalCache[board] = idx;
+  return idx;
+}
+
+// Tickets/dia da loja, normalizados pela sazonalidade dos dias observados.
+// Cada ticket é uma sacola. Devolve null quando não há histórico suficiente.
+function nivelTickets(db, board, ateDateStr) {
+  const idx = indiceSazonal(board);
+  const fim = new Date(`${ateDateStr}T12:00:00`);
+  const ini = new Date(fim); ini.setDate(ini.getDate() - EMBAL_JANELA_NIVEL);
+  const iniStr = ini.toISOString().slice(0, 10);
+  const porDia = {};
+  for (const [key, vs] of Object.entries(db.vsales || {})) {
+    // key = YYYY-MM-board-empId
+    const partes = key.split('-');
+    if (partes.slice(2, -1).join('-') !== board) continue;
+    for (const [ds, en] of Object.entries(vs.entries || {})) {
+      if (ds < iniStr || ds > ateDateStr) continue;
+      porDia[ds] = (porDia[ds] || 0) + (en.atendimentos || 0);
+    }
+  }
+  const dias = Object.keys(porDia);
+  if (dias.length < 20) return null;   // pouco histórico → cai no mínimo manual
+  let tickets = 0, pesoIdx = 0;
+  for (const ds of dias) {
+    tickets += porDia[ds];
+    pesoIdx += idx[parseInt(ds.slice(5, 7)) - 1];
+  }
+  return pesoIdx > 0 ? tickets / pesoIdx : null;
+}
+
+// Tickets previstos nos próximos N dias, andando pelo calendário.
+function ticketsPrevistos(nivel, board, deDateStr, dias) {
+  const DIAS_MES = [31,28,31,30,31,30,31,31,30,31,30,31];
+  const idx = indiceSazonal(board);
+  const d0 = new Date(`${deDateStr}T12:00:00`);
+  let m = d0.getMonth(), dia = d0.getDate(), restam = dias, total = 0;
+  while (restam > 0) {
+    const disp = DIAS_MES[m] - dia + 1;
+    const usa  = Math.min(disp, restam);
+    total += nivel * idx[m] * usa;
+    restam -= usa; dia = 1; m = (m + 1) % 12;
+  }
+  return total;
+}
+
+// Participação de cada item no consumo. Medida das contagens quando já houver
+// duas seguidas; até lá, usa a semente cadastrada (ou divide igual).
+function mixConsumo(db, board) {
   const cfg = (db.embalagemConfig || {})[board] || {};
-  const pad = EMBALAGENS_FORNECEDOR[board] || {};
-  return [...EMBALAGENS_BASE, ...(EMBALAGENS_EXTRA[board] || [])].map(it => ({
-    key:    it.key,
-    nome:   it.nome,
-    cod:    pad[it.key]?.cod || null,
-    min:    Math.max(0, Number(cfg[it.key]?.min) || 0),
-    modulo: Math.max(1, Number(cfg[it.key]?.modulo) || pad[it.key]?.modulo || 1),
-  }));
+  const itens = [...EMBALAGENS_BASE, ...(EMBALAGENS_EXTRA[board] || [])];
+  const medido = (db.embalagemMix || {})[board];
+  const out = {};
+  let somaCfg = 0;
+  for (const it of itens) somaCfg += Math.max(0, Number(cfg[it.key]?.share) || 0);
+  for (const it of itens) {
+    if (medido && medido[it.key] != null) out[it.key] = medido[it.key];
+    else if (somaCfg > 0) out[it.key] = (Math.max(0, Number(cfg[it.key]?.share) || 0)) / somaCfg;
+    else out[it.key] = null;   // sem semente → sem mínimo calculado
+  }
+  return out;
+}
+
+// Duas coisas diferentes, de propósito:
+//
+//   min       — piso FIXO da loja, cadastrado pelo admin. É o alarme: abaixo
+//               disso a loja precisa ser avisada. Número estável, que a equipe
+//               da loja consegue guardar de cabeça.
+//   cobertura — quanto o item vai consumir até a próxima entrega chegar, já
+//               com a sazonalidade do calendário. É o que DIMENSIONA O PEDIDO.
+//
+// Separar os dois resolve o caso de novembro: a loja pode estar acima do piso
+// e mesmo assim precisar de um pedido grande, porque dezembro está chegando.
+function embalagensDaLoja(db, board, hoje) {
+  const cfg   = (db.embalagemConfig || {})[board] || {};
+  const pad   = EMBALAGENS_FORNECEDOR[board] || {};
+  const ref   = hoje || todayBRT();
+  const lead  = embalLeadDias(db);
+  const ciclo = EMBAL_DIAS_CONTAGEM;
+  const nivel = nivelTickets(db, board, ref);
+  const mix   = mixConsumo(db, board);
+  // Consumo previsto no horizonte (sazonal) e num mês comum (índice 1,00),
+  // este último só para sugerir ao admin um piso fixo coerente.
+  const prev  = nivel != null ? ticketsPrevistos(nivel, board, ref, ciclo + lead) : null;
+  const plano = nivel != null ? nivel * (ciclo + lead) : null;
+
+  return [...EMBALAGENS_BASE, ...(EMBALAGENS_EXTRA[board] || [])].map(it => {
+    const share = mix[it.key];
+    return {
+      key:    it.key,
+      nome:   it.nome,
+      cod:    pad[it.key]?.cod || null,
+      min:    Math.max(0, Number(cfg[it.key]?.min) || 0),
+      // piso sugerido = consumo de um mês comum, sem o empurrão sazonal
+      minSugerido: (plano != null && share != null) ? Math.ceil(plano * share) : null,
+      // alvo do pedido = consumo previsto no horizonte, com sazonalidade
+      cobertura:   (prev  != null && share != null) ? Math.ceil(prev  * share) : null,
+      share,
+      modulo: Math.max(1, Number(cfg[it.key]?.modulo) || pad[it.key]?.modulo || 1),
+    };
+  });
+}
+
+// Alvo do pedido: cobrir o consumo previsto, não só voltar ao piso. Quando não
+// há histórico para projetar, cai no piso fixo — comportamento antigo.
+function alvoPedido(item) {
+  return item.cobertura != null ? Math.max(item.cobertura, item.min) : item.min;
+}
+
+// Cobertura prevista da loja: quantas sacolas ela vai gastar no horizonte e
+// como isso se compara com o mês corrente. Usado para explicar o número na tela.
+function coberturaLoja(db, board, hoje) {
+  const ref   = hoje || todayBRT();
+  const lead  = embalLeadDias(db);
+  const nivel = nivelTickets(db, board, ref);
+  if (nivel == null) return { nivel: null, horizonte: EMBAL_DIAS_CONTAGEM + lead, previsto: null, indice: null };
+  const mesIdx = parseInt(ref.slice(5, 7)) - 1;
+  return {
+    nivel,
+    horizonte: EMBAL_DIAS_CONTAGEM + lead,
+    previsto:  ticketsPrevistos(nivel, board, ref, EMBAL_DIAS_CONTAGEM + lead),
+    indice:    indiceSazonal(board)[mesIdx],
+  };
 }
 
 // Falta em peças → módulos a pedir, sempre arredondando pra cima (caixa fechada).
+// A falta é medida contra o ALVO (consumo previsto), não contra o piso: em
+// novembro a loja pode estar acima do piso e ainda assim precisar pedir.
+// `abaixoDoPiso` é o que dispara o alerta na tela da loja.
 function sugestaoEmbalagem(item, contado) {
-  const falta = Math.max(0, item.min - Math.max(0, Number(contado) || 0));
+  const tem   = Math.max(0, Number(contado) || 0);
+  const alvo  = alvoPedido(item);
+  const falta = Math.max(0, alvo - tem);
   const modulos = falta > 0 ? Math.ceil(falta / item.modulo) : 0;
-  return { falta, modulos, pecas: modulos * item.modulo };
+  return { alvo, falta, modulos, pecas: modulos * item.modulo, abaixoDoPiso: item.min > 0 && tem < item.min };
 }
 
 function addDias(dateStr, n) {
@@ -855,7 +1003,7 @@ app.get('/api/init', requireAuth, async (req, res) => {
     const embalBoards = isAdminOrEscritorio
       ? EMBAL_STORE_BOARDS
       : EMBAL_STORE_BOARDS.filter(b => isSupervisor ? userLojas.includes(b) : b === board);
-    const embalagens = { itens: {}, status: {}, diasContagem: EMBAL_DIAS_CONTAGEM };
+    const embalagens = { itens: {}, status: {}, diasContagem: EMBAL_DIAS_CONTAGEM, leadDias: embalLeadDias(db) };
     for (const b of embalBoards) {
       embalagens.itens[b]  = embalagensDaLoja(db, b);
       embalagens.status[b] = statusContagem(db, b);
@@ -2498,7 +2646,7 @@ app.get('/api/embalagens', requireAuth, async (req, res) => {
       itens[b]  = embalagensDaLoja(db, b);
       status[b] = statusContagem(db, b);
     }
-    res.json({ itens, status, diasContagem: EMBAL_DIAS_CONTAGEM });
+    res.json({ itens, status, diasContagem: EMBAL_DIAS_CONTAGEM, leadDias: embalLeadDias(db) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2516,13 +2664,22 @@ app.post('/api/embalagens/config/:board', requireAdmin, async (req, res) => {
     for (const [key, v] of Object.entries(req.body.config || {})) {
       if (!validKeys.has(key)) continue;
       cfg[key] = {
+        // min = trava manual; 0 devolve o item para o cálculo automático
         min:    Math.max(0, Math.round(Number(v?.min)    || 0)),
         modulo: Math.max(1, Math.round(Number(v?.modulo) || 1)),
+        share:  Math.max(0, Number(v?.share) || 0),
       };
     }
     db.embalagemConfig[board] = cfg;
+    // Lead time é da rede, não da loja — chega junto para não exigir outra tela
+    if (req.body.leadDias !== undefined) {
+      const v = Number(req.body.leadDias);
+      if (!Number.isFinite(v) || v < 0 || v > 180)
+        return res.status(400).json({ error: 'Lead time deve ser de 0 a 180 dias' });
+      db.embalagemParams = { ...(db.embalagemParams || {}), leadDias: Math.round(v) };
+    }
     await writeDB(db);
-    res.json({ ok: true, itens: embalagensDaLoja(db, board) });
+    res.json({ ok: true, itens: embalagensDaLoja(db, board), cobertura: coberturaLoja(db, board) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2584,9 +2741,45 @@ app.get('/api/embalagens/pedido', requireAdmin, async (req, res) => {
       // O pedido fecha em módulo do grupo, não somando módulo de cada loja
       const itens = Object.values(linhas).map(l => ({
         ...l, modulos: l.modulo > 1 ? Math.ceil(l.pecas / l.modulo) : l.pecas,
-      })).filter(l => l.pecas > 0);
+      }));
+
+      // Antes de comprar, olhar o que já está na rede: loja com sobra acima do
+      // próprio alvo pode abastecer a que está faltando. Não guardamos estoque
+      // no escritório, então a transferência é sempre de loja para loja.
+      const transferencias = [];
+      for (const l of itens) {
+        const sobra = [], falta = [];
+        for (const b of g.boards) {
+          const p = l.porLoja[b];
+          if (!p || p.contado == null) continue;
+          const dif = p.contado - p.alvo;
+          if (dif > 0) sobra.push({ board: b, qtd: dif });
+          else if (p.falta > 0) falta.push({ board: b, qtd: p.falta });
+        }
+        sobra.sort((a, b) => b.qtd - a.qtd);
+        falta.sort((a, b) => b.qtd - a.qtd);
+        let i = 0, j = 0;
+        while (i < sobra.length && j < falta.length) {
+          const qtd = Math.min(sobra[i].qtd, falta[j].qtd);
+          if (qtd > 0) {
+            transferencias.push({ key: l.key, nome: l.nome, de: sobra[i].board, para: falta[j].board, qtd });
+            sobra[i].qtd -= qtd; falta[j].qtd -= qtd;
+          }
+          if (sobra[i].qtd <= 0) i++;
+          if (falta[j].qtd <= 0) j++;
+        }
+      }
+
       return {
-        key: g.key, label: g.label, boards: g.boards, itens,
+        key: g.key, label: g.label, boards: g.boards,
+        itens: itens.filter(l => l.pecas > 0),
+        // O "mínimo do centro" é só a soma do que as lojas precisam ter.
+        centro: Object.fromEntries(Object.values(linhas).map(l => [l.key, {
+          nome: l.nome,
+          piso:  g.boards.reduce((s, b) => s + (l.porLoja[b]?.min  || 0), 0),
+          alvo:  g.boards.reduce((s, b) => s + (l.porLoja[b]?.alvo || 0), 0),
+        }])),
+        transferencias,
         semContagem: g.boards.filter(b => !ultimaPorLoja[b]),
         contagens: Object.fromEntries(g.boards.map(b => [b, ultimaPorLoja[b]?.data || null])),
       };
