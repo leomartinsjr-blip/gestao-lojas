@@ -3630,3 +3630,13 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .req-hint b { color: var(--text); }
 .ct-piso-cell { display: flex; align-items: center; gap: .35rem; }
 .ct-auto { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #58A6FF; background: rgba(88,166,255,.12); border-radius: 3px; padding: .05rem .3rem; cursor: help; }
+.ct-proj { border: 1px solid var(--border); border-radius: 8px; padding: .8rem .9rem .6rem; background: var(--hover-bg, rgba(255,255,255,.02)); }
+.ct-proj-bars { display: flex; align-items: flex-end; gap: .3rem; height: 118px; }
+.ct-proj-col { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; gap: .18rem; cursor: help; }
+.ct-proj-v { font-size: .62rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ct-proj-bar { width: 100%; max-width: 34px; background: linear-gradient(180deg, #58A6FF, #1F6FEB); border-radius: 3px 3px 0 0; min-height: 3px; }
+.ct-proj-pico .ct-proj-bar { background: linear-gradient(180deg, #F0883E, #DB6D28); }
+.ct-proj-pico .ct-proj-v { color: #F0883E; font-weight: 700; }
+.ct-proj-m { font-size: .64rem; color: var(--muted); }
+.ct-proj-nota { font-size: .74rem; color: var(--muted); margin-top: .55rem; padding-top: .5rem; border-top: 1px solid var(--border); }
+.ct-proj-nota b { color: #F0883E; }

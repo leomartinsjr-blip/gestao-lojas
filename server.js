@@ -358,7 +358,10 @@ const EMBALAGENS_FORNECEDOR = {
 // Horizonte = ciclo de contagem + lead time do chamado. Como o horizonte anda
 // pelo calendário e o calendário tem dezembro, o mínimo sobe sozinho em
 // novembro — que é quando a sacola de dezembro precisa já estar na loja.
-const EMBAL_LEAD_PADRAO = 30;      // dias entre chamar e receber
+// 45 dias, não 30: o chamado de 31/07/2026 ainda não tinha chegado em 24/08.
+// Com o ciclo de 15, dá 60 dias de cobertura — o mínimo matemático seria 45,
+// sem folga nenhuma para o lead variar.
+const EMBAL_LEAD_PADRAO = 45;      // dias entre chamar e receber
 const EMBAL_JANELA_NIVEL = 120;    // dias de histórico usados para medir o nível
 
 // Lead time do chamado, em dias. Number(undefined) é NaN e NaN passa direto
@@ -560,6 +563,21 @@ function embalagensDaLoja(db, board, hoje) {
 // há histórico para projetar, cai no piso fixo — comportamento antigo.
 function alvoPedido(item) {
   return item.cobertura != null ? Math.max(item.cobertura, item.min) : item.min;
+}
+
+// Consumo projetado mês a mês, para o ano inteiro. É o que faz o pedido do fim
+// do ano ser grande sozinho: dezembro vende ~3,2x janeiro no histórico, então o
+// horizonte que atravessa dezembro puxa esse volume junto.
+function projecaoAnual(db, board, hoje) {
+  const DIAS_MES = [31,28,31,30,31,30,31,31,30,31,30,31];
+  const ref = hoje || todayBRT();
+  const nv  = nivelTickets(db, board, ref);
+  if (!nv) return null;
+  const idx   = indiceSazonal(board);
+  const meses = idx.map((v, i) => Math.round(nv.nivel * v * DIAS_MES[i]));
+  const total = meses.reduce((a, b) => a + b, 0);
+  const pico  = meses.indexOf(Math.max(...meses));
+  return { meses, total, pico, base100: meses.map(m => Math.round(m / meses[0] * 100)) };
 }
 
 // Cobertura prevista da loja: quantas sacolas ela vai gastar no horizonte e
@@ -1094,10 +1112,11 @@ app.get('/api/init', requireAuth, async (req, res) => {
     const embalBoards = isAdminOrEscritorio
       ? EMBAL_STORE_BOARDS
       : EMBAL_STORE_BOARDS.filter(b => isSupervisor ? userLojas.includes(b) : b === board);
-    const embalagens = { itens: {}, status: {}, diasContagem: EMBAL_DIAS_CONTAGEM, leadDias: embalLeadDias(db) };
+    const embalagens = { itens: {}, status: {}, projecao: {}, diasContagem: EMBAL_DIAS_CONTAGEM, leadDias: embalLeadDias(db) };
     for (const b of embalBoards) {
-      embalagens.itens[b]  = embalagensDaLoja(db, b);
-      embalagens.status[b] = statusContagem(db, b);
+      embalagens.itens[b]    = embalagensDaLoja(db, b);
+      embalagens.status[b]   = statusContagem(db, b);
+      embalagens.projecao[b] = projecaoAnual(db, b);
     }
 
     // Indeva stats for this month
@@ -2738,12 +2757,13 @@ app.get('/api/embalagens', requireAuth, async (req, res) => {
     const boards = isAdminOrEscritorio
       ? EMBAL_STORE_BOARDS
       : EMBAL_STORE_BOARDS.filter(b => b === board);
-    const itens  = {}, status = {};
+    const itens = {}, status = {}, projecao = {};
     for (const b of boards) {
-      itens[b]  = embalagensDaLoja(db, b);
-      status[b] = statusContagem(db, b);
+      itens[b]    = embalagensDaLoja(db, b);
+      status[b]   = statusContagem(db, b);
+      projecao[b] = projecaoAnual(db, b);
     }
-    res.json({ itens, status, diasContagem: EMBAL_DIAS_CONTAGEM, leadDias: embalLeadDias(db) });
+    res.json({ itens, status, projecao, diasContagem: EMBAL_DIAS_CONTAGEM, leadDias: embalLeadDias(db) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2776,7 +2796,7 @@ app.post('/api/embalagens/config/:board', requireAdmin, async (req, res) => {
       db.embalagemParams = { ...(db.embalagemParams || {}), leadDias: Math.round(v) };
     }
     await writeDB(db);
-    res.json({ ok: true, itens: embalagensDaLoja(db, board), cobertura: coberturaLoja(db, board) });
+    res.json({ ok: true, itens: embalagensDaLoja(db, board), cobertura: coberturaLoja(db, board), projecao: projecaoAnual(db, board) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -10881,6 +10881,25 @@ async function _renderPedidoConsolidado(el) {
   }
 }
 
+// Curva do ano da loja: é ela que faz o pedido do fim do ano ser grande sozinho.
+// Base 100 em janeiro, do jeito que o usuário raciocina sobre sazonalidade.
+function _projecaoHtml(board) {
+  const p = (S.embalagens?.projecao || {})[board];
+  if (!p) return '<div class="ct-ped-vazio">Sem histórico de vendas suficiente para projetar esta loja.</div>';
+  const M = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];
+  const max = Math.max(...p.meses);
+  return `<div class="ct-proj">
+    <div class="ct-proj-bars">
+      ${p.meses.map((v, i) => `<div class="ct-proj-col${i === p.pico ? ' ct-proj-pico' : ''}" title="${M[i]}: ${v} sacolas · índice ${p.base100[i]}">
+        <span class="ct-proj-v">${v}</span>
+        <span class="ct-proj-bar" style="height:${Math.max(3, v / max * 100)}%"></span>
+        <span class="ct-proj-m">${M[i]}</span>
+      </div>`).join('')}
+    </div>
+    <div class="ct-proj-nota">${p.total.toLocaleString('pt-BR')} sacolas no ano · pico em <b>${M[p.pico]}</b>, ${p.base100[p.pico]} contra 100 de janeiro</div>
+  </div>`;
+}
+
 function _renderContagemAdminView(body) {
   const boards = _embalStoreBoards();
   const dias   = S.embalagens?.diasContagem || 15;
@@ -10907,6 +10926,11 @@ function _renderContagemAdminView(body) {
             </div>`;
           }).join('')}
         </div>
+      </div>
+
+      <div class="ct-admin-sec">
+        <div class="req-sec-hdr">📈 Consumo projetado de ${_escHtml(BOARDS[sel]?.label || sel)} — o fim do ano se dimensiona sozinho</div>
+        ${_projecaoHtml(sel)}
       </div>
 
       <div class="ct-admin-sec" id="ctPedidoSec">
@@ -10992,6 +11016,7 @@ function _renderContagemAdminView(body) {
           config, ...(Number.isFinite(leadDias) ? { leadDias } : {}),
         });
         S.embalagens.itens[sel] = r.itens;
+        if (r.projecao) { if (!S.embalagens.projecao) S.embalagens.projecao = {}; S.embalagens.projecao[sel] = r.projecao; }
         if (Number.isFinite(leadDias)) S.embalagens.leadDias = leadDias;
         toast('Salvo ✓');
         render();
