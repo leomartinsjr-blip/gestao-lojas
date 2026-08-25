@@ -10772,7 +10772,7 @@ async function _renderPedidoConsolidado(el) {
           <thead><tr>
             <th>Item</th><th>Cód.</th>
             ${lojas.map(b => `<th>${_escHtml(BOARDS[b]?.label || b)}</th>`).join('')}
-            <th>Total pç</th><th>Pedir</th>
+            <th>Necessidade</th><th>Pedir</th>
           </tr></thead>
           <tbody>
             ${g.itens.map(it => `<tr>
@@ -10780,10 +10780,10 @@ async function _renderPedidoConsolidado(el) {
               <td class="ct-num ct-cod-cell">${it.cod ? _escHtml(it.cod) : '—'}</td>
               ${lojas.map(b => {
                 const l = it.porLoja[b];
-                return `<td class="ct-num">${l && l.pecas > 0 ? `${l.pecas}` : '—'}</td>`;
+                return `<td class="ct-num">${l && l.falta > 0 ? `${l.falta}` : '—'}</td>`;
               }).join('')}
               <td class="ct-num"><b>${it.pecas}</b></td>
-              <td class="ct-num ct-pos">${it.modulo > 1 ? `${it.modulos} mód` : `${it.pecas} pç`}</td>
+              <td class="ct-num ct-pos">${it.modulo > 1 ? `${it.modulos} mód (${it.pedido})` : `${it.pecas} pç`}${it.sobra > 0 ? `<span class="ct-sobra">+${it.sobra}</span>` : ''}</td>
             </tr>`).join('')}
           </tbody>
         </table>
@@ -10812,6 +10812,18 @@ async function _renderPedidoConsolidado(el) {
 
   el.classList.remove('ct-total');
   el.innerHTML = html || '<div class="ct-ped-vazio">Nenhuma contagem registrada ainda.</div>';
+
+  // Sem item a pedir o export sai vazio — melhor desabilitar do que baixar em branco
+  const temPedido = (data.grupos || []).some(g => g.itens.length);
+  const btn = document.getElementById('ctExportBtn');
+  if (btn) {
+    btn.classList.toggle('ct-export-off', !temPedido);
+    btn.title = temPedido
+      ? 'Uma aba por grupo de compra, com a distribuição por loja'
+      : 'Nada a pedir ainda — faça as contagens primeiro';
+    if (!temPedido) btn.removeAttribute('href');
+    else btn.setAttribute('href', '/api/embalagens/pedido/export');
+  }
 }
 
 function _renderContagemAdminView(body) {
@@ -10843,7 +10855,10 @@ function _renderContagemAdminView(body) {
       </div>
 
       <div class="ct-admin-sec" id="ctPedidoSec">
-        <div class="req-sec-hdr">🧾 Pedido consolidado — as Surfers compram num pedido só</div>
+        <div class="ct-sec-top">
+          <div class="req-sec-hdr">🧾 Pedido consolidado — as Surfers compram num pedido só</div>
+          <a class="ct-export-btn" id="ctExportBtn" href="/api/embalagens/pedido/export">↓ Exportar Excel p/ o fornecedor</a>
+        </div>
         <div class="ct-total" id="ctPedidoBody">Carregando…</div>
       </div>
 

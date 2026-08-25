@@ -3620,3 +3620,9 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .ct-param .ct-input { width: 64px; }
 .ct-param-un { color: var(--muted); font-size: .78rem; }
 .ct-param-nota { font-size: .74rem; color: var(--muted); }
+.ct-sec-top { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.ct-sec-top .req-sec-hdr { margin-bottom: 0; }
+.ct-export-btn { background: #1B4B32; border: 1px solid #2EA043; color: #7EE2A8; font-size: .78rem; font-weight: 600; padding: .32rem .8rem; border-radius: 6px; text-decoration: none; white-space: nowrap; }
+.ct-export-btn:hover { background: #216E39; color: #fff; }
+.ct-export-off { opacity: .4; pointer-events: none; }
+.ct-sobra { color: #E3B341; font-size: .72rem; font-weight: 600; margin-left: .3rem; }

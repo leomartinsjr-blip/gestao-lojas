@@ -276,6 +276,11 @@ function writeUsers(users) {
 }
 
 const BOARDS   = ['admin','escritorio','delrey','minas','contagem','estacao','tommy','lez'];
+const BOARDS_LABEL = {
+  delrey:'DEL REY', minas:'MINAS', contagem:'CONTAGEM',
+  estacao:'ESTAÇÃO', tommy:'TOMMY', lez:'LEZ A LEZ',
+  escritorio:'ESCRITÓRIO', site:'SITE',
+};
 const SECTIONS = ['performance','estoque_marca','estoque_grupo','pauta','pendencias'];
 
 // CFOPs de saída sem venda real (bonificação/doação de mercadoria) — não representam
@@ -2716,76 +2721,259 @@ app.post('/api/embalagens/contagem', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Monta o pedido consolidado a partir da última contagem de cada loja.
+// Usada pela tela e pelo Excel — o arquivo nunca diverge do que está em tela.
+function montarPedido(db) {
+  const ultimaPorLoja = {};
+      for (const c of (db.contagensEmbalagem || [])) {
+        const at = ultimaPorLoja[c.board];
+        if (!at || (c.data || '') > (at.data || '')) ultimaPorLoja[c.board] = c;
+      }
+      return EMBAL_GRUPOS.map(g => {
+        const linhas = {};
+        for (const board of g.boards) {
+          const cont = ultimaPorLoja[board];
+          for (const it of embalagensDaLoja(db, board)) {
+            const s = cont ? sugestaoEmbalagem(it, cont.contagem?.[it.key]) : { falta: 0, modulos: 0, pecas: 0 };
+            if (!linhas[it.key]) linhas[it.key] = { key: it.key, nome: it.nome, cod: it.cod, modulo: it.modulo, porLoja: {}, pecas: 0 };
+            linhas[it.key].porLoja[board] = { contado: cont?.contagem?.[it.key] ?? null, min: it.min, ...s };
+            // Soma a falta CRUA, em peças. Somar a quantidade já arredondada de
+            // cada loja arredondaria uma vez por loja e inflaria o pedido.
+            linhas[it.key].pecas += s.falta;
+          }
+        }
+        // Fecha o módulo UMA vez, sobre a necessidade somada do grupo.
+        // pecas = necessidade crua · pedido = o que efetivamente será comprado.
+        const itens = Object.values(linhas).map(l => {
+          const modulos = l.modulo > 1 ? Math.ceil(l.pecas / l.modulo) : l.pecas;
+          const pedido  = l.modulo > 1 ? modulos * l.modulo : l.pecas;
+          return { ...l, modulos, pedido, sobra: pedido - l.pecas };
+        });
+  
+        // Antes de comprar, olhar o que já está na rede: loja com sobra acima do
+        // próprio alvo pode abastecer a que está faltando. Não guardamos estoque
+        // no escritório, então a transferência é sempre de loja para loja.
+        const transferencias = [];
+        for (const l of itens) {
+          const sobra = [], falta = [];
+          for (const b of g.boards) {
+            const p = l.porLoja[b];
+            if (!p || p.contado == null) continue;
+            const dif = p.contado - p.alvo;
+            if (dif > 0) sobra.push({ board: b, qtd: dif });
+            else if (p.falta > 0) falta.push({ board: b, qtd: p.falta });
+          }
+          sobra.sort((a, b) => b.qtd - a.qtd);
+          falta.sort((a, b) => b.qtd - a.qtd);
+          let i = 0, j = 0;
+          while (i < sobra.length && j < falta.length) {
+            const qtd = Math.min(sobra[i].qtd, falta[j].qtd);
+            if (qtd > 0) {
+              transferencias.push({ key: l.key, nome: l.nome, de: sobra[i].board, para: falta[j].board, qtd });
+              sobra[i].qtd -= qtd; falta[j].qtd -= qtd;
+            }
+            if (sobra[i].qtd <= 0) i++;
+            if (falta[j].qtd <= 0) j++;
+          }
+        }
+  
+        return {
+          key: g.key, label: g.label, boards: g.boards,
+          itens: itens.filter(l => l.pecas > 0),
+          // O "mínimo do centro" é só a soma do que as lojas precisam ter.
+          centro: Object.fromEntries(Object.values(linhas).map(l => [l.key, {
+            nome: l.nome,
+            piso:  g.boards.reduce((s, b) => s + (l.porLoja[b]?.min  || 0), 0),
+            alvo:  g.boards.reduce((s, b) => s + (l.porLoja[b]?.alvo || 0), 0),
+          }])),
+          transferencias,
+          semContagem: g.boards.filter(b => !ultimaPorLoja[b]),
+          contagens: Object.fromEntries(g.boards.map(b => [b, ultimaPorLoja[b]?.data || null])),
+        };
+      });
+}
+
 // ── GET /api/embalagens/pedido ────────────────────────────────────────────
-// Pedido consolidado por grupo de compra, a partir da última contagem de cada
-// loja. Só admin — é quem fecha o pedido com o fornecedor.
+// Pedido consolidado por grupo de compra. Só admin — é quem fecha com o fornecedor.
 app.get('/api/embalagens/pedido', requireAdmin, async (req, res) => {
   try {
     const db = await readDB();
-    const ultimaPorLoja = {};
-    for (const c of (db.contagensEmbalagem || [])) {
-      const at = ultimaPorLoja[c.board];
-      if (!at || (c.data || '') > (at.data || '')) ultimaPorLoja[c.board] = c;
-    }
-    const grupos = EMBAL_GRUPOS.map(g => {
-      const linhas = {};
-      for (const board of g.boards) {
-        const cont = ultimaPorLoja[board];
-        for (const it of embalagensDaLoja(db, board)) {
-          const s = cont ? sugestaoEmbalagem(it, cont.contagem?.[it.key]) : { falta: 0, modulos: 0, pecas: 0 };
-          if (!linhas[it.key]) linhas[it.key] = { key: it.key, nome: it.nome, cod: it.cod, modulo: it.modulo, porLoja: {}, pecas: 0 };
-          linhas[it.key].porLoja[board] = { contado: cont?.contagem?.[it.key] ?? null, min: it.min, ...s };
-          linhas[it.key].pecas += s.pecas;
-        }
-      }
-      // O pedido fecha em módulo do grupo, não somando módulo de cada loja
-      const itens = Object.values(linhas).map(l => ({
-        ...l, modulos: l.modulo > 1 ? Math.ceil(l.pecas / l.modulo) : l.pecas,
-      }));
-
-      // Antes de comprar, olhar o que já está na rede: loja com sobra acima do
-      // próprio alvo pode abastecer a que está faltando. Não guardamos estoque
-      // no escritório, então a transferência é sempre de loja para loja.
-      const transferencias = [];
-      for (const l of itens) {
-        const sobra = [], falta = [];
-        for (const b of g.boards) {
-          const p = l.porLoja[b];
-          if (!p || p.contado == null) continue;
-          const dif = p.contado - p.alvo;
-          if (dif > 0) sobra.push({ board: b, qtd: dif });
-          else if (p.falta > 0) falta.push({ board: b, qtd: p.falta });
-        }
-        sobra.sort((a, b) => b.qtd - a.qtd);
-        falta.sort((a, b) => b.qtd - a.qtd);
-        let i = 0, j = 0;
-        while (i < sobra.length && j < falta.length) {
-          const qtd = Math.min(sobra[i].qtd, falta[j].qtd);
-          if (qtd > 0) {
-            transferencias.push({ key: l.key, nome: l.nome, de: sobra[i].board, para: falta[j].board, qtd });
-            sobra[i].qtd -= qtd; falta[j].qtd -= qtd;
-          }
-          if (sobra[i].qtd <= 0) i++;
-          if (falta[j].qtd <= 0) j++;
-        }
-      }
-
-      return {
-        key: g.key, label: g.label, boards: g.boards,
-        itens: itens.filter(l => l.pecas > 0),
-        // O "mínimo do centro" é só a soma do que as lojas precisam ter.
-        centro: Object.fromEntries(Object.values(linhas).map(l => [l.key, {
-          nome: l.nome,
-          piso:  g.boards.reduce((s, b) => s + (l.porLoja[b]?.min  || 0), 0),
-          alvo:  g.boards.reduce((s, b) => s + (l.porLoja[b]?.alvo || 0), 0),
-        }])),
-        transferencias,
-        semContagem: g.boards.filter(b => !ultimaPorLoja[b]),
-        contagens: Object.fromEntries(g.boards.map(b => [b, ultimaPorLoja[b]?.data || null])),
-      };
-    });
-    res.json({ grupos });
+    res.json({ grupos: montarPedido(db) });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/embalagens/pedido/export ─────────────────────────────────────
+// Excel do pedido: uma aba por grupo de compra. A parte de cima é o que vai
+// para o fornecedor (código, item, módulos); as colunas de loja à direita são
+// a distribuição interna quando a mercadoria chegar.
+app.get('/api/embalagens/pedido/export', requireAdmin, async (req, res) => {
+  try {
+    const db     = await readDB();
+    const grupos = montarPedido(db).filter(g => g.itens.length);
+    if (!grupos.length) return res.status(400).json({ error: 'Nenhum item a pedir — faça as contagens primeiro.' });
+
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Gestão Lojas';
+    wb.created = new Date();
+    const hoje = new Date().toLocaleDateString('pt-BR');
+
+    const C_TITULO   = 'FF111827';
+    const C_HEADER   = 'FF1F2937';
+    const C_BRANCO   = 'FFFFFFFF';
+    const C_ZEBRA    = 'FFF3F4F6';
+    const C_BORDA    = 'FFD1D5DB';
+    const C_PEDIR    = 'FF1D4ED8';
+    const C_ALERTA   = 'FFB45309';
+    const C_SOBRA_BG = 'FFFEF3C7';
+
+    for (const g of grupos) {
+      const lojas = g.boards;
+      const defs = [
+        { header: 'Cód. Forn.', width: 12 },
+        { header: 'Item',       width: 34 },
+        { header: 'Pç/Módulo',  width: 11 },
+        { header: 'Módulos',    width:  9 },
+        { header: 'Total pç',   width: 10 },
+        ...lojas.map(b => ({ header: (BOARDS_LABEL[b] || b).toUpperCase(), width: 12 })),
+        { header: 'Sobra',      width:  9 },
+      ];
+      const nCols = defs.length;
+
+      const ws = wb.addWorksheet(g.label.slice(0, 31), {
+        pageSetup: { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
+                     margins: { left: .4, right: .4, top: .5, bottom: .5, header: .2, footer: .2 } },
+        headerFooter: { oddHeader: `&L&BPEDIDO DE EMBALAGEM — ${g.label.toUpperCase()}&R&BData: ${hoje}` },
+      });
+      ws.columns = defs.map(d => ({ width: d.width }));
+
+      // Linha 1 — título
+      const t = ws.getRow(1);
+      t.getCell(1).value = `PEDIDO DE EMBALAGEM — ${g.label.toUpperCase()}   |   Data: ${hoje}`;
+      t.getCell(1).font = { bold: true, size: 13, color: { argb: C_BRANCO } };
+      t.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_TITULO } };
+      t.getCell(1).alignment = { vertical: 'middle' };
+      t.height = 24;
+      ws.mergeCells(1, 1, 1, nCols);
+
+      // Linha 2 — procedência dos números
+      const datas = lojas.map(b => `${BOARDS_LABEL[b] || b} ${g.contagens[b] ? g.contagens[b].split('-').reverse().join('/') : 'sem contagem'}`).join('  ·  ');
+      const s2 = ws.getRow(2);
+      s2.getCell(1).value = `Baseado na última contagem de cada loja: ${datas}`;
+      s2.getCell(1).font = { size: 9, italic: true, color: { argb: 'FF6B7280' } };
+      s2.height = 15;
+      ws.mergeCells(2, 1, 2, nCols);
+
+      let linha = 3;
+      if (g.semContagem.length) {
+        const av = ws.getRow(linha);
+        av.getCell(1).value = `ATENÇÃO: ${g.semContagem.map(b => BOARDS_LABEL[b] || b).join(', ')} ainda não contou — o pedido pode estar subdimensionado.`;
+        av.getCell(1).font = { bold: true, size: 9, color: { argb: C_ALERTA } };
+        av.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_SOBRA_BG } };
+        av.height = 15;
+        ws.mergeCells(linha, 1, linha, nCols);
+        linha++;
+      }
+      linha++; // respiro
+
+      // Cabeçalho
+      const hdrNum = linha;
+      const hdr = ws.getRow(hdrNum);
+      defs.forEach((d, i) => {
+        const c = hdr.getCell(i + 1);
+        c.value = d.header;
+        c.font  = { bold: true, size: 10, color: { argb: C_BRANCO } };
+        c.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_HEADER } };
+        c.alignment = { vertical: 'middle', horizontal: i === 1 ? 'left' : 'center', wrapText: true };
+        c.border = { bottom: { style: 'medium', color: { argb: C_BORDA } } };
+      });
+      hdr.height = 20;
+      ws.views = [{ state: 'frozen', ySplit: hdrNum }];
+
+      // Itens
+      const somaLoja = Object.fromEntries(lojas.map(b => [b, 0]));
+      let totModulos = 0, totPecas = 0, totSobra = 0;
+
+      g.itens.forEach((it, idx) => {
+        const r = ws.getRow(hdrNum + 1 + idx);
+        const qtdLoja = lojas.map(b => it.porLoja[b]?.falta || 0);
+        const necessidade = it.pecas;      // soma crua das lojas
+        const pedido = it.pedido;          // já fechado em caixa fechada
+        const sobra  = it.sobra;
+        qtdLoja.forEach((q, i) => { somaLoja[lojas[i]] += q; });
+        totModulos += it.modulos; totPecas += pedido; totSobra += sobra;
+
+        const vals = [
+          it.cod || '—', it.nome, it.modulo > 1 ? it.modulo : '—',
+          it.modulo > 1 ? it.modulos : '—', pedido, ...qtdLoja, sobra || '',
+        ];
+        vals.forEach((v, i) => {
+          const c = r.getCell(i + 1);
+          c.value = v;
+          c.font  = { size: 9 };
+          c.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: idx % 2 ? C_ZEBRA : C_BRANCO } };
+          c.alignment = { vertical: 'middle', horizontal: i === 1 ? 'left' : 'center' };
+          c.border = {
+            top:    { style: 'thin', color: { argb: C_BORDA } },
+            bottom: { style: 'thin', color: { argb: C_BORDA } },
+            left:   { style: 'thin', color: { argb: C_BORDA } },
+            right:  { style: 'thin', color: { argb: C_BORDA } },
+          };
+          if (i === 3 || i === 4) c.font = { bold: true, size: 9, color: { argb: C_PEDIR } };
+          if (i >= 5 && i < 5 + lojas.length && v > 0) c.font = { bold: true, size: 9 };
+          if (i === vals.length - 1 && v) c.font = { size: 9, color: { argb: C_ALERTA } };
+        });
+        r.height = 15;
+      });
+
+      // Total
+      const totR = ws.getRow(hdrNum + 1 + g.itens.length);
+      const totVals = ['', 'TOTAL', '', totModulos, totPecas,
+                       ...lojas.map(b => somaLoja[b]), totSobra || ''];
+      totVals.forEach((v, i) => {
+        const c = totR.getCell(i + 1);
+        c.value = v;
+        c.font  = { bold: true, size: 10, color: { argb: C_BRANCO } };
+        c.fill  = { type: 'pattern', pattern: 'solid', fgColor: { argb: C_HEADER } };
+        c.alignment = { vertical: 'middle', horizontal: i === 1 ? 'left' : 'center' };
+        c.border = { top: { style: 'medium', color: { argb: 'FF000000' } } };
+      });
+      totR.height = 18;
+
+      // Rodapé explicando a sobra e o remanejamento
+      let pe = hdrNum + g.itens.length + 3;
+      const nota = ws.getRow(pe);
+      nota.getCell(1).value = 'As colunas de loja somam a necessidade de cada uma. "Sobra" é o que passa disso por causa do arredondamento para caixa fechada.';
+      nota.getCell(1).font = { size: 9, italic: true, color: { argb: 'FF6B7280' } };
+      ws.mergeCells(pe, 1, pe, nCols);
+      pe++;
+
+      if (g.transferencias.length) {
+        pe++;
+        const th = ws.getRow(pe);
+        th.getCell(1).value = 'ANTES DE COMPRAR — dá para remanejar entre lojas:';
+        th.getCell(1).font = { bold: true, size: 10, color: { argb: C_PEDIR } };
+        ws.mergeCells(pe, 1, pe, nCols);
+        pe++;
+        for (const tr of g.transferencias) {
+          const r = ws.getRow(pe);
+          r.getCell(1).value = `${tr.qtd} pç`;
+          r.getCell(2).value = `${tr.nome}:  ${BOARDS_LABEL[tr.de] || tr.de}  →  ${BOARDS_LABEL[tr.para] || tr.para}`;
+          r.getCell(1).font = { bold: true, size: 9 };
+          r.getCell(2).font = { size: 9 };
+          r.getCell(1).alignment = { horizontal: 'center' };
+          pe++;
+        }
+      }
+    }
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="pedido-embalagem-${hoje.replace(/\//g, '-')}.xlsx"`);
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) {
+    console.error('[export/embalagens]', e.message);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ── GET /api/embalagens/contagens ─────────────────────────────────────────
