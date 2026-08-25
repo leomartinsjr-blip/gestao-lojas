@@ -10824,18 +10824,27 @@ async function _renderPedidoConsolidado(el) {
       </div>
       <div class="ct-table-wrap">
         <table class="ct-table">
-          <thead><tr>
-            <th>Item</th><th>Cód.</th>
-            ${lojas.map(b => `<th>${_escHtml(BOARDS[b]?.label || b)}</th>`).join('')}
-            <th>Necessidade</th><th>Pedir</th>
-          </tr></thead>
+          <thead>
+            <tr>
+              <th rowspan="2">Item</th><th rowspan="2">Cód.</th>
+              ${lojas.map(b => `<th colspan="2" class="ct-th-loja ct-grp-start">
+                <span class="dash-store-dot" style="background:${BOARDS[b]?.color || '#8B949E'}"></span>${_escHtml(BOARDS[b]?.label || b)}</th>`).join('')}
+              <th rowspan="2">Necessidade</th><th rowspan="2">Pedir</th>
+            </tr>
+            <tr>
+              ${lojas.map(() => `<th class="ct-th-sub ct-grp-start" title="O que a loja contou na última contagem">Tem</th><th class="ct-th-sub">Falta</th>`).join('')}
+            </tr>
+          </thead>
           <tbody>
             ${g.itens.map(it => `<tr>
               <td class="ct-nome">${_escHtml(it.nome)}</td>
               <td class="ct-num ct-cod-cell">${it.cod ? _escHtml(it.cod) : '—'}</td>
               ${lojas.map(b => {
                 const l = it.porLoja[b];
-                return `<td class="ct-num">${l && l.falta > 0 ? `${l.falta}` : '—'}</td>`;
+                // Tem = o que a loja contou · Falta = o que esse estoque deixa faltando p/ o alvo
+                const tem = l && l.contado != null ? l.contado : null;
+                return `<td class="ct-num ct-tem ct-grp-start"${tem != null && l.alvo ? ` title="Alvo ${l.alvo} pç"` : ''}>${tem != null ? tem : '—'}</td>`
+                     + `<td class="ct-num ct-falta-col">${l && l.falta > 0 ? `${l.falta}` : '—'}</td>`;
               }).join('')}
               <td class="ct-num"><b>${it.pecas}</b></td>
               <td class="ct-num ct-pos">${it.modulo > 1 ? `${it.modulos} mód (${it.pedido})` : `${it.pecas} pç`}${it.sobra > 0 ? `<span class="ct-sobra">+${it.sobra}</span>` : ''}</td>

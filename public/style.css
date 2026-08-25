@@ -3641,3 +3641,10 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .ct-proj-nota { font-size: .74rem; color: var(--muted); margin-top: .55rem; padding-top: .5rem; border-top: 1px solid var(--border); }
 .ct-proj-nota b { color: #F0883E; }
 .ct-alvo-det { display: block; font-size: .64rem; font-weight: 400; color: var(--muted); }
+/* pedido consolidado: cada loja abre em Tem (contado) x Falta (p/ o alvo) */
+.ct-th-loja { text-align: center; font-size: .68rem; }
+.ct-th-loja .dash-store-dot { margin-right: .3rem; vertical-align: middle; }
+.ct-th-sub { font-size: .62rem; letter-spacing: .02em; padding-top: .1rem !important; padding-bottom: .4rem !important; }
+.ct-grp-start { border-left: 1px solid var(--border); }
+.ct-tem { font-variant-numeric: tabular-nums; }
+.ct-falta-col { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
