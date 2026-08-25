@@ -10922,7 +10922,7 @@ function _renderContagemAdminView(body) {
         <div class="req-board-chips">
           ${boards.map(b => `<button class="req-board-chip${sel === b ? ' active' : ''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color || '#8B949E'}">${_escHtml(BOARDS[b]?.label || b)}</button>`).join('')}
         </div>
-        <p class="ct-help">O <b>piso</b> é fixo e você define — é o alarme da loja. O <b>alvo</b> o sistema calcula sozinho a cada contagem, a partir das vendas e da época do ano, e é ele que dimensiona o pedido. <b>Consumo por venda</b> é quantas unidades do item saem a cada venda: 0,455 sacola P significa que pouco menos da metade das vendas leva uma P; a Seda já vem no PA da loja, porque sai por peça. Deixar em 0 tira o item do cálculo.</p>
+        <p class="ct-help">O <b>piso</b> é o alarme da loja. Em branco ele fica no <b>automático</b>, acompanhando a venda; digite um número para travar, e apague para voltar ao automático. O <b>alvo</b> o sistema calcula sozinho a cada contagem, a partir das vendas e da época do ano, e é ele que dimensiona o pedido. <b>Consumo por venda</b> é quantas unidades do item saem a cada venda: 0,455 sacola P significa que pouco menos da metade das vendas leva uma P; a Seda já vem no PA da loja, porque sai por peça. Deixar em 0 tira o item do cálculo.</p>
         <div class="ct-table-wrap">
           <table class="ct-table">
             <thead><tr>
@@ -10934,11 +10934,15 @@ function _renderContagemAdminView(body) {
                 <tr>
                   <td class="ct-nome">${_escHtml(it.nome)}</td>
                   <td class="ct-num ct-cod-cell">${it.cod ? _escHtml(it.cod) : '—'}</td>
-                  <td><input type="number" class="ct-input ct-cfg-min" data-key="${it.key}" min="0" max="99999" value="${it.min || 0}"></td>
+                  <td class="ct-piso-cell">
+                    <input type="number" class="ct-input ct-cfg-min" data-key="${it.key}" min="0" max="99999"
+                           value="${it.minAuto ? '' : it.min}" placeholder="${it.minAuto ? (it.min || 0) : ''}">
+                    ${it.minAuto ? '<span class="ct-auto" title="Sem número fixo: acompanha a venda sozinho. Digite para travar.">auto</span>' : ''}
+                  </td>
                   <td class="ct-num ct-sug">${it.minSugerido != null
-                      ? `<button type="button" class="ct-usar" data-key="${it.key}" data-v="${it.minSugerido}" title="Usar este valor como piso">${it.minSugerido}</button>`
+                      ? `<button type="button" class="ct-usar" data-key="${it.key}" data-v="${it.minSugerido}" title="Travar o piso neste valor">${it.minSugerido}</button>`
                       : '—'}</td>
-                  <td><input type="number" class="ct-input ct-cfg-share" data-key="${it.key}" min="0" max="99" step="0.01" value="${it.porTicket != null ? +Number(it.porTicket).toFixed(2) : ''}" placeholder="—"></td>
+                  <td><input type="number" class="ct-input ct-cfg-share" data-key="${it.key}" min="0" max="99" step="0.005" value="${it.porTicket != null ? +Number(it.porTicket).toFixed(3) : ''}" placeholder="—"></td>
                   <td><input type="number" class="ct-input ct-cfg-mod" data-key="${it.key}" min="1" max="9999" value="${it.modulo || 1}"></td>
                   <td class="ct-num ct-pos">${it.cobertura != null ? it.cobertura : '—'}</td>
                 </tr>`).join('')}

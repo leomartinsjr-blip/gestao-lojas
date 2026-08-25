@@ -3628,3 +3628,5 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .ct-sobra { color: #E3B341; font-size: .72rem; font-weight: 600; margin-left: .3rem; }
 .req-hint { font-size: .8rem; color: var(--muted); line-height: 1.55; background: var(--hover-bg, rgba(255,255,255,.03)); border: 1px solid var(--border); border-radius: 7px; padding: .55rem .8rem; margin: 0 0 1.25rem; }
 .req-hint b { color: var(--text); }
+.ct-piso-cell { display: flex; align-items: center; gap: .35rem; }
+.ct-auto { font-size: .62rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: #58A6FF; background: rgba(88,166,255,.12); border-radius: 3px; padding: .05rem .3rem; cursor: help; }

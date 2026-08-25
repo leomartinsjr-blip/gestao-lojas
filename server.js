@@ -325,6 +325,18 @@ const EMBALAGENS_EXTRA = {
   ],
 };
 
+// Consumo por venda que difere do padrão do catálogo, por loja.
+// Na Surfers a seda só vai em compra de presente, então está longe do PA —
+// o 0,15 abaixo é chute conservador e some assim que duas contagens seguidas
+// derem o número real. Na Tommy a seda vale o PA: cada peça é embrulhada.
+const EMBALAGENS_CONSUMO_LOJA = {
+  delrey:   { seda: 0.15 },
+  minas:    { seda: 0.15 },
+  contagem: { seda: 0.15 },
+  estacao:  { seda: 0.15 },
+  lez:      { seda: 0.15 },
+};
+
 // Códigos e peças/módulo do fornecedor, por loja. Só a Tommy tem catálogo
 // fechado hoje; nas demais o módulo nasce 1 (pede em peças) até o admin ajustar.
 const EMBALAGENS_FORNECEDOR = {
@@ -421,6 +433,63 @@ function ticketsPrevistos(nivel, board, deDateStr, dias) {
   return total;
 }
 
+// Mede o consumo real entre a contagem anterior e a de agora:
+//   consumo = tinha antes + recebeu no meio − tem agora
+// dividido pelos tickets do período, dá o consumo por venda de verdade.
+// Só substitui o padrão quando o período tem tamanho suficiente para significar
+// algo, e entra suavizado — um ciclo atípico não deve virar a régua sozinho.
+function medirConsumo(db, board, atual, anterior) {
+  if (!anterior || !anterior.data || anterior.data >= atual.data) return null;
+  const dias = Math.round((new Date(`${atual.data}T12:00:00`) - new Date(`${anterior.data}T12:00:00`)) / 86400000);
+  if (dias < 5 || dias > 90) return null;
+
+  // O que chegou na loja entre as duas contagens (requisição já recebida)
+  const recebido = {};
+  const porNome = Object.fromEntries(embalagensDaLoja(db, board, atual.data).map(i => [i.nome, i.key]));
+  for (const r of (db.requisicoes || [])) {
+    if (r.board !== board || r.status !== 'recebido') continue;
+    const quando = (r.updatedAt || r.createdAt || '').slice(0, 10);
+    if (quando <= anterior.data || quando > atual.data) continue;
+    for (const [nome, qtd] of Object.entries(r.embalagens || {})) {
+      const k = porNome[nome];
+      if (k) recebido[k] = (recebido[k] || 0) + (Number(qtd) || 0);
+    }
+  }
+
+  // Tickets do período
+  let tickets = 0;
+  for (const [key, vs] of Object.entries(db.vsales || {})) {
+    if (key.split('-').slice(2, -1).join('-') !== board) continue;
+    for (const [ds, en] of Object.entries(vs.entries || {})) {
+      if (ds > anterior.data && ds <= atual.data) tickets += en.atendimentos || 0;
+    }
+  }
+  if (tickets < 20) return null;
+
+  const out = {};
+  for (const it of [...EMBALAGENS_BASE, ...(EMBALAGENS_EXTRA[board] || [])]) {
+    const antes = anterior.contagem?.[it.key];
+    const agora = atual.contagem?.[it.key];
+    if (antes == null || agora == null) continue;
+    const consumo = antes + (recebido[it.key] || 0) - agora;
+    // Negativo significa entrada não registrada; não dá para medir nesse ciclo.
+    if (consumo < 0) continue;
+    out[it.key] = consumo / tickets;
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+// Guarda a medição suavizada contra a anterior (média móvel simples de 2).
+function gravarConsumoMedido(db, board, medido) {
+  if (!medido) return;
+  if (!db.embalagemMix) db.embalagemMix = {};
+  const at = db.embalagemMix[board] || {};
+  for (const [k, v] of Object.entries(medido)) {
+    at[k] = at[k] != null ? (at[k] + v) / 2 : v;
+  }
+  db.embalagemMix[board] = at;
+}
+
 // Consumo por venda de cada item. Vale o medido das contagens quando houver;
 // senão o que o admin cadastrou; senão o padrão de fábrica do catálogo — que já
 // vem preenchido para o sistema funcionar sem ninguém digitar nada.
@@ -428,8 +497,11 @@ function fatorConsumo(db, board, pa) {
   const cfg    = (db.embalagemConfig || {})[board] || {};
   const medido = (db.embalagemMix || {})[board];
   const out = {};
+  const daLoja = EMBALAGENS_CONSUMO_LOJA[board] || {};
   for (const it of [...EMBALAGENS_BASE, ...(EMBALAGENS_EXTRA[board] || [])]) {
-    const padrao = it.porPeca != null ? it.porPeca * (pa || 0) : (it.porTicket || 0);
+    const padrao = daLoja[it.key] != null ? daLoja[it.key]
+                 : it.porPeca != null ? it.porPeca * (pa || 0)
+                 : (it.porTicket || 0);
     const doAdmin = Number(cfg[it.key]?.porTicket);
     out[it.key] = medido?.[it.key] != null ? medido[it.key]
                 : Number.isFinite(doAdmin) && doAdmin > 0 ? doAdmin
@@ -465,13 +537,17 @@ function embalagensDaLoja(db, board, hoje) {
   return [...EMBALAGENS_BASE, ...(EMBALAGENS_EXTRA[board] || [])].map(it => {
     const f = fator[it.key];
     const ativo = prev != null && f > 0;
+    const manual = Math.max(0, Number(cfg[it.key]?.min) || 0);
+    const sugerido = ativo ? Math.ceil(plano * f) : null;
     return {
       key:    it.key,
       nome:   it.nome,
       cod:    pad[it.key]?.cod || null,
-      min:    Math.max(0, Number(cfg[it.key]?.min) || 0),
-      // piso sugerido = consumo de um mês comum, sem o empurrão sazonal
-      minSugerido: ativo ? Math.ceil(plano * f) : null,
+      // Sem piso cadastrado vale o sugerido — assim o alarme já funciona sem
+      // ninguém digitar, e acompanha a venda. Cadastrar fixa o número.
+      min:    manual > 0 ? manual : (sugerido || 0),
+      minAuto: !(manual > 0),
+      minSugerido: sugerido,
       // alvo do pedido = consumo previsto no horizonte, com sazonalidade
       cobertura:   ativo ? Math.ceil(prev  * f) : null,
       porTicket:   f,
@@ -2720,6 +2796,9 @@ app.post('/api/embalagens/contagem', requireAuth, async (req, res) => {
       const v = req.body.contagem?.[it.key];
       contagem[it.key] = Math.max(0, Math.round(Number(v) || 0));
     }
+    const anterior = (db.contagensEmbalagem || [])
+      .filter(c => c.board === board)
+      .sort((a, b) => (b.data || '').localeCompare(a.data || ''))[0] || null;
     const item = {
       id: nextId(db), board,
       data:      todayBRT(),
@@ -2728,6 +2807,9 @@ app.post('/api/embalagens/contagem', requireAuth, async (req, res) => {
       createdBy: req.session.user.label || req.session.user.username,
     };
     db.contagensEmbalagem.push(item);
+    // Fecha o ciclo: com duas contagens dá para medir o consumo real e parar
+    // de depender do padrão do catálogo.
+    gravarConsumoMedido(db, board, medirConsumo(db, board, item, anterior));
     await writeDB(db);
     res.json({
       contagem: item,
