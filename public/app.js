@@ -10620,9 +10620,6 @@ function _embalTabDot() {
   return atrasadas ? `<span class="ct-dot">${atrasadas}</span>` : '';
 }
 
-// Sugestão pendente vinda da contagem, para pré-preencher a requisição
-let _reqPrefill = null;
-
 function _ctStatusLine(st, dias) {
   if (!st) return '';
   if (st.atrasada) {
@@ -10734,14 +10731,72 @@ function _renderContagemLojaView(body) {
         _renderContagemLojaView(body);
         return;
       }
-      _reqPrefill = {
-        board,
-        contagemId: r.contagem.id,
-        itens: Object.fromEntries(faltantes.map(s => [s.nome, s.pecas])),
-      };
       toast('Contagem salva ✓');
-      _lojaAcaoTab = 'req';
-      _renderLojaAcaoModal();
+      _renderContagemRevisao(body, board, r.contagem.id, faltantes);
+    } catch (e) { toast('Erro: ' + e.message, true); btn.disabled = false; }
+  });
+}
+
+// Passo 2 da contagem: a loja confere a sugestão e envia. A requisição de
+// embalagem nasce aqui, e só aqui — é o que garante que tudo o que a loja pede
+// passou por uma contagem e entra no pedido consolidado da rede.
+function _renderContagemRevisao(body, board, contagemId, faltantes) {
+  body.innerHTML = `<div class="req-form-wrap">
+    <div class="req-form-top">
+      <h3 class="req-form-title">Conferir e enviar — ${BOARDS[board]?.label || board}</h3>
+      <button class="req-link-btn" id="ctVoltarBtn">← Refazer contagem</button>
+    </div>
+    <div class="ct-alert ct-alert-ok">Contagem salva ✓ Abaixo é o que o sistema sugere pedir, em caixa fechada. Ajuste se precisar e envie.</div>
+    <div class="ct-table-wrap">
+      <table class="ct-table">
+        <thead><tr><th>Item</th><th>Tenho</th><th>Alvo</th><th>Pedir (pç)</th><th>Módulos</th></tr></thead>
+        <tbody>
+          ${faltantes.map(f => `<tr>
+            <td class="ct-nome">${_escHtml(f.nome)}${f.cod ? `<span class="ct-cod">${_escHtml(f.cod)}</span>` : ''}</td>
+            <td class="ct-num">${f.contado}</td>
+            <td class="ct-num">${f.alvo}</td>
+            <td><input type="number" class="ct-input ct-rev" data-nome="${_escHtml(f.nome)}" data-mod="${f.modulo}" min="0" max="99999" step="${f.modulo}" value="${f.pecas}"></td>
+            <td class="ct-num ct-rev-mod" data-nome="${_escHtml(f.nome)}">${f.modulo > 1 ? `${f.modulos} mód` : '—'}</td>
+          </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>
+    <div class="req-section" style="margin-top:1rem">
+      <div class="req-sec-hdr">Observação (opcional)</div>
+      <textarea class="req-obs" id="ctRevObs" placeholder="Ex: urgente, acabou antes do previsto…" maxlength="500" rows="2"></textarea>
+    </div>
+    <div class="req-form-actions">
+      <button class="req-submit-btn" id="ctEnviarBtn">Enviar requisição</button>
+    </div>
+  </div>`;
+
+  body.querySelector('#ctVoltarBtn').addEventListener('click', () => _renderContagemLojaView(body));
+
+  body.querySelectorAll('.ct-rev').forEach(inp => inp.addEventListener('input', () => {
+    const mod = parseInt(inp.dataset.mod) || 1;
+    const v   = parseInt(inp.value) || 0;
+    const lbl = body.querySelector(`.ct-rev-mod[data-nome="${inp.dataset.nome}"]`);
+    if (lbl && mod > 1) lbl.textContent = v > 0 ? `${Math.ceil(v / mod)} mód` : '—';
+  }));
+
+  body.querySelector('#ctEnviarBtn').addEventListener('click', async () => {
+    const embalagens = {};
+    body.querySelectorAll('.ct-rev').forEach(inp => {
+      const q = parseInt(inp.value) || 0;
+      if (q > 0) embalagens[inp.dataset.nome] = q;
+    });
+    if (!Object.keys(embalagens).length) { toast('Nada a pedir — ajuste as quantidades', true); return; }
+    const btn = body.querySelector('#ctEnviarBtn');
+    btn.disabled = true;
+    try {
+      const req = await apiFetch('POST', '/api/requisicoes', {
+        embalagens, materiais: [], contagemId,
+        observacao: body.querySelector('#ctRevObs').value.trim(),
+      });
+      S.requisicoes = [...(S.requisicoes || []), req];
+      _updateLojaAcaoBadge();
+      toast('Requisição enviada ✓');
+      _renderContagemLojaView(body);
     } catch (e) { toast('Erro: ' + e.message, true); btn.disabled = false; }
   });
 }
@@ -10964,38 +11019,12 @@ function _renderReqLojaView(body) {
 }
 
 function _reqFormHtml(board) {
-  const itens = _embalItens(board);
-  const pre   = (_reqPrefill && _reqPrefill.board === board) ? _reqPrefill : null;
-  const st    = _embalStatus(board);
-  const dias  = S.embalagens?.diasContagem || 15;
   return `<div class="req-form-wrap">
     <div class="req-form-top">
       <h3 class="req-form-title">Nova Requisição — ${BOARDS[board]?.label || board}</h3>
       <button class="req-link-btn" id="reqHistBtn">Ver histórico →</button>
     </div>
-    ${pre
-      ? `<div class="ct-alert ct-alert-ok">🧮 Sugestão da contagem de <b>${_fmtData(st?.ultimaData)}</b> já preenchida abaixo, em caixa fechada. Confira e ajuste antes de enviar.</div>`
-      : (st?.atrasada ? `<div class="ct-alert ct-alert-late">⏰ <b>Contagem de embalagens atrasada.</b> Faça a contagem (a cada ${dias} dias) na aba <b>Contagem Embalagens</b> para o sistema sugerir o pedido.</div>` : '')}
-    <div class="req-section">
-      <div class="req-sec-hdr">📦 Embalagens</div>
-      <div class="req-embal-cards">
-        ${itens.map(it => {
-          const qty = pre?.itens?.[it.nome] || 0;
-          const step = it.modulo > 1 ? it.modulo : 1;
-          return `
-          <div class="req-embal-card${qty > 0 ? ' req-embal-active' : ''}">
-            <span class="req-embal-nome">${_escHtml(it.nome)}</span>
-            <span class="req-embal-sub">${it.min ? `mín ${it.min} pç` : 'sem mínimo'}${it.modulo > 1 ? ` · módulo ${it.modulo}` : ''}</span>
-            <div class="req-embal-counter">
-              <button type="button" class="req-cnt-btn req-cnt-minus" data-item="${_escHtml(it.nome)}">−</button>
-              <input type="number" class="req-qty" data-item="${_escHtml(it.nome)}" data-step="${step}" min="0" max="99999" value="${qty}">
-              <button type="button" class="req-cnt-btn req-cnt-plus" data-item="${_escHtml(it.nome)}">+</button>
-            </div>
-            ${it.modulo > 1 ? `<span class="req-embal-mod" data-item="${_escHtml(it.nome)}">${qty > 0 ? `${Math.ceil(qty / it.modulo)} módulo${Math.ceil(qty / it.modulo) === 1 ? '' : 's'}` : ''}</span>` : ''}
-          </div>`;
-        }).join('')}
-      </div>
-    </div>
+    <p class="req-hint">Embalagem não se pede por aqui — ela sai da <b>contagem</b>, para entrar no pedido consolidado da rede. Use a aba <b>Contagem Embalagens</b>.</p>
     <div class="req-section">
       <div class="req-sec-hdr">🗂 Materiais — clique para selecionar o que precisa</div>
       <div class="req-mat-grid">
@@ -11013,57 +11042,18 @@ function _reqFormHtml(board) {
 }
 
 function _initReqForm(body, board, onSuccess) {
-  // Item com módulo anda de caixa fechada em caixa fechada nos botões +/−
-  const _sync = input => {
-    const v = parseInt(input.value) || 0;
-    input.closest('.req-embal-card').classList.toggle('req-embal-active', v > 0);
-    const mod  = parseInt(input.dataset.step) || 1;
-    const lbl  = body.querySelector(`.req-embal-mod[data-item="${input.dataset.item}"]`);
-    if (lbl) {
-      const n = mod > 1 && v > 0 ? Math.ceil(v / mod) : 0;
-      lbl.textContent = n ? `${n} módulo${n === 1 ? '' : 's'}` : '';
-    }
-  };
-  body.querySelectorAll('.req-cnt-plus').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const input = body.querySelector(`.req-qty[data-item="${btn.dataset.item}"]`);
-      const step  = parseInt(input.dataset.step) || 1;
-      input.value = (parseInt(input.value) || 0) + step;
-      _sync(input);
-    });
-  });
-  body.querySelectorAll('.req-cnt-minus').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const input = body.querySelector(`.req-qty[data-item="${btn.dataset.item}"]`);
-      const step  = parseInt(input.dataset.step) || 1;
-      input.value = Math.max(0, (parseInt(input.value) || 0) - step);
-      _sync(input);
-    });
-  });
-  body.querySelectorAll('.req-qty').forEach(input => {
-    input.addEventListener('input', () => _sync(input));
-  });
   body.querySelectorAll('.req-mat-btn').forEach(btn =>
     btn.addEventListener('click', () => btn.classList.toggle('active'))
   );
   body.querySelector('#reqSubmitBtn').addEventListener('click', async () => {
-    const embalagens = {};
-    body.querySelectorAll('.req-qty').forEach(input => {
-      const qty = parseInt(input.value) || 0;
-      if (qty > 0) embalagens[input.dataset.item] = qty;
-    });
     const materiais = [...body.querySelectorAll('.req-mat-btn.active')].map(b => b.dataset.item);
-    if (!Object.keys(embalagens).length && !materiais.length) {
-      toast('Selecione ao menos um item', true); return;
-    }
+    if (!materiais.length) { toast('Selecione ao menos um material', true); return; }
     const observacao = body.querySelector('#reqObs').value.trim();
     const btn = body.querySelector('#reqSubmitBtn');
     btn.disabled = true;
-    const contagemId = (_reqPrefill && _reqPrefill.board === board) ? _reqPrefill.contagemId : null;
     try {
-      const req = await apiFetch('POST', '/api/requisicoes', { embalagens, materiais, observacao, contagemId });
+      const req = await apiFetch('POST', '/api/requisicoes', { embalagens: {}, materiais, observacao });
       S.requisicoes = [...(S.requisicoes || []), req];
-      _reqPrefill = null;
       _updateLojaAcaoBadge();
       toast('Requisição enviada ✓');
       onSuccess();

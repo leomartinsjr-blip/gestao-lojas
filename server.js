@@ -2582,6 +2582,12 @@ app.post('/api/requisicoes', requireAuth, async (req, res) => {
     const { embalagens, materiais, observacao, contagemId } = req.body;
     const db = await readDB();
     if (!db.requisicoes) db.requisicoes = [];
+    // Embalagem só entra por contagem. Sem isso ela ficaria invisível para o
+    // pedido consolidado, que é montado a partir das contagens.
+    if (Object.keys(embalagens || {}).length) {
+      const c = (db.contagensEmbalagem || []).find(x => x.id === Number(contagemId) && x.board === board);
+      if (!c) return res.status(400).json({ error: 'Requisição de embalagem exige uma contagem — use a aba Contagem Embalagens' });
+    }
     // embalagens continua sendo { nome: peças } (formato antigo, usado no histórico).
     // embalagensModulos guarda o pedido em caixa fechada, quando veio de uma contagem.
     const itensLoja = new Map(embalagensDaLoja(db, board).map(i => [i.nome, i]));
