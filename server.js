@@ -353,22 +353,22 @@ const EMBALAGENS_FORNECEDOR = {
   },
 };
 
-// ── Mínimo dinâmico ─────────────────────────────────────────────────────────
-// O mínimo não é digitado: é o consumo previsto até a próxima entrega chegar.
-// Horizonte = ciclo de contagem + lead time do chamado. Como o horizonte anda
-// pelo calendário e o calendário tem dezembro, o mínimo sobe sozinho em
-// novembro — que é quando a sacola de dezembro precisa já estar na loja.
-// 45 dias, não 30: o chamado de 31/07/2026 ainda não tinha chegado em 24/08.
-// Com o ciclo de 15, dá 60 dias de cobertura — o mínimo matemático seria 45,
-// sem folga nenhuma para o lead variar.
-const EMBAL_LEAD_PADRAO = 45;      // dias entre chamar e receber
+// ── Dimensionamento do pedido ───────────────────────────────────────────────
+// A conta é a que a operação usa:
+//
+//     pedido = consumo previsto dos próximos N meses + piso − estoque atual
+//
+// O horizonte anda pelo CALENDÁRIO, então atravessar dezembro puxa o volume de
+// dezembro junto. É isso que faz o pedido do fim do ano ficar grande sozinho,
+// sem ninguém lembrar de inflar.
+const EMBAL_HORIZONTE_PADRAO = 3;  // meses de cobertura do pedido
 const EMBAL_JANELA_NIVEL = 120;    // dias de histórico usados para medir o nível
 
-// Lead time do chamado, em dias. Number(undefined) é NaN e NaN passa direto
-// pelo ??, então o fallback precisa ser por isFinite.
-function embalLeadDias(db) {
-  const v = Number(db?.embalagemParams?.leadDias);
-  return Number.isFinite(v) && v >= 0 ? v : EMBAL_LEAD_PADRAO;
+// Meses de cobertura do pedido. Number(undefined) é NaN e NaN passa direto pelo
+// ??, então o fallback precisa ser por isFinite.
+function embalHorizonteMeses(db) {
+  const v = Number(db?.embalagemParams?.horizonteMeses);
+  return Number.isFinite(v) && v > 0 ? v : EMBAL_HORIZONTE_PADRAO;
 }
 
 // Quanto cada mês pesa contra o dia médio do ano, do histórico real de vendas.
@@ -434,6 +434,17 @@ function ticketsPrevistos(nivel, board, deDateStr, dias) {
     restam -= usa; dia = 1; m = (m + 1) % 12;
   }
   return total;
+}
+
+// Mesma coisa, mas em meses de calendário — 3 meses a partir de 15/out vai até
+// 14/jan, não 90 dias corridos. É assim que o pedido é pensado.
+function ticketsPrevistosMeses(nivel, board, deDateStr, meses) {
+  const d0 = new Date(`${deDateStr}T12:00:00`);
+  const fim = new Date(d0);
+  fim.setMonth(fim.getMonth() + Math.floor(meses));
+  const resto = meses - Math.floor(meses);
+  if (resto > 0) fim.setDate(fim.getDate() + Math.round(resto * 30));
+  return ticketsPrevistos(nivel, board, deDateStr, Math.round((fim - d0) / 86400000));
 }
 
 // Mede o consumo real entre a contagem anterior e a de agora:
@@ -523,15 +534,15 @@ function fatorConsumo(db, board, pa) {
 //
 // Separar os dois resolve o caso de novembro: a loja pode estar acima do piso
 // e mesmo assim precisar de um pedido grande, porque dezembro está chegando.
-function embalagensDaLoja(db, board, hoje) {
+function embalagensDaLoja(db, board, hoje, mesesOverride) {
   const cfg   = (db.embalagemConfig || {})[board] || {};
   const pad   = EMBALAGENS_FORNECEDOR[board] || {};
   const ref   = hoje || todayBRT();
-  const lead  = embalLeadDias(db);
+  const meses = mesesOverride || embalHorizonteMeses(db);
   const ciclo = EMBAL_DIAS_CONTAGEM;
   const nv    = nivelTickets(db, board, ref);
   const fator = fatorConsumo(db, board, nv?.pa);
-  const prev  = nv ? ticketsPrevistos(nv.nivel, board, ref, ciclo + lead) : null;
+  const prev  = nv ? ticketsPrevistosMeses(nv.nivel, board, ref, meses) : null;
   // Piso sugerido = consumo de UM CICLO num mês comum. É a linha do "estou
   // ficando sem" — fica bem abaixo do alvo de propósito, senão alarmaria o
   // tempo todo na baixa estação, quando o normal é a loja estar com pouco.
@@ -551,8 +562,11 @@ function embalagensDaLoja(db, board, hoje) {
       min:    manual > 0 ? manual : (sugerido || 0),
       minAuto: !(manual > 0),
       minSugerido: sugerido,
-      // alvo do pedido = consumo previsto no horizonte, com sazonalidade
-      cobertura:   ativo ? Math.ceil(prev  * f) : null,
+      // só o gasto previsto no horizonte
+      consumo:     ativo ? Math.ceil(prev * f) : null,
+      // alvo = gastar os próximos N meses e AINDA terminar com o piso na mão
+      cobertura:   ativo ? Math.ceil(prev * f) + (manual > 0 ? manual : (sugerido || 0)) : null,
+      meses,
       porTicket:   f,
       modulo: Math.max(1, Number(cfg[it.key]?.modulo) || pad[it.key]?.modulo || 1),
     };
@@ -584,15 +598,15 @@ function projecaoAnual(db, board, hoje) {
 // como isso se compara com o mês corrente. Usado para explicar o número na tela.
 function coberturaLoja(db, board, hoje) {
   const ref   = hoje || todayBRT();
-  const lead  = embalLeadDias(db);
+  const meses = embalHorizonteMeses(db);
   const nv = nivelTickets(db, board, ref);
-  if (!nv) return { nivel: null, pa: null, horizonte: EMBAL_DIAS_CONTAGEM + lead, previsto: null, indice: null };
+  if (!nv) return { nivel: null, pa: null, meses, previsto: null, indice: null };
   const mesIdx = parseInt(ref.slice(5, 7)) - 1;
   return {
     nivel: nv.nivel,
     pa:    nv.pa,
-    horizonte: EMBAL_DIAS_CONTAGEM + lead,
-    previsto:  ticketsPrevistos(nv.nivel, board, ref, EMBAL_DIAS_CONTAGEM + lead),
+    meses,
+    previsto:  ticketsPrevistosMeses(nv.nivel, board, ref, meses),
     indice:    indiceSazonal(board)[mesIdx],
   };
 }
@@ -1112,7 +1126,7 @@ app.get('/api/init', requireAuth, async (req, res) => {
     const embalBoards = isAdminOrEscritorio
       ? EMBAL_STORE_BOARDS
       : EMBAL_STORE_BOARDS.filter(b => isSupervisor ? userLojas.includes(b) : b === board);
-    const embalagens = { itens: {}, status: {}, projecao: {}, diasContagem: EMBAL_DIAS_CONTAGEM, leadDias: embalLeadDias(db) };
+    const embalagens = { itens: {}, status: {}, projecao: {}, diasContagem: EMBAL_DIAS_CONTAGEM, horizonteMeses: embalHorizonteMeses(db) };
     for (const b of embalBoards) {
       embalagens.itens[b]    = embalagensDaLoja(db, b);
       embalagens.status[b]   = statusContagem(db, b);
@@ -2763,7 +2777,7 @@ app.get('/api/embalagens', requireAuth, async (req, res) => {
       status[b]   = statusContagem(db, b);
       projecao[b] = projecaoAnual(db, b);
     }
-    res.json({ itens, status, projecao, diasContagem: EMBAL_DIAS_CONTAGEM, leadDias: embalLeadDias(db) });
+    res.json({ itens, status, projecao, diasContagem: EMBAL_DIAS_CONTAGEM, horizonteMeses: embalHorizonteMeses(db) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2789,11 +2803,11 @@ app.post('/api/embalagens/config/:board', requireAdmin, async (req, res) => {
     }
     db.embalagemConfig[board] = cfg;
     // Lead time é da rede, não da loja — chega junto para não exigir outra tela
-    if (req.body.leadDias !== undefined) {
-      const v = Number(req.body.leadDias);
-      if (!Number.isFinite(v) || v < 0 || v > 180)
-        return res.status(400).json({ error: 'Lead time deve ser de 0 a 180 dias' });
-      db.embalagemParams = { ...(db.embalagemParams || {}), leadDias: Math.round(v) };
+    if (req.body.horizonteMeses !== undefined) {
+      const v = Number(req.body.horizonteMeses);
+      if (!Number.isFinite(v) || v <= 0 || v > 24)
+        return res.status(400).json({ error: 'Cobertura deve ser de 1 a 24 meses' });
+      db.embalagemParams = { ...(db.embalagemParams || {}), horizonteMeses: v };
     }
     await writeDB(db);
     res.json({ ok: true, itens: embalagensDaLoja(db, board), cobertura: coberturaLoja(db, board), projecao: projecaoAnual(db, board) });

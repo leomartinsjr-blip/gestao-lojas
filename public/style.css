@@ -3640,3 +3640,4 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .ct-proj-m { font-size: .64rem; color: var(--muted); }
 .ct-proj-nota { font-size: .74rem; color: var(--muted); margin-top: .55rem; padding-top: .5rem; border-top: 1px solid var(--border); }
 .ct-proj-nota b { color: #F0883E; }
+.ct-alvo-det { display: block; font-size: .64rem; font-weight: 400; color: var(--muted); }

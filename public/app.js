@@ -10659,7 +10659,7 @@ function _renderContagemLojaView(body) {
       <h3 class="req-form-title">Contagem de Embalagens — ${BOARDS[board]?.label || board}</h3>
     </div>
     ${_ctStatusLine(_embalStatus(board), dias)}
-    <p class="ct-help">Conte o que tem <b>em peças</b> e lance abaixo. O <b>piso</b> é o número fixo da loja — abaixo dele você é avisado. O <b>alvo</b> é quanto o item vai gastar até a próxima entrega chegar, já contando a época do ano: por isso ele sobe em novembro, para dezembro não pegar ninguém sem sacola. O pedido é sugerido em <b>módulos</b> (caixa fechada), arredondando pra cima.</p>
+    <p class="ct-help">Conte o que tem <b>em peças</b> e lance abaixo. O <b>piso</b> é o número fixo da loja — abaixo dele você é avisado. O <b>alvo</b> é o consumo previsto dos próximos ${S.embalagens?.horizonteMeses ?? 3} meses mais o piso, já contando a época do ano: por isso ele sobe em novembro, para dezembro não pegar ninguém sem sacola. O pedido é sugerido em <b>módulos</b> (caixa fechada), arredondando pra cima.</p>
     <div class="ct-table-wrap">
       <table class="ct-table">
         <thead><tr>
@@ -10946,7 +10946,7 @@ function _renderContagemAdminView(body) {
         <div class="req-board-chips">
           ${boards.map(b => `<button class="req-board-chip${sel === b ? ' active' : ''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color || '#8B949E'}">${_escHtml(BOARDS[b]?.label || b)}</button>`).join('')}
         </div>
-        <p class="ct-help">O <b>piso</b> é o alarme da loja. Em branco ele fica no <b>automático</b>, acompanhando a venda; digite um número para travar, e apague para voltar ao automático. O <b>alvo</b> o sistema calcula sozinho a cada contagem, a partir das vendas e da época do ano, e é ele que dimensiona o pedido. <b>Consumo por venda</b> é quantas unidades do item saem a cada venda: 0,455 sacola P significa que pouco menos da metade das vendas leva uma P; a Seda já vem no PA da loja, porque sai por peça. Deixar em 0 tira o item do cálculo.</p>
+        <p class="ct-help">O <b>piso</b> é o alarme da loja. Em branco ele fica no <b>automático</b>, acompanhando a venda; digite um número para travar, e apague para voltar ao automático. O <b>alvo</b> o sistema calcula sozinho: consumo previsto do horizonte mais o piso. É ele que dimensiona o pedido. <b>Consumo por venda</b> é quantas unidades do item saem a cada venda: 0,455 sacola P significa que pouco menos da metade das vendas leva uma P; a Seda já vem no PA da loja, porque sai por peça. Deixar em 0 tira o item do cálculo.</p>
         <div class="ct-table-wrap">
           <table class="ct-table">
             <thead><tr>
@@ -10968,18 +10968,20 @@ function _renderContagemAdminView(body) {
                       : '—'}</td>
                   <td><input type="number" class="ct-input ct-cfg-share" data-key="${it.key}" min="0" max="99" step="0.005" value="${it.porTicket != null ? +Number(it.porTicket).toFixed(3) : ''}" placeholder="—"></td>
                   <td><input type="number" class="ct-input ct-cfg-mod" data-key="${it.key}" min="1" max="9999" value="${it.modulo || 1}"></td>
-                  <td class="ct-num ct-pos">${it.cobertura != null ? it.cobertura : '—'}</td>
+                  <td class="ct-num ct-pos">${it.cobertura != null
+                      ? `${it.cobertura}<span class="ct-alvo-det">${it.consumo} + ${it.min}</span>`
+                      : '—'}</td>
                 </tr>`).join('')}
             </tbody>
           </table>
         </div>
         <div class="ct-params">
           <label class="ct-param">
-            <span>Lead time do chamado</span>
-            <input type="number" class="ct-input" id="ctLead" min="0" max="180" value="${S.embalagens?.leadDias ?? 30}">
-            <span class="ct-param-un">dias</span>
+            <span>Cobertura do pedido</span>
+            <input type="number" class="ct-input" id="ctLead" min="1" max="24" step="1" value="${S.embalagens?.horizonteMeses ?? 3}">
+            <span class="ct-param-un">meses</span>
           </label>
-          <span class="ct-param-nota">Vale para a rede toda. O alvo cobre ${S.embalagens?.diasContagem ?? 15} dias de ciclo + esse lead.</span>
+          <span class="ct-param-nota">Vale para a rede toda. Pedido = consumo previsto desses meses + piso − estoque atual. Suba na hora do pedido do fim do ano, para o horizonte atravessar dezembro.</span>
         </div>
         <div class="req-form-actions">
           <button class="req-submit-btn" id="ctCfgSalvar">Salvar — ${_escHtml(BOARDS[sel]?.label || sel)}</button>
@@ -11011,13 +11013,13 @@ function _renderContagemAdminView(body) {
       const btn = body.querySelector('#ctCfgSalvar');
       btn.disabled = true;
       try {
-        const leadDias = parseInt(body.querySelector('#ctLead')?.value);
+        const horizonteMeses = parseFloat(body.querySelector('#ctLead')?.value);
         const r = await apiFetch('POST', `/api/embalagens/config/${sel}`, {
-          config, ...(Number.isFinite(leadDias) ? { leadDias } : {}),
+          config, ...(Number.isFinite(horizonteMeses) ? { horizonteMeses } : {}),
         });
         S.embalagens.itens[sel] = r.itens;
         if (r.projecao) { if (!S.embalagens.projecao) S.embalagens.projecao = {}; S.embalagens.projecao[sel] = r.projecao; }
-        if (Number.isFinite(leadDias)) S.embalagens.leadDias = leadDias;
+        if (Number.isFinite(horizonteMeses)) S.embalagens.horizonteMeses = horizonteMeses;
         toast('Salvo ✓');
         render();
       } catch (e) { toast('Erro: ' + e.message, true); btn.disabled = false; }
