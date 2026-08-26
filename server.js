@@ -342,9 +342,24 @@ const EMBALAGENS_CONSUMO_LOJA = {
   tommy:    { 'sacola-papel-p': 0.05, 'sacola-papel-m': 0.60, 'sacola-papel-g': 0.25 },
 };
 
-// Códigos e peças/módulo do fornecedor, por loja. Só a Tommy tem catálogo
-// fechado hoje; nas demais o módulo nasce 1 (pede em peças) até o admin ajustar.
+// Sacola da Surfers (Embalagens & Cia) é comprada em centena: o pedido fecha
+// sempre em múltiplo de 100, nunca em peça avulsa. Não há código de catálogo —
+// o pedido vai pelo nome do item.
+const EMBAL_LOTE_SURFERS = {
+  'sacola-papel-p':  { modulo: 100 },
+  'sacola-papel-m':  { modulo: 100 },
+  'sacola-papel-g':  { modulo: 100 },
+  'sacola-plastico': { modulo: 100 },
+};
+
+// Códigos e peças/módulo do fornecedor, por loja. Só a Tommy tem código de
+// catálogo (Antilhas). O admin pode sobrescrever o módulo item a item na tela
+// de mínimos; isto aqui é só o padrão do fornecedor.
 const EMBALAGENS_FORNECEDOR = {
+  delrey:   EMBAL_LOTE_SURFERS,
+  minas:    EMBAL_LOTE_SURFERS,
+  contagem: EMBAL_LOTE_SURFERS,
+  estacao:  EMBAL_LOTE_SURFERS,
   tommy: {
     'sacola-papel-p':   { cod: 'IF00031', modulo: 25  },
     'sacola-papel-m':   { cod: 'IF00228', modulo: 25  },
