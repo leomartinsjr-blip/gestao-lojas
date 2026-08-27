@@ -9153,14 +9153,48 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       }
       return { value, pecas, atend };
     };
-    // Meta automática: cada dia usa a meta mensal e o peso do SEU mês
-    const empWeekMetaAuto = (empId, board, dias) => dias.reduce((s, ds) => {
-      const mensal = vsalesAll[`${mkOf(ds)}-${board}-${empId}`]?.meta?.mensal || 0;
-      return s + mensal * dayWeight(ds) / 100;
-    }, 0);
-    const empWeekMeta = (empId, board, ws, we, dias) => {
-      const manual = manualWeekMeta(ws, we, empId);
-      return manual > 0 ? manual : empWeekMetaAuto(empId, board, dias);
+    // ── Meta do dia de um vendedor — porta server-side de sellerDayGoal (public/app.js) ──
+    // A meta semanal TEM que sair da meta da loja dividida pelos vendedores ativos NAQUELE
+    // dia, igual à tela Meta Semanal. Antes daqui saía `vsales.meta.mensal * peso do dia`,
+    // e esse `meta.mensal` é só um snapshot gravado quando alguém salva a meta da loja —
+    // já vem proporcional aos dias do vendedor no mês. Para quem entrou/saiu no meio do mês
+    // (ou teve férias), o snapshot encolhido era espalhado por TODAS as semanas, derrubando
+    // a meta das semanas que ele trabalhou inteiras e gerando prêmio indevido — individual
+    // e de loja, porque a meta da loja aqui é a soma das metas dos vendedores.
+    const metaLojaOf = (mkX, board) => db.dailySales?.[`${mkX}-${board}`]?.meta?.mensal || 0;
+    // Roster completo por loja, SEM filtro de inativo: o divisor precisa contar quem estava
+    // ativo naquele dia, não quem está ativo hoje (mesma razão do S.allEmployees no cliente).
+    const allVendByBoard = {};
+    for (const emp of (db.employees || [])) {
+      if (!isVend(emp)) continue;
+      if (!allVendByBoard[emp.board]) allVendByBoard[emp.board] = [];
+      allVendByBoard[emp.board].push(emp);
+    }
+    const vacDaysMk    = (empId, board, mkX) => vsalesAll[`${mkX}-${board}-${empId}`]?.meta?.vacationDays || [];
+    const ativoNoDia   = (emp, ds) => (!emp.admissao     || emp.admissao     <= ds)
+                                   && (!emp.desligamento || emp.desligamento >= ds);
+    const sellerDayGoal = (emp, board, ds) => {
+      if (emp.omniChannel) return 0;                    // canal Omni não divide meta
+      if (!ativoNoDia(emp, ds)) return 0;               // fora da janela admissão/desligamento
+      const mkX = mkOf(ds);
+      if (vacDaysMk(emp.id, board, mkX).includes(ds)) return 0;  // férias (Part%)
+      const w = dayWeight(ds);
+      const metaLoja = metaLojaOf(mkX, board);
+      if (metaLoja > 0) {
+        const nActive = Math.max(1, (allVendByBoard[board] || []).filter(e =>
+          !e.omniChannel && ativoNoDia(e, ds) && !vacDaysMk(e.id, board, mkX).includes(ds)
+        ).length);
+        return metaLoja * w / 100 / nActive;
+      }
+      // Mês sem meta da loja: mesmo fallback do cliente — meta individual gravada
+      return (vsalesAll[`${mkX}-${board}-${emp.id}`]?.meta?.mensal || 0) * w / 100;
+    };
+    // Meta automática da semana: soma das metas diárias, cada dia com o peso do SEU mês
+    const empWeekMetaAuto = (emp, board, dias) =>
+      dias.reduce((s, ds) => s + sellerDayGoal(emp, board, ds), 0);
+    const empWeekMeta = (emp, board, ws, we, dias) => {
+      const manual = manualWeekMeta(ws, we, emp.id);
+      return manual > 0 ? manual : empWeekMetaAuto(emp, board, dias);
     };
     // Dias de férias marcados via Part%, unindo os meses tocados pela semana
     const vacDaysOf = (empId, board, dias) => {
@@ -9207,7 +9241,7 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
           storeSales += agg.value;
           storePecas += agg.pecas;
           storeAtend += agg.atend;
-          storeMeta  += empWeekMeta(emp.id, board, weekStart, weStr, dias);
+          storeMeta  += empWeekMeta(emp, board, weekStart, weStr, dias);
         }
         const storeHitMeta = storeMeta > 0 && storeSales >= storeMeta;
         const storeHitPA   = storeAtend > 0 && (storePecas/storeAtend) >= PA_THR;
@@ -9264,7 +9298,7 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
             if (!trabalhouSemanaInteira) continue;
             const { value: empSales, pecas: empPecas, atend: empAtend } =
               empWeekAgg(emp.id, board, dias);
-            const empMeta = empWeekMeta(emp.id, board, weekStart, weStr, dias);
+            const empMeta = empWeekMeta(emp, board, weekStart, weStr, dias);
             if (empMeta > 0 && empSales >= empMeta) {
               let val = PREMIO_VEND_W;
               if (empAtend > 0 && (empPecas/empAtend) >= PA_THR) val += PREMIO_PA_W;
