@@ -3167,7 +3167,7 @@ function montarPedido(db) {
         }
         // Fecha o módulo UMA vez, sobre a necessidade somada do grupo.
         // pecas = necessidade crua · pedido = o que efetivamente será comprado.
-        const itens = Object.values(linhas).map(l => {
+        const todos = Object.values(linhas).map(l => {
           const modulos = l.modulo > 1 ? Math.ceil(l.pecas / l.modulo) : l.pecas;
           const pedido  = l.modulo > 1 ? modulos * l.modulo : l.pecas;
           const mod     = l.modulo > 1 ? l.modulo : 1;
@@ -3180,7 +3180,7 @@ function montarPedido(db) {
         // próprio alvo pode abastecer a que está faltando. Não guardamos estoque
         // no escritório, então a transferência é sempre de loja para loja.
         const transferencias = [];
-        for (const l of itens) {
+        for (const l of todos) {
           const sobra = [], falta = [];
           for (const b of g.boards) {
             const p = l.porLoja[b];
@@ -3224,10 +3224,11 @@ function montarPedido(db) {
           // lançou a entrega precisa ver o efeito dela, e some sozinho na
           // próxima contagem — quando `entregue` volta a zero porque a contagem
           // nova já inclui a mercadoria.
-          itens: itens.filter(l => l.pecas > 0 || g.boards.some(b => l.porLoja[b]?.entregue > 0)),
-          // catálogo cheio do grupo: a entrega pode trazer item que não estava
-          // faltando, e o formulário precisa da linha mesmo assim
-          catalogo: Object.values(linhas).map(l => ({ key: l.key, nome: l.nome, cod: l.cod, modulo: l.modulo })),
+          itens: todos.filter(l => l.pecas > 0 || g.boards.some(b => l.porLoja[b]?.entregue > 0)),
+          // `itens` é a lista de compras — só o que falta. `todos` é o catálogo
+          // cheio com o estoque de cada loja: alimenta o painel de estoque e o
+          // formulário de entrega, que pode trazer item sem falta nenhuma.
+          todos,
           entregas,
           // O "mínimo do centro" é só a soma do que as lojas precisam ter.
           centro: Object.fromEntries(Object.values(linhas).map(l => [l.key, {

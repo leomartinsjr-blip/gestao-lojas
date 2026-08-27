@@ -3277,6 +3277,17 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .ct-ent-del { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: .78rem; padding: 0 .25rem; }
 .ct-ent-del:hover { color: #F85149; }
 .ct-em-dia { color: #7EE787; opacity: .75; font-size: .72rem; font-weight: 600; }
+/* ── Painel de estoque por loja ─────────────────────────────────────────── */
+.ct-est-table td, .ct-est-table th { white-space: nowrap; }
+.ct-est-cel { font-weight: 700; }
+.ct-est-baixo { color: #F0A9A5; background: rgba(248,81,73,.10); }
+.ct-est-medio { color: #E3B341; background: rgba(227,179,65,.08); }
+.ct-est-ok    { color: #7EE787; background: rgba(63,185,80,.07); }
+.ct-est-vazio { color: var(--muted); opacity: .5; }
+.ct-est-rede  { font-weight: 700; border-left: 1px solid var(--border); }
+.ct-est-legenda { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; font-size: .7rem; color: var(--muted); margin-top: .5rem; }
+.ct-est-tag { font-size: .68rem; font-weight: 700; padding: .1rem .4rem; border-radius: 4px; }
+.ct-est-tag + .ct-est-tag, .ct-est-legenda .ct-est-tag:not(:first-child) { margin-left: .6rem; }
 .req-embal-mod { font-size: .68rem; font-weight: 700; color: #58A6FF; min-height: .9rem; }
 
 /* ── Contagem de embalagens ─────────────────────────────────────────────── */

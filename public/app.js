@@ -10855,6 +10855,71 @@ function _renderContagemRevisao(body, board, contagemId, faltantes) {
   });
 }
 
+// Quanto cada loja tem HOJE de cada embalagem: o que ela contou mais o que foi
+// entregue depois. A tabela do pedido responde "o que comprar"; esta responde
+// "quanto tem", que é outra pergunta — e some item nenhum, mesmo em dia.
+//
+// Semáforo: abaixo do piso é alarme (a loja pode ficar sem antes da próxima
+// entrega); entre o piso e o alvo é normal e vira pedido; acima do alvo é
+// sobra que pode abastecer outra loja.
+function _estoqueCelula(p) {
+  if (!p || p.estoque == null) return '<td class="ct-num ct-est-vazio">—</td>';
+  const cls = p.min > 0 && p.estoque < p.min ? ' ct-est-baixo'
+            : p.falta > 0                    ? ' ct-est-medio'
+            : ' ct-est-ok';
+  const det = [`piso ${p.min}`, p.alvo ? `alvo ${p.alvo}` : null,
+               p.entregue ? `${p.contado} contados + ${p.entregue} entregues` : null]
+              .filter(Boolean).join(' · ');
+  return `<td class="ct-num ct-est-cel${cls}" title="${_escHtml(det)}">${p.estoque}`
+       + `${p.entregue ? `<span class="ct-sobra">+${p.entregue}</span>` : ''}</td>`;
+}
+
+function _estoqueGrupoHtml(g) {
+  const linhas = g.todos || [];
+  if (!linhas.length) return '';
+  const lojas = g.boards;
+  return `<div class="ct-ped-grupo">
+    <div class="ct-ped-hdr">${_escHtml(g.label)}</div>
+    <div class="ct-table-wrap">
+      <table class="ct-table ct-est-table">
+        <thead>
+          <tr><th>Item</th>
+            ${lojas.map(b => `<th class="ct-th-loja">
+              <span class="dash-store-dot" style="background:${BOARDS[b]?.color || '#8B949E'}"></span>${_escHtml(BOARDS[b]?.label || b)}</th>`).join('')}
+            <th>Rede</th></tr>
+          <tr><th class="ct-th-sub">contado em</th>
+            ${lojas.map(b => `<th class="ct-th-sub">${g.contagens?.[b] ? _fmtData(g.contagens[b]) : 'nunca contou'}</th>`).join('')}
+            <th class="ct-th-sub"></th></tr>
+        </thead>
+        <tbody>
+          ${linhas.map(l => {
+            const rede = lojas.reduce((s, b) => s + (l.porLoja[b]?.estoque || 0), 0);
+            return `<tr>
+              <td class="ct-nome">${_escHtml(l.nome)}</td>
+              ${lojas.map(b => _estoqueCelula(l.porLoja[b])).join('')}
+              <td class="ct-num ct-est-rede">${rede || '—'}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  </div>`;
+}
+
+function _renderEstoqueRede() {
+  const el = document.getElementById('ctEstoqueBody');
+  if (!el) return;
+  const html = (_pedidoData?.grupos || []).map(_estoqueGrupoHtml).join('');
+  el.classList.remove('ct-total');
+  el.innerHTML = html
+    ? html + `<div class="ct-est-legenda">
+        <span class="ct-est-tag ct-est-baixo">abaixo do piso</span> pode faltar antes da próxima entrega
+        <span class="ct-est-tag ct-est-medio">abaixo do alvo</span> entra no pedido
+        <span class="ct-est-tag ct-est-ok">em dia</span> cobre o horizonte
+      </div>`
+    : '<div class="ct-ped-vazio">Nenhuma contagem registrada ainda.</div>';
+}
+
 // Formulário de entrega. O rateio que o próprio pedido calculou já vem
 // preenchido — é o que se espera que chegue em cada loja —, mas quem manda é
 // o que desceu do caminhão: o número digitado aqui é o que vira consumo
@@ -10864,7 +10929,7 @@ function _entregaFormHtml(g) {
   const hoje = _hojeBRT();
   const sug = {};
   for (const it of (g.itens || [])) sug[it.key] = it.entrega || {};
-  const cat = g.catalogo?.length ? g.catalogo : (g.itens || []);
+  const cat = g.todos?.length ? g.todos : (g.itens || []);
   return `<div class="ct-entrega-form">
     <div class="ct-ent-hdr">📥 O que chegou de verdade — em peças, por loja</div>
     <div class="ct-ent-linha1">
@@ -10901,7 +10966,7 @@ function _entregaFormHtml(g) {
 // as lojas do grupo — e o ✕ desfaz a chegada inteira.
 function _entregaListaHtml(g) {
   if (!g.entregas?.length) return '';
-  const nomes = Object.fromEntries((g.catalogo || []).map(i => [i.key, i.nome]));
+  const nomes = Object.fromEntries((g.todos || []).map(i => [i.key, i.nome]));
   return `<div class="ct-ent-lista">
     <div class="ct-ent-lista-hdr">Entregas lançadas</div>
     ${g.entregas.map(e => `<div class="ct-ent-lote">
@@ -11015,6 +11080,9 @@ async function _renderPedidoConsolidado(el, usarCache) {
 
   el.classList.remove('ct-total');
   el.innerHTML = html || '<div class="ct-ped-vazio">Nenhuma contagem registrada ainda.</div>';
+
+  // Mesma resposta serve às duas tabelas — não vale uma segunda chamada.
+  _renderEstoqueRede();
 
   el.querySelectorAll('.ct-entrega-btn').forEach(btn => btn.addEventListener('click', () => {
     _entregaGrupo = _entregaGrupo === btn.dataset.grupo ? null : btn.dataset.grupo;
@@ -11130,6 +11198,11 @@ function _renderContagemAdminView(body) {
             </div>`;
           }).join('')}
         </div>
+      </div>
+
+      <div class="ct-admin-sec">
+        <div class="req-sec-hdr">📦 Estoque por loja — o que foi contado mais o que chegou depois</div>
+        <div class="ct-total" id="ctEstoqueBody">Carregando…</div>
       </div>
 
       <div class="ct-admin-sec">
