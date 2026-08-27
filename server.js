@@ -3219,7 +3219,12 @@ function montarPedido(db) {
 
         return {
           key: g.key, label: g.label, boards: g.boards,
-          itens: itens.filter(l => l.pecas > 0),
+          // A tabela é a lista de compras, então item em dia sai da frente. Mas
+          // o que acabou de ser entregue FICA, mesmo zerando a falta: quem
+          // lançou a entrega precisa ver o efeito dela, e some sozinho na
+          // próxima contagem — quando `entregue` volta a zero porque a contagem
+          // nova já inclui a mercadoria.
+          itens: itens.filter(l => l.pecas > 0 || g.boards.some(b => l.porLoja[b]?.entregue > 0)),
           // catálogo cheio do grupo: a entrega pode trazer item que não estava
           // faltando, e o formulário precisa da linha mesmo assim
           catalogo: Object.values(linhas).map(l => ({ key: l.key, nome: l.nome, cod: l.cod, modulo: l.modulo })),
@@ -3323,8 +3328,12 @@ app.get('/api/embalagens/pedido', requireAdmin, async (req, res) => {
 // a distribuição interna quando a mercadoria chegar.
 app.get('/api/embalagens/pedido/export', requireAdmin, async (req, res) => {
   try {
-    const db     = await readDB();
-    const grupos = montarPedido(db).filter(g => g.itens.length);
+    const db = await readDB();
+    // A tela mantém à vista o item que acabou de ser entregue mesmo com falta
+    // zero; o arquivo do fornecedor, não — linha de 0 módulo não se pede.
+    const grupos = montarPedido(db)
+      .map(g => ({ ...g, itens: g.itens.filter(i => i.pecas > 0) }))
+      .filter(g => g.itens.length);
     if (!grupos.length) return res.status(400).json({ error: 'Nenhum item a pedir — faça as contagens primeiro.' });
 
     const wb = new ExcelJS.Workbook();

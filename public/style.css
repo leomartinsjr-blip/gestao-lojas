@@ -3276,6 +3276,7 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .ct-ent-por { font-size: .7rem; color: var(--muted); opacity: .8; }
 .ct-ent-del { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: .78rem; padding: 0 .25rem; }
 .ct-ent-del:hover { color: #F85149; }
+.ct-em-dia { color: #7EE787; opacity: .75; font-size: .72rem; font-weight: 600; }
 .req-embal-mod { font-size: .68rem; font-weight: 700; color: #58A6FF; min-height: .9rem; }
 
 /* ── Contagem de embalagens ─────────────────────────────────────────────── */

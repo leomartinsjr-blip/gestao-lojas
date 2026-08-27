@@ -10982,8 +10982,10 @@ async function _renderPedidoConsolidado(el, usarCache) {
                 return `<td class="ct-num ct-tem ct-grp-start"${titulo}>${tem != null ? tem : '—'}${l?.entregue ? `<span class="ct-sobra">+${l.entregue}</span>` : ''}</td>`
                      + `<td class="ct-num ct-falta-col"${ent != null ? ` title="Entregar ${ent} pç nesta loja — o pedido é rateado em caixa fechada"` : ''}>${l && l.falta > 0 ? `${l.falta}` : '—'}</td>`;
               }).join('')}
-              <td class="ct-num"><b>${it.pecas}</b></td>
-              <td class="ct-num ct-pos">${it.modulo > 1 ? `${it.modulos} mód (${it.pedido})` : `${it.pecas} pç`}${it.sobra > 0 ? `<span class="ct-sobra">+${it.sobra}</span>` : ''}</td>
+              <td class="ct-num">${it.pecas > 0 ? `<b>${it.pecas}</b>` : '—'}</td>
+              <td class="ct-num ct-pos">${it.pecas === 0
+                ? '<span class="ct-em-dia">nada a pedir</span>'
+                : `${it.modulo > 1 ? `${it.modulos} mód (${it.pedido})` : `${it.pecas} pç`}${it.sobra > 0 ? `<span class="ct-sobra">+${it.sobra}</span>` : ''}`}</td>
             </tr>`).join('')}
           </tbody>
         </table>
@@ -11071,7 +11073,7 @@ async function _renderPedidoConsolidado(el, usarCache) {
   }));
 
   // Sem item a pedir o export sai vazio — melhor desabilitar do que baixar em branco
-  const temPedido = (data.grupos || []).some(g => g.itens.length);
+  const temPedido = (data.grupos || []).some(g => g.itens.some(i => i.pecas > 0));
   const btn = document.getElementById('ctExportBtn');
   if (btn) {
     btn.classList.toggle('ct-export-off', !temPedido);
