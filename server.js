@@ -9410,6 +9410,7 @@ app.post('/api/folha/:year/:month', requireAuth, async (req, res) => {
     if (!db.folhas) db.folhas = {};
     if (!db.folhas[mk]) db.folhas[mk] = {};
     const bloqueadas = [];
+    const entriesBloqueadas = [];
     for (const [board, boardData] of Object.entries(req.body || {})) {
       if (!boardData) continue;
       if (!db.folhas[mk][board]) db.folhas[mk][board] = {};
@@ -9422,14 +9423,26 @@ app.post('/api/folha/:year/:month', requireAuth, async (req, res) => {
         bloqueadas.push(board);
       } else if (boardData.entries) {
         if (!db.folhas[mk][board].entries) db.folhas[mk][board].entries = {};
-        Object.assign(db.folhas[mk][board].entries, boardData.entries);
+        const alvo = db.folhas[mk][board].entries;
+        for (const [empId, entry] of Object.entries(boardData.entries)) {
+          // Mesma regra, um nível abaixo: colaborador com folha individual
+          // encerrada (rescisão fechada antes da folha do resto da loja) é
+          // histórico. Só passa a própria reabertura, explícita no payload.
+          if (alvo[empId]?.encerrada === true && entry?.encerrada !== false) {
+            entriesBloqueadas.push(`${board}/${empId}`);
+            continue;
+          }
+          alvo[empId] = entry;
+        }
       }
       if ('encerrada' in boardData) db.folhas[mk][board].encerrada = boardData.encerrada;
     }
     await writeDB(db);
     if (bloqueadas.length)
       console.warn(`[folha ${mk}] gravação recusada — folha encerrada: ${bloqueadas.join(', ')}`);
-    res.json({ ok: true, bloqueadas });
+    if (entriesBloqueadas.length)
+      console.warn(`[folha ${mk}] entry recusada — folha individual encerrada: ${entriesBloqueadas.join(', ')}`);
+    res.json({ ok: true, bloqueadas, entriesBloqueadas });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

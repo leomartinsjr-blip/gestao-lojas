@@ -37,6 +37,24 @@ function premiacaoPagaNaLoja(board) {
     : PREMIACAO_NA_LOJA_PADRAO.includes(board);
 }
 
+// ── Encerramento ───────────────────────────────────────────────────────────
+// Duas travas independentes:
+//   • a folha da loja inteira  → FP.folha[board].encerrada
+//   • a de um colaborador só   → entry.encerrada
+// A individual existe para rescisão: o acerto de quem foi demitido é fechado
+// antes da folha do resto da loja, e a partir daí nada mais o reescreve — nem
+// "Gerar Folha", nem mudança de config, nem o remendo automático da premiação.
+function folhaEncerrada(board = FP.board) {
+  return !!FP.folha[board]?.encerrada;
+}
+function entryEncerrada(empId, board = FP.board) {
+  return !!FP.folha[board]?.entries?.[empId]?.encerrada;
+}
+// Congelado = não recalcula, não reescreve, não aceita edição.
+function empCongelado(empId, board = FP.board) {
+  return folhaEncerrada(board) || entryEncerrada(empId, board);
+}
+
 const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
@@ -344,7 +362,7 @@ function premiacaoCalculada(emp) {
   // Sócio, supervisor e caixa não têm prêmio semanal na entry: não há o que tirar.
   const temSemanal = !['socio', 'supervisor', 'caixa'].includes(t);
   const naLoja = (temSemanal && premiacaoPagaNaLoja(emp.board)
-                  && !FP.folha[emp.board]?.encerrada) ? sem : 0;
+                  && !empCongelado(emp.id, emp.board)) ? sem : 0;
   return {
     premiacao:        r2(sem - naLoja),
     premiacaoBalanco: (t === 'gvend' || ecfg.recebePremiaoLoja) ? ger : 0,
@@ -648,12 +666,15 @@ function buildTotalForm(emps) {
   const rows = emps.map(emp => {
     let entry = FP.folha[FP.board]?.entries?.[emp.id] || defaultEntry(emp);
     const _ct = cargoTipo(emp.cargo);
-    const _calc = premiacaoCalculada(emp);
-    if (!entry.premiacaoManual &&
-        (_calc.premiacao !== r2(entry.premiacao || 0)
-         || _calc.premiacaoBalanco !== r2(entry.premiacaoBalanco || 0)
-         || _calc.premiacaoNaLoja !== r2(entry.premiacaoNaLoja || 0))) {
-      entry = applyFora(defaultEntry(emp), emp, entry.fora);
+    // Linha congelada é o que foi pago: o resumo mostra o gravado, sem remendar.
+    if (!empCongelado(emp.id)) {
+      const _calc = premiacaoCalculada(emp);
+      if (!entry.premiacaoManual &&
+          (_calc.premiacao !== r2(entry.premiacao || 0)
+           || _calc.premiacaoBalanco !== r2(entry.premiacaoBalanco || 0)
+           || _calc.premiacaoNaLoja !== r2(entry.premiacaoNaLoja || 0))) {
+        entry = applyFora(defaultEntry(emp), emp, entry.fora);
+      }
     }
     const _fb = foraBreakdown(entry, _ct);
     totalProv += entry.proventos      || 0;
@@ -845,10 +866,11 @@ function renderEmpTabs(emps) {
   </button>`;
   document.getElementById('fpEmpTabs').innerHTML = totalBtn + emps.map(e => {
     const has = !!(lojaData.entries?.[e.id]);
+    const enc = !!(lojaData.entries?.[e.id]?.encerrada);
     return `<button id="tab-${e.id}"
-      class="fp-emp-tab${has?' has-data':''}${e.id===FP.activeEmpId?' active':''}"
-      onclick="selectEmp(${e.id})">
-      ${e.apelido || e.name.split(' ')[0]}
+      class="fp-emp-tab${has?' has-data':''}${enc?' enc':''}${e.id===FP.activeEmpId?' active':''}"
+      onclick="selectEmp(${e.id})"${enc?' title="Folha individual encerrada"':''}>
+      ${enc?'⊠ ':''}${e.apelido || e.name.split(' ')[0]}
       <span style="font-size:.68rem;opacity:.6;margin-left:.2rem">${e.cargo}</span>
     </button>`;
   }).join('');
@@ -874,9 +896,9 @@ function selectEmp(empId) {
   const _calc = premiacaoCalculada(emp);
   const calcPrem     = entry.premiacaoManual ? r2(entry.premiacao || 0)        : _calc.premiacao;
   const calcPremGer2 = entry.premiacaoManual ? r2(entry.premiacaoBalanco || 0) : _calc.premiacaoBalanco;
-  // Em folha encerrada o que está gravado é o que foi pago — a premiação
-  // recalculada pelo servidor não substitui o histórico.
-  const encerrada = !!FP.folha[FP.board]?.encerrada;
+  // Em folha encerrada — da loja ou só deste colaborador — o que está gravado é
+  // o que foi pago: a premiação recalculada pelo servidor não substitui histórico.
+  const encerrada = empCongelado(empId);
   if (!encerrada && calcPrem !== r2(entry.premiacao || 0)) {
     entry = { ...entry, premiacao: calcPrem };
   }
@@ -1081,6 +1103,13 @@ function fmtDiaMes(iso) {
   return `${d}/${m}`;
 }
 
+// Aceita 'YYYY-MM-DD' e ISO completo (o carimbo do encerramento individual)
+function fmtDataBR(iso) {
+  if (!iso) return '';
+  const [y, m, d] = String(iso).slice(0, 10).split('-');
+  return d ? `${d}/${m}/${y}` : '';
+}
+
 const _diasEntre = (a, b) =>
   Math.round((new Date(b + 'T12:00:00') - new Date(a + 'T12:00:00')) / 86400000) + 1;
 
@@ -1158,7 +1187,7 @@ function buildFeriasBox(emp, e) {
 function onFeriasChange(empId) {
   const emp = FP.employees.find(e => e.id === empId);
   if (!emp) return;
-  if (FP.folha[FP.board]?.encerrada) {
+  if (empCongelado(empId)) {
     toast('Folha encerrada — reabra antes de alterar férias.', true, 5000);
     return;
   }
@@ -1438,7 +1467,7 @@ function buildEmpForm(emp, entry) {
   // Campo do prêmio semanal. Na loja que paga pelo caixa vira texto, não input:
   // sem o elemento fp-premiacao-*, recalc e saveEntryFromForm leem zero e o
   // prêmio fica naturalmente fora dos proventos, do INSS/VT e do líquido.
-  const premNaLoja = premiacaoPagaNaLoja(emp.board) && !FP.folha[FP.board]?.encerrada;
+  const premNaLoja = premiacaoPagaNaLoja(emp.board) && !empCongelado(emp.id);
   const premField = (label, hint) => premNaLoja
     ? `<div class="fp-field"><label>${label}</label>
          <div class="fp-prem-loja">
@@ -1727,11 +1756,29 @@ function buildEmpForm(emp, entry) {
     <div class="fp-extras" id="extras-desc-${emp.id}">${buildExtraRows(emp.id, e.extrasDesc||[], 'desc')}</div>
     <button class="fp-add-extra" onclick="addExtra(${emp.id},'desc')">+ Adicionar desconto</button>`;
 
+  // Encerramento individual — pensado para rescisão: fecha o acerto deste
+  // colaborador antes da folha do resto da loja. Quando a folha da loja inteira
+  // já está encerrada o controle é o do painel, não este.
+  const encEmp  = entryEncerrada(emp.id);
+  const encLoja = folhaEncerrada(FP.board);
+  const bSt     = 'padding:.2rem .6rem;font-size:.72rem';
+  const headBtns = encLoja
+    ? ''
+    : encEmp
+      ? `<span class="fp-emp-enc-tag" style="margin-left:auto">⊠ Encerrada${e.encerradaEm ? ' em ' + fmtDataBR(e.encerradaEm) : ''}</span>
+         <button class="fp-btn" style="${bSt}" onclick="fpImprimirRecibos(${emp.id})"
+           title="Imprimir o recibo só deste colaborador">Recibo</button>
+         <button class="fp-btn reabrir" style="${bSt}" onclick="fpEncerrarEmp(${emp.id})"
+           title="Reabrir a folha deste colaborador para poder editar de novo">Reabrir</button>`
+      : `<button class="fp-btn" style="${bSt};margin-left:auto" onclick="fpGerarEmp(${emp.id})" title="Recalcular só este colaborador">↺ Gerar</button>
+         <button class="fp-btn encerrar" style="${bSt}" onclick="fpEncerrarEmp(${emp.id})"
+           title="Fecha a folha só deste colaborador (rescisão). Gerar Folha e mudança de config deixam de mexer nele.">Encerrar</button>`;
+
   return `
-  <div class="fp-emp-form active" id="empform-${emp.id}">
+  <div class="fp-emp-form active${encEmp ? ' fp-emp-encerrada' : ''}" id="empform-${emp.id}">
     <div style="font-size:.75rem;color:#8b949e;margin-bottom:.75rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
       <span>${emp.name} · ${emp.cargo}${ecfg.inssRate ? ` · INSS ${ecfg.inssRate}%` : ''}${ecfg.vtRate ? ` · VT ${ecfg.vtRate}%` : ''}${emp.banco ? ` · Banco ${emp.banco} / Cta ${emp.conta||'—'}` : ''}</span>
-      <button class="fp-btn" style="padding:.2rem .6rem;font-size:.72rem;margin-left:auto" onclick="fpGerarEmp(${emp.id})" title="Recalcular só este colaborador">↺ Gerar</button>
+      ${headBtns}
     </div>
     ${buildFeriasBox(emp, e)}
     <div class="fp-form-grid">
@@ -1921,8 +1968,9 @@ async function fpSaveEmpCfg(empId) {
     await apiFetch(`/api/folha/empconfig/${empId}`, 'POST', cfg);
     FP.empConfig[empId] = cfg;
     // Folha encerrada é histórico: a config passa a valer para os próximos
-    // meses, mas a entry fechada não é recalculada nem reescrita.
-    if (FP.folha[FP.board]?.encerrada) {
+    // meses, mas a entry fechada não é recalculada nem reescrita. Vale tanto
+    // para a folha da loja inteira quanto para o encerramento individual.
+    if (empCongelado(empId)) {
       selectEmp(empId);
       toast('Configuração salva ✓ — folha encerrada, valores deste mês mantidos.', 'warn', 6000);
       return;
@@ -1988,6 +2036,9 @@ function buildForaRows(empId, fora, tipo, temFixo = false) {
   }).join('');
 }
 
+// Todas as mutações de extras/por-fora passam por aqui ou pelos handlers abaixo.
+// Com a entry congelada os botões somem da tela via CSS, mas a trava fica no
+// código também: valor de rescisão fechada não muda por acidente.
 function ensureEntry(empId) {
   const board = FP.board;
   if (!FP.folha[board]) FP.folha[board] = { entries: {} };
@@ -1998,6 +2049,7 @@ function ensureEntry(empId) {
 }
 
 function addFora(empId) {
+  if (empCongelado(empId)) return;
   const emp   = FP.employees.find(e => e.id === empId);
   const tipo  = cargoTipo(emp?.cargo);
   const entry = ensureEntry(empId);
@@ -2008,6 +2060,7 @@ function addFora(empId) {
 }
 
 function removeFora(empId, idx) {
+  if (empCongelado(empId)) return;
   FP.folha[FP.board]?.entries?.[empId]?.fora?.splice(idx, 1);
   FP.dirty = true;
   refreshFora(empId);
@@ -2015,6 +2068,7 @@ function removeFora(empId, idx) {
 }
 
 function onForaField(empId, idx, field, value) {
+  if (empCongelado(empId)) return;
   const arr = FP.folha[FP.board]?.entries?.[empId]?.fora;
   if (arr?.[idx]) arr[idx][field] = field === 'valor' ? r2(parseFloat(value)||0) : value;
   FP.dirty = true;
@@ -2171,6 +2225,9 @@ function onFieldChange(empId) {
 }
 
 function saveEntryFromForm(empId) {
+  // Entry congelada é o que foi pago: nem o formulário a reescreve. Sem esta
+  // trava, só passar pela aba do colaborador já regravaria os valores.
+  if (empCongelado(empId)) return;
   const emp  = FP.employees.find(e=>e.id===empId);
   const tipo = cargoTipo(emp?.cargo);
 
@@ -2317,6 +2374,7 @@ function saveEntryFromForm(empId) {
 
 // ── Extras ─────────────────────────────────────────────────────────────────
 function addExtra(empId, type) {
+  if (empCongelado(empId)) return;
   const board = FP.board;
   if (!FP.folha[board]?.entries?.[empId]) {
     if (!FP.folha[board]) FP.folha[board] = {entries:{}};
@@ -2331,6 +2389,7 @@ function addExtra(empId, type) {
 }
 
 function removeExtra(empId, type, idx) {
+  if (empCongelado(empId)) return;
   const key = type==='prov'?'extras':'extrasDesc';
   FP.folha[FP.board]?.entries?.[empId]?.[key]?.splice(idx,1);
   FP.dirty = true;
@@ -2339,6 +2398,7 @@ function removeExtra(empId, type, idx) {
 }
 
 function onExtraChange(empId, type, idx, field, value) {
+  if (empCongelado(empId)) return;
   const key = type==='prov'?'extras':'extrasDesc';
   const arr = FP.folha[FP.board]?.entries?.[empId]?.[key];
   if (arr?.[idx]) {
@@ -2364,13 +2424,25 @@ function fpGerar() {
   }
   if (!FP.folha[board]) FP.folha[board] = {};
   if (!FP.folha[board].entries) FP.folha[board].entries = {};
+  // Colaborador com folha individual encerrada (rescisão já fechada) fica de
+  // fora — é exatamente para isso que o encerramento individual existe.
+  const congelados = [];
   for (const emp of boardEmps(board)) {
+    if (entryEncerrada(emp.id, board)) {
+      congelados.push(emp.apelido || emp.name.split(' ')[0]);
+      continue;
+    }
     // "por fora" é decisão manual, não valor calculado — sobrevive ao Gerar
     const fora = FP.folha[board].entries[emp.id]?.fora;
     FP.folha[board].entries[emp.id] = applyFora(defaultEntry(emp), emp, fora);
   }
   FP.dirty = true;
   renderPanel();
+
+  if (congelados.length) {
+    toast(`Folha gerada. ${congelados.join(', ')} não ${congelados.length > 1 ? 'foram recalculados' : 'foi recalculado'} — folha individual encerrada.`, 'warn', 7000);
+    return;
+  }
 
   // Adiantamento cujo colaborador não existe mais no cadastro não entra em
   // nenhuma entry — avisa para não sumir em silêncio do desconto.
@@ -2388,6 +2460,10 @@ function fpGerarEmp(empId) {
   if (!emp) return;
   if (FP.folha[FP.board]?.encerrada) {
     toast('Folha encerrada — reabra antes de recalcular. O histórico não é alterado.', true, 6000);
+    return;
+  }
+  if (entryEncerrada(empId)) {
+    toast(`Folha de ${emp.apelido || emp.name.split(' ')[0]} encerrada — reabra antes de recalcular.`, true, 6000);
     return;
   }
   const hasData = !!(FP.folha[FP.board]?.entries?.[empId]);
@@ -2432,6 +2508,49 @@ async function fpEncerrar() {
   } catch(e) { toast('Erro: '+e.message, true); }
 }
 
+// Encerramento individual — o caso de uso é rescisão: fecha o acerto de quem
+// saiu antes da folha do resto da loja e protege os valores dali em diante.
+async function fpEncerrarEmp(empId) {
+  const board = FP.board;
+  const emp   = FP.employees.find(e => e.id === empId);
+  if (!emp) return;
+  if (folhaEncerrada(board)) {
+    toast('A folha da loja inteira está encerrada — use Reabrir Folha.', true, 6000);
+    return;
+  }
+  const nome = emp.apelido || emp.name.split(' ')[0];
+  const enc  = entryEncerrada(empId, board);
+
+  if (!enc) {
+    // Grava o que está na tela ANTES de congelar — é esse valor que fica.
+    if (FP.activeEmpId === empId) saveEntryFromForm(empId);
+    if (!FP.folha[board]?.entries?.[empId]) {
+      toast(`Gere a folha de ${nome} antes de encerrar.`, true, 5000);
+      return;
+    }
+    if (!confirm(`Encerrar a folha de ${nome}?
+
+Os valores ficam congelados: "Gerar Folha", mudança de config e recálculo de premiação deixam de mexer nele. Dá para reabrir depois.`)) return;
+  }
+
+  const prev = FP.folha[board].entries[empId];
+  FP.folha[board].entries[empId] = enc
+    ? { ...prev, encerrada: false, encerradaEm: null }
+    : { ...prev, encerrada: true,  encerradaEm: new Date().toISOString() };
+
+  try {
+    await apiFetch(`/api/folha/${FP.year}/${FP.month}`, 'POST', FP.folha);
+    FP.dirty = false;
+    renderStoreButtons(board);
+    renderEmpTabs(boardEmps(board));
+    selectEmp(empId);
+    toast(enc ? `Folha de ${nome} reaberta.` : `Folha de ${nome} encerrada ✓`);
+  } catch (e) {
+    FP.folha[board].entries[empId] = prev;   // desfaz se o servidor recusou
+    toast('Erro: ' + e.message, true);
+  }
+}
+
 async function fpExportar() {
   await fpSalvar();
   window.location.href = `/api/folha/${FP.year}/${FP.month}/export?board=${FP.board}`;
@@ -2448,10 +2567,11 @@ async function fpLogout() {
 }
 
 // ── Recibos (impressão) ────────────────────────────────────────────────────
-function fpImprimirRecibos() {
+function fpImprimirRecibos(soEmpId = null) {
   if (!FP.board) { toast('Selecione uma loja.', true); return; }
   if (FP.activeEmpId) saveEntryFromForm(FP.activeEmpId);
-  const emps = boardEmps(FP.board).filter(e => FP.folha[FP.board]?.entries?.[e.id]);
+  const emps = boardEmps(FP.board).filter(e =>
+    FP.folha[FP.board]?.entries?.[e.id] && (soEmpId == null || e.id === soEmpId));
   if (!emps.length) { toast('Gere a folha antes de imprimir.', true); return; }
   const mes    = MONTHS_PT[FP.month - 1].substring(0, 3) + '/' + String(FP.year).substring(2);
   const origin = window.location.origin;
@@ -2463,7 +2583,7 @@ function fpImprimirRecibos() {
   if (!win) { toast('Permita popups para imprimir.', true); return; }
   win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head>
 <meta charset="UTF-8">
-<title>Recibos — ${BOARDS_INFO[FP.board]?.label} — ${mes}</title>
+<title>${soEmpId ? 'Recibo — ' + (emps[0].apelido || emps[0].name) : 'Recibos — ' + BOARDS_INFO[FP.board]?.label} — ${mes}</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#000;background:#fff}
