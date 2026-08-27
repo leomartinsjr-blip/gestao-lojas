@@ -791,25 +791,15 @@ function _renderContagemAviso(c) {
 // estar em dia com o prazo e mesmo assim já ter furado o mínimo, e pode estar
 // atrasada sem faltar nada. Por isso é um banner separado, e não uma linha a
 // mais no de cima — cada um pede uma ação diferente.
+//
+// Só quem não é loja vê: embalagem se compra num pedido único, fechado pelo
+// admin a partir da contagem de todas as lojas. Avisar a loja para "pedir"
+// prometia uma ação que ela não tem — a reposição dela é transferência de
+// outra loja, que sai do mesmo relatório. O lembrete de CONTAR, esse sim,
+// continua na tela da loja, logo acima.
 function _renderPisoAviso(c) {
+  if (S.user?.board) return;
   const abrir = () => { _lojaAcaoTab = 'contagem'; openLojaAcaoModal(); };
-  const chip = i => `<span class="ct-banner-chip">${_escHtml(i.nome)}
-      <b class="ct-chip-neg">${i.contado}</b><span class="ct-chip-min">/ ${i.min}</span></span>`;
-
-  if (S.user?.board) {
-    const p = _embalPiso(S.user.board);
-    if (!p?.itens?.length) return;
-    const n = p.itens.length;
-    const el = document.createElement('div');
-    el.className = 'ct-banner ct-banner-piso';
-    el.innerHTML = `<div class="ct-banner-txt"><b>📦 Embalagem no mínimo — hora de pedir.</b>
-        Na contagem de <b>${_fmtData(p.data)}</b> ${n === 1 ? 'um item estava' : `${n} itens estavam`} abaixo do piso:
-        ${p.itens.map(chip).join('')}</div>
-      <button class="ct-banner-btn">Pedir agora</button>`;
-    el.querySelector('.ct-banner-btn').addEventListener('click', abrir);
-    c.appendChild(el);
-    return;
-  }
 
   const lojas = _embalStoreBoards()
     .map(b => [b, _embalPiso(b)])
