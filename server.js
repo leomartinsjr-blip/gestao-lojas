@@ -315,8 +315,13 @@ const EMBALAGENS_BASE = [
   { key: 'adesivo-presente', nome: 'Etiqueta Adesivo de Presente', porTicket: 0     },
 ];
 
-// Itens que só existem na Tommy (catálogo Antilhas)
+// Itens que não estão no catálogo base, por loja.
 const EMBALAGENS_EXTRA = {
+  // A Lez a Lez vende envelope institucional na mesma loja das sacolas.
+  lez: [
+    { key: 'envelope-papel-m', nome: 'Envelope M Institucional', porTicket: 0 },
+  ],
+  // Catálogo Antilhas
   tommy: [
     { key: 'caixa-p',          nome: 'Caixa P (215x175x80)',          porTicket: 0 },
     { key: 'caixa-m',          nome: 'Caixa M (340x285x80)',          porTicket: 0 },
@@ -360,12 +365,15 @@ const EMBALAGENS_FORNECEDOR = {
   minas:    EMBAL_LOTE_SURFERS,
   contagem: EMBAL_LOTE_SURFERS,
   estacao:  EMBAL_LOTE_SURFERS,
-  // Lez a Lez tem loja própria de material institucional: a sacola é vendida
-  // em pacote de 50, e é essa a quantidade mínima do site.
+  // Lez a Lez tem loja própria de material institucional. O módulo é a
+  // quantidade mínima do site, que varia bastante de item para item.
   lez: {
-    'sacola-papel-p': { modulo: 50 },
-    'sacola-papel-m': { modulo: 50 },
-    'sacola-papel-g': { modulo: 50 },
+    'sacola-papel-p':   { modulo: 50   },
+    'sacola-papel-m':   { modulo: 50   },
+    'sacola-papel-g':   { modulo: 50   },
+    'envelope-papel-m': { modulo: 30   },
+    'seda':             { modulo: 500  },
+    'adesivo-presente': { modulo: 1000 },
   },
   tommy: {
     'sacola-papel-p':   { cod: 'IF00031', modulo: 25  },
