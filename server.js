@@ -724,6 +724,24 @@ function sugestaoEmbalagem(item, contado) {
   return { alvo, falta, modulos, pecas: modulos * item.modulo, abaixoDoPiso: item.min > 0 && tem < item.min };
 }
 
+// Estoque de hoje não é o que a loja contou: entre a contagem e agora pode ter
+// chegado entrega. Somar isso é o que impede o pedido de comprar de novo o que
+// acabou de descer do caminhão — e o piso de acusar falta em loja abastecida.
+//
+// A contagem crua fica intacta no registro: medirConsumo() depende dela para
+// fechar `antes + recebido − agora`, e somar aqui também zeraria a conta.
+//
+// Entrega na data da própria contagem conta como já contada — mesma convenção
+// da janela de medirConsumo(), onde o dia da contagem anterior fica de fora.
+function entreguesDesde(db, board, dataCorte) {
+  const out = {};
+  for (const e of (db.entregasEmbalagem || [])) {
+    if (e.board !== board || !(e.data > dataCorte)) continue;
+    for (const [k, q] of Object.entries(e.itens || {})) out[k] = (out[k] || 0) + (Number(q) || 0);
+  }
+  return out;
+}
+
 function addDias(dateStr, n) {
   const d = new Date(`${dateStr}T12:00:00`);
   d.setDate(d.getDate() + n);
@@ -740,12 +758,14 @@ function itensAbaixoDoPiso(db, board, itens) {
     .filter(c => c.board === board)
     .sort((a, b) => (b.data || '').localeCompare(a.data || ''))[0];
   if (!ultima) return null;
+  const entregue = entreguesDesde(db, board, ultima.data);
   const abaixo = [];
   for (const it of (itens || embalagensDaLoja(db, board))) {
     const contado = ultima.contagem?.[it.key];
     if (contado == null) continue;
-    const s = sugestaoEmbalagem(it, contado);
-    if (s.abaixoDoPiso) abaixo.push({ key: it.key, nome: it.nome, contado, min: it.min, falta: s.falta });
+    const ent = entregue[it.key] || 0;
+    const s = sugestaoEmbalagem(it, contado + ent);
+    if (s.abaixoDoPiso) abaixo.push({ key: it.key, nome: it.nome, contado: contado + ent, entregue: ent, min: it.min, falta: s.falta });
   }
   return { data: ultima.data, itens: abaixo };
 }
@@ -3131,10 +3151,15 @@ function montarPedido(db) {
         const linhas = {};
         for (const board of g.boards) {
           const cont = ultimaPorLoja[board];
+          const entregue = cont ? entreguesDesde(db, board, cont.data) : {};
           for (const it of embalagensDaLoja(db, board)) {
-            const s = cont ? sugestaoEmbalagem(it, cont.contagem?.[it.key]) : { falta: 0, modulos: 0, pecas: 0 };
+            const contado = cont?.contagem?.[it.key] ?? null;
+            const ent     = entregue[it.key] || 0;
+            // O que a loja tem HOJE: o que contou mais o que chegou depois.
+            const estoque = contado != null ? contado + ent : null;
+            const s = cont ? sugestaoEmbalagem(it, estoque) : { falta: 0, modulos: 0, pecas: 0 };
             if (!linhas[it.key]) linhas[it.key] = { key: it.key, nome: it.nome, cod: it.cod, modulo: it.modulo, porLoja: {}, pecas: 0 };
-            linhas[it.key].porLoja[board] = { contado: cont?.contagem?.[it.key] ?? null, min: it.min, ...s };
+            linhas[it.key].porLoja[board] = { contado, entregue: ent, estoque, min: it.min, ...s };
             // Soma a falta CRUA, em peças. Somar a quantidade já arredondada de
             // cada loja arredondaria uma vez por loja e inflaria o pedido.
             linhas[it.key].pecas += s.falta;
@@ -3159,8 +3184,8 @@ function montarPedido(db) {
           const sobra = [], falta = [];
           for (const b of g.boards) {
             const p = l.porLoja[b];
-            if (!p || p.contado == null) continue;
-            const dif = p.contado - p.alvo;
+            if (!p || p.estoque == null) continue;
+            const dif = p.estoque - p.alvo;
             if (dif > 0) sobra.push({ board: b, qtd: dif });
             else if (p.falta > 0) falta.push({ board: b, qtd: p.falta });
           }

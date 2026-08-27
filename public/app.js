@@ -10964,7 +10964,7 @@ async function _renderPedidoConsolidado(el, usarCache) {
               <th rowspan="2">Necessidade</th><th rowspan="2">Pedir</th>
             </tr>
             <tr>
-              ${lojas.map(() => `<th class="ct-th-sub ct-grp-start" title="O que a loja contou na última contagem">Tem</th><th class="ct-th-sub">Falta</th>`).join('')}
+              ${lojas.map(() => `<th class="ct-th-sub ct-grp-start" title="O que a loja tem hoje: a última contagem mais as entregas lançadas depois dela">Tem</th><th class="ct-th-sub">Falta</th>`).join('')}
             </tr>
           </thead>
           <tbody>
@@ -10973,10 +10973,13 @@ async function _renderPedidoConsolidado(el, usarCache) {
               <td class="ct-num ct-cod-cell">${it.cod ? _escHtml(it.cod) : '—'}</td>
               ${lojas.map(b => {
                 const l = it.porLoja[b];
-                // Tem = o que a loja contou · Falta = o que esse estoque deixa faltando p/ o alvo
-                const tem = l && l.contado != null ? l.contado : null;
+                // Tem = o que a loja tem HOJE (contagem + entregas lançadas depois dela)
+                // Falta = o que esse estoque deixa faltando p/ o alvo
+                const tem = l && l.estoque != null ? l.estoque : null;
                 const ent = it.entrega?.[b];
-                return `<td class="ct-num ct-tem ct-grp-start"${tem != null && l.alvo ? ` title="Alvo ${l.alvo} pç"` : ''}>${tem != null ? tem : '—'}</td>`
+                const quando = _fmtData(g.contagens?.[b]);
+                const titulo = tem == null ? '' : ` title="Contou ${l.contado} em ${quando}${l.entregue ? ` e recebeu ${l.entregue} depois` : ''}${l.alvo ? ` · alvo ${l.alvo} pç` : ''}"`;
+                return `<td class="ct-num ct-tem ct-grp-start"${titulo}>${tem != null ? tem : '—'}${l?.entregue ? `<span class="ct-sobra">+${l.entregue}</span>` : ''}</td>`
                      + `<td class="ct-num ct-falta-col"${ent != null ? ` title="Entregar ${ent} pç nesta loja — o pedido é rateado em caixa fechada"` : ''}>${l && l.falta > 0 ? `${l.falta}` : '—'}</td>`;
               }).join('')}
               <td class="ct-num"><b>${it.pecas}</b></td>
