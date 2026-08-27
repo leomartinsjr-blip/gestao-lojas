@@ -3234,6 +3234,26 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .req-del-btn { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: .8rem; padding: .2rem .5rem; border-radius: 4px; cursor: pointer; }
 .req-del-btn:hover { border-color: #F85149; color: #F85149; }
 .req-embal-sub { font-size: .68rem; color: var(--muted); text-align: center; margin-top: -.3rem; }
+/* Recebimento de embalagem: quantidade e data lançadas pelo admin */
+.req-rec-mark { background: rgba(63,185,80,.12); color: #7EE787; font-size: .68rem; padding: .05rem .3rem; border-radius: 3px; }
+.req-rec-mark.ok { background: rgba(63,185,80,.22); }
+.req-rec-list { display: flex; flex-direction: column; gap: .25rem; margin: .4rem 0; }
+.req-rec-line { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; font-size: .74rem; color: var(--muted); border-left: 2px solid #3FB950; padding: .15rem 0 .15rem .5rem; }
+.req-rec-date { color: #7EE787; font-weight: 700; }
+.req-rec-itens { color: var(--text); }
+.req-rec-por { opacity: .7; margin-left: auto; }
+.req-rec-del { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: .75rem; padding: 0 .2rem; }
+.req-rec-del:hover { color: #F85149; }
+.req-rec-form { border: 1px solid rgba(63,185,80,.35); background: rgba(63,185,80,.05); border-radius: 7px; padding: .7rem .85rem; margin: .5rem 0; }
+.req-rec-form-hdr { font-size: .76rem; font-weight: 700; color: #96D9A2; margin-bottom: .55rem; }
+.req-rec-data { display: flex; align-items: center; gap: .5rem; font-size: .76rem; color: var(--muted); margin-bottom: .6rem; }
+.req-rec-data input { background: var(--card); border: 1px solid var(--border); color: var(--text); border-radius: 5px; padding: .25rem .45rem; font-size: .78rem; }
+.req-rec-grid { display: flex; flex-direction: column; gap: .35rem; }
+.req-rec-row { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.req-rec-nome { font-size: .78rem; font-weight: 600; min-width: 9rem; }
+.req-rec-ped { font-size: .7rem; color: var(--muted); margin-right: auto; }
+.req-rec-qtd { width: 6rem; background: var(--card); border: 1px solid var(--border); color: var(--text); border-radius: 5px; padding: .25rem .45rem; font-size: .8rem; text-align: right; }
+.req-rec-actions { display: flex; align-items: center; gap: .6rem; margin-top: .7rem; }
 .req-embal-mod { font-size: .68rem; font-weight: 700; color: #58A6FF; min-height: .9rem; }
 
 /* ── Contagem de embalagens ─────────────────────────────────────────────── */

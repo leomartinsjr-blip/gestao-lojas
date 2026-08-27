@@ -519,17 +519,30 @@ function medirConsumo(db, board, atual, anterior) {
   const dias = Math.round((new Date(`${atual.data}T12:00:00`) - new Date(`${anterior.data}T12:00:00`)) / 86400000);
   if (dias < 5 || dias > 90) return null;
 
-  // O que chegou na loja entre as duas contagens (requisição já recebida)
+  // O que chegou na loja entre as duas contagens. Vale o recebimento lançado
+  // pelo admin — quantidade e data reais, que é o que existe de fato quando a
+  // entrega vem parcelada. Sem lançamento nenhum, cai no atalho antigo: a
+  // requisição inteira, na data em que ela virou "recebido".
   const recebido = {};
   const porNome = Object.fromEntries(embalagensDaLoja(db, board, atual.data).map(i => [i.nome, i.key]));
-  for (const r of (db.requisicoes || [])) {
-    if (r.board !== board || r.status !== 'recebido') continue;
-    const quando = (r.updatedAt || r.createdAt || '').slice(0, 10);
-    if (quando <= anterior.data || quando > atual.data) continue;
-    for (const [nome, qtd] of Object.entries(r.embalagens || {})) {
+  const somar = (qtds) => {
+    for (const [nome, qtd] of Object.entries(qtds || {})) {
       const k = porNome[nome];
       if (k) recebido[k] = (recebido[k] || 0) + (Number(qtd) || 0);
     }
+  };
+  for (const r of (db.requisicoes || [])) {
+    if (r.board !== board) continue;
+    if (r.recebimentos?.length) {
+      for (const rc of r.recebimentos) {
+        if (rc.data > anterior.data && rc.data <= atual.data) somar(rc.qtd);
+      }
+      continue;
+    }
+    if (r.status !== 'recebido') continue;
+    const quando = (r.updatedAt || r.createdAt || '').slice(0, 10);
+    if (quando <= anterior.data || quando > atual.data) continue;
+    somar(r.embalagens);
   }
 
   // Tickets do período
@@ -2845,6 +2858,104 @@ app.patch('/api/requisicoes/:id', requireAdmin, async (req, res) => {
     item.updatedBy = req.session.user.label || req.session.user.username;
     await writeDB(db);
     res.json(item);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Soma de tudo que já foi lançado como recebido nesta requisição, por item.
+function totalRecebido(item) {
+  const t = {};
+  for (const rc of (item.recebimentos || []))
+    for (const [nome, q] of Object.entries(rc.qtd || {}))
+      t[nome] = (t[nome] || 0) + (Number(q) || 0);
+  return t;
+}
+
+// Já chegou tudo o que foi pedido?
+function requisicaoCompleta(item) {
+  const total = totalRecebido(item);
+  const pedido = Object.entries(item.embalagens || {});
+  return pedido.length > 0 && pedido.every(([nome, ped]) => (total[nome] || 0) >= (Number(ped) || 0));
+}
+
+// ── POST /api/requisicoes/:id/recebimento ─────────────────────────────────
+// A entrega de embalagem vem parcelada e nem sempre bate com o que foi pedido
+// (o fornecedor tem 15% de tolerância). Marcar a requisição inteira como
+// "recebido" jogaria a quantidade PEDIDA na medição de consumo, na data do
+// clique. Aqui o admin lança o que chegou de verdade e quando chegou — é isso
+// que medirConsumo() usa para fechar o ciclo.
+app.post('/api/requisicoes/:id/recebimento', requireAdmin, async (req, res) => {
+  try {
+    const id   = parseInt(req.params.id);
+    const db   = await readDB();
+    const item = (db.requisicoes || []).find(x => x.id === id);
+    if (!item) return res.status(404).json({ error: 'Requisição não encontrada' });
+
+    const data = String(req.body.data || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return res.status(400).json({ error: 'Data inválida' });
+    if (data > todayBRT()) return res.status(400).json({ error: 'Data de recebimento não pode ser futura' });
+    // Não trava quem lança atrasado — a entrega parcelada às vezes só é
+    // registrada dias depois. Barra só o erro de digitação de ano.
+    const limite = new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10);
+    if (data < limite) return res.status(400).json({ error: 'Recebimento com mais de 180 dias — confira a data' });
+
+    // Só itens da própria requisição — o recebimento confere uma entrega, não
+    // inventa item novo. Pode passar do pedido: a tolerância é de 15%.
+    const qtd = {};
+    for (const [nome, v] of Object.entries(req.body.qtd || {})) {
+      if (!(nome in (item.embalagens || {}))) continue;
+      const n = Math.round(Number(v) || 0);
+      if (n > 0) qtd[nome] = n;
+    }
+    if (!Object.keys(qtd).length) return res.status(400).json({ error: 'Informe ao menos um item recebido' });
+
+    if (!item.recebimentos) item.recebimentos = [];
+    item.recebimentos.push({
+      data, qtd,
+      por: req.session.user.label || req.session.user.username,
+      em:  new Date().toISOString(),
+    });
+
+    // Fecha sozinha quando tudo que foi pedido já chegou; faltando parcela, a
+    // requisição continua aberta para receber o resto.
+    const completa = requisicaoCompleta(item);
+    if (completa) item.status = 'recebido';
+    item.updatedAt = new Date().toISOString();
+    item.updatedBy = req.session.user.label || req.session.user.username;
+    await writeDB(db);
+
+    // A medição de consumo roda no instante em que a loja lança a contagem. Se
+    // já existe contagem nessa data ou depois, aquele ciclo fechou sem esta
+    // entrada e não é refeito — o admin precisa saber, senão o consumo medido
+    // fica errado em silêncio.
+    const jaContado = (db.contagensEmbalagem || [])
+      .some(c => c.board === item.board && (c.data || '') >= data);
+    res.json({
+      item, completa,
+      aviso: jaContado
+        ? 'Já existe contagem desta loja nessa data ou depois. O consumo daquele ciclo foi medido sem este recebimento e não será refeito — lance o recebimento antes da contagem.'
+        : null,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── DELETE /api/requisicoes/:id/recebimento/:idx ──────────────────────────
+// Lançamento manual erra; sem desfazer, o erro vira consumo medido errado.
+app.delete('/api/requisicoes/:id/recebimento/:idx', requireAdmin, async (req, res) => {
+  try {
+    const id   = parseInt(req.params.id);
+    const idx  = parseInt(req.params.idx);
+    const db   = await readDB();
+    const item = (db.requisicoes || []).find(x => x.id === id);
+    if (!item) return res.status(404).json({ error: 'Requisição não encontrada' });
+    if (!Array.isArray(item.recebimentos) || !item.recebimentos[idx])
+      return res.status(404).json({ error: 'Recebimento não encontrado' });
+    item.recebimentos.splice(idx, 1);
+    const completa = requisicaoCompleta(item);
+    if (!completa && item.status === 'recebido') item.status = 'enviado';
+    item.updatedAt = new Date().toISOString();
+    item.updatedBy = req.session.user.label || req.session.user.username;
+    await writeDB(db);
+    res.json({ item, completa });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

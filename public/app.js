@@ -10540,6 +10540,21 @@ const REQ_STATUS = {
   'recebido':     { label: 'Recebido',     color: '#3FB950' },
 };
 
+// Data de hoje no fuso da loja. toISOString() é UTC e depois das 21h já virou o
+// dia seguinte — o servidor recusa recebimento com data futura.
+function _hojeBRT() {
+  return new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+}
+
+// Quanto já foi lançado como recebido nesta requisição, item a item.
+function _reqRecebidoTotal(req) {
+  const t = {};
+  for (const rc of (req.recebimentos || []))
+    for (const [nome, q] of Object.entries(rc.qtd || {}))
+      t[nome] = (t[nome] || 0) + (Number(q) || 0);
+  return t;
+}
+
 function _reqStatusBadge(status) {
   const s = REQ_STATUS[status] || REQ_STATUS['pendente'];
   return `<span class="req-status-badge" style="background:${s.color}22;color:${s.color};border:1px solid ${s.color}44">${s.label}</span>`;
@@ -11186,6 +11201,7 @@ function _renderReqLojaHistory(body, board, onBack) {
 function _renderReqAdminView(body) {
   let filterStatus = 'pendente';
   let filterBoard  = '';
+  let openRec      = null;   // id da requisição com o formulário de recebimento aberto
   const STORE_BOARDS = ['delrey','minas','contagem','estacao','tommy','lez','site'];
   const NEXT_STATUS = {
     'pendente':     [['em-separacao','Em Separação'],['enviado','Enviado']],
@@ -11218,17 +11234,51 @@ function _renderReqAdminView(body) {
               const sc = BOARDS[req.board]?.color || '#8B949E';
               const sl = BOARDS[req.board]?.label  || req.board;
               const dt = new Date(req.createdAt).toLocaleDateString('pt-BR');
+              const recTot = _reqRecebidoTotal(req);
               // Item com módulo mostra a caixa fechada (é assim que o pedido sai
               // pro fornecedor); os demais continuam em peças.
               const embalHtml = Object.entries(req.embalagens||{}).map(([k,v]) => {
                 const m = (req.embalagensModulos||{})[k];
                 const det = m ? ` <span style="opacity:.65">(${m.modulos} × ${m.modulo}${m.cod ? ` · ${_escHtml(m.cod)}` : ''})</span>` : '';
-                return `<span class="req-embal-tag">${_escHtml(k)}: <b>${v}</b>${det}</span>`;
+                const r = recTot[k] || 0;
+                const rec = r ? ` <span class="req-rec-mark${r >= v ? ' ok' : ''}">recebido ${r}</span>` : '';
+                return `<span class="req-embal-tag">${_escHtml(k)}: <b>${v}</b>${det}${rec}</span>`;
               }).join('');
               const matHtml = (req.materiais||[]).map(m =>
                 `<span class="req-mat-tag">${m}</span>`).join('');
-              const actions = (NEXT_STATUS[req.status]||[]).map(([s,l]) =>
-                `<button class="req-action-btn" data-id="${req.id}" data-status="${s}">${l}</button>`).join('');
+              // Embalagem não fecha no botão: o que entra na medição de consumo é a
+              // quantidade que chegou de verdade, na data em que chegou. Por isso a
+              // requisição de embalagem troca o "Recebido" pelo lançamento da entrega.
+              const temEmbal = !!Object.keys(req.embalagens||{}).length;
+              const actions = (NEXT_STATUS[req.status]||[])
+                .filter(([s]) => !(temEmbal && s === 'recebido'))
+                .map(([s,l]) => `<button class="req-action-btn" data-id="${req.id}" data-status="${s}">${l}</button>`)
+                .join('')
+                + (temEmbal && req.status !== 'recebido'
+                    ? `<button class="req-action-btn req-rec-open" data-id="${req.id}">Receber</button>` : '');
+              const recHtml = (req.recebimentos||[]).map((rc, i) => `<div class="req-rec-line">
+                  <span class="req-rec-date">${(rc.data||'').split('-').reverse().join('/')}</span>
+                  <span class="req-rec-itens">${Object.entries(rc.qtd||{}).map(([n,q]) => `${_escHtml(n)} <b>${q}</b>`).join(' · ')}</span>
+                  <span class="req-rec-por">${_escHtml(rc.por||'—')}</span>
+                  <button class="req-rec-del" data-id="${req.id}" data-idx="${i}" title="Desfazer este lançamento">✕</button>
+                </div>`).join('');
+              const recForm = openRec !== req.id ? '' : `<div class="req-rec-form">
+                <div class="req-rec-form-hdr">Lance o que chegou de verdade — é isso que vira consumo medido</div>
+                <label class="req-rec-data">Data da entrega
+                  <input type="date" class="req-rec-input-data" value="${_hojeBRT()}" max="${_hojeBRT()}">
+                </label>
+                <div class="req-rec-grid">
+                  ${Object.entries(req.embalagens||{}).map(([k,v]) => `<div class="req-rec-row">
+                    <span class="req-rec-nome">${_escHtml(k)}</span>
+                    <span class="req-rec-ped">pedido ${v}${recTot[k] ? ` · já lançado ${recTot[k]}` : ''}</span>
+                    <input type="number" class="req-rec-qtd" data-nome="${_escHtml(k)}" min="0" max="999999" value="${Math.max(0, v - (recTot[k]||0))}">
+                  </div>`).join('')}
+                </div>
+                <div class="req-rec-actions">
+                  <button class="req-action-btn req-rec-save" data-id="${req.id}">Confirmar recebimento</button>
+                  <button class="req-link-btn req-rec-cancel">Cancelar</button>
+                </div>
+              </div>`;
               return `<div class="req-admin-item">
                 <div class="req-admin-item-hdr">
                   <div style="display:flex;align-items:center;gap:.6rem;flex-wrap:wrap">
@@ -11244,6 +11294,8 @@ function _renderReqAdminView(body) {
                 ${embalHtml ? `<div class="req-admin-tags">${embalHtml}</div>` : ''}
                 ${matHtml   ? `<div class="req-admin-tags req-mat-wrap">${matHtml}</div>` : ''}
                 ${req.observacao ? `<div class="req-admin-obs">"${_escHtml(req.observacao)}"</div>` : ''}
+                ${recHtml ? `<div class="req-rec-list">${recHtml}</div>` : ''}
+                ${recForm}
                 ${req.updatedAt ? `<div class="req-admin-upd">Atualizado ${new Date(req.updatedAt).toLocaleDateString('pt-BR')} por ${_escHtml(req.updatedBy||'—')}</div>` : ''}
               </div>`;
             }).join('')}
@@ -11266,6 +11318,50 @@ function _renderReqAdminView(body) {
         } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
       });
     });
+    body.querySelectorAll('.req-rec-open').forEach(btn =>
+      btn.addEventListener('click', () => { openRec = parseInt(btn.dataset.id); render(); }));
+    body.querySelectorAll('.req-rec-cancel').forEach(btn =>
+      btn.addEventListener('click', () => { openRec = null; render(); }));
+
+    body.querySelectorAll('.req-rec-save').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id   = parseInt(btn.dataset.id);
+        const card = btn.closest('.req-admin-item');
+        const data = card.querySelector('.req-rec-input-data')?.value;
+        const qtd  = {};
+        card.querySelectorAll('.req-rec-qtd').forEach(inp => {
+          const q = parseInt(inp.value) || 0;
+          if (q > 0) qtd[inp.dataset.nome] = q;
+        });
+        if (!data) { toast('Informe a data da entrega', true); return; }
+        if (!Object.keys(qtd).length) { toast('Informe o que chegou', true); return; }
+        btn.disabled = true;
+        try {
+          const r = await apiFetch('POST', `/api/requisicoes/${id}/recebimento`, { data, qtd });
+          const i = S.requisicoes.findIndex(x => x.id === id);
+          if (i >= 0) S.requisicoes[i] = r.item;
+          openRec = null;
+          toast(r.completa ? 'Recebimento lançado ✓ requisição fechada' : 'Recebimento parcial lançado ✓');
+          if (r.aviso) alert(r.aviso);
+          _updateLojaAcaoBadge(); render();
+        } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
+      });
+    });
+
+    body.querySelectorAll('.req-rec-del').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Desfazer este lançamento de recebimento?')) return;
+        const id = parseInt(btn.dataset.id);
+        btn.disabled = true;
+        try {
+          const r = await apiFetch('DELETE', `/api/requisicoes/${id}/recebimento/${btn.dataset.idx}`);
+          const i = S.requisicoes.findIndex(x => x.id === id);
+          if (i >= 0) S.requisicoes[i] = r.item;
+          _updateLojaAcaoBadge(); render();
+        } catch(e) { toast('Erro: '+e.message, true); btn.disabled = false; }
+      });
+    });
+
     body.querySelectorAll('.req-del-btn').forEach(btn => {
       btn.addEventListener('click', async () => {
         if (!confirm('Excluir esta requisição?')) return;
