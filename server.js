@@ -597,6 +597,18 @@ function fatorConsumo(db, board, pa) {
 //
 // Separar os dois resolve o caso de novembro: a loja pode estar acima do piso
 // e mesmo assim precisar de um pedido grande, porque dezembro está chegando.
+// Peças por módulo. O que o admin cadastrou vence — mas só quando é de fato um
+// lote (>1). A tela de mínimos sempre gravou 1 nas lojas que ainda não tinham
+// catálogo do fornecedor, e esse 1 antigo ficaria por cima do lote quando o
+// catálogo chegasse: a loja com piso já cadastrado continuaria pedindo em peça
+// avulsa, e a que nunca foi salva pediria em caixa fechada. Mesmo item, mesmo
+// fornecedor, número diferente conforme alguém tivesse clicado em Salvar.
+function moduloEmbalagem(doAdmin, doFornecedor) {
+  const m = Math.round(Number(doAdmin) || 0);
+  if (m > 1) return m;
+  return Math.max(1, Math.round(Number(doFornecedor) || 0));
+}
+
 function embalagensDaLoja(db, board, hoje, mesesOverride) {
   const cfg   = (db.embalagemConfig || {})[board] || {};
   const pad   = EMBALAGENS_FORNECEDOR[board] || {};
@@ -634,7 +646,7 @@ function embalagensDaLoja(db, board, hoje, mesesOverride) {
       cobertura:   ativo ? Math.ceil(prev * f) + (manual > 0 ? manual : (sugerido || 0)) : null,
       meses,
       porTicket:   f,
-      modulo: Math.max(1, Number(cfg[it.key]?.modulo) || pad[it.key]?.modulo || 1),
+      modulo: moduloEmbalagem(cfg[it.key]?.modulo, pad[it.key]?.modulo),
     };
   });
 }
