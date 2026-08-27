@@ -360,6 +360,13 @@ const EMBALAGENS_FORNECEDOR = {
   minas:    EMBAL_LOTE_SURFERS,
   contagem: EMBAL_LOTE_SURFERS,
   estacao:  EMBAL_LOTE_SURFERS,
+  // Lez a Lez tem loja própria de material institucional: a sacola é vendida
+  // em pacote de 50, e é essa a quantidade mínima do site.
+  lez: {
+    'sacola-papel-p': { modulo: 50 },
+    'sacola-papel-m': { modulo: 50 },
+    'sacola-papel-g': { modulo: 50 },
+  },
   tommy: {
     'sacola-papel-p':   { cod: 'IF00031', modulo: 25  },
     'sacola-papel-m':   { cod: 'IF00228', modulo: 25  },
