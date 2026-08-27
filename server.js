@@ -531,6 +531,17 @@ function medirConsumo(db, board, atual, anterior) {
       if (k) recebido[k] = (recebido[k] || 0) + (Number(qtd) || 0);
     }
   };
+  // Entrega lançada direto na tela de embalagens: é o caminho normal do
+  // pedido único das Surfers, que chega parcelado na sala 505 e é rateado
+  // entre as lojas sem passar por requisição nenhuma. Guarda a chave do item,
+  // não o nome.
+  for (const e of (db.entregasEmbalagem || [])) {
+    if (e.board !== board) continue;
+    if (!(e.data > anterior.data && e.data <= atual.data)) continue;
+    for (const [k, q] of Object.entries(e.itens || {})) {
+      recebido[k] = (recebido[k] || 0) + (Number(q) || 0);
+    }
+  }
   for (const r of (db.requisicoes || [])) {
     if (r.board !== board) continue;
     if (r.recebimentos?.length) {
@@ -3167,9 +3178,27 @@ function montarPedido(db) {
           }
         }
   
+        // Entregas já lançadas, agrupadas pelo lote em que foram registradas —
+        // um lote é uma chegada só, rateada entre as lojas do grupo.
+        const lotes = {};
+        for (const e of (db.entregasEmbalagem || [])) {
+          if (!g.boards.includes(e.board)) continue;
+          const k = e.lote || `av-${e.id}`;
+          if (!lotes[k]) lotes[k] = { lote: k, data: e.data, obs: e.obs || '', por: e.createdBy || '', porLoja: {} };
+          if (e.data < lotes[k].data) lotes[k].data = e.data;
+          lotes[k].porLoja[e.board] = e.itens || {};
+        }
+        const entregas = Object.values(lotes)
+          .sort((a, b) => b.data.localeCompare(a.data))
+          .slice(0, 12);
+
         return {
           key: g.key, label: g.label, boards: g.boards,
           itens: itens.filter(l => l.pecas > 0),
+          // catálogo cheio do grupo: a entrega pode trazer item que não estava
+          // faltando, e o formulário precisa da linha mesmo assim
+          catalogo: Object.values(linhas).map(l => ({ key: l.key, nome: l.nome, cod: l.cod, modulo: l.modulo })),
+          entregas,
           // O "mínimo do centro" é só a soma do que as lojas precisam ter.
           centro: Object.fromEntries(Object.values(linhas).map(l => [l.key, {
             nome: l.nome,
@@ -3182,6 +3211,77 @@ function montarPedido(db) {
         };
       });
 }
+
+// ── POST /api/embalagens/entrega ──────────────────────────────────────────
+// A entrega das Surfers não nasce de requisição: é o pedido anual chegando
+// parcelado na sala 505 e sendo rateado entre as lojas. Lançar aqui é o que
+// fecha a conta de medirConsumo() — sem isso a contagem seguinte dá consumo
+// negativo e o ciclo é descartado.
+app.post('/api/embalagens/entrega', requireAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+
+    const data = String(req.body.data || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return res.status(400).json({ error: 'Data inválida' });
+    if (data > todayBRT()) return res.status(400).json({ error: 'Data de entrega não pode ser futura' });
+    const limite = new Date(Date.now() - 180 * 86400000).toISOString().slice(0, 10);
+    if (data < limite) return res.status(400).json({ error: 'Entrega com mais de 180 dias — confira a data' });
+
+    // Um lote = uma chegada. Guarda um registro por loja para a medição de
+    // consumo ser por loja, mas dá para desfazer a chegada inteira de uma vez.
+    const lote = `L${Date.now()}`;
+    const criados = [];
+    if (!db.entregasEmbalagem) db.entregasEmbalagem = [];
+    for (const [board, itens] of Object.entries(req.body.porLoja || {})) {
+      if (!EMBAL_STORE_BOARDS.includes(board)) continue;
+      const validas = new Set(embalagensDaLoja(db, board, data).map(i => i.key));
+      const limpo = {};
+      for (const [k, v] of Object.entries(itens || {})) {
+        if (!validas.has(k)) continue;
+        const n = Math.round(Number(v) || 0);
+        if (n > 0) limpo[k] = n;
+      }
+      if (!Object.keys(limpo).length) continue;
+      const item = {
+        id: nextId(db), lote, board, data, itens: limpo,
+        obs: String(req.body.obs || '').trim().slice(0, 300),
+        createdAt: new Date().toISOString(),
+        createdBy: req.session.user.label || req.session.user.username,
+      };
+      db.entregasEmbalagem.push(item);
+      criados.push(item);
+    }
+    if (!criados.length) return res.status(400).json({ error: 'Informe o que chegou em ao menos uma loja' });
+    await writeDB(db);
+
+    // A medição roda no instante da contagem e não é refeita: se a loja já
+    // contou nessa data ou depois, aquele ciclo fechou sem esta entrega.
+    const tarde = criados
+      .filter(c => (db.contagensEmbalagem || []).some(x => x.board === c.board && (x.data || '') >= data))
+      .map(c => c.board);
+    res.json({
+      lote, criados, grupos: montarPedido(db),
+      aviso: tarde.length
+        ? `Estas lojas já contaram nessa data ou depois: ${tarde.join(', ')}. O consumo daquele ciclo foi medido sem esta entrega e não será refeito — lance a entrega antes da contagem.`
+        : null,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── DELETE /api/embalagens/entrega/:lote ──────────────────────────────────
+// Desfaz a chegada inteira: o lançamento é manual e o erro de digitação vira
+// consumo medido errado.
+app.delete('/api/embalagens/entrega/:lote', requireAdmin, async (req, res) => {
+  try {
+    const lote = String(req.params.lote);
+    const db = await readDB();
+    const antes = (db.entregasEmbalagem || []).length;
+    db.entregasEmbalagem = (db.entregasEmbalagem || []).filter(e => (e.lote || `av-${e.id}`) !== lote);
+    if (db.entregasEmbalagem.length === antes) return res.status(404).json({ error: 'Entrega não encontrada' });
+    await writeDB(db);
+    res.json({ ok: true, grupos: montarPedido(db) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // ── GET /api/embalagens/pedido ────────────────────────────────────────────
 // Pedido consolidado por grupo de compra. Só admin — é quem fecha com o fornecedor.

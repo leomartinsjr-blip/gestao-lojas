@@ -10855,27 +10855,105 @@ function _renderContagemRevisao(body, board, contagemId, faltantes) {
   });
 }
 
+// Formulário de entrega. O rateio que o próprio pedido calculou já vem
+// preenchido — é o que se espera que chegue em cada loja —, mas quem manda é
+// o que desceu do caminhão: o número digitado aqui é o que vira consumo
+// medido na contagem seguinte.
+function _entregaFormHtml(g) {
+  if (_entregaGrupo !== g.key) return '';
+  const hoje = _hojeBRT();
+  const sug = {};
+  for (const it of (g.itens || [])) sug[it.key] = it.entrega || {};
+  const cat = g.catalogo?.length ? g.catalogo : (g.itens || []);
+  return `<div class="ct-entrega-form">
+    <div class="ct-ent-hdr">📥 O que chegou de verdade — em peças, por loja</div>
+    <div class="ct-ent-linha1">
+      <label class="ct-ent-lbl">Data da entrega
+        <input type="date" class="ct-ent-data" value="${hoje}" max="${hoje}">
+      </label>
+      <label class="ct-ent-lbl ct-ent-obs-wrap">Observação
+        <input type="text" class="ct-ent-obs" maxlength="300" placeholder="Ex: 2ª parcela do pedido de setembro, NF 1234">
+      </label>
+    </div>
+    <div class="ct-table-wrap">
+      <table class="ct-table">
+        <thead><tr><th>Item</th>${g.boards.map(b => `<th class="ct-th-loja">
+          <span class="dash-store-dot" style="background:${BOARDS[b]?.color || '#8B949E'}"></span>${_escHtml(BOARDS[b]?.label || b)}</th>`).join('')}</tr></thead>
+        <tbody>
+          ${cat.map(it => `<tr>
+            <td class="ct-nome">${_escHtml(it.nome)}${it.cod ? `<span class="ct-cod">${_escHtml(it.cod)}</span>` : ''}</td>
+            ${g.boards.map(b => `<td class="ct-num"><input type="number" class="ct-input ct-ent-qtd" data-board="${b}" data-key="${it.key}" min="0" max="999999" value="${sug[it.key]?.[b] || 0}"></td>`).join('')}
+          </tr>`).join('')}
+        </tbody>
+        <tfoot><tr><td class="ct-nome">Total por loja</td>
+          ${g.boards.map(b => `<td class="ct-num ct-ent-total" data-board="${b}">—</td>`).join('')}
+        </tr></tfoot>
+      </table>
+    </div>
+    <div class="ct-ent-acoes">
+      <button class="req-action-btn ct-entrega-salvar">Confirmar entrega</button>
+      <button class="req-link-btn ct-entrega-cancel">Cancelar</button>
+    </div>
+  </div>`;
+}
+
+// Chegadas já lançadas. Cada linha é um lote — uma entrega só, rateada entre
+// as lojas do grupo — e o ✕ desfaz a chegada inteira.
+function _entregaListaHtml(g) {
+  if (!g.entregas?.length) return '';
+  const nomes = Object.fromEntries((g.catalogo || []).map(i => [i.key, i.nome]));
+  return `<div class="ct-ent-lista">
+    <div class="ct-ent-lista-hdr">Entregas lançadas</div>
+    ${g.entregas.map(e => `<div class="ct-ent-lote">
+      <span class="ct-ent-data-tag">${(e.data || '').split('-').reverse().join('/')}</span>
+      <div class="ct-ent-lote-corpo">
+        ${Object.entries(e.porLoja || {}).map(([b, itens]) => `<span class="ct-banner-chip" title="${_escHtml(Object.entries(itens).map(([k, q]) => `${nomes[k] || k}: ${q}`).join(' · '))}">
+          <span class="dash-store-dot" style="background:${BOARDS[b]?.color || '#8B949E'}"></span>${_escHtml(BOARDS[b]?.label || b)}
+          <b>${Object.values(itens).reduce((s, q) => s + (Number(q) || 0), 0)}</b><span class="ct-chip-min">pç</span></span>`).join('')}
+        ${e.obs ? `<span class="ct-ent-obs-txt">"${_escHtml(e.obs)}"</span>` : ''}
+      </div>
+      <span class="ct-ent-por">${_escHtml(e.por || '—')}</span>
+      <button class="ct-ent-del" data-lote="${_escHtml(e.lote)}" title="Desfazer esta entrega">✕</button>
+    </div>`).join('')}
+  </div>`;
+}
+
+// Estado da tela do pedido. O cache existe só para abrir e fechar o
+// formulário de entrega sem refazer a chamada; quem entra na tela recarrega.
+let _pedidoData    = null;
+let _entregaGrupo  = null;   // key do grupo com o formulário de entrega aberto
+
 // Soma a falta da última contagem de cada loja do grupo e fecha o módulo no
 // total do grupo — não loja a loja, senão o arredondamento pra cima repete.
-async function _renderPedidoConsolidado(el) {
+async function _renderPedidoConsolidado(el, usarCache) {
   if (!el) return;
-  let data;
-  try { data = await apiFetch('GET', '/api/embalagens/pedido'); }
-  catch (e) { el.textContent = 'Erro ao montar o pedido: ' + e.message; return; }
+  if (!usarCache || !_pedidoData) {
+    try { _pedidoData = await apiFetch('GET', '/api/embalagens/pedido'); }
+    catch (e) { el.textContent = 'Erro ao montar o pedido: ' + e.message; return; }
+    _entregaGrupo = null;
+  }
+  const data = _pedidoData;
+  const recarregar = () => _renderPedidoConsolidado(el, true);
 
   const html = (data.grupos || []).map(g => {
+    // A entrega não depende de haver pedido em aberto: o pedido é anual e
+    // chega parcelado meses depois, quando a tela já não mostra falta nenhuma.
+    const cabeca = `<div class="ct-ped-hdr">${_escHtml(g.label)}
+        ${g.semContagem.length ? `<span class="ct-ped-warn">⚠ sem contagem: ${g.semContagem.map(b => _escHtml(BOARDS[b]?.label || b)).join(', ')}</span>` : ''}
+        <button class="ct-entrega-btn" data-grupo="${g.key}">📥 Registrar entrega</button>
+      </div>`;
+
     if (!g.itens.length) {
       const pend = g.semContagem.length
         ? ` — falta a contagem de ${g.semContagem.map(b => _escHtml(BOARDS[b]?.label || b)).join(', ')}.`
         : ' — nenhuma loja abaixo do mínimo.';
-      return `<div class="ct-ped-grupo"><div class="ct-ped-hdr">${_escHtml(g.label)}</div>
-        <div class="ct-ped-vazio">Nada a pedir${pend}</div></div>`;
+      return `<div class="ct-ped-grupo">${cabeca}
+        <div class="ct-ped-vazio">Nada a pedir${pend}</div>
+        ${_entregaFormHtml(g)}${_entregaListaHtml(g)}</div>`;
     }
     const lojas = g.boards;
     return `<div class="ct-ped-grupo">
-      <div class="ct-ped-hdr">${_escHtml(g.label)}
-        ${g.semContagem.length ? `<span class="ct-ped-warn">⚠ sem contagem: ${g.semContagem.map(b => _escHtml(BOARDS[b]?.label || b)).join(', ')}</span>` : ''}
-      </div>
+      ${cabeca}
       <div class="ct-table-wrap">
         <table class="ct-table">
           <thead>
@@ -10926,11 +11004,68 @@ async function _renderPedidoConsolidado(el) {
         return `<div class="ct-centro">Precisa estar disponível para o grupo (soma das lojas):
           ${c.map(x => `<span class="ct-centro-item">${_escHtml(x.nome)} <b>${x.alvo}</b></span>`).join('')}</div>`;
       })()}
+      ${_entregaFormHtml(g)}${_entregaListaHtml(g)}
     </div>`;
   }).join('');
 
   el.classList.remove('ct-total');
   el.innerHTML = html || '<div class="ct-ped-vazio">Nenhuma contagem registrada ainda.</div>';
+
+  el.querySelectorAll('.ct-entrega-btn').forEach(btn => btn.addEventListener('click', () => {
+    _entregaGrupo = _entregaGrupo === btn.dataset.grupo ? null : btn.dataset.grupo;
+    recarregar();
+  }));
+  el.querySelectorAll('.ct-entrega-cancel').forEach(btn => btn.addEventListener('click', () => {
+    _entregaGrupo = null; recarregar();
+  }));
+
+  // Total por loja acompanha a digitação: é assim que se confere a nota do
+  // fornecedor sem somar na mão.
+  const somaColunas = (form) => {
+    form.querySelectorAll('.ct-ent-total').forEach(td => {
+      let t = 0;
+      form.querySelectorAll(`.ct-ent-qtd[data-board="${td.dataset.board}"]`).forEach(i => { t += parseInt(i.value) || 0; });
+      td.textContent = t || '—';
+    });
+  };
+  el.querySelectorAll('.ct-entrega-form').forEach(form => {
+    somaColunas(form);
+    form.querySelectorAll('.ct-ent-qtd').forEach(i => i.addEventListener('input', () => somaColunas(form)));
+  });
+
+  el.querySelectorAll('.ct-entrega-salvar').forEach(btn => btn.addEventListener('click', async () => {
+    const form = btn.closest('.ct-entrega-form');
+    const dataEnt = form.querySelector('.ct-ent-data')?.value;
+    if (!dataEnt) { toast('Informe a data da entrega', true); return; }
+    const porLoja = {};
+    form.querySelectorAll('.ct-ent-qtd').forEach(i => {
+      const q = parseInt(i.value) || 0;
+      if (q <= 0) return;
+      (porLoja[i.dataset.board] = porLoja[i.dataset.board] || {})[i.dataset.key] = q;
+    });
+    if (!Object.keys(porLoja).length) { toast('Informe o que chegou em ao menos uma loja', true); return; }
+    btn.disabled = true;
+    try {
+      const r = await apiFetch('POST', '/api/embalagens/entrega', {
+        data: dataEnt, porLoja, obs: form.querySelector('.ct-ent-obs')?.value || '',
+      });
+      _pedidoData = { grupos: r.grupos };
+      _entregaGrupo = null;
+      toast('Entrega lançada ✓');
+      if (r.aviso) alert(r.aviso);
+      recarregar();
+    } catch (e) { toast('Erro: ' + e.message, true); btn.disabled = false; }
+  }));
+
+  el.querySelectorAll('.ct-ent-del').forEach(btn => btn.addEventListener('click', async () => {
+    if (!confirm('Desfazer esta entrega? O consumo medido volta a não contar com ela.')) return;
+    btn.disabled = true;
+    try {
+      const r = await apiFetch('DELETE', `/api/embalagens/entrega/${encodeURIComponent(btn.dataset.lote)}`);
+      _pedidoData = { grupos: r.grupos };
+      recarregar();
+    } catch (e) { toast('Erro: ' + e.message, true); btn.disabled = false; }
+  }));
 
   // Sem item a pedir o export sai vazio — melhor desabilitar do que baixar em branco
   const temPedido = (data.grupos || []).some(g => g.itens.length);

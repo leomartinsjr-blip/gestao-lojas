@@ -3254,6 +3254,28 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .req-rec-ped { font-size: .7rem; color: var(--muted); margin-right: auto; }
 .req-rec-qtd { width: 6rem; background: var(--card); border: 1px solid var(--border); color: var(--text); border-radius: 5px; padding: .25rem .45rem; font-size: .8rem; text-align: right; }
 .req-rec-actions { display: flex; align-items: center; gap: .6rem; margin-top: .7rem; }
+/* ── Entrega de embalagem lançada na própria tela de contagem ───────────── */
+.ct-entrega-btn { background: rgba(63,185,80,.12); border: 1px solid rgba(63,185,80,.45); color: #7EE787; font-size: .74rem; font-weight: 700; padding: .25rem .7rem; border-radius: 6px; cursor: pointer; margin-left: auto; white-space: nowrap; }
+.ct-entrega-btn:hover { background: rgba(63,185,80,.22); }
+.ct-entrega-form { border: 1px solid rgba(63,185,80,.35); background: rgba(63,185,80,.05); border-radius: 8px; padding: .8rem .9rem; margin-top: .8rem; }
+.ct-ent-hdr { font-size: .8rem; font-weight: 700; color: #96D9A2; margin-bottom: .7rem; }
+.ct-ent-linha1 { display: flex; gap: .9rem; flex-wrap: wrap; margin-bottom: .8rem; }
+.ct-ent-lbl { display: flex; flex-direction: column; gap: .25rem; font-size: .72rem; color: var(--muted); }
+.ct-ent-obs-wrap { flex: 1 1 18rem; }
+.ct-ent-linha1 input { background: var(--card); border: 1px solid var(--border); color: var(--text); border-radius: 5px; padding: .3rem .5rem; font-size: .8rem; width: 100%; }
+.ct-ent-qtd { width: 5.5rem; text-align: right; }
+.ct-ent-total { font-weight: 700; color: #7EE787; border-top: 1px solid var(--border); }
+.ct-entrega-form tfoot td { padding-top: .4rem; }
+.ct-ent-acoes { display: flex; align-items: center; gap: .8rem; margin-top: .8rem; }
+.ct-ent-lista { margin-top: .8rem; }
+.ct-ent-lista-hdr { font-size: .72rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: .4rem; }
+.ct-ent-lote { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; font-size: .76rem; border-left: 2px solid #3FB950; padding: .3rem 0 .3rem .55rem; margin-bottom: .3rem; }
+.ct-ent-data-tag { color: #7EE787; font-weight: 700; white-space: nowrap; }
+.ct-ent-lote-corpo { display: flex; align-items: center; gap: .35rem; flex-wrap: wrap; flex: 1; }
+.ct-ent-obs-txt { font-size: .72rem; color: var(--muted); font-style: italic; }
+.ct-ent-por { font-size: .7rem; color: var(--muted); opacity: .8; }
+.ct-ent-del { background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: .78rem; padding: 0 .25rem; }
+.ct-ent-del:hover { color: #F85149; }
 .req-embal-mod { font-size: .68rem; font-weight: 700; color: #58A6FF; min-height: .9rem; }
 
 /* ── Contagem de embalagens ─────────────────────────────────────────────── */
