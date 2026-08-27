@@ -347,14 +347,13 @@ const EMBALAGENS_CONSUMO_LOJA = {
   tommy:    { 'sacola-papel-p': 0.05, 'sacola-papel-m': 0.60, 'sacola-papel-g': 0.25 },
 };
 
-// Sacola da Surfers (Embalagens & Cia) é comprada em centena: o pedido fecha
-// sempre em múltiplo de 100, nunca em peça avulsa. Não há código de catálogo —
-// o pedido vai pelo nome do item.
+// Sacola da Surfers (Embalagens & Cia). Não há código de catálogo — o pedido
+// vai pelo nome do item. A G tem lote menor que as outras duas: ela sai bem
+// menos, e fechar 100 nela seria quase um ano de estoque parado.
 const EMBAL_LOTE_SURFERS = {
-  'sacola-papel-p':  { modulo: 100 },
-  'sacola-papel-m':  { modulo: 100 },
-  'sacola-papel-g':  { modulo: 100 },
-  'sacola-plastico': { modulo: 100 },
+  'sacola-papel-p': { modulo: 100 },
+  'sacola-papel-m': { modulo: 100 },
+  'sacola-papel-g': { modulo:  50 },
 };
 
 // Códigos e peças/módulo do fornecedor, por loja. Só a Tommy tem código de
