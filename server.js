@@ -707,6 +707,26 @@ function addDias(dateStr, n) {
   return d.toISOString().slice(0, 10);
 }
 
+// Itens da última contagem que estão abaixo do piso da loja. É o que acende o
+// aviso no painel, e é uma pergunta diferente da contagem atrasada: a loja pode
+// estar em dia com o prazo e mesmo assim já ter furado o mínimo. Reaproveita o
+// abaixoDoPiso da tela da loja para o painel nunca discordar da linha vermelha
+// que o gerente vê na contagem.
+function itensAbaixoDoPiso(db, board, itens) {
+  const ultima = (db.contagensEmbalagem || [])
+    .filter(c => c.board === board)
+    .sort((a, b) => (b.data || '').localeCompare(a.data || ''))[0];
+  if (!ultima) return null;
+  const abaixo = [];
+  for (const it of (itens || embalagensDaLoja(db, board))) {
+    const contado = ultima.contagem?.[it.key];
+    if (contado == null) continue;
+    const s = sugestaoEmbalagem(it, contado);
+    if (s.abaixoDoPiso) abaixo.push({ key: it.key, nome: it.nome, contado, min: it.min, falta: s.falta });
+  }
+  return { data: ultima.data, itens: abaixo };
+}
+
 // Status da contagem quinzenal de uma loja: quando foi a última, quando vence a
 // próxima e há quantos dias está atrasada (nunca contou → atrasada desde já).
 function statusContagem(db, board) {
@@ -1204,11 +1224,12 @@ app.get('/api/init', requireAuth, async (req, res) => {
     const embalBoards = isAdminOrEscritorio
       ? EMBAL_STORE_BOARDS
       : EMBAL_STORE_BOARDS.filter(b => isSupervisor ? userLojas.includes(b) : b === board);
-    const embalagens = { itens: {}, status: {}, projecao: {}, diasContagem: EMBAL_DIAS_CONTAGEM, horizonteMeses: embalHorizonteMeses(db), pisoMeses: embalPisoMeses(db) };
+    const embalagens = { itens: {}, status: {}, projecao: {}, piso: {}, diasContagem: EMBAL_DIAS_CONTAGEM, horizonteMeses: embalHorizonteMeses(db), pisoMeses: embalPisoMeses(db) };
     for (const b of embalBoards) {
       embalagens.itens[b]    = embalagensDaLoja(db, b);
       embalagens.status[b]   = statusContagem(db, b);
       embalagens.projecao[b] = projecaoAnual(db, b);
+      embalagens.piso[b]     = itensAbaixoDoPiso(db, b, embalagens.itens[b]);
     }
 
     // Indeva stats for this month

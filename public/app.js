@@ -787,11 +787,52 @@ function _renderContagemAviso(c) {
   c.appendChild(el);
 }
 
+// Estoque no piso é uma pergunta diferente de contagem atrasada: a loja pode
+// estar em dia com o prazo e mesmo assim já ter furado o mínimo, e pode estar
+// atrasada sem faltar nada. Por isso é um banner separado, e não uma linha a
+// mais no de cima — cada um pede uma ação diferente.
+function _renderPisoAviso(c) {
+  const abrir = () => { _lojaAcaoTab = 'contagem'; openLojaAcaoModal(); };
+  const chip = i => `<span class="ct-banner-chip">${_escHtml(i.nome)}
+      <b class="ct-chip-neg">${i.contado}</b><span class="ct-chip-min">/ ${i.min}</span></span>`;
+
+  if (S.user?.board) {
+    const p = _embalPiso(S.user.board);
+    if (!p?.itens?.length) return;
+    const n = p.itens.length;
+    const el = document.createElement('div');
+    el.className = 'ct-banner ct-banner-piso';
+    el.innerHTML = `<div class="ct-banner-txt"><b>📦 Embalagem no mínimo — hora de pedir.</b>
+        Na contagem de <b>${_fmtData(p.data)}</b> ${n === 1 ? 'um item estava' : `${n} itens estavam`} abaixo do piso:
+        ${p.itens.map(chip).join('')}</div>
+      <button class="ct-banner-btn">Pedir agora</button>`;
+    el.querySelector('.ct-banner-btn').addEventListener('click', abrir);
+    c.appendChild(el);
+    return;
+  }
+
+  const lojas = _embalStoreBoards()
+    .map(b => [b, _embalPiso(b)])
+    .filter(([, p]) => p?.itens?.length);
+  if (!lojas.length) return;
+  const el = document.createElement('div');
+  el.className = 'ct-banner ct-banner-piso';
+  el.innerHTML = `<div class="ct-banner-txt">
+      <b>📦 Embalagem no mínimo em ${lojas.length} ${lojas.length === 1 ? 'loja' : 'lojas'} — já entra no próximo pedido:</b>
+      ${lojas.map(([b, p]) => `<span class="ct-banner-chip" title="${_escHtml(p.itens.map(i => `${i.nome}: ${i.contado} de ${i.min}`).join(' · '))}">
+        <span class="dash-store-dot" style="background:${BOARDS[b]?.color || '#8B949E'}"></span>${_escHtml(BOARDS[b]?.label || b)}
+        <b class="ct-chip-neg">${p.itens.length}</b><span class="ct-chip-min">${p.itens.length === 1 ? 'item' : 'itens'}</span></span>`).join('')}</div>
+    <button class="ct-banner-btn">Ver pedido</button>`;
+  el.querySelector('.ct-banner-btn').addEventListener('click', abrir);
+  c.appendChild(el);
+}
+
 function renderDashboard() {
   if (_dayCardTimer) { clearInterval(_dayCardTimer); _dayCardTimer = null; }
   const c = document.getElementById('boardContainer');
   c.innerHTML = '';
   _renderContagemAviso(c);
+  _renderPisoAviso(c);
 
   const pad = n => String(n).padStart(2, '0');
   const today = new Date();
@@ -10460,6 +10501,7 @@ function _initBoletaForm(body, boleta, isAdmin, userBoard) {
 function _embalItens(board) { return (S.embalagens?.itens || {})[board] || []; }
 function _embalStatus(board) { return (S.embalagens?.status || {})[board] || null; }
 function _embalStoreBoards() { return Object.keys(S.embalagens?.itens || {}); }
+function _embalPiso(board) { return (S.embalagens?.piso || {})[board] || null; }
 
 // Falta em peças → módulos a pedir, arredondando pra cima (caixa fechada).
 // Espelha sugestaoEmbalagem() do server.
@@ -10723,6 +10765,13 @@ function _renderContagemLojaView(body) {
       const r = await apiFetch('POST', '/api/embalagens/contagem', { contagem });
       if (!S.embalagens.status) S.embalagens.status = {};
       S.embalagens.status[board] = r.status;
+      // o banner do painel sai (ou entra) na hora, sem esperar o próximo login
+      if (!S.embalagens.piso) S.embalagens.piso = {};
+      S.embalagens.piso[board] = {
+        data: r.contagem?.data,
+        itens: (r.sugestao || []).filter(x => x.abaixoDoPiso)
+          .map(x => ({ key: x.key, nome: x.nome, contado: x.contado, min: x.min, falta: x.falta })),
+      };
       _updateLojaAcaoBadge();
       renderDashboard();
       const faltantes = (r.sugestao || []).filter(s => s.modulos > 0);

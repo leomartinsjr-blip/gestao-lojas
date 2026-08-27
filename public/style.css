@@ -3295,6 +3295,15 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .ct-banner-chip { display: inline-flex; align-items: center; gap: .3rem; background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: .72rem; font-weight: 600; padding: .1rem .5rem; border-radius: 999px; margin-left: .35rem; }
 .ct-banner-btn { background: #238636; border: 1px solid #2EA043; color: #fff; font-size: .8rem; font-weight: 600; padding: .4rem 1rem; border-radius: 6px; cursor: pointer; white-space: nowrap; }
 .ct-banner-btn:hover { background: #2EA043; }
+/* Piso furado é aviso de compra, não de prazo — âmbar para não competir com o
+   vermelho da contagem atrasada, que é o que trava o processo. */
+.ct-banner-piso { background: rgba(227,179,65,.09); border-color: rgba(227,179,65,.38); }
+.ct-banner-piso .ct-banner-txt { color: #D9C089; }
+.ct-banner-piso .ct-banner-txt b { color: #E3B341; }
+/* precisa vencer o b âmbar do banner, senão o número some no resto do texto */
+.ct-banner-piso .ct-banner-txt b.ct-chip-neg { color: #F85149; }
+.ct-chip-neg { color: #F85149; margin-left: .3rem; }
+.ct-chip-min { color: var(--muted); font-size: .68rem; margin-left: .15rem; }
 /* ── Loja em Ação — tabs ── */
 .la-tabs { display: flex; gap: .35rem; padding: .75rem 1.25rem .5rem; border-bottom: 1px solid var(--border); }
 .la-tab { padding: .35rem .9rem; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: .82rem; cursor: pointer; transition: all .15s; }
