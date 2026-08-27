@@ -705,7 +705,7 @@ async function loadData() {
         const vencEm = dias => {
           if (!dias) return null;
           const d = new Date(e.admissao + 'T00:00:00');
-          d.setDate(d.getDate() + dias);
+          d.setDate(d.getDate() + dias - 1); // dia da admissão conta como 1º dia do prazo
           return d;
         };
         // 2º contrato já cadastrado = prorrogação já decidida:
@@ -9188,7 +9188,7 @@ function renderContratoCard(container) {
   function calcVenc(admissao, dias) {
     if (!admissao || !dias) return null;
     const d = new Date(admissao + 'T00:00:00');
-    d.setDate(d.getDate() + dias);
+    d.setDate(d.getDate() + dias - 1); // dia da admissão conta como 1º dia do prazo
     return d;
   }
 
