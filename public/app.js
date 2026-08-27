@@ -10892,8 +10892,9 @@ async function _renderPedidoConsolidado(el) {
                 const l = it.porLoja[b];
                 // Tem = o que a loja contou · Falta = o que esse estoque deixa faltando p/ o alvo
                 const tem = l && l.contado != null ? l.contado : null;
+                const ent = it.entrega?.[b];
                 return `<td class="ct-num ct-tem ct-grp-start"${tem != null && l.alvo ? ` title="Alvo ${l.alvo} pç"` : ''}>${tem != null ? tem : '—'}</td>`
-                     + `<td class="ct-num ct-falta-col">${l && l.falta > 0 ? `${l.falta}` : '—'}</td>`;
+                     + `<td class="ct-num ct-falta-col"${ent != null ? ` title="Entregar ${ent} pç nesta loja — o pedido é rateado em caixa fechada"` : ''}>${l && l.falta > 0 ? `${l.falta}` : '—'}</td>`;
               }).join('')}
               <td class="ct-num"><b>${it.pecas}</b></td>
               <td class="ct-num ct-pos">${it.modulo > 1 ? `${it.modulos} mód (${it.pedido})` : `${it.pecas} pç`}${it.sobra > 0 ? `<span class="ct-sobra">+${it.sobra}</span>` : ''}</td>

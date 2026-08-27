@@ -2957,6 +2957,46 @@ app.post('/api/embalagens/contagem', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Divide o pedido já fechado entre as lojas, em módulos inteiros. Não dá para
+// entregar 97 peças de um item que vem em pacote de 100: a coluna da loja tem
+// de ser múltiplo do módulo, e as colunas precisam somar EXATAMENTE o total
+// comprado — senão o pedido não bate na hora de conferir a entrega.
+//
+// Método do maior resto: cada loja leva os módulos inteiros da sua necessidade
+// e os que sobram vão para quem ficou com a maior fração. Como o total foi
+// arredondado uma vez só, sobre a soma do grupo, pode não haver módulo para
+// todo mundo receber a necessidade cheia — é o preço de não inflar o pedido
+// arredondando loja a loja. Quem fica curto aparece na sugestão de
+// remanejamento, logo abaixo no mesmo relatório.
+function distribuirModulos(faltaPorLoja, modulo, totalModulos) {
+  const boards = Object.keys(faltaPorLoja);
+  const base = {}, restos = [];
+  let usados = 0;
+  for (const b of boards) {
+    const falta   = Math.max(0, faltaPorLoja[b] || 0);
+    const exato   = falta / modulo;
+    const inteiro = Math.floor(exato);
+    base[b] = inteiro;
+    usados += inteiro;
+    restos.push({ b, resto: exato - inteiro, falta });
+  }
+  restos.sort((x, y) => y.resto - x.resto || y.falta - x.falta);
+  let sobrando = totalModulos - usados;
+  for (const r of restos) {
+    if (sobrando <= 0) break;
+    if (r.falta <= 0) continue;  // loja que não precisa de nada não recebe caixa
+    base[r.b]++; sobrando--;
+  }
+  // Rede de segurança: se ainda sobrar módulo, vai inteiro para a maior
+  // necessidade. Pela conta do maior resto isso não acontece, mas o total não
+  // pode ficar diferente da soma das colunas em nenhuma hipótese.
+  if (sobrando > 0) {
+    const maior = restos.slice().sort((x, y) => y.falta - x.falta)[0];
+    if (maior) base[maior.b] += sobrando;
+  }
+  return Object.fromEntries(boards.map(b => [b, base[b] * modulo]));
+}
+
 // Monta o pedido consolidado a partir da última contagem de cada loja.
 // Usada pela tela e pelo Excel — o arquivo nunca diverge do que está em tela.
 function montarPedido(db) {
@@ -2983,7 +3023,10 @@ function montarPedido(db) {
         const itens = Object.values(linhas).map(l => {
           const modulos = l.modulo > 1 ? Math.ceil(l.pecas / l.modulo) : l.pecas;
           const pedido  = l.modulo > 1 ? modulos * l.modulo : l.pecas;
-          return { ...l, modulos, pedido, sobra: pedido - l.pecas };
+          const mod     = l.modulo > 1 ? l.modulo : 1;
+          const falta   = Object.fromEntries(g.boards.map(b => [b, l.porLoja[b]?.falta || 0]));
+          return { ...l, modulos, pedido, sobra: pedido - l.pecas,
+                   entrega: distribuirModulos(falta, mod, pedido / mod) };
         });
   
         // Antes de comprar, olhar o que já está na rede: loja com sobra acima do
@@ -3131,7 +3174,10 @@ app.get('/api/embalagens/pedido/export', requireAdmin, async (req, res) => {
 
       g.itens.forEach((it, idx) => {
         const r = ws.getRow(hdrNum + 1 + idx);
-        const qtdLoja = lojas.map(b => it.porLoja[b]?.falta || 0);
+        // A coluna da loja é o que ENTREGAR nela, em caixa fechada — por isso
+        // as colunas somam o Total pç. A necessidade crua de cada uma fica no
+        // comentário da célula, para conferir de onde saiu o número.
+        const qtdLoja = lojas.map(b => it.entrega?.[b] ?? (it.porLoja[b]?.falta || 0));
         const necessidade = it.pecas;      // soma crua das lojas
         const pedido = it.pedido;          // já fechado em caixa fechada
         const sobra  = it.sobra;
@@ -3155,7 +3201,12 @@ app.get('/api/embalagens/pedido/export', requireAdmin, async (req, res) => {
             right:  { style: 'thin', color: { argb: C_BORDA } },
           };
           if (i === 3 || i === 4) c.font = { bold: true, size: 9, color: { argb: C_PEDIR } };
-          if (i >= 5 && i < 5 + lojas.length && v > 0) c.font = { bold: true, size: 9 };
+          if (i >= 5 && i < 5 + lojas.length) {
+            if (v > 0) c.font = { bold: true, size: 9 };
+            const bl  = lojas[i - 5];
+            const cru = it.porLoja[bl]?.falta || 0;
+            c.note = `${BOARDS_LABEL[bl] || bl} · necessidade ${cru} pç · entregar ${v} pç`;
+          }
           if (i === vals.length - 1 && v) c.font = { size: 9, color: { argb: C_ALERTA } };
         });
         r.height = 15;
@@ -3178,7 +3229,7 @@ app.get('/api/embalagens/pedido/export', requireAdmin, async (req, res) => {
       // Rodapé explicando a sobra e o remanejamento
       let pe = hdrNum + g.itens.length + 3;
       const nota = ws.getRow(pe);
-      nota.getCell(1).value = 'As colunas de loja somam a necessidade de cada uma. "Sobra" é o que passa disso por causa do arredondamento para caixa fechada.';
+      nota.getCell(1).value = 'As colunas de loja são o que entregar em cada uma, já em caixa fechada — elas somam exatamente o Total pç. "Sobra" é o quanto o pedido inteiro passa da necessidade do grupo por causa desse fechamento. Passe o mouse na célula da loja para ver a necessidade crua dela.';
       nota.getCell(1).font = { size: 9, italic: true, color: { argb: 'FF6B7280' } };
       ws.mergeCells(pe, 1, pe, nCols);
       pe++;
