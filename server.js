@@ -12344,6 +12344,575 @@ app.put('/api/dre/:ano/:mes/:loja', requireAdmin, async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ════════════════════════════════════════════════════════════════════════════
+// PAUTA DE REUNIÃO MENSAL — uma por loja, por mês
+// ════════════════════════════════════════════════════════════════════════════
+// A reunião roda na última semana do mês, loja a loja. Nada de número digitado:
+// performance, RH e pendências saem do que o sistema já tem. O que se escreve
+// aqui é o que a conversa produziu — comentário, demanda e ação combinada.
+// Ao fechar, cada ação vira item de pauta (meetingItems) da loja, que é onde a
+// cobrança do mês seguinte já acontece hoje.
+
+const PAUTA_BOARDS = BOARDS.filter(b => b !== 'admin' && b !== 'escritorio');
+
+function pautaKey(y, m, board) { return `${monthKey(y, m)}-${board}`; }
+
+function pautaMesAnterior(y, m) { return m === 1 ? { y: y - 1, m: 12 } : { y, m: m - 1 }; }
+
+// Datas ancoradas ao meio-dia UTC: imune a fuso e horário de verão.
+function pautaAddDias(dateStr, dias) {
+  const d = new Date(dateStr + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+
+function pautaAddMeses(dateStr, meses) {
+  const d   = new Date(dateStr + 'T12:00:00Z');
+  const dia = d.getUTCDate();
+  d.setUTCDate(1);
+  d.setUTCMonth(d.getUTCMonth() + meses);
+  const ultimo = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate();
+  d.setUTCDate(Math.min(dia, ultimo));
+  return d.toISOString().slice(0, 10);
+}
+
+function pautaDiasEntre(de, ate) {
+  return Math.round((Date.parse(ate + 'T12:00:00Z') - Date.parse(de + 'T12:00:00Z')) / 86400000);
+}
+
+// Contrato de experiência: o dia da admissão conta como 1º dia do prazo.
+function pautaVencContrato(admissao, dias) {
+  if (!admissao || !dias) return null;
+  return pautaAddDias(admissao, dias - 1);
+}
+
+const pautaNorm = s => (s || '').toString().toLowerCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim();
+
+// Ausência guarda o colaborador como texto livre; funcionário tem nome e apelido.
+// Casa por igualdade do nome completo, do apelido, ou por primeiro+último nome.
+function pautaMesmaPessoa(colaborador, emp) {
+  const c = pautaNorm(colaborador);
+  if (!c) return false;
+  const nome    = pautaNorm(emp.name);
+  const apelido = pautaNorm(emp.apelido);
+  if (c === nome || (apelido && c === apelido)) return true;
+  const p = nome.split(' ');
+  if (p.length > 1 && c === `${p[0]} ${p[p.length - 1]}`) return true;
+  return false;
+}
+
+// dailySales antigo guardava meta como número solto
+function pautaMetaLoja(rec) {
+  if (!rec) return 0;
+  return typeof rec.meta === 'object' ? (rec.meta?.mensal || 0) : (rec.meta || 0);
+}
+
+// Conversão da Lista da Vez (indeva): atendimento marcado como "vendeu"
+function pautaAtendimentosIndeva(db, y, m, board) {
+  const store = db.indeva?.[board];
+  if (!store) return [];
+  const prefix = monthKey(y, m) + '-';
+  const dias   = { ...(store.historico || {}) };
+  if (store.date && store.atendimentos?.length) dias[store.date] = { atendimentos: store.atendimentos };
+  const out = [];
+  for (const [date, d] of Object.entries(dias)) {
+    if (!date.startsWith(prefix)) continue;
+    for (const a of (d.atendimentos || [])) out.push(a);
+  }
+  return out;
+}
+
+function pautaConversao(db, y, m, board) {
+  const ats = pautaAtendimentosIndeva(db, y, m, board);
+  if (!ats.length) return null;
+  const conv = ats.filter(a => a.vendeu).length;
+  return { total: ats.length, conv, pct: (conv / ats.length) * 100 };
+}
+
+function pautaConversaoPorVendedor(db, y, m, board) {
+  const out = {};
+  for (const a of pautaAtendimentosIndeva(db, y, m, board)) {
+    const k = String(a.empId);
+    if (!out[k]) out[k] = { total: 0, conv: 0 };
+    out[k].total++;
+    if (a.vendeu) out[k].conv++;
+  }
+  return out;
+}
+
+function pautaTotaisLoja(db, y, m, board) {
+  const mk  = monthKey(y, m);
+  const rec = db.dailySales?.[`${mk}-${board}`];
+  let venda = 0, pecas = 0, fluxo = 0, diasComVenda = 0;
+  for (const e of Object.values(rec?.entries || {})) {
+    venda += e.value || 0;
+    pecas += e.pecas || 0;
+    fluxo += e.fluxo || 0;
+    if ((e.value || 0) > 0) diasComVenda++;
+  }
+  // storeFluxo é a contagem de porta feita pela loja — quando existe, manda nela
+  const sf = db.storeFluxo?.[`${mk}-${board}`] || {};
+  const fluxoPorta = Object.values(sf).reduce((s, v) => s + (Number(v) || 0), 0);
+  if (fluxoPorta > 0) fluxo = fluxoPorta;
+
+  // Atendimento só existe por vendedor; o da loja é a soma deles
+  let atend = 0;
+  for (const emp of (db.employees || [])) {
+    if (emp.board !== board) continue;
+    const vs = db.vsales?.[`${mk}-${board}-${emp.id}`];
+    for (const e of Object.values(vs?.entries || {})) atend += e.atendimentos || 0;
+  }
+
+  const meta = pautaMetaLoja(rec);
+  const conv = pautaConversao(db, y, m, board);
+  return {
+    meta, venda, pecas, fluxo, atend, diasComVenda,
+    pct:  meta  > 0 ? (venda / meta) * 100 : null,
+    pa:   atend > 0 ? pecas / atend : null,
+    tm:   atend > 0 ? venda / atend : null,
+    conv: conv ? conv.pct : (fluxo > 0 && atend > 0 ? (atend / fluxo) * 100 : null),
+    convFonte: conv ? 'lista da vez' : (fluxo > 0 && atend > 0 ? 'atendimentos / fluxo' : null),
+  };
+}
+
+function pautaVendedores(db, y, m, board) {
+  const mk   = monthKey(y, m);
+  const conv = pautaConversaoPorVendedor(db, y, m, board);
+  return (db.employees || [])
+    .filter(e => e.board === board && !e.inativo)
+    .map(e => {
+      const vs = db.vsales?.[`${mk}-${board}-${e.id}`] || {};
+      let venda = 0, pecas = 0, atend = 0, dias = 0;
+      for (const en of Object.values(vs.entries || {})) {
+        venda += en.value || 0; pecas += en.pecas || 0; atend += en.atendimentos || 0;
+        if ((en.value || 0) > 0) dias++;
+      }
+      const meta = vs.meta?.mensal || 0;
+      const c    = conv[String(e.id)];
+      return {
+        id: e.id, nome: e.apelido || e.name, nomeCompleto: e.name,
+        cargo: e.cargo || '', gerente: e.isVendedor === false,
+        meta, venda, pecas, atend, dias,
+        pct:  meta  > 0 ? (venda / meta) * 100 : null,
+        pa:   atend > 0 ? pecas / atend : null,
+        tm:   atend > 0 ? venda / atend : null,
+        conv: c && c.total > 0 ? (c.conv / c.total) * 100 : null,
+        diasFerias: (vs.meta?.vacationDays || []).length,
+        admissao: e.admissao || '',
+      };
+    })
+    .sort((a, b) => b.venda - a.venda);
+}
+
+// Faturamento de referência: o do próprio sistema quando existe; senão o
+// histórico consolidado em perf-hist.js (fonte única, não duplicar números).
+function pautaFaturamento(db, y, m, board) {
+  const t = pautaTotaisLoja(db, y, m, board);
+  if (t.venda > 0) return { venda: t.venda, meta: t.meta, pecas: t.pecas, fonte: 'sistema' };
+  const h = PERF_HIST[board]?.[y]?.[m - 1];
+  return h ? { venda: h, meta: 0, pecas: 0, fonte: 'histórico' } : { venda: 0, meta: 0, pecas: 0, fonte: null };
+}
+
+function pautaRH(db, board, y, m, hoje) {
+  const mk     = monthKey(y, m);
+  const iniMes = `${mk}-01`;
+  const fimMes = `${mk}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+  const emps   = (db.employees || []).filter(e => e.board === board);
+  const ativos = emps.filter(e => !e.inativo);
+
+  const admissoes = emps
+    .filter(e => (e.admissao || '').startsWith(mk))
+    .map(e => ({ nome: e.apelido || e.name, cargo: e.cargo || '', data: e.admissao }));
+
+  const desligamentos = emps
+    .filter(e => (e.desligamento || '').startsWith(mk))
+    .map(e => ({ nome: e.apelido || e.name, cargo: e.cargo || '', data: e.desligamento }));
+
+  // Contrato de experiência: o que vence nos próximos 60 dias ou venceu nos últimos 30
+  const contratos = [];
+  for (const e of ativos) {
+    if (!e.admissao || !(e.contrato1 || e.contrato2)) continue;
+    const venc1 = pautaVencContrato(e.admissao, e.contrato1);
+    const venc2 = (e.contrato1 && e.contrato2) ? pautaVencContrato(e.admissao, e.contrato1 + e.contrato2) : null;
+    const d1 = venc1 ? pautaDiasEntre(hoje, venc1) : null;
+    const d2 = venc2 ? pautaDiasEntre(hoje, venc2) : null;
+    if (![d1, d2].some(d => d !== null && d >= -30 && d <= 60)) continue;
+    contratos.push({
+      nome: e.apelido || e.name, cargo: e.cargo || '', admissao: e.admissao,
+      venc1, venc2, dias1: d1, dias2: d2,
+      // 1º prazo já venceu e o 2º ainda corre: é a hora de decidir a efetivação
+      decisao: d1 !== null && d1 < 0 && d2 !== null && d2 >= 0,
+      // sem 2º contrato cadastrado e o 1º vencendo: prorrogar ou desligar
+      semSegundo: !venc2,
+    });
+  }
+  contratos.sort((a, b) => {
+    const ka = [a.dias1, a.dias2].filter(d => d !== null && d >= 0);
+    const kb = [b.dias1, b.dias2].filter(d => d !== null && d >= 0);
+    return (ka.length ? Math.min(...ka) : 999) - (kb.length ? Math.min(...kb) : 999);
+  });
+
+  // Férias: período aquisitivo de 12 meses a contar da admissão (ou do fim das
+  // últimas férias gozadas); o gozo tem de acontecer nos 12 meses seguintes.
+  const feriasAus = (db.ausencias || []).filter(a => a.board === board && a.tipo === 'ferias');
+  const ferias = [];
+  for (const e of ativos) {
+    if (!e.admissao) continue;
+    const gozos    = feriasAus.filter(a => pautaMesmaPessoa(a.colaborador, e));
+    const passadas = gozos.filter(a => a.dataFim <= hoje).sort((a, b) => a.dataFim.localeCompare(b.dataFim));
+    const futuras  = gozos.filter(a => a.dataFim >  hoje).sort((a, b) => a.dataInicio.localeCompare(b.dataInicio));
+    const ultimo   = passadas.length ? passadas[passadas.length - 1].dataFim : null;
+    const aquisitivoFim = pautaAddMeses(ultimo || e.admissao, 12);
+    const limiteGozo    = pautaAddMeses(aquisitivoFim, 12);
+    const diasAquis     = pautaDiasEntre(hoje, aquisitivoFim);
+    const diasLimite    = pautaDiasEntre(hoje, limiteGozo);
+    let status = null;
+    if (diasLimite < 0)       status = 'vencida';
+    else if (diasAquis <= 0)  status = 'direito adquirido';
+    else if (diasAquis <= 90) status = 'a vencer';
+    if (!status && !futuras.length) continue;
+    ferias.push({
+      nome: e.apelido || e.name, admissao: e.admissao,
+      ultimoGozo: ultimo, aquisitivoFim, limiteGozo,
+      diasParaLimite: diasLimite, status: status || 'agendada',
+      agendada: futuras.length ? { inicio: futuras[0].dataInicio, fim: futuras[0].dataFim } : null,
+    });
+  }
+  ferias.sort((a, b) => a.diasParaLimite - b.diasParaLimite);
+
+  // Atestados e férias que tocam o mês da reunião
+  const ausenciasMes = (db.ausencias || [])
+    .filter(a => a.board === board && a.dataInicio <= fimMes && a.dataFim >= iniMes)
+    .map(a => ({ tipo: a.tipo, colaborador: a.colaborador, dataInicio: a.dataInicio, dataFim: a.dataFim, observacao: a.observacao || '' }))
+    .sort((a, b) => a.dataInicio.localeCompare(b.dataInicio));
+
+  return {
+    ativos: ativos.length,
+    vendedores: ativos.filter(e => e.isVendedor !== false).length,
+    admissoes, desligamentos, contratos, ferias, ausenciasMes,
+  };
+}
+
+function pautaPendencias(db, board) {
+  return (db.meetingItems || [])
+    .filter(x => x.board === board && !x.archived)
+    .map(x => ({
+      id: x.id, text: x.text, year: x.year, month: x.month,
+      origin: x.origin || 'admin', visibility: x.visibility || 'admin',
+      addedBy: x.addedBy || '', addedAt: x.addedAt || '',
+    }))
+    .sort((a, b) => (a.year - b.year) || (a.month - b.month) || (a.id - b.id));
+}
+
+function pautaVazia(y, m, board) {
+  return {
+    year: y, month: m, board,
+    status: 'rascunho',
+    realizadaEm: '', participantes: '',
+    comentarios: { performance: '', vendedores: '', rh: '', produtos: '' },
+    vendedorNotas: {},
+    rhItens: [], demandas: [], acoes: [],
+    produtosResumo: null, roteiro: null, snapshot: null,
+    createdAt: null, updatedAt: null, updatedBy: '',
+  };
+}
+
+function pautaDaLoja(db, y, m, board) {
+  const p = db.pautas?.[pautaKey(y, m, board)];
+  return p ? { ...pautaVazia(y, m, board), ...p } : pautaVazia(y, m, board);
+}
+
+// Ações combinadas no mês anterior, com o status atual do item de pauta gerado
+function pautaAcoesAnteriores(db, y, m, board) {
+  const { y: py, m: pm } = pautaMesAnterior(y, m);
+  const anterior = db.pautas?.[pautaKey(py, pm, board)];
+  if (!anterior?.acoes?.length) return [];
+  const itens = db.meetingItems || [];
+  return anterior.acoes.map(a => {
+    const item = a.meetingItemId ? itens.find(x => x.id === a.meetingItemId) : null;
+    return {
+      texto: a.texto, responsavel: a.responsavel || '', prazo: a.prazo || '',
+      year: py, month: pm,
+      feito: item ? !!(item.checked || item.archived) : false,
+      naPauta: !!item,
+    };
+  });
+}
+
+// GET /pauta — serve a página
+app.get('/pauta', requireEscritorioOrAdmin, (req, res) =>
+  res.sendFile(path.join(__dirname, 'public', 'pauta.html')));
+
+// GET /api/pautas/:year/:month — status de cada loja no mês (para o seletor)
+app.get('/api/pautas/:year/:month', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const y = parseInt(req.params.year), m = parseInt(req.params.month);
+    const db = await readDB();
+    res.json(PAUTA_BOARDS.map(board => {
+      const p = db.pautas?.[pautaKey(y, m, board)];
+      return {
+        board, label: BOARDS_LABEL[board] || board,
+        status: p?.status || 'nova',
+        realizadaEm: p?.realizadaEm || '',
+        acoes: (p?.acoes || []).length,
+        pendencias: pautaPendencias(db, board).length,
+      };
+    }));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/pauta/:year/:month/:board — pauta salva + tudo que o sistema já sabe
+app.get('/api/pauta/:year/:month/:board', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const y = parseInt(req.params.year), m = parseInt(req.params.month);
+    const board = req.params.board;
+    if (!PAUTA_BOARDS.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
+
+    const db   = await readDB();
+    const hoje = todayBRT();
+    const { y: py, m: pm } = pautaMesAnterior(y, m);
+
+    const loja     = pautaTotaisLoja(db, y, m, board);
+    const anterior = pautaFaturamento(db, py, pm, board);
+    const anoAnt   = pautaFaturamento(db, y - 1, m, board);
+
+    res.json({
+      pauta: pautaDaLoja(db, y, m, board),
+      label: BOARDS_LABEL[board] || board,
+      dados: {
+        loja: {
+          ...loja,
+          anterior:    { ...anterior, year: py,    month: pm },
+          anoAnterior: { ...anoAnt,   year: y - 1, month: m  },
+          varAnterior:    anterior.venda > 0 ? ((loja.venda - anterior.venda) / anterior.venda) * 100 : null,
+          varAnoAnterior: anoAnt.venda   > 0 ? ((loja.venda - anoAnt.venda)   / anoAnt.venda)   * 100 : null,
+        },
+        vendedores:      pautaVendedores(db, y, m, board),
+        rh:              pautaRH(db, board, y, m, hoje),
+        pendencias:      pautaPendencias(db, board),
+        acoesAnteriores: pautaAcoesAnteriores(db, y, m, board),
+        hoje,
+      },
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/pauta/:year/:month/:board — salva o que foi escrito (autosave)
+app.put('/api/pauta/:year/:month/:board', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const y = parseInt(req.params.year), m = parseInt(req.params.month);
+    const board = req.params.board;
+    if (!PAUTA_BOARDS.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
+
+    const db = await readDB();
+    if (!db.pautas) db.pautas = {};
+    const key = pautaKey(y, m, board);
+    const p   = { ...pautaVazia(y, m, board), ...(db.pautas[key] || {}) };
+
+    const campos = ['participantes', 'realizadaEm', 'comentarios', 'vendedorNotas',
+                    'rhItens', 'demandas', 'acoes', 'produtosResumo', 'roteiro'];
+    for (const c of campos) if (c in req.body) p[c] = req.body[c];
+
+    if (!p.createdAt) p.createdAt = new Date().toISOString();
+    p.updatedAt = new Date().toISOString();
+    p.updatedBy = req.session.user.label || req.session.user.username;
+    db.pautas[key] = p;
+    await writeDB(db);
+    res.json(p);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/pauta/:year/:month/:board/fechar — congela os números e joga as
+// ações na pauta da loja, que é onde a cobrança já acontece
+app.post('/api/pauta/:year/:month/:board/fechar', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const y = parseInt(req.params.year), m = parseInt(req.params.month);
+    const board = req.params.board;
+    if (!PAUTA_BOARDS.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
+
+    const db = await readDB();
+    if (!db.pautas) db.pautas = {};
+    if (!db.meetingItems) db.meetingItems = [];
+    const key = pautaKey(y, m, board);
+    const p   = { ...pautaVazia(y, m, board), ...(db.pautas[key] || {}) };
+
+    const criados = [];
+    for (const acao of p.acoes || []) {
+      if (!acao.texto?.trim() || acao.meetingItemId) continue;
+      const partes = [acao.texto.trim()];
+      if (acao.responsavel) partes.push(`(${acao.responsavel})`);
+      if (acao.prazo)       partes.push(`— até ${acao.prazo.split('-').reverse().join('/')}`);
+      const item = {
+        id: nextId(db),
+        text: partes.join(' ').slice(0, 200),
+        board, year: y, month: m,
+        visibility: 'loja',
+        origin: 'pauta',
+        autoTag: `pauta-${monthKey(y, m)}`,
+        checked: false, archived: false,
+        addedBy: req.session.user.label || req.session.user.username,
+        addedAt: new Date().toISOString(),
+      };
+      db.meetingItems.push(item);
+      acao.meetingItemId = item.id;
+      criados.push(item);
+    }
+
+    p.status      = 'realizada';
+    p.realizadaEm = p.realizadaEm || todayBRT();
+    p.snapshot    = {
+      loja:        pautaTotaisLoja(db, y, m, board),
+      vendedores:  pautaVendedores(db, y, m, board),
+      rh:          pautaRH(db, board, y, m, todayBRT()),
+      produtos:    p.produtosResumo || null,
+      congeladoEm: new Date().toISOString(),
+    };
+    p.updatedAt = new Date().toISOString();
+    p.updatedBy = req.session.user.label || req.session.user.username;
+    db.pautas[key] = p;
+    await writeDB(db);
+    res.json({ pauta: p, criados: criados.length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/pauta/:year/:month/:board/reabrir — volta para rascunho.
+// Os itens de pauta já criados ficam: quem foi cobrado foi cobrado.
+app.post('/api/pauta/:year/:month/:board/reabrir', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const y = parseInt(req.params.year), m = parseInt(req.params.month);
+    const board = req.params.board;
+    const db  = await readDB();
+    const key = pautaKey(y, m, board);
+    if (!db.pautas?.[key]) return res.status(404).json({ error: 'Pauta não encontrada' });
+    db.pautas[key].status    = 'rascunho';
+    db.pautas[key].updatedAt = new Date().toISOString();
+    db.pautas[key].updatedBy = req.session.user.label || req.session.user.username;
+    await writeDB(db);
+    res.json(db.pautas[key]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/pauta/:year/:month/:board/roteiro — a IA lê os números e devolve
+// por onde conduzir a conversa. Não decide nada: levanta pergunta e sugestão.
+app.post('/api/pauta/:year/:month/:board/roteiro', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    if (!process.env.ANTHROPIC_API_KEY)
+      return res.status(400).json({ error: 'ANTHROPIC_API_KEY não configurada no servidor' });
+
+    const y = parseInt(req.params.year), m = parseInt(req.params.month);
+    const board = req.params.board;
+    if (!PAUTA_BOARDS.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
+
+    const db   = await readDB();
+    const hoje = todayBRT();
+    const p    = pautaDaLoja(db, y, m, board);
+    const { y: py, m: pm } = pautaMesAnterior(y, m);
+    const loja  = pautaTotaisLoja(db, y, m, board);
+    const ant   = pautaFaturamento(db, py, pm, board);
+    const anoA  = pautaFaturamento(db, y - 1, m, board);
+    const vends = pautaVendedores(db, y, m, board);
+    const rh    = pautaRH(db, board, y, m, hoje);
+
+    const n = v => v == null ? null : Math.round(v * 100) / 100;
+    const contexto = {
+      loja: BOARDS_LABEL[board] || board,
+      mes: `${String(m).padStart(2, '0')}/${y}`,
+      performance: {
+        meta: loja.meta, faturado: n(loja.venda), pctMeta: n(loja.pct),
+        pecas: loja.pecas, atendimentos: loja.atend, fluxoPorta: loja.fluxo,
+        pa: n(loja.pa), ticketMedio: n(loja.tm), conversaoPct: n(loja.conv),
+        mesAnterior:        { mes: `${String(pm).padStart(2, '0')}/${py}`,    faturado: n(ant.venda)  },
+        mesmoMesAnoPassado: { mes: `${String(m).padStart(2, '0')}/${y - 1}`, faturado: n(anoA.venda) },
+      },
+      vendedores: vends.map(v => ({
+        nome: v.nome, gerente: v.gerente, meta: v.meta, faturado: n(v.venda),
+        pctMeta: n(v.pct), pa: n(v.pa), ticketMedio: n(v.tm), conversaoPct: n(v.conv),
+        pecas: v.pecas, atendimentos: v.atend, diasFerias: v.diasFerias,
+      })),
+      rh: {
+        colaboradoresAtivos: rh.ativos,
+        admissoesNoMes: rh.admissoes,
+        desligamentosNoMes: rh.desligamentos,
+        contratosExperiencia: rh.contratos.map(c => ({
+          nome: c.nome, venc1: c.venc1, venc2: c.venc2,
+          diasParaVenc1: c.dias1, diasParaVenc2: c.dias2,
+          precisaDecidirEfetivacao: c.decisao, semSegundoContrato: c.semSegundo,
+        })),
+        ferias: rh.ferias,
+        ausenciasNoMes: rh.ausenciasMes,
+        pendenciasAnotadas: p.rhItens || [],
+      },
+      produtosXEstoque: req.body?.produtos || p.produtosResumo || null,
+      pendenciasAbertas: pautaPendencias(db, board).map(x => x.text),
+      acoesDoMesAnterior: pautaAcoesAnteriores(db, y, m, board),
+      demandasAnotadas: p.demandas || [],
+      comentariosDoGestor: p.comentarios || {},
+    };
+
+    const systemPrompt = `Você prepara a reunião mensal de resultado de uma rede de lojas de surf/streetwear em Belo Horizonte. A reunião é individual com cada loja, na última semana do mês, entre o dono/administração e a gerente da loja.
+
+Você recebe os números fechados do mês e a situação de RH e de estoque. Sua função é dar ao dono o roteiro da conversa: o que reconhecer, o que cobrar, que pergunta fazer para a gerente e que ação combinar.
+
+Regras:
+- Português do Brasil, direto, sem jargão de consultoria e sem elogio vazio.
+- Toda observação cita o número que a sustenta (ex: "PA 1,42 contra 1,68 no mês passado").
+- Dado zerado ou ausente não vira conclusão: aponte como dado que falta.
+- PA = peças por atendimento. Ticket médio = faturado por atendimento. Conversão = atendimentos que viraram venda.
+- Pergunta boa é aberta e sobre causa ("o que aconteceu com...?"), não sobre culpa.
+- Ação combinada tem verbo, dono e prazo. No máximo 5.
+- Quem está marcado como gerente não é cobrado por meta individual do mesmo jeito que vendedor.
+- Contrato de experiência vencendo é decisão que não pode ficar para depois da reunião.
+
+Responda SOMENTE com JSON válido, sem texto fora dele, neste formato:
+{
+  "resumo": "2 a 3 frases sobre como o mês foi",
+  "pontosFortes": ["..."],
+  "pontosAtencao": [{"tema":"...","evidencia":"...","pergunta":"..."}],
+  "vendedores": [{"nome":"...","leitura":"...","pergunta":"..."}],
+  "rh": [{"tema":"...","evidencia":"...","encaminhamento":"..."}],
+  "produtos": [{"tema":"...","evidencia":"...","pergunta":"..."}],
+  "acoesSugeridas": [{"texto":"...","responsavel":"...","prazoSugerido":"..."}]
+}`;
+
+    const { default: Anthropic } = require('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const pedir = model => client.messages.create({
+      model, max_tokens: 3000, system: systemPrompt,
+      messages: [{ role: 'user', content: `Dados da reunião:\n${JSON.stringify(contexto, null, 1)}` }],
+    });
+
+    let response;
+    try { response = await pedir('claude-sonnet-5'); }
+    catch (e) {
+      console.warn('[Pauta IA] sonnet indisponível, caindo para haiku:', e.message);
+      response = await pedir('claude-haiku-4-5-20251001');
+    }
+
+    let txt = response.content?.[0]?.text || '';
+    const match = txt.match(/\{[\s\S]*\}/);
+    if (match) txt = match[0];
+    let roteiro;
+    try { roteiro = JSON.parse(txt.trim()); }
+    catch (e) { return res.status(500).json({ error: `IA devolveu JSON inválido: ${e.message}` }); }
+
+    roteiro.geradoEm  = new Date().toISOString();
+    roteiro.geradoPor = req.session.user.label || req.session.user.username;
+
+    const dbw = await readDB();
+    if (!dbw.pautas) dbw.pautas = {};
+    const key = pautaKey(y, m, board);
+    dbw.pautas[key] = { ...pautaVazia(y, m, board), ...(dbw.pautas[key] || {}), roteiro, updatedAt: new Date().toISOString() };
+    await writeDB(dbw);
+
+    res.json({ roteiro });
+  } catch (e) {
+    console.error('[Pauta IA]', e.message);
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── POST /api/seed-weights-tmp (TEMPORÁRIO — remover após uso) ────────────────
 // Exemplo: POST /api/seed-weights-tmp?secret=GL2026SEED  body: { year, month, weights }
 app.post('/api/seed-weights-tmp', async (req, res) => {

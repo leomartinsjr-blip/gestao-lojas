@@ -100,6 +100,8 @@ function applyUserPermissions(user) {
   if (icmsEl) icmsEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
   const conferenciaEl = document.getElementById('conferenciaBtn');
   if (conferenciaEl) conferenciaEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
+  const pautaEl = document.getElementById('pautaBtn');
+  if (pautaEl) pautaEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
   const certificadosEl = document.getElementById('certificadosBtn');
   if (certificadosEl) certificadosEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
 }

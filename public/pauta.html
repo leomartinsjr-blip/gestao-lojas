@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pauta de Reunião</title>
+<link rel="icon" type="image/jpeg" href="favicon.jpg">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+
+/* ── Header ── */
+.pa-header{background:#161b22;border-bottom:1px solid #30363d;padding:0 1.25rem;display:flex;align-items:center;gap:.6rem;min-height:52px;position:sticky;top:0;z-index:100;flex-wrap:wrap}
+.pa-back{font-size:.8rem;color:#8b949e;padding:.28rem .6rem;border-radius:6px;border:1px solid #30363d;background:transparent;cursor:pointer;white-space:nowrap}
+.pa-back:hover{background:#21262d;color:#e6edf3}
+.pa-title{font-weight:700;font-size:.95rem;color:#58a6ff;white-space:nowrap}
+.pa-controls{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-left:auto}
+.pa-sel{background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:.3rem .5rem;border-radius:6px;font-size:.82rem;cursor:pointer}
+.pa-sel:focus{outline:none;border-color:#388bfd}
+.pa-nav{display:flex;align-items:center;gap:.35rem}
+.pa-nav-btn{background:#21262d;border:1px solid #30363d;color:#8b949e;width:26px;height:26px;border-radius:6px;cursor:pointer;font-size:.85rem;line-height:1}
+.pa-nav-btn:hover{background:#30363d;color:#e6edf3}
+.pa-mes{font-size:.82rem;font-weight:700;min-width:6.5rem;text-align:center;color:#e6edf3}
+.pa-badge{font-size:.7rem;font-weight:700;padding:.18rem .5rem;border-radius:5px;white-space:nowrap;letter-spacing:.02em}
+.pa-badge.rascunho{background:#d2992222;color:#d29922;border:1px solid #d2992244}
+.pa-badge.realizada{background:#3fb95022;color:#3fb950;border:1px solid #3fb95044}
+.pa-badge.nova{background:#8b949e22;color:#8b949e;border:1px solid #8b949e44}
+.pa-btn{background:#1f6feb;border:1px solid #388bfd;color:#fff;font-size:.8rem;font-weight:600;padding:.32rem .8rem;border-radius:6px;cursor:pointer;white-space:nowrap}
+.pa-btn:hover{background:#388bfd}
+.pa-btn:disabled{opacity:.5;cursor:default}
+.pa-btn.ghost{background:transparent;border-color:#30363d;color:#8b949e}
+.pa-btn.ghost:hover{background:#21262d;color:#e6edf3}
+.pa-btn.ok{background:#238636;border-color:#3fb950}
+.pa-btn.ok:hover{background:#2ea043}
+.pa-saving{font-size:.72rem;color:#8b949e;white-space:nowrap;opacity:0;transition:opacity .2s}
+.pa-saving.on{opacity:1}
+
+/* ── Body ── */
+.pa-body{max-width:1080px;margin:0 auto;padding:1.1rem 1rem 4rem}
+.pa-card{background:#161b22;border:1px solid #30363d;border-radius:9px;margin-bottom:.9rem;overflow:hidden}
+.pa-card-hdr{display:flex;align-items:center;gap:.6rem;padding:.65rem .9rem;border-bottom:1px solid #21262d;background:#1a1f27}
+.pa-card-num{font-size:.7rem;font-weight:700;color:#0d1117;background:#58a6ff;width:19px;height:19px;border-radius:50%;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.pa-card-title{font-size:.87rem;font-weight:700;color:#e6edf3;flex:1;min-width:0}
+.pa-card-sub{font-size:.72rem;color:#8b949e;font-weight:400}
+.pa-card-body{padding:.85rem .9rem}
+
+/* ── KPIs ── */
+.pa-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(118px,1fr));gap:.6rem}
+.pa-kpi{background:#0d1117;border:1px solid #21262d;border-radius:7px;padding:.55rem .7rem}
+.pa-kpi-lbl{font-size:.68rem;color:#8b949e;margin-bottom:.15rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pa-kpi-val{font-size:1.02rem;font-weight:700;color:#e6edf3;font-variant-numeric:tabular-nums}
+.pa-kpi-sub{font-size:.68rem;color:#6e7681;margin-top:.12rem}
+.pos{color:#3fb950}.neg{color:#f85149}.warn{color:#d29922}.blue{color:#58a6ff}.mut{color:#8b949e}
+
+/* ── Tabela ── */
+.pa-tbl-wrap{overflow-x:auto}
+.pa-tbl{width:100%;border-collapse:collapse;font-size:.79rem;min-width:640px}
+.pa-tbl th{background:#0d1117;color:#8b949e;font-weight:600;text-align:left;padding:.42rem .55rem;border-bottom:1px solid #21262d;white-space:nowrap;font-size:.7rem;text-transform:uppercase;letter-spacing:.03em}
+.pa-tbl td{padding:.4rem .55rem;border-bottom:1px solid #1a1f26;color:#e6edf3;white-space:nowrap}
+.pa-tbl tr:last-child td{border-bottom:none}
+.pa-tbl tr:hover td{background:#1c2128}
+.pa-tbl .num{text-align:right;font-variant-numeric:tabular-nums}
+.pa-tbl tfoot td{font-weight:700;background:#0d1117;border-top:1px solid #30363d}
+.pa-nota-inp{width:100%;min-width:150px;background:transparent;border:1px solid transparent;border-radius:4px;color:#c9d1d9;font-size:.76rem;padding:.18rem .3rem;font-family:inherit}
+.pa-nota-inp:hover{border-color:#30363d}
+.pa-nota-inp:focus{outline:none;border-color:#388bfd;background:#0d1117}
+.pa-tag{font-size:.65rem;padding:.08rem .32rem;border-radius:3px;font-weight:600;margin-left:.3rem}
+.pa-tag.ger{background:#a78bfa22;color:#a78bfa}
+.pa-tag.fer{background:#22d3ee22;color:#22d3ee}
+
+/* ── Textarea / inputs ── */
+.pa-ta{width:100%;background:#0d1117;border:1px solid #30363d;border-radius:7px;color:#e6edf3;font-family:inherit;font-size:.82rem;padding:.5rem .6rem;resize:vertical;min-height:64px;line-height:1.45}
+.pa-ta:focus{outline:none;border-color:#388bfd}
+.pa-ta-lbl{font-size:.7rem;color:#8b949e;margin:.75rem 0 .28rem;text-transform:uppercase;letter-spacing:.04em;font-weight:600}
+.pa-inp{background:#0d1117;border:1px solid #30363d;color:#e6edf3;padding:.34rem .5rem;border-radius:6px;font-size:.8rem;font-family:inherit}
+.pa-inp:focus{outline:none;border-color:#388bfd}
+
+/* ── Blocos RH / alertas ── */
+.pa-alertas{display:flex;flex-direction:column;gap:.4rem}
+.pa-alert{display:flex;align-items:flex-start;gap:.55rem;background:#0d1117;border:1px solid #21262d;border-left-width:3px;border-radius:6px;padding:.45rem .65rem;font-size:.79rem}
+.pa-alert.crit{border-left-color:#f85149}
+.pa-alert.att{border-left-color:#d29922}
+.pa-alert.info{border-left-color:#58a6ff}
+.pa-alert.ok{border-left-color:#3fb950}
+.pa-alert-txt{flex:1;min-width:0;line-height:1.4}
+.pa-alert-nome{font-weight:700}
+.pa-alert-meta{font-size:.72rem;color:#8b949e;margin-top:.1rem}
+.pa-alert-pill{font-size:.66rem;font-weight:700;padding:.1rem .38rem;border-radius:4px;white-space:nowrap;flex-shrink:0}
+.pill-crit{background:#f8514922;color:#f85149}
+.pill-att{background:#d2992222;color:#d29922}
+.pill-info{background:#58a6ff22;color:#58a6ff}
+.pill-ok{background:#3fb95022;color:#3fb950}
+.pa-sub-hdr{font-size:.7rem;color:#8b949e;text-transform:uppercase;letter-spacing:.04em;font-weight:700;margin:.8rem 0 .4rem;display:flex;align-items:center;gap:.4rem}
+.pa-sub-hdr:first-child{margin-top:0}
+.pa-sub-hdr::after{content:'';flex:1;height:1px;background:#21262d}
+.pa-empty{color:#6e7681;font-size:.78rem;padding:.35rem 0;font-style:italic}
+
+/* ── Listas editáveis (RH itens / demandas / ações) ── */
+.pa-lista{display:flex;flex-direction:column;gap:.4rem;margin-bottom:.6rem}
+.pa-linha{display:flex;align-items:center;gap:.4rem;background:#0d1117;border:1px solid #21262d;border-radius:6px;padding:.4rem .5rem;flex-wrap:wrap}
+.pa-linha .grow{flex:1;min-width:160px}
+.pa-del{background:transparent;border:none;color:#6e7681;cursor:pointer;font-size:.95rem;line-height:1;padding:.1rem .25rem;border-radius:4px;flex-shrink:0}
+.pa-del:hover{color:#f85149;background:#f8514915}
+.pa-add-row{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}
+.pa-add-row .grow{flex:1;min-width:170px}
+
+/* ── Pendências / ações anteriores ── */
+.pa-pend{display:flex;align-items:flex-start;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #1a1f26;font-size:.8rem}
+.pa-pend:last-child{border-bottom:none}
+.pa-pend-mes{font-size:.68rem;color:#6e7681;white-space:nowrap;font-variant-numeric:tabular-nums}
+.pa-pend-txt{flex:1;min-width:0;line-height:1.4}
+.pa-check{color:#3fb950;font-weight:700}
+.pa-uncheck{color:#f85149;font-weight:700}
+
+/* ── Produtos x estoque ── */
+.pa-prod-head{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-bottom:.7rem}
+.pa-cob{font-weight:700;font-variant-numeric:tabular-nums}
+.pa-legend{font-size:.71rem;color:#6e7681;margin-top:.5rem;line-height:1.5}
+
+/* ── Roteiro IA ── */
+.pa-ia-box{background:#0d1117;border:1px solid #21262d;border-radius:7px;padding:.7rem .8rem;font-size:.82rem;line-height:1.55}
+.pa-ia-resumo{color:#c9d1d9;margin-bottom:.7rem}
+.pa-ia-item{border-left:2px solid #30363d;padding:.1rem 0 .1rem .6rem;margin-bottom:.55rem}
+.pa-ia-tema{font-weight:700;color:#e6edf3}
+.pa-ia-ev{font-size:.77rem;color:#8b949e;margin-top:.1rem}
+.pa-ia-perg{font-size:.79rem;color:#58a6ff;margin-top:.18rem;font-style:italic}
+.pa-ia-acao{display:flex;align-items:center;gap:.5rem;background:#161b22;border:1px solid #21262d;border-radius:6px;padding:.4rem .55rem;margin-bottom:.35rem;font-size:.79rem}
+.pa-ia-acao-txt{flex:1;min-width:0;line-height:1.4}
+.pa-ia-add{background:#238636;border:1px solid #3fb950;color:#fff;font-size:.72rem;font-weight:600;padding:.2rem .5rem;border-radius:5px;cursor:pointer;white-space:nowrap;flex-shrink:0}
+.pa-ia-add:hover{background:#2ea043}
+.pa-ia-add:disabled{opacity:.45;cursor:default}
+.pa-ia-forte{font-size:.8rem;color:#3fb950;padding:.12rem 0 .12rem .6rem;border-left:2px solid #3fb95055;margin-bottom:.3rem}
+
+/* ── Estados ── */
+.pa-state{text-align:center;padding:2.5rem 1rem;color:#8b949e;font-size:.85rem}
+.pa-spin{display:inline-block;width:20px;height:20px;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:spin .7s linear infinite;margin-bottom:.5rem}
+@keyframes spin{to{transform:rotate(360deg)}}
+.pa-err{background:#f8514915;border:1px solid #f8514944;border-radius:8px;padding:.6rem .8rem;color:#f85149;font-size:.8rem;margin-bottom:.8rem}
+.pa-toast{position:fixed;bottom:1.2rem;left:50%;transform:translateX(-50%);background:#238636;color:#fff;padding:.5rem 1rem;border-radius:7px;font-size:.82rem;font-weight:600;z-index:300;opacity:0;pointer-events:none;transition:opacity .25s}
+.pa-toast.on{opacity:1}
+.pa-toast.err{background:#da3633}
+
+/* ── Mobile ── */
+@media(max-width:640px){
+  .pa-header{padding:.5rem .7rem;gap:.4rem}
+  .pa-controls{margin-left:0;width:100%}
+  .pa-body{padding:.7rem .5rem 3rem}
+  .pa-kpis{grid-template-columns:repeat(2,1fr)}
+}
+
+/* ── Impressão ── */
+@media print{
+  body{background:#fff;color:#000}
+  .pa-header,.pa-del,.pa-add-row,.pa-ia-add,.pa-btn{display:none!important}
+  .pa-card{border-color:#ccc;break-inside:avoid}
+  .pa-card-hdr{background:#f2f2f2}
+  .pa-card,.pa-kpi,.pa-ia-box,.pa-alert,.pa-linha{background:#fff;color:#000}
+  .pa-ta,.pa-inp,.pa-nota-inp{border-color:#ccc;color:#000;background:#fff}
+}
+</style>
+</head>
+<body>
+
+<header class="pa-header">
+  <button class="pa-back" onclick="history.back()">← Voltar</button>
+  <span class="pa-title">Pauta de Reunião</span>
+
+  <div class="pa-controls">
+    <select id="boardSel" class="pa-sel"></select>
+    <div class="pa-nav">
+      <button class="pa-nav-btn" id="btnPrev" title="Mês anterior">‹</button>
+      <span class="pa-mes" id="mesLabel">—</span>
+      <button class="pa-nav-btn" id="btnNext" title="Próximo mês">›</button>
+    </div>
+    <span class="pa-badge nova" id="statusBadge">—</span>
+    <span class="pa-saving" id="saving">salvando…</span>
+    <button class="pa-btn ghost" id="btnPrint" title="Imprimir a pauta">Imprimir</button>
+    <button class="pa-btn ok" id="btnFechar">Fechar reunião</button>
+  </div>
+</header>
+
+<div class="pa-body">
+  <div id="errBox" class="pa-err" style="display:none"></div>
+  <div id="loading" class="pa-state"><div class="pa-spin"></div><div>Carregando…</div></div>
+  <div id="content" style="display:none">
+
+    <!-- 1 · Performance da loja -->
+    <div class="pa-card">
+      <div class="pa-card-hdr">
+        <span class="pa-card-num">1</span>
+        <span class="pa-card-title">Performance da loja <span class="pa-card-sub" id="perfSub"></span></span>
+      </div>
+      <div class="pa-card-body">
+        <div class="pa-kpis" id="lojaKpis"></div>
+        <div class="pa-ta-lbl">Comentário da reunião</div>
+        <textarea class="pa-ta" id="cmtPerformance" placeholder="O que explicou o mês: clima, campanha, obra na rua, equipe reduzida…"></textarea>
+      </div>
+    </div>
+
+    <!-- 2 · Vendedores -->
+    <div class="pa-card">
+      <div class="pa-card-hdr">
+        <span class="pa-card-num">2</span>
+        <span class="pa-card-title">Performance dos vendedores <span class="pa-card-sub" id="vendSub"></span></span>
+      </div>
+      <div class="pa-card-body">
+        <div class="pa-tbl-wrap"><table class="pa-tbl" id="vendTbl"></table></div>
+        <div class="pa-ta-lbl">Comentário sobre a equipe</div>
+        <textarea class="pa-ta" id="cmtVendedores" placeholder="Quem puxou o resultado, quem precisa de acompanhamento, o que foi combinado individualmente…"></textarea>
+      </div>
+    </div>
+
+    <!-- 3 · RH -->
+    <div class="pa-card">
+      <div class="pa-card-hdr">
+        <span class="pa-card-num">3</span>
+        <span class="pa-card-title">Pendências de RH <span class="pa-card-sub" id="rhSub"></span></span>
+      </div>
+      <div class="pa-card-body">
+        <div id="rhAuto"></div>
+        <div class="pa-sub-hdr">Pendências anotadas na reunião</div>
+        <div class="pa-lista" id="rhItens"></div>
+        <div class="pa-add-row">
+          <select class="pa-inp" id="rhTipo">
+            <option value="ferias">Férias</option>
+            <option value="contratacao">Contratação</option>
+            <option value="demissao">Demissão</option>
+            <option value="atestado">Atestado</option>
+            <option value="advertencia">Advertência</option>
+            <option value="treinamento">Treinamento</option>
+            <option value="outro">Outro</option>
+          </select>
+          <input class="pa-inp" id="rhColab" placeholder="Colaborador" style="min-width:140px">
+          <input class="pa-inp grow" id="rhDesc" placeholder="O que precisa ser resolvido">
+          <input class="pa-inp" id="rhPrazo" type="date" title="Prazo">
+          <button class="pa-btn" id="rhAdd">Adicionar</button>
+        </div>
+        <div class="pa-ta-lbl">Comentário de RH</div>
+        <textarea class="pa-ta" id="cmtRh" placeholder="Clima da equipe, escala, cobertura de férias…"></textarea>
+      </div>
+    </div>
+
+    <!-- 4 · Produtos e serviços vendidos x estoque -->
+    <div class="pa-card">
+      <div class="pa-card-hdr">
+        <span class="pa-card-num">4</span>
+        <span class="pa-card-title">Produtos e serviços vendidos × estoque <span class="pa-card-sub" id="prodSub"></span></span>
+      </div>
+      <div class="pa-card-body">
+        <div class="pa-prod-head">
+          <button class="pa-btn" id="btnProd">Carregar do Microvix</button>
+          <span class="pa-card-sub" id="prodStatus">Vendas do mês contra o estoque de hoje, marca a marca.</span>
+        </div>
+        <div id="prodResult"></div>
+        <div class="pa-ta-lbl">Comentário sobre produto e estoque</div>
+        <textarea class="pa-ta" id="cmtProdutos" placeholder="O que falta na loja, o que está encalhado, o que pedir ou transferir…"></textarea>
+      </div>
+    </div>
+
+    <!-- 5 · Pendências abertas -->
+    <div class="pa-card">
+      <div class="pa-card-hdr">
+        <span class="pa-card-num">5</span>
+        <span class="pa-card-title">Pendências e ações anteriores <span class="pa-card-sub" id="pendSub"></span></span>
+      </div>
+      <div class="pa-card-body" id="pendBody"></div>
+    </div>
+
+    <!-- 6 · Demandas adicionais -->
+    <div class="pa-card">
+      <div class="pa-card-hdr">
+        <span class="pa-card-num">6</span>
+        <span class="pa-card-title">Demandas adicionais</span>
+      </div>
+      <div class="pa-card-body">
+        <div class="pa-lista" id="demandas"></div>
+        <div class="pa-add-row">
+          <input class="pa-inp grow" id="demTitulo" placeholder="Assunto (manutenção, visual, sistema, fornecedor…)">
+          <input class="pa-inp grow" id="demDetalhe" placeholder="Detalhe">
+          <button class="pa-btn" id="demAdd">Adicionar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 7 · Ações combinadas -->
+    <div class="pa-card">
+      <div class="pa-card-hdr">
+        <span class="pa-card-num">7</span>
+        <span class="pa-card-title">Ações combinadas <span class="pa-card-sub">viram itens de pauta da loja ao fechar a reunião</span></span>
+      </div>
+      <div class="pa-card-body">
+        <div class="pa-lista" id="acoes"></div>
+        <div class="pa-add-row">
+          <input class="pa-inp grow" id="acaoTexto" placeholder="O que vai ser feito">
+          <input class="pa-inp" id="acaoResp" placeholder="Responsável" style="min-width:130px">
+          <input class="pa-inp" id="acaoPrazo" type="date" title="Prazo">
+          <button class="pa-btn" id="acaoAdd">Adicionar</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 8 · Roteiro da conversa -->
+    <div class="pa-card">
+      <div class="pa-card-hdr">
+        <span class="pa-card-num">8</span>
+        <span class="pa-card-title">Roteiro da conversa <span class="pa-card-sub" id="iaSub">gerado a partir dos números acima</span></span>
+        <button class="pa-btn" id="btnIA">Gerar roteiro</button>
+      </div>
+      <div class="pa-card-body" id="iaBody">
+        <div class="pa-empty">Clique em “Gerar roteiro” para receber os pontos de atenção, as perguntas para a gerente e as ações sugeridas.</div>
+      </div>
+    </div>
+
+    <!-- Rodapé: participantes -->
+    <div class="pa-card">
+      <div class="pa-card-body" style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
+        <span class="pa-card-sub">Reunião realizada em</span>
+        <input class="pa-inp" id="realizadaEm" type="date">
+        <span class="pa-card-sub">Participantes</span>
+        <input class="pa-inp grow" id="participantes" placeholder="Quem esteve na reunião" style="flex:1;min-width:200px">
+        <span class="pa-card-sub" id="updatedInfo"></span>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="pa-toast" id="toast"></div>
+
+<script src="pauta.js"></script>
+</body>
+</html>
