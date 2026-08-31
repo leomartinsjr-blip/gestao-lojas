@@ -9250,11 +9250,19 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       const empId = parseInt(key.split('-').at(-1));
       if (empId) savedEmpIds.add(empId);
     }
-    const monthEnd = `${year}-${String(month).padStart(2,'0')}-${String(new Date(year, month, 0).getDate()).padStart(2,'0')}`;
+    const mesIni     = `${mk}-01`;
+    const monthEnd   = `${year}-${String(month).padStart(2,'0')}-${String(new Date(year, month, 0).getDate()).padStart(2,'0')}`;
+    // Quem entrou ou saiu no meio do mês trabalhou dias que têm de ser pagos —
+    // e "inativo" é a foto de hoje, não do mês. Quem decide é o vínculo:
+    // admitido até o fim do mês e desligado a partir do começo dele entra.
+    // Sem data de desligamento não dá para saber a janela: aí continua valendo
+    // só o histórico (folha salva ou venda lançada no mês).
+    const vinculoNoMes = e => (!e.admissao     || e.admissao     <= monthEnd)
+                           && (!e.desligamento || e.desligamento >= mesIni);
     const employees = (db.employees || []).filter(e => {
-      if (e.inativo && !savedEmpIds.has(e.id)) return false;
-      if (e.admissao && e.admissao > monthEnd && !savedEmpIds.has(e.id)) return false;
-      return true;
+      if (savedEmpIds.has(e.id)) return true;
+      if (e.inativo && !e.desligamento) return false;
+      return vinculoNoMes(e);
     });
 
     const isVend = e => e.isVendedor !== false;
