@@ -12441,34 +12441,113 @@ function pautaConversaoPorVendedor(db, y, m, board) {
   return out;
 }
 
-function pautaTotaisLoja(db, y, m, board) {
-  const mk  = monthKey(y, m);
-  const rec = db.dailySales?.[`${mk}-${board}`];
-  let venda = 0, pecas = 0, fluxo = 0, diasComVenda = 0;
-  for (const e of Object.values(rec?.entries || {})) {
-    venda += e.value || 0;
-    pecas += e.pecas || 0;
-    fluxo += e.fluxo || 0;
-    if ((e.value || 0) > 0) diasComVenda++;
-  }
-  // storeFluxo é a contagem de porta feita pela loja — quando existe, manda nela
-  const sf = db.storeFluxo?.[`${mk}-${board}`] || {};
-  const fluxoPorta = Object.values(sf).reduce((s, v) => s + (Number(v) || 0), 0);
-  if (fluxoPorta > 0) fluxo = fluxoPorta;
+// Peso do dia no mês: quanto aquele dia vale do total (a soma do mês é 100).
+// Sem peso cadastrado, o mês é linear. Mesma regra da Planilha do Mês.
+function pautaPesoDoDia(db, y, m) {
+  const w = (db.globalWeights || {})[monthKey(y, m)] || {};
+  const padrao = 100 / new Date(y, m, 0).getDate();
+  return ds => (w[ds] ?? padrao);
+}
 
-  // Atendimento só existe por vendedor; o da loja é a soma deles
-  let atend = 0;
+// A reunião acontece com o mês ainda em curso, então o corte é D-1: o dia de
+// hoje ainda está sendo vendido e entraria no cálculo pela metade.
+function pautaCorte(y, m, hoje) {
+  const mk       = monthKey(y, m);
+  const primeiro = `${mk}-01`;
+  const ultimo   = `${mk}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+  const ontem    = pautaAddDias(hoje, -1);
+  if (ontem >= ultimo)  return { corte: ultimo, fechado: true };
+  if (ontem < primeiro) return { corte: null,   fechado: false };
+  return { corte: ontem, fechado: false };
+}
+
+// Quando a meta da loja não está lançada na Planilha do Mês, ela é a soma das
+// metas individuais — é assim que a loja é cobrada.
+function pautaMetaVendedores(db, y, m, board) {
+  const mk = monthKey(y, m);
+  let meta = 0;
+  for (const emp of (db.employees || [])) {
+    if (emp.board !== board || emp.inativo) continue;
+    meta += db.vsales?.[`${mk}-${board}-${emp.id}`]?.meta?.mensal || 0;
+  }
+  return meta;
+}
+
+// Projeção pelo ritmo: o que já foi vendido dividido pelo peso que já correu.
+// Mês fechado não se projeta — o realizado é o número.
+function pautaProjetar(valor, pesoAcum, fechado) {
+  if (fechado) return valor || null;
+  if (!(pesoAcum > 0) || !(valor > 0)) return null;
+  return valor * 100 / pesoAcum;
+}
+
+function pautaTotaisLoja(db, y, m, board) {
+  const mk = monthKey(y, m);
+  const { corte, fechado } = pautaCorte(y, m, todayBRT());
+  const noCorte = ds => corte ? ds <= corte : false; // mês futuro não tem nada a contar
+
+  // O faturamento da loja é a soma dos vendedores — é o lançamento que existe
+  // todo dia. A Planilha do Mês só entra quando não há vsales no período.
+  let venda = 0, pecas = 0, atend = 0;
+  const porDia = {};
   for (const emp of (db.employees || [])) {
     if (emp.board !== board) continue;
     const vs = db.vsales?.[`${mk}-${board}-${emp.id}`];
-    for (const e of Object.values(vs?.entries || {})) atend += e.atendimentos || 0;
+    for (const [ds, e] of Object.entries(vs?.entries || {})) {
+      if (!noCorte(ds)) continue;
+      venda += e.value || 0;
+      pecas += e.pecas || 0;
+      atend += e.atendimentos || 0;
+      porDia[ds] = (porDia[ds] || 0) + (e.value || 0);
+    }
+  }
+  let diasComVenda = Object.values(porDia).filter(v => v > 0).length;
+  let fonte = 'vendedores';
+
+  const rec = db.dailySales?.[`${mk}-${board}`];
+  let fluxo = 0;
+  for (const [ds, e] of Object.entries(rec?.entries || {})) {
+    if (noCorte(ds)) fluxo += e.fluxo || 0;
+  }
+  if (venda === 0) {
+    // Sem lançamento por vendedor no período: cai na Planilha do Mês
+    let dsVenda = 0, dsPecas = 0, dsDias = 0;
+    for (const [ds, e] of Object.entries(rec?.entries || {})) {
+      if (!noCorte(ds)) continue;
+      dsVenda += e.value || 0;
+      dsPecas += e.pecas || 0;
+      if ((e.value || 0) > 0) dsDias++;
+    }
+    if (dsVenda > 0) { venda = dsVenda; pecas = dsPecas; diasComVenda = dsDias; fonte = 'planilha do mês'; }
   }
 
-  const meta = pautaMetaLoja(rec);
+  // storeFluxo é a contagem de porta feita pela loja — quando existe, manda nela
+  const sf = db.storeFluxo?.[`${mk}-${board}`] || {};
+  const fluxoPorta = Object.entries(sf)
+    .filter(([ds]) => noCorte(ds))
+    .reduce((s, [, v]) => s + (Number(v) || 0), 0);
+  if (fluxoPorta > 0) fluxo = fluxoPorta;
+
+  const peso = pautaPesoDoDia(db, y, m);
+  let pesoAcum = 0;
+  const totalDias = new Date(y, m, 0).getDate();
+  for (let d = 1; d <= totalDias; d++) {
+    const ds = `${mk}-${String(d).padStart(2, '0')}`;
+    if (!noCorte(ds)) break;
+    pesoAcum += peso(ds);
+  }
+
+  const projecao  = pautaProjetar(venda, pesoAcum, fechado);
+  const projPecas = fechado ? (pecas || null) : (pautaProjetar(pecas, pesoAcum, false) ? Math.round(pautaProjetar(pecas, pesoAcum, false)) : null);
+  const meta = pautaMetaLoja(rec) || pautaMetaVendedores(db, y, m, board);
   const conv = pautaConversao(db, y, m, board);
+
   return {
-    meta, venda, pecas, fluxo, atend, diasComVenda,
-    pct:  meta  > 0 ? (venda / meta) * 100 : null,
+    meta, venda, pecas, fluxo, atend, diasComVenda, fonte,
+    corte, fechado, pesoAcum: Math.round(pesoAcum * 10) / 10,
+    projecao, projPecas,
+    pct:     meta > 0 && venda > 0 ? (venda / meta) * 100 : null,
+    pctProj: meta > 0 && projecao  ? (projecao / meta) * 100 : null,
     pa:   atend > 0 ? pecas / atend : null,
     tm:   atend > 0 ? venda / atend : null,
     conv: conv ? conv.pct : (fluxo > 0 && atend > 0 ? (atend / fluxo) * 100 : null),
@@ -12479,22 +12558,39 @@ function pautaTotaisLoja(db, y, m, board) {
 function pautaVendedores(db, y, m, board) {
   const mk   = monthKey(y, m);
   const conv = pautaConversaoPorVendedor(db, y, m, board);
+  const { corte, fechado } = pautaCorte(y, m, todayBRT());
+  const noCorte = ds => corte ? ds <= corte : false; // mês futuro não tem nada a contar
+
+  const peso = pautaPesoDoDia(db, y, m);
+  let pesoAcum = 0;
+  const totalDias = new Date(y, m, 0).getDate();
+  for (let d = 1; d <= totalDias; d++) {
+    const ds = `${mk}-${String(d).padStart(2, '0')}`;
+    if (!noCorte(ds)) break;
+    pesoAcum += peso(ds);
+  }
+
   return (db.employees || [])
     .filter(e => e.board === board && !e.inativo)
     .map(e => {
       const vs = db.vsales?.[`${mk}-${board}-${e.id}`] || {};
       let venda = 0, pecas = 0, atend = 0, dias = 0;
-      for (const en of Object.values(vs.entries || {})) {
+      for (const [ds, en] of Object.entries(vs.entries || {})) {
+        if (!noCorte(ds)) continue;
         venda += en.value || 0; pecas += en.pecas || 0; atend += en.atendimentos || 0;
         if ((en.value || 0) > 0) dias++;
       }
       const meta = vs.meta?.mensal || 0;
       const c    = conv[String(e.id)];
+      // Quem esteve de férias no mês vendeu menos por acordo, não por ritmo:
+      // a projeção linear puniria duas vezes. Fica registrado para a leitura.
+      const projecao = pautaProjetar(venda, pesoAcum, fechado);
       return {
         id: e.id, nome: e.apelido || e.name, nomeCompleto: e.name,
         cargo: e.cargo || '', gerente: e.isVendedor === false,
-        meta, venda, pecas, atend, dias,
-        pct:  meta  > 0 ? (venda / meta) * 100 : null,
+        meta, venda, pecas, atend, dias, projecao,
+        pct:     meta > 0 && venda > 0 ? (venda / meta) * 100 : null,
+        pctProj: meta > 0 && projecao  ? (projecao / meta) * 100 : null,
         pa:   atend > 0 ? pecas / atend : null,
         tm:   atend > 0 ? venda / atend : null,
         conv: c && c.total > 0 ? (c.conv / c.total) * 100 : null,
@@ -12676,6 +12772,9 @@ app.get('/api/pauta/:year/:month/:board', requireEscritorioOrAdmin, async (req, 
     const loja     = pautaTotaisLoja(db, y, m, board);
     const anterior = pautaFaturamento(db, py, pm, board);
     const anoAnt   = pautaFaturamento(db, y - 1, m, board);
+    // Comparar o parcial do mês em curso com um mês fechado dá sempre queda:
+    // a base da comparação é a projeção de fechamento.
+    const base     = loja.projecao ?? loja.venda;
 
     res.json({
       pauta: pautaDaLoja(db, y, m, board),
@@ -12685,8 +12784,9 @@ app.get('/api/pauta/:year/:month/:board', requireEscritorioOrAdmin, async (req, 
           ...loja,
           anterior:    { ...anterior, year: py,    month: pm },
           anoAnterior: { ...anoAnt,   year: y - 1, month: m  },
-          varAnterior:    anterior.venda > 0 ? ((loja.venda - anterior.venda) / anterior.venda) * 100 : null,
-          varAnoAnterior: anoAnt.venda   > 0 ? ((loja.venda - anoAnt.venda)   / anoAnt.venda)   * 100 : null,
+          base,
+          varAnterior:    anterior.venda > 0 && base ? ((base - anterior.venda) / anterior.venda) * 100 : null,
+          varAnoAnterior: anoAnt.venda   > 0 && base ? ((base - anoAnt.venda)   / anoAnt.venda)   * 100 : null,
         },
         vendedores:      pautaVendedores(db, y, m, board),
         rh:              pautaRH(db, board, y, m, hoje),
@@ -12819,14 +12919,23 @@ app.post('/api/pauta/:year/:month/:board/roteiro', requireEscritorioOrAdmin, asy
       loja: BOARDS_LABEL[board] || board,
       mes: `${String(m).padStart(2, '0')}/${y}`,
       performance: {
+        mesFechado: loja.fechado,
+        dadosAte: loja.corte,
+        pesoDoMesJaCorrido: loja.pesoAcum,
+        projecaoFechamento: n(loja.projecao),
+        pctMetaProjetado: n(loja.pctProj),
         meta: loja.meta, faturado: n(loja.venda), pctMeta: n(loja.pct),
         pecas: loja.pecas, atendimentos: loja.atend, fluxoPorta: loja.fluxo,
         pa: n(loja.pa), ticketMedio: n(loja.tm), conversaoPct: n(loja.conv),
         mesAnterior:        { mes: `${String(pm).padStart(2, '0')}/${py}`,    faturado: n(ant.venda)  },
         mesmoMesAnoPassado: { mes: `${String(m).padStart(2, '0')}/${y - 1}`, faturado: n(anoA.venda) },
+        obs: loja.fechado
+          ? 'Mês fechado: o faturado é o número final.'
+          : 'Mês em curso. Compare SEMPRE pela projeção de fechamento, nunca pelo faturado parcial — o mês anterior e o ano passado são meses inteiros.',
       },
       vendedores: vends.map(v => ({
         nome: v.nome, gerente: v.gerente, meta: v.meta, faturado: n(v.venda),
+        projecaoFechamento: n(v.projecao), pctMetaProjetado: n(v.pctProj),
         pctMeta: n(v.pct), pa: n(v.pa), ticketMedio: n(v.tm), conversaoPct: n(v.conv),
         pecas: v.pecas, atendimentos: v.atend, diasFerias: v.diasFerias,
       })),
@@ -12859,6 +12968,8 @@ Regras:
 - Toda observação cita o número que a sustenta (ex: "PA 1,42 contra 1,68 no mês passado").
 - Dado zerado ou ausente não vira conclusão: aponte como dado que falta.
 - PA = peças por atendimento. Ticket médio = faturado por atendimento. Conversão = atendimentos que viraram venda.
+- A reunião é na última semana, com o mês ainda aberto. Avalie o mês pela projeção de fechamento (faturado ÷ peso do mês já corrido), e diga "projeção" quando citar esse número. O faturado parcial só serve para dizer até onde os dados vão.
+- Quem esteve de férias no mês tem a projeção linear distorcida para baixo: não cobre ritmo de quem faltou por acordo.
 - Pergunta boa é aberta e sobre causa ("o que aconteceu com...?"), não sobre culpa.
 - Ação combinada tem verbo, dono e prazo. No máximo 5.
 - Quem está marcado como gerente não é cobrado por meta individual do mesmo jeito que vendedor.

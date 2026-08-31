@@ -174,55 +174,89 @@ function varHtml(v) {
 
 function renderLoja() {
   const d = S.dados.loja;
-  $('perfSub').textContent = `${S.label} · ${MESES[S.month - 1]}/${S.year}`;
-  const pctCls = d.pct == null ? 'mut' : d.pct >= 100 ? 'pos' : d.pct >= 85 ? 'warn' : 'neg';
+  const emCurso = !d.fechado;
+  $('perfSub').textContent = `${S.label} · ${MESES[S.month - 1]}/${S.year}`
+    + (emCurso ? ` · mês em curso, dados até ${fCurto(d.corte)}` : ' · mês fechado');
+
+  const pctBase = emCurso ? d.pctProj : d.pct;
+  const pctCls  = pctBase == null ? 'mut' : pctBase >= 100 ? 'pos' : pctBase >= 85 ? 'warn' : 'neg';
+  const base    = d.base ?? d.projecao ?? d.venda;
+
   const kpis = [
-    { l: 'Meta',        v: d.meta ? fBRL(d.meta) : '—', s: d.meta ? '' : 'meta não lançada' },
-    { l: 'Faturado',    v: fBRL(d.venda), c: 'blue', s: `${d.diasComVenda} dia${d.diasComVenda === 1 ? '' : 's'} com venda` },
-    { l: '% da meta',   v: fPct(d.pct), c: pctCls, s: d.meta ? fBRL(d.venda - d.meta) + ' vs meta' : '' },
-    { l: `vs ${MESES[d.anterior.month - 1]}/${String(d.anterior.year).slice(2)}`, v: varHtml(d.varAnterior), raw: true, s: d.anterior.venda ? fBRL(d.anterior.venda) : 'sem base' },
-    { l: `vs ${MESES[S.month - 1]}/${String(d.anoAnterior.year).slice(2)}`, v: varHtml(d.varAnoAnterior), raw: true, s: d.anoAnterior.venda ? fBRL(d.anoAnterior.venda) : 'sem base' },
-    { l: 'Peças',       v: fNum(d.pecas) },
-    { l: 'Atendimentos',v: fNum(d.atend), s: d.atend ? '' : 'não lançados' },
-    { l: 'PA',          v: fDec(d.pa), s: 'peças / atendimento' },
-    { l: 'Ticket médio',v: d.tm == null ? '—' : fBRL2(d.tm) },
-    { l: 'Conversão',   v: fPct(d.conv), s: d.convFonte || 'sem dado' },
+    { l: 'Meta', v: d.meta ? fBRL(d.meta) : '—', s: d.meta ? '' : 'meta não lançada' },
+    { l: emCurso ? `Realizado até ${fCurto(d.corte)}` : 'Faturado',
+      v: fBRL(d.venda),
+      s: `${d.diasComVenda} dia${d.diasComVenda === 1 ? '' : 's'} com venda · ${d.fonte}` },
+    ...(emCurso ? [{
+      l: 'Projeção do mês', c: 'blue',
+      v: d.projecao == null ? '—' : fBRL(d.projecao),
+      s: `no ritmo de ${fDec(d.pesoAcum, 0)}% do mês` }] : []),
+    { l: emCurso ? '% da meta (proj.)' : '% da meta',
+      v: fPct(pctBase), c: pctCls,
+      s: d.meta && base ? fBRL(base - d.meta) + ' vs meta' : '' },
+    { l: `vs ${MESES[d.anterior.month - 1]}/${String(d.anterior.year).slice(2)}`,
+      v: varHtml(d.varAnterior), raw: true,
+      s: d.anterior.venda ? fBRL(d.anterior.venda) : 'sem base' },
+    { l: `vs ${MESES[S.month - 1]}/${String(d.anoAnterior.year).slice(2)}`,
+      v: varHtml(d.varAnoAnterior), raw: true,
+      s: d.anoAnterior.venda ? fBRL(d.anoAnterior.venda) : 'sem base' },
+    { l: 'Peças', v: fNum(d.pecas), s: emCurso && d.projPecas ? `proj. ${fNum(d.projPecas)}` : '' },
+    { l: 'Atendimentos', v: fNum(d.atend), s: d.atend ? '' : 'não lançados' },
+    { l: 'PA', v: fDec(d.pa), s: 'peças / atendimento' },
+    { l: 'Ticket médio', v: d.tm == null ? '—' : fBRL2(d.tm) },
+    { l: 'Conversão', v: fPct(d.conv), s: d.convFonte || 'sem dado' },
     { l: 'Fluxo de porta', v: d.fluxo ? fNum(d.fluxo) : '—' },
   ];
+
   $('lojaKpis').innerHTML = kpis.map(k => `
     <div class="pa-kpi">
       <div class="pa-kpi-lbl">${esc(k.l)}</div>
       <div class="pa-kpi-val ${k.c || ''}">${k.raw ? k.v : esc(k.v)}</div>
       ${k.s ? `<div class="pa-kpi-sub">${esc(k.s)}</div>` : ''}
-    </div>`).join('');
+    </div>`).join('')
+    + (emCurso ? `<div class="pa-legend" style="grid-column:1/-1;margin-top:.1rem">
+        Projeção = realizado ÷ peso do mês já corrido. As comparações com o mês anterior e com o ano passado usam a projeção — meses fechados só se comparam com fechamento.
+      </div>` : '');
+
   $('cmtPerformance').value = S.pauta.comentarios.performance || '';
 }
 
 // ── 2 · Vendedores ───────────────────────────────────────────────────────────
 function renderVendedores() {
   const vs = S.dados.vendedores;
-  $('vendSub').textContent = `${vs.length} ativo${vs.length === 1 ? '' : 's'}`;
+  const emCurso = !S.dados.loja.fechado;
+  $('vendSub').textContent = `${vs.length} ativo${vs.length === 1 ? '' : 's'}`
+    + (emCurso ? ` · % pela projeção` : '');
+
   if (!vs.length) {
     $('vendTbl').innerHTML = '<tbody><tr><td class="pa-empty">Nenhum colaborador ativo nesta loja.</td></tr></tbody>';
   } else {
     const tot = vs.reduce((a, v) => ({
-      meta: a.meta + v.meta, venda: a.venda + v.venda,
-      pecas: a.pecas + v.pecas, atend: a.atend + v.atend,
-    }), { meta: 0, venda: 0, pecas: 0, atend: 0 });
+      meta:  a.meta  + v.meta,
+      venda: a.venda + v.venda,
+      proj:  a.proj  + (v.projecao || 0),
+      pecas: a.pecas + v.pecas,
+      atend: a.atend + v.atend,
+    }), { meta: 0, venda: 0, proj: 0, pecas: 0, atend: 0 });
 
     $('vendTbl').innerHTML = `
       <thead><tr>
-        <th>Vendedor</th><th class="num">Meta</th><th class="num">Faturado</th><th class="num">%</th>
+        <th>Vendedor</th><th class="num">Meta</th>
+        <th class="num">${emCurso ? 'Realizado' : 'Faturado'}</th>
+        ${emCurso ? '<th class="num">Projeção</th>' : ''}
+        <th class="num">${emCurso ? '% proj.' : '%'}</th>
         <th class="num">Peças</th><th class="num">Atend.</th><th class="num">PA</th><th class="num">Ticket</th><th class="num">Conv.</th>
         <th>Nota da reunião</th>
       </tr></thead>
       <tbody>${vs.map(v => {
-        const cls = v.pct == null ? 'mut' : v.pct >= 100 ? 'pos' : v.pct >= 85 ? 'warn' : 'neg';
+        const pct = emCurso ? v.pctProj : v.pct;
+        const cls = pct == null ? 'mut' : pct >= 100 ? 'pos' : pct >= 85 ? 'warn' : 'neg';
         return `<tr>
           <td>${esc(v.nome)}${v.gerente ? '<span class="pa-tag ger">gerente</span>' : ''}${v.diasFerias ? `<span class="pa-tag fer">${v.diasFerias}d férias</span>` : ''}</td>
           <td class="num">${v.meta ? fBRL(v.meta) : '—'}</td>
           <td class="num">${fBRL(v.venda)}</td>
-          <td class="num ${cls}">${fPct(v.pct)}</td>
+          ${emCurso ? `<td class="num blue">${v.projecao == null ? '—' : fBRL(v.projecao)}</td>` : ''}
+          <td class="num ${cls}">${fPct(pct)}</td>
           <td class="num">${fNum(v.pecas)}</td>
           <td class="num">${fNum(v.atend)}</td>
           <td class="num">${fDec(v.pa)}</td>
@@ -235,7 +269,8 @@ function renderVendedores() {
         <td>Total</td>
         <td class="num">${tot.meta ? fBRL(tot.meta) : '—'}</td>
         <td class="num">${fBRL(tot.venda)}</td>
-        <td class="num">${tot.meta ? fPct(tot.venda / tot.meta * 100) : '—'}</td>
+        ${emCurso ? `<td class="num blue">${tot.proj ? fBRL(tot.proj) : '—'}</td>` : ''}
+        <td class="num">${tot.meta ? fPct((emCurso ? tot.proj : tot.venda) / tot.meta * 100) : '—'}</td>
         <td class="num">${fNum(tot.pecas)}</td>
         <td class="num">${fNum(tot.atend)}</td>
         <td class="num">${tot.atend ? fDec(tot.pecas / tot.atend) : '—'}</td>
