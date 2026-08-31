@@ -88,6 +88,7 @@ async function salvar() {
       rhItens:       p.rhItens,
       demandas:      p.demandas,
       acoes:         p.acoes,
+      estoqueManual: p.estoqueManual,
       produtosResumo: p.produtosResumo,
     });
     S.pauta.updatedAt = salvo.updatedAt;
@@ -131,11 +132,13 @@ function renderTudo() {
   renderCabecalho();
   renderLoja();
   renderVendedores();
+  renderHistorico();
   renderRH();
   renderPendencias();
   renderLista('demandas');
   renderLista('acoes');
   renderProdutos();
+  renderEstoqueManual();
   renderRoteiro();
   renderRodape();
 }
@@ -245,6 +248,7 @@ function renderVendedores() {
         <th class="num">${emCurso ? 'Realizado' : 'Faturado'}</th>
         ${emCurso ? '<th class="num">Projeção</th>' : ''}
         <th class="num">${emCurso ? '% proj.' : '%'}</th>
+        <th class="num">vs loja</th>
         <th class="num">Peças</th><th class="num">Atend.</th><th class="num">PA</th><th class="num">Ticket</th><th class="num">Conv.</th>
         <th>Nota da reunião</th>
       </tr></thead>
@@ -257,6 +261,7 @@ function renderVendedores() {
           <td class="num">${fBRL(v.venda)}</td>
           ${emCurso ? `<td class="num blue">${v.projecao == null ? '—' : fBRL(v.projecao)}</td>` : ''}
           <td class="num ${cls}">${fPct(pct)}</td>
+          <td class="num ${v.delta == null ? 'mut' : v.delta >= 0 ? 'pos' : 'neg'}">${v.delta == null ? '—' : (v.delta >= 0 ? '+' : '') + v.delta.toFixed(0) + ' pp'}</td>
           <td class="num">${fNum(v.pecas)}</td>
           <td class="num">${fNum(v.atend)}</td>
           <td class="num">${fDec(v.pa)}</td>
@@ -271,6 +276,7 @@ function renderVendedores() {
         <td class="num">${fBRL(tot.venda)}</td>
         ${emCurso ? `<td class="num blue">${tot.proj ? fBRL(tot.proj) : '—'}</td>` : ''}
         <td class="num">${tot.meta ? fPct((emCurso ? tot.proj : tot.venda) / tot.meta * 100) : '—'}</td>
+        <td class="num">—</td>
         <td class="num">${fNum(tot.pecas)}</td>
         <td class="num">${fNum(tot.atend)}</td>
         <td class="num">${tot.atend ? fDec(tot.pecas / tot.atend) : '—'}</td>
@@ -288,7 +294,106 @@ function renderVendedores() {
   $('cmtVendedores').value = S.pauta.comentarios.vendedores || '';
 }
 
-// ── 3 · RH ───────────────────────────────────────────────────────────────────
+// ── 3 · Histórico dos últimos meses ──────────────────────────────────────────
+// A leitura que importa: o % do vendedor contra o % que a loja fez no mesmo
+// mês. Acima da loja, puxou; abaixo, foi puxado.
+function deltaCell(pct, delta) {
+  if (pct == null) return '<td class="num mut">—</td>';
+  if (delta == null) return `<td class="num">${fPct(pct)}</td>`;
+  const cls = delta >= 0 ? 'pos' : 'neg';
+  return `<td class="num">${fPct(pct)}<div class="hist-delta ${cls}">${delta >= 0 ? '+' : ''}${delta.toFixed(0)} pp</div></td>`;
+}
+
+function renderHistorico() {
+  const hist = S.dados.historico || [];
+  const d = S.dados.loja;
+  const emCurso = !d.fechado;
+  const pctAtual = emCurso ? d.pctProj : d.pct;
+
+  const cols = [
+    ...hist.map(h => ({ year: h.year, month: h.month, pct: h.loja.pct, atual: false })),
+    { year: S.year, month: S.month, pct: pctAtual, atual: true },
+  ];
+
+  // Uma linha por vendedor que apareceu em qualquer um dos meses
+  const linhas = new Map();
+  for (const h of hist) {
+    for (const v of h.vendedores) {
+      if (!linhas.has(v.id)) linhas.set(v.id, { id: v.id, nome: v.nome, gerente: v.gerente, meses: {}, ordem: 0 });
+      linhas.get(v.id).meses[`${h.year}-${h.month}`] = { pct: v.pct, delta: v.delta, ferias: v.diasFerias };
+    }
+  }
+  for (const v of S.dados.vendedores) {
+    if (!linhas.has(v.id)) linhas.set(v.id, { id: v.id, nome: v.nome, gerente: v.gerente, meses: {}, ordem: 0 });
+    const l = linhas.get(v.id);
+    l.nome = v.nome;
+    l.ordem = v.venda;
+    l.meses[`${S.year}-${S.month}`] = { pct: emCurso ? v.pctProj : v.pct, delta: v.delta, ferias: v.diasFerias };
+  }
+
+  if (!hist.length && !S.dados.vendedores.length) {
+    $('histTbl').innerHTML = '<tbody><tr><td class="pa-empty">Sem meses lançados para comparar.</td></tr></tbody>';
+    return;
+  }
+
+  $('histSub').textContent = hist.length
+    ? `${hist.length} ${hist.length === 1 ? 'mês fechado' : 'meses fechados'} + o mês em curso`
+    : 'só o mês em curso — ainda sem histórico lançado';
+
+  const cab = c => `${MESES[c.month - 1]}/${String(c.year).slice(2)}${c.atual && emCurso ? '<div class="hist-delta mut">proj.</div>' : ''}`;
+  const ordenadas = [...linhas.values()].sort((a, b) => b.ordem - a.ordem || a.nome.localeCompare(b.nome));
+
+  $('histTbl').innerHTML = `
+    <thead><tr>
+      <th>Vendedor</th>
+      ${cols.map(c => `<th class="num">${cab(c)}</th>`).join('')}
+    </tr></thead>
+    <tbody>
+      <tr class="hist-loja">
+        <td>LOJA — % da meta</td>
+        ${cols.map(c => `<td class="num">${fPct(c.pct)}</td>`).join('')}
+      </tr>
+      ${ordenadas.map(l => `<tr>
+        <td>${esc(l.nome)}${l.gerente ? '<span class="pa-tag ger">gerente</span>' : ''}</td>
+        ${cols.map(c => {
+          const cel = l.meses[`${c.year}-${c.month}`];
+          if (!cel) return '<td class="num mut">—</td>';
+          const td = deltaCell(cel.pct, cel.delta);
+          return cel.ferias ? td.replace('</td>', '<div class="hist-delta mut">férias</div></td>') : td;
+        }).join('')}
+      </tr>`).join('')}
+    </tbody>`;
+}
+
+// ── Valor do estoque declarado à mão ─────────────────────────────────────────
+// O Microvix dá o estoque a preço de venda pelo catálogo; o número que o
+// contábil usa é outro. Aqui entra o que a loja/escritório apurou.
+function parseValor(txt) {
+  const limpo = String(txt || '').replace(/[^\d,.-]/g, '');
+  if (!limpo) return 0;
+  // 1.234,56 (brasileiro) vs 1234.56 — a vírgula decide
+  const n = limpo.includes(',')
+    ? parseFloat(limpo.replace(/\./g, '').replace(',', '.'))
+    : parseFloat(limpo);
+  return isNaN(n) ? 0 : n;
+}
+
+function renderEstoqueManual() {
+  const e = S.pauta.estoqueManual || { custo: 0, venda: 0, data: '', obs: '' };
+  S.pauta.estoqueManual = e;
+  if (document.activeElement?.id !== 'estCusto') $('estCusto').value = e.custo ? fBRL2(e.custo) : '';
+  if (document.activeElement?.id !== 'estVenda') $('estVenda').value = e.venda ? fBRL2(e.venda) : '';
+  $('estData').value = e.data || '';
+  if (document.activeElement?.id !== 'estObs') $('estObs').value = e.obs || '';
+
+  const partes = [];
+  if (e.custo > 0 && e.venda > 0) partes.push(`Markup ${fDec(e.venda / e.custo, 2)}× · margem embutida ${fDec((1 - e.custo / e.venda) * 100, 1)}%`);
+  const ritmo = S.dados.loja.projecao ?? S.dados.loja.venda;
+  if (e.venda > 0 && ritmo > 0) partes.push(`${fDec(e.venda / ritmo, 1)} meses de venda parados na loja, no ritmo deste mês`);
+  $('estDeriv').innerHTML = partes.length ? partes.join(' · ') : '';
+}
+
+// ── 4 · RH ───────────────────────────────────────────────────────────────────
 function alerta(nivel, titulo, meta, pill, pillCls) {
   return `<div class="pa-alert ${nivel}">
     <div class="pa-alert-txt">
@@ -705,6 +810,17 @@ async function init() {
   for (const [id, campo] of [['cmtPerformance', 'performance'], ['cmtVendedores', 'vendedores'], ['cmtRh', 'rh'], ['cmtProdutos', 'produtos']]) {
     $(id).addEventListener('input', () => { S.pauta.comentarios[campo] = $(id).value; queueSave(); });
   }
+  for (const id of ['estCusto', 'estVenda']) {
+    $(id).addEventListener('input', () => {
+      S.pauta.estoqueManual[id === 'estCusto' ? 'custo' : 'venda'] = parseValor($(id).value);
+      renderEstoqueManual();
+      queueSave();
+    });
+    $(id).addEventListener('blur', () => renderEstoqueManual());
+  }
+  $('estData').addEventListener('change', () => { S.pauta.estoqueManual.data = $('estData').value; queueSave(); });
+  $('estObs').addEventListener('input', () => { S.pauta.estoqueManual.obs = $('estObs').value; queueSave(); });
+
   $('realizadaEm').addEventListener('change', () => { S.pauta.realizadaEm = $('realizadaEm').value; queueSave(); });
   $('participantes').addEventListener('input', () => { S.pauta.participantes = $('participantes').value; queueSave(); });
 

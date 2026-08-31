@@ -12555,7 +12555,7 @@ function pautaTotaisLoja(db, y, m, board) {
   };
 }
 
-function pautaVendedores(db, y, m, board) {
+function pautaVendedores(db, y, m, board, pctLoja) {
   const mk   = monthKey(y, m);
   const conv = pautaConversaoPorVendedor(db, y, m, board);
   const { corte, fechado } = pautaCorte(y, m, todayBRT());
@@ -12591,6 +12591,8 @@ function pautaVendedores(db, y, m, board) {
         meta, venda, pecas, atend, dias, projecao,
         pct:     meta > 0 && venda > 0 ? (venda / meta) * 100 : null,
         pctProj: meta > 0 && projecao  ? (projecao / meta) * 100 : null,
+        // Acima do % da loja é quem puxou o mês; abaixo é quem foi carregado
+        delta: (meta > 0 && projecao && pctLoja != null) ? ((projecao / meta) * 100) - pctLoja : null,
         pa:   atend > 0 ? pecas / atend : null,
         tm:   atend > 0 ? venda / atend : null,
         conv: c && c.total > 0 ? (c.conv / c.total) * 100 : null,
@@ -12599,6 +12601,47 @@ function pautaVendedores(db, y, m, board) {
       };
     })
     .sort((a, b) => b.venda - a.venda);
+}
+
+// Histórico dos meses fechados. O que interessa não é só o % do vendedor, é o
+// quanto ele ficou acima ou abaixo do % da loja naquele mês: vender 95% num mês
+// em que a loja fez 85% é puxar o resultado, e o número absoluto esconde isso.
+function pautaHistorico(db, y, m, board, meses) {
+  const emps = (db.employees || []).filter(e => e.board === board);
+  const out  = [];
+  let cy = y, cm = m;
+
+  for (let i = 0; i < meses; i++) {
+    ({ y: cy, m: cm } = pautaMesAnterior(cy, cm));
+    const mk   = monthKey(cy, cm);
+    const loja = pautaTotaisLoja(db, cy, cm, board);
+    if (!loja.venda) continue; // mês sem lançamento nenhum não entra na conversa
+
+    const vendedores = [];
+    for (const e of emps) {
+      const vs = db.vsales?.[`${mk}-${board}-${e.id}`];
+      if (!vs) continue;
+      let venda = 0;
+      for (const en of Object.values(vs.entries || {})) venda += en.value || 0;
+      const meta = vs.meta?.mensal || 0;
+      if (!venda && !meta) continue; // não estava na loja nesse mês
+      const pct = meta > 0 && venda > 0 ? (venda / meta) * 100 : null;
+      vendedores.push({
+        id: e.id, nome: e.apelido || e.name, gerente: e.isVendedor === false,
+        meta, venda, pct,
+        // Diferença em pontos percentuais para o % da loja no mesmo mês
+        delta: pct != null && loja.pct != null ? pct - loja.pct : null,
+        diasFerias: (vs.meta?.vacationDays || []).length,
+      });
+    }
+    vendedores.sort((a, b) => b.venda - a.venda);
+    out.push({
+      year: cy, month: cm,
+      loja: { meta: loja.meta, venda: loja.venda, pct: loja.pct, pecas: loja.pecas, fonte: loja.fonte },
+      vendedores,
+    });
+  }
+  return out.reverse(); // do mais antigo para o mais novo
 }
 
 // Faturamento de referência: o do próprio sistema quando existe; senão o
@@ -12709,6 +12752,7 @@ function pautaVazia(y, m, board) {
     comentarios: { performance: '', vendedores: '', rh: '', produtos: '' },
     vendedorNotas: {},
     rhItens: [], demandas: [], acoes: [],
+    estoqueManual: { custo: 0, venda: 0, data: '', obs: '' },
     produtosResumo: null, roteiro: null, snapshot: null,
     createdAt: null, updatedAt: null, updatedBy: '',
   };
@@ -12788,7 +12832,8 @@ app.get('/api/pauta/:year/:month/:board', requireEscritorioOrAdmin, async (req, 
           varAnterior:    anterior.venda > 0 && base ? ((base - anterior.venda) / anterior.venda) * 100 : null,
           varAnoAnterior: anoAnt.venda   > 0 && base ? ((base - anoAnt.venda)   / anoAnt.venda)   * 100 : null,
         },
-        vendedores:      pautaVendedores(db, y, m, board),
+        vendedores:      pautaVendedores(db, y, m, board, loja.fechado ? loja.pct : loja.pctProj),
+        historico:       pautaHistorico(db, y, m, board, 6),
         rh:              pautaRH(db, board, y, m, hoje),
         pendencias:      pautaPendencias(db, board),
         acoesAnteriores: pautaAcoesAnteriores(db, y, m, board),
@@ -12811,7 +12856,7 @@ app.put('/api/pauta/:year/:month/:board', requireEscritorioOrAdmin, async (req, 
     const p   = { ...pautaVazia(y, m, board), ...(db.pautas[key] || {}) };
 
     const campos = ['participantes', 'realizadaEm', 'comentarios', 'vendedorNotas',
-                    'rhItens', 'demandas', 'acoes', 'produtosResumo', 'roteiro'];
+                    'rhItens', 'demandas', 'acoes', 'estoqueManual', 'produtosResumo', 'roteiro'];
     for (const c of campos) if (c in req.body) p[c] = req.body[c];
 
     if (!p.createdAt) p.createdAt = new Date().toISOString();
@@ -12861,11 +12906,14 @@ app.post('/api/pauta/:year/:month/:board/fechar', requireEscritorioOrAdmin, asyn
 
     p.status      = 'realizada';
     p.realizadaEm = p.realizadaEm || todayBRT();
+    const snapLoja = pautaTotaisLoja(db, y, m, board);
     p.snapshot    = {
-      loja:        pautaTotaisLoja(db, y, m, board),
-      vendedores:  pautaVendedores(db, y, m, board),
+      loja:        snapLoja,
+      vendedores:  pautaVendedores(db, y, m, board, snapLoja.fechado ? snapLoja.pct : snapLoja.pctProj),
       rh:          pautaRH(db, board, y, m, todayBRT()),
       produtos:    p.produtosResumo || null,
+      estoque:     p.estoqueManual  || null,
+      historico:   pautaHistorico(db, y, m, board, 6),
       congeladoEm: new Date().toISOString(),
     };
     p.updatedAt = new Date().toISOString();
@@ -12911,7 +12959,7 @@ app.post('/api/pauta/:year/:month/:board/roteiro', requireEscritorioOrAdmin, asy
     const loja  = pautaTotaisLoja(db, y, m, board);
     const ant   = pautaFaturamento(db, py, pm, board);
     const anoA  = pautaFaturamento(db, y - 1, m, board);
-    const vends = pautaVendedores(db, y, m, board);
+    const vends = pautaVendedores(db, y, m, board, loja.fechado ? loja.pct : loja.pctProj);
     const rh    = pautaRH(db, board, y, m, hoje);
 
     const n = v => v == null ? null : Math.round(v * 100) / 100;
@@ -12936,6 +12984,7 @@ app.post('/api/pauta/:year/:month/:board/roteiro', requireEscritorioOrAdmin, asy
       vendedores: vends.map(v => ({
         nome: v.nome, gerente: v.gerente, meta: v.meta, faturado: n(v.venda),
         projecaoFechamento: n(v.projecao), pctMetaProjetado: n(v.pctProj),
+        pontosVsLoja: n(v.delta),
         pctMeta: n(v.pct), pa: n(v.pa), ticketMedio: n(v.tm), conversaoPct: n(v.conv),
         pecas: v.pecas, atendimentos: v.atend, diasFerias: v.diasFerias,
       })),
@@ -12952,7 +13001,13 @@ app.post('/api/pauta/:year/:month/:board/roteiro', requireEscritorioOrAdmin, asy
         ausenciasNoMes: rh.ausenciasMes,
         pendenciasAnotadas: p.rhItens || [],
       },
+      historicoMesesFechados: pautaHistorico(db, y, m, board, 6).map(h => ({
+        mes: `${String(h.month).padStart(2, '0')}/${h.year}`,
+        lojaPctMeta: n(h.loja.pct), lojaFaturado: n(h.loja.venda),
+        vendedores: h.vendedores.map(v => ({ nome: v.nome, pctMeta: n(v.pct), pontosVsLoja: n(v.delta) })),
+      })),
       produtosXEstoque: req.body?.produtos || p.produtosResumo || null,
+      estoqueDeclarado: (p.estoqueManual && (p.estoqueManual.custo || p.estoqueManual.venda)) ? p.estoqueManual : null,
       pendenciasAbertas: pautaPendencias(db, board).map(x => x.text),
       acoesDoMesAnterior: pautaAcoesAnteriores(db, y, m, board),
       demandasAnotadas: p.demandas || [],
@@ -12970,6 +13025,7 @@ Regras:
 - PA = peças por atendimento. Ticket médio = faturado por atendimento. Conversão = atendimentos que viraram venda.
 - A reunião é na última semana, com o mês ainda aberto. Avalie o mês pela projeção de fechamento (faturado ÷ peso do mês já corrido), e diga "projeção" quando citar esse número. O faturado parcial só serve para dizer até onde os dados vão.
 - Quem esteve de férias no mês tem a projeção linear distorcida para baixo: não cobre ritmo de quem faltou por acordo.
+- O que separa vendedor bom de ruim é "pontosVsLoja": quanto o % da meta dele ficou acima (bom) ou abaixo (ruim) do % da loja no mesmo mês. Num mês fraco da loja, 85% do vendedor pode ser um bom resultado; num mês forte, 100% pode ser fraco. Use o histórico para dizer se é oscilação de um mês ou tendência.
 - Pergunta boa é aberta e sobre causa ("o que aconteceu com...?"), não sobre culpa.
 - Ação combinada tem verbo, dono e prazo. No máximo 5.
 - Quem está marcado como gerente não é cobrado por meta individual do mesmo jeito que vendedor.

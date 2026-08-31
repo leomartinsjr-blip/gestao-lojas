@@ -117,6 +117,11 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
 .pa-cob{font-weight:700;font-variant-numeric:tabular-nums}
 .pa-legend{font-size:.71rem;color:#6e7681;margin-top:.5rem;line-height:1.5}
 
+/* ── Histórico ── */
+.hist-delta{font-size:.64rem;font-weight:700;line-height:1.2;margin-top:.05rem}
+.hist-loja td{background:#0d1117;font-weight:700;color:#58a6ff;border-bottom:1px solid #30363d}
+.pa-tbl td.num .hist-delta{text-align:right}
+
 /* ── Roteiro IA ── */
 .pa-ia-box{background:#0d1117;border:1px solid #21262d;border-radius:7px;padding:.7rem .8rem;font-size:.82rem;line-height:1.55}
 .pa-ia-resumo{color:#c9d1d9;margin-bottom:.7rem}
@@ -210,10 +215,23 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
       </div>
     </div>
 
-    <!-- 3 · RH -->
+    <!-- 3 · Histórico -->
     <div class="pa-card">
       <div class="pa-card-hdr">
         <span class="pa-card-num">3</span>
+        <span class="pa-card-title">Histórico dos últimos meses <span class="pa-card-sub" id="histSub"></span></span>
+      </div>
+      <div class="pa-card-body">
+        <div class="pa-tbl-wrap"><table class="pa-tbl" id="histTbl"></table></div>
+        <div class="pa-legend">O número grande é o % da meta do vendedor no mês; embaixo, a diferença em pontos para o % que a loja fez no mesmo mês.
+        Verde ficou acima da loja — puxou o resultado. Vermelho ficou abaixo. Num mês fraco da loja, 85% pode ser bom; num mês forte, 100% pode ser pouco.</div>
+      </div>
+    </div>
+
+    <!-- 4 · RH -->
+    <div class="pa-card">
+      <div class="pa-card-hdr">
+        <span class="pa-card-num">4</span>
         <span class="pa-card-title">Pendências de RH <span class="pa-card-sub" id="rhSub"></span></span>
       </div>
       <div class="pa-card-body">
@@ -240,10 +258,10 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
       </div>
     </div>
 
-    <!-- 4 · Produtos e serviços vendidos x estoque -->
+    <!-- 5 · Produtos e serviços vendidos x estoque -->
     <div class="pa-card">
       <div class="pa-card-hdr">
-        <span class="pa-card-num">4</span>
+        <span class="pa-card-num">5</span>
         <span class="pa-card-title">Produtos e serviços vendidos × estoque <span class="pa-card-sub" id="prodSub"></span></span>
       </div>
       <div class="pa-card-body">
@@ -252,24 +270,36 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
           <span class="pa-card-sub" id="prodStatus">Vendas do mês contra o estoque de hoje, marca a marca.</span>
         </div>
         <div id="prodResult"></div>
+        <div class="pa-sub-hdr">Valor do estoque na loja</div>
+        <div class="pa-add-row">
+          <span class="pa-card-sub">A custo</span>
+          <input class="pa-inp" id="estCusto" inputmode="decimal" placeholder="R$ 0,00" style="min-width:130px">
+          <span class="pa-card-sub">A preço de venda</span>
+          <input class="pa-inp" id="estVenda" inputmode="decimal" placeholder="R$ 0,00" style="min-width:130px">
+          <span class="pa-card-sub">Apurado em</span>
+          <input class="pa-inp" id="estData" type="date">
+          <input class="pa-inp grow" id="estObs" placeholder="De onde saiu o número">
+        </div>
+        <div id="estDeriv" class="pa-legend"></div>
+
         <div class="pa-ta-lbl">Comentário sobre produto e estoque</div>
         <textarea class="pa-ta" id="cmtProdutos" placeholder="O que falta na loja, o que está encalhado, o que pedir ou transferir…"></textarea>
       </div>
     </div>
 
-    <!-- 5 · Pendências abertas -->
+    <!-- 6 · Pendências abertas -->
     <div class="pa-card">
       <div class="pa-card-hdr">
-        <span class="pa-card-num">5</span>
+        <span class="pa-card-num">6</span>
         <span class="pa-card-title">Pendências e ações anteriores <span class="pa-card-sub" id="pendSub"></span></span>
       </div>
       <div class="pa-card-body" id="pendBody"></div>
     </div>
 
-    <!-- 6 · Demandas adicionais -->
+    <!-- 7 · Demandas adicionais -->
     <div class="pa-card">
       <div class="pa-card-hdr">
-        <span class="pa-card-num">6</span>
+        <span class="pa-card-num">7</span>
         <span class="pa-card-title">Demandas adicionais</span>
       </div>
       <div class="pa-card-body">
@@ -282,10 +312,10 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
       </div>
     </div>
 
-    <!-- 7 · Ações combinadas -->
+    <!-- 8 · Ações combinadas -->
     <div class="pa-card">
       <div class="pa-card-hdr">
-        <span class="pa-card-num">7</span>
+        <span class="pa-card-num">8</span>
         <span class="pa-card-title">Ações combinadas <span class="pa-card-sub">viram itens de pauta da loja ao fechar a reunião</span></span>
       </div>
       <div class="pa-card-body">
@@ -299,10 +329,10 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
       </div>
     </div>
 
-    <!-- 8 · Roteiro da conversa -->
+    <!-- 9 · Roteiro da conversa -->
     <div class="pa-card">
       <div class="pa-card-hdr">
-        <span class="pa-card-num">8</span>
+        <span class="pa-card-num">9</span>
         <span class="pa-card-title">Roteiro da conversa <span class="pa-card-sub" id="iaSub">gerado a partir dos números acima</span></span>
         <button class="pa-btn" id="btnIA">Gerar roteiro</button>
       </div>
