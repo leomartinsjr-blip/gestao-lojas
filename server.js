@@ -9917,33 +9917,35 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
       ws.getRow(1).font = { bold: true, size: 12 };
       ws.addRow([]);
 
-      // Header — cada desconto na sua coluna. A antiga DESC. mandava o total de
-      // descontos, repetindo o que AD e VALE já diziam; saiu.
-      // A    B      C     D     E    F          G    H       I   J        K      L       M            N   O   P     Q       R       S               T
-      // NOME CARGO  FIXO  Q.CX  S.F  COMISSÕES  DSR  PRÊMIO  GM  FERIADO  PREM.  T+PREM  VERIFICAÇÃO  OK  AD  VALE  MAX.VT  FALTAS  PLANO DE SAÚDE  OBS
-      const headers = ['NOME','CARGO','FIXO','Q.CX','S.F','COMISSÕES','DSR','PRÊMIO','GM','FERIADO','PREM.','T+PREM','VERIFICAÇÃO','OK','AD','VALE','MAX. VT','FALTAS','PLANO DE SAÚDE','OBSERVAÇÕES'];
+      // Header — cada desconto na sua coluna. A antiga DESC. mandava o total,
+      // repetindo o que AD e VALE já diziam; saiu. OUTROS DESC. é o resto:
+      // INSS, IR, arredondamento, falta e lançamento avulso sem coluna própria.
+      // A    B      C     D     E    F          G    H       I   J        K      L       M            N   O   P     Q       R       S               T             U
+      // NOME CARGO  FIXO  Q.CX  S.F  COMISSÕES  DSR  PRÊMIO  GM  FERIADO  PREM.  T+PREM  VERIFICAÇÃO  OK  AD  VALE  MAX.VT  FALTAS  PLANO DE SAÚDE  OUTROS DESC.  OBS
+      const headers = ['NOME','CARGO','FIXO','Q.CX','S.F','COMISSÕES','DSR','PRÊMIO','GM','FERIADO','PREM.','T+PREM','VERIFICAÇÃO','OK','AD','VALE','MAX. VT','FALTAS','PLANO DE SAÚDE','OUTROS DESC.','OBSERVAÇÕES'];
       ws.addRow(headers);
       const hRow = ws.getRow(3);
       hRow.font = { bold: true, color: { argb: 'FFE6EDF3' } };
       hRow.fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FF21262D'} };
       hRow.eachCell(c => { c.border = { bottom:{style:'thin',color:{argb:'FF30363D'}} }; });
 
-      // Widths: text cols = 5(S.F) 14(OK) 18(FALTAS) 20(OBS)
+      // Widths: text cols = 5(S.F) 14(OK) 18(FALTAS) 21(OBS)
       ws.getColumn(1).width = 22;
       ws.getColumn(2).width = 14;
       ws.getColumn(5).width = 5;
       ws.getColumn(14).width = 5;
       ws.getColumn(18).width = 18;
-      ws.getColumn(20).width = 22;
-      const numCols = [3,4,6,7,8,9,10,11,12,13,15,16,17,19];
+      ws.getColumn(21).width = 22;
+      const numCols = [3,4,6,7,8,9,10,11,12,13,15,16,17,19,20];
       numCols.forEach(i => { ws.getColumn(i).width = 12; ws.getColumn(i).numFmt = '#,##0.00'; });
-      ws.getColumn(19).width = 16;  // cabeçalho "PLANO DE SAÚDE" não cabe em 12
+      ws.getColumn(19).width = 16;  // "PLANO DE SAÚDE" e "OUTROS DESC." não
+      ws.getColumn(20).width = 14;  // cabem em 12
 
       const folhaEmpCfg = db.folhaEmpConfig || {};
 
       let sumFixo=0, sumQcx=0, sumCom=0, sumDsr=0, sumPremio=0,
           sumGm=0, sumFer=0, sumPrem=0, sumTotal=0,
-          sumAd=0, sumVc=0, sumPs=0, sumVt=0;
+          sumAd=0, sumVc=0, sumPs=0, sumOut=0, sumVt=0;
 
       for (const emp of lojaEmps) {
         const entry = lojaData.entries[emp.id];
@@ -9982,6 +9984,11 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
           .filter(x => ehPlanoSaude(x.nome))
           .reduce((s, x) => s + (parseFloat(x.valor) || 0), 0));
 
+        // Sobra: INSS, IR, arredondamento, falta e avulso sem coluna própria.
+        // Nada de desconto some da planilha, e nada aparece em duas colunas.
+        const outros = r2((entry.totalDescontos || 0)
+          - r2(entry.vt || 0) - ad - vale - planoSaude);
+
         // Férias do mês vão para OBSERVAÇÕES: explicam por que fixo e comissão
         // de loja saíram proporcionais, sem virar verba nenhuma na planilha.
         const fer = entry.ferias;
@@ -10013,14 +10020,15 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
           n2(gm)||null, n2(feriado)||null, n2(prem)||null,
           n2(tTotal), n2(verif), ok,
           n2(ad)||null, n2(vale)||null, n2(vtVal)||null,
-          faltas, n2(planoSaude)||null, obs,
+          faltas, n2(planoSaude)||null, n2(outros)||null, obs,
         ]);
         empRow.getCell(14).font = { bold: true, color: { argb: ok==='OK'?'FF3FB950':'FFF85149' } };
         if (sf) empRow.getCell(5).font = { bold: true, color: { argb: 'FFD29922' } };
 
         sumFixo+=fixo; sumQcx+=qcx; sumCom+=comissoes; sumDsr+=dsr;
         sumPremio+=premio; sumGm+=gm; sumFer+=feriado; sumPrem+=prem;
-        sumTotal+=tTotal; sumAd+=ad; sumVc+=vale; sumPs+=planoSaude; sumVt+=vtVal;
+        sumTotal+=tTotal; sumAd+=ad; sumVc+=vale;
+        sumPs+=planoSaude; sumOut+=outros; sumVt+=vtVal;
       }
 
       // Totals row
@@ -10031,7 +10039,7 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
         r2(sumGm)||null, r2(sumFer)||null, r2(sumPrem)||null,
         r2(sumTotal), r2(sumTotal), '',
         r2(sumAd)||null, r2(sumVc)||null, r2(sumVt)||null,
-        null, r2(sumPs)||null, '',
+        null, r2(sumPs)||null, r2(sumOut)||null, '',
       ]);
       totRow.font = { bold: true };
       totRow.eachCell(c => { c.border = { top:{style:'thin',color:{argb:'FF30363D'}} }; });
