@@ -224,7 +224,7 @@ function rateioSrcFromDom(emp, tipo) {
     ajudaCustoLojas: ajudaCustoBoards(emp).map(b => ({ board: b, valor: g(`fp-ajuda-${id}-${b}`) })),
     outros:    r2(g(`fp-feriado-${id}`) + (entry.extras || []).reduce((s, ex) => s + r2(ex.valor), 0)),
     descontos: r2(g(`fp-valeCompras-${id}`) + g(`fp-adiantamento-${id}`) + g(`fp-inss-${id}`) +
-                  g(`fp-irpf-${id}`) + g(`fp-vt-${id}`) + g(`fp-arred-${id}`) +
+                  g(`fp-irpf-${id}`) + g(`fp-vt-${id}`) + g(`fp-arred-${id}`) + g(`fp-faltasValor-${id}`) +
                   (entry.extrasDesc || []).reduce((s, ex) => s + r2(ex.valor), 0)),
   };
 }
@@ -426,6 +426,7 @@ function applyFora(entry, emp, fora) {
   entry.vt   = r2(baseEnc * (ecfg.vtRate   || 0) / 100);
   entry.totalDescontos = r2((entry.valeCompras || 0) + (entry.adiantamento || 0)
     + entry.inss + (entry.irpf || 0) + entry.vt + (entry.arredondamento || 0)
+    + (entry.faltasValor || 0)
     + (entry.extrasDesc || []).reduce((s, x) => s + r2(x.valor), 0));
   entry.liquido    = r2(entry.proventos - entry.totalDescontos);
   entry.totalGeral = r2(entry.liquido + fb.total);
@@ -1242,7 +1243,23 @@ function adiNota(emp) {
   return `<span style="font-size:.7rem;color:#484f58">Loja em Ação: ${det}${dif}</span>`;
 }
 
+// Faltas são lançamento manual do mês, como a ajuda de custo: o cálculo não
+// tem como redescobri-las. Ficam por fora do cálculo e voltam por cima dele,
+// para sobreviverem a todo caminho que recria a entry — Gerar, férias, config.
 function defaultEntry(emp) {
+  const entry = calcEntry(emp);
+  const ant   = FP.folha[FP.board]?.entries?.[emp.id] || {};
+  const valor = r2(ant.faltasValor || 0);
+  entry.faltas      = ant.faltas || '';
+  entry.faltasValor = valor;
+  if (valor) {
+    entry.totalDescontos = r2((entry.totalDescontos || 0) + valor);
+    entry.liquido        = r2((entry.proventos || 0) - entry.totalDescontos);
+  }
+  return entry;
+}
+
+function calcEntry(emp) {
   const cfg  = FP.folhaConfig[FP.board] || {};
   const ecfg = getEmpCfg(emp);
   const tipo = cargoTipo(emp.cargo);
@@ -1759,8 +1776,8 @@ function buildEmpForm(emp, entry) {
     <div class="fp-field"><label>IR FP (R$)</label>${inp(`fp-irpf-${emp.id}`, e.irpf)}</div>
     <div class="fp-field"><label>Vale Transporte (R$)</label>${inp(`fp-vt-${emp.id}`, e.vt)}</div>
     <div class="fp-field"><label>Arredondamento (R$)</label>${inp(`fp-arred-${emp.id}`, e.arredondamento)}</div>
-    <div class="fp-field"><label>Faltas</label>${inpTxt(`fp-faltas-${emp.id}`, e.faltas, 'ex.: 27/08')}
-      <span style="font-size:.7rem;color:#484f58">vai só para a coluna FALTAS da contabilidade</span></div>
+    <div class="fp-field fp-field-faltas"><label>Faltas (R$)</label>${inp(`fp-faltasValor-${emp.id}`, e.faltasValor || 0)}
+      ${inpTxt(`fp-faltas-${emp.id}`, e.faltas, 'datas — ex.: 27/08')}</div>
     <div class="fp-extras" id="extras-desc-${emp.id}">${buildExtraRows(emp.id, e.extrasDesc||[], 'desc')}</div>
     <button class="fp-add-extra" onclick="addExtra(${emp.id},'desc')">+ Adicionar desconto</button>`;
 
@@ -2186,6 +2203,7 @@ function recalc(empId) {
   const descontos = r2(
     g(`fp-valeCompras-${empId}`) + g(`fp-adiantamento-${empId}`) +
     g(`fp-inss-${empId}`) + g(`fp-irpf-${empId}`) + g(`fp-vt-${empId}`) + g(`fp-arred-${empId}`) +
+    g(`fp-faltasValor-${empId}`) +
     (entry.extrasDesc||[]).reduce((s,ex)=>s+r2(ex.valor),0)
   );
 
@@ -2252,7 +2270,7 @@ function saveEntryFromForm(empId) {
     premiacaoBalanco: 'premiacaoBalanco', feriado: 'feriado', dsr: 'dsr',
     premio: 'premio', proLabore: 'proLabore', complemento: 'complemento',
     valeCompras: 'valeCompras', adiantamento: 'adiantamento', inss: 'inss',
-    irpf: 'irpf', vt: 'vt', arred: 'arredondamento',
+    irpf: 'irpf', vt: 'vt', arred: 'arredondamento', faltasValor: 'faltasValor',
   };
   const g = id => {
     const el = document.getElementById(id);
@@ -2261,8 +2279,8 @@ function saveEntryFromForm(empId) {
     return campo ? r2(prev[campo] || 0) : 0;
   };
 
-  // Anotação de faltas — texto livre que só existe para a coluna FALTAS da
-  // contabilidade. Não entra em desconto nenhum: quem desconta é o contador.
+  // Faltas: as datas viram texto na coluna FALTAS da contabilidade e o valor
+  // é desconto como qualquer outro — entra no total e no líquido.
   const faltasEl = document.getElementById(`fp-faltas-${empId}`);
   const faltas   = faltasEl ? faltasEl.value.trim() : (prev.faltas || '');
 
@@ -2310,7 +2328,8 @@ function saveEntryFromForm(empId) {
       + comissaoTotal + premiacaoBalanco + ajudaCustoTotal + feriado + extProv);
     const proventos = r2(proventosBruto - fb.total);
     const totalDesc = r2(g(`fp-valeCompras-${empId}`) + g(`fp-adiantamento-${empId}`) +
-      g(`fp-inss-${empId}`) + g(`fp-irpf-${empId}`) + g(`fp-vt-${empId}`) + g(`fp-arred-${empId}`) + extDesc);
+      g(`fp-inss-${empId}`) + g(`fp-irpf-${empId}`) + g(`fp-vt-${empId}`) + g(`fp-arred-${empId}`) +
+      g(`fp-faltasValor-${empId}`) + extDesc);
     const liquido = r2(proventos - totalDesc);
     FP.folha[FP.board].entries[empId] = {
       ...prev, tipo, proLabore, complemento, fixo, lojaComissoes, comissaoTotal,
@@ -2323,7 +2342,7 @@ function saveEntryFromForm(empId) {
       valeCompras: g(`fp-valeCompras-${empId}`), adiantamento: g(`fp-adiantamento-${empId}`),
       inss: g(`fp-inss-${empId}`), irpf: g(`fp-irpf-${empId}`),
       vt: g(`fp-vt-${empId}`), arredondamento: g(`fp-arred-${empId}`),
-      faltas,
+      faltas, faltasValor: g(`fp-faltasValor-${empId}`),
       totalDescontos: totalDesc, liquido, totalGeral: r2(liquido + fb.total),
     };
     return;
@@ -2357,7 +2376,7 @@ function saveEntryFromForm(empId) {
 
   const totalDesc = r2(g(`fp-valeCompras-${empId}`) + g(`fp-adiantamento-${empId}`)
     + g(`fp-inss-${empId}`) + g(`fp-irpf-${empId}`) + g(`fp-vt-${empId}`)
-    + g(`fp-arred-${empId}`) + extDesc);
+    + g(`fp-arred-${empId}`) + g(`fp-faltasValor-${empId}`) + extDesc);
 
   FP.folha[FP.board].entries[empId] = {
     ...prev, tipo,
@@ -2380,7 +2399,7 @@ function saveEntryFromForm(empId) {
     irpf:           g(`fp-irpf-${empId}`),
     vt:             g(`fp-vt-${empId}`),
     arredondamento: g(`fp-arred-${empId}`),
-    faltas,
+    faltas, faltasValor: g(`fp-faltasValor-${empId}`),
     totalDescontos: totalDesc,
     liquido: r2(proventos - totalDesc),
     totalGeral: r2(proventos - totalDesc + fb.total),
@@ -2447,12 +2466,9 @@ function fpGerar() {
       congelados.push(emp.apelido || emp.name.split(' ')[0]);
       continue;
     }
-    // "por fora" e faltas são lançamento manual, não valor calculado —
-    // sobrevivem ao Gerar
-    const ant  = FP.folha[board].entries[emp.id];
-    const nova = applyFora(defaultEntry(emp), emp, ant?.fora);
-    if (ant?.faltas) nova.faltas = ant.faltas;
-    FP.folha[board].entries[emp.id] = nova;
+    // "por fora" é decisão manual, não valor calculado — sobrevive ao Gerar
+    const fora = FP.folha[board].entries[emp.id]?.fora;
+    FP.folha[board].entries[emp.id] = applyFora(defaultEntry(emp), emp, fora);
   }
   FP.dirty = true;
   renderPanel();
@@ -2488,10 +2504,8 @@ function fpGerarEmp(empId) {
   if (hasData && !confirm(`Recalcular a folha de ${emp.apelido || emp.name}? Os valores editados manualmente serão perdidos.`)) return;
   if (!FP.folha[FP.board]) FP.folha[FP.board] = {};
   if (!FP.folha[FP.board].entries) FP.folha[FP.board].entries = {};
-  const ant  = FP.folha[FP.board].entries[empId];
-  const nova = applyFora(defaultEntry(emp), emp, ant?.fora);
-  if (ant?.faltas) nova.faltas = ant.faltas;
-  FP.folha[FP.board].entries[empId] = nova;
+  const fora = FP.folha[FP.board].entries[empId]?.fora;
+  FP.folha[FP.board].entries[empId] = applyFora(defaultEntry(emp), emp, fora);
   FP.dirty = true;
   selectEmp(empId);
   toast(`Folha de ${emp.apelido || emp.name} recalculada.`);
@@ -2841,6 +2855,8 @@ function buildRecibo(emp, entry, mes, origin) {
     if (num(ex.valor) !== 0)
       desc += tr((ex.nome || 'DESCONTO').toUpperCase(), ex.valor);
   });
+  if (num(entry.faltasValor) !== 0)
+    desc += tr(entry.faltas ? `FALTAS (${entry.faltas})` : 'FALTAS', entry.faltasValor);
   desc += tr('INSS',           entry.inss  || 0, '', ecfg.inssRate ? fmt(ecfg.inssRate) + '%' : '');
   desc += tr('IR FP',          entry.irpf  || 0);
   desc += tr('VALE TRANSPORTE',entry.vt    || 0, '', ecfg.vtRate   ? fmt(ecfg.vtRate)   + '%' : '');

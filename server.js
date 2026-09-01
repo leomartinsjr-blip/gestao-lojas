@@ -1587,7 +1587,7 @@ app.get('/api/dados-folha/:year/:month/:board', requireAuth, async (req, res) =>
     if (!isAdmin && user.board !== board) return res.status(403).json({ error: 'Sem acesso' });
     const db  = await readDB();
     const key = `${year}-${String(month).padStart(2,'0')}-${board}`;
-    res.json((db.dadosFolha || {})[key] || { feriados: [], extensoes: [], faltas: [], vr: '', abertura: '', instagram: '' });
+    res.json((db.dadosFolha || {})[key] || { feriados: [], extensoes: [], faltas: [], vr: '', abertura: '', instagram: '', obs: '' });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -9796,7 +9796,6 @@ app.get('/api/folha/:year/:month/export', requireAuth, async (req, res) => {
           if (entry.gmComplement) addProv('GARANTIA SURFERS', entry.gmComplement);
         }
         if (entry.feriado) addProv('FERIADO', entry.feriado);
-        if (entry.feriado) addProv('FERIADO', entry.feriado);
         // Ajuda de custo do supervisor/sócio — uma linha por empresa
         const AJUDA_LABEL = { site: 'ESCRITÓRIO', estacao: 'ESTAÇÃO', delrey: 'DEL REY', lez: 'LEZ A LEZ' };
         for (const aj of (entry.ajudaCustoLojas || [])) {
@@ -9815,6 +9814,7 @@ app.get('/api/folha/:year/:month/export', requireAuth, async (req, res) => {
         };
         addDesc('VALE COMPRAS', entry.valeCompras);
         addDesc('ADIANTAMENTO', entry.adiantamento);
+        addDesc(entry.faltas ? `FALTAS (${entry.faltas})` : 'FALTAS', entry.faltasValor);
         addDesc('INSS', entry.inss);
         addDesc('IR FP', entry.irpf);
         addDesc('VALE TRANSPORTE', entry.vt);
@@ -9951,16 +9951,22 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
         const obs = (fer?.ativo && fer.ini && fer.fim)
           ? `Férias ${dm(fer.ini)} a ${dm(fer.fim)}` : '';
 
-        // FALTAS é anotação, não verba: sai do campo próprio da folha e também
-        // das linhas de desconto escritas como "FALTA 27/08", que era como se
-        // anotava antes do campo existir. O valor dessas linhas segue no DESC.
+        // FALTAS é coluna de texto: leva as datas do campo da folha e também as
+        // linhas de desconto escritas como "FALTA 27/08", que era como se
+        // anotava antes do campo existir. O valor descontado vai junto, como
+        // nota — somar já foi somado no DESC., que é a coluna de dinheiro.
         const faltasExtras = (entry.extrasDesc || [])
           .map(x => String(x.nome || ''))
           .filter(nome => /^\s*faltas?\b/i.test(nome))
           .map(nome => nome.replace(/^\s*faltas?\s*[:\-–]?\s*/i, '').trim() || nome.trim())
           .filter(Boolean);
-        const faltas = [String(entry.faltas || '').trim(), ...faltasExtras]
-          .filter(Boolean).join(' · ') || null;
+        const faltasTxt = [String(entry.faltas || '').trim(), ...faltasExtras]
+          .filter(Boolean).join(' · ');
+        const faltasVal = r2(entry.faltasValor || 0);
+        const faltas = [
+          faltasTxt,
+          faltasVal ? `R$ ${faltasVal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '',
+        ].filter(Boolean).join(' — ') || null;
 
         const empRow = ws.addRow([
           emp.apelido || emp.name, emp.cargo,

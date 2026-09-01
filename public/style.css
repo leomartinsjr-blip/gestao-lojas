@@ -1144,6 +1144,9 @@ body {
 .df-save-btn:hover { filter: brightness(1.1); }
 .df-save-btn:disabled { opacity: .5; cursor: default; }
 .df-empty { font-size: .8rem; color: var(--muted); font-style: italic; }
+.df-obs { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: .45rem; padding: .5rem .6rem; font-size: .83rem; font-family: inherit; line-height: 1.45; width: 100%; min-height: 90px; resize: vertical; }
+.df-obs:focus { outline: none; border-color: var(--accent); }
+.df-obs::placeholder { color: var(--muted); opacity: .7; }
 
 /* Table */
 .folgas-table {

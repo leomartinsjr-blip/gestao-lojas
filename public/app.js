@@ -6388,6 +6388,7 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
   let vr        = data.vr        || '';
   let abertura  = data.abertura  || '';
   let instagram = data.instagram || '';
+  let obs       = data.obs       || '';
 
   const sourceEmps = empsList || FC.employees;
   const boardEmps = sourceEmps.filter(e => e.board === board && !e.inativo);
@@ -6495,6 +6496,11 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
         </div>
       </div>
 
+      <div class="df-section">
+        <div class="df-sec-hdr"><span>Observações</span></div>
+        <textarea class="df-obs" id="dfObs" placeholder="O que a folha precisa saber e não cabe nos campos acima — atraso, troca de turno, acerto combinado, atestado entregue…">${_escHtml(obs)}</textarea>
+      </div>
+
       <button class="df-save-btn" id="dfSaveBtn">Salvar</button>
     </div>`;
 
@@ -6552,6 +6558,9 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
     body.querySelector('#dfVr').addEventListener('change', e => { vr = e.target.value; });
     body.querySelector('#dfAbertura').addEventListener('change', e => { abertura = e.target.value; });
     body.querySelector('#dfInstagram').addEventListener('change', e => { instagram = e.target.value; });
+    // 'input': o render() é refeito a cada linha adicionada/removida, e o texto
+    // digitado só sobrevive se a variável já estiver atualizada na hora.
+    body.querySelector('#dfObs').addEventListener('input', e => { obs = e.target.value; });
 
     body.querySelector('#dfSaveBtn').addEventListener('click', async () => {
       const btn = body.querySelector('#dfSaveBtn');
@@ -6562,6 +6571,7 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
           extensoes: extensoes.filter(f => f.date),
           faltas:    faltas.filter(f => f.date && f.colaborador),
           vr, abertura, instagram,
+          obs: obs.trim(),
         };
         await apiFetch('POST', `/api/dados-folha/${year}/${month}/${board}`, payload);
         toast('Dados salvos ✓');
