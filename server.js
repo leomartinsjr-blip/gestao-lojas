@@ -9906,6 +9906,7 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
       ws.getColumn(2).width = 14;
       ws.getColumn(5).width = 5;
       ws.getColumn(14).width = 5;
+      ws.getColumn(19).width = 18;
       ws.getColumn(21).width = 22;
       const numCols = [3,4,6,7,8,9,10,11,12,13,15,16,17,18];
       numCols.forEach(i => { ws.getColumn(i).width = 12; ws.getColumn(i).numFmt = '#,##0.00'; });
@@ -9950,6 +9951,17 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
         const obs = (fer?.ativo && fer.ini && fer.fim)
           ? `Férias ${dm(fer.ini)} a ${dm(fer.fim)}` : '';
 
+        // FALTAS é anotação, não verba: sai do campo próprio da folha e também
+        // das linhas de desconto escritas como "FALTA 27/08", que era como se
+        // anotava antes do campo existir. O valor dessas linhas segue no DESC.
+        const faltasExtras = (entry.extrasDesc || [])
+          .map(x => String(x.nome || ''))
+          .filter(nome => /^\s*faltas?\b/i.test(nome))
+          .map(nome => nome.replace(/^\s*faltas?\s*[:\-–]?\s*/i, '').trim() || nome.trim())
+          .filter(Boolean);
+        const faltas = [String(entry.faltas || '').trim(), ...faltasExtras]
+          .filter(Boolean).join(' · ') || null;
+
         const empRow = ws.addRow([
           emp.apelido || emp.name, emp.cargo,
           n2(fixo), n2(qcx), sf||null,
@@ -9957,7 +9969,7 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
           n2(gm)||null, n2(feriado)||null, n2(prem)||null,
           n2(tTotal), n2(verif), ok,
           n2(ad)||null, n2(vale)||null, n2(desc)||null, n2(vtVal)||null,
-          null, null, obs,
+          faltas, null, obs,
         ]);
         empRow.getCell(14).font = { bold: true, color: { argb: ok==='OK'?'FF3FB950':'FFF85149' } };
         if (sf) empRow.getCell(5).font = { bold: true, color: { argb: 'FFD29922' } };

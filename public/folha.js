@@ -1463,6 +1463,12 @@ function buildEmpForm(emp, entry) {
     `<input type="number" step="0.01" id="${id}" value="${r2(v).toFixed(2)}" ${extra} onchange="onFieldChange(${emp.id})">`;
   const inpRO = (id, v) =>
     `<input type="number" step="0.01" id="${id}" value="${r2(v).toFixed(2)}" readonly class="fp-readonly" tabindex="-1">`;
+  // Campo de texto: anotação que vai para a contabilidade, não entra em conta
+  // nenhuma (faltas). onchange também grava, senão sai da tela sem salvar.
+  const inpTxt = (id, v, ph='') =>
+    `<input type="text" class="fp-txt" id="${id}" placeholder="${ph}"
+       value="${String(v || '').replace(/"/g, '&quot;')}"
+       oninput="onFieldChange(${emp.id})" onchange="onFieldChange(${emp.id})">`;
 
   // Campo do prêmio semanal. Na loja que paga pelo caixa vira texto, não input:
   // sem o elemento fp-premiacao-*, recalc e saveEntryFromForm leem zero e o
@@ -1753,6 +1759,8 @@ function buildEmpForm(emp, entry) {
     <div class="fp-field"><label>IR FP (R$)</label>${inp(`fp-irpf-${emp.id}`, e.irpf)}</div>
     <div class="fp-field"><label>Vale Transporte (R$)</label>${inp(`fp-vt-${emp.id}`, e.vt)}</div>
     <div class="fp-field"><label>Arredondamento (R$)</label>${inp(`fp-arred-${emp.id}`, e.arredondamento)}</div>
+    <div class="fp-field"><label>Faltas</label>${inpTxt(`fp-faltas-${emp.id}`, e.faltas, 'ex.: 27/08')}
+      <span style="font-size:.7rem;color:#484f58">vai só para a coluna FALTAS da contabilidade</span></div>
     <div class="fp-extras" id="extras-desc-${emp.id}">${buildExtraRows(emp.id, e.extrasDesc||[], 'desc')}</div>
     <button class="fp-add-extra" onclick="addExtra(${emp.id},'desc')">+ Adicionar desconto</button>`;
 
@@ -2253,6 +2261,11 @@ function saveEntryFromForm(empId) {
     return campo ? r2(prev[campo] || 0) : 0;
   };
 
+  // Anotação de faltas — texto livre que só existe para a coluna FALTAS da
+  // contabilidade. Não entra em desconto nenhum: quem desconta é o contador.
+  const faltasEl = document.getElementById(`fp-faltas-${empId}`);
+  const faltas   = faltasEl ? faltasEl.value.trim() : (prev.faltas || '');
+
   const extProv = (prev.extras||[]).reduce((s,ex)=>s+r2(ex.valor),0);
   const extDesc = (prev.extrasDesc||[]).reduce((s,ex)=>s+r2(ex.valor),0);
   const fb      = foraBreakdown(prev, tipo);
@@ -2310,6 +2323,7 @@ function saveEntryFromForm(empId) {
       valeCompras: g(`fp-valeCompras-${empId}`), adiantamento: g(`fp-adiantamento-${empId}`),
       inss: g(`fp-inss-${empId}`), irpf: g(`fp-irpf-${empId}`),
       vt: g(`fp-vt-${empId}`), arredondamento: g(`fp-arred-${empId}`),
+      faltas,
       totalDescontos: totalDesc, liquido, totalGeral: r2(liquido + fb.total),
     };
     return;
@@ -2366,6 +2380,7 @@ function saveEntryFromForm(empId) {
     irpf:           g(`fp-irpf-${empId}`),
     vt:             g(`fp-vt-${empId}`),
     arredondamento: g(`fp-arred-${empId}`),
+    faltas,
     totalDescontos: totalDesc,
     liquido: r2(proventos - totalDesc),
     totalGeral: r2(proventos - totalDesc + fb.total),
@@ -2432,9 +2447,12 @@ function fpGerar() {
       congelados.push(emp.apelido || emp.name.split(' ')[0]);
       continue;
     }
-    // "por fora" é decisão manual, não valor calculado — sobrevive ao Gerar
-    const fora = FP.folha[board].entries[emp.id]?.fora;
-    FP.folha[board].entries[emp.id] = applyFora(defaultEntry(emp), emp, fora);
+    // "por fora" e faltas são lançamento manual, não valor calculado —
+    // sobrevivem ao Gerar
+    const ant  = FP.folha[board].entries[emp.id];
+    const nova = applyFora(defaultEntry(emp), emp, ant?.fora);
+    if (ant?.faltas) nova.faltas = ant.faltas;
+    FP.folha[board].entries[emp.id] = nova;
   }
   FP.dirty = true;
   renderPanel();
@@ -2470,8 +2488,10 @@ function fpGerarEmp(empId) {
   if (hasData && !confirm(`Recalcular a folha de ${emp.apelido || emp.name}? Os valores editados manualmente serão perdidos.`)) return;
   if (!FP.folha[FP.board]) FP.folha[FP.board] = {};
   if (!FP.folha[FP.board].entries) FP.folha[FP.board].entries = {};
-  const fora = FP.folha[FP.board].entries[empId]?.fora;
-  FP.folha[FP.board].entries[empId] = applyFora(defaultEntry(emp), emp, fora);
+  const ant  = FP.folha[FP.board].entries[empId];
+  const nova = applyFora(defaultEntry(emp), emp, ant?.fora);
+  if (ant?.faltas) nova.faltas = ant.faltas;
+  FP.folha[FP.board].entries[empId] = nova;
   FP.dirty = true;
   selectEmp(empId);
   toast(`Folha de ${emp.apelido || emp.name} recalculada.`);
