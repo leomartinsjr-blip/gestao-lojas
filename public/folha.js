@@ -489,6 +489,7 @@ let FP = {
   premiacaoSemanalGer: {}, premiacaoSemanalGerDetalhe: {}, prevExtras: {},
   prevAjudaCusto: {},
   adiantamentos: {}, adiantamentosSemVinculo: [],
+  faltasLoja: {}, faltasSemVinculo: [],
   activeEmpId: null, dirty: false,
 };
 
@@ -541,6 +542,8 @@ async function loadPeriod() {
     FP.prevAjudaCusto          = d.prevAjudaCusto          || {};
     FP.adiantamentos           = d.adiantamentos           || {};
     FP.adiantamentosSemVinculo = d.adiantamentosSemVinculo || [];
+    FP.faltasLoja              = d.faltasLoja              || {};
+    FP.faltasSemVinculo        = d.faltasSemVinculo        || [];
     FP.mensal = {
       diasUteis:        d.folhaMensal?.diasUteis        || 22,
       domingosFeriados: d.folhaMensal?.domingosFeriados || 4,
@@ -1243,14 +1246,33 @@ function adiNota(emp) {
   return `<span style="font-size:.7rem;color:#484f58">Loja em Ação: ${det}${dif}</span>`;
 }
 
-// Faltas são lançamento manual do mês, como a ajuda de custo: o cálculo não
-// tem como redescobri-las. Ficam por fora do cálculo e voltam por cima dele,
-// para sobreviverem a todo caminho que recria a entry — Gerar, férias, config.
+// Faltas lançadas pelo gerente no Loja em Ação → Dados p/ Folha. Vêm do
+// servidor agrupadas por colaborador; na folha viram as datas do campo Faltas.
+function faltasDaLoja(emp) {
+  return FP.faltasLoja?.[emp.id]?.dias || [];
+}
+function faltasTexto(dias) {
+  return dias.map(d => `${d.slice(8,10)}/${d.slice(5,7)}`).join(' · ');
+}
+
+// Rastro das datas: mostra o que o gerente lançou, mesmo depois de o campo da
+// folha ser reescrito à mão — a nota é a fonte, o campo é o que vai na planilha.
+function faltasNota(emp) {
+  const dias = faltasDaLoja(emp);
+  if (!dias.length) return '';
+  return `<span class="fp-field-hint">Loja em Ação: ${faltasTexto(dias)}</span>`;
+}
+
+// O valor da falta é sempre manual — como a ajuda de custo, o cálculo não tem
+// como redescobri-lo, então volta por cima do calculado e sobrevive a todo
+// caminho que recria a entry: Gerar, férias, config. As datas seguem o
+// adiantamento: quem manda é o Loja em Ação, e o Gerar traz de lá.
 function defaultEntry(emp) {
   const entry = calcEntry(emp);
   const ant   = FP.folha[FP.board]?.entries?.[emp.id] || {};
   const valor = r2(ant.faltasValor || 0);
-  entry.faltas      = ant.faltas || '';
+  const dias  = faltasDaLoja(emp);
+  entry.faltas      = dias.length ? faltasTexto(dias) : (ant.faltas || '');
   entry.faltasValor = valor;
   if (valor) {
     entry.totalDescontos = r2((entry.totalDescontos || 0) + valor);
@@ -1777,7 +1799,7 @@ function buildEmpForm(emp, entry) {
     <div class="fp-field"><label>Vale Transporte (R$)</label>${inp(`fp-vt-${emp.id}`, e.vt)}</div>
     <div class="fp-field"><label>Arredondamento (R$)</label>${inp(`fp-arred-${emp.id}`, e.arredondamento)}</div>
     <div class="fp-field fp-field-faltas"><label>Faltas (R$)</label>${inp(`fp-faltasValor-${emp.id}`, e.faltasValor || 0)}
-      ${inpTxt(`fp-faltas-${emp.id}`, e.faltas, 'datas — ex.: 27/08')}</div>
+      ${inpTxt(`fp-faltas-${emp.id}`, e.faltas, 'datas — ex.: 27/08')}${faltasNota(emp)}</div>
     <div class="fp-extras" id="extras-desc-${emp.id}">${buildExtraRows(emp.id, e.extrasDesc||[], 'desc')}</div>
     <button class="fp-add-extra" onclick="addExtra(${emp.id},'desc')">+ Adicionar desconto</button>`;
 
@@ -2478,15 +2500,18 @@ function fpGerar() {
     return;
   }
 
-  // Adiantamento cujo colaborador não existe mais no cadastro não entra em
-  // nenhuma entry — avisa para não sumir em silêncio do desconto.
+  // Lançamento cujo colaborador não bate com ninguém do cadastro não entra em
+  // entry nenhuma — avisa para não sumir em silêncio da folha.
+  const avisos = [];
   const orfaos = (FP.adiantamentosSemVinculo || []).filter(a => a.board === board);
-  if (orfaos.length) {
-    const nomes = orfaos.map(a => `${a.colaborador} (${brl(a.valor)})`).join(', ');
-    toast(`Folha gerada. ⚠ Adiantamento sem colaborador no cadastro: ${nomes} — lance à mão.`, 'warn', 9000);
-  } else {
-    toast('Folha gerada.');
-  }
+  if (orfaos.length)
+    avisos.push(`Adiantamento sem colaborador no cadastro: ${orfaos.map(a => `${a.colaborador} (${brl(a.valor)})`).join(', ')}`);
+  const faltasOrfas = (FP.faltasSemVinculo || []).filter(f => f.board === board);
+  if (faltasOrfas.length)
+    avisos.push(`Falta sem colaborador no cadastro: ${faltasOrfas.map(f => `${f.colaborador} (${f.date.slice(8,10)}/${f.date.slice(5,7)})`).join(', ')}`);
+
+  if (avisos.length) toast(`Folha gerada. ⚠ ${avisos.join(' · ')} — lance à mão.`, 'warn', 9000);
+  else toast('Folha gerada.');
 }
 
 function fpGerarEmp(empId) {

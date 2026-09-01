@@ -3627,6 +3627,28 @@ function adiantamentosDoMes(db, year, month) {
   return { porEmp, semVinculo };
 }
 
+// Faltas que o gerente lançou em Loja em Ação → Dados p/ Folha, agrupadas por
+// colaborador. O lançamento guarda só o nome, então o vínculo é pelo nome
+// normalizado dentro da própria loja — mesma regra do adiantamento.
+function faltasDoMes(db, year, month) {
+  const mk         = `${year}-${String(month).padStart(2, '0')}`;
+  const porEmp     = {};
+  const semVinculo = [];
+  for (const [key, dados] of Object.entries(db.dadosFolha || {})) {
+    if (!key.startsWith(`${mk}-`)) continue;
+    const board = key.slice(mk.length + 1);
+    for (const f of (dados.faltas || [])) {
+      if (!f.date || !f.colaborador) continue;
+      const emp = (db.employees || []).find(e => e.board === board && _adiNomeIgual(e, f.colaborador));
+      if (!emp) { semVinculo.push({ board, colaborador: f.colaborador, date: f.date }); continue; }
+      if (!porEmp[emp.id]) porEmp[emp.id] = { dias: [] };
+      if (!porEmp[emp.id].dias.includes(f.date)) porEmp[emp.id].dias.push(f.date);
+    }
+  }
+  for (const v of Object.values(porEmp)) v.dias.sort();
+  return { porEmp, semVinculo };
+}
+
 // ── GET /api/adiantamentos ────────────────────────────────────────────────
 app.get('/api/adiantamentos', requireAuth, async (req, res) => {
   try {
@@ -9632,6 +9654,10 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       ...(() => {
         const { porEmp, semVinculo } = adiantamentosDoMes(db, year, month);
         return { adiantamentos: porEmp, adiantamentosSemVinculo: semVinculo };
+      })(),
+      ...(() => {
+        const { porEmp, semVinculo } = faltasDoMes(db, year, month);
+        return { faltasLoja: porEmp, faltasSemVinculo: semVinculo };
       })(),
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
