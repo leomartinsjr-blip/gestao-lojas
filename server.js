@@ -9917,31 +9917,33 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
       ws.getRow(1).font = { bold: true, size: 12 };
       ws.addRow([]);
 
-      // Header — estrutura idêntica à planilha de referência
-      // A    B      C     D     E    F          G    H       I   J        K      L       M            N   O   P     Q      R        S       T     U
-      // NOME CARGO  FIXO  Q.CX  S.F  COMISSÕES  DSR  PRÊMIO  GM  FERIADO  PREM.  T+PREM  VERIFICAÇÃO  OK  AD  VALE  DESC.  MAX.VT  FALTAS  P.S  OBS
-      const headers = ['NOME','CARGO','FIXO','Q.CX','S.F','COMISSÕES','DSR','PRÊMIO','GM','FERIADO','PREM.','T+PREM','VERIFICAÇÃO','OK','AD','VALE','DESC.','MAX. VT','FALTAS','P.S','OBSERVAÇÕES'];
+      // Header — cada desconto na sua coluna. A antiga DESC. mandava o total de
+      // descontos, repetindo o que AD e VALE já diziam; saiu.
+      // A    B      C     D     E    F          G    H       I   J        K      L       M            N   O   P     Q       R       S               T
+      // NOME CARGO  FIXO  Q.CX  S.F  COMISSÕES  DSR  PRÊMIO  GM  FERIADO  PREM.  T+PREM  VERIFICAÇÃO  OK  AD  VALE  MAX.VT  FALTAS  PLANO DE SAÚDE  OBS
+      const headers = ['NOME','CARGO','FIXO','Q.CX','S.F','COMISSÕES','DSR','PRÊMIO','GM','FERIADO','PREM.','T+PREM','VERIFICAÇÃO','OK','AD','VALE','MAX. VT','FALTAS','PLANO DE SAÚDE','OBSERVAÇÕES'];
       ws.addRow(headers);
       const hRow = ws.getRow(3);
       hRow.font = { bold: true, color: { argb: 'FFE6EDF3' } };
       hRow.fill = { type:'pattern', pattern:'solid', fgColor:{argb:'FF21262D'} };
       hRow.eachCell(c => { c.border = { bottom:{style:'thin',color:{argb:'FF30363D'}} }; });
 
-      // Widths: text cols = 5(S.F) 14(OK) 19(FALTAS) 20(P.S) 21(OBS)
+      // Widths: text cols = 5(S.F) 14(OK) 18(FALTAS) 20(OBS)
       ws.getColumn(1).width = 22;
       ws.getColumn(2).width = 14;
       ws.getColumn(5).width = 5;
       ws.getColumn(14).width = 5;
-      ws.getColumn(19).width = 18;
-      ws.getColumn(21).width = 22;
-      const numCols = [3,4,6,7,8,9,10,11,12,13,15,16,17,18];
+      ws.getColumn(18).width = 18;
+      ws.getColumn(20).width = 22;
+      const numCols = [3,4,6,7,8,9,10,11,12,13,15,16,17,19];
       numCols.forEach(i => { ws.getColumn(i).width = 12; ws.getColumn(i).numFmt = '#,##0.00'; });
+      ws.getColumn(19).width = 16;  // cabeçalho "PLANO DE SAÚDE" não cabe em 12
 
       const folhaEmpCfg = db.folhaEmpConfig || {};
 
       let sumFixo=0, sumQcx=0, sumCom=0, sumDsr=0, sumPremio=0,
           sumGm=0, sumFer=0, sumPrem=0, sumTotal=0,
-          sumAd=0, sumVc=0, sumDesc=0, sumVt=0;
+          sumAd=0, sumVc=0, sumPs=0, sumVt=0;
 
       for (const emp of lojaEmps) {
         const entry = lojaData.entries[emp.id];
@@ -9967,8 +9969,18 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
         const ad        = r2(entry.adiantamento || 0);
         const vale      = r2(entry.valeCompras  || 0);
         const vtVal     = r2(fc.maxVT           || 0);
-        const vtDesc    = r2(entry.vt           || 0);
-        const desc      = r2((entry.totalDescontos || 0) - vtDesc);
+
+        // Plano de saúde é linha de desconto solta na folha, com nome livre.
+        // Sai pelo nome, como as faltas, e ganha coluna própria na planilha.
+        const _norm = s => String(s || '').trim().toUpperCase()
+          .normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/\s+/g, ' ');
+        const ehPlanoSaude = nome => {
+          const n = _norm(nome);
+          return (n.includes('PLANO') && n.includes('SAUDE')) || /^P\.?\s*S\.?$/.test(n);
+        };
+        const planoSaude = r2((entry.extrasDesc || [])
+          .filter(x => ehPlanoSaude(x.nome))
+          .reduce((s, x) => s + (parseFloat(x.valor) || 0), 0));
 
         // Férias do mês vão para OBSERVAÇÕES: explicam por que fixo e comissão
         // de loja saíram proporcionais, sem virar verba nenhuma na planilha.
@@ -9980,7 +9992,7 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
         // FALTAS é coluna de texto: leva as datas do campo da folha e também as
         // linhas de desconto escritas como "FALTA 27/08", que era como se
         // anotava antes do campo existir. O valor descontado vai junto, como
-        // nota — somar já foi somado no DESC., que é a coluna de dinheiro.
+        // nota — a coluna é de texto, o dinheiro fica na folha.
         const faltasExtras = (entry.extrasDesc || [])
           .map(x => String(x.nome || ''))
           .filter(nome => /^\s*faltas?\b/i.test(nome))
@@ -10000,15 +10012,15 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
           n2(comissoes), n2(dsr), n2(premio),
           n2(gm)||null, n2(feriado)||null, n2(prem)||null,
           n2(tTotal), n2(verif), ok,
-          n2(ad)||null, n2(vale)||null, n2(desc)||null, n2(vtVal)||null,
-          faltas, null, obs,
+          n2(ad)||null, n2(vale)||null, n2(vtVal)||null,
+          faltas, n2(planoSaude)||null, obs,
         ]);
         empRow.getCell(14).font = { bold: true, color: { argb: ok==='OK'?'FF3FB950':'FFF85149' } };
         if (sf) empRow.getCell(5).font = { bold: true, color: { argb: 'FFD29922' } };
 
         sumFixo+=fixo; sumQcx+=qcx; sumCom+=comissoes; sumDsr+=dsr;
         sumPremio+=premio; sumGm+=gm; sumFer+=feriado; sumPrem+=prem;
-        sumTotal+=tTotal; sumAd+=ad; sumVc+=vale; sumDesc+=desc; sumVt+=vtVal;
+        sumTotal+=tTotal; sumAd+=ad; sumVc+=vale; sumPs+=planoSaude; sumVt+=vtVal;
       }
 
       // Totals row
@@ -10018,8 +10030,8 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
         r2(sumCom), r2(sumDsr), r2(sumPremio),
         r2(sumGm)||null, r2(sumFer)||null, r2(sumPrem)||null,
         r2(sumTotal), r2(sumTotal), '',
-        r2(sumAd)||null, r2(sumVc)||null, r2(sumDesc)||null, r2(sumVt)||null,
-        null, null, '',
+        r2(sumAd)||null, r2(sumVc)||null, r2(sumVt)||null,
+        null, r2(sumPs)||null, '',
       ]);
       totRow.font = { bold: true };
       totRow.eachCell(c => { c.border = { top:{style:'thin',color:{argb:'FF30363D'}} }; });
