@@ -219,12 +219,17 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
     <div class="pa-card">
       <div class="pa-card-hdr">
         <span class="pa-card-num">3</span>
-        <span class="pa-card-title">Histórico dos últimos meses <span class="pa-card-sub" id="histSub"></span></span>
+        <span class="pa-card-title">Histórico e média dos últimos meses <span class="pa-card-sub" id="histSub"></span></span>
       </div>
       <div class="pa-card-body">
+        <div class="pa-sub-hdr">Mês a mês</div>
         <div class="pa-tbl-wrap"><table class="pa-tbl" id="histTbl"></table></div>
         <div class="pa-legend">O número grande é o % da meta do vendedor no mês; embaixo, a diferença em pontos para o % que a loja fez no mesmo mês.
         Verde ficou acima da loja — puxou o resultado. Vermelho ficou abaixo. Num mês fraco da loja, 85% pode ser bom; num mês forte, 100% pode ser pouco.</div>
+
+        <div class="pa-sub-hdr" id="mediaHdr">Média dos últimos meses × mês em curso</div>
+        <div class="pa-tbl-wrap"><table class="pa-tbl" id="mediaTbl"></table></div>
+        <div class="pa-legend" id="mediaLegend"></div>
       </div>
     </div>
 
@@ -281,6 +286,10 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
           <input class="pa-inp grow" id="estObs" placeholder="De onde saiu o número">
         </div>
         <div id="estDeriv" class="pa-legend"></div>
+
+        <div class="pa-sub-hdr">Estoque nos últimos 12 meses</div>
+        <div class="pa-tbl-wrap"><table class="pa-tbl" id="estHistTbl"></table></div>
+        <div class="pa-legend" id="estHistLegend"></div>
 
         <div class="pa-ta-lbl">Comentário sobre produto e estoque</div>
         <textarea class="pa-ta" id="cmtProdutos" placeholder="O que falta na loja, o que está encalhado, o que pedir ou transferir…"></textarea>

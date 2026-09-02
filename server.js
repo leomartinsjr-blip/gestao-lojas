@@ -9250,6 +9250,340 @@ app.post('/api/folha/empconfig/:empId', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Folha: quem entra na folha do mês ───────────────────────────────────────
+// Extraído do GET /api/folha para a pauta de reunião usar exatamente o mesmo
+// recorte de gente que a folha usa — inclusive quem entrou ou saiu no meio do mês.
+function folhaEmployeesDoMes(db, year, month) {
+  const mk = `${year}-${String(month).padStart(2,'0')}`;
+  // Inclui funcionários inativos que têm folha salva OU vsales registradas neste mês
+  const savedFolha  = (db.folhas || {})[mk] || {};
+  const vsalesAll   = db.vsales || {};
+  const savedEmpIds = new Set();
+  for (const boardData of Object.values(savedFolha))
+    for (const id of Object.keys(boardData.entries || {})) savedEmpIds.add(parseInt(id));
+  // Garante que inativos com vendas no mês nunca desaparecem do histórico
+  for (const [key, vs] of Object.entries(vsalesAll)) {
+    if (!key.startsWith(mk + '-')) continue;
+    const hasEntries = Object.keys(vs.entries || {}).some(d => d.startsWith(mk));
+    if (!hasEntries) continue;
+    const empId = parseInt(key.split('-').at(-1));
+    if (empId) savedEmpIds.add(empId);
+  }
+  const mesIni     = `${mk}-01`;
+  const monthEnd   = `${year}-${String(month).padStart(2,'0')}-${String(new Date(year, month, 0).getDate()).padStart(2,'0')}`;
+  // Quem entrou ou saiu no meio do mês trabalhou dias que têm de ser pagos —
+  // e "inativo" é a foto de hoje, não do mês. Quem decide é o vínculo:
+  // admitido até o fim do mês e desligado a partir do começo dele entra.
+  // Sem data de desligamento não dá para saber a janela: aí continua valendo
+  // só o histórico (folha salva ou venda lançada no mês).
+  const vinculoNoMes = e => (!e.admissao     || e.admissao     <= monthEnd)
+                         && (!e.desligamento || e.desligamento >= mesIni);
+  const employees = (db.employees || []).filter(e => {
+    if (savedEmpIds.has(e.id)) return true;
+    if (e.inativo && !e.desligamento) return false;
+    return vinculoNoMes(e);
+  });
+  return employees;
+}
+
+// ── Folha: premiação semanal do mês ─────────────────────────────────────────
+// O mesmo cálculo que a folha paga. A pauta de reunião chama esta função para
+// que o valor discutido com a gerente nunca divirja do que caiu no bolso.
+function calcPremiacaoSemanal(db, year, month, employees) {
+  const vsalesAll = db.vsales || {};
+  const isVend    = e => e.isVendedor !== false;
+  // ── Premiação semanal — calcula para semanas cujo último dia está dentro do mês ──
+  const PREMIO_VEND_W = 80, PREMIO_GER_W = 250, PREMIO_PA_W = 50, PA_THR = 1.80;
+  const todayStr   = new Date().toISOString().slice(0, 10);
+  const lastDay    = new Date(year, month, 0);
+  const padD       = n => String(n).padStart(2,'0');
+  const lastDayStr = `${year}-${padD(month)}-${padD(lastDay.getDate())}`;
+  const monthStart = `${year}-${padD(month)}-01`;
+  // A primeira semana do mês pode começar até 6 dias antes (domingo do mês anterior)
+  const rangeStart = (() => {
+    const d = new Date(monthStart + 'T12:00:00'); d.setDate(d.getDate() - 6);
+    return `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
+  })();
+
+  // ── Ausências (férias/atestados) → mapa de dias bloqueados por funcionário ──
+  // Usado para excluir funcionários que não trabalharam a semana inteira da premiação semanal
+  const ausencias = db.ausencias || [];
+  // Normaliza nome para comparação case-insensitive sem acento
+  const _normName = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
+  // Para cada funcionário, expande o range de férias/atestado em dias individuais
+  const ausenciaDiasMap = {}; // empId → Set<'YYYY-MM-DD'>
+  for (const emp of employees) {
+    const empNorm = _normName(emp.apelido || emp.name);
+    const empAus  = ausencias.filter(a =>
+      ['ferias','atestado'].includes(a.tipo) &&
+      _normName(a.colaborador) === empNorm &&
+      a.dataFim >= rangeStart && a.dataInicio <= lastDayStr
+    );
+    if (!empAus.length) continue;
+    const days = new Set();
+    for (const a of empAus) {
+      const cur = new Date(a.dataInicio + 'T12:00:00');
+      const fim = new Date(a.dataFim    + 'T12:00:00');
+      while (cur <= fim) {
+        const ds = cur.toISOString().slice(0,10);
+        if (ds >= rangeStart && ds <= lastDayStr) days.add(ds);
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+    if (days.size > 0) ausenciaDiasMap[emp.id] = days;
+  }
+  // Semana só entra depois de encerrada. Guardar quais entraram é o que permite
+  // dizer, num mês em curso, que o prêmio está zerado por falta de semana fechada.
+  const semanasAvaliadas           = [];
+  const premiacaoSemanal           = {};
+  const premiacaoSemanalDetalhe    = {};
+  const premiacaoSemanalGer        = {};
+  const premiacaoSemanalGerDetalhe = {};
+  for (const emp of employees) {
+    premiacaoSemanal[emp.id]           = 0;
+    premiacaoSemanalDetalhe[emp.id]    = [];
+    premiacaoSemanalGer[emp.id]        = 0;
+    premiacaoSemanalGerDetalhe[emp.id] = [];
+  }
+
+  const folhaEmpCfgMap = db.folhaEmpConfig || {};
+
+  const boardEmpsMap = {};
+  for (const emp of employees) {
+    if (!boardEmpsMap[emp.board]) boardEmpsMap[emp.board] = [];
+    boardEmpsMap[emp.board].push(emp);
+  }
+
+  // Supervisor/sócio recebe o prêmio de CADA loja que supervisiona, não só o da
+  // loja onde está cadastrado — por isso não sai de boardEmpsMap (que agrupa por
+  // emp.board), e sim de supervisedBoards.
+  const isSupervisorLike = emp => /supervisor|sócio|socio/i.test(emp.cargo || '');
+  const supervisoresPorLoja = {};
+  for (const emp of employees) {
+    if (!isSupervisorLike(emp)) continue;
+    if (!(folhaEmpCfgMap[emp.id] || {}).recebePremiaoLoja) continue;
+    for (const b of (emp.supervisedBoards || [])) {
+      if (!supervisoresPorLoja[b]) supervisoresPorLoja[b] = [];
+      supervisoresPorLoja[b].push(emp);
+    }
+  }
+
+  // ── Semanas que cruzam dois meses ─────────────────────────────────────────
+  // A semana domingo-sábado pode começar no mês anterior (ex.: 28/06 – 04/07).
+  // Vendas, PA e meta têm que ser avaliados sobre a semana INTEIRA, como a tela
+  // Meta Semanal faz. Antes só os dias do mês corrente entravam: a meta caía
+  // proporcionalmente e a loja "batia meta" numa semana em que não bateu.
+  const mkOf     = ds  => ds.slice(0, 7);
+  const daysInMk = mkX => { const [y2, m2] = mkX.split('-').map(Number); return new Date(y2, m2, 0).getDate(); };
+  const dayWeight = ds => {
+    const w = (db.globalWeights || {})[mkOf(ds)] || {};
+    return w[ds] !== undefined ? w[ds] : 100 / daysInMk(mkOf(ds));
+  };
+  const weekDays = (ws, we) => {
+    const out = [];
+    const d = new Date(ws + 'T12:00:00'), end = new Date(we + 'T12:00:00');
+    while (d <= end) {
+      out.push(`${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`);
+      d.setDate(d.getDate() + 1);
+    }
+    return out;
+  };
+  // Meta manual da semana pode estar gravada sob o mês do início OU o do fim
+  const manualWeekMeta = (ws, we, empId) => {
+    const metas = db.weeklyMetas || {};
+    for (const mkX of new Set([mkOf(ws), mkOf(we)])) {
+      const v = metas[mkX]?.[ws]?.[empId]?.meta || 0;
+      if (v > 0) return v;
+    }
+    return 0;
+  };
+  // Vendas/peças/atendimentos da semana, buscando cada dia no vsales do seu mês
+  const empWeekAgg = (empId, board, dias) => {
+    let value = 0, pecas = 0, atend = 0;
+    for (const ds of dias) {
+      const e = vsalesAll[`${mkOf(ds)}-${board}-${empId}`]?.entries?.[ds];
+      if (e) { value += e.value || 0; pecas += e.pecas || 0; atend += e.atendimentos || 0; }
+    }
+    return { value, pecas, atend };
+  };
+  // ── Meta do dia de um vendedor — porta server-side de sellerDayGoal (public/app.js) ──
+  // A meta semanal TEM que sair da meta da loja dividida pelos vendedores ativos NAQUELE
+  // dia, igual à tela Meta Semanal. Antes daqui saía `vsales.meta.mensal * peso do dia`,
+  // e esse `meta.mensal` é só um snapshot gravado quando alguém salva a meta da loja —
+  // já vem proporcional aos dias do vendedor no mês. Para quem entrou/saiu no meio do mês
+  // (ou teve férias), o snapshot encolhido era espalhado por TODAS as semanas, derrubando
+  // a meta das semanas que ele trabalhou inteiras e gerando prêmio indevido — individual
+  // e de loja, porque a meta da loja aqui é a soma das metas dos vendedores.
+  const metaLojaOf = (mkX, board) => db.dailySales?.[`${mkX}-${board}`]?.meta?.mensal || 0;
+  // Roster completo por loja, SEM filtro de inativo: o divisor precisa contar quem estava
+  // ativo naquele dia, não quem está ativo hoje (mesma razão do S.allEmployees no cliente).
+  const allVendByBoard = {};
+  for (const emp of (db.employees || [])) {
+    if (!isVend(emp)) continue;
+    if (!allVendByBoard[emp.board]) allVendByBoard[emp.board] = [];
+    allVendByBoard[emp.board].push(emp);
+  }
+  const vacDaysMk    = (empId, board, mkX) => vsalesAll[`${mkX}-${board}-${empId}`]?.meta?.vacationDays || [];
+  const ativoNoDia   = (emp, ds) => (!emp.admissao     || emp.admissao     <= ds)
+                                 && (!emp.desligamento || emp.desligamento >= ds);
+  const sellerDayGoal = (emp, board, ds) => {
+    if (emp.omniChannel) return 0;                    // canal Omni não divide meta
+    if (!ativoNoDia(emp, ds)) return 0;               // fora da janela admissão/desligamento
+    const mkX = mkOf(ds);
+    if (vacDaysMk(emp.id, board, mkX).includes(ds)) return 0;  // férias (Part%)
+    const w = dayWeight(ds);
+    const metaLoja = metaLojaOf(mkX, board);
+    if (metaLoja > 0) {
+      const nActive = Math.max(1, (allVendByBoard[board] || []).filter(e =>
+        !e.omniChannel && ativoNoDia(e, ds) && !vacDaysMk(e.id, board, mkX).includes(ds)
+      ).length);
+      return metaLoja * w / 100 / nActive;
+    }
+    // Mês sem meta da loja: mesmo fallback do cliente — meta individual gravada
+    return (vsalesAll[`${mkX}-${board}-${emp.id}`]?.meta?.mensal || 0) * w / 100;
+  };
+  // Meta automática da semana: soma das metas diárias, cada dia com o peso do SEU mês
+  const empWeekMetaAuto = (emp, board, dias) =>
+    dias.reduce((s, ds) => s + sellerDayGoal(emp, board, ds), 0);
+  const empWeekMeta = (emp, board, ws, we, dias) => {
+    const manual = manualWeekMeta(ws, we, emp.id);
+    return manual > 0 ? manual : empWeekMetaAuto(emp, board, dias);
+  };
+  // Dias de férias marcados via Part%, unindo os meses tocados pela semana
+  const vacDaysOf = (empId, board, dias) => {
+    const set = new Set();
+    for (const mkX of new Set(dias.map(mkOf))) {
+      for (const d of (vsalesAll[`${mkX}-${board}-${empId}`]?.meta?.vacationDays || [])) set.add(d);
+    }
+    return set;
+  };
+
+  // Generate all Sunday-based weeks overlapping the month + any manual-meta weeks
+  // Somente semanas domingo-a-sábado, igual à view Meta Semanal
+  const allWeekStarts = new Set();
+  const msDate = new Date(monthStart + 'T12:00:00');
+  const firstSunday = new Date(msDate);
+  firstSunday.setDate(msDate.getDate() - msDate.getDay()); // rewind to Sunday
+  for (let d = new Date(firstSunday); ; d.setDate(d.getDate() + 7)) {
+    const ws = `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
+    if (ws > lastDayStr) break;
+    const weEndD = new Date(d); weEndD.setDate(weEndD.getDate() + 6);
+    const weEnd = `${weEndD.getFullYear()}-${padD(weEndD.getMonth()+1)}-${padD(weEndD.getDate())}`;
+    // Inclui semana se o FIM cair dentro do mês — garante que semanas cross-month
+    // (ex.: Dom 31/05–Sáb 06/06) sempre sejam avaliadas para o mês de junho,
+    // permitindo que férias/admissão da semana parcial sejam verificados corretamente.
+    if (weEnd >= monthStart && weEnd <= lastDayStr) allWeekStarts.add(ws);
+  }
+
+  for (const weekStart of allWeekStarts) {
+    const wsDate = new Date(weekStart + 'T12:00:00');
+    const weDate = new Date(wsDate); weDate.setDate(weDate.getDate() + 6);
+    const weStr   = `${weDate.getFullYear()}-${padD(weDate.getMonth()+1)}-${padD(weDate.getDate())}`;
+    const semLabel = `${padD(wsDate.getDate())}/${padD(wsDate.getMonth()+1)} – ${padD(weDate.getDate())}/${padD(weDate.getMonth()+1)}`;
+    // inclui semana apenas se o último dia está dentro do mês e a semana já terminou
+    if (weStr > lastDayStr || weStr >= todayStr) continue;
+    semanasAvaliadas.push(semLabel);
+
+    const dias = weekDays(weekStart, weStr);
+
+    for (const board of Object.keys(boardEmpsMap)) {
+      const bEmps = boardEmpsMap[board];
+      let storeSales = 0, storePecas = 0, storeAtend = 0, storeMeta = 0;
+      for (const emp of bEmps) {
+        if (!isVend(emp)) continue;
+        const agg = empWeekAgg(emp.id, board, dias);
+        storeSales += agg.value;
+        storePecas += agg.pecas;
+        storeAtend += agg.atend;
+        storeMeta  += empWeekMeta(emp, board, weekStart, weStr, dias);
+      }
+      const storeHitMeta = storeMeta > 0 && storeSales >= storeMeta;
+      const storeHitPA   = storeAtend > 0 && (storePecas/storeAtend) >= PA_THR;
+
+      for (const emp of bEmps) {
+        const tipo  = (emp.cargo||'').toLowerCase();
+        const isGer    = /gerente/.test(tipo) && !/^sub/.test(tipo) && !/g\.?\s*vend/.test(tipo) && !/gerente\s+vend/.test(tipo);
+        const isGVend  = (/g\.?\s*vend/.test(tipo) || /gerente\s+vend/.test(tipo)) && !/^sub/.test(tipo);
+        const isSubGer = /^sub/.test(tipo) && /gerente/.test(tipo);
+        const empCfg   = folhaEmpCfgMap[emp.id] || {};
+        // Sub-gerente NÃO recebe prêmio de loja por padrão — é vendedor com
+        // comissionamento sobre a loja. Só recebe se marcar a flag no config.
+        // Supervisor/sócio sai do laço dedicado abaixo (uma linha por loja supervisionada).
+        const useStorePremio = !isSupervisorLike(emp) &&
+          (isGer || isGVend || empCfg.recebePremiaoLoja);
+        const storePremioVal = empCfg.premioLojaValor > 0 ? empCfg.premioLojaValor : PREMIO_GER_W;
+
+        // Verifica se o funcionário trabalhou todos os dias da semana
+        // Regra: % diário zerado (férias, admissão no meio, desligamento) = não trabalhou = sem prêmio
+        const vacSet = vacDaysOf(emp.id, board, dias);
+
+        // Se admissão não estiver cadastrada, usa a primeira entrada de vsales
+        // da semana como fallback (detecta quem começou no meio do mês sem data)
+        let effectiveAdmissao = emp.admissao || null;
+        if (!effectiveAdmissao) {
+          const allEntryDates = [...new Set(dias.map(mkOf))]
+            .flatMap(mkX => Object.keys(vsalesAll[`${mkX}-${board}-${emp.id}`]?.entries || {}))
+            .sort();
+          if (allEntryDates.length > 0) effectiveAdmissao = allEntryDates[0];
+        }
+
+        const ausenciaDias = ausenciaDiasMap[emp.id] || new Set();
+        const trabalhouSemanaInteira = dias.every(ds => {
+          if (vacSet.has(ds))       return false; // férias via toggle Part%
+          if (ausenciaDias.has(ds)) return false; // férias/atestado via calendário
+          if (effectiveAdmissao && ds < effectiveAdmissao) return false;
+          if (emp.desligamento  && ds > emp.desligamento)  return false;
+          return true;
+        });
+
+        // Prêmio de loja para gerente, gerente vendedor e funcionários com flag no config
+        if (useStorePremio && trabalhouSemanaInteira) {
+          let val = 0;
+          if (storeHitMeta) val += storePremioVal;
+          if (storeHitMeta && storeHitPA) val += PREMIO_PA_W;
+          if (val > 0) {
+            premiacaoSemanalGer[emp.id] += val;
+            premiacaoSemanalGerDetalhe[emp.id].push({ label: semLabel, valor: val, board });
+          }
+        }
+
+        // Prêmio individual para vendedor, gerente vendedor e sub-gerente
+        if (isGVend || isSubGer || (!isGer && isVend(emp))) {
+          if (!trabalhouSemanaInteira) continue;
+          const { value: empSales, pecas: empPecas, atend: empAtend } =
+            empWeekAgg(emp.id, board, dias);
+          const empMeta = empWeekMeta(emp, board, weekStart, weStr, dias);
+          if (empMeta > 0 && empSales >= empMeta) {
+            let val = PREMIO_VEND_W;
+            if (empAtend > 0 && (empPecas/empAtend) >= PA_THR) val += PREMIO_PA_W;
+            premiacaoSemanal[emp.id] += val;
+            premiacaoSemanalDetalhe[emp.id].push({ label: semLabel, valor: val });
+          }
+        }
+      }
+
+      // Prêmio de loja do supervisor/sócio: uma linha por loja supervisionada
+      // que bateu a meta na semana. Sem adicional de PA (regra do gerente).
+      if (storeHitMeta) {
+        for (const sup of (supervisoresPorLoja[board] || [])) {
+          const ausSup = ausenciaDiasMap[sup.id] || new Set();
+          const vacSup = vacDaysOf(sup.id, sup.board, dias);
+          const trabalhou = dias.every(ds =>
+            !vacSup.has(ds) && !ausSup.has(ds) &&
+            !(sup.admissao     && ds < sup.admissao) &&
+            !(sup.desligamento && ds > sup.desligamento));
+          if (!trabalhou) continue;
+          const supCfg = folhaEmpCfgMap[sup.id] || {};
+          const val = supCfg.premioLojaValor > 0 ? supCfg.premioLojaValor : PREMIO_GER_W;
+          premiacaoSemanalGer[sup.id] += val;
+          premiacaoSemanalGerDetalhe[sup.id].push({ label: semLabel, valor: val, board });
+        }
+      }
+    }
+  }
+  return { semanasAvaliadas, premiacaoSemanal, premiacaoSemanalDetalhe, premiacaoSemanalGer, premiacaoSemanalGerDetalhe };
+}
+
 // GET /api/folha/:year/:month — retorna dados completos para a folha do mês
 app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
   try {
@@ -9258,34 +9592,8 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
     const mk    = `${year}-${String(month).padStart(2,'0')}`;
     const db    = await readDB();
 
-    // Inclui funcionários inativos que têm folha salva OU vsales registradas neste mês
-    const savedFolha  = (db.folhas || {})[mk] || {};
-    const vsalesAll   = db.vsales || {};
-    const savedEmpIds = new Set();
-    for (const boardData of Object.values(savedFolha))
-      for (const id of Object.keys(boardData.entries || {})) savedEmpIds.add(parseInt(id));
-    // Garante que inativos com vendas no mês nunca desaparecem do histórico
-    for (const [key, vs] of Object.entries(vsalesAll)) {
-      if (!key.startsWith(mk + '-')) continue;
-      const hasEntries = Object.keys(vs.entries || {}).some(d => d.startsWith(mk));
-      if (!hasEntries) continue;
-      const empId = parseInt(key.split('-').at(-1));
-      if (empId) savedEmpIds.add(empId);
-    }
-    const mesIni     = `${mk}-01`;
-    const monthEnd   = `${year}-${String(month).padStart(2,'0')}-${String(new Date(year, month, 0).getDate()).padStart(2,'0')}`;
-    // Quem entrou ou saiu no meio do mês trabalhou dias que têm de ser pagos —
-    // e "inativo" é a foto de hoje, não do mês. Quem decide é o vínculo:
-    // admitido até o fim do mês e desligado a partir do começo dele entra.
-    // Sem data de desligamento não dá para saber a janela: aí continua valendo
-    // só o histórico (folha salva ou venda lançada no mês).
-    const vinculoNoMes = e => (!e.admissao     || e.admissao     <= monthEnd)
-                           && (!e.desligamento || e.desligamento >= mesIni);
-    const employees = (db.employees || []).filter(e => {
-      if (savedEmpIds.has(e.id)) return true;
-      if (e.inativo && !e.desligamento) return false;
-      return vinculoNoMes(e);
-    });
+    const vsalesAll = db.vsales || {};
+    const employees = folhaEmployeesDoMes(db, year, month);
 
     const isVend = e => e.isVendedor !== false;
 
@@ -9318,291 +9626,9 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
       vsales[emp.id] = vsalesAll[key] || { meta: { mensal: 0 }, entries: {} };
     }
 
-    // ── Premiação semanal — calcula para semanas cujo último dia está dentro do mês ──
-    const PREMIO_VEND_W = 80, PREMIO_GER_W = 250, PREMIO_PA_W = 50, PA_THR = 1.80;
-    const todayStr   = new Date().toISOString().slice(0, 10);
-    const lastDay    = new Date(year, month, 0);
-    const padD       = n => String(n).padStart(2,'0');
-    const lastDayStr = `${year}-${padD(month)}-${padD(lastDay.getDate())}`;
-    const monthStart = `${year}-${padD(month)}-01`;
-    // A primeira semana do mês pode começar até 6 dias antes (domingo do mês anterior)
-    const rangeStart = (() => {
-      const d = new Date(monthStart + 'T12:00:00'); d.setDate(d.getDate() - 6);
-      return `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
-    })();
-
-    // ── Ausências (férias/atestados) → mapa de dias bloqueados por funcionário ──
-    // Usado para excluir funcionários que não trabalharam a semana inteira da premiação semanal
-    const ausencias = db.ausencias || [];
-    // Normaliza nome para comparação case-insensitive sem acento
-    const _normName = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
-    // Para cada funcionário, expande o range de férias/atestado em dias individuais
-    const ausenciaDiasMap = {}; // empId → Set<'YYYY-MM-DD'>
-    for (const emp of employees) {
-      const empNorm = _normName(emp.apelido || emp.name);
-      const empAus  = ausencias.filter(a =>
-        ['ferias','atestado'].includes(a.tipo) &&
-        _normName(a.colaborador) === empNorm &&
-        a.dataFim >= rangeStart && a.dataInicio <= lastDayStr
-      );
-      if (!empAus.length) continue;
-      const days = new Set();
-      for (const a of empAus) {
-        const cur = new Date(a.dataInicio + 'T12:00:00');
-        const fim = new Date(a.dataFim    + 'T12:00:00');
-        while (cur <= fim) {
-          const ds = cur.toISOString().slice(0,10);
-          if (ds >= rangeStart && ds <= lastDayStr) days.add(ds);
-          cur.setDate(cur.getDate() + 1);
-        }
-      }
-      if (days.size > 0) ausenciaDiasMap[emp.id] = days;
-    }
-    const premiacaoSemanal           = {};
-    const premiacaoSemanalDetalhe    = {};
-    const premiacaoSemanalGer        = {};
-    const premiacaoSemanalGerDetalhe = {};
-    for (const emp of employees) {
-      premiacaoSemanal[emp.id]           = 0;
-      premiacaoSemanalDetalhe[emp.id]    = [];
-      premiacaoSemanalGer[emp.id]        = 0;
-      premiacaoSemanalGerDetalhe[emp.id] = [];
-    }
-
-    const folhaEmpCfgMap = db.folhaEmpConfig || {};
-
-    const boardEmpsMap = {};
-    for (const emp of employees) {
-      if (!boardEmpsMap[emp.board]) boardEmpsMap[emp.board] = [];
-      boardEmpsMap[emp.board].push(emp);
-    }
-
-    // Supervisor/sócio recebe o prêmio de CADA loja que supervisiona, não só o da
-    // loja onde está cadastrado — por isso não sai de boardEmpsMap (que agrupa por
-    // emp.board), e sim de supervisedBoards.
-    const isSupervisorLike = emp => /supervisor|sócio|socio/i.test(emp.cargo || '');
-    const supervisoresPorLoja = {};
-    for (const emp of employees) {
-      if (!isSupervisorLike(emp)) continue;
-      if (!(folhaEmpCfgMap[emp.id] || {}).recebePremiaoLoja) continue;
-      for (const b of (emp.supervisedBoards || [])) {
-        if (!supervisoresPorLoja[b]) supervisoresPorLoja[b] = [];
-        supervisoresPorLoja[b].push(emp);
-      }
-    }
-
-    // ── Semanas que cruzam dois meses ─────────────────────────────────────────
-    // A semana domingo-sábado pode começar no mês anterior (ex.: 28/06 – 04/07).
-    // Vendas, PA e meta têm que ser avaliados sobre a semana INTEIRA, como a tela
-    // Meta Semanal faz. Antes só os dias do mês corrente entravam: a meta caía
-    // proporcionalmente e a loja "batia meta" numa semana em que não bateu.
-    const mkOf     = ds  => ds.slice(0, 7);
-    const daysInMk = mkX => { const [y2, m2] = mkX.split('-').map(Number); return new Date(y2, m2, 0).getDate(); };
-    const dayWeight = ds => {
-      const w = (db.globalWeights || {})[mkOf(ds)] || {};
-      return w[ds] !== undefined ? w[ds] : 100 / daysInMk(mkOf(ds));
-    };
-    const weekDays = (ws, we) => {
-      const out = [];
-      const d = new Date(ws + 'T12:00:00'), end = new Date(we + 'T12:00:00');
-      while (d <= end) {
-        out.push(`${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`);
-        d.setDate(d.getDate() + 1);
-      }
-      return out;
-    };
-    // Meta manual da semana pode estar gravada sob o mês do início OU o do fim
-    const manualWeekMeta = (ws, we, empId) => {
-      const metas = db.weeklyMetas || {};
-      for (const mkX of new Set([mkOf(ws), mkOf(we)])) {
-        const v = metas[mkX]?.[ws]?.[empId]?.meta || 0;
-        if (v > 0) return v;
-      }
-      return 0;
-    };
-    // Vendas/peças/atendimentos da semana, buscando cada dia no vsales do seu mês
-    const empWeekAgg = (empId, board, dias) => {
-      let value = 0, pecas = 0, atend = 0;
-      for (const ds of dias) {
-        const e = vsalesAll[`${mkOf(ds)}-${board}-${empId}`]?.entries?.[ds];
-        if (e) { value += e.value || 0; pecas += e.pecas || 0; atend += e.atendimentos || 0; }
-      }
-      return { value, pecas, atend };
-    };
-    // ── Meta do dia de um vendedor — porta server-side de sellerDayGoal (public/app.js) ──
-    // A meta semanal TEM que sair da meta da loja dividida pelos vendedores ativos NAQUELE
-    // dia, igual à tela Meta Semanal. Antes daqui saía `vsales.meta.mensal * peso do dia`,
-    // e esse `meta.mensal` é só um snapshot gravado quando alguém salva a meta da loja —
-    // já vem proporcional aos dias do vendedor no mês. Para quem entrou/saiu no meio do mês
-    // (ou teve férias), o snapshot encolhido era espalhado por TODAS as semanas, derrubando
-    // a meta das semanas que ele trabalhou inteiras e gerando prêmio indevido — individual
-    // e de loja, porque a meta da loja aqui é a soma das metas dos vendedores.
-    const metaLojaOf = (mkX, board) => db.dailySales?.[`${mkX}-${board}`]?.meta?.mensal || 0;
-    // Roster completo por loja, SEM filtro de inativo: o divisor precisa contar quem estava
-    // ativo naquele dia, não quem está ativo hoje (mesma razão do S.allEmployees no cliente).
-    const allVendByBoard = {};
-    for (const emp of (db.employees || [])) {
-      if (!isVend(emp)) continue;
-      if (!allVendByBoard[emp.board]) allVendByBoard[emp.board] = [];
-      allVendByBoard[emp.board].push(emp);
-    }
-    const vacDaysMk    = (empId, board, mkX) => vsalesAll[`${mkX}-${board}-${empId}`]?.meta?.vacationDays || [];
-    const ativoNoDia   = (emp, ds) => (!emp.admissao     || emp.admissao     <= ds)
-                                   && (!emp.desligamento || emp.desligamento >= ds);
-    const sellerDayGoal = (emp, board, ds) => {
-      if (emp.omniChannel) return 0;                    // canal Omni não divide meta
-      if (!ativoNoDia(emp, ds)) return 0;               // fora da janela admissão/desligamento
-      const mkX = mkOf(ds);
-      if (vacDaysMk(emp.id, board, mkX).includes(ds)) return 0;  // férias (Part%)
-      const w = dayWeight(ds);
-      const metaLoja = metaLojaOf(mkX, board);
-      if (metaLoja > 0) {
-        const nActive = Math.max(1, (allVendByBoard[board] || []).filter(e =>
-          !e.omniChannel && ativoNoDia(e, ds) && !vacDaysMk(e.id, board, mkX).includes(ds)
-        ).length);
-        return metaLoja * w / 100 / nActive;
-      }
-      // Mês sem meta da loja: mesmo fallback do cliente — meta individual gravada
-      return (vsalesAll[`${mkX}-${board}-${emp.id}`]?.meta?.mensal || 0) * w / 100;
-    };
-    // Meta automática da semana: soma das metas diárias, cada dia com o peso do SEU mês
-    const empWeekMetaAuto = (emp, board, dias) =>
-      dias.reduce((s, ds) => s + sellerDayGoal(emp, board, ds), 0);
-    const empWeekMeta = (emp, board, ws, we, dias) => {
-      const manual = manualWeekMeta(ws, we, emp.id);
-      return manual > 0 ? manual : empWeekMetaAuto(emp, board, dias);
-    };
-    // Dias de férias marcados via Part%, unindo os meses tocados pela semana
-    const vacDaysOf = (empId, board, dias) => {
-      const set = new Set();
-      for (const mkX of new Set(dias.map(mkOf))) {
-        for (const d of (vsalesAll[`${mkX}-${board}-${empId}`]?.meta?.vacationDays || [])) set.add(d);
-      }
-      return set;
-    };
-
-    // Generate all Sunday-based weeks overlapping the month + any manual-meta weeks
-    // Somente semanas domingo-a-sábado, igual à view Meta Semanal
-    const allWeekStarts = new Set();
-    const msDate = new Date(monthStart + 'T12:00:00');
-    const firstSunday = new Date(msDate);
-    firstSunday.setDate(msDate.getDate() - msDate.getDay()); // rewind to Sunday
-    for (let d = new Date(firstSunday); ; d.setDate(d.getDate() + 7)) {
-      const ws = `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
-      if (ws > lastDayStr) break;
-      const weEndD = new Date(d); weEndD.setDate(weEndD.getDate() + 6);
-      const weEnd = `${weEndD.getFullYear()}-${padD(weEndD.getMonth()+1)}-${padD(weEndD.getDate())}`;
-      // Inclui semana se o FIM cair dentro do mês — garante que semanas cross-month
-      // (ex.: Dom 31/05–Sáb 06/06) sempre sejam avaliadas para o mês de junho,
-      // permitindo que férias/admissão da semana parcial sejam verificados corretamente.
-      if (weEnd >= monthStart && weEnd <= lastDayStr) allWeekStarts.add(ws);
-    }
-
-    for (const weekStart of allWeekStarts) {
-      const wsDate = new Date(weekStart + 'T12:00:00');
-      const weDate = new Date(wsDate); weDate.setDate(weDate.getDate() + 6);
-      const weStr   = `${weDate.getFullYear()}-${padD(weDate.getMonth()+1)}-${padD(weDate.getDate())}`;
-      const semLabel = `${padD(wsDate.getDate())}/${padD(wsDate.getMonth()+1)} – ${padD(weDate.getDate())}/${padD(weDate.getMonth()+1)}`;
-      // inclui semana apenas se o último dia está dentro do mês e a semana já terminou
-      if (weStr > lastDayStr || weStr >= todayStr) continue;
-
-      const dias = weekDays(weekStart, weStr);
-
-      for (const board of Object.keys(boardEmpsMap)) {
-        const bEmps = boardEmpsMap[board];
-        let storeSales = 0, storePecas = 0, storeAtend = 0, storeMeta = 0;
-        for (const emp of bEmps) {
-          if (!isVend(emp)) continue;
-          const agg = empWeekAgg(emp.id, board, dias);
-          storeSales += agg.value;
-          storePecas += agg.pecas;
-          storeAtend += agg.atend;
-          storeMeta  += empWeekMeta(emp, board, weekStart, weStr, dias);
-        }
-        const storeHitMeta = storeMeta > 0 && storeSales >= storeMeta;
-        const storeHitPA   = storeAtend > 0 && (storePecas/storeAtend) >= PA_THR;
-
-        for (const emp of bEmps) {
-          const tipo  = (emp.cargo||'').toLowerCase();
-          const isGer    = /gerente/.test(tipo) && !/^sub/.test(tipo) && !/g\.?\s*vend/.test(tipo) && !/gerente\s+vend/.test(tipo);
-          const isGVend  = (/g\.?\s*vend/.test(tipo) || /gerente\s+vend/.test(tipo)) && !/^sub/.test(tipo);
-          const isSubGer = /^sub/.test(tipo) && /gerente/.test(tipo);
-          const empCfg   = folhaEmpCfgMap[emp.id] || {};
-          // Sub-gerente NÃO recebe prêmio de loja por padrão — é vendedor com
-          // comissionamento sobre a loja. Só recebe se marcar a flag no config.
-          // Supervisor/sócio sai do laço dedicado abaixo (uma linha por loja supervisionada).
-          const useStorePremio = !isSupervisorLike(emp) &&
-            (isGer || isGVend || empCfg.recebePremiaoLoja);
-          const storePremioVal = empCfg.premioLojaValor > 0 ? empCfg.premioLojaValor : PREMIO_GER_W;
-
-          // Verifica se o funcionário trabalhou todos os dias da semana
-          // Regra: % diário zerado (férias, admissão no meio, desligamento) = não trabalhou = sem prêmio
-          const vacSet = vacDaysOf(emp.id, board, dias);
-
-          // Se admissão não estiver cadastrada, usa a primeira entrada de vsales
-          // da semana como fallback (detecta quem começou no meio do mês sem data)
-          let effectiveAdmissao = emp.admissao || null;
-          if (!effectiveAdmissao) {
-            const allEntryDates = [...new Set(dias.map(mkOf))]
-              .flatMap(mkX => Object.keys(vsalesAll[`${mkX}-${board}-${emp.id}`]?.entries || {}))
-              .sort();
-            if (allEntryDates.length > 0) effectiveAdmissao = allEntryDates[0];
-          }
-
-          const ausenciaDias = ausenciaDiasMap[emp.id] || new Set();
-          const trabalhouSemanaInteira = dias.every(ds => {
-            if (vacSet.has(ds))       return false; // férias via toggle Part%
-            if (ausenciaDias.has(ds)) return false; // férias/atestado via calendário
-            if (effectiveAdmissao && ds < effectiveAdmissao) return false;
-            if (emp.desligamento  && ds > emp.desligamento)  return false;
-            return true;
-          });
-
-          // Prêmio de loja para gerente, gerente vendedor e funcionários com flag no config
-          if (useStorePremio && trabalhouSemanaInteira) {
-            let val = 0;
-            if (storeHitMeta) val += storePremioVal;
-            if (storeHitMeta && storeHitPA) val += PREMIO_PA_W;
-            if (val > 0) {
-              premiacaoSemanalGer[emp.id] += val;
-              premiacaoSemanalGerDetalhe[emp.id].push({ label: semLabel, valor: val, board });
-            }
-          }
-
-          // Prêmio individual para vendedor, gerente vendedor e sub-gerente
-          if (isGVend || isSubGer || (!isGer && isVend(emp))) {
-            if (!trabalhouSemanaInteira) continue;
-            const { value: empSales, pecas: empPecas, atend: empAtend } =
-              empWeekAgg(emp.id, board, dias);
-            const empMeta = empWeekMeta(emp, board, weekStart, weStr, dias);
-            if (empMeta > 0 && empSales >= empMeta) {
-              let val = PREMIO_VEND_W;
-              if (empAtend > 0 && (empPecas/empAtend) >= PA_THR) val += PREMIO_PA_W;
-              premiacaoSemanal[emp.id] += val;
-              premiacaoSemanalDetalhe[emp.id].push({ label: semLabel, valor: val });
-            }
-          }
-        }
-
-        // Prêmio de loja do supervisor/sócio: uma linha por loja supervisionada
-        // que bateu a meta na semana. Sem adicional de PA (regra do gerente).
-        if (storeHitMeta) {
-          for (const sup of (supervisoresPorLoja[board] || [])) {
-            const ausSup = ausenciaDiasMap[sup.id] || new Set();
-            const vacSup = vacDaysOf(sup.id, sup.board, dias);
-            const trabalhou = dias.every(ds =>
-              !vacSup.has(ds) && !ausSup.has(ds) &&
-              !(sup.admissao     && ds < sup.admissao) &&
-              !(sup.desligamento && ds > sup.desligamento));
-            if (!trabalhou) continue;
-            const supCfg = folhaEmpCfgMap[sup.id] || {};
-            const val = supCfg.premioLojaValor > 0 ? supCfg.premioLojaValor : PREMIO_GER_W;
-            premiacaoSemanalGer[sup.id] += val;
-            premiacaoSemanalGerDetalhe[sup.id].push({ label: semLabel, valor: val, board });
-          }
-        }
-      }
-    }
+    // Premiação semanal — mesma função que a pauta de reunião consome
+    const { premiacaoSemanal, premiacaoSemanalDetalhe, premiacaoSemanalGer, premiacaoSemanalGerDetalhe } =
+      calcPremiacaoSemanal(db, year, month, employees);
 
     // Extras do mês anterior como sugestão para novos lançamentos
     const prevMonth = month === 1 ? 12 : month - 1;
@@ -12675,6 +12701,112 @@ function pautaVendedores(db, y, m, board, pctLoja) {
     .sort((a, b) => b.venda - a.venda);
 }
 
+// Premiação semanal já ganha no mês, por colaborador da loja. Sai da mesma
+// função que a folha usa para pagar — o número que a gerente ouve na reunião é
+// o número que caiu no bolso, não uma segunda conta parecida.
+function pautaPremiacoes(db, y, m, board) {
+  const employees = folhaEmployeesDoMes(db, y, m);
+  const r = calcPremiacaoSemanal(db, y, m, employees);
+  const porEmp = {};
+  for (const e of employees) {
+    if (e.board !== board) continue;
+    // Quem recebe prêmio de mais de uma loja (supervisor) só entra aqui com o
+    // que ganhou por ESTA loja — o resto não é assunto desta reunião.
+    const detInd  = r.premiacaoSemanalDetalhe[e.id]    || [];
+    const detLoja = (r.premiacaoSemanalGerDetalhe[e.id] || []).filter(x => !x.board || x.board === board);
+    const individual = detInd.reduce((a, x) => a + x.valor, 0);
+    const daLoja     = detLoja.reduce((a, x) => a + x.valor, 0);
+    const porSemana = {};
+    for (const x of detInd)  (porSemana[x.label] ??= { label: x.label, individual: 0, loja: 0 }).individual += x.valor;
+    for (const x of detLoja) (porSemana[x.label] ??= { label: x.label, individual: 0, loja: 0 }).loja       += x.valor;
+    // A semana que abre o mês pode começar no mês anterior (26/07 – 01/08): por
+    // rótulo ela cairia no fim da lista, quando é a primeira da conversa.
+    const ordem = d => {
+      const [dd, mm] = d.label.slice(0, 5).split('/').map(Number);
+      return (mm === m ? 100 : 0) + dd;
+    };
+    porEmp[e.id] = {
+      individual, loja: daLoja, total: individual + daLoja,
+      semanas: Object.keys(porSemana).length,
+      detalhe: Object.values(porSemana).sort((a, b) => ordem(a) - ordem(b)),
+    };
+  }
+  return { semanas: r.semanasAvaliadas.length, porEmp };
+}
+
+// Média dos últimos meses fechados contra o mês em curso. A pergunta da reunião
+// não é "quanto ele fez", é "melhorou ou piorou": a média tira o mês atípico e o
+// delta diz para que lado a agulha andou. Em todos estes indicadores, mais é
+// melhor — por isso um único sinal serve para os quatro.
+function pautaMedia3M(historico, vendedores, loja, premAtual, meses = 3) {
+  const usados = (historico || []).slice(-meses);
+  const media  = arr => {
+    const v = arr.filter(x => x != null && !Number.isNaN(x));
+    return v.length ? v.reduce((a, b) => a + b, 0) / v.length : null;
+  };
+  const cmp = (m, a) => ({ media: m, atual: a, delta: m != null && a != null ? a - m : null });
+
+  const emCurso = !loja.fechado;
+
+  const indicadoresDe = (hs, atual) => ({
+    pct:  cmp(media(hs.map(h => h.pct)),  atual.pct),
+    pa:   cmp(media(hs.map(h => h.pa)),   atual.pa),
+    tm:   cmp(media(hs.map(h => h.tm)),   atual.tm),
+    conv: cmp(media(hs.map(h => h.conv)), atual.conv),
+  });
+  // Ruído de ponto flutuante não é melhora, e ficar igual não é piora: o placar
+  // separa os três lados para a leitura da reunião não virar 0 de 2 num mês parado.
+  const contar = ind => {
+    const vs  = Object.values(ind).filter(x => x.delta != null);
+    const dir = x => Number(x.delta.toFixed(6));
+    return {
+      avaliados:  vs.length,
+      melhoraram: vs.filter(x => dir(x) > 0).length,
+      pioraram:   vs.filter(x => dir(x) < 0).length,
+    };
+  };
+
+  const hsLoja  = usados.map(h => h.loja);
+  const indLoja = indicadoresDe(hsLoja, {
+    pct: emCurso ? loja.pctProj : loja.pct, pa: loja.pa, tm: loja.tm, conv: loja.conv,
+  });
+  const premioLojaAtual = Object.values(premAtual || {}).reduce((a, x) => a + x.total, 0);
+
+  const linhas = (vendedores || []).map(v => {
+    const hs  = usados.map(h => h.vendedores.find(x => x.id === v.id)).filter(Boolean);
+    const ind = indicadoresDe(hs, {
+      pct: emCurso ? v.pctProj : v.pct, pa: v.pa, tm: v.tm, conv: v.conv,
+    });
+    const pr = premAtual?.[v.id] || { total: 0, semanas: 0 };
+    return {
+      id: v.id, nome: v.nome, gerente: v.gerente,
+      mesesComparados: hs.length,
+      ...ind,
+      premio: {
+        media:   media(hs.map(h => h.premio || 0)),
+        total3m: hs.reduce((a, h) => a + (h.premio || 0), 0),
+        atual:   pr.total,
+        semanas: pr.semanas,
+      },
+      ...contar(ind),
+    };
+  });
+
+  return {
+    meses: usados.map(h => ({ year: h.year, month: h.month })),
+    emCurso,
+    loja: {
+      ...indLoja,
+      premio: {
+        media:   media(hsLoja.map(h => h.premio || 0)),
+        total3m: hsLoja.reduce((a, h) => a + (h.premio || 0), 0),
+        atual:   premioLojaAtual,
+      },
+      ...contar(indLoja),
+    },
+    vendedores: linhas,
+  };
+}
 // Histórico dos meses fechados. O que interessa não é só o % do vendedor, é o
 // quanto ele ficou acima ou abaixo do % da loja naquele mês: vender 95% num mês
 // em que a loja fez 85% é puxar o resultado, e o número absoluto esconde isso.
@@ -12689,27 +12821,43 @@ function pautaHistorico(db, y, m, board, meses) {
     const loja = pautaTotaisLoja(db, cy, cm, board);
     if (!loja.venda) continue; // mês sem lançamento nenhum não entra na conversa
 
+    // Os mesmos indicadores do mês em curso, para a média dos últimos meses
+    // ser comparável linha a linha com o agora — não só o % da meta.
+    const convMes = pautaConversaoPorVendedor(db, cy, cm, board);
+    const premMes = pautaPremiacoes(db, cy, cm, board).porEmp;
+
     const vendedores = [];
     for (const e of emps) {
       const vs = db.vsales?.[`${mk}-${board}-${e.id}`];
       if (!vs) continue;
-      let venda = 0;
-      for (const en of Object.values(vs.entries || {})) venda += en.value || 0;
+      let venda = 0, pecas = 0, atend = 0;
+      for (const en of Object.values(vs.entries || {})) {
+        venda += en.value || 0; pecas += en.pecas || 0; atend += en.atendimentos || 0;
+      }
       const meta = vs.meta?.mensal || 0;
       if (!venda && !meta) continue; // não estava na loja nesse mês
       const pct = meta > 0 && venda > 0 ? (venda / meta) * 100 : null;
+      const c   = convMes[String(e.id)];
       vendedores.push({
         id: e.id, nome: e.apelido || e.name, gerente: e.isVendedor === false,
-        meta, venda, pct,
+        meta, venda, pct, pecas, atend,
         // Diferença em pontos percentuais para o % da loja no mesmo mês
         delta: pct != null && loja.pct != null ? pct - loja.pct : null,
+        pa:   atend > 0 ? pecas / atend : null,
+        tm:   atend > 0 ? venda / atend : null,
+        conv: c && c.total > 0 ? (c.conv / c.total) * 100 : null,
+        premio: premMes[e.id] ? premMes[e.id].total : 0,
         diasFerias: (vs.meta?.vacationDays || []).length,
       });
     }
     vendedores.sort((a, b) => b.venda - a.venda);
     out.push({
       year: cy, month: cm,
-      loja: { meta: loja.meta, venda: loja.venda, pct: loja.pct, pecas: loja.pecas, fonte: loja.fonte },
+      loja: {
+        meta: loja.meta, venda: loja.venda, pct: loja.pct, pecas: loja.pecas,
+        atend: loja.atend, pa: loja.pa, tm: loja.tm, conv: loja.conv, fonte: loja.fonte,
+        premio: Object.values(premMes).reduce((acc, x) => acc + x.total, 0),
+      },
       vendedores,
     });
   }
@@ -12725,6 +12873,34 @@ function pautaFaturamento(db, y, m, board) {
   return h ? { venda: h, meta: 0, pecas: 0, fonte: 'histórico' } : { venda: 0, meta: 0, pecas: 0, fonte: null };
 }
 
+// Valor do estoque mês a mês. Este número não vem de sistema: é o que a loja e
+// o escritório apuraram e deixaram gravado na pauta de cada mês. Um mês isolado
+// não diz nada; doze lado a lado mostram estoque subindo enquanto a venda não
+// sobe — que é a conversa que interessa.
+function pautaEstoqueHistorico(db, y, m, board, meses = 12) {
+  const out = [];
+  let cy = y, cm = m;
+  for (let i = 0; i < meses; i++) {
+    const p  = db.pautas?.[pautaKey(cy, cm, board)];
+    const e  = p?.estoqueManual  || {};
+    const pr = p?.produtosResumo || null;
+    const fat = pautaFaturamento(db, cy, cm, board);
+    const custo = e.custo || 0, venda = e.venda || 0;
+    out.push({
+      year: cy, month: cm,
+      custo, venda, data: e.data || '', obs: e.obs || '',
+      markup: custo > 0 && venda > 0 ? venda / custo : null,
+      margem: custo > 0 && venda > 0 ? (1 - custo / venda) * 100 : null,
+      // Quantos meses de venda estão parados na loja, no ritmo daquele mês
+      cobertura: venda > 0 && fat.venda > 0 ? venda / fat.venda : null,
+      faturado: fat.venda || 0,
+      // O estoque que o Microvix mostrou quando a pauta daquele mês foi montada
+      microvix: pr ? { valor: pr.totalEstoque || 0, pecas: pr.pecasEstoque || 0, em: pr.geradoEm || '' } : null,
+    });
+    ({ y: cy, m: cm } = pautaMesAnterior(cy, cm));
+  }
+  return out.reverse(); // do mais antigo para o mais novo
+}
 function pautaRH(db, board, y, m, hoje) {
   const mk     = monthKey(y, m);
   const iniMes = `${mk}-01`;
@@ -12904,8 +13080,16 @@ app.get('/api/pauta/:year/:month/:board', requireEscritorioOrAdmin, async (req, 
           varAnterior:    anterior.venda > 0 && base ? ((base - anterior.venda) / anterior.venda) * 100 : null,
           varAnoAnterior: anoAnt.venda   > 0 && base ? ((base - anoAnt.venda)   / anoAnt.venda)   * 100 : null,
         },
-        vendedores:      pautaVendedores(db, y, m, board, loja.fechado ? loja.pct : loja.pctProj),
-        historico:       pautaHistorico(db, y, m, board, 6),
+        ...(() => {
+          const vendedores = pautaVendedores(db, y, m, board, loja.fechado ? loja.pct : loja.pctProj);
+          const historico  = pautaHistorico(db, y, m, board, 6);
+          const premiacoes = pautaPremiacoes(db, y, m, board);
+          return {
+            vendedores, historico, premiacoes,
+            media3m: pautaMedia3M(historico, vendedores, loja, premiacoes.porEmp, 3),
+          };
+        })(),
+        estoqueHistorico: pautaEstoqueHistorico(db, y, m, board, 12),
         rh:              pautaRH(db, board, y, m, hoje),
         pendencias:      pautaPendencias(db, board),
         acoesAnteriores: pautaAcoesAnteriores(db, y, m, board),
@@ -12978,14 +13162,20 @@ app.post('/api/pauta/:year/:month/:board/fechar', requireEscritorioOrAdmin, asyn
 
     p.status      = 'realizada';
     p.realizadaEm = p.realizadaEm || todayBRT();
-    const snapLoja = pautaTotaisLoja(db, y, m, board);
+    const snapLoja  = pautaTotaisLoja(db, y, m, board);
+    const snapVends = pautaVendedores(db, y, m, board, snapLoja.fechado ? snapLoja.pct : snapLoja.pctProj);
+    const snapHist  = pautaHistorico(db, y, m, board, 6);
+    const snapPrem  = pautaPremiacoes(db, y, m, board);
     p.snapshot    = {
       loja:        snapLoja,
-      vendedores:  pautaVendedores(db, y, m, board, snapLoja.fechado ? snapLoja.pct : snapLoja.pctProj),
+      vendedores:  snapVends,
       rh:          pautaRH(db, board, y, m, todayBRT()),
       produtos:    p.produtosResumo || null,
       estoque:     p.estoqueManual  || null,
-      historico:   pautaHistorico(db, y, m, board, 6),
+      estoqueHistorico: pautaEstoqueHistorico(db, y, m, board, 12),
+      historico:   snapHist,
+      premiacoes:  snapPrem,
+      media3m:     pautaMedia3M(snapHist, snapVends, snapLoja, snapPrem.porEmp, 3),
       congeladoEm: new Date().toISOString(),
     };
     p.updatedAt = new Date().toISOString();
@@ -13033,6 +13223,9 @@ app.post('/api/pauta/:year/:month/:board/roteiro', requireEscritorioOrAdmin, asy
     const anoA  = pautaFaturamento(db, y - 1, m, board);
     const vends = pautaVendedores(db, y, m, board, loja.fechado ? loja.pct : loja.pctProj);
     const rh    = pautaRH(db, board, y, m, hoje);
+    const hist  = pautaHistorico(db, y, m, board, 6);
+    const prem  = pautaPremiacoes(db, y, m, board);
+    const med   = pautaMedia3M(hist, vends, loja, prem.porEmp, 3);
 
     const n = v => v == null ? null : Math.round(v * 100) / 100;
     const contexto = {
@@ -13073,13 +13266,41 @@ app.post('/api/pauta/:year/:month/:board/roteiro', requireEscritorioOrAdmin, asy
         ausenciasNoMes: rh.ausenciasMes,
         pendenciasAnotadas: p.rhItens || [],
       },
-      historicoMesesFechados: pautaHistorico(db, y, m, board, 6).map(h => ({
+      historicoMesesFechados: hist.map(h => ({
         mes: `${String(h.month).padStart(2, '0')}/${h.year}`,
         lojaPctMeta: n(h.loja.pct), lojaFaturado: n(h.loja.venda),
-        vendedores: h.vendedores.map(v => ({ nome: v.nome, pctMeta: n(v.pct), pontosVsLoja: n(v.delta) })),
+        lojaPa: n(h.loja.pa), lojaTicketMedio: n(h.loja.tm), lojaConversaoPct: n(h.loja.conv),
+        premiacaoSemanalDaLoja: n(h.loja.premio),
+        vendedores: h.vendedores.map(v => ({
+          nome: v.nome, pctMeta: n(v.pct), pontosVsLoja: n(v.delta),
+          pa: n(v.pa), ticketMedio: n(v.tm), conversaoPct: n(v.conv),
+          premiacaoSemanal: n(v.premio),
+        })),
       })),
+      // Média dos meses fechados contra o mês em curso: é o que diz se melhorou
+      mediaUltimosMesesFechados: {
+        mesesUsados: med.meses.map(x => `${String(x.month).padStart(2, '0')}/${x.year}`),
+        obs: 'media = média dos meses fechados listados; atual = mês em curso (o % da meta usa a projeção); delta = atual − média, positivo é melhora. mesesComparados diz sobre quantos meses fechados aquela média foi tirada.',
+        loja: med.loja,
+        vendedores: med.vendedores,
+      },
+      premiacaoSemanalDoMes: {
+        obs: 'Prêmio semanal já ganho no mês corrente. individual = prêmio de meta do vendedor; loja = prêmio por a loja bater a semana; semanas = em quantas semanas ele ganhou algo, de semanasEncerradas possíveis.',
+        semanasEncerradas: prem.semanas,
+        porVendedor: vends.map(v => ({ nome: v.nome, ...(prem.porEmp[v.id] || { individual: 0, loja: 0, total: 0, semanas: 0 }) })),
+        totalDaLoja: Object.values(prem.porEmp).reduce((a, x) => a + x.total, 0),
+      },
       produtosXEstoque: req.body?.produtos || p.produtosResumo || null,
       estoqueDeclarado: (p.estoqueManual && (p.estoqueManual.custo || p.estoqueManual.venda)) ? p.estoqueManual : null,
+      estoqueUltimos12Meses: {
+        obs: 'Valor do estoque apurado pela loja/escritório em cada mês. custo e venda em R$; cobertura = quantos meses de venda daquele mês estão parados na loja; microvix = estoque que o sistema mostrava quando a pauta do mês foi montada. Mês sem apuração vem zerado — isso é falta de dado, não estoque zero.',
+        meses: pautaEstoqueHistorico(db, y, m, board, 12).map(x => ({
+          mes: `${String(x.month).padStart(2, '0')}/${x.year}`,
+          custo: n(x.custo), venda: n(x.venda), markup: n(x.markup),
+          coberturaMeses: n(x.cobertura), faturadoNoMes: n(x.faturado),
+          estoqueMicrovixRS: x.microvix ? n(x.microvix.valor) : null,
+        })),
+      },
       pendenciasAbertas: pautaPendencias(db, board).map(x => x.text),
       acoesDoMesAnterior: pautaAcoesAnteriores(db, y, m, board),
       demandasAnotadas: p.demandas || [],
@@ -13098,6 +13319,10 @@ Regras:
 - A reunião é na última semana, com o mês ainda aberto. Avalie o mês pela projeção de fechamento (faturado ÷ peso do mês já corrido), e diga "projeção" quando citar esse número. O faturado parcial só serve para dizer até onde os dados vão.
 - Quem esteve de férias no mês tem a projeção linear distorcida para baixo: não cobre ritmo de quem faltou por acordo.
 - O que separa vendedor bom de ruim é "pontosVsLoja": quanto o % da meta dele ficou acima (bom) ou abaixo (ruim) do % da loja no mesmo mês. Num mês fraco da loja, 85% do vendedor pode ser um bom resultado; num mês forte, 100% pode ser fraco. Use o histórico para dizer se é oscilação de um mês ou tendência.
+- "mediaUltimosMesesFechados" é o que separa oscilação de tendência: compare o mês em curso com a média dos meses fechados e diga, por vendedor, se melhorou ou piorou e em quais indicadores. Quem tem mesesComparados 1 ou 2 ainda não tem base — diga isso em vez de concluir.
+- Melhora só conta com o número ao lado (ex: "PA 1,42 contra média de 1,25 nos 3 meses fechados"). Melhorar de base fraca continua sendo base fraca: reconheça o movimento sem dizer que o indicador está bom.
+- Prêmio semanal é resultado, não benefício: quem ganhou pouco ou nada ganhou é quem não bateu as semanas. Use o valor para mostrar quanto ficou na mesa, sem transformar a reunião em conversa de salário.
+- Em "estoqueUltimos12Meses", o que acusa problema é o estoque crescer sem a venda crescer, ou a cobertura passar de uns 3 meses. Mês com custo e venda zerados é mês que ninguém apurou: cobre a apuração, não conclua que o estoque sumiu.
 - Pergunta boa é aberta e sobre causa ("o que aconteceu com...?"), não sobre culpa.
 - Ação combinada tem verbo, dono e prazo. No máximo 5.
 - Quem está marcado como gerente não é cobrado por meta individual do mesmo jeito que vendedor.

@@ -133,6 +133,7 @@ function renderTudo() {
   renderLoja();
   renderVendedores();
   renderHistorico();
+  renderMedia3M();
   renderRH();
   renderPendencias();
   renderLista('demandas');
@@ -225,11 +226,33 @@ function renderLoja() {
 }
 
 // ── 2 · Vendedores ───────────────────────────────────────────────────────────
+// Prêmio semanal já ganho no mês, por vendedor. O total vem do mesmo cálculo
+// da folha; o title abre semana a semana para quando a gerente contestar.
+function premioDe(id) {
+  return (S.dados.premiacoes?.porEmp || {})[id] || { individual: 0, loja: 0, total: 0, semanas: 0, detalhe: [] };
+}
+
+function premioCell(id) {
+  const pr = premioDe(id);
+  if (!pr.total) return '<span class="mut">—</span>';
+  const linhas = pr.detalhe.map(d => {
+    const partes = [];
+    if (d.individual) partes.push(`meta ${fBRL(d.individual)}`);
+    if (d.loja)       partes.push(`loja ${fBRL(d.loja)}`);
+    return `${d.label}: ${partes.join(' + ')}`;
+  });
+  return `<span class="pos" title="${esc(linhas.join(' · '))}">${fBRL(pr.total)}</span>`;
+}
+
 function renderVendedores() {
   const vs = S.dados.vendedores;
   const emCurso = !S.dados.loja.fechado;
+  const premLoja = vs.reduce((a, v) => a + premioDe(v.id).total, 0);
+  const semanas = S.dados.premiacoes?.semanas || 0;
   $('vendSub').textContent = `${vs.length} ativo${vs.length === 1 ? '' : 's'}`
-    + (emCurso ? ` · % pela projeção` : '');
+    + (emCurso ? ` · % pela projeção` : '')
+    + ` · ${fBRL(premLoja)} em prêmios semanais`
+    + ` (${semanas} semana${semanas === 1 ? '' : 's'} encerrada${semanas === 1 ? '' : 's'})`;
 
   if (!vs.length) {
     $('vendTbl').innerHTML = '<tbody><tr><td class="pa-empty">Nenhum colaborador ativo nesta loja.</td></tr></tbody>';
@@ -250,6 +273,7 @@ function renderVendedores() {
         <th class="num">${emCurso ? '% proj.' : '%'}</th>
         <th class="num">vs loja</th>
         <th class="num">Peças</th><th class="num">Atend.</th><th class="num">PA</th><th class="num">Ticket</th><th class="num">Conv.</th>
+        <th class="num">Prêmios</th>
         <th>Nota da reunião</th>
       </tr></thead>
       <tbody>${vs.map(v => {
@@ -267,6 +291,7 @@ function renderVendedores() {
           <td class="num">${fDec(v.pa)}</td>
           <td class="num">${v.tm == null ? '—' : fBRL(v.tm)}</td>
           <td class="num">${fPct(v.conv)}</td>
+          <td class="num">${premioCell(v.id)}</td>
           <td><input class="pa-nota-inp" data-vend="${v.id}" value="${esc(S.pauta.vendedorNotas[v.id] || '')}" placeholder="—"></td>
         </tr>`;
       }).join('')}</tbody>
@@ -281,7 +306,8 @@ function renderVendedores() {
         <td class="num">${fNum(tot.atend)}</td>
         <td class="num">${tot.atend ? fDec(tot.pecas / tot.atend) : '—'}</td>
         <td class="num">${tot.atend ? fBRL(tot.venda / tot.atend) : '—'}</td>
-        <td class="num">—</td><td></td>
+        <td class="num">—</td>
+        <td class="num">${premLoja ? fBRL(premLoja) : '—'}</td><td></td>
       </tr></tfoot>`;
 
     $('vendTbl').querySelectorAll('[data-vend]').forEach(inp => {
@@ -365,6 +391,106 @@ function renderHistorico() {
     </tbody>`;
 }
 
+// ── 3b · Média dos últimos meses fechados × mês em curso ─────────────────────
+// Um mês isolado mente: o vendedor pega uma semana boa e parece outro. A média
+// dos meses fechados é a régua; o que se discute na reunião é a distância entre
+// ela e o mês que está correndo, indicador por indicador.
+const sinal = (v, f) => (v >= 0 ? '+' : '-') + f(Math.abs(v));
+
+// Se a diferença some no arredondamento, ela não é melhora nem piora: pintar de
+// verde um +0,00 faz a reunião discutir ruído.
+const semMovimento = txt => !/[1-9]/.test(txt);
+
+function cmpCell(ind, fmt, fmtDelta) {
+  if (!ind || ind.atual == null) return '<td class="num mut">—</td>';
+  const topo = fmt(ind.atual);
+  if (ind.media == null) return `<td class="num">${topo}<div class="hist-delta mut">sem base</div></td>`;
+  const dTxt  = fmtDelta(ind.delta);
+  const parou = semMovimento(dTxt);
+  const cls   = parou ? 'mut' : ind.delta > 0 ? 'pos' : 'neg';
+  const sub   = parou ? `igual à média (${fmt(ind.media)})` : `${dTxt} vs ${fmt(ind.media)}`;
+  return `<td class="num">${topo}<div class="hist-delta ${cls}">${sub}</div></td>`;
+}
+
+function premioCmpCell(pr, emCurso) {
+  if (!pr) return '<td class="num mut">—</td>';
+  const topo = pr.atual ? fBRL(pr.atual) : '<span class="mut">R$ 0</span>';
+  if (pr.media == null) return `<td class="num">${topo}</td>`;
+  // Mês aberto tem semana por acontecer: comparar com a média de meses inteiros
+  // pintaria de vermelho quem ainda vai ganhar. A média fica só como referência.
+  if (emCurso) return `<td class="num">${topo}<div class="hist-delta mut">méd ${fBRL(pr.media)}/mês nos fechados</div></td>`;
+  const delta = pr.atual - pr.media;
+  const parou = Math.abs(delta) < 1;
+  const cls   = parou ? 'mut' : delta > 0 ? 'pos' : 'neg';
+  const sub   = parou ? `igual à média (${fBRL(pr.media)})` : `${sinal(delta, fBRL)} vs méd ${fBRL(pr.media)}`;
+  return `<td class="num">${topo}<div class="hist-delta ${cls}">${sub}</div></td>`;
+}
+
+// Quantos dos quatro indicadores andaram para frente e quantos andaram para trás.
+// É o resumo que a gerente leva da reunião — e mês parado aparece como parado,
+// não como fracasso.
+function placarCell(linha) {
+  if (!linha.avaliados) return '<td class="num mut">—</td>';
+  const { melhoraram: k, pioraram: pi = 0, avaliados: n } = linha;
+  const cls = k > pi ? 'pos' : k < pi ? 'neg' : 'warn';
+  const partes = [];
+  if (k)  partes.push(`${k}↑`);
+  if (pi) partes.push(`${pi}↓`);
+  const sub = linha.mesesComparados != null && linha.mesesComparados < 3
+    ? `base de ${linha.mesesComparados} ${linha.mesesComparados === 1 ? 'mês' : 'meses'}`
+    : `de ${n} indicador${n === 1 ? '' : 'es'}`;
+  return `<td class="num ${cls}">${partes.length ? partes.join(' ') : 'estável'}<div class="hist-delta mut">${sub}</div></td>`;
+}
+
+function renderMedia3M() {
+  const md = S.dados.media3m;
+  const hdr = $('mediaHdr'), tbl = $('mediaTbl'), leg = $('mediaLegend');
+  if (!md || !md.meses.length) {
+    hdr.textContent = 'Média dos últimos meses × mês em curso';
+    tbl.innerHTML = '<tbody><tr><td class="pa-empty">Sem meses fechados suficientes para tirar média.</td></tr></tbody>';
+    leg.textContent = '';
+    return;
+  }
+
+  const rot = md.meses.map(x => `${MESES[x.month - 1]}/${String(x.year).slice(2)}`).join(', ');
+  hdr.textContent = `Média de ${md.meses.length} ${md.meses.length === 1 ? 'mês fechado' : 'meses fechados'} (${rot}) × ${MESES[S.month - 1]}/${S.year}${md.emCurso ? ' em curso' : ''}`;
+
+  const fmtPct  = v => fPct(v);
+  const fmtPa   = v => fDec(v, 2);
+  const fmtTm   = v => fBRL(v);
+  const dPP     = v => sinal(v, x => x.toFixed(0) + ' pp');
+  const dPa     = v => sinal(v, x => fDec(x, 2));
+  const dTm     = v => sinal(v, fBRL);
+
+  const linhaHtml = (l, nome, classe) => `<tr class="${classe || ''}">
+      <td>${nome}</td>
+      ${cmpCell(l.pct,  fmtPct, dPP)}
+      ${cmpCell(l.pa,   fmtPa,  dPa)}
+      ${cmpCell(l.tm,   fmtTm,  dTm)}
+      ${cmpCell(l.conv, fmtPct, dPP)}
+      ${premioCmpCell(l.premio, md.emCurso)}
+      ${placarCell(l)}
+    </tr>`;
+
+  tbl.innerHTML = `
+    <thead><tr>
+      <th>Vendedor</th>
+      <th class="num">% da meta</th><th class="num">PA</th><th class="num">Ticket</th><th class="num">Conversão</th>
+      <th class="num">Prêmios/mês</th><th class="num">Evolução</th>
+    </tr></thead>
+    <tbody>
+      ${linhaHtml(md.loja, 'LOJA', 'hist-loja')}
+      ${md.vendedores.map(l => linhaHtml(l,
+          esc(l.nome) + (l.gerente ? '<span class="pa-tag ger">gerente</span>' : ''))).join('')}
+    </tbody>`;
+
+  const sem = S.dados.premiacoes?.semanas || 0;
+  leg.innerHTML = 'Em cima, o número do mês' + (md.emCurso ? ' em curso (o % da meta pela projeção de fechamento)' : '')
+    + '; embaixo, quanto ele está acima ou abaixo da média dos meses fechados. Verde melhorou, vermelho piorou, cinza não saiu do lugar.'
+    + ` Prêmios é o que a premiação semanal já pagou no mês — ${sem} semana${sem === 1 ? '' : 's'} encerrada${sem === 1 ? '' : 's'} até aqui`
+    + (md.emCurso ? ', por isso o mês em curso aparece sem comparação: a média serve só de referência.' : '.')
+    + ' Quem tem menos de três meses fechados aparece com a base reduzida: ainda é cedo para chamar de tendência.';
+}
 // ── Valor do estoque declarado à mão ─────────────────────────────────────────
 // O Microvix dá o estoque a preço de venda pelo catálogo; o número que o
 // contábil usa é outro. Aqui entra o que a loja/escritório apurou.
@@ -391,8 +517,72 @@ function renderEstoqueManual() {
   const ritmo = S.dados.loja.projecao ?? S.dados.loja.venda;
   if (e.venda > 0 && ritmo > 0) partes.push(`${fDec(e.venda / ritmo, 1)} meses de venda parados na loja, no ritmo deste mês`);
   $('estDeriv').innerHTML = partes.length ? partes.join(' · ') : '';
+  renderEstoqueHistorico();
 }
 
+// Os doze meses de estoque declarado. O mês em curso sai do que está sendo
+// digitado agora, não do que já foi salvo — senão a linha de baixo desmente o
+// campo de cima enquanto o gestor digita.
+function renderEstoqueHistorico() {
+  const tbl = $('estHistTbl'), leg = $('estHistLegend');
+  const hist = (S.dados.estoqueHistorico || []).map(x => {
+    if (x.year !== S.year || x.month !== S.month) return x;
+    const e = S.pauta.estoqueManual || {};
+    const custo = e.custo || 0, venda = e.venda || 0;
+    const ritmo = S.dados.loja.projecao ?? S.dados.loja.venda;
+    return {
+      ...x, custo, venda, data: e.data || '', obs: e.obs || '',
+      markup:    custo > 0 && venda > 0 ? venda / custo : null,
+      cobertura: venda > 0 && ritmo > 0 ? venda / ritmo : null,
+      faturado:  ritmo || x.faturado,
+      atual: true,
+    };
+  });
+
+  // Antes da primeira apuração não há o que mostrar; depois dela, o mês vazio
+  // é informação: alguém deixou de apurar.
+  const primeiro = hist.findIndex(x => x.custo || x.venda || x.microvix);
+  if (primeiro > 0) hist.splice(0, primeiro);
+
+  if (primeiro < 0) {
+    tbl.innerHTML = '<tbody><tr><td class="pa-empty">Nenhum mês com valor de estoque apurado ainda. O primeiro lançamento vira a base de comparação dos próximos.</td></tr></tbody>';
+    leg.textContent = '';
+    return;
+  }
+
+  const varCusto = (x, i) => {
+    const ant = hist.slice(0, i).reverse().find(p => p.custo > 0);
+    if (!x.custo || !ant) return '';
+    const v = ((x.custo - ant.custo) / ant.custo) * 100;
+    const cls = Math.abs(v) < 0.5 ? 'mut' : v > 0 ? 'warn' : 'pos';
+    return `<div class="hist-delta ${cls}">${v >= 0 ? '+' : ''}${v.toFixed(0)}% vs ${MESES[ant.month - 1]}</div>`;
+  };
+
+  tbl.innerHTML = `
+    <thead><tr>
+      <th>Mês</th>
+      <th class="num">A custo</th><th class="num">A preço de venda</th><th class="num">Markup</th>
+      <th class="num">Meses parados</th><th class="num">Faturado no mês</th>
+      <th class="num">Estoque Microvix</th><th>Apurado em</th>
+    </tr></thead>
+    <tbody>${hist.map((x, i) => `<tr>
+      <td>${MESES[x.month - 1]}/${String(x.year).slice(2)}${x.atual ? '<span class="pa-tag fer">em curso</span>' : ''}</td>
+      <td class="num">${x.custo ? fBRL(x.custo) : '<span class="mut">—</span>'}${varCusto(x, i)}</td>
+      <td class="num">${x.venda ? fBRL(x.venda) : '<span class="mut">—</span>'}</td>
+      <td class="num">${x.markup == null ? '<span class="mut">—</span>' : fDec(x.markup, 2) + '×'}</td>
+      <td class="num">${x.cobertura == null ? '<span class="mut">—</span>' : cobHtml(x.cobertura)}</td>
+      <td class="num">${x.faturado ? fBRL(x.faturado) : '<span class="mut">—</span>'}</td>
+      <td class="num">${x.microvix && x.microvix.valor
+          ? `${fBRL(x.microvix.valor)}<div class="hist-delta mut">${fNum(x.microvix.pecas)} peças</div>`
+          : '<span class="mut">—</span>'}</td>
+      <td>${x.data ? fData(x.data) : '<span class="mut">—</span>'}${x.obs ? `<div class="hist-delta mut">${esc(x.obs)}</div>` : ''}</td>
+    </tr>`).join('')}</tbody>`;
+
+  leg.innerHTML = 'A custo e a preço de venda é o que a loja apurou naquele mês — mês em branco é mês que ninguém apurou, não estoque zerado.'
+    + ' Embaixo do valor a custo, quanto ele cresceu ou caiu contra o último mês apurado: estoque subindo com venda parada é dinheiro preso na arara.'
+    + ' Meses parados = estoque a preço de venda dividido pelo faturamento do mês; verde até 3 meses, vermelho acima de 6.'
+    + ' A coluna do Microvix é a foto do sistema no dia em que a pauta daquele mês foi montada.';
+}
 // ── 4 · RH ───────────────────────────────────────────────────────────────────
 function alerta(nivel, titulo, meta, pill, pillCls) {
   return `<div class="pa-alert ${nivel}">
