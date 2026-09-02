@@ -12559,13 +12559,41 @@ function pautaCorte(y, m, hoje) {
   return { corte: ontem, fechado: false };
 }
 
+// Quem esteve na loja NAQUELE mês — não quem está hoje. "inativo" é a foto de
+// agora: quem saiu no dia 20 vendeu 20 dias e tem de aparecer na reunião do mês,
+// senão a soma dos vendedores não fecha com o faturamento da loja. Vale a janela
+// do vínculo — admitido até o fim do mês e desligado a partir do começo dele —,
+// a mesma régua que a folha usa. E quem tem meta ou venda lançada na loja no mês
+// entra sempre, inclusive quem foi transferido para outra loja depois.
+function pautaEquipeDoMes(db, y, m, board) {
+  const mk     = monthKey(y, m);
+  const mesIni = `${mk}-01`;
+  const mesFim = `${mk}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+
+  const comLancamento = new Set();
+  for (const [key, vs] of Object.entries(db.vsales || {})) {
+    if (!key.startsWith(`${mk}-${board}-`)) continue;
+    const temVenda = Object.keys(vs.entries || {}).some(ds => ds.startsWith(mk));
+    if (!temVenda && !(vs.meta?.mensal > 0)) continue;
+    comLancamento.add(parseInt(key.split('-').at(-1)));
+  }
+
+  return (db.employees || []).filter(e => {
+    if (comLancamento.has(e.id)) return true;
+    if (e.board !== board) return false;
+    // Sem data de desligamento não dá para saber a janela: fica só o lançamento
+    if (e.inativo && !e.desligamento) return false;
+    return (!e.admissao     || e.admissao     <= mesFim)
+        && (!e.desligamento || e.desligamento >= mesIni);
+  });
+}
+
 // Quando a meta da loja não está lançada na Planilha do Mês, ela é a soma das
 // metas individuais — é assim que a loja é cobrada.
 function pautaMetaVendedores(db, y, m, board) {
   const mk = monthKey(y, m);
   let meta = 0;
-  for (const emp of (db.employees || [])) {
-    if (emp.board !== board || emp.inativo) continue;
+  for (const emp of pautaEquipeDoMes(db, y, m, board)) {
     meta += db.vsales?.[`${mk}-${board}-${emp.id}`]?.meta?.mensal || 0;
   }
   return meta;
@@ -12588,8 +12616,7 @@ function pautaTotaisLoja(db, y, m, board) {
   // todo dia. A Planilha do Mês só entra quando não há vsales no período.
   let venda = 0, pecas = 0, atend = 0;
   const porDia = {};
-  for (const emp of (db.employees || [])) {
-    if (emp.board !== board) continue;
+  for (const emp of pautaEquipeDoMes(db, y, m, board)) {
     const vs = db.vsales?.[`${mk}-${board}-${emp.id}`];
     for (const [ds, e] of Object.entries(vs?.entries || {})) {
       if (!noCorte(ds)) continue;
@@ -12668,8 +12695,10 @@ function pautaVendedores(db, y, m, board, pctLoja) {
     pesoAcum += peso(ds);
   }
 
-  return (db.employees || [])
-    .filter(e => e.board === board && !e.inativo)
+  const mesIni = `${mk}-01`;
+  const mesFim = `${mk}-${String(totalDias).padStart(2, '0')}`;
+
+  return pautaEquipeDoMes(db, y, m, board)
     .map(e => {
       const vs = db.vsales?.[`${mk}-${board}-${e.id}`] || {};
       let venda = 0, pecas = 0, atend = 0, dias = 0;
@@ -12695,7 +12724,11 @@ function pautaVendedores(db, y, m, board, pctLoja) {
         tm:   atend > 0 ? venda / atend : null,
         conv: c && c.total > 0 ? (c.conv / c.total) * 100 : null,
         diasFerias: (vs.meta?.vacationDays || []).length,
-        admissao: e.admissao || '',
+        admissao: e.admissao || '', desligamento: e.desligamento || '',
+        // Quem entrou ou saiu no meio do mês não é comparável com quem fez o mês
+        // inteiro — a linha precisa dizer isso antes de alguém cobrar ritmo.
+        entrouNoMes: !!(e.admissao     && e.admissao     >  mesIni && e.admissao     <= mesFim),
+        saiuNoMes:   !!(e.desligamento && e.desligamento >= mesIni && e.desligamento <= mesFim),
       };
     })
     .sort((a, b) => b.venda - a.venda);
@@ -12811,7 +12844,6 @@ function pautaMedia3M(historico, vendedores, loja, premAtual, meses = 3) {
 // quanto ele ficou acima ou abaixo do % da loja naquele mês: vender 95% num mês
 // em que a loja fez 85% é puxar o resultado, e o número absoluto esconde isso.
 function pautaHistorico(db, y, m, board, meses) {
-  const emps = (db.employees || []).filter(e => e.board === board);
   const out  = [];
   let cy = y, cm = m;
 
@@ -12820,6 +12852,7 @@ function pautaHistorico(db, y, m, board, meses) {
     const mk   = monthKey(cy, cm);
     const loja = pautaTotaisLoja(db, cy, cm, board);
     if (!loja.venda) continue; // mês sem lançamento nenhum não entra na conversa
+    const emps = pautaEquipeDoMes(db, cy, cm, board);
 
     // Os mesmos indicadores do mês em curso, para a média dos últimos meses
     // ser comparável linha a linha com o agora — não só o % da meta.

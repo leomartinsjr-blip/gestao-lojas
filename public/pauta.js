@@ -133,7 +133,6 @@ function renderTudo() {
   renderLoja();
   renderVendedores();
   renderHistorico();
-  renderMedia3M();
   renderRH();
   renderPendencias();
   renderLista('demandas');
@@ -186,6 +185,19 @@ function renderLoja() {
   const pctCls  = pctBase == null ? 'mut' : pctBase >= 100 ? 'pos' : pctBase >= 85 ? 'warn' : 'neg';
   const base    = d.base ?? d.projecao ?? d.venda;
 
+  // Cada indicador da loja contra a média dos meses fechados: o mês sozinho não
+  // diz se a loja está subindo ou descendo.
+  const mdl    = S.dados.media3m?.loja;
+  const nMeses = S.dados.media3m?.meses?.length || 0;
+  const vsMedia = (ind, fmt, fmtDelta) => {
+    if (!nMeses || !ind || ind.media == null || ind.atual == null) return '';
+    const dTxt  = fmtDelta(ind.delta);
+    const parou = semMovimento(dTxt);
+    const cls   = parou ? 'mut' : ind.delta > 0 ? 'pos' : 'neg';
+    const txt   = parou ? `igual à média de ${nMeses}m` : `${dTxt} vs média de ${nMeses}m (${fmt(ind.media)})`;
+    return `<div class="pa-kpi-sub ${cls}">${txt}</div>`;
+  };
+
   const kpis = [
     { l: 'Meta', v: d.meta ? fBRL(d.meta) : '—', s: d.meta ? '' : 'meta não lançada' },
     { l: emCurso ? `Realizado até ${fCurto(d.corte)}` : 'Faturado',
@@ -197,7 +209,8 @@ function renderLoja() {
       s: `no ritmo de ${fDec(d.pesoAcum, 0)}% do mês` }] : []),
     { l: emCurso ? '% da meta (proj.)' : '% da meta',
       v: fPct(pctBase), c: pctCls,
-      s: d.meta && base ? fBRL(base - d.meta) + ' vs meta' : '' },
+      s: d.meta && base ? fBRL(base - d.meta) + ' vs meta' : '',
+      s2: vsMedia(mdl?.pct, fmtPct, dPP) },
     { l: `vs ${MESES[d.anterior.month - 1]}/${String(d.anterior.year).slice(2)}`,
       v: varHtml(d.varAnterior), raw: true,
       s: d.anterior.venda ? fBRL(d.anterior.venda) : 'sem base' },
@@ -206,9 +219,9 @@ function renderLoja() {
       s: d.anoAnterior.venda ? fBRL(d.anoAnterior.venda) : 'sem base' },
     { l: 'Peças', v: fNum(d.pecas), s: emCurso && d.projPecas ? `proj. ${fNum(d.projPecas)}` : '' },
     { l: 'Atendimentos', v: fNum(d.atend), s: d.atend ? '' : 'não lançados' },
-    { l: 'PA', v: fDec(d.pa), s: 'peças / atendimento' },
-    { l: 'Ticket médio', v: d.tm == null ? '—' : fBRL2(d.tm) },
-    { l: 'Conversão', v: fPct(d.conv), s: d.convFonte || 'sem dado' },
+    { l: 'PA', v: fDec(d.pa), s: 'peças / atendimento', s2: vsMedia(mdl?.pa, fmtPa, dPa) },
+    { l: 'Ticket médio', v: d.tm == null ? '—' : fBRL2(d.tm), s2: vsMedia(mdl?.tm, fBRL, dTm) },
+    { l: 'Conversão', v: fPct(d.conv), s: d.convFonte || 'sem dado', s2: vsMedia(mdl?.conv, fmtPct, dPP) },
     { l: 'Fluxo de porta', v: d.fluxo ? fNum(d.fluxo) : '—' },
   ];
 
@@ -217,6 +230,7 @@ function renderLoja() {
       <div class="pa-kpi-lbl">${esc(k.l)}</div>
       <div class="pa-kpi-val ${k.c || ''}">${k.raw ? k.v : esc(k.v)}</div>
       ${k.s ? `<div class="pa-kpi-sub">${esc(k.s)}</div>` : ''}
+      ${k.s2 || ''}
     </div>`).join('')
     + (emCurso ? `<div class="pa-legend" style="grid-column:1/-1;margin-top:.1rem">
         Projeção = realizado ÷ peso do mês já corrido. As comparações com o mês anterior e com o ano passado usam a projeção — meses fechados só se comparam com fechamento.
@@ -226,33 +240,97 @@ function renderLoja() {
 }
 
 // ── 2 · Vendedores ───────────────────────────────────────────────────────────
+// Um quadro só: em cima o número do mês, embaixo a distância para a média dos
+// meses fechados. Foto e movimento na mesma linha — é o que evita cobrar quem
+// está subindo de baixo e elogiar quem está caindo devagar.
+
 // Prêmio semanal já ganho no mês, por vendedor. O total vem do mesmo cálculo
 // da folha; o title abre semana a semana para quando a gerente contestar.
 function premioDe(id) {
   return (S.dados.premiacoes?.porEmp || {})[id] || { individual: 0, loja: 0, total: 0, semanas: 0, detalhe: [] };
 }
 
-function premioCell(id) {
+function mediaDe(id) {
+  return (S.dados.media3m?.vendedores || []).find(l => l.id === id) || null;
+}
+
+const sinal = (v, f) => (v >= 0 ? '+' : '-') + f(Math.abs(v));
+// Se a diferença some no arredondamento, ela não é melhora nem piora: pintar de
+// verde um +0,00 faz a reunião discutir ruído.
+const semMovimento = txt => !/[1-9]/.test(txt);
+
+const fmtPct = v => fPct(v);
+const fmtPa  = v => fDec(v, 2);
+const dPP    = v => sinal(v, x => x.toFixed(0) + ' pp');
+const dPa    = v => sinal(v, x => fDec(x, 2));
+const dTm    = v => sinal(v, fBRL);
+
+// Célula de indicador: o número do mês com a cor que ele já tinha e, embaixo,
+// quanto ele andou contra a média dos meses fechados.
+function indCell(valor, ind, fmt, fmtDelta, clsTopo) {
+  if (valor == null) return '<td class="num mut">—</td>';
+  const topo = clsTopo ? `<span class="${clsTopo}">${fmt(valor)}</span>` : fmt(valor);
+  if (!ind) return `<td class="num">${topo}</td>`;
+  if (ind.media == null) return `<td class="num">${topo}<div class="hist-delta mut">sem base</div></td>`;
+  const dTxt  = fmtDelta(ind.delta);
+  const parou = semMovimento(dTxt);
+  const cls   = parou ? 'mut' : ind.delta > 0 ? 'pos' : 'neg';
+  const sub   = parou ? `igual à média (${fmt(ind.media)})` : `${dTxt} vs ${fmt(ind.media)}`;
+  return `<td class="num">${topo}<div class="hist-delta ${cls}">${sub}</div></td>`;
+}
+
+function premioTd(id, md, emCurso) {
   const pr = premioDe(id);
-  if (!pr.total) return '<span class="mut">—</span>';
   const linhas = pr.detalhe.map(d => {
     const partes = [];
     if (d.individual) partes.push(`meta ${fBRL(d.individual)}`);
     if (d.loja)       partes.push(`loja ${fBRL(d.loja)}`);
     return `${d.label}: ${partes.join(' + ')}`;
   });
-  return `<span class="pos" title="${esc(linhas.join(' · '))}">${fBRL(pr.total)}</span>`;
+  const topo = pr.total
+    ? `<span class="pos" title="${esc(linhas.join(' · '))}">${fBRL(pr.total)}</span>`
+    : '<span class="mut">—</span>';
+  const media = md?.premio?.media;
+  // Quem nunca ganhou não precisa de linha dizendo que a média é zero
+  if (media == null || (!media && !pr.total)) return `<td class="num">${topo}</td>`;
+  // Mês aberto tem semana por acontecer: comparar com a média de meses inteiros
+  // pintaria de vermelho quem ainda vai ganhar. A média fica só de referência.
+  if (emCurso) return `<td class="num">${topo}<div class="hist-delta mut">méd ${fBRL(media)}/mês</div></td>`;
+  const d     = pr.total - media;
+  const parou = Math.abs(d) < 1;
+  const cls   = parou ? 'mut' : d > 0 ? 'pos' : 'neg';
+  const sub   = parou ? `igual à média (${fBRL(media)})` : `${sinal(d, fBRL)} vs méd ${fBRL(media)}`;
+  return `<td class="num">${topo}<div class="hist-delta ${cls}">${sub}</div></td>`;
+}
+
+// Quantos indicadores andaram para frente e quantos para trás. É o resumo que a
+// gerente leva da reunião — e mês parado aparece como parado, não como fracasso.
+function placarCell(md) {
+  if (!md || !md.avaliados) return '<td class="num mut">—</td>';
+  const { melhoraram: k, pioraram: pi = 0, avaliados: n } = md;
+  const cls = k > pi ? 'pos' : k < pi ? 'neg' : 'warn';
+  const partes = [];
+  if (k)  partes.push(`${k}↑`);
+  if (pi) partes.push(`${pi}↓`);
+  const sub = md.mesesComparados != null && md.mesesComparados < 3
+    ? `base de ${md.mesesComparados} ${md.mesesComparados === 1 ? 'mês' : 'meses'}`
+    : `de ${n} indicador${n === 1 ? '' : 'es'}`;
+  return `<td class="num ${cls}">${partes.length ? partes.join(' ') : 'estável'}<div class="hist-delta mut">${sub}</div></td>`;
 }
 
 function renderVendedores() {
   const vs = S.dados.vendedores;
   const emCurso = !S.dados.loja.fechado;
   const premLoja = vs.reduce((a, v) => a + premioDe(v.id).total, 0);
-  const semanas = S.dados.premiacoes?.semanas || 0;
-  $('vendSub').textContent = `${vs.length} ativo${vs.length === 1 ? '' : 's'}`
+  const semanas  = S.dados.premiacoes?.semanas || 0;
+  const nMeses   = S.dados.media3m?.meses?.length || 0;
+  const saiu = vs.filter(v => v.saiuNoMes).length;
+  $('vendSub').textContent = `${vs.length} na equipe do mês`
+    + (saiu ? ` (${saiu} desligad${saiu === 1 ? 'o' : 'os'} no mês)` : '')
     + (emCurso ? ` · % pela projeção` : '')
     + ` · ${fBRL(premLoja)} em prêmios semanais`
-    + ` (${semanas} semana${semanas === 1 ? '' : 's'} encerrada${semanas === 1 ? '' : 's'})`;
+    + ` (${semanas} semana${semanas === 1 ? '' : 's'} encerrada${semanas === 1 ? '' : 's'})`
+    + (nMeses ? ` · linha de baixo: média de ${nMeses} ${nMeses === 1 ? 'mês fechado' : 'meses fechados'}` : '');
 
   if (!vs.length) {
     $('vendTbl').innerHTML = '<tbody><tr><td class="pa-empty">Nenhum colaborador ativo nesta loja.</td></tr></tbody>';
@@ -273,25 +351,27 @@ function renderVendedores() {
         <th class="num">${emCurso ? '% proj.' : '%'}</th>
         <th class="num">vs loja</th>
         <th class="num">Peças</th><th class="num">Atend.</th><th class="num">PA</th><th class="num">Ticket</th><th class="num">Conv.</th>
-        <th class="num">Prêmios</th>
+        <th class="num">Prêmios</th><th class="num">Evolução</th>
         <th>Nota da reunião</th>
       </tr></thead>
       <tbody>${vs.map(v => {
         const pct = emCurso ? v.pctProj : v.pct;
         const cls = pct == null ? 'mut' : pct >= 100 ? 'pos' : pct >= 85 ? 'warn' : 'neg';
+        const md  = mediaDe(v.id);
         return `<tr>
-          <td>${esc(v.nome)}${v.gerente ? '<span class="pa-tag ger">gerente</span>' : ''}${v.diasFerias ? `<span class="pa-tag fer">${v.diasFerias}d férias</span>` : ''}</td>
+          <td>${esc(v.nome)}${v.gerente ? '<span class="pa-tag ger">gerente</span>' : ''}${v.diasFerias ? `<span class="pa-tag fer">${v.diasFerias}d férias</span>` : ''}${v.entrouNoMes ? `<span class="pa-tag in">entrou ${fCurto(v.admissao)}</span>` : ''}${v.saiuNoMes ? `<span class="pa-tag out">saiu ${fCurto(v.desligamento)}</span>` : ''}</td>
           <td class="num">${v.meta ? fBRL(v.meta) : '—'}</td>
           <td class="num">${fBRL(v.venda)}</td>
           ${emCurso ? `<td class="num blue">${v.projecao == null ? '—' : fBRL(v.projecao)}</td>` : ''}
-          <td class="num ${cls}">${fPct(pct)}</td>
+          ${indCell(pct, md?.pct, fmtPct, dPP, cls)}
           <td class="num ${v.delta == null ? 'mut' : v.delta >= 0 ? 'pos' : 'neg'}">${v.delta == null ? '—' : (v.delta >= 0 ? '+' : '') + v.delta.toFixed(0) + ' pp'}</td>
           <td class="num">${fNum(v.pecas)}</td>
           <td class="num">${fNum(v.atend)}</td>
-          <td class="num">${fDec(v.pa)}</td>
-          <td class="num">${v.tm == null ? '—' : fBRL(v.tm)}</td>
-          <td class="num">${fPct(v.conv)}</td>
-          <td class="num">${premioCell(v.id)}</td>
+          ${indCell(v.pa,   md?.pa,   fmtPa,  dPa)}
+          ${indCell(v.tm,   md?.tm,   fBRL,   dTm)}
+          ${indCell(v.conv, md?.conv, fmtPct, dPP)}
+          ${premioTd(v.id, md, emCurso)}
+          ${placarCell(md)}
           <td><input class="pa-nota-inp" data-vend="${v.id}" value="${esc(S.pauta.vendedorNotas[v.id] || '')}" placeholder="—"></td>
         </tr>`;
       }).join('')}</tbody>
@@ -307,7 +387,8 @@ function renderVendedores() {
         <td class="num">${tot.atend ? fDec(tot.pecas / tot.atend) : '—'}</td>
         <td class="num">${tot.atend ? fBRL(tot.venda / tot.atend) : '—'}</td>
         <td class="num">—</td>
-        <td class="num">${premLoja ? fBRL(premLoja) : '—'}</td><td></td>
+        <td class="num">${premLoja ? fBRL(premLoja) : '—'}</td>
+        <td class="num">—</td><td></td>
       </tr></tfoot>`;
 
     $('vendTbl').querySelectorAll('[data-vend]').forEach(inp => {
@@ -341,10 +422,13 @@ function renderHistorico() {
     { year: S.year, month: S.month, pct: pctAtual, atual: true },
   ];
 
-  // Uma linha por vendedor que apareceu em qualquer um dos meses
+  // Uma linha por vendedor da equipe do mês — inclui quem saiu no meio dele.
+  // Quem já tinha saído antes tem histórico, mas não tem reunião.
+  const ativos = new Set(S.dados.vendedores.map(v => v.id));
   const linhas = new Map();
   for (const h of hist) {
     for (const v of h.vendedores) {
+      if (!ativos.has(v.id)) continue;
       if (!linhas.has(v.id)) linhas.set(v.id, { id: v.id, nome: v.nome, gerente: v.gerente, meses: {}, ordem: 0 });
       linhas.get(v.id).meses[`${h.year}-${h.month}`] = { pct: v.pct, delta: v.delta, ferias: v.diasFerias };
     }
@@ -363,7 +447,7 @@ function renderHistorico() {
   }
 
   $('histSub').textContent = hist.length
-    ? `${hist.length} ${hist.length === 1 ? 'mês fechado' : 'meses fechados'} + o mês em curso`
+    ? `${hist.length} ${hist.length === 1 ? 'mês fechado' : 'meses fechados'} + o mês em curso · só a equipe do mês`
     : 'só o mês em curso — ainda sem histórico lançado';
 
   const cab = c => `${MESES[c.month - 1]}/${String(c.year).slice(2)}${c.atual && emCurso ? '<div class="hist-delta mut">proj.</div>' : ''}`;
@@ -391,106 +475,6 @@ function renderHistorico() {
     </tbody>`;
 }
 
-// ── 3b · Média dos últimos meses fechados × mês em curso ─────────────────────
-// Um mês isolado mente: o vendedor pega uma semana boa e parece outro. A média
-// dos meses fechados é a régua; o que se discute na reunião é a distância entre
-// ela e o mês que está correndo, indicador por indicador.
-const sinal = (v, f) => (v >= 0 ? '+' : '-') + f(Math.abs(v));
-
-// Se a diferença some no arredondamento, ela não é melhora nem piora: pintar de
-// verde um +0,00 faz a reunião discutir ruído.
-const semMovimento = txt => !/[1-9]/.test(txt);
-
-function cmpCell(ind, fmt, fmtDelta) {
-  if (!ind || ind.atual == null) return '<td class="num mut">—</td>';
-  const topo = fmt(ind.atual);
-  if (ind.media == null) return `<td class="num">${topo}<div class="hist-delta mut">sem base</div></td>`;
-  const dTxt  = fmtDelta(ind.delta);
-  const parou = semMovimento(dTxt);
-  const cls   = parou ? 'mut' : ind.delta > 0 ? 'pos' : 'neg';
-  const sub   = parou ? `igual à média (${fmt(ind.media)})` : `${dTxt} vs ${fmt(ind.media)}`;
-  return `<td class="num">${topo}<div class="hist-delta ${cls}">${sub}</div></td>`;
-}
-
-function premioCmpCell(pr, emCurso) {
-  if (!pr) return '<td class="num mut">—</td>';
-  const topo = pr.atual ? fBRL(pr.atual) : '<span class="mut">R$ 0</span>';
-  if (pr.media == null) return `<td class="num">${topo}</td>`;
-  // Mês aberto tem semana por acontecer: comparar com a média de meses inteiros
-  // pintaria de vermelho quem ainda vai ganhar. A média fica só como referência.
-  if (emCurso) return `<td class="num">${topo}<div class="hist-delta mut">méd ${fBRL(pr.media)}/mês nos fechados</div></td>`;
-  const delta = pr.atual - pr.media;
-  const parou = Math.abs(delta) < 1;
-  const cls   = parou ? 'mut' : delta > 0 ? 'pos' : 'neg';
-  const sub   = parou ? `igual à média (${fBRL(pr.media)})` : `${sinal(delta, fBRL)} vs méd ${fBRL(pr.media)}`;
-  return `<td class="num">${topo}<div class="hist-delta ${cls}">${sub}</div></td>`;
-}
-
-// Quantos dos quatro indicadores andaram para frente e quantos andaram para trás.
-// É o resumo que a gerente leva da reunião — e mês parado aparece como parado,
-// não como fracasso.
-function placarCell(linha) {
-  if (!linha.avaliados) return '<td class="num mut">—</td>';
-  const { melhoraram: k, pioraram: pi = 0, avaliados: n } = linha;
-  const cls = k > pi ? 'pos' : k < pi ? 'neg' : 'warn';
-  const partes = [];
-  if (k)  partes.push(`${k}↑`);
-  if (pi) partes.push(`${pi}↓`);
-  const sub = linha.mesesComparados != null && linha.mesesComparados < 3
-    ? `base de ${linha.mesesComparados} ${linha.mesesComparados === 1 ? 'mês' : 'meses'}`
-    : `de ${n} indicador${n === 1 ? '' : 'es'}`;
-  return `<td class="num ${cls}">${partes.length ? partes.join(' ') : 'estável'}<div class="hist-delta mut">${sub}</div></td>`;
-}
-
-function renderMedia3M() {
-  const md = S.dados.media3m;
-  const hdr = $('mediaHdr'), tbl = $('mediaTbl'), leg = $('mediaLegend');
-  if (!md || !md.meses.length) {
-    hdr.textContent = 'Média dos últimos meses × mês em curso';
-    tbl.innerHTML = '<tbody><tr><td class="pa-empty">Sem meses fechados suficientes para tirar média.</td></tr></tbody>';
-    leg.textContent = '';
-    return;
-  }
-
-  const rot = md.meses.map(x => `${MESES[x.month - 1]}/${String(x.year).slice(2)}`).join(', ');
-  hdr.textContent = `Média de ${md.meses.length} ${md.meses.length === 1 ? 'mês fechado' : 'meses fechados'} (${rot}) × ${MESES[S.month - 1]}/${S.year}${md.emCurso ? ' em curso' : ''}`;
-
-  const fmtPct  = v => fPct(v);
-  const fmtPa   = v => fDec(v, 2);
-  const fmtTm   = v => fBRL(v);
-  const dPP     = v => sinal(v, x => x.toFixed(0) + ' pp');
-  const dPa     = v => sinal(v, x => fDec(x, 2));
-  const dTm     = v => sinal(v, fBRL);
-
-  const linhaHtml = (l, nome, classe) => `<tr class="${classe || ''}">
-      <td>${nome}</td>
-      ${cmpCell(l.pct,  fmtPct, dPP)}
-      ${cmpCell(l.pa,   fmtPa,  dPa)}
-      ${cmpCell(l.tm,   fmtTm,  dTm)}
-      ${cmpCell(l.conv, fmtPct, dPP)}
-      ${premioCmpCell(l.premio, md.emCurso)}
-      ${placarCell(l)}
-    </tr>`;
-
-  tbl.innerHTML = `
-    <thead><tr>
-      <th>Vendedor</th>
-      <th class="num">% da meta</th><th class="num">PA</th><th class="num">Ticket</th><th class="num">Conversão</th>
-      <th class="num">Prêmios/mês</th><th class="num">Evolução</th>
-    </tr></thead>
-    <tbody>
-      ${linhaHtml(md.loja, 'LOJA', 'hist-loja')}
-      ${md.vendedores.map(l => linhaHtml(l,
-          esc(l.nome) + (l.gerente ? '<span class="pa-tag ger">gerente</span>' : ''))).join('')}
-    </tbody>`;
-
-  const sem = S.dados.premiacoes?.semanas || 0;
-  leg.innerHTML = 'Em cima, o número do mês' + (md.emCurso ? ' em curso (o % da meta pela projeção de fechamento)' : '')
-    + '; embaixo, quanto ele está acima ou abaixo da média dos meses fechados. Verde melhorou, vermelho piorou, cinza não saiu do lugar.'
-    + ` Prêmios é o que a premiação semanal já pagou no mês — ${sem} semana${sem === 1 ? '' : 's'} encerrada${sem === 1 ? '' : 's'} até aqui`
-    + (md.emCurso ? ', por isso o mês em curso aparece sem comparação: a média serve só de referência.' : '.')
-    + ' Quem tem menos de três meses fechados aparece com a base reduzida: ainda é cedo para chamar de tendência.';
-}
 // ── Valor do estoque declarado à mão ─────────────────────────────────────────
 // O Microvix dá o estoque a preço de venda pelo catálogo; o número que o
 // contábil usa é outro. Aqui entra o que a loja/escritório apurou.

@@ -67,6 +67,8 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
 .pa-tag{font-size:.65rem;padding:.08rem .32rem;border-radius:3px;font-weight:600;margin-left:.3rem}
 .pa-tag.ger{background:#a78bfa22;color:#a78bfa}
 .pa-tag.fer{background:#22d3ee22;color:#22d3ee}
+.pa-tag.out{background:#f8514922;color:#f85149}
+.pa-tag.in{background:#3fb95022;color:#3fb950}
 
 /* ── Textarea / inputs ── */
 .pa-ta{width:100%;background:#0d1117;border:1px solid #30363d;border-radius:7px;color:#e6edf3;font-family:inherit;font-size:.82rem;padding:.5rem .6rem;resize:vertical;min-height:64px;line-height:1.45}
@@ -161,6 +163,10 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
   .pa-card-hdr{background:#f2f2f2}
   .pa-card,.pa-kpi,.pa-ia-box,.pa-alert,.pa-linha{background:#fff;color:#000}
   .pa-ta,.pa-inp,.pa-nota-inp{border-color:#ccc;color:#000;background:#fff}
+  .pa-tbl-wrap{overflow:visible}
+  .pa-tbl{min-width:0;font-size:.62rem}
+  .pa-tbl th,.pa-tbl td{padding:.22rem .3rem}
+  .hist-delta{font-size:.55rem}
 }
 </style>
 </head>
@@ -219,17 +225,13 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
     <div class="pa-card">
       <div class="pa-card-hdr">
         <span class="pa-card-num">3</span>
-        <span class="pa-card-title">Histórico e média dos últimos meses <span class="pa-card-sub" id="histSub"></span></span>
+        <span class="pa-card-title">Histórico mês a mês <span class="pa-card-sub" id="histSub"></span></span>
       </div>
       <div class="pa-card-body">
-        <div class="pa-sub-hdr">Mês a mês</div>
         <div class="pa-tbl-wrap"><table class="pa-tbl" id="histTbl"></table></div>
-        <div class="pa-legend">O número grande é o % da meta do vendedor no mês; embaixo, a diferença em pontos para o % que a loja fez no mesmo mês.
-        Verde ficou acima da loja — puxou o resultado. Vermelho ficou abaixo. Num mês fraco da loja, 85% pode ser bom; num mês forte, 100% pode ser pouco.</div>
-
-        <div class="pa-sub-hdr" id="mediaHdr">Média dos últimos meses × mês em curso</div>
-        <div class="pa-tbl-wrap"><table class="pa-tbl" id="mediaTbl"></table></div>
-        <div class="pa-legend" id="mediaLegend"></div>
+        <div class="pa-legend">Só a equipe do mês — quem saiu no meio dele continua aqui. O número grande é o % da meta do vendedor no mês; embaixo, a diferença em pontos para o % que a loja fez no mesmo mês.
+        Verde ficou acima da loja — puxou o resultado. Vermelho ficou abaixo. Num mês fraco da loja, 85% pode ser bom; num mês forte, 100% pode ser pouco.
+        A média desses meses e a comparação com o mês atual estão no quadro dos vendedores, acima.</div>
       </div>
     </div>
 
