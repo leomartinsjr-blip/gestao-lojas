@@ -267,6 +267,24 @@ td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { backgro
   display: flex; flex-direction: column; gap: 1.25rem;
 }
 
+/* Masonry: grid de linhas finas; o span de cada card vem do JS (_initMasonry).
+   align-self:start é essencial — sem ele o card estica até a altura do span e
+   a medida da próxima passada realimenta o cálculo. */
+.dash-masonry {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-auto-rows: 4px;
+  column-gap: 1.25rem;
+  row-gap: 0;          /* o respiro vertical entra no span, não como gap: com
+                          gap aqui cada linha de 4px viraria 24px e o card
+                          desceria 6x a altura certa */
+  align-items: start;
+}
+.dash-masonry > .sector-grid-col { align-self: start; }
+@media (max-width: 900px) {
+  .dash-masonry { grid-template-columns: 1fr; }
+}
+
 /* Banner de lembrete já afasta do topbar fixo; sem isto o container soma
    outra margem igual e abre um vão morto entre o aviso e o dashboard. */
 .thursday-banner:not(.hidden) ~ #boardContainer { margin-top: 0; }

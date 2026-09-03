@@ -904,6 +904,7 @@ function renderDashboard() {
   // Colunas de destino de cada card (preenchidas conforme o modo)
   let dayCol, compCol, perfCol, weekCol, caixaCol, caixaColB,
       rightCol, anivCol, folgasCol, midCol, defeitosCol;
+  let _masonryTarget = null;
 
   if (useSectorTabs) {
     const sectorTabbar = document.createElement('div');
@@ -971,16 +972,26 @@ function renderDashboard() {
 
     // Topo: os três cards curtos de acompanhamento, lado a lado
     const [t1, t2, t3] = _row(3);      // Reunião | Contratos | Aniversariantes
-    const [r1a, r1b] = _row();         // Faturamento Diário | Escala (Folgas)
-    const [r2a, r2b] = _row();         // Meta Semanal       | Performance Mensal
-    const [r3a, r3b] = _row();         // Comparativo        | Recebimento de NF
-    const [r4a, r4b] = _row();         // Fechamento de Caixa| Defeitos
+    midCol = t1;  rightCol = t2;  anivCol = t3;
 
-    midCol    = t1;     rightCol    = t2;   anivCol = t3;
-    dayCol    = r1a;    folgasCol   = r1b;
-    weekCol   = r2a;    perfCol     = r2b;
-    compCol   = r3a;    caixaCol    = r3b;
-    caixaColB = r4a;    defeitosCol = r4b;
+    // Abaixo, masonry: em linhas fixas a altura era a do card mais alto, e um
+    // card curto ao lado de um comprido deixava um vão morto embaixo dele.
+    // Aqui cada card sobe até encostar no de cima da sua coluna. A ordem de
+    // leitura (esquerda → direita) é a pedida; quem preenche o vão é o próximo.
+    const masonry = document.createElement('div');
+    masonry.className = 'dash-masonry';
+    panel.appendChild(masonry);
+    const _slot = (ordem) => {
+      const el = _col();
+      el.style.order = ordem;
+      masonry.appendChild(el);
+      return el;
+    };
+    dayCol    = _slot(1);  folgasCol   = _slot(2);   // Faturamento | Escala
+    weekCol   = _slot(3);  perfCol     = _slot(4);   // Meta Semanal | Performance
+    compCol   = _slot(5);  caixaCol    = _slot(6);   // Comparativo | Recebimento NF
+    caixaColB = _slot(7);  defeitosCol = _slot(8);   // Fechamento  | Defeitos
+    _masonryTarget = masonry;
   }
 
   // A barra de chips para filtrar lojas saiu da tela a pedido do Leonardo.
@@ -1608,7 +1619,36 @@ function renderDashboard() {
     c.querySelectorAll('.sector-grid').forEach(row => {
       if (!row.querySelector('.main-card')) row.remove();
     });
+    if (_masonryTarget) _initMasonry(_masonryTarget);
   }
+}
+
+// Masonry sem biblioteca: o container é um grid de linhas finas e cada card
+// ocupa quantas linhas couberem na sua altura. Assim o card curto não obriga o
+// vizinho a descer. Recalcula quando um card muda de tamanho (abrir uma loja no
+// Faturamento, o Comparativo chegar do backend) e quando a janela redimensiona.
+const MASONRY_ROW_PX = 4;
+const MASONRY_GAP_PX = 20; // 1.25rem — mesmo respiro das colunas
+function _initMasonry(container) {
+  const slots = () => Array.from(container.children);
+  const gap = MASONRY_GAP_PX;
+
+  const layout = () => {
+    for (const slot of slots()) {
+      const h = slot.getBoundingClientRect().height;
+      if (!h) continue;
+      slot.style.gridRowEnd = `span ${Math.max(1, Math.ceil((h + gap) / MASONRY_ROW_PX))}`;
+    }
+  };
+
+  layout();
+  // Duas passadas: fontes e o corpo de alguns cards só assentam no frame seguinte
+  requestAnimationFrame(layout);
+
+  if (container._masonryRO) container._masonryRO.disconnect();
+  const ro = new ResizeObserver(layout);
+  slots().forEach(s => ro.observe(s));
+  container._masonryRO = ro;
 }
 
 
@@ -9613,18 +9653,15 @@ function renderCaixaCard(container) {
     const hasData = r => r.caixa > 0 || r.sangria > 0 || r.deposito > 0;
     const showSaldo = r => carryDisplayFrom ? r.dt <= todayTrunc : hasData(r);
     const dash = `<span style="color:var(--muted)">—</span>`;
-    // No mês corrente, dia que ainda não chegou só rende uma linha de traços —
-    // ocupa espaço sem dizer nada. Mês passado/futuro segue inteiro, e um dia
-    // futuro que já tenha lançamento continua aparecendo.
-    const visibleRows = isCurrentMonth
-      ? rows.filter(r => r.dt <= todayTrunc || hasData(r))
-      : rows;
+    // O mês inteiro é listado de propósito: .caixa-table-wrap rola e o JS abaixo
+    // centraliza o dia de hoje, então dá para consultar qualquer dia sem sair
+    // do card. Cortar os dias futuros tira essa navegação.
 
     targetBody.innerHTML = `
       <div class="caixa-table-wrap">
         <table class="caixa-table">
           <thead><tr><th>Data</th><th>Dinheiro</th><th>Sangria</th><th>Depósito</th><th>Saldo</th></tr></thead>
-          <tbody>${visibleRows.map(r => `
+          <tbody>${rows.map(r => `
             <tr class="${r.d === todayDay ? 'caixa-today' : ''}" data-day="${r.d}">
               <td class="caixa-td-date">${pad(r.d)}/${pad(S.month)} <span style="color:var(--muted);font-size:.72rem">${r.dow}</span></td>
               <td class="caixa-td-val${isAdmin?' caixa-deposito-cell':''}" ${isAdmin?`data-field="caixa" data-day="${r.d}" style="cursor:pointer" title="Clique para editar"`:''}>${r.caixa > 0 ? fmtCur(r.caixa) : dash}</td>
