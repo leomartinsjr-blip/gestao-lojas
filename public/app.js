@@ -63,8 +63,8 @@ function aplicaTema(tema) {
   if (btn) {
     const escuro = temaEscuroAgora();
     btn.title = escuro ? 'Mudar para claro' : 'Mudar para escuro';
-    btn.querySelector('.theme-sun').style.display  = escuro ? '' : 'none';
-    btn.querySelector('.theme-moon').style.display = escuro ? 'none' : '';
+    const rot = document.getElementById('themeLabel');
+    if (rot) rot.textContent = escuro ? 'Modo claro' : 'Modo escuro';
   }
 }
 
@@ -1035,8 +1035,50 @@ function _renderResumoRede(panel, ctx) {
 }
 let _resumoObs = null;
 
+// ── Barra de lojas ──────────────────────────────────────────────────────────
+// Filtra a tela inteira numa loja. Quem enxerga uma loja só vê o próprio nome,
+// sem botão: não há o que filtrar.
+const ROTA_LOJAS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'lez', 'site'];
+
+function _renderRouteStrip() {
+  const strip = document.getElementById('routeStrip');
+  if (!strip) return;
+
+  const permitidas = S.user?.board && S.user.board !== 'escritorio'
+    ? [S.user.board]
+    : (S.user?.lojas?.length ? ROTA_LOJAS.filter(k => S.user.lojas.includes(k)) : ROTA_LOJAS);
+  const lojas = permitidas.filter(k => BOARDS[k]);
+
+  if (lojas.length <= 1) {
+    const k = lojas[0];
+    strip.innerHTML = k
+      ? `<span class="route-tab on"><span class="dot" style="background:${BOARDS[k].color}"></span>${_escHtml(BOARDS[k].label)}</span>`
+      : '';
+    return;
+  }
+
+  const ativa = DASH_BOARD_FILTER.size === 1 ? [...DASH_BOARD_FILTER][0] : null;
+  strip.innerHTML =
+    `<button class="route-tab${ativa ? '' : ' on'}" data-rota="todas" type="button">
+       <span class="dot" style="background:var(--muted)"></span>Todas
+     </button>` +
+    lojas.map(k => `<button class="route-tab${ativa === k ? ' on' : ''}" data-rota="${k}" type="button">
+       <span class="dot" style="background:${BOARDS[k].color}"></span>${_escHtml(BOARDS[k].label)}
+     </button>`).join('');
+
+  strip.querySelectorAll('[data-rota]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const k = btn.dataset.rota;
+      DASH_BOARD_FILTER.clear();
+      if (k !== 'todas') DASH_BOARD_FILTER.add(k);
+      renderDashboard();
+    });
+  });
+}
+
 function renderDashboard() {
   if (_dayCardTimer) { clearInterval(_dayCardTimer); _dayCardTimer = null; }
+  _renderRouteStrip();
   const c = document.getElementById('boardContainer');
   c.innerHTML = '';
   _renderContagemAviso(c);
@@ -1117,41 +1159,47 @@ function renderDashboard() {
   panel.dataset.sectorPanel = 'unico';
   c.appendChild(panel);
 
-  // Antes de qualquer card: os quatro números que se olha em três segundos e a
-  // forma do mês em barras. Tudo sai do que já está em memória — nenhuma volta
-  // ao servidor.
+  // A tela é lida por setor, não como um monte de card solto: o dia abre, o
+  // mês vem em seguida, e o resto entra em faixas numeradas — Vendas, Ação,
+  // Pessoas, Operação. Dentro de cada faixa os cards se acomodam em masonry,
+  // que é o que evita vão morto quando um card é bem mais curto que o vizinho.
+  const dayCol = _col();
+  dayCol.className = 'dash-hero-col';
+  panel.appendChild(dayCol);
+
   _renderResumoRede(panel, { visible, byBoard, prefix, cutoff, daysInMonth, defW, weightAccum, isCurrentMonth, todayStr });
 
-  // Um masonry só, 3 colunas, pra tela inteira — não dois grids empilhados.
-  // Um grid comum reserva a altura da coluna mais alta pra todas (foi o que
-  // deixava vão morto embaixo do bloco de Pendências/Aniversariantes numa
-  // loja, cujos cards são bem mais curtos que o de vendas). No masonry, os
-  // 3 primeiros blocos (ordem 1-3) abrem as 3 colunas lado a lado; os cards
-  // que sobraram (ordem 4-6) sobem e preenchem o que sobrar, na coluna que
-  // estiver mais curta naquele momento.
-  const masonry = document.createElement('div');
-  masonry.className = 'dash-masonry';
-  panel.appendChild(masonry);
-  const _slot = (ordem) => {
-    const el = _col();
-    el.style.order = ordem;
-    masonry.appendChild(el);
-    return el;
+  const _masonries = [];
+  const _lane = (idx, titulo, colunas) => {
+    const sec = document.createElement('section');
+    sec.className = 'lane';
+    sec.innerHTML = `<div class="lane-hdr"><span class="lane-idx">${idx}</span><h2>${titulo}</h2><span class="lane-rule"></span></div>`;
+    const grid = document.createElement('div');
+    grid.className = 'lane-cols c' + colunas;
+    sec.appendChild(grid);
+    panel.appendChild(sec);
+    _masonries.push(grid);
+    return grid;
   };
+  const _slotEm = grid => { const el = _col(); grid.appendChild(el); return el; };
 
-  const block1 = _slot(1), block2 = _slot(2), block3 = _slot(3);
+  const laneVendas   = _lane('01', 'Vendas',   2);
+  const perfCol      = _slotEm(laneVendas);
+  const weekCol      = _slotEm(laneVendas);
+  const compCol      = _slotEm(laneVendas);
 
-  const dayCol = _col(), perfCol = _col(), weekCol = _col();
-  [dayCol, perfCol, weekCol].forEach(col => block1.appendChild(col));       // Faturamento | Performance | Meta Semanal
+  const laneAcao     = _lane('02', 'Ação',     2);
+  const midCol       = _slotEm(laneAcao);      // Pendências + Reunião
+  const caixaCol     = _slotEm(laneAcao);      // Conferência + NF
 
-  const midCol = _col(), caixaCol = _col();
-  [midCol, caixaCol].forEach(col => block2.appendChild(col));               // Pendências+Reunião | Conferência+NF
+  const lanePessoas  = _lane('03', 'Pessoas',  3);
+  const anivCol      = _slotEm(lanePessoas);
+  const rightCol     = _slotEm(lanePessoas);
+  const folgasCol    = _slotEm(lanePessoas);
 
-  const anivCol = _col(), rightCol = _col(), folgasCol = _col();
-  [anivCol, rightCol, folgasCol].forEach(col => block3.appendChild(col));   // Aniversariantes | Contratos | Folgas
-
-  const compCol = _slot(4), caixaColB = _slot(5), defeitosCol = _slot(6);   // Comparativo | Fechamento | Defeitos
-  const _masonryTarget = masonry;
+  const laneOperacao = _lane('04', 'Operação', 2);
+  const caixaColB    = _slotEm(laneOperacao);  // Fechamento de Caixa
+  const defeitosCol  = _slotEm(laneOperacao);  // Defeitos
 
   // A barra de chips para filtrar lojas saiu da tela a pedido do Leonardo.
   // DASH_BOARD_FILTER continua existindo e vazio, que é o mesmo que "todas" —
@@ -1777,7 +1825,11 @@ function renderDashboard() {
   c.querySelectorAll('.sector-grid').forEach(row => {
     if (!row.querySelector('.main-card')) row.remove();
   });
-  _initMasonry(_masonryTarget);
+  // Faixa sem card deixaria o título órfão na tela — some junto.
+  c.querySelectorAll('.lane').forEach(sec => {
+    if (!sec.querySelector('.main-card')) sec.remove();
+  });
+  _masonries.forEach(_initMasonry);
 }
 
 // Masonry sem biblioteca: o container é um grid de linhas finas e cada card
