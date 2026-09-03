@@ -899,28 +899,13 @@ function renderDashboard() {
   panel.dataset.sectorPanel = 'unico';
   c.appendChild(panel);
 
-  // Topo: três blocos lado a lado, cada um com os cards empilhados na ordem
-  // de leitura — bloco 1 é o acompanhamento de vendas (dia/mês/semana),
-  // bloco 2 é o que pede ação (pendências, reunião, conferência de caixa e
-  // NF), bloco 3 é o de pessoas (aniversariantes, contratos, folgas).
-  const topo = document.createElement('div');
-  topo.className = 'sector-grid sector-grid--three';
-  panel.appendChild(topo);
-  const topoCol1 = _col(), topoCol2 = _col(), topoCol3 = _col();
-  [topoCol1, topoCol2, topoCol3].forEach(col => topo.appendChild(col));
-
-  const dayCol = _col(), perfCol = _col(), weekCol = _col();
-  [dayCol, perfCol, weekCol].forEach(col => topoCol1.appendChild(col));       // Faturamento | Performance | Meta Semanal
-
-  const midCol = _col(), caixaCol = _col();
-  [midCol, caixaCol].forEach(col => topoCol2.appendChild(col));               // Pendências+Reunião | Conferência+NF
-
-  const anivCol = _col(), rightCol = _col(), folgasCol = _col();
-  [anivCol, rightCol, folgasCol].forEach(col => topoCol3.appendChild(col));   // Aniversariantes | Contratos | Folgas
-
-  // Abaixo, masonry: em linhas fixas a altura era a do card mais alto, e um
-  // card curto ao lado de um comprido deixava um vão morto embaixo dele.
-  // Aqui cada card sobe até encostar no de cima da sua coluna.
+  // Um masonry só, 3 colunas, pra tela inteira — não dois grids empilhados.
+  // Um grid comum reserva a altura da coluna mais alta pra todas (foi o que
+  // deixava vão morto embaixo do bloco de Pendências/Aniversariantes numa
+  // loja, cujos cards são bem mais curtos que o de vendas). No masonry, os
+  // 3 primeiros blocos (ordem 1-3) abrem as 3 colunas lado a lado; os cards
+  // que sobraram (ordem 4-6) sobem e preenchem o que sobrar, na coluna que
+  // estiver mais curta naquele momento.
   const masonry = document.createElement('div');
   masonry.className = 'dash-masonry';
   panel.appendChild(masonry);
@@ -930,7 +915,19 @@ function renderDashboard() {
     masonry.appendChild(el);
     return el;
   };
-  const compCol = _slot(1), caixaColB = _slot(2), defeitosCol = _slot(3);     // Comparativo | Fechamento | Defeitos
+
+  const block1 = _slot(1), block2 = _slot(2), block3 = _slot(3);
+
+  const dayCol = _col(), perfCol = _col(), weekCol = _col();
+  [dayCol, perfCol, weekCol].forEach(col => block1.appendChild(col));       // Faturamento | Performance | Meta Semanal
+
+  const midCol = _col(), caixaCol = _col();
+  [midCol, caixaCol].forEach(col => block2.appendChild(col));               // Pendências+Reunião | Conferência+NF
+
+  const anivCol = _col(), rightCol = _col(), folgasCol = _col();
+  [anivCol, rightCol, folgasCol].forEach(col => block3.appendChild(col));   // Aniversariantes | Contratos | Folgas
+
+  const compCol = _slot(4), caixaColB = _slot(5), defeitosCol = _slot(6);   // Comparativo | Fechamento | Defeitos
   const _masonryTarget = masonry;
 
   // A barra de chips para filtrar lojas saiu da tela a pedido do Leonardo.
@@ -1716,6 +1713,17 @@ function _renderDashFolgas(body) {
   }
   html += '</tbody></table></div>';
   body.innerHTML = html;
+
+  // O mês inteiro não cabe no card, então sem isto a tabela sempre abre no
+  // dia 1. Centraliza o scroll no dia de hoje, descontando a coluna de nome
+  // (sticky) da largura visível.
+  const wrap = body.querySelector('.folga-mini-wrap');
+  const todayCol = body.querySelector('.folga-mini-today-col');
+  if (wrap && todayCol) {
+    const stickyW = body.querySelector('.folga-mini-name-h')?.offsetWidth || 0;
+    const target = todayCol.offsetLeft + todayCol.offsetWidth / 2 - stickyW - (wrap.clientWidth - stickyW) / 2;
+    wrap.scrollLeft = Math.max(0, target);
+  }
 }
 
 function _renderDayCardBody(body, dateStr) {

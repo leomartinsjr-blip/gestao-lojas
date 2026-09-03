@@ -171,7 +171,7 @@ td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { backgro
    a medida da próxima passada realimenta o cálculo. */
 .dash-masonry {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   grid-auto-rows: 4px;
   column-gap: 1.25rem;
   row-gap: 0;          /* o respiro vertical entra no span, não como gap: com
@@ -180,6 +180,9 @@ td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { backgro
   align-items: start;
 }
 .dash-masonry > .sector-grid-col { align-self: start; }
+@media (max-width: 1100px) {
+  .dash-masonry { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 900px) {
   .dash-masonry { grid-template-columns: 1fr; }
 }
@@ -277,7 +280,10 @@ td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { backgro
   overflow-x: auto;
 }
 .dash-table {
-  width: 100%; border-collapse: collapse;
+  /* max-content: as colunas não encolhem para caber, então nomes/números não
+     quebram linha; min-width garante que ainda preencha cards largos.
+     .main-card-body já tem overflow-x:auto — o card rola em vez de espremer. */
+  width: max-content; min-width: 100%; border-collapse: collapse;
   font-size: .8rem;
 }
 .dash-thead-tr { background: #262c36; }
@@ -1690,7 +1696,7 @@ td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { backgro
 .dw-store-collapse-row td { background: #252a33; font-weight: 700; font-size: .78rem; border-top: 2px solid var(--border2); }
 .dw-store-collapse-row:hover td { background: #2d3340 !important; }
 .dw-store-dot { display: none; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.dw-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+.dw-table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: .82rem; } /* mesmo motivo do .dash-table acima */
 .dw-thead-tr { background: #262c36; }
 .dw-th {
   padding: .55rem .875rem; color: #C9D1D9;
