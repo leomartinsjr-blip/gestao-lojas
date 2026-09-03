@@ -921,9 +921,6 @@ function _renderResumoRede(panel, ctx) {
   const pesoDe   = d => (S.weights[d] ?? defW);
   const metaDe   = d => metaMes * pesoDe(d) / 100;
   const projecao = weightAccum > 0 ? realizado / (weightAccum / 100) : null;
-  const vendidoNoDia = porDia[cutoff] || 0;
-  const metaDoDia    = metaDe(cutoff);
-  const pctDia  = metaDoDia > 0 ? vendidoNoDia / metaDoDia * 100 : null;
   const pctProj = metaMes   > 0 && projecao != null ? projecao / metaMes * 100 : null;
   const falta   = projecao != null ? metaMes - projecao : null;
 
@@ -937,7 +934,6 @@ function _renderResumoRede(panel, ctx) {
   const fRS2 = v => 'R$ ' + (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const cls  = (p, alvo = 100) => p == null ? '' : p >= alvo ? 'kpi-pos' : 'kpi-neg';
   const rede = visible.length === 1 ? (visible[0][1].label || 'Loja') : 'Rede';
-  const dataCurta = `${cutoff.slice(8)}/${cutoff.slice(5, 7)}`;
   const diasCorridos = dias.filter(d => d.passado).length;
 
   const tile = (rot, val, pe, larg, clsBarra) => `
@@ -950,12 +946,10 @@ function _renderResumoRede(panel, ctx) {
 
   const el = document.createElement('section');
   el.className = 'dash-resumo';
+  // O dia fica no card de Faturamento Diário, que tem o total grande e as
+  // lojas embaixo. Aqui a faixa fala do mês, para não dizer a mesma coisa duas
+  // vezes na mesma tela.
   el.innerHTML =
-    tile(`Vendido em ${dataCurta}`, fRS(vendidoNoDia),
-         metaDoDia > 0
-           ? `<span class="rs-tag ${cls(pctDia)}">${pctDia.toFixed(0)}% da meta do dia</span> meta ${fRS(metaDoDia)}`
-           : 'sem meta lançada para o dia',
-         pctDia, pctDia != null && pctDia < 100 ? 'abaixo' : '') +
     tile('Mês até aqui', fRS(realizado),
          `${diasCorridos} dia${diasCorridos === 1 ? '' : 's'} corrido${diasCorridos === 1 ? '' : 's'} · ${weightAccum.toFixed(1)}% do peso do mês`,
          weightAccum, '') +
@@ -1177,21 +1171,14 @@ function renderDashboard() {
     const dayCard = document.createElement('div');
     dayCard.className = 'main-card';
     dayCard.dataset.cardId = 'card-dia';
-    // Fechado, o cabeçalho já responde "quanto a rede fez hoje". Aberto, mostra
-    // de onde veio: loja a loja, contra a meta do dia. A escolha fica guardada.
-    let _diaAberto = false;
-    try { _diaAberto = localStorage.getItem('dash:diaAberto') === '1'; } catch (_) {}
-    if (!_diaAberto) dayCard.classList.add('card-fechado');
     dayCard.innerHTML = `
-      <div class="main-card-hdr dia-hdr">
+      <div class="main-card-hdr">
         <span class="main-card-title">
-          <svg class="dia-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="9 6 15 12 9 18"/></svg>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
           </svg>
           Faturamento Diário
         </span>
-        <span class="dia-resumo" id="dayCardResumo"></span>
         <div class="dash-wk-nav">
           <button class="dash-wk-btn" id="dayCardPrev" title="Dia anterior">&#8592;</button>
           <span class="dash-wk-label" id="dayCardLabel"></span>
@@ -1202,14 +1189,6 @@ function renderDashboard() {
       <div class="main-card-body" id="dayCardBody"></div>
     `;
     dayCol.appendChild(dayCard);
-
-    // Clicar no cabeçalho abre e fecha — menos nas setas de dia, que são
-    // controle próprio e continuam funcionando com o card fechado.
-    dayCard.querySelector('.dia-hdr').addEventListener('click', ev => {
-      if (ev.target.closest('.dash-wk-nav')) return;
-      const fechado = dayCard.classList.toggle('card-fechado');
-      try { localStorage.setItem('dash:diaAberto', fechado ? '0' : '1'); } catch (_) {}
-    });
 
     async function _updateDayCard() {
       const fdsBtnEl = document.getElementById('dayCardFds');
@@ -1995,7 +1974,10 @@ function _renderDayCardBody(body, dateStr) {
     byBoard[emp.board].push(emp);
   }
 
+  // O total do dia abre o card; as lojas ficam logo abaixo e cada uma abre nos
+  // seus vendedores. O bloco é preenchido no fim, quando os totais existem.
   body.innerHTML = `
+    <div class="dia-hero" id="diaHero"></div>
     <div class="dia-col-hdr">
       <span></span>
       <span>Realizado</span>
@@ -2006,6 +1988,7 @@ function _renderDayCardBody(body, dateStr) {
 
   let anyData = false;
   let grandVal = 0, grandMeta = 0, grandPecas = 0, grandAtend = 0, grandFluxo = 0;
+  const lojasDoDia = [];
 
   for (const [bk, bc] of visibleBoards()) {
     const emps = (byBoard[bk] || []).filter(e => {
@@ -2076,6 +2059,7 @@ function _renderDayCardBody(body, dateStr) {
     const sPctCls    = storePct == null ? '' : storePct >= 100 ? 'dia-pct-ok' : storePct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
     const sConvCls   = storeConv == null ? '' : storeConv >= 30 ? 'dia-conv-ok' : storeConv >= 15 ? 'dia-conv-warn' : 'dia-conv-bad';
     grandFluxo += storeFluxo;
+    lojasDoDia.push({ label: bc.label, color: bc.color, valor: storeTotalVal });
     const isAdmin  = !S.user?.board;
     const isExp    = !isAdmin || _dayCardExpanded.has(bk);
 
@@ -2110,16 +2094,39 @@ function _renderDayCardBody(body, dateStr) {
     }
   }
 
-  // O cabeçalho carrega o total do dia: com o card fechado, é ele que responde.
-  const resumoEl = document.getElementById('dayCardResumo');
-  if (resumoEl) {
+  // ── O total do dia, em cima ────────────────────────────────────────────
+  // Realizado grande, meta do dia ao lado e o quanto disso foi atingido. À
+  // direita, quem puxou: as três lojas que mais venderam no dia.
+  const heroEl = body.querySelector('#diaHero');
+  if (heroEl) {
     const pct = grandMeta > 0 ? grandVal / grandMeta * 100 : null;
-    const cls = pct == null ? '' : pct >= 100 ? 'dia-pct-ok' : pct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
-    resumoEl.innerHTML = !anyData || grandVal <= 0
-      ? '<span class="dia-resumo-vazio">sem lançamento no dia</span>'
-      : `<b>R$ ${fV(grandVal)}</b>`
-        + (pct != null ? `<span class="dia-resumo-pct ${cls}">${pct.toFixed(0)}% da meta</span>` : '')
-        + (grandMeta > 0 ? `<span class="dia-resumo-meta">meta R$ ${fV(grandMeta)}</span>` : '');
+    const cls = pct == null ? '' : pct >= 100 ? 'dia-pct-ok' : pct >= 80 ? 'dia-pct-warn' : 'dia-pct-bad';
+    const cheio = fV(grandVal);                       // "49.441,48"
+    const inteiro = cheio.slice(0, -3), centavos = cheio.slice(-3);
+    const maiores = lojasDoDia.filter(l => l.valor > 0).sort((a, b) => b.valor - a.valor).slice(0, 3);
+
+    heroEl.innerHTML = !anyData || grandVal <= 0
+      ? '<div class="dia-hero-vazio">Sem lançamento para este dia.</div>'
+      : `<div class="dia-hero-num">
+           <span class="dia-hero-val"><i>R$</i>${inteiro}<em>${centavos}</em></span>
+           <span class="dia-hero-lbl">Realizado${DASH_DAY.mode === 'weekend' ? ' no FDS' : ''}</span>
+         </div>
+         <div class="dia-hero-meta">
+           <span class="dia-hero-val2">${grandMeta > 0 ? fV(grandMeta) : '—'}</span>
+           <span class="dia-hero-lbl">Meta do dia</span>
+         </div>
+         <div class="dia-hero-pct">
+           <span class="dia-hero-badge ${cls}">${pct != null ? pct.toFixed(1) + '%' : '—'}</span>
+           <span class="dia-hero-lbl">da meta atingida</span>
+         </div>
+         ${maiores.length > 1 ? `<div class="dia-hero-top">
+           <span class="dia-hero-lbl">Maiores do dia</span>
+           ${maiores.map(l => `<span class="dia-hero-top-row">
+             <i class="loja-tarja" style="background:${l.color}"></i>
+             <span class="nome">${_escHtml(l.label)}</span>
+             <span class="valor">${fV(l.valor).slice(0, -3)}</span>
+           </span>`).join('')}
+         </div>` : ''}`;
   }
 
   if (!anyData) {
