@@ -249,9 +249,12 @@ body {
 
 /* Status colorido na célula: numa tabela densa não dá para embutir pílula em
    <td>, então a própria célula recebe um fundo suave do status. */
-.dash-table td.kpi-pos,  td.dw-td.kpi-pos,  td.comp-td.kpi-pos  { background: rgba(63,185,80,.11); }
-.dash-table td.kpi-warn, td.dw-td.kpi-warn, td.comp-td.kpi-warn { background: rgba(251,191,36,.11); }
-.dash-table td.kpi-neg,  td.dw-td.kpi-neg,  td.comp-td.kpi-neg  { background: rgba(248,81,73,.11); }
+.dash-table td.kpi-pos,  td.dw-td.kpi-pos,  td.comp-td.kpi-pos,
+td.wk-td.kpi-pos,  .ds-table td.kpi-pos,  .perf-proj-table td.kpi-pos  { background: rgba(63,185,80,.11); }
+.dash-table td.kpi-warn, td.dw-td.kpi-warn, td.comp-td.kpi-warn,
+td.wk-td.kpi-warn, .ds-table td.kpi-warn, .perf-proj-table td.kpi-warn { background: rgba(251,191,36,.11); }
+.dash-table td.kpi-neg,  td.dw-td.kpi-neg,  td.comp-td.kpi-neg,
+td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { background: rgba(248,81,73,.11); }
 
 /* Bolinha da loja: identidade visual que já existia no HTML mas estava oculta */
 .dash-store-hdr .dash-store-dot { display: inline-block; }
@@ -1404,7 +1407,7 @@ body {
 .perf-chart-wrap { position: relative; height: 320px; }
 .perf-no-data { text-align: center; padding: 3rem; color: var(--muted); font-size: .875rem; line-height: 1.8; }
 .perf-proj-table { width: 100%; border-collapse: collapse; font-size: .78rem; }
-.perf-proj-table th { background: var(--surface3); padding: .45rem .75rem; text-align: right; color: var(--muted); font-weight: 500; font-size: .68rem; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border); }
+.perf-proj-table th { background: #262c36; padding: .55rem .75rem; text-align: right; color: #C9D1D9; font-weight: 700; font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid var(--border); }
 .perf-proj-table th:first-child { text-align: left; }
 .perf-proj-table td { padding: .4rem .75rem; border-bottom: 1px solid rgba(48,54,61,.6); text-align: right; }
 .perf-proj-table td:first-child { text-align: left; font-weight: 600; }
@@ -1504,9 +1507,9 @@ body {
   white-space: nowrap;
 }
 .ds-table thead th {
-  background: var(--surface3); padding: .45rem .6rem;
-  text-align: right; color: var(--muted); font-weight: 500;
-  font-size: .67rem; text-transform: uppercase; letter-spacing: .04em;
+  background: #262c36; padding: .55rem .6rem;
+  text-align: right; color: #C9D1D9; font-weight: 700;
+  font-size: .67rem; text-transform: uppercase; letter-spacing: .06em;
   border-bottom: 1px solid var(--border);
   position: sticky; top: 24px; z-index: 2;
 }
@@ -1774,17 +1777,17 @@ body {
 .dw-store-collapse-row:hover td { background: #2d3340 !important; }
 .dw-store-dot { display: none; width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .dw-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-.dw-thead-tr { background: #292e38; }
+.dw-thead-tr { background: #262c36; }
 .dw-th {
-  padding: .45rem .875rem; color: #fff;
-  font-size: .7rem; font-weight: 700;
-  text-transform: uppercase; letter-spacing: .04em; text-align: left;
+  padding: .55rem .875rem; color: #C9D1D9;
+  font-size: .68rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em; text-align: left;
 }
 .dw-th.dw-th-r { text-align: right; }
 .dw-row { border-bottom: 1px solid var(--border); }
 .dw-row:nth-child(even) td { background: rgba(255,255,255,.025); }
 .dw-row:hover td { background: rgba(88,166,255,.07) !important; }
-.dw-td { padding: .42rem .875rem; color: var(--text); }
+.dw-td { padding: .5rem .875rem; color: var(--text); }
 .dw-td-name { font-weight: 500; }
 .dw-td-num  { text-align: right; font-variant-numeric: tabular-nums; }
 .dw-total-row { background: #292e38; border-top: 2px solid #484F58; }
@@ -1815,11 +1818,11 @@ body {
 }
 .wk-store-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 .wk-table { width: 100%; border-collapse: collapse; font-size: .82rem; }
-.wk-thead-tr { background: #292e38; }
+.wk-thead-tr { background: #262c36; }
 .wk-th {
-  padding: .45rem 1rem; color: #fff;
-  font-size: .7rem; font-weight: 700;
-  text-transform: uppercase; letter-spacing: .04em; text-align: left;
+  padding: .55rem 1rem; color: #C9D1D9;
+  font-size: .68rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em; text-align: left;
   white-space: nowrap;
 }
 .wk-th.wk-th-r { text-align: right; }
@@ -1827,7 +1830,7 @@ body {
 .wk-row { border-bottom: 1px solid var(--border); }
 .wk-row:nth-child(even) td { background: rgba(255,255,255,.025); }
 .wk-row:hover td { background: rgba(88,166,255,.07) !important; }
-.wk-td { padding: .45rem 1rem; color: var(--text); }
+.wk-td { padding: .5rem 1rem; color: var(--text); }
 .wk-td-name { font-weight: 500; }
 .wk-td-num  { text-align: right; font-variant-numeric: tabular-nums; }
 .wk-td-edit {
@@ -2111,14 +2114,14 @@ body {
 
 /* ── Comparativo table ─────────────────────────────────────────────────── */
 .comp-table { width: 100%; border-collapse: collapse; font-size: .8rem; }
-.comp-thead-tr { background: #292e38; }
-.comp-th { padding: .45rem .55rem; text-align: left; font-weight: 700; font-size: .68rem; color: #8B949E; text-transform: uppercase; letter-spacing: .04em; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.comp-thead-tr { background: #262c36; }
+.comp-th { padding: .55rem .55rem; text-align: left; font-weight: 700; font-size: .68rem; color: #C9D1D9; text-transform: uppercase; letter-spacing: .06em; border-bottom: 1px solid var(--border); white-space: nowrap; }
 .comp-th-r { text-align: right; }
 .comp-row { border-bottom: 1px solid var(--border); transition: background .1s; }
 .comp-row:last-child { border-bottom: none; }
 .comp-row:nth-child(even) { background: rgba(255,255,255,.02); }
 .comp-row:hover { background: rgba(88,166,255,.07) !important; }
-.comp-td { padding: .42rem .55rem; color: var(--text); }
+.comp-td { padding: .5rem .55rem; color: var(--text); }
 .comp-td-name { font-weight: 500; font-size: .8rem; }
 .comp-td-num { text-align: right; font-variant-numeric: tabular-nums; color: var(--text2); font-size: .78rem; }
 .comp-row-cur { background: rgba(88,166,255,.06); }
