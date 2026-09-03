@@ -367,6 +367,9 @@ function initMicrovixSync() {
         label.textContent = `Microvix ${hm}`;
         btn.title = `Última sync: ${hm} — ${s.lastSync.updated} vendedores`;
         btn.classList.add('ok');
+        // A mesma hora aparece no canto do Faturamento Diário, como na Torre.
+        const sub = document.getElementById('dayCardSync');
+        if (sub) sub.textContent = `atualizado às ${hm} · dados Microvix`;
       }
     } catch {}
   }
@@ -1220,19 +1223,15 @@ function renderDashboard() {
     dayCard.className = 'main-card';
     dayCard.dataset.cardId = 'card-dia';
     dayCard.innerHTML = `
-      <div class="main-card-hdr">
-        <span class="main-card-title">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-          </svg>
-          Faturamento Diário
-        </span>
+      <div class="main-card-hdr dia-hdr-topo">
+        <span class="dia-eyebrow" id="dayCardEyebrow">Faturamento</span>
         <div class="dash-wk-nav">
           <button class="dash-wk-btn" id="dayCardPrev" title="Dia anterior">&#8592;</button>
           <span class="dash-wk-label" id="dayCardLabel"></span>
           <button class="dash-wk-btn" id="dayCardNext" title="Próximo dia">&#8594;</button>
           <button class="dash-wk-btn dash-fds-btn" id="dayCardFds" title="Último final de semana (Sex–Dom)">FDS</button>
         </div>
+        <span class="dia-sub" id="dayCardSync">dados Microvix</span>
       </div>
       <div class="main-card-body" id="dayCardBody"></div>
     `;
@@ -1266,6 +1265,12 @@ function renderDashboard() {
       const lbl = d === todayStr ? `Hoje · ${d.slice(8)}/${d.slice(5,7)}` : `${d.slice(8)}/${d.slice(5,7)}`;
       const lblEl = document.getElementById('dayCardLabel');
       lblEl.textContent = lbl;
+      // O rótulo do card repete a data com o dia da semana, como na Torre.
+      const olho = document.getElementById('dayCardEyebrow');
+      if (olho) {
+        const dow = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'][new Date(d + 'T00:00:00').getDay()];
+        olho.textContent = `Faturamento · ${d.slice(8)}/${d.slice(5, 7)} ${dow}`;
+      }
       lblEl.classList.toggle('dash-wk-label--future', d > cutoff);
       lblEl.title = d > cutoff ? 'Dia futuro — só a Meta Dia está disponível' : '';
       document.getElementById('dayCardPrev').disabled = d <= monthStart;
@@ -2026,17 +2031,13 @@ function _renderDayCardBody(body, dateStr) {
     byBoard[emp.board].push(emp);
   }
 
-  // O total do dia abre o card; as lojas ficam logo abaixo e cada uma abre nos
-  // seus vendedores. O bloco é preenchido no fim, quando os totais existem.
+  // O total do dia abre o card; embaixo, a faixa de lojas lado a lado; clicar
+  // numa delas abre os vendedores daquela loja. Tudo é preenchido no fim,
+  // quando os totais já existem.
   body.innerHTML = `
     <div class="dia-hero" id="diaHero"></div>
-    <div class="dia-col-hdr">
-      <span></span>
-      <span>Realizado</span>
-      <span>Meta Dia</span>
-      <span>PA</span>
-      <span>%</span>
-    </div>`;
+    <div class="dia-ticker" id="diaTicker"></div>
+    <div class="dia-detalhe" id="diaDetalhe"></div>`;
 
   let anyData = false;
   let grandVal = 0, grandMeta = 0, grandPecas = 0, grandAtend = 0, grandFluxo = 0;
@@ -2086,14 +2087,10 @@ function _renderDayCardBody(body, dateStr) {
       const empConv = iDay?.total > 0 ? iDay.conv / iDay.total * 100 : null;
       const pctCls  = pct == null ? '' : pct >= 100 ? 'dia-pct-ok' : pct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
       const cCls    = empConv == null ? '' : empConv >= 50 ? 'dia-conv-ok' : empConv >= 30 ? 'dia-conv-warn' : 'dia-conv-bad';
-      vendorRowsHtml.push(`
-        <div class="dia-row dia-vendor-row">
-          <span class="dia-name">${emp.apelido || emp.name.split(' ')[0]}</span>
-          <span class="dia-val">${valor > 0 ? fV(valor) : '—'}</span>
-          <span class="dia-meta">${metaDia > 0 ? fV(metaDia) : '—'}</span>
-          <span class="dia-pa">${pa != null ? pa.toFixed(2) : '—'}</span>
-          <span class="dia-pct ${pctCls}">${pct != null ? pct.toFixed(1) + '%' : '—'}</span>
-        </div>`);
+      vendorRowsHtml.push({
+        nome: emp.apelido || emp.name.split(' ')[0],
+        valor, meta: metaDia, pa, pct, pctCls,
+      });
     }
 
     grandVal   += storeTotalVal;
@@ -2111,39 +2108,12 @@ function _renderDayCardBody(body, dateStr) {
     const sPctCls    = storePct == null ? '' : storePct >= 100 ? 'dia-pct-ok' : storePct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
     const sConvCls   = storeConv == null ? '' : storeConv >= 30 ? 'dia-conv-ok' : storeConv >= 15 ? 'dia-conv-warn' : 'dia-conv-bad';
     grandFluxo += storeFluxo;
-    lojasDoDia.push({ label: bc.label, color: bc.color, valor: storeTotalVal });
-    const isAdmin  = !S.user?.board;
-    const isExp    = !isAdmin || _dayCardExpanded.has(bk);
-
-    // Store row (always visible) — shows totals + chevron, click to expand (admin only)
-    const storeRow = document.createElement('div');
-    storeRow.className = 'dia-row dia-store-row' + (isExp ? ' dia-store-expanded' : '');
-    storeRow.innerHTML = `
-      <span class="dia-name dia-store-label">
-        ${isAdmin ? `<span class="dia-chevron">${isExp ? '▾' : '▸'}</span>` : ''}
-        <span class="dash-store-dot" style="background:${bc.color}"></span>
-        ${bc.label}
-      </span>
-      <span class="dia-val">${storeTotalVal > 0 ? fV(storeTotalVal) : '—'}</span>
-      <span class="dia-meta">${storeTotalMeta > 0 ? fV(storeTotalMeta) : '—'}</span>
-      <span class="dia-pa">${storePa != null ? storePa.toFixed(2) : '—'}</span>
-      <span class="dia-pct ${sPctCls}">${storePct != null ? storePct.toFixed(1) + '%' : '—'}</span>`;
-    if (isAdmin) {
-      storeRow.style.cursor = 'pointer';
-      storeRow.addEventListener('click', () => {
-        if (_dayCardExpanded.has(bk)) _dayCardExpanded.delete(bk);
-        else _dayCardExpanded.add(bk);
-        _renderDayCardBody(body, dateStr);
-      });
-    }
-    body.appendChild(storeRow);
-
-    // Vendor rows (always visible for store users, toggle for admin)
-    if (isExp) {
-      const wrap = document.createElement('div');
-      wrap.innerHTML = vendorRowsHtml.join('');
-      while (wrap.firstChild) body.appendChild(wrap.firstChild);
-    }
+    lojasDoDia.push({
+      bk, label: bc.label, color: bc.color,
+      valor: storeTotalVal, meta: storeTotalMeta,
+      pa: storePa, pct: storePct, pctCls: sPctCls,
+      vendedores: vendorRowsHtml,
+    });
   }
 
   // ── O total do dia, em cima ────────────────────────────────────────────
@@ -2181,23 +2151,79 @@ function _renderDayCardBody(body, dateStr) {
          </div>` : ''}`;
   }
 
-  if (!anyData) {
-    body.insertAdjacentHTML('beforeend',
-      '<div style="padding:.85rem 1rem;font-size:.78rem;color:var(--muted)">Sem lançamentos para este dia.</div>');
-  } else {
-    const grandPa   = grandAtend > 0 ? grandPecas / grandAtend : null;
-    const grandPct  = grandMeta  > 0 ? grandVal   / grandMeta  * 100 : null;
-    const grandConv = (grandFluxo > 0 && grandAtend > 0) ? grandAtend / grandFluxo * 100 : null;
-    const gPctCls   = grandPct  == null ? '' : grandPct  >= 100 ? 'dia-pct-ok'  : grandPct  >= 70 ? 'dia-pct-warn'  : 'dia-pct-bad';
-    const gConvCls  = grandConv == null ? '' : grandConv >= 30  ? 'dia-conv-ok' : grandConv >= 15 ? 'dia-conv-warn' : 'dia-conv-bad';
-    body.insertAdjacentHTML('beforeend', `
-      <div class="dia-row dia-grand-total">
-        <span class="dia-name">TOTAL GERAL</span>
-        <span class="dia-val">${grandVal > 0 ? fV(grandVal) : '—'}</span>
-        <span class="dia-meta">${grandMeta > 0 ? fV(grandMeta) : '—'}</span>
-        <span class="dia-pa">${grandPa != null ? grandPa.toFixed(2) : '—'}</span>
-        <span class="dia-pct ${gPctCls}">${grandPct != null ? grandPct.toFixed(1) + '%' : '—'}</span>
-      </div>`);
+  // ── A faixa de lojas ───────────────────────────────────────────────────
+  // Uma célula por loja, lado a lado: nome, vendido sobre a meta do dia, % e
+  // PA. Quem enxerga uma loja só recebe a faixa já com os vendedores dela —
+  // não há o que expandir.
+  const tickerEl = body.querySelector('#diaTicker');
+  const detalheEl = body.querySelector('#diaDetalhe');
+  const podeAbrir = !!S.user?.board === false;   // admin e supervisor
+
+  if (tickerEl) {
+    if (!anyData) {
+      tickerEl.innerHTML = '';
+    } else if (podeAbrir) {
+      tickerEl.innerHTML = lojasDoDia.map(l => {
+        const aberta = _dayCardExpanded.has(l.bk);
+        return `<button class="tick${aberta ? ' open' : ''}" data-loja="${l.bk}" type="button">
+          <span class="tick-nome">
+            <span class="tick-chev">${aberta ? '▾' : '▸'}</span>
+            <i class="loja-tarja" style="background:${l.color}"></i>${_escHtml(l.label)}
+            ${l.pct != null && l.pct >= 100 ? '<span class="tick-bateu" title="bateu a meta do dia">🎉</span>' : ''}
+          </span>
+          <span class="tick-vm">${l.valor > 0 ? fV(l.valor) : '—'}<span class="mt"> / ${l.meta > 0 ? fV(l.meta) : '—'}</span></span>
+          <span class="tick-foot">
+            <span class="${l.pctCls}">${l.pct != null ? l.pct.toFixed(1) + '%' : '—'}</span>
+            <span class="pa">PA ${l.pa != null ? l.pa.toFixed(2) : '—'}</span>
+          </span>
+        </button>`;
+      }).join('');
+
+      tickerEl.querySelectorAll('[data-loja]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const k = btn.dataset.loja;
+          if (_dayCardExpanded.has(k)) _dayCardExpanded.delete(k);
+          else _dayCardExpanded.add(k);
+          _renderDayCardBody(body, dateStr);
+        });
+      });
+    } else {
+      // Loja: a faixa já é a equipe — não há nível para abrir.
+      const eu = lojasDoDia[0];
+      tickerEl.innerHTML = (eu?.vendedores || []).map(v => `<span class="tick">
+          <span class="tick-nome">${_escHtml(v.nome)}</span>
+          <span class="tick-vm">${v.valor > 0 ? fV(v.valor) : '—'}<span class="mt"> / ${v.meta > 0 ? fV(v.meta) : '—'}</span></span>
+          <span class="tick-foot">
+            <span class="${v.pctCls}">${v.pct != null ? v.pct.toFixed(1) + '%' : '—'}</span>
+            <span class="pa">PA ${v.pa != null ? v.pa.toFixed(2) : '—'}</span>
+          </span>
+        </span>`).join('');
+    }
+  }
+
+  // ── O detalhe das lojas abertas ────────────────────────────────────────
+  if (detalheEl) {
+    const abertas = podeAbrir ? lojasDoDia.filter(l => _dayCardExpanded.has(l.bk)) : [];
+    detalheEl.innerHTML = !anyData
+      ? '<div class="dia-hero-vazio" style="padding:.6rem 0">Sem lançamentos para este dia.</div>'
+      : abertas.length
+        ? `<div class="dia-hdr"><span>Vendedor</span><span class="num">Realizado</span><span class="num">Meta dia</span><span class="num">PA</span><span class="num">%</span></div>`
+          + abertas.map(l => `
+            <div class="dia-row store">
+              <span class="nm"><i class="loja-tarja" style="background:${l.color}"></i>${_escHtml(l.label)}</span>
+              <span class="num">${l.valor > 0 ? fV(l.valor) : '—'}</span>
+              <span class="num">${l.meta > 0 ? fV(l.meta) : '—'}</span>
+              <span class="num">${l.pa != null ? l.pa.toFixed(2) : '—'}</span>
+              <span class="num ${l.pctCls}">${l.pct != null ? l.pct.toFixed(1) + '%' : '—'}</span>
+            </div>` + l.vendedores.map(v => `
+            <div class="dia-row vend">
+              <span class="nm">${_escHtml(v.nome)}</span>
+              <span class="num">${v.valor > 0 ? fV(v.valor) : '—'}</span>
+              <span class="num">${v.meta > 0 ? fV(v.meta) : '—'}</span>
+              <span class="num">${v.pa != null ? v.pa.toFixed(2) : '—'}</span>
+              <span class="num ${v.pctCls}">${v.pct != null ? v.pct.toFixed(1) + '%' : '—'}</span>
+            </div>`).join('')).join('')
+        : '';
   }
 }
 
