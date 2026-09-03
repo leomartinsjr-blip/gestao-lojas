@@ -13030,10 +13030,11 @@ function pautaVazia(y, m, board) {
     year: y, month: m, board,
     status: 'rascunho',
     realizadaEm: '', participantes: '',
-    comentarios: { performance: '', vendedores: '', rh: '', produtos: '' },
+    comentarios: { performance: '', vendedores: '', rh: '', produtos: '', balanco: '' },
     vendedorNotas: {},
     rhItens: [], demandas: [], acoes: [],
     estoqueManual: { custo: 0, venda: 0, data: '', obs: '' },
+    balanco: { diferenca: 0, data: '', obs: '', imagens: [] },
     produtosResumo: null, roteiro: null, snapshot: null,
     createdAt: null, updatedAt: null, updatedBy: '',
   };
@@ -13059,6 +13060,44 @@ function pautaAcoesAnteriores(db, y, m, board) {
       naPauta: !!item,
     };
   });
+}
+
+// ── Prints do fechamento de balanço ──────────────────────────────────────────
+// O documento principal já carrega a rede inteira e é lido a cada tela: imagem
+// nenhuma entra nele. Cada print vira um documento próprio, e a pauta guarda só
+// a ficha (id, nome, tamanho). Sem Mongo — desenvolvimento — cai no disco.
+const PAUTA_IMG_MAX = 8 * 1024 * 1024; // por print, já decodificado
+
+function pautaImgPath(id) {
+  return path.join(UPLOADS_DIR, `pauta-balanco-${id}.bin`);
+}
+
+async function pautaImgSalvar(id, mime, buf) {
+  if (mongoDb) {
+    await mongoDb.collection('pautaImagens').replaceOne(
+      { _id: id },
+      { _id: id, mime, data: buf, createdAt: new Date().toISOString() },
+      { upsert: true }
+    );
+    return;
+  }
+  fs.writeFileSync(pautaImgPath(id), buf);
+}
+
+async function pautaImgLer(id) {
+  if (mongoDb) {
+    const doc = await mongoDb.collection('pautaImagens').findOne({ _id: id });
+    if (!doc) return null;
+    return { mime: doc.mime, buf: doc.data.buffer ? Buffer.from(doc.data.buffer) : Buffer.from(doc.data) };
+  }
+  const f = pautaImgPath(id);
+  if (!fs.existsSync(f)) return null;
+  return { mime: null, buf: fs.readFileSync(f) };
+}
+
+async function pautaImgApagar(id) {
+  if (mongoDb) { await mongoDb.collection('pautaImagens').deleteOne({ _id: id }); return; }
+  try { fs.unlinkSync(pautaImgPath(id)); } catch {}
 }
 
 // GET /pauta — serve a página
@@ -13145,8 +13184,14 @@ app.put('/api/pauta/:year/:month/:board', requireEscritorioOrAdmin, async (req, 
     const p   = { ...pautaVazia(y, m, board), ...(db.pautas[key] || {}) };
 
     const campos = ['participantes', 'realizadaEm', 'comentarios', 'vendedorNotas',
-                    'rhItens', 'demandas', 'acoes', 'estoqueManual', 'produtosResumo', 'roteiro'];
+                    'rhItens', 'demandas', 'acoes', 'estoqueManual', 'balanco', 'produtosResumo', 'roteiro'];
     for (const c of campos) if (c in req.body) p[c] = req.body[c];
+
+    // A lista de prints é do servidor: quem manda nela são as rotas de imagem.
+    // Senão um autosave disparado antes do upload voltar apagaria o print.
+    if ('balanco' in req.body) {
+      p.balanco = { ...p.balanco, ...req.body.balanco, imagens: (db.pautas[key]?.balanco?.imagens) || [] };
+    }
 
     if (!p.createdAt) p.createdAt = new Date().toISOString();
     p.updatedAt = new Date().toISOString();
@@ -13154,6 +13199,88 @@ app.put('/api/pauta/:year/:month/:board', requireEscritorioOrAdmin, async (req, 
     db.pautas[key] = p;
     await writeDB(db);
     res.json(p);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/pauta/:y/:m/:board/balanco/imagem — recebe o print colado (dataURL)
+app.post('/api/pauta/:year/:month/:board/balanco/imagem', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const y = parseInt(req.params.year), m = parseInt(req.params.month);
+    const board = req.params.board;
+    if (!PAUTA_BOARDS.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
+
+    const m2 = /^data:(image\/[a-z+.-]+);base64,(.+)$/i.exec(String(req.body?.dataUrl || ''));
+    if (!m2) return res.status(400).json({ error: 'Mande uma imagem' });
+    const mime = m2[1].toLowerCase();
+    const buf  = Buffer.from(m2[2], 'base64');
+    if (!buf.length) return res.status(400).json({ error: 'Imagem vazia' });
+    if (buf.length > PAUTA_IMG_MAX)
+      return res.status(413).json({ error: `Imagem grande demais (${(buf.length / 1048576).toFixed(1)} MB). O limite é 8 MB.` });
+
+    const db = await readDB();
+    if (!db.pautas) db.pautas = {};
+    const key = pautaKey(y, m, board);
+    const p   = { ...pautaVazia(y, m, board), ...(db.pautas[key] || {}) };
+    if (!p.balanco) p.balanco = { diferenca: 0, data: '', obs: '', imagens: [] };
+    if (!Array.isArray(p.balanco.imagens)) p.balanco.imagens = [];
+    if (p.balanco.imagens.length >= 12)
+      return res.status(400).json({ error: 'Limite de 12 prints por mês' });
+
+    const id = crypto.randomBytes(8).toString('hex');
+    await pautaImgSalvar(id, mime, buf);
+
+    p.balanco.imagens.push({
+      id, mime,
+      nome: String(req.body?.nome || '').slice(0, 120) || 'print do balanço',
+      tamanho: buf.length,
+      addedAt: new Date().toISOString(),
+      addedBy: req.session.user.label || req.session.user.username,
+    });
+    if (!p.createdAt) p.createdAt = new Date().toISOString();
+    p.updatedAt = new Date().toISOString();
+    p.updatedBy = req.session.user.label || req.session.user.username;
+    db.pautas[key] = p;
+    await writeDB(db);
+    res.json({ imagens: p.balanco.imagens, updatedAt: p.updatedAt, updatedBy: p.updatedBy });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/pauta/:y/:m/:board/balanco/imagem/:id — serve o print
+app.get('/api/pauta/:year/:month/:board/balanco/imagem/:id', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const y = parseInt(req.params.year), m = parseInt(req.params.month);
+    const board = req.params.board;
+    const db = await readDB();
+    const p  = db.pautas?.[pautaKey(y, m, board)];
+    const ficha = (p?.balanco?.imagens || []).find(x => x.id === req.params.id);
+    if (!ficha) return res.status(404).json({ error: 'Print não encontrado' });
+
+    const img = await pautaImgLer(ficha.id);
+    if (!img) return res.status(404).json({ error: 'Print não encontrado' });
+    res.set('Content-Type', img.mime || ficha.mime || 'image/jpeg');
+    res.set('Cache-Control', 'private, max-age=86400');
+    res.send(img.buf);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/pauta/:y/:m/:board/balanco/imagem/:id
+app.delete('/api/pauta/:year/:month/:board/balanco/imagem/:id', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const y = parseInt(req.params.year), m = parseInt(req.params.month);
+    const board = req.params.board;
+    const db  = await readDB();
+    const key = pautaKey(y, m, board);
+    const p   = db.pautas?.[key];
+    if (!p?.balanco?.imagens?.length) return res.status(404).json({ error: 'Print não encontrado' });
+    if (!p.balanco.imagens.some(x => x.id === req.params.id))
+      return res.status(404).json({ error: 'Print não encontrado' });
+
+    p.balanco.imagens = p.balanco.imagens.filter(x => x.id !== req.params.id);
+    p.updatedAt = new Date().toISOString();
+    p.updatedBy = req.session.user.label || req.session.user.username;
+    await writeDB(db);
+    await pautaImgApagar(req.params.id);
+    res.json({ imagens: p.balanco.imagens, updatedAt: p.updatedAt, updatedBy: p.updatedBy });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -13205,6 +13332,7 @@ app.post('/api/pauta/:year/:month/:board/fechar', requireEscritorioOrAdmin, asyn
       rh:          pautaRH(db, board, y, m, todayBRT()),
       produtos:    p.produtosResumo || null,
       estoque:     p.estoqueManual  || null,
+      balanco:     p.balanco        || null,
       estoqueHistorico: pautaEstoqueHistorico(db, y, m, board, 12),
       historico:   snapHist,
       premiacoes:  snapPrem,
@@ -13334,6 +13462,17 @@ app.post('/api/pauta/:year/:month/:board/roteiro', requireEscritorioOrAdmin, asy
           estoqueMicrovixRS: x.microvix ? n(x.microvix.valor) : null,
         })),
       },
+      fechamentoDeBalanco: (p.balanco && (p.balanco.diferenca || p.balanco.data || (p.balanco.imagens || []).length))
+        ? {
+            obs: 'Diferença total apurada no fechamento do balanço da loja, em R$. Negativo é falta de mercadoria contra o sistema; positivo é sobra. prints = quantas telas do fechamento foram anexadas na pauta (você não as vê).',
+            diferencaRS: n(p.balanco.diferenca),
+            balancoEm: p.balanco.data || null,
+            observacao: p.balanco.obs || '',
+            prints: (p.balanco.imagens || []).length,
+            percentualDoEstoqueACusto: (p.estoqueManual?.custo > 0 && p.balanco.diferenca)
+              ? n((Math.abs(p.balanco.diferenca) / p.estoqueManual.custo) * 100) : null,
+          }
+        : null,
       pendenciasAbertas: pautaPendencias(db, board).map(x => x.text),
       acoesDoMesAnterior: pautaAcoesAnteriores(db, y, m, board),
       demandasAnotadas: p.demandas || [],
@@ -13356,6 +13495,7 @@ Regras:
 - Melhora só conta com o número ao lado (ex: "PA 1,42 contra média de 1,25 nos 3 meses fechados"). Melhorar de base fraca continua sendo base fraca: reconheça o movimento sem dizer que o indicador está bom.
 - Prêmio semanal é resultado, não benefício: quem ganhou pouco ou nada ganhou é quem não bateu as semanas. Use o valor para mostrar quanto ficou na mesa, sem transformar a reunião em conversa de salário.
 - Em "estoqueUltimos12Meses", o que acusa problema é o estoque crescer sem a venda crescer, ou a cobertura passar de uns 3 meses. Mês com custo e venda zerados é mês que ninguém apurou: cobre a apuração, não conclua que o estoque sumiu.
+- Em "fechamentoDeBalanco", diferença negativa é mercadoria que faltou no balanço. Cite o valor e, quando houver, o quanto ele representa do estoque a custo; falta relevante vira pergunta sobre causa (furto, erro de entrada, transferência não baixada) e ação, não acusação. Sem fechamento lançado, cobre o lançamento.
 - Pergunta boa é aberta e sobre causa ("o que aconteceu com...?"), não sobre culpa.
 - Ação combinada tem verbo, dono e prazo. No máximo 5.
 - Quem está marcado como gerente não é cobrado por meta individual do mesmo jeito que vendedor.

@@ -106,6 +106,22 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
 .pa-add-row{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}
 .pa-add-row .grow{flex:1;min-width:170px}
 
+/* ── Fechamento de balanço ── */
+/* Linha própria, não .pa-add-row: a diferença apurada tem que sair no papel. */
+.pa-bal-row{display:flex;gap:.4rem;flex-wrap:wrap;align-items:center}
+.pa-bal-row .grow{flex:1;min-width:170px}
+.pa-drop{border:1px dashed #30363d;border-radius:7px;background:#0d1117;color:#8b949e;font-size:.79rem;padding:.7rem .8rem;display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;cursor:pointer}
+.pa-drop:hover,.pa-drop:focus{border-color:#388bfd;color:#c9d1d9;outline:none}
+.pa-drop.over{border-color:#3fb950;background:#3fb95010;color:#c9d1d9}
+.pa-drop.busy{opacity:.6;pointer-events:none}
+.pa-imgs{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:.55rem;margin-top:.6rem}
+.pa-img{background:#0d1117;border:1px solid #21262d;border-radius:7px;overflow:hidden;position:relative}
+.pa-img img{display:block;width:100%;height:128px;object-fit:cover;background:#161b22}
+.pa-img-meta{font-size:.68rem;color:#6e7681;padding:.3rem .45rem;display:flex;align-items:center;gap:.35rem}
+.pa-img-meta .grow{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pa-img .pa-del{position:absolute;top:.25rem;right:.25rem;background:#0d1117cc;border:1px solid #30363d;border-radius:5px;color:#8b949e}
+.pa-img .pa-del:hover{color:#f85149;border-color:#f8514966}
+
 /* ── Pendências / ações anteriores ── */
 .pa-pend{display:flex;align-items:flex-start;gap:.5rem;padding:.35rem 0;border-bottom:1px solid #1a1f26;font-size:.8rem}
 .pa-pend:last-child{border-bottom:none}
@@ -167,6 +183,11 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
   .pa-tbl{min-width:0;font-size:.62rem}
   .pa-tbl th,.pa-tbl td{padding:.22rem .3rem}
   .hist-delta{font-size:.55rem}
+  .pa-drop{display:none!important}
+  /* No papel o print do balanço é a prova: inteiro, não recortado. */
+  .pa-imgs{grid-template-columns:1fr}
+  .pa-img{border-color:#ccc;background:#fff;break-inside:avoid}
+  .pa-img img{height:auto;max-height:none;object-fit:contain}
 }
 </style>
 </head>
@@ -298,19 +319,48 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
       </div>
     </div>
 
-    <!-- 6 · Pendências abertas -->
+    <!-- 6 · Fechamento de balanço -->
     <div class="pa-card">
       <div class="pa-card-hdr">
         <span class="pa-card-num">6</span>
+        <span class="pa-card-title">Fechamento de balanço <span class="pa-card-sub" id="balSub"></span></span>
+      </div>
+      <div class="pa-card-body">
+        <div class="pa-bal-row">
+          <span class="pa-card-sub">Diferença total</span>
+          <input class="pa-inp" id="balDif" inputmode="decimal" placeholder="R$ 0,00" style="min-width:140px">
+          <span class="pa-card-sub">Balanço em</span>
+          <input class="pa-inp" id="balData" type="date">
+          <input class="pa-inp grow" id="balObs" placeholder="O que explica a diferença">
+        </div>
+        <div id="balDeriv" class="pa-legend"></div>
+
+        <div class="pa-sub-hdr">Print do fechamento</div>
+        <div class="pa-drop" id="balDrop" tabindex="0">
+          <span>Cole a imagem aqui (<b>Ctrl+V</b>), arraste o arquivo ou </span>
+          <button class="pa-btn ghost" id="balPick" type="button">escolha um arquivo</button>
+        </div>
+        <input type="file" id="balFile" accept="image/*" multiple style="display:none">
+        <div class="pa-imgs" id="balImgs"></div>
+
+        <div class="pa-ta-lbl">Comentário sobre o balanço</div>
+        <textarea class="pa-ta" id="cmtBalanco" placeholder="Onde a diferença se concentrou, o que já foi conferido, o que fica combinado…"></textarea>
+      </div>
+    </div>
+
+    <!-- 7 · Pendências abertas -->
+    <div class="pa-card">
+      <div class="pa-card-hdr">
+        <span class="pa-card-num">7</span>
         <span class="pa-card-title">Pendências e ações anteriores <span class="pa-card-sub" id="pendSub"></span></span>
       </div>
       <div class="pa-card-body" id="pendBody"></div>
     </div>
 
-    <!-- 7 · Demandas adicionais -->
+    <!-- 8 · Demandas adicionais -->
     <div class="pa-card">
       <div class="pa-card-hdr">
-        <span class="pa-card-num">7</span>
+        <span class="pa-card-num">8</span>
         <span class="pa-card-title">Demandas adicionais</span>
       </div>
       <div class="pa-card-body">
@@ -323,10 +373,10 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
       </div>
     </div>
 
-    <!-- 8 · Ações combinadas -->
+    <!-- 9 · Ações combinadas -->
     <div class="pa-card">
       <div class="pa-card-hdr">
-        <span class="pa-card-num">8</span>
+        <span class="pa-card-num">9</span>
         <span class="pa-card-title">Ações combinadas <span class="pa-card-sub">viram itens de pauta da loja ao fechar a reunião</span></span>
       </div>
       <div class="pa-card-body">
@@ -340,10 +390,10 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
       </div>
     </div>
 
-    <!-- 9 · Roteiro da conversa -->
+    <!-- 10 · Roteiro da conversa -->
     <div class="pa-card">
       <div class="pa-card-hdr">
-        <span class="pa-card-num">9</span>
+        <span class="pa-card-num">10</span>
         <span class="pa-card-title">Roteiro da conversa <span class="pa-card-sub" id="iaSub">gerado a partir dos números acima</span></span>
         <button class="pa-btn" id="btnIA">Gerar roteiro</button>
       </div>

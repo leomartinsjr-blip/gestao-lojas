@@ -89,6 +89,7 @@ async function salvar() {
       demandas:      p.demandas,
       acoes:         p.acoes,
       estoqueManual: p.estoqueManual,
+      balanco:       p.balanco,
       produtosResumo: p.produtosResumo,
     });
     S.pauta.updatedAt = salvo.updatedAt;
@@ -114,7 +115,9 @@ async function carregar() {
     S.pauta = r.pauta;
     S.dados = r.dados;
     S.label = r.label;
-    if (!S.pauta.comentarios) S.pauta.comentarios = { performance: '', vendedores: '', rh: '', produtos: '' };
+    if (!S.pauta.comentarios) S.pauta.comentarios = { performance: '', vendedores: '', rh: '', produtos: '', balanco: '' };
+    if (!S.pauta.balanco) S.pauta.balanco = { diferenca: 0, data: '', obs: '', imagens: [] };
+    if (!Array.isArray(S.pauta.balanco.imagens)) S.pauta.balanco.imagens = [];
     if (!S.pauta.vendedorNotas) S.pauta.vendedorNotas = {};
     if (!Array.isArray(S.pauta.rhItens))  S.pauta.rhItens  = [];
     if (!Array.isArray(S.pauta.demandas)) S.pauta.demandas = [];
@@ -139,6 +142,7 @@ function renderTudo() {
   renderLista('acoes');
   renderProdutos();
   renderEstoqueManual();
+  renderBalanco();
   renderRoteiro();
   renderRodape();
 }
@@ -502,6 +506,7 @@ function renderEstoqueManual() {
   if (e.venda > 0 && ritmo > 0) partes.push(`${fDec(e.venda / ritmo, 1)} meses de venda parados na loja, no ritmo deste mês`);
   $('estDeriv').innerHTML = partes.length ? partes.join(' · ') : '';
   renderEstoqueHistorico();
+  if (S.pauta.balanco) renderBalResumo();  // a diferença do balanço é lida como % deste custo
 }
 
 // Os doze meses de estoque declarado. O mês em curso sai do que está sendo
@@ -567,6 +572,205 @@ function renderEstoqueHistorico() {
     + ' Meses parados = estoque a preço de venda dividido pelo faturamento do mês; verde até 3 meses, vermelho acima de 6.'
     + ' A coluna do Microvix é a foto do sistema no dia em que a pauta daquele mês foi montada.';
 }
+
+// ── 6 · Fechamento de balanço ────────────────────────────────────────────────
+// A diferença apurada é o número que se cobra na reunião; o print é de onde ele
+// saiu. A imagem não anda dentro do JSON da pauta: sobe por rota própria e volta
+// como URL, senão o documento da rede engorda um print por loja por mês.
+const BAL_LADO_MAX = 2000;        // px — print de balanço é tabela: tem que dar para ler
+const BAL_ORIG_MAX = 900 * 1024;  // abaixo disso sobe como veio, sem reencodar
+
+function balImgUrl(id) {
+  return `/api/pauta/${S.year}/${S.month}/${S.board}/balanco/imagem/${id}`;
+}
+
+function renderBalanco() {
+  const b = S.pauta.balanco || (S.pauta.balanco = { diferenca: 0, data: '', obs: '', imagens: [] });
+  if (!Array.isArray(b.imagens)) b.imagens = [];
+  if (document.activeElement?.id !== 'balDif') $('balDif').value = b.diferenca ? fBRL2(b.diferenca) : '';
+  $('balData').value = b.data || '';
+  if (document.activeElement?.id !== 'balObs') $('balObs').value = b.obs || '';
+  if (document.activeElement?.id !== 'cmtBalanco') $('cmtBalanco').value = S.pauta.comentarios.balanco || '';
+  renderBalResumo();
+  renderBalImagens();
+}
+
+function renderBalResumo() {
+  const b = S.pauta.balanco, dif = Number(b.diferenca || 0);
+  const qtd = (b.imagens || []).length;
+
+  $('balSub').innerHTML = dif
+    ? `<span class="${dif < 0 ? 'neg' : 'pos'}">${dif < 0 ? 'falta' : 'sobra'} de ${fBRL2(Math.abs(dif))}</span>`
+      + (b.data ? ` · balanço de ${fData(b.data)}` : '')
+    : (qtd ? 'print anexado, valor ainda não lançado' : 'não lançado');
+
+  const partes = [];
+  if (dif) {
+    const custo = S.pauta.estoqueManual?.custo || 0;
+    if (custo > 0) partes.push(`${fDec((Math.abs(dif) / custo) * 100, 2)}% do estoque a custo apurado (${fBRL(custo)})`);
+    const ritmo = S.dados.loja.projecao ?? S.dados.loja.venda;
+    if (ritmo > 0) partes.push(`${fDec((Math.abs(dif) / ritmo) * 100, 1)}% do faturamento do mês`);
+  }
+  partes.push('Negativo é falta de mercadoria contra o sistema; positivo é sobra.');
+  $('balDeriv').textContent = partes.join(' · ');
+}
+
+function renderBalImagens() {
+  const el = $('balImgs');
+  const arr = S.pauta.balanco.imagens || [];
+  if (!arr.length) {
+    el.innerHTML = '<div class="pa-empty">Nenhum print anexado.</div>';
+    return;
+  }
+  el.innerHTML = arr.map(im => `<div class="pa-img">
+    <a href="${balImgUrl(im.id)}" target="_blank" rel="noopener" title="Abrir em tamanho real">
+      <img src="${balImgUrl(im.id)}" alt="${esc(im.nome || 'print do balanço')}" loading="lazy">
+    </a>
+    <button class="pa-del" data-img="${esc(im.id)}" title="Remover">✕</button>
+    <div class="pa-img-meta">
+      <span class="grow">${esc(im.nome || 'print do balanço')}</span>
+      <span>${Math.max(1, Math.round((im.tamanho || 0) / 1024))} KB</span>
+    </div>
+  </div>`).join('');
+
+  el.querySelectorAll('[data-img]').forEach(b => {
+    b.addEventListener('click', () => removerImagemBalanco(b.dataset.img));
+  });
+}
+
+// Print grande vira JPEG reduzido; print pequeno sobe como veio — reencodar
+// texto de tabela só borra o que a gerente precisa ler.
+function prepararImagem(file) {
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onerror = () => reject(new Error('não deu para ler o arquivo'));
+    fr.onload = () => {
+      const dataUrl = fr.result;
+      const img = new Image();
+      img.onerror = () => reject(new Error('o arquivo não é uma imagem válida'));
+      img.onload = () => {
+        const lado = Math.max(img.width, img.height);
+        if (lado <= BAL_LADO_MAX && file.size <= BAL_ORIG_MAX) return resolve(dataUrl);
+        const escala = Math.min(1, BAL_LADO_MAX / lado);
+        const cv = document.createElement('canvas');
+        cv.width  = Math.max(1, Math.round(img.width  * escala));
+        cv.height = Math.max(1, Math.round(img.height * escala));
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = '#fff';                        // PNG transparente vira preto no JPEG
+        ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.drawImage(img, 0, 0, cv.width, cv.height);
+        resolve(cv.toDataURL('image/jpeg', 0.9));
+      };
+      img.src = dataUrl;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
+function imagensDe(dt) {
+  const out = [];
+  if (!dt) return out;
+  for (const it of dt.items || []) {
+    if (it.kind === 'file' && /^image\//i.test(it.type)) { const f = it.getAsFile(); if (f) out.push(f); }
+  }
+  if (!out.length) for (const f of dt.files || []) if (/^image\//i.test(f.type)) out.push(f);
+  return out;
+}
+
+let _balEnviando = false;
+async function anexarImagens(files) {
+  if (!files.length || _balEnviando) return;
+  _balEnviando = true;
+  const drop = $('balDrop');
+  drop.classList.add('busy');
+  const texto = drop.querySelector('span');
+  const original = texto ? texto.innerHTML : '';
+  try {
+    for (let i = 0; i < files.length; i++) {
+      if (texto) texto.textContent = files.length > 1 ? `Enviando ${i + 1} de ${files.length}…` : 'Enviando…';
+      const dataUrl = await prepararImagem(files[i]);
+      const r = await api('POST', `/api/pauta/${S.year}/${S.month}/${S.board}/balanco/imagem`,
+        { nome: files[i].name || 'print do balanço', dataUrl });
+      S.pauta.balanco.imagens = r.imagens;
+      S.pauta.updatedAt = r.updatedAt;
+      S.pauta.updatedBy = r.updatedBy;
+    }
+    renderBalResumo();
+    renderBalImagens();
+    renderRodape();
+    toast(files.length > 1 ? `${files.length} prints anexados` : 'Print anexado');
+  } catch (e) {
+    toast('Não anexou: ' + e.message, true);
+  } finally {
+    if (texto) texto.innerHTML = original;
+    drop.classList.remove('busy');
+    _balEnviando = false;
+  }
+}
+
+async function removerImagemBalanco(id) {
+  if (!confirm('Remover este print da pauta?')) return;
+  try {
+    const r = await api('DELETE', `/api/pauta/${S.year}/${S.month}/${S.board}/balanco/imagem/${id}`);
+    S.pauta.balanco.imagens = r.imagens;
+    S.pauta.updatedAt = r.updatedAt;
+    S.pauta.updatedBy = r.updatedBy;
+    renderBalResumo();
+    renderBalImagens();
+    renderRodape();
+  } catch (e) {
+    toast(e.message, true);
+  }
+}
+
+function ligarBalanco() {
+  const drop = $('balDrop'), file = $('balFile');
+
+  $('balDif').addEventListener('input', () => {
+    S.pauta.balanco.diferenca = parseValor($('balDif').value);
+    renderBalResumo();
+    queueSave();
+  });
+  $('balDif').addEventListener('blur', () => {
+    $('balDif').value = S.pauta.balanco.diferenca ? fBRL2(S.pauta.balanco.diferenca) : '';
+  });
+  $('balData').addEventListener('change', () => { S.pauta.balanco.data = $('balData').value; renderBalResumo(); queueSave(); });
+  $('balObs').addEventListener('input',   () => { S.pauta.balanco.obs  = $('balObs').value;  queueSave(); });
+
+  drop.addEventListener('click', () => file.click());
+  drop.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); file.click(); } });
+  $('balPick').addEventListener('click', e => { e.stopPropagation(); file.click(); });
+  file.addEventListener('change', () => {
+    anexarImagens([...file.files].filter(f => /^image\//i.test(f.type)));
+    file.value = '';
+  });
+
+  for (const ev of ['dragenter', 'dragover']) {
+    drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); });
+  }
+  for (const ev of ['dragleave', 'dragend']) {
+    drop.addEventListener(ev, () => drop.classList.remove('over'));
+  }
+  drop.addEventListener('drop', e => {
+    e.preventDefault();
+    drop.classList.remove('over');
+    anexarImagens(imagensDe(e.dataTransfer));
+  });
+
+  // Ctrl+V em qualquer lugar da página que não seja campo de texto: o print da
+  // tela de fechamento cai aqui sem precisar procurar o quadro certo.
+  document.addEventListener('paste', e => {
+    if (!S.pauta) return;
+    const alvo = e.target;
+    const digitando = alvo && (alvo.tagName === 'INPUT' || alvo.tagName === 'TEXTAREA' || alvo.isContentEditable);
+    if (digitando && alvo !== drop) return;
+    const imgs = imagensDe(e.clipboardData);
+    if (!imgs.length) return;
+    e.preventDefault();
+    anexarImagens(imgs);
+  });
+}
+
 // ── 4 · RH ───────────────────────────────────────────────────────────────────
 function alerta(nivel, titulo, meta, pill, pillCls) {
   return `<div class="pa-alert ${nivel}">
@@ -981,7 +1185,7 @@ async function init() {
   $('btnProd').addEventListener('click', carregarProdutos);
   $('btnIA').addEventListener('click', gerarRoteiro);
 
-  for (const [id, campo] of [['cmtPerformance', 'performance'], ['cmtVendedores', 'vendedores'], ['cmtRh', 'rh'], ['cmtProdutos', 'produtos']]) {
+  for (const [id, campo] of [['cmtPerformance', 'performance'], ['cmtVendedores', 'vendedores'], ['cmtRh', 'rh'], ['cmtProdutos', 'produtos'], ['cmtBalanco', 'balanco']]) {
     $(id).addEventListener('input', () => { S.pauta.comentarios[campo] = $(id).value; queueSave(); });
   }
   for (const id of ['estCusto', 'estVenda']) {
@@ -994,6 +1198,8 @@ async function init() {
   }
   $('estData').addEventListener('change', () => { S.pauta.estoqueManual.data = $('estData').value; queueSave(); });
   $('estObs').addEventListener('input', () => { S.pauta.estoqueManual.obs = $('estObs').value; queueSave(); });
+
+  ligarBalanco();
 
   $('realizadaEm').addEventListener('change', () => { S.pauta.realizadaEm = $('realizadaEm').value; queueSave(); });
   $('participantes').addEventListener('input', () => { S.pauta.participantes = $('participantes').value; queueSave(); });
