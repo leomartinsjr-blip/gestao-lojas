@@ -94,8 +94,6 @@ function applyUserPermissions(user) {
   const indevaEl = document.getElementById('indevaBtn');
   if (indevaEl) indevaEl.style.display = indevaVisible ? '' : 'none';
 
-  const dreEl = document.getElementById('dreBtn');
-  if (dreEl) dreEl.style.display = (user.username === 'leonardo') ? 'flex' : 'none';
   const icmsEl = document.getElementById('icmsBtn');
   if (icmsEl) icmsEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
   const conferenciaEl = document.getElementById('conferenciaBtn');
@@ -13591,7 +13589,7 @@ function _updateDreMesLabel() {
 }
 
 function initDreModal() {
-  document.getElementById('dreBtn').addEventListener('click', openDreModal);
+  document.getElementById('dreBtn')?.addEventListener('click', openDreModal);
   document.getElementById('dreClose').addEventListener('click', closeDreModal);
   document.getElementById('dreOverlay').addEventListener('click', e => { if (e.target.id === 'dreOverlay') closeDreModal(); });
 
