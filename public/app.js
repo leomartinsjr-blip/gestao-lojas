@@ -51,8 +51,13 @@ function temaEscuroAgora() {
 }
 
 function aplicaTema(tema) {
-  if (tema) document.documentElement.setAttribute('data-theme', tema);
-  else      document.documentElement.removeAttribute('data-theme');
+  // Sem isto, todo elemento com transition de cor troca de tema animando — e
+  // alguns ficam com a cor do tema antigo até a próxima repintura.
+  const raiz = document.documentElement;
+  raiz.classList.add('sem-transicao');
+  if (tema) raiz.setAttribute('data-theme', tema);
+  else      raiz.removeAttribute('data-theme');
+  requestAnimationFrame(() => requestAnimationFrame(() => raiz.classList.remove('sem-transicao')));
   _corCache.clear();
   const btn = document.getElementById('themeBtn');
   if (btn) {
@@ -888,6 +893,154 @@ function _renderPisoAviso(c) {
   c.appendChild(el);
 }
 
+// ── Faixa de resumo ─────────────────────────────────────────────────────────
+// O painel começava direto na tabela do dia. Aqui vêm antes os quatro números
+// que decidem se o mês está de pé — e as barras do mês contra a linha da meta,
+// que é o que mostra a forma do mês, não só o ponto de hoje.
+function _renderResumoRede(panel, ctx) {
+  const { visible, byBoard, prefix, cutoff, daysInMonth, defW, weightAccum } = ctx;
+  const pad2 = n => String(n).padStart(2, '0');
+
+  let metaMes = 0, realizado = 0;
+  const porDia = {};
+  for (const [bk] of visible) {
+    for (const emp of (byBoard[bk] || [])) {
+      const vs = S.vsales[emp.id] || {};
+      metaMes += vs.meta?.mensal || 0;
+      for (const [dia, ent] of Object.entries(vs.entries || {})) {
+        if (!dia.startsWith(prefix)) continue;
+        const v = ent.value || 0;
+        realizado += v;
+        porDia[dia] = (porDia[dia] || 0) + v;
+      }
+    }
+  }
+  // Sem meta e sem venda não há resumo — some em vez de mostrar quatro traços.
+  if (metaMes <= 0 && realizado <= 0) return;
+
+  const pesoDe   = d => (S.weights[d] ?? defW);
+  const metaDe   = d => metaMes * pesoDe(d) / 100;
+  const projecao = weightAccum > 0 ? realizado / (weightAccum / 100) : null;
+  const vendidoNoDia = porDia[cutoff] || 0;
+  const metaDoDia    = metaDe(cutoff);
+  const pctDia  = metaDoDia > 0 ? vendidoNoDia / metaDoDia * 100 : null;
+  const pctProj = metaMes   > 0 && projecao != null ? projecao / metaMes * 100 : null;
+  const falta   = projecao != null ? metaMes - projecao : null;
+
+  const dias = [];
+  for (let d = 1; d <= daysInMonth; d++) {
+    const ds = `${S.year}-${pad2(S.month)}-${pad2(d)}`;
+    dias.push({ ds, dia: d, valor: porDia[ds] || 0, meta: metaDe(ds), passado: ds <= cutoff, hoje: ds === cutoff });
+  }
+
+  const fRS  = v => 'R$ ' + Math.round(v || 0).toLocaleString('pt-BR');
+  const fRS2 = v => 'R$ ' + (v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const cls  = (p, alvo = 100) => p == null ? '' : p >= alvo ? 'kpi-pos' : 'kpi-neg';
+  const rede = visible.length === 1 ? (visible[0][1].label || 'Loja') : 'Rede';
+  const dataCurta = `${cutoff.slice(8)}/${cutoff.slice(5, 7)}`;
+  const diasCorridos = dias.filter(d => d.passado).length;
+
+  const tile = (rot, val, pe, larg, clsBarra) => `
+    <div class="rs-kpi">
+      <span class="rs-rot">${rot}</span>
+      <span class="rs-val">${val}</span>
+      <span class="rs-pe">${pe}</span>
+      <span class="rs-meter"><i class="${clsBarra || ''}" style="width:${Math.max(0, Math.min(100, larg || 0)).toFixed(1)}%"></i></span>
+    </div>`;
+
+  const el = document.createElement('section');
+  el.className = 'dash-resumo';
+  el.innerHTML =
+    tile(`Vendido em ${dataCurta}`, fRS(vendidoNoDia),
+         metaDoDia > 0
+           ? `<span class="rs-tag ${cls(pctDia)}">${pctDia.toFixed(0)}% da meta do dia</span> meta ${fRS(metaDoDia)}`
+           : 'sem meta lançada para o dia',
+         pctDia, pctDia != null && pctDia < 100 ? 'abaixo' : '') +
+    tile('Mês até aqui', fRS(realizado),
+         `${diasCorridos} dia${diasCorridos === 1 ? '' : 's'} corrido${diasCorridos === 1 ? '' : 's'} · ${weightAccum.toFixed(1)}% do peso do mês`,
+         weightAccum, '') +
+    tile('Projeção de fechamento', projecao == null ? '—' : fRS(projecao),
+         pctProj == null
+           ? 'ainda sem peso corrido para projetar'
+           : `<span class="rs-tag ${cls(pctProj)}">${pctProj.toFixed(1)}% da meta</span> ${falta > 0 ? 'faltam ' + fRS(falta) : 'sobram ' + fRS(-falta)}`,
+         pctProj, pctProj != null && pctProj < 100 ? 'abaixo' : '') +
+    tile('Meta do mês', fRS(metaMes),
+         `${rede} · ${daysInMonth} dias`, 100, 'quieta') +
+    `<div class="rs-chart-wrap">
+       <div class="rs-chart-hdr">
+         <span class="rs-rot">Faturamento diário · ${MONTHS_PT[S.month - 1].toLowerCase()}</span>
+         <span class="rs-legend">
+           <span><i class="rs-sw"></i>faturado</span>
+           <span><svg width="16" height="4" aria-hidden="true"><line x1="0" y1="2" x2="16" y2="2" stroke="var(--muted)" stroke-width="1.5" stroke-dasharray="3 2"></line></svg>meta do dia</span>
+         </span>
+       </div>
+       <div class="rs-chart" id="rsChart"><div class="rs-tip" id="rsTip"></div></div>
+     </div>`;
+  panel.appendChild(el);
+
+  // ── O gráfico ──────────────────────────────────────────────────────────
+  // Desenhado no tamanho real do card (viewBox = pixels): assim texto e barra
+  // não esticam junto com a coluna. As cores saem de var(), então a troca de
+  // tema não precisa redesenhar nada.
+  const box = el.querySelector('#rsChart');
+  const tip = el.querySelector('#rsTip');
+  const teto = Math.max(...dias.map(d => Math.max(d.valor, d.meta)), 1) * 1.08;
+
+  let _ultimo = '';
+  function desenha() {
+    const W = Math.max(160, box.clientWidth), H = Math.max(60, box.clientHeight);
+    if (`${W}x${H}` === _ultimo) return;   // observer não redesenha o que não mudou
+    _ultimo = `${W}x${H}`;
+    const base = H - 12, topo = 6;
+    const passo = W / dias.length;
+    const larg  = Math.max(2, Math.min(14, passo - 2.5));
+    const y = v => topo + (base - topo) - (v / teto) * (base - topo);
+
+    const barras = dias.filter(d => d.valor > 0).map(d => {
+      const cx = (d.dia - 1) * passo + passo / 2;
+      const alt = Math.max(2, (d.valor / teto) * (base - topo));
+      return `<rect x="${(cx - larg / 2).toFixed(1)}" y="${(base - alt).toFixed(1)}" width="${larg.toFixed(1)}" height="${alt.toFixed(1)}" rx="2" fill="${d.hoje ? 'var(--chart-now)' : 'var(--chart-bar)'}"></rect>`;
+    }).join('');
+
+    const linha = dias.map(d => `${((d.dia - 1) * passo + passo / 2).toFixed(1)},${y(d.meta).toFixed(1)}`).join(' ');
+
+    const marcos = dias.filter(d => d.dia === 1 || d.dia % 7 === 0 || d.hoje).map(d =>
+      `<text x="${((d.dia - 1) * passo + passo / 2).toFixed(1)}" y="${H - 1}" fill="var(--muted)" font-size="8.5" text-anchor="middle" font-family="IBM Plex Mono, monospace">${d.dia}</text>`
+    ).join('');
+
+    const alvos = dias.map(d =>
+      `<rect class="rs-hit" data-i="${d.dia - 1}" x="${((d.dia - 1) * passo).toFixed(1)}" y="0" width="${passo.toFixed(1)}" height="${H}" fill="transparent"></rect>`
+    ).join('');
+
+    box.querySelectorAll('svg').forEach(s => s.remove());
+    box.insertAdjacentHTML('afterbegin',
+      `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Faturamento de cada dia do mês contra a meta do dia">
+         ${barras}
+         <polyline points="${linha}" fill="none" stroke="var(--muted)" stroke-width="1.3" stroke-dasharray="3 2.5" stroke-linejoin="round"></polyline>
+         ${marcos}${alvos}
+       </svg>`);
+
+    box.querySelectorAll('.rs-hit').forEach(alvo => {
+      alvo.addEventListener('mouseenter', () => {
+        const d = dias[+alvo.dataset.i];
+        const pct = d.meta > 0 ? Math.round(d.valor / d.meta * 100) : null;
+        tip.innerHTML = `<b>${pad2(d.dia)}/${pad2(S.month)}</b> · <b>${d.valor > 0 ? fRS2(d.valor) : 'sem venda'}</b>`
+          + `<br>meta ${fRS(d.meta)}${pct != null && d.valor > 0 ? ' · ' + pct + '%' : ''}`;
+        tip.style.left = ((d.dia - 0.5) / dias.length * 100).toFixed(2) + '%';
+        tip.classList.add('on');
+      });
+      alvo.addEventListener('mouseleave', () => tip.classList.remove('on'));
+    });
+  }
+
+  desenha();
+  // Um observer só, trocado a cada render do painel — sem empilhar listeners.
+  if (_resumoObs) _resumoObs.disconnect();
+  _resumoObs = new ResizeObserver(() => desenha());
+  _resumoObs.observe(box);
+}
+let _resumoObs = null;
+
 function renderDashboard() {
   if (_dayCardTimer) { clearInterval(_dayCardTimer); _dayCardTimer = null; }
   const c = document.getElementById('boardContainer');
@@ -969,6 +1122,11 @@ function renderDashboard() {
   panel.className = 'dash-sector-panel active';
   panel.dataset.sectorPanel = 'unico';
   c.appendChild(panel);
+
+  // Antes de qualquer card: os quatro números que se olha em três segundos e a
+  // forma do mês em barras. Tudo sai do que já está em memória — nenhuma volta
+  // ao servidor.
+  _renderResumoRede(panel, { visible, byBoard, prefix, cutoff, daysInMonth, defW, weightAccum, isCurrentMonth, todayStr });
 
   // Um masonry só, 3 colunas, pra tela inteira — não dois grids empilhados.
   // Um grid comum reserva a altura da coluna mais alta pra todas (foi o que

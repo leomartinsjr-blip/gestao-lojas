@@ -289,6 +289,86 @@ body {
 .save-indicator::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--warn); }
 .hidden { display: none !important; }
 
+/* Troca de tema é instantânea: animar 2000 elementos deixa cor velha para trás. */
+.sem-transicao, .sem-transicao *, .sem-transicao *::before, .sem-transicao *::after {
+  transition: none !important;
+}
+/* ── Faixa de resumo do mês ───────────────────────────────────────── */
+/* Quatro números e a forma do mês, antes de qualquer card. Uma peça só:
+   as divisórias são o próprio gap sobre o fundo da borda. */
+.dash-resumo {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(300px, 1.5fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  margin-bottom: 1.25rem;
+  box-shadow: 0 1px 2px var(--shadow-1), 0 8px 24px -18px var(--shadow-2);
+}
+.rs-kpi {
+  background: var(--surface);
+  padding: .7rem .85rem;
+  display: flex; flex-direction: column; gap: .18rem; min-width: 0;
+}
+.rs-rot {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: .62rem; font-weight: 500; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.rs-val {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 1.32rem; font-weight: 600; letter-spacing: -.02em;
+  color: var(--text); font-variant-numeric: tabular-nums; line-height: 1.15;
+}
+.rs-pe {
+  font-size: .72rem; color: var(--muted);
+  display: flex; align-items: center; gap: .35rem; flex-wrap: wrap;
+}
+.rs-tag {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: .68rem; font-weight: 600; padding: .05rem .35rem; border-radius: 5px;
+  background: var(--surface3); color: var(--muted);
+}
+.rs-tag.kpi-pos { background: rgba(var(--up-rgb), .12);   color: var(--up) !important; }
+.rs-tag.kpi-neg { background: rgba(var(--down-rgb), .12); color: var(--down) !important; }
+.rs-meter { height: 3px; border-radius: 2px; background: var(--surface3); margin-top: .3rem; overflow: hidden; }
+.rs-meter i { display: block; height: 100%; border-radius: 2px; background: var(--text); }
+.rs-meter i.abaixo { background: var(--down); }
+.rs-meter i.quieta { background: var(--border2); }
+
+.rs-chart-wrap {
+  background: var(--surface);
+  padding: .6rem .85rem .4rem;
+  display: flex; flex-direction: column; gap: .2rem; min-width: 0;
+}
+.rs-chart-hdr { display: flex; align-items: baseline; justify-content: space-between; gap: .6rem; }
+.rs-legend { display: flex; gap: .7rem; align-items: center; font-size: .64rem; color: var(--muted); white-space: nowrap; }
+.rs-legend span { display: inline-flex; align-items: center; gap: .3rem; }
+.rs-sw { width: 8px; height: 8px; border-radius: 2px; background: var(--chart-bar); display: inline-block; }
+.rs-chart { position: relative; flex: 1; min-height: 74px; overflow: hidden; }
+.rs-chart svg { display: block; width: 100%; height: 100%; }
+.rs-tip {
+  position: absolute; top: 0; transform: translate(-50%, -108%);
+  background: var(--text); color: var(--surface);
+  border-radius: 6px; padding: .3rem .5rem;
+  font-size: .7rem; line-height: 1.45; white-space: nowrap;
+  opacity: 0; pointer-events: none; transition: opacity .1s; z-index: 5;
+  box-shadow: 0 6px 20px -8px var(--shadow-3);
+}
+.rs-tip b { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 600; }
+.rs-tip.on { opacity: 1; }
+
+@media (max-width: 1240px) {
+  .dash-resumo { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rs-chart-wrap { grid-column: 1 / -1; }
+}
+@media (max-width: 640px) {
+  .dash-resumo { grid-template-columns: 1fr; }
+}
+
 /* ── Board container ──────────────────────────────────────────────── */
 #boardContainer {
   margin-top: var(--topbar-h);
