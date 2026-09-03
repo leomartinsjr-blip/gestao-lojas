@@ -918,11 +918,11 @@ function renderDashboard() {
 
   const block1 = _slot(1), block2 = _slot(2), block3 = _slot(3);
 
-  const perfCol = _col(), weekCol = _col();
-  [perfCol, weekCol].forEach(col => block1.appendChild(col));               // Performance | Meta Semanal
+  const dayCol = _col(), perfCol = _col(), weekCol = _col();
+  [dayCol, perfCol, weekCol].forEach(col => block1.appendChild(col));       // Faturamento | Performance | Meta Semanal
 
-  const dayCol = _col(), midCol = _col(), caixaCol = _col();
-  [dayCol, midCol, caixaCol].forEach(col => block2.appendChild(col));       // Faturamento | Pendências+Reunião | Conferência+NF
+  const midCol = _col(), caixaCol = _col();
+  [midCol, caixaCol].forEach(col => block2.appendChild(col));               // Pendências+Reunião | Conferência+NF
 
   const anivCol = _col(), rightCol = _col(), folgasCol = _col();
   [anivCol, rightCol, folgasCol].forEach(col => block3.appendChild(col));   // Aniversariantes | Contratos | Folgas
