@@ -1865,7 +1865,7 @@ function renderAniversariantesCard(col) {
       <span class="aniv-day">${pad(day)}</span>
       <div class="aniv-info">
         <span class="aniv-name">${_escHtml(displayName)}${isToday ? ' 🎂' : ''}</span>
-        <span class="aniv-meta" style="color:${storeColor}">${storeLabel}</span>
+        <span class="aniv-meta"><i class="loja-tarja" style="background:${storeColor}"></i>${storeLabel}</span>
       </div>
     </div>`;
   }).join('');
