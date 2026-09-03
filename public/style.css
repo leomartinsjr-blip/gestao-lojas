@@ -206,33 +206,45 @@ body {
 }
 
 /* ── Dashboard por setor (abas Vendas / Caixa / Pessoas / Gestão da Loja) ── */
+/* Seletor de setor: as lojas precisam perceber sozinhas que dá para trocar de
+   aba, então é um segmented control com a aba ativa preenchida — e não uma
+   linha discreta que passa despercebida. */
 .dash-sector-tabbar {
-  display: flex; gap: .15rem; flex-wrap: wrap;
-  border-bottom: 1px solid var(--border);
+  display: inline-flex; gap: .3rem; flex-wrap: wrap;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: .7rem;
+  padding: .35rem;
   margin-bottom: 1.15rem;
+  box-shadow: 0 1px 8px rgba(0,0,0,.15);
 }
 .dash-sector-tab {
-  background: transparent; border: none; border-bottom: 2px solid transparent;
-  color: var(--muted); font-size: .92rem; font-weight: 600;
-  padding: .7rem 1.05rem; cursor: pointer;
-  margin-bottom: -1px;
+  background: transparent; border: 1px solid transparent;
+  color: var(--muted); font-size: .95rem; font-weight: 700;
+  padding: .6rem 1.25rem; cursor: pointer;
   display: flex; align-items: center; gap: .45rem;
-  transition: color .15s, border-color .15s, background .15s;
-  white-space: nowrap; border-radius: .4rem .4rem 0 0;
+  transition: color .15s, background .15s, border-color .15s;
+  white-space: nowrap; border-radius: .5rem;
 }
-.dash-sector-tab:hover { color: var(--text); background: rgba(255,255,255,.035); }
+.dash-sector-tab:hover { color: var(--text); background: var(--surface2); }
 .dash-sector-tab.active {
-  color: var(--accent); border-bottom-color: var(--accent);
-  background: rgba(88,166,255,.07);
+  background: var(--accent); border-color: var(--accent);
+  color: #0D1117;
+  box-shadow: 0 2px 10px rgba(88,166,255,.3);
 }
+.dash-sector-tab.active:hover { background: var(--accent); color: #0D1117; }
 .dash-sector-tab .dash-sector-badge {
   font-size: .68rem; font-weight: 700; color: var(--muted);
   background: var(--surface3); border: 1px solid var(--border);
   padding: .1rem .4rem; border-radius: 999px;
 }
 .dash-sector-tab.active .dash-sector-badge {
-  color: var(--accent); border-color: rgba(88,166,255,.45);
-  background: rgba(88,166,255,.12);
+  color: #0D1117; border-color: rgba(13,17,23,.25);
+  background: rgba(13,17,23,.16);
+}
+@media (max-width: 700px) {
+  .dash-sector-tabbar { display: flex; width: 100%; }
+  .dash-sector-tab { flex: 1; justify-content: center; padding: .55rem .5rem; font-size: .82rem; }
 }
 
 /* Status colorido na célula: numa tabela densa não dá para embutir pílula em
@@ -247,6 +259,19 @@ body {
 .dash-sector-panel { display: none; }
 .dash-sector-panel.active { display: block; }
 
+/* Título de seção na tela única (login de loja) — substitui a aba */
+.dash-sector-heading {
+  font-size: .72rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .1em;
+  color: var(--muted);
+  display: flex; align-items: center; gap: .6rem;
+  margin: 1.6rem 0 .85rem;
+}
+.dash-sector-heading:first-of-type { margin-top: .2rem; }
+.dash-sector-heading::after {
+  content: ''; flex: 1; height: 1px; background: var(--border);
+}
+
 .sector-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
@@ -254,8 +279,12 @@ body {
   align-items: start;
 }
 .sector-grid-col { min-width: 0; display: flex; flex-direction: column; gap: 1.25rem; }
+/* Aba Vendas: os dois cards estreitos dividem a linha meio a meio */
+.sector-grid--even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+/* Cards de largura total (Performance, Meta Semanal) abaixo da linha de cima */
+.dash-sector-panel > .sector-grid + .sector-grid-col { margin-top: 1.25rem; }
 @media (max-width: 900px) {
-  .sector-grid { grid-template-columns: 1fr; }
+  .sector-grid, .sector-grid--even { grid-template-columns: 1fr; }
 }
 
 .main-card {
@@ -1988,7 +2017,7 @@ body {
 /* ── Faturamento Diário card ──────────────────────────────────────────── */
 .dia-col-hdr {
   display: grid;
-  grid-template-columns: 1fr 82px 82px 36px 64px;
+  grid-template-columns: minmax(100px, 1.7fr) minmax(78px, 1fr) minmax(78px, 1fr) minmax(38px, .5fr) 64px;
   gap: 0 .4rem;
   padding: .2rem .75rem .15rem;
   border-bottom: 1px solid var(--border);
@@ -2000,7 +2029,7 @@ body {
 .dia-col-hdr span:first-child { text-align: left; }
 .dia-row {
   display: grid;
-  grid-template-columns: 1fr 82px 82px 36px 64px;
+  grid-template-columns: minmax(100px, 1.7fr) minmax(78px, 1fr) minmax(78px, 1fr) minmax(38px, .5fr) 64px;
   gap: 0 .4rem;
   padding: .32rem .75rem;
   align-items: center;
