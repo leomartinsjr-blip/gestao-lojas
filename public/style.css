@@ -280,10 +280,15 @@ td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { backgro
 .sector-grid-col { min-width: 0; display: flex; flex-direction: column; gap: 1.25rem; }
 /* Aba Vendas: os dois cards estreitos dividem a linha meio a meio */
 .sector-grid--even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+/* Topo da tela da loja: três cards curtos de acompanhamento lado a lado */
+.sector-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 1100px) {
+  .sector-grid--three { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+}
 /* Cards de largura total (Performance, Meta Semanal) abaixo da linha de cima */
 .dash-sector-panel > .sector-grid + .sector-grid-col { margin-top: 1.25rem; }
 @media (max-width: 900px) {
-  .sector-grid, .sector-grid--even { grid-template-columns: 1fr; }
+  .sector-grid, .sector-grid--even, .sector-grid--three { grid-template-columns: 1fr; }
 }
 
 .main-card {
@@ -2445,7 +2450,9 @@ td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { backgro
 .mtg-vis-loja { background: #1a3a2a; color: #3FB950; }
 
 /* ── Boletas de Defeito ──────────────────────────────────────────────────── */
-.bol-card-body { display: flex; flex-direction: column; gap: .5rem; padding: .5rem .75rem .75rem; }
+/* Mesmo teto do Recebimento de NF: sem ele, uma loja com muitos defeitos
+   esticava o card por várias telas e deixava a coluna ao lado vazia. */
+.bol-card-body { display: flex; flex-direction: column; gap: .5rem; padding: .5rem .75rem .75rem; max-height: 420px; overflow-y: auto; }
 .bol-item { background: var(--surface2); border: 1px solid var(--border); border-radius: .5rem;
   padding: .6rem .75rem; cursor: pointer; transition: border-color .15s; }
 .bol-item:hover { border-color: #58A6FF; }

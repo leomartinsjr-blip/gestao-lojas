@@ -960,29 +960,27 @@ function renderDashboard() {
     panel.dataset.sectorPanel = 'unico';
     c.appendChild(panel);
 
-    const _row = () => {
+    const _row = (n = 2) => {
       const g = document.createElement('div');
-      g.className = 'sector-grid sector-grid--even';
+      g.className = 'sector-grid ' + (n === 3 ? 'sector-grid--three' : 'sector-grid--even');
       panel.appendChild(g);
-      const a = _col(), b = _col();
-      g.appendChild(a); g.appendChild(b);
-      return [a, b];
+      const cols = Array.from({ length: n }, () => _col());
+      cols.forEach(col => g.appendChild(col));
+      return cols;
     };
 
-    const topo = _col();               // Reunião Mensal, logo abaixo do lembrete
-    panel.appendChild(topo);
+    // Topo: os três cards curtos de acompanhamento, lado a lado
+    const [t1, t2, t3] = _row(3);      // Reunião | Contratos | Aniversariantes
     const [r1a, r1b] = _row();         // Faturamento Diário | Escala (Folgas)
     const [r2a, r2b] = _row();         // Meta Semanal       | Performance Mensal
     const [r3a, r3b] = _row();         // Comparativo        | Recebimento de NF
     const [r4a, r4b] = _row();         // Fechamento de Caixa| Defeitos
-    const [r5a, r5b] = _row();         // Contratos          | Aniversariantes
 
-    midCol    = topo;   defeitosCol = r4b;
+    midCol    = t1;     rightCol    = t2;   anivCol = t3;
     dayCol    = r1a;    folgasCol   = r1b;
     weekCol   = r2a;    perfCol     = r2b;
     compCol   = r3a;    caixaCol    = r3b;
-    caixaColB = r4a;
-    rightCol  = r5a;    anivCol     = r5b;
+    caixaColB = r4a;    defeitosCol = r4b;
   }
 
   // A barra de chips para filtrar lojas saiu da tela a pedido do Leonardo.
@@ -2517,7 +2515,8 @@ async function _loadCompCard(body) {
   }
 
   if (showSurfers) html += subtotalRow(BOARDS.surfers.label, BOARDS.surfers.color, surfProj, surfLY, 'comp-row-surfers');
-  html += subtotalRow('TOTAL', null, sumProj, sumLY, 'comp-row-cur');
+  // Com uma loja só (login de loja), o total repetiria a própria linha acima.
+  if (rows.length > 1) html += subtotalRow('TOTAL', null, sumProj, sumLY, 'comp-row-cur');
   html += '</tbody></table>';
 
   body.innerHTML = html;
@@ -9614,12 +9613,18 @@ function renderCaixaCard(container) {
     const hasData = r => r.caixa > 0 || r.sangria > 0 || r.deposito > 0;
     const showSaldo = r => carryDisplayFrom ? r.dt <= todayTrunc : hasData(r);
     const dash = `<span style="color:var(--muted)">—</span>`;
+    // No mês corrente, dia que ainda não chegou só rende uma linha de traços —
+    // ocupa espaço sem dizer nada. Mês passado/futuro segue inteiro, e um dia
+    // futuro que já tenha lançamento continua aparecendo.
+    const visibleRows = isCurrentMonth
+      ? rows.filter(r => r.dt <= todayTrunc || hasData(r))
+      : rows;
 
     targetBody.innerHTML = `
       <div class="caixa-table-wrap">
         <table class="caixa-table">
           <thead><tr><th>Data</th><th>Dinheiro</th><th>Sangria</th><th>Depósito</th><th>Saldo</th></tr></thead>
-          <tbody>${rows.map(r => `
+          <tbody>${visibleRows.map(r => `
             <tr class="${r.d === todayDay ? 'caixa-today' : ''}" data-day="${r.d}">
               <td class="caixa-td-date">${pad(r.d)}/${pad(S.month)} <span style="color:var(--muted);font-size:.72rem">${r.dow}</span></td>
               <td class="caixa-td-val${isAdmin?' caixa-deposito-cell':''}" ${isAdmin?`data-field="caixa" data-day="${r.d}" style="cursor:pointer" title="Clique para editar"`:''}>${r.caixa > 0 ? fmtCur(r.caixa) : dash}</td>
