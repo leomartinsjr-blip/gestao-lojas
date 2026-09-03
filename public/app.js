@@ -846,7 +846,6 @@ function renderDashboard() {
   }
 
   const isAdmin = !S.user?.board; // admin or supervisor — controls collapsible rows/grand total
-  const canFilterStores = userIsAdmin(S.user); // only true admin can change store filter
 
   const daysInMonth = new Date(S.year, S.month, 0).getDate();
   const defW = +(100 / daysInMonth).toFixed(6);
@@ -883,10 +882,11 @@ function renderDashboard() {
   }
 
 
-  // ── Setores: Vendas / Caixa / Pessoas / Gestão da Loja ───────────────────
+  // ── Onde cada card entra ─────────────────────────────────────────────────
   // Quem enxerga várias lojas (admin e supervisor) tem card demais para uma
-  // tela só, então navega por abas. A loja tem poucos cards e prefere ver tudo
-  // de uma vez: mesma divisão, mas como seções empilhadas, sem nada escondido.
+  // tela só, então navega por abas agrupadas por setor. A loja tem poucos
+  // cards e vê tudo de uma vez, numa ordem montada pelo que ela olha junto no
+  // dia a dia — e não pela divisão em setores, que aqui só atrapalharia.
   const SECTOR_LABELS = {
     vendas:  'Vendas',
     caixa:   'Caixa',
@@ -894,6 +894,16 @@ function renderDashboard() {
     gestao:  'Gestão da Loja',
   };
   const useSectorTabs = !S.user?.board;
+
+  const _col = () => {
+    const el = document.createElement('div');
+    el.className = 'sector-grid-col';
+    return el;
+  };
+
+  // Colunas de destino de cada card (preenchidas conforme o modo)
+  let dayCol, compCol, perfCol, weekCol, caixaCol, caixaColB,
+      rightCol, anivCol, folgasCol, midCol, defeitosCol;
 
   if (useSectorTabs) {
     const sectorTabbar = document.createElement('div');
@@ -910,88 +920,74 @@ function renderDashboard() {
         renderDashboard();
       });
     });
-  }
 
-  function _makeSectorPanel(sector, layout) {
-    if (!useSectorTabs) {
-      const heading = document.createElement('div');
-      heading.className = 'dash-sector-heading';
-      heading.dataset.sectorHeading = sector;
-      heading.textContent = SECTOR_LABELS[sector];
-      c.appendChild(heading);
-    }
-
-    const panel = document.createElement('div');
-    panel.className = 'dash-sector-panel' +
-      ((!useSectorTabs || sector === DASH_SECTOR) ? ' active' : '');
-    panel.dataset.sectorPanel = sector;
-    c.appendChild(panel);
-
-    const _col = () => {
-      const el = document.createElement('div');
-      el.className = 'sector-grid-col';
-      return el;
+    const _panel = (sector) => {
+      const p = document.createElement('div');
+      p.className = 'dash-sector-panel' + (sector === DASH_SECTOR ? ' active' : '');
+      p.dataset.sectorPanel = sector;
+      c.appendChild(p);
+      return p;
     };
-    const _grid = (extraCls) => {
+    const _gridIn = (parent, extraCls) => {
       const g = document.createElement('div');
       g.className = 'sector-grid' + (extraCls ? ' ' + extraCls : '');
-      panel.appendChild(g);
+      parent.appendChild(g);
       return g;
     };
+    const _pairIn = (parent, extraCls) => {
+      const g = _gridIn(parent, extraCls);
+      const a = _col(), b = _col();
+      g.appendChild(a); g.appendChild(b);
+      return [a, b];
+    };
 
-    if (layout === 'vendas') {
-      // Faturamento Diário (5 colunas) e Comparativo (4) são estreitos e ficam
-      // lado a lado; Performance (9) e Meta Semanal (8) precisam da largura
-      // inteira. Sem esse par, o Faturamento sozinho esticava e sobrava vão.
-      const top = _grid('sector-grid--even');
-      const colDay = _col(), colSide = _col();
-      top.appendChild(colDay); top.appendChild(colSide);
-      const colWide = _col();
-      panel.appendChild(colWide);
-      return [colDay, colSide, colWide];
-    }
+    // Vendas: Faturamento (5 colunas) e Comparativo (4) são estreitos e ficam
+    // lado a lado; Performance (9) e Meta Semanal (8) ocupam a largura toda.
+    const pVendas = _panel('vendas');
+    [dayCol, compCol] = _pairIn(pVendas, 'sector-grid--even');
+    const wideCol = _col();
+    pVendas.appendChild(wideCol);
+    perfCol = weekCol = wideCol;
 
-    const g = _grid();
-    const colA = _col(), colB = _col();
-    g.appendChild(colA); g.appendChild(colB);
-    return [colA, colB];
+    [caixaCol, caixaColB] = _pairIn(_panel('caixa'));
+    [rightCol, folgasCol] = _pairIn(_panel('pessoas'));
+    anivCol = rightCol;
+    [midCol, defeitosCol] = _pairIn(_panel('gestao'));
+  } else {
+    // Tela única (loja e escritório): pares montados pelo uso, não pelo setor.
+    const panel = document.createElement('div');
+    panel.className = 'dash-sector-panel active';
+    panel.dataset.sectorPanel = 'unico';
+    c.appendChild(panel);
+
+    const _row = () => {
+      const g = document.createElement('div');
+      g.className = 'sector-grid sector-grid--even';
+      panel.appendChild(g);
+      const a = _col(), b = _col();
+      g.appendChild(a); g.appendChild(b);
+      return [a, b];
+    };
+
+    const topo = _col();               // Reunião Mensal, logo abaixo do lembrete
+    panel.appendChild(topo);
+    const [r1a, r1b] = _row();         // Faturamento Diário | Escala (Folgas)
+    const [r2a, r2b] = _row();         // Meta Semanal       | Performance Mensal
+    const [r3a, r3b] = _row();         // Comparativo        | Recebimento de NF
+    const [r4a, r4b] = _row();         // Fechamento de Caixa| Defeitos
+    const [r5a, r5b] = _row();         // Contratos          | Aniversariantes
+
+    midCol    = topo;   defeitosCol = r4b;
+    dayCol    = r1a;    folgasCol   = r1b;
+    weekCol   = r2a;    perfCol     = r2b;
+    compCol   = r3a;    caixaCol    = r3b;
+    caixaColB = r4a;
+    rightCol  = r5a;    anivCol     = r5b;
   }
 
-  const [dayCol, compCol, wideCol] = _makeSectorPanel('vendas', 'vendas'); // Faturamento | Comparativo+Campanha / Performance+Semana
-  const [caixaCol, caixaColB] = _makeSectorPanel('caixa');    // Conferência, Fechamento de Caixa, Recebimento de NF
-  const [rightCol, folgasCol] = _makeSectorPanel('pessoas');  // Contratos, Aniversariantes, Folgas
-  const [midCol, defeitosCol] = _makeSectorPanel('gestao');   // Pendências, Reunião Mensal, Defeitos
-
-  // ── FILTRO DE LOJAS ──────────────────────────────────────────────────────
-  if (canFilterStores) {
-    const storeBoards = Object.entries(BOARDS).filter(([k]) => k !== 'admin' && k !== 'escritorio');
-    const filterBar = document.createElement('div');
-    filterBar.className = 'dash-store-filter';
-    const allOn = DASH_BOARD_FILTER.size === 0;
-    filterBar.innerHTML =
-      `<button class="dash-store-chip" data-board="" style="${allOn ? 'color:var(--text);border-color:var(--border);background:var(--surface2,#2a2a2a)' : 'color:var(--muted)'}">Todas</button>` +
-      storeBoards.map(([k, bc]) => {
-        const on = allOn || DASH_BOARD_FILTER.has(k);
-        return `<button class="dash-store-chip" data-board="${k}" style="${on ? `color:${bc.color};border-color:${bc.color}55;background:${bc.color}18` : 'color:var(--muted)'}">
-          ${bc.label}
-        </button>`;
-      }).join('');
-
-    filterBar.querySelectorAll('.dash-store-chip').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const board = btn.dataset.board;
-        if (!board) {
-          DASH_BOARD_FILTER.clear();
-        } else {
-          if (DASH_BOARD_FILTER.has(board)) DASH_BOARD_FILTER.delete(board);
-          else DASH_BOARD_FILTER.add(board);
-          if (DASH_BOARD_FILTER.size === storeBoards.length) DASH_BOARD_FILTER.clear();
-        }
-        renderDashboard();
-      });
-    });
-    dayCol.appendChild(filterBar);
-  }
+  // A barra de chips para filtrar lojas saiu da tela a pedido do Leonardo.
+  // DASH_BOARD_FILTER continua existindo e vazio, que é o mesmo que "todas" —
+  // então visibleBoards() segue devolvendo tudo, sem depender da barra.
 
   // ── CARD: Faturamento Diário ─────────────────────────────────────────────
   {
@@ -1129,7 +1125,7 @@ function renderDashboard() {
     </div>
     <div class="main-card-body"></div>
   `;
-  wideCol.appendChild(leftCard);
+  perfCol.appendChild(leftCard);
   const leftBody = leftCard.querySelector('.main-card-body');
 
   // Monthly table
@@ -1405,7 +1401,7 @@ function renderDashboard() {
     </div>
     <div class="main-card-body" id="dashWeekBody"></div>
   `;
-  wideCol.appendChild(rightCard);
+  weekCol.appendChild(rightCard);
   _refreshDashWeek();
 
   document.getElementById('dashWkPrev').addEventListener('click', () => {
@@ -1424,7 +1420,7 @@ function renderDashboard() {
   });
 
   // Escritório não vê faturamento/performance/semana (era o leftCol removido)
-  if (S.user?.board === 'escritorio') { dayCol.remove(); wideCol.remove(); }
+  if (S.user?.board === 'escritorio') { dayCol.remove(); perfCol.remove(); weekCol.remove(); }
 
   // ── CARD: Campanha Ativa (mini ranking top 5) — aba Vendas ───────────────
   const userBoard = S.user?.board || null;
@@ -1535,7 +1531,7 @@ function renderDashboard() {
   }
 
   // ── CARD: Aniversariantes do Mês ─────────────────────────────────────────
-  renderAniversariantesCard(rightCol);
+  renderAniversariantesCard(anivCol);
 
   // ── CARD: Contratos de Experiência ───────────────────────────────────────
   renderContratoCard(rightCol);
@@ -1604,13 +1600,15 @@ function renderDashboard() {
   // Campanha Ativa fica junto do Comparativo por Loja, na aba Vendas
   if (campDashCard) compCol.appendChild(campDashCard);
 
-  // Na tela única, seção sem nenhum card viraria só um título solto — o
-  // escritório, por exemplo, não vê nada de Vendas.
+  // Na tela única, coluna vazia deixaria um buraco no meio da linha e linha
+  // vazia deixaria um vão — o escritório, por exemplo, não vê nada de vendas.
+  // Some com a coluna primeiro para o card que sobrou ocupar a esquerda.
   if (!useSectorTabs) {
-    c.querySelectorAll('.dash-sector-panel').forEach(panel => {
-      if (panel.querySelector('.main-card')) return;
-      c.querySelector(`.dash-sector-heading[data-sector-heading="${panel.dataset.sectorPanel}"]`)?.remove();
-      panel.remove();
+    c.querySelectorAll('.sector-grid-col').forEach(col => {
+      if (!col.querySelector('.main-card')) col.remove();
+    });
+    c.querySelectorAll('.sector-grid').forEach(row => {
+      if (!row.querySelector('.main-card')) row.remove();
     });
   }
 }

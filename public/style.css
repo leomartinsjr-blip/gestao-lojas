@@ -262,18 +262,14 @@ td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { backgro
 .dash-sector-panel { display: none; }
 .dash-sector-panel.active { display: block; }
 
-/* Título de seção na tela única (login de loja) — substitui a aba */
-.dash-sector-heading {
-  font-size: .72rem; font-weight: 700;
-  text-transform: uppercase; letter-spacing: .1em;
-  color: var(--muted);
-  display: flex; align-items: center; gap: .6rem;
-  margin: 1.6rem 0 .85rem;
+/* Tela única (loja): linhas empilhadas com o mesmo respiro entre elas */
+.dash-sector-panel.active[data-sector-panel="unico"] {
+  display: flex; flex-direction: column; gap: 1.25rem;
 }
-.dash-sector-heading:first-of-type { margin-top: .2rem; }
-.dash-sector-heading::after {
-  content: ''; flex: 1; height: 1px; background: var(--border);
-}
+
+/* Banner de lembrete já afasta do topbar fixo; sem isto o container soma
+   outra margem igual e abre um vão morto entre o aviso e o dashboard. */
+.thursday-banner:not(.hidden) ~ #boardContainer { margin-top: 0; }
 
 .sector-grid {
   display: grid;
