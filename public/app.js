@@ -885,14 +885,46 @@ function renderDashboard() {
   }
 
 
-  // ── Layout: left column (half width) + right free ───────────────────────
-  const grid = document.createElement('div');
-  grid.className = 'main-grid';
-  c.appendChild(grid);
+  // ── Abas por setor: Vendas / Caixa / Pessoas / Gestão da Loja ────────────
+  const sectorTabbar = document.createElement('div');
+  sectorTabbar.className = 'dash-sector-tabbar';
+  sectorTabbar.innerHTML = `
+    <button class="dash-sector-tab" data-sector="vendas">Vendas</button>
+    <button class="dash-sector-tab" data-sector="caixa">Caixa</button>
+    <button class="dash-sector-tab" data-sector="pessoas">Pessoas</button>
+    <button class="dash-sector-tab" data-sector="gestao">Gestão da Loja</button>
+  `;
+  c.appendChild(sectorTabbar);
+  sectorTabbar.querySelectorAll('.dash-sector-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.sector === DASH_SECTOR);
+    btn.addEventListener('click', () => {
+      if (DASH_SECTOR === btn.dataset.sector) return;
+      DASH_SECTOR = btn.dataset.sector;
+      renderDashboard();
+    });
+  });
 
-  const leftCol = document.createElement('div');
-  leftCol.className = 'main-left-col';
-  grid.appendChild(leftCol);
+  function _makeSectorPanel(sector) {
+    const panel = document.createElement('div');
+    panel.className = 'dash-sector-panel' + (sector === DASH_SECTOR ? ' active' : '');
+    panel.dataset.sectorPanel = sector;
+    const sGrid = document.createElement('div');
+    sGrid.className = 'sector-grid';
+    panel.appendChild(sGrid);
+    const colA = document.createElement('div');
+    colA.className = 'sector-grid-col';
+    const colB = document.createElement('div');
+    colB.className = 'sector-grid-col';
+    sGrid.appendChild(colA);
+    sGrid.appendChild(colB);
+    c.appendChild(panel);
+    return [colA, colB];
+  }
+
+  const [leftCol, compCol]   = _makeSectorPanel('vendas');   // Faturamento, Performance, Semana, Comparativo, Campanha
+  const [caixaCol, caixaColB] = _makeSectorPanel('caixa');    // Conferência, Fechamento de Caixa, Recebimento de NF
+  const [rightCol, folgasCol] = _makeSectorPanel('pessoas');  // Contratos, Aniversariantes, Folgas
+  const [midCol, defeitosCol] = _makeSectorPanel('gestao');   // Pendências, Reunião Mensal, Defeitos
 
   // ── FILTRO DE LOJAS ──────────────────────────────────────────────────────
   if (canFilterStores) {
@@ -956,10 +988,7 @@ function renderDashboard() {
       </div>
       <div class="main-card-body" id="dayCardBody"></div>
     `;
-    const dayRow = document.createElement('div');
-    dayRow.className = 'dash-day-row';
-    dayRow.appendChild(dayCard);
-    leftCol.appendChild(dayRow);
+    leftCol.appendChild(dayCard);
 
     async function _updateDayCard() {
       const fdsBtnEl = document.getElementById('dayCardFds');
@@ -1031,10 +1060,11 @@ function renderDashboard() {
 
     _updateDayCard();
     _startDayCardAutoRefresh();
-
-    // Conferência de Caixa ao lado do faturamento diário (admins/supervisores; escritório usa rightCol)
-    if (S.user?.board !== 'escritorio') renderConferenciaStatusCard(dayRow);
   }
+
+  // ── CARD: Conferência de Caixa → aba Caixa (a própria função já filtra
+  // por perfil: admin/supervisor/escritório; demais não veem nada aqui) ────
+  renderConferenciaStatusCard(caixaCol);
 
   // ── CARD: Performance Mensal ────────────────────────────────────────────
   const leftCard = document.createElement('div');
@@ -1359,15 +1389,7 @@ function renderDashboard() {
 
   if (S.user?.board === 'escritorio') leftCol.remove();
 
-  const midCol = document.createElement('div');
-  midCol.className = 'main-mid-col';
-  grid.appendChild(midCol);
-
-  const rightCol = document.createElement('div');
-  rightCol.className = 'main-right-col';
-  grid.appendChild(rightCol);
-
-  // ── CARD: Campanha Ativa (mini ranking top 5) — na coluna do meio ────────
+  // ── CARD: Campanha Ativa (mini ranking top 5) — aba Vendas ───────────────
   const userBoard = S.user?.board || null;
   const activeCampaigns = (S.campaigns || []).filter(c =>
     c.startDate <= todayStr && c.endDate >= todayStr &&
@@ -1475,9 +1497,6 @@ function renderDashboard() {
     }
   }
 
-  // ── CARD: Conferência de Caixa → escritório vê aqui (leftCol foi removida)
-  if (S.user?.board === 'escritorio') renderConferenciaStatusCard(rightCol);
-
   // ── CARD: Aniversariantes do Mês ─────────────────────────────────────────
   renderAniversariantesCard(rightCol);
 
@@ -1502,10 +1521,10 @@ function renderDashboard() {
     </div>
     <div class="main-card-body" id="dashFolgasBody"></div>
   `;
-  rightCol.appendChild(folgasCard);
+  folgasCol.appendChild(folgasCard);
   _renderDashFolgas(folgasCard.querySelector('#dashFolgasBody'));
 
-  // ── CARD: Comparativo por Loja → coluna esquerda (abaixo da performance) ─
+  // ── CARD: Comparativo por Loja → aba Vendas, coluna secundária ───────────
   const compCard = document.createElement('div');
   compCard.className = 'main-card';
   compCard.dataset.cardId = 'card-comp';
@@ -1523,8 +1542,12 @@ function renderDashboard() {
       <div style="padding:.85rem;text-align:center;font-size:.78rem;color:var(--muted)">Carregando...</div>
     </div>
   `;
-  leftCol.appendChild(compCard);
-  _loadCompCard(compCard.querySelector('#compCardBody')).catch(e => console.error(e));
+  // Comparativo ficava escondido pro escritório antes (dentro da coluna que
+  // era removida) — mantém a mesma visibilidade agora que virou aba própria.
+  if (S.user?.board !== 'escritorio') {
+    compCol.appendChild(compCard);
+    _loadCompCard(compCard.querySelector('#compCardBody')).catch(e => console.error(e));
+  }
 
   // ── CARD: Pendências ─────────────────────────────────────────────────────
   renderPendenciasCard(midCol);
@@ -1532,17 +1555,17 @@ function renderDashboard() {
   // ── CARD: Reunião Mensal ──────────────────────────────────────────────────
   renderMeetingCard(midCol);
 
-  // ── CARD: Recebimento de NF ──────────────────────────────────────────────
-  renderNFCard(midCol);
+  // ── CARD: Recebimento de NF → aba Caixa ───────────────────────────────────
+  renderNFCard(caixaCol);
 
-  // ── CARD: Boletas de Defeito ─────────────────────────────────────────────
-  renderBoletasCard(midCol);
+  // ── CARD: Boletas de Defeito (Defeitos) → aba Gestão da Loja, col. secundária
+  renderBoletasCard(defeitosCol);
 
-  // ── CARD: Fechamento de Caixa ─────────────────────────────────────────────
-  renderCaixaCard(rightCol);
+  // ── CARD: Fechamento de Caixa → aba Caixa, coluna secundária ─────────────
+  renderCaixaCard(caixaColB);
 
-  // Campanhas abaixo do Fechamento de Caixa
-  if (campDashCard) rightCol.appendChild(campDashCard);
+  // Campanha Ativa fica junto do Comparativo por Loja, na aba Vendas
+  if (campDashCard) compCol.appendChild(campDashCard);
 
 }
 
@@ -6964,6 +6987,7 @@ const PA_THRESHOLD          = 1.80;
 let WK = { refDate: null, cache: {} };
 let DASH_WEEK = { refDate: null };
 let DASH_DAY  = { refDate: null, mode: 'day' };
+let DASH_SECTOR = 'vendas'; // aba ativa do dashboard: vendas | caixa | pessoas | gestao
 let _dayCardTimer = null;
 const _dayCardExpanded  = new Set(); // lojas expandidas no card diário
 const _perfExpanded     = new Set(); // lojas expandidas em Performance Mensal (admin)
@@ -13595,10 +13619,37 @@ function initDreModal() {
   });
 }
 
+// ── Menu superior por categoria ─────────────────────────────────────────────
+function initNavCategorias() {
+  const triggers = document.querySelectorAll('.nav-cat-trigger');
+  triggers.forEach(trigger => {
+    trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const drop = trigger.nextElementSibling;
+      const wasOpen = drop.classList.contains('nav-cat-open');
+      document.querySelectorAll('.nav-cat-dropdown.nav-cat-open').forEach(d => d.classList.remove('nav-cat-open'));
+      document.querySelectorAll('.nav-cat-trigger.nav-cat-open').forEach(t => t.classList.remove('nav-cat-open'));
+      if (!wasOpen) { drop.classList.add('nav-cat-open'); trigger.classList.add('nav-cat-open'); }
+    });
+  });
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.nav-cat-dropdown.nav-cat-open').forEach(d => d.classList.remove('nav-cat-open'));
+    document.querySelectorAll('.nav-cat-trigger.nav-cat-open').forEach(t => t.classList.remove('nav-cat-open'));
+  });
+  // Fecha o dropdown ao escolher um item, sem interferir no clique do botão original
+  document.querySelectorAll('.nav-cat-dropdown').forEach(drop => {
+    drop.addEventListener('click', () => {
+      drop.classList.remove('nav-cat-open');
+      drop.previousElementSibling?.classList.remove('nav-cat-open');
+    });
+  });
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
 function init() {
   if (window.INDEVA_STANDALONE) { initStandalone(); return; }
   initLoginForm();
+  initNavCategorias();
   initPerfModal();
   initDailyModal();
   initCaixaConf();

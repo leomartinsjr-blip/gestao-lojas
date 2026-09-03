@@ -62,6 +62,35 @@ body {
 }
 .topbar-row2::-webkit-scrollbar { display: none; }
 
+/* ── Menu superior por categoria ──────────────────────────────────── */
+.nav-cat-bar { overflow: visible; }
+.nav-cat { position: relative; }
+.nav-cat-trigger {
+  display: flex; align-items: center; gap: .32rem;
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--muted); cursor: pointer; border-radius: .375rem;
+  font-size: .75rem; font-weight: 600; padding: .3rem .6rem;
+  font-family: inherit; white-space: nowrap;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.nav-cat-trigger:hover { color: var(--text); border-color: var(--border2); }
+.nav-cat-trigger.nav-cat-open {
+  color: #58A6FF; border-color: #58A6FF; background: rgba(88,166,255,.12);
+}
+.nav-cat-chevron { transition: transform .15s ease; flex-shrink: 0; }
+.nav-cat-trigger.nav-cat-open .nav-cat-chevron { transform: rotate(180deg); }
+
+.nav-cat-dropdown {
+  position: absolute; top: calc(100% + 6px); left: 0;
+  display: none; flex-direction: column; gap: .25rem;
+  background: var(--surface2); border: 1px solid var(--border);
+  border-radius: .5rem; padding: .4rem; min-width: 210px;
+  box-shadow: 0 12px 28px rgba(0,0,0,.35);
+  z-index: 250;
+}
+.nav-cat-dropdown.nav-cat-open { display: flex; }
+.nav-cat-dropdown .folgas-topbar-btn { width: 100%; justify-content: flex-start; }
+
 .brand {
   display: flex; align-items: center; gap: .5rem;
   font-size: .9375rem; font-weight: 700; color: #58A6FF;
@@ -174,6 +203,42 @@ body {
 }
 @media (max-width: 700px) {
   .main-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Dashboard por setor (abas Vendas / Caixa / Pessoas / Gestão da Loja) ── */
+.dash-sector-tabbar {
+  display: flex; gap: 0; flex-wrap: wrap;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 1.1rem;
+}
+.dash-sector-tab {
+  background: transparent; border: none; border-bottom: 2px solid transparent;
+  color: var(--muted); font-size: .85rem; font-weight: 600;
+  padding: .55rem .9rem; cursor: pointer;
+  display: flex; align-items: center; gap: .4rem;
+  transition: color .15s, border-color .15s; white-space: nowrap;
+}
+.dash-sector-tab:hover { color: var(--text); }
+.dash-sector-tab.active { color: var(--text); border-bottom-color: #58A6FF; }
+.dash-sector-tab .dash-sector-badge {
+  font-size: .68rem; font-weight: 700; color: var(--muted);
+  background: var(--surface3); border: 1px solid var(--border);
+  padding: .1rem .4rem; border-radius: 999px;
+}
+.dash-sector-tab.active .dash-sector-badge { color: #58A6FF; border-color: #58A6FF; }
+
+.dash-sector-panel { display: none; }
+.dash-sector-panel.active { display: block; }
+
+.sector-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 1.25rem;
+  align-items: start;
+}
+.sector-grid-col { min-width: 0; display: flex; flex-direction: column; gap: 1.25rem; }
+@media (max-width: 900px) {
+  .sector-grid { grid-template-columns: 1fr; }
 }
 
 .main-card {
