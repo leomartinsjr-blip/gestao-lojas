@@ -899,18 +899,28 @@ function renderDashboard() {
   panel.dataset.sectorPanel = 'unico';
   c.appendChild(panel);
 
-  // Topo: os três cards curtos de acompanhamento, lado a lado.
-  // No admin, Pendências entra junto da Reunião Mensal no primeiro.
+  // Topo: três blocos lado a lado, cada um com os cards empilhados na ordem
+  // de leitura — bloco 1 é o acompanhamento de vendas (dia/mês/semana),
+  // bloco 2 é o que pede ação (pendências, reunião, conferência de caixa e
+  // NF), bloco 3 é o de pessoas (aniversariantes, contratos, folgas).
   const topo = document.createElement('div');
   topo.className = 'sector-grid sector-grid--three';
   panel.appendChild(topo);
-  const midCol = _col(), rightCol = _col(), anivCol = _col();
-  [midCol, rightCol, anivCol].forEach(col => topo.appendChild(col));
+  const topoCol1 = _col(), topoCol2 = _col(), topoCol3 = _col();
+  [topoCol1, topoCol2, topoCol3].forEach(col => topo.appendChild(col));
+
+  const dayCol = _col(), perfCol = _col(), weekCol = _col();
+  [dayCol, perfCol, weekCol].forEach(col => topoCol1.appendChild(col));       // Faturamento | Performance | Meta Semanal
+
+  const midCol = _col(), caixaCol = _col();
+  [midCol, caixaCol].forEach(col => topoCol2.appendChild(col));               // Pendências+Reunião | Conferência+NF
+
+  const anivCol = _col(), rightCol = _col(), folgasCol = _col();
+  [anivCol, rightCol, folgasCol].forEach(col => topoCol3.appendChild(col));   // Aniversariantes | Contratos | Folgas
 
   // Abaixo, masonry: em linhas fixas a altura era a do card mais alto, e um
   // card curto ao lado de um comprido deixava um vão morto embaixo dele.
-  // Aqui cada card sobe até encostar no de cima da sua coluna. A ordem de
-  // leitura (esquerda → direita) é a pedida; quem preenche o vão é o próximo.
+  // Aqui cada card sobe até encostar no de cima da sua coluna.
   const masonry = document.createElement('div');
   masonry.className = 'dash-masonry';
   panel.appendChild(masonry);
@@ -920,10 +930,7 @@ function renderDashboard() {
     masonry.appendChild(el);
     return el;
   };
-  const dayCol    = _slot(1), folgasCol   = _slot(2);  // Faturamento | Escala
-  const weekCol   = _slot(3), perfCol     = _slot(4);  // Meta Semanal | Performance
-  const compCol   = _slot(5), caixaCol    = _slot(6);  // Comparativo | Conferência + NF
-  const caixaColB = _slot(7), defeitosCol = _slot(8);  // Fechamento  | Defeitos
+  const compCol = _slot(1), caixaColB = _slot(2), defeitosCol = _slot(3);     // Comparativo | Fechamento | Defeitos
   const _masonryTarget = masonry;
 
   // A barra de chips para filtrar lojas saiu da tela a pedido do Leonardo.
