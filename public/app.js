@@ -1177,14 +1177,21 @@ function renderDashboard() {
     const dayCard = document.createElement('div');
     dayCard.className = 'main-card';
     dayCard.dataset.cardId = 'card-dia';
+    // Fechado, o cabeçalho já responde "quanto a rede fez hoje". Aberto, mostra
+    // de onde veio: loja a loja, contra a meta do dia. A escolha fica guardada.
+    let _diaAberto = false;
+    try { _diaAberto = localStorage.getItem('dash:diaAberto') === '1'; } catch (_) {}
+    if (!_diaAberto) dayCard.classList.add('card-fechado');
     dayCard.innerHTML = `
-      <div class="main-card-hdr">
+      <div class="main-card-hdr dia-hdr">
         <span class="main-card-title">
+          <svg class="dia-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="9 6 15 12 9 18"/></svg>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
             <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
           </svg>
           Faturamento Diário
         </span>
+        <span class="dia-resumo" id="dayCardResumo"></span>
         <div class="dash-wk-nav">
           <button class="dash-wk-btn" id="dayCardPrev" title="Dia anterior">&#8592;</button>
           <span class="dash-wk-label" id="dayCardLabel"></span>
@@ -1195,6 +1202,14 @@ function renderDashboard() {
       <div class="main-card-body" id="dayCardBody"></div>
     `;
     dayCol.appendChild(dayCard);
+
+    // Clicar no cabeçalho abre e fecha — menos nas setas de dia, que são
+    // controle próprio e continuam funcionando com o card fechado.
+    dayCard.querySelector('.dia-hdr').addEventListener('click', ev => {
+      if (ev.target.closest('.dash-wk-nav')) return;
+      const fechado = dayCard.classList.toggle('card-fechado');
+      try { localStorage.setItem('dash:diaAberto', fechado ? '0' : '1'); } catch (_) {}
+    });
 
     async function _updateDayCard() {
       const fdsBtnEl = document.getElementById('dayCardFds');
@@ -2093,6 +2108,18 @@ function _renderDayCardBody(body, dateStr) {
       wrap.innerHTML = vendorRowsHtml.join('');
       while (wrap.firstChild) body.appendChild(wrap.firstChild);
     }
+  }
+
+  // O cabeçalho carrega o total do dia: com o card fechado, é ele que responde.
+  const resumoEl = document.getElementById('dayCardResumo');
+  if (resumoEl) {
+    const pct = grandMeta > 0 ? grandVal / grandMeta * 100 : null;
+    const cls = pct == null ? '' : pct >= 100 ? 'dia-pct-ok' : pct >= 70 ? 'dia-pct-warn' : 'dia-pct-bad';
+    resumoEl.innerHTML = !anyData || grandVal <= 0
+      ? '<span class="dia-resumo-vazio">sem lançamento no dia</span>'
+      : `<b>R$ ${fV(grandVal)}</b>`
+        + (pct != null ? `<span class="dia-resumo-pct ${cls}">${pct.toFixed(0)}% da meta</span>` : '')
+        + (grandMeta > 0 ? `<span class="dia-resumo-meta">meta R$ ${fV(grandMeta)}</span>` : '');
   }
 
   if (!anyData) {

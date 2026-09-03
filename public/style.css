@@ -298,6 +298,34 @@ body {
 .sem-transicao, .sem-transicao *, .sem-transicao *::before, .sem-transicao *::after {
   transition: none !important;
 }
+/* ── Faturamento Diário: cabeçalho que resume, corpo que detalha ──── */
+.dia-hdr { cursor: pointer; user-select: none; }
+.dia-hdr:hover { background: var(--surface2); }
+.dia-chevron { color: var(--muted); transition: transform .15s ease; flex-shrink: 0; }
+.main-card:not(.card-fechado) .dia-chevron { transform: rotate(90deg); }
+.card-fechado .main-card-body { display: none; }
+.dia-resumo {
+  display: flex; align-items: baseline; gap: .45rem; flex-wrap: wrap;
+  margin-left: auto; margin-right: .6rem; font-size: .78rem; color: var(--muted);
+}
+.dia-resumo b {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: .95rem; font-weight: 600; color: var(--text);
+  font-variant-numeric: tabular-nums; letter-spacing: -.02em;
+}
+.dia-resumo-pct {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: .7rem; font-weight: 600; padding: .05rem .35rem; border-radius: var(--r-sm);
+  background: var(--surface3);
+}
+.dia-resumo-pct.dia-pct-ok   { background: rgba(var(--up-rgb), .12);   color: var(--up); }
+.dia-resumo-pct.dia-pct-warn { background: rgba(var(--warn-rgb), .13); color: var(--warn); }
+.dia-resumo-pct.dia-pct-bad  { background: rgba(var(--down-rgb), .12); color: var(--down); }
+.dia-resumo-meta { font-size: .72rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.dia-resumo-vazio { font-size: .74rem; font-style: italic; }
+@media (max-width: 900px) {
+  .dia-resumo-meta { display: none; }
+}
 /* ── Faixa de resumo do mês ───────────────────────────────────────── */
 /* Quatro números e a forma do mês, antes de qualquer card. Uma peça só:
    as divisórias são o próprio gap sobre o fundo da borda. */
