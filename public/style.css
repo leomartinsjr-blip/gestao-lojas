@@ -2186,19 +2186,31 @@ td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { backgro
 .dw-row:nth-child(even) td { background: rgba(var(--tint-rgb),.025); }
 .dw-row:hover td { background: rgba(var(--accent-rgb),.07) !important; }
 .dw-td { padding: .5rem .875rem; color: var(--text); }
-.dw-td-name { font-weight: 500; }
+.dw-td-name { font-weight: 500; display: flex; align-items: center; gap: .3rem; }
 .dw-td-num  { text-align: right; font-variant-numeric: tabular-nums; }
 .dw-total-row { background: var(--surface3); border-top: 2px solid var(--border2); }
 .dw-total-row .dw-td { color: var(--text); font-weight: 700; border: none; text-align: right; }
 .dw-total-row .dw-td:first-child { text-align: left; }
 .dw-premio { text-align: right; white-space: nowrap; }
-.dw-p {
-  display: inline-block; font-size: .7rem; padding: .1rem .35rem;
-  border-radius: .25rem; margin-left: .2rem; font-weight: 700;
+/* Prêmio da loja: os dois valores num bloco de largura fixa, centralizados e
+   alinhados de uma linha para outra — antes eles corriam atrás do nome, e nome
+   curto e nome comprido deixavam a coluna toda desencontrada. */
+.dw-premio-loja {
+  margin-left: auto; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: .25rem;
+  min-width: 8.5rem;
 }
-.dw-p-ok   { background: rgba(var(--up-rgb),.15); color: var(--up); }
-.dw-p-no   { background: rgba(var(--down-rgb),.12); color: var(--down); }
-.dw-p-warn { background: rgba(var(--warn-rgb),.1);  color: var(--warn); }
+.dw-p {
+  display: inline-block; font-size: .7rem; padding: .1rem .4rem;
+  border-radius: var(--r-sm); font-weight: 600;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+/* Verde só quando o prêmio foi ganho. Em aberto ou perdido fica neutro. */
+.dw-p-ok     { background: rgba(var(--up-rgb),.15); color: var(--up); }
+.dw-p-neutro { background: var(--surface3); color: var(--muted); }
+.dw-p-no     { background: var(--surface3); color: var(--muted); }
+.dw-p-warn   { background: var(--surface3); color: var(--muted); }
 .dw-p-pending { color: var(--muted); font-size: .75rem; }
 
 /* ── Weekly Modal content ─────────────────────────────────────────── */

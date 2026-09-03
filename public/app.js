@@ -2419,11 +2419,24 @@ function _renderDashWeekBody(body, week, extraData) {
   const refIsFuture = week.startStr > todayStr;
   const refIsComplete = week.endStr < todayStr;
 
+  // Prêmio da loja: verde só quando foi ganho. O resto — ainda em aberto ou
+  // perdido — fica neutro, para a cor da tela significar resultado e não
+  // decoração. O ✓ e o ✗ continuam dizendo o que aconteceu.
   function _gerenteChips(sHitMeta, sHitPA, refIsFuture, refIsComplete) {
-    if (refIsFuture) return '<span class="dw-p-pending">—</span>';
-    if (refIsComplete)
-      return `<span class="dw-p ${sHitMeta?'dw-p-ok':'dw-p-no'}">${new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(PREMIO_GERENTE_VENDAS)} ${sHitMeta?'✓':'✗'}</span> <span class="dw-p ${sHitMeta&&sHitPA?'dw-p-ok':'dw-p-no'}">+${new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(PREMIO_PA)} ${sHitMeta&&sHitPA?'✓':'✗'}</span>`;
-    return `<span class="dw-p ${sHitMeta?'dw-p-ok':'dw-p-warn'}">${new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(PREMIO_GERENTE_VENDAS)}${sHitMeta?' ✓':''}</span> <span class="dw-p ${sHitMeta&&sHitPA?'dw-p-ok':sHitPA&&!sHitMeta?'dw-p-no':'dw-p-warn'}">+${new Intl.NumberFormat('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(PREMIO_PA)}${sHitMeta&&sHitPA?' ✓':sHitPA&&!sHitMeta?' ✗':''}</span>`;
+    const n = v => new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+    const chip = (ganho, txt, marca, dica) =>
+      `<span class="dw-p ${ganho ? 'dw-p-ok' : 'dw-p-neutro'}"${dica ? ` title="${dica}"` : ''}>${txt}${marca}</span>`;
+    if (refIsFuture) return '<span class="dw-premio-loja"><span class="dw-p-pending">—</span></span>';
+
+    const paGanho = sHitMeta && sHitPA;
+    const paPerdido = sHitPA && !sHitMeta;
+    const html = refIsComplete
+      ? chip(sHitMeta, n(PREMIO_GERENTE_VENDAS), sHitMeta ? ' ✓' : ' ✗')
+        + chip(paGanho, '+' + n(PREMIO_PA), paGanho ? ' ✓' : ' ✗')
+      : chip(sHitMeta, n(PREMIO_GERENTE_VENDAS), sHitMeta ? ' ✓' : '')
+        + chip(paGanho, '+' + n(PREMIO_PA), paGanho ? ' ✓' : paPerdido ? ' ✗' : '',
+               paPerdido ? 'PA atingido, mas a meta de venda não' : '');
+    return `<span class="dw-premio-loja">${html}</span>`;
   }
 
   // Admin: single table with one header row + one collapsible row per store
@@ -2511,7 +2524,7 @@ function _renderDashWeekBody(body, week, extraData) {
           <span class="dia-chevron">${isExp?'▾':'▸'}</span>
           <span class="dw-store-dot" style="background:${bc.color}"></span>
           <strong>${bc.label}</strong>
-          <span style="margin-left:.5rem">${_gerenteChips(sHitMeta, sHitPA, refIsFuture, refIsComplete)}</span>
+          ${_gerenteChips(sHitMeta, sHitPA, refIsFuture, refIsComplete)}
         </td>
         <td class="dw-td dw-td-num">${fBRL(totMeta||null)}</td>
         <td class="dw-td dw-td-num">${fBRL(totValor||null)}</td>
@@ -2636,7 +2649,7 @@ function _renderDashWeekBody(body, week, extraData) {
     sec.innerHTML = `
       <div class="dw-store-hdr">
         <span class="dw-store-dot" style="background:${bc.color}"></span><strong>${bc.label}</strong>
-        <span style="margin-left:.75rem">${_gerenteChips(sHitMeta, sHitPA, refIsFuture, refIsComplete)}</span>
+        ${_gerenteChips(sHitMeta, sHitPA, refIsFuture, refIsComplete)}
       </div>
       <table class="dw-table">
         <thead><tr class="dw-thead-tr">
