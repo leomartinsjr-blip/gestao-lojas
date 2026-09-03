@@ -13,6 +13,77 @@ const BOARDS = {
   total:      { label: 'TOTAL GERAL',   color: '#E2E8F0' },
 };
 
+// ── Tema ───────────────────────────────────────────────────────────────────
+// A cor mora no CSS (tokens em style.css). Aqui só se lê o valor já resolvido,
+// para os dois casos em que var() não serve: o Chart.js, que exige cor pronta,
+// e as concatenações de alfa (cor + '55').
+const _corCache = new Map();
+function cssVar(nome, fallback = '') {
+  if (_corCache.has(nome)) return _corCache.get(nome);
+  const v = getComputedStyle(document.documentElement).getPropertyValue(nome).trim() || fallback;
+  _corCache.set(nome, v);
+  return v;
+}
+
+// A cor de cada loja passa a vir do tema: acompanha claro/escuro sozinha e
+// continua servindo tanto para style inline quanto para o Chart.js. Os ~40
+// lugares que já liam BOARDS[x].color não mudam.
+const BOARD_COR_VAR = {
+  admin: '--muted', escritorio: '--col-escritorio', delrey: '--col-delrey',
+  minas: '--col-minas', contagem: '--col-contagem', estacao: '--col-estacao',
+  tommy: '--col-tommy', lez: '--col-lez', site: '--col-site',
+  surfers: '--col-surfers', total: '--text2',
+};
+for (const [chave, board] of Object.entries(BOARDS)) {
+  const padrao = board.color;
+  Object.defineProperty(board, 'color', {
+    get: () => cssVar(BOARD_COR_VAR[chave] || '--muted', padrao),
+    enumerable: true, configurable: true,
+  });
+}
+
+const TEMA_CHAVE = 'ui:tema';   // 'light' | 'dark' | ausente = segue o sistema
+
+function temaEscuroAgora() {
+  const t = document.documentElement.getAttribute('data-theme');
+  if (t) return t === 'dark';
+  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+}
+
+function aplicaTema(tema) {
+  if (tema) document.documentElement.setAttribute('data-theme', tema);
+  else      document.documentElement.removeAttribute('data-theme');
+  _corCache.clear();
+  const btn = document.getElementById('themeBtn');
+  if (btn) {
+    const escuro = temaEscuroAgora();
+    btn.title = escuro ? 'Mudar para claro' : 'Mudar para escuro';
+    btn.querySelector('.theme-sun').style.display  = escuro ? '' : 'none';
+    btn.querySelector('.theme-moon').style.display = escuro ? 'none' : '';
+  }
+}
+
+function alternaTema() {
+  const novo = temaEscuroAgora() ? 'light' : 'dark';
+  try { localStorage.setItem(TEMA_CHAVE, novo); } catch (_) {}
+  aplicaTema(novo);
+  // O CSS vira sozinho; o que precisa de nova passada é o que o JS escreveu
+  // com cor resolvida — os cards do painel e os gráficos do Chart.js.
+  try { if (typeof renderDashboard === 'function' && S.user) renderDashboard(); } catch (_) {}
+  try { if (typeof PD !== 'undefined' && PD.board && document.getElementById('perfAnnualCanvas')) renderPerfStore(PD.board); } catch (_) {}
+}
+
+// Escolha salva vence; sem escolha, segue o sistema — e acompanha se ele mudar.
+(function iniciaTema() {
+  let salvo = null;
+  try { salvo = localStorage.getItem(TEMA_CHAVE); } catch (_) {}
+  aplicaTema(salvo === 'light' || salvo === 'dark' ? salvo : null);
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    let s = null;
+    try { s = localStorage.getItem(TEMA_CHAVE); } catch (_) {}
+    if (!s) { _corCache.clear(); aplicaTema(null); }
+  });
+})();
 
 const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
@@ -171,7 +242,7 @@ function renderJustModal() {
       ).join('')}</div>`
     : '';
 
-  const discPct = pct => `<span style="display:inline-block;background:#F8514920;color:#F85149;border-radius:5px;padding:2px 8px;font-size:.68rem;font-weight:800;margin-left:6px">${pct.toFixed(1)}%</span>`;
+  const discPct = pct => `<span style="display:inline-block;background:rgba(var(--down-rgb),.13);color:var(--down);border-radius:5px;padding:2px 8px;font-size:.68rem;font-weight:800;margin-left:6px">${pct.toFixed(1)}%</span>`;
 
   const itensHtml = p => {
     const itens = p.itens || [];
@@ -189,7 +260,7 @@ function renderJustModal() {
           const baseDescPct = (it.emPromocao && it.precoPromocao) ? it.precoPromocao : it.vlrUnitario;
           const percDesc = baseDescPct > 0 ? ((baseDescPct - vlrLiqUnit) / baseDescPct * 100) : 0;
           const promoCell = it.emPromocao && it.precoPromocao
-            ? `<span style="color:#2dd4bf;font-weight:700">${fmtRS(it.precoPromocao)}</span>` : '—';
+            ? `<span style="color:var(--col-tommy);font-weight:700">${fmtRS(it.precoPromocao)}</span>` : '—';
           const cod = it.cod_produto || '', ref = it.referencia || '', marc = it.marca || '', col = it.colecao || '';
           const nome = it.nome || it.descricao || cod;
           const tag = (bg, fg, txt) => `<span style="background:${bg};color:${fg};font-size:.62rem;font-weight:600;padding:2px 7px;border-radius:4px;white-space:nowrap">${txt}</span>`;
@@ -209,7 +280,7 @@ function renderJustModal() {
             <td style="padding:9px 10px;border-bottom:1px solid var(--border)">${fmtRS(it.vlrUnitario)}</td>
             <td style="padding:9px 10px;border-bottom:1px solid var(--border)">${promoCell}</td>
             <td style="padding:9px 10px;border-bottom:1px solid var(--border)">${fmtRS(it.vlrBruto)}</td>
-            <td style="padding:9px 10px;border-bottom:1px solid var(--border);${temDesc ? 'color:#F85149;font-weight:700' : 'color:var(--muted)'}">${temDesc ? fmtRS(it.vlrDesconto) : '—'}</td>
+            <td style="padding:9px 10px;border-bottom:1px solid var(--border);${temDesc ? 'color:var(--down);font-weight:700' : 'color:var(--muted)'}">${temDesc ? fmtRS(it.vlrDesconto) : '—'}</td>
             <td style="padding:9px 10px;border-bottom:1px solid var(--border)">${percDesc > 0.05 ? discPct(percDesc) : '—'}</td>
             <td style="padding:9px 10px;border-bottom:1px solid var(--border);font-weight:700">${fmtRS(liq)}</td>
           </tr>`;
@@ -232,7 +303,7 @@ function renderJustModal() {
       ${itensHtml(p)}
       ${p.justificativa?.pergunta ? `<div style="font-size:.82rem;background:var(--surface2);border-radius:.4rem;padding:.5rem .65rem;margin-bottom:.6rem">"${p.justificativa.pergunta}"</div>` : ''}
       <textarea data-just-doc="${p.doc}" data-just-board="${p.board}" placeholder="Explique o motivo do desconto..." style="width:100%;min-height:70px;resize:vertical;font-family:inherit;font-size:.85rem;padding:.5rem;border-radius:.4rem;border:1px solid var(--border);background:var(--surface);color:var(--text)"></textarea>
-      <button data-just-send="${i}" style="margin-top:.5rem;padding:.35rem .9rem;border-radius:.4rem;border:none;background:#F85149;color:#fff;font-weight:600;cursor:pointer;font-size:.82rem">Enviar resposta</button>
+      <button data-just-send="${i}" style="margin-top:.5rem;padding:.35rem .9rem;border-radius:.4rem;border:none;background:var(--down);color:#fff;font-weight:600;cursor:pointer;font-size:.82rem">Enviar resposta</button>
     </div>`).join('');
 
   body.querySelectorAll('[data-just-send]').forEach(btn => {
@@ -240,7 +311,7 @@ function renderJustModal() {
       const idx = btn.dataset.justSend;
       const ta = body.querySelector(`textarea[data-just-doc="${pendentes[idx].doc}"][data-just-board="${pendentes[idx].board}"]`);
       const resposta = ta.value.trim();
-      if (!resposta) { ta.focus(); ta.style.borderColor = '#F85149'; return; }
+      if (!resposta) { ta.focus(); ta.style.borderColor = 'var(--down)'; return; }
       btn.disabled = true; btn.textContent = 'Enviando…';
       try {
         await apiFetch('POST', '/api/conferencia/justificativa-resposta', { doc: pendentes[idx].doc, board: pendentes[idx].board, resposta });
@@ -371,22 +442,22 @@ function showChangePasswordModal() {
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;z-index:9999';
 
   overlay.innerHTML = `
-    <div style="background:#1e2433;border:1px solid #2d3654;border-radius:12px;padding:28px 32px;width:340px;max-width:95vw;box-shadow:0 8px 32px #0008">
-      <div style="font-size:1.15rem;font-weight:700;color:#e2e8f0;margin-bottom:6px">Altere sua senha</div>
-      <div style="font-size:.85rem;color:#94a3b8;margin-bottom:20px">Por segurança, crie uma senha pessoal antes de continuar.</div>
+    <div style="background:var(--surface2);border:1px solid var(--surface3);border-radius:12px;padding:28px 32px;width:340px;max-width:95vw;box-shadow:0 8px 32px #0008">
+      <div style="font-size:1.15rem;font-weight:700;color:var(--text2);margin-bottom:6px">Altere sua senha</div>
+      <div style="font-size:.85rem;color:var(--muted);margin-bottom:20px">Por segurança, crie uma senha pessoal antes de continuar.</div>
       <div style="margin-bottom:12px">
-        <label style="font-size:.8rem;color:#94a3b8;display:block;margin-bottom:4px">Nova senha</label>
+        <label style="font-size:.8rem;color:var(--muted);display:block;margin-bottom:4px">Nova senha</label>
         <input id="cpNewPass" type="password" autocomplete="new-password" placeholder="Nova senha"
-          style="width:100%;box-sizing:border-box;background:#0f1623;border:1px solid #2d3654;border-radius:7px;padding:9px 12px;color:#e2e8f0;font-size:.95rem;outline:none">
+          style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--surface3);border-radius:7px;padding:9px 12px;color:var(--text2);font-size:.95rem;outline:none">
       </div>
       <div style="margin-bottom:20px">
-        <label style="font-size:.8rem;color:#94a3b8;display:block;margin-bottom:4px">Confirmar nova senha</label>
+        <label style="font-size:.8rem;color:var(--muted);display:block;margin-bottom:4px">Confirmar nova senha</label>
         <input id="cpConfPass" type="password" autocomplete="new-password" placeholder="Confirmar senha"
-          style="width:100%;box-sizing:border-box;background:#0f1623;border:1px solid #2d3654;border-radius:7px;padding:9px 12px;color:#e2e8f0;font-size:.95rem;outline:none">
+          style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--surface3);border-radius:7px;padding:9px 12px;color:var(--text2);font-size:.95rem;outline:none">
       </div>
-      <div id="cpErr" style="font-size:.8rem;color:#f87171;margin-bottom:12px;display:none"></div>
+      <div id="cpErr" style="font-size:.8rem;color:var(--down);margin-bottom:12px;display:none"></div>
       <div style="display:flex;gap:10px;justify-content:flex-end">
-        <button id="cpSubmit" style="background:#3b82f6;border:none;border-radius:7px;padding:8px 18px;color:#fff;cursor:pointer;font-size:.9rem;font-weight:600">Alterar senha</button>
+        <button id="cpSubmit" style="background:var(--accent);border:none;border-radius:7px;padding:8px 18px;color:#fff;cursor:pointer;font-size:.9rem;font-weight:600">Alterar senha</button>
       </div>
     </div>`;
 
@@ -425,18 +496,18 @@ function showForgotPasswordModal() {
   overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.65);display:flex;align-items:center;justify-content:center;z-index:9999';
 
   overlay.innerHTML = `
-    <div style="background:#1e2433;border:1px solid #2d3654;border-radius:12px;padding:28px 32px;width:340px;max-width:95vw;box-shadow:0 8px 32px #0008">
-      <div style="font-size:1.1rem;font-weight:700;color:#e2e8f0;margin-bottom:6px">Recuperar senha</div>
-      <div style="font-size:.85rem;color:#94a3b8;margin-bottom:20px">Informe seu usuário e enviaremos um link de redefinição para o email cadastrado.</div>
+    <div style="background:var(--surface2);border:1px solid var(--surface3);border-radius:12px;padding:28px 32px;width:340px;max-width:95vw;box-shadow:0 8px 32px #0008">
+      <div style="font-size:1.1rem;font-weight:700;color:var(--text2);margin-bottom:6px">Recuperar senha</div>
+      <div style="font-size:.85rem;color:var(--muted);margin-bottom:20px">Informe seu usuário e enviaremos um link de redefinição para o email cadastrado.</div>
       <div style="margin-bottom:16px">
-        <label style="font-size:.8rem;color:#94a3b8;display:block;margin-bottom:4px">Usuário</label>
+        <label style="font-size:.8rem;color:var(--muted);display:block;margin-bottom:4px">Usuário</label>
         <input id="fpUser" type="text" autocomplete="username" placeholder="seu usuário"
-          style="width:100%;box-sizing:border-box;background:#0f1623;border:1px solid #2d3654;border-radius:7px;padding:9px 12px;color:#e2e8f0;font-size:.95rem;outline:none">
+          style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--surface3);border-radius:7px;padding:9px 12px;color:var(--text2);font-size:.95rem;outline:none">
       </div>
       <div id="fpMsg" style="font-size:.82rem;margin-bottom:12px;display:none"></div>
       <div style="display:flex;gap:10px;justify-content:flex-end">
-        <button id="fpCancel" style="background:none;border:1px solid #2d3654;border-radius:7px;padding:8px 16px;color:#94a3b8;cursor:pointer;font-size:.9rem">Cancelar</button>
-        <button id="fpSubmit" style="background:#3b82f6;border:none;border-radius:7px;padding:8px 18px;color:#fff;cursor:pointer;font-size:.9rem;font-weight:600">Enviar link</button>
+        <button id="fpCancel" style="background:none;border:1px solid var(--surface3);border-radius:7px;padding:8px 16px;color:var(--muted);cursor:pointer;font-size:.9rem">Cancelar</button>
+        <button id="fpSubmit" style="background:var(--accent);border:none;border-radius:7px;padding:8px 18px;color:#fff;cursor:pointer;font-size:.9rem;font-weight:600">Enviar link</button>
       </div>
     </div>`;
 
@@ -450,13 +521,13 @@ function showForgotPasswordModal() {
     const msgEl = document.getElementById('fpMsg');
     const btn = document.getElementById('fpSubmit');
     if (!username) {
-      msgEl.style.color = '#f87171'; msgEl.textContent = 'Informe o usuário'; msgEl.style.display = ''; return;
+      msgEl.style.color = 'var(--down)'; msgEl.textContent = 'Informe o usuário'; msgEl.style.display = ''; return;
     }
     btn.disabled = true; btn.textContent = 'Enviando…';
     msgEl.style.display = 'none';
     try {
       await apiFetch('POST', '/api/forgot-password', { username });
-      msgEl.style.color = '#4ade80';
+      msgEl.style.color = 'var(--up)';
       msgEl.textContent = 'Se o usuário tiver email cadastrado, você receberá o link em instantes.';
       msgEl.style.display = '';
       btn.style.display = 'none';
@@ -464,7 +535,7 @@ function showForgotPasswordModal() {
     } catch (e) {
       let msg = 'Erro ao enviar. Tente novamente.';
       try { msg = JSON.parse(e.message).error || msg; } catch {}
-      msgEl.style.color = '#f87171'; msgEl.textContent = msg; msgEl.style.display = '';
+      msgEl.style.color = 'var(--down)'; msgEl.textContent = msg; msgEl.style.display = '';
       btn.disabled = false; btn.textContent = 'Enviar link';
     }
   };
@@ -476,24 +547,24 @@ function showResetPasswordPage(token) {
 
   const overlay = document.createElement('div');
   overlay.id = 'resetPwdPage';
-  overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg,#0d1117);display:flex;align-items:center;justify-content:center;z-index:9999';
+  overlay.style.cssText = 'position:fixed;inset:0;background:var(--bg,var(--on-accent));display:flex;align-items:center;justify-content:center;z-index:9999';
 
   overlay.innerHTML = `
-    <div style="background:#1e2433;border:1px solid #2d3654;border-radius:12px;padding:28px 32px;width:360px;max-width:95vw;box-shadow:0 8px 32px #0008">
-      <div style="font-size:1.15rem;font-weight:700;color:#e2e8f0;margin-bottom:6px">Nova senha</div>
-      <div style="font-size:.85rem;color:#94a3b8;margin-bottom:20px">Escolha uma nova senha para sua conta.</div>
+    <div style="background:var(--surface2);border:1px solid var(--surface3);border-radius:12px;padding:28px 32px;width:360px;max-width:95vw;box-shadow:0 8px 32px #0008">
+      <div style="font-size:1.15rem;font-weight:700;color:var(--text2);margin-bottom:6px">Nova senha</div>
+      <div style="font-size:.85rem;color:var(--muted);margin-bottom:20px">Escolha uma nova senha para sua conta.</div>
       <div style="margin-bottom:12px">
-        <label style="font-size:.8rem;color:#94a3b8;display:block;margin-bottom:4px">Nova senha</label>
+        <label style="font-size:.8rem;color:var(--muted);display:block;margin-bottom:4px">Nova senha</label>
         <input id="rpNewPass" type="password" autocomplete="new-password" placeholder="Nova senha"
-          style="width:100%;box-sizing:border-box;background:#0f1623;border:1px solid #2d3654;border-radius:7px;padding:9px 12px;color:#e2e8f0;font-size:.95rem;outline:none">
+          style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--surface3);border-radius:7px;padding:9px 12px;color:var(--text2);font-size:.95rem;outline:none">
       </div>
       <div style="margin-bottom:20px">
-        <label style="font-size:.8rem;color:#94a3b8;display:block;margin-bottom:4px">Confirmar senha</label>
+        <label style="font-size:.8rem;color:var(--muted);display:block;margin-bottom:4px">Confirmar senha</label>
         <input id="rpConfPass" type="password" autocomplete="new-password" placeholder="Confirmar senha"
-          style="width:100%;box-sizing:border-box;background:#0f1623;border:1px solid #2d3654;border-radius:7px;padding:9px 12px;color:#e2e8f0;font-size:.95rem;outline:none">
+          style="width:100%;box-sizing:border-box;background:var(--surface2);border:1px solid var(--surface3);border-radius:7px;padding:9px 12px;color:var(--text2);font-size:.95rem;outline:none">
       </div>
-      <div id="rpErr" style="font-size:.8rem;color:#f87171;margin-bottom:12px;display:none"></div>
-      <button id="rpSubmit" style="width:100%;background:#3b82f6;border:none;border-radius:7px;padding:10px;color:#fff;cursor:pointer;font-size:.95rem;font-weight:600">Salvar nova senha</button>
+      <div id="rpErr" style="font-size:.8rem;color:var(--down);margin-bottom:12px;display:none"></div>
+      <button id="rpSubmit" style="width:100%;background:var(--accent);border:none;border-radius:7px;padding:10px;color:#fff;cursor:pointer;font-size:.95rem;font-weight:600">Salvar nova senha</button>
     </div>`;
 
   document.body.appendChild(overlay);
@@ -511,11 +582,11 @@ function showResetPasswordPage(token) {
     try {
       await apiFetch('POST', '/api/reset-password', { token, password: pwd });
       overlay.innerHTML = `
-        <div style="background:#1e2433;border:1px solid #2d3654;border-radius:12px;padding:32px;width:340px;max-width:95vw;text-align:center;box-shadow:0 8px 32px #0008">
+        <div style="background:var(--surface2);border:1px solid var(--surface3);border-radius:12px;padding:32px;width:340px;max-width:95vw;text-align:center;box-shadow:0 8px 32px #0008">
           <div style="font-size:2rem;margin-bottom:12px">✓</div>
-          <div style="font-size:1.1rem;font-weight:700;color:#4ade80;margin-bottom:8px">Senha redefinida!</div>
-          <div style="font-size:.9rem;color:#94a3b8;margin-bottom:20px">Sua senha foi alterada com sucesso.</div>
-          <button onclick="window.location.href='/'" style="background:#3b82f6;border:none;border-radius:7px;padding:10px 24px;color:#fff;cursor:pointer;font-size:.9rem;font-weight:600">Fazer login</button>
+          <div style="font-size:1.1rem;font-weight:700;color:var(--up);margin-bottom:8px">Senha redefinida!</div>
+          <div style="font-size:.9rem;color:var(--muted);margin-bottom:20px">Sua senha foi alterada com sucesso.</div>
+          <button onclick="window.location.href='/'" style="background:var(--accent);border:none;border-radius:7px;padding:10px 24px;color:#fff;cursor:pointer;font-size:.9rem;font-weight:600">Fazer login</button>
         </div>`;
     } catch (e) {
       let msg = 'Erro ao redefinir senha.';
@@ -683,10 +754,10 @@ async function loadData() {
               if (certTitleEl) certTitleEl.textContent = (certAlertas?.length && seguroAlertas?.length) ? 'Certificados & Seguros' : (seguroAlertas?.length ? 'Seguros' : 'Certificados Digitais');
               const linhas = itens.map(c => {
                 const days = Math.round((new Date(c.validade + 'T12:00:00') - new Date().setHours(0,0,0,0)) / 86400000);
-                const status = days < 0 ? `<span style="color:#F85149">VENCIDO há ${Math.abs(days)}d</span>`
-                             : days === 0 ? `<span style="color:#F85149">vence HOJE</span>`
-                             : days <= 15  ? `<span style="color:#E3B341">vence em ${days}d</span>`
-                             : `<span style="color:#4493F8">vence em ${days}d</span>`;
+                const status = days < 0 ? `<span style="color:var(--down)">VENCIDO há ${Math.abs(days)}d</span>`
+                             : days === 0 ? `<span style="color:var(--down)">vence HOJE</span>`
+                             : days <= 15  ? `<span style="color:var(--warn)">vence em ${days}d</span>`
+                             : `<span style="color:var(--accent)">vence em ${days}d</span>`;
                 return `<strong>${_escHtml(c.loja)}</strong> · ${_escHtml(c._origem)}: ${_escHtml(c.tipo||'')} — ${status}`;
               }).join('<br>');
               certMsgEl.innerHTML = linhas;
@@ -737,8 +808,8 @@ async function loadData() {
             const loja  = BOARDS[a.emp.board]?.label || a.emp.board || '';
             const vStr  = `${_pad(a.venc.getDate())}/${_pad(a.venc.getMonth()+1)}`;
             const prazo = a.dias === 0
-              ? `<span style="color:#F85149">vence HOJE (${vStr})</span>`
-              : `<span style="color:#E3B341">vence em ${a.dias} dia${a.dias > 1 ? 's' : ''} (${vStr})</span>`;
+              ? `<span style="color:var(--down)">vence HOJE (${vStr})</span>`
+              : `<span style="color:var(--warn)">vence em ${a.dias} dia${a.dias > 1 ? 's' : ''} (${vStr})</span>`;
             return `<strong>${nome}</strong>${loja ? ` <span style="opacity:.7">(${_escHtml(loja)})</span>` : ''}`
                  + ` · ${a.etapa} ${prazo}<br>`
                  + `<span style="opacity:.7;font-size:.9em">→ ${a.acao}</span>`;
@@ -781,7 +852,7 @@ function _renderContagemAviso(c) {
   const el = document.createElement('div');
   el.className = 'ct-banner';
   el.innerHTML = `<div class="ct-banner-txt"><b>🧮 Contagem de embalagens atrasada em ${late.length} ${late.length === 1 ? 'loja' : 'lojas'}:</b>
-      ${late.map(b => `<span class="ct-banner-chip"><span class="dash-store-dot" style="background:${BOARDS[b]?.color || '#8B949E'}"></span>${_escHtml(BOARDS[b]?.label || b)}</span>`).join('')}</div>
+      ${late.map(b => `<span class="ct-banner-chip"><span class="dash-store-dot" style="background:${BOARDS[b]?.color || 'var(--muted)'}"></span>${_escHtml(BOARDS[b]?.label || b)}</span>`).join('')}</div>
     <button class="ct-banner-btn">Ver status</button>`;
   el.querySelector('.ct-banner-btn').addEventListener('click', abrir);
   c.appendChild(el);
@@ -810,7 +881,7 @@ function _renderPisoAviso(c) {
   el.innerHTML = `<div class="ct-banner-txt">
       <b>📦 Embalagem no mínimo em ${lojas.length} ${lojas.length === 1 ? 'loja' : 'lojas'} — já entra no próximo pedido:</b>
       ${lojas.map(([b, p]) => `<span class="ct-banner-chip" title="${_escHtml(p.itens.map(i => `${i.nome}: ${i.contado} de ${i.min}`).join(' · '))}">
-        <span class="dash-store-dot" style="background:${BOARDS[b]?.color || '#8B949E'}"></span>${_escHtml(BOARDS[b]?.label || b)}
+        <span class="dash-store-dot" style="background:${BOARDS[b]?.color || 'var(--muted)'}"></span>${_escHtml(BOARDS[b]?.label || b)}
         <b class="ct-chip-neg">${p.itens.length}</b><span class="ct-chip-min">${p.itens.length === 1 ? 'item' : 'itens'}</span></span>`).join('')}</div>
     <button class="ct-banner-btn">Ver pedido</button>`;
   el.querySelector('.ct-banner-btn').addEventListener('click', abrir);
@@ -1393,7 +1464,7 @@ function renderDashboard() {
           ? (r.kpiValue > 0 ? (top5[0].kpiValue / r.kpiValue) * 100 : 100)
           : (maxVal > 0 ? (r.kpiValue / maxVal * 100) : 0);
         const board = campPorLoja ? r.board : r.emp.board;
-        const color = BOARDS[board]?.color || '#8B949E';
+        const color = BOARDS[board]?.color || 'var(--muted)';
         const name  = campPorLoja
           ? (BOARDS[board]?.label || board)
           : (r.emp.apelido || r.emp.name.split(' ')[0]);
@@ -1629,7 +1700,7 @@ function renderAniversariantesCard(col) {
   body.innerHTML = aniversariantes.map(e => {
     const day = parseInt(e.nascimento.slice(8, 10));
     const isToday = isCurrentMonth && day === todayDay && S.month === todayMonth;
-    const storeColor = BOARDS[e.board]?.color || '#8B949E';
+    const storeColor = BOARDS[e.board]?.color || 'var(--muted)';
     const storeLabel = BOARDS[e.board]?.label || e.board;
     const displayName = e.apelido || e.name;
     return `<div class="aniv-item${isToday ? ' aniv-item--today' : ''}">
@@ -1688,7 +1759,7 @@ function _renderDashFolgas(body) {
 
   const totalCols = 1 + daysInMonth;
   for (const [bk, emps] of Object.entries(byBoard)) {
-    const bc = BOARDS[bk] || { label: bk, color: '#64748b' };
+    const bc = BOARDS[bk] || { label: bk, color: 'var(--muted)' };
     html += `<tr class="folga-mini-store-row">
       <td colspan="${totalCols}" class="folga-mini-store-td" style="background:${bc.color}22;border-left:3px solid ${bc.color}">
         <strong>${bc.label}</strong>
@@ -3009,7 +3080,7 @@ function renderPromocaoView() {
         const base  = g.totalGiro + g.totalStock; // saldo anterior + recebimentos
         const pct   = base > 0 ? g.totalGiro / base : 0;
         const pctStr = `${Math.round(pct * 100)}%`;
-        const pctColor = pct < 0.10 ? '#F85149' : pct < 0.20 ? '#E3B341' : '#8B949E';
+        const pctColor = pct < 0.10 ? 'var(--down)' : pct < 0.20 ? 'var(--warn)' : 'var(--muted)';
         const fmtR = v => v > 0 ? `R$ ${v.toFixed(2).replace('.',',')}` : '—';
         return `<tr>
           <td class="trans-td" style="font-size:.72rem;color:var(--muted)">${_escHtml(g.setor||'—')}</td>
@@ -3020,7 +3091,7 @@ function renderPromocaoView() {
           <td class="trans-td trans-td-c" style="color:var(--muted)">${base}</td>
           <td class="trans-td trans-td-c" style="color:${pctColor};font-weight:700">${pctStr}</td>
           <td class="trans-td trans-td-c">${fmtR(g.precoCheio)}</td>
-          <td class="trans-td trans-td-c" style="color:#3FB950">${fmtR(g.precoPromo)}</td>
+          <td class="trans-td trans-td-c" style="color:var(--up)">${fmtR(g.precoPromo)}</td>
           <td class="trans-td">${fmtD(g.ultimaCompra)}</td>
         </tr>`;
       }).join('');
@@ -3359,7 +3430,7 @@ function _cadRenderUpload(body) {
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           Analisar arquivo
         </button>
-        <button class="trans-calc-btn" id="cadAiSuggestBtn" ${_cad.file ? '' : 'disabled'} style="align-self:flex-end;background:#3a1f6e;border-color:#6e40c9">
+        <button class="trans-calc-btn" id="cadAiSuggestBtn" ${_cad.file ? '' : 'disabled'} style="align-self:flex-end;background:var(--col-lez);border-color:var(--col-lez)">
           ✦ Sugerir com IA
         </button>
       </div>
@@ -3866,7 +3937,7 @@ function _cadRenderProdSection(sec) {
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
         Verificar no Microvix
       </button>
-      <button class="trans-calc-btn" id="cadAiMatchBtn" style="background:#3a1f6e;border-color:#6e40c9">
+      <button class="trans-calc-btn" id="cadAiMatchBtn" style="background:var(--col-lez);border-color:var(--col-lez)">
         ✦ Sugerir Match com IA
       </button>
     </div>`;
@@ -4146,13 +4217,13 @@ function _cadUpdateExportActionsAfterAi(sec) {
       <button class="trans-calc-btn" id="cadRecheckBtn" style="background:transparent;border:1px solid rgba(88,166,255,.3);color:var(--muted);padding:.28rem .6rem">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </button>
-      <button class="trans-calc-btn" id="cadAiMatchBtn" style="background:#3a1f6e;border-color:#6e40c9">✦ Sugerir Match com IA</button>
+      <button class="trans-calc-btn" id="cadAiMatchBtn" style="background:var(--col-lez);border-color:var(--col-lez)">✦ Sugerir Match com IA</button>
       ${newCount > 0
         ? `<button class="trans-calc-btn" id="cadExportBtn">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 16 12 21 17 16"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
             Baixar cadastro Microvix (${newCount} produtos)
           </button>`
-        : `<span style="color:#3FB950;font-size:.8rem">✓ Todos já estão no Microvix</span>`}
+        : `<span style="color:var(--up);font-size:.8rem">✓ Todos já estão no Microvix</span>`}
     </div>`;
 
   const eb = actEl.querySelector('#cadExportBtn');
@@ -4204,13 +4275,13 @@ function _cadUpdateExportActions(sec) {
       <button class="trans-calc-btn" id="cadRecheckBtn" style="background:transparent;border:1px solid rgba(88,166,255,.3);color:var(--muted);padding:.28rem .6rem">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
       </button>
-      <button class="trans-calc-btn" id="cadAiMatchBtn" style="background:#3a1f6e;border-color:#6e40c9">✦ Sugerir Match com IA</button>
+      <button class="trans-calc-btn" id="cadAiMatchBtn" style="background:var(--col-lez);border-color:var(--col-lez)">✦ Sugerir Match com IA</button>
       ${exportRows.length > 0
         ? `<button class="trans-calc-btn" id="cadExportBtn">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 16 12 21 17 16"/><line x1="12" y1="3" x2="12" y2="21"/></svg>
             Baixar cadastro Microvix (${exportRows.length} produtos)
           </button>`
-        : `<span style="color:#3FB950;font-size:.8rem">✓ Todos já estão no Microvix</span>`}
+        : `<span style="color:var(--up);font-size:.8rem">✓ Todos já estão no Microvix</span>`}
     </div>`;
 
   const eb = actEl.querySelector('#cadExportBtn');
@@ -4796,7 +4867,7 @@ function renderTransTable(container, data) {
 
   const fN = v => v != null ? v : 0;
   const boardLabel = k => BOARDS[k]?.label || k;
-  const boardColor = k => BOARDS[k]?.color || '#8B949E';
+  const boardColor = k => BOARDS[k]?.color || 'var(--muted)';
   const fmtDate    = d => d ? d : '—'; // já em DD/MM/YYYY
 
   // Resumo por par De→Para
@@ -5008,8 +5079,8 @@ function buildPerfTabs() {
     btn.className = 'perf-tab-btn';
     btn.dataset.store = k;
     btn.textContent = BOARDS[k]?.label || k;
-    btn.style.borderColor = BOARDS[k]?.color || '#8B949E';
-    btn.style.color = BOARDS[k]?.color || '#8B949E';
+    btn.style.borderColor = BOARDS[k]?.color || cssVar('--muted');
+    btn.style.color = BOARDS[k]?.color || 'var(--muted)';
     btn.addEventListener('click', () => {
       PD.board = k;
       fetchMissingPerfData(k).then(() => renderPerfStore(k));
@@ -5021,12 +5092,12 @@ function buildPerfTabs() {
 function renderPerfStore(k) {
   PD.board = k;
   // Update tab active state
-  const color = BOARDS[k]?.color || '#8B949E';
+  const color = BOARDS[k]?.color || 'var(--muted)';
   document.querySelectorAll('.perf-tab-btn').forEach(btn => {
     const active = btn.dataset.store === k;
     btn.classList.toggle('active', active);
     btn.style.background = active ? color : 'transparent';
-    btn.style.color = active ? '#0D1117' : (BOARDS[btn.dataset.store]?.color || '#8B949E');
+    btn.style.color = active ? 'var(--on-accent)' : (BOARDS[btn.dataset.store]?.color || 'var(--muted)');
   });
 
   const body = document.getElementById('perfBody');
@@ -5059,12 +5130,12 @@ function renderPerfStore(k) {
         <div class="perf-kpi-value">${fmtBRLk(m.realAcum)}</div>
         <div class="perf-kpi-sub">dados reais</div>
       </div>
-      <div class="perf-kpi" style="border-color:${m.avgD < -10 ? '#F85149' : 'var(--border)'}">
+      <div class="perf-kpi" style="border-color:${m.avgD < -10 ? 'var(--down)' : 'var(--border)'}">
         <div class="perf-kpi-label">Média últimos 3 meses</div>
         <div class="perf-kpi-value ${cls(m.avgD)}">${sign(m.avgD)}${m.avgD.toFixed(1)}%</div>
         <div class="perf-kpi-sub">${m.last3idx.map((idx,j) => m.last3[j] !== null ? `${PERF_MONTHS[idx]}${idx === PERF_CUR ? ' (proj)' : ''} ${m.last3[j].toFixed(1)}%` : null).filter(Boolean).join(' · ')}</div>
       </div>
-      <div class="perf-kpi" style="border-color:#D2992255">
+      <div class="perf-kpi" style="border-color:rgba(var(--warn-rgb),.33)">
         <div class="perf-kpi-label">Projeção 2026 (ano)</div>
         <div class="perf-kpi-value">${fmtBRLk(m.projTotal)}</div>
         <div class="perf-kpi-sub ${cls(pProj)}">${sign(pProj)}${pProj.toFixed(1)}% vs 2025</div>
@@ -5108,7 +5179,7 @@ function renderPerfStore(k) {
     const dCell  = (d, extra='') => d !== null
       ? `<td class="${cls(d)} ${extra}" style="font-size:.72rem;white-space:nowrap">${sign(d)+d.toFixed(1)}%</td>`
       : `<td class="${extra}" style="font-size:.72rem;color:var(--muted)">—</td>`;
-    const projTag = isProj ? ' <span style="color:#D29922;font-size:.62rem">proj</span>' : '';
+    const projTag = isProj ? ' <span style="color:var(--warn);font-size:.62rem">proj</span>' : '';
     tableHtml += `<tr>
       <td style="white-space:nowrap">${mn}${projTag}</td>
       ${h.map((v, j) => `
@@ -5116,7 +5187,7 @@ function renderPerfStore(k) {
         <td class="${deltas[j] !== null ? cls(deltas[j]) : ''}" style="font-size:.72rem;white-space:nowrap">
           ${deltas[j] !== null ? sign(deltas[j])+deltas[j].toFixed(1)+'%' : '—'}
         </td>`).join('')}
-      <td style="color:${isProj?'#D29922':'inherit'}">${v26 !== null ? fmtBRL(v26) : '—'}</td>
+      <td style="color:${isProj?'var(--warn)':'inherit'}">${v26 !== null ? fmtBRL(v26) : '—'}</td>
       ${dCell(d2625,'d26-sep')}${dCell(d2624,'d26')}${dCell(d2623,'d26')}${dCell(d2622,'d26')}
     </tr>`;
   });
@@ -5160,8 +5231,8 @@ function renderPerfStore(k) {
   // ── Annual chart ───────────────────────────────────────────────────────
   const annualLabels = [...HIST_YEARS.map(String), '2026 proj'];
   const annualValues = [...annualTotals, m.projTotal];
-  const annualColors = ['#484F58','#484F58','#484F58',color+'99',`${color}55`];
-  const annualBorders= ['#484F58','#484F58','#484F58',color,color];
+  const annualColors = [cssVar('--border2'),cssVar('--border2'),cssVar('--border2'),color+'99',`${color}55`];
+  const annualBorders= [cssVar('--border2'),cssVar('--border2'),cssVar('--border2'),color,color];
   const annualYoYFull= annualValues.map((v,i) => i===0?null:(v-annualValues[i-1])/annualValues[i-1]*100);
 
   perfAnnualChart = new Chart(document.getElementById('perfAnnualCanvas'), {
@@ -5173,9 +5244,9 @@ function renderPerfStore(k) {
           backgroundColor: annualColors, borderColor: annualBorders,
           borderWidth: 1, borderRadius: 4, yAxisID:'y', order:2 },
         { type:'line', label:'Δ% vs ano ant.', data: annualYoYFull,
-          borderColor:'#8B949E', fill:false, yAxisID:'y2',
-          pointRadius:5, pointBackgroundColor: annualYoYFull.map(v=>v===null?'transparent':v>=0?'#3FB950':'#F85149'),
-          pointBorderColor: annualYoYFull.map(v=>v===null?'transparent':v>=0?'#3FB950':'#F85149'),
+          borderColor:cssVar('--muted'), fill:false, yAxisID:'y2',
+          pointRadius:5, pointBackgroundColor: annualYoYFull.map(v=>v===null?'transparent':v>=0?cssVar('--up'):cssVar('--down')),
+          pointBorderColor: annualYoYFull.map(v=>v===null?'transparent':v>=0?cssVar('--up'):cssVar('--down')),
           tension:.3, borderWidth:1.5, spanGaps:false, order:1 },
       ]
     },
@@ -5183,16 +5254,16 @@ function renderPerfStore(k) {
       responsive:true, maintainAspectRatio:false,
       interaction:{mode:'index',intersect:false},
       plugins:{
-        legend:{labels:{color:'#8B949E',boxWidth:10,boxHeight:10,font:{size:11}}},
+        legend:{labels:{color:cssVar('--muted'),boxWidth:10,boxHeight:10,font:{size:11}}},
         tooltip:{callbacks:{label:ctx=>{
           if(ctx.dataset.yAxisID==='y2') return ctx.parsed.y!=null?` ${ctx.dataset.label}: ${ctx.parsed.y>0?'+':''}${ctx.parsed.y.toFixed(1)}%`:null;
           return ` ${ctx.dataset.label}: ${fmtBRL(ctx.parsed.y)}`;
         }}}
       },
       scales:{
-        x:{grid:{color:'rgba(48,54,61,.6)'},ticks:{color:'#8B949E',maxRotation:0}},
-        y:{position:'left',grid:{color:'rgba(48,54,61,.6)'},ticks:{color:'#8B949E',maxRotation:0,callback:v=>fmtBRLk(v)}},
-        y2:{position:'right',grid:{drawOnChartArea:false},ticks:{color:'#8B949E',maxRotation:0,callback:v=>`${v>0?'+':''}${v.toFixed(0)}%`}},
+        x:{grid:{color:'rgba(' + cssVar('--border-rgb','48,54,61') + ',.6)'},ticks:{color:cssVar('--muted'),maxRotation:0}},
+        y:{position:'left',grid:{color:'rgba(' + cssVar('--border-rgb','48,54,61') + ',.6)'},ticks:{color:cssVar('--muted'),maxRotation:0,callback:v=>fmtBRLk(v)}},
+        y2:{position:'right',grid:{drawOnChartArea:false},ticks:{color:cssVar('--muted'),maxRotation:0,callback:v=>`${v>0?'+':''}${v.toFixed(0)}%`}},
       }
     }
   });
@@ -5202,11 +5273,11 @@ function renderPerfStore(k) {
   const barProj = PERF_MONTHS.map((_,i) => i >= PERF_CUR ? m.proj[i] : null);
   const lineReal = PERF_MONTHS.map((_,i) => i < PERF_CUR ? m.yoyReal[i] : null);
   const lineProj = PERF_MONTHS.map((_,i) => i >= PERF_CUR ? m.yoyFull[i] : null);
-  const ptColor  = PERF_MONTHS.map((_,i) => m.last3idx.includes(i) ? '#D29922' : (m.yoyReal[i]>=0?'#3FB950':'#F85149'));
+  const ptColor  = PERF_MONTHS.map((_,i) => m.last3idx.includes(i) ? cssVar('--warn') : (m.yoyReal[i]>=0?cssVar('--up'):cssVar('--down')));
   const ptSize   = PERF_MONTHS.map((_,i) => m.last3idx.includes(i) ? 7 : 3);
 
   const gridC = 'rgba(48,54,61,.6)';
-  const tickC = { color: '#8B949E', maxRotation: 0 };
+  const tickC = { color: cssVar('--muted'), maxRotation: 0 };
 
   perfChart = new Chart(document.getElementById('perfChartCanvas'), {
     type: 'bar',
@@ -5214,21 +5285,21 @@ function renderPerfStore(k) {
       labels: PERF_MONTHS,
       datasets: [
         { type:'line', label:'2025 (ref.)', data: m.d25,
-          borderColor:'#484F58', borderDash:[5,3], borderWidth:1.5,
+          borderColor:cssVar('--border2'), borderDash:[5,3], borderWidth:1.5,
           fill:false, yAxisID:'y', pointRadius:0, tension:.3, order:0 },
         { type:'bar', label:'2026 Real', data: barReal,
           backgroundColor: color+'CC', borderColor: color,
           borderWidth:1, borderRadius:4, yAxisID:'y', order:2 },
         { type:'bar', label:'2026 Proj.', data: barProj,
-          backgroundColor:'rgba(210,153,34,.25)', borderColor:'#D29922',
+          backgroundColor:'rgba(' + cssVar('--warn-rgb') + ',.25)', borderColor:cssVar('--warn'),
           borderWidth:2, borderRadius:4, yAxisID:'y', order:3 },
         { type:'line', label:'% real', data: lineReal,
-          borderColor:'#F85149', fill:false, yAxisID:'y2',
+          borderColor:cssVar('--down'), fill:false, yAxisID:'y2',
           pointRadius: ptSize, pointBackgroundColor: ptColor,
           pointBorderColor: ptColor, tension:.35, borderWidth:2, spanGaps:false, order:1 },
         { type:'line', label:'% projetado', data: lineProj,
-          borderColor:'#D29922', borderDash:[4,3], fill:false, yAxisID:'y2',
-          pointRadius:3, pointBackgroundColor:'#D29922',
+          borderColor:cssVar('--warn'), borderDash:[4,3], fill:false, yAxisID:'y2',
+          pointRadius:3, pointBackgroundColor:cssVar('--warn'),
           tension:.35, borderWidth:1.5, spanGaps:false, order:1 },
       ]
     },
@@ -5236,7 +5307,7 @@ function renderPerfStore(k) {
       responsive: true, maintainAspectRatio: false,
       interaction: { mode:'index', intersect:false },
       plugins: {
-        legend: { labels: { color:'#8B949E', boxWidth:10, boxHeight:10, font:{size:11} } },
+        legend: { labels: { color:cssVar('--muted'), boxWidth:10, boxHeight:10, font:{size:11} } },
         tooltip: {
           callbacks: {
             label: ctx => {
@@ -5290,7 +5361,7 @@ function _buildPerfStorePayload(k) {
   return {
     key: k,
     label: BOARDS[k]?.label || k,
-    color: BOARDS[k]?.color || '#8B949E',
+    color: BOARDS[k]?.color || 'var(--muted)',
     kpis: {
       total25: m.total25,
       acumulado: m.realAcum,
@@ -5378,15 +5449,15 @@ function buildDailyStoreTabs(activeBoard) {
     btn.className = 'perf-tab-btn';
     btn.dataset.store = k;
     btn.textContent = BOARDS[k]?.label || k;
-    const color = BOARDS[k]?.color || '#8B949E';
+    const color = BOARDS[k]?.color || 'var(--muted)';
     btn.style.borderColor = color;
-    btn.style.background  = k === activeBoard ? color : '#0D1117';
-    btn.style.color       = k === activeBoard ? '#0D1117' : '#fff';
+    btn.style.background  = k === activeBoard ? color : 'var(--on-accent)';
+    btn.style.color       = k === activeBoard ? 'var(--on-accent)' : '#fff';
     btn.addEventListener('click', () => {
       document.querySelectorAll('#dailyStoreTabs .perf-tab-btn').forEach(b => {
-        const c = BOARDS[b.dataset.store]?.color || '#8B949E';
-        b.style.background = b.dataset.store === k ? c : '#0D1117';
-        b.style.color      = b.dataset.store === k ? '#0D1117' : '#fff';
+        const c = BOARDS[b.dataset.store]?.color || 'var(--muted)';
+        b.style.background = b.dataset.store === k ? c : 'var(--on-accent)';
+        b.style.color      = b.dataset.store === k ? 'var(--on-accent)' : '#fff';
       });
       PD.activeEmpId = null;
       loadAndRenderDaily(k);
@@ -5441,14 +5512,14 @@ function renderVendedorSheet() {
   const body    = PD.container;
   const isAdmin = !S.user?.board;
   const emps    = PD.employees;
-  const color   = BOARDS[PD.board]?.color || '#8B949E';
+  const color   = BOARDS[PD.board]?.color || 'var(--muted)';
 
   const totActive = PD.activeEmpId === 'total';
   let tabs = `<button class="ds-vtab ds-vtab-total${totActive ? ' ds-vtab-active' : ''}" data-empid="total">TOTAL</button>`;
   for (const emp of emps) {
     const active = PD.activeEmpId === emp.id;
     tabs += `<button class="ds-vtab${active ? ' ds-vtab-active' : ''}" data-empid="${emp.id}"
-      style="${active ? `background:${color};border-color:${color};color:#0D1117` : `border-color:${color};color:${color}`}"
+      style="${active ? `background:${color};border-color:${color};color:var(--on-accent)` : `border-color:${color};color:${color}`}"
     >${emp.apelido || emp.name}</button>`;
   }
   const syncActive = PD.boardSettings?.[PD.board]?.microvixSync === true;
@@ -6359,7 +6430,7 @@ function renderFolgasTable() {
 
   // Rows
   for (const emp of emps) {
-    const color = BOARDS[emp.board]?.color || '#8B949E';
+    const color = BOARDS[emp.board]?.color || 'var(--muted)';
     const storeLabel = BOARDS[emp.board]?.label || '';
     html += `<tr>
       <td class="emp-col-td">
@@ -6399,7 +6470,7 @@ function renderFolgasTable() {
 async function toggleFolga(empId, date, existingFid, cell) {
   const emp = FC.employees.find(e => e.id === empId);
   if (!emp) return;
-  const color = BOARDS[emp.board]?.color || '#8B949E';
+  const color = BOARDS[emp.board]?.color || 'var(--muted)';
   try {
     if (existingFid) {
       await apiFetch('DELETE', `/api/folgas/${existingFid}`);
@@ -6435,7 +6506,7 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
   try {
     data = await apiFetch('GET', `/api/dados-folha/${year}/${month}/${board}`);
   } catch(e) {
-    body.innerHTML = `<div style="color:#f85149;padding:1rem">Erro: ${e.message}</div>`;
+    body.innerHTML = `<div style="color:var(--down);padding:1rem">Erro: ${e.message}</div>`;
     return;
   }
 
@@ -6674,7 +6745,7 @@ function _renderAusenciasView(body, tipo) {
     const fb   = getFilterBoard();
     const emps = fb ? boardEmpsFor(fb) : [];
     const items = filteredItems();
-    const boardColor = fb ? (BOARDS[fb]?.color || '#8B949E') : '#8B949E';
+    const boardColor = fb ? (BOARDS[fb]?.color || 'var(--muted)') : 'var(--muted)';
     const boardLbl   = fb ? (BOARDS[fb]?.label || fb) : '';
 
     body.innerHTML = `<div class="aus-wrap">
@@ -6713,7 +6784,7 @@ function _renderAusenciasView(body, tipo) {
       <div class="aus-list">
         <div class="aus-list-title">${items.length ? `${items.length} registro${items.length>1?'s':''}` : 'Nenhum registro'}</div>
         ${items.map(r => {
-          const sc = BOARDS[r.board]?.color || '#8B949E';
+          const sc = BOARDS[r.board]?.color || 'var(--muted)';
           const sl = BOARDS[r.board]?.label || r.board;
           return `<div class="aus-card">
             <div class="aus-card-top">
@@ -7592,7 +7663,7 @@ function empAvatarHtml(emp, size) {
     return `<img src="${emp.foto}" class="func-avatar-img" style="width:${size}px;height:${size}px;" alt="">`;
   }
   const initials = emp.name.split(' ').filter(Boolean).map(w => w[0]).slice(0,2).join('').toUpperCase();
-  const color = BOARDS[emp.board]?.color || '#64748b';
+  const color = BOARDS[emp.board]?.color || 'var(--muted)';
   return `<span class="func-avatar-ini" style="width:${size}px;height:${size}px;background:${color}22;color:${color};font-size:${Math.round(size*0.36)}px;">${initials}</span>`;
 }
 
@@ -7613,7 +7684,7 @@ function renderFuncionariosTable() {
 
   tbody.innerHTML = list.map(e => {
     const board   = BOARDS[e.board];
-    const lojaColor = board?.color || '#8B949E';
+    const lojaColor = board?.color || 'var(--muted)';
     const lojaLabel = board?.label || e.board;
     const inativo   = !!e.inativo;
     const comissao  = e.comissao ? `${e.comissao}%` : e.comissaoSemMeta ? `${e.comissaoSemMeta}%` : '—';
@@ -7723,7 +7794,7 @@ function _updateFotoPreview(emp) {
     const name = document.getElementById('funcNome').value || (emp?.name) || '?';
     const ini  = name.split(' ').filter(Boolean).map(w => w[0]).slice(0,2).join('').toUpperCase() || '?';
     const boardVal = document.getElementById('funcBoard')?.value;
-    const color = BOARDS[boardVal]?.color || '#64748b';
+    const color = BOARDS[boardVal]?.color || 'var(--muted)';
     initials.textContent = ini;
     initials.style.color = color;
     initials.style.display = '';
@@ -8176,12 +8247,12 @@ async function renderCampaignRanking(campaign) {
       : (maxVal > 0 ? (r.kpiValue / maxVal * 100) : 0);
     const medal = i < 3 ? medals[i] : `#${i + 1}`;
     const board = porLoja ? r.board : r.emp.board;
-    const color = BOARDS[board]?.color || '#8B949E';
+    const color = BOARDS[board]?.color || 'var(--muted)';
     const store = BOARDS[board]?.label || board;
     const name  = porLoja ? store : (r.emp.apelido || r.emp.name.split(' ')[0]);
     const sub   = porLoja
       ? (r.semCartao
-          ? '<span style="color:var(--warn,#E3B341)">⚠ sem dados de cartão</span>'
+          ? '<span style="color:var(--warn,var(--warn))">⚠ sem dados de cartão</span>'
           : `${fmtBRL(r.vlrLiquido || 0)} de venda líquida`)
       : store;
     return `
@@ -8535,18 +8606,18 @@ function _fmtNFDate(iso) {
 // ── Pendências ────────────────────────────────────────────────────────────
 
 const PENDENCIA_USERS = [
-  { key: 'leonardo',   label: 'Leonardo',   color: '#58A6FF' },
-  { key: 'ingrid',     label: 'Ingrid',     color: '#F78166' },
-  { key: 'gustavo',    label: 'Gustavo',    color: '#E3B341' },
-  { key: 'laura',      label: 'Laura',      color: '#A78BFA' },
-  { key: 'escritorio', label: 'Escritório', color: '#3FB950' },
+  { key: 'leonardo',   label: 'Leonardo',   color: 'var(--accent)' },
+  { key: 'ingrid',     label: 'Ingrid',     color: 'var(--warn-strong)' },
+  { key: 'gustavo',    label: 'Gustavo',    color: 'var(--warn)' },
+  { key: 'laura',      label: 'Laura',      color: 'var(--col-lez)' },
+  { key: 'escritorio', label: 'Escritório', color: 'var(--up)' },
 ];
 
 function _pendenciaChips(assignedTo) {
   // handle legacy string and new array format
   const arr = Array.isArray(assignedTo) ? assignedTo : (assignedTo === 'todos' ? ['leonardo','ingrid','escritorio'] : [assignedTo]);
   if (arr.length >= PENDENCIA_USERS.length) {
-    return `<span class="pend-chip" style="background:#8B949E22;color:#8B949E;border:1px solid #8B949E44">Todos</span>`;
+    return `<span class="pend-chip" style="background:rgba(var(--muted-rgb),.13);color:var(--muted);border:1px solid rgba(var(--muted-rgb),.27)">Todos</span>`;
   }
   return arr.map(key => {
     const u = PENDENCIA_USERS.find(x => x.key === key);
@@ -8994,7 +9065,7 @@ function renderMeetingCard(container) {
           x.board === b && _mtgCarriedOver(x, S.year, S.month)
         ).length;
         return `<button class="nf-tab${b === activeBoard ? ' active' : ''}" data-board="${b}"
-          style="--nf-tab-color:${BOARDS[b]?.color || '#8B949E'}">
+          style="--nf-tab-color:${BOARDS[b]?.color || 'var(--muted)'}">
           ${BOARDS[b]?.label || b}${pending ? ` <span class="nf-tab-badge">${pending}</span>` : ''}
         </button>`;
       }).join('')}
@@ -9316,7 +9387,7 @@ function renderContratoCard(container) {
     if (!rows.length) return '<div class="contrato-empty">Nenhum contrato cadastrado.</div>';
     rows.sort((a, b) => a.sortKey - b.sortKey);
     return rows.map(({ e, b, venc1, venc2, d1, d2 }) => {
-      const color = BOARDS[b]?.color || '#8B949E';
+      const color = BOARDS[b]?.color || 'var(--muted)';
       const isDecisao = d1 !== null && d1 < 0 && d2 !== null && d2 >= 0;
       return `<div class="contrato-row">
         <div class="contrato-row-name">
@@ -9420,7 +9491,7 @@ function renderConferenciaStatusCard(container) {
       const daysElapsed = fechados + abertos;
       const emAberto = abertos;
       const pct      = daysElapsed > 0 ? Math.round(fechados / daysElapsed * 100) : 0;
-      const color    = BOARDS[b]?.color || '#8B949E';
+      const color    = BOARDS[b]?.color || 'var(--muted)';
       const label    = BOARDS[b]?.label || b;
       return `
         <div style="
@@ -9436,11 +9507,11 @@ function renderConferenciaStatusCard(container) {
             letter-spacing:.02em">${label}</div>
           <div style="display:flex;gap:.3rem;align-items:flex-end">
             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:.1rem;min-width:0">
-              <span style="font-size:1.35rem;font-weight:700;color:#3FB950;line-height:1">${fechados}</span>
+              <span style="font-size:1.35rem;font-weight:700;color:var(--up);line-height:1">${fechados}</span>
               <span style="font-size:.56rem;font-weight:600;color:var(--muted);letter-spacing:.04em;white-space:nowrap">FECH.</span>
             </div>
             <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:.1rem;min-width:0">
-              <span style="font-size:1.35rem;font-weight:700;color:#F85149;line-height:1">${emAberto}</span>
+              <span style="font-size:1.35rem;font-weight:700;color:var(--down);line-height:1">${emAberto}</span>
               <span style="font-size:.56rem;font-weight:600;color:var(--muted);letter-spacing:.04em;white-space:nowrap">ABERTO</span>
             </div>
           </div>
@@ -9473,7 +9544,7 @@ function renderCaixaCard(container) {
     if (!visibleStores) return '';
     return `<div class="nf-tabs">${visibleStores.map(b => `
       <button class="nf-tab${b === activeB ? ' active' : ''}" data-board="${b}"
-        style="--nf-tab-color:${BOARDS[b]?.color || '#8B949E'}">${BOARDS[b]?.label || b}
+        style="--nf-tab-color:${BOARDS[b]?.color || 'var(--muted)'}">${BOARDS[b]?.label || b}
       </button>`).join('')}</div>`;
   }
 
@@ -9757,7 +9828,7 @@ function renderCaixaCard(container) {
                 ${lojas.map(b => `
                   <div style="display:flex;align-items:center;gap:.35rem;font-size:.78rem">
                     <span style="color:${BOARDS[b]?.color||'var(--muted)'};font-weight:700">${BOARDS[b]?.label||b}</span>
-                    <span style="color:#F85149;font-weight:600">${fmtCur(porLoja[b]||0)}</span>
+                    <span style="color:var(--down);font-weight:600">${fmtCur(porLoja[b]||0)}</span>
                   </div>`).join('<span style="color:var(--border)">|</span>')}
               </div>`;
 
@@ -9777,12 +9848,12 @@ function renderCaixaCard(container) {
                       </td>
                       <td style="padding:.38rem .6rem;font-size:.8rem;white-space:nowrap;color:var(--muted)">${r.data}</td>
                       <td style="padding:.38rem .6rem;font-size:.8rem">${r.desc || '—'}</td>
-                      <td class="caixa-td-val" style="color:#F85149;font-weight:600">${fmtCur(r.valor)}</td>
+                      <td class="caixa-td-val" style="color:var(--down);font-weight:600">${fmtCur(r.valor)}</td>
                     </tr>`).join('')}
                   </tbody>
                   <tfoot><tr class="caixa-total-row">
                     <td colspan="3">Total${filtroAtivo ? ` — ${BOARDS[filtroAtivo]?.label||filtroAtivo}` : ' Geral'}</td>
-                    <td style="text-align:right;color:#F85149">${fmtCur(total)}</td>
+                    <td style="text-align:right;color:var(--down)">${fmtCur(total)}</td>
                   </tr></tfoot>
                 </table>
               </div>`;
@@ -9794,7 +9865,7 @@ function renderCaixaCard(container) {
             const allBtn = document.createElement('button');
             allBtn.className = 'nf-tab active';
             allBtn.textContent = 'Todas';
-            allBtn.style.cssText = '--nf-tab-color:#8B949E';
+            allBtn.style.cssText = '--nf-tab-color:var(--muted)';
             allBtn.addEventListener('click', () => {
               filtroAtivo = null;
               sgFilters.querySelectorAll('button').forEach(b => b.classList.remove('active'));
@@ -9807,7 +9878,7 @@ function renderCaixaCard(container) {
               const btn = document.createElement('button');
               btn.className = 'nf-tab';
               btn.textContent = BOARDS[board]?.label || board;
-              btn.style.cssText = `--nf-tab-color:${BOARDS[board]?.color||'#8B949E'}`;
+              btn.style.cssText = `--nf-tab-color:${BOARDS[board]?.color||'var(--muted)'}`;
               btn.addEventListener('click', () => {
                 filtroAtivo = board;
                 sgFilters.querySelectorAll('button').forEach(b => b.classList.remove('active'));
@@ -9857,7 +9928,7 @@ function renderNFCard(container) {
       ${visibleStores.map(b => {
         const pending = (S.nfItems || []).filter(x => x.board === b && !x.archived && x.status === 'pendente').length;
         return `<button class="nf-tab${b === activeBoard ? ' active' : ''}" data-board="${b}"
-          style="--nf-tab-color:${BOARDS[b]?.color || '#8B949E'}">
+          style="--nf-tab-color:${BOARDS[b]?.color || 'var(--muted)'}">
           ${BOARDS[b]?.label || b}${pending ? ` <span class="nf-tab-badge">${pending}</span>` : ''}
         </button>`;
       }).join('')}
@@ -9946,7 +10017,7 @@ function renderNFCard(container) {
 
 // ── Meta celebration ──────────────────────────────────────────────────────
 function triggerMetaCelebration(label, color) {
-  const COLORS = ['#FBBF24','#3FB950','#58A6FF','#FF7B72','#F0883E','#D2A8FF', color, '#ffffff'];
+  const COLORS = ['var(--warn)','var(--up)','var(--accent)','var(--down)','var(--warn-strong)','var(--col-lez)', color, 'var(--text)'];
 
   const overlay = document.createElement('div');
   overlay.className = 'meta-cel-overlay';
@@ -10022,7 +10093,7 @@ function renderBoletasCard(container) {
     ? '<div class="nf-empty">Nenhuma boleta pendente</div>'
     : pending.map(b => {
         const days = _boletaDaysLeft(b);
-        const storeTag = (isAdmin || isEscritorio) ? ` <span style="color:${BOARDS[b.board]?.color || '#8B949E'}">${BOARDS[b.board]?.label || b.board}</span>` : '';
+        const storeTag = (isAdmin || isEscritorio) ? ` <span style="color:${BOARDS[b.board]?.color || 'var(--muted)'}">${BOARDS[b.board]?.label || b.board}</span>` : '';
         const info = [b.produto, b.tamanho, b.cor].filter(Boolean).join(' · ');
         return `<div class="bol-item" data-id="${b.id}" style="cursor:pointer">
           <div class="bol-item-top">
@@ -10173,7 +10244,7 @@ function _initBoletasList(body, isAdmin, userBoard) {
 
     listBody.innerHTML = items.map(b => {
       const days = _boletaDaysLeft(b);
-      const storeTag = isAdmin ? `<span class="bol-list-store" style="color:${BOARDS[b.board]?.color||'#8B949E'}">${BOARDS[b.board]?.label||b.board}</span>` : '';
+      const storeTag = isAdmin ? `<span class="bol-list-store" style="color:${BOARDS[b.board]?.color||'var(--muted)'}">${BOARDS[b.board]?.label||b.board}</span>` : '';
       const info = [b.produto, b.tamanho, b.cor].filter(Boolean).join(' · ');
       const resolvedInfo = b.status === 'resolvido' ? `<span class="bol-resolved-tag">✓ Resolvida${b.resolvedAt ? ' em '+new Date(b.resolvedAt).toLocaleDateString('pt-BR') : ''}</span>` : _boletaBadge(days);
       return `<div class="bol-list-item" data-id="${b.id}">
@@ -10220,7 +10291,7 @@ function _initBoletasList(body, isAdmin, userBoard) {
 
 function _boletaDetailHtml(b, isAdmin) {
   const days = _boletaDaysLeft(b);
-  const storeColor = BOARDS[b.board]?.color || '#8B949E';
+  const storeColor = BOARDS[b.board]?.color || 'var(--muted)';
   const fDate = d => d ? new Date(d+'T12:00:00').toLocaleDateString('pt-BR') : '—';
   const row = (label, val) => val ? `<div class="bol-detail-row"><span class="bol-detail-lbl">${label}</span><span class="bol-detail-val">${val}</span></div>` : '';
 
@@ -10596,10 +10667,10 @@ const MATERIAIS_ITEMS = [
   'Bobinas PagSeguro', 'Marca texto', 'Etiqueta para tag', 'Munição',
 ];
 const REQ_STATUS = {
-  'pendente':     { label: 'Pendente',     color: '#8B949E' },
-  'em-separacao': { label: 'Em Separação', color: '#E3B341' },
-  'enviado':      { label: 'Enviado',      color: '#58A6FF' },
-  'recebido':     { label: 'Recebido',     color: '#3FB950' },
+  'pendente':     { label: 'Pendente',     color: 'var(--muted)' },
+  'em-separacao': { label: 'Em Separação', color: 'var(--warn)' },
+  'enviado':      { label: 'Enviado',      color: 'var(--accent)' },
+  'recebido':     { label: 'Recebido',     color: 'var(--up)' },
 };
 
 // Data de hoje no fuso da loja. toISOString() é UTC e depois das 21h já virou o
@@ -10720,7 +10791,7 @@ function _renderFechVendedorLojaAcaoView(body) {
     body.innerHTML = `<div style="padding:.75rem 1.25rem .25rem">
       <div class="req-board-chips">
         ${STORE_BOARDS.map(b =>
-          `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'#8B949E'}">${BOARDS[b]?.label||b}</button>`).join('')}
+          `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'var(--muted)'}">${BOARDS[b]?.label||b}</button>`).join('')}
       </div>
     </div>
     <div id="fvContent">${monthLink(filterBoard, S.year, S.month)}</div>`;
@@ -10957,7 +11028,7 @@ function _estoqueGrupoHtml(g) {
         <thead>
           <tr><th>Item</th>
             ${lojas.map(b => `<th class="ct-th-loja">
-              <span class="dash-store-dot" style="background:${BOARDS[b]?.color || '#8B949E'}"></span>${_escHtml(BOARDS[b]?.label || b)}</th>`).join('')}
+              <span class="dash-store-dot" style="background:${BOARDS[b]?.color || 'var(--muted)'}"></span>${_escHtml(BOARDS[b]?.label || b)}</th>`).join('')}
             <th>Rede</th></tr>
           <tr><th class="ct-th-sub">contado em</th>
             ${lojas.map(b => `<th class="ct-th-sub">${g.contagens?.[b] ? _fmtData(g.contagens[b]) : 'nunca contou'}</th>`).join('')}
@@ -11015,7 +11086,7 @@ function _entregaFormHtml(g) {
     <div class="ct-table-wrap">
       <table class="ct-table">
         <thead><tr><th>Item</th>${g.boards.map(b => `<th class="ct-th-loja">
-          <span class="dash-store-dot" style="background:${BOARDS[b]?.color || '#8B949E'}"></span>${_escHtml(BOARDS[b]?.label || b)}</th>`).join('')}</tr></thead>
+          <span class="dash-store-dot" style="background:${BOARDS[b]?.color || 'var(--muted)'}"></span>${_escHtml(BOARDS[b]?.label || b)}</th>`).join('')}</tr></thead>
         <tbody>
           ${cat.map(it => `<tr>
             <td class="ct-nome">${_escHtml(it.nome)}${it.cod ? `<span class="ct-cod">${_escHtml(it.cod)}</span>` : ''}</td>
@@ -11045,7 +11116,7 @@ function _entregaListaHtml(g) {
       <span class="ct-ent-data-tag">${(e.data || '').split('-').reverse().join('/')}</span>
       <div class="ct-ent-lote-corpo">
         ${Object.entries(e.porLoja || {}).map(([b, itens]) => `<span class="ct-banner-chip" title="${_escHtml(Object.entries(itens).map(([k, q]) => `${nomes[k] || k}: ${q}`).join(' · '))}">
-          <span class="dash-store-dot" style="background:${BOARDS[b]?.color || '#8B949E'}"></span>${_escHtml(BOARDS[b]?.label || b)}
+          <span class="dash-store-dot" style="background:${BOARDS[b]?.color || 'var(--muted)'}"></span>${_escHtml(BOARDS[b]?.label || b)}
           <b>${Object.values(itens).reduce((s, q) => s + (Number(q) || 0), 0)}</b><span class="ct-chip-min">pç</span></span>`).join('')}
         ${e.obs ? `<span class="ct-ent-obs-txt">"${_escHtml(e.obs)}"</span>` : ''}
       </div>
@@ -11097,7 +11168,7 @@ async function _renderPedidoConsolidado(el, usarCache) {
             <tr>
               <th rowspan="2">Item</th><th rowspan="2">Cód.</th>
               ${lojas.map(b => `<th colspan="2" class="ct-th-loja ct-grp-start">
-                <span class="dash-store-dot" style="background:${BOARDS[b]?.color || '#8B949E'}"></span>${_escHtml(BOARDS[b]?.label || b)}</th>`).join('')}
+                <span class="dash-store-dot" style="background:${BOARDS[b]?.color || 'var(--muted)'}"></span>${_escHtml(BOARDS[b]?.label || b)}</th>`).join('')}
               <th rowspan="2">Necessidade</th><th rowspan="2">Pedir</th>
             </tr>
             <tr>
@@ -11134,9 +11205,9 @@ async function _renderPedidoConsolidado(el, usarCache) {
             <span class="ct-transf-qtd">${t.qtd} pç</span>
             <span class="ct-transf-item">${_escHtml(t.nome)}</span>
             <span class="ct-transf-rota">
-              <span class="dash-store-dot" style="background:${BOARDS[t.de]?.color || '#8B949E'}"></span>${_escHtml(BOARDS[t.de]?.label || t.de)}
+              <span class="dash-store-dot" style="background:${BOARDS[t.de]?.color || 'var(--muted)'}"></span>${_escHtml(BOARDS[t.de]?.label || t.de)}
               <span class="ct-transf-seta">→</span>
-              <span class="dash-store-dot" style="background:${BOARDS[t.para]?.color || '#8B949E'}"></span>${_escHtml(BOARDS[t.para]?.label || t.para)}
+              <span class="dash-store-dot" style="background:${BOARDS[t.para]?.color || 'var(--muted)'}"></span>${_escHtml(BOARDS[t.para]?.label || t.para)}
             </span>
           </div>`).join('')}
         </div>` : ''}
@@ -11260,7 +11331,7 @@ function _renderContagemAdminView(body) {
             const late = st?.atrasada;
             return `<div class="ct-status-card${late ? ' ct-status-late' : ''}">
               <div class="ct-status-top">
-                <span class="dash-store-dot" style="background:${BOARDS[b]?.color || '#8B949E'}"></span>
+                <span class="dash-store-dot" style="background:${BOARDS[b]?.color || 'var(--muted)'}"></span>
                 <b>${_escHtml(BOARDS[b]?.label || b)}</b>
               </div>
               <div class="ct-status-line">${late
@@ -11293,7 +11364,7 @@ function _renderContagemAdminView(body) {
       <div class="ct-admin-sec">
         <div class="req-sec-hdr">📦 Mínimos por loja — a loja conta em peças, o pedido sai em módulos</div>
         <div class="req-board-chips">
-          ${boards.map(b => `<button class="req-board-chip${sel === b ? ' active' : ''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color || '#8B949E'}">${_escHtml(BOARDS[b]?.label || b)}</button>`).join('')}
+          ${boards.map(b => `<button class="req-board-chip${sel === b ? ' active' : ''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color || 'var(--muted)'}">${_escHtml(BOARDS[b]?.label || b)}</button>`).join('')}
         </div>
         <p class="ct-help">O <b>piso</b> é o alarme da loja. Em branco ele fica no <b>automático</b>, acompanhando a venda; digite um número para travar, e apague para voltar ao automático. O <b>alvo</b> o sistema calcula sozinho: consumo previsto do horizonte mais o piso. É ele que dimensiona o pedido. <b>Consumo por venda</b> é quantas unidades do item saem a cada venda: 0,455 sacola P significa que pouco menos da metade das vendas leva uma P; a Seda já vem no PA da loja, porque sai por peça. Deixar em 0 tira o item do cálculo.</p>
         <div class="ct-table-wrap">
@@ -11498,15 +11569,15 @@ function _renderReqAdminView(body) {
             `<button class="req-stab${filterStatus===s?' active':''}" data-s="${s}">${l}</button>`).join('')}
         </div>
         <div class="req-board-chips">
-          <button class="req-board-chip${filterBoard===''?' active':''}" data-b="" style="--rbc:#8B949E">Todas</button>
-          ${STORE_BOARDS.map(b => `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'#8B949E'}">${BOARDS[b]?.label||b}</button>`).join('')}
+          <button class="req-board-chip${filterBoard===''?' active':''}" data-b="" style="--rbc:var(--muted)">Todas</button>
+          ${STORE_BOARDS.map(b => `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'var(--muted)'}">${BOARDS[b]?.label||b}</button>`).join('')}
         </div>
       </div>
       <div class="req-admin-list">
         ${!items.length
           ? '<div class="req-empty">Nenhuma requisição encontrada</div>'
           : items.map(req => {
-              const sc = BOARDS[req.board]?.color || '#8B949E';
+              const sc = BOARDS[req.board]?.color || 'var(--muted)';
               const sl = BOARDS[req.board]?.label  || req.board;
               const dt = new Date(req.createdAt).toLocaleDateString('pt-BR');
               const recTot = _reqRecebidoTotal(req);
@@ -11685,7 +11756,7 @@ function _retCardHtml(r) {
       ${r.tamanho  ? `<span><b>Tam.:</b> ${_escHtml(r.tamanho)}</span>`   : ''}
       <span><b>Qtd.:</b> ${r.quantidade||1}</span>
       <span><b>Preço cheio:</b> ${_retBrl(r.precoCheio)}</span>
-      <span><b>c/ 30% desc.:</b> <span style="color:#3fb950;font-weight:700">${_retBrl(totalDesc)}</span></span>
+      <span><b>c/ 30% desc.:</b> <span style="color:var(--up);font-weight:700">${_retBrl(totalDesc)}</span></span>
     </div>
     ${r.observacao ? `<div class="ret-obs">"${_escHtml(r.observacao)}"</div>` : ''}
   </div>`;
@@ -11733,14 +11804,14 @@ function _renderRetiradaLojaView(body) {
           <div class="ret-field">
             <label>Preço Cheio (R$)</label>
             <input type="number" id="retPreco" step="0.01" min="0.01" placeholder="0,00">
-            <span id="retDescCalc" style="font-size:.8rem;color:#3fb950;margin-top:.25rem;display:block"></span>
+            <span id="retDescCalc" style="font-size:.8rem;color:var(--up);margin-top:.25rem;display:block"></span>
           </div>
           <div class="ret-field" style="grid-column:1/-1">
             <label>Observação (opcional)</label>
             <textarea id="retObs" rows="2" maxlength="400" placeholder="Detalhes adicionais…"></textarea>
           </div>
         </div>
-        <div style="background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.25);border-radius:8px;padding:.6rem .9rem;margin-bottom:.9rem;font-size:.85rem;color:#58a6ff">
+        <div style="background:rgba(88,166,255,.08);border:1px solid rgba(88,166,255,.25);border-radius:8px;padding:.6rem .9rem;margin-bottom:.9rem;font-size:.85rem;color:var(--accent)">
           <b>Desconto funcionário: 30%</b> — o valor final com desconto será calculado automaticamente.
         </div>
         <button class="ret-submit-btn" id="retSubmitBtn">Enviar Solicitação</button>
@@ -11820,15 +11891,15 @@ function _renderRetiradaAdminView(body) {
             `<button class="req-stab${filterStatus===s?' active':''}" data-s="${s}">${l}</button>`).join('')}
         </div>
         <div class="req-board-chips">
-          <button class="req-board-chip${filterBoard===''?' active':''}" data-b="" style="--rbc:#8B949E">Todas</button>
+          <button class="req-board-chip${filterBoard===''?' active':''}" data-b="" style="--rbc:var(--muted)">Todas</button>
           ${Object.keys(BOARDS).filter(b=>b!=='escritorio').map(b =>
-            `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'#8B949E'}">${BOARDS[b]?.label||b}</button>`).join('')}
+            `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'var(--muted)'}">${BOARDS[b]?.label||b}</button>`).join('')}
         </div>
       </div>
       <div class="req-admin-list">
         ${!items.length ? '<div class="req-empty">Nenhuma solicitação encontrada</div>'
           : items.map(r => {
-              const sc = BOARDS[r.board]?.color||'#8B949E';
+              const sc = BOARDS[r.board]?.color||'var(--muted)';
               const sl = BOARDS[r.board]?.label||r.board;
               const precoDesc = (r.precoCheio||0) * (1 - RET_DESCONTO) * (r.quantidade||1);
               const actions = (NEXT_RET[r.status]||[]).map(([s,l]) =>
@@ -11979,11 +12050,11 @@ function _renderAdiAdminLancar(content, onSuccess) {
 
   function renderForm() {
     const emps = (S.employees||[]).filter(e => e.board === filterBoard && !e.inativo);
-    const cor  = BOARDS[filterBoard]?.color || '#8B949E';
+    const cor  = BOARDS[filterBoard]?.color || 'var(--muted)';
     content.innerHTML = `<div class="ret-form-wrap">
       <div class="req-board-chips" style="margin-bottom:.9rem">
         ${STORE_BOARDS.map(b =>
-          `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'#8B949E'}">${BOARDS[b]?.label||b}</button>`).join('')}
+          `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'var(--muted)'}">${BOARDS[b]?.label||b}</button>`).join('')}
       </div>
       <div class="adi-emp-list">
         ${emps.length
@@ -12059,15 +12130,15 @@ function _renderAdiAdminGerenciar(content) {
             `<button class="req-stab${filterStatus===s?' active':''}" data-s="${s}">${l}</button>`).join('')}
         </div>
         <div class="req-board-chips">
-          <button class="req-board-chip${filterBoard===''?' active':''}" data-b="" style="--rbc:#8B949E">Todas</button>
+          <button class="req-board-chip${filterBoard===''?' active':''}" data-b="" style="--rbc:var(--muted)">Todas</button>
           ${Object.keys(BOARDS).filter(b=>b!=='escritorio').map(b =>
-            `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'#8B949E'}">${BOARDS[b]?.label||b}</button>`).join('')}
+            `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'var(--muted)'}">${BOARDS[b]?.label||b}</button>`).join('')}
         </div>
       </div>
       <div class="req-admin-list">
         ${!items.length ? '<div class="req-empty">Nenhuma solicitação encontrada</div>'
           : items.map(r => {
-              const sc = BOARDS[r.board]?.color||'#8B949E';
+              const sc = BOARDS[r.board]?.color||'var(--muted)';
               const sl = BOARDS[r.board]?.label||r.board;
               const actions = (NEXT_ADI[r.status]||[]).map(([s,l]) =>
                 `<button class="req-action-btn${s==='recusado'?' req-del-btn':''}" data-id="${r.id}" data-status="${s}">${l}</button>`).join('');
@@ -12120,7 +12191,7 @@ function _renderDadosLojaAcaoView(body) {
     wrapper.innerHTML = `<div style="padding:.75rem 1.25rem .25rem">
       <div class="req-board-chips">
         ${STORE_BOARDS.map(b =>
-          `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'#8B949E'}">${BOARDS[b]?.label||b}</button>`).join('')}
+          `<button class="req-board-chip${filterBoard===b?' active':''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color||'var(--muted)'}">${BOARDS[b]?.label||b}</button>`).join('')}
       </div>
     </div>
     <div id="dadosLojaAcaoContent"></div>`;
@@ -12407,10 +12478,10 @@ function _buildIndevaTabs() {
     btn.className = 'perf-tab-btn';
     btn.dataset.board = bk;
     btn.textContent = BOARDS[bk]?.label || bk;
-    const color = BOARDS[bk]?.color || '#8B949E';
+    const color = BOARDS[bk]?.color || 'var(--muted)';
     btn.style.borderColor = color;
     btn.style.background  = bk === _indevaBoard ? color : 'transparent';
-    btn.style.color       = bk === _indevaBoard ? '#0D1117' : color;
+    btn.style.color       = bk === _indevaBoard ? 'var(--on-accent)' : color;
     btn.addEventListener('click', () => { _indevaBoard = bk; _buildIndevaTabs(); _loadIndeva(); });
     tabsEl.appendChild(btn);
   });
@@ -12429,7 +12500,7 @@ async function _loadIndeva() {
       if (!r.ok) throw new Error(await r.text());
       _renderIndeva(body, await r.json());
     }
-  } catch (e) { body.innerHTML = `<div style="padding:2rem;color:#F85149">${e.message}</div>`; }
+  } catch (e) { body.innerHTML = `<div style="padding:2rem;color:var(--down)">${e.message}</div>`; }
 }
 
 function _renderIndeva(body, state) {
@@ -12724,7 +12795,7 @@ function _showIndevaGoalsOverlay(emp, state) {
     return val >= ref ? '<span class="ig-arrow ig-up">▲</span>' : '<span class="ig-arrow ig-dn">▼</span>';
   };
   const todayBarPct   = todayMeta > 0 ? Math.min(todayValor / todayMeta * 100, 100) : 0;
-  const todayBarColor = todayBarPct>=100?'#3FB950':todayBarPct>=80?'#D29922':'#F85149';
+  const todayBarColor = todayBarPct>=100?'var(--up)':todayBarPct>=80?'var(--warn)':'var(--down)';
   const todayPctNum   = todayMeta > 0 ? todayValor / todayMeta * 100 : null;
   const weekVendido   = weekRows.filter(r => !r.future).reduce((s, r) => s + r.vendido, 0);
   const weekPct       = k.wMeta > 0 ? weekVendido / k.wMeta * 100 : null;
@@ -12916,7 +12987,7 @@ function _renderIndevaHistorico(body, historico) {
 
   function usabChip(usab) {
     if (usab === null) return '<span style="color:var(--muted);font-size:.75rem">s/dados MX</span>';
-    const c = usab>=80?'#3FB950':usab>=50?'#D29922':'#F85149';
+    const c = usab>=80?'var(--up)':usab>=50?'var(--warn)':'var(--down)';
     return `<span style="font-weight:700;color:${c}">${Math.round(usab)}%</span>`;
   }
 
@@ -12956,11 +13027,11 @@ function _renderIndevaHistorico(body, historico) {
         <td class="ih-td ih-num">${vd.total}</td>
         <td class="ih-td ih-num">${mxAtend||'—'}</td>
         <td class="ih-td ih-num">${usabChip(vUsab)}</td>
-        <td class="ih-td ih-num" style="color:${vd.total>0?(Math.round(vd.vendas/vd.total*100)>=50?'#3FB950':'#F85149'):'var(--muted)'}">${fPct(vd.vendas,vd.total)}</td>
+        <td class="ih-td ih-num" style="color:${vd.total>0?(Math.round(vd.vendas/vd.total*100)>=50?'var(--up)':'var(--down)'):'var(--muted)'}">${fPct(vd.vendas,vd.total)}</td>
       </tr>`;
     }).join('');
 
-    const convColor = conv>=50?'#3FB950':conv>=30?'#D29922':'#F85149';
+    const convColor = conv>=50?'var(--up)':conv>=30?'var(--warn)':'var(--down)';
     return `<div class="ih-day-card">
       <div class="ih-day-hdr">
         <span class="ih-day-date">${fDate(day.date)}</span>
@@ -13003,8 +13074,8 @@ function _renderIndevaHistorico(body, historico) {
       <div class="ih-summary-lbl">Últimos ${last7.length} dias</div>
       <div class="ih-summary-pills">
         <div class="ih-sum-pill"><span class="ih-sum-val">${aggTotal}</span><span class="ih-sum-lbl">atendimentos</span></div>
-        <div class="ih-sum-pill"><span class="ih-sum-val" style="color:${aggConv>=50?'#3FB950':aggConv>=30?'#D29922':'#F85149'}">${aggConv}%</span><span class="ih-sum-lbl">conversão</span></div>
-        ${aggUsab!==null?`<div class="ih-sum-pill"><span class="ih-sum-val" style="color:${aggUsab>=80?'#3FB950':aggUsab>=50?'#D29922':'#F85149'}">${aggUsab}%</span><span class="ih-sum-lbl">usabilidade</span></div>`:''}
+        <div class="ih-sum-pill"><span class="ih-sum-val" style="color:${aggConv>=50?'var(--up)':aggConv>=30?'var(--warn)':'var(--down)'}">${aggConv}%</span><span class="ih-sum-lbl">conversão</span></div>
+        ${aggUsab!==null?`<div class="ih-sum-pill"><span class="ih-sum-val" style="color:${aggUsab>=80?'var(--up)':aggUsab>=50?'var(--warn)':'var(--down)'}">${aggUsab}%</span><span class="ih-sum-lbl">usabilidade</span></div>`:''}
       </div>
     </div>` : ''}
     ${days.length === 0
@@ -13079,7 +13150,7 @@ function _openIndevaCampanhasOverlay() {
         <div class="indeva-camp-list">
           ${ranking.map((r,i) => {
             const pct   = maxVal > 0 ? r.kpiValue / maxVal * 100 : 0;
-            const color = BOARDS[r.emp.board]?.color || '#8B949E';
+            const color = BOARDS[r.emp.board]?.color || 'var(--muted)';
             return `<div class="indeva-camp-row">
               <div class="indeva-camp-pos">${i<3?medals[i]:'#'+(i+1)}</div>
               ${empAvatarHtml(r.emp, 36)}
@@ -13179,7 +13250,7 @@ async function initStandalone() {
 
   if (!isAdmin && !isEscritorio && !INDEVA_STORES.includes(userBoard)) {
     document.getElementById('indevaBody').innerHTML =
-      '<div style="padding:2rem;color:#F85149">Acesso não autorizado</div>';
+      '<div style="padding:2rem;color:var(--down)">Acesso não autorizado</div>';
     return;
   }
 
@@ -13588,7 +13659,7 @@ function renderDreHistorico(body) {
         <tbody>${rows}</tbody>
       </table>
     </div>`;
-  }).catch(e => { body.innerHTML = `<div class="dre-historico"><p style="color:#F85149">Erro: ${e.message}</p></div>`; });
+  }).catch(e => { body.innerHTML = `<div class="dre-historico"><p style="color:var(--down)">Erro: ${e.message}</p></div>`; });
 }
 
 async function loadDreData() {
@@ -13602,7 +13673,7 @@ async function loadDreData() {
     DR.cmv_microvix     = data.cmv_microvix;
     renderDreTab();
   } catch(e) {
-    body.innerHTML = `<div style="padding:2rem;color:#F85149">Erro: ${e.message}</div>`;
+    body.innerHTML = `<div style="padding:2rem;color:var(--down)">Erro: ${e.message}</div>`;
   }
 }
 
@@ -13702,6 +13773,12 @@ function init() {
   initDreModal();
   initJustificativaModal();
   document.getElementById('logoutBtn').addEventListener('click', logout);
+  const btnTema = document.getElementById('themeBtn');
+  if (btnTema) {
+    btnTema.addEventListener('click', alternaTema);
+    // Sincroniza o ícone: o tema foi aplicado antes de o DOM existir.
+    aplicaTema(document.documentElement.getAttribute('data-theme'));
+  }
   document.getElementById('btnPrev').addEventListener('click', () => navigate(-1));
   document.getElementById('btnNext').addEventListener('click', () => navigate(1));
 

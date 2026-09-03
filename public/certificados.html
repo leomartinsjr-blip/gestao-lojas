@@ -7,23 +7,23 @@
 <link rel="stylesheet" href="/style.css"/>
 <style>
 :root {
-  --cf-bg:      #0D1117;
-  --cf-card:    #161B22;
-  --cf-card2:   #1C2128;
-  --cf-border:  #30363D;
-  --cf-text:    #E6EDF3;
-  --cf-muted:   #7D8590;
-  --cf-primary: #4493F8;
-  --cf-accent:  #E3B341;
-  --cf-alert:   #F85149;
-  --cf-green:   #3FB950;
-  --cf-purple:  #BC8CFF;
-  --cf-teal:    #39D3BB;
+  --cf-bg:      var(--bg);
+  --cf-card:    var(--surface);
+  --cf-card2:   var(--surface2);
+  --cf-border:  var(--border);
+  --cf-text:    var(--text);
+  --cf-muted:   var(--muted);
+  --cf-primary: var(--accent);
+  --cf-accent:  var(--warn);
+  --cf-alert:   var(--down);
+  --cf-green:   var(--up);
+  --cf-purple:  var(--col-lez);
+  --cf-teal:    var(--col-tommy);
   --r: 10px;
-  --cf-primary-bg: #4493F818;
-  --cf-accent-bg:  #E3B34118;
-  --cf-alert-bg:   #F8514918;
-  --cf-green-bg:   #3FB95018;
+  --cf-primary-bg: var(--accent)18;
+  --cf-accent-bg:  rgba(var(--warn-rgb), .09);
+  --cf-alert-bg:   rgba(var(--down-rgb), .09);
+  --cf-green-bg:   rgba(var(--up-rgb), .09);
 }
 *, *::before, *::after { box-sizing: border-box; }
 body {
@@ -94,7 +94,7 @@ body {
   font-size: 13px; font-family: inherit; height: 34px; outline: none;
   transition: border-color .15s;
 }
-.cf-input:focus, .cf-select:focus { border-color: var(--cf-primary); box-shadow: 0 0 0 3px #4493F820; }
+.cf-input:focus, .cf-select:focus { border-color: var(--cf-primary); box-shadow: 0 0 0 3px var(--accent)20; }
 .cf-select option { background: var(--cf-card2); }
 .cf-btn {
   background: var(--cf-card); border: 1px solid var(--cf-border);
@@ -105,7 +105,7 @@ body {
 }
 .cf-btn:hover { background: var(--cf-card2); border-color: var(--cf-muted); }
 .cf-btn.primary { background: var(--cf-primary-bg); border-color: var(--cf-primary); color: var(--cf-primary); }
-.cf-btn.primary:hover { background: #4493F830; }
+.cf-btn.primary:hover { background: var(--accent)30; }
 
 /* ── Section title ── */
 .section-title { font-size: 11px; font-weight: 600; color: var(--cf-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
@@ -154,14 +154,14 @@ body {
 
 /* ── Modal ── */
 .modal-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,.65);
+  position: fixed; inset: 0; background: rgba(var(--shadow-rgb),.65);
   display: flex; align-items: center; justify-content: center;
   z-index: 200; padding: 1rem;
 }
 .modal {
   background: var(--cf-card); border: 1px solid var(--cf-border);
   border-radius: 14px; padding: 24px; width: 100%; max-width: 420px;
-  box-shadow: 0 8px 40px rgba(0,0,0,.4);
+  box-shadow: 0 8px 40px rgba(var(--shadow-rgb),.4);
 }
 .modal-title { font-size: 15px; font-weight: 700; color: var(--cf-text); margin-bottom: 20px; }
 .form-group { margin-bottom: 14px; }
@@ -281,7 +281,7 @@ textarea.cf-input { height: auto; min-height: 60px; resize: vertical; padding: 8
 </div>
 
 <script>
-const LOJAS_COLORS = { 'Del Rey':'#4AA3FF','Minas':'#a78bfa','Contagem':'#34d399','Estação':'#FF9A4A','Tommy':'#2dd4bf','Surfers':'#FF6161' };
+const LOJAS_COLORS = { 'Del Rey':'var(--accent)','Minas':'var(--col-lez)','Contagem':'var(--up)','Estação':'var(--warn-strong)','Tommy':'var(--col-tommy)','Surfers':'var(--down)' };
 
 const MODES = {
   cert: {
@@ -403,7 +403,7 @@ function render() {
   listEl.innerHTML = list.map(c => {
     const days = daysDiff(c.validade);
     const st   = statusOf(days);
-    const cor  = LOJAS_COLORS[c.loja] || '#7D8590';
+    const cor  = LOJAS_COLORS[c.loja] || 'var(--muted)';
     const audit = c.atualizadoPor
       ? `Atualizado por ${esc(c.atualizadoPor)} · ${new Date(c.atualizadoEm).toLocaleDateString('pt-BR')}`
       : c.criadoPor ? `Cadastrado por ${esc(c.criadoPor)} · ${new Date(c.criadoEm).toLocaleDateString('pt-BR')}` : '';

@@ -17,7 +17,7 @@
     padding: 20px 0; flex-shrink: 0;
   }
   .crm-logo { padding: 0 20px 20px; border-bottom: 1px solid var(--border); margin-bottom: 12px; }
-  .crm-logo h2 { font-size: .95rem; font-weight: 700; color: #58A6FF; margin: 0; }
+  .crm-logo h2 { font-size: .95rem; font-weight: 700; color: var(--accent); margin: 0; }
   .crm-logo span { font-size: .75rem; color: var(--muted); }
   .crm-nav-item {
     display: flex; align-items: center; gap: 10px; padding: 9px 20px;
@@ -25,7 +25,7 @@
     transition: background .15s, color .15s; border-left: 3px solid transparent;
   }
   .crm-nav-item:hover { background: var(--surface2); color: var(--text); }
-  .crm-nav-item.active { color: #58A6FF; background: rgba(88,166,255,.08); border-left-color: #58A6FF; }
+  .crm-nav-item.active { color: var(--accent); background: rgba(var(--accent-rgb),.08); border-left-color: var(--accent); }
   .crm-nav-item svg { flex-shrink: 0; opacity: .75; }
   .crm-nav-item.active svg { opacity: 1; }
   .crm-sidebar-footer { margin-top: auto; padding: 16px 20px; border-top: 1px solid var(--border); }
@@ -47,10 +47,10 @@
   .crm-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
   .crm-card-label { font-size: .75rem; color: var(--muted); margin-bottom: 6px; }
   .crm-card-value { font-size: 1.6rem; font-weight: 700; color: var(--text); }
-  .crm-card-value.blue { color: #58A6FF; }
-  .crm-card-value.green { color: #3FB950; }
-  .crm-card-value.yellow { color: #D29922; }
-  .crm-card-value.red { color: #F85149; }
+  .crm-card-value.blue { color: var(--accent); }
+  .crm-card-value.green { color: var(--up); }
+  .crm-card-value.yellow { color: var(--warn); }
+  .crm-card-value.red { color: var(--down); }
 
   /* Tables */
   .crm-table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
@@ -65,10 +65,10 @@
 
   /* Badges */
   .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: .72rem; font-weight: 600; }
-  .badge-green  { background: rgba(63,185,80,.15);  color: #3FB950; }
-  .badge-red    { background: rgba(248,81,73,.15);   color: #F85149; }
-  .badge-blue   { background: rgba(88,166,255,.15);  color: #58A6FF; }
-  .badge-yellow { background: rgba(210,153,34,.15);  color: #D29922; }
+  .badge-green  { background: rgba(var(--up-rgb),.15);  color: var(--up); }
+  .badge-red    { background: rgba(var(--down-rgb),.15);   color: var(--down); }
+  .badge-blue   { background: rgba(var(--accent-rgb),.15);  color: var(--accent); }
+  .badge-yellow { background: rgba(var(--warn-rgb),.15);  color: var(--warn); }
   .badge-gray   { background: var(--surface2); color: var(--muted); }
 
   /* Forms */
@@ -82,22 +82,22 @@
     color: var(--text); font-size: .88rem; padding: 7px 10px; font-family: inherit; outline: none;
     transition: border-color .15s;
   }
-  .crm-form-field input:focus, .crm-form-field select:focus, .crm-form-field textarea:focus { border-color: #58A6FF; }
+  .crm-form-field input:focus, .crm-form-field select:focus, .crm-form-field textarea:focus { border-color: var(--accent); }
   .crm-form-field textarea { resize: vertical; min-height: 80px; }
   .crm-template-hint { font-size: .75rem; color: var(--muted); margin-top: 4px; }
 
   /* Buttons */
   .btn { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 6px; font-size: .83rem; font-weight: 600; cursor: pointer; border: none; font-family: inherit; transition: opacity .15s; }
   .btn:disabled { opacity: .5; cursor: not-allowed; }
-  .btn-primary { background: #58A6FF; color: #000; }
+  .btn-primary { background: var(--accent); color: #000; }
   .btn-primary:hover:not(:disabled) { opacity: .85; }
-  .btn-danger  { background: rgba(248,81,73,.15); color: #F85149; border: 1px solid rgba(248,81,73,.3); }
-  .btn-danger:hover:not(:disabled)  { background: rgba(248,81,73,.25); }
+  .btn-danger  { background: rgba(var(--down-rgb),.15); color: var(--down); border: 1px solid rgba(var(--down-rgb),.3); }
+  .btn-danger:hover:not(:disabled)  { background: rgba(var(--down-rgb),.25); }
   .btn-ghost   { background: none; color: var(--muted); border: 1px solid var(--border); }
   .btn-ghost:hover:not(:disabled)   { color: var(--text); background: var(--surface2); }
   .btn-sm      { padding: 4px 10px; font-size: .78rem; }
-  .btn-green   { background: rgba(63,185,80,.15); color: #3FB950; border: 1px solid rgba(63,185,80,.3); }
-  .btn-green:hover:not(:disabled) { background: rgba(63,185,80,.25); }
+  .btn-green   { background: rgba(var(--up-rgb),.15); color: var(--up); border: 1px solid rgba(var(--up-rgb),.3); }
+  .btn-green:hover:not(:disabled) { background: rgba(var(--up-rgb),.25); }
 
   /* Search bar */
   .crm-search { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -106,7 +106,7 @@
     color: var(--text); font-size: .85rem; padding: 6px 10px; font-family: inherit; outline: none;
   }
   .crm-search input { min-width: 220px; }
-  .crm-search input:focus, .crm-search select:focus { border-color: #58A6FF; }
+  .crm-search input:focus, .crm-search select:focus { border-color: var(--accent); }
 
   /* Pagination */
   .crm-pagination { display: flex; align-items: center; gap: 8px; padding: 12px 18px; justify-content: flex-end; font-size: .82rem; color: var(--muted); }
@@ -127,7 +127,7 @@
   .birthday-item { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: .85rem; }
   .birthday-item:last-child { border-bottom: none; }
   .birthday-date { font-size: .78rem; color: var(--muted); min-width: 40px; }
-  .birthday-today { color: #3FB950; font-weight: 600; }
+  .birthday-today { color: var(--up); font-weight: 600; }
 
   /* Responsive */
   @media (max-width: 640px) {
@@ -293,7 +293,7 @@
             <button class="btn btn-ghost btn-sm" onclick="resetCampaignForm()">Limpar</button>
             <button class="btn btn-primary btn-sm" onclick="saveCampaign()">Salvar campanha</button>
           </div>
-          <div id="cfErr" style="font-size:.8rem;color:#F85149;margin-top:8px;display:none"></div>
+          <div id="cfErr" style="font-size:.8rem;color:var(--down);margin-top:8px;display:none"></div>
         </div>
       </div>
     </div>
