@@ -207,25 +207,42 @@ body {
 
 /* ── Dashboard por setor (abas Vendas / Caixa / Pessoas / Gestão da Loja) ── */
 .dash-sector-tabbar {
-  display: flex; gap: 0; flex-wrap: wrap;
+  display: flex; gap: .15rem; flex-wrap: wrap;
   border-bottom: 1px solid var(--border);
-  margin-bottom: 1.1rem;
+  margin-bottom: 1.15rem;
 }
 .dash-sector-tab {
   background: transparent; border: none; border-bottom: 2px solid transparent;
-  color: var(--muted); font-size: .85rem; font-weight: 600;
-  padding: .55rem .9rem; cursor: pointer;
-  display: flex; align-items: center; gap: .4rem;
-  transition: color .15s, border-color .15s; white-space: nowrap;
+  color: var(--muted); font-size: .92rem; font-weight: 600;
+  padding: .7rem 1.05rem; cursor: pointer;
+  margin-bottom: -1px;
+  display: flex; align-items: center; gap: .45rem;
+  transition: color .15s, border-color .15s, background .15s;
+  white-space: nowrap; border-radius: .4rem .4rem 0 0;
 }
-.dash-sector-tab:hover { color: var(--text); }
-.dash-sector-tab.active { color: var(--text); border-bottom-color: #58A6FF; }
+.dash-sector-tab:hover { color: var(--text); background: rgba(255,255,255,.035); }
+.dash-sector-tab.active {
+  color: var(--accent); border-bottom-color: var(--accent);
+  background: rgba(88,166,255,.07);
+}
 .dash-sector-tab .dash-sector-badge {
   font-size: .68rem; font-weight: 700; color: var(--muted);
   background: var(--surface3); border: 1px solid var(--border);
   padding: .1rem .4rem; border-radius: 999px;
 }
-.dash-sector-tab.active .dash-sector-badge { color: #58A6FF; border-color: #58A6FF; }
+.dash-sector-tab.active .dash-sector-badge {
+  color: var(--accent); border-color: rgba(88,166,255,.45);
+  background: rgba(88,166,255,.12);
+}
+
+/* Status colorido na célula: numa tabela densa não dá para embutir pílula em
+   <td>, então a própria célula recebe um fundo suave do status. */
+.dash-table td.kpi-pos,  td.dw-td.kpi-pos,  td.comp-td.kpi-pos  { background: rgba(63,185,80,.11); }
+.dash-table td.kpi-warn, td.dw-td.kpi-warn, td.comp-td.kpi-warn { background: rgba(251,191,36,.11); }
+.dash-table td.kpi-neg,  td.dw-td.kpi-neg,  td.comp-td.kpi-neg  { background: rgba(248,81,73,.11); }
+
+/* Bolinha da loja: identidade visual que já existia no HTML mas estava oculta */
+.dash-store-hdr .dash-store-dot { display: inline-block; }
 
 .dash-sector-panel { display: none; }
 .dash-sector-panel.active { display: block; }
@@ -250,14 +267,17 @@ body {
 }
 .main-card-hdr {
   display: flex; align-items: center; justify-content: space-between;
-  padding: .55rem .85rem;
+  padding: .7rem .95rem;
   background: var(--surface2);
   border-bottom: 1px solid var(--border);
 }
 .main-card-title {
-  display: flex; align-items: center; gap: .4rem;
+  display: flex; align-items: center; gap: .45rem;
   font-size: .82rem; font-weight: 700; color: var(--text);
+  letter-spacing: .01em;
 }
+/* Ícone do card em azul: âncora visual que separa um card do outro na rolagem */
+.main-card-title > svg { color: var(--accent); opacity: .85; }
 .main-card-sub {
   font-size: .72rem; color: var(--muted);
 }
@@ -314,12 +334,12 @@ body {
   width: 100%; border-collapse: collapse;
   font-size: .8rem;
 }
-.dash-thead-tr { background: #292e38; }
+.dash-thead-tr { background: #262c36; }
 .dash-th {
-  padding: .45rem .75rem;
-  text-align: left; font-weight: 700; font-size: .72rem;
-  text-transform: uppercase; letter-spacing: .04em;
-  color: #fff; white-space: nowrap; cursor: pointer;
+  padding: .55rem .85rem;
+  text-align: left; font-weight: 700; font-size: .68rem;
+  text-transform: uppercase; letter-spacing: .06em;
+  color: #C9D1D9; white-space: nowrap; cursor: pointer;
   user-select: none;
 }
 .dash-th:not(:first-child) { text-align: right; min-width: 80px; }
@@ -363,7 +383,7 @@ body {
 .dash-row:nth-child(even) td { background: rgba(255,255,255,.025); }
 .dash-row:hover td { background: rgba(88,166,255,.07) !important; }
 .dash-td {
-  padding: .38rem .75rem; color: var(--text);
+  padding: .5rem .85rem; color: var(--text);
 }
 .dash-td-name { font-weight: 500; }
 .dash-td-num  { text-align: right !important; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -1968,7 +1988,7 @@ body {
 /* ── Faturamento Diário card ──────────────────────────────────────────── */
 .dia-col-hdr {
   display: grid;
-  grid-template-columns: 1fr 82px 82px 36px 52px;
+  grid-template-columns: 1fr 82px 82px 36px 64px;
   gap: 0 .4rem;
   padding: .2rem .75rem .15rem;
   border-bottom: 1px solid var(--border);
@@ -1980,7 +2000,7 @@ body {
 .dia-col-hdr span:first-child { text-align: left; }
 .dia-row {
   display: grid;
-  grid-template-columns: 1fr 82px 82px 36px 52px;
+  grid-template-columns: 1fr 82px 82px 36px 64px;
   gap: 0 .4rem;
   padding: .32rem .75rem;
   align-items: center;
@@ -1996,10 +2016,17 @@ body {
 .dia-conv-ok   { color: #3FB950; }
 .dia-conv-warn { color: #FBBF24; }
 .dia-conv-bad  { color: #F85149; }
-.dia-pct  { font-size: .78rem; font-weight: 700; text-align: right; font-variant-numeric: tabular-nums; }
-.dia-pct-ok   { color: #3FB950; }
-.dia-pct-warn { color: #FBBF24; }
-.dia-pct-bad  { color: #F85149; }
+/* % vira pílula: o status precisa saltar aos olhos numa tabela densa */
+.dia-pct  {
+  font-size: .76rem; font-weight: 700; text-align: center;
+  font-variant-numeric: tabular-nums;
+  justify-self: end; min-width: 3.4rem;
+  padding: .1rem .4rem; border-radius: 999px;
+  border: 1px solid transparent;
+}
+.dia-pct-ok   { color: #56D364; background: rgba(63,185,80,.13);  border-color: rgba(63,185,80,.3); }
+.dia-pct-warn { color: #E3B341; background: rgba(251,191,36,.13); border-color: rgba(251,191,36,.3); }
+.dia-pct-bad  { color: #FF7B72; background: rgba(248,81,73,.13);  border-color: rgba(248,81,73,.3); }
 
 /* Store row (collapsible header) */
 .dia-store-row {
@@ -2908,7 +2935,7 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   /* ── Faturamento Diário: mesmo estilo compacto da Meta Semanal ─────────── */
   .dia-col-hdr,
   .dia-row {
-    grid-template-columns: 1fr 62px 58px 24px 38px;
+    grid-template-columns: 1fr 62px 58px 24px 56px;
     padding-left:  .4rem;
     padding-right: .4rem;
     gap: 0 .18rem;
@@ -2922,7 +2949,7 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   .dia-meta { font-size: .67rem; }
   .dia-pa   { font-size: .67rem; }
   .dia-conv { font-size: .67rem; }
-  .dia-pct  { font-size: .69rem; }
+  .dia-pct  { font-size: .67rem; min-width: 0; padding: .05rem .28rem; }
 
   /* Store label: sem dot, só chevron + nome */
   .dia-store-label { gap: .2rem; font-size: .72rem; }
