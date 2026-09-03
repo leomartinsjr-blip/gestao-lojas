@@ -146,107 +146,6 @@ body {
 #boardContainer::-webkit-scrollbar-track { background: transparent; }
 #boardContainer::-webkit-scrollbar-thumb { background: var(--surface3); border-radius: 4px; }
 
-/* ── Main grid layout ─────────────────────────────────────────────── */
-.main-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1.2fr) minmax(0, 1fr);
-  gap: 1.25rem;
-  align-items: start;
-}
-.main-left-col  { min-width: 0; display: flex; flex-direction: column; gap: 1.25rem; }
-.main-mid-col   { min-width: 0; display: flex; flex-direction: column; gap: 1.25rem; }
-.main-right-col { min-width: 0; display: flex; flex-direction: column; gap: 1.25rem; }
-
-/* Faturamento Diário + Conferência de Caixa lado a lado */
-.dash-day-row {
-  display: flex; gap: .75rem; align-items: stretch;
-}
-.dash-day-row > .main-card:first-child {
-  flex: 1 1 0; min-width: 0;
-}
-.dash-day-row > [data-card-id="card-conf-status"] {
-  flex: 1 1 0; min-width: 0;
-}
-@media (max-width: 700px) {
-  .dash-day-row { flex-direction: column; align-items: stretch; }
-  .dash-day-row > .main-card:first-child,
-  .dash-day-row > [data-card-id="card-conf-status"] { flex: none; width: 100%; }
-}
-
-/* ── Filtro de lojas ──────────────────────────────────────────────────────── */
-.dash-store-filter {
-  display: flex;
-  flex-wrap: wrap;
-  gap: .3rem;
-  padding: .5rem .65rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: .5rem;
-}
-.dash-store-chip {
-  font-size: .68rem;
-  font-weight: 700;
-  letter-spacing: .03em;
-  padding: .18rem .52rem;
-  border-radius: 1rem;
-  border: 1px solid var(--border);
-  background: transparent;
-  cursor: pointer;
-  transition: opacity .15s;
-  white-space: nowrap;
-}
-.dash-store-chip:hover { opacity: .75; }
-
-@media (max-width: 1100px) {
-  .main-grid { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
-  .main-right-col { grid-column: 1 / -1; }
-}
-@media (max-width: 700px) {
-  .main-grid { grid-template-columns: 1fr; }
-}
-
-/* ── Dashboard por setor (abas Vendas / Caixa / Pessoas / Gestão da Loja) ── */
-/* Seletor de setor: as lojas precisam perceber sozinhas que dá para trocar de
-   aba, então é um segmented control com a aba ativa preenchida — e não uma
-   linha discreta que passa despercebida. */
-.dash-sector-tabbar {
-  display: inline-flex; gap: .3rem; flex-wrap: wrap;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: .7rem;
-  padding: .35rem;
-  margin-bottom: 1.15rem;
-  box-shadow: 0 1px 8px rgba(0,0,0,.15);
-}
-.dash-sector-tab {
-  background: transparent; border: 1px solid transparent;
-  color: var(--muted); font-size: .95rem; font-weight: 700;
-  padding: .6rem 1.25rem; cursor: pointer;
-  display: flex; align-items: center; gap: .45rem;
-  transition: color .15s, background .15s, border-color .15s;
-  white-space: nowrap; border-radius: .5rem;
-}
-.dash-sector-tab:hover { color: var(--text); background: var(--surface2); }
-.dash-sector-tab.active {
-  background: var(--accent); border-color: var(--accent);
-  color: #0D1117;
-  box-shadow: 0 2px 10px rgba(88,166,255,.3);
-}
-.dash-sector-tab.active:hover { background: var(--accent); color: #0D1117; }
-.dash-sector-tab .dash-sector-badge {
-  font-size: .68rem; font-weight: 700; color: var(--muted);
-  background: var(--surface3); border: 1px solid var(--border);
-  padding: .1rem .4rem; border-radius: 999px;
-}
-.dash-sector-tab.active .dash-sector-badge {
-  color: #0D1117; border-color: rgba(13,17,23,.25);
-  background: rgba(13,17,23,.16);
-}
-@media (max-width: 700px) {
-  .dash-sector-tabbar { display: flex; width: 100%; }
-  .dash-sector-tab { flex: 1; justify-content: center; padding: .55rem .5rem; font-size: .82rem; }
-}
-
 /* Status colorido na célula: numa tabela densa não dá para embutir pílula em
    <td>, então a própria célula recebe um fundo suave do status. */
 .dash-table td.kpi-pos,  td.dw-td.kpi-pos,  td.comp-td.kpi-pos,
@@ -296,17 +195,13 @@ td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { backgro
   align-items: start;
 }
 .sector-grid-col { min-width: 0; display: flex; flex-direction: column; gap: 1.25rem; }
-/* Aba Vendas: os dois cards estreitos dividem a linha meio a meio */
-.sector-grid--even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
-/* Topo da tela da loja: três cards curtos de acompanhamento lado a lado */
+/* Topo: três cards curtos de acompanhamento lado a lado */
 .sector-grid--three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 1100px) {
   .sector-grid--three { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
 }
-/* Cards de largura total (Performance, Meta Semanal) abaixo da linha de cima */
-.dash-sector-panel > .sector-grid + .sector-grid-col { margin-top: 1.25rem; }
 @media (max-width: 900px) {
-  .sector-grid, .sector-grid--even, .sector-grid--three { grid-template-columns: 1fr; }
+  .sector-grid, .sector-grid--three { grid-template-columns: 1fr; }
 }
 
 .main-card {
@@ -2912,11 +2807,10 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   /* ── Board container ──────────────────────────────────────────────────── */
   #boardContainer { padding: .4rem .35rem 1.5rem; }
 
-  /* ── Main grid ────────────────────────────────────────────────────────── */
-  .main-grid { gap: .6rem; }
-  .main-left-col,
-  .main-mid-col,
-  .main-right-col { gap: .6rem; }
+  /* ── Grid do dashboard ────────────────────────────────────────────────── */
+  /* row-gap do masonry fica em 0 de propósito (o respiro vem do span, no JS) */
+  .sector-grid, .sector-grid-col { gap: .6rem; }
+  .dash-masonry { column-gap: .6rem; }
 
   /* ── Cards ────────────────────────────────────────────────────────────── */
   .main-card { border-radius: .5rem; }
@@ -2930,10 +2824,6 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
   .dash-table { font-size: .73rem; }
   .dash-th, .dash-td { padding: .3rem .4rem; }
   .dash-th:not(:first-child), .dash-td:not(:first-child) { min-width: 64px; }
-
-  /* Filtro de lojas */
-  .dash-store-filter { padding: .35rem .45rem; gap: .2rem; }
-  .dash-store-chip { font-size: .62rem; padding: .14rem .42rem; }
 
   /* ── Modais: quase tela cheia ─────────────────────────────────────────── */
   .perf-overlay,

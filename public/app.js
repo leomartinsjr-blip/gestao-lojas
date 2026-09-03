@@ -883,116 +883,48 @@ function renderDashboard() {
 
 
   // ── Onde cada card entra ─────────────────────────────────────────────────
-  // Quem enxerga várias lojas (admin e supervisor) tem card demais para uma
-  // tela só, então navega por abas agrupadas por setor. A loja tem poucos
-  // cards e vê tudo de uma vez, numa ordem montada pelo que ela olha junto no
-  // dia a dia — e não pela divisão em setores, que aqui só atrapalharia.
-  const SECTOR_LABELS = {
-    vendas:  'Vendas',
-    caixa:   'Caixa',
-    pessoas: 'Pessoas',
-    gestao:  'Gestão da Loja',
-  };
-  const useSectorTabs = !S.user?.board;
-
+  // Uma tela só para todo mundo — loja, escritório, supervisor e admin. As
+  // abas por setor foram substituídas por este arranjo, montado pelo que se
+  // olha junto no dia a dia. Cada perfil já vê só os cards a que tem direito
+  // (as próprias funções render* filtram), então o admin usa o mesmo layout,
+  // só com mais cards dentro dos mesmos lugares.
   const _col = () => {
     const el = document.createElement('div');
     el.className = 'sector-grid-col';
     return el;
   };
 
-  // Colunas de destino de cada card (preenchidas conforme o modo)
-  let dayCol, compCol, perfCol, weekCol, caixaCol, caixaColB,
-      rightCol, anivCol, folgasCol, midCol, defeitosCol;
-  let _masonryTarget = null;
+  const panel = document.createElement('div');
+  panel.className = 'dash-sector-panel active';
+  panel.dataset.sectorPanel = 'unico';
+  c.appendChild(panel);
 
-  if (useSectorTabs) {
-    const sectorTabbar = document.createElement('div');
-    sectorTabbar.className = 'dash-sector-tabbar';
-    sectorTabbar.innerHTML = Object.entries(SECTOR_LABELS)
-      .map(([k, label]) => `<button class="dash-sector-tab" data-sector="${k}">${label}</button>`)
-      .join('');
-    c.appendChild(sectorTabbar);
-    sectorTabbar.querySelectorAll('.dash-sector-tab').forEach(btn => {
-      btn.classList.toggle('active', btn.dataset.sector === DASH_SECTOR);
-      btn.addEventListener('click', () => {
-        if (DASH_SECTOR === btn.dataset.sector) return;
-        DASH_SECTOR = btn.dataset.sector;
-        renderDashboard();
-      });
-    });
+  // Topo: os três cards curtos de acompanhamento, lado a lado.
+  // No admin, Pendências entra junto da Reunião Mensal no primeiro.
+  const topo = document.createElement('div');
+  topo.className = 'sector-grid sector-grid--three';
+  panel.appendChild(topo);
+  const midCol = _col(), rightCol = _col(), anivCol = _col();
+  [midCol, rightCol, anivCol].forEach(col => topo.appendChild(col));
 
-    const _panel = (sector) => {
-      const p = document.createElement('div');
-      p.className = 'dash-sector-panel' + (sector === DASH_SECTOR ? ' active' : '');
-      p.dataset.sectorPanel = sector;
-      c.appendChild(p);
-      return p;
-    };
-    const _gridIn = (parent, extraCls) => {
-      const g = document.createElement('div');
-      g.className = 'sector-grid' + (extraCls ? ' ' + extraCls : '');
-      parent.appendChild(g);
-      return g;
-    };
-    const _pairIn = (parent, extraCls) => {
-      const g = _gridIn(parent, extraCls);
-      const a = _col(), b = _col();
-      g.appendChild(a); g.appendChild(b);
-      return [a, b];
-    };
-
-    // Vendas: Faturamento (5 colunas) e Comparativo (4) são estreitos e ficam
-    // lado a lado; Performance (9) e Meta Semanal (8) ocupam a largura toda.
-    const pVendas = _panel('vendas');
-    [dayCol, compCol] = _pairIn(pVendas, 'sector-grid--even');
-    const wideCol = _col();
-    pVendas.appendChild(wideCol);
-    perfCol = weekCol = wideCol;
-
-    [caixaCol, caixaColB] = _pairIn(_panel('caixa'));
-    [rightCol, folgasCol] = _pairIn(_panel('pessoas'));
-    anivCol = rightCol;
-    [midCol, defeitosCol] = _pairIn(_panel('gestao'));
-  } else {
-    // Tela única (loja e escritório): pares montados pelo uso, não pelo setor.
-    const panel = document.createElement('div');
-    panel.className = 'dash-sector-panel active';
-    panel.dataset.sectorPanel = 'unico';
-    c.appendChild(panel);
-
-    const _row = (n = 2) => {
-      const g = document.createElement('div');
-      g.className = 'sector-grid ' + (n === 3 ? 'sector-grid--three' : 'sector-grid--even');
-      panel.appendChild(g);
-      const cols = Array.from({ length: n }, () => _col());
-      cols.forEach(col => g.appendChild(col));
-      return cols;
-    };
-
-    // Topo: os três cards curtos de acompanhamento, lado a lado
-    const [t1, t2, t3] = _row(3);      // Reunião | Contratos | Aniversariantes
-    midCol = t1;  rightCol = t2;  anivCol = t3;
-
-    // Abaixo, masonry: em linhas fixas a altura era a do card mais alto, e um
-    // card curto ao lado de um comprido deixava um vão morto embaixo dele.
-    // Aqui cada card sobe até encostar no de cima da sua coluna. A ordem de
-    // leitura (esquerda → direita) é a pedida; quem preenche o vão é o próximo.
-    const masonry = document.createElement('div');
-    masonry.className = 'dash-masonry';
-    panel.appendChild(masonry);
-    const _slot = (ordem) => {
-      const el = _col();
-      el.style.order = ordem;
-      masonry.appendChild(el);
-      return el;
-    };
-    dayCol    = _slot(1);  folgasCol   = _slot(2);   // Faturamento | Escala
-    weekCol   = _slot(3);  perfCol     = _slot(4);   // Meta Semanal | Performance
-    compCol   = _slot(5);  caixaCol    = _slot(6);   // Comparativo | Recebimento NF
-    caixaColB = _slot(7);  defeitosCol = _slot(8);   // Fechamento  | Defeitos
-    _masonryTarget = masonry;
-  }
+  // Abaixo, masonry: em linhas fixas a altura era a do card mais alto, e um
+  // card curto ao lado de um comprido deixava um vão morto embaixo dele.
+  // Aqui cada card sobe até encostar no de cima da sua coluna. A ordem de
+  // leitura (esquerda → direita) é a pedida; quem preenche o vão é o próximo.
+  const masonry = document.createElement('div');
+  masonry.className = 'dash-masonry';
+  panel.appendChild(masonry);
+  const _slot = (ordem) => {
+    const el = _col();
+    el.style.order = ordem;
+    masonry.appendChild(el);
+    return el;
+  };
+  const dayCol    = _slot(1), folgasCol   = _slot(2);  // Faturamento | Escala
+  const weekCol   = _slot(3), perfCol     = _slot(4);  // Meta Semanal | Performance
+  const compCol   = _slot(5), caixaCol    = _slot(6);  // Comparativo | Conferência + NF
+  const caixaColB = _slot(7), defeitosCol = _slot(8);  // Fechamento  | Defeitos
+  const _masonryTarget = masonry;
 
   // A barra de chips para filtrar lojas saiu da tela a pedido do Leonardo.
   // DASH_BOARD_FILTER continua existindo e vazio, que é o mesmo que "todas" —
@@ -1606,21 +1538,19 @@ function renderDashboard() {
   // ── CARD: Fechamento de Caixa → aba Caixa, coluna secundária ─────────────
   renderCaixaCard(caixaColB);
 
-  // Campanha Ativa fica junto do Comparativo por Loja, na aba Vendas
+  // Campanha Ativa fica junto do Comparativo por Loja
   if (campDashCard) compCol.appendChild(campDashCard);
 
-  // Na tela única, coluna vazia deixaria um buraco no meio da linha e linha
-  // vazia deixaria um vão — o escritório, por exemplo, não vê nada de vendas.
-  // Some com a coluna primeiro para o card que sobrou ocupar a esquerda.
-  if (!useSectorTabs) {
-    c.querySelectorAll('.sector-grid-col').forEach(col => {
-      if (!col.querySelector('.main-card')) col.remove();
-    });
-    c.querySelectorAll('.sector-grid').forEach(row => {
-      if (!row.querySelector('.main-card')) row.remove();
-    });
-    if (_masonryTarget) _initMasonry(_masonryTarget);
-  }
+  // Coluna vazia deixaria um buraco no meio da linha e linha vazia deixaria um
+  // vão — o escritório, por exemplo, não vê nada de faturamento. Some com a
+  // coluna primeiro, para o card que sobrou ocupar a esquerda.
+  c.querySelectorAll('.sector-grid-col').forEach(col => {
+    if (!col.querySelector('.main-card')) col.remove();
+  });
+  c.querySelectorAll('.sector-grid').forEach(row => {
+    if (!row.querySelector('.main-card')) row.remove();
+  });
+  _initMasonry(_masonryTarget);
 }
 
 // Masonry sem biblioteca: o container é um grid de linhas finas e cada card
@@ -7076,7 +7006,6 @@ const PA_THRESHOLD          = 1.80;
 let WK = { refDate: null, cache: {} };
 let DASH_WEEK = { refDate: null };
 let DASH_DAY  = { refDate: null, mode: 'day' };
-let DASH_SECTOR = 'vendas'; // aba ativa do dashboard: vendas | caixa | pessoas | gestao
 let _dayCardTimer = null;
 const _dayCardExpanded  = new Set(); // lojas expandidas no card diário
 const _perfExpanded     = new Set(); // lojas expandidas em Performance Mensal (admin)
