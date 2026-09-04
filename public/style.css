@@ -464,9 +464,13 @@ button.tick.open  { box-shadow: inset 0 -2px 0 var(--accent); }
 /* ── Detalhe da loja aberta ────────────────────────────────────────── */
 .dia-detalhe { padding: 0 1rem .35rem; }
 .dia-detalhe:empty { display: none; }
+/* As colunas param de crescer com a tela: em monitor largo, com 1fr, o nome
+   ficava num canto e o % no outro e o olho tinha que atravessar a tela inteira.
+   Larguras com teto e tudo encostado à esquerda. */
 .dia-detalhe .dia-hdr,
 .dia-detalhe .dia-row {
-  display: grid; grid-template-columns: minmax(150px, 1.6fr) repeat(4, minmax(74px, 1fr));
+  display: grid; grid-template-columns: minmax(150px, 300px) repeat(4, minmax(74px, 120px));
+  justify-content: start;
   gap: .5rem; align-items: center; padding: .4rem .1rem;
 }
 .dia-detalhe .dia-hdr {
@@ -484,6 +488,13 @@ button.tick.open  { box-shadow: inset 0 -2px 0 var(--accent); }
 .dia-detalhe .dia-row.vend  { font-size: .75rem; }
 .dia-detalhe .dia-row.vend .nm { padding-left: 1.5rem; color: var(--muted); }
 .dia-detalhe .num { text-align: right; }
+/* O % é pílula, não faixa: esticado na célula ele pintava a coluna inteira. */
+.dia-detalhe .num.dia-pct-ok,
+.dia-detalhe .num.dia-pct-warn,
+.dia-detalhe .num.dia-pct-bad {
+  justify-self: end; min-width: 3.6rem; text-align: center;
+  padding: .05rem .4rem; border-radius: 999px; border: 1px solid transparent;
+}
 .dia-detalhe .nm { display: flex; align-items: center; gap: .35rem; }
 
 /* ── Faturamento Diário: o total do dia abrindo o card ────────────── */
