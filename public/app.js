@@ -2504,14 +2504,15 @@ function _renderDashWeekBody(body, week, extraData) {
              <span class="dw-p ${paEarned?'dw-p-ok':k.hitPA&&!k.hitMeta?'dw-p-no':'dw-p-warn'}" title="${k.hitPA&&!k.hitMeta?'PA atingido mas meta venda não':''}">+${fBRL(PREMIO_PA)}${paEarned?' ✓':k.hitPA&&!k.hitMeta?' ✗':''}</span>`;
 
         vendorRows.push(`<tr class="dw-row">
-          <td class="dw-td dw-td-name" style="padding-left:1.4rem">${emp.apelido || emp.name}</td>
+          <td class="dw-td dw-td-name" style="padding-left:1.4rem">${emp.apelido || emp.name}
+            <span class="dw-premio-bloco">${premioHtml}</span></td>
           <td class="dw-td dw-td-num">${fBRL(k.wMeta||null)}</td>
           <td class="dw-td dw-td-num">${fBRL(k.valor||null)}</td>
           <td class="dw-td dw-td-num">${fPct(k.pctMeta)}</td>
           <td class="dw-td dw-td-num">${fBRL(k.projecao)}</td>
           <td class="dw-td dw-td-num ${pctProjCls}">${fPct(k.pctProj)}</td>
           <td class="dw-td dw-td-num${k.pa!=null?(k.pa>=1.8?' pa-ok':' pa-low'):''}">${fDec(k.pa)}</td>
-          <td class="dw-td dw-premio"><span class="dw-premio-bloco">${premioHtml}</span></td>
+          <td class="dw-td dw-td-num">${pTotal != null ? 'R$ ' + pTotal.toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—'}</td>
         </tr>`);
       }
 
@@ -2634,14 +2635,15 @@ function _renderDashWeekBody(body, week, extraData) {
            <span class="dw-p ${paEarned?'dw-p-ok':k.hitPA&&!k.hitMeta?'dw-p-no':'dw-p-warn'}" title="${k.hitPA&&!k.hitMeta?'PA atingido mas meta venda não':''}">+${fBRL(PREMIO_PA)}${paEarned?' ✓':k.hitPA&&!k.hitMeta?' ✗':''}</span>`;
 
       return `<tr class="dw-row">
-        <td class="dw-td dw-td-name">${emp.apelido || emp.name}</td>
+        <td class="dw-td dw-td-name">${emp.apelido || emp.name}
+          <span class="dw-premio-bloco">${premioHtml}</span></td>
         <td class="dw-td dw-td-num">${fBRL(k.wMeta||null)}</td>
         <td class="dw-td dw-td-num">${fBRL(k.valor||null)}</td>
         <td class="dw-td dw-td-num">${fPct(k.pctMeta)}</td>
         <td class="dw-td dw-td-num">${fBRL(k.projecao)}</td>
         <td class="dw-td dw-td-num ${pctProjCls}">${fPct(k.pctProj)}</td>
         <td class="dw-td dw-td-num${k.pa != null ? (k.pa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${fDec(k.pa)}</td>
-        <td class="dw-td dw-premio"><span class="dw-premio-bloco">${premioHtml}</span></td>
+        <td class="dw-td dw-td-num">${pTotal != null ? 'R$ ' + pTotal.toLocaleString('pt-BR',{minimumFractionDigits:2}) : '—'}</td>
       </tr>`;
     }).join('');
 
