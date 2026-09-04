@@ -12701,9 +12701,12 @@ async function _loadUsersList() {
         <tbody>
         ${users.map(u => {
           const tipo = userTipo(u);
+          // Ninguém suspende a si mesmo (ficaria trancado do lado de fora) e
+          // ninguém suspende a conta dona — inclusive ela própria.
+          const protegido = u.dono || u.username === S.user?.username;
           return `
-          <tr class="users-tr" data-user="${u.username}">
-            <td class="users-td users-td-user">${u.username}</td>
+          <tr class="users-tr${u.suspenso ? ' users-tr-susp' : ''}" data-user="${u.username}">
+            <td class="users-td users-td-user">${u.username}${u.dono ? '<span class="users-chip users-chip-dono" title="Conta dona — só ela altera a si mesma">dono</span>' : ''}${u.suspenso ? '<span class="users-chip users-chip-susp">suspenso</span>' : ''}</td>
             <td class="users-td"><input class="users-input users-inline-input" data-field="label" value="${u.label}" placeholder="Nome"></td>
             <td class="users-td users-td-acesso">
               <select class="users-input users-select users-inline-input" data-field="tipo">
@@ -12716,7 +12719,8 @@ async function _loadUsersList() {
             <td class="users-td"><input class="users-input users-inline-input" data-field="password" type="text" placeholder="••••••" autocomplete="off"></td>
             <td class="users-td users-td-actions">
               <button class="users-save-btn" data-user="${u.username}">Salvar</button>
-              <button class="users-del-btn" data-user="${u.username}">Excluir</button>
+              ${protegido ? '' : `<button class="users-susp-btn${u.suspenso ? ' users-susp-on' : ''}" data-user="${u.username}" data-susp="${u.suspenso ? 0 : 1}">${u.suspenso ? 'Reativar' : 'Suspender'}</button>`}
+              ${u.dono ? '' : `<button class="users-del-btn" data-user="${u.username}">Excluir</button>`}
             </td>
           </tr>`;}).join('')}
         </tbody>
@@ -12756,6 +12760,22 @@ async function _loadUsersList() {
           await apiFetch('PUT', `/api/users/${btn.dataset.user}`, body);
           btn.textContent = '✓';
           setTimeout(() => btn.textContent = 'Salvar', 1500);
+        } catch (e) { alert('Erro: ' + e.message); }
+      });
+    });
+
+    // Suspender é um clique só, sem passar pelo Salvar: é uma decisão inteira em
+    // si, e misturar com a edição da linha deixaria o acesso caindo por engano.
+    list.querySelectorAll('.users-susp-btn').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const quem = btn.dataset.user;
+        const suspender = btn.dataset.susp === '1';
+        if (suspender && !confirm(`Suspender o acesso de "${quem}"?
+
+A sessão aberta cai no próximo clique e ele não entra mais até você reativar. A senha continua guardada.`)) return;
+        try {
+          await apiFetch('PUT', `/api/users/${quem}`, { suspenso: suspender });
+          _loadUsersList();
         } catch (e) { alert('Erro: ' + e.message); }
       });
     });

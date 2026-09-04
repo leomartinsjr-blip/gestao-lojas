@@ -849,9 +849,26 @@ app.use(express.static(path.join(__dirname, 'public'), {
 }));
 app.use('/uploads', express.static(UPLOADS_DIR));
 
+// ── Conta dona ──────────────────────────────────────────────────────────────
+// Admin manda em tudo e em todos — menos nesta conta. Sem isso, qualquer admin
+// troca a senha do dono na tela de Usuários e entra como ele em dois cliques,
+// e o dono não teria como impedir nem como perceber.
+const OWNER_USER = (process.env.OWNER_USER || 'leonardo').toLowerCase();
+
+// Suspender só vale se derruba quem já está dentro: a sessão viva de um
+// usuário suspenso morre no clique seguinte.
+function sessaoSuspensa(req, res) {
+  const u = readUsers()[req.session?.user?.username];
+  if (!u?.suspenso) return false;
+  req.session.destroy(() => {});
+  res.status(401).json({ error: 'Acesso suspenso. Fale com o administrador.' });
+  return true;
+}
+
 // ── Auth middleware ────────────────────────────────────────────────────────
 function requireAuth(req, res, next) {
   if (!req.session?.user) return res.status(401).json({ error: 'Não autenticado' });
+  if (sessaoSuspensa(req, res)) return;
   const users = readUsers();
   const u = users[req.session.user.username];
   if (u && u.passwordChangedAt) {
@@ -869,6 +886,7 @@ function requireAuth(req, res, next) {
 
 function requireAdmin(req, res, next) {
   if (!req.session?.user) return res.status(401).json({ error: 'Não autenticado' });
+  if (sessaoSuspensa(req, res)) return;
   const u = req.session.user;
   if (u.board || (u.lojas && u.lojas.length))
     return res.status(403).json({ error: 'Acesso restrito' });
@@ -883,6 +901,10 @@ app.post('/api/login', (req, res) => {
   const user  = users[key];
   if (!user || user.password !== password)
     return res.status(401).json({ error: 'Usuário ou senha incorretos' });
+  // Depois da senha, não antes: quem erra a senha não fica sabendo se a conta
+  // existe nem em que estado ela está.
+  if (user.suspenso)
+    return res.status(403).json({ error: 'Acesso suspenso. Fale com o administrador.' });
   req.session.user = { username: key, board: user.board, lojas: user.lojas || null, label: user.label, passwordChangedAt: user.passwordChangedAt || null, mustChangePassword: !!user.mustChangePassword };
   res.json({ username: key, board: user.board, lojas: user.lojas || null, label: user.label, mustChangePassword: !!user.mustChangePassword });
 });
@@ -973,7 +995,8 @@ app.post('/api/reset-password', (req, res) => {
 app.get('/api/users', requireAdmin, (req, res) => {
   const users = readUsers();
   const list = Object.entries(users).map(([username, u]) => ({
-    username, label: u.label || username, board: u.board || null, lojas: u.lojas || null, email: u.email || null
+    username, label: u.label || username, board: u.board || null, lojas: u.lojas || null, email: u.email || null,
+    suspenso: !!u.suspenso, dono: username === OWNER_USER
   }));
   res.json(list);
 });
@@ -995,7 +1018,14 @@ app.put('/api/users/:username', requireAdmin, (req, res) => {
   const key = req.params.username.toLowerCase();
   const users = readUsers();
   if (!users[key]) return res.status(404).json({ error: 'Usuário não encontrado' });
-  const { password, label, board, email, lojas } = req.body || {};
+  if (key === OWNER_USER && req.session.user.username !== OWNER_USER)
+    return res.status(403).json({ error: 'A conta do dono só é alterada por ela mesma' });
+  const { password, label, board, email, lojas, suspenso } = req.body || {};
+  if (suspenso !== undefined) {
+    if (key === req.session.user.username)
+      return res.status(400).json({ error: 'Não dá para suspender o próprio acesso' });
+    users[key].suspenso = !!suspenso;
+  }
   if (password) {
     const ts = Date.now().toString();
     users[key].password = password;
@@ -1023,6 +1053,7 @@ app.put('/api/users/:username', requireAdmin, (req, res) => {
 app.delete('/api/users/:username', requireAdmin, (req, res) => {
   const key = req.params.username.toLowerCase();
   if (key === req.session.user.username) return res.status(400).json({ error: 'Não pode excluir seu próprio usuário' });
+  if (key === OWNER_USER) return res.status(403).json({ error: 'A conta do dono não pode ser excluída' });
   const users = readUsers();
   if (!users[key]) return res.status(404).json({ error: 'Usuário não encontrado' });
   delete users[key];
@@ -10331,6 +10362,7 @@ app.get('/api/crm/messages', requireAdmin, async (req, res) => {
 // Middleware: permite escritório e admin
 function requireEscritorioOrAdmin(req, res, next) {
   if (!req.session?.user) return res.status(401).json({ error: 'Não autenticado' });
+  if (sessaoSuspensa(req, res)) return;
   const b = req.session.user.board;
   if (b && b !== 'escritorio') return res.status(403).json({ error: 'Acesso restrito ao escritório' });
   next();
