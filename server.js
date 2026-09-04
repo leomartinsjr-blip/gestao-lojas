@@ -837,6 +837,23 @@ const resetTokens = new Map();
 app.use(compress());
 app.use(express.json({ limit: '50mb' }));
 app.use(session(sessionOpts));
+
+// ── Manuais ─────────────────────────────────────────────────────────────────
+// Índice e manuais em si. Antes do express.static de propósito: existe uma
+// pasta public/manuais, e o static responderia /manuais com um 301 para
+// /manuais/ — redirecionamento permanente, que o navegador guarda.
+//
+// Sem exigir login: manual não tem dado de ninguém, e gerente costuma abrir no
+// celular, fora da sessão do sistema — pedir senha aí é a diferença entre ler
+// o passo a passo e ligar para o escritório.
+app.get('/manuais', (req, res) => res.sendFile(path.join(__dirname, 'public/manuais.html')));
+app.get('/manuais/:slug', (req, res) => {
+  const slug = String(req.params.slug || '').replace(/[^a-z0-9-]/gi, '');
+  const arq  = path.join(__dirname, 'public', 'manuais', slug + '.html');
+  if (!slug || !fs.existsSync(arq)) return res.redirect('/manuais');
+  res.sendFile(arq);
+});
+
 // Serve JS/CSS sem cache para garantir que deploys chegam ao navegador
 app.use(express.static(path.join(__dirname, 'public'), {
   etag: false,

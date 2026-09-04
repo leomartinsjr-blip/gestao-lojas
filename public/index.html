@@ -246,6 +246,14 @@
           <svg class="nav-cat-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
         </button>
         <div class="nav-cat-dropdown" data-navdrop="sistema">
+          <!-- Manuais fica sem display:none de propósito: é a única entrada da
+               barra feita para o gerente de loja, não para o escritório. -->
+          <a href="/manuais" target="_blank" id="manuaisBtn" class="folgas-topbar-btn" title="Manuais — passo a passo das rotinas da loja">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+              <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+            </svg><span class="btn-label">Manuais</span>
+          </a>
           <button id="dadosLojasBtn" class="folgas-topbar-btn" title="Dados das Lojas — CNPJ, IE, IM e endereços">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="2" y="4" width="20" height="16" rx="2"/>

@@ -1,0 +1,439 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Retirada de Colaborador</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground:   #FBFAF8;
+    --surface:  #FFFFFF;
+    --surface2: #F4F1EC;
+    --ink:      #1B1E27;
+    --ink2:     #4A4640;
+    --muted:    #7A7267;
+    --border:   #E3DED6;
+    --rule:     #CFC7BC;
+    --accent:   #A85F14;
+    --accent-soft: rgba(168, 95, 20, .09);
+    --warn:     #8A6410;
+    --warn-soft: rgba(138, 100, 16, .10);
+    --stop:     #B23A2E;
+    --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+    --disp: "Big Shoulders Display", "IBM Plex Sans", Impact, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:   #14161C;
+      --surface:  #1B1E27;
+      --surface2: #232733;
+      --ink:      #E9E6E1;
+      --ink2:     #C3BDB4;
+      --muted:    #8E877D;
+      --border:   #2E333F;
+      --rule:     #3A4050;
+      --accent:   #F0A045;
+      --accent-soft: rgba(240, 160, 69, .12);
+      --warn:     #E3B93F;
+      --warn-soft: rgba(227, 185, 63, .12);
+      --stop:     #E36C5D;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:   #14161C;
+    --surface:  #1B1E27;
+    --surface2: #232733;
+    --ink:      #E9E6E1;
+    --ink2:     #C3BDB4;
+    --muted:    #8E877D;
+    --border:   #2E333F;
+    --rule:     #3A4050;
+    --accent:   #F0A045;
+    --accent-soft: rgba(240, 160, 69, .12);
+    --warn:     #E3B93F;
+    --warn-soft: rgba(227, 185, 63, .12);
+    --stop:     #E36C5D;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .folha { max-width: 46rem; margin: 0 auto; padding: 2.75rem 1.5rem 4rem; }
+  .mono { font-family: var(--mono); }
+
+  /* Cabecalho */
+  .kicker {
+    font-family: var(--mono); font-size: .68rem; font-weight: 600;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--accent);
+    margin: 0;
+  }
+  h1 {
+    font-family: var(--disp); font-weight: 700; font-size: clamp(2.6rem, 8vw, 4.1rem);
+    line-height: .92; letter-spacing: .005em; text-transform: uppercase;
+    margin: .5rem 0 .35rem; text-wrap: balance; color: var(--ink);
+  }
+  .sub { font-size: 1.02rem; color: var(--ink2); max-width: 34rem; margin: 0 0 1.6rem; }
+  .ficha {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 1px; background: var(--border); border: 1px solid var(--border);
+    border-radius: 3px; overflow: hidden; margin: 0;
+  }
+  .ficha > div { background: var(--surface); padding: .7rem .85rem; }
+  .ficha dt {
+    font-family: var(--mono); font-size: .64rem; font-weight: 600; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: .2rem;
+  }
+  .ficha dd { margin: 0; font-size: .88rem; color: var(--ink); font-weight: 500; }
+
+  /* Blocos */
+  section { margin-top: 2.75rem; }
+  h2 {
+    font-family: var(--disp); font-weight: 700; font-size: 1.75rem; text-transform: uppercase;
+    letter-spacing: .02em; margin: 0 0 .2rem; color: var(--ink);
+  }
+  .h2-nota { font-size: .85rem; color: var(--muted); margin: 0 0 1rem; }
+
+  .antes { list-style: none; padding: 0; margin: 0; display: grid; gap: .55rem; }
+  .antes li {
+    display: grid; grid-template-columns: .85rem 1fr; gap: .7rem;
+    align-items: start; font-size: .95rem; color: var(--ink2);
+  }
+  .antes li::before {
+    content: ""; width: .5rem; height: .5rem; margin-top: .48rem;
+    border: 1.5px solid var(--accent); border-radius: 50%;
+  }
+  .antes b { color: var(--ink); font-weight: 600; }
+
+  .regras { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+  @media (min-width: 34rem) { .regras { grid-template-columns: 1fr 1fr; } }
+  .regra { background: var(--surface); padding: .9rem 1rem; }
+  .regra-t {
+    font-family: var(--mono); font-size: .95rem; font-weight: 600; color: var(--accent);
+    display: block; margin-bottom: .2rem;
+  }
+  .regra p { margin: 0; font-size: .85rem; color: var(--ink2); line-height: 1.5; }
+  .regra b { color: var(--ink); font-weight: 600; }
+
+  /* Fases e passos */
+  .fase { display: flex; align-items: center; gap: .85rem; margin: 2.6rem 0 1.1rem; }
+  .fase-nome {
+    font-family: var(--mono); font-size: .68rem; font-weight: 600; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--muted); white-space: nowrap;
+  }
+  .fase-linha { flex: 1; height: 1px; background: var(--rule); }
+
+  .passos { list-style: none; margin: 0; padding: 0; display: grid; gap: 1.9rem; }
+  .passo { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; align-items: start; }
+  .num {
+    font-family: var(--disp); font-weight: 700; font-size: 2.5rem; line-height: .78;
+    color: var(--accent); font-variant-numeric: tabular-nums; padding-top: .15rem;
+  }
+  .passo h3 { font-size: 1.06rem; font-weight: 600; margin: 0 0 .35rem; line-height: 1.3; color: var(--ink); }
+  .passo p { margin: 0 0 .55rem; color: var(--ink2); }
+  .passo p:last-child { margin-bottom: 0; }
+  .passo b { color: var(--ink); font-weight: 600; }
+  .caminho {
+    font-family: var(--mono); font-size: .82rem; color: var(--ink2);
+    background: var(--surface2); border-left: 2px solid var(--accent);
+    padding: .5rem .7rem; margin: 0; overflow-x: auto; white-space: nowrap;
+  }
+  .caminho b { color: var(--accent); font-weight: 600; }
+  .btn {
+    font-family: var(--mono); font-size: .82rem; font-weight: 600; color: var(--ink);
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 3px; padding: .05rem .35rem; white-space: nowrap;
+  }
+
+  .campos { margin: 0 0 .75rem; border-top: 1px solid var(--border); }
+  .campos > div {
+    display: grid; grid-template-columns: minmax(8rem, 12.5rem) 1fr; gap: .2rem 1rem;
+    padding: .4rem 0; border-bottom: 1px solid var(--border); align-items: baseline;
+  }
+  .campos dt { font-size: .84rem; color: var(--muted); }
+  .campos dd {
+    margin: 0; font-family: var(--mono); font-size: .84rem; font-weight: 600;
+    color: var(--ink); overflow-wrap: anywhere;
+  }
+  .campos dd em { font-family: var(--sans); font-style: normal; font-weight: 400; color: var(--ink2); }
+
+  .aviso {
+    background: var(--warn-soft); border-left: 2px solid var(--warn);
+    padding: .7rem .85rem; margin: .8rem 0 0; font-size: .87rem; color: var(--ink2);
+  }
+  .aviso b { color: var(--warn); }
+  .aviso .cit { font-family: var(--mono); font-size: .8rem; }
+
+  .atalho { font-size: .85rem; color: var(--muted); }
+  .atalho b { color: var(--ink2); font-weight: 600; }
+
+  .parada {
+    background: var(--accent-soft); border: 1px solid var(--border); border-left: 2px solid var(--stop);
+    padding: .85rem .95rem; margin-top: 1.8rem; font-size: .9rem; color: var(--ink2);
+  }
+  .parada b { color: var(--stop); }
+
+  /* Checklist */
+  .check { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+  .check li { background: var(--surface); }
+  .check label { display: grid; grid-template-columns: 1.05rem 1fr; gap: .75rem; align-items: start; padding: .7rem .9rem; cursor: pointer; }
+  .check input { width: 1rem; height: 1rem; margin: .18rem 0 0; accent-color: var(--accent); }
+  .check input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .check span { font-size: .92rem; color: var(--ink2); }
+  .check input:checked + span { color: var(--muted); text-decoration: line-through; }
+
+  .rodape {
+    margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    font-family: var(--mono); font-size: .7rem; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; justify-content: space-between;
+  }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  /* Impressao — folha clara, cores mantidas. Só o fundo vira branco puro:
+     papel poupa tinta, mas o laranja é o que separa passo de passo. */
+  @page { size: A4; margin: 15mm 14mm; }
+  @media print {
+    /* Os três estados de tema de uma vez: o seletor do tema escuro tem
+       especificidade maior que um :root sozinho, e venceria aqui dentro —
+       papel branco com texto claro é o resultado. */
+    :root, :root:not([data-theme="light"]), :root[data-theme="dark"] {
+      --ground: #FFFFFF; --surface: #FFFFFF; --surface2: #F4F1EC; --ink: #14171F; --ink2: #3D3A35;
+      --muted: #6B655C; --border: #D9D3CA; --rule: #C4BCB1; --accent: #A85F14;
+      --accent-soft: rgba(168, 95, 20, .07);
+      --warn: #8A6410; --warn-soft: rgba(138, 100, 16, .09); --stop: #B23A2E;
+    }
+    body {
+      background: #fff; color: var(--ink); font-size: 10pt; line-height: 1.45;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .folha { max-width: none; padding: 0; }
+    h1 { font-size: 30pt; color: var(--ink); }
+    .num { font-size: 19pt; }
+    .passos { gap: 1.1rem; }
+    .passo, .regra, .check li, .aviso, .parada { break-inside: avoid; }
+    /* No papel o quadradinho é para marcar com caneta: sai vazio, não pintado */
+    .check input { appearance: none; -webkit-appearance: none; width: .8rem; height: .8rem;
+      border: 1.2px solid var(--ink2); background: #fff; border-radius: 1px; }
+    .fase, h2 { break-after: avoid; }
+    .caminho { white-space: normal; }
+  }
+</style>
+<style>body{margin:0}img{max-width:100%}</style>
+</head>
+<body>
+
+<div class="folha">
+
+  <header>
+    <p class="kicker">Manual do gerente &middot; Surfers</p>
+    <h1>Retirada de<br>Colaborador</h1>
+    <p class="sub">Como emitir a nota de saída quando um colaborador leva um produto da loja: desconto de funcionário, pagamento combinado e os vales no envelope de caixa.</p>
+    <dl class="ficha">
+      <div><dt>Quem faz</dt><dd>Gerente da loja</dd></div>
+      <div><dt>Onde</dt><dd>Microvix &middot; Faturamento</dd></div>
+      <div><dt>Quando</dt><dd>No dia da retirada</dd></div>
+      <div><dt>Tamanho</dt><dd>10 passos</dd></div>
+    </dl>
+  </header>
+
+  <section>
+    <h2>Antes de começar</h2>
+    <p class="h2-nota">Sem estas três coisas em mãos, você trava no meio.</p>
+    <ul class="antes">
+      <li><span>O <b>CPF do colaborador</b> — é por ele que se acha o cadastro na nota.</span></li>
+      <li><span>O <b>código do produto</b> que ele está levando, e a quantidade.</span></li>
+      <li><span>O que ficou <b>combinado de pagamento</b>: em quantas vezes e com quais vencimentos.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>O que não muda</h2>
+    <p class="h2-nota">Vale para toda retirada de colaborador, em qualquer loja.</p>
+    <div class="regras">
+      <div class="regra">
+        <span class="regra-t">Desconto de 30%</span>
+        <p>É fixo para colaborador. Não muda por produto e não se negocia na hora.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Documento = data do dia</span>
+        <p>Sem barras, no formato <span class="mono">ddmmaaaa</span>. Hoje seria <b id="hojeNum">04092026</b>.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Natureza 42</span>
+        <p>Sempre <span class="mono">[S] OUTRAS SAIDAS</span>. Não é venda de balcão.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Fora do resultado</span>
+        <p>Essa venda <b>não soma no resultado da loja</b>. Não conte com ela no dia.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="fase"><span class="fase-nome">Parte 1 &middot; Abrir a nota</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">01</div>
+      <div>
+        <h3>Abra a emissão de nota</h3>
+        <p class="caminho">Faturamento &rarr; Nota Fiscal &rarr; <b>Emitir Nota Fiscal Saída</b></p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">02</div>
+      <div>
+        <h3>Preencha o cabeçalho</h3>
+        <p>No <b>Código do Cliente</b>, clique na lupa e <b>procure o colaborador pelo CPF</b>. Confira se o nome que apareceu é mesmo o dele antes de seguir.</p>
+        <dl class="campos">
+          <div><dt>Data de emissão</dt><dd>a data de hoje</dd></div>
+          <div><dt>Data e hora de entrada/saída</dt><dd><em>deixe em branco</em></dd></div>
+          <div><dt>Código do Cliente</dt><dd>o colaborador, achado pelo CPF</dd></div>
+          <div><dt>Série</dt><dd>999 (Num.Manual)</dd></div>
+          <div><dt>Número do Documento</dt><dd>a data de hoje, ddmmaaaa</dd></div>
+          <div><dt>Natureza de Operação</dt><dd>42 &mdash; [S] OUTRAS SAIDAS</dd></div>
+          <div><dt>Vendedor/Repres.</dt><dd>.LOJA (8)</dd></div>
+          <div><dt>Tabela de Preço</dt><dd>Tabela padrão (1)</dd></div>
+          <div><dt>Depósito</dt><dd>Estoque (1)</dd></div>
+          <div><dt>Desconto especial do cadastro</dt><dd><em>deixe desmarcado</em></dd></div>
+        </dl>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase"><span class="fase-nome">Parte 2 &middot; Lançar os produtos</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">03</div>
+      <div>
+        <h3>Busque o produto e aplique os 30%</h3>
+        <p>Em <b>Inserir itens</b>, procure o produto <b>pelo código</b> — é a busca mais segura, porque não traz tamanho ou cor trocados. Na linha dele, preencha:</p>
+        <dl class="campos">
+          <div><dt>Desc.(%)</dt><dd>30</dd></div>
+          <div><dt>Qtde.</dt><dd>a quantidade retirada</dd></div>
+        </dl>
+        <p class="atalho"><b>Atalho:</b> dá para usar a <span class="btn">Inserção rápida</span> no alto da tela, digitando a quantidade e bipando o código de barras.</p>
+        <p>Se for mais de um produto, faça isso em cada um antes de seguir.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">04</div>
+      <div>
+        <h3>Insira os itens e confira</h3>
+        <p>Clique em <span class="btn">Inserir Itens</span>: o produto vai para a lista <b>Produtos</b>. Antes de seguir, confira quatro coisas:</p>
+        <dl class="campos">
+          <div><dt>Cliente/Fornecedor</dt><dd>o nome do colaborador</dd></div>
+          <div><dt>Código &middot; Ref. &middot; Descrição</dt><dd>é o produto certo</dd></div>
+          <div><dt>Índice %</dt><dd>30,0000</dd></div>
+          <div><dt>Pr.Tabela R$</dt><dd>o preço já com desconto</dd></div>
+        </dl>
+        <p>Certo, clique em <span class="btn">Prosseguir</span>. Errado, clique em <span class="btn">Abortar essa nota</span> e comece de novo — sai mais rápido do que consertar depois.</p>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase"><span class="fase-nome">Parte 3 &middot; Pagamento e faturas</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">05</div>
+      <div>
+        <h3>Escolha a forma de pagamento</h3>
+        <p>No quadro de pagamento, selecione o <b>Plano que foi combinado</b> com o colaborador, preencha o <b>Valor</b> com o total da nota e clique no <b>✓ Confirmar?</b> da linha.</p>
+        <div class="aviso">
+          <b>O aviso amarelo é normal.</b> Enquanto a linha não é confirmada, o sistema mostra <span class="cit">"O total informado é menor do que o valor do documento fiscal"</span>, porque o subtotal das formas de pagamento ainda está em 0,00. Ele some assim que você clica no ✓.
+        </div>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">06</div>
+      <div>
+        <h3>Prossiga</h3>
+        <p>Com o pagamento confirmado, clique em <span class="btn">Prosseguir</span>.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">07</div>
+      <div>
+        <h3>Confira as faturas</h3>
+        <p>Na tela <b>Finalizando nota fiscal</b>, confira o topo — nome do colaborador, valor total e número de parcelas — e depois o <b>Detalhamento das faturas</b>: a <b>data de vencimento</b> e o <b>valor</b> de cada parcela têm que bater com o combinado.</p>
+        <p>Os campos de <b>Contabilidade</b>, logo abaixo, já vêm preenchidos. Não mexa neles.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">08</div>
+      <div>
+        <h3>Confirme</h3>
+        <p>Clique em <span class="btn">Confirmar</span>. A nota está emitida.</p>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase"><span class="fase-nome">Parte 4 &middot; Depois de emitir</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">09</div>
+      <div>
+        <h3>Mande os vales assinados</h3>
+        <p>Colha a <b>assinatura do colaborador</b> nos vales e confira se os <b>vencimentos</b> estão escritos neles. Grampeie os vales <b>por fora do envelope de caixa</b> — por fora, para o escritório achar sem precisar abrir.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">10</div>
+      <div>
+        <h3>Confira no movimento diário</h3>
+        <p>Antes de fechar, veja no <b>movimento diário</b> se a venda computou certo. Ela aparece no movimento, mas <b>não soma no resultado da loja</b> — é assim mesmo. O que você confere é se ela entrou, e pelo valor certo.</p>
+      </div>
+    </li>
+  </ol>
+
+  <div class="parada">
+    <b>Parou no meio?</b> Nota começada e não finalizada não vira nada. Mas como o número do documento é a data do dia, não emita duas para a mesma retirada — procure a nota do colaborador antes de refazer.
+  </div>
+
+  <section>
+    <h2>Antes de fechar o caixa</h2>
+    <p class="h2-nota">Cinco conferências, uma a uma.</p>
+    <ul class="check">
+      <li><label><input type="checkbox"><span>A nota saiu no nome do colaborador certo, achado pelo CPF.</span></label></li>
+      <li><label><input type="checkbox"><span>Todos os itens estão com os 30% de desconto.</span></label></li>
+      <li><label><input type="checkbox"><span>As parcelas batem com o que foi combinado.</span></label></li>
+      <li><label><input type="checkbox"><span>Os vales estão assinados e com os vencimentos escritos.</span></label></li>
+      <li><label><input type="checkbox"><span>Os vales estão grampeados por fora do envelope de caixa.</span></label></li>
+    </ul>
+  </section>
+
+  <div class="rodape">
+    <span>Surfers &middot; Manual do gerente</span>
+    <span>Retirada de colaborador &middot; Microvix</span>
+  </div>
+</div>
+
+<script>
+  // O numero do documento e a data do dia sem barras: mostrar o de hoje ja
+  // formatado evita o erro mais comum do passo 2.
+  (function () {
+    var el = document.getElementById('hojeNum');
+    if (!el) return;
+    var d = new Date();
+    var p = function (n) { return String(n).padStart(2, '0'); };
+    el.textContent = p(d.getDate()) + p(d.getMonth() + 1) + d.getFullYear();
+  })();
+</script>
+
+</body>
+</html>
