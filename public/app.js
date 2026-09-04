@@ -622,7 +622,20 @@ function navigate(delta) {
   if (S.month > 12) { S.month = 1; S.year++; }
   if (S.month < 1)  { S.month = 12; S.year--; }
   updateLabel();
+  _animaMes(delta);
   loadData();
+}
+
+// O mês entra deslizando pelo lado de quem chamou: a troca se percebe sem
+// precisar reler o topo.
+function _animaMes(delta) {
+  const el = document.getElementById('currentMonthLabel');
+  if (!el) return;
+  const cls = delta < 0 ? 'mes-prev' : 'mes-next';
+  el.classList.remove('mes-prev', 'mes-next');
+  void el.offsetWidth;                       // reinicia a animação
+  el.classList.add(cls);
+  el.addEventListener('animationend', () => el.classList.remove(cls), { once: true });
 }
 
 // ── Load data ──────────────────────────────────────────────────────────────
@@ -1039,49 +1052,12 @@ function _renderResumoRede(panel, ctx) {
 let _resumoObs = null;
 
 // ── Barra de lojas ──────────────────────────────────────────────────────────
-// Filtra a tela inteira numa loja. Quem enxerga uma loja só vê o próprio nome,
-// sem botão: não há o que filtrar.
-const ROTA_LOJAS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'lez', 'site'];
-
-function _renderRouteStrip() {
-  const strip = document.getElementById('routeStrip');
-  if (!strip) return;
-
-  const permitidas = S.user?.board && S.user.board !== 'escritorio'
-    ? [S.user.board]
-    : (S.user?.lojas?.length ? ROTA_LOJAS.filter(k => S.user.lojas.includes(k)) : ROTA_LOJAS);
-  const lojas = permitidas.filter(k => BOARDS[k]);
-
-  if (lojas.length <= 1) {
-    const k = lojas[0];
-    strip.innerHTML = k
-      ? `<span class="route-tab on"><span class="dot" style="background:${BOARDS[k].color}"></span>${_escHtml(BOARDS[k].label)}</span>`
-      : '';
-    return;
-  }
-
-  const ativa = DASH_BOARD_FILTER.size === 1 ? [...DASH_BOARD_FILTER][0] : null;
-  strip.innerHTML =
-    `<button class="route-tab${ativa ? '' : ' on'}" data-rota="todas" type="button">
-       <span class="dot" style="background:var(--muted)"></span>Todas
-     </button>` +
-    lojas.map(k => `<button class="route-tab${ativa === k ? ' on' : ''}" data-rota="${k}" type="button">
-       <span class="dot" style="background:${BOARDS[k].color}"></span>${_escHtml(BOARDS[k].label)}
-     </button>`).join('');
-
-  strip.querySelectorAll('[data-rota]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const k = btn.dataset.rota;
-      DASH_BOARD_FILTER.clear();
-      if (k !== 'todas') DASH_BOARD_FILTER.add(k);
-      renderDashboard();
-    });
-  });
-}
+// A faixa de chips no topo saiu a pedido do Leonardo: o painel já mostra todas
+// as lojas e a faixa do dia dá o número de cada uma. DASH_BOARD_FILTER continua
+// existindo e vazio, que é o mesmo que "todas" — visibleBoards() segue igual.
 
 function renderDashboard() {
   if (_dayCardTimer) { clearInterval(_dayCardTimer); _dayCardTimer = null; }
-  _renderRouteStrip();
   const c = document.getElementById('boardContainer');
   c.innerHTML = '';
   _renderContagemAviso(c);
@@ -2006,6 +1982,17 @@ function _renderDashFolgas(body) {
   }
 }
 
+// Barra de progresso da célula da faixa: mesma faixa de cor do %, então a
+// barra e o número contam a mesma história.
+function _tickBarra(pct, pctCls) {
+  const larg = pct == null ? 0 : Math.max(2, Math.min(100, pct));
+  const tom  = pct == null ? '' : pctCls === 'dia-pct-ok' ? 'ok' : pctCls === 'dia-pct-warn' ? 'warn' : 'bad';
+  return `<span class="tick-bar">
+      <span class="tick-track"><i class="tick-fill ${tom || 'vazio'}" style="width:${larg.toFixed(0)}%"></i></span>
+      <span class="tick-pct ${tom}">${pct != null ? pct.toFixed(1) + '%' : '—'}</span>
+    </span>`;
+}
+
 function _renderDayCardBody(body, dateStr) {
   const fV = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -2152,9 +2139,10 @@ function _renderDayCardBody(body, dateStr) {
   }
 
   // ── A faixa de lojas ───────────────────────────────────────────────────
-  // Uma célula por loja, lado a lado: nome, vendido sobre a meta do dia, % e
-  // PA. Quem enxerga uma loja só recebe a faixa já com os vendedores dela —
-  // não há o que expandir.
+  // Uma célula por loja: nome, vendido, meta do dia com rótulo próprio e uma
+  // barra de progresso com o % à direita — dá para ver quanto falta sem
+  // comparar dois números. Quem enxerga uma loja só recebe a faixa já com os
+  // vendedores dela — não há o que expandir.
   const tickerEl = body.querySelector('#diaTicker');
   const detalheEl = body.querySelector('#diaDetalhe');
   const podeAbrir = !!S.user?.board === false;   // admin e supervisor
@@ -2171,11 +2159,12 @@ function _renderDayCardBody(body, dateStr) {
             <i class="loja-tarja" style="background:${l.color}"></i>${_escHtml(l.label)}
             ${l.pct != null && l.pct >= 100 ? '<span class="tick-bateu" title="bateu a meta do dia">🎉</span>' : ''}
           </span>
-          <span class="tick-vm">${l.valor > 0 ? fV(l.valor) : '—'}<span class="mt"> / ${l.meta > 0 ? fV(l.meta) : '—'}</span></span>
-          <span class="tick-foot">
-            <span class="${l.pctCls}">${l.pct != null ? l.pct.toFixed(1) + '%' : '—'}</span>
-            <span class="pa">PA ${l.pa != null ? l.pa.toFixed(2) : '—'}</span>
+          <span class="tick-vm">${l.valor > 0 ? fV(l.valor) : '—'}</span>
+          <span class="tick-sub">
+            <span>meta ${l.meta > 0 ? fV(l.meta) : '—'}</span>
+            <span>PA ${l.pa != null ? l.pa.toFixed(2) : '—'}</span>
           </span>
+          ${_tickBarra(l.pct, l.pctCls)}
         </button>`;
       }).join('');
 
@@ -2192,11 +2181,12 @@ function _renderDayCardBody(body, dateStr) {
       const eu = lojasDoDia[0];
       tickerEl.innerHTML = (eu?.vendedores || []).map(v => `<span class="tick">
           <span class="tick-nome">${_escHtml(v.nome)}</span>
-          <span class="tick-vm">${v.valor > 0 ? fV(v.valor) : '—'}<span class="mt"> / ${v.meta > 0 ? fV(v.meta) : '—'}</span></span>
-          <span class="tick-foot">
-            <span class="${v.pctCls}">${v.pct != null ? v.pct.toFixed(1) + '%' : '—'}</span>
-            <span class="pa">PA ${v.pa != null ? v.pa.toFixed(2) : '—'}</span>
+          <span class="tick-vm">${v.valor > 0 ? fV(v.valor) : '—'}</span>
+          <span class="tick-sub">
+            <span>meta ${v.meta > 0 ? fV(v.meta) : '—'}</span>
+            <span>PA ${v.pa != null ? v.pa.toFixed(2) : '—'}</span>
           </span>
+          ${_tickBarra(v.pct, v.pctCls)}
         </span>`).join('');
     }
   }
