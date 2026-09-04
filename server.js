@@ -1323,6 +1323,9 @@ app.get('/api/init', requireAuth, async (req, res) => {
       nfItems:      db.nfItems      || [],
       boletas:      db.boletas      || [],
       meetingItems,
+      // Quando este usuário abriu a pauta pela última vez — o aviso do topo do
+      // painel só mostra o que a loja mandou depois disso.
+      pautaVisto:   (db.pautaVistos || {})[req.session.user.username] || null,
       pendencias,
       embalagens,
       requisicoes,
@@ -2727,6 +2730,22 @@ app.delete('/api/meeting-items/:id', requireAdmin, async (req, res) => {
     db.meetingItems = (db.meetingItems || []).filter(x => x.id !== id);
     await writeDB(db);
     res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/pauta-visto ────────────────────────────────────────────────
+// Marca que este usuário já olhou a pauta. Guarda a hora, e não um flag por
+// item, porque a pergunta que o aviso do painel faz é "chegou coisa nova
+// desde que eu olhei?" — item que a loja mandar depois desta marca acende o
+// aviso outra vez sozinho, sem precisar reabrir nada.
+app.post('/api/pauta-visto', requireAuth, async (req, res) => {
+  try {
+    const db = await readDB();
+    if (!db.pautaVistos) db.pautaVistos = {};
+    const at = new Date().toISOString();
+    db.pautaVistos[req.session.user.username] = at;
+    await writeDB(db);
+    res.json({ at });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

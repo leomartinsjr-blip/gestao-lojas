@@ -94,7 +94,7 @@ const MONTHS_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
                    'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
 // ── State ──────────────────────────────────────────────────────────────────
-const S = { year: 2026, month: 5, user: null, employees: [], weights: {}, vsales: {}, weeklyMetas: {}, folgas: [], campaigns: [], nfItems: [], meetingItems: [], pendencias: [], requisicoes: [], storeFluxo: {}, embalagens: { itens: {}, status: {}, diasContagem: 15 } };
+const S = { year: 2026, month: 5, user: null, employees: [], weights: {}, vsales: {}, weeklyMetas: {}, folgas: [], campaigns: [], nfItems: [], meetingItems: [], pautaVisto: null, pendencias: [], requisicoes: [], storeFluxo: {}, embalagens: { itens: {}, status: {}, diasContagem: 15 } };
 
 let saveTimeout = null;
 
@@ -680,6 +680,7 @@ async function loadData() {
     S.nfItems      = init.nfItems      || [];
     S.boletas      = init.boletas      || [];
     S.meetingItems = init.meetingItems || [];
+    S.pautaVisto   = init.pautaVisto   || null;
     S.pendencias   = init.pendencias   || [];
     S.requisicoes  = init.requisicoes  || [];
     S.retiradas         = init.retiradas         || [];
@@ -909,6 +910,145 @@ function _renderPisoAviso(c) {
   c.appendChild(el);
 }
 
+// ── Avisos de chegada ───────────────────────────────────────────────────────
+// Três caixas de entrada do adm viram três linhas no topo: o pedido que a loja
+// mandou, o item que a loja escreveu na pauta e a nota que o escritório
+// lançou. Cada linha some sozinha quando a ação foi feita — nenhuma tem botão
+// de "ok, li", porque um aviso que se fecha à toa some antes de virar ação.
+//
+// Só quem não é loja vê: as três esperam resposta do adm, e a loja já
+// acompanha o que mandou dentro do próprio Loja em Ação.
+
+// Lojas que este usuário enxerga — supervisor vê as dele, adm vê todas.
+function _avisoLojas() {
+  const lojas = S.user?.lojas;
+  return lojas?.length ? NF_STORES.filter(b => lojas.includes(b)) : NF_STORES;
+}
+
+// Chip de loja com a contagem — mesmo desenho do banner de embalagem.
+function _avisoChip(board, n, unidade, titulo) {
+  return `<span class="ct-banner-chip"${titulo ? ` title="${_escHtml(titulo)}"` : ''}>
+      <span class="dash-store-dot" style="background:${BOARDS[board]?.color || 'var(--muted)'}"></span>${_escHtml(BOARDS[board]?.label || board)}
+      <b class="ct-chip-num">${n}</b><span class="ct-chip-min">${unidade}</span></span>`;
+}
+
+// Agrupa por loja na ordem das abas dos cards, para o chip da esquerda ser a
+// mesma loja da primeira aba que o botão abre.
+function _avisoPorLoja(itens, lojas) {
+  const m = new Map();
+  for (const b of lojas) {
+    const doBoard = itens.filter(x => x.board === b);
+    if (doBoard.length) m.set(b, doBoard);
+  }
+  return m;
+}
+
+function _avisoBanner(c, { titulo, chips, botao, acao }) {
+  const el = document.createElement('div');
+  el.className = 'ct-banner ct-banner-novo';
+  el.innerHTML = `<div class="ct-banner-txt"><b>${titulo}</b>${chips}</div>
+    <button class="ct-banner-btn">${botao}</button>`;
+  el.querySelector('.ct-banner-btn').addEventListener('click', () => acao(el));
+  c.appendChild(el);
+  return el;
+}
+
+// Leva até o card que resolve o aviso e pisca a borda: o card fica lá embaixo,
+// na faixa 02, e avisar sem dizer onde é só metade do recado.
+function _irParaCard(bodyId, board) {
+  const card = document.getElementById(bodyId)?.closest('.main-card');
+  if (!card) return;
+  if (board) card.querySelector(`.nf-tab[data-board="${board}"]`)?.click();
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  card.classList.add('card-alvo');
+  setTimeout(() => card.classList.remove('card-alvo'), 1800);
+}
+
+// Pedido de loja parado esperando o adm. Requisição em separação já teve
+// resposta e sai daqui — senão a linha ficaria acesa do pedido até a entrega.
+function _renderLojaAcaoAviso(c) {
+  if (S.user?.board) return;
+  const lojas = _avisoLojas();
+  const tipos = [
+    { tab: 'req',          sing: 'requisição',   plur: 'requisições',   itens: (S.requisicoes   || []).filter(x => x.status === 'pendente') },
+    { tab: 'retirada',     sing: 'retirada',     plur: 'retiradas',     itens: (S.retiradas     || []).filter(x => x.status === 'pendente') },
+    { tab: 'adiantamento', sing: 'adiantamento', plur: 'adiantamentos', itens: (S.adiantamentos || []).filter(x => x.status === 'pendente') },
+  ];
+  const naLoja = t => t.itens.filter(x => lojas.includes(x.board));
+  const total  = tipos.reduce((s, t) => s + naLoja(t).length, 0);
+  if (!total) return;
+
+  const chips = lojas.map(b => {
+    const partes = tipos.map(t => [t, t.itens.filter(x => x.board === b).length]).filter(([, n]) => n);
+    const n = partes.reduce((s, [, q]) => s + q, 0);
+    if (!n) return '';
+    return _avisoChip(b, n, n === 1 ? 'pedido' : 'pedidos',
+      partes.map(([t, q]) => `${q} ${q === 1 ? t.sing : t.plur}`).join(' · '));
+  }).join('');
+
+  // Abre na aba de quem tem mais coisa parada, que é onde o trabalho está.
+  const maior = tipos.slice().sort((a, b) => naLoja(b).length - naLoja(a).length)[0];
+  _avisoBanner(c, {
+    titulo: `🛎 ${total} ${total === 1 ? 'pedido de loja esperando' : 'pedidos de loja esperando'} resposta:`,
+    chips,
+    botao: 'Ver pedidos',
+    acao: () => { _lojaAcaoTab = maior.tab; openLojaAcaoModal(); },
+  });
+}
+
+// Item que a loja escreveu na pauta depois da última vez que este usuário
+// abriu a pauta. O fim do aviso é ter olhado, e não o item estar resolvido:
+// pauta só fecha na reunião do mês, e a linha ficaria acesa quatro semanas.
+function _renderPautaAviso(c) {
+  if (S.user?.board) return;
+  const lojas = _avisoLojas();
+  const desde = S.pautaVisto || '';
+  const novos = (S.meetingItems || []).filter(x =>
+    x.origin === 'loja' && !x.archived && lojas.includes(x.board) && (x.addedAt || '') > desde);
+  if (!novos.length) return;
+
+  const grupos = _avisoPorLoja(novos, lojas);
+  const chips  = [...grupos].map(([b, itens]) => _avisoChip(
+    b, itens.length, itens.length === 1 ? 'item' : 'itens',
+    itens.map(i => i.text).join(' · '))).join('');
+  const primeira = [...grupos.keys()][0];
+
+  _avisoBanner(c, {
+    titulo: `📌 ${novos.length} ${novos.length === 1 ? 'item novo' : 'itens novos'} na pauta da reunião:`,
+    chips,
+    botao: 'Ver pauta',
+    acao: async el => {
+      el.remove();
+      const r = await apiFetch('POST', '/api/pauta-visto').catch(() => null);
+      S.pautaVisto = r?.at || new Date().toISOString();
+      _irParaCard('mtgCardBody', primeira);
+    },
+  });
+}
+
+// Nota lançada e ainda sem decisão. Enquanto está pendente a loja nem
+// consegue dar baixa — o check só abre depois de autorizada.
+function _renderNotasAviso(c) {
+  if (S.user?.board) return;
+  const lojas = _avisoLojas();
+  const pend  = (S.nfItems || []).filter(x =>
+    !x.archived && x.status === 'pendente' && lojas.includes(x.board));
+  if (!pend.length) return;
+
+  const grupos = _avisoPorLoja(pend, lojas);
+  const chips  = [...grupos].map(([b, itens]) => _avisoChip(
+    b, itens.length, itens.length === 1 ? 'nota' : 'notas',
+    itens.map(i => i.text).join(' · '))).join('');
+  const primeira = [...grupos.keys()][0];
+
+  _avisoBanner(c, {
+    titulo: `🧾 ${pend.length} ${pend.length === 1 ? 'nota aguardando' : 'notas aguardando'} conferência:`,
+    chips,
+    botao: 'Ver notas',
+    acao: () => _irParaCard('nfCardBody', primeira),
+  });
+}
+
 // ── Faixa de resumo ─────────────────────────────────────────────────────────
 // O painel começava direto na tabela do dia. Aqui vêm antes os quatro números
 // que decidem se o mês está de pé — e as barras do mês contra a linha da meta,
@@ -1062,6 +1202,9 @@ function renderDashboard() {
   c.innerHTML = '';
   _renderContagemAviso(c);
   _renderPisoAviso(c);
+  _renderLojaAcaoAviso(c);
+  _renderPautaAviso(c);
+  _renderNotasAviso(c);
 
   const pad = n => String(n).padStart(2, '0');
   const today = new Date();

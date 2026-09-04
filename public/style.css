@@ -712,6 +712,7 @@ td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { backgro
   overflow: hidden;
   /* Sombra rasa: quem separa card de card é a borda, não a profundidade. */
   box-shadow: 0 1px 2px var(--shadow-1);
+  transition: box-shadow .35s;
 }
 /* Cabeçalho na mesma superfície do corpo: quem separa um card do outro é a
    borda, não uma faixa cinza em cima de cada um. */
@@ -3935,6 +3936,15 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .ct-banner-piso .ct-banner-txt b.ct-chip-neg { color: var(--down); }
 .ct-chip-neg { color: var(--down); margin-left: .3rem; }
 .ct-chip-min { color: var(--muted); font-size: .68rem; margin-left: .15rem; }
+/* Avisos de chegada (pedido da loja, pauta nova, nota pendente): chegou coisa
+   nova não é atraso nem furo de piso — tarja neutra, para o vermelho da
+   contagem e o âmbar do piso continuarem valendo o que valem. */
+.ct-banner-novo { background: rgba(var(--tint-rgb),.05); border-left-color: var(--text2); }
+.ct-banner-novo .ct-banner-txt b { color: var(--text); }
+.ct-chip-num { color: var(--text); margin-left: .3rem; }
+/* Card apontado pelo aviso: uma piscada na borda, porque ele está lá embaixo
+   na faixa 02 e rolar até o meio da tela ainda deixa procurar qual é. */
+.main-card.card-alvo { box-shadow: 0 0 0 2px var(--accent); }
 /* ── Loja em Ação — tabs ── */
 .la-tabs { display: flex; gap: .35rem; padding: .75rem 1.25rem .5rem; border-bottom: 1px solid var(--border); }
 .la-tab { padding: .35rem .9rem; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--muted); font-size: .82rem; cursor: pointer; transition: all .15s; }

@@ -1166,6 +1166,9 @@ async function init() {
   catch { return; }
   if (S.me.board && S.me.board !== 'escritorio') { window.location.href = '/'; return; }
 
+  // Abriu a pauta: o aviso de "item novo" no topo do painel já cumpriu o papel.
+  api('POST', '/api/pauta-visto').catch(() => {});
+
   const sel = $('boardSel');
   sel.innerHTML = Object.entries(PAUTA_LOJAS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('');
   let salvo = null;
