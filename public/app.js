@@ -12689,6 +12689,9 @@ async function _loadUsersList() {
   try {
     const users = await apiFetch('GET', '/api/users');
     if (!users.length) { list.innerHTML = '<div class="users-loading">Nenhum usuário</div>'; return; }
+    // Conta de admin é território do dono. A própria lista diz quem é ele, então
+    // não precisa de mais um campo só para a tela saber com quem está falando.
+    const souDono = users.some(u => u.dono && u.username === S.user?.username);
     list.innerHTML = `
       <table class="users-table">
         <thead><tr>
@@ -12701,26 +12704,32 @@ async function _loadUsersList() {
         <tbody>
         ${users.map(u => {
           const tipo = userTipo(u);
+          const euMesmo = u.username === S.user?.username;
+          // Linha de outro admin, e quem olha não é o dono: fica só de leitura.
+          // O servidor recusa de qualquer jeito — a tela é que não deve oferecer
+          // um botão que só vai dar erro.
+          const bloqueada = !souDono && u.admin && !euMesmo;
           // Ninguém suspende a si mesmo (ficaria trancado do lado de fora) e
           // ninguém suspende a conta dona — inclusive ela própria.
-          const protegido = u.dono || u.username === S.user?.username;
+          const protegido = u.dono || euMesmo || bloqueada;
+          const ro = bloqueada ? ' disabled' : '';
           return `
           <tr class="users-tr${u.suspenso ? ' users-tr-susp' : ''}" data-user="${u.username}">
-            <td class="users-td users-td-user">${u.username}${u.dono ? '<span class="users-chip users-chip-dono" title="Conta dona — só ela altera a si mesma">dono</span>' : ''}${u.suspenso ? '<span class="users-chip users-chip-susp">suspenso</span>' : ''}</td>
-            <td class="users-td"><input class="users-input users-inline-input" data-field="label" value="${u.label}" placeholder="Nome"></td>
+            <td class="users-td users-td-user">${u.username}${u.dono ? '<span class="users-chip users-chip-dono" title="Conta dona — só ela altera a si mesma">dono</span>' : ''}${u.admin && !u.dono ? `<span class="users-chip users-chip-admin"${bloqueada ? ' title="Conta de admin — só o dono altera"' : ''}>admin</span>` : ''}${u.suspenso ? '<span class="users-chip users-chip-susp">suspenso</span>' : ''}</td>
+            <td class="users-td"><input class="users-input users-inline-input" data-field="label" value="${u.label}" placeholder="Nome"${ro}></td>
             <td class="users-td users-td-acesso">
-              <select class="users-input users-select users-inline-input" data-field="tipo">
-                ${TIPO_OPTIONS.map(([v,l]) => `<option value="${v}"${tipo===v?' selected':''}>${l}</option>`).join('')}
+              <select class="users-input users-select users-inline-input" data-field="tipo"${ro}>
+                ${TIPO_OPTIONS.filter(([v]) => v !== 'admin' || souDono || tipo === 'admin').map(([v,l]) => `<option value="${v}"${tipo===v?' selected':''}>${l}</option>`).join('')}
               </select>
               <div class="users-supervisor-lojas${tipo==='supervisor' ? '' : ' hidden'}" data-role="lojas-box">
                 ${SUPERVISOR_STORES.map(([v,l]) => `<label class="users-loja-chk"><input type="checkbox" value="${v}"${(u.lojas||[]).includes(v)?' checked':''}> ${l}</label>`).join('')}
               </div>
             </td>
-            <td class="users-td"><input class="users-input users-inline-input" data-field="password" type="text" placeholder="••••••" autocomplete="off"></td>
+            <td class="users-td"><input class="users-input users-inline-input" data-field="password" type="text" placeholder="${bloqueada ? '—' : '••••••'}" autocomplete="off"${ro}></td>
             <td class="users-td users-td-actions">
-              <button class="users-save-btn" data-user="${u.username}">Salvar</button>
+              ${bloqueada ? '<span class="users-so-dono">só o dono</span>' : `<button class="users-save-btn" data-user="${u.username}">Salvar</button>`}
               ${protegido ? '' : `<button class="users-susp-btn${u.suspenso ? ' users-susp-on' : ''}" data-user="${u.username}" data-susp="${u.suspenso ? 0 : 1}">${u.suspenso ? 'Reativar' : 'Suspender'}</button>`}
-              ${u.dono ? '' : `<button class="users-del-btn" data-user="${u.username}">Excluir</button>`}
+              ${u.dono || bloqueada ? '' : `<button class="users-del-btn" data-user="${u.username}">Excluir</button>`}
             </td>
           </tr>`;}).join('')}
         </tbody>

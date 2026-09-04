@@ -855,6 +855,10 @@ app.use('/uploads', express.static(UPLOADS_DIR));
 // e o dono não teria como impedir nem como perceber.
 const OWNER_USER = (process.env.OWNER_USER || 'leonardo').toLowerCase();
 
+// Conta com poder de admin: sem loja e sem lojas supervisionadas.
+const ehAdminUser = u => !!u && !u.board && !(u.lojas && u.lojas.length);
+const souDono = req => req.session?.user?.username === OWNER_USER;
+
 // Suspender só vale se derruba quem já está dentro: a sessão viva de um
 // usuário suspenso morre no clique seguinte.
 function sessaoSuspensa(req, res) {
@@ -996,7 +1000,7 @@ app.get('/api/users', requireAdmin, (req, res) => {
   const users = readUsers();
   const list = Object.entries(users).map(([username, u]) => ({
     username, label: u.label || username, board: u.board || null, lojas: u.lojas || null, email: u.email || null,
-    suspenso: !!u.suspenso, dono: username === OWNER_USER
+    suspenso: !!u.suspenso, dono: username === OWNER_USER, admin: ehAdminUser(u)
   }));
   res.json(list);
 });
@@ -1008,6 +1012,10 @@ app.post('/api/users', requireAdmin, (req, res) => {
   const key = username.toLowerCase().trim();
   const users = readUsers();
   if (users[key]) return res.status(409).json({ error: 'Usuário já existe' });
+  // Criar admin é criar um par: quem pode isso contorna qualquer trava sobre
+  // os admins que já existem. Fica com o dono.
+  if (!board && !(lojas && lojas.length) && !souDono(req))
+    return res.status(403).json({ error: 'Só o dono cria conta de admin' });
   users[key] = { password, label: label || key, board: board || null, lojas: (lojas && lojas.length) ? lojas : null, mustChangePassword: true };
   writeUsers(users);
   res.json({ ok: true, username: key });
@@ -1021,6 +1029,19 @@ app.put('/api/users/:username', requireAdmin, (req, res) => {
   if (key === OWNER_USER && req.session.user.username !== OWNER_USER)
     return res.status(403).json({ error: 'A conta do dono só é alterada por ela mesma' });
   const { password, label, board, email, lojas, suspenso } = req.body || {};
+  // Admin manda em loja, escritório e supervisor. Em outro admin, não: podia
+  // suspender o colega, trocar a senha dele ou promover alguém e ficar sozinho
+  // no comando. Mexer em conta de admin é do dono. Na própria conta cada um
+  // mexe — não há degrau a subir aí.
+  const euMesmo = key === req.session.user.username;
+  if (!souDono(req) && !euMesmo) {
+    if (ehAdminUser(users[key]))
+      return res.status(403).json({ error: 'Só o dono altera contas de admin' });
+    const alvoBoard = board !== undefined ? board : users[key].board;
+    const alvoLojas = lojas !== undefined ? lojas : users[key].lojas;
+    if (!alvoBoard && !(alvoLojas && alvoLojas.length))
+      return res.status(403).json({ error: 'Só o dono promove alguém a admin' });
+  }
   if (suspenso !== undefined) {
     if (key === req.session.user.username)
       return res.status(400).json({ error: 'Não dá para suspender o próprio acesso' });
@@ -1056,6 +1077,8 @@ app.delete('/api/users/:username', requireAdmin, (req, res) => {
   if (key === OWNER_USER) return res.status(403).json({ error: 'A conta do dono não pode ser excluída' });
   const users = readUsers();
   if (!users[key]) return res.status(404).json({ error: 'Usuário não encontrado' });
+  if (ehAdminUser(users[key]) && !souDono(req))
+    return res.status(403).json({ error: 'Só o dono exclui contas de admin' });
   delete users[key];
   writeUsers(users);
   res.json({ ok: true });
