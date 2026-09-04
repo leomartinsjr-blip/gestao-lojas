@@ -2216,10 +2216,10 @@ td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { backgro
 .dw-total-row .dw-td { color: var(--text); font-weight: 700; border: none; text-align: right; }
 .dw-total-row .dw-td:first-child { text-align: left; }
 .dw-premio { text-align: right; white-space: nowrap; }
-/* Prêmio da loja: os dois valores num bloco de largura fixa, centralizados e
-   alinhados de uma linha para outra — antes eles corriam atrás do nome, e nome
-   curto e nome comprido deixavam a coluna toda desencontrada. */
-.dw-premio-loja {
+/* Prêmio, da loja e do vendedor: os dois valores num bloco de largura fixa,
+   centralizados e alinhados de uma linha para outra — soltos, o ✗ de uma linha
+   e a ausência dele na outra deixavam a coluna desencontrada. */
+.dw-premio-loja, .dw-premio-bloco {
   margin-left: auto; flex-shrink: 0;
   display: inline-flex; align-items: center; justify-content: center; gap: .25rem;
   min-width: 8.5rem;

@@ -2511,7 +2511,7 @@ function _renderDashWeekBody(body, week, extraData) {
           <td class="dw-td dw-td-num">${fBRL(k.projecao)}</td>
           <td class="dw-td dw-td-num ${pctProjCls}">${fPct(k.pctProj)}</td>
           <td class="dw-td dw-td-num${k.pa!=null?(k.pa>=1.8?' pa-ok':' pa-low'):''}">${fDec(k.pa)}</td>
-          <td class="dw-td dw-premio">${premioHtml}</td>
+          <td class="dw-td dw-premio"><span class="dw-premio-bloco">${premioHtml}</span></td>
         </tr>`);
       }
 
@@ -2641,7 +2641,7 @@ function _renderDashWeekBody(body, week, extraData) {
         <td class="dw-td dw-td-num">${fBRL(k.projecao)}</td>
         <td class="dw-td dw-td-num ${pctProjCls}">${fPct(k.pctProj)}</td>
         <td class="dw-td dw-td-num${k.pa != null ? (k.pa >= 1.8 ? ' pa-ok' : ' pa-low') : ''}">${fDec(k.pa)}</td>
-        <td class="dw-td dw-premio">${premioHtml}</td>
+        <td class="dw-td dw-premio"><span class="dw-premio-bloco">${premioHtml}</span></td>
       </tr>`;
     }).join('');
 
@@ -2685,16 +2685,6 @@ function _renderDashWeekBody(body, week, extraData) {
           </tr>
           ${rows}
         </tbody>
-        <tfoot><tr class="dw-total-row">
-          <td class="dw-td">Total</td>
-          <td class="dw-td dw-td-num">${fBRL(totMeta||null)}</td>
-          <td class="dw-td dw-td-num">${fBRL(totValor||null)}</td>
-          <td class="dw-td dw-td-num">${fPct(totPct)}</td>
-          <td class="dw-td dw-td-num">${hasProj ? fBRL(totProjecao) : '—'}</td>
-          <td class="dw-td dw-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
-          <td class="dw-td dw-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
-          <td class="dw-td dw-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
-        </tr></tfoot>
       </table>`;
     body.appendChild(sec);
   }
