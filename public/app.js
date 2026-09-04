@@ -2114,8 +2114,25 @@ function _renderDayCardBody(body, dateStr) {
     const inteiro = cheio.slice(0, -3), centavos = cheio.slice(-3);
     const maiores = lojasDoDia.filter(l => l.valor > 0).sort((a, b) => b.valor - a.valor).slice(0, 3);
 
-    heroEl.innerHTML = !anyData || grandVal <= 0
+    // Dia ainda sem venda — o dia seguinte, por exemplo — continua mostrando a
+    // meta da loja: é justamente o número que se abre para ver. O card só diz
+    // "sem lançamento" quando não há nem meta para aquele dia.
+    const semLanc = !anyData || grandVal <= 0;
+    heroEl.innerHTML = semLanc && grandMeta <= 0
       ? '<div class="dia-hero-vazio">Sem lançamento para este dia.</div>'
+      : semLanc
+      ? `<div class="dia-hero-num">
+           <span class="dia-hero-val"><i>R$</i>—</span>
+           <span class="dia-hero-lbl">Realizado${DASH_DAY.mode === 'weekend' ? ' no FDS' : ''}</span>
+         </div>
+         <div class="dia-hero-meta">
+           <span class="dia-hero-val2">${fV(grandMeta)}</span>
+           <span class="dia-hero-lbl">Meta do dia</span>
+         </div>
+         <div class="dia-hero-pct">
+           <span class="dia-hero-badge">—</span>
+           <span class="dia-hero-lbl">Sem lançamento ainda</span>
+         </div>`
       : `<div class="dia-hero-num">
            <span class="dia-hero-val"><i>R$</i>${inteiro}<em>${centavos}</em></span>
            <span class="dia-hero-lbl">Realizado${DASH_DAY.mode === 'weekend' ? ' no FDS' : ''}</span>
@@ -2635,12 +2652,11 @@ function _renderDashWeekBody(body, week, extraData) {
     const tpProjCls  = totPctProj==null?'': totPctProj>=100?'kpi-pos': totPctProj>=80?'kpi-warn':'kpi-neg';
     const tprojCls   = !hasProj?'': totProjecao>=totMeta?'kpi-pos':'kpi-neg';
 
+    // A loja entra como linha da tabela, e não como faixa solta em cima: assim
+    // meta, realizado e prêmio dela caem nas mesmas colunas dos vendedores,
+    // igual à visão do admin.
     const sec = document.createElement('div');
     sec.innerHTML = `
-      <div class="dw-store-hdr">
-        <span class="dw-store-dot" style="background:${bc.color}"></span><strong>${bc.label}</strong>
-        ${_gerenteChips(sHitMeta, sHitPA, refIsFuture, refIsComplete)}
-      </div>
       <table class="dw-table">
         <thead><tr class="dw-thead-tr">
           <th class="dw-th">Vendedor</th>
@@ -2652,7 +2668,23 @@ function _renderDashWeekBody(body, week, extraData) {
           <th class="dw-th dw-th-r">PA</th>
           <th class="dw-th dw-th-r">Prêmio</th>
         </tr></thead>
-        <tbody>${rows}</tbody>
+        <tbody>
+          <tr class="dw-store-row">
+            <td class="dw-td dw-td-name" style="border-left:3px solid ${bc.color}">
+              <span class="dw-store-dot" style="background:${bc.color}"></span>
+              <strong>${bc.label}</strong>
+              ${_gerenteChips(sHitMeta, sHitPA, refIsFuture, refIsComplete)}
+            </td>
+            <td class="dw-td dw-td-num">${fBRL(totMeta||null)}</td>
+            <td class="dw-td dw-td-num">${fBRL(totValor||null)}</td>
+            <td class="dw-td dw-td-num">${fPct(totPct)}</td>
+            <td class="dw-td dw-td-num">${hasProj ? fBRL(totProjecao) : '—'}</td>
+            <td class="dw-td dw-td-num ${tpProjCls}">${fPct(totPctProj)}</td>
+            <td class="dw-td dw-td-num${totPa!=null?(totPa>=1.8?' pa-ok':' pa-low'):''}">${totPa!=null?totPa.toFixed(2):'—'}</td>
+            <td class="dw-td dw-td-num">R$ ${totPremio.toLocaleString('pt-BR',{minimumFractionDigits:2})}</td>
+          </tr>
+          ${rows}
+        </tbody>
         <tfoot><tr class="dw-total-row">
           <td class="dw-td">Total</td>
           <td class="dw-td dw-td-num">${fBRL(totMeta||null)}</td>
@@ -5723,14 +5755,17 @@ function buildDailyStoreTabs(activeBoard) {
     btn.dataset.store = k;
     btn.textContent = BOARDS[k]?.label || k;
     const color = BOARDS[k]?.color || 'var(--muted)';
+    // A aba inativa fica com a cor da própria loja sobre fundo transparente —
+    // igual às outras abas do sistema. Texto branco fixo sumia no tema claro,
+    // porque lá --on-accent também é branco.
     btn.style.borderColor = color;
-    btn.style.background  = k === activeBoard ? color : 'var(--on-accent)';
-    btn.style.color       = k === activeBoard ? 'var(--on-accent)' : '#fff';
+    btn.style.background  = k === activeBoard ? color : 'transparent';
+    btn.style.color       = k === activeBoard ? 'var(--on-accent)' : color;
     btn.addEventListener('click', () => {
       document.querySelectorAll('#dailyStoreTabs .perf-tab-btn').forEach(b => {
         const c = BOARDS[b.dataset.store]?.color || 'var(--muted)';
-        b.style.background = b.dataset.store === k ? c : 'var(--on-accent)';
-        b.style.color      = b.dataset.store === k ? 'var(--on-accent)' : '#fff';
+        b.style.background = b.dataset.store === k ? c : 'transparent';
+        b.style.color      = b.dataset.store === k ? 'var(--on-accent)' : c;
       });
       PD.activeEmpId = null;
       loadAndRenderDaily(k);

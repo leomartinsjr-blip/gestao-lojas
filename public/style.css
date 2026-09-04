@@ -2186,13 +2186,9 @@ td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { backgro
 .dw-badge-cur  { background: var(--surface2); color: var(--text); }
 .dw-badge-past { background: var(--surface3); color: var(--muted); }
 .dw-store { }
-.dw-store-hdr {
-  padding: .3rem .875rem; font-size: .7rem; font-weight: 700;
-  text-transform: uppercase; letter-spacing: .05em;
-  background: var(--surface2); color: var(--text);
-  display: flex; align-items: center; justify-content: center; gap: .4rem;
-  border-bottom: 1px solid var(--border2);
-}
+/* A loja na visão de loja: mesma pesagem da linha de loja do admin, só que sem
+   abrir e fechar — ela já vem com os vendedores embaixo. */
+.dw-store-row td { background: var(--surface2); font-weight: 700; font-size: .78rem; border-top: 2px solid var(--border2); }
 .dw-store-collapse {
   cursor: pointer; justify-content: flex-start;
   transition: background .12s;
