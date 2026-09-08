@@ -178,6 +178,35 @@ function applyUserPermissions(user) {
   if (pautaEl) pautaEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
   const certificadosEl = document.getElementById('certificadosBtn');
   if (certificadosEl) certificadosEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
+  const vtEl = document.getElementById('valeTransporteBtn');
+  if (vtEl) vtEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
+}
+
+// ── Aviso do Vale-Transporte ───────────────────────────────────────────────
+// Aparece na semana da primeira terça (o dia da recarga) e continua depois dela
+// enquanto sobrar cartão para abastecer. Se a escala do mês não estiver
+// fechada, é isso que o aviso cobra primeiro: sem ela a conta é estimativa.
+async function checarValeTransporte() {
+  const banner = document.getElementById('vtBanner');
+  if (!banner) return;
+  const u = S.user;
+  if (!(userIsAdmin(u) || u?.board === 'escritorio')) return;
+  try {
+    const a = await apiFetch('GET', '/api/vt/alerta');
+    if (!a?.mostrar) return;
+    const dia = a.dia.split('-').reverse().join('/');
+    const quando = a.hoje   ? 'Hoje é dia de recarregar o vale-transporte'
+                 : a.passou ? `A recarga do vale-transporte era ${dia}`
+                 : `Recarga do vale-transporte em ${dia}`;
+    const pendencia = !a.escalaCompleta
+      ? ` — feche a escala de ${a.escalaPendentes} ${a.escalaPendentes === 1 ? 'pessoa' : 'pessoas'} antes`
+      : a.semSaldo ? ` — falta ler o saldo de ${a.semSaldo} ${a.semSaldo === 1 ? 'cartão' : 'cartões'}`
+      : a.falta > 0 ? ` — R$ ${a.falta.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} a recarregar`
+      : '';
+    document.getElementById('vtBannerText').textContent = quando + pendencia;
+    banner.classList.remove('hidden');
+    document.getElementById('vtBannerClose')?.addEventListener('click', () => banner.classList.add('hidden'));
+  } catch { /* sem VT configurado ou sem permissão: o aviso simplesmente não aparece */ }
 }
 
 async function checkAuth() {
@@ -185,6 +214,10 @@ async function checkAuth() {
     S.user = await apiFetch('GET', '/api/me');
     hideLogin();
     applyUserPermissions(S.user);
+    checarValeTransporte();
+    // O aviso do VT manda para cá quando falta escala: abrir o painel já com
+    // as Folgas na tela poupa o passo de procurar no menu.
+    if (location.hash === '#folgas') openFolgas();
     // Thursday reminder for store users
     const todayBRTDay = new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo', weekday: 'short' });
     const isStore = S.user?.board && S.user.board !== 'escritorio';

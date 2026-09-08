@@ -13657,6 +13657,1070 @@ app.post('/api/seed-weights-tmp', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ══════════════════════════════════════════════════════════════════════════
+// VALE-TRANSPORTE
+// Substitui a planilha "VALE TRANSPORTE <ano>.xlsx". O recorte é o mesmo dela,
+// porque é assim que as operadoras cobram: um bloco por CNPJ pagador e, dentro
+// dele, um cartão por colaborador. O único número que vem de fora é o SALDO,
+// lido no portal da BHBUS ou da Ótimo; todo o resto é conta.
+//
+// A conta é a da planilha, letra por letra, para o valor não mudar na virada:
+// compra-se em dias inteiros até o cartão cobrir os dias de trabalho do mês
+// mais uma reserva. Quem falta, tira férias ou se afasta não é calculado aqui
+// — a linha é marcada para não recarregar, que é como o escritório já faz.
+//
+// O cartão é o cadastro central, não a pessoa: todos os cartões da casa ficam
+// aqui, com dono ou na gaveta, e é o cartão que se perde, se bloqueia e se
+// substitui. O saldo de um cartão perdido não evapora e não volta sozinho —
+// só é dado como recuperado quando alguém marca que fez o procedimento na
+// operadora, e aí o valor é creditado no cartão que entrou no lugar.
+// ══════════════════════════════════════════════════════════════════════════
+
+// Os dias de trabalho saem da escala do mês (db.folgas): dias do mês menos as
+// folgas marcadas para a pessoa. O 26 continua existindo como rede — é o que
+// vale quando a escala daquela pessoa ainda não foi feita, e nesse caso a
+// linha avisa. 4 dias de reserva é o colchão que a planilha somava (a coluna
+// "≠", que era sempre valor do dia × 4).
+// minFolgas é o que define "escala preenchida": ninguém trabalha o mês inteiro,
+// então quem está com menos de 4 folgas marcadas é escala por fazer, não gente
+// que folgou pouco.
+const VT_DEFAULTS = { diasMes: 26, diasReserva: 4, usarEscala: true, minFolgas: 4 };
+const VT_OPERADORAS = ['BHBUS', 'OTIMO'];
+
+// Quem não quer vale-transporte recebe ajuda de custo em dinheiro, num valor
+// fixo por faixa de distância. As quatro faixas abaixo são as que a casa já
+// usa; ficam editáveis, e só entram uma vez, na primeira carga.
+const VT_FAIXAS_SEED = [
+  { nome: 'Faixa 1', valor: 200, ateKm: 300 },
+  { nome: 'Faixa 2', valor: 250, ateKm: 400 },
+  { nome: 'Faixa 3', valor: 300, ateKm: 500 },
+  { nome: 'Faixa 4', valor: 400, ateKm: null },   // acima de 500
+];
+const VT_ESTADOS = ['uso', 'gaveta', 'perdido', 'bloqueado', 'substituido'];
+
+// nextId vive em outro ponto do arquivo; aqui só um apelido para deixar claro
+// que a semente das faixas consome a mesma sequência de ids de todo o resto.
+const nextIdSeq = db => nextId(db);
+
+function vtRoot(db) {
+  if (!db.vt) db.vt = {};
+  const vt = db.vt;
+  if (!vt.config) vt.config = {};
+  if (typeof vt.config.diasMes     !== 'number') vt.config.diasMes     = VT_DEFAULTS.diasMes;
+  if (typeof vt.config.diasReserva !== 'number') vt.config.diasReserva = VT_DEFAULTS.diasReserva;
+  if (typeof vt.config.usarEscala  !== 'boolean') vt.config.usarEscala = VT_DEFAULTS.usarEscala;
+  if (typeof vt.config.minFolgas   !== 'number') vt.config.minFolgas   = VT_DEFAULTS.minFolgas;
+  if (!Array.isArray(vt.config.empresas)) vt.config.empresas = [];
+  if (!Array.isArray(vt.config.linhas))   vt.config.linhas   = [];
+  if (!Array.isArray(vt.config.faixas) || !vt.config.faixas.length) {
+    vt.config.faixas = VT_FAIXAS_SEED.map(f => ({ id: nextIdSeq(db), ...f }));
+  }
+  if (!Array.isArray(vt.ajudas)) vt.ajudas = [];
+  if (!Array.isArray(vt.cartoes))         vt.cartoes = [];
+  if (!vt.meses)                          vt.meses = {};
+  return vt;
+}
+
+// A tarifa de uma linha muda com o tempo, e mês fechado não pode mudar junto:
+// cada alta entra como uma vigência nova ("desde 2026-03"), e o mês usa a que
+// valia nele. Sem isso, subir a tarifa reescreveria a recarga de janeiro.
+function vtTarifaEm(linha, mk) {
+  const hist = (linha?.tarifas || []).filter(t => t.desde <= mk).sort((a, b) => a.desde.localeCompare(b.desde));
+  return hist.length ? Number(hist[hist.length - 1].valor) || 0 : 0;
+}
+
+// O valor do dia de um cartão: tarifa da linha × passagens do dia. O campo
+// digitado continua existindo para a exceção — cartão sem linha cadastrada —
+// e é o que segura o que veio da planilha antes de as linhas existirem.
+function vtValorDia(cartao, linhas, mk) {
+  const linha = cartao.linhaId ? (linhas || []).find(l => l.id === cartao.linhaId) : null;
+  if (!linha) return { valor: vt2(cartao.valorDia), origem: 'proprio', linha: null, tarifa: null };
+  const tarifa = vtTarifaEm(linha, mk);
+  const pass = Math.max(1, Number(cartao.passagensDia) || 2);
+  return { valor: vt2(tarifa * pass), origem: 'linha', linha: linha.nome, tarifa };
+}
+
+const vtLinhaPublica = (l, mk) => ({
+  id: l.id, nome: l.nome, obs: l.obs || '',
+  tarifas: [...(l.tarifas || [])].sort((a, b) => a.desde.localeCompare(b.desde)),
+  tarifaAtual: vtTarifaEm(l, mk || vtMesKeyDeHoje()),
+});
+
+// ROUNDUP(((valorDia*reserva) + (valorDia*diasMes) - saldo) / valorDia) — o
+// épsilon existe porque uma divisão que dá 18 exato em decimal pode dar
+// 18.000000000000004 em ponto flutuante, e aí o teto compraria um dia a mais.
+function vtCalcula(valorDia, saldo, diasMes, diasReserva) {
+  const vd = Number(valorDia) || 0;
+  if (vd <= 0) return { dias: 0, recarga: 0 };
+  const alvo = (Number(diasMes) + Number(diasReserva)) * vd;
+  const dias = Math.max(0, Math.ceil((alvo - (Number(saldo) || 0)) / vd - 1e-9));
+  return { dias, recarga: Math.round(dias * vd * 100) / 100 };
+}
+
+// A faixa de uma distância: a primeira que ainda cobre o km. A última, sem
+// teto, é a de cima de tudo — é ela que pega quem mora longe demais.
+function vtFaixaPara(km, faixas) {
+  const q = Number(km) || 0;
+  const ordenadas = [...(faixas || [])].sort((a, b) => {
+    if (a.ateKm == null) return 1;
+    if (b.ateKm == null) return -1;
+    return a.ateKm - b.ateKm;
+  });
+  return ordenadas.find(f => f.ateKm != null && q <= f.ateKm)
+      || ordenadas.find(f => f.ateKm == null)
+      || null;
+}
+
+const vtFaixaPublica = f => ({ id: f.id, nome: f.nome, valor: vt2(f.valor), ateKm: f.ateKm ?? null });
+
+const vtMesKey = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
+const vtMesKeyDeHoje = () => vtHojeISO().slice(0, 7);
+const vtDiasNoMes = (y, m) => new Date(y, m, 0).getDate();
+
+// A recarga é sempre na primeira terça do mês — é quando o escritório senta
+// para fazer. Serve de prazo: a escala precisa estar pronta antes disso.
+function vtPrimeiraTerca(y, m) {
+  const d = new Date(y, m - 1, 1);
+  while (d.getDay() !== 2) d.setDate(d.getDate() + 1);
+  return `${y}-${String(m).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+const vtHojeISO = () => {
+  const s = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' });
+  const [d, m, y] = s.split('/');
+  return `${y}-${m}-${d}`;
+};
+
+// Quantas folgas cada um tem marcadas no mês. É a escala que a loja preenche
+// na tela de Folgas — aqui ela só é lida.
+function vtFolgasPorEmp(db, y, m) {
+  const prefixo = vtMesKey(y, m);
+  const mapa = new Map();
+  for (const f of (db.folgas || [])) {
+    if (!f.date || !f.date.startsWith(prefixo)) continue;
+    mapa.set(f.employeeId, (mapa.get(f.employeeId) || 0) + 1);
+  }
+  return mapa;
+}
+const vt2 = v => Math.round((Number(v) || 0) * 100) / 100;
+
+// Colaborador ativo no mês: já tinha sido admitido e ainda não foi desligado.
+// Quem sai no meio do mês continua aparecendo — a recarga dele já foi feita.
+function vtAtivoNoMes(emp, y, m) {
+  const ini = `${y}-${String(m).padStart(2, '0')}-01`;
+  const fim = `${y}-${String(m).padStart(2, '0')}-31`;
+  if (emp.admissao     && emp.admissao     > fim) return false;
+  if (emp.desligamento && emp.desligamento < ini) return false;
+  return true;
+}
+
+// A empresa nunca sai da listagem com a senha dentro: ela só vem por /senha,
+// uma de cada vez e a pedido. A planilha trazia as dez juntas em cima da aba.
+const vtConfigPublica = vt => ({
+  diasMes: vt.config.diasMes, diasReserva: vt.config.diasReserva,
+  usarEscala: vt.config.usarEscala, minFolgas: vt.config.minFolgas,
+  linhas: (vt.config.linhas || []).map(l => vtLinhaPublica(l)),
+  faixas: (vt.config.faixas || []).map(vtFaixaPublica),
+});
+
+const vtEmpresaPublica = e => ({
+  id: e.id, nome: e.nome, cnpj: e.cnpj || '', operadora: e.operadora || 'BHBUS',
+  login: e.login || '', obs: e.obs || '', temSenha: !!e.senha,
+});
+
+function vtCartaoPublico(c) {
+  return {
+    id: c.id, numero: c.numero, empresaId: c.empresaId, empId: c.empId || null,
+    valorDia: vt2(c.valorDia), passagensDia: Number(c.passagensDia) || 2,
+    linhaId: c.linhaId || null,
+    estado: c.estado || (c.empId ? 'uso' : 'gaveta'), obs: c.obs || '',
+    nomePlanilha: c.nomePlanilha || '',
+    perdidoEm: c.perdidoEm || null,
+    saldoNaPerda: c.saldoNaPerda == null ? null : vt2(c.saldoNaPerda),
+    saldoRecuperado: !!c.saldoRecuperado,
+    saldoRecuperadoEm: c.saldoRecuperadoEm || null,
+    substituidoPor: c.substituidoPor || null,
+    substituiDe: c.substituiDe || null,
+  };
+}
+
+function vtRegistra(cartao, quem, texto) {
+  if (!Array.isArray(cartao.historico)) cartao.historico = [];
+  cartao.historico.push({ em: new Date().toISOString(), quem, texto });
+}
+
+function vtLinhaDoMes(mes, cartaoId) {
+  return (mes.linhas || {})[String(cartaoId)] || {};
+}
+
+// Monta o mês inteiro já calculado. É o servidor que faz a conta para a tela e
+// o Excel nunca discordarem — na planilha isso já rendeu linha com fórmula e
+// linha com número fixo lado a lado.
+function vtMontaMes(vt, employees, y, m, folgasPorEmp) {
+  const mk  = vtMesKey(y, m);
+  const mes = vt.meses[mk] || { linhas: {} };
+  const cfg = vt.config;
+  const empById = new Map((employees || []).map(e => [e.id, e]));
+  const folgas  = folgasPorEmp || new Map();
+  const diasNoMes = vtDiasNoMes(y, m);
+
+  // Dias de trabalho de uma pessoa: o mês menos as folgas dela. Sem escala
+  // feita, cai no número fixo — e a linha diz que caiu, porque comprar
+  // passagem por um palpite é errar para os dois lados.
+  const diasDe = empId => {
+    const qtd = folgas.get(empId) || 0;
+    const temEscala = qtd >= cfg.minFolgas;
+    if (!cfg.usarEscala || !temEscala) {
+      return { dias: cfg.diasMes, folgas: qtd, escalaOk: false, origem: cfg.usarEscala ? 'padrao' : 'fixo' };
+    }
+    return { dias: Math.max(1, diasNoMes - qtd), folgas: qtd, escalaOk: true, origem: 'escala' };
+  };
+
+  // Ajuda de custo: mesma lógica de linha do mês (pular, valor à mão, pago),
+  // mas o valor não sai de conta nenhuma — é o da faixa, fixo no mês.
+  const ajudasDoMes = mes.ajudas || {};
+  const montaAjudas = empresaId => vt.ajudas
+    .filter(a => a.ativo !== false && a.empresaId === empresaId)
+    .map(a => {
+      const am    = ajudasDoMes[String(a.id)] || {};
+      const pes   = empById.get(a.empId) || null;
+      const faixa = a.faixaId ? (cfg.faixas || []).find(f => f.id === a.faixaId) : vtFaixaPara(a.km, cfg.faixas);
+      const base  = faixa ? vt2(faixa.valor) : 0;
+      const manual = am.valorManual != null && am.valorManual !== '';
+      return {
+        ajudaId: a.id, empId: a.empId,
+        nome:  pes ? (pes.apelido || pes.name) : '— sem vínculo —',
+        board: pes ? pes.board : null,
+        semCadastro: !pes,
+        km: Number(a.km) || 0,
+        faixa: faixa ? faixa.nome : '—',
+        faixaFixada: !!a.faixaId,
+        valorFaixa: base,
+        valor: am.pular ? 0 : (manual ? vt2(am.valorManual) : base),
+        manual, valorManual: manual ? vt2(am.valorManual) : null,
+        pular: !!am.pular, motivo: am.motivo || '',
+        pago: !!am.pago, pagoEm: am.pagoEm || null,
+        obs: a.obs || '',
+      };
+    })
+    .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+  const grupos = vt.config.empresas.map(emp => {
+    const cartoes = vt.cartoes.filter(c => c.empresaId === emp.id && c.empId);
+    const linhas  = cartoes.map(c => {
+      const l    = vtLinhaDoMes(mes, c.id);
+      const pes  = empById.get(c.empId) || null;
+      const esc  = diasDe(c.empId);
+      const vd   = vtValorDia(c, cfg.linhas, mk);
+      const calc = vtCalcula(vd.valor, l.saldo, esc.dias, cfg.diasReserva);
+      const manual = l.recargaManual != null && l.recargaManual !== '';
+      const recarga = l.pular ? 0 : (manual ? vt2(l.recargaManual) : calc.recarga);
+      return {
+        cartaoId: c.id, numero: c.numero, empId: c.empId,
+        nome:  pes ? (pes.apelido || pes.name) : (c.nomePlanilha || '— sem vínculo —'),
+        board: pes ? pes.board : null,
+        semCadastro: !pes,
+        valorDia: vd.valor, origemValor: vd.origem,
+        linha: vd.linha, tarifa: vd.tarifa,
+        passagensDia: Number(c.passagensDia) || 2,
+        diasTrabalho: esc.dias, folgasNoMes: esc.folgas,
+        escalaOk: esc.escalaOk, origemDias: esc.origem,
+        saldo: l.saldo == null || l.saldo === '' ? null : vt2(l.saldo),
+        temSaldo: l.saldo != null && l.saldo !== '',
+        dias: l.pular ? 0 : calc.dias,
+        recarga,
+        calculado: calc.recarga,
+        manual, recargaManual: manual ? vt2(l.recargaManual) : null,
+        pular: !!l.pular, motivo: l.motivo || '',
+        pago: !!l.pago, pagoEm: l.pagoEm || null,
+        // Cartão que entrou no lugar de outro carrega o aviso junto, para
+        // ninguém recarregar por cima de um saldo que ainda está preso.
+        substituiDe: c.substituiDe || null,
+      };
+    }).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
+
+    const ajudas = montaAjudas(emp.id);
+    return {
+      empresa: vtEmpresaPublica(emp),
+      linhas, ajudas,
+      total:     vt2(linhas.reduce((s, l) => s + l.recarga, 0)),
+      totalPago: vt2(linhas.filter(l => l.pago).reduce((s, l) => s + l.recarga, 0)),
+      totalAjuda:     vt2(ajudas.reduce((s, a) => s + a.valor, 0)),
+      totalAjudaPago: vt2(ajudas.filter(a => a.pago).reduce((s, a) => s + a.valor, 0)),
+      semSaldo:  linhas.filter(l => !l.temSaldo && !l.pular).length,
+    };
+  });
+
+  // Cartão sem dono é a gaveta. Na planilha ele era um número solto numa linha
+  // vazia e não dava para saber se estava livre, perdido ou esquecido.
+  const gaveta = vt.cartoes.filter(c => !c.empId).map(vtCartaoPublico);
+
+  // Dinheiro parado: saldo de cartão perdido que ainda não voltou. É o número
+  // que a planilha não tinha como mostrar, porque cartão perdido era só uma
+  // linha que parava de aparecer.
+  const presos = vt.cartoes.filter(c => c.estado === 'perdido' && !c.saldoRecuperado && Number(c.saldoNaPerda) > 0);
+
+  const linhasTodas = grupos.flatMap(g => g.linhas);
+  const ajudasTodas = grupos.flatMap(g => g.ajudas);
+
+  // A escala é pré-requisito: sem ela a conta usa o número fixo e passa a ser
+  // chute. Por isso o mês diz, em número e em nome, quem ainda falta.
+  // A ajuda de custo é valor fechado do mês: não depende de escala, então quem
+  // está nela não entra nessa conferência.
+  const semEscala = linhasTodas.filter(l => !l.escalaOk);
+  const diaRecarga = vtPrimeiraTerca(y, m);
+  const hoje = vtHojeISO();
+
+  return {
+    mes: mk, ano: y, numMes: m,
+    config: {
+      diasMes: cfg.diasMes, diasReserva: cfg.diasReserva,
+      usarEscala: cfg.usarEscala, minFolgas: cfg.minFolgas, diasNoMes,
+    },
+    escala: {
+      usando: cfg.usarEscala,
+      completa: cfg.usarEscala && semEscala.length === 0 && linhasTodas.length > 0,
+      pendentes: semEscala.map(l => ({ nome: l.nome, board: l.board, folgas: l.folgasNoMes })),
+    },
+    recarga: {
+      dia: diaRecarga,
+      hoje: hoje === diaRecarga,
+      passou: hoje > diaRecarga,
+      diasAte: Math.round((new Date(diaRecarga + 'T12:00:00') - new Date(hoje + 'T12:00:00')) / 86400000),
+    },
+    grupos, gaveta,
+    saldoPreso: {
+      valor: vt2(presos.reduce((s, c) => s + Number(c.saldoNaPerda || 0), 0)),
+      cartoes: presos.map(vtCartaoPublico),
+    },
+    totais: {
+      recarga:  vt2(linhasTodas.reduce((s, l) => s + l.recarga, 0)),
+      pago:     vt2(linhasTodas.filter(l => l.pago).reduce((s, l) => s + l.recarga, 0)),
+      ajuda:     vt2(ajudasTodas.reduce((s, a) => s + a.valor, 0)),
+      ajudaPaga: vt2(ajudasTodas.filter(a => a.pago).reduce((s, a) => s + a.valor, 0)),
+      naAjuda:   ajudasTodas.length,
+      pessoas:  linhasTodas.length,
+      semSaldo: linhasTodas.filter(l => !l.temSaldo && !l.pular).length,
+      pulados:  linhasTodas.filter(l => l.pular).length,
+      naGaveta: gaveta.filter(c => (c.estado || 'gaveta') === 'gaveta').length,
+      perdidos: vt.cartoes.filter(c => c.estado === 'perdido').length,
+    },
+    atualizadoEm:  mes.atualizadoEm  || null,
+    atualizadoPor: mes.atualizadoPor || null,
+  };
+}
+
+async function vtResponde(res, db, vt, y, m) {
+  const emps = (db.employees || []).filter(e => vtAtivoNoMes(e, y, m));
+  res.json(vtMontaMes(vt, emps, y, m, vtFolgasPorEmp(db, y, m)));
+}
+
+// ── A página ────────────────────────────────────────────────────────────────
+app.get('/vale-transporte', requireEscritorioOrAdmin, (req, res) =>
+  res.sendFile(path.join(__dirname, 'public', 'vale-transporte.html')));
+
+// ── GET /api/vt/base — empresas, cartões e colaboradores para os cadastros ──
+app.get('/api/vt/base', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const vt = vtRoot(db);
+    res.json({
+      config: vtConfigPublica(vt),
+      operadoras: VT_OPERADORAS,
+      empresas: vt.config.empresas.map(vtEmpresaPublica),
+      cartoes: vt.cartoes.map(vtCartaoPublico),
+      ajudas: (vt.ajudas || []).map(a => ({
+        id: a.id, empId: a.empId, empresaId: a.empresaId, km: Number(a.km) || 0,
+        faixaId: a.faixaId || null, obs: a.obs || '', ativo: a.ativo !== false,
+      })),
+      colaboradores: (db.employees || [])
+        .filter(e => !e.inativo)
+        .map(e => ({ id: e.id, nome: e.apelido || e.name, board: e.board }))
+        .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/vt/config — parâmetros do cálculo e empresas pagadoras ────────
+app.post('/api/vt/config', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const vt = vtRoot(db);
+    const { diasMes, diasReserva, usarEscala, minFolgas, empresa, removerEmpresa } = req.body;
+
+    if (diasMes     != null) vt.config.diasMes     = Math.max(1, parseInt(diasMes)     || VT_DEFAULTS.diasMes);
+    if (diasReserva != null) vt.config.diasReserva = Math.max(0, parseInt(diasReserva) || 0);
+    if (usarEscala  != null) vt.config.usarEscala  = !!usarEscala;
+    if (minFolgas   != null) vt.config.minFolgas   = Math.max(1, parseInt(minFolgas)   || VT_DEFAULTS.minFolgas);
+
+    if (removerEmpresa) {
+      const id = parseInt(removerEmpresa);
+      if (vt.cartoes.some(c => c.empresaId === id))
+        return res.status(400).json({ error: 'Ainda há cartão nesta empresa' });
+      vt.config.empresas = vt.config.empresas.filter(e => e.id !== id);
+    }
+
+    if (empresa) {
+      const nome = String(empresa.nome || '').trim();
+      if (!nome) return res.status(400).json({ error: 'Nome da empresa é obrigatório' });
+      const op = VT_OPERADORAS.includes(empresa.operadora) ? empresa.operadora : 'BHBUS';
+      const alvo = empresa.id ? vt.config.empresas.find(e => e.id === parseInt(empresa.id)) : null;
+      if (alvo) {
+        alvo.nome = nome; alvo.cnpj = String(empresa.cnpj || '').trim();
+        alvo.operadora = op; alvo.login = String(empresa.login || '').trim();
+        alvo.obs = String(empresa.obs || '').trim();
+        // Senha em branco não apaga a que está lá: o campo volta vazio da tela.
+        if (empresa.senha)      alvo.senha = String(empresa.senha);
+        if (empresa.limparSenha) alvo.senha = '';
+      } else {
+        vt.config.empresas.push({
+          id: nextId(db), nome, cnpj: String(empresa.cnpj || '').trim(), operadora: op,
+          login: String(empresa.login || '').trim(), senha: String(empresa.senha || ''),
+          obs: String(empresa.obs || '').trim(),
+        });
+      }
+    }
+
+    await writeDB(db);
+    res.json({ ok: true, empresas: vt.config.empresas.map(vtEmpresaPublica), config: vtConfigPublica(vt) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/vt/linha — as linhas e suas tarifas ──────────────────────────
+// Uma linha, uma tarifa por vigência. Subir a tarifa é acrescentar vigência,
+// nunca editar a anterior: os meses já fechados continuam com o valor deles.
+app.post('/api/vt/linha', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const vt = vtRoot(db);
+    const { id, nome, obs, tarifa, desde, remover, removerTarifa } = req.body;
+
+    if (remover) {
+      const lid = parseInt(remover);
+      const usando = vt.cartoes.filter(c => c.linhaId === lid);
+      if (usando.length)
+        return res.status(400).json({ error: `${usando.length} cartão(ões) ainda usam esta linha` });
+      vt.config.linhas = vt.config.linhas.filter(l => l.id !== lid);
+      await writeDB(db);
+      return res.json({ ok: true, config: vtConfigPublica(vt) });
+    }
+
+    let alvo = id ? vt.config.linhas.find(l => l.id === parseInt(id)) : null;
+    if (!alvo) {
+      const n = String(nome || '').trim();
+      if (!n) return res.status(400).json({ error: 'Nome da linha é obrigatório' });
+      if (vt.config.linhas.some(l => l.nome.toLowerCase() === n.toLowerCase()))
+        return res.status(400).json({ error: 'Já existe uma linha com este nome' });
+      alvo = { id: nextId(db), nome: n, obs: '', tarifas: [] };
+      vt.config.linhas.push(alvo);
+    } else {
+      if (nome != null && String(nome).trim()) alvo.nome = String(nome).trim();
+    }
+    if (obs != null) alvo.obs = String(obs).trim();
+
+    if (removerTarifa) {
+      alvo.tarifas = (alvo.tarifas || []).filter(t => t.desde !== String(removerTarifa));
+    }
+
+    if (tarifa != null && tarifa !== '') {
+      const valor = vt2(tarifa);
+      if (valor <= 0) return res.status(400).json({ error: 'Tarifa precisa ser maior que zero' });
+      // Sem mês informado, vale desde sempre — é o caso do primeiro cadastro,
+      // que precisa alcançar os meses que já estão no sistema.
+      const mk = /^\d{4}-\d{2}$/.test(String(desde || '')) ? String(desde) : '2000-01';
+      if (!Array.isArray(alvo.tarifas)) alvo.tarifas = [];
+      const existente = alvo.tarifas.find(t => t.desde === mk);
+      if (existente) existente.valor = valor;
+      else alvo.tarifas.push({ desde: mk, valor });
+      alvo.tarifas.sort((a, b) => a.desde.localeCompare(b.desde));
+    }
+
+    await writeDB(db);
+    res.json({ ok: true, config: vtConfigPublica(vt) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/vt/empresa/:id/senha — uma senha, a pedido ─────────────────────
+// Na planilha as dez ficavam à mostra em cima das tabelas e o arquivo inteiro
+// circulava com elas. Aqui sai uma de cada vez, e fica registrado quem pediu.
+app.get('/api/vt/empresa/:id/senha', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const vt = vtRoot(db);
+    const emp = vt.config.empresas.find(e => e.id === parseInt(req.params.id));
+    if (!emp) return res.status(404).json({ error: 'Empresa não encontrada' });
+    console.log(`[vt] senha de "${emp.nome}" vista por ${req.session.user.username}`);
+    res.json({ login: emp.login || '', senha: emp.senha || '' });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/vt/cartao — cadastra, edita, entrega e recolhe ───────────────
+// Todo cartão da casa entra aqui, com dono ou sem. Sem dono ele fica na gaveta
+// e continua existindo — é a diferença entre "cartão livre" e "cartão sumido".
+app.post('/api/vt/cartao', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const vt = vtRoot(db);
+    const { id, numero, empresaId, empId, valorDia, passagensDia, estado, obs, linhaId, remover } = req.body;
+
+    if (remover) {
+      const cid = parseInt(remover);
+      const usado = Object.values(vt.meses).some(mes => {
+        const l = (mes.linhas || {})[String(cid)];
+        return l && (l.saldo != null || l.pago);
+      });
+      if (usado) return res.status(400).json({ error: 'Cartão já tem histórico; recolha para a gaveta em vez de apagar' });
+      if (vt.cartoes.some(c => c.substituiDe === cid || c.substituidoPor === cid))
+        return res.status(400).json({ error: 'Cartão faz parte de uma substituição; não pode ser apagado' });
+      vt.cartoes = vt.cartoes.filter(c => c.id !== cid);
+      await writeDB(db);
+      return res.json({ ok: true });
+    }
+
+    const num = String(numero || '').trim();
+    if (!num) return res.status(400).json({ error: 'Número do cartão é obrigatório' });
+    const eid = parseInt(empresaId);
+    if (!vt.config.empresas.some(e => e.id === eid))
+      return res.status(400).json({ error: 'Empresa pagadora inválida' });
+
+    const meuId = parseInt(id || 0) || null;
+    const repetido = vt.cartoes.find(c => c.numero === num && c.id !== meuId);
+    if (repetido) return res.status(400).json({ error: 'Já existe um cartão com este número' });
+
+    const dono = empId ? parseInt(empId) : null;
+    // Uma pessoa, um cartão: dois cartões no mesmo nome viram duas recargas.
+    const jaTem = vt.cartoes.find(c => dono && c.empId === dono && c.id !== meuId);
+    if (jaTem) return res.status(400).json({ error: 'Este colaborador já está com o cartão ' + jaTem.numero });
+    // Ou cartão, ou dinheiro. Os dois juntos seria pagar o benefício duas vezes.
+    if (dono && (vt.ajudas || []).some(a => a.empId === dono && a.ativo !== false))
+      return res.status(400).json({ error: 'Este colaborador recebe ajuda de custo; encerre a ajuda antes de dar um cartão' });
+
+    const alvo = meuId ? vt.cartoes.find(c => c.id === meuId) : null;
+    if (alvo && ['perdido', 'substituido'].includes(alvo.estado) && dono)
+      return res.status(400).json({ error: 'Cartão perdido ou substituído não volta para uso; cadastre o novo' });
+
+    const est = dono ? 'uso'
+      : (VT_ESTADOS.includes(estado) && estado !== 'uso' ? estado : 'gaveta');
+    const lid = linhaId ? parseInt(linhaId) : null;
+    if (lid && !vt.config.linhas.some(l => l.id === lid))
+      return res.status(400).json({ error: 'Linha inválida' });
+
+    const dados = {
+      numero: num, empresaId: eid, empId: dono,
+      linhaId: lid,
+      // Com linha escolhida o valor do dia passa a ser calculado; o campo
+      // digitado fica guardado para o caso de a linha ser desfeita depois.
+      valorDia: vt2(valorDia),
+      passagensDia: Math.max(1, parseInt(passagensDia) || 2),
+      estado: est,
+      obs: String(obs || '').trim(),
+    };
+
+    if (alvo) {
+      const antes = alvo.empId;
+      Object.assign(alvo, dados);
+      if (antes !== dono) vtRegistra(alvo, req.session.user.username,
+        dono ? 'Entregue ao colaborador #' + dono : 'Recolhido para a gaveta');
+    } else {
+      const novo = { id: nextId(db), nomePlanilha: '', historico: [], ...dados };
+      vtRegistra(novo, req.session.user.username, 'Cartão cadastrado');
+      vt.cartoes.push(novo);
+    }
+
+    await writeDB(db);
+    res.json({ ok: true, cartoes: vt.cartoes.map(vtCartaoPublico) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/vt/cartao/perda — o cartão sumiu ─────────────────────────────
+// O saldo declarado aqui não some junto: fica como dinheiro preso até alguém
+// marcar que a operadora devolveu. Sem esse passo o valor não volta — é a
+// regra da operadora, e a tela passa a cobrar.
+app.post('/api/vt/cartao/perda', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const vt = vtRoot(db);
+    const c = vt.cartoes.find(x => x.id === parseInt(req.body.cartaoId));
+    if (!c) return res.status(404).json({ error: 'Cartão não encontrado' });
+    if (c.estado === 'perdido') return res.status(400).json({ error: 'Cartão já está marcado como perdido' });
+
+    c.estado          = 'perdido';
+    c.empId           = null;
+    c.perdidoEm       = new Date().toISOString();
+    c.perdidoPor      = req.session.user.username;
+    c.saldoNaPerda    = vt2(req.body.saldo);
+    c.saldoRecuperado = false;
+    if (req.body.obs) c.obs = String(req.body.obs).trim();
+    vtRegistra(c, req.session.user.username,
+      `Perda registrada com saldo de R$ ${c.saldoNaPerda.toFixed(2)}`);
+
+    await writeDB(db);
+    res.json({ ok: true, cartoes: vt.cartoes.map(vtCartaoPublico) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/vt/cartao/substituir — quem entra no lugar ───────────────────
+// Pode ser um cartão que já está na gaveta ou um número novo. O colaborador do
+// cartão antigo passa para o novo, e os dois ficam ligados pelos dois lados.
+app.post('/api/vt/cartao/substituir', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const vt = vtRoot(db);
+    const velho = vt.cartoes.find(x => x.id === parseInt(req.body.cartaoId));
+    if (!velho) return res.status(404).json({ error: 'Cartão antigo não encontrado' });
+
+    const empId = req.body.empId ? parseInt(req.body.empId) : (velho.empId || null);
+    if (!empId) return res.status(400).json({ error: 'Diga de quem é o cartão novo' });
+
+    let novo = null;
+    if (req.body.novoCartaoId) {
+      novo = vt.cartoes.find(x => x.id === parseInt(req.body.novoCartaoId));
+      if (!novo) return res.status(404).json({ error: 'Cartão novo não encontrado' });
+      if (novo.empId) return res.status(400).json({ error: 'O cartão escolhido já tem dono' });
+      if (novo.id === velho.id) return res.status(400).json({ error: 'Escolha um cartão diferente' });
+    } else {
+      const num = String(req.body.novoNumero || '').trim();
+      if (!num) return res.status(400).json({ error: 'Informe o cartão novo' });
+      if (vt.cartoes.some(c => c.numero === num))
+        return res.status(400).json({ error: 'Já existe um cartão com este número' });
+      novo = { id: nextId(db), numero: num, nomePlanilha: '', historico: [] };
+      vt.cartoes.push(novo);
+    }
+
+    const outroDoDono = vt.cartoes.find(c => c.empId === empId && c.id !== novo.id);
+    if (outroDoDono) return res.status(400).json({ error: 'Este colaborador já está com o cartão ' + outroDoDono.numero });
+
+    novo.empresaId    = parseInt(req.body.empresaId) || novo.empresaId || velho.empresaId;
+    novo.empId        = empId;
+    novo.estado       = 'uso';
+    novo.valorDia     = req.body.valorDia != null ? vt2(req.body.valorDia) : vt2(velho.valorDia);
+    novo.passagensDia = Number(velho.passagensDia) || 2;
+    novo.linhaId      = req.body.linhaId ? parseInt(req.body.linhaId) : (velho.linhaId || null);
+    novo.substituiDe  = velho.id;
+
+    velho.empId          = null;
+    velho.substituidoPor = novo.id;
+    if (velho.estado !== 'perdido') velho.estado = 'substituido';
+
+    vtRegistra(novo,  req.session.user.username, `Entrou no lugar do cartão ${velho.numero}`);
+    vtRegistra(velho, req.session.user.username, `Substituído pelo cartão ${novo.numero}`);
+
+    await writeDB(db);
+    res.json({ ok: true, novoCartaoId: novo.id, cartoes: vt.cartoes.map(vtCartaoPublico) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/vt/cartao/recuperar — a operadora devolveu o saldo ───────────
+// Aqui o dinheiro volta a existir: marca o cartão perdido como resolvido e,
+// se for o caso, lança o valor como saldo do cartão que entrou no lugar — que
+// é o que faz a recarga do mês já sair descontada.
+app.post('/api/vt/cartao/recuperar', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const vt = vtRoot(db);
+    const c = vt.cartoes.find(x => x.id === parseInt(req.body.cartaoId));
+    if (!c) return res.status(404).json({ error: 'Cartão não encontrado' });
+    if (c.estado !== 'perdido') return res.status(400).json({ error: 'Só cartão perdido tem saldo a recuperar' });
+
+    const valor = req.body.valor != null ? vt2(req.body.valor) : vt2(c.saldoNaPerda);
+    c.saldoRecuperado   = true;
+    c.saldoRecuperadoEm = new Date().toISOString();
+    c.saldoRecuperadoValor = valor;
+    vtRegistra(c, req.session.user.username, `Saldo de R$ ${valor.toFixed(2)} recuperado na operadora`);
+
+    // Crédito no cartão novo, no mês pedido
+    const destino = req.body.creditarEm ? parseInt(req.body.creditarEm) : c.substituidoPor;
+    const y = parseInt(req.body.ano), m = parseInt(req.body.mes);
+    if (destino && y && m) {
+      const mk = vtMesKey(y, m);
+      if (!vt.meses[mk]) vt.meses[mk] = { linhas: {} };
+      if (!vt.meses[mk].linhas) vt.meses[mk].linhas = {};
+      const l = vt.meses[mk].linhas[String(destino)] || (vt.meses[mk].linhas[String(destino)] = {});
+      l.saldo = vt2((Number(l.saldo) || 0) + valor);
+      vt.meses[mk].atualizadoEm  = new Date().toISOString();
+      vt.meses[mk].atualizadoPor = req.session.user.username;
+    }
+
+    await writeDB(db);
+    if (y && m) return vtResponde(res, db, vt, y, m);
+    res.json({ ok: true, cartoes: vt.cartoes.map(vtCartaoPublico) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/vt/cartao/:id/historico — a vida do cartão ────────────────────
+app.get('/api/vt/cartao/:id/historico', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const vt = vtRoot(db);
+    const c = vt.cartoes.find(x => x.id === parseInt(req.params.id));
+    if (!c) return res.status(404).json({ error: 'Cartão não encontrado' });
+    res.json({ cartao: vtCartaoPublico(c), historico: c.historico || [] });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/vt/importar — a planilha antiga entrando de uma vez ──────────
+// Roda pelo scripts/importar-vt.js. Repetir não duplica: empresa casa pelo
+// nome, cartão pelo número, e o vínculo com o colaborador nunca é tocado —
+// quem liga cartão a pessoa é a tela, porque a planilha escrevia o nome à mão
+// e em três formatos diferentes.
+app.post('/api/vt/importar', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { blocos, ano, mes } = req.body;
+    if (!Array.isArray(blocos)) return res.status(400).json({ error: 'blocos é obrigatório' });
+
+    const db = await readDB();
+    const vt = vtRoot(db);
+    const chave = s => String(s || '').trim().toLowerCase();
+    const conta = { empresasNovas: 0, empresasAtualizadas: 0, cartoesNovos: 0, cartoesAtualizados: 0, saldos: 0 };
+
+    const mk = (ano && mes) ? vtMesKey(parseInt(ano), parseInt(mes)) : null;
+    if (mk && !vt.meses[mk]) vt.meses[mk] = { linhas: {} };
+    if (mk && !vt.meses[mk].linhas) vt.meses[mk].linhas = {};
+
+    for (const b of blocos) {
+      const nome = String(b.nome || '').trim();
+      if (!nome) continue;
+      let emp = vt.config.empresas.find(e => chave(e.nome) === chave(nome));
+      if (!emp) {
+        emp = { id: nextId(db), nome, cnpj: '', operadora: 'BHBUS', login: '', senha: '', obs: '' };
+        vt.config.empresas.push(emp);
+        conta.empresasNovas++;
+      } else conta.empresasAtualizadas++;
+      if (b.cnpj)      emp.cnpj = String(b.cnpj);
+      if (b.operadora && VT_OPERADORAS.includes(b.operadora)) emp.operadora = b.operadora;
+      if (b.login)     emp.login = String(b.login);
+      if (b.senha)     emp.senha = String(b.senha);
+
+      for (const c of (b.cartoes || [])) {
+        const numero = String(c.numero || '').trim();
+        if (!numero) continue;
+        let cart = vt.cartoes.find(x => String(x.numero).trim() === numero);
+        if (!cart) {
+          cart = {
+            id: nextId(db), numero, empresaId: emp.id, empId: null,
+            valorDia: vt2(c.valorDia), passagensDia: Math.max(1, parseInt(c.passagensDia) || 2),
+            estado: 'gaveta', obs: '', nomePlanilha: String(c.nomePlanilha || '').trim(),
+            historico: [],
+          };
+          vtRegistra(cart, req.session.user.username, 'Importado da planilha');
+          vt.cartoes.push(cart);
+          conta.cartoesNovos++;
+        } else {
+          cart.empresaId = emp.id;
+          if (c.valorDia) cart.valorDia = vt2(c.valorDia);
+          if (c.nomePlanilha) cart.nomePlanilha = String(c.nomePlanilha).trim();
+          conta.cartoesAtualizados++;
+        }
+
+        if (mk && c.saldo != null) {
+          const l = vt.meses[mk].linhas[String(cart.id)] || (vt.meses[mk].linhas[String(cart.id)] = {});
+          l.saldo = vt2(c.saldo);
+          conta.saldos++;
+        }
+      }
+    }
+
+    if (mk) {
+      vt.meses[mk].atualizadoEm  = new Date().toISOString();
+      vt.meses[mk].atualizadoPor = req.session.user.username;
+    }
+
+    await writeDB(db);
+    res.json({
+      ok: true, ...conta,
+      semVinculo: vt.cartoes.filter(c => !c.empId && c.nomePlanilha).length,
+      aviso: 'Cartão nenhum foi vinculado a colaborador: ligue cada um na tela, em Cartões.',
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/vt/alerta — o que o painel precisa saber sem abrir a tela ─────
+// Vira o aviso do topo: a recarga é na primeira terça, e ela só pode ser feita
+// com a escala do mês pronta.
+app.get('/api/vt/alerta', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const hoje = vtHojeISO();
+    const [y, m] = hoje.split('-').map(Number);
+    const db = await readDB();
+    const vt = vtRoot(db);
+    const emps = (db.employees || []).filter(e => vtAtivoNoMes(e, y, m));
+    const d = vtMontaMes(vt, emps, y, m, vtFolgasPorEmp(db, y, m));
+    const falta = vt2((d.totais.recarga - d.totais.pago) + (d.totais.ajuda - d.totais.ajudaPaga));
+
+    // Aparece na semana que antecede a terça (para dar tempo de fechar a
+    // escala) e continua aparecendo depois dela enquanto sobrar recarga.
+    const mostrar = (d.totais.pessoas + d.totais.naAjuda) > 0 && (
+      (d.recarga.diasAte <= 6 && d.recarga.diasAte >= 0) ||
+      (d.recarga.passou && falta > 0));
+
+    res.json({
+      mostrar, dia: d.recarga.dia, hoje: d.recarga.hoje, passou: d.recarga.passou,
+      diasAte: d.recarga.diasAte, falta,
+      escalaCompleta: d.escala.completa,
+      escalaPendentes: d.escala.pendentes.length,
+      semSaldo: d.totais.semSaldo,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/vt/faixa — as faixas da ajuda de custo ───────────────────────
+app.post('/api/vt/faixa', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const vt = vtRoot(db);
+    const { id, nome, valor, ateKm, remover } = req.body;
+
+    if (remover) {
+      const fid = parseInt(remover);
+      if ((vt.ajudas || []).some(a => a.faixaId === fid))
+        return res.status(400).json({ error: 'Há ajuda de custo presa nesta faixa' });
+      if (vt.config.faixas.length <= 1)
+        return res.status(400).json({ error: 'Precisa sobrar ao menos uma faixa' });
+      vt.config.faixas = vt.config.faixas.filter(f => f.id !== fid);
+      await writeDB(db);
+      return res.json({ ok: true, config: vtConfigPublica(vt) });
+    }
+
+    const alvo = id ? vt.config.faixas.find(f => f.id === parseInt(id)) : null;
+    const dados = {
+      nome: String(nome || '').trim() || 'Faixa',
+      valor: vt2(valor),
+      // Faixa sem teto é a de cima: "acima de tudo o que as outras cobrem".
+      ateKm: ateKm === '' || ateKm == null ? null : Math.max(1, parseInt(ateKm) || 0),
+    };
+    if (dados.valor <= 0) return res.status(400).json({ error: 'Valor da faixa precisa ser maior que zero' });
+
+    if (alvo) Object.assign(alvo, dados);
+    else vt.config.faixas.push({ id: nextId(db), ...dados });
+
+    await writeDB(db);
+    res.json({ ok: true, config: vtConfigPublica(vt) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/vt/ajuda — quem recebe em dinheiro no lugar do cartão ────────
+// A ajuda substitui o vale: não tem cartão, não tem saldo para ler e não
+// depende da escala. O que define o valor é a faixa de distância.
+app.post('/api/vt/ajuda', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const vt = vtRoot(db);
+    const { id, empId, empresaId, km, faixaId, obs, ativo, remover } = req.body;
+
+    if (remover) {
+      const aid = parseInt(remover);
+      const usada = Object.values(vt.meses).some(mes => {
+        const a = (mes.ajudas || {})[String(aid)];
+        return a && a.pago;
+      });
+      if (usada) return res.status(400).json({ error: 'Ajuda já tem pagamento registrado; encerre em vez de apagar' });
+      vt.ajudas = vt.ajudas.filter(a => a.id !== aid);
+      await writeDB(db);
+      return res.json({ ok: true });
+    }
+
+    const meuId = parseInt(id || 0) || null;
+    const alvo = meuId ? vt.ajudas.find(a => a.id === meuId) : null;
+
+    if (ativo === false && alvo) {
+      alvo.ativo = false;
+      alvo.encerradaEm = new Date().toISOString();
+      await writeDB(db);
+      return res.json({ ok: true });
+    }
+
+    const dono = parseInt(empId);
+    if (!dono) return res.status(400).json({ error: 'Escolha o colaborador' });
+    const eid = parseInt(empresaId);
+    if (!vt.config.empresas.some(e => e.id === eid))
+      return res.status(400).json({ error: 'Empresa pagadora inválida' });
+
+    const comCartao = vt.cartoes.find(c => c.empId === dono);
+    if (comCartao) return res.status(400).json({ error: 'Este colaborador está com o cartão ' + comCartao.numero + '; recolha o cartão antes' });
+    const outra = vt.ajudas.find(a => a.empId === dono && a.ativo !== false && a.id !== meuId);
+    if (outra) return res.status(400).json({ error: 'Este colaborador já recebe ajuda de custo' });
+
+    const fid = faixaId ? parseInt(faixaId) : null;
+    if (fid && !vt.config.faixas.some(f => f.id === fid))
+      return res.status(400).json({ error: 'Faixa inválida' });
+
+    const dados = {
+      empId: dono, empresaId: eid,
+      km: Math.max(0, Number(km) || 0),
+      // Sem faixa escolhida, ela sai do km — mas dá para fixar quando o caso
+      // fugir da tabela.
+      faixaId: fid,
+      obs: String(obs || '').trim(),
+      ativo: true,
+    };
+    if (alvo) Object.assign(alvo, dados);
+    else vt.ajudas.push({ id: nextId(db), criadaEm: new Date().toISOString(), ...dados });
+
+    await writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/vt/:year/:month — o mês inteiro, já calculado ─────────────────
+app.get('/api/vt/:year/:month', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const y = parseInt(req.params.year), m = parseInt(req.params.month);
+    if (!y || !m || m < 1 || m > 12) return res.status(400).json({ error: 'Mês inválido' });
+    const db = await readDB();
+    await vtResponde(res, db, vtRoot(db), y, m);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/vt/:year/:month/linha — o saldo lido e as marcações ──────────
+app.post('/api/vt/:year/:month/linha', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const y = parseInt(req.params.year), m = parseInt(req.params.month);
+    const mk = vtMesKey(y, m);
+    const cartaoId = String(parseInt(req.body.cartaoId) || 0);
+    if (cartaoId === '0') return res.status(400).json({ error: 'Cartão inválido' });
+
+    const db = await readDB();
+    const vt = vtRoot(db);
+    if (!vt.meses[mk]) vt.meses[mk] = { linhas: {} };
+    const mes = vt.meses[mk];
+    if (!mes.linhas) mes.linhas = {};
+    const l = mes.linhas[cartaoId] || (mes.linhas[cartaoId] = {});
+
+    const b = req.body;
+    if ('saldo'         in b) l.saldo         = b.saldo === '' || b.saldo == null ? null : vt2(b.saldo);
+    if ('recargaManual' in b) l.recargaManual = b.recargaManual === '' || b.recargaManual == null ? null : vt2(b.recargaManual);
+    if ('pular'         in b) { l.pular = !!b.pular; if (!l.pular) l.motivo = ''; }
+    if ('motivo'        in b) l.motivo = String(b.motivo || '').slice(0, 120);
+    if ('pago'          in b) { l.pago = !!b.pago; l.pagoEm = l.pago ? new Date().toISOString() : null; }
+
+    mes.atualizadoEm  = new Date().toISOString();
+    mes.atualizadoPor = req.session.user.username;
+    await writeDB(db);
+    await vtResponde(res, db, vt, y, m);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/vt/:year/:month/ajuda — pagar, pular ou ajustar o valor ──────
+app.post('/api/vt/:year/:month/ajuda', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const y = parseInt(req.params.year), m = parseInt(req.params.month);
+    const mk = vtMesKey(y, m);
+    const ajudaId = String(parseInt(req.body.ajudaId) || 0);
+    if (ajudaId === '0') return res.status(400).json({ error: 'Ajuda inválida' });
+
+    const db = await readDB();
+    const vt = vtRoot(db);
+    if (!vt.meses[mk]) vt.meses[mk] = { linhas: {} };
+    const mes = vt.meses[mk];
+    if (!mes.ajudas) mes.ajudas = {};
+    const a = mes.ajudas[ajudaId] || (mes.ajudas[ajudaId] = {});
+
+    const b = req.body;
+    if ('valorManual' in b) a.valorManual = b.valorManual === '' || b.valorManual == null ? null : vt2(b.valorManual);
+    if ('pular'       in b) { a.pular = !!b.pular; if (!a.pular) a.motivo = ''; }
+    if ('motivo'      in b) a.motivo = String(b.motivo || '').slice(0, 120);
+    if ('pago'        in b) { a.pago = !!b.pago; a.pagoEm = a.pago ? new Date().toISOString() : null; }
+
+    mes.atualizadoEm  = new Date().toISOString();
+    mes.atualizadoPor = req.session.user.username;
+    await writeDB(db);
+    await vtResponde(res, db, vt, y, m);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/vt/:year/:month/export — a planilha do mês, para o pagamento ──
+app.get('/api/vt/:year/:month/export', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const y = parseInt(req.params.year), m = parseInt(req.params.month);
+    const db = await readDB();
+    const vt = vtRoot(db);
+    const emps = (db.employees || []).filter(e => vtAtivoNoMes(e, y, m));
+    const dados = vtMontaMes(vt, emps, y, m, vtFolgasPorEmp(db, y, m));
+
+    const MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
+                      'Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+    const fBRLx = v => (Number(v) || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    const wb = new ExcelJS.Workbook();
+    wb.creator = 'Gestão Lojas';
+    const ws = wb.addWorksheet(`${MESES_PT[m-1]} ${y}`);
+    ws.columns = [
+      { header: 'Empresa',     key: 'empresa',  width: 26 },
+      { header: 'Operadora',   key: 'oper',     width: 11 },
+      { header: 'Colaborador', key: 'nome',     width: 24 },
+      { header: 'Cartão',      key: 'cartao',   width: 22 },
+      { header: 'Linha',       key: 'linha',    width: 18 },
+      { header: 'Valor dia',   key: 'valorDia', width: 11 },
+      { header: 'Saldo',       key: 'saldo',    width: 11 },
+      { header: 'Dias trab.',  key: 'diasTrab', width: 10 },
+      { header: 'Dias',        key: 'dias',     width:  7 },
+      { header: 'Recarga',     key: 'recarga',  width: 12 },
+      { header: 'Situação',    key: 'sit',      width: 26 },
+    ];
+    ws.getRow(1).font = { bold: true };
+
+    for (const g of dados.grupos) {
+      for (const l of g.linhas) {
+        ws.addRow({
+          empresa: g.empresa.nome, oper: g.empresa.operadora,
+          nome: l.nome, cartao: l.numero,
+          linha: l.linha ? `${l.linha} (${l.passagensDia}×${fBRLx(l.tarifa)})` : '—',
+          valorDia: l.valorDia, saldo: l.saldo,
+          diasTrab: l.diasTrabalho, dias: l.dias, recarga: l.recarga,
+          sit: l.pular ? ('Não recarregar' + (l.motivo ? ' — ' + l.motivo : ''))
+             : l.manual ? 'Valor ajustado à mão'
+             : !l.escalaOk ? 'Escala do mês não preenchida — usou ' + dados.config.diasMes + ' dias'
+             : l.pago ? 'Recarregado' : '',
+        });
+      }
+      const tot = ws.addRow({ nome: 'Total ' + g.empresa.nome, recarga: g.total });
+      tot.font = { bold: true };
+      ws.addRow({});
+    }
+    const geral = ws.addRow({ nome: 'TOTAL EM RECARGA', recarga: dados.totais.recarga });
+    geral.font = { bold: true };
+
+    // Ajuda de custo é dinheiro, não recarga: sai num bloco à parte para não se
+    // misturar com o que se paga na operadora.
+    if (dados.totais.naAjuda > 0) {
+      ws.addRow({});
+      const h = ws.addRow({ empresa: 'AJUDA DE CUSTO (dinheiro)' });
+      h.font = { bold: true };
+      ws.addRow({ empresa: 'Empresa', nome: 'Colaborador', linha: 'Faixa', saldo: 'Km', recarga: 'Valor', sit: 'Situação' }).font = { bold: true };
+      for (const g of dados.grupos) {
+        for (const a of g.ajudas) {
+          ws.addRow({
+            empresa: g.empresa.nome, nome: a.nome, linha: a.faixa, saldo: a.km, recarga: a.valor,
+            sit: a.pular ? ('Não pagar' + (a.motivo ? ' — ' + a.motivo : ''))
+               : a.manual ? 'Valor ajustado à mão'
+               : a.pago ? 'Pago' : '',
+          });
+        }
+      }
+      const ta = ws.addRow({ nome: 'TOTAL EM AJUDA', recarga: dados.totais.ajuda });
+      ta.font = { bold: true };
+      ws.addRow({});
+      const tg = ws.addRow({ nome: 'TOTAL DO MÊS', recarga: vt2(dados.totais.recarga + dados.totais.ajuda) });
+      tg.font = { bold: true };
+    }
+
+    if (dados.saldoPreso.valor > 0) {
+      ws.addRow({});
+      const t = ws.addRow({ nome: 'Saldo preso em cartão perdido', recarga: dados.saldoPreso.valor });
+      t.font = { bold: true };
+      for (const c of dados.saldoPreso.cartoes)
+        ws.addRow({ cartao: c.numero, saldo: c.saldoNaPerda, sit: 'Aguardando recuperação na operadora' });
+    }
+
+    for (const col of ['F', 'G', 'J']) ws.getColumn(col).numFmt = '#,##0.00';
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="vale-transporte-${vtMesKey(y, m)}.xlsx"`);
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+
 // Porta abre imediatamente — MongoDB conecta em background para não bloquear o health check do Render
 const _server = app.listen(PORT, () => {
   console.log(`\n✅  Gestão de Lojas → http://localhost:${PORT}\n`);

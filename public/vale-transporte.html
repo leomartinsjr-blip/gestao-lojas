@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12151D" media="(prefers-color-scheme: dark)">
+<title>Vale-Transporte</title>
+<link rel="icon" type="image/jpeg" href="favicon.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800;900&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<!-- Herda os tokens da Torre: cores, tipografia, tema claro/escuro e o mobile
+     já vêm prontos daqui. A folha própria abaixo só desenha o que é daqui. -->
+<link rel="stylesheet" href="/style.css">
+<style>
+body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+
+/* ── Topo ─────────────────────────────────────────────────────────────── */
+.vt-top {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 0 1.25rem; padding-top: env(safe-area-inset-top, 0px);
+  height: calc(54px + env(safe-area-inset-top, 0px));
+  display: flex; align-items: center; gap: .75rem;
+}
+.vt-back {
+  display: flex; align-items: center; gap: .3rem;
+  background: transparent; border: 1px solid var(--border); border-radius: var(--r-sm);
+  color: var(--muted); font: inherit; font-size: .78rem; padding: .3rem .6rem;
+  cursor: pointer; white-space: nowrap;
+}
+.vt-back:hover { color: var(--text); border-color: var(--border2); }
+.vt-ident { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.vt-kicker {
+  font-family: 'Big Shoulders Display', 'Archivo Narrow', system-ui, sans-serif;
+  font-weight: 700; font-size: .68rem; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted); line-height: 1;
+}
+.vt-titulo {
+  font-family: 'Big Shoulders Display', 'Archivo Narrow', system-ui, sans-serif;
+  font-weight: 800; font-size: 1.15rem; letter-spacing: .02em;
+  text-transform: uppercase; color: var(--text); line-height: 1;
+}
+.vt-top-acoes { margin-left: auto; display: flex; align-items: center; gap: .4rem; }
+
+.vt-mes { display: flex; align-items: center; gap: .4rem; }
+.vt-mes-lbl {
+  font-family: 'Big Shoulders Display', 'Archivo Narrow', system-ui, sans-serif;
+  font-weight: 700; font-size: 1.05rem; letter-spacing: .02em; text-transform: uppercase;
+  color: var(--accent); min-width: 8.2rem; text-align: center; white-space: nowrap;
+}
+
+.vt-btn {
+  display: inline-flex; align-items: center; gap: .35rem;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r-sm);
+  color: var(--text2); font: inherit; font-size: .76rem; font-weight: 500;
+  padding: .34rem .65rem; cursor: pointer; white-space: nowrap; text-decoration: none;
+  transition: border-color .15s, color .15s;
+}
+.vt-btn:hover { color: var(--text); border-color: var(--border2); }
+.vt-btn.solido { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.vt-btn.solido:hover { color: var(--on-accent); opacity: .9; }
+.vt-btn:disabled { opacity: .45; cursor: default; }
+.vt-btn.mini { padding: .2rem .45rem; font-size: .7rem; }
+
+/* ── Corpo ────────────────────────────────────────────────────────────── */
+.vt-body { max-width: 1180px; margin: 0 auto; padding: 1.15rem 1.25rem calc(3rem + env(safe-area-inset-bottom, 0px)); }
+
+/* ── Faixa de números ─────────────────────────────────────────────────── */
+.vt-resumo {
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 1px; background: var(--border); border: 1px solid var(--border);
+  border-radius: var(--r-lg); overflow: hidden; margin-bottom: 1.1rem;
+  box-shadow: 0 1px 2px var(--shadow-1);
+}
+.vt-kpi { background: var(--surface); padding: .7rem .85rem; display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.vt-kpi-rot {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: .62rem; font-weight: 500; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.vt-kpi-val {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 1.4rem; font-weight: 600; letter-spacing: -.025em;
+  font-variant-numeric: tabular-nums; line-height: 1.15; color: var(--text);
+}
+.vt-kpi-val small { font-size: .82rem; color: var(--muted); margin-right: .25rem; }
+.vt-kpi-sub { font-size: .7rem; color: var(--muted); }
+.vt-kpi-val.alerta { color: var(--down); }
+
+/* ── Aviso ────────────────────────────────────────────────────────────── */
+.vt-aviso {
+  display: flex; align-items: flex-start; gap: .6rem;
+  background: rgba(var(--warn-rgb), .12); border: 1px solid rgba(var(--warn-rgb), .35);
+  border-radius: var(--r-md); padding: .65rem .85rem; margin-bottom: 1.1rem;
+  font-size: .82rem; line-height: 1.5;
+}
+.vt-aviso.erro { background: rgba(var(--down-rgb), .1); border-color: rgba(var(--down-rgb), .35); }
+.vt-aviso b { color: var(--text); }
+.vt-aviso-acoes { margin-left: auto; display: flex; gap: .35rem; flex-shrink: 0; }
+
+/* ── Card de empresa ──────────────────────────────────────────────────── */
+.vt-emp {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-lg); overflow: hidden; margin-bottom: 1rem;
+  box-shadow: 0 1px 2px var(--shadow-1);
+}
+.vt-emp-hdr {
+  display: flex; align-items: center; gap: .6rem; flex-wrap: wrap;
+  padding: .7rem .95rem; border-bottom: 1px solid var(--border);
+}
+.vt-emp-nome { font-size: .88rem; font-weight: 600; color: var(--text); letter-spacing: -.012em; }
+.vt-emp-cnpj { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .7rem; color: var(--muted); }
+.vt-oper {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: .64rem; font-weight: 600; letter-spacing: .05em;
+  padding: .1rem .4rem; border-radius: 5px; border: 1px solid var(--border);
+  background: var(--surface3); color: var(--muted);
+}
+.vt-emp-tot { margin-left: auto; display: flex; align-items: baseline; gap: .4rem; }
+.vt-emp-tot-rot { font-size: .66rem; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.vt-emp-tot-val {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 1.05rem; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--text);
+}
+.vt-acesso {
+  width: 100%; margin-top: .5rem; padding: .5rem .65rem;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r-md);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .76rem;
+  display: flex; gap: 1.2rem; flex-wrap: wrap; align-items: center;
+}
+.vt-acesso span { color: var(--muted); }
+.vt-acesso b { color: var(--text); font-weight: 600; }
+
+/* ── Tabela ───────────────────────────────────────────────────────────── */
+.vt-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
+table.vt-t { width: max-content; min-width: 100%; border-collapse: collapse; font-size: .8rem; }
+table.vt-t th {
+  padding: .5rem .75rem .4rem; text-align: right;
+  font-size: .62rem; font-weight: 500; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--muted); white-space: nowrap; border-bottom: 1px solid var(--border);
+}
+table.vt-t th:first-child, table.vt-t td:first-child { text-align: left; }
+table.vt-t th:nth-child(2), table.vt-t td:nth-child(2) { text-align: left; }
+table.vt-t td {
+  padding: .42rem .75rem; text-align: right; white-space: nowrap;
+  border-bottom: 1px solid rgba(var(--border-rgb), .55);
+}
+table.vt-t tr:last-child td { border-bottom: none; }
+table.vt-t tr:hover td { background: rgba(var(--accent-rgb), .06); }
+.vt-num { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.vt-nome { font-weight: 500; display: flex; align-items: center; gap: .4rem; }
+.vt-tarja { display: inline-block; width: 3px; height: 13px; border-radius: 2px; flex-shrink: 0; }
+/* A linha aparece ao lado do valor, discreta: quem confere o valor quer
+   saber de onde ele saiu sem ter que abrir o cartão. */
+.vt-linha-tag {
+  display: block; font-size: .62rem; font-weight: 500; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .04em; margin-top: .05rem;
+  max-width: 9rem; overflow: hidden; text-overflow: ellipsis;
+  margin-left: auto;
+}
+.vt-cartao { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .72rem; color: var(--muted); }
+.vt-linha-pular td { opacity: .5; }
+.vt-linha-pular .vt-recarga { text-decoration: line-through; }
+.vt-recarga { font-weight: 600; }
+.vt-recarga.zero { color: var(--muted); font-weight: 400; }
+
+.vt-inp-saldo {
+  width: 6.2rem; text-align: right;
+  background: var(--input-bg); border: 1px solid var(--border); border-radius: var(--r-sm);
+  color: var(--text); font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: .8rem; padding: .25rem .45rem; font-variant-numeric: tabular-nums;
+}
+.vt-inp-saldo:focus { outline: none; border-color: var(--accent); }
+.vt-inp-saldo.vazio { border-style: dashed; border-color: var(--border2); }
+.vt-inp-saldo.salvando { border-color: var(--warn); }
+
+.vt-chip {
+  display: inline-block; font-size: .64rem; font-weight: 600;
+  padding: .08rem .4rem; border-radius: 999px; white-space: nowrap;
+}
+.vt-chip.pago     { background: rgba(var(--up-rgb), .15);   color: var(--up); }
+.vt-chip.pular    { background: var(--surface3);            color: var(--muted); }
+.vt-chip.manual   { background: rgba(var(--accent-rgb), .15); color: var(--accent); }
+.vt-chip.perdido  { background: rgba(var(--down-rgb), .15); color: var(--down); }
+.vt-chip.gaveta   { background: var(--surface3);            color: var(--muted); }
+.vt-chip.bloqueado{ background: rgba(var(--warn-rgb), .15); color: var(--warn); }
+.vt-chip.substituido { background: var(--surface3); color: var(--muted); }
+.vt-chip.sem-cadastro { background: rgba(var(--warn-rgb), .15); color: var(--warn); }
+
+.vt-acoes { display: flex; gap: .25rem; justify-content: flex-end; }
+.vt-ico {
+  background: transparent; border: 1px solid transparent; border-radius: var(--r-sm);
+  color: var(--muted); cursor: pointer; font: inherit; font-size: .72rem;
+  padding: .2rem .4rem; line-height: 1.2; white-space: nowrap;
+}
+.vt-ico:hover { color: var(--text); border-color: var(--border); background: var(--surface2); }
+.vt-ico.perigo:hover { color: var(--down); border-color: rgba(var(--down-rgb), .4); }
+
+.vt-vazio { padding: 1.1rem .95rem; color: var(--muted); font-size: .82rem; }
+
+/* Sub-cabeçalho: a ajuda de custo é outro benefício dentro da mesma empresa,
+   e sai em dinheiro, não em recarga — então ganha faixa própria dentro do card
+   em vez de virar mais linhas na tabela dos cartões. */
+.vt-sub-hdr {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .45rem .95rem;
+  background: var(--surface2);
+  border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  font-size: .68rem; font-weight: 600; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--muted);
+}
+.vt-sub-tot {
+  margin-left: auto;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: .84rem; font-weight: 600; letter-spacing: 0;
+  text-transform: none; color: var(--text); font-variant-numeric: tabular-nums;
+}
+
+/* ── Gaveta ───────────────────────────────────────────────────────────── */
+.vt-sec-titulo {
+  display: flex; align-items: center; gap: .6rem; margin: 1.6rem 0 .7rem;
+}
+.vt-sec-titulo h2 {
+  margin: 0; font-family: 'Big Shoulders Display', 'Archivo Narrow', system-ui, sans-serif;
+  font-weight: 700; font-size: 1.15rem; letter-spacing: .03em; text-transform: uppercase;
+  color: var(--text); line-height: 1;
+}
+.vt-sec-rule { flex: 1; height: 1px; background: var(--border); }
+.vt-sec-cont { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .72rem; color: var(--muted); }
+
+/* ── Modal ────────────────────────────────────────────────────────────── */
+.vt-overlay {
+  position: fixed; inset: 0; z-index: 700; background: var(--shadow-3);
+  display: flex; align-items: center; justify-content: center; padding: 1rem;
+}
+.vt-overlay.hidden { display: none; }
+.vt-modal {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
+  width: 100%; max-width: 560px; max-height: 92dvh; overflow-y: auto;
+  box-shadow: 0 20px 60px var(--shadow-3);
+}
+.vt-modal-hdr {
+  display: flex; align-items: center; gap: .6rem;
+  padding: .8rem 1rem; border-bottom: 1px solid var(--border);
+}
+.vt-modal-hdr h3 { margin: 0; font-size: .92rem; font-weight: 600; }
+.vt-modal-fechar {
+  margin-left: auto; background: none; border: none; color: var(--muted);
+  font-size: 1.05rem; cursor: pointer; padding: .2rem .4rem; line-height: 1;
+  min-width: 34px; min-height: 34px;
+}
+.vt-modal-body { padding: .95rem 1rem 1.1rem; }
+.vt-modal-pe { display: flex; gap: .5rem; justify-content: flex-end; margin-top: 1rem; }
+
+.vt-campo { display: flex; flex-direction: column; gap: .22rem; margin-bottom: .7rem; }
+.vt-campo label { font-size: .7rem; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.vt-campo input, .vt-campo select, .vt-campo textarea {
+  background: var(--input-bg); border: 1px solid var(--border); border-radius: var(--r-sm);
+  color: var(--text); font: inherit; font-size: .85rem; padding: .45rem .6rem; width: 100%;
+}
+.vt-campo input:focus, .vt-campo select:focus, .vt-campo textarea:focus { outline: none; border-color: var(--accent); }
+.vt-campo .dica { font-size: .72rem; color: var(--muted); line-height: 1.45; }
+.vt-dupla { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; }
+
+.vt-erro {
+  background: rgba(var(--down-rgb), .1); border: 1px solid rgba(var(--down-rgb), .35);
+  color: var(--down); border-radius: var(--r-sm); padding: .5rem .7rem;
+  font-size: .8rem; margin-bottom: .7rem;
+}
+
+.vt-estado { text-align: center; padding: 3rem 1rem; color: var(--muted); font-size: .88rem; line-height: 1.6; }
+.hidden { display: none !important; }
+
+/* ── Celular ──────────────────────────────────────────────────────────── */
+@media (max-width: 1100px) {
+  .vt-resumo { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 820px) {
+  .vt-top { padding-left: .6rem; padding-right: .6rem; gap: .5rem; }
+  .vt-kicker { display: none; }
+  .vt-titulo { font-size: 1rem; }
+  .vt-mes-lbl { min-width: 0; font-size: .92rem; }
+  .vt-body { padding: .8rem .6rem calc(2.5rem + env(safe-area-inset-bottom, 0px)); }
+  .vt-resumo { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .vt-top-acoes .vt-rotulo { display: none; }
+  .vt-resumo { grid-template-columns: 1fr 1fr; }
+  .vt-kpi-val { font-size: 1.2rem; }
+  .vt-emp-hdr { padding: .55rem .7rem; }
+  .vt-emp-tot { width: 100%; margin-left: 0; justify-content: space-between; }
+  table.vt-t th, table.vt-t td { padding: .35rem .5rem; }
+  /* O nome fica preso: rolando até a recarga não se perde de quem é a linha. */
+  table.vt-t th:first-child, table.vt-t td:first-child {
+    position: sticky; left: 0; z-index: 2; background: var(--surface);
+    box-shadow: 1px 0 0 rgba(var(--border-rgb), .9);
+  }
+  .vt-dupla { grid-template-columns: 1fr; }
+  .vt-overlay { padding: .3rem; }
+  .vt-modal { max-height: 96dvh; }
+  .vt-campo input, .vt-campo select { font-size: 16px; }
+}
+</style>
+</head>
+<body>
+
+<header class="vt-top">
+  <button class="vt-back" onclick="history.back()">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+    <span class="vt-rotulo">Voltar</span>
+  </button>
+  <div class="vt-ident">
+    <span class="vt-kicker">Torre de Controle</span>
+    <span class="vt-titulo">Vale-Transporte</span>
+  </div>
+  <div class="vt-top-acoes">
+    <div class="vt-mes">
+      <button class="vt-btn mini" id="mesAnt" title="Mês anterior">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <span class="vt-mes-lbl" id="mesLabel">—</span>
+      <button class="vt-btn mini" id="mesProx" title="Próximo mês">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+    </div>
+    <button class="vt-btn" id="btnCartoes" title="Cartões e empresas">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/>
+      </svg><span class="vt-rotulo">Cartões</span>
+    </button>
+    <button class="vt-btn" id="btnExportar" title="Baixar a planilha do mês">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+      </svg><span class="vt-rotulo">Excel</span>
+    </button>
+  </div>
+</header>
+
+<div class="vt-body">
+  <div id="erroBox" class="vt-erro hidden"></div>
+
+  <div class="vt-resumo" id="resumo"></div>
+  <div id="avisos"></div>
+  <div id="empresas"></div>
+
+  <div class="vt-sec-titulo">
+    <h2>Cartões sem dono</h2>
+    <span class="vt-sec-rule"></span>
+    <span class="vt-sec-cont" id="gavetaCont"></span>
+  </div>
+  <div class="vt-emp" id="gaveta"></div>
+
+  <div id="carregando" class="vt-estado">Carregando…</div>
+</div>
+
+<!-- Modal genérico: o conteúdo é montado pelo JS conforme a ação -->
+<div class="vt-overlay hidden" id="overlay">
+  <div class="vt-modal">
+    <div class="vt-modal-hdr">
+      <h3 id="modalTitulo">—</h3>
+      <button class="vt-modal-fechar" id="modalFechar" title="Fechar">✕</button>
+    </div>
+    <div class="vt-modal-body" id="modalBody"></div>
+  </div>
+</div>
+
+<script src="vale-transporte.js"></script>
+</body>
+</html>
