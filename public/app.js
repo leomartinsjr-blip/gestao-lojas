@@ -14220,8 +14220,38 @@ function initNavCategorias() {
     drop.addEventListener('click', () => {
       drop.classList.remove('nav-cat-open');
       drop.previousElementSibling?.classList.remove('nav-cat-open');
+      fechaGaveta();   // no celular o item escolhido também fecha a gaveta
     });
   });
+
+  // ── Gaveta do celular ──────────────────────────────────────────────────
+  // Em tela estreita as seis categorias não cabem lado a lado, então a linha 2
+  // inteira vira uma gaveta que o hambúrguer abre. O CSS é quem decide quando:
+  // aqui só se liga e desliga a classe no <body>.
+  const toggle = document.getElementById('navToggle');
+  const scrim  = document.getElementById('navScrim');
+
+  function fechaGaveta() {
+    if (!document.body.classList.contains('nav-aberto')) return;
+    document.body.classList.remove('nav-aberto');
+    toggle?.setAttribute('aria-expanded', 'false');
+    document.querySelectorAll('.nav-cat-dropdown.nav-cat-open').forEach(d => d.classList.remove('nav-cat-open'));
+    document.querySelectorAll('.nav-cat-trigger.nav-cat-open').forEach(t => t.classList.remove('nav-cat-open'));
+  }
+
+  toggle?.addEventListener('click', (e) => {
+    e.stopPropagation();   // senão o listener global fecharia no mesmo clique
+    const abrindo = !document.body.classList.contains('nav-aberto');
+    if (abrindo) {
+      document.body.classList.add('nav-aberto');
+      toggle.setAttribute('aria-expanded', 'true');
+    } else fechaGaveta();
+  });
+
+  scrim?.addEventListener('click', fechaGaveta);
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') fechaGaveta(); });
+  // Voltou para tela larga com a gaveta aberta: a linha 2 volta a ser barra.
+  window.addEventListener('resize', () => { if (window.innerWidth > 820) fechaGaveta(); });
 }
 
 // ── Init ───────────────────────────────────────────────────────────────────

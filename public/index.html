@@ -2,7 +2,9 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12151D" media="(prefers-color-scheme: dark)">
 <title>Gestão Operacional</title>
 <link rel="icon" type="image/jpeg" href="favicon.jpg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -47,6 +49,10 @@
   <!-- Linha 1: identidade + mês em destaque + sync + usuário -->
   <div class="topbar-row1">
     <div class="brand">
+      <!-- Hamburguer: só aparece no celular, onde a linha 2 vira gaveta. -->
+      <button id="navToggle" class="nav-toggle" type="button" aria-label="Abrir menu" aria-expanded="false" aria-controls="topbarNav">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><line x1="4" y1="7" x2="20" y2="7"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="17" x2="20" y2="17"/></svg>
+      </button>
       <img src="/logosurfers.webp" alt="Surfers" class="brand-logo">
       <span class="brand-kicker" id="brandKicker">Torre de Controle</span>
     </div>
@@ -82,7 +88,7 @@
   </div>
 
   <!-- Linha 2: menu por categoria + tema ───────────────────────────────── -->
-  <div class="topbar-row2">
+  <div class="topbar-row2" id="topbarNav">
     <div class="topbar-nav nav-cat-bar">
 
       <div class="nav-cat">
@@ -283,6 +289,9 @@
   </div>
 
 </header>
+
+<!-- Fundo que fecha a gaveta do menu no celular -->
+<div id="navScrim"></div>
 
 <!-- Thursday Reminder Banner -->
 <div id="thursdayBanner" class="thursday-banner hidden">
