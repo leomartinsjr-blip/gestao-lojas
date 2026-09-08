@@ -93,6 +93,45 @@ function lePlanilha(caminho, nomeAba) {
   return blocos.filter(b => b.cartoes.length || b.login || b.senha);
 }
 
+// ── Pergunta no terminal ───────────────────────────────────────────────────
+// A senha é lida em modo cru, sem eco: não aparece na tela nem fica no
+// histórico do terminal, que é onde ela ficaria se fosse digitada no meio do
+// comando.
+const TECLA_ENTER = ['\r', '\n', '\u0004'];
+const TECLA_CTRLC = '\u0003';   // ctrl+c cancela
+const TECLA_APAGA = ['\u007f', '\b'];
+
+function pergunta(rotulo, escondido) {
+  return new Promise((resolve, reject) => {
+    if (!process.stdin.isTTY) {
+      return reject(new Error('Sem terminal interativo aqui — informe usuário e senha no próprio comando.'));
+    }
+    process.stdout.write(rotulo);
+    const stdin = process.stdin;
+    if (escondido) stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding('utf8');
+    let texto = '';
+    const aoDigitar = ch => {
+      if (TECLA_ENTER.includes(ch)) {
+        stdin.removeListener('data', aoDigitar);
+        if (escondido) stdin.setRawMode(false);
+        stdin.pause();
+        process.stdout.write('\n');
+        resolve(texto.trim());
+      } else if (ch === TECLA_CTRLC) {
+        process.stdout.write('\n');
+        process.exit(1);
+      } else if (TECLA_APAGA.includes(ch)) {
+        texto = texto.slice(0, -1);
+      } else {
+        texto += ch;
+      }
+    };
+    stdin.on('data', aoDigitar);
+  });
+}
+
 // ── Conversa com o servidor ────────────────────────────────────────────────
 let cookie = '';
 function req(method, caminho, body) {
@@ -146,11 +185,15 @@ if (require.main === module) (async () => {
     console.log('\n(prévia — nada foi gravado; rode de novo com --gravar)\n');
     return;
   }
-  if (!usuario || !senha) { console.error('\nPara gravar informe usuário e senha.\n'); process.exit(1); }
+  // Sem usuário/senha no comando, pergunta na hora: assim a senha não fica
+  // no histórico do terminal nem passa por cima do ombro de ninguém.
+  const quem  = usuario || await pergunta(`\nUsuário do sistema (${HOST}): `, false);
+  const chave = senha   || await pergunta('Senha: ', true);
+  if (!quem || !chave) { console.error('\nSem usuário ou senha, não dá para gravar.\n'); process.exit(1); }
 
-  const login = await req('POST', '/api/login', { username: usuario, password: senha });
+  const login = await req('POST', '/api/login', { username: quem, password: chave });
   if (login.status !== 200) { console.error('Login falhou:', login.json || login.raw); process.exit(1); }
-  console.log(`\nLogado em ${HOST} como ${usuario}.`);
+  console.log(`\nLogado em ${HOST} como ${quem}.`);
 
   const [ano, mes] = MES ? MES.split('-') : [null, null];
   const r = await req('POST', '/api/vt/importar', { blocos, ano, mes });
