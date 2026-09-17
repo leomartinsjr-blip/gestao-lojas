@@ -14783,6 +14783,24 @@ function fichaLimparDados(bruto) {
   return dados;
 }
 
+// O mínimo para a ficha sair da loja: quem é a pessoa e o que foi combinado.
+// Adiantamento fica de fora (zero é resposta válida); valor e quantidade do
+// VT só contam quando a pessoa vai receber vale.
+const FICHA_OBRIGATORIOS = [
+  ['nome', 'nome'], ['cpf', 'CPF'], ['nascimento', 'data de nascimento'],
+  ['dataAdmissao', 'data de admissão'], ['funcao', 'função'], ['salario', 'salário'],
+  ['contratoExp', 'contrato de experiência'], ['valeTransporte', 'vale-transporte (sim/não)'],
+  ['horarioInicio', 'horário de entrada'], ['horarioFim', 'horário de saída'],
+];
+function fichaCamposFaltando(d = {}) {
+  const faltam = FICHA_OBRIGATORIOS.filter(([k]) => !d[k]).map(([, rotulo]) => rotulo);
+  if (d.valeTransporte === 'Sim') {
+    if (!d.vtValor) faltam.push('valor do VT');
+    if (!d.vtQuant) faltam.push('quantidade de VT');
+  }
+  return faltam;
+}
+
 function fichaEmpresaPublica(cnpj) {
   const { buscarEmpresa, formatarCnpj } = require('./services/empresas');
   const e = buscarEmpresa(cnpj);
@@ -14918,9 +14936,12 @@ app.post('/api/fichas-admissao/:id/status', requireAuth, async (req, res) => {
     const agora = new Date().toISOString();
 
     if (acao === 'enviar') {
-      // A loja terminou de digitar. Sem nome não tem o que conferir.
+      // A loja terminou de digitar. Os dados profissionais são dela — é a
+      // loja que sabe o que foi combinado — e sem eles a contabilidade não
+      // registra; a ficha não sai daqui faltando isso.
       if (f.status !== 'enviada') return res.status(409).json({ error: 'Essa ficha não está com a loja' });
-      if (!f.dados?.nome) return res.status(400).json({ error: 'Preencha ao menos o nome antes de enviar' });
+      const faltam = fichaCamposFaltando(f.dados);
+      if (faltam.length) return res.status(400).json({ error: `Falta preencher: ${faltam.join(', ')}` });
       f.status = 'preenchida'; f.preenchidaEm = agora; f.devolucao = null;
       fichaRegistra(f, req, 'Preenchida e enviada ao escritório');
     } else if (acao === 'receber') {

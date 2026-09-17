@@ -56,7 +56,7 @@ const SECOES = [
     { k: 'bairro', l: 'Bairro' },
     { k: 'cidade', l: 'Cidade' },
   ]},
-  { titulo: 'Dados profissionais', campos: [
+  { titulo: 'Dados profissionais', nota: 'a loja preenche com o que foi combinado; sem isso a ficha não é enviada', campos: [
     { k: 'dataAdmissao', l: 'Data de admissão', tipo: 'date' },
     { k: 'funcao', l: 'Função', w: 'wide' },
     { k: 'salario', l: 'Salário (R$)', inputmode: 'decimal' },
@@ -220,7 +220,7 @@ function abrirFicha(f) {
   else if (f.status === 'preenchida' && !esc_)
     avisos.push(`<div class="fa-aviso">📤 <div><b>Enviada ao escritório em ${fDataHora(f.preenchidaEm)}.</b> Ainda dá para corrigir algo: o que você alterar aqui já vale.</div></div>`);
   else if (f.status === 'enviada' && !esc_ && !f.devolucao)
-    avisos.push(`<div class="fa-aviso">🖨 <div><b>Imprima</b> para o candidato preencher à mão, <b>digite</b> aqui o que ele escreveu e depois clique em <b>Enviar ao escritório</b>. O que você digita é salvo sozinho.</div></div>`);
+    avisos.push(`<div class="fa-aviso">🖨 <div><b>Imprima</b> para o candidato preencher à mão, <b>digite</b> aqui o que ele escreveu e complete os <b>dados profissionais</b> — salário, contrato, horário e vale-transporte são a loja que informa. Depois clique em <b>Enviar ao escritório</b>. O que você digita é salvo sozinho.</div></div>`);
 
   $('ficha').innerHTML = `
     <div class="fa-card">
@@ -239,7 +239,7 @@ function abrirFicha(f) {
 
       ${SECOES.map(sec => `
         <div class="fa-form-sec">
-          <h3>${sec.titulo}</h3>
+          <h3>${sec.titulo}${sec.nota ? ` <span class="fa-mono" style="font-family:inherit;text-transform:none;letter-spacing:0">— ${sec.nota}</span>` : ''}</h3>
           <div class="fa-grid">${sec.campos.map(c => campoHtml(c, d[c.k] || '', editavel)).join('')}</div>
         </div>`).join('')}
 
