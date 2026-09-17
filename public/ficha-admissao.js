@@ -505,7 +505,7 @@ function papelHtml(f, d) {
       <span class="p-l" style="margin-right:6pt">Pessoa com deficiência:</span>
       ${marca('Auditiva', def === 'Auditiva')}${marca('Física', def === 'Física')}${marca('Mental', def === 'Mental')}${marca('Múltipla', def === 'Múltipla')}${marca('Visual', def === 'Visual')}
       ${marca('Não portador', def === 'Não')}
-      <span class="p-l" style="margin:0 6pt 0 10pt">Reabilitado:</span>${marca('Sim', d.reabilitado === 'Sim')}${marca('Não', d.reabilitado === 'Não')}
+      <span style="white-space:nowrap"><span class="p-l" style="margin:0 6pt 0 10pt">Reabilitado:</span>${marca('Sim', d.reabilitado === 'Sim')}${marca('Não', d.reabilitado === 'Não')}</span>
     </div>
 
     <div class="p-sec">Endereço</div>
