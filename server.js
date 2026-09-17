@@ -14799,6 +14799,7 @@ function fichaPublica(f) {
     empresa: fichaEmpresaPublica(f.cnpj),
     status: f.status, observacao: f.observacao || '',
     devolucao: f.devolucao || null,
+    empId: f.empId || null,
     dados: f.dados || fichaLimparDados({}),
     criadoEm: f.criadoEm, criadoPor: f.criadoPor,
     atualizadoEm: f.atualizadoEm || null, atualizadoPor: f.atualizadoPor || null,
@@ -14838,6 +14839,8 @@ app.get('/api/fichas-admissao', requireAuth, async (req, res) => {
       .map(fichaPublica);
     res.json({
       escritorio: fichaEhEscritorio(u),
+      // Cadastrar colaborador é tela de admin (mesma regra do botão Colaboradores).
+      admin: !u.board && !(u.lojas && u.lojas.length),
       board: u.board || null,
       lojas: FICHA_LOJAS.map(b => ({ board: b, nome: FICHA_LOJA_NOME[b], cnpj: FICHA_EMPRESA_DA_LOJA[b] })),
       empresas: EMPRESAS.filter(e => e.ativa).map(e => ({
@@ -14942,6 +14945,25 @@ app.post('/api/fichas-admissao/:id/status', requireAuth, async (req, res) => {
     } else {
       return res.status(400).json({ error: 'Ação desconhecida' });
     }
+    await writeDB(db);
+    res.json(fichaPublica(f));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/fichas-admissao/:id/colaborador — virou cadastro ─────────────
+// O painel abre o formulário de Colaboradores já preenchido com a ficha
+// (/?ficha=ID) e, ao salvar, avisa aqui qual cadastro nasceu dela. A ficha
+// guarda o vínculo para ninguém cadastrar a mesma pessoa duas vezes.
+app.post('/api/fichas-admissao/:id/colaborador', requireAdmin, async (req, res) => {
+  try {
+    const r = await fichaBuscar(req, res);
+    if (!r) return;
+    const { db, f } = r;
+    const empId = parseInt(req.body?.empId);
+    const emp = (db.employees || []).find(e => e.id === empId);
+    if (!emp) return res.status(404).json({ error: 'Colaborador não encontrado' });
+    f.empId = empId;
+    fichaRegistra(f, req, `Cadastrada como colaborador: ${emp.name}`);
     await writeDB(db);
     res.json(fichaPublica(f));
   } catch (e) { res.status(500).json({ error: e.message }); }

@@ -313,9 +313,17 @@ function renderAcoes() {
     if (f.status === 'recebida') botoes.push(`<button class="fa-btn" id="acReabrir">Reabrir</button>`);
     if (f.status !== 'recebida') botoes.push(`<button class="fa-btn perigo" id="acExcluir">Excluir</button>`);
   }
-  bar.innerHTML = `<span class="fa-salvo" id="salvoLbl">${f.status === 'recebida' ? 'Fechada' : f.atualizadoEm ? `Salva ${fDataHora(f.atualizadoEm)}` : 'Nada digitado ainda'}</span>${botoes.join('')}`;
+  // Só depois que a loja terminou de digitar, e só para quem tem a tela de
+  // Colaboradores. Ficha já cadastrada mostra o vínculo em vez do botão.
+  if (S.base.admin && f.status !== 'enviada' && !f.empId)
+    botoes.unshift(`<button class="fa-btn" id="acCadastrar" title="Abre o cadastro de Colaboradores já preenchido com esta ficha">Cadastrar colaborador</button>`);
+  bar.innerHTML = `<span class="fa-salvo" id="salvoLbl">${f.empId ? `Colaborador nº ${f.empId} cadastrado · ` : ''}${f.status === 'recebida' ? 'Fechada' : f.atualizadoEm ? `Salva ${fDataHora(f.atualizadoEm)}` : 'Nada digitado ainda'}</span>${botoes.join('')}`;
   bar.classList.remove('hidden');
 
+  $('acCadastrar') && ($('acCadastrar').onclick = async () => {
+    if (S.sujo) await salvar();
+    location.href = `/?ficha=${f.id}`;
+  });
   $('acEnviar')  && ($('acEnviar').onclick  = () => transicao('enviar'));
   $('acReceber') && ($('acReceber').onclick = () => transicao('receber'));
   $('acReabrir') && ($('acReabrir').onclick = () => transicao('reabrir'));

@@ -260,6 +260,8 @@ async function checkAuth() {
     checkJustificativasPendentes();
     if (S.user.mustChangePassword) showChangePasswordModal();
     if (new URLSearchParams(location.search).get('gestao') === '1') openTransModal();
+    const fichaId = parseInt(new URLSearchParams(location.search).get('ficha'));
+    if (fichaId && userIsAdmin(S.user)) abrirCadastroDaFicha(fichaId);
   } catch {
     showLogin();
   }
@@ -8215,9 +8217,54 @@ function renderFuncionariosTable() {
     btn.addEventListener('click', () => deleteFuncionario(parseInt(btn.dataset.id))));
 }
 
+// ── Cadastro a partir da Ficha de Admissão (/?ficha=ID) ────────────────────
+// A ficha traz o que a loja digitou; o formulário abre com isso preenchido e
+// o resto — comissões, INSS, banco — é o que o escritório completa. Ao salvar,
+// a ficha fica sabendo qual cadastro nasceu dela.
+async function abrirCadastroDaFicha(fichaId) {
+  try {
+    const r = await apiFetch('GET', '/api/fichas-admissao');
+    const f = (r.fichas || []).find(x => x.id === fichaId);
+    if (!f) { toast('Ficha de admissão não encontrada', true); return; }
+    if (f.empId) { toast(`Essa ficha já virou o colaborador nº ${f.empId}`, true); return; }
+    const d = f.dados || {};
+    document.getElementById('funcOverlay').classList.remove('hidden');
+    await loadFuncionarios();
+    openFuncForm(null);
+    FE.fichaOrigem = fichaId;
+    document.getElementById('funcFormTitle').textContent = `Novo colaborador — ficha nº ${fichaId}`;
+    document.getElementById('funcFormSubtitle').textContent = `${f.loja} · ${f.empresa?.apelido || ''} — confira e complete o que a ficha não tem`;
+
+    const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+    set('funcNome', d.nome);
+    set('funcBoard', f.board);
+    set('funcCPF', d.cpf);
+    set('funcNascimento', d.nascimento);
+    set('funcAdmissao', d.dataAdmissao);
+    // Salário chega como texto ("1.800,00"); o campo é numérico.
+    const sal = parseFloat(String(d.salario || '').replace(/\./g, '').replace(',', '.'));
+    if (sal > 0) set('funcSalario', sal.toFixed(2));
+    // A ficha marca o total (30/45/90); o cadastro guarda os dois contratos.
+    const exp = parseInt(d.contratoExp) || 0;
+    if (exp === 90) { set('funcContrato1', 45); set('funcContrato2', 45); }
+    else if (exp)   { set('funcContrato1', exp); }
+    // A função vem em texto livre; o cargo é uma lista fechada.
+    const fn = (d.funcao || '').toLowerCase();
+    const cargo = fn.includes('sub') ? 'Sub-Gerente'
+                : fn.includes('gerente') && fn.includes('vend') ? 'Gerente Vendedor'
+                : fn.includes('gerente') ? 'Gerente'
+                : fn.includes('caixa') ? 'Caixa'
+                : fn.includes('vend') ? 'Vendedor' : '';
+    if (cargo) set('funcCargo', cargo);
+    // Tira o ?ficha da URL: um F5 não deve abrir o formulário de novo.
+    history.replaceState(null, '', location.pathname);
+  } catch (e) { toast('Erro: ' + e.message, true); }
+}
+
 function openFuncForm(id) {
   FE.editingId = id || null;
   FE.newPhotoFile = null;
+  FE.fichaOrigem = null;
   const emp = id ? FE.employees.find(e => e.id === id) : null;
   document.getElementById('funcBody').classList.add('func-body--open');
   document.getElementById('funcFormTitle').textContent = emp ? (emp.apelido || emp.name) : 'Novo Funcionário';
@@ -8374,6 +8421,11 @@ async function saveFuncionario() {
     } else {
       emp = await apiFetch('POST', '/api/employees', body);
       FE.employees.push(emp);
+      if (FE.fichaOrigem) {
+        // O cadastro já existe; se o vínculo falhar, a ficha só fica sem ele.
+        apiFetch('POST', `/api/fichas-admissao/${FE.fichaOrigem}/colaborador`, { empId: emp.id }).catch(() => {});
+        FE.fichaOrigem = null;
+      }
     }
     // Upload new photo if selected
     if (FE.newPhotoFile) {
