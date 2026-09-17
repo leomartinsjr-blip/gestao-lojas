@@ -250,6 +250,14 @@
               <line x1="3" y1="10" x2="21" y2="10"/><line x1="7" y1="15" x2="12" y2="15"/>
             </svg><span class="btn-label">Vale-Transporte</span>
           </a>
+          <!-- Sem display:none de propósito: a loja também usa — é ela que
+               imprime a ficha e digita o que o candidato preencheu. -->
+          <a href="/ficha-admissao" target="_blank" id="fichaAdmissaoBtn" class="folgas-topbar-btn" title="Ficha de Admissão — o escritório envia, a loja imprime e digita">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/>
+            </svg><span class="btn-label">Ficha de Admissão</span>
+          </a>
         </div>
       </div>
 
@@ -312,6 +320,14 @@
   <span>🚌 <strong id="vtBannerText"></strong></span>
   <a href="/vale-transporte" target="_blank" class="thursday-banner-btn" id="vtBannerOpen">Abrir</a>
   <button id="vtBannerClose" class="thursday-banner-close" title="Fechar">✕</button>
+</div>
+
+<!-- Ficha de admissão: na loja, cobra a que está esperando digitação; no
+     escritório, avisa da que a loja devolveu preenchida. -->
+<div id="fichaBanner" class="thursday-banner hidden">
+  <span>📝 <strong id="fichaBannerText"></strong></span>
+  <a href="/ficha-admissao" target="_blank" class="thursday-banner-btn">Abrir</a>
+  <button id="fichaBannerClose" class="thursday-banner-close" title="Fechar">✕</button>
 </div>
 
 <!-- Justificativa de Desconto Banner -->

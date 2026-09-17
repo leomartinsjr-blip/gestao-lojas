@@ -14721,6 +14721,247 @@ app.get('/api/vt/:year/:month/export', requireEscritorioOrAdmin, async (req, res
 });
 
 
+// ══════════════════════════════════════════════════════════════════════════
+// MÓDULO: FICHA DE ADMISSÃO
+// O escritório manda a ficha para a loja; a loja imprime para o candidato
+// preencher à mão e digita aqui o que ele escreveu; quando termina, devolve ao
+// escritório, que confere e dá baixa. O papel continua existindo — é ele que o
+// novo colaborador assina — mas o que vai para o e-Social sai daqui, digitado
+// uma vez só e sem depender de foto de WhatsApp.
+//
+// Ciclo:  enviada ──(loja)──▶ preenchida ──(escritório)──▶ recebida
+//            ▲                    │
+//            └──── devolver ──────┘   (escritório pede correção)
+// ══════════════════════════════════════════════════════════════════════════
+
+const FICHA_LOJAS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'lez'];
+const FICHA_LOJA_NOME = {
+  delrey: 'Del Rey', minas: 'Minas', contagem: 'Contagem',
+  estacao: 'Estação', tommy: 'Tommy', lez: 'Lez a Lez',
+};
+// Empresa que costuma registrar quem trabalha em cada loja. O escritório pode
+// trocar na hora de enviar — a filial da LMJ, por exemplo — mas o comum é este.
+const FICHA_EMPRESA_DA_LOJA = {
+  delrey: '28519094000129', minas: '32473768000179', contagem: '35041602000171',
+  estacao: '11106478000206', tommy: '60509746000157', lez: '44602345000190',
+};
+
+// Os campos do papel, na ordem em que aparecem. Tudo vai como texto: o
+// servidor guarda o que a loja digitou e quem lança no e-Social — com o
+// documento original na mão — é quem valida CPF, data e o resto.
+const FICHA_CAMPOS = [
+  'nome', 'rg', 'cpf', 'nascimento', 'cidadeNascimento', 'pai', 'mae',
+  'celular', 'email', 'grauInstrucao', 'estadoCivil', 'racaCor',
+  'deficiencia', 'reabilitado',
+  'rua', 'numero', 'cep', 'bairro', 'cidade',
+  'dataAdmissao', 'funcao', 'salario', 'adiantamentoPct',
+  'valeTransporte', 'vtValor', 'vtQuant', 'contratoExp', 'horarioInicio', 'horarioFim',
+];
+const FICHA_DEPENDENTES_MAX = 4;
+
+function fichaRoot(db) {
+  if (!Array.isArray(db.fichasAdmissao)) db.fichasAdmissao = [];
+  return db.fichasAdmissao;
+}
+
+// Escritório = quem não é loja: admin, supervisor e o login "escritorio".
+function fichaEhEscritorio(u) { return !u.board || u.board === 'escritorio'; }
+function fichaPodeVer(u, f)   { return fichaEhEscritorio(u) || f.board === u.board; }
+
+function fichaLimparDados(bruto) {
+  const src = bruto && typeof bruto === 'object' ? bruto : {};
+  const dados = {};
+  for (const k of FICHA_CAMPOS) dados[k] = String(src[k] ?? '').trim().slice(0, 200);
+  dados.dependentes = (Array.isArray(src.dependentes) ? src.dependentes : [])
+    .slice(0, FICHA_DEPENDENTES_MAX)
+    .map(d => ({
+      nome:       String(d?.nome ?? '').trim().slice(0, 120),
+      cpf:        String(d?.cpf ?? '').trim().slice(0, 20),
+      nascimento: String(d?.nascimento ?? '').trim().slice(0, 12),
+    }))
+    .filter(d => d.nome || d.cpf || d.nascimento);
+  return dados;
+}
+
+function fichaEmpresaPublica(cnpj) {
+  const { buscarEmpresa, formatarCnpj } = require('./services/empresas');
+  const e = buscarEmpresa(cnpj);
+  return {
+    cnpj, cnpjFmt: formatarCnpj(cnpj),
+    razaoSocial: e?.razaoSocial || '', nomeFantasia: e?.nomeFantasia || '',
+    apelido: e?.apelido || cnpj,
+  };
+}
+
+function fichaPublica(f) {
+  return {
+    id: f.id, board: f.board, loja: FICHA_LOJA_NOME[f.board] || f.board,
+    empresa: fichaEmpresaPublica(f.cnpj),
+    status: f.status, observacao: f.observacao || '',
+    devolucao: f.devolucao || null,
+    dados: f.dados || fichaLimparDados({}),
+    criadoEm: f.criadoEm, criadoPor: f.criadoPor,
+    atualizadoEm: f.atualizadoEm || null, atualizadoPor: f.atualizadoPor || null,
+    preenchidaEm: f.preenchidaEm || null, recebidaEm: f.recebidaEm || null,
+    historico: f.historico || [],
+  };
+}
+
+function fichaRegistra(f, req, evento) {
+  if (!Array.isArray(f.historico)) f.historico = [];
+  f.historico.push({ em: new Date().toISOString(), por: req.session.user.username, evento });
+}
+
+async function fichaBuscar(req, res) {
+  const db = await readDB();
+  const f = fichaRoot(db).find(x => x.id === parseInt(req.params.id));
+  if (!f) { res.status(404).json({ error: 'Ficha não encontrada' }); return null; }
+  if (!fichaPodeVer(req.session.user, f)) { res.status(403).json({ error: 'Essa ficha é de outra loja' }); return null; }
+  return { db, f };
+}
+
+// GET /ficha-admissao — a página, para loja e escritório
+app.get('/ficha-admissao', (req, res) => {
+  if (!req.session?.user) return res.redirect('/');
+  res.sendFile(path.join(__dirname, 'public', 'ficha-admissao.html'));
+});
+
+// ── GET /api/fichas-admissao — as fichas que o usuário pode ver ─────────────
+app.get('/api/fichas-admissao', requireAuth, async (req, res) => {
+  try {
+    const u  = req.session.user;
+    const db = await readDB();
+    const { EMPRESAS, formatarCnpj } = require('./services/empresas');
+    const fichas = fichaRoot(db)
+      .filter(f => fichaPodeVer(u, f))
+      .sort((a, b) => (b.criadoEm || '').localeCompare(a.criadoEm || ''))
+      .map(fichaPublica);
+    res.json({
+      escritorio: fichaEhEscritorio(u),
+      board: u.board || null,
+      lojas: FICHA_LOJAS.map(b => ({ board: b, nome: FICHA_LOJA_NOME[b], cnpj: FICHA_EMPRESA_DA_LOJA[b] })),
+      empresas: EMPRESAS.filter(e => e.ativa).map(e => ({
+        cnpj: e.cnpj, cnpjFmt: formatarCnpj(e.cnpj), razaoSocial: e.razaoSocial,
+        nomeFantasia: e.nomeFantasia || '', apelido: e.apelido,
+      })),
+      fichas,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GET /api/fichas-admissao/alerta — o que o painel avisa no topo ──────────
+// Para a loja: quantas fichas estão esperando ela digitar. Para o escritório:
+// quantas a loja já devolveu e ninguém conferiu.
+app.get('/api/fichas-admissao/alerta', requireAuth, async (req, res) => {
+  try {
+    const u  = req.session.user;
+    const db = await readDB();
+    const minhas = fichaRoot(db).filter(f => fichaPodeVer(u, f));
+    if (fichaEhEscritorio(u))
+      return res.json({ papel: 'escritorio', pendentes: minhas.filter(f => f.status === 'preenchida').length });
+    res.json({ papel: 'loja', pendentes: minhas.filter(f => f.status === 'enviada').length });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/fichas-admissao — o escritório manda uma ficha para a loja ─────
+app.post('/api/fichas-admissao', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { buscarEmpresa } = require('./services/empresas');
+    const board = String(req.body?.board || '');
+    if (!FICHA_LOJAS.includes(board)) return res.status(400).json({ error: 'Escolha a loja' });
+    const cnpj = String(req.body?.cnpj || FICHA_EMPRESA_DA_LOJA[board]).replace(/\D/g, '');
+    const emp = buscarEmpresa(cnpj);
+    if (!emp || !emp.ativa) return res.status(400).json({ error: 'Empresa não cadastrada ou inativa' });
+    const db = await readDB();
+    const f = {
+      id: nextId(db), board, cnpj, status: 'enviada',
+      observacao: String(req.body?.observacao || '').trim().slice(0, 300),
+      dados: fichaLimparDados({ funcao: req.body?.funcao }),
+      criadoEm: new Date().toISOString(), criadoPor: req.session.user.username,
+      historico: [],
+    };
+    fichaRegistra(f, req, `Enviada para ${FICHA_LOJA_NOME[board]}`);
+    fichaRoot(db).push(f);
+    await writeDB(db);
+    res.json(fichaPublica(f));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── PUT /api/fichas-admissao/:id — a loja digita (o escritório também pode) ─
+// Salva a cada pausa na digitação, então a resposta é só o carimbo de hora.
+app.put('/api/fichas-admissao/:id', requireAuth, async (req, res) => {
+  try {
+    const r = await fichaBuscar(req, res);
+    if (!r) return;
+    const { db, f } = r;
+    if (f.status === 'recebida')
+      return res.status(409).json({ error: 'Ficha já recebida pelo escritório — peça para reabrir antes de alterar' });
+    f.dados = fichaLimparDados(req.body?.dados);
+    f.atualizadoEm = new Date().toISOString();
+    f.atualizadoPor = req.session.user.username;
+    await writeDB(db);
+    res.json({ ok: true, atualizadoEm: f.atualizadoEm, atualizadoPor: f.atualizadoPor });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/fichas-admissao/:id/status — as transições do ciclo ──────────
+app.post('/api/fichas-admissao/:id/status', requireAuth, async (req, res) => {
+  try {
+    const r = await fichaBuscar(req, res);
+    if (!r) return;
+    const { db, f } = r;
+    const u = req.session.user;
+    const acao = String(req.body?.acao || '');
+    const agora = new Date().toISOString();
+
+    if (acao === 'enviar') {
+      // A loja terminou de digitar. Sem nome não tem o que conferir.
+      if (f.status !== 'enviada') return res.status(409).json({ error: 'Essa ficha não está com a loja' });
+      if (!f.dados?.nome) return res.status(400).json({ error: 'Preencha ao menos o nome antes de enviar' });
+      f.status = 'preenchida'; f.preenchidaEm = agora; f.devolucao = null;
+      fichaRegistra(f, req, 'Preenchida e enviada ao escritório');
+    } else if (acao === 'receber') {
+      if (!fichaEhEscritorio(u)) return res.status(403).json({ error: 'Só o escritório dá baixa' });
+      if (f.status === 'recebida') return res.status(409).json({ error: 'Já recebida' });
+      f.status = 'recebida'; f.recebidaEm = agora;
+      fichaRegistra(f, req, 'Recebida pelo escritório');
+    } else if (acao === 'devolver') {
+      // Volta para a loja com o motivo: é ele que a gerente vai ler no topo da ficha.
+      if (!fichaEhEscritorio(u)) return res.status(403).json({ error: 'Só o escritório devolve' });
+      if (f.status === 'enviada') return res.status(409).json({ error: 'A ficha já está com a loja' });
+      const motivo = String(req.body?.motivo || '').trim().slice(0, 300);
+      if (!motivo) return res.status(400).json({ error: 'Diga à loja o que precisa corrigir' });
+      f.status = 'enviada'; f.recebidaEm = null;
+      f.devolucao = { motivo, em: agora, por: u.username };
+      fichaRegistra(f, req, `Devolvida à loja: ${motivo}`);
+    } else if (acao === 'reabrir') {
+      if (!fichaEhEscritorio(u)) return res.status(403).json({ error: 'Só o escritório reabre' });
+      if (f.status !== 'recebida') return res.status(409).json({ error: 'A ficha não está fechada' });
+      f.status = 'preenchida'; f.recebidaEm = null;
+      fichaRegistra(f, req, 'Reaberta pelo escritório');
+    } else {
+      return res.status(400).json({ error: 'Ação desconhecida' });
+    }
+    await writeDB(db);
+    res.json(fichaPublica(f));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── DELETE /api/fichas-admissao/:id — enviada por engano ────────────────────
+// Ficha recebida não se apaga: virou registro de admissão.
+app.delete('/api/fichas-admissao/:id', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const r = await fichaBuscar(req, res);
+    if (!r) return;
+    const { db, f } = r;
+    if (f.status === 'recebida') return res.status(409).json({ error: 'Ficha recebida não pode ser excluída — reabra se precisar alterar' });
+    db.fichasAdmissao = fichaRoot(db).filter(x => x.id !== f.id);
+    await writeDB(db);
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+
 // Porta abre imediatamente — MongoDB conecta em background para não bloquear o health check do Render
 const _server = app.listen(PORT, () => {
   console.log(`\n✅  Gestão de Lojas → http://localhost:${PORT}\n`);

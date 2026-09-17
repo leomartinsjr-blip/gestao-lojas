@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Ficha de Admissão</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground:   #FBFAF8;
+    --surface:  #FFFFFF;
+    --surface2: #F4F1EC;
+    --ink:      #1B1E27;
+    --ink2:     #4A4640;
+    --muted:    #7A7267;
+    --border:   #E3DED6;
+    --rule:     #CFC7BC;
+    --accent:   #A85F14;
+    --accent-soft: rgba(168, 95, 20, .09);
+    --warn:     #8A6410;
+    --warn-soft: rgba(138, 100, 16, .10);
+    --stop:     #B23A2E;
+    --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+    --disp: "Big Shoulders Display", "IBM Plex Sans", Impact, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:   #14161C;
+      --surface:  #1B1E27;
+      --surface2: #232733;
+      --ink:      #E9E6E1;
+      --ink2:     #C3BDB4;
+      --muted:    #8E877D;
+      --border:   #2E333F;
+      --rule:     #3A4050;
+      --accent:   #F0A045;
+      --accent-soft: rgba(240, 160, 69, .12);
+      --warn:     #E3B93F;
+      --warn-soft: rgba(227, 185, 63, .12);
+      --stop:     #E36C5D;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:   #14161C;
+    --surface:  #1B1E27;
+    --surface2: #232733;
+    --ink:      #E9E6E1;
+    --ink2:     #C3BDB4;
+    --muted:    #8E877D;
+    --border:   #2E333F;
+    --rule:     #3A4050;
+    --accent:   #F0A045;
+    --accent-soft: rgba(240, 160, 69, .12);
+    --warn:     #E3B93F;
+    --warn-soft: rgba(227, 185, 63, .12);
+    --stop:     #E36C5D;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .folha { max-width: 46rem; margin: 0 auto; padding: 2.75rem 1.5rem 4rem; }
+  .mono { font-family: var(--mono); }
+
+  /* Cabecalho */
+  .kicker {
+    font-family: var(--mono); font-size: .68rem; font-weight: 600;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--accent);
+    margin: 0;
+  }
+  h1 {
+    font-family: var(--disp); font-weight: 700; font-size: clamp(2.6rem, 8vw, 4.1rem);
+    line-height: .92; letter-spacing: .005em; text-transform: uppercase;
+    margin: .5rem 0 .35rem; text-wrap: balance; color: var(--ink);
+  }
+  .sub { font-size: 1.02rem; color: var(--ink2); max-width: 34rem; margin: 0 0 1.6rem; }
+  .ficha {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 1px; background: var(--border); border: 1px solid var(--border);
+    border-radius: 3px; overflow: hidden; margin: 0;
+  }
+  .ficha > div { background: var(--surface); padding: .7rem .85rem; }
+  .ficha dt {
+    font-family: var(--mono); font-size: .64rem; font-weight: 600; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: .2rem;
+  }
+  .ficha dd { margin: 0; font-size: .88rem; color: var(--ink); font-weight: 500; }
+
+  /* Blocos */
+  section { margin-top: 2.75rem; }
+  h2 {
+    font-family: var(--disp); font-weight: 700; font-size: 1.75rem; text-transform: uppercase;
+    letter-spacing: .02em; margin: 0 0 .2rem; color: var(--ink);
+  }
+  .h2-nota { font-size: .85rem; color: var(--muted); margin: 0 0 1rem; }
+
+  .antes { list-style: none; padding: 0; margin: 0; display: grid; gap: .55rem; }
+  .antes li {
+    display: grid; grid-template-columns: .85rem 1fr; gap: .7rem;
+    align-items: start; font-size: .95rem; color: var(--ink2);
+  }
+  .antes li::before {
+    content: ""; width: .5rem; height: .5rem; margin-top: .48rem;
+    border: 1.5px solid var(--accent); border-radius: 50%;
+  }
+  .antes b { color: var(--ink); font-weight: 600; }
+
+  .regras { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+  @media (min-width: 34rem) { .regras { grid-template-columns: 1fr 1fr; } }
+  .regra { background: var(--surface); padding: .9rem 1rem; }
+  .regra-t {
+    font-family: var(--mono); font-size: .95rem; font-weight: 600; color: var(--accent);
+    display: block; margin-bottom: .2rem;
+  }
+  .regra p { margin: 0; font-size: .85rem; color: var(--ink2); line-height: 1.5; }
+  .regra b { color: var(--ink); font-weight: 600; }
+
+  /* Fases e passos */
+  .fase { display: flex; align-items: center; gap: .85rem; margin: 2.6rem 0 1.1rem; }
+  .fase-nome {
+    font-family: var(--mono); font-size: .68rem; font-weight: 600; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--muted); white-space: nowrap;
+  }
+  .fase-linha { flex: 1; height: 1px; background: var(--rule); }
+
+  .passos { list-style: none; margin: 0; padding: 0; display: grid; gap: 1.9rem; }
+  .passo { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; align-items: start; }
+  .num {
+    font-family: var(--disp); font-weight: 700; font-size: 2.5rem; line-height: .78;
+    color: var(--accent); font-variant-numeric: tabular-nums; padding-top: .15rem;
+  }
+  .passo h3 { font-size: 1.06rem; font-weight: 600; margin: 0 0 .35rem; line-height: 1.3; color: var(--ink); }
+  .passo p { margin: 0 0 .55rem; color: var(--ink2); }
+  .passo p:last-child { margin-bottom: 0; }
+  .passo b { color: var(--ink); font-weight: 600; }
+  .caminho {
+    font-family: var(--mono); font-size: .82rem; color: var(--ink2);
+    background: var(--surface2); border-left: 2px solid var(--accent);
+    padding: .5rem .7rem; margin: 0; overflow-x: auto; white-space: nowrap;
+  }
+  .caminho b { color: var(--accent); font-weight: 600; }
+  .btn {
+    font-family: var(--mono); font-size: .82rem; font-weight: 600; color: var(--ink);
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 3px; padding: .05rem .35rem; white-space: nowrap;
+  }
+
+  .campos { margin: 0 0 .75rem; border-top: 1px solid var(--border); }
+  .campos > div {
+    display: grid; grid-template-columns: minmax(8rem, 12.5rem) 1fr; gap: .2rem 1rem;
+    padding: .4rem 0; border-bottom: 1px solid var(--border); align-items: baseline;
+  }
+  .campos dt { font-size: .84rem; color: var(--muted); }
+  .campos dd {
+    margin: 0; font-family: var(--mono); font-size: .84rem; font-weight: 600;
+    color: var(--ink); overflow-wrap: anywhere;
+  }
+  .campos dd em { font-family: var(--sans); font-style: normal; font-weight: 400; color: var(--ink2); }
+
+  .aviso {
+    background: var(--warn-soft); border-left: 2px solid var(--warn);
+    padding: .7rem .85rem; margin: .8rem 0 0; font-size: .87rem; color: var(--ink2);
+  }
+  .aviso b { color: var(--warn); }
+  .aviso .cit { font-family: var(--mono); font-size: .8rem; }
+
+  .atalho { font-size: .85rem; color: var(--muted); }
+  .atalho b { color: var(--ink2); font-weight: 600; }
+
+  .parada {
+    background: var(--accent-soft); border: 1px solid var(--border); border-left: 2px solid var(--stop);
+    padding: .85rem .95rem; margin-top: 1.8rem; font-size: .9rem; color: var(--ink2);
+  }
+  .parada b { color: var(--stop); }
+
+  /* Checklist */
+  .check { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+  .check li { background: var(--surface); }
+  .check label { display: grid; grid-template-columns: 1.05rem 1fr; gap: .75rem; align-items: start; padding: .7rem .9rem; cursor: pointer; }
+  .check input { width: 1rem; height: 1rem; margin: .18rem 0 0; accent-color: var(--accent); }
+  .check input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .check span { font-size: .92rem; color: var(--ink2); }
+  .check input:checked + span { color: var(--muted); text-decoration: line-through; }
+
+  .rodape {
+    margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    font-family: var(--mono); font-size: .7rem; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; justify-content: space-between;
+  }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  /* Impressao — folha clara, cores mantidas. Só o fundo vira branco puro:
+     papel poupa tinta, mas o laranja é o que separa passo de passo. */
+  @page { size: A4; margin: 15mm 14mm; }
+  @media print {
+    /* Os três estados de tema de uma vez: o seletor do tema escuro tem
+       especificidade maior que um :root sozinho, e venceria aqui dentro —
+       papel branco com texto claro é o resultado. */
+    :root, :root:not([data-theme="light"]), :root[data-theme="dark"] {
+      --ground: #FFFFFF; --surface: #FFFFFF; --surface2: #F4F1EC; --ink: #14171F; --ink2: #3D3A35;
+      --muted: #6B655C; --border: #D9D3CA; --rule: #C4BCB1; --accent: #A85F14;
+      --accent-soft: rgba(168, 95, 20, .07);
+      --warn: #8A6410; --warn-soft: rgba(138, 100, 16, .09); --stop: #B23A2E;
+    }
+    body {
+      background: #fff; color: var(--ink); font-size: 10pt; line-height: 1.45;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .folha { max-width: none; padding: 0; }
+    h1 { font-size: 30pt; color: var(--ink); }
+    .num { font-size: 19pt; }
+    .passos { gap: 1.1rem; }
+    .passo, .regra, .check li, .aviso, .parada { break-inside: avoid; }
+    /* No papel o quadradinho é para marcar com caneta: sai vazio, não pintado */
+    .check input { appearance: none; -webkit-appearance: none; width: .8rem; height: .8rem;
+      border: 1.2px solid var(--ink2); background: #fff; border-radius: 1px; }
+    .fase, h2 { break-after: avoid; }
+    .caminho { white-space: normal; }
+  }
+</style>
+<style>body{margin:0}img{max-width:100%}</style>
+</head>
+<body>
+
+<div class="folha">
+
+  <header>
+    <p class="kicker">Manual do gerente &middot; Surfers</p>
+    <h1>Ficha de<br>Admissão</h1>
+    <p class="sub">O que fazer quando o escritório manda a ficha de um candidato para a loja: imprimir, deixar o candidato preencher, digitar no Gestão e devolver ao escritório.</p>
+    <dl class="ficha">
+      <div><dt>Quem faz</dt><dd>Gerente da loja</dd></div>
+      <div><dt>Onde</dt><dd>Gestão &middot; Pessoas &middot; Ficha de Admissão</dd></div>
+      <div><dt>Quando</dt><dd>Assim que o aviso aparecer no painel</dd></div>
+      <div><dt>Tamanho</dt><dd>9 passos</dd></div>
+    </dl>
+  </header>
+
+  <section>
+    <h2>Antes de começar</h2>
+    <p class="h2-nota">Três coisas para ter à mão.</p>
+    <ul class="antes">
+      <li><span>A <b>impressora</b> ligada — o candidato preenche no papel primeiro, com a própria letra.</span></li>
+      <li><span>Os <b>documentos do candidato</b>: RG, CPF, comprovante de endereço e, se tiver filhos, a certidão de nascimento e o CPF de cada um.</span></li>
+      <li><span>O que ficou <b>combinado na contratação</b>: função, horário, data de início e vale-transporte.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>O que não muda</h2>
+    <p class="h2-nota">Vale para toda ficha, em qualquer loja.</p>
+    <div class="regras">
+      <div class="regra">
+        <span class="regra-t">A ficha vem do escritório</span>
+        <p>A loja não cria ficha. Quando houver contratação, o escritório manda uma e o <b>aviso 📝 aparece no topo do painel</b>.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Salva sozinho</span>
+        <p>Não existe botão de salvar. Cada campo que você digita é gravado na pausa seguinte — a barra de baixo mostra <span class="mono">Salva às hh:mm</span>.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Copie o documento, não a letra</span>
+        <p>Nome, CPF, RG e datas saem <b>do documento</b>. O papel serve para o candidato informar o que o documento não tem: endereço, telefone, filhos.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Não invente</span>
+        <p>O que você não souber — salário, adiantamento, prazo de experiência — <b>deixe em branco</b>. O escritório completa. Errado dá mais trabalho que vazio.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="fase"><span class="fase-nome">Parte 1 &middot; Imprimir</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">01</div>
+      <div>
+        <h3>Abra a ficha</h3>
+        <p>Clique em <span class="btn">Abrir</span> no aviso do painel, ou vá pelo menu:</p>
+        <p class="caminho">Pessoas &rarr; <b>Ficha de Admissão</b></p>
+        <p>A ficha do candidato está na lista <b>Para imprimir e preencher</b>. Clique na linha dela. No alto aparece a empresa que vai registrar e, se o escritório deixou, um <b>recado</b> — leia antes de seguir.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">02</div>
+      <div>
+        <h3>Imprima em branco</h3>
+        <p>Clique em <span class="btn">Imprimir</span> no canto de cima. Sai uma folha A4 já com o empregador e o CNPJ preenchidos e o resto em linha, para caneta.</p>
+        <p class="atalho"><b>Dica:</b> na janela de impressão, confira se está em <b>A4</b> e em <b>retrato</b>. Uma folha só.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">03</div>
+      <div>
+        <h3>Entregue ao candidato</h3>
+        <p>Peça para preencher <b>tudo com letra de forma</b> e assinar embaixo. Enquanto ele preenche, separe os documentos: é deles que você vai copiar na hora de digitar.</p>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase"><span class="fase-nome">Parte 2 &middot; Digitar</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">04</div>
+      <div>
+        <h3>Dados pessoais e endereço</h3>
+        <p>Abra a ficha de novo no Gestão e vá campo a campo, na mesma ordem do papel.</p>
+        <dl class="campos">
+          <div><dt>Nome, RG, CPF</dt><dd>copie do documento, <em>completo e sem abreviar</em></dd></div>
+          <div><dt>Data de nascimento</dt><dd>pelo calendário do campo</dd></div>
+          <div><dt>Nome do pai e da mãe</dt><dd>como está no RG</dd></div>
+          <div><dt>Grau de instrução, estado civil, raça/cor</dt><dd>o campo sugere; se não estiver na lista, digite</dd></div>
+          <div><dt>Pessoa com deficiência</dt><dd><em>escolha</em> Não <em>quando o candidato marcou "não portador"</em></dd></div>
+          <div><dt>Endereço</dt><dd>do comprovante; CEP com os 8 números</dd></div>
+        </dl>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">05</div>
+      <div>
+        <h3>Dados profissionais</h3>
+        <p>Preencha só o que foi combinado e você tem certeza.</p>
+        <dl class="campos">
+          <div><dt>Data de admissão</dt><dd>o primeiro dia de trabalho</dd></div>
+          <div><dt>Função</dt><dd>pode já vir preenchida pelo escritório</dd></div>
+          <div><dt>Horário</dt><dd>entrada e saída, como na escala</dd></div>
+          <div><dt>Vale-transporte</dt><dd>Sim ou Não; se Sim, o valor da passagem e quantas por dia</dd></div>
+          <div><dt>Salário, adiantamento, experiência</dt><dd><em>se não souber, deixe em branco</em></dd></div>
+        </dl>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">06</div>
+      <div>
+        <h3>Dependentes</h3>
+        <p>Um filho por linha: nome, CPF e data de nascimento — <b>pela certidão</b>, não de cabeça. Sem filhos, deixe as linhas vazias.</p>
+        <div class="aviso">
+          <b>Filho sem CPF ainda?</b> Digite o nome e a data de nascimento e deixe o CPF vazio. O escritório sabe o que fazer.
+        </div>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase"><span class="fase-nome">Parte 3 &middot; Enviar</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">07</div>
+      <div>
+        <h3>Confira e envie</h3>
+        <p>Olhe a barra de baixo: tem que estar <span class="mono">Salva às hh:mm</span>. Passe o olho no papel uma última vez, depois clique em <span class="btn">Enviar ao escritório</span> e confirme.</p>
+        <p>A ficha muda para a lista <b>Enviadas ao escritório</b>. Se lembrar de algo depois, ainda dá para abrir e corrigir — vale até o escritório dar baixa.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">08</div>
+      <div>
+        <h3>Se ela voltar</h3>
+        <p>Quando o escritório encontra algo errado, a ficha <b>volta para a lista de cima</b> com um <b>aviso vermelho</b> dizendo o que corrigir. Corrija só aquilo e clique em <span class="btn">Enviar ao escritório</span> de novo.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">09</div>
+      <div>
+        <h3>Guarde o papel</h3>
+        <p>A folha preenchida e assinada fica <b>com os documentos do candidato</b>, do jeito que a loja já manda para o escritório. É por ela que o escritório confere o que você digitou.</p>
+      </div>
+    </li>
+  </ol>
+
+  <div class="parada">
+    <b>Sumiu a ficha da lista?</b> Ou o escritório deu baixa — ela está em <b>Concluídas</b>, só para leitura — ou ele apagou uma enviada por engano. Nos dois casos, não tem o que fazer na loja. Se achar que era para estar lá, fale com o escritório.
+  </div>
+
+  <section>
+    <h2>Antes de enviar</h2>
+    <p class="h2-nota">Cinco conferências, uma a uma.</p>
+    <ul class="check">
+      <li><label><input type="checkbox"><span>Nome, RG e CPF copiados do documento, sem abreviar.</span></label></li>
+      <li><label><input type="checkbox"><span>Data de nascimento e endereço batem com os documentos.</span></label></li>
+      <li><label><input type="checkbox"><span>Os dependentes estão com nome e data de nascimento pela certidão.</span></label></li>
+      <li><label><input type="checkbox"><span>O que eu não sabia ficou em branco — não chutei.</span></label></li>
+      <li><label><input type="checkbox"><span>A barra de baixo diz "Salva às…" e o papel assinado está com os documentos.</span></label></li>
+    </ul>
+  </section>
+
+  <div class="rodape">
+    <span>Surfers &middot; Manual do gerente</span>
+    <span>Ficha de admissão &middot; Gestão de Lojas</span>
+  </div>
+</div>
+</body>
+</html>

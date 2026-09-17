@@ -209,12 +209,31 @@ async function checarValeTransporte() {
   } catch { /* sem VT configurado ou sem permissão: o aviso simplesmente não aparece */ }
 }
 
+// ── Aviso da Ficha de Admissão ─────────────────────────────────────────────
+// A loja vê a ficha que o escritório mandou e ainda não foi digitada; o
+// escritório vê a que a loja já devolveu preenchida e ninguém conferiu.
+async function checarFichaAdmissao() {
+  const banner = document.getElementById('fichaBanner');
+  if (!banner) return;
+  try {
+    const a = await apiFetch('GET', '/api/fichas-admissao/alerta');
+    if (!a?.pendentes) return;
+    const n = a.pendentes;
+    document.getElementById('fichaBannerText').textContent = a.papel === 'loja'
+      ? `${n} ficha${n > 1 ? 's' : ''} de admissão para imprimir e preencher`
+      : `${n} ficha${n > 1 ? 's' : ''} de admissão preenchida${n > 1 ? 's' : ''} pela loja — conferir`;
+    banner.classList.remove('hidden');
+    document.getElementById('fichaBannerClose')?.addEventListener('click', () => banner.classList.add('hidden'));
+  } catch { /* sem permissão ou sem ficha: o aviso não aparece */ }
+}
+
 async function checkAuth() {
   try {
     S.user = await apiFetch('GET', '/api/me');
     hideLogin();
     applyUserPermissions(S.user);
     checarValeTransporte();
+    checarFichaAdmissao();
     // O aviso do VT manda para cá quando falta escala: abrir o painel já com
     // as Folgas na tela poupa o passo de procurar no menu.
     if (location.hash === '#folgas') openFolgas();
