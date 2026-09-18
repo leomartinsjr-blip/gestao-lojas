@@ -4577,3 +4577,32 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .ct-mix-item b { color: var(--accent); font-variant-numeric: tabular-nums; }
 .ct-mix-sep { opacity: .5; }
 .ct-mix-orig { margin-left: auto; font-size: .7rem; font-style: italic; }
+/* tela admin de embalagens: pedido no topo com cobertura/piso, estoque com status, ajustes recolhidos */
+.ct-params-top { margin: .6rem 0 .9rem; padding: .55rem .8rem; border: 1px solid var(--border); border-radius: 8px; background: var(--hover-bg, rgba(var(--tint-rgb),.03)); row-gap: .5rem; }
+.ct-params-top .ct-param { flex-wrap: wrap; }
+.ct-param-ate { font-size: .72rem; color: var(--muted); white-space: nowrap; }
+.ct-params-aplicar { padding: .3rem .9rem; font-size: .78rem; }
+.ct-params-top .ct-param-nota { flex-basis: 100%; }
+.ct-loja-cel { vertical-align: middle; line-height: 1.15; }
+.ct-loja-cel .ct-falta-col { display: block; font-size: .86rem; }
+.ct-loja-cel .ct-em-dia { display: block; }
+.ct-tem-sub { display: block; font-size: .64rem; color: var(--muted); font-weight: 400; }
+.ct-tem-sub .ct-sobra { font-size: .62rem; margin-left: .2rem; }
+.ct-ped-legenda { margin-top: .2rem; margin-bottom: .6rem; display: block; }
+.ct-ped-legenda b { color: var(--text); }
+.ct-cont-late { color: var(--down); font-weight: 700; }
+.ct-ajustes { border: 1px solid var(--border); border-radius: 8px; padding: .7rem .9rem; margin-bottom: 1.5rem; }
+.ct-ajustes-sum { cursor: pointer; margin-bottom: 0; list-style: none; display: flex; align-items: center; gap: .6rem; }
+.ct-ajustes-sum::-webkit-details-marker { display: none; }
+.ct-ajustes-dica { margin-left: auto; font-size: .66rem; font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--accent); border: 1px solid rgba(var(--accent-rgb),.4); border-radius: 4px; padding: .05rem .4rem; }
+.ct-ajustes[open] .ct-ajustes-dica { display: none; }
+.ct-ajustes[open] .ct-ajustes-sum { margin-bottom: .8rem; }
+.ct-ajustes .req-board-chips { margin-bottom: .7rem; }
+.ct-proj-sec { margin-top: 1.2rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+.ct-ent-lista summary { cursor: pointer; list-style: none; }
+.ct-ent-lista summary::-webkit-details-marker { display: none; }
+.ct-ent-lista summary::before { content: '▸ '; }
+.ct-ent-lista[open] summary::before { content: '▾ '; }
+.ct-spv-wrap { display: inline-flex; align-items: center; gap: .3rem; }
+.ct-cfg-spv { width: 4.2rem; }
+.ct-spv-susp { flex-basis: 100%; font-size: .72rem; color: var(--warn-strong); font-weight: 600; cursor: help; }

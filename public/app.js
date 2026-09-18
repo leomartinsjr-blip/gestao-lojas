@@ -11578,7 +11578,7 @@ function _estoqueGrupoHtml(g) {
               <span class="dash-store-dot" style="background:${BOARDS[b]?.color || 'var(--muted)'}"></span>${_escHtml(BOARDS[b]?.label || b)}</th>`).join('')}
             <th>Rede</th></tr>
           <tr><th class="ct-th-sub">contado em</th>
-            ${lojas.map(b => `<th class="ct-th-sub">${g.contagens?.[b] ? _fmtData(g.contagens[b]) : 'nunca contou'}</th>`).join('')}
+            ${lojas.map(b => `<th class="ct-th-sub">${_contagemStatusHtml(b, g.contagens?.[b])}</th>`).join('')}
             <th class="ct-th-sub"></th></tr>
         </thead>
         <tbody>
@@ -11594,6 +11594,15 @@ function _estoqueGrupoHtml(g) {
       </table>
     </div>
   </div>`;
+}
+
+// "contado em" de cada loja, já com o atraso da quinzenal: a tabela de estoque
+// responde as duas perguntas (quanto tem e quando contou) num lugar só.
+function _contagemStatusHtml(board, data) {
+  const st = _embalStatus(board);
+  if (!data) return '<span class="ct-cont-late">nunca contou</span>';
+  if (st?.atrasada) return `<span class="ct-cont-late" title="Contagem quinzenal vencida em ${_fmtData(st.proxima)}">${_fmtData(data)} · atrasada ${st.diasAtraso}d</span>`;
+  return `<span title="Próxima contagem em ${_fmtData(st?.proxima)}">${_fmtData(data)}</span>`;
 }
 
 function _renderEstoqueRede() {
@@ -11653,12 +11662,13 @@ function _entregaFormHtml(g) {
 }
 
 // Chegadas já lançadas. Cada linha é um lote — uma entrega só, rateada entre
-// as lojas do grupo — e o ✕ desfaz a chegada inteira.
+// as lojas do grupo — e o ✕ desfaz a chegada inteira. Fica recolhido: é
+// histórico, e a tela do pedido já tem muita coisa.
 function _entregaListaHtml(g) {
   if (!g.entregas?.length) return '';
   const nomes = Object.fromEntries((g.todos || []).map(i => [i.key, i.nome]));
-  return `<div class="ct-ent-lista">
-    <div class="ct-ent-lista-hdr">Entregas lançadas</div>
+  return `<details class="ct-ent-lista">
+    <summary class="ct-ent-lista-hdr">Entregas lançadas (${g.entregas.length})</summary>
     ${g.entregas.map(e => `<div class="ct-ent-lote">
       <span class="ct-ent-data-tag">${(e.data || '').split('-').reverse().join('/')}</span>
       <div class="ct-ent-lote-corpo">
@@ -11670,7 +11680,7 @@ function _entregaListaHtml(g) {
       <span class="ct-ent-por">${_escHtml(e.por || '—')}</span>
       <button class="ct-ent-del" data-lote="${_escHtml(e.lote)}" title="Desfazer esta entrega">✕</button>
     </div>`).join('')}
-  </div>`;
+  </details>`;
 }
 
 // Estado da tela do pedido. O cache existe só para abrir e fechar o
@@ -11713,29 +11723,28 @@ async function _renderPedidoConsolidado(el, usarCache) {
         <table class="ct-table">
           <thead>
             <tr>
-              <th rowspan="2">Item</th><th rowspan="2">Cód.</th>
-              ${lojas.map(b => `<th colspan="2" class="ct-th-loja ct-grp-start">
+              <th>Item</th>${g.itens.some(i => i.cod) ? '<th>Cód.</th>' : ''}
+              ${lojas.map(b => `<th class="ct-th-loja ct-grp-start" title="Quanto falta para o alvo da loja; embaixo, o que ela tem hoje (última contagem + entregas depois dela)">
                 <span class="dash-store-dot" style="background:${BOARDS[b]?.color || 'var(--muted)'}"></span>${_escHtml(BOARDS[b]?.label || b)}</th>`).join('')}
-              <th rowspan="2">Necessidade</th><th rowspan="2">Pedir</th>
-            </tr>
-            <tr>
-              ${lojas.map(() => `<th class="ct-th-sub ct-grp-start" title="O que a loja tem hoje: a última contagem mais as entregas lançadas depois dela">Tem</th><th class="ct-th-sub">Falta</th>`).join('')}
+              <th>Necessidade</th><th>Pedir</th>
             </tr>
           </thead>
           <tbody>
             ${g.itens.map(it => `<tr>
               <td class="ct-nome">${_escHtml(it.nome)}</td>
-              <td class="ct-num ct-cod-cell">${it.cod ? _escHtml(it.cod) : '—'}</td>
+              ${g.itens.some(i => i.cod) ? `<td class="ct-num ct-cod-cell">${it.cod ? _escHtml(it.cod) : '—'}</td>` : ''}
               ${lojas.map(b => {
                 const l = it.porLoja[b];
-                // Tem = o que a loja tem HOJE (contagem + entregas lançadas depois dela)
-                // Falta = o que esse estoque deixa faltando p/ o alvo
+                // Uma célula por loja: a FALTA (p/ o alvo) em destaque e, embaixo,
+                // o que a loja tem hoje — contagem + entregas lançadas depois dela.
                 const tem = l && l.estoque != null ? l.estoque : null;
                 const ent = it.entrega?.[b];
                 const quando = _fmtData(g.contagens?.[b]);
-                const titulo = tem == null ? '' : ` title="Contou ${l.contado} em ${quando}${l.entregue ? ` e recebeu ${l.entregue} depois` : ''}${l.alvo ? ` · alvo ${l.alvo} pç` : ''}"`;
-                return `<td class="ct-num ct-tem ct-grp-start"${titulo}>${tem != null ? tem : '—'}${l?.entregue ? `<span class="ct-sobra">+${l.entregue}</span>` : ''}</td>`
-                     + `<td class="ct-num ct-falta-col"${ent != null ? ` title="Entregar ${ent} pç nesta loja — o pedido é rateado em caixa fechada"` : ''}>${l && l.falta > 0 ? `${l.falta}` : '—'}</td>`;
+                const titulo = tem == null ? ' title="Sem contagem"' : ` title="Contou ${l.contado} em ${quando}${l.entregue ? ` e recebeu ${l.entregue} depois` : ''}${l.alvo ? ` · alvo ${l.alvo} pç` : ''}${ent ? ` · entregar ${ent} pç aqui` : ''}"`;
+                if (tem == null) return `<td class="ct-num ct-loja-cel ct-grp-start"${titulo}>—</td>`;
+                return `<td class="ct-num ct-loja-cel ct-grp-start"${titulo}>`
+                     + (l.falta > 0 ? `<span class="ct-falta-col">${l.falta}</span>` : `<span class="ct-em-dia">ok</span>`)
+                     + `<span class="ct-tem-sub">tem ${tem}${l.entregue ? `<span class="ct-sobra">+${l.entregue}</span>` : ''}</span></td>`;
               }).join('')}
               <td class="ct-num">${it.pecas > 0 ? `<b>${it.pecas}</b>` : '—'}</td>
               <td class="ct-num ct-pos">${it.pecas === 0
@@ -11770,6 +11779,8 @@ async function _renderPedidoConsolidado(el, usarCache) {
 
   el.classList.remove('ct-total');
   el.innerHTML = html || '<div class="ct-ped-vazio">Nenhuma contagem registrada ainda.</div>';
+  if (html) el.insertAdjacentHTML('beforeend', `<div class="ct-est-legenda ct-ped-legenda">
+    Em cada loja: <b>falta</b> para o alvo, e embaixo o que ela <b>tem</b> hoje. A necessidade soma as faltas e o módulo fecha uma vez só, no total do grupo.</div>`);
 
   // Mesma resposta serve às duas tabelas — não vale uma segunda chamada.
   _renderEstoqueRede();
@@ -11883,11 +11894,27 @@ function _mixResumoHtml(itens) {
   const origem = origens.length === 1
     ? `divisão ${nomeOrig(origens[0])}${origens[0] === 'medido' && medEm ? ` (${_fmtData(medEm)})` : ''}`
     : `${sac.filter(i => i.origem === 'admin').map(i => i.nome.replace('Sacola de Papel ', '')).join('/')} digitado · resto ${sac.find(i => i.origem !== 'admin').origem === 'medido' ? `medido${medEm ? ` (${_fmtData(medEm)})` : ''}` : 'padrão'}`;
-  const spv = sac[0].sacolasPorVenda || 1;
+  const spv = sac[0].spv || { valor: sac[0].sacolasPorVenda || 1, origem: 'padrao' };
+  const fmtN = v => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const spvTag = spv.origem === 'admin'
+    ? '<span class="ct-auto ct-orig-admin" title="Número digitado. Apague para voltar ao automático.">travado</span>'
+    : spv.origem === 'medido'
+      ? `<span class="ct-auto ct-orig-medido" title="Medido nas contagens${spv.medido?.data ? ` (última em ${_fmtData(spv.medido.data)})` : ''}, suavizado.">medido${spv.medido?.data ? ` ${_fmtData(spv.medido.data).slice(0, 5)}` : ''}</span>`
+      : '<span class="ct-auto ct-orig-padrao" title="Padrão: 1 sacola por venda na média. Some quando duas contagens seguidas medirem o total real.">padrão</span>';
+  const medHint = spv.origem === 'admin' && spv.medido
+    ? `<span class="ct-med-hint" title="Medido nas contagens${spv.medido.data ? ` em ${_fmtData(spv.medido.data)}` : ''}">medido ${fmtN(spv.medido.valor)}</span>` : '';
+  const suspeito = spv.suspeito
+    ? `<span class="ct-spv-susp" title="A contagem de ${_fmtData(spv.suspeito.data)} deu ${fmtN(spv.suspeito.valor)} sacola por venda — fora da faixa de 0,8 a 2,0, então foi ignorada. Provável contagem ou entrega não lançada.">⚠ contagem de ${_fmtData(spv.suspeito.data).slice(0, 5)} deu ${fmtN(spv.suspeito.valor)}/venda — ignorada</span>` : '';
   return `<div class="ct-mix-resumo">
-    <span class="ct-mix-lbl">🛍 Sacola de papel — ${spv === 1 ? 'toda venda leva uma' : `${(spv * 100).toFixed(0)}% das vendas levam uma`}, dividida em</span>
+    <span class="ct-mix-lbl">🛍 Sacola de papel — cada venda leva, na média,</span>
+    <span class="ct-spv-wrap">
+      <input type="number" class="ct-input ct-cfg-spv" min="0.1" max="5" step="0.05" value="${spv.origem === 'admin' ? spv.valor : ''}" placeholder="${fmtN(spv.valor)}">
+      <span class="ct-fator-un">sacola${spv.valor === 1 ? '' : 's'}</span>${spvTag}${medHint}
+    </span>
+    <span class="ct-mix-lbl">dividida em</span>
     ${sac.map(i => `<span class="ct-mix-item"><b>${Math.round((i.share || 0) * 100)}%</b> ${_escHtml(i.nome.replace('Sacola de Papel ', ''))}</span>`).join('<span class="ct-mix-sep">·</span>')}
     <span class="ct-mix-orig">${origem}</span>
+    ${suspeito}
   </div>`;
 }
 
@@ -11910,58 +11937,98 @@ function _projecaoHtml(board) {
   </div>`;
 }
 
+// Data + N meses, no fuso da loja. É até onde a cobertura vai.
+function _addMeses(ds, n) {
+  const d = new Date(`${ds}T12:00:00`);
+  d.setMonth(d.getMonth() + Math.floor(n));
+  const resto = n - Math.floor(n);
+  if (resto > 0) d.setDate(d.getDate() + Math.round(resto * 30));
+  return d.toISOString().slice(0, 10);
+}
+
+// Sacolas que a rede vai gastar de hoje até o fim de N meses, somando a curva
+// mensal projetada de cada loja (S.embalagens.projecao). Anda pelo calendário:
+// o mês atual entra pela fração que falta dele, o último pela fração usada.
+// É uma conta de tela, para a simulação; o servidor faz a dele por loja.
+function _consumoRede(boards, meses) {
+  // a curva é em vendas; vira sacolas pelo total de cada loja
+  const curvas = boards.map(b => {
+    const c = S.embalagens?.projecao?.[b]?.meses;
+    const spv = _embalItens(b).find(i => i.mix)?.sacolasPorVenda || 1;
+    return c ? c.map(v => v * spv) : null;
+  }).filter(Boolean);
+  if (!curvas.length || !(meses > 0)) return null;
+  const rede = Array(12).fill(0);
+  curvas.forEach(c => c.forEach((v, i) => { rede[i] += v; }));
+  const DIAS = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const ini = new Date(`${_hojeBRT()}T12:00:00`);
+  const fim = new Date(`${_addMeses(_hojeBRT(), meses)}T12:00:00`);
+  let total = 0;
+  const cur = new Date(ini);
+  while (cur < fim) {
+    const m = cur.getMonth();
+    const fimMes = new Date(cur.getFullYear(), m + 1, 1, 12);
+    const ate = fimMes < fim ? fimMes : fim;
+    const dias = Math.round((ate - cur) / 86400000);
+    total += rede[m] * dias / DIAS[m];
+    cur.setTime(fimMes.getTime());
+  }
+  return Math.round(total);
+}
+
+// Barra de cobertura/piso. Fica ao lado do pedido porque é o que se mexe para
+// simular: cada campo mostra até que data vai e quanto a rede gasta até lá.
+function _paramsBarHtml() {
+  const h = S.embalagens?.horizonteMeses ?? 3;
+  const p = S.embalagens?.pisoMeses ?? 2;
+  const surfers = ['delrey', 'minas', 'contagem', 'estacao'];
+  const ch = _consumoRede(surfers, h), cp = _consumoRede(surfers, p);
+  const fmt = n => n == null ? '' : ` · ${n.toLocaleString('pt-BR')} sacolas na Surfers`;
+  return `<div class="ct-params ct-params-top">
+    <label class="ct-param">
+      <span>Cobertura</span>
+      <input type="number" class="ct-input" id="ctLead" min="1" max="24" step="1" value="${h}">
+      <span class="ct-param-un">meses</span>
+      <span class="ct-param-ate" id="ctLeadAte">até ${_fmtData(_addMeses(_hojeBRT(), h))}${fmt(ch)}</span>
+    </label>
+    <label class="ct-param">
+      <span>Piso</span>
+      <input type="number" class="ct-input" id="ctPiso" min="1" max="24" step="1" value="${p}">
+      <span class="ct-param-un">meses</span>
+      <span class="ct-param-ate" id="ctPisoAte">até ${_fmtData(_addMeses(_hojeBRT(), p))}${fmt(cp)}</span>
+    </label>
+    <button class="req-action-btn ct-params-aplicar" id="ctParamsAplicar">Aplicar</button>
+    <span class="ct-param-nota">Pedido = consumo até o fim da cobertura + piso − estoque atual. Vale para a rede toda; a sazonalidade entra sozinha (dezembro pesa ~3× janeiro).</span>
+  </div>`;
+}
+
 function _renderContagemAdminView(body) {
   const boards = _embalStoreBoards();
-  const dias   = S.embalagens?.diasContagem || 15;
   let sel = boards[0] || '';
 
   function render() {
     const itens = _embalItens(sel);
     body.innerHTML = `<div class="req-admin-wrap">
-      <div class="ct-admin-sec">
-        <div class="req-sec-hdr">📅 Status da contagem quinzenal</div>
-        <div class="ct-status-grid">
-          ${boards.map(b => {
-            const st = _embalStatus(b);
-            const late = st?.atrasada;
-            return `<div class="ct-status-card${late ? ' ct-status-late' : ''}">
-              <div class="ct-status-top">
-                <span class="dash-store-dot" style="background:${BOARDS[b]?.color || 'var(--muted)'}"></span>
-                <b>${_escHtml(BOARDS[b]?.label || b)}</b>
-              </div>
-              <div class="ct-status-line">${late
-                ? (st?.ultimaData ? `Atrasada há <b>${st.diasAtraso}</b> dia${st.diasAtraso === 1 ? '' : 's'}` : 'Nunca contou')
-                : `Próxima em <b>${_fmtData(st?.proxima)}</b>`}</div>
-              <div class="ct-status-sub">Última: ${_fmtData(st?.ultimaData)}${st?.ultimaPor ? ` · ${_escHtml(st.ultimaPor)}` : ''}</div>
-            </div>`;
-          }).join('')}
-        </div>
-      </div>
-
-      <div class="ct-admin-sec">
-        <div class="req-sec-hdr">📦 Estoque por loja — o que foi contado mais o que chegou depois</div>
-        <div class="ct-total" id="ctEstoqueBody">Carregando…</div>
-      </div>
-
-      <div class="ct-admin-sec">
-        <div class="req-sec-hdr">📈 Consumo projetado de ${_escHtml(BOARDS[sel]?.label || sel)} — o fim do ano se dimensiona sozinho</div>
-        ${_projecaoHtml(sel)}
-      </div>
-
       <div class="ct-admin-sec" id="ctPedidoSec">
         <div class="ct-sec-top">
           <div class="req-sec-hdr">🧾 Pedido consolidado — as Surfers compram num pedido só</div>
           <a class="ct-export-btn" id="ctExportBtn" href="/api/embalagens/pedido/export">↓ Exportar Excel p/ o fornecedor</a>
         </div>
+        ${_paramsBarHtml()}
         <div class="ct-total" id="ctPedidoBody">Carregando…</div>
       </div>
 
       <div class="ct-admin-sec">
-        <div class="req-sec-hdr">📦 Mínimos por loja — a loja conta em peças, o pedido sai em módulos</div>
+        <div class="req-sec-hdr">📦 Estoque e contagens por loja — o que foi contado mais o que chegou depois</div>
+        <div class="ct-total" id="ctEstoqueBody">Carregando…</div>
+      </div>
+
+      <details class="ct-ajustes"${_ajustesAberto ? ' open' : ''}>
+        <summary class="req-sec-hdr ct-ajustes-sum">⚙️ Ajustes por loja — piso, divisão P/M/G, módulo e projeção do ano <span class="ct-ajustes-dica">abrir</span></summary>
         <div class="req-board-chips">
           ${boards.map(b => `<button class="req-board-chip${sel === b ? ' active' : ''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color || 'var(--muted)'}">${_escHtml(BOARDS[b]?.label || b)}</button>`).join('')}
         </div>
-        <p class="ct-help">O <b>piso</b> é o alarme da loja. Em branco ele fica no <b>automático</b>, acompanhando a venda; digite um número para travar, e apague para voltar ao automático. O <b>alvo</b> o sistema calcula sozinho: consumo previsto do horizonte mais o piso. É ele que dimensiona o pedido. <b>Consumo por venda</b> funciona igual ao piso: em branco vale o <b>medido</b> nas contagens (ou o padrão, enquanto não há medição); digite para travar. Para a <b>sacola de papel</b> vale a regra da loja: toda venda leva <b>uma</b>, e P/M/G é só a divisão — os três sempre somam 100%. Os demais itens são unidades por venda: a Seda já vem no PA da loja, porque sai por peça.</p>
+        <p class="ct-help">O <b>piso</b> é o alarme da loja. Em branco ele fica no <b>automático</b>, acompanhando a venda; digite um número para travar, e apague para voltar ao automático. O <b>alvo</b> o sistema calcula sozinho: consumo previsto da cobertura mais o piso. É ele que dimensiona o pedido. <b>Consumo por venda</b> funciona igual ao piso: em branco vale o <b>medido</b> nas contagens (ou o padrão, enquanto não há medição); digite para travar. A <b>sacola de papel</b> é medida em duas partes: quantas saem por venda na média (venda grande leva duas, peça pequena leva uma — o pedido de 2025 deu 1,04) e a divisão P/M/G, que sempre soma 100%. Medição de total fora de 0,8–2,0 por venda é contagem errada e fica de fora. Os demais itens são unidades por venda: a Seda já vem no PA da loja, porque sai por peça.</p>
         ${_mixResumoHtml(itens)}
         <div class="ct-table-wrap">
           <table class="ct-table">
@@ -11991,24 +12058,17 @@ function _renderContagemAdminView(body) {
             </tbody>
           </table>
         </div>
-        <div class="ct-params">
-          <label class="ct-param">
-            <span>Piso da loja</span>
-            <input type="number" class="ct-input" id="ctPiso" min="1" max="24" step="1" value="${S.embalagens?.pisoMeses ?? 2}">
-            <span class="ct-param-un">meses</span>
-          </label>
-          <label class="ct-param">
-            <span>Cobertura do pedido</span>
-            <input type="number" class="ct-input" id="ctLead" min="1" max="24" step="1" value="${S.embalagens?.horizonteMeses ?? 3}">
-            <span class="ct-param-un">meses</span>
-          </label>
-          <span class="ct-param-nota">Vale para a rede toda. Pedido = consumo previsto desses meses + piso − estoque atual. Suba na hora do pedido do fim do ano, para o horizonte atravessar dezembro.</span>
-        </div>
         <div class="req-form-actions">
           <button class="req-submit-btn" id="ctCfgSalvar">Salvar — ${_escHtml(BOARDS[sel]?.label || sel)}</button>
         </div>
-      </div>
+        <div class="ct-proj-sec">
+          <div class="req-sec-hdr">📈 Consumo projetado de ${_escHtml(BOARDS[sel]?.label || sel)} — o fim do ano se dimensiona sozinho</div>
+          ${_projecaoHtml(sel)}
+        </div>
+      </details>
     </div>`;
+
+    body.querySelector('.ct-ajustes')?.addEventListener('toggle', e => { _ajustesAberto = e.target.open; });
 
     body.querySelectorAll('.req-board-chip').forEach(btn =>
       btn.addEventListener('click', () => { sel = btn.dataset.b; render(); }));
@@ -12017,6 +12077,32 @@ function _renderContagemAdminView(body) {
       const inp = body.querySelector(`.ct-cfg-min[data-key="${btn.dataset.key}"]`);
       if (inp) { inp.value = btn.dataset.v; inp.focus(); }
     }));
+
+    // Cobertura/piso: os "até dd/mm" acompanham a digitação; Aplicar grava e
+    // recarrega tudo, porque alvo, piso sugerido e pedido mudam juntos.
+    const surfers = ['delrey', 'minas', 'contagem', 'estacao'];
+    const atualizaAte = (inpId, spanId) => {
+      const v = parseFloat(body.querySelector(`#${inpId}`)?.value);
+      const span = body.querySelector(`#${spanId}`);
+      if (!span || !Number.isFinite(v) || v <= 0) return;
+      const c = _consumoRede(surfers, v);
+      span.textContent = `até ${_fmtData(_addMeses(_hojeBRT(), v))}${c == null ? '' : ` · ${c.toLocaleString('pt-BR')} sacolas na Surfers`}`;
+    };
+    body.querySelector('#ctLead')?.addEventListener('input', () => atualizaAte('ctLead', 'ctLeadAte'));
+    body.querySelector('#ctPiso')?.addEventListener('input', () => atualizaAte('ctPiso', 'ctPisoAte'));
+    body.querySelector('#ctParamsAplicar')?.addEventListener('click', async () => {
+      const horizonteMeses = parseFloat(body.querySelector('#ctLead')?.value);
+      const pisoMeses      = parseFloat(body.querySelector('#ctPiso')?.value);
+      if (!Number.isFinite(horizonteMeses) || !Number.isFinite(pisoMeses)) { toast('Informe cobertura e piso em meses', true); return; }
+      const btn = body.querySelector('#ctParamsAplicar');
+      btn.disabled = true;
+      try {
+        const r = await apiFetch('POST', '/api/embalagens/params', { horizonteMeses, pisoMeses });
+        S.embalagens = { ...S.embalagens, ...r };
+        toast('Cobertura aplicada ✓');
+        render();
+      } catch (e) { toast('Erro: ' + e.message, true); btn.disabled = false; }
+    });
 
     // Descartar a medição: o fator volta ao cadastrado ou ao padrão. Para a
     // sacola de papel o mix é uma medição só — sai P, M e G juntos.
@@ -12055,20 +12141,14 @@ function _renderContagemAdminView(body) {
         const v = inp.value === '' ? 0 : (parseFloat(inp.value) || 0);
         config[inp.dataset.key].porTicket = byKey[inp.dataset.key]?.mix ? v / 100 : v;
       });
+      const spvInp = body.querySelector('.ct-cfg-spv');
+      const sacolasPorVenda = spvInp ? (spvInp.value === '' ? 0 : (parseFloat(spvInp.value) || 0)) : undefined;
       const btn = body.querySelector('#ctCfgSalvar');
       btn.disabled = true;
       try {
-        const horizonteMeses = parseFloat(body.querySelector('#ctLead')?.value);
-        const pisoMeses      = parseFloat(body.querySelector('#ctPiso')?.value);
-        const r = await apiFetch('POST', `/api/embalagens/config/${sel}`, {
-          config,
-          ...(Number.isFinite(horizonteMeses) ? { horizonteMeses } : {}),
-          ...(Number.isFinite(pisoMeses) ? { pisoMeses } : {}),
-        });
+        const r = await apiFetch('POST', `/api/embalagens/config/${sel}`, { config, ...(sacolasPorVenda !== undefined ? { sacolasPorVenda } : {}) });
         S.embalagens.itens[sel] = r.itens;
         if (r.projecao) { if (!S.embalagens.projecao) S.embalagens.projecao = {}; S.embalagens.projecao[sel] = r.projecao; }
-        if (Number.isFinite(horizonteMeses)) S.embalagens.horizonteMeses = horizonteMeses;
-        if (Number.isFinite(pisoMeses)) S.embalagens.pisoMeses = pisoMeses;
         toast('Salvo ✓');
         render();
       } catch (e) { toast('Erro: ' + e.message, true); btn.disabled = false; }
@@ -12081,6 +12161,10 @@ function _renderContagemAdminView(body) {
   }
   render();
 }
+
+// Ajustes por loja ficam recolhidos: quem entra na tela quer o pedido e o
+// estoque; piso e mix se mexem de vez em quando. Lembra se estava aberto.
+let _ajustesAberto = false;
 
 function _renderReqLojaView(body) {
   const board = S.user.board;

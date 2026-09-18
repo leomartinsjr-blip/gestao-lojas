@@ -359,12 +359,26 @@ const EMBALAGENS_CONSUMO_LOJA = {
 // contagens mede só a divisão, nunca o volume.
 const EMBAL_MIX_SACOLAS = ['sacola-papel-p', 'sacola-papel-m', 'sacola-papel-g'];
 
-// Quantas sacolas de papel saem por venda. Uma, salvo na Tommy, onde ~10% das
-// vendas vão em caixa ou envelope de presente em vez de sacola.
+// Quantas sacolas de papel saem por venda, NA MÉDIA — venda grande leva duas,
+// peça pequena leva uma. O pedido de Natal/2025 (11.000 sacolas, ~10 meses,
+// ~10.600 vendas) deu 1,04. Padrão 1; Tommy 0,9 porque ~10% das vendas vão em
+// caixa ou envelope de presente.
 const EMBAL_SACOLAS_POR_VENDA = { tommy: 0.90 };
-function sacolasPorVenda(board) {
-  const v = Number(EMBAL_SACOLAS_POR_VENDA[board]);
-  return Number.isFinite(v) && v > 0 ? v : 1;
+// A contagem mede esse total também, mas só entra o que é crível: fora desta
+// faixa é contagem errada (a Estação "gastou" 2,9 por venda em set/2026), e o
+// ciclo fica marcado como suspeito em vez de virar pedido.
+const EMBAL_SPV_MIN = 0.8, EMBAL_SPV_MAX = 2.0;
+
+// Total em uso na loja: travado pelo admin > medido nas contagens > padrão.
+function sacolasPorVenda(db, board) {
+  const padrao = Number(EMBAL_SACOLAS_POR_VENDA[board]) > 0 ? Number(EMBAL_SACOLAS_POR_VENDA[board]) : 1;
+  const admin  = Number((db?.embalagemSacolasPorVenda || {})[board]);
+  const med    = (db?.embalagemMixSacolas || {})[board];
+  const medido = med?.total > 0 ? { valor: med.total, data: med.totalData || null } : null;
+  const suspeito = med?.suspeito ? { valor: med.suspeito.total, data: med.suspeito.data } : null;
+  if (Number.isFinite(admin) && admin > 0) return { valor: admin, origem: 'admin', medido, suspeito, padrao };
+  if (medido) return { valor: medido.valor, origem: 'medido', medido, suspeito, padrao };
+  return { valor: padrao, origem: 'padrao', medido, suspeito, padrao };
 }
 
 // Sacola da Surfers (Embalagens & Cia). Não há código de catálogo — o pedido
@@ -618,9 +632,12 @@ function medirConsumo(db, board, atual, anterior) {
 
   // Mix das sacolas: só fecha com as três medidas no MESMO ciclo. Faltando uma
   // (negativa, por entrada não lançada), a divisão sairia torta — pula.
-  let mix = null;
+  let mix = null, total = null;
   const cs = EMBAL_MIX_SACOLAS.map(k => consumo[k]);
-  if (cs.every(v => v != null)) mix = normalizarMix(Object.fromEntries(EMBAL_MIX_SACOLAS.map((k, i) => [k, cs[i]])));
+  if (cs.every(v => v != null)) {
+    mix   = normalizarMix(Object.fromEntries(EMBAL_MIX_SACOLAS.map((k, i) => [k, cs[i]])));
+    total = cs.reduce((s, v) => s + v, 0) / tickets;   // sacolas por venda do ciclo
+  }
 
   // Demais itens: unidades por venda. Zero num ciclo é "não deu para ver",
   // não "a loja não usa" — Minas recebeu 100 G e contou 100 G, e o zero tirou
@@ -631,7 +648,7 @@ function medirConsumo(db, board, atual, anterior) {
     itens[k] = c / tickets;
   }
   if (!mix && !Object.keys(itens).length) return null;
-  return { mix, itens, tickets, dias };
+  return { mix, total, itens, tickets, dias };
 }
 
 // Medição acima de tantas vezes o fator em uso é contagem errada, não consumo.
@@ -649,9 +666,21 @@ function gravarConsumoMedido(db, board, medido, data) {
 
   if (medido.mix) {
     if (!db.embalagemMixSacolas) db.embalagemMixSacolas = {};
-    const base = db.embalagemMixSacolas[board]?.mix || emUso.sacolas.mix;
+    const at   = db.embalagemMixSacolas[board] || {};
+    const base = at.mix || emUso.sacolas.mix;
     const mix  = normalizarMix(Object.fromEntries(EMBAL_MIX_SACOLAS.map(k => [k, ((base[k] || 0) + medido.mix[k]) / 2])));
-    db.embalagemMixSacolas[board] = { mix, data, cru: medido.mix };
+    const novo = { ...at, mix, data, cru: medido.mix };
+    // Total: só dentro da faixa crível, e suavizado com o que estava em uso.
+    // Fora dela fica registrado como suspeito — a tela mostra, o pedido ignora.
+    if (medido.total >= EMBAL_SPV_MIN && medido.total <= EMBAL_SPV_MAX) {
+      novo.total = (emUso.sacolasPorVenda + medido.total) / 2;
+      novo.totalData = data;
+      delete novo.suspeito;
+    } else {
+      novo.suspeito = { total: medido.total, data };
+      descartados.push('sacolas-total');
+    }
+    db.embalagemMixSacolas[board] = novo;
   }
 
   if (!db.embalagemMix)      db.embalagemMix      = {};
@@ -744,7 +773,8 @@ function fatorConsumo(db, board, pa) {
   const medEm  = (db.embalagemMedidoEm || {})[board] || {};
   const daLoja = EMBALAGENS_CONSUMO_LOJA[board] || {};
   const sac    = mixSacolas(db, board);
-  const spv    = sacolasPorVenda(board);
+  const spvInfo = sacolasPorVenda(db, board);
+  const spv    = spvInfo.valor;
   const fator = {}, origem = {};
   for (const it of [...EMBALAGENS_BASE, ...(EMBALAGENS_EXTRA[board] || [])]) {
     if (EMBAL_MIX_SACOLAS.includes(it.key)) {
@@ -764,7 +794,7 @@ function fatorConsumo(db, board, pa) {
     else                                          { fator[it.key] = padrao;          origem[it.key] = { origem: 'padrao', data: null }; }
     origem[it.key].medido = temMed ? { valor: medido[it.key], data: medEm[it.key] || null } : null;
   }
-  return { fator, origem, sacolas: sac, sacolasPorVenda: spv };
+  return { fator, origem, sacolas: sac, sacolasPorVenda: spv, spv: spvInfo };
 }
 
 // Duas coisas diferentes, de propósito:
@@ -796,7 +826,7 @@ function embalagensDaLoja(db, board, hoje, mesesOverride) {
   const meses = mesesOverride || embalHorizonteMeses(db);
   const ciclo = EMBAL_DIAS_CONTAGEM;
   const nv    = nivelTickets(db, board, ref);
-  const { fator, origem, sacolasPorVenda: spv } = fatorConsumo(db, board, nv?.pa);
+  const { fator, origem, sacolasPorVenda: spv, spv: spvInfo } = fatorConsumo(db, board, nv?.pa);
   const prev  = nv ? ticketsPrevistosMeses(nv.nivel, board, ref, meses) : null;
   // Piso = os meses de estoque que a loja tem de ter na mão, medidos sobre o
   // consumo PREVISTO desses meses, não sobre um mês médio. Assim ele já sobe
@@ -835,6 +865,8 @@ function embalagensDaLoja(db, board, hoje, mesesOverride) {
       mix:         EMBAL_MIX_SACOLAS.includes(it.key),
       share:       origem[it.key].share ?? null,
       sacolasPorVenda: spv,
+      // total em uso e de onde veio (só faz sentido nos itens do mix)
+      spv:         EMBAL_MIX_SACOLAS.includes(it.key) ? spvInfo : null,
       modulo: moduloEmbalagem(cfg[it.key]?.modulo, pad[it.key]?.modulo),
     };
   });
@@ -3294,6 +3326,17 @@ app.post('/api/embalagens/config/:board', requireAdmin, async (req, res) => {
       };
     }
     db.embalagemConfig[board] = cfg;
+    // Sacolas por venda da loja: número > 0 trava, 0/vazio volta ao automático
+    if (req.body.sacolasPorVenda !== undefined) {
+      const v = Number(req.body.sacolasPorVenda);
+      if (!db.embalagemSacolasPorVenda) db.embalagemSacolasPorVenda = {};
+      if (Number.isFinite(v) && v > 0) {
+        if (v < 0.1 || v > 5) return res.status(400).json({ error: 'Sacolas por venda deve ficar entre 0,1 e 5' });
+        db.embalagemSacolasPorVenda[board] = v;
+      } else {
+        delete db.embalagemSacolasPorVenda[board];
+      }
+    }
     // Lead time é da rede, não da loja — chega junto para não exigir outra tela
     if (req.body.pisoMeses !== undefined) {
       const v = Number(req.body.pisoMeses);
@@ -3309,6 +3352,33 @@ app.post('/api/embalagens/config/:board', requireAdmin, async (req, res) => {
     }
     await writeDB(db);
     res.json({ ok: true, itens: embalagensDaLoja(db, board), cobertura: coberturaLoja(db, board), projecao: projecaoAnual(db, board) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/embalagens/params ───────────────────────────────────────────
+// Cobertura e piso são da rede, não da loja: têm endpoint próprio para não
+// passar pelo config/:board, que substitui o cadastro inteiro da loja.
+// Devolve o mesmo payload do GET /api/embalagens — a tela recarrega tudo.
+app.post('/api/embalagens/params', requireAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const params = { ...(db.embalagemParams || {}) };
+    for (const [campo, rotulo] of [['horizonteMeses', 'Cobertura'], ['pisoMeses', 'Piso']]) {
+      if (req.body[campo] === undefined) continue;
+      const v = Number(req.body[campo]);
+      if (!Number.isFinite(v) || v <= 0 || v > 24)
+        return res.status(400).json({ error: `${rotulo} deve ser de 1 a 24 meses` });
+      params[campo] = v;
+    }
+    db.embalagemParams = params;
+    await writeDB(db);
+    const itens = {}, status = {}, projecao = {};
+    for (const b of EMBAL_STORE_BOARDS) {
+      itens[b]    = embalagensDaLoja(db, b);
+      status[b]   = statusContagem(db, b);
+      projecao[b] = projecaoAnual(db, b);
+    }
+    res.json({ itens, status, projecao, diasContagem: EMBAL_DIAS_CONTAGEM, horizonteMeses: embalHorizonteMeses(db), pisoMeses: embalPisoMeses(db) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
