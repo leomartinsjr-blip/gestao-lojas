@@ -303,9 +303,15 @@ const EMBAL_GRUPOS = [
   { key: 'lez',     label: 'Lez a Lez', boards: ['lez'] },
 ];
 
-// porTicket = quantas unidades do item saem por VENDA. Não é fatia de um bolo:
-// cada item tem o seu, e somar 1 não significa nada. Seda é o caso que deixa
-// isso claro — ela sai por PEÇA, então o padrão dela é o PA da loja.
+// porTicket = quantas unidades do item saem por VENDA. Para a maioria dos itens
+// cada um tem o seu e somar não significa nada — Seda é o caso que deixa isso
+// claro: ela sai por PEÇA, então o padrão dela é o PA da loja.
+//
+// A sacola de papel é a exceção, e é a regra que segura o pedido: toda venda
+// leva UMA sacola, e P/M/G é só a divisão dessa sacola. Os três fatores somam
+// exatamente `sacolasPorVenda` por construção (ver EMBAL_MIX_SACOLAS), então
+// uma contagem chutada pode errar a proporção, mas nunca faz a loja "gastar"
+// três sacolas por venda — foi o que dobrou o pedido de setembro/2026.
 const EMBALAGENS_BASE = [
   { key: 'sacola-papel-p',   nome: 'Sacola de Papel P',            porTicket: 0.455 },
   { key: 'sacola-papel-m',   nome: 'Sacola de Papel M',            porTicket: 0.455 },
@@ -346,6 +352,20 @@ const EMBALAGENS_CONSUMO_LOJA = {
   // envelope de presente. A medição das contagens substitui em dois ciclos.
   tommy:    { 'sacola-papel-p': 0.05, 'sacola-papel-m': 0.60, 'sacola-papel-g': 0.25 },
 };
+
+// As três sacolas de papel formam um mix: os fatores são fatias de UMA sacola
+// por venda. O padrão de cada loja (EMBALAGENS_BASE / EMBALAGENS_CONSUMO_LOJA)
+// e o que o admin cadastra são lidos como pesos e normalizados; a medição das
+// contagens mede só a divisão, nunca o volume.
+const EMBAL_MIX_SACOLAS = ['sacola-papel-p', 'sacola-papel-m', 'sacola-papel-g'];
+
+// Quantas sacolas de papel saem por venda. Uma, salvo na Tommy, onde ~10% das
+// vendas vão em caixa ou envelope de presente em vez de sacola.
+const EMBAL_SACOLAS_POR_VENDA = { tommy: 0.90 };
+function sacolasPorVenda(board) {
+  const v = Number(EMBAL_SACOLAS_POR_VENDA[board]);
+  return Number.isFinite(v) && v > 0 ? v : 1;
+}
 
 // Sacola da Surfers (Embalagens & Cia). Não há código de catálogo — o pedido
 // vai pelo nome do item. A G tem lote menor que as outras duas: ela sai bem
@@ -509,11 +529,30 @@ function ticketsPrevistosMeses(nivel, board, deDateStr, meses) {
   return ticketsPrevistos(nivel, board, deDateStr, Math.round((fim - d0) / 86400000));
 }
 
+// Contagens de uma loja, da mais recente para a mais antiga. Duas no mesmo dia
+// são a mesma contagem corrigida: a segunda vale, então o desempate é pela
+// hora de criação — antes a ordenação estável devolvia a PRIMEIRA do dia, e a
+// medição de Contagem em 17/09/2026 partiu de M=400 quando a loja tinha
+// corrigido para 500.
+function contagensDaLoja(db, board) {
+  return (db.contagensEmbalagem || [])
+    .filter(c => c.board === board)
+    .sort((a, b) => (b.data || '').localeCompare(a.data || '')
+                 || (b.createdAt || '').localeCompare(a.createdAt || ''));
+}
+
+// Última contagem da loja; com `antesDe`, a última de um dia ANTERIOR a essa
+// data — é a "anterior" da medição, que nunca pode ser do mesmo dia.
+function ultimaContagem(db, board, antesDe) {
+  return contagensDaLoja(db, board).find(c => !antesDe || (c.data || '') < antesDe) || null;
+}
+
 // Mede o consumo real entre a contagem anterior e a de agora:
 //   consumo = tinha antes + recebeu no meio − tem agora
-// dividido pelos tickets do período, dá o consumo por venda de verdade.
-// Só substitui o padrão quando o período tem tamanho suficiente para significar
-// algo, e entra suavizado — um ciclo atípico não deve virar a régua sozinho.
+// Para as sacolas de papel isso vira a DIVISÃO P/M/G (mix); para os demais
+// itens, consumo dividido pelos tickets do período. Só mede quando o período
+// tem tamanho suficiente para significar algo. Quem suaviza e descarta o que
+// não faz sentido é gravarConsumoMedido().
 function medirConsumo(db, board, atual, anterior) {
   if (!anterior || !anterior.data || anterior.data >= atual.data) return null;
   const dias = Math.round((new Date(`${atual.data}T12:00:00`) - new Date(`${anterior.data}T12:00:00`)) / 86400000);
@@ -566,48 +605,166 @@ function medirConsumo(db, board, atual, anterior) {
   }
   if (tickets < 20) return null;
 
-  const out = {};
+  const consumo = {};
   for (const it of [...EMBALAGENS_BASE, ...(EMBALAGENS_EXTRA[board] || [])]) {
     const antes = anterior.contagem?.[it.key];
     const agora = atual.contagem?.[it.key];
     if (antes == null || agora == null) continue;
-    const consumo = antes + (recebido[it.key] || 0) - agora;
+    const c = antes + (recebido[it.key] || 0) - agora;
     // Negativo significa entrada não registrada; não dá para medir nesse ciclo.
-    if (consumo < 0) continue;
-    out[it.key] = consumo / tickets;
+    if (c < 0) continue;
+    consumo[it.key] = c;
   }
-  return Object.keys(out).length ? out : null;
+
+  // Mix das sacolas: só fecha com as três medidas no MESMO ciclo. Faltando uma
+  // (negativa, por entrada não lançada), a divisão sairia torta — pula.
+  let mix = null;
+  const cs = EMBAL_MIX_SACOLAS.map(k => consumo[k]);
+  if (cs.every(v => v != null)) mix = normalizarMix(Object.fromEntries(EMBAL_MIX_SACOLAS.map((k, i) => [k, cs[i]])));
+
+  // Demais itens: unidades por venda. Zero num ciclo é "não deu para ver",
+  // não "a loja não usa" — Minas recebeu 100 G e contou 100 G, e o zero tirou
+  // a G do pedido dela.
+  const itens = {};
+  for (const [k, c] of Object.entries(consumo)) {
+    if (EMBAL_MIX_SACOLAS.includes(k) || c <= 0) continue;
+    itens[k] = c / tickets;
+  }
+  if (!mix && !Object.keys(itens).length) return null;
+  return { mix, itens, tickets, dias };
 }
 
-// Guarda a medição suavizada contra a anterior (média móvel simples de 2).
-function gravarConsumoMedido(db, board, medido) {
-  if (!medido) return;
-  if (!db.embalagemMix) db.embalagemMix = {};
-  const at = db.embalagemMix[board] || {};
-  for (const [k, v] of Object.entries(medido)) {
-    at[k] = at[k] != null ? (at[k] + v) / 2 : v;
+// Medição acima de tantas vezes o fator em uso é contagem errada, não consumo.
+const EMBAL_SALTO_MAX = 3;
+
+// Guarda a medição SUAVIZADA: média com o que estava em uso — inclusive na
+// primeira vez, contra o padrão. Antes a primeira medição entrava crua e virava
+// a régua sozinha; foi assim que uma contagem chutada dobrou o pedido.
+// Devolve as chaves descartadas por salto absurdo, para quem quiser avisar.
+function gravarConsumoMedido(db, board, medido, data) {
+  if (!medido) return [];
+  const descartados = [];
+  const nv    = nivelTickets(db, board, data || todayBRT());
+  const emUso = fatorConsumo(db, board, nv?.pa);
+
+  if (medido.mix) {
+    if (!db.embalagemMixSacolas) db.embalagemMixSacolas = {};
+    const base = db.embalagemMixSacolas[board]?.mix || emUso.sacolas.mix;
+    const mix  = normalizarMix(Object.fromEntries(EMBAL_MIX_SACOLAS.map(k => [k, ((base[k] || 0) + medido.mix[k]) / 2])));
+    db.embalagemMixSacolas[board] = { mix, data, cru: medido.mix };
   }
-  db.embalagemMix[board] = at;
+
+  if (!db.embalagemMix)      db.embalagemMix      = {};
+  if (!db.embalagemMedidoEm) db.embalagemMedidoEm = {};
+  const at = db.embalagemMix[board]      || {};
+  const em = db.embalagemMedidoEm[board] || {};
+  for (const [k, v] of Object.entries(medido.itens || {})) {
+    const atual = emUso.fator[k] || 0;
+    if (atual > 0 && v > EMBAL_SALTO_MAX * atual) { descartados.push(k); continue; }
+    at[k] = at[k] > 0 ? (at[k] + v) / 2 : (atual > 0 ? (atual + v) / 2 : v);
+    em[k] = data;
+  }
+  db.embalagemMix[board]      = at;
+  db.embalagemMedidoEm[board] = em;
+  return descartados;
 }
 
-// Consumo por venda de cada item. Vale o medido das contagens quando houver;
-// senão o que o admin cadastrou; senão o padrão de fábrica do catálogo — que já
-// vem preenchido para o sistema funcionar sem ninguém digitar nada.
+// Pesos → fatias que somam 1. Null quando não há peso nenhum.
+function normalizarMix(pesos) {
+  const p = Object.fromEntries(EMBAL_MIX_SACOLAS.map(k => [k, Math.max(0, Number(pesos?.[k]) || 0)]));
+  const soma = Object.values(p).reduce((s, v) => s + v, 0);
+  if (!(soma > 0)) return null;
+  return Object.fromEntries(EMBAL_MIX_SACOLAS.map(k => [k, p[k] / soma]));
+}
+
+function mixPadrao(board) {
+  const daLoja = EMBALAGENS_CONSUMO_LOJA[board] || {};
+  return normalizarMix(Object.fromEntries(EMBAL_MIX_SACOLAS.map(k => {
+    const it = EMBALAGENS_BASE.find(i => i.key === k);
+    return [k, daLoja[k] != null ? daLoja[k] : (it?.porTicket || 0)];
+  }))) || Object.fromEntries(EMBAL_MIX_SACOLAS.map(k => [k, 1 / EMBAL_MIX_SACOLAS.length]));
+}
+
+// Divisão P/M/G em uso na loja. Precedência: cadastrado > medido > padrão —
+// digitar é travar, apagar volta ao automático, igual ao piso.
+//
+// O admin digita FATIAS (0,43 = 43%). Com as três digitadas, a soma é
+// normalizada para 1. Com só uma ou duas, a digitada fica fixa e o que sobra
+// de 1 se divide entre as outras na proporção do automático (medido ou
+// padrão) — travar o P em 50% não pode zerar M e G, que era o que acontecia
+// quando a normalização rodava só sobre o que estava digitado.
+function mixSacolas(db, board) {
+  const cfg    = (db.embalagemConfig || {})[board] || {};
+  const med    = (db.embalagemMixSacolas || {})[board];
+  const medido = med?.mix ? normalizarMix(med.mix) : null;
+  const auto   = medido || mixPadrao(board);
+  const autoOrigem = medido ? 'medido' : 'padrao';
+
+  const digitado = {};
+  for (const k of EMBAL_MIX_SACOLAS) {
+    const v = Number(cfg[k]?.porTicket);
+    if (Number.isFinite(v) && v > 0) digitado[k] = v;
+  }
+  const fixos = Object.keys(digitado);
+  const livres = EMBAL_MIX_SACOLAS.filter(k => !digitado[k]);
+  const somaFixa = fixos.reduce((s, k) => s + digitado[k], 0);
+
+  let mix, origem;
+  if (!fixos.length) {
+    mix = auto;
+    origem = Object.fromEntries(EMBAL_MIX_SACOLAS.map(k => [k, autoOrigem]));
+  } else if (!livres.length || somaFixa >= 1) {
+    // tudo digitado (ou o digitado já fecha 100%): normaliza o que foi digitado
+    mix = normalizarMix(digitado);
+    origem = Object.fromEntries(EMBAL_MIX_SACOLAS.map(k => [k, 'admin']));
+  } else {
+    const resto = 1 - somaFixa;
+    const somaAutoLivre = livres.reduce((s, k) => s + (auto[k] || 0), 0);
+    mix = { ...digitado };
+    for (const k of livres) mix[k] = resto * (somaAutoLivre > 0 ? (auto[k] || 0) / somaAutoLivre : 1 / livres.length);
+    origem = Object.fromEntries(EMBAL_MIX_SACOLAS.map(k => [k, digitado[k] ? 'admin' : autoOrigem]));
+  }
+  return {
+    mix,
+    origem,
+    data:   medido ? (med.data || null) : null,
+    medido: medido ? { mix: medido, data: med.data || null } : null,
+  };
+}
+
+// Consumo por venda de cada item, com a origem de cada número.
+//   sacolas P/M/G — fatia do mix × sacolas por venda (somam 1 por construção)
+//   demais        — cadastrado > medido (>0) > padrão do catálogo, que já vem
+//                   preenchido para o sistema funcionar sem ninguém digitar.
+// O medido antigo guardado como 0 é lido como "sem medição": era o zero de um
+// ciclo sem consumo visível, e apagava o item do pedido.
 function fatorConsumo(db, board, pa) {
   const cfg    = (db.embalagemConfig || {})[board] || {};
-  const medido = (db.embalagemMix || {})[board];
-  const out = {};
+  const medido = (db.embalagemMix || {})[board] || {};
+  const medEm  = (db.embalagemMedidoEm || {})[board] || {};
   const daLoja = EMBALAGENS_CONSUMO_LOJA[board] || {};
+  const sac    = mixSacolas(db, board);
+  const spv    = sacolasPorVenda(board);
+  const fator = {}, origem = {};
   for (const it of [...EMBALAGENS_BASE, ...(EMBALAGENS_EXTRA[board] || [])]) {
+    if (EMBAL_MIX_SACOLAS.includes(it.key)) {
+      const o = sac.origem[it.key];
+      fator[it.key]  = sac.mix[it.key] * spv;
+      origem[it.key] = { origem: o, data: o === 'medido' ? sac.data : null, share: sac.mix[it.key],
+                         medido: sac.medido ? { valor: sac.medido.mix[it.key], data: sac.medido.data } : null };
+      continue;
+    }
     const padrao = daLoja[it.key] != null ? daLoja[it.key]
                  : it.porPeca != null ? it.porPeca * (pa || 0)
                  : (it.porTicket || 0);
     const doAdmin = Number(cfg[it.key]?.porTicket);
-    out[it.key] = medido?.[it.key] != null ? medido[it.key]
-                : Number.isFinite(doAdmin) && doAdmin > 0 ? doAdmin
-                : padrao;
+    const temMed  = medido[it.key] > 0;
+    if (Number.isFinite(doAdmin) && doAdmin > 0) { fator[it.key] = doAdmin;         origem[it.key] = { origem: 'admin',  data: null }; }
+    else if (temMed)                              { fator[it.key] = medido[it.key];  origem[it.key] = { origem: 'medido', data: medEm[it.key] || null }; }
+    else                                          { fator[it.key] = padrao;          origem[it.key] = { origem: 'padrao', data: null }; }
+    origem[it.key].medido = temMed ? { valor: medido[it.key], data: medEm[it.key] || null } : null;
   }
-  return out;
+  return { fator, origem, sacolas: sac, sacolasPorVenda: spv };
 }
 
 // Duas coisas diferentes, de propósito:
@@ -639,7 +796,7 @@ function embalagensDaLoja(db, board, hoje, mesesOverride) {
   const meses = mesesOverride || embalHorizonteMeses(db);
   const ciclo = EMBAL_DIAS_CONTAGEM;
   const nv    = nivelTickets(db, board, ref);
-  const fator = fatorConsumo(db, board, nv?.pa);
+  const { fator, origem, sacolasPorVenda: spv } = fatorConsumo(db, board, nv?.pa);
   const prev  = nv ? ticketsPrevistosMeses(nv.nivel, board, ref, meses) : null;
   // Piso = os meses de estoque que a loja tem de ter na mão, medidos sobre o
   // consumo PREVISTO desses meses, não sobre um mês médio. Assim ele já sobe
@@ -669,6 +826,15 @@ function embalagensDaLoja(db, board, hoje, mesesOverride) {
       cobertura:   ativo ? Math.ceil(prev * f) + (manual > 0 ? manual : (sugerido || 0)) : null,
       meses,
       porTicket:   f,
+      // de onde veio o fator — é o que a tela mostra ao lado do número
+      origem:      origem[it.key].origem,
+      medidoEm:    origem[it.key].data,
+      medido:      origem[it.key].medido,
+      cadastrado:  Number(cfg[it.key]?.porTicket) > 0 ? Number(cfg[it.key].porTicket) : null,
+      // sacola de papel: fatia de uma sacola por venda, não fator solto
+      mix:         EMBAL_MIX_SACOLAS.includes(it.key),
+      share:       origem[it.key].share ?? null,
+      sacolasPorVenda: spv,
       modulo: moduloEmbalagem(cfg[it.key]?.modulo, pad[it.key]?.modulo),
     };
   });
@@ -754,9 +920,7 @@ function addDias(dateStr, n) {
 // abaixoDoPiso da tela da loja para o painel nunca discordar da linha vermelha
 // que o gerente vê na contagem.
 function itensAbaixoDoPiso(db, board, itens) {
-  const ultima = (db.contagensEmbalagem || [])
-    .filter(c => c.board === board)
-    .sort((a, b) => (b.data || '').localeCompare(a.data || ''))[0];
+  const ultima = ultimaContagem(db, board);
   if (!ultima) return null;
   const entregue = entreguesDesde(db, board, ultima.data);
   const abaixo = [];
@@ -773,9 +937,7 @@ function itensAbaixoDoPiso(db, board, itens) {
 // Status da contagem quinzenal de uma loja: quando foi a última, quando vence a
 // próxima e há quantos dias está atrasada (nunca contou → atrasada desde já).
 function statusContagem(db, board) {
-  const ultima = (db.contagensEmbalagem || [])
-    .filter(c => c.board === board)
-    .sort((a, b) => (b.data || '').localeCompare(a.data || ''))[0] || null;
+  const ultima = ultimaContagem(db, board);
   const hoje = todayBRT();
   const proxima = ultima ? addDias(ultima.data, EMBAL_DIAS_CONTAGEM) : hoje;
   const diasAtraso = Math.max(0, Math.round(
@@ -3150,6 +3312,27 @@ app.post('/api/embalagens/config/:board', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── DELETE /api/embalagens/medicao/:board/:key ────────────────────────────
+// Descarta a medição das contagens de um item — ou do mix inteiro das
+// sacolas, que é uma medição só. O fator volta ao cadastrado ou ao padrão, e
+// a próxima contagem mede de novo, do zero.
+app.delete('/api/embalagens/medicao/:board/:key', requireAdmin, async (req, res) => {
+  try {
+    const { board, key } = req.params;
+    if (!EMBAL_STORE_BOARDS.includes(board))
+      return res.status(400).json({ error: 'Loja inválida' });
+    const db = await readDB();
+    if (key === 'sacolas' || EMBAL_MIX_SACOLAS.includes(key)) {
+      if (db.embalagemMixSacolas) delete db.embalagemMixSacolas[board];
+    } else {
+      if (db.embalagemMix?.[board])      delete db.embalagemMix[board][key];
+      if (db.embalagemMedidoEm?.[board]) delete db.embalagemMedidoEm[board][key];
+    }
+    await writeDB(db);
+    res.json({ ok: true, itens: embalagensDaLoja(db, board), projecao: projecaoAnual(db, board) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── POST /api/embalagens/contagem ─────────────────────────────────────────
 // A loja lança o que tem em peças; devolve a sugestão de pedido em módulos.
 // Não cria requisição — a loja revisa a sugestão e envia pelo fluxo normal.
@@ -3166,20 +3349,43 @@ app.post('/api/embalagens/contagem', requireAuth, async (req, res) => {
       const v = req.body.contagem?.[it.key];
       contagem[it.key] = Math.max(0, Math.round(Number(v) || 0));
     }
-    const anterior = (db.contagensEmbalagem || [])
-      .filter(c => c.board === board)
-      .sort((a, b) => (b.data || '').localeCompare(a.data || ''))[0] || null;
+    const hoje = todayBRT();
+    // Contar de novo no mesmo dia é corrigir a contagem, não fazer outra: a
+    // anterior sai do histórico e a medição que ela gerou é desfeita, senão o
+    // consumo seria suavizado duas vezes a partir do mesmo ciclo.
+    const doDia = db.contagensEmbalagem.filter(c => c.board === board && c.data === hoje);
+    if (doDia.length) {
+      const snap = doDia[0].mixAntes;
+      if (snap) {
+        if (!db.embalagemMix)        db.embalagemMix = {};
+        if (!db.embalagemMixSacolas) db.embalagemMixSacolas = {};
+        if (!db.embalagemMedidoEm)   db.embalagemMedidoEm = {};
+        db.embalagemMix[board]      = snap.itens    || {};
+        db.embalagemMedidoEm[board] = snap.medidoEm || {};
+        if (snap.sacolas) db.embalagemMixSacolas[board] = snap.sacolas;
+        else delete db.embalagemMixSacolas[board];
+      }
+      db.contagensEmbalagem = db.contagensEmbalagem.filter(c => !(c.board === board && c.data === hoje));
+    }
+    const anterior = ultimaContagem(db, board, hoje);
+    const clone = (v) => v == null ? null : JSON.parse(JSON.stringify(v));
     const item = {
       id: nextId(db), board,
-      data:      todayBRT(),
+      data:      hoje,
       contagem,
       createdAt: new Date().toISOString(),
       createdBy: req.session.user.label || req.session.user.username,
+      // o que estava em uso antes desta contagem medir — para desfazer
+      mixAntes: {
+        itens:    clone((db.embalagemMix || {})[board]),
+        sacolas:  clone((db.embalagemMixSacolas || {})[board]),
+        medidoEm: clone((db.embalagemMedidoEm || {})[board]),
+      },
     };
     db.contagensEmbalagem.push(item);
     // Fecha o ciclo: com duas contagens dá para medir o consumo real e parar
     // de depender do padrão do catálogo.
-    gravarConsumoMedido(db, board, medirConsumo(db, board, item, anterior));
+    gravarConsumoMedido(db, board, medirConsumo(db, board, item, anterior), hoje);
     await writeDB(db);
     res.json({
       contagem: item,
@@ -3233,9 +3439,9 @@ function distribuirModulos(faltaPorLoja, modulo, totalModulos) {
 // Usada pela tela e pelo Excel — o arquivo nunca diverge do que está em tela.
 function montarPedido(db) {
   const ultimaPorLoja = {};
-      for (const c of (db.contagensEmbalagem || [])) {
-        const at = ultimaPorLoja[c.board];
-        if (!at || (c.data || '') > (at.data || '')) ultimaPorLoja[c.board] = c;
+      for (const b of EMBAL_STORE_BOARDS) {
+        const c = ultimaContagem(db, b);
+        if (c) ultimaPorLoja[b] = c;
       }
       return EMBAL_GRUPOS.map(g => {
         const linhas = {};

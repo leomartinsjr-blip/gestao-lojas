@@ -11843,6 +11843,54 @@ async function _renderPedidoConsolidado(el, usarCache) {
   }
 }
 
+// Célula "Consumo p/ venda" da tela de mínimos. Mesma lógica do piso: input em
+// branco = automático (medido ou padrão), digitado = travado. Ao lado, de onde
+// veio o número em uso — e o ✕ que descarta a medição quando ela existe.
+function _fatorCelulaHtml(it) {
+  const pct = v => `${Math.round((Number(v) || 0) * 100)}%`;
+  const dec = v => (+Number(v || 0).toFixed(3)).toString();
+  const emUso = it.mix ? pct(it.share) : dec(it.porTicket);
+  const travado = it.origem === 'admin';
+  const valor = !travado ? '' : (it.mix ? Math.round((it.share || 0) * 100) : dec(it.cadastrado ?? it.porTicket));
+  const input = it.mix
+    ? `<input type="number" class="ct-input ct-cfg-share ct-cfg-pct" data-key="${it.key}" min="0" max="100" step="1" value="${valor}" placeholder="${emUso}">`
+    : `<input type="number" class="ct-input ct-cfg-share" data-key="${it.key}" min="0" max="99" step="0.005" value="${valor}" placeholder="${emUso}">`;
+  let tag;
+  if (travado) {
+    tag = `<span class="ct-auto ct-orig-admin" title="Número digitado. Apague para voltar ao automático.">travado</span>`;
+  } else if (it.origem === 'medido') {
+    tag = `<span class="ct-auto ct-orig-medido" title="Medido nas contagens da loja${it.medidoEm ? ` (última em ${_fmtData(it.medidoEm)})` : ''}, suavizado com o valor anterior.">medido${it.medidoEm ? ` ${_fmtData(it.medidoEm).slice(0, 5)}` : ''}</span>`;
+  } else {
+    tag = `<span class="ct-auto ct-orig-padrao" title="Padrão do catálogo. Some assim que duas contagens seguidas medirem o consumo real.">padrão</span>`;
+  }
+  // Medição existe mas está por baixo de um número travado: mostra e deixa descartar
+  const medHint = travado && it.medido
+    ? `<span class="ct-med-hint" title="Medido nas contagens${it.medido.data ? ` em ${_fmtData(it.medido.data)}` : ''}">medido ${it.mix ? pct(it.medido.valor) : dec(it.medido.valor)}</span>` : '';
+  const del = it.medido
+    ? `<button type="button" class="ct-med-del" data-key="${it.key}" title="Descartar a medição das contagens">✕</button>` : '';
+  return `<div class="ct-fator-wrap">${input}<span class="ct-fator-un">${it.mix ? '%' : '/venda'}</span>${tag}${medHint}${del}</div>`;
+}
+
+// Linha-resumo da sacola de papel: a divisão em uso e de onde ela veio. É a
+// regra que segura o pedido — os três somam 100% por construção.
+function _mixResumoHtml(itens) {
+  const sac = itens.filter(i => i.mix);
+  if (!sac.length) return '';
+  const nomeOrig = o => o === 'admin' ? 'digitada' : o === 'medido' ? 'medida nas contagens' : 'padrão do catálogo';
+  const medEm = sac.find(i => i.medidoEm)?.medidoEm;
+  const origens = [...new Set(sac.map(i => i.origem))];
+  // Uma origem só: "divisão medida (14/09)". Mista: "P digitado · resto medido"
+  const origem = origens.length === 1
+    ? `divisão ${nomeOrig(origens[0])}${origens[0] === 'medido' && medEm ? ` (${_fmtData(medEm)})` : ''}`
+    : `${sac.filter(i => i.origem === 'admin').map(i => i.nome.replace('Sacola de Papel ', '')).join('/')} digitado · resto ${sac.find(i => i.origem !== 'admin').origem === 'medido' ? `medido${medEm ? ` (${_fmtData(medEm)})` : ''}` : 'padrão'}`;
+  const spv = sac[0].sacolasPorVenda || 1;
+  return `<div class="ct-mix-resumo">
+    <span class="ct-mix-lbl">🛍 Sacola de papel — ${spv === 1 ? 'toda venda leva uma' : `${(spv * 100).toFixed(0)}% das vendas levam uma`}, dividida em</span>
+    ${sac.map(i => `<span class="ct-mix-item"><b>${Math.round((i.share || 0) * 100)}%</b> ${_escHtml(i.nome.replace('Sacola de Papel ', ''))}</span>`).join('<span class="ct-mix-sep">·</span>')}
+    <span class="ct-mix-orig">${origem}</span>
+  </div>`;
+}
+
 // Curva do ano da loja: é ela que faz o pedido do fim do ano ser grande sozinho.
 // Base 100 em janeiro, do jeito que o usuário raciocina sobre sazonalidade.
 function _projecaoHtml(board) {
@@ -11913,7 +11961,8 @@ function _renderContagemAdminView(body) {
         <div class="req-board-chips">
           ${boards.map(b => `<button class="req-board-chip${sel === b ? ' active' : ''}" data-b="${b}" style="--rbc:${BOARDS[b]?.color || 'var(--muted)'}">${_escHtml(BOARDS[b]?.label || b)}</button>`).join('')}
         </div>
-        <p class="ct-help">O <b>piso</b> é o alarme da loja. Em branco ele fica no <b>automático</b>, acompanhando a venda; digite um número para travar, e apague para voltar ao automático. O <b>alvo</b> o sistema calcula sozinho: consumo previsto do horizonte mais o piso. É ele que dimensiona o pedido. <b>Consumo por venda</b> é quantas unidades do item saem a cada venda: 0,455 sacola P significa que pouco menos da metade das vendas leva uma P; a Seda já vem no PA da loja, porque sai por peça. Deixar em 0 tira o item do cálculo.</p>
+        <p class="ct-help">O <b>piso</b> é o alarme da loja. Em branco ele fica no <b>automático</b>, acompanhando a venda; digite um número para travar, e apague para voltar ao automático. O <b>alvo</b> o sistema calcula sozinho: consumo previsto do horizonte mais o piso. É ele que dimensiona o pedido. <b>Consumo por venda</b> funciona igual ao piso: em branco vale o <b>medido</b> nas contagens (ou o padrão, enquanto não há medição); digite para travar. Para a <b>sacola de papel</b> vale a regra da loja: toda venda leva <b>uma</b>, e P/M/G é só a divisão — os três sempre somam 100%. Os demais itens são unidades por venda: a Seda já vem no PA da loja, porque sai por peça.</p>
+        ${_mixResumoHtml(itens)}
         <div class="ct-table-wrap">
           <table class="ct-table">
             <thead><tr>
@@ -11933,7 +11982,7 @@ function _renderContagemAdminView(body) {
                   <td class="ct-num ct-sug">${it.minSugerido != null
                       ? `<button type="button" class="ct-usar" data-key="${it.key}" data-v="${it.minSugerido}" title="Travar o piso neste valor">${it.minSugerido}</button>`
                       : '—'}</td>
-                  <td><input type="number" class="ct-input ct-cfg-share" data-key="${it.key}" min="0" max="99" step="0.005" value="${it.porTicket != null ? +Number(it.porTicket).toFixed(3) : ''}" placeholder="—"></td>
+                  <td class="ct-fator-cell">${_fatorCelulaHtml(it)}</td>
                   <td><input type="number" class="ct-input ct-cfg-mod" data-key="${it.key}" min="1" max="9999" value="${it.modulo || 1}"></td>
                   <td class="ct-num ct-pos">${it.cobertura != null
                       ? `${it.cobertura}<span class="ct-alvo-det">${it.consumo} + ${it.min}</span>`
@@ -11969,18 +12018,42 @@ function _renderContagemAdminView(body) {
       if (inp) { inp.value = btn.dataset.v; inp.focus(); }
     }));
 
+    // Descartar a medição: o fator volta ao cadastrado ou ao padrão. Para a
+    // sacola de papel o mix é uma medição só — sai P, M e G juntos.
+    body.querySelectorAll('.ct-med-del').forEach(btn => btn.addEventListener('click', async () => {
+      const it = itens.find(i => i.key === btn.dataset.key);
+      const alvo = it?.mix ? 'sacolas' : btn.dataset.key;
+      const msg = it?.mix
+        ? 'Descartar a divisão P/M/G medida nas contagens? Volta ao padrão (ou ao que estiver digitado) até a próxima contagem medir de novo.'
+        : `Descartar a medição de ${it?.nome || btn.dataset.key}? Volta ao padrão (ou ao que estiver digitado).`;
+      if (!confirm(msg)) return;
+      btn.disabled = true;
+      try {
+        const r = await apiFetch('DELETE', `/api/embalagens/medicao/${sel}/${encodeURIComponent(alvo)}`);
+        S.embalagens.itens[sel] = r.itens;
+        if (r.projecao) { if (!S.embalagens.projecao) S.embalagens.projecao = {}; S.embalagens.projecao[sel] = r.projecao; }
+        toast('Medição descartada ✓');
+        render();
+      } catch (e) { toast('Erro: ' + e.message, true); btn.disabled = false; }
+    }));
+
     _renderPedidoConsolidado(body.querySelector('#ctPedidoBody'));
 
     body.querySelector('#ctCfgSalvar')?.addEventListener('click', async () => {
       const config = {};
+      const byKey = Object.fromEntries(itens.map(i => [i.key, i]));
       body.querySelectorAll('.ct-cfg-min').forEach(inp => {
         config[inp.dataset.key] = { min: parseInt(inp.value) || 0, modulo: 1, porTicket: 0 };
       });
       body.querySelectorAll('.ct-cfg-mod').forEach(inp => {
         if (config[inp.dataset.key]) config[inp.dataset.key].modulo = Math.max(1, parseInt(inp.value) || 1);
       });
+      // Em branco = automático (0 no servidor). Sacola vai em % e o servidor
+      // normaliza — o que importa é a proporção entre as três.
       body.querySelectorAll('.ct-cfg-share').forEach(inp => {
-        if (config[inp.dataset.key]) config[inp.dataset.key].porTicket = parseFloat(inp.value) || 0;
+        if (!config[inp.dataset.key]) return;
+        const v = inp.value === '' ? 0 : (parseFloat(inp.value) || 0);
+        config[inp.dataset.key].porTicket = byKey[inp.dataset.key]?.mix ? v / 100 : v;
       });
       const btn = body.querySelector('#ctCfgSalvar');
       btn.disabled = true;

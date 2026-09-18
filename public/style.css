@@ -4561,3 +4561,19 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
   .mx-sync-btn:hover { padding: .3rem .4rem; }
   .mx-sync-btn:hover #mxSyncLabel { max-width: 0; opacity: 0; margin-left: 0; }
 }
+/* mínimos: consumo por venda com origem (padrão / medido / travado) e descarte da medição */
+.ct-fator-cell { padding-top: .2rem !important; padding-bottom: .2rem !important; }
+.ct-fator-wrap { display: flex; align-items: center; gap: .3rem; flex-wrap: nowrap; }
+.ct-fator-wrap .ct-input { width: 4.4rem; }
+.ct-fator-un { font-size: .66rem; color: var(--muted); }
+.ct-orig-padrao { color: var(--muted); background: rgba(var(--tint-rgb), .08); }
+.ct-orig-medido { color: var(--up); background: rgba(var(--up-rgb), .14); }
+.ct-orig-admin  { color: var(--warn-strong); background: rgba(var(--warn-rgb), .14); }
+.ct-med-hint { font-size: .64rem; color: var(--muted); white-space: nowrap; cursor: help; }
+.ct-med-del { background: transparent; border: 1px solid var(--border); color: var(--muted); font-size: .66rem; line-height: 1; padding: .1rem .3rem; border-radius: 3px; cursor: pointer; }
+.ct-med-del:hover { border-color: var(--down, #e5484d); color: var(--down, #e5484d); }
+.ct-mix-resumo { display: flex; align-items: center; flex-wrap: wrap; gap: .35rem .5rem; font-size: .78rem; color: var(--muted); border: 1px solid var(--border); border-radius: 7px; padding: .45rem .75rem; margin: 0 0 .7rem; background: var(--hover-bg, rgba(var(--tint-rgb),.03)); }
+.ct-mix-lbl { color: var(--text); }
+.ct-mix-item b { color: var(--accent); font-variant-numeric: tabular-nums; }
+.ct-mix-sep { opacity: .5; }
+.ct-mix-orig { margin-left: auto; font-size: .7rem; font-style: italic; }
