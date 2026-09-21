@@ -1591,31 +1591,44 @@ td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { backgro
 .folgas-close-btn:hover { color: var(--down); }
 
 /* ── Users Modal ──────────────────────────────────────────────────────────── */
-.users-body { padding: 1rem; display: flex; flex-direction: column; gap: 1rem; overflow-y: auto; max-height: calc(90vh - 60px); }
+/* A tabela tem cinco colunas com campo de texto dentro — em 600px ela ficava
+   espremida e os botões saíam pela direita. O painel abre largo e a lista
+   rola de lado se a tela não der conta, em vez de cortar. */
+.users-panel { max-width: 1040px; }
+.users-body { padding: 1rem 1.25rem 1.25rem; display: flex; flex-direction: column; gap: 1rem; overflow-y: auto; max-height: calc(90vh - 60px); }
 .users-add-form { background: var(--surface2); border-radius: .5rem; padding: .75rem 1rem; display: flex; flex-direction: column; gap: .5rem; }
 .users-form-title { font-size: .8rem; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
 .users-form-row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
-.users-input { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: .4rem; padding: .4rem .6rem; font-size: .85rem; min-width: 0; }
+.users-form-row .users-input { flex: 1 1 150px; }
+.users-input { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: .4rem; padding: .45rem .65rem; font-size: .85rem; min-width: 0; }
 .users-input:focus { outline: none; border-color: var(--accent); }
 .users-select { cursor: pointer; }
-.users-add-btn { background: var(--accent); color: var(--on-solid); border: none; border-radius: .4rem; padding: .4rem .8rem; font-size: .85rem; cursor: pointer; white-space: nowrap; }
+.users-add-btn { background: var(--accent); color: var(--on-solid); border: none; border-radius: .4rem; padding: .45rem .9rem; font-size: .85rem; cursor: pointer; white-space: nowrap; }
 .users-add-btn:hover { filter: brightness(1.1); }
 .users-form-error { color: var(--down); font-size: .82rem; padding: .2rem 0; }
 .users-loading { color: var(--muted); font-size: .85rem; padding: .5rem 0; }
+.users-list { overflow-x: auto; }
 .users-table { width: 100%; border-collapse: collapse; font-size: .85rem; }
-.users-th { text-align: left; padding: .4rem .6rem; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; }
+.users-th { text-align: left; padding: .5rem .6rem; color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--border); font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+/* Larguras mínimas por coluna: o campo de nome e o de senha precisam caber
+   uma palavra inteira, e a coluna de ações encolhe até o tamanho dos botões. */
+.users-th:nth-child(2) { min-width: 170px; }
+.users-th:nth-child(3) { min-width: 250px; }
+.users-th:nth-child(4) { min-width: 130px; }
+.users-th:nth-child(5) { width: 1%; }
 .users-tr:hover td { background: var(--surface2); }
-.users-td { padding: .4rem .5rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
+.users-td { padding: .5rem .6rem; border-bottom: 1px solid var(--border); vertical-align: middle; }
 .users-td-user { font-weight: 600; color: var(--text); white-space: nowrap; }
-.users-td-actions { display: flex; gap: .4rem; white-space: nowrap; }
+.users-td-actions { white-space: nowrap; text-align: right; }
+.users-td-actions > * + * { margin-left: .4rem; }
 .users-inline-input { width: 100%; }
-.users-save-btn { background: rgba(var(--up-rgb), .14); color: var(--up); border: 1px solid var(--up); border-radius: .35rem; padding: .25rem .6rem; font-size: .8rem; cursor: pointer; }
+.users-save-btn { background: rgba(var(--up-rgb), .14); color: var(--up); border: 1px solid var(--up); border-radius: .35rem; padding: .3rem .7rem; font-size: .8rem; cursor: pointer; }
 .users-save-btn:hover { background: rgba(var(--up-rgb), .24); }
-.users-del-btn { background: rgba(var(--down-rgb), .13); color: var(--down); border: 1px solid var(--down); border-radius: .35rem; padding: .25rem .6rem; font-size: .8rem; cursor: pointer; }
+.users-del-btn { background: rgba(var(--down-rgb), .13); color: var(--down); border: 1px solid var(--down); border-radius: .35rem; padding: .3rem .7rem; font-size: .8rem; cursor: pointer; }
 .users-del-btn:hover { background: rgba(var(--down-rgb), .22); }
 /* Suspender fica em âmbar, entre o Salvar e o Excluir: não é rotina como
    salvar, nem irreversível como excluir — a senha continua guardada. */
-.users-susp-btn { background: rgba(var(--warn-rgb), .13); color: var(--warn); border: 1px solid var(--warn); border-radius: .35rem; padding: .25rem .6rem; font-size: .8rem; cursor: pointer; }
+.users-susp-btn { background: rgba(var(--warn-rgb), .13); color: var(--warn); border: 1px solid var(--warn); border-radius: .35rem; padding: .3rem .7rem; font-size: .8rem; cursor: pointer; }
 .users-susp-btn:hover { background: rgba(var(--warn-rgb), .22); }
 .users-susp-btn.users-susp-on { background: rgba(var(--accent-rgb), .12); color: var(--accent); border-color: var(--accent); }
 .users-susp-btn.users-susp-on:hover { background: rgba(var(--accent-rgb), .2); }
@@ -1636,7 +1649,14 @@ td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { backgro
 .users-lojas-label { font-size: .78rem; color: var(--muted); font-weight: 600; white-space: nowrap; }
 .users-loja-chk { display: flex; align-items: center; gap: .25rem; font-size: .82rem; color: var(--text); cursor: pointer; user-select: none; }
 .users-loja-chk input { cursor: pointer; accent-color: var(--accent); }
-.users-td-acesso { min-width: 140px; }
+.users-td-acesso { min-width: 250px; }
+/* Dentro da tabela as lojas do supervisor viram pílulas lado a lado (três por
+   linha): empilhadas uma por linha, uma conta só fazia a linha crescer seis
+   vezes e empurrava o resto da lista para fora da tela. */
+.users-td-acesso .users-supervisor-lojas { gap: .3rem; padding: .4rem 0 0; }
+.users-td-acesso .users-loja-chk { font-size: .76rem; padding: .15rem .5rem .15rem .35rem; border: 1px solid var(--border); border-radius: 999px; background: var(--surface); white-space: nowrap; }
+.users-td-acesso .users-loja-chk:has(input:checked) { border-color: var(--accent); color: var(--accent); background: rgba(var(--accent-rgb), .08); }
+.users-td-acesso .users-loja-chk input { width: 13px; height: 13px; margin: 0; }
 
 /* ── Folgas tab bar ───────────────────────────────────────────────────── */
 .folgas-tab-bar { display: flex; gap: 0; border-bottom: 1px solid var(--border); flex-shrink: 0; padding: 0 1rem; }
@@ -4606,3 +4626,16 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .ct-spv-wrap { display: inline-flex; align-items: center; gap: .3rem; }
 .ct-cfg-spv { width: 4.2rem; }
 .ct-spv-susp { flex-basis: 100%; font-size: .72rem; color: var(--warn-strong); font-weight: 600; cursor: help; }
+
+/* ── Gerenciar Logins no celular ───────────────────────────────────────── */
+/* A tabela rola de lado e o login fica grudado à esquerda, com fundo opaco,
+   para se saber de quem é a linha enquanto se procura o botão. A linha
+   suspensa tem tinta própria e translúcida: aqui ela vai por cima do fundo
+   opaco, senão o resto da tabela aparecia atrás dela ao rolar. */
+@media (max-width: 820px) {
+  .users-body { padding: .75rem; }
+  .users-table .users-th:first-child,
+  .users-table .users-td-user { position: sticky; left: 0; z-index: 1; background: var(--surface); }
+  .users-table .users-tr:hover .users-td-user { background: var(--surface2); }
+  .users-table .users-tr-susp .users-td-user { background: linear-gradient(rgba(var(--warn-rgb), .05), rgba(var(--warn-rgb), .05)), var(--surface); }
+}
