@@ -6644,7 +6644,7 @@ function startVendCellEdit(td, empId) {
   const inp = document.createElement('input');
   inp.type = 'text'; inp.className = 'ds-cell-input';
   inp.placeholder = isValue ? '0,00' : '0';
-  inp.value = cur > 0 ? (isValue ? cur.toFixed(2).replace('.',',') : cur) : '';
+  inp.value = cur !== 0 ? (isValue ? cur.toFixed(2).replace('.',',') : cur) : '';
   td.innerHTML = ''; td.appendChild(inp);
   inp.focus(); inp.select();
 

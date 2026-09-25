@@ -2323,26 +2323,27 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
       const dayData = [];
       for (let d = 1; d <= N; d++) {
         const ds = `${y}-${pad(m)}-${pad(d)}`;
-        let metaDia = 0, valor = 0, pecas = 0, atend = 0;
+        let metaDia = 0, valor = 0, pecas = 0, atend = 0, hasEntry = false;
         if (isTotal) {
           for (const e of emps) {
             metaDia += sellerDayGoal(e.id, ds);
-            const en = vsMap[e.id]?.entries?.[ds] || {};
-            valor += en.value||0; pecas += en.pecas||0; atend += en.atendimentos||0;
+            const en = vsMap[e.id]?.entries?.[ds];
+            if (en) { hasEntry = true; valor += en.value||0; pecas += en.pecas||0; atend += en.atendimentos||0; }
           }
         } else {
           metaDia = sellerDayGoal(empId, ds);
-          const en = vsMap[empId]?.entries?.[ds] || {};
-          valor = en.value||0; pecas = en.pecas||0; atend = en.atendimentos||0;
+          const en = vsMap[empId]?.entries?.[ds];
+          hasEntry = !!en;
+          valor = en?.value||0; pecas = en?.pecas||0; atend = en?.atendimentos||0;
         }
-        dayData.push({ ds, metaDia, valor, pecas, atend });
+        dayData.push({ ds, metaDia, valor, pecas, atend, hasEntry });
       }
 
       // Totais acumulados
       let metaAcum = 0, valorAcum = 0;
 
       for (let d = 1; d <= N; d++) {
-        const { ds, metaDia, valor, pecas, atend } = dayData[d - 1];
+        const { ds, metaDia, valor, pecas, atend, hasEntry } = dayData[d - 1];
         metaAcum  += metaDia;
         valorAcum += valor;
 
@@ -2385,11 +2386,11 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
             fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
         if (isTotal) {
           const fG = crossSum('G', cRow), fJ = crossSum('J', cRow), fK = crossSum('K', cRow);
-          set(7,  { formula: fG, result: valor > 0 ? +valor.toFixed(2) : 0 }, fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
+          set(7,  { formula: fG, result: hasEntry ? +valor.toFixed(2) : 0 }, fmtBRL, isWE ? C.WE_BG : C.CALC_BG);
           set(10, { formula: fJ, result: pecas  || 0 }, fmtInt, isWE ? C.WE_BG : C.CALC_BG);
           set(11, { formula: fK, result: atend  || 0 }, fmtInt, isWE ? C.WE_BG : C.CALC_BG);
         } else {
-          set(7,  valor > 0 ? +valor.toFixed(2) : null, fmtBRL);
+          set(7,  hasEntry ? +valor.toFixed(2) : null, fmtBRL);
           set(10, pecas > 0 ? pecas : null, fmtInt);
           set(11, atend > 0 ? atend : null, fmtInt);
         }
