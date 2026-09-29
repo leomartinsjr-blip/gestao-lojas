@@ -2646,6 +2646,8 @@ function fpImprimirRecibos(soEmpId = null) {
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:Arial,Helvetica,sans-serif;font-size:10pt;color:#000;background:#fff}
+/* Sem isso o navegador corta os fundos: somem o cinza de PROVENTOS, DESCONTOS e LÍQUIDO. */
+*{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 @media print{@page{size:A4 portrait;margin:8mm 10mm}}
 @media screen{.recibo{max-width:720px;margin:20px auto;padding:12px;border:1px solid #ccc;border-radius:4px}}
 </style>
@@ -2714,7 +2716,7 @@ function buildRecibo(emp, entry, mes, origin) {
   };
   // Complemento com linha de origem visível → soma nos proventos junto com ela
   const complRows = org => foraLinhas.filter(f => foraOrgDe(f) === org)
-    .map(f => tr((f.nome || 'COMPLEMENTO').toUpperCase(), f.valor, '', '', false, '#fef9c3'))
+    .map(f => tr((f.nome || 'COMPLEMENTO').toUpperCase(), f.valor, '', '', false, '#e0e0e0'))
     .join('');
   // Supervisor/sócio: proventos em blocos por empresa, com os valores cheios —
   // não há linha de complemento a somar, todo "por fora" vira nota de rodapé.
@@ -2766,7 +2768,7 @@ function buildRecibo(emp, entry, mes, origin) {
       const pjl = (entry.premiacaoLojas || []).find(l => l.board === r.board) || {};
       prov += gap;
       prov += tr(bi.label.toUpperCase(), r.comissao, lj.vendas || 0,
-        num(lj.comissaoPct) ? fmt(lj.comissaoPct) + '%' : '', true, '#f0f0f0');
+        num(lj.comissaoPct) ? fmt(lj.comissaoPct) + '%' : '', true, '#ebebeb');
       if (num(r.fixo)) prov += tr(fixoLbl, r.fixo);
       if (num(r.premiacao)) {
         const sem    = pjl.semanas || [];
@@ -2791,9 +2793,7 @@ function buildRecibo(emp, entry, mes, origin) {
       prov += tr('SALÁRIO FIXO', fixoDecl, fixoDecl);
       prov += complRows('fixo');
     }
-    const faixaColors = {'SEM META':'#888','META 1':'#b8860b','META 2':'#2e7d32','SUPER META':'#00838f'};
     const faixaLbl   = entry.faixaLabel || '—';
-    const faixaClr   = faixaColors[faixaLbl] || '#888';
     const pctMeta    = num(entry.pctMeta) ||
       (num(entry.meta) > 0 ? Math.round(num(entry.vendas) / num(entry.meta) * 10) / 10 : 0);
     const infoParts  = [
@@ -2802,7 +2802,7 @@ function buildRecibo(emp, entry, mes, origin) {
       faixaLbl !== '—'  ? faixaLbl                               : '',
     ].filter(Boolean).join('  ·  ');
     if (infoParts)
-      prov += `<tr><td colspan="4" style="padding:1px 5px 0;font-size:8pt;color:${faixaClr};font-style:italic">${infoParts}</td></tr>`;
+      prov += `<tr><td colspan="4" style="padding:1px 5px 0;font-size:8pt;color:#000;font-style:italic">${infoParts}</td></tr>`;
     prov +=
       `<tr>` +
       `<td style="padding:1px 5px 2px">${tipo === 'gerente' ? 'VENDAS LOJA' : (tipo === 'gvend' || tipo === 'sub') ? 'VENDAS PRÓPRIAS' : 'VENDAS'}</td>` +
@@ -2817,7 +2817,7 @@ function buildRecibo(emp, entry, mes, origin) {
         ? r2(cfg.garantiaMinimaSubGerente || cfg.garantiaMinima || 0)
         : r2(cfg.garantiaMinima || 0);
     if (num(entry.gmComplement) > 0)
-      prov += tr(rc.garantia, entry.gmComplement, gm, '', false, '#fef9c3');
+      prov += tr(rc.garantia, entry.gmComplement, gm, '', false, '#e0e0e0');
     if (num(entry.comissaoLoja) > 0)
       prov += tr((tipo === 'gvend' || tipo === 'sub') ? 'VENDAS DA LOJA' : 'COMISSÃO LOJA', entry.comissaoLoja, entry.vendaLoja,
         ecfg.comissaoVR ? fmt(ecfg.comissaoVR) + '%' : '');
@@ -2846,7 +2846,7 @@ function buildRecibo(emp, entry, mes, origin) {
       const detNaLoja = semDetNaLoja.length && Math.abs(semSumNaLoja - premNaLojaRec) < 0.02
         ? semDetNaLoja.map(s => `sem. ${s.label}: ${money(s.valor)}`).join('  ·  ')
         : '';
-      prov += `<tr><td colspan="4" style="padding:2px 5px 0;font-size:8pt;font-style:italic;color:#555">` +
+      prov += `<tr><td colspan="4" style="padding:2px 5px 0;font-size:8pt;font-style:italic;color:#222">` +
         `premiação de meta ${money(premNaLojaRec)} paga pela loja na semana — não entra neste recibo` +
         (detNaLoja ? `<br>${detNaLoja}` : '') +
         `</td></tr>`;
@@ -2868,7 +2868,7 @@ function buildRecibo(emp, entry, mes, origin) {
       prov += tr((ex.nome || 'OUTROS').toUpperCase(), ex.valor, ex.valor);
   });
   if (foraMemo.length)
-    prov += `<tr><td colspan="4" style="padding:2px 5px 0;font-size:8pt;font-style:italic;color:#555">` +
+    prov += `<tr><td colspan="4" style="padding:2px 5px 0;font-size:8pt;font-style:italic;color:#222">` +
       foraMemo.map(f => `${f.nome || 'complemento'}: ${money(f.valor)} pago à parte (já incluso acima)`).join('  ·  ') +
       `</td></tr>`;
 
@@ -2907,7 +2907,7 @@ function buildRecibo(emp, entry, mes, origin) {
     </td>
     <td style="width:105px;padding:5px 8px;text-align:center;vertical-align:middle">
       <div style="font-weight:700;font-size:10pt">${loja}</div>
-      <div style="font-size:8pt;margin-top:2px;color:#444">${adm}</div>
+      <div style="font-size:8pt;margin-top:2px;color:#222">${adm}</div>
     </td>
   </tr>
   <tr><td colspan="3" style="text-align:center;padding:5px;border-top:1px solid #000;font-style:italic;font-size:9pt">"${rc.tagline}"</td></tr>
