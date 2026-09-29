@@ -544,7 +544,7 @@ function renderEstoqueHistorico() {
     if (!x.custo || !ant) return '';
     const v = ((x.custo - ant.custo) / ant.custo) * 100;
     const cls = Math.abs(v) < 0.5 ? 'mut' : v > 0 ? 'warn' : 'pos';
-    return `<div class="hist-delta ${cls}">${v >= 0 ? '+' : ''}${v.toFixed(0)}% vs ${MESES[ant.month - 1]}</div>`;
+    return `<div class="hist-delta sinal-est ${cls}">${v >= 0 ? '+' : ''}${v.toFixed(0)}% vs ${MESES[ant.month - 1]}</div>`;
   };
 
   tbl.innerHTML = `

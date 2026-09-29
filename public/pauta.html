@@ -211,6 +211,10 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
   .sinal.warn::before{content:'● '}
   .sinal.neg::before{content:'▼ '}
   .sinal::before{font-size:.8em}
+  /* Variação do estoque: aqui cair é bom e subir pede atenção, então ▲/▼
+     ao lado de −3% confundiria. Vai ✓ para queda e ! para alta. */
+  .sinal-est.pos::before{content:'✓ '}
+  .sinal-est.warn::before{content:'! '}
 
   /* KPIs */
   .pa-kpi{background:#fff;border:1px solid #999}
