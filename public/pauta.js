@@ -212,7 +212,7 @@ function renderLoja() {
       v: d.projecao == null ? '—' : fBRL(d.projecao),
       s: `no ritmo de ${fDec(d.pesoAcum, 0)}% do mês` }] : []),
     { l: emCurso ? '% da meta (proj.)' : '% da meta',
-      v: fPct(pctBase), c: pctCls,
+      v: fPct(pctBase), c: pctCls + ' sinal',
       s: d.meta && base ? fBRL(base - d.meta) + ' vs meta' : '',
       s2: vsMedia(mdl?.pct, fmtPct, dPP) },
     { l: `vs ${MESES[d.anterior.month - 1]}/${String(d.anterior.year).slice(2)}`,
@@ -273,7 +273,7 @@ const dTm    = v => sinal(v, fBRL);
 // quanto ele andou contra a média dos meses fechados.
 function indCell(valor, ind, fmt, fmtDelta, clsTopo) {
   if (valor == null) return '<td class="num mut">—</td>';
-  const topo = clsTopo ? `<span class="${clsTopo}">${fmt(valor)}</span>` : fmt(valor);
+  const topo = clsTopo ? `<span class="${clsTopo} sinal">${fmt(valor)}</span>` : fmt(valor);
   if (!ind) return `<td class="num">${topo}</td>`;
   if (ind.media == null) return `<td class="num">${topo}<div class="hist-delta mut">sem base</div></td>`;
   const dTxt  = fmtDelta(ind.delta);
@@ -873,7 +873,7 @@ function renderLista(campo) {
     if (campo === 'demandas') {
       return `<div class="pa-linha">
         <strong style="font-size:.8rem">${esc(it.titulo || '')}</strong>
-        <span class="grow" style="font-size:.8rem;color:#8b949e">${esc(it.detalhe || '')}</span>
+        <span class="grow mut" style="font-size:.8rem">${esc(it.detalhe || '')}</span>
         <button class="pa-del" data-del="${campo}" data-i="${i}" title="Remover">✕</button>
       </div>`;
     }
@@ -1004,7 +1004,7 @@ async function carregarProdutos() {
 function cobHtml(c) {
   if (c == null) return '<span class="pa-cob mut">sem giro</span>';
   const cls = c < 1 ? 'neg' : c <= 3 ? 'pos' : c <= 6 ? 'warn' : 'neg';
-  return `<span class="pa-cob ${cls}">${fDec(c, 1)}</span>`;
+  return `<span class="pa-cob sinal ${cls}">${fDec(c, 1)}</span>`;
 }
 
 function renderProdutos() {

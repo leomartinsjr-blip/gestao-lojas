@@ -172,22 +172,95 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
 }
 
 /* ── Impressão ── */
+/* O tema da tela é escuro: texto claro e cor viva sobre fundo quase preto.
+   No papel o fundo é branco, então TODA cor de texto precisa ser trocada —
+   não basta pintar o body, porque as classes fixam a cor delas. Os tons
+   abaixo dão 7:1 ou mais sobre branco; numa colorida ainda se distinguem,
+   numa preto e branco todos saem quase pretos (ver .sinal). */
 @media print{
+  @page{margin:10mm}
+  *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
   body{background:#fff;color:#000}
-  .pa-header,.pa-del,.pa-add-row,.pa-ia-add,.pa-btn{display:none!important}
-  .pa-card{border-color:#ccc;break-inside:avoid}
-  .pa-card-hdr{background:#f2f2f2}
-  .pa-card,.pa-kpi,.pa-ia-box,.pa-alert,.pa-linha{background:#fff;color:#000}
-  .pa-ta,.pa-inp,.pa-nota-inp{border-color:#ccc;color:#000;background:#fff}
+  .pa-header,.pa-del,.pa-add-row,.pa-ia-add,.pa-btn,.pa-drop{display:none!important}
+
+  /* Cartões */
+  .pa-body{max-width:none;padding:0}
+  .pa-card{background:#fff;border:1px solid #888;border-radius:6px;break-inside:avoid;margin-bottom:.7rem}
+  .pa-card-hdr{background:#e8e8e8;border-bottom:1px solid #888}
+  .pa-card-num{background:#000;color:#fff}
+  .pa-card-title{color:#000}
+  .pa-card-sub{color:#333}
+
+  /* Texto de apoio: cinza escuro, nunca o cinza da tela */
+  .mut,.pa-kpi-lbl,.pa-kpi-sub,.pa-legend,.pa-empty,.pa-alert-meta,.pa-pend-mes,
+  .pa-img-meta,.pa-ia-ev,.pa-ta-lbl,.pa-sub-hdr{color:#333}
+  .pa-legend{font-size:.68rem}
+  .pa-sub-hdr::after{background:#888}
+
+  /* Cores de sinal, escurecidas para o papel */
+  .pos,.pa-check{color:#0b6b22}
+  .neg,.pa-uncheck{color:#b0100b}
+  .warn{color:#8a4b00}
+  .blue{color:#0a4fa8}
+  .pos,.neg,.warn{font-weight:700}
+
+  /* Impressora preto e branco: verde, âmbar e vermelho viram o mesmo cinza.
+     Número que só a cor dizia se era bom ou ruim (% da meta, meses parados)
+     ganha símbolo; quem já tem + ou − não precisa. */
+  .sinal.pos::before{content:'▲ '}
+  .sinal.warn::before{content:'● '}
+  .sinal.neg::before{content:'▼ '}
+  .sinal::before{font-size:.8em}
+
+  /* KPIs */
+  .pa-kpi{background:#fff;border:1px solid #999}
+  .pa-kpi-val{color:#000}
+
+  /* Tabelas */
   .pa-tbl-wrap{overflow:visible}
-  .pa-tbl{min-width:0;font-size:.62rem}
-  .pa-tbl th,.pa-tbl td{padding:.22rem .3rem}
-  .hist-delta{font-size:.55rem}
-  .pa-drop{display:none!important}
+  .pa-tbl{min-width:0;font-size:.64rem}
+  .pa-tbl th{background:#e8e8e8;color:#000;border-bottom:1px solid #666;padding:.25rem .3rem}
+  .pa-tbl td{color:#000;border-bottom:1px solid #bbb;padding:.22rem .3rem}
+  .pa-tbl td.mut,.pa-tbl td .mut{color:#333}
+  .pa-tbl td.pos,.pa-tbl td .pos{color:#0b6b22}
+  .pa-tbl td.neg,.pa-tbl td .neg{color:#b0100b}
+  .pa-tbl td.warn,.pa-tbl td .warn{color:#8a4b00}
+  .pa-tbl tr:hover td{background:transparent}
+  .pa-tbl tfoot td{background:#e8e8e8;color:#000;border-top:1.5px solid #000}
+  .hist-delta{font-size:.58rem}
+  .hist-loja td{background:#e8e8e8;color:#000;border-bottom:1px solid #666}
+
+  /* Etiquetas e pílulas: texto escuro + contorno, porque o fundo translúcido some */
+  .pa-tag,.pa-alert-pill,.pa-badge{background:#fff!important;border:1px solid currentColor}
+  .pa-tag.ger{color:#5b2a9e}
+  .pa-tag.fer{color:#0b5d6e}
+  .pa-tag.out,.pill-crit{color:#b0100b}
+  .pa-tag.in,.pill-ok{color:#0b6b22}
+  .pill-att{color:#8a4b00}
+  .pill-info{color:#0a4fa8}
+
+  /* Alertas e listas */
+  .pa-alert,.pa-linha,.pa-ia-box,.pa-ia-acao{background:#fff;color:#000;border-color:#999}
+  .pa-alert.crit{border-left-color:#b0100b}
+  .pa-alert.att{border-left-color:#8a4b00}
+  .pa-alert.info{border-left-color:#0a4fa8}
+  .pa-alert.ok{border-left-color:#0b6b22}
+  .pa-pend{border-bottom-color:#bbb}
+
+  /* Campos preenchidos na reunião */
+  .pa-ta,.pa-inp,.pa-nota-inp{background:#fff;color:#000;border-color:#999}
+  .pa-nota-inp{border-color:transparent}
+
+  /* Roteiro IA */
+  .pa-ia-resumo,.pa-ia-tema{color:#000}
+  .pa-ia-item{border-left-color:#666}
+  .pa-ia-perg{color:#0a4fa8}
+  .pa-ia-forte{color:#0b6b22;border-left-color:#0b6b22}
+
   /* No papel o print do balanço é a prova: inteiro, não recortado. */
   .pa-imgs{grid-template-columns:1fr}
-  .pa-img{border-color:#ccc;background:#fff;break-inside:avoid}
-  .pa-img img{height:auto;max-height:none;object-fit:contain}
+  .pa-img{border-color:#999;background:#fff;break-inside:avoid}
+  .pa-img img{height:auto;max-height:none;object-fit:contain;background:#fff}
 }
 </style>
 </head>
