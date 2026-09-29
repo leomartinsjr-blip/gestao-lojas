@@ -13341,29 +13341,53 @@ function pautaRH(db, board, y, m, hoje) {
     return (ka.length ? Math.min(...ka) : 999) - (kb.length ? Math.min(...kb) : 999);
   });
 
-  // Férias: período aquisitivo de 12 meses a contar da admissão (ou do fim das
-  // últimas férias gozadas); o gozo tem de acontecer nos 12 meses seguintes.
+  // Férias: a cada aniversário da admissão o colaborador ganha 30 dias, e tem
+  // os 12 meses seguintes para tirar (período concessivo). As férias lançadas em
+  // Ausências abatem o saldo, do período mais antigo para o mais novo. "Zerar"
+  // grava feriasZeradoAte = último aniversário completo: dali para trás tudo
+  // conta como tirado — é para férias que foram gozadas mas nunca lançadas.
   const feriasAus = (db.ausencias || []).filter(a => a.board === board && a.tipo === 'ferias');
   const ferias = [];
+  const feriasZeradas = [];
   for (const e of ativos) {
     if (!e.admissao) continue;
-    const gozos    = feriasAus.filter(a => pautaMesmaPessoa(a.colaborador, e));
-    const passadas = gozos.filter(a => a.dataFim <= hoje).sort((a, b) => a.dataFim.localeCompare(b.dataFim));
-    const futuras  = gozos.filter(a => a.dataFim >  hoje).sort((a, b) => a.dataInicio.localeCompare(b.dataInicio));
-    const ultimo   = passadas.length ? passadas[passadas.length - 1].dataFim : null;
-    const aquisitivoFim = pautaAddMeses(ultimo || e.admissao, 12);
-    const limiteGozo    = pautaAddMeses(aquisitivoFim, 12);
-    const diasAquis     = pautaDiasEntre(hoje, aquisitivoFim);
-    const diasLimite    = pautaDiasEntre(hoje, limiteGozo);
+    const zerado  = e.feriasZeradoAte || '';
+    const gozos   = feriasAus.filter(a => pautaMesmaPessoa(a.colaborador, e) && a.dataInicio >= (zerado || e.admissao));
+    const futuras = gozos.filter(a => a.dataInicio > hoje).sort((a, b) => a.dataInicio.localeCompare(b.dataInicio));
+    const passadas = gozos.filter(a => a.dataInicio <= hoje).sort((a, b) => a.dataFim.localeCompare(b.dataFim));
+    const ultimo  = passadas.length ? passadas[passadas.length - 1].dataFim : null;
+    // Férias em andamento contam inteiras: o colaborador já está fora.
+    let tirados   = passadas.reduce((s, a) => s + pautaDiasEntre(a.dataInicio, a.dataFim) + 1, 0);
+
+    let anos = 0;
+    while (pautaAddMeses(e.admissao, 12 * (anos + 1)) <= hoje) anos++;
+    const abertos = [];
+    for (let k = 1; k <= anos; k++) {
+      const aquisitivoFim = pautaAddMeses(e.admissao, 12 * k);
+      if (zerado && aquisitivoFim <= zerado) continue;
+      const usa = Math.min(30, tirados);
+      tirados -= usa;
+      if (usa < 30) abertos.push({ aquisitivoFim, limiteGozo: pautaAddMeses(e.admissao, 12 * (k + 1)), saldo: 30 - usa });
+    }
+
+    if (zerado && e.feriasZeradoEm)
+      feriasZeradas.push({ id: e.id, nome: e.apelido || e.name, ate: zerado, em: e.feriasZeradoEm, por: e.feriasZeradoPor || '' });
+
+    const proxAquis = pautaAddMeses(e.admissao, 12 * (anos + 1));
+    const diasAquis = pautaDiasEntre(hoje, proxAquis);
+    const base      = abertos[0] || { aquisitivoFim: proxAquis, limiteGozo: pautaAddMeses(e.admissao, 12 * (anos + 2)), saldo: 0 };
+    const diasLimite = pautaDiasEntre(hoje, base.limiteGozo);
     let status = null;
-    if (diasLimite < 0)       status = 'vencida';
-    else if (diasAquis <= 0)  status = 'direito adquirido';
+    if (abertos.length)       status = diasLimite < 0 ? 'vencida' : 'direito adquirido';
     else if (diasAquis <= 90) status = 'a vencer';
     if (!status && !futuras.length) continue;
     ferias.push({
-      nome: e.apelido || e.name, admissao: e.admissao,
-      ultimoGozo: ultimo, aquisitivoFim, limiteGozo,
+      id: e.id, nome: e.apelido || e.name, admissao: e.admissao,
+      ultimoGozo: ultimo, aquisitivoFim: base.aquisitivoFim, limiteGozo: base.limiteGozo,
       diasParaLimite: diasLimite, status: status || 'agendada',
+      saldoDias: abertos.reduce((s, p) => s + p.saldo, 0),
+      periodosAbertos: abertos.length,
+      podeZerar: abertos.length > 0,
       agendada: futuras.length ? { inicio: futuras[0].dataInicio, fim: futuras[0].dataFim } : null,
     });
   }
@@ -13378,7 +13402,7 @@ function pautaRH(db, board, y, m, hoje) {
   return {
     ativos: ativos.length,
     vendedores: ativos.filter(e => e.isVendedor !== false).length,
-    admissoes, desligamentos, contratos, ferias, ausenciasMes,
+    admissoes, desligamentos, contratos, ferias, feriasZeradas, ausenciasMes,
   };
 }
 
@@ -13713,6 +13737,35 @@ app.post('/api/pauta/:year/:month/:board/fechar', requireEscritorioOrAdmin, asyn
     await writeDB(db);
     res.json({ pauta: p, criados: criados.length });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/pauta/ferias/:empId/zerar — dá as férias vencidas até o último
+// aniversário da admissão como tiradas. { desfazer: true } volta ao anterior.
+app.post('/api/pauta/ferias/:empId/zerar', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const id = parseInt(req.params.empId);
+    const db = await readDB();
+    const e  = (db.employees || []).find(x => x.id === id);
+    if (!e) return res.status(404).json({ error: 'Colaborador não encontrado' });
+    if (req.body?.desfazer) {
+      e.feriasZeradoAte = e.feriasZeradoAnt || '';
+      e.feriasZeradoEm  = '';
+      e.feriasZeradoPor = '';
+      delete e.feriasZeradoAnt;
+    } else {
+      if (!e.admissao) return res.status(400).json({ error: 'Colaborador sem data de admissão' });
+      const hoje = todayBRT();
+      let anos = 0;
+      while (pautaAddMeses(e.admissao, 12 * (anos + 1)) <= hoje) anos++;
+      if (!anos) return res.status(400).json({ error: 'Ainda não completou o primeiro ano' });
+      e.feriasZeradoAnt = e.feriasZeradoAte || '';
+      e.feriasZeradoAte = pautaAddMeses(e.admissao, 12 * anos);
+      e.feriasZeradoEm  = new Date().toISOString();
+      e.feriasZeradoPor = req.session.user.label || req.session.user.username;
+    }
+    await writeDB(db);
+    res.json({ ok: true, feriasZeradoAte: e.feriasZeradoAte });
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
 // POST /api/pauta/:year/:month/:board/reabrir — volta para rascunho.

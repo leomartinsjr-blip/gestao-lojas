@@ -772,13 +772,13 @@ function ligarBalanco() {
 }
 
 // ── 4 · RH ───────────────────────────────────────────────────────────────────
-function alerta(nivel, titulo, meta, pill, pillCls) {
+function alerta(nivel, titulo, meta, pill, pillCls, acao = '') {
   return `<div class="pa-alert ${nivel}">
     <div class="pa-alert-txt">
       <div class="pa-alert-nome">${titulo}</div>
       ${meta ? `<div class="pa-alert-meta">${meta}</div>` : ''}
     </div>
-    ${pill ? `<span class="pa-alert-pill ${pillCls}">${esc(pill)}</span>` : ''}
+    ${pill ? `<span class="pa-alert-pill ${pillCls}">${esc(pill)}</span>` : ''}${acao}
   </div>`;
 }
 
@@ -816,13 +816,27 @@ function renderRH() {
     blocos.push('<div class="pa-alertas">' + rh.ferias.map(f => {
       const nivel = f.status === 'vencida' ? 'crit' : f.status === 'direito adquirido' ? 'att' : f.status === 'agendada' ? 'ok' : 'info';
       const pillCls = nivel === 'crit' ? 'pill-crit' : nivel === 'att' ? 'pill-att' : nivel === 'ok' ? 'pill-ok' : 'pill-info';
+      const saldo = f.saldoDias
+        ? `${f.saldoDias} dias a tirar${f.periodosAbertos > 1 ? ` (${f.periodosAbertos} períodos)` : ''}`
+        : `completa 1 período em ${fData(f.aquisitivoFim)}`;
       const meta = [
+        `admissão ${fData(f.admissao)}`,
+        saldo,
+        `<strong>limite ${fData(f.limiteGozo)}</strong>`,
         f.agendada ? `agendada ${fData(f.agendada.inicio)} a ${fData(f.agendada.fim)}` : null,
-        f.ultimoGozo ? `últimas férias até ${fData(f.ultimoGozo)}` : `admissão ${fData(f.admissao)} — sem férias registradas`,
-        `limite para gozo ${fData(f.limiteGozo)}`,
+        f.ultimoGozo ? `últimas férias até ${fData(f.ultimoGozo)}` : null,
       ].filter(Boolean).join(' · ');
-      return alerta(nivel, esc(f.nome), meta, f.status, pillCls);
+      const zerar = f.podeZerar
+        ? `<button class="pa-zerar" data-zerar="${f.id}" data-nome="${esc(f.nome)}" title="Já tirou: dar as férias vencidas como gozadas">Zerar</button>`
+        : '';
+      return alerta(nivel, esc(f.nome), meta, f.status, pillCls, zerar);
     }).join('') + '</div>');
+  }
+  const zeradas = (rh.feriasZeradas || []).filter(z => z.em.slice(0, 7) >= `${S.year}-${String(S.month).padStart(2, '0')}`);
+  if (zeradas.length) {
+    blocos.push('<div class="pa-empty" style="font-style:normal">Zeradas: ' + zeradas.map(z =>
+      `${esc(z.nome)} até ${fData(z.ate)}${z.por ? ' por ' + esc(z.por) : ''} <button class="pa-link" data-desfazer="${z.id}">desfazer</button>`
+    ).join(' · ') + '</div>');
   }
 
   // Movimentação do mês
@@ -838,8 +852,24 @@ function renderRH() {
   }
 
   $('rhAuto').innerHTML = blocos.join('');
+  $('rhAuto').querySelectorAll('[data-zerar]').forEach(b => b.addEventListener('click', () =>
+    zerarFerias(+b.dataset.zerar, b.dataset.nome)));
+  $('rhAuto').querySelectorAll('[data-desfazer]').forEach(b => b.addEventListener('click', () =>
+    zerarFerias(+b.dataset.desfazer, null, true)));
   renderLista('rhItens');
   $('cmtRh').value = S.pauta.comentarios.rh || '';
+}
+
+// Zerar: para quem já tirou as férias mas elas nunca foram lançadas em Ausências.
+async function zerarFerias(id, nome, desfazer = false) {
+  if (!desfazer && !confirm(`${nome} já tirou as férias?\n\nOs períodos vencidos até o último aniversário da admissão passam a contar como gozados e a pendência some. O próximo período começa a contar normalmente.`)) return;
+  try {
+    await api('POST', `/api/pauta/ferias/${id}/zerar`, desfazer ? { desfazer: true } : {});
+    const r = await api('GET', `/api/pauta/${S.year}/${S.month}/${S.board}`);
+    S.dados.rh = r.dados.rh;
+    renderRH();
+    toast(desfazer ? 'Férias restauradas.' : 'Férias zeradas.');
+  } catch (e) { toast(e.message, true); }
 }
 
 // ── Listas editáveis: rhItens, demandas, acoes ───────────────────────────────
