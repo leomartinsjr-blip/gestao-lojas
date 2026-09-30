@@ -2063,12 +2063,13 @@
       const x = /(\d+)\s*x/i.exec(mod);
       return x ? 1 + parseInt(x[1]) : 99;
     };
-    const taxaDetRows = [...porMod.values()].sort((a,b) => ordemMod(a.mod) - ordemMod(b.mod) || a.mod.localeCompare(b.mod)).map(m => {
+    const linhaMod = (m, subtotal) => {
       const semTaxa = !m.valorComTaxa;
       const parcial = !semTaxa && m.valorSemTaxa > 0.01;
+      const fundo = subtotal ? `background:${P('primary')}0f;border-top:1px solid var(--cf-border)` : semTaxa ? `background:${P('accent')}0c` : '';
       return `
-      <tr${semTaxa ? ` style="background:${P('accent')}0c"` : ''}>
-        <td style="font-weight:600">${esc(m.mod)}</td>
+      <tr${fundo ? ` style="${fundo}"` : ''}>
+        <td style="font-weight:${subtotal ? 800 : 600}">${esc(m.mod)}</td>
         <td class="num">${fmtR(m.valor)}</td>
         <td class="num" style="color:${P('muted')}">${totTaxaValor > 0 ? (m.valor/totTaxaValor*100).toFixed(1)+'%' : '—'}</td>
         <td class="num">${semTaxa
@@ -2076,7 +2077,21 @@
             : `<span style="font-weight:700"${parcial ? ` title="${fmtR(m.valorSemTaxa)} de bandeira sem taxa cadastrada ficou fora da conta"` : ''}>${(m.vlrTaxa / m.valorComTaxa * 100).toFixed(2)}%${parcial ? ` <sup style="color:${P('accent')}">⚠</sup>` : ''}</span>`}</td>
         <td class="num" style="font-weight:800;color:${semTaxa ? P('muted') : '#14B8A6'}">${semTaxa ? '—' : fmtR(m.vlrTaxa)}</td>
       </tr>`;
-    }).join('');
+    };
+    // Subtotais pedidos pelo Leonardo: À vista (Dinheiro + PIX + Débito) e
+    // Crédito (todas as parcelas). A taxa do subtotal é a média ponderada.
+    const soma = (mod, lista) => lista.reduce((s, m) => ({ mod,
+      valor: s.valor + m.valor, vlrTaxa: s.vlrTaxa + m.vlrTaxa,
+      valorComTaxa: s.valorComTaxa + m.valorComTaxa, valorSemTaxa: s.valorSemTaxa + m.valorSemTaxa,
+    }), { mod, valor: 0, vlrTaxa: 0, valorComTaxa: 0, valorSemTaxa: 0 });
+    const mods    = [...porMod.values()].sort((a,b) => ordemMod(a.mod) - ordemMod(b.mod) || a.mod.localeCompare(b.mod));
+    const aVista  = mods.filter(m => ordemMod(m.mod) <= 1);
+    const credito = mods.filter(m => ordemMod(m.mod) > 1 && /cr[ée]dito/i.test(m.mod));
+    const outros  = mods.filter(m => !aVista.includes(m) && !credito.includes(m));
+    const taxaDetRows =
+        aVista.map(m => linhaMod(m)).join('')  + (aVista.length  ? linhaMod(soma('À vista', aVista), true)  : '')
+      + credito.map(m => linhaMod(m)).join('') + (credito.length ? linhaMod(soma('Crédito', credito), true) : '')
+      + outros.map(m => linhaMod(m)).join('');
 
     const taxaAvisoHtml = !taxasCadastradas
       ? `<div style="margin-top:10px;padding:9px 13px;background:${P('accent')}12;border-left:3px solid ${P('accent')};border-radius:6px;font-size:11px;color:${P('accent')}">
