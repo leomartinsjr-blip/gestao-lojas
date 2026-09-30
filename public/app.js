@@ -2109,115 +2109,98 @@ function renderAniversariantesCard(col) {
   }).join('');
 }
 
-// O adm abre o painel para saber quem falta hoje e amanhã, não para ler o mês
-// de todas as lojas — o calendário inteiro fica a um clique. A loja segue
-// vendo o calendário direto, porque é nele que ela monta a escala.
+// O calendário do mês inteiro é bom de ler, mas para o adm, com todas as lojas,
+// vira uma parede. Ele abre na mesma grade só com a semana (ontem + 6 dias) e
+// só com quem folga nela; o mês inteiro fica a um clique. A loja segue vendo o
+// mês direto, porque é nele que ela monta a escala.
 function _renderDashFolgas(body) {
-  const pad = n => String(n).padStart(2,'0');
   const today = new Date();
   const isCurrentMonth = S.year === today.getFullYear() && S.month === today.getMonth() + 1;
   if (S.user?.board || !isCurrentMonth) return _renderDashFolgasMes(body);
 
-  const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
-  const amanha = new Date(today); amanha.setDate(today.getDate() + 1);
-  const empById = new Map(S.employees.map(e => [e.id, e]));
-  const lista = (dia, folgas = S.folgas) => {
-    const emps = folgas.filter(f => f.date === iso(dia)).map(f => empById.get(f.employeeId)).filter(Boolean);
-    if (!emps.length) return '<div class="folga-dia-vazio">Ninguém de folga</div>';
-    return Object.keys(BOARDS).map(bk => {
-      const daLoja = emps.filter(e => e.board === bk);
-      if (!daLoja.length) return '';
-      return `<div class="folga-dia-loja"><i class="loja-tarja" style="background:${BOARDS[bk].color}"></i><b>${BOARDS[bk].label}</b>
-        ${daLoja.map(e => _escHtml(e.apelido || e.name.split(' ')[0])).join(', ')}</div>`;
-    }).join('');
-  };
-  const DIAS = ['dom','seg','ter','qua','qui','sex','sáb'];
-  body.innerHTML = `
-    <div class="folga-dia"><div class="folga-dia-hdr">Hoje <span>${DIAS[today.getDay()]} ${pad(today.getDate())}/${pad(today.getMonth()+1)}</span></div>${lista(today)}</div>
-    <div class="folga-dia"><div class="folga-dia-hdr">Amanhã <span>${DIAS[amanha.getDay()]} ${pad(amanha.getDate())}/${pad(amanha.getMonth()+1)}</span></div><div id="folgaAmanha">${lista(amanha)}</div></div>
-    <button class="bol-resumo-todas" id="folgaVerMes">Ver o mês inteiro</button>`;
-  body.querySelector('#folgaVerMes').addEventListener('click', () => _renderDashFolgasMes(body));
-  // S.folgas só traz o mês aberto: no último dia, "amanhã" mora no mês seguinte.
-  if (amanha.getMonth() !== today.getMonth()) {
-    const alvo = body.querySelector('#folgaAmanha');
-    alvo.innerHTML = '<div class="folga-dia-vazio">Carregando…</div>';
-    apiFetch('GET', `/api/folgas/${amanha.getFullYear()}/${amanha.getMonth()+1}`)
-      .then(f => { alvo.innerHTML = lista(amanha, f); })
-      .catch(() => { alvo.innerHTML = '<div class="folga-dia-vazio">Erro ao carregar</div>'; });
-  }
+  const dias = [];
+  for (let i = -1; i <= 5; i++) { const d = new Date(today); d.setDate(today.getDate() + i); dias.push(d); }
+  const botao = (rotulo, fn) => ({ rotulo, fn });
+  const semana = folgas => _folgasGrade(body, dias, folgas,
+    botao('Ver o mês inteiro', () => _folgasGrade(body, _diasDoMes(), S.folgas, botao('Ver só a semana', () => semana(folgas)))));
+
+  // S.folgas só traz o mês aberto: perto do fim do mês a semana entra no
+  // mês seguinte, que é buscado à parte.
+  const ultimo = dias[dias.length - 1];
+  if (ultimo.getMonth() === today.getMonth()) return semana(S.folgas);
+  body.innerHTML = '<div class="folga-mini-empty">Carregando…</div>';
+  apiFetch('GET', `/api/folgas/${ultimo.getFullYear()}/${ultimo.getMonth()+1}`)
+    .then(prox => semana([...S.folgas, ...prox]))
+    .catch(() => semana(S.folgas));
 }
 
 function _renderDashFolgasMes(body) {
+  _folgasGrade(body, _diasDoMes(), S.folgas);
+}
+
+function _diasDoMes() {
+  const n = new Date(S.year, S.month, 0).getDate();
+  return Array.from({ length: n }, (_, i) => new Date(S.year, S.month - 1, i + 1));
+}
+
+// Grade de folgas: uma coluna por dia de `dias`, uma linha por pessoa que
+// folga em algum deles, agrupada por loja. `botao` (opcional) vai embaixo.
+function _folgasGrade(body, dias, folgas, botao) {
   const pad = n => String(n).padStart(2,'0');
-  const daysInMonth = new Date(S.year, S.month, 0).getDate();
+  const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
   const DAY_SHORT = ['D','S','T','Q','Q','S','S'];
+  const todayStr = iso(new Date());
+  const noPeriodo = new Set(dias.map(iso));
 
-  const today = new Date();
-  const todayStr = `${today.getFullYear()}-${pad(today.getMonth()+1)}-${pad(today.getDate())}`;
-
-  // Build per-employee folga set for this month
   const empFolgas = {};
-  for (const f of S.folgas) {
-    if (!f.date.startsWith(`${S.year}-${pad(S.month)}`)) continue;
-    const day = parseInt(f.date.split('-')[2]);
+  for (const f of folgas) {
+    if (!noPeriodo.has(f.date)) continue;
     if (!empFolgas[f.employeeId]) empFolgas[f.employeeId] = new Set();
-    empFolgas[f.employeeId].add(day);
+    empFolgas[f.employeeId].add(f.date);
   }
 
   const empsWithFolga = S.employees.filter(e => empFolgas[e.id]);
-  if (empsWithFolga.length === 0) {
-    body.innerHTML = '<div class="folga-mini-empty">Sem folgas programadas</div>';
-    return;
-  }
-
-  // Group by board in visible order
   const byBoard = {};
   for (const emp of empsWithFolga) {
     if (!byBoard[emp.board]) byBoard[emp.board] = [];
     byBoard[emp.board].push(emp);
   }
 
-  // Header row
-  let html = '<div class="folga-mini-wrap"><table class="folga-mini-tbl"><thead><tr><th class="folga-mini-name-h"></th>';
-  for (let d = 1; d <= daysInMonth; d++) {
-    const dow = new Date(S.year, S.month - 1, d).getDay();
-    const ds = `${S.year}-${pad(S.month)}-${pad(d)}`;
-    const isWE = dow === 0 || dow === 6;
-    const isToday = ds === todayStr;
-    let cls = 'folga-mini-day-h';
-    if (isWE) cls += ' folga-mini-we';
-    if (isToday) cls += ' folga-mini-today-col';
-    html += `<th class="${cls}">${d}<span class="folga-mini-dow">${DAY_SHORT[dow]}</span></th>`;
-  }
-  html += '</tr></thead><tbody>';
+  const colCls = (d, base) => {
+    const dow = d.getDay();
+    let cls = base;
+    if (dow === 0 || dow === 6) cls += ' folga-mini-we';
+    if (iso(d) === todayStr) cls += base === 'folga-mini-day-h' ? ' folga-mini-today-col' : ' folga-mini-today-cell';
+    return cls;
+  };
 
-  const totalCols = 1 + daysInMonth;
-  for (const [bk, emps] of Object.entries(byBoard)) {
-    const bc = BOARDS[bk] || { label: bk, color: 'var(--muted)' };
-    html += `<tr class="folga-mini-store-row">
-      <td colspan="${totalCols}" class="folga-mini-store-td" style="background:${bc.color}22;border-left:3px solid ${bc.color}">
-        <strong>${bc.label}</strong>
-      </td></tr>`;
-    for (const emp of emps) {
-      const color = bc.color;
-      const fDays = empFolgas[emp.id];
-      html += `<tr><td class="folga-mini-name-td">${emp.apelido || emp.name.split(' ')[0]}</td>`;
-      for (let d = 1; d <= daysInMonth; d++) {
-        const dow = new Date(S.year, S.month - 1, d).getDay();
-        const ds = `${S.year}-${pad(S.month)}-${pad(d)}`;
-        const isWE = dow === 0 || dow === 6;
-        const isToday = ds === todayStr;
-        const has = fDays.has(d);
-        let cls = 'folga-mini-cell';
-        if (isWE) cls += ' folga-mini-we';
-        if (isToday) cls += ' folga-mini-today-cell';
-        html += `<td class="${cls}"${has ? ` style="background:${color}28;"` : ''}>${has ? `<span class="folga-mini-mark" style="background:${color}"></span>` : ''}</td>`;
+  let html;
+  if (!empsWithFolga.length) {
+    html = '<div class="folga-mini-empty">Sem folgas programadas</div>';
+  } else {
+    html = '<div class="folga-mini-wrap"><table class="folga-mini-tbl"><thead><tr><th class="folga-mini-name-h"></th>';
+    for (const d of dias) html += `<th class="${colCls(d, 'folga-mini-day-h')}">${d.getDate()}<span class="folga-mini-dow">${DAY_SHORT[d.getDay()]}</span></th>`;
+    html += '</tr></thead><tbody>';
+    for (const [bk, emps] of Object.entries(byBoard)) {
+      const bc = BOARDS[bk] || { label: bk, color: 'var(--muted)' };
+      html += `<tr class="folga-mini-store-row">
+        <td colspan="${1 + dias.length}" class="folga-mini-store-td" style="background:${bc.color}22;border-left:3px solid ${bc.color}">
+          <strong>${bc.label}</strong>
+        </td></tr>`;
+      for (const emp of emps) {
+        html += `<tr><td class="folga-mini-name-td">${emp.apelido || emp.name.split(' ')[0]}</td>`;
+        for (const d of dias) {
+          const has = empFolgas[emp.id].has(iso(d));
+          html += `<td class="${colCls(d, 'folga-mini-cell')}"${has ? ` style="background:${bc.color}28;"` : ''}>${has ? `<span class="folga-mini-mark" style="background:${bc.color}"></span>` : ''}</td>`;
+        }
+        html += '</tr>';
       }
-      html += '</tr>';
     }
+    html += '</tbody></table></div>';
   }
-  html += '</tbody></table></div>';
+  if (botao) html += `<button class="bol-resumo-todas folga-grade-btn">${botao.rotulo}</button>`;
   body.innerHTML = html;
+  if (botao) body.querySelector('.folga-grade-btn').addEventListener('click', botao.fn);
 
   // O mês inteiro não cabe no card, então sem isto a tabela sempre abre no
   // dia 1. Centraliza o scroll no dia de hoje, descontando a coluna de nome

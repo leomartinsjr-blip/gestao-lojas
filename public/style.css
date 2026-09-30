@@ -4049,7 +4049,7 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 }
 .aniv-meta { color: var(--muted); font-weight: 500; }
 
-/* Resumos do adm: Defeitos por loja e Folgas de hoje/amanhã. O detalhe
+/* Resumo do adm: Defeitos por loja. O detalhe
    completo fica a um clique, então aqui é só o que decide onde agir. */
 .bol-resumo-topo { display: flex; gap: 1.1rem; font-size: .8rem; color: var(--text2); padding: .1rem 0 .2rem; }
 .bol-resumo-topo b { font-size: 1.05rem; color: var(--text); margin-right: .2rem; }
@@ -4062,13 +4062,6 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .bol-resumo-tbl tbody tr:hover { background: var(--surface2); }
 .bol-resumo-todas { align-self: flex-start; background: transparent; border: 1px solid var(--border2); color: var(--text2); font: inherit; font-size: .75rem; font-weight: 600; padding: .3rem .8rem; border-radius: 999px; cursor: pointer; margin-top: .35rem; }
 .bol-resumo-todas:hover { color: var(--text); border-color: var(--text2); }
-.folga-dia { padding: .15rem 0 .55rem; }
-.folga-dia + .folga-dia { border-top: 1px solid var(--border); padding-top: .55rem; }
-.folga-dia-hdr { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: .3rem; }
-.folga-dia-hdr span { font-weight: 500; text-transform: none; letter-spacing: 0; margin-left: .3rem; }
-.folga-dia-loja { font-size: .8rem; color: var(--text2); line-height: 1.6; }
-.folga-dia-loja b { color: var(--text); font-weight: 600; margin-right: .35rem; }
-.folga-dia-vazio { font-size: .8rem; color: var(--muted); }
 
 /* ── CADASTRO DE PRODUTO ─────────────────────────────────────────────────── */
 .cad-panel { padding: .25rem 0; }
