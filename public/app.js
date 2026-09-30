@@ -203,10 +203,31 @@ async function checarValeTransporte() {
       : a.semSaldo ? ` — falta ler o saldo de ${a.semSaldo} ${a.semSaldo === 1 ? 'cartão' : 'cartões'}`
       : a.falta > 0 ? ` — R$ ${a.falta.toLocaleString('pt-BR', { minimumFractionDigits: 2 })} a recarregar`
       : '';
+    // O adm vê o VT como pílula na linha de Pendências do painel; a faixa
+    // amarela fica para o escritório, que não tem essa linha.
+    if (userIsAdmin(u)) {
+      S.vtAlerta = { ...a, texto: quando + pendencia };
+      _atualizarAvisosAdm();
+      return;
+    }
     document.getElementById('vtBannerText').textContent = quando + pendencia;
     banner.classList.remove('hidden');
     document.getElementById('vtBannerClose')?.addEventListener('click', () => banner.classList.add('hidden'));
+    document.getElementById('vtBannerFeito')?.addEventListener('click', async () => {
+      if (await _vtMarcarFeito(a.dia)) banner.classList.add('hidden');
+    });
   } catch { /* sem VT configurado ou sem permissão: o aviso simplesmente não aparece */ }
+}
+
+// "Já fiz" cala o aviso desta recarga; o da recarga seguinte volta sozinho.
+async function _vtMarcarFeito(dia) {
+  if (!confirm(`Marcar a recarga do vale-transporte de ${dia.split('-').reverse().join('/')} como feita? O aviso some até a próxima recarga.`)) return false;
+  try {
+    await apiFetch('POST', '/api/vt/alerta/feito', { dia });
+    S.vtAlerta = null;
+    toast('Recarga do VT marcada como feita');
+    return true;
+  } catch (e) { toast('Erro: ' + e.message, true); return false; }
 }
 
 // ── Aviso da Ficha de Admissão ─────────────────────────────────────────────
@@ -928,9 +949,8 @@ function _renderContagemAviso(c) {
 // botão de "ok, li", porque um aviso que se fecha à toa some antes de virar
 // ação.
 //
-// Ficaram fora da linha os dois avisos que não pediam nada ao adm: embalagem
-// no piso (o próprio aviso dizia que já entra no próximo pedido) e nota
-// aguardando conferência (o card de Recebimento de NF já conta por loja).
+// Ficou fora da linha a embalagem no piso: o próprio aviso dizia que já entra
+// no próximo pedido, então não pedia nada ao adm.
 //
 // Só quem não é loja vê: todas esperam resposta do adm, e a loja já acompanha
 // o que mandou dentro do próprio Loja em Ação.
@@ -941,8 +961,19 @@ function _renderAvisosAdm(c) {
   strip.innerHTML = '<span class="aviso-strip-lbl">Pendências</span>';
   _avisoContagem(strip);
   _avisoLojaAcao(strip);
+  _avisoNotas(strip);
   _avisoPauta(strip);
-  if (strip.querySelector('.aviso-pill')) c.appendChild(strip);
+  _avisoVt(strip);
+  if (strip.querySelector('.aviso-pill')) c.prepend(strip);
+}
+
+// O alerta do VT chega depois do painel já desenhado (vem de outra chamada),
+// então a linha é refeita no lugar quando ele chega.
+function _atualizarAvisosAdm() {
+  const c = document.getElementById('boardContainer');
+  if (!c?.querySelector('.dash-sector-panel')) return;
+  c.querySelector('.aviso-strip')?.remove();
+  _renderAvisosAdm(c);
 }
 
 // Lojas que este usuário enxerga — supervisor vê as dele, adm vê todas.
@@ -970,7 +1001,7 @@ function _avisoPilula(strip, { icone, rotulo, n, detalhe, atraso, acao }) {
   const el = document.createElement('button');
   el.className = 'aviso-pill' + (atraso ? ' aviso-pill-atraso' : '');
   el.title = detalhe;
-  el.innerHTML = `<span class="aviso-pill-ico">${icone}</span>${rotulo}<b>${n}</b>`;
+  el.innerHTML = `<span class="aviso-pill-ico">${icone}</span>${rotulo}${n != null ? `<b>${n}</b>` : ''}`;
   el.addEventListener('click', () => acao(el));
   strip.appendChild(el);
   return el;
@@ -1022,6 +1053,45 @@ function _avisoLojaAcao(strip) {
     icone: '🛎', rotulo: 'Pedidos de loja', n: total, detalhe,
     acao: () => { _lojaAcaoTab = maior.tab; openLojaAcaoModal(); },
   });
+}
+
+// Nota lançada e ainda sem decisão. Enquanto está pendente a loja nem
+// consegue dar baixa — o check só abre depois de autorizada.
+function _avisoNotas(strip) {
+  const lojas = _avisoLojas();
+  const pend  = (S.nfItems || []).filter(x =>
+    !x.archived && x.status === 'pendente' && lojas.includes(x.board));
+  if (!pend.length) return;
+
+  const grupos = _avisoPorLoja(pend, lojas);
+  const primeira = [...grupos.keys()][0];
+  _avisoPilula(strip, {
+    icone: '🧾', rotulo: 'Notas para conferir', n: pend.length,
+    detalhe: [...grupos].map(([b, itens]) => `${_avisoNomeLoja(b)}: ${itens.length}`).join(' · '),
+    acao: () => _irParaCard('nfCardBody', primeira),
+  });
+}
+
+// Recarga do VT: a pílula abre a tela do VT; o ✓ ao lado marca a recarga
+// como feita, e o aviso só volta na do mês seguinte.
+function _avisoVt(strip) {
+  const a = S.vtAlerta;
+  if (!a) return;
+  const pill = _avisoPilula(strip, {
+    icone: '🚌', rotulo: a.hoje ? 'Recarga do VT hoje' : a.passou ? 'Recarga do VT pendente' : 'Recarga do VT',
+    atraso: a.passou, detalhe: a.texto,
+    acao: () => window.open('/vale-transporte', '_blank'),
+  });
+  const ok = document.createElement('button');
+  ok.className = 'aviso-pill-ok';
+  ok.textContent = '✓ Já fiz';
+  ok.title = 'Marcar a recarga como feita';
+  ok.addEventListener('click', async () => {
+    if (!await _vtMarcarFeito(a.dia)) return;
+    ok.remove(); pill.remove();
+    if (!strip.querySelector('.aviso-pill')) strip.remove();
+  });
+  pill.after(ok);
 }
 
 // Item que a loja escreveu na pauta depois da última vez que este usuário

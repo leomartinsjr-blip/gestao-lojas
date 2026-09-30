@@ -14812,7 +14812,10 @@ app.get('/api/vt/alerta', requireEscritorioOrAdmin, async (req, res) => {
 
     // Aparece na semana que antecede a terça (para dar tempo de fechar a
     // escala) e continua aparecendo depois dela enquanto sobrar recarga.
-    const mostrar = (d.totais.pessoas + d.totais.naAjuda) > 0 && (
+    // "Já fiz" marcado para esta recarga cala o aviso até a do mês seguinte,
+    // mesmo que a conta ainda veja falta (saldo de cartão que ninguém leu).
+    const feita = (vt.recargasFeitas || {})[d.recarga.dia] || null;
+    const mostrar = !feita && (d.totais.pessoas + d.totais.naAjuda) > 0 && (
       (d.recarga.diasAte <= 6 && d.recarga.diasAte >= 0) ||
       (d.recarga.passou && falta > 0));
 
@@ -14823,6 +14826,21 @@ app.get('/api/vt/alerta', requireEscritorioOrAdmin, async (req, res) => {
       escalaPendentes: d.escala.pendentes.length,
       semSaldo: d.totais.semSaldo,
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/vt/alerta/feito — marca a recarga do dia como feita ──────────
+app.post('/api/vt/alerta/feito', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const dia = String(req.body?.dia || '');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return res.status(400).json({ error: 'dia inválido' });
+    const db = await readDB();
+    const vt = vtRoot(db);
+    if (!vt.recargasFeitas) vt.recargasFeitas = {};
+    const u = req.session.user;
+    vt.recargasFeitas[dia] = { em: new Date().toISOString(), por: u.label || u.username };
+    await writeDB(db);
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

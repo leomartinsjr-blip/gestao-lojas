@@ -3976,6 +3976,8 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .aviso-pill-ico { font-size: .85rem; line-height: 1; }
 .aviso-pill-atraso { border-color: rgba(var(--down-rgb),.45); }
 .aviso-pill-atraso b { color: var(--down); }
+.aviso-pill-ok { background: transparent; border: 1px dashed var(--border2); color: var(--text2); font: inherit; font-size: .72rem; font-weight: 600; padding: .25rem .6rem; border-radius: 999px; cursor: pointer; margin-left: -.2rem; }
+.aviso-pill-ok:hover { border-style: solid; border-color: var(--up); color: var(--up); }
 /* Card apontado pelo aviso: uma piscada na borda, porque ele está lá embaixo
    na faixa 02 e rolar até o meio da tela ainda deixa procurar qual é. */
 .main-card.card-alvo { box-shadow: 0 0 0 2px var(--accent); }
