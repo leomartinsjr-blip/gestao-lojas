@@ -11555,7 +11555,8 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
           }
         }
       }
-      allVendas.sort((a, b) => (a.board + a.data + a.hora).localeCompare(b.board + b.data + b.hora));
+      // Por data e hora, misturando as lojas — a tela mostra a coluna Loja.
+      allVendas.sort((a, b) => (a.data + a.hora + a.board).localeCompare(b.data + b.hora + b.board));
       const totalVendas = allVendas.reduce((s, v) => s + v.valorTotal, 0);
       return res.json({
         board: 'all', dtIni, dtFin, regra: {},

@@ -1,6 +1,6 @@
 (() => {
   const LOJAS = ['delrey','minas','contagem','estacao','tommy','surfers'];
-  const LOJA_LABEL = { delrey:'Del Rey', minas:'Minas', contagem:'Contagem', estacao:'Estação', tommy:'Tommy', surfers:'Surfers' };
+  const LOJA_LABEL = { delrey:'Del Rey', minas:'Minas', contagem:'Contagem', estacao:'Estação', tommy:'Tommy', surfers:'Surfers', lez:'Lez a Lez', site:'Site' };
   const LOJA_COLORS = { delrey:'#4AA3FF', minas:'#a78bfa', contagem:'#34d399', estacao:'#FF9A4A', tommy:'#2dd4bf', surfers:'#FF6161' };
 
   const $ = id => document.getElementById(id);
@@ -1448,12 +1448,17 @@
   }
 
   // ── Tabela de vendas ──────────────────────────────────────────────────
+  // Com várias lojas na lista (Todas / Surfers) a coluna Loja aparece: a
+  // lista vem por data e hora, misturando as lojas, e sem ela não dá para
+  // saber de onde é cada venda.
   function tabelaVendas(vendas) {
+    const multi = ['all', 'surfers'].includes($('vBoard').value);
+    const lojaCell = b => `<td style="white-space:nowrap"><span style="display:inline-block;width:3px;height:11px;border-radius:2px;margin-right:6px;vertical-align:-1px;background:${LOJA_COLORS[b] || P('muted')}"></span>${esc(LOJA_LABEL[b] || b || '—')}</td>`;
     return `
       <table class="cf-tbl">
         <thead><tr>
           <th style="width:3px;padding:0"></th>
-          <th>Data</th><th>Hora</th><th>Doc</th>
+          <th>Data</th><th>Hora</th>${multi ? '<th>Loja</th>' : ''}<th>Doc</th>
           <th>Vendedor</th><th>Pagamento</th>
           <th class="num">Desconto</th>
           <th class="num">Total</th>
@@ -1470,6 +1475,7 @@
               <td class="accent-cell"><div class="accent-bar ${acc}"></div></td>
               <td style="font-weight:700">${fmtD(v.data)}</td>
               <td class="muted">${v.hora||'—'}</td>
+              ${multi ? lojaCell(v.board) : ''}
               <td class="mono">${esc(v.doc)}</td>
               <td>${esc(v.vendedor||'—')}</td>
               <td><div class="pay-chips">${formaChips(v.formas)}</div></td>
