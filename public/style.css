@@ -3965,21 +3965,17 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .ct-banner-chip { display: inline-flex; align-items: center; gap: .3rem; background: var(--card); border: 1px solid var(--border); color: var(--text); font-size: .72rem; font-weight: 600; padding: .1rem .5rem; border-radius: 999px; margin-left: .35rem; }
 .ct-banner-btn { background: var(--up-strong); border: 1px solid var(--up-strong); color: var(--on-solid); font-size: .8rem; font-weight: 600; padding: .4rem 1rem; border-radius: 6px; cursor: pointer; white-space: nowrap; }
 .ct-banner-btn:hover { background: var(--up-strong); }
-/* Piso furado é aviso de compra, não de prazo — âmbar para não competir com o
-   vermelho da contagem atrasada, que é o que trava o processo. */
-.ct-banner-piso { background: rgba(var(--warn-rgb),.08); border-left-color: var(--warn); }
-.ct-banner-piso .ct-banner-txt { color: var(--text2); }
-.ct-banner-piso .ct-banner-txt b { color: var(--warn); }
-/* precisa vencer o b âmbar do banner, senão o número some no resto do texto */
-.ct-banner-piso .ct-banner-txt b.ct-chip-neg { color: var(--down); }
-.ct-chip-neg { color: var(--down); margin-left: .3rem; }
 .ct-chip-min { color: var(--muted); font-size: .68rem; margin-left: .15rem; }
-/* Avisos de chegada (pedido da loja, pauta nova, nota pendente): chegou coisa
-   nova não é atraso nem furo de piso — tarja neutra, para o vermelho da
-   contagem e o âmbar do piso continuarem valendo o que valem. */
-.ct-banner-novo { background: rgba(var(--tint-rgb),.05); border-left-color: var(--text2); }
-.ct-banner-novo .ct-banner-txt b { color: var(--text); }
-.ct-chip-num { color: var(--text); margin-left: .3rem; }
+/* Pendências do adm: uma linha de pílulas no lugar de uma faixa por aviso.
+   Neutra por padrão — só o número da contagem atrasada ganha vermelho. */
+.aviso-strip { display: flex; align-items: center; flex-wrap: wrap; gap: .45rem; margin-bottom: 1.15rem; }
+.aviso-strip-lbl { font-size: .68rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-right: .2rem; }
+.aviso-pill { display: inline-flex; align-items: center; gap: .4rem; background: var(--card); border: 1px solid var(--border); color: var(--text2); font: inherit; font-size: .78rem; padding: .3rem .7rem; border-radius: 999px; cursor: pointer; }
+.aviso-pill:hover { border-color: var(--text2); color: var(--text); }
+.aviso-pill b { color: var(--text); font-weight: 700; }
+.aviso-pill-ico { font-size: .85rem; line-height: 1; }
+.aviso-pill-atraso { border-color: rgba(var(--down-rgb),.45); }
+.aviso-pill-atraso b { color: var(--down); }
 /* Card apontado pelo aviso: uma piscada na borda, porque ele está lá embaixo
    na faixa 02 e rolar até o meio da tela ainda deixa procurar qual é. */
 .main-card.card-alvo { box-shadow: 0 0 0 2px var(--accent); }
@@ -4050,6 +4046,27 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
   margin-right: .35rem; vertical-align: -1px; flex-shrink: 0;
 }
 .aniv-meta { color: var(--muted); font-weight: 500; }
+
+/* Resumos do adm: Defeitos por loja e Folgas de hoje/amanhã. O detalhe
+   completo fica a um clique, então aqui é só o que decide onde agir. */
+.bol-resumo-topo { display: flex; gap: 1.1rem; font-size: .8rem; color: var(--text2); padding: .1rem 0 .2rem; }
+.bol-resumo-topo b { font-size: 1.05rem; color: var(--text); margin-right: .2rem; }
+.bol-resumo-topo b.bol-resumo-venc, .bol-resumo-tbl td.bol-resumo-venc { color: var(--down); font-weight: 700; }
+.bol-resumo-tbl { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.bol-resumo-tbl th { color: var(--muted); font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; text-align: right; padding: .3rem .4rem; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.bol-resumo-tbl td { text-align: right; padding: .38rem .4rem; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.bol-resumo-tbl th:first-child, .bol-resumo-tbl td:first-child { text-align: left; }
+.bol-resumo-tbl tbody tr { cursor: pointer; }
+.bol-resumo-tbl tbody tr:hover { background: var(--surface2); }
+.bol-resumo-todas { align-self: flex-start; background: transparent; border: 1px solid var(--border2); color: var(--text2); font: inherit; font-size: .75rem; font-weight: 600; padding: .3rem .8rem; border-radius: 999px; cursor: pointer; margin-top: .35rem; }
+.bol-resumo-todas:hover { color: var(--text); border-color: var(--text2); }
+.folga-dia { padding: .15rem 0 .55rem; }
+.folga-dia + .folga-dia { border-top: 1px solid var(--border); padding-top: .55rem; }
+.folga-dia-hdr { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin-bottom: .3rem; }
+.folga-dia-hdr span { font-weight: 500; text-transform: none; letter-spacing: 0; margin-left: .3rem; }
+.folga-dia-loja { font-size: .8rem; color: var(--text2); line-height: 1.6; }
+.folga-dia-loja b { color: var(--text); font-weight: 600; margin-right: .35rem; }
+.folga-dia-vazio { font-size: .8rem; color: var(--muted); }
 
 /* ── CADASTRO DE PRODUTO ─────────────────────────────────────────────────── */
 .cad-panel { padding: .25rem 0; }

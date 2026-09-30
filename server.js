@@ -4094,6 +4094,39 @@ app.get('/api/caixa/:year/:month/:board', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/caixa-saldos/:year/:month?boards=a,b — saldo de cada loja ─────
+// Resumo do card de Fechamento de Caixa do adm. O saldo segue a mesma conta
+// do card da loja (public/app.js, renderCaixaCard): soma o mês pedido e volta
+// mês a mês até o primeiro mês sem dado, que é tratado como início do
+// histórico. Feito aqui para o resumo não disparar dezenas de GETs por loja.
+app.get('/api/caixa-saldos/:year/:month', requireAuth, async (req, res) => {
+  try {
+    const user = req.session.user;
+    if (user.board && user.board !== 'escritorio') return res.status(403).json({ error: 'Sem acesso' });
+    const year = parseInt(req.params.year), month = parseInt(req.params.month);
+    const boards = String(req.query.boards || '').split(',').filter(Boolean);
+    const caixa = (await readDB()).caixa || {};
+    const out = {};
+    for (const board of boards) {
+      let saldo = 0, ultimoDeposito = null;
+      let y = year, m = month;
+      for (let i = 0; i < 37; i++) {
+        const mes = caixa[`${y}-${String(m).padStart(2,'0')}-${board}`];
+        if (i > 0 && (!mes || !Object.keys(mes).length)) break;
+        for (const [d, e] of Object.entries(mes || {})) {
+          saldo += (e.caixa ?? 0) - (e.sangria ?? 0) - (e.deposito ?? 0);
+          const data = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+          if ((e.deposito ?? 0) > 0 && (!ultimoDeposito || data > ultimoDeposito)) ultimoDeposito = data;
+        }
+        m -= 1;
+        if (m < 1) { m = 12; y -= 1; }
+      }
+      out[board] = { saldo: Math.round(saldo * 100) / 100, ultimoDeposito };
+    }
+    res.json(out);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/caixa-sangrias/:year/:month — todas as sangrias do mês (admin) ─
 app.get('/api/caixa-sangrias/:year/:month', requireAdmin, async (req, res) => {
   try {

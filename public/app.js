@@ -902,76 +902,48 @@ async function loadData() {
 }
 
 // ── Dashboard — weekly tracking ────────────────────────────────────────────
-// Card de aviso da contagem quinzenal de embalagens — fica no topo do painel.
-// Loja vê o próprio atraso; admin vê quais lojas estão devendo.
+// Card de aviso da contagem quinzenal de embalagens — fica no topo do painel
+// da loja. O adm vê as lojas atrasadas na linha de Pendências, logo abaixo.
 function _renderContagemAviso(c) {
+  if (!S.user?.board) return;
   const dias = S.embalagens?.diasContagem || 15;
-  const abrir = () => { _lojaAcaoTab = 'contagem'; openLojaAcaoModal(); };
-
-  if (S.user?.board) {
-    const st = _embalStatus(S.user.board);
-    if (!st?.atrasada) return;
-    const txt = st.ultimaData
-      ? `A última foi em <b>${_fmtData(st.ultimaData)}</b> — venceu há <b>${st.diasAtraso} dia${st.diasAtraso === 1 ? '' : 's'}</b>.`
-      : 'Esta loja ainda não registrou nenhuma contagem.';
-    const el = document.createElement('div');
-    el.className = 'ct-banner';
-    el.innerHTML = `<div class="ct-banner-txt"><b>🧮 Hora de contar as embalagens.</b> ${txt} A contagem é a cada ${dias} dias e o sistema já sugere o pedido do que estiver abaixo do mínimo.</div>
-      <button class="ct-banner-btn">Fazer contagem</button>`;
-    el.querySelector('.ct-banner-btn').addEventListener('click', abrir);
-    c.appendChild(el);
-    return;
-  }
-
-  const late = _embalStoreBoards().filter(b => _embalStatus(b)?.atrasada);
-  if (!late.length) return;
+  const st = _embalStatus(S.user.board);
+  if (!st?.atrasada) return;
+  const txt = st.ultimaData
+    ? `A última foi em <b>${_fmtData(st.ultimaData)}</b> — venceu há <b>${st.diasAtraso} dia${st.diasAtraso === 1 ? '' : 's'}</b>.`
+    : 'Esta loja ainda não registrou nenhuma contagem.';
   const el = document.createElement('div');
   el.className = 'ct-banner';
-  el.innerHTML = `<div class="ct-banner-txt"><b>🧮 Contagem de embalagens atrasada em ${late.length} ${late.length === 1 ? 'loja' : 'lojas'}:</b>
-      ${late.map(b => `<span class="ct-banner-chip"><span class="dash-store-dot" style="background:${BOARDS[b]?.color || 'var(--muted)'}"></span>${_escHtml(BOARDS[b]?.label || b)}</span>`).join('')}</div>
-    <button class="ct-banner-btn">Ver status</button>`;
-  el.querySelector('.ct-banner-btn').addEventListener('click', abrir);
+  el.innerHTML = `<div class="ct-banner-txt"><b>🧮 Hora de contar as embalagens.</b> ${txt} A contagem é a cada ${dias} dias e o sistema já sugere o pedido do que estiver abaixo do mínimo.</div>
+    <button class="ct-banner-btn">Fazer contagem</button>`;
+  el.querySelector('.ct-banner-btn').addEventListener('click', () => { _lojaAcaoTab = 'contagem'; openLojaAcaoModal(); });
   c.appendChild(el);
 }
 
-// Estoque no piso é uma pergunta diferente de contagem atrasada: a loja pode
-// estar em dia com o prazo e mesmo assim já ter furado o mínimo, e pode estar
-// atrasada sem faltar nada. Por isso é um banner separado, e não uma linha a
-// mais no de cima — cada um pede uma ação diferente.
+// ── Pendências do adm ──────────────────────────────────────────────────────
+// Eram uma faixa grande por aviso, e com quatro acesas elas empurravam o
+// faturamento para baixo da dobra. Viraram uma linha só de pílulas: o número
+// diz o tamanho, o detalhe por loja fica no title e o clique leva até onde
+// resolve. Cada pílula some sozinha quando a ação foi feita — nenhuma tem
+// botão de "ok, li", porque um aviso que se fecha à toa some antes de virar
+// ação.
 //
-// Só quem não é loja vê: embalagem se compra num pedido único, fechado pelo
-// admin a partir da contagem de todas as lojas. Avisar a loja para "pedir"
-// prometia uma ação que ela não tem — a reposição dela é transferência de
-// outra loja, que sai do mesmo relatório. O lembrete de CONTAR, esse sim,
-// continua na tela da loja, logo acima.
-function _renderPisoAviso(c) {
+// Ficaram fora da linha os dois avisos que não pediam nada ao adm: embalagem
+// no piso (o próprio aviso dizia que já entra no próximo pedido) e nota
+// aguardando conferência (o card de Recebimento de NF já conta por loja).
+//
+// Só quem não é loja vê: todas esperam resposta do adm, e a loja já acompanha
+// o que mandou dentro do próprio Loja em Ação.
+function _renderAvisosAdm(c) {
   if (S.user?.board) return;
-  const abrir = () => { _lojaAcaoTab = 'contagem'; openLojaAcaoModal(); };
-
-  const lojas = _embalStoreBoards()
-    .map(b => [b, _embalPiso(b)])
-    .filter(([, p]) => p?.itens?.length);
-  if (!lojas.length) return;
-  const el = document.createElement('div');
-  el.className = 'ct-banner ct-banner-piso';
-  el.innerHTML = `<div class="ct-banner-txt">
-      <b>📦 Embalagem no mínimo em ${lojas.length} ${lojas.length === 1 ? 'loja' : 'lojas'} — já entra no próximo pedido:</b>
-      ${lojas.map(([b, p]) => `<span class="ct-banner-chip" title="${_escHtml(p.itens.map(i => `${i.nome}: ${i.contado} de ${i.min}`).join(' · '))}">
-        <span class="dash-store-dot" style="background:${BOARDS[b]?.color || 'var(--muted)'}"></span>${_escHtml(BOARDS[b]?.label || b)}
-        <b class="ct-chip-neg">${p.itens.length}</b><span class="ct-chip-min">${p.itens.length === 1 ? 'item' : 'itens'}</span></span>`).join('')}</div>
-    <button class="ct-banner-btn">Ver pedido</button>`;
-  el.querySelector('.ct-banner-btn').addEventListener('click', abrir);
-  c.appendChild(el);
+  const strip = document.createElement('div');
+  strip.className = 'aviso-strip';
+  strip.innerHTML = '<span class="aviso-strip-lbl">Pendências</span>';
+  _avisoContagem(strip);
+  _avisoLojaAcao(strip);
+  _avisoPauta(strip);
+  if (strip.querySelector('.aviso-pill')) c.appendChild(strip);
 }
-
-// ── Avisos de chegada ───────────────────────────────────────────────────────
-// Três caixas de entrada do adm viram três linhas no topo: o pedido que a loja
-// mandou, o item que a loja escreveu na pauta e a nota que o escritório
-// lançou. Cada linha some sozinha quando a ação foi feita — nenhuma tem botão
-// de "ok, li", porque um aviso que se fecha à toa some antes de virar ação.
-//
-// Só quem não é loja vê: as três esperam resposta do adm, e a loja já
-// acompanha o que mandou dentro do próprio Loja em Ação.
 
 // Lojas que este usuário enxerga — supervisor vê as dele, adm vê todas.
 function _avisoLojas() {
@@ -979,15 +951,10 @@ function _avisoLojas() {
   return lojas?.length ? NF_STORES.filter(b => lojas.includes(b)) : NF_STORES;
 }
 
-// Chip de loja com a contagem — mesmo desenho do banner de embalagem.
-function _avisoChip(board, n, unidade, titulo) {
-  return `<span class="ct-banner-chip"${titulo ? ` title="${_escHtml(titulo)}"` : ''}>
-      <span class="dash-store-dot" style="background:${BOARDS[board]?.color || 'var(--muted)'}"></span>${_escHtml(BOARDS[board]?.label || board)}
-      <b class="ct-chip-num">${n}</b><span class="ct-chip-min">${unidade}</span></span>`;
-}
+const _avisoNomeLoja = b => BOARDS[b]?.label || b;
 
-// Agrupa por loja na ordem das abas dos cards, para o chip da esquerda ser a
-// mesma loja da primeira aba que o botão abre.
+// Agrupa por loja na ordem das abas dos cards, para a primeira loja do
+// detalhe ser a mesma da primeira aba que o clique abre.
 function _avisoPorLoja(itens, lojas) {
   const m = new Map();
   for (const b of lojas) {
@@ -997,13 +964,15 @@ function _avisoPorLoja(itens, lojas) {
   return m;
 }
 
-function _avisoBanner(c, { titulo, chips, botao, acao }) {
-  const el = document.createElement('div');
-  el.className = 'ct-banner ct-banner-novo';
-  el.innerHTML = `<div class="ct-banner-txt"><b>${titulo}</b>${chips}</div>
-    <button class="ct-banner-btn">${botao}</button>`;
-  el.querySelector('.ct-banner-btn').addEventListener('click', () => acao(el));
-  c.appendChild(el);
+// atraso: número em vermelho — é o que trava processo. O resto é "chegou
+// coisa", sem cor, para o vermelho continuar valendo o que vale.
+function _avisoPilula(strip, { icone, rotulo, n, detalhe, atraso, acao }) {
+  const el = document.createElement('button');
+  el.className = 'aviso-pill' + (atraso ? ' aviso-pill-atraso' : '');
+  el.title = detalhe;
+  el.innerHTML = `<span class="aviso-pill-ico">${icone}</span>${rotulo}<b>${n}</b>`;
+  el.addEventListener('click', () => acao(el));
+  strip.appendChild(el);
   return el;
 }
 
@@ -1018,10 +987,19 @@ function _irParaCard(bodyId, board) {
   setTimeout(() => card.classList.remove('card-alvo'), 1800);
 }
 
+function _avisoContagem(strip) {
+  const late = _embalStoreBoards().filter(b => _embalStatus(b)?.atrasada);
+  if (!late.length) return;
+  _avisoPilula(strip, {
+    icone: '🧮', rotulo: 'Contagem de embalagem atrasada', n: late.length, atraso: true,
+    detalhe: late.map(_avisoNomeLoja).join(' · '),
+    acao: () => { _lojaAcaoTab = 'contagem'; openLojaAcaoModal(); },
+  });
+}
+
 // Pedido de loja parado esperando o adm. Requisição em separação já teve
-// resposta e sai daqui — senão a linha ficaria acesa do pedido até a entrega.
-function _renderLojaAcaoAviso(c) {
-  if (S.user?.board) return;
+// resposta e sai daqui — senão a pílula ficaria acesa do pedido até a entrega.
+function _avisoLojaAcao(strip) {
   const lojas = _avisoLojas();
   const tipos = [
     { tab: 'req',          sing: 'requisição',   plur: 'requisições',   itens: (S.requisicoes   || []).filter(x => x.status === 'pendente') },
@@ -1032,29 +1010,24 @@ function _renderLojaAcaoAviso(c) {
   const total  = tipos.reduce((s, t) => s + naLoja(t).length, 0);
   if (!total) return;
 
-  const chips = lojas.map(b => {
+  const detalhe = lojas.map(b => {
     const partes = tipos.map(t => [t, t.itens.filter(x => x.board === b).length]).filter(([, n]) => n);
-    const n = partes.reduce((s, [, q]) => s + q, 0);
-    if (!n) return '';
-    return _avisoChip(b, n, n === 1 ? 'pedido' : 'pedidos',
-      partes.map(([t, q]) => `${q} ${q === 1 ? t.sing : t.plur}`).join(' · '));
-  }).join('');
+    if (!partes.length) return '';
+    return `${_avisoNomeLoja(b)}: ${partes.map(([t, q]) => `${q} ${q === 1 ? t.sing : t.plur}`).join(', ')}`;
+  }).filter(Boolean).join(' · ');
 
   // Abre na aba de quem tem mais coisa parada, que é onde o trabalho está.
   const maior = tipos.slice().sort((a, b) => naLoja(b).length - naLoja(a).length)[0];
-  _avisoBanner(c, {
-    titulo: `🛎 ${total} ${total === 1 ? 'pedido de loja esperando' : 'pedidos de loja esperando'} resposta:`,
-    chips,
-    botao: 'Ver pedidos',
+  _avisoPilula(strip, {
+    icone: '🛎', rotulo: 'Pedidos de loja', n: total, detalhe,
     acao: () => { _lojaAcaoTab = maior.tab; openLojaAcaoModal(); },
   });
 }
 
 // Item que a loja escreveu na pauta depois da última vez que este usuário
 // abriu a pauta. O fim do aviso é ter olhado, e não o item estar resolvido:
-// pauta só fecha na reunião do mês, e a linha ficaria acesa quatro semanas.
-function _renderPautaAviso(c) {
-  if (S.user?.board) return;
+// pauta só fecha na reunião do mês, e a pílula ficaria acesa quatro semanas.
+function _avisoPauta(strip) {
   const lojas = _avisoLojas();
   const desde = S.pautaVisto || '';
   const novos = (S.meetingItems || []).filter(x =>
@@ -1062,44 +1035,18 @@ function _renderPautaAviso(c) {
   if (!novos.length) return;
 
   const grupos = _avisoPorLoja(novos, lojas);
-  const chips  = [...grupos].map(([b, itens]) => _avisoChip(
-    b, itens.length, itens.length === 1 ? 'item' : 'itens',
-    itens.map(i => i.text).join(' · '))).join('');
   const primeira = [...grupos.keys()][0];
-
-  _avisoBanner(c, {
-    titulo: `📌 ${novos.length} ${novos.length === 1 ? 'item novo' : 'itens novos'} na pauta da reunião:`,
-    chips,
-    botao: 'Ver pauta',
+  _avisoPilula(strip, {
+    icone: '📌', rotulo: 'Novo na pauta', n: novos.length,
+    detalhe: [...grupos].map(([b, itens]) => `${_avisoNomeLoja(b)}: ${itens.map(i => i.text).join(', ')}`).join(' · '),
     acao: async el => {
+      const strip = el.parentElement;
       el.remove();
+      if (!strip.querySelector('.aviso-pill')) strip.remove();
       const r = await apiFetch('POST', '/api/pauta-visto').catch(() => null);
       S.pautaVisto = r?.at || new Date().toISOString();
       _irParaCard('mtgCardBody', primeira);
     },
-  });
-}
-
-// Nota lançada e ainda sem decisão. Enquanto está pendente a loja nem
-// consegue dar baixa — o check só abre depois de autorizada.
-function _renderNotasAviso(c) {
-  if (S.user?.board) return;
-  const lojas = _avisoLojas();
-  const pend  = (S.nfItems || []).filter(x =>
-    !x.archived && x.status === 'pendente' && lojas.includes(x.board));
-  if (!pend.length) return;
-
-  const grupos = _avisoPorLoja(pend, lojas);
-  const chips  = [...grupos].map(([b, itens]) => _avisoChip(
-    b, itens.length, itens.length === 1 ? 'nota' : 'notas',
-    itens.map(i => i.text).join(' · '))).join('');
-  const primeira = [...grupos.keys()][0];
-
-  _avisoBanner(c, {
-    titulo: `🧾 ${pend.length} ${pend.length === 1 ? 'nota aguardando' : 'notas aguardando'} conferência:`,
-    chips,
-    botao: 'Ver notas',
-    acao: () => _irParaCard('nfCardBody', primeira),
   });
 }
 
@@ -1255,10 +1202,7 @@ function renderDashboard() {
   const c = document.getElementById('boardContainer');
   c.innerHTML = '';
   _renderContagemAviso(c);
-  _renderPisoAviso(c);
-  _renderLojaAcaoAviso(c);
-  _renderPautaAviso(c);
-  _renderNotasAviso(c);
+  _renderAvisosAdm(c);
 
   const pad = n => String(n).padStart(2, '0');
   const today = new Date();
@@ -2095,7 +2039,45 @@ function renderAniversariantesCard(col) {
   }).join('');
 }
 
+// O adm abre o painel para saber quem falta hoje e amanhã, não para ler o mês
+// de todas as lojas — o calendário inteiro fica a um clique. A loja segue
+// vendo o calendário direto, porque é nele que ela monta a escala.
 function _renderDashFolgas(body) {
+  const pad = n => String(n).padStart(2,'0');
+  const today = new Date();
+  const isCurrentMonth = S.year === today.getFullYear() && S.month === today.getMonth() + 1;
+  if (S.user?.board || !isCurrentMonth) return _renderDashFolgasMes(body);
+
+  const iso = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+  const amanha = new Date(today); amanha.setDate(today.getDate() + 1);
+  const empById = new Map(S.employees.map(e => [e.id, e]));
+  const lista = (dia, folgas = S.folgas) => {
+    const emps = folgas.filter(f => f.date === iso(dia)).map(f => empById.get(f.employeeId)).filter(Boolean);
+    if (!emps.length) return '<div class="folga-dia-vazio">Ninguém de folga</div>';
+    return Object.keys(BOARDS).map(bk => {
+      const daLoja = emps.filter(e => e.board === bk);
+      if (!daLoja.length) return '';
+      return `<div class="folga-dia-loja"><i class="loja-tarja" style="background:${BOARDS[bk].color}"></i><b>${BOARDS[bk].label}</b>
+        ${daLoja.map(e => _escHtml(e.apelido || e.name.split(' ')[0])).join(', ')}</div>`;
+    }).join('');
+  };
+  const DIAS = ['dom','seg','ter','qua','qui','sex','sáb'];
+  body.innerHTML = `
+    <div class="folga-dia"><div class="folga-dia-hdr">Hoje <span>${DIAS[today.getDay()]} ${pad(today.getDate())}/${pad(today.getMonth()+1)}</span></div>${lista(today)}</div>
+    <div class="folga-dia"><div class="folga-dia-hdr">Amanhã <span>${DIAS[amanha.getDay()]} ${pad(amanha.getDate())}/${pad(amanha.getMonth()+1)}</span></div><div id="folgaAmanha">${lista(amanha)}</div></div>
+    <button class="bol-resumo-todas" id="folgaVerMes">Ver o mês inteiro</button>`;
+  body.querySelector('#folgaVerMes').addEventListener('click', () => _renderDashFolgasMes(body));
+  // S.folgas só traz o mês aberto: no último dia, "amanhã" mora no mês seguinte.
+  if (amanha.getMonth() !== today.getMonth()) {
+    const alvo = body.querySelector('#folgaAmanha');
+    alvo.innerHTML = '<div class="folga-dia-vazio">Carregando…</div>';
+    apiFetch('GET', `/api/folgas/${amanha.getFullYear()}/${amanha.getMonth()+1}`)
+      .then(f => { alvo.innerHTML = lista(amanha, f); })
+      .catch(() => { alvo.innerHTML = '<div class="folga-dia-vazio">Erro ao carregar</div>'; });
+  }
+}
+
+function _renderDashFolgasMes(body) {
   const pad = n => String(n).padStart(2,'0');
   const daysInMonth = new Date(S.year, S.month, 0).getDate();
   const DAY_SHORT = ['D','S','T','Q','Q','S','S'];
@@ -10082,6 +10064,10 @@ function renderCaixaCard(container) {
     : isSupervisor ? NF_STORES.filter(b => (S.user?.lojas||[]).includes(b))
     : null;
   let activeBoard    = visibleStores ? visibleStores[0] : userBoard;
+  // Adm e supervisor olham várias lojas: no card fica só o saldo de cada uma,
+  // e o dia a dia de uma loja abre no overlay ao clicar nela. O escritório
+  // lança depósito pelo card, então continua vendo a tabela.
+  const resumo       = !userBoard;
 
   const syncSvg   = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>`;
   const expandSvg  = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>`;
@@ -10111,12 +10097,12 @@ function renderCaixaCard(container) {
       </span>
       ${!visibleStores ? `<span class="main-card-sub" style="color:${BOARDS[userBoard]?.color}">${BOARDS[userBoard]?.label || ''}</span>` : ''}
       <div style="display:flex;gap:.3rem;margin-left:auto">
-        <button class="caixa-sync-btn" id="caixaSyncBtn" title="Sincronizar com Microvix">${syncSvg} Microvix</button>
+        ${!resumo ? `<button class="caixa-sync-btn" id="caixaSyncBtn" title="Sincronizar com Microvix">${syncSvg} Microvix</button>` : ''}
         ${(isAdmin || isEscritorio) ? `<button class="caixa-sync-btn" id="caixaSangriaBtn" title="Ver todas as sangrias">${sangriaSvg} Sangrias</button>` : ''}
         <button class="caixa-expand-btn" id="caixaExpandBtn" title="Expandir">${expandSvg}</button>
       </div>
     </div>
-    ${tabsMarkup(activeBoard)}
+    ${!resumo ? tabsMarkup(activeBoard) : ''}
     <div class="main-card-body caixa-card-body" id="caixaCardBody"></div>`;
   container.appendChild(card);
 
@@ -10254,6 +10240,37 @@ function renderCaixaCard(container) {
     });
   }
 
+  async function renderResumo() {
+    body.innerHTML = '<div style="padding:.75rem .85rem;color:var(--muted);font-size:.8rem">Carregando…</div>';
+    let saldos;
+    try { saldos = await apiFetch('GET', `/api/caixa-saldos/${S.year}/${S.month}?boards=${visibleStores.join(',')}`); }
+    catch(e) { body.innerHTML = '<div style="padding:.75rem;color:var(--down);font-size:.8rem">Erro ao carregar</div>'; return; }
+    const fmtCur = v => `R$ ${Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+    const hoje = new Date(); hoje.setHours(0,0,0,0);
+    const quando = iso => {
+      if (!iso) return '—';
+      const dias = Math.round((hoje - new Date(iso + 'T00:00:00')) / 86400000);
+      return `${iso.slice(8)}/${iso.slice(5,7)}${dias > 0 ? ` <span style="color:var(--muted)">· há ${dias}d</span>` : ''}`;
+    };
+    const sc = s => s > 0 ? 'pos' : s < 0 ? 'neg' : 'zero';
+    body.innerHTML = `
+      <table class="caixa-table caixa-resumo">
+        <thead><tr><th>Loja</th><th>Saldo em caixa</th><th>Último depósito</th></tr></thead>
+        <tbody>${visibleStores.map(b => {
+          const s = saldos[b] || { saldo: 0 };
+          return `<tr data-board="${b}" style="cursor:pointer" title="Ver o dia a dia">
+            <td class="caixa-td-date"><i class="loja-tarja" style="background:${BOARDS[b]?.color || 'var(--muted)'}"></i>${BOARDS[b]?.label || b}</td>
+            <td class="caixa-td-saldo ${sc(s.saldo)}">${s.saldo ? fmtCur(s.saldo) : '—'}</td>
+            <td class="caixa-td-val">${quando(s.ultimoDeposito)}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>`;
+    body.querySelectorAll('tr[data-board]').forEach(tr => tr.addEventListener('click', () => {
+      activeBoard = tr.dataset.board;
+      card.querySelector('#caixaExpandBtn').click();
+    }));
+  }
+
   async function _caixaStartEdit(cell, data, board, refreshFn) {
     if (cell.querySelector('input')) return;
     const field = cell.dataset.field;
@@ -10275,7 +10292,7 @@ function renderCaixaCard(container) {
   }
 
   // ── Refresh functions ──────────────────────────────────────────────────────
-  function refresh()    { return fetchAndRender(body,    activeBoard, refresh); }
+  function refresh()    { return resumo ? renderResumo() : fetchAndRender(body, activeBoard, refresh); }
   function refreshOvl() { return fetchAndRender(ovlBody, activeBoard, () => { refreshOvl(); refresh(); }); }
 
   // ── Sync helper ────────────────────────────────────────────────────────────
@@ -10638,6 +10655,7 @@ function renderBoletasCard(container) {
 
   const itemsHtml = pending.length === 0
     ? '<div class="nf-empty">Nenhuma boleta pendente</div>'
+    : isAdmin ? _boletasResumoHtml(pending)
     : pending.map(b => {
         const days = _boletaDaysLeft(b);
         const storeTag = (isAdmin || isEscritorio) ? ` <span style="color:${BOARDS[b.board]?.color || 'var(--muted)'}">${BOARDS[b.board]?.label || b.board}</span>` : '';
@@ -10677,6 +10695,44 @@ function renderBoletasCard(container) {
   card.querySelector('#boletasCardInput').addEventListener('click', () => openBoletasModal('new'));
   card.querySelectorAll('.bol-item').forEach(el =>
     el.addEventListener('click', () => openBoletasModal('view', parseInt(el.dataset.id))));
+  card.querySelectorAll('[data-bol-loja]').forEach(el =>
+    el.addEventListener('click', () => {
+      openBoletasModal('list');
+      const sel = document.getElementById('bolStoreFilter');
+      if (sel && el.dataset.bolLoja) { sel.value = el.dataset.bolLoja; sel.dispatchEvent(new Event('change')); }
+    }));
+}
+
+// Para o adm a lista inteira virava uma parede de 40 boletas no dashboard. O
+// que ele decide daqui é onde cobrar: quantas por loja, quantas já passaram
+// dos 30 dias e há quanto tempo está a mais antiga. A lista completa segue no
+// modal, filtrada na loja clicada.
+function _boletasResumoHtml(pending) {
+  const dias = b => _boletaDaysLeft(b);
+  const vencidas = pending.filter(b => dias(b) != null && dias(b) <= 0).length;
+  const lojas = NF_STORES_BOL.map(board => {
+    const doBoard = pending.filter(b => b.board === board);
+    if (!doBoard.length) return null;
+    const venc = doBoard.filter(b => dias(b) != null && dias(b) <= 0).length;
+    const pior = Math.min(...doBoard.map(b => dias(b) ?? 9999));
+    return { board, n: doBoard.length, venc, pior };
+  }).filter(Boolean).sort((a, b) => a.pior - b.pior);
+
+  return `<div class="bol-resumo-topo">
+      <span><b class="${vencidas ? 'bol-resumo-venc' : ''}">${vencidas}</b> vencidas</span>
+      <span><b>${pending.length - vencidas}</b> no prazo</span>
+    </div>
+    <table class="bol-resumo-tbl">
+      <thead><tr><th>Loja</th><th>Abertas</th><th>Vencidas</th><th>Mais antiga</th></tr></thead>
+      <tbody>${lojas.map(l => `
+        <tr data-bol-loja="${l.board}">
+          <td><i class="loja-tarja" style="background:${BOARDS[l.board]?.color || 'var(--muted)'}"></i>${_escHtml(BOARDS[l.board]?.label || l.board)}</td>
+          <td>${l.n}</td>
+          <td class="${l.venc ? 'bol-resumo-venc' : ''}">${l.venc || '—'}</td>
+          <td>${l.pior === 9999 ? '—' : l.pior < 0 ? `vencida há ${-l.pior}d` : l.pior === 0 ? 'vence hoje' : `${l.pior}d restantes`}</td>
+        </tr>`).join('')}</tbody>
+    </table>
+    <button class="bol-resumo-todas" data-bol-loja="">Ver todas as ${pending.length} boletas</button>`;
 }
 
 function openBoletasModal(view = 'list', boletaId = null) {
