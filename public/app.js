@@ -1271,6 +1271,21 @@ let _resumoObs = null;
 function renderDashboard() {
   if (_dayCardTimer) { clearInterval(_dayCardTimer); _dayCardTimer = null; }
   const c = document.getElementById('boardContainer');
+  // Abrir uma loja na Performance, ordenar coluna, salvar boleta... tudo
+  // redesenha o painel inteiro. Sem isto a página encolhe por um instante
+  // (cards que carregam depois, como o Comparativo) e o navegador joga a
+  // rolagem para o topo — no celular, sempre. Guarda a posição da página e
+  // a rolagem lateral de cada card, e segura a altura até tudo assentar.
+  const _redesenho = c.querySelector('.dash-sector-panel') ? {
+    y: window.scrollY,
+    lados: new Map([...c.querySelectorAll('[data-card-id]')].map(card =>
+      [card.dataset.cardId, [...card.querySelectorAll('*')].filter(el => el.scrollLeft > 0 && typeof el.className === 'string').map(el => [el.className, el.scrollLeft])])),
+  } : null;
+  if (_redesenho) {
+    c.style.minHeight = c.offsetHeight + 'px';
+    clearTimeout(c._soltaAltura);
+    c._soltaAltura = setTimeout(() => { c.style.minHeight = ''; }, 2500);
+  }
   c.innerHTML = '';
   _renderContagemAviso(c);
   _renderAvisosAdm(c);
@@ -2023,6 +2038,17 @@ function renderDashboard() {
     if (!sec.querySelector('.main-card')) sec.remove();
   });
   _masonries.forEach(_initMasonry);
+
+  if (_redesenho) {
+    for (const [id, lados] of _redesenho.lados) {
+      const card = c.querySelector(`[data-card-id="${id}"]`);
+      for (const [cls, x] of lados) {
+        const el = cls && card?.getElementsByClassName(cls.split(' ')[0])[0];
+        if (el) el.scrollLeft = x;
+      }
+    }
+    window.scrollTo(0, _redesenho.y);
+  }
 }
 
 // Masonry sem biblioteca: o container é um grid de linhas finas e cada card
