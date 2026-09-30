@@ -959,11 +959,12 @@ function _renderAvisosAdm(c) {
   const strip = document.createElement('div');
   strip.className = 'aviso-strip';
   strip.innerHTML = '<span class="aviso-strip-lbl">Pendências</span>';
-  _avisoContagem(strip);
-  _avisoLojaAcao(strip);
-  _avisoNotas(strip);
-  _avisoPauta(strip);
+  // Ordem pedida pelo Leonardo em 30/09/2026.
   _avisoVt(strip);
+  _avisoNotas(strip);
+  _avisoLojaAcao(strip);
+  _avisoContagem(strip);
+  _avisoPauta(strip);
   if (strip.querySelector('.aviso-pill')) c.prepend(strip);
 }
 
