@@ -1393,6 +1393,7 @@ function renderDashboard() {
   const perfCol      = _slotEm(laneVendas);
   const weekCol      = _slotEm(laneVendas);
   const compCol      = _slotEm(laneVendas);
+  const margemCol    = userIsAdmin(S.user) ? _slotEm(laneVendas) : null;
 
   const laneAcao     = _lane('02', 'Ação',     2);
   const midCol       = _slotEm(laneAcao);      // Pendências + Reunião
@@ -2006,6 +2007,9 @@ function renderDashboard() {
     _loadCompCard(compCard.querySelector('#compCardBody')).catch(e => console.error(e));
   }
 
+  // ── CARD: Margem por Loja (foto diária das 08:00) — só adm ───────────────
+  if (margemCol) renderMargemCard(margemCol);
+
   // ── CARD: Pendências ─────────────────────────────────────────────────────
   renderPendenciasCard(midCol);
 
@@ -2079,6 +2083,95 @@ function _initMasonry(container) {
   container._masonryRO = ro;
 }
 
+
+// Margem por Loja do Dashboard da Conferência, trazida para o painel do adm.
+// Lê a foto que o servidor tira às 08:00 (do dia 1º até ontem) — nunca
+// consulta o Microvix daqui, porque o painel se redesenha a cada clique. A foto
+// fica guardada na página depois da primeira leitura pelo mesmo motivo.
+let _margemFoto; // undefined = ainda não buscou; null = servidor não tem foto
+function renderMargemCard(col) {
+  const card = document.createElement('div');
+  card.className = 'main-card';
+  card.dataset.cardId = 'card-margem';
+  card.innerHTML = `
+    <div class="main-card-hdr">
+      <span class="main-card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <line x1="19" y1="5" x2="5" y2="19"/><circle cx="6.5" cy="6.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/>
+        </svg>
+        Margem por Loja
+      </span>
+      <span class="main-card-sub" id="margemCardSub"></span>
+    </div>
+    <div class="main-card-body" id="margemCardBody"></div>`;
+  col.appendChild(card);
+  const body = card.querySelector('#margemCardBody');
+  const sub  = card.querySelector('#margemCardSub');
+
+  const desenhar = foto => {
+    if (!foto?.lojas?.length) {
+      body.innerHTML = '<div class="folga-mini-empty">A foto da margem sai todo dia às 08:00.</div>';
+      return;
+    }
+    const pad = n => String(n).padStart(2, '0');
+    const dm  = iso => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+    const ger = new Date(foto.geradoEm);
+    sub.textContent = `${dm(foto.dtIni)} a ${dm(foto.dtFin)} · atualizado ${pad(ger.getDate())}/${pad(ger.getMonth()+1)} ${pad(ger.getHours())}:${pad(ger.getMinutes())}`;
+
+    const fR = v => 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    // Mesma conta do Dashboard da Conferência: CMV% e Taxa% são sobre a venda
+    // líquida e somam; o % de desconto é sobre o bruto, só como indicador.
+    const linhas = foto.lojas.map(l => ({
+      ...l,
+      margemPerc: 100 - (l.cmvPerc || 0) - (l.taxaPercLiquido || 0),
+      margemVlr:  l.vlrLiquido - l.vlrCusto - (l.vlrTaxa || 0),
+    })).sort((a, b) => b.margemPerc - a.margemPerc);
+    const tot = linhas.reduce((s, l) => ({
+      liq: s.liq + l.vlrLiquido, bruto: s.bruto + l.vlrBruto, desc: s.desc + l.vlrDesconto,
+      custo: s.custo + l.vlrCusto, taxa: s.taxa + (l.vlrTaxa || 0),
+    }), { liq: 0, bruto: 0, desc: 0, custo: 0, taxa: 0 });
+    const totCmv = tot.liq ? tot.custo / tot.liq * 100 : 0;
+    const totTx  = tot.liq ? tot.taxa / tot.liq * 100 : 0;
+    const totMg  = 100 - totCmv - totTx;
+    // Cor relativa à média da rede, como na Conferência: quem puxa para cima/baixo
+    const corMg = m => m >= totMg + 1.5 ? 'kpi-pos' : m <= totMg - 1.5 ? 'kpi-neg' : '';
+
+    body.innerHTML = `
+      <table class="dash-table">
+        <thead><tr class="dash-thead-tr">
+          <th class="dash-th">Loja</th><th class="dash-th">Venda líq.</th><th class="dash-th">% Desc.</th>
+          <th class="dash-th">CMV %</th><th class="dash-th">Taxa %</th><th class="dash-th">Margem %</th><th class="dash-th">Margem R$</th>
+        </tr></thead>
+        <tbody>${linhas.map(l => `
+          <tr class="dash-row">
+            <td class="dash-td dash-td-name"><span class="dash-store-dot" style="display:inline-block;background:${BOARDS[l.board]?.color || 'var(--muted)'}"></span> ${BOARDS[l.board]?.label || l.board}</td>
+            <td class="dash-td dash-td-num">${fR(l.vlrLiquido)}</td>
+            <td class="dash-td dash-td-num" style="color:var(--muted)">${(l.percDesconto || 0).toFixed(1)}%</td>
+            <td class="dash-td dash-td-num">${(l.cmvPerc || 0).toFixed(1)}%</td>
+            <td class="dash-td dash-td-num">${l.vlrCartao ? (l.taxaPercLiquido || 0).toFixed(2) + '%' : '—'}</td>
+            <td class="dash-td dash-td-num ${corMg(l.margemPerc)}"><strong>${l.margemPerc.toFixed(1)}%</strong></td>
+            <td class="dash-td dash-td-num">${fR(l.margemVlr)}</td>
+          </tr>`).join('')}
+          <tr class="dash-total-row">
+            <td class="dash-td"><strong>Consolidado</strong></td>
+            <td class="dash-td dash-td-num"><strong>${fR(tot.liq)}</strong></td>
+            <td class="dash-td dash-td-num" style="color:var(--muted)">${(tot.bruto ? tot.desc / tot.bruto * 100 : 0).toFixed(1)}%</td>
+            <td class="dash-td dash-td-num">${totCmv.toFixed(1)}%</td>
+            <td class="dash-td dash-td-num">${totTx.toFixed(2)}%</td>
+            <td class="dash-td dash-td-num"><strong>${totMg.toFixed(1)}%</strong></td>
+            <td class="dash-td dash-td-num"><strong>${fR(tot.liq - tot.custo - tot.taxa)}</strong></td>
+          </tr>
+        </tbody>
+      </table>
+      <div class="margem-nota">${linhas.length} lojas Microvix · sem Lez a Lez · antes de aluguel, folha e impostos</div>`;
+  };
+
+  if (_margemFoto !== undefined) return desenhar(_margemFoto);
+  body.innerHTML = '<div class="folga-mini-empty">Carregando…</div>';
+  apiFetch('GET', '/api/margem-snapshot')
+    .then(f => { _margemFoto = f; desenhar(f); })
+    .catch(() => { body.innerHTML = '<div class="folga-mini-empty">Erro ao carregar a margem</div>'; });
+}
 
 function renderAniversariantesCard(col) {
   const pad = n => String(n).padStart(2, '0');

@@ -11081,6 +11081,44 @@ app.get('/api/conferencia/dashboard', requireEscritorioOrAdmin, async (req, res)
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Margem por loja do painel principal (foto diária) ──────────────────────
+// O card do painel do adm mostra a mesma Margem por Loja do Dashboard da
+// Conferência, mas o painel se redesenha a cada clique e cada cálculo são ~20
+// consultas pesadas ao Microvix. Então ele lê uma foto: calculada 1× por dia
+// às 08:00 (Brasília), do dia 1º do mês até ontem, e guardada em
+// db.margemSnapshot. O Dashboard da Conferência continua ao vivo, sem cache.
+function _ontemBRT() {
+  const brt = new Date(Date.now() - 3 * 60 * 60 * 1000);
+  brt.setUTCDate(brt.getUTCDate() - 1);
+  return brt.toISOString().slice(0, 10);
+}
+
+let _margemSnapshotRodando = false;
+async function gerarMargemSnapshot() {
+  if (_margemSnapshotRodando) return;
+  _margemSnapshotRodando = true;
+  try {
+    const dtFin = _ontemBRT();
+    const dtIni = dtFin.slice(0, 8) + '01';
+    const { porLoja } = await computeConferenciaDashboard(dtIni, dtFin);
+    const campos = ['board', 'vlrLiquido', 'vlrBruto', 'vlrDesconto', 'vlrCusto', 'vlrTaxa', 'vlrCartao', 'percDesconto', 'cmvPerc', 'taxaPercLiquido'];
+    const lojas = (porLoja || []).filter(l => !l.erro && l.vlrLiquido > 0)
+      .map(l => Object.fromEntries(campos.map(k => [k, l[k] ?? 0])));
+    const db = await readDB();
+    db.margemSnapshot = { dtIni, dtFin, geradoEm: new Date().toISOString(), lojas };
+    await writeDB(db);
+    console.log(`[margem] Foto ${dtIni} → ${dtFin} gravada (${lojas.length} loja(s))`);
+  } catch (e) {
+    console.warn('[margem] Falha ao gerar foto:', e.message);
+  } finally { _margemSnapshotRodando = false; }
+}
+
+// GET /api/margem-snapshot — a foto do dia para o card do painel (só adm)
+app.get('/api/margem-snapshot', requireAdmin, async (req, res) => {
+  try { res.json((await readDB()).margemSnapshot || null); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Extrato Rede (mensal) ─────────────────────────────────────────────────────
 let _redeExtratoColReady = false;
 async function getRedeExtratoCol() {
@@ -15563,6 +15601,18 @@ initMongo()
           }).catch(e => console.warn('[prewarm/90d]', e.message));
         }
       }, 10_000);
+    }
+
+    // ── Cron: foto da Margem por Loja — diário 08:00 Brasília, até ontem ────
+    if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
+      cron.schedule('0 8 * * *', () => { gerarMargemSnapshot(); }, { timezone: 'America/Sao_Paulo' });
+      // Reinício depois das 08:00 (deploy) sem a foto de hoje: gera uma vez,
+      // com folga para o catálogo e o prewarm assentarem primeiro.
+      setTimeout(async () => {
+        const horaBRT = new Date(Date.now() - 3 * 60 * 60 * 1000).getUTCHours();
+        const foto = (await readDB().catch(() => ({}))).margemSnapshot;
+        if (horaBRT >= 8 && foto?.dtFin !== _ontemBRT()) gerarMargemSnapshot();
+      }, 90_000);
     }
 
     // Dispara prewarm 10s após startup (catálogo precisa estar carregado primeiro)
