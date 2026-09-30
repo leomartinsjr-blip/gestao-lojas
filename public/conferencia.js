@@ -2042,19 +2042,40 @@
            (l.taxaPercLiquido||0).toFixed(2)+'%')
     ).join('') || `<div style="color:${P('muted')};font-size:12px;padding:14px 0">Nenhum pagamento em cartão/PIX no período.</div>`;
 
-    // ── Detalhamento por bandeira/modalidade ──────────────────────────────
+    // ── Detalhamento por modalidade ───────────────────────────────────────
+    // Agrupado só por modalidade, a pedido do Leonardo: a bandeira não muda a
+    // decisão. A taxa da linha é a média ponderada das bandeiras (desconto ÷
+    // volume com taxa); volume de bandeira sem taxa cadastrada fica de fora
+    // dessa média e é sinalizado.
     const totTaxaValor = taxaRows.reduce((s,t) => s + t.valor, 0);
-    const taxaDetRows = taxaRows.map(t => `
-      <tr${t.semTaxa ? ` style="background:${P('accent')}0c"` : ''}>
-        <td style="font-weight:600">${esc(t.bandeira)}</td>
-        <td><span style="font-size:10px;font-weight:700;color:${P('muted')}">${esc(t.mod)}</span></td>
-        <td class="num">${fmtR(t.valor)}</td>
-        <td class="num" style="color:${P('muted')}">${totTaxaValor > 0 ? (t.valor/totTaxaValor*100).toFixed(1)+'%' : '—'}</td>
-        <td class="num">${t.semTaxa
+    const porMod = new Map();
+    for (const t of taxaRows) {
+      const m = porMod.get(t.mod) || { mod: t.mod, valor: 0, vlrTaxa: 0, valorComTaxa: 0, valorSemTaxa: 0 };
+      m.valor += t.valor;
+      if (t.semTaxa) m.valorSemTaxa += t.valor;
+      else { m.vlrTaxa += t.vlrTaxa; m.valorComTaxa += t.valor; }
+      porMod.set(t.mod, m);
+    }
+    const ordemMod = mod => {
+      if (/pix/i.test(mod)) return 0;
+      if (/d[ée]bito/i.test(mod)) return 1;
+      const x = /(\d+)\s*x/i.exec(mod);
+      return x ? 1 + parseInt(x[1]) : 99;
+    };
+    const taxaDetRows = [...porMod.values()].sort((a,b) => ordemMod(a.mod) - ordemMod(b.mod) || a.mod.localeCompare(b.mod)).map(m => {
+      const semTaxa = !m.valorComTaxa;
+      const parcial = !semTaxa && m.valorSemTaxa > 0.01;
+      return `
+      <tr${semTaxa ? ` style="background:${P('accent')}0c"` : ''}>
+        <td style="font-weight:600">${esc(m.mod)}</td>
+        <td class="num">${fmtR(m.valor)}</td>
+        <td class="num" style="color:${P('muted')}">${totTaxaValor > 0 ? (m.valor/totTaxaValor*100).toFixed(1)+'%' : '—'}</td>
+        <td class="num">${semTaxa
             ? `<span style="color:${P('accent')};font-weight:700" title="Taxa não cadastrada na aba Taxas">não cadastrada</span>`
-            : `<span style="font-weight:700">${(+t.taxa).toFixed(2)}%</span>`}</td>
-        <td class="num" style="font-weight:800;color:${t.semTaxa ? P('muted') : '#14B8A6'}">${t.semTaxa ? '—' : fmtR(t.vlrTaxa)}</td>
-      </tr>`).join('');
+            : `<span style="font-weight:700"${parcial ? ` title="${fmtR(m.valorSemTaxa)} de bandeira sem taxa cadastrada ficou fora da conta"` : ''}>${(m.vlrTaxa / m.valorComTaxa * 100).toFixed(2)}%${parcial ? ` <sup style="color:${P('accent')}">⚠</sup>` : ''}</span>`}</td>
+        <td class="num" style="font-weight:800;color:${semTaxa ? P('muted') : '#14B8A6'}">${semTaxa ? '—' : fmtR(m.vlrTaxa)}</td>
+      </tr>`;
+    }).join('');
 
     const taxaAvisoHtml = !taxasCadastradas
       ? `<div style="margin-top:10px;padding:9px 13px;background:${P('accent')}12;border-left:3px solid ${P('accent')};border-radius:6px;font-size:11px;color:${P('accent')}">
@@ -2077,16 +2098,16 @@
         </div>
         <div class="panel-card">
           <div class="panel-card-hdr">
-            <span class="panel-card-title">Taxas por Bandeira</span>
+            <span class="panel-card-title">Taxas por Modalidade</span>
             <span class="panel-card-meta">total: ${fmtR(tot.vlrTaxa)}</span>
           </div>
           <table class="cf-tbl">
             <thead><tr>
-              <th>Bandeira</th><th>Modalidade</th>
+              <th>Modalidade</th>
               <th class="num">Volume</th><th class="num">Mix</th>
               <th class="num">Taxa</th><th class="num">Desconto</th>
             </tr></thead>
-            <tbody>${taxaDetRows || `<tr><td colspan="6" style="text-align:center;color:${P('muted')};padding:24px;font-size:12px">Nenhum pagamento em cartão/PIX no período</td></tr>`}</tbody>
+            <tbody>${taxaDetRows || `<tr><td colspan="5" style="text-align:center;color:${P('muted')};padding:24px;font-size:12px">Nenhum pagamento em cartão/PIX no período</td></tr>`}</tbody>
           </table>
         </div>
       </div>
