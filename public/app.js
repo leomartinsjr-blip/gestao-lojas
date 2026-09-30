@@ -2089,6 +2089,17 @@ function _initMasonry(container) {
 // consulta o Microvix daqui, porque o painel se redesenha a cada clique. A foto
 // fica guardada na página depois da primeira leitura pelo mesmo motivo.
 let _margemFoto; // undefined = ainda não buscou; null = servidor não tem foto
+// Ordenação do card — fica guardada entre os redesenhos do painel.
+let _margemSort = { key: 'margemPerc', dir: -1 };
+const MARGEM_COLS = [
+  { key: 'loja',         label: 'Loja' },
+  { key: 'vlrLiquido',   label: 'Venda líq.' },
+  { key: 'percDesconto', label: '% Desc.' },
+  { key: 'cmvPerc',      label: 'CMV %' },
+  { key: 'taxaPercLiquido', label: 'Taxa %' },
+  { key: 'margemPerc',   label: 'Margem %' },
+  { key: 'margemVlr',    label: 'Margem R$' },
+];
 function renderMargemCard(col) {
   const card = document.createElement('div');
   card.className = 'main-card';
@@ -2121,11 +2132,15 @@ function renderMargemCard(col) {
     const fR = v => 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     // Mesma conta do Dashboard da Conferência: CMV% e Taxa% são sobre a venda
     // líquida e somam; o % de desconto é sobre o bruto, só como indicador.
+    const { key, dir } = _margemSort;
     const linhas = foto.lojas.map(l => ({
       ...l,
+      loja:       BOARDS[l.board]?.label || l.board,
       margemPerc: 100 - (l.cmvPerc || 0) - (l.taxaPercLiquido || 0),
       margemVlr:  l.vlrLiquido - l.vlrCusto - (l.vlrTaxa || 0),
-    })).sort((a, b) => b.margemPerc - a.margemPerc);
+    })).sort((a, b) => key === 'loja'
+      ? dir * a.loja.localeCompare(b.loja, 'pt-BR')
+      : dir * ((a[key] || 0) - (b[key] || 0)));
     const tot = linhas.reduce((s, l) => ({
       liq: s.liq + l.vlrLiquido, bruto: s.bruto + l.vlrBruto, desc: s.desc + l.vlrDesconto,
       custo: s.custo + l.vlrCusto, taxa: s.taxa + (l.vlrTaxa || 0),
@@ -2138,9 +2153,8 @@ function renderMargemCard(col) {
 
     body.innerHTML = `
       <table class="dash-table">
-        <thead><tr class="dash-thead-tr">
-          <th class="dash-th">Loja</th><th class="dash-th">Venda líq.</th><th class="dash-th">% Desc.</th>
-          <th class="dash-th">CMV %</th><th class="dash-th">Taxa %</th><th class="dash-th">Margem %</th><th class="dash-th">Margem R$</th>
+        <thead><tr class="dash-thead-tr">${MARGEM_COLS.map(c => `
+          <th class="dash-th" data-sort="${c.key}" title="Clique para ordenar">${c.label}<span class="dash-sort-arrow">${c.key === key ? (dir > 0 ? '↑' : '↓') : '⇅'}</span></th>`).join('')}
         </tr></thead>
         <tbody>${linhas.map(l => `
           <tr class="dash-row">
@@ -2164,6 +2178,14 @@ function renderMargemCard(col) {
         </tbody>
       </table>
       <div class="margem-nota">${linhas.length} lojas Microvix · sem Lez a Lez · antes de aluguel, folha e impostos</div>`;
+
+    // Clicar de novo na mesma coluna inverte; coluna nova começa do maior
+    // (ou de A a Z, na Loja). Só o card se redesenha, não o painel.
+    body.querySelectorAll('th[data-sort]').forEach(th => th.addEventListener('click', () => {
+      const k = th.dataset.sort;
+      _margemSort = k === _margemSort.key ? { key: k, dir: -_margemSort.dir } : { key: k, dir: k === 'loja' ? 1 : -1 };
+      desenhar(foto);
+    }));
   };
 
   if (_margemFoto !== undefined) return desenhar(_margemFoto);
