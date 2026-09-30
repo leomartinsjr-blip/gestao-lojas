@@ -2057,6 +2057,7 @@
       porMod.set(t.mod, m);
     }
     const ordemMod = mod => {
+      if (/dinheiro/i.test(mod)) return -1;
       if (/pix/i.test(mod)) return 0;
       if (/d[ée]bito/i.test(mod)) return 1;
       const x = /(\d+)\s*x/i.exec(mod);

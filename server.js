@@ -10873,6 +10873,7 @@ async function computeConferenciaDashboard(dtIni, dtFin) {
     const porLoja      = {};
     const porVendedor  = {};
     const taxaGlobal   = {}; // `${label}::${mod}` → { bandeira, mod, taxa, valor, vlrTaxa, semTaxa }
+    let vlrDinheiroGlobal = 0; // entra só na tabela de modalidades, com taxa 0
 
     for (const { board, cnpjClean, rows, planoRows, cartoesRows, erro, vendNomes } of resultados) {
       if (erro) { porLoja[board] = { board, erro }; continue; }
@@ -10940,6 +10941,7 @@ async function computeConferenciaDashboard(dtIni, dtFin) {
           .reduce((s, k) => s + parseBR(r[k]||'0'), 0)
           || parseBR(r.valor_total||r.total_liquido||'0');
         loja.vlrLiquido += sign * vlrLiq;
+        vlrDinheiroGlobal += sign * parseBR(r.total_dinheiro||'0');
 
         // vlrLiquido do vendedor: por documento (após seenDocs)
         if (cod && porVendedor[`${board}::${cod}`]) {
@@ -11061,6 +11063,13 @@ async function computeConferenciaDashboard(dtIni, dtFin) {
         semTaxa:  t.semTaxa,
       }))
       .sort((a,b) => b.valor - a.valor);
+    // Dinheiro não passa na maquineta, mas o Leonardo quer ver o peso dele no
+    // mix de pagamento. Fica só nesta lista: taxa e margem por loja seguem
+    // calculadas sobre cartão/PIX.
+    if (Math.abs(vlrDinheiroGlobal) > 0.005) {
+      porTaxa.push({ bandeira: 'Dinheiro', mod: 'Dinheiro', taxa: 0,
+        valor: +vlrDinheiroGlobal.toFixed(2), vlrTaxa: 0, semTaxa: false });
+    }
 
     return {
       dtIni, dtFin,
