@@ -1922,8 +1922,10 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
         row('Com. Loja Meta 2 (%)', `ec-comissaoVRMeta2-${emp.id}`,   ecfg.comissaoVRMeta2) +
         row('Com. Loja S.Meta (%)', `ec-comissaoVRSuper-${emp.id}`,   ecfg.comissaoVRSuper)
       : '') +
-      (tipo === 'sub' || tipo === 'gvend'
+      (tipo === 'sub' || tipo === 'gvend' || tipo === 'supervisor'
         ? row('Salário Fixo (R$)', `ec-salarioFixo-${emp.id}`, ecfg.salarioFixo) : '') +
+      (tipo === 'socio'
+        ? row('Pró-Labore (R$)', `ec-salarioFixo-${emp.id}`, ecfg.salarioFixo) : '') +
       (tipo === 'vendedor'
         ? `<div class="fp-emp-cfg-row" title="Deixe 0 para usar o Salário Fixo cadastrado na loja (Configurar → Vendedor no regime fixo + comissão)">
              <label>Salário Fixo (R$) <span style="color:#484f58;font-weight:400">0 = usa o da loja</span></label>
@@ -2003,7 +2005,7 @@ async function fpSaveEmpCfg(empId) {
       cfg.comissaoVRMeta2   = g(`ec-comissaoVRMeta2-${empId}`);
       cfg.comissaoVRSuper   = g(`ec-comissaoVRSuper-${empId}`);
     }
-    if (tipo === 'sub' || tipo === 'gvend' || tipo === 'vendedor')
+    if (['sub', 'gvend', 'vendedor', 'supervisor', 'socio'].includes(tipo))
       cfg.salarioFixo = g(`ec-salarioFixo-${empId}`);
     if (tipo === 'vendedor')
       cfg.vendedorComFixo = document.getElementById(`ec-vendedorComFixo-${empId}`)?.checked || false;
