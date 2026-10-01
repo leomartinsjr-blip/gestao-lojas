@@ -152,6 +152,9 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
       });
       continue;
     }
+    // Vendedor ".loja" (cod 8 nas Surfers) é transferência/lançamento interno, não
+    // venda de ninguém — fica fora sem gerar aviso. Pelo nome: o cod muda por portal.
+    if (/^\W*loja\W*$/.test(vendNorm)) continue;
 
     const dateStr = parseDate(row.data_documento);
     if (!dateStr) continue;
