@@ -135,6 +135,9 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
     // Só venda (S) ou devolução (DS) contam — entrada de mercadoria (E), ajuste (J) etc. não são vendas
     const rowOp = (row.operacao || '').trim().toUpperCase();
     if (rowOp !== 'S' && rowOp !== 'DS') continue;
+    // Ajuste de estoque chega como operacao S com serie J e documento 0, no
+    // cod_vendedor padrão (1) — não é venda e não aparece no Faturamento Vendedor
+    if ((row.serie || '').trim().toUpperCase() === 'J' || !parseInt(row.documento || '0')) continue;
 
     const codVend  = String(row.cod_vendedor || '').trim();
     const vendNorm = vendMap[codVend];
