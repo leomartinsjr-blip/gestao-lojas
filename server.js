@@ -9950,7 +9950,8 @@ function calcPremiacaoSemanal(db, year, month, employees) {
         if (useStorePremio && trabalhouSemanaInteira) {
           let val = 0;
           if (storeHitMeta) val += storePremioVal;
-          if (storeHitMeta && storeHitPA) val += PREMIO_PA_W;
+          // Caixa ganha só o prêmio da meta da loja — o adicional de PA é de quem vende
+          if (storeHitMeta && storeHitPA && !/caixa/.test(tipo)) val += PREMIO_PA_W;
           if (val > 0) {
             premiacaoSemanalGer[emp.id] += val;
             premiacaoSemanalGerDetalhe[emp.id].push({ label: semLabel, valor: val, board });
