@@ -287,6 +287,15 @@ const SECTIONS = ['performance','estoque_marca','estoque_grupo','pauta','pendenc
 // dinheiro recebido nem venda; excluídos do Fechamento e da Conferência de Caixa.
 const CFOP_SEM_RECEITA = new Set(['5910', '6910']);
 
+// Ajuste de balanço/estoque no LinxMovimento: chega como operacao S/E no cod_vendedor
+// padrão, documento 0, com 'J' no tipo_transacao (Tommy) ou na serie (Del Rey).
+// Não é venda em loja nenhuma — mesma regra de services/microvixSync.js.
+function isAjusteEstoque(r) {
+  const serie = String(r.serie || r.serie_documento || r.num_serie || '').trim().toUpperCase();
+  const tipo  = String(r.tipo_transacao || '').trim().toUpperCase();
+  return serie === 'J' || tipo === 'J' || !parseInt(r.documento || '0');
+}
+
 // ── Embalagens: catálogo, mínimos e contagem quinzenal ──────────────────────
 // Fonte única do que cada loja conta e pede. A loja conta em PEÇAS (é o que ela
 // enxerga na prateleira); o pedido sai em MÓDULOS (caixa fechada do fornecedor),
@@ -4467,8 +4476,9 @@ app.get('/api/conferencia-caixa', requireAuth, async (req, res) => {
       const operacao = (r.operacao || '').trim().toUpperCase();
       if (operacao !== 'S' && operacao !== 'DS') continue;
       if ((r.soma_relatorio || 'S').toUpperCase() === 'N') continue;
-      // tipo_transacao 'J' sem documento = ajuste de balanço/estoque (Tommy: FALTA BALANÇO)
-      if ((r.tipo_transacao || '').trim().toUpperCase() === 'J' && String(r.documento || '').trim() === '0') continue;
+      // Ajuste de balanço/estoque: documento 0, com 'J' no tipo_transacao (Tommy: FALTA BALANÇO)
+      // ou na serie (Del Rey) — nunca é venda
+      if (isAjusteEstoque(r)) continue;
       const serie = String(r.serie || r.serie_documento || r.num_serie || '').trim();
       if (serie === '999') continue;
       if (serie === '4' && operacao !== 'DS') continue;
@@ -11738,8 +11748,9 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
       if ((r.soma_relatorio || 'S').toUpperCase() === 'N') continue;
       const op    = (r.operacao || '').trim().toUpperCase();
       if (op !== 'S' && op !== 'DS') continue;
-      // tipo_transacao 'J' sem documento = ajuste de balanço/estoque (Tommy: FALTA BALANÇO)
-      if ((r.tipo_transacao || '').trim().toUpperCase() === 'J' && String(r.documento || '').trim() === '0') continue;
+      // Ajuste de balanço/estoque: documento 0, com 'J' no tipo_transacao (Tommy: FALTA BALANÇO)
+      // ou na serie (Del Rey) — nunca é venda
+      if (isAjusteEstoque(r)) continue;
       const serie = String(r.serie || r.serie_documento || '').trim();
       if (serie === '999') continue;
       // Série 4: processa normalmente — pós-filtro vai remover os de total positivo (transferências internas)
@@ -15538,6 +15549,11 @@ initMongo()
             if (row.soma_relatorio === 'N') continue;
             const op = (row.operacao || '').toUpperCase();
             if (op !== 'S' && op !== 'DS') continue;
+            // Mesmos cortes de /api/marcas — sem eles o cache pré-aquecido divergia da tela
+            const serie = String(row.serie || row.serie_documento || row.num_serie || '').trim();
+            if (serie === '999') continue;
+            if (serie === '4' && op !== 'DS') continue;
+            if (serie === 'J') continue;
             const sign = op === 'DS' ? -1 : 1;
             const cod  = String(row.cod_produto || '').replace(/\.0+$/, '').trim();
             const barra = String(row.cod_barra || '').replace(/\.0+$/, '').trim();
