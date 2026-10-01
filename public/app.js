@@ -7193,7 +7193,16 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
   let obs       = data.obs       || '';
 
   const sourceEmps = empsList || FC.employees;
-  const boardEmps = sourceEmps.filter(e => e.board === board && !e.inativo);
+  // "Inativo" é a foto de hoje: quem saiu no mês exibido ainda precisa de falta,
+  // feriado e extensão lançados para a folha. Mesma regra do folhaEmployeesDoMes
+  // no servidor — admitido até o fim do mês e desligado a partir do começo dele.
+  const _mesIni = `${year}-${String(month).padStart(2,'0')}-01`;
+  const _mesFim = `${year}-${String(month).padStart(2,'0')}-${String(new Date(year, month, 0).getDate()).padStart(2,'0')}`;
+  const boardEmps = sourceEmps.filter(e => {
+    if (e.board !== board) return false;
+    if (e.inativo && !e.desligamento) return false;
+    return (!e.admissao || e.admissao <= _mesFim) && (!e.desligamento || e.desligamento >= _mesIni);
+  });
   const boardLabel = BOARDS[board]?.label || board;
   const monthLabel = `${MONTHS_PT[month-1]} ${year}`;
 
@@ -13135,7 +13144,7 @@ function _renderDadosLojaAcaoView(body) {
   const userBoard = S.user?.board;
 
   if (userBoard) {
-    _renderDadosFolha(body, userBoard, S.year, S.month, S.employees);
+    _renderDadosFolha(body, userBoard, S.year, S.month, S.allEmployees || S.employees);
     return;
   }
 
@@ -13155,7 +13164,7 @@ function _renderDadosLojaAcaoView(body) {
     wrapper.querySelectorAll('.req-board-chip').forEach(btn => btn.addEventListener('click', () => {
       filterBoard = btn.dataset.b; render();
     }));
-    _renderDadosFolha(body.querySelector('#dadosLojaAcaoContent'), filterBoard, S.year, S.month, S.employees);
+    _renderDadosFolha(body.querySelector('#dadosLojaAcaoContent'), filterBoard, S.year, S.month, S.allEmployees || S.employees);
   }
   render();
 }
