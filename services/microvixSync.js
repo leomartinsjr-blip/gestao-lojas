@@ -72,6 +72,8 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
       if (rowOp !== 'S' && rowOp !== 'DS') continue;
       // Ignora reservas B2C sem NF emitida (documento=0 = ainda não faturado)
       if (!parseInt(row.documento || '0')) continue;
+      // Série 999 = transferência entre lojas — nunca é venda
+      if ((row.serie || '').trim() === '999') continue;
       const dateStr = parseDate(row.data_documento);
       if (!dateStr) continue;
       console.log(`[Microvix/site] INCLUÍDO doc=${row.documento} data=${dateStr} vend=${row.cod_vendedor} val=${row.valor_total} op=${row.operacao} tipo=${row.tipo_transacao}`);
@@ -138,6 +140,8 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
     // Ajuste de estoque chega como operacao S com serie J e documento 0, no
     // cod_vendedor padrão (1) — não é venda e não aparece no Faturamento Vendedor
     if ((row.serie || '').trim().toUpperCase() === 'J' || !parseInt(row.documento || '0')) continue;
+    // Série 999 = transferência entre lojas (cod_vendedor 8 ".loja") — nunca é venda
+    if ((row.serie || '').trim() === '999') continue;
 
     const codVend  = String(row.cod_vendedor || '').trim();
     const vendNorm = vendMap[codVend];
