@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Cadastro de Produto</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground:   #FBFAF8;
+    --surface:  #FFFFFF;
+    --surface2: #F4F1EC;
+    --ink:      #1B1E27;
+    --ink2:     #4A4640;
+    --muted:    #7A7267;
+    --border:   #E3DED6;
+    --rule:     #CFC7BC;
+    --accent:   #A85F14;
+    --accent-soft: rgba(168, 95, 20, .09);
+    --warn:     #8A6410;
+    --warn-soft: rgba(138, 100, 16, .10);
+    --stop:     #B23A2E;
+    --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+    --disp: "Big Shoulders Display", "IBM Plex Sans", Impact, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:   #14161C;
+      --surface:  #1B1E27;
+      --surface2: #232733;
+      --ink:      #E9E6E1;
+      --ink2:     #C3BDB4;
+      --muted:    #8E877D;
+      --border:   #2E333F;
+      --rule:     #3A4050;
+      --accent:   #F0A045;
+      --accent-soft: rgba(240, 160, 69, .12);
+      --warn:     #E3B93F;
+      --warn-soft: rgba(227, 185, 63, .12);
+      --stop:     #E36C5D;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:   #14161C;
+    --surface:  #1B1E27;
+    --surface2: #232733;
+    --ink:      #E9E6E1;
+    --ink2:     #C3BDB4;
+    --muted:    #8E877D;
+    --border:   #2E333F;
+    --rule:     #3A4050;
+    --accent:   #F0A045;
+    --accent-soft: rgba(240, 160, 69, .12);
+    --warn:     #E3B93F;
+    --warn-soft: rgba(227, 185, 63, .12);
+    --stop:     #E36C5D;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .folha { max-width: 46rem; margin: 0 auto; padding: 2.75rem 1.5rem 4rem; }
+  .mono { font-family: var(--mono); }
+
+  /* Cabecalho */
+  .kicker {
+    font-family: var(--mono); font-size: .68rem; font-weight: 600;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--accent);
+    margin: 0;
+  }
+  h1 {
+    font-family: var(--disp); font-weight: 700; font-size: clamp(2.6rem, 8vw, 4.1rem);
+    line-height: .92; letter-spacing: .005em; text-transform: uppercase;
+    margin: .5rem 0 .35rem; text-wrap: balance; color: var(--ink);
+  }
+  .sub { font-size: 1.02rem; color: var(--ink2); max-width: 34rem; margin: 0 0 1.6rem; }
+  .ficha {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 1px; background: var(--border); border: 1px solid var(--border);
+    border-radius: 3px; overflow: hidden; margin: 0;
+  }
+  .ficha > div { background: var(--surface); padding: .7rem .85rem; }
+  .ficha dt {
+    font-family: var(--mono); font-size: .64rem; font-weight: 600; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: .2rem;
+  }
+  .ficha dd { margin: 0; font-size: .88rem; color: var(--ink); font-weight: 500; }
+
+  /* Blocos */
+  section { margin-top: 2.75rem; }
+  h2 {
+    font-family: var(--disp); font-weight: 700; font-size: 1.75rem; text-transform: uppercase;
+    letter-spacing: .02em; margin: 0 0 .2rem; color: var(--ink);
+  }
+  .h2-nota { font-size: .85rem; color: var(--muted); margin: 0 0 1rem; }
+
+  .antes { list-style: none; padding: 0; margin: 0; display: grid; gap: .55rem; }
+  .antes li {
+    display: grid; grid-template-columns: .85rem 1fr; gap: .7rem;
+    align-items: start; font-size: .95rem; color: var(--ink2);
+  }
+  .antes li::before {
+    content: ""; width: .5rem; height: .5rem; margin-top: .48rem;
+    border: 1.5px solid var(--accent); border-radius: 50%;
+  }
+  .antes b { color: var(--ink); font-weight: 600; }
+
+  .regras { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+  @media (min-width: 34rem) { .regras { grid-template-columns: 1fr 1fr; } }
+  .regra { background: var(--surface); padding: .9rem 1rem; }
+  .regra-t {
+    font-family: var(--mono); font-size: .95rem; font-weight: 600; color: var(--accent);
+    display: block; margin-bottom: .2rem;
+  }
+  .regra p { margin: 0; font-size: .85rem; color: var(--ink2); line-height: 1.5; }
+  .regra b { color: var(--ink); font-weight: 600; }
+
+  /* Fases e passos */
+  .fase { display: flex; align-items: center; gap: .85rem; margin: 2.6rem 0 1.1rem; }
+  .fase-nome {
+    font-family: var(--mono); font-size: .68rem; font-weight: 600; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--muted); white-space: nowrap;
+  }
+  .fase-linha { flex: 1; height: 1px; background: var(--rule); }
+
+  .passos { list-style: none; margin: 0; padding: 0; display: grid; gap: 1.9rem; }
+  .passo { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; align-items: start; }
+  .num {
+    font-family: var(--disp); font-weight: 700; font-size: 2.5rem; line-height: .78;
+    color: var(--accent); font-variant-numeric: tabular-nums; padding-top: .15rem;
+  }
+  .passo h3 { font-size: 1.06rem; font-weight: 600; margin: 0 0 .35rem; line-height: 1.3; color: var(--ink); }
+  .passo p { margin: 0 0 .55rem; color: var(--ink2); }
+  .passo p:last-child { margin-bottom: 0; }
+  .passo b { color: var(--ink); font-weight: 600; }
+  .caminho {
+    font-family: var(--mono); font-size: .82rem; color: var(--ink2);
+    background: var(--surface2); border-left: 2px solid var(--accent);
+    padding: .5rem .7rem; margin: 0; overflow-x: auto; white-space: nowrap;
+  }
+  .caminho b { color: var(--accent); font-weight: 600; }
+  .btn {
+    font-family: var(--mono); font-size: .82rem; font-weight: 600; color: var(--ink);
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 3px; padding: .05rem .35rem; white-space: nowrap;
+  }
+
+  .campos { margin: 0 0 .75rem; border-top: 1px solid var(--border); }
+  .campos > div {
+    display: grid; grid-template-columns: minmax(8rem, 12.5rem) 1fr; gap: .2rem 1rem;
+    padding: .4rem 0; border-bottom: 1px solid var(--border); align-items: baseline;
+  }
+  .campos dt { font-size: .84rem; color: var(--muted); }
+  .campos dd {
+    margin: 0; font-family: var(--mono); font-size: .84rem; font-weight: 600;
+    color: var(--ink); overflow-wrap: anywhere;
+  }
+  .campos dd em { font-family: var(--sans); font-style: normal; font-weight: 400; color: var(--ink2); }
+
+  .aviso {
+    background: var(--warn-soft); border-left: 2px solid var(--warn);
+    padding: .7rem .85rem; margin: .8rem 0 0; font-size: .87rem; color: var(--ink2);
+  }
+  .aviso b { color: var(--warn); }
+  .aviso .cit { font-family: var(--mono); font-size: .8rem; }
+
+  .atalho { font-size: .85rem; color: var(--muted); }
+  .atalho b { color: var(--ink2); font-weight: 600; }
+
+  .parada {
+    background: var(--accent-soft); border: 1px solid var(--border); border-left: 2px solid var(--stop);
+    padding: .85rem .95rem; margin-top: 1.8rem; font-size: .9rem; color: var(--ink2);
+  }
+  .parada b { color: var(--stop); }
+
+  /* Checklist */
+  .check { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+  .check li { background: var(--surface); }
+  .check label { display: grid; grid-template-columns: 1.05rem 1fr; gap: .75rem; align-items: start; padding: .7rem .9rem; cursor: pointer; }
+  .check input { width: 1rem; height: 1rem; margin: .18rem 0 0; accent-color: var(--accent); }
+  .check input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .check span { font-size: .92rem; color: var(--ink2); }
+  .check input:checked + span { color: var(--muted); text-decoration: line-through; }
+
+  .rodape {
+    margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    font-family: var(--mono); font-size: .7rem; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; justify-content: space-between;
+  }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  /* Impressao — folha clara, cores mantidas. Só o fundo vira branco puro:
+     papel poupa tinta, mas o laranja é o que separa passo de passo. */
+  @page { size: A4; margin: 15mm 14mm; }
+  @media print {
+    /* Os três estados de tema de uma vez: o seletor do tema escuro tem
+       especificidade maior que um :root sozinho, e venceria aqui dentro —
+       papel branco com texto claro é o resultado. */
+    :root, :root:not([data-theme="light"]), :root[data-theme="dark"] {
+      --ground: #FFFFFF; --surface: #FFFFFF; --surface2: #F4F1EC; --ink: #14171F; --ink2: #3D3A35;
+      --muted: #6B655C; --border: #D9D3CA; --rule: #C4BCB1; --accent: #A85F14;
+      --accent-soft: rgba(168, 95, 20, .07);
+      --warn: #8A6410; --warn-soft: rgba(138, 100, 16, .09); --stop: #B23A2E;
+    }
+    body {
+      background: #fff; color: var(--ink); font-size: 10pt; line-height: 1.45;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .folha { max-width: none; padding: 0; }
+    h1 { font-size: 30pt; color: var(--ink); }
+    .num { font-size: 19pt; }
+    .passos { gap: 1.1rem; }
+    .passo, .regra, .check li, .aviso, .parada { break-inside: avoid; }
+    /* No papel o quadradinho é para marcar com caneta: sai vazio, não pintado */
+    .check input { appearance: none; -webkit-appearance: none; width: .8rem; height: .8rem;
+      border: 1.2px solid var(--ink2); background: #fff; border-radius: 1px; }
+    .fase, h2 { break-after: avoid; }
+    .caminho { white-space: normal; }
+  }
+
+  /* Prints do Microvix — exemplo real, não ilustração */
+  .tela { margin: .8rem 0 0; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; background: var(--surface); }
+  .tela img { display: block; width: 100%; height: auto; }
+  .tela.estreita { max-width: 15rem; }
+  .tela figcaption {
+    font-family: var(--mono); font-size: .68rem; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); padding: .4rem .7rem; border-top: 1px solid var(--border); background: var(--surface2);
+  }
+  .passo a, .antes a, .parada a { color: var(--accent); }
+
+  /* Tabelas de consulta */
+  .tab-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 3px; }
+  table.tab { width: 100%; border-collapse: collapse; font-size: .8rem; background: var(--surface); }
+  .tab th {
+    font-family: var(--mono); font-size: .62rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); text-align: left; padding: .5rem .6rem; background: var(--surface2);
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  .tab td { padding: .45rem .6rem; border-bottom: 1px solid var(--border); color: var(--ink2); vertical-align: top; }
+  .tab tr:last-child td { border-bottom: 0; }
+  .tab td:first-child { font-weight: 600; color: var(--ink); }
+  .tab .m { font-family: var(--mono); color: var(--ink); white-space: nowrap; }
+  .tab .vazio { color: var(--muted); font-style: italic; font-weight: 400; }
+  /* A tabela por marca tem 8 colunas: sai da coluna de texto para caber sem rolar */
+  .largo { width: min(68rem, calc(100vw - 2rem)); position: relative; left: 50%; transform: translateX(-50%); }
+  .chips { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0; padding: 0; list-style: none; }
+  .chips li {
+    font-family: var(--mono); font-size: .74rem; font-weight: 600; color: var(--ink);
+    border: 1px solid var(--border); background: var(--surface); border-radius: 3px; padding: .15rem .45rem;
+  }
+
+  @media print {
+    .tela { break-inside: avoid; }
+    .tela img { max-height: 95mm; width: auto; max-width: 100%; margin: 0 auto; }
+    .tab-wrap { overflow: visible; }
+    .largo { width: auto; left: 0; transform: none; }
+    .tab tr { break-inside: avoid; }
+  }
+</style>
+<style>body{margin:0}img{max-width:100%}</style>
+</head>
+<body>
+
+<div class="folha">
+
+  <header>
+    <p class="kicker">Manual do escritório &middot; Surfers</p>
+    <h1>Cadastro de<br>Produto</h1>
+    <p class="sub">Como cadastrar um produto novo no Microvix a partir do pedido ou da nota do fornecedor: descrição, estrutura, preço, tributação e código de barras. O exemplo é um tênis Vans Old Skool.</p>
+    <dl class="ficha">
+      <div><dt>Quem faz</dt><dd>ADM e escritório</dd></div>
+      <div><dt>Onde</dt><dd>Microvix &middot; Suprimentos</dd></div>
+      <div><dt>Quando</dt><dd>Pedido novo chegando</dd></div>
+      <div><dt>Tamanho</dt><dd>12 passos</dd></div>
+    </dl>
+  </header>
+
+  <section>
+    <h2>Antes de começar</h2>
+    <p class="h2-nota">Sem isto em mãos, você trava no meio.</p>
+    <ul class="antes">
+      <li><span>O <b>pedido</b> do fornecedor e, se já chegou, a <b>nota fiscal</b>. Deles saem referência, cor, grade, custo, preço de venda, NCM e código de barras.</span></li>
+      <li><span>A <b>regra da marca</b>, na <a href="#marcas">tabela por marca</a> no fim deste manual: como montar a descrição, a referência, a cor e qual mark-up usar.</span></li>
+      <li><span><b>Procure a referência</b> na Listagem de Produtos antes de cadastrar. Se ela já existe, o produto pode já estar cadastrado, e cadastrar de novo gera duplicado.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>O que não muda</h2>
+    <p class="h2-nota">Vale para todo produto, de qualquer marca.</p>
+    <div class="regras">
+      <div class="regra">
+        <span class="regra-t">Linha = UNISEX</span>
+        <p>Sempre. Não use Feminino nem Masculino.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Espessura = BAIXAR SITE</span>
+        <p>Sempre, em todo produto.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Coleção atual</span>
+        <p>Hoje é <b>SUMMER 27</b>. Depois vêm WINTER 27 e SUMMER 28. <b>Confira sempre</b> antes de salvar.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Código de barras = GTIN13</span>
+        <p>Sempre o EAN de 13 dígitos do fornecedor, marcado como <b>principal</b>.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="fase"><span class="fase-nome">Parte 1 &middot; Abrir o cadastro</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">01</div>
+      <div>
+        <h3>Abra a tela de Produtos</h3>
+        <p class="caminho">Suprimentos &rarr; Estoque &rarr; <b>Produtos</b></p>
+        <figure class="tela estreita"><img src="/manuais/cadastro-produto/menu.png" alt="Menu lateral do Microvix com Suprimentos, Estoque e Produtos" loading="lazy"><figcaption>Menu lateral</figcaption></figure>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">02</div>
+      <div>
+        <h3>Clique em Novo Produto</h3>
+        <p>Na <b>Listagem de Produtos</b>, clique em <span class="btn">+ Novo Produto</span>, o botão roxo no canto superior direito. Aproveite a busca dessa tela para conferir se a referência já existe.</p>
+        <figure class="tela"><img src="/manuais/cadastro-produto/listagem.png" alt="Listagem de Produtos com o botão Novo Produto no canto superior direito" loading="lazy"><figcaption>Listagem de Produtos</figcaption></figure>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase"><span class="fase-nome">Parte 2 &middot; Dados gerais</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">03</div>
+      <div>
+        <h3>Preencha os dados gerais</h3>
+        <p>Descrição e referência seguem a <a href="#marcas">regra da marca</a>. A descrição vai <b>sem tamanho e sem cor</b>: o Microvix junta os dois no nome sozinho.</p>
+        <dl class="campos">
+          <div><dt>Código</dt><dd><em>já vem preenchido, não mexa</em></dd></div>
+          <div><dt>Descrição</dt><dd>conforme a tabela da marca</dd></div>
+          <div><dt>Referência</dt><dd>conforme a tabela da marca</dd></div>
+          <div><dt>Cód. Auxiliar</dt><dd><em>deixe em branco</em></dd></div>
+          <div><dt>Fornecedor</dt><dd>o fornecedor da marca</dd></div>
+          <div><dt>Comprador e Status</dt><dd><em>deixe em branco</em></dd></div>
+          <div><dt>Produto contabiliza saldo em estoque</dt><dd>marcado</dd></div>
+        </dl>
+        <p class="atalho"><b>Garantia:</b> a regra muda por marca e vai ter um manual próprio. Até ele sair, confirme com o escritório antes de marcar.</p>
+        <figure class="tela"><img src="/manuais/cadastro-produto/dados-gerais.png" alt="Exemplo preenchido: Tênis Vans Skate Old Skool, referência VN0A5FCB, fornecedor Arezzo, setor Tênis, linha Unisex, marca Vans, coleção Summer 27, espessura Baixar Site" loading="lazy"><figcaption>Exemplo &middot; Tênis Vans Skate Old Skool</figcaption></figure>
+        <div class="aviso">
+          <b>Vans aparece como Arezzo.</b> No Microvix, o fornecedor da Vans (Azzas) está cadastrado como <span class="cit">AREZZO INDUSTRIA E COMERCIO S.A</span>.
+        </div>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase"><span class="fase-nome">Parte 3 &middot; Estrutura mercadológica</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">04</div>
+      <div>
+        <h3>Classifique o produto</h3>
+        <dl class="campos">
+          <div><dt>Setor</dt><dd>o grupo do produto <em>(ver <a href="#setores">lista de setores</a>)</em></dd></div>
+          <div><dt>Linha</dt><dd>UNISEX</dd></div>
+          <div><dt>Marca</dt><dd>a marca do produto</dd></div>
+          <div><dt>Coleção</dt><dd>a coleção atual, hoje SUMMER 27</dd></div>
+          <div><dt>Espessura</dt><dd>BAIXAR SITE</dd></div>
+          <div><dt>Classificação</dt><dd><em>deixe em branco</em></dd></div>
+        </dl>
+        <div class="aviso">
+          <b>Cuidado com setor e marca.</b> Produto no setor errado bagunça todo relatório por setor. Tênis Redley e chinelos Kenner, por exemplo, já entraram como <span class="cit">CINTO</span> e marca <span class="cit">GERAL</span>. Use sempre o setor e a marca reais.
+        </div>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">05</div>
+      <div>
+        <h3>Tamanho e cor</h3>
+        <p><b>Mais de uma cor ou mais de um tamanho:</b> marque <b>Cadastro em grade</b> e selecione todos os tamanhos e cores da grade do pedido.</p>
+        <p><b>Uma cor e um tamanho só:</b> deixe a grade desmarcada e escolha o <b>Tamanho</b> e a <b>Cor</b>.</p>
+        <p>O código da cor segue a <a href="#marcas">regra da marca</a>. No exemplo da Vans, é o <span class="mono">Y28</span>.</p>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase"><span class="fase-nome">Parte 4 &middot; Preço de compra e venda</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">06</div>
+      <div>
+        <h3>Informe o custo</h3>
+        <dl class="campos">
+          <div><dt>Unidade de venda</dt><dd>UN</dd></div>
+          <div><dt>Custo com ICMS</dt><dd>o custo do pedido ou da nota fiscal</dd></div>
+          <div><dt>Desconto, IPI, frete e demais</dt><dd><em>deixe zerados</em></dd></div>
+        </dl>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">07</div>
+      <div>
+        <h3>Informe o preço de venda</h3>
+        <p>Em <b>Valor de venda</b>, marque <b>Informar preço de venda (R$) e calcular mark-up (%)</b> e digite o <b>Preço de venda</b>.</p>
+        <p>O preço vem do <b>pedido</b>. Se o pedido não trouxer, calcule: <b>custo &times; mark-up da marca</b>. O mark-up de cada marca está na <a href="#marcas">tabela</a>.</p>
+        <div class="aviso">
+          <b>O mark-up da tabela não é o % do Microvix.</b> Na tabela, mark-up 2,30 quer dizer <span class="cit">preço = custo &times; 2,30</span>, e o Microvix mostra isso como 130%. No exemplo: R$ 195,67 &times; 2,30 &asymp; R$ 449,90, e o campo de mark-up mostra 129,93%.
+        </div>
+        <figure class="tela"><img src="/manuais/cadastro-produto/preco.png" alt="Exemplo: custo com ICMS de R$ 195,67, preço de venda de R$ 449,90, mark-up de 129,93%" loading="lazy"><figcaption>Exemplo &middot; custo R$ 195,67, venda R$ 449,90</figcaption></figure>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase"><span class="fase-nome">Parte 5 &middot; Tributação</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">08</div>
+      <div>
+        <h3>Tipo de item e origem</h3>
+        <dl class="campos">
+          <div><dt>Tipo de item</dt><dd>1 &mdash; Mercadoria para Revenda</dd></div>
+          <div><dt>Origem da mercadoria</dt><dd>0 nacional &middot; 1 importado</dd></div>
+        </dl>
+        <p><b>Como saber se é importado:</b> na nota, o <b>primeiro dígito do CST</b> de cada item é a origem. CST 000 é nacional, CST 100 é importado.</p>
+        <p>Outro jeito: em nota de fornecedor <b>de fora de MG</b>, ICMS de <b>12%</b> é nacional e de <b>4%</b> é importado. Em nota de fornecedor de MG isso não serve, porque os dois saem a 18%.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">09</div>
+      <div>
+        <h3>NCM e CEST</h3>
+        <p>O <b>NCM</b> vem na nota fiscal, ou o fornecedor passa. <b>Use sempre o da nota.</b> Só se não tiver, use a <a href="#ncm">tabela de NCM</a> do fim do manual.</p>
+        <p>O <b>CEST</b> quase sempre é <span class="mono">28.059.00</span>.</p>
+        <p><b>Regime de Incidência do PIS e COFINS</b>, <b>EX</b>, <b>FCI</b> e <b>Código do benefício fiscal</b>: deixe em branco.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">10</div>
+      <div>
+        <h3>Configuração tributária</h3>
+        <dl class="campos">
+          <div><dt>Produto nacional</dt><dd>TT nacional</dd></div>
+          <div><dt>Produto importado</dt><dd>TT IMPOR</dd></div>
+          <div><dt>Com substituição tributária</dt><dd>FF <em>(só nesse caso)</em></dd></div>
+        </dl>
+        <figure class="tela"><img src="/manuais/cadastro-produto/tributacao.png" alt="Exemplo: mercadoria para revenda, origem 1 importação direta, NCM 64039990, CEST 28.059.00, configuração TT IMPOR" loading="lazy"><figcaption>Exemplo &middot; tênis importado</figcaption></figure>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase"><span class="fase-nome">Parte 6 &middot; Código de barras e salvar</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">11</div>
+      <div>
+        <h3>Inclua o código de barras</h3>
+        <p>Em <b>Tipo de código</b>, escolha <b>GTIN13</b>. Digite o EAN de 13 dígitos do fornecedor em <b>Código</b> e clique no <span class="btn">+</span>. Na lista, marque o GTIN13 como <b>Principal</b>.</p>
+        <p>O <b>Código gerencial</b> o Microvix cria sozinho. Não mexa nele.</p>
+        <figure class="tela"><img src="/manuais/cadastro-produto/codigo-barras.png" alt="Lista de códigos de barras: código gerencial 709958 e GTIN13 7890000251198 marcado como principal" loading="lazy"><figcaption>Exemplo &middot; GTIN13 como principal</figcaption></figure>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">12</div>
+      <div>
+        <h3>Salve e confira</h3>
+        <p>Clique em <span class="btn">Salvar</span>. Depois procure o produto na <b>Listagem de Produtos</b> e confira se o nome saiu com tamanho e cor certos e se o preço de venda está certo.</p>
+      </div>
+    </li>
+  </ol>
+
+  <div class="parada">
+    <b>Ficou em dúvida?</b> Marca sem regra na tabela, mark-up marcado como "confirmar" ou NCM que não bate: não chute, pergunte ao escritório antes de salvar. Cadastro errado vai para a etiqueta, para a nota e para o site.
+  </div>
+
+  <section>
+    <h2>Antes de salvar</h2>
+    <p class="h2-nota">Seis conferências, uma a uma.</p>
+    <ul class="check">
+      <li><label><input type="checkbox"><span>Descrição e referência seguem a regra da marca, sem tamanho e sem cor na descrição.</span></label></li>
+      <li><label><input type="checkbox"><span>Setor e marca são os reais, não CINTO nem GERAL por engano.</span></label></li>
+      <li><label><input type="checkbox"><span>Linha UNISEX, espessura BAIXAR SITE e a coleção atual.</span></label></li>
+      <li><label><input type="checkbox"><span>Preço de venda do pedido, ou custo &times; mark-up da marca.</span></label></li>
+      <li><label><input type="checkbox"><span>Origem, NCM e configuração tributária batem com a nota.</span></label></li>
+      <li><label><input type="checkbox"><span>GTIN13 incluído e marcado como principal.</span></label></li>
+    </ul>
+  </section>
+
+  <section id="marcas" class="largo">
+    <h2>Regra por marca</h2>
+    <p class="h2-nota">Como cada fornecedor manda e como cadastrar. Marca sem regra: verificar com o escritório.</p>
+    <div class="tab-wrap">
+      <table class="tab">
+        <thead><tr><th>Marca</th><th>Fornecedor</th><th>Vem na NF</th><th>Cadastrar ref.</th><th>Descrição (exemplo)</th><th>Cor</th><th>Tamanho</th><th>Mark-up</th></tr></thead>
+        <tbody>
+          <tr><td>Converse</td><td>Coopershoes</td><td class="m">123050</td><td class="m">CK00040001</td><td>TENIS CK00040001 CHUCK TAYLOR ALL STAR</td><td>cada ref. uma cor</td><td>grade do pedido</td><td>PDV atualizado pelo Leonardo</td></tr>
+          <tr><td>Vans</td><td>Azzas <span class="vazio">(Arezzo)</span></td><td class="m">VN0A4BRWY28</td><td class="m">VN0A4BRW</td><td>TS VANS CLASSIC</td><td class="m">Y28</td><td>grade do pedido</td><td>2,20 nacional &middot; 2,34 importado</td></tr>
+          <tr><td>Tommy Hilfiger</td><td>Tommy</td><td class="m">THFM0FM06008</td><td class="m">THFM0FM06008</td><td>CHINELO-HILFIGER PATCH POOL SLIDE</td><td>esperar romaneio da loja</td><td>esperar romaneio da loja</td><td>2,40 nacional &middot; 2,60 importado</td></tr>
+          <tr><td>Oakley <span class="vazio">(boné, roupa, calçado)</span></td><td>Luxottica</td><td class="m">911545-014</td><td class="m">911545</td><td>BONE OAKLEY TINCAN CAP</td><td class="m">014</td><td>grade do pedido</td><td>2,62 confecção &middot; 2,34 calçados</td></tr>
+          <tr><td>Oakley <span class="vazio">(óculos)</span></td><td>Luxottica</td><td class="m">0OO9242-02</td><td class="m">OO9242</td><td>OCULOS OAKLEY HSTN</td><td class="m">02</td><td>tamanho único</td><td>ver planilha do pedido</td></tr>
+          <tr><td>New Era</td><td>New Era Brasil</td><td class="m">NEPERTSH002C002</td><td class="m">NEPERTSH002</td><td>TS NEW ERA FLAG</td><td>ver pedido</td><td>grade do pedido</td><td>2,60</td></tr>
+          <tr><td>New Balance</td><td>New Brasil</td><td class="m">1278959</td><td class="m">BB480</td><td>TENIS NEW BALANCE BB480</td><td class="m">LKQ</td><td>grade do pedido</td><td>2,30</td></tr>
+          <tr><td>Mizuno</td><td>Vulcabras</td><td class="m">106049049-BCAZRO-37/38</td><td class="m">106049049</td><td>CHINELO SLIDE MIZUNO ENERZY</td><td>AZUL BRANCO</td><td>grade do pedido</td><td>confirmar com o Leonardo</td></tr>
+          <tr><td>MCD</td><td>Outside</td><td class="m">12522201</td><td class="m">12522201</td><td>REGATA MCD ESPECIAL CORE</td><td>ver pedido</td><td>grade do pedido</td><td>2,42 após o desconto</td></tr>
+          <tr><td>Redley</td><td>Tess</td><td class="m">2631</td><td class="m">6002320000</td><td>TENIS REDLEY ORIGINALS 600232000</td><td class="m">-1</td><td>grade do pedido</td><td>2,35</td></tr>
+          <tr><td>Kenner</td><td>Tess</td><td class="m">4000040100-2</td><td class="m">4000040100</td><td>CHINELO KENNER NK7</td><td class="m">2</td><td>grade do pedido</td><td>2,35</td></tr>
+          <tr><td>G-Shock</td><td>Casio</td><td colspan="6" class="vazio">verificar com o escritório</td></tr>
+          <tr><td>Casio</td><td>Casio</td><td colspan="6" class="vazio">verificar com o escritório</td></tr>
+          <tr><td>Blunt</td><td colspan="7" class="vazio">verificar com o escritório</td></tr>
+          <tr><td>Thugnine</td><td colspan="7" class="vazio">verificar com o escritório</td></tr>
+          <tr><td>BAW</td><td colspan="7" class="vazio">verificar com o escritório</td></tr>
+          <tr><td>Approve</td><td colspan="7" class="vazio">verificar com o escritório</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section id="setores">
+    <h2>Setores</h2>
+    <p class="h2-nota">Os grupos de produto em uso. Escolha sempre o mais específico.</p>
+    <ul class="chips">
+      <li>TENIS</li><li>CHINELO</li><li>TS BASICA</li><li>TS ESPECIAL</li><li>REGATA</li><li>CAMISA</li><li>POLO</li>
+      <li>MOLETOM</li><li>JAQUETA</li><li>BERMUDAS</li><li>SHORT</li><li>WALKSHORT</li><li>BOARDSHORT</li><li>CALÇA</li>
+      <li>CUECA</li><li>SUNGA</li><li>MEIA</li><li>BONE</li><li>BUCKET</li><li>GORRO</li><li>OCULOS</li><li>RELOGIO</li>
+      <li>MOCHILA</li><li>POCHETES</li><li>CARTEIRA</li><li>BOLSAS</li><li>ACESSORIOS</li><li>CINTO</li>
+    </ul>
+  </section>
+
+  <section id="ncm">
+    <h2>Tabela de NCM</h2>
+    <p class="h2-nota">Só para quando a nota não trouxer. É o NCM mais usado em cada setor no cadastro atual. Roupa muda de NCM conforme o tecido.</p>
+    <div class="tab-wrap">
+      <table class="tab">
+        <thead><tr><th>Setor</th><th>NCM padrão</th><th>Quando muda</th></tr></thead>
+        <tbody>
+          <tr><td>TS básica, TS especial, regata, camisa</td><td class="m">6109.10.00</td><td><span class="m">6109.90.00</span> se não for algodão</td></tr>
+          <tr><td>Polo</td><td class="m">6105.10.00</td><td></td></tr>
+          <tr><td>Moletom</td><td class="m">6110.30.00</td><td><span class="m">6110.20.00</span> se for algodão</td></tr>
+          <tr><td>Bermuda, short, walkshort</td><td class="m">6103.49.00</td><td><span class="m">6203.42.00</span> se for sarja ou jeans de algodão</td></tr>
+          <tr><td>Boardshort</td><td class="m">6104.61.00</td><td></td></tr>
+          <tr><td>Calça</td><td class="m">6203.42.00</td><td><span class="m">6103.49.00</span> se for moletom ou malha</td></tr>
+          <tr><td>Jaqueta</td><td class="m">6201.40.00</td><td></td></tr>
+          <tr><td>Cueca</td><td class="m">6107.19.00</td><td></td></tr>
+          <tr><td>Sunga</td><td class="m">6211.11.00</td><td></td></tr>
+          <tr><td>Meia</td><td class="m">6115.95.00</td><td></td></tr>
+          <tr><td>Boné, bucket</td><td class="m">6505.00.12</td><td><span class="m">6505.00.11</span> também aparece bastante</td></tr>
+          <tr><td>Gorro</td><td class="m">6505.00.22</td><td></td></tr>
+          <tr><td>Tênis</td><td class="m">6404.11.00</td><td><span class="m">6403.99.90</span> se for de couro &middot; <span class="m">6404.19.00</span></td></tr>
+          <tr><td>Chinelo</td><td class="m">6404.19.00</td><td><span class="m">6402.19.00</span> ou <span class="m">6402.99.90</span> se for todo de borracha</td></tr>
+          <tr><td>Óculos</td><td class="m">9004.10.00</td><td></td></tr>
+          <tr><td>Relógio</td><td class="m">9102.12.20</td><td></td></tr>
+          <tr><td>Mochila</td><td class="m">4202.92.00</td><td></td></tr>
+          <tr><td>Pochete</td><td class="m">4202.22.20</td><td></td></tr>
+          <tr><td>Carteira, bolsa</td><td class="m">4202.21.00</td><td></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="rodape">
+    <span>Surfers &middot; Manual do escritório</span>
+    <span>Cadastro de produto &middot; Microvix</span>
+  </div>
+</div>
+
+</body>
+</html>

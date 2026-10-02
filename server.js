@@ -1049,11 +1049,21 @@ app.use(session(sessionOpts));
 // Sem exigir login: manual não tem dado de ninguém, e gerente costuma abrir no
 // celular, fora da sessão do sistema — pedir senha aí é a diferença entre ler
 // o passo a passo e ligar para o escritório.
+//
+// A exceção são os manuais do escritório: o de cadastro traz mark-up por
+// marca, e isso não pode ficar aberto para quem tiver o link.
+const MANUAIS_ESCRITORIO = new Set(['cadastro-produto']);
 app.get('/manuais', (req, res) => res.sendFile(path.join(__dirname, 'public/manuais.html')));
 app.get('/manuais/:slug', (req, res) => {
   const slug = String(req.params.slug || '').replace(/[^a-z0-9-]/gi, '');
   const arq  = path.join(__dirname, 'public', 'manuais', slug + '.html');
   if (!slug || !fs.existsSync(arq)) return res.redirect('/manuais');
+  if (MANUAIS_ESCRITORIO.has(slug)) {
+    const u = req.session?.user;
+    if (!u) return res.redirect('/');
+    // Mesma regra do requireEscritorioOrAdmin, mais o supervisor fora
+    if (u.board ? u.board !== 'escritorio' : (u.lojas && u.lojas.length)) return res.redirect('/manuais');
+  }
   res.sendFile(arq);
 });
 
