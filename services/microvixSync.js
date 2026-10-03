@@ -8,6 +8,11 @@ function getLojas() {
   catch { return {}; }
 }
 
+// Quem quiser as linhas de venda cruas (o feed do CRM) registra aqui; chamado
+// depois de cada fetch de movimento, sem custar requisição extra ao Microvix.
+let salesSink     = null;
+function setSalesSink(fn) { salesSink = fn; }
+
 let lastSync      = null;
 let lastError     = null;
 let running       = false;
@@ -129,6 +134,11 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
   const warnings = [];
 
   if (!rows.length) return 0;
+
+  if (salesSink) {
+    try { await salesSink(board, dtIni, dtFin, rows, vendMap, employees); }
+    catch (e) { console.error(`[Microvix/${board}] Feed CRM:`, e.message); }
+  }
 
   // 3. Aggregate by vendor + date (skip cancelled)
   const agg = {};
@@ -405,4 +415,4 @@ function setLastSync(val) {
   if (val && val.at) lastSync = val;
 }
 
-module.exports = { runSync, runSyncHoje, runSync30Dias, runSyncRetroativo, getStatus, setLastSync };
+module.exports = { runSync, runSyncHoje, runSync30Dias, runSyncRetroativo, getStatus, setLastSync, setSalesSink };

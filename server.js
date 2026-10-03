@@ -14,8 +14,9 @@ const nodemailer = require('nodemailer');
 // Mesma tabela que o navegador carrega em <script src="/perf-hist.js">
 const { PERF_HIST } = require('./public/perf-hist.js');
 const crypto     = require('crypto');
-const { runSync, runSyncHoje, runSync30Dias, runSyncRetroativo, getStatus, setLastSync } = require('./services/microvixSync');
+const { runSync, runSyncHoje, runSync30Dias, runSyncRetroativo, getStatus, setLastSync, setSalesSink } = require('./services/microvixSync');
 const { syncCustomers, sendWhatsApp: zapiSend, applyTemplate: crmTemplate, runScheduledCampaigns } = require('./services/crmSync');
+const crmFeed = require('./services/crmFeed');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -43,7 +44,7 @@ async function initMongo() {
   if (!MONGODB_URI) return;
   const client = new MongoClient(MONGODB_URI, {
     serverSelectionTimeoutMS: 30000,  // tempo para encontrar primário no Atlas (cold start pode ser lento)
-    tls: true,
+    tls: !/^mongodb:\/\/(localhost|127\.0\.0\.1)[:/]/.test(MONGODB_URI),  // Mongo local de teste não tem TLS
     tlsAllowInvalidCertificates: false,
     maxPoolSize: 20,        // M0 suporta 500 conexões totais; o salvamento do catálogo em chunks
                             // (services/_saveCatalogMongo) usa várias conexões em paralelo — 10 era
@@ -10498,6 +10499,88 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
   } catch (e) { console.error(e); res.status(500).json({ error: e.message }); }
 });
 
+// ── API interna do app CRM (crm-lojas) ─────────────────────────────────────
+// Servidor a servidor, sem sessão: o CRM manda o token em x-crm-token. Sem
+// CRM_INTERNAL_TOKEN configurado a API inteira fica fechada.
+function requireCrmToken(req, res, next) {
+  const esperado = process.env.CRM_INTERNAL_TOKEN || '';
+  const veio     = String(req.get('x-crm-token') || '');
+  const ok = esperado.length >= 24 && veio.length === esperado.length &&
+             crypto.timingSafeEqual(Buffer.from(veio), Buffer.from(esperado));
+  if (!ok) return res.status(401).json({ error: 'Token inválido' });
+  next();
+}
+
+// Perfil no CRM a partir do usuário do gestão (mesma regra do requireAdmin)
+function perfilCrm(u) {
+  if (!u.board) return (u.lojas && u.lojas.length) ? 'supervisor' : 'admin';
+  return u.board === 'escritorio' ? 'escritorio' : 'gerente';
+}
+
+app.post('/api/internal/crm/auth', requireCrmToken, (req, res) => {
+  const key  = String(req.body?.username || '').toLowerCase();
+  const user = readUsers()[key];
+  if (!user || user.password !== req.body?.password)
+    return res.status(401).json({ error: 'Usuário ou senha incorretos' });
+  if (user.suspenso) return res.status(403).json({ error: 'Acesso suspenso. Fale com o administrador.' });
+  res.json({ username: key, label: user.label || key, board: user.board || null,
+             lojas: user.lojas || null, perfil: perfilCrm(user) });
+});
+
+app.get('/api/internal/crm/config', requireCrmToken, (req, res) => {
+  const lojas = Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}'))
+    .filter(b => b !== 'site')
+    .map(b => ({ board: b, label: BOARDS_LABEL[b] || b.toUpperCase() }));
+  const grupos = crmFeed.gruposDeCadastro().map(g => ({ id: g.id, boards: g.boards }));
+  res.json({ lojas, grupos });
+});
+
+app.get('/api/internal/crm/vendedores', requireCrmToken, async (req, res) => {
+  const db = await readDB();
+  res.json((db.employees || []).filter(e => e.board && e.board !== 'site').map(e => ({
+    id: e.id, nome: e.name, apelido: e.apelido || '', board: e.board, cargo: e.cargo || '',
+    microvixCod: e.microvixCod || '', isVendedor: e.isVendedor !== false,
+    omniChannel: !!e.omniChannel, inativo: !!e.inativo,
+  })));
+});
+
+for (const [rota, col] of [['vendas', 'crm_vendas'], ['clientes', 'crm_clientes']]) {
+  app.get(`/api/internal/crm/${rota}`, requireCrmToken, async (req, res) => {
+    if (!mongoDb) return res.status(503).json({ error: 'MongoDB não configurado' });
+    const limite = Math.min(parseInt(req.query.limite) || 2000, 5000);
+    try { res.json(await crmFeed.lerDelta(mongoDb, col, req.query.cursor, limite)); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+  });
+}
+
+app.post('/api/internal/crm/clientes/sync', requireCrmToken, async (req, res) => {
+  if (!mongoDb) return res.status(503).json({ error: 'MongoDB não configurado' });
+  if (req.body?.completo === true) await crmFeed.zerarCursorClientes(mongoDb);
+  crmFeed.syncClientes(mongoDb).catch(e => console.error('[CRM feed] clientes:', e.message));
+  res.json({ ok: true, iniciado: true });
+});
+
+app.post('/api/internal/crm/vendas/backfill', requireCrmToken, async (req, res) => {
+  if (!mongoDb) return res.status(503).json({ error: 'MongoDB não configurado' });
+  const { dtIni, dtFin, boards } = req.body || {};
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dtIni || '') || !/^\d{4}-\d{2}-\d{2}$/.test(dtFin || '') || dtIni > dtFin)
+    return res.status(400).json({ error: 'dtIni e dtFin (YYYY-MM-DD) obrigatórios' });
+  try {
+    const db = await readDB();
+    res.json(await crmFeed.backfillVendas(mongoDb, db.employees || [], dtIni, dtFin, boards));
+  } catch (e) { res.status(409).json({ error: e.message }); }
+});
+
+app.get('/api/internal/crm/status', requireCrmToken, async (req, res) => {
+  if (!mongoDb) return res.status(503).json({ error: 'MongoDB não configurado' });
+  const [vendas, clientes, estado] = await Promise.all([
+    mongoDb.collection('crm_vendas').estimatedDocumentCount(),
+    mongoDb.collection('crm_clientes').estimatedDocumentCount(),
+    mongoDb.collection('crm_feed_estado').find().toArray(),
+  ]);
+  res.json({ vendas, clientes, estado, backfill: crmFeed.statusBackfill() });
+});
+
 // ── CRM ────────────────────────────────────────────────────────────────────
 const { ObjectId } = require('mongodb');
 
@@ -15712,6 +15795,20 @@ initMongo()
         }, { timezone: 'America/Sao_Paulo' });
       }
       console.log('[CRM] Cron de campanhas agendado para 08:30 America/Sao_Paulo');
+
+      // Feed do app CRM: vendas com cliente vão de carona no sync do Microvix;
+      // o cadastro de clientes é lido por timestamp, de 2 em 2 horas no horário de loja.
+      crmFeed.ensureIndexes(mongoDb).catch(e => console.error('[CRM feed] índices:', e.message));
+      setSalesSink((board, dtIni, dtFin, rows, vendMap, employees) =>
+        crmFeed.salvarVendas(mongoDb, board, dtIni, dtFin, rows, vendMap, employees));
+      if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
+        cron.schedule('15 7-23/2 * * *', () => {
+          crmFeed.syncClientes(mongoDb).catch(e => console.error('[CRM feed] clientes:', e.message));
+        }, { timezone: 'America/Sao_Paulo' });
+      }
+      cron.schedule('40 4 * * *', () => {
+        crmFeed.podarFeed(mongoDb).catch(e => console.error('[CRM feed] poda:', e.message));
+      }, { timezone: 'America/Sao_Paulo' });
     }
 
     // ── Cron: contas a pagar — LinxFaturas diário 07:00 Brasília ─────────

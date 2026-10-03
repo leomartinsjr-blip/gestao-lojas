@@ -491,13 +491,15 @@ async function fetchSetores(cnpj, chave) {
 }
 
 // Fetch LinxClientesFornec → clientes/fornecedores cadastrados no portal
-// Limita 5000 por chamada — pagina via timestamp para buscar todos
-async function fetchClientes(cnpj, chave, dtIni, dtFim) {
+// Limita 5000 por chamada — pagina via timestamp para buscar todos.
+// O filtro de data é pela data de CADASTRO; para pegar só quem mudou desde a
+// última leitura, passe tsInicial (o maior timestamp já visto) com o período cheio.
+async function fetchClientes(cnpj, chave, dtIni, dtFim, tsInicial = 0) {
   const today = new Date().toISOString().slice(0, 10);
   const di = dtIni || '2000-01-01';
   const df = dtFim || today;
   const allRows = [];
-  let ts = 0;
+  let ts = tsInicial;
 
   for (let page = 0; page < 50; page++) {
     const body = buildRequest('LinxClientesFornec', cnpj, [
