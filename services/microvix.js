@@ -3,6 +3,7 @@
 // Format: XML body → CSV response
 const https  = require('https');
 const crypto = require('crypto');
+const zlib   = require('zlib');
 
 const MX_HOST = 'webapi.microvix.com.br';
 const MX_PATH = '/1.0/api/integracao';
@@ -164,8 +165,11 @@ function postRaw(body, timeoutMs = 45_000) {
       path:     MX_PATH,
       method:   'POST',
       headers: {
-        'Content-Type':   'text/xml; charset=utf-8',
-        'Content-Length': buf.length,
+        'Content-Type':    'text/xml; charset=utf-8',
+        'Content-Length':  buf.length,
+        // A WebAPI responde gzip quando pedido: o CSV vem ~8x menor, e o Render
+        // cobra a banda que o servidor troca com serviços de fora
+        'Accept-Encoding': 'gzip',
       },
     };
     // Timer absoluto: garante que a promise rejeita mesmo se o servidor
@@ -174,7 +178,15 @@ function postRaw(body, timeoutMs = 45_000) {
     const req = https.request(opts, res => {
       const chunks = [];
       res.on('data', c => chunks.push(c));
-      res.on('end', () => { clearTimeout(timer); resolve(Buffer.concat(chunks).toString('utf-8')); });
+      res.on('end', () => {
+        clearTimeout(timer);
+        const resp = Buffer.concat(chunks);
+        require('./trafego').contar(`microvix:${comandoDe(body)}`, buf.length, resp.length);
+        try {
+          const texto = res.headers['content-encoding'] === 'gzip' ? zlib.gunzipSync(resp) : resp;
+          resolve(texto.toString('utf-8'));
+        } catch (e) { reject(new Error('Microvix: resposta gzip inválida — ' + e.message)); }
+      });
     });
     req.on('error', e => { clearTimeout(timer); reject(e); });
     req.write(buf);

@@ -46,7 +46,9 @@ function parseDate(s) {
   return `${y}-${m}-${d}`;
 }
 
-async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
+// marcar(caminho): avisa quem grava quais campos do documento principal mudaram,
+// para gravar só eles em vez do documento inteiro (ver writeDB no server.js)
+async function syncStore(board, cnpj, dtIni, dtFin, employees, db, marcar = () => {}) {
   const cnpjClean = cnpj.replace(/\D/g, '');
   // Allow per-board chave: MICROVIX_CHAVE_DELREY, MICROVIX_CHAVE_MINAS, etc.
   const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
@@ -89,7 +91,7 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
       if (sign > 0) dayAgg[dateStr].docs.add(row.documento);
       else dayAgg[dateStr].retDocs.add(row.documento);
     }
-    if (!db.vsales) db.vsales = {};
+    if (!db.vsales) { db.vsales = {}; marcar('vsales'); }
 
     // Limpa entradas órfãs no intervalo: datas sem NF faturada devem ser removidas
     for (let d = new Date(dtIni + 'T00:00:00Z'); d <= new Date(dtFin + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + 1)) {
@@ -98,6 +100,7 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
       const vsKey = `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-site-${siteEmp.id}`;
       if (db.vsales[vsKey]?.entries?.[ds]) {
         delete db.vsales[vsKey].entries[ds];
+        marcar(`vsales.${vsKey}.entries.${ds}`);
         console.log(`[Microvix/site] Removida entrada órfã: ${ds}`);
       }
     }
@@ -107,7 +110,8 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
       const year  = parseInt(dateStr.slice(0, 4));
       const month = parseInt(dateStr.slice(5, 7));
       const vsKey = `${year}-${pad(month)}-site-${siteEmp.id}`;
-      if (!db.vsales[vsKey]) db.vsales[vsKey] = { meta: { mensal: 0 }, entries: {} };
+      if (!db.vsales[vsKey]) { db.vsales[vsKey] = { meta: { mensal: 0 }, entries: {} }; marcar(`vsales.${vsKey}`); }
+      marcar(`vsales.${vsKey}.entries.${dateStr}`);
       db.vsales[vsKey].entries[dateStr] = {
         value:        parseFloat(agg.value.toFixed(2)),
         pecas:        agg.pecas,
@@ -179,7 +183,7 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
   }
 
   // 4. Match employees and write
-  if (!db.vsales) db.vsales = {};
+  if (!db.vsales) { db.vsales = {}; marcar('vsales'); }
   let updated = 0;
   const covered = new Set(); // "empId||date" seen in this sync run, for orphan cleanup below
 
@@ -205,7 +209,8 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
 
     covered.add(`${emp.id}||${date}`);
     const vsKey = `${year}-${pad(month)}-${board}-${emp.id}`;
-    if (!db.vsales[vsKey]) db.vsales[vsKey] = { meta: { mensal: 0 }, entries: {} };
+    if (!db.vsales[vsKey]) { db.vsales[vsKey] = { meta: { mensal: 0 }, entries: {} }; marcar(`vsales.${vsKey}`); }
+    marcar(`vsales.${vsKey}.entries.${date}`);
     db.vsales[vsKey].entries[date] = {
       value:        parseFloat(value.toFixed(2)),
       pecas,
@@ -228,13 +233,15 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db) {
       const vsKey = `${vsMonth}-${board}-${emp.id}`;
       if (db.vsales[vsKey]?.entries?.[ds]) {
         delete db.vsales[vsKey].entries[ds];
+        marcar(`vsales.${vsKey}.entries.${ds}`);
         console.log(`[Microvix/${board}] Removida entrada órfã: ${emp.name} ${ds}`);
       }
     }
   }
 
-  if (!db.microvixSyncWarnings) db.microvixSyncWarnings = {};
+  if (!db.microvixSyncWarnings) { db.microvixSyncWarnings = {}; marcar('microvixSyncWarnings'); }
   db.microvixSyncWarnings[board] = { at: new Date().toISOString(), warnings };
+  marcar(`microvixSyncWarnings.${board}`);
 
   return updated;
 }
@@ -257,6 +264,8 @@ async function runSync(readDB, writeDB) {
     const date      = syncTargetDate();
     const db        = await readDB();
     const employees = db.employees || [];
+    const caminhos  = new Set();
+    const marcar    = c => caminhos.add(c);
     let totalUpdated = 0;
 
     for (const [board, cnpj] of Object.entries(lojas)) {
@@ -265,7 +274,7 @@ async function runSync(readDB, writeDB) {
         continue;
       }
       try {
-        const updated = await syncStore(board, cnpj, date, date, employees, db);
+        const updated = await syncStore(board, cnpj, date, date, employees, db, marcar);
         totalUpdated += updated;
       } catch (err) {
         console.error(`[Microvix/${board}] Erro:`, err.message);
@@ -275,7 +284,8 @@ async function runSync(readDB, writeDB) {
     lastSync  = { at: new Date().toISOString(), updated: totalUpdated, date };
     lastError = null;
     db.microvixLastSync = lastSync;
-    await writeDB(db);
+    marcar('microvixLastSync');
+    await writeDB(db, { caminhos });
     console.log(`[Microvix] Sync OK — ${totalUpdated} vendedores atualizados`);
     return lastSync;
 
@@ -300,12 +310,14 @@ async function runSyncRetroativo(readDB, writeDB, dtIni, dtFin, boards) {
 
     const db        = await readDB();
     const employees = db.employees || [];
+    const caminhos  = new Set();
+    const marcar    = c => caminhos.add(c);
     let totalUpdated = 0;
     const warningsByBoard = {};
 
     for (const [board, cnpj] of Object.entries(targets)) {
       try {
-        const updated = await syncStore(board, cnpj, dtIni, dtFin, employees, db);
+        const updated = await syncStore(board, cnpj, dtIni, dtFin, employees, db, marcar);
         totalUpdated += updated;
         // Captura os warnings desta rodada antes que outro sync (ex: o intervalo
         // automático rodando em paralelo) sobrescreva db.microvixSyncWarnings[board]
@@ -316,7 +328,7 @@ async function runSyncRetroativo(readDB, writeDB, dtIni, dtFin, boards) {
       }
     }
 
-    await writeDB(db);
+    await writeDB(db, { caminhos });
     const result = { at: new Date().toISOString(), updated: totalUpdated, dtIni, dtFin, boards: Object.keys(targets), warnings: warningsByBoard };
     lastSync  = result;
     lastError = null;
@@ -342,6 +354,8 @@ async function runSyncHoje(readDB, writeDB) {
     const date      = todayBRT();
     const db        = await readDB();
     const employees = db.employees || [];
+    const caminhos  = new Set();
+    const marcar    = c => caminhos.add(c);
     let totalUpdated = 0;
 
     for (const [board, cnpj] of Object.entries(lojas)) {
@@ -349,14 +363,14 @@ async function runSyncHoje(readDB, writeDB) {
         continue;
       }
       try {
-        const updated = await syncStore(board, cnpj, date, date, employees, db);
+        const updated = await syncStore(board, cnpj, date, date, employees, db, marcar);
         totalUpdated += updated;
       } catch (err) {
         console.error(`[Microvix/hoje/${board}] Erro:`, err.message);
       }
     }
 
-    await writeDB(db);
+    await writeDB(db, { caminhos });
     console.log(`[Microvix/hoje] OK — ${totalUpdated} entradas em ${date}`);
     return { at: new Date().toISOString(), updated: totalUpdated, date };
   } catch (err) {
@@ -379,6 +393,8 @@ async function runSync30Dias(readDB, writeDB) {
     const dtFin = todayBRT();
     const db        = await readDB();
     const employees = db.employees || [];
+    const caminhos  = new Set();
+    const marcar    = c => caminhos.add(c);
     let totalUpdated = 0;
 
     for (const [board, cnpj] of Object.entries(lojas)) {
@@ -387,7 +403,7 @@ async function runSync30Dias(readDB, writeDB) {
         continue;
       }
       try {
-        const updated = await syncStore(board, cnpj, dtIni, dtFin, employees, db);
+        const updated = await syncStore(board, cnpj, dtIni, dtFin, employees, db, marcar);
         totalUpdated += updated;
         console.log(`[Microvix/30d/${board}] ${updated} entradas atualizadas`);
       } catch (err) {
@@ -395,7 +411,7 @@ async function runSync30Dias(readDB, writeDB) {
       }
     }
 
-    await writeDB(db);
+    await writeDB(db, { caminhos });
     lastSync30d = { at: new Date().toISOString(), updated: totalUpdated, dtIni, dtFin };
     console.log(`[Microvix/30d] OK — ${totalUpdated} entradas, ${dtIni} → ${dtFin}`);
     return lastSync30d;

@@ -17,6 +17,7 @@ const crypto     = require('crypto');
 const { runSync, runSyncHoje, runSync30Dias, runSyncRetroativo, getStatus, setLastSync, setSalesSink } = require('./services/microvixSync');
 const { syncCustomers, sendWhatsApp: zapiSend, applyTemplate: crmTemplate, runScheduledCampaigns } = require('./services/crmSync');
 const crmFeed = require('./services/crmFeed');
+const trafego = require('./services/trafego');
 
 const app  = express();
 const PORT = process.env.PORT || 3000;
@@ -53,9 +54,15 @@ async function initMongo() {
     minPoolSize: 1,
     maxIdleTimeMS: 30000,   // fecha conexões ociosas após 30s
     connectTimeoutMS: 30000,
+    monitorCommands: true,  // medidor de banda (services/trafego.js)
+    // Compressão no fio: o catálogo e o documento principal são texto e
+    // encolhem várias vezes — e o Render cobra a banda trocada com o Atlas
+    compressors: ['zlib'],
   });
+  trafego.monitorarMongo(client);
   await client.connect();
   mongoDb = client.db('gestao_lojas');
+  setInterval(() => trafego.gravar(mongoDb).catch(e => console.warn('[trafego]', e.message)), 10 * 60_000);
 
   // one-time migration from data.json if MongoDB collection is empty
   const existing = await mongoDb.collection('store').findOne({ _id: 'main' });
@@ -183,15 +190,47 @@ async function readDB() {
   catch { _dbCache = { nextId: 1, months: {}, cards: {} }; return _dbCache; }
 }
 
-async function writeDB(data) {
+// O documento principal tem alguns MB e o Render cobra a banda que o servidor
+// troca com o Atlas. Duas economias:
+//  • sem mudança desde a última gravação inteira, não regrava (o sync de hoje
+//    roda a cada 5 min e de noite quase nunca muda nada);
+//  • opts.caminhos (Set de "a.b.c") grava só esses campos com $set/$unset —
+//    o sync do Microvix sabe exatamente quais entradas de vsales mexeu.
+let _hashGravado = null;
+
+function _caminhosSemRedundancia(caminhos) {
+  const lista = [...caminhos].sort();
+  return lista.filter(c => !lista.some(p => p !== c && c.startsWith(p + '.')));
+}
+
+async function writeDB(data, opts = {}) {
   _dbCache = data;
   _dbCacheDirty = false; // já temos o dado atualizado em cache
   if (mongoDb) {
+    const caminhos = opts.caminhos ? _caminhosSemRedundancia(opts.caminhos) : null;
+    const seguros = caminhos && caminhos.every(c => c.split('.').every(p => p && !p.startsWith('$')));
+    if (caminhos && seguros) {
+      if (!caminhos.length) return;
+      const $set = {}, $unset = {};
+      for (const c of caminhos) {
+        const valor = c.split('.').reduce((o, k) => (o == null ? undefined : o[k]), data);
+        if (valor === undefined) $unset[c] = ''; else $set[c] = valor;
+      }
+      await mongoDb.collection('store').updateOne({ _id: 'main' }, {
+        ...(Object.keys($set).length ? { $set } : {}),
+        ...(Object.keys($unset).length ? { $unset } : {}),
+      });
+      _hashGravado = null;   // o banco mudou por fora da gravação inteira
+      return;
+    }
+    const hash = crypto.createHash('sha1').update(JSON.stringify(data)).digest('hex');
+    if (hash === _hashGravado) return;
     await mongoDb.collection('store').replaceOne(
       { _id: 'main' },
       { _id: 'main', ...data },
       { upsert: true }
     );
+    _hashGravado = hash;
     return;
   }
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
@@ -1321,6 +1360,24 @@ app.get('/api/version', (req, res) => {
   let commit = 'unknown';
   try { commit = execSync('git rev-parse --short HEAD', { cwd: __dirname }).toString().trim(); } catch {}
   res.json({ commit, deployedAt: new Date().toISOString() });
+});
+
+// ── GET /api/admin/trafego  (admin — banda de saída por origem) ───────────
+// ?dias=N (padrão 3). Bytes do que o servidor troca com Mongo e Microvix —
+// é o "Service-Initiated" que o Render cobra acima de 5 GB/mês.
+app.get('/api/admin/trafego', requireAdmin, async (req, res) => {
+  if (!mongoDb) return res.status(503).json({ error: 'MongoDB não configurado' });
+  await trafego.gravar(mongoDb).catch(() => {});
+  const dias = Math.min(parseInt(req.query.dias) || 3, 31);
+  const docs = await mongoDb.collection('trafego').find().sort({ _id: -1 }).limit(dias).toArray();
+  const mb = n => +(n / 1048576).toFixed(2);
+  res.json(docs.map(d => {
+    const cats = Object.entries(d.cat || {}).map(([k, v]) => ({ origem: k, ops: v.ops, enviadoMB: mb(v.env), recebidoMB: mb(v.rec), totalMB: mb(v.env + v.rec) }))
+      .sort((a, b) => b.totalMB - a.totalMB);
+    const tot = cats.reduce((a, c) => ({ env: a.env + c.enviadoMB, rec: a.rec + c.recebidoMB }), { env: 0, rec: 0 });
+    return { dia: d._id, enviadoMB: +tot.env.toFixed(2), recebidoMB: +tot.rec.toFixed(2), origens: cats,
+      porHora: Object.fromEntries(Object.entries(d.hora || {}).sort().map(([h, v]) => [h, mb(v.env + v.rec)])) };
+  }));
 });
 
 // ── GET /api/backup  (admin — exporta dump completo do banco) ─────────────
@@ -6626,8 +6683,12 @@ async function _saveCatalogMongo(map) {
     }
     await Promise.all(batch);
   }
-  // Remove chunks antigos que não existem mais (se o catálogo encolheu)
-  await col.deleteMany({ _id: { $regex: /^fullCatalog_/, $gt: `fullCatalog_${numChunks - 1}` } });
+  // Remove chunks antigos que não existem mais (se o catálogo encolheu). Pela
+  // lista dos válidos, não por $gt: em texto "fullCatalog_3" > "fullCatalog_29",
+  // e o $gt apagava os chunks 3–9 recém-gravados — o catálogo do Mongo nunca
+  // fechava e todo restart reconstruía tudo pela Microvix.
+  const validos = Array.from({ length: numChunks }, (_, i) => `fullCatalog_${i}`);
+  await col.deleteMany({ _id: { $regex: /^fullCatalog_\d+$/, $nin: validos } });
   // Salva metadado com número de chunks
   await col.replaceOne(
     { _id: 'fullCatalog_meta' },
@@ -6637,7 +6698,17 @@ async function _saveCatalogMongo(map) {
   console.log(`[Catalog] Salvo no MongoDB: ${total} entradas em ${numChunks} chunks`);
 }
 
-async function _loadCatalogMongo() {
+// Quem pede o catálogo enquanto ele está sendo lido do Mongo espera a mesma
+// leitura: são ~100 MB, e no boot e durante o rebuild várias telas pedem juntas
+let _catalogLoadPromise = null;
+function _loadCatalogMongo() {
+  if (!_catalogLoadPromise) {
+    _catalogLoadPromise = _lerCatalogMongo().finally(() => { _catalogLoadPromise = null; });
+  }
+  return _catalogLoadPromise;
+}
+
+async function _lerCatalogMongo() {
   const col  = mongoDb.collection('catalog');
   const meta = await col.findOne({ _id: 'fullCatalog_meta' });
   if (!meta || !meta.numChunks) return null;
@@ -6714,6 +6785,7 @@ async function _buildCatalog(lojas) {
     // Não usar '2000-01-01': traz 150k+ por loja em ordem ASC truncando os recentes no limite de 20 páginas.
     const dtIniCatalog = new Date(Date.now() - 1095 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
+    const portaisBaixados = new Set();
     async function fetchBoard(board) {
       const cnpj  = (lojas[board] || '').replace(/\D/g, '');
       const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
@@ -6729,6 +6801,17 @@ async function _buildCatalog(lojas) {
         try { raw = await postRequest(body, 30_000); } catch (e) { console.warn(`[Catalog/${board}] pág`, page, e.message); break; }
         if (raw.includes('<ResponseSuccess>False</ResponseSuccess>')) break;
         const rows = parseCsv(raw);
+        // As Surfers têm CNPJs diferentes mas o mesmo portal (o mesmo catálogo):
+        // a 1ª página já diz o portal, e o que outra loja já baixou não se baixa
+        // de novo — eram 4 cópias de ~150 mil produtos a cada rebuild
+        if (page === 0) {
+          const portal = String(rows[0]?.portal || '').trim();
+          if (portal && portaisBaixados.has(portal)) {
+            console.log(`[Catalog/${board}] portal ${portal} já baixado por outra loja — pulando`);
+            return 0;
+          }
+          if (portal) portaisBaixados.add(portal);
+        }
         if (!_catalogRawFields.length && rows.length) {
           _catalogRawFields = Object.keys(rows[0]);
           _catalogRawSample = rows[0];
@@ -6794,9 +6877,18 @@ async function _buildCatalog(lojas) {
       const source = `${chave}|${cnpj}`;
       if (!seenSources.has(source)) { seenSources.add(source); representantes.push(b); }
     }
-    const counts = await Promise.all(
-      representantes.map(b => fetchBoard(b).catch(e => { console.warn(`[Catalog/${b}] erro:`, e.message); return 0; }))
-    );
+    // Chaves diferentes em paralelo; lojas da mesma chave em sequência, para a
+    // 2ª em diante já saber se o portal dela foi baixado
+    const porChave = {};
+    for (const b of representantes) {
+      const ch = process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || defaultChave;
+      (porChave[ch] ||= []).push(b);
+    }
+    const counts = (await Promise.all(Object.values(porChave).map(async grupo => {
+      const n = [];
+      for (const b of grupo) n.push(await fetchBoard(b).catch(e => { console.warn(`[Catalog/${b}] erro:`, e.message); return 0; }));
+      return n;
+    }))).flat();
     const totalProd = counts.reduce((s, n) => s + n, 0);
 
     console.log(`[Catalog] ${totalProd} produtos → ${Object.keys(map).length} entradas (via ${representantes.join(',')})`);
