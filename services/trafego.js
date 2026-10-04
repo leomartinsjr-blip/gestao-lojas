@@ -39,7 +39,9 @@ function monitorarMongo(client) {
     const cat = porRequisicao.get(ev.requestId);
     if (!cat) return;
     porRequisicao.delete(ev.requestId);
-    if (ok) pendente[cat].rec += tamanho(ev.reply);
+    // gravar() troca `pendente` a cada 10 min: o comando pode ter começado no
+    // lote anterior, então a categoria pode não existir mais no atual.
+    if (ok) (pendente[cat] || (pendente[cat] = { ops: 0, env: 0, rec: 0 })).rec += tamanho(ev.reply);
   };
   client.on('commandSucceeded', ev => fim(ev, true));
   client.on('commandFailed', ev => fim(ev, false));
