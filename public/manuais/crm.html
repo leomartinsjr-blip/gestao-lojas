@@ -280,7 +280,7 @@
       <div><dt>Endereço</dt><dd><a href="https://crm-lojas.onrender.com" target="_blank" rel="noopener">crm-lojas.onrender.com</a></dd></div>
       <div><dt>Quem usa</dt><dd>Todos, cada um com a sua tela</dd></div>
       <div><dt>De onde vêm os dados</dt><dd>Vendas do Microvix, via Gestão</dd></div>
-      <div><dt>Tamanho</dt><dd>18 passos</dd></div>
+      <div><dt>Tamanho</dt><dd>19 passos</dd></div>
     </dl>
     <ul class="sumario">
       <li><a href="#entrar">Entrar</a></li>
@@ -289,6 +289,7 @@
       <li><a href="#clientes">Clientes</a></li>
       <li><a href="#ficha">Ficha do cliente</a></li>
       <li><a href="#campanhas">Campanhas</a></li>
+      <li><a href="#automaticas">Automáticas</a></li>
       <li><a href="#equipe">Equipe</a></li>
       <li><a href="#sistema">Sistema</a></li>
       <li><a href="#vendedor">Vendedor</a></li>
@@ -532,10 +533,26 @@
     </li>
   </ol>
 
+  <ol class="passos">
+    <li class="passo" id="automaticas">
+      <div class="num">13</div>
+      <div>
+        <h3>Campanhas automáticas</h3>
+        <p>Ficam <b>sempre ativas</b>: todo dia, às 7h, entram clientes novos na lista de cada vendedor, sem ninguém precisar criar campanha. Admin e escritório ligam cada uma uma vez só, no quadro <b>Campanhas automáticas</b> no alto da tela Campanhas.</p>
+        <dl class="campos">
+          <div><dt>🎂 Aniversariantes</dt><dd><em>quem faz aniversário <b>daqui a 3 dias</b> entra na lista do vendedor da carteira, e fica em “para chamar agora” até 3 dias depois do aniversário</em></dd></div>
+          <div><dt>🛍️ Pós-venda</dt><dd><em>quem comprou <b>há 3 dias</b> entra na lista do vendedor que fez a venda. Cada cliente recebe no máximo um pós-venda a cada 30 dias.</em></dd></div>
+        </dl>
+        <p>Dentro da campanha, a lista abre em <b>Para chamar agora</b>: a fila do dia, com o motivo de cada cliente (o aniversário ou o dia da compra). Quem passou do prazo sem contato aparece marcado. Os números de cima olham <b>quem entrou na lista no período</b> escolhido, e conta como venda a compra feita em até <b>30 dias</b> depois de o cliente entrar na lista.</p>
+        <p><span class="btn">Editar</span> muda o texto e quantos dias antes do aniversário ou depois da compra o cliente aparece. <span class="btn">Desligar</span> para de gerar lista nova; para voltar, ative de novo em Campanhas.</p>
+      </div>
+    </li>
+  </ol>
+
   <div class="fase" id="equipe"><span class="fase-nome">Parte 4 &middot; Equipe e sistema</span><span class="fase-linha"></span></div>
   <ol class="passos">
     <li class="passo">
-      <div class="num">13</div>
+      <div class="num">14</div>
       <div>
         <h3>Equipe: gerar o código de acesso</h3>
         <p>A lista vem do <b>cadastro de funcionários ativos do Gestão</b>, separada por loja. Para dar acesso a alguém:</p>
@@ -550,7 +567,7 @@
     </li>
 
     <li class="passo" id="sistema">
-      <div class="num">14</div>
+      <div class="num">15</div>
       <div>
         <h3>Sistema <span class="quem">(admin e escritório)</span></h3>
         <p>A ligação com o Gestão e as regras dos segmentos.</p>
@@ -566,7 +583,7 @@
     </li>
 
     <li class="passo">
-      <div class="num">15</div>
+      <div class="num">16</div>
       <div>
         <h3>Ver como vendedor <span class="quem">(admin e escritório)</span></h3>
         <p>O botão no canto de cima mostra a tela do vendedor, para testar ou treinar. Uma faixa avisa que você está nesse modo. Para sair dele, clique em <span class="btn">Voltar ao admin</span>.</p>
@@ -578,7 +595,7 @@
   <div class="fase" id="vendedor"><span class="fase-nome">Parte 5 &middot; Tela do vendedor</span><span class="fase-linha"></span></div>
   <ol class="passos">
     <li class="passo">
-      <div class="num">16</div>
+      <div class="num">17</div>
       <div>
         <h3>Minha carteira</h3>
         <p>Os clientes que o vendedor atendeu por último. <span class="btn">Toda a loja</span> mostra os clientes da loja inteira. Os atalhos do alto montam as listas mais usadas:</p>
@@ -594,10 +611,10 @@
     </li>
 
     <li class="passo">
-      <div class="num">17</div>
+      <div class="num">18</div>
       <div>
         <h3>Campanhas: chamar cada cliente</h3>
-        <p>O vendedor vê só as campanhas <b>ativas</b> em que ele tem clientes, e só os clientes dele. Para cada um:</p>
+        <p>O vendedor vê só as campanhas <b>ativas</b> em que ele tem clientes, e só os clientes dele. As automáticas (aniversariantes e pós-venda) vêm primeiro e abrem direto em <b>Para chamar agora</b>, a fila do dia. Para cada cliente:</p>
         <ul>
           <li>Toque em <span class="btn">WhatsApp</span>. A conversa abre com a mensagem pronta e o nome do cliente, e dá para editar antes de enviar.</li>
           <li>Ao tocar, a situação muda sozinha para <b>Mensagem enviada</b>.</li>
@@ -612,7 +629,7 @@
   <div class="fase" id="caixa"><span class="fase-nome">Parte 6 &middot; Tela do caixa</span><span class="fase-linha"></span></div>
   <ol class="passos">
     <li class="passo">
-      <div class="num">18</div>
+      <div class="num">19</div>
       <div>
         <h3>Consulta</h3>
         <p>Digite o <b>CPF, o celular ou o nome</b> (pelo menos 3 caracteres) e toque em <span class="btn">Buscar</span>. A busca acha o cliente em qualquer loja da rede e mostra até 20 resultados. Se o cliente não estiver entre eles, digite mais do nome ou o CPF inteiro. Tocando no cliente, abre a ficha com o histórico.</p>
@@ -625,8 +642,7 @@
     <h2>Rotina sugerida</h2>
     <p class="h2-nota">Marque na tela, ou imprima e marque à caneta.</p>
     <ul class="check">
-      <li><label><input type="checkbox"><span><b>Vendedor, todo dia:</b> abrir Campanhas e chamar quem está “A contatar”; atualizar a situação de quem respondeu.</span></label></li>
-      <li><label><input type="checkbox"><span><b>Vendedor, toda segunda:</b> Minha carteira → 🎂 Aniversário esta semana e mandar os parabéns.</span></label></li>
+      <li><label><input type="checkbox"><span><b>Vendedor, todo dia:</b> abrir Aniversariantes e Pós-venda e zerar o “Para chamar agora”; depois, as outras campanhas. Atualizar a situação de quem respondeu.</span></label></li>
       <li><label><input type="checkbox"><span><b>Gerente, toda semana:</b> no Painel, resolver o aviso de clientes sem vendedor (ligar o código no Gestão ou distribuir).</span></label></li>
       <li><label><input type="checkbox"><span><b>Gerente, toda semana:</b> em cada campanha, olhar a coluna Mandou mensagem por vendedor e cobrar quem está parado.</span></label></li>
       <li><label><input type="checkbox"><span><b>Gerente, toda semana:</b> no Painel, olhar a coluna Sem cadastro por vendedor e cobrar quem lança em consumidor final.</span></label></li>
