@@ -1,357 +1,252 @@
 'use strict';
+// Dashboard do CRM dentro do gestão. Os números vêm do app crm-lojas via
+// /api/crm/dashboard; o servidor já recorta as lojas que o usuário pode ver.
 
-// ── Auth check ──────────────────────────────────────────────────────────────
-(async () => {
+const META = 0.9, PISO = 0.8;   // cadastro nas vendas: meta 90%, vermelho abaixo de 80%
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const int = n => (n || 0).toLocaleString('pt-BR');
+const brl0 = n => (n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+const pct = (n, d) => d ? (n / d * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—';
+const pad = n => String(n).padStart(2, '0');
+const iso = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const dataBR = s => s ? `${s.slice(8, 10)}/${s.slice(5, 7)}/${s.slice(0, 4)}` : '—';
+const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const nomeMes = m => `${MESES[+m.slice(5, 7) - 1]}/${m.slice(2, 4)}`;
+
+// Status da meta: classe de cor + palavra (a cor nunca vem sozinha)
+const status = x => x == null ? ['', ''] : x >= META ? ['ok', 'na meta'] : x >= PISO ? ['aten', 'abaixo da meta'] : ['ruim', 'bem abaixo da meta'];
+const taxaCadastro = (vendas, sem) => vendas ? 1 - sem / vendas : null;
+
+const PERIODOS = {
+  mes:     ['Este mês',    () => { const h = new Date(); return [iso(h).slice(0, 8) + '01', iso(h)]; }],
+  passado: ['Mês passado', () => { const d = new Date(); d.setDate(0); return [iso(d).slice(0, 8) + '01', iso(d)]; }],
+  d90:     ['90 dias',     () => { const h = new Date(), d = new Date(); d.setDate(d.getDate() - 89); return [iso(d), iso(h)]; }],
+  d365:    ['12 meses',    () => { const h = new Date(), d = new Date(); d.setDate(d.getDate() - 364); return [iso(d), iso(h)]; }],
+};
+
+const S = { per: 'mes', lojas: [], ord: 'vendas', dir: -1, dados: null, rotulos: {} };
+try { const p = new URLSearchParams(location.search); if (PERIODOS[p.get('p')]) S.per = p.get('p'); if (p.get('loja')) S.lojas = p.get('loja').split(','); } catch (_) {}
+
+const corLoja = b => `var(--col-${b}, var(--muted))`;
+const nomeLoja = b => S.rotulos[b] || String(b || '—').toUpperCase();
+const pontoLoja = b => `<span class="ponto" style="background:${corLoja(b)}"></span>`;
+
+async function carregar() {
+  const [de, ate] = PERIODOS[S.per][1]();
+  const qs = new URLSearchParams({ de, ate, ...(S.lojas.length ? { loja: S.lojas.join(',') } : {}) });
+  history.replaceState(null, '', '?' + new URLSearchParams({ p: S.per, ...(S.lojas.length ? { loja: S.lojas.join(',') } : {}) }));
+  $('conteudo').classList.add('carregando');
   try {
-    const r = await fetch('/api/me');
-    if (!r.ok || (await r.json()).board) { window.location.href = '/'; }
-  } catch { window.location.href = '/'; }
-})();
-
-// ── State ───────────────────────────────────────────────────────────────────
-const S = { clientesPage: 1, clientesTotal: 0, clientesPages: 1, msgPage: 1, msgPages: 1 };
-
-// ── Helpers ─────────────────────────────────────────────────────────────────
-function toast(msg, isErr = false) {
-  const el = document.getElementById('toast');
-  el.textContent = msg;
-  el.className = 'toast' + (isErr ? ' error' : '');
-  el.classList.remove('hidden');
-  clearTimeout(el._t);
-  el._t = setTimeout(() => el.classList.add('hidden'), 3500);
+    const r = await fetch('/api/crm/dashboard?' + qs);
+    if (r.status === 401) return (location.href = '/');
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Falha ao carregar');
+    S.dados = d;
+    for (const l of d.lojas || []) S.rotulos[l.board] = l.label;
+    desenhar();
+  } catch (e) {
+    $('conteudo').innerHTML = `<div class="card vazio erro">${esc(e.message)}</div>`;
+  } finally {
+    $('conteudo').classList.remove('carregando');
+  }
 }
 
-async function api(method, url, body) {
-  const opts = { method, headers: {} };
-  if (body !== undefined) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
-  const r = await fetch(url, opts);
-  const text = await r.text();
-  if (!r.ok) { let msg = text; try { msg = JSON.parse(text).error || msg; } catch {} throw new Error(msg); }
-  try { return JSON.parse(text); } catch { return text; }
-}
-
-function fmtDate(d) {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
-}
-
-function fmtDateTime(d) {
-  if (!d) return '—';
-  return new Date(d).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-}
-
-function fmtPhone(p) {
-  if (!p) return '—';
-  const d = p.replace(/\D/g, '');
-  if (d.length === 11) return `(${d.slice(0,2)}) ${d.slice(2,7)}-${d.slice(7)}`;
-  if (d.length === 10) return `(${d.slice(0,2)}) ${d.slice(2,6)}-${d.slice(6)}`;
-  return p;
-}
-
-const TIPO_LABELS = { birthday: '🎂 Aniversário', reengagement: '💤 Reengajamento', manual: '📣 Manual' };
-const TIPO_BADGES = { birthday: 'badge-blue', reengagement: 'badge-yellow', manual: 'badge-green' };
-
-// ── Navigation ───────────────────────────────────────────────────────────────
-const TITLES = { dashboard: 'Dashboard', clientes: 'Clientes', campanhas: 'Campanhas', historico: 'Histórico', config: 'Configurações' };
-
-document.querySelectorAll('.crm-nav-item').forEach(item => {
-  item.addEventListener('click', () => {
-    const tab = item.dataset.tab;
-    document.querySelectorAll('.crm-nav-item').forEach(i => i.classList.remove('active'));
-    document.querySelectorAll('.crm-tab').forEach(t => t.classList.remove('active'));
-    item.classList.add('active');
-    document.getElementById(`tab-${tab}`).classList.add('active');
-    document.getElementById('crmTitle').textContent = TITLES[tab] || '';
-    document.getElementById('crmHeaderActions').innerHTML = '';
-    if (tab === 'dashboard') loadDashboard();
-    if (tab === 'clientes')  loadClientes();
-    if (tab === 'campanhas') loadCampaigns();
-    if (tab === 'historico') loadMessages();
+function filtros() {
+  const d = S.dados;
+  const perm = d?.permitidas || [];
+  $('filtros').innerHTML = Object.entries(PERIODOS).map(([id, [nome]]) =>
+    `<button class="chip ${S.per === id ? 'on' : ''}" data-p="${id}">${nome}</button>`).join('')
+    + (perm.length > 1 ? `<span class="sep"></span><button class="chip ${!S.lojas.length ? 'on' : ''}" data-l="">Todas</button>`
+      + perm.map(b => `<button class="chip ${S.lojas.includes(b) ? 'on' : ''}" data-l="${esc(b)}">${pontoLoja(b)}${esc(nomeLoja(b))}</button>`).join('') : '');
+  $('filtros').querySelectorAll('[data-p]').forEach(b => b.onclick = () => { S.per = b.dataset.p; carregar(); });
+  $('filtros').querySelectorAll('[data-l]').forEach(b => b.onclick = () => {
+    const l = b.dataset.l;
+    S.lojas = !l ? [] : S.lojas.includes(l) ? S.lojas.filter(x => x !== l) : [...S.lojas, l];
+    if (S.lojas.length === perm.length) S.lojas = [];
+    carregar();
   });
-});
-
-// ── Dashboard ────────────────────────────────────────────────────────────────
-async function loadDashboard() {
-  try {
-    const s = await api('GET', '/api/crm/stats');
-    document.getElementById('statTotal').textContent  = s.total.toLocaleString('pt-BR');
-    document.getElementById('statToday').textContent  = s.sentToday;
-    document.getElementById('statMonth').textContent  = s.sentMonth;
-    document.getElementById('statRisk').textContent   = s.atRisk.toLocaleString('pt-BR');
-
-    // Birthdays
-    const bl = document.getElementById('birthdayList');
-    if (!s.upcoming?.length) {
-      bl.innerHTML = '<p style="color:var(--muted);font-size:.82rem;padding:12px 0">Nenhum aniversariante nos próximos 7 dias.</p>';
-    } else {
-      bl.innerHTML = s.upcoming.map(c => {
-        const isToday = c.dtNasc === s.todayDDMM;
-        return `<div class="birthday-item">
-          <span class="birthday-date ${isToday ? 'birthday-today' : ''}">${c.dtNasc || '??'}</span>
-          <span style="flex:1;font-weight:${isToday ? '600' : '400'}">${c.nome}${isToday ? ' 🎂' : ''}</span>
-          <span style="font-size:.75rem;color:var(--muted)">${fmtPhone(c.celular)}</span>
-        </div>`;
-      }).join('');
-    }
-
-    // Recent messages
-    const msgs = await api('GET', '/api/crm/messages?page=1');
-    const tbody = document.getElementById('recentMsgBody');
-    if (!msgs.messages?.length) {
-      tbody.innerHTML = '<tr><td colspan="3" class="crm-empty">Nenhuma mensagem enviada ainda.</td></tr>';
-    } else {
-      tbody.innerHTML = msgs.messages.slice(0, 8).map(m => `
-        <tr>
-          <td>${m.customerNome || '—'}</td>
-          <td style="color:var(--muted);font-size:.8rem">${m.campaignNome || '—'}</td>
-          <td><span class="badge ${m.status === 'sent' ? 'badge-green' : 'badge-red'}">${m.status === 'sent' ? 'Enviado' : 'Erro'}</span></td>
-        </tr>`).join('');
-    }
-  } catch (e) { toast(e.message, true); }
 }
 
-// ── Clientes ─────────────────────────────────────────────────────────────────
-let searchDebounce = null;
-function debounceSearchClientes() {
-  clearTimeout(searchDebounce);
-  searchDebounce = setTimeout(() => { S.clientesPage = 1; loadClientes(); }, 350);
-}
-
-async function loadClientes() {
-  const q    = document.getElementById('clienteSearch').value.trim();
-  const loja = document.getElementById('clienteLoja').value;
-  const params = new URLSearchParams({ page: S.clientesPage });
-  if (q) params.set('q', q);
-  if (loja) params.set('loja', loja);
-  const tbody = document.getElementById('clientesBody');
-  tbody.innerHTML = '<tr><td colspan="5" class="crm-empty">Carregando…</td></tr>';
-  try {
-    const d = await api('GET', `/api/crm/customers?${params}`);
-    S.clientesTotal = d.total; S.clientesPages = d.pages;
-    document.getElementById('clientesPagInfo').textContent = `${d.total.toLocaleString('pt-BR')} clientes`;
-    document.getElementById('btnClientesPrev').disabled = S.clientesPage <= 1;
-    document.getElementById('btnClientesNext').disabled = S.clientesPage >= d.pages;
-    if (!d.customers?.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="crm-empty">Nenhum cliente encontrado.</td></tr>'; return;
-    }
-    tbody.innerHTML = d.customers.map(c => `
-      <tr>
-        <td><strong>${c.nome}</strong>${c.email ? `<br><span style="font-size:.75rem;color:var(--muted)">${c.email}</span>` : ''}</td>
-        <td>${fmtPhone(c.celular)}</td>
-        <td>${c.dtNasc || '—'}</td>
-        <td style="font-size:.78rem">${(c.lojas||[]).join(', ') || '—'}</td>
-        <td style="font-size:.8rem;color:var(--muted)">${fmtDate(c.ultimaCompra)}</td>
-      </tr>`).join('');
-  } catch (e) { tbody.innerHTML = `<tr><td colspan="5" class="crm-empty" style="color:#F85149">${e.message}</td></tr>`; }
-}
-
-function navigateClientes(delta) {
-  S.clientesPage = Math.max(1, Math.min(S.clientesPages, S.clientesPage + delta));
-  loadClientes();
-}
-
-async function importCustomers(input) {
-  const file = input.files[0];
-  if (!file) return;
-  input.value = '';
-  const label = input.closest('label');
-  const origHTML = label.innerHTML;
-  label.style.opacity = '.5';
-  label.style.pointerEvents = 'none';
-  try {
-    const fd = new FormData();
-    fd.append('file', file);
-    const r = await fetch('/api/crm/import', { method: 'POST', body: fd });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || 'Erro ao importar');
-    toast(`Importados ${data.imported} clientes (${data.skipped} ignorados por falta de CPF/telefone).`);
-    loadClientes();
-  } catch (e) {
-    toast(e.message, true);
-  } finally {
-    label.innerHTML = origHTML;
-    label.style.opacity = '';
-    label.style.pointerEvents = '';
-    // Re-wire the input since innerHTML was replaced
-    label.querySelector('input').addEventListener('change', e => importCustomers(e.target));
+function desenhar() {
+  const d = S.dados;
+  filtros();
+  if (d.semLojas) {
+    $('conteudo').innerHTML = '<div class="card vazio">Sua loja não tem vendas no Microvix, então não há dados do CRM para mostrar.</div>';
+    return;
   }
+  const lojasVistas = d.lojas.map(l => l.board);
+  $('sub').textContent = `${dataBR(d.de)} a ${dataBR(d.ate)} · ${lojasVistas.length === 1 ? nomeLoja(lojasVistas[0]) : lojasVistas.length === (d.permitidas || []).length ? 'todas as lojas' : lojasVistas.map(nomeLoja).join(', ')}`;
+
+  const vs = d.vendedores;
+  const soma = k => vs.reduce((a, v) => a + (v[k] || 0), 0);
+  const vendas = soma('vendas'), sem = soma('semCadastro');
+  const tx = taxaCadastro(vendas, sem);
+  const [cls, palavra] = status(tx);
+  const publico = soma('publico'), contatados = soma('contatados'), compraram = soma('compraram'), comMsg = soma('compraramContatados');
+  const semMsg = publico - contatados;
+
+  $('conteudo').innerHTML = `
+    <div class="kpis">
+      <div class="kpi" title="Vendas lançadas com o cliente cadastrado. O resto foi em consumidor final ou sem cliente.">
+        <div class="rot">Cadastro nas vendas · meta 90%</div>
+        <div class="val ${cls}">${tx == null ? '—' : pct(vendas - sem, vendas)}</div>
+        <div class="det">${tx == null ? 'sem vendas no período' : `<b class="${cls}">${palavra}</b> · ${int(sem)} de ${int(vendas)} vendas sem cadastro`}</div></div>
+      <div class="kpi" title="Clientes das campanhas que receberam mensagem do vendedor">
+        <div class="rot">Contatos feitos nas campanhas</div>
+        <div class="val">${pct(contatados, publico)}</div>
+        <div class="det">${int(contatados)} de ${int(publico)} clientes</div></div>
+      <div class="kpi" title="Aniversariantes e pós-venda: na fila hoje, e os que passaram do prazo sem contato no período">
+        <div class="rot">Fila de aniversário e pós-venda</div>
+        <div class="val">${int(soma('agora'))}</div>
+        <div class="det">para chamar hoje · <b class="${soma('atrasados') ? 'ruim' : ''}">${int(soma('atrasados'))} passaram do prazo</b></div></div>
+      <div class="kpi" title="Clientes das campanhas que compraram. Comparar com e sem mensagem mostra se o contato traz venda.">
+        <div class="rot">Compraram depois da campanha</div>
+        <div class="val">${int(compraram)}</div>
+        <div class="det">com mensagem ${pct(comMsg, contatados)} × sem ${pct(compraram - comMsg, semMsg)} · ${brl0(soma('faturamentoCamp'))}</div></div>
+      <div class="kpi" title="Faturamento das vendas com cliente cadastrado">
+        <div class="rot">Faturamento identificado</div>
+        <div class="val">${brl0(soma('faturamentoIdent'))}</div>
+        <div class="det">de ${brl0(soma('faturamento'))} vendidos</div></div>
+    </div>
+
+    <div class="grade2">
+      <div class="card">${blocoBarras()}</div>
+      <div class="card">${blocoMapa()}</div>
+    </div>
+
+    <div class="card">
+      <h2>Ranking de vendedores</h2>
+      <p class="nota">Clique no título de uma coluna para ordenar. “Já eram clientes”: atendidos no período que já tinham comprado antes. “Atrasados”: aniversário ou pós-venda que passou do prazo sem contato.</p>
+      <div class="tabela fixa" id="ranking"></div>
+    </div>
+
+    <div class="card">
+      <h2>Campanhas do período</h2>
+      <p class="nota">Nas automáticas, contam os clientes que entraram na lista no período.</p>
+      ${blocoCampanhas()}
+    </div>`;
+  desenharRanking();
+  // No celular o mapa não cabe: abre já nos meses mais recentes
+  const mapa = document.querySelector('.mapa')?.parentElement;
+  if (mapa) mapa.scrollLeft = mapa.scrollWidth;
 }
 
-async function crmSyncCustomers() {
-  const btn = document.querySelector('[onclick="crmSyncCustomers()"]');
-  btn.disabled = true; btn.textContent = 'Sincronizando…';
-  try {
-    const r = await api('POST', '/api/crm/sync');
-    toast(`Sincronizado! ${r.total.toLocaleString('pt-BR')} clientes importados.`);
-    loadClientes();
-  } catch (e) {
-    toast(e.message, true);
-  } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> Sincronizar';
-  }
+// Cadastro por loja (ou por vendedor, quando é uma loja só), com a meta marcada
+function blocoBarras() {
+  const d = S.dados;
+  const umaLoja = d.lojas.length === 1;
+  const itens = umaLoja
+    ? d.vendedores.filter(v => v.vendas).sort((a, b) => b.vendas - a.vendas).slice(0, 14).map(v => ({ nome: v.nome, board: v.board, vendas: v.vendas, sem: v.semCadastro }))
+    : d.porLoja.slice().sort((a, b) => taxaCadastro(b.vendas, b.semCadastro) - taxaCadastro(a.vendas, a.semCadastro)).map(l => ({ nome: nomeLoja(l.board), board: l.board, vendas: l.vendas, sem: l.semCadastro }));
+  if (!itens.length) return '<h2>Cadastro nas vendas</h2><div class="vazio">Sem vendas no período.</div>';
+  return `<h2>Cadastro nas vendas ${umaLoja ? 'por vendedor' : 'por loja'}</h2>
+    <p class="nota">% das vendas com o cliente cadastrado.</p>
+    <div class="barras">${itens.map(i => {
+      const x = taxaCadastro(i.vendas, i.sem);
+      const [cls, palavra] = status(x);
+      return `<div class="barra" title="${esc(i.nome)}: ${pct(i.vendas - i.sem, i.vendas)} (${palavra}) · ${int(i.sem)} de ${int(i.vendas)} vendas sem cadastro">
+        <span class="nome">${umaLoja ? '' : pontoLoja(i.board)}${esc(i.nome)}</span>
+        <div class="trilho"><div class="enche" style="width:${(x * 100).toFixed(1)}%;background:var(--${cls === 'ok' ? 'up' : cls === 'aten' ? 'warn' : 'down'})"></div><i class="meta"></i></div>
+        <span class="v n ${cls}">${pct(i.vendas - i.sem, i.vendas)}</span></div>`;
+    }).join('')}</div>
+    <div class="legenda-meta"><i></i> meta 90% · <b class="ok">verde</b> na meta, <b class="aten">amarelo</b> de 80% a 90%, <b class="ruim">vermelho</b> abaixo de 80%</div>`;
 }
 
-// ── Campanhas ─────────────────────────────────────────────────────────────────
-async function loadCampaigns() {
-  const list = document.getElementById('campaignsList');
-  const empty = document.getElementById('campaignsEmpty');
-  list.innerHTML = '<div style="color:var(--muted);font-size:.85rem;padding:8px 0">Carregando…</div>';
-  try {
-    const campaigns = await api('GET', '/api/crm/campaigns');
-    if (!campaigns.length) { list.innerHTML = ''; empty.style.display = ''; return; }
-    empty.style.display = 'none';
-    list.innerHTML = campaigns.map(c => `
-      <div class="campaign-card" id="camp-${c._id}">
-        <div class="campaign-card-header">
-          <div>
-            <span class="campaign-card-name">${c.nome}</span>
-            <span class="badge ${TIPO_BADGES[c.tipo] || 'badge-gray'}" style="margin-left:8px">${TIPO_LABELS[c.tipo] || c.tipo}</span>
-            <span class="badge ${c.ativo ? 'badge-green' : 'badge-gray'}" style="margin-left:6px">${c.ativo ? 'Ativa' : 'Inativa'}</span>
-          </div>
-          <div class="campaign-card-actions">
-            ${c.tipo === 'manual' ? `<button class="btn btn-green btn-sm" onclick="runCampaign('${c._id}','${c.nome}')">▶ Disparar</button>` : ''}
-            <button class="btn btn-ghost btn-sm" onclick="editCampaign(${JSON.stringify(c).replace(/"/g,'&quot;')})">Editar</button>
-            <button class="btn btn-ghost btn-sm" onclick="toggleCampaign('${c._id}',${!c.ativo})">${c.ativo ? 'Pausar' : 'Ativar'}</button>
-            <button class="btn btn-danger btn-sm" onclick="deleteCampaign('${c._id}')">Excluir</button>
-          </div>
-        </div>
-        ${c.config?.diasSemCompra ? `<div style="font-size:.78rem;color:var(--muted);margin-bottom:6px">Clientes sem compra há ${c.config.diasSemCompra} dias</div>` : ''}
-        <div class="campaign-template">${c.template}</div>
-      </div>`).join('');
-  } catch (e) { list.innerHTML = `<div style="color:#F85149;font-size:.85rem">${e.message}</div>`; }
+// Mês × loja, 12 meses: cada célula com o % escrito
+function blocoMapa() {
+  const d = S.dados;
+  const meses = [...new Set(d.porMes.map(m => m.mes))].sort();
+  if (!meses.length) return '<h2>Cadastro mês a mês</h2><div class="vazio">Sem vendas nos últimos 12 meses.</div>';
+  const por = {};
+  for (const m of d.porMes) (por[m.board] ||= {})[m.mes] = m;
+  const totalMes = Object.fromEntries(meses.map(mes => {
+    const xs = d.porMes.filter(m => m.mes === mes);
+    return [mes, { vendas: xs.reduce((a, m) => a + m.vendas, 0), semCadastro: xs.reduce((a, m) => a + m.semCadastro, 0) }];
+  }));
+  const cel = (m, rot) => {
+    if (!m || !m.vendas) return '<td class="cel vazia">—</td>';
+    const x = taxaCadastro(m.vendas, m.semCadastro);
+    const [cls, palavra] = status(x);
+    return `<td class="cel ${cls}" title="${esc(rot)}: ${pct(m.vendas - m.semCadastro, m.vendas)} (${palavra}) · ${int(m.semCadastro)} de ${int(m.vendas)} vendas sem cadastro">${Math.round(x * 100)}</td>`;
+  };
+  const lojas = d.lojas.map(l => l.board);
+  return `<h2>Cadastro mês a mês</h2>
+    <p class="nota">% das vendas com cliente cadastrado em cada mês. Passe o mouse para ver o detalhe.</p>
+    <div class="tabela fixa"><table class="mapa">
+      <thead><tr><th>Loja</th>${meses.map(m => `<th>${nomeMes(m)}</th>`).join('')}</tr></thead>
+      <tbody>
+        ${lojas.map(b => `<tr><td>${pontoLoja(b)} ${esc(nomeLoja(b))}</td>${meses.map(m => cel(por[b]?.[m], `${nomeLoja(b)} em ${nomeMes(m)}`)).join('')}</tr>`).join('')}
+        ${lojas.length > 1 ? `<tr><td><b>Total</b></td>${meses.map(m => cel(totalMes[m], `Total em ${nomeMes(m)}`)).join('')}</tr>` : ''}
+      </tbody></table></div>`;
 }
 
-function updateConfigFields() {
-  const tipo = document.getElementById('cfTipo').value;
-  document.getElementById('cfReengagementConfig').style.display = tipo === 'reengagement' ? '' : 'none';
+function blocoCampanhas() {
+  const cs = S.dados.campanhas;
+  if (!cs.length) return '<div class="vazio">Nenhuma campanha no período.</div>';
+  const SIT = { ativa: 'Ativa', agendada: 'Agendada', encerrada: 'Encerrada' };
+  const ICONE = { aniversario: '🎂 ', posvenda: '🛍️ ' };
+  return `<div class="tabela fixa"><table>
+    <thead><tr><th>Campanha</th><th>Situação</th><th class="n">Recebeu</th><th class="n">Mandou mensagem</th><th class="n">Compraram</th><th class="n">Faturamento</th></tr></thead>
+    <tbody>${cs.map(c => `<tr>
+      <td><b>${ICONE[c.auto] || ''}${esc(c.nome)}</b>${c.auto ? ' <span class="tag">automática</span>' : ` <span class="tag">${dataBR(c.inicio)} a ${dataBR(c.fim)}</span>`}</td>
+      <td>${SIT[c.situacao] || esc(c.situacao)}</td>
+      <td class="n">${int(c.publico)}</td>
+      <td class="n">${int(c.contatados)} <span class="tag">${pct(c.contatados, c.publico)}</span></td>
+      <td class="n">${int(c.compraram)} <span class="tag">${pct(c.compraram, c.publico)}</span></td>
+      <td class="n">${brl0(c.faturamento)}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
-function resetCampaignForm() {
-  document.getElementById('editCampaignId').value = '';
-  document.getElementById('cfNome').value = '';
-  document.getElementById('cfTipo').value = 'birthday';
-  document.getElementById('cfTemplate').value = '';
-  document.getElementById('cfDias').value = '60';
-  document.getElementById('formTitle').textContent = 'Nova campanha';
-  document.getElementById('cfErr').style.display = 'none';
-  updateConfigFields();
+// Ranking: uma linha por vendedor, juntando cadastro, carteira e campanhas
+const COLS = [
+  { id: 'nome',      rot: 'Vendedor',          val: v => v.nome, txt: true },
+  { id: 'board',     rot: 'Loja',              val: v => nomeLoja(v.board), txt: true },
+  { id: 'vendas',    rot: 'Vendas',            val: v => v.vendas },
+  { id: 'cadastro',  rot: 'Cadastro',          val: v => taxaCadastro(v.vendas, v.semCadastro) ?? -1 },
+  { id: 'clientes',  rot: 'Clientes',          val: v => v.clientes },
+  { id: 'recompra',  rot: 'Já eram clientes',  val: v => v.clientes ? v.recompra / v.clientes : -1 },
+  { id: 'publico',   rot: 'Recebeu (camp.)',   val: v => v.publico },
+  { id: 'contato',   rot: 'Contatou',          val: v => v.publico ? v.contatados / v.publico : -1 },
+  { id: 'agora',     rot: 'Fila hoje',         val: v => v.agora },
+  { id: 'atrasados', rot: 'Atrasados',         val: v => v.atrasados },
+  { id: 'compraram', rot: 'Compraram (camp.)', val: v => v.compraram },
+  { id: 'fat',       rot: 'Fat. identificado', val: v => v.faturamentoIdent },
+];
+
+function desenharRanking() {
+  const col = COLS.find(c => c.id === S.ord) || COLS[2];
+  const linhas = S.dados.vendedores.filter(v => v.vendas || v.publico || v.agora)
+    .sort((a, b) => {
+      if ((a.empId == null) !== (b.empId == null)) return a.empId == null ? 1 : -1;   // "Sem vendedor" no fim
+      const x = col.val(a), y = col.val(b);
+      return (col.txt ? String(x).localeCompare(String(y)) : x - y) * S.dir;
+    });
+  if (!linhas.length) { $('ranking').innerHTML = '<div class="vazio">Nenhum vendedor com vendas ou campanha no período.</div>'; return; }
+  $('ranking').innerHTML = `<table>
+    <thead><tr>${COLS.map(c => `<th data-ord="${c.id}" class="${c.txt ? '' : 'n'} ${c.id === col.id ? 'ordenado' : ''}">${c.rot}${c.id === col.id ? (S.dir > 0 ? ' ↑' : ' ↓') : ''}</th>`).join('')}</tr></thead>
+    <tbody>${linhas.map(v => {
+      const tx = taxaCadastro(v.vendas, v.semCadastro);
+      const [cls, palavra] = status(tx);
+      return `<tr class="${v.inativo ? 'inativo' : ''}">
+        <td><b>${esc(v.nome)}</b>${v.inativo ? ' <span class="tag">saiu</span>' : ''}</td>
+        <td>${pontoLoja(v.board)} ${esc(nomeLoja(v.board))}</td>
+        <td class="n">${int(v.vendas)}</td>
+        <td class="n" title="${tx == null ? '' : `${palavra} · ${int(v.semCadastro)} de ${int(v.vendas)} vendas sem cadastro`}"><b class="${cls}">${tx == null ? '—' : pct(v.vendas - v.semCadastro, v.vendas)}</b></td>
+        <td class="n">${int(v.clientes)}</td>
+        <td class="n">${pct(v.recompra, v.clientes)}</td>
+        <td class="n">${int(v.publico)}</td>
+        <td class="n">${v.publico ? `${int(v.contatados)} <span class="tag">${pct(v.contatados, v.publico)}</span>` : '—'}</td>
+        <td class="n">${int(v.agora)}</td>
+        <td class="n ${v.atrasados ? 'ruim' : ''}">${int(v.atrasados)}</td>
+        <td class="n">${v.publico ? `${int(v.compraram)} <span class="tag">${pct(v.compraram, v.publico)}</span>` : '—'}</td>
+        <td class="n">${brl0(v.faturamentoIdent)}</td></tr>`;
+    }).join('')}</tbody></table>`;
+  $('ranking').querySelectorAll('[data-ord]').forEach(th => th.onclick = () => {
+    const id = th.dataset.ord;
+    if (S.ord === id) S.dir = -S.dir;
+    else { S.ord = id; S.dir = COLS.find(c => c.id === id).txt ? 1 : -1; }
+    desenharRanking();
+  });
 }
 
-function editCampaign(c) {
-  document.getElementById('editCampaignId').value = c._id;
-  document.getElementById('cfNome').value = c.nome;
-  document.getElementById('cfTipo').value = c.tipo;
-  document.getElementById('cfTemplate').value = c.template;
-  document.getElementById('cfDias').value = c.config?.diasSemCompra || 60;
-  document.getElementById('formTitle').textContent = 'Editar campanha';
-  updateConfigFields();
-  document.getElementById('cfNome').focus();
-}
-
-async function saveCampaign() {
-  const id       = document.getElementById('editCampaignId').value;
-  const nome     = document.getElementById('cfNome').value.trim();
-  const tipo     = document.getElementById('cfTipo').value;
-  const template = document.getElementById('cfTemplate').value.trim();
-  const dias     = parseInt(document.getElementById('cfDias').value) || 60;
-  const errEl    = document.getElementById('cfErr');
-
-  errEl.style.display = 'none';
-  if (!nome || !template) { errEl.textContent = 'Preencha nome e mensagem.'; errEl.style.display = ''; return; }
-
-  const body = { nome, tipo, template, config: tipo === 'reengagement' ? { diasSemCompra: dias } : {} };
-  try {
-    if (id) await api('PUT', `/api/crm/campaigns/${id}`, body);
-    else    await api('POST', '/api/crm/campaigns', body);
-    toast(id ? 'Campanha atualizada!' : 'Campanha criada!');
-    resetCampaignForm();
-    loadCampaigns();
-  } catch (e) { errEl.textContent = e.message; errEl.style.display = ''; }
-}
-
-async function toggleCampaign(id, ativo) {
-  try { await api('PUT', `/api/crm/campaigns/${id}`, { ativo }); loadCampaigns(); }
-  catch (e) { toast(e.message, true); }
-}
-
-async function deleteCampaign(id) {
-  if (!confirm('Excluir esta campanha?')) return;
-  try { await api('DELETE', `/api/crm/campaigns/${id}`); toast('Campanha excluída.'); loadCampaigns(); }
-  catch (e) { toast(e.message, true); }
-}
-
-async function runCampaign(id, nome) {
-  if (!confirm(`Disparar a campanha "${nome}" agora? Isso enviará mensagens para os clientes filtrados.`)) return;
-  try {
-    const r = await api('POST', `/api/crm/campaigns/${id}/run`, {});
-    toast(`Disparo concluído: ${r.sent} enviados, ${r.failed} com erro.`);
-    loadCampaigns();
-  } catch (e) { toast(e.message, true); }
-}
-
-// ── Histórico ─────────────────────────────────────────────────────────────────
-async function loadMessages() {
-  const status = document.getElementById('msgStatusFilter').value;
-  const params = new URLSearchParams({ page: S.msgPage });
-  if (status) params.set('status', status);
-  const tbody = document.getElementById('messagesBody');
-  tbody.innerHTML = '<tr><td colspan="5" class="crm-empty">Carregando…</td></tr>';
-  try {
-    const d = await api('GET', `/api/crm/messages?${params}`);
-    S.msgPages = d.pages;
-    document.getElementById('msgPagInfo').textContent = `${d.total.toLocaleString('pt-BR')} mensagens`;
-    document.getElementById('btnMsgPrev').disabled = S.msgPage <= 1;
-    document.getElementById('btnMsgNext').disabled = S.msgPage >= d.pages;
-    if (!d.messages?.length) {
-      tbody.innerHTML = '<tr><td colspan="5" class="crm-empty">Nenhuma mensagem no histórico.</td></tr>'; return;
-    }
-    tbody.innerHTML = d.messages.map(m => `
-      <tr>
-        <td>${m.customerNome || '—'}</td>
-        <td style="color:var(--muted)">${fmtPhone(m.celular)}</td>
-        <td style="font-size:.8rem">${m.campaignNome || '—'}</td>
-        <td><span class="badge ${m.status === 'sent' ? 'badge-green' : 'badge-red'}" title="${m.erro || ''}">${m.status === 'sent' ? 'Enviado' : 'Erro'}</span></td>
-        <td style="color:var(--muted);font-size:.8rem">${fmtDateTime(m.enviadoEm)}</td>
-      </tr>`).join('');
-  } catch (e) { tbody.innerHTML = `<tr><td colspan="5" class="crm-empty" style="color:#F85149">${e.message}</td></tr>`; }
-}
-
-function navigateMessages(delta) {
-  S.msgPage = Math.max(1, Math.min(S.msgPages, S.msgPage + delta));
-  loadMessages();
-}
-
-// ── Config / Teste ─────────────────────────────────────────────────────────────
-async function sendTest() {
-  const phone   = document.getElementById('testPhone').value.trim();
-  const message = document.getElementById('testMsg').value.trim();
-  const resEl   = document.getElementById('testResult');
-  if (!phone || !message) { resEl.style.color = '#F85149'; resEl.textContent = 'Preencha telefone e mensagem.'; resEl.style.display = ''; return; }
-  resEl.style.display = 'none';
-  try {
-    await api('POST', '/api/crm/send-test', { phone, message });
-    resEl.style.color = '#3FB950'; resEl.textContent = 'Mensagem enviada com sucesso!';
-  } catch (e) {
-    resEl.style.color = '#F85149'; resEl.textContent = e.message;
-  }
-  resEl.style.display = '';
-}
-
-async function probeClientes() {
-  const el = document.getElementById('probeResult');
-  el.style.display = ''; el.textContent = 'Consultando Microvix…';
-  try {
-    const results = await api('GET', '/api/crm/clientes-raw');
-    el.textContent = results.map(r =>
-      `[${r.tentativa}] → ${r.status}\n` +
-      (r.campos?.length ? `Campos: ${r.campos.join(', ')}\n` : '') +
-      (r.exemplo ? `Exemplo: ${JSON.stringify(r.exemplo, null, 2)}\n` : '') +
-      (r.raw_inicio ? `Raw: ${r.raw_inicio}\n` : '')
-    ).join('\n---\n');
-  } catch (e) { el.textContent = 'Erro: ' + e.message; }
-}
-
-// ── Init ───────────────────────────────────────────────────────────────────
-loadDashboard();
-updateConfigFields();
+carregar();

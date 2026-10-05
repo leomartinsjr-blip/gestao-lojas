@@ -166,6 +166,9 @@ function applyUserPermissions(user) {
   });
   const marcasEl = document.getElementById('marcasBtn');
   if (marcasEl) marcasEl.style.display = 'flex';
+  // Dashboard do CRM: todos; o servidor recorta a loja de cada um
+  const crmEl = document.getElementById('crmBtn');
+  if (crmEl) crmEl.style.display = 'flex';
   const indevaVisible = isAdmin || isSupervisor || user.board === 'escritorio' || INDEVA_STORES.includes(user.board);
   const indevaEl = document.getElementById('indevaBtn');
   if (indevaEl) indevaEl.style.display = indevaVisible ? '' : 'none';

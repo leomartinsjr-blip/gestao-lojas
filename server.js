@@ -10676,8 +10676,46 @@ app.get('/api/internal/crm/status', requireCrmToken, async (req, res) => {
 // ── CRM ────────────────────────────────────────────────────────────────────
 const { ObjectId } = require('mongodb');
 
-app.get('/crm', requireAdmin, (req, res) =>
-  res.sendFile(path.join(__dirname, 'public', 'crm.html')));
+// Dashboard do CRM: os números vêm do app crm-lojas (API interna, mesmo
+// token do feed). Admin, escritório e supervisor veem as suas lojas; o
+// gerente, só a dele.
+app.get('/crm', (req, res) => {
+  if (!req.session?.user) return res.redirect('/');
+  res.sendFile(path.join(__dirname, 'public', 'crm.html'));
+});
+
+function lojasCrmDoUsuario(u) {
+  const microvix = Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}')).filter(b => b !== 'site');
+  if (!u.board || u.board === 'escritorio') return (u.lojas && u.lojas.length) ? u.lojas.filter(b => microvix.includes(b)) : microvix;
+  return microvix.includes(u.board) ? [u.board] : [];
+}
+
+const _crmDashCache = new Map();   // 2 min: o painel recarrega e o CRM não sofre
+app.get('/api/crm/dashboard', requireAuth, async (req, res) => {
+  const u = req.session.user;
+  const permitidas = lojasCrmDoUsuario(u);
+  const pedidas = String(req.query.loja || '').split(',').filter(b => permitidas.includes(b));
+  const lojas = pedidas.length ? pedidas : permitidas;
+  if (!lojas.length) return res.json({ semLojas: true, permitidas: [] });
+  const qs = new URLSearchParams({ lojas: lojas.join(',') });
+  for (const k of ['de', 'ate']) if (/^\d{4}-\d{2}-\d{2}$/.test(req.query[k] || '')) qs.set(k, req.query[k]);
+  const chave = qs.toString();
+  const c = _crmDashCache.get(chave);
+  if (c && Date.now() - c.at < 120_000) return res.json({ ...c.dados, permitidas });
+  try {
+    const base = (process.env.CRM_URL || 'https://crm-lojas.onrender.com').replace(/\/+$/, '');
+    const r = await fetch(`${base}/api/internal/dashboard?${chave}`, {
+      headers: { 'x-crm-token': (process.env.CRM_INTERNAL_TOKEN || '').trim() },
+      signal: AbortSignal.timeout(60000),
+    });
+    const dados = await r.json().catch(() => ({ error: `CRM respondeu ${r.status}` }));
+    if (!r.ok) return res.status(502).json({ error: dados.error || `CRM respondeu ${r.status}` });
+    _crmDashCache.set(chave, { at: Date.now(), dados });
+    res.json({ ...dados, permitidas });
+  } catch (e) {
+    res.status(502).json({ error: 'CRM indisponível: ' + e.message });
+  }
+});
 
 // Probe — testa todos os possíveis comandos de clientes no Microvix
 app.get('/api/crm/clientes-raw', requireAdmin, async (req, res) => {
