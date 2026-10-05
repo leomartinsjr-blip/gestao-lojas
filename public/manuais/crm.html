@@ -1,0 +1,638 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Manual do CRM</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground:   #FBFAF8;
+    --surface:  #FFFFFF;
+    --surface2: #F4F1EC;
+    --ink:      #1B1E27;
+    --ink2:     #4A4640;
+    --muted:    #7A7267;
+    --border:   #E3DED6;
+    --rule:     #CFC7BC;
+    --accent:   #A85F14;
+    --accent-soft: rgba(168, 95, 20, .09);
+    --warn:     #8A6410;
+    --warn-soft: rgba(138, 100, 16, .10);
+    --stop:     #B23A2E;
+    --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+    --disp: "Big Shoulders Display", "IBM Plex Sans", Impact, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:   #14161C;
+      --surface:  #1B1E27;
+      --surface2: #232733;
+      --ink:      #E9E6E1;
+      --ink2:     #C3BDB4;
+      --muted:    #8E877D;
+      --border:   #2E333F;
+      --rule:     #3A4050;
+      --accent:   #F0A045;
+      --accent-soft: rgba(240, 160, 69, .12);
+      --warn:     #E3B93F;
+      --warn-soft: rgba(227, 185, 63, .12);
+      --stop:     #E36C5D;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:   #14161C;
+    --surface:  #1B1E27;
+    --surface2: #232733;
+    --ink:      #E9E6E1;
+    --ink2:     #C3BDB4;
+    --muted:    #8E877D;
+    --border:   #2E333F;
+    --rule:     #3A4050;
+    --accent:   #F0A045;
+    --accent-soft: rgba(240, 160, 69, .12);
+    --warn:     #E3B93F;
+    --warn-soft: rgba(227, 185, 63, .12);
+    --stop:     #E36C5D;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .folha { max-width: 46rem; margin: 0 auto; padding: 2.75rem 1.5rem 4rem; }
+  .mono { font-family: var(--mono); }
+
+  /* Cabecalho */
+  .kicker {
+    font-family: var(--mono); font-size: .68rem; font-weight: 600;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--accent);
+    margin: 0;
+  }
+  h1 {
+    font-family: var(--disp); font-weight: 700; font-size: clamp(2.6rem, 8vw, 4.1rem);
+    line-height: .92; letter-spacing: .005em; text-transform: uppercase;
+    margin: .5rem 0 .35rem; text-wrap: balance; color: var(--ink);
+  }
+  .sub { font-size: 1.02rem; color: var(--ink2); max-width: 34rem; margin: 0 0 1.6rem; }
+  .ficha {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 1px; background: var(--border); border: 1px solid var(--border);
+    border-radius: 3px; overflow: hidden; margin: 0;
+  }
+  .ficha > div { background: var(--surface); padding: .7rem .85rem; }
+  .ficha dt {
+    font-family: var(--mono); font-size: .64rem; font-weight: 600; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: .2rem;
+  }
+  .ficha dd { margin: 0; font-size: .88rem; color: var(--ink); font-weight: 500; }
+
+  /* Blocos */
+  section { margin-top: 2.75rem; }
+  h2 {
+    font-family: var(--disp); font-weight: 700; font-size: 1.75rem; text-transform: uppercase;
+    letter-spacing: .02em; margin: 0 0 .2rem; color: var(--ink);
+  }
+  .h2-nota { font-size: .85rem; color: var(--muted); margin: 0 0 1rem; }
+
+  .antes { list-style: none; padding: 0; margin: 0; display: grid; gap: .55rem; }
+  .antes li {
+    display: grid; grid-template-columns: .85rem 1fr; gap: .7rem;
+    align-items: start; font-size: .95rem; color: var(--ink2);
+  }
+  .antes li::before {
+    content: ""; width: .5rem; height: .5rem; margin-top: .48rem;
+    border: 1.5px solid var(--accent); border-radius: 50%;
+  }
+  .antes b { color: var(--ink); font-weight: 600; }
+
+  .regras { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+  @media (min-width: 34rem) { .regras { grid-template-columns: 1fr 1fr; } }
+  .regra { background: var(--surface); padding: .9rem 1rem; }
+  .regra-t {
+    font-family: var(--mono); font-size: .95rem; font-weight: 600; color: var(--accent);
+    display: block; margin-bottom: .2rem;
+  }
+  .regra p { margin: 0; font-size: .85rem; color: var(--ink2); line-height: 1.5; }
+  .regra b { color: var(--ink); font-weight: 600; }
+
+  /* Fases e passos */
+  .fase { display: flex; align-items: center; gap: .85rem; margin: 2.6rem 0 1.1rem; }
+  .fase-nome {
+    font-family: var(--mono); font-size: .68rem; font-weight: 600; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--muted); white-space: nowrap;
+  }
+  .fase-linha { flex: 1; height: 1px; background: var(--rule); }
+
+  .passos { list-style: none; margin: 0; padding: 0; display: grid; gap: 1.9rem; }
+  .passo { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; align-items: start; }
+  .num {
+    font-family: var(--disp); font-weight: 700; font-size: 2.5rem; line-height: .78;
+    color: var(--accent); font-variant-numeric: tabular-nums; padding-top: .15rem;
+  }
+  .passo h3 { font-size: 1.06rem; font-weight: 600; margin: 0 0 .35rem; line-height: 1.3; color: var(--ink); }
+  .passo p { margin: 0 0 .55rem; color: var(--ink2); }
+  .passo p:last-child { margin-bottom: 0; }
+  .passo b { color: var(--ink); font-weight: 600; }
+  .caminho {
+    font-family: var(--mono); font-size: .82rem; color: var(--ink2);
+    background: var(--surface2); border-left: 2px solid var(--accent);
+    padding: .5rem .7rem; margin: 0; overflow-x: auto; white-space: nowrap;
+  }
+  .caminho b { color: var(--accent); font-weight: 600; }
+  .btn {
+    font-family: var(--mono); font-size: .82rem; font-weight: 600; color: var(--ink);
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 3px; padding: .05rem .35rem; white-space: nowrap;
+  }
+
+  .campos { margin: 0 0 .75rem; border-top: 1px solid var(--border); }
+  .campos > div {
+    display: grid; grid-template-columns: minmax(8rem, 12.5rem) 1fr; gap: .2rem 1rem;
+    padding: .4rem 0; border-bottom: 1px solid var(--border); align-items: baseline;
+  }
+  .campos dt { font-size: .84rem; color: var(--muted); }
+  .campos dd {
+    margin: 0; font-family: var(--mono); font-size: .84rem; font-weight: 600;
+    color: var(--ink); overflow-wrap: anywhere;
+  }
+  .campos dd em { font-family: var(--sans); font-style: normal; font-weight: 400; color: var(--ink2); }
+
+  .aviso {
+    background: var(--warn-soft); border-left: 2px solid var(--warn);
+    padding: .7rem .85rem; margin: .8rem 0 0; font-size: .87rem; color: var(--ink2);
+  }
+  .aviso b { color: var(--warn); }
+  .aviso .cit { font-family: var(--mono); font-size: .8rem; }
+
+  .atalho { font-size: .85rem; color: var(--muted); }
+  .atalho b { color: var(--ink2); font-weight: 600; }
+
+  .parada {
+    background: var(--accent-soft); border: 1px solid var(--border); border-left: 2px solid var(--stop);
+    padding: .85rem .95rem; margin-top: 1.8rem; font-size: .9rem; color: var(--ink2);
+  }
+  .parada b { color: var(--stop); }
+
+  /* Checklist */
+  .check { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+  .check li { background: var(--surface); }
+  .check label { display: grid; grid-template-columns: 1.05rem 1fr; gap: .75rem; align-items: start; padding: .7rem .9rem; cursor: pointer; }
+  .check input { width: 1rem; height: 1rem; margin: .18rem 0 0; accent-color: var(--accent); }
+  .check input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .check span { font-size: .92rem; color: var(--ink2); }
+  .check input:checked + span { color: var(--muted); text-decoration: line-through; }
+
+  .rodape {
+    margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    font-family: var(--mono); font-size: .7rem; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; justify-content: space-between;
+  }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  /* Impressao — folha clara, cores mantidas. Só o fundo vira branco puro:
+     papel poupa tinta, mas o laranja é o que separa passo de passo. */
+  @page { size: A4; margin: 15mm 14mm; }
+  @media print {
+    /* Os três estados de tema de uma vez: o seletor do tema escuro tem
+       especificidade maior que um :root sozinho, e venceria aqui dentro —
+       papel branco com texto claro é o resultado. */
+    :root, :root:not([data-theme="light"]), :root[data-theme="dark"] {
+      --ground: #FFFFFF; --surface: #FFFFFF; --surface2: #F4F1EC; --ink: #14171F; --ink2: #3D3A35;
+      --muted: #6B655C; --border: #D9D3CA; --rule: #C4BCB1; --accent: #A85F14;
+      --accent-soft: rgba(168, 95, 20, .07);
+      --warn: #8A6410; --warn-soft: rgba(138, 100, 16, .09); --stop: #B23A2E;
+    }
+    body {
+      background: #fff; color: var(--ink); font-size: 10pt; line-height: 1.45;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .folha { max-width: none; padding: 0; }
+    h1 { font-size: 30pt; color: var(--ink); }
+    .num { font-size: 19pt; }
+    .passos { gap: 1.1rem; }
+    .passo, .regra, .check li, .aviso, .parada { break-inside: avoid; }
+    /* No papel o quadradinho é para marcar com caneta: sai vazio, não pintado */
+    .check input { appearance: none; -webkit-appearance: none; width: .8rem; height: .8rem;
+      border: 1.2px solid var(--ink2); background: #fff; border-radius: 1px; }
+    .fase, h2 { break-after: avoid; }
+    .caminho { white-space: normal; }
+  }
+</style>
+<style>
+  body { margin: 0; }
+  /* Quem vê o quê: tabela de perfis */
+  .tab-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 3px; }
+  table.perfis { width: 100%; border-collapse: collapse; font-size: .85rem; background: var(--surface); }
+  .perfis th, .perfis td { padding: .5rem .7rem; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  .perfis th {
+    font-family: var(--mono); font-size: .64rem; font-weight: 600; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted); background: var(--surface2);
+  }
+  .perfis td:first-child { font-weight: 600; color: var(--ink); white-space: nowrap; }
+  .perfis td { color: var(--ink2); }
+  .perfis tr:last-child td { border-bottom: 0; }
+
+  /* Sumário */
+  .sumario { display: flex; flex-wrap: wrap; gap: .4rem; margin: 1.4rem 0 0; padding: 0; list-style: none; }
+  .sumario a {
+    font-family: var(--mono); font-size: .72rem; font-weight: 600; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--ink2); text-decoration: none; border: 1px solid var(--border); background: var(--surface);
+    border-radius: 3px; padding: .3rem .55rem; display: inline-block;
+  }
+  .sumario a:hover { border-color: var(--accent); color: var(--accent); }
+
+  .seg { font-family: var(--mono); font-size: .8rem; font-weight: 600; color: var(--ink); }
+  .passo ul { margin: .2rem 0 .55rem; padding-left: 1.1rem; color: var(--ink2); }
+  .passo li { margin-bottom: .25rem; }
+  .passo > div { min-width: 0; }
+  .passo .btn { white-space: normal; }  /* tem botão de nome longo (Distribuir todos…) */
+  /* Celular: rótulo em cima, explicação embaixo — duas colunas espremem o texto */
+  @media (max-width: 34rem) {
+    .campos > div { grid-template-columns: 1fr; }
+    .passo { grid-template-columns: 2rem 1fr; gap: .7rem; }
+    .num { font-size: 2rem; }
+  }
+  .quem { font-weight: 400; color: var(--muted); font-size: .9rem; }
+  a { color: var(--accent); }
+  @media print { .sumario { display: none; } }
+</style>
+</head>
+<body>
+
+<div class="folha">
+
+  <header>
+    <p class="kicker">Manual da loja &middot; Surfers</p>
+    <h1>CRM<br>Lojas</h1>
+    <p class="sub">O sistema de relacionamento com o cliente das lojas físicas: quem comprou, quanto gasta, de qual vendedor ele é e quem precisa ser procurado agora. Este manual passa por todas as telas.</p>
+    <dl class="ficha">
+      <div><dt>Endereço</dt><dd><a href="https://crm-lojas.onrender.com" target="_blank" rel="noopener">crm-lojas.onrender.com</a></dd></div>
+      <div><dt>Quem usa</dt><dd>Todos, cada um com a sua tela</dd></div>
+      <div><dt>De onde vêm os dados</dt><dd>Vendas do Microvix, via Gestão</dd></div>
+      <div><dt>Tamanho</dt><dd>18 passos</dd></div>
+    </dl>
+    <ul class="sumario">
+      <li><a href="#entrar">Entrar</a></li>
+      <li><a href="#regras">Regras</a></li>
+      <li><a href="#painel">Painel</a></li>
+      <li><a href="#clientes">Clientes</a></li>
+      <li><a href="#ficha">Ficha do cliente</a></li>
+      <li><a href="#campanhas">Campanhas</a></li>
+      <li><a href="#equipe">Equipe</a></li>
+      <li><a href="#sistema">Sistema</a></li>
+      <li><a href="#vendedor">Vendedor</a></li>
+      <li><a href="#caixa">Caixa</a></li>
+      <li><a href="#rotina">Rotina</a></li>
+    </ul>
+  </header>
+
+  <section>
+    <h2>Quem vê o quê</h2>
+    <p class="h2-nota">O menu muda conforme o perfil. Cada um só enxerga as próprias lojas.</p>
+    <div class="tab-wrap"><table class="perfis">
+      <thead><tr><th>Perfil</th><th>Entra com</th><th>Telas</th><th>Enxerga</th></tr></thead>
+      <tbody>
+        <tr><td>Admin / Escritório</td><td>Login do Gestão</td><td>Painel, Clientes, Campanhas, Equipe, Sistema</td><td>Todas as lojas. Só esse perfil cria campanha e vê o CPF inteiro.</td></tr>
+        <tr><td>Supervisor</td><td>Login do Gestão</td><td>Painel, Clientes, Campanhas, Equipe</td><td>As lojas que supervisiona</td></tr>
+        <tr><td>Gerente</td><td>Login do Gestão</td><td>Painel, Clientes, Campanhas, Equipe</td><td>A própria loja</td></tr>
+        <tr><td>Vendedor</td><td>Código de 6 dígitos</td><td>Minha carteira, Campanhas</td><td>Os clientes da carteira dele e, se quiser, os da loja</td></tr>
+        <tr><td>Caixa</td><td>Código de 6 dígitos</td><td>Consulta</td><td>Busca de cliente pelo CPF, celular ou nome</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <div class="fase" id="entrar"><span class="fase-nome">Parte 1 &middot; Entrar</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">01</div>
+      <div>
+        <h3>Gerente, supervisor e escritório: aba Gestão</h3>
+        <p>Abra <b>crm-lojas.onrender.com</b>, clique na aba <span class="btn">Gestão</span> e entre com <b>o mesmo usuário e senha do Gestão de Lojas</b>. O CRM não tem senha própria.</p>
+      </div>
+    </li>
+    <li class="passo">
+      <div class="num">02</div>
+      <div>
+        <h3>Vendedor e caixa: aba Vendedor / Caixa</h3>
+        <p>Digite o <b>código de 6 dígitos</b> que o gerente gerou na tela <a href="#equipe">Equipe</a>. O código é pessoal: por ele o CRM sabe quem é a pessoa, de qual loja e se é vendedor ou caixa.</p>
+        <div class="aviso"><b>Errou várias vezes?</b> O CRM bloqueia novas tentativas daquele aparelho por <b>15 minutos</b>. Perdeu o código? O gerente gera um novo, e o antigo para de funcionar na hora.</div>
+      </div>
+    </li>
+    <li class="passo">
+      <div class="num">03</div>
+      <div>
+        <h3>A sessão dura 12 horas</h3>
+        <p>Depois disso o CRM pede para entrar de novo. Em celular ou computador compartilhado, use <span class="btn">Sair</span> no canto de cima ao terminar.</p>
+      </div>
+    </li>
+  </ol>
+
+  <section id="regras">
+    <h2>O que não muda</h2>
+    <p class="h2-nota">As regras que estão por trás de todas as telas.</p>
+    <div class="regras">
+      <div class="regra">
+        <span class="regra-t">Carteira = última venda</span>
+        <p>O cliente é <b>do vendedor que fez a última venda</b> para ele. Se outro vendedor vender para ele depois, a carteira passa para esse outro.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Vendedor saiu</span>
+        <p>Os clientes dele são <b>redistribuídos sozinhos</b> entre os vendedores ativos da loja da última compra, começando por quem tem a carteira menor.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Sem vendedor</span>
+        <p>A venda foi num código de vendedor do Microvix que <b>não está ligado a nenhum funcionário</b> no Gestão. O gerente resolve: liga o código no cadastro ou distribui os clientes.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Só venda com cliente</span>
+        <p>O CRM só conhece a venda que foi <b>identificada com o cliente</b> no Microvix. Venda sem cliente não entra em nenhum número daqui.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Atualização</span>
+        <p>Venda nova chega <b>alguns minutos depois</b> de entrar no Gestão. Os segmentos são recalculados <b>todo dia às 03:20</b>.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">CPF protegido</span>
+        <p>Só admin e escritório veem o CPF inteiro. Os demais veem só os dígitos do meio, no formato <span class="mono">***.456.789-**</span>.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Os segmentos</h2>
+    <p class="h2-nota">Cada cliente fica em um segmento só. O CRM testa na ordem abaixo e para no primeiro que servir. Os números são os atuais e podem ser ajustados em <a href="#sistema">Sistema</a>.</p>
+    <dl class="campos">
+      <div><dt><span class="seg">VIP</span></dt><dd><em>gastou <b>R$ 2.000</b> ou mais nos últimos 12 meses e comprou nos últimos 180 dias</em></dd></div>
+      <div><dt><span class="seg">Novo</span></dt><dd><em>fez a <b>1ª compra</b> há até 30 dias</em></dd></div>
+      <div><dt><span class="seg">Recorrente</span></dt><dd><em><b>2 compras ou mais</b> em 12 meses e comprou nos últimos 90 dias</em></dd></div>
+      <div><dt><span class="seg">Ativo</span></dt><dd><em>comprou nos últimos <b>90 dias</b></em></dd></div>
+      <div><dt><span class="seg">Em risco</span></dt><dd><em>está <b>de 3 a 6 meses</b> sem comprar (de 91 a 180 dias). Na tela do vendedor, aparece como “Sumindo”.</em></dd></div>
+      <div><dt><span class="seg">Inativo</span></dt><dd><em>mais de <b>6 meses</b> sem comprar</em></dd></div>
+    </dl>
+  </section>
+
+  <div class="fase" id="painel"><span class="fase-nome">Parte 2 &middot; Telas da gestão</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">04</div>
+      <div>
+        <h3>Painel</h3>
+        <p>A primeira tela de gerente, supervisor e escritório. No alto, escolha o período (<span class="btn">Este mês</span>, <span class="btn">Mês passado</span>, <span class="btn">30 dias</span>, <span class="btn">90 dias</span>, <span class="btn">12 meses</span> ou duas datas). Quem tem mais de uma loja escolhe também as lojas.</p>
+        <dl class="campos">
+          <div><dt>Clientes atendidos</dt><dd><em>quantas pessoas diferentes compraram no período, e quantas compras cada uma fez em média</em></dd></div>
+          <div><dt>Faturamento identificado</dt><dd><em>só das vendas com cliente, por isso não bate com o faturamento total da loja</em></dd></div>
+          <div><dt>Ticket médio</dt><dd><em>faturamento identificado ÷ número de vendas</em></dd></div>
+          <div><dt>Voltaram a comprar</dt><dd><em>quantos dos clientes do período já tinham comprado antes</em></dd></div>
+          <div><dt>Clientes novos</dt><dd><em>fizeram a 1ª compra dentro do período</em></dd></div>
+          <div><dt>Aniversariantes</dt><dd><em>hoje e nos próximos 7 dias; clique para ver a lista</em></dd></div>
+        </dl>
+        <p>Mais abaixo ficam:</p>
+        <ul>
+          <li>a <b>base por segmento</b> (clique numa barra para ver aqueles clientes);</li>
+          <li>os <b>clientes atendidos por mês</b> nos últimos 12 meses;</li>
+          <li>as tabelas <b>por loja</b> e <b>por vendedor</b>. Clicar num vendedor abre a carteira dele.</li>
+        </ul>
+        <div class="aviso"><b>Aviso “clientes sem vendedor”.</b> Quando aparecer, clique nele: abre a lista desses clientes já pronta para distribuir (passo 06).</div>
+      </div>
+    </li>
+
+    <li class="passo" id="clientes">
+      <div class="num">05</div>
+      <div>
+        <h3>Clientes</h3>
+        <p>Todos que já compraram nas suas lojas, 50 por página. Os filtros se combinam:</p>
+        <ul>
+          <li><b>Busca</b> por nome, CPF ou celular.</li>
+          <li><b>Aniversário</b>: hoje, próximos 7 dias ou um mês.</li>
+          <li><b>Vendedor</b>: a carteira de alguém, ou <b>— Sem vendedor —</b>.</li>
+          <li><b>Ordem</b>: compra mais recente, mais tempo sem comprar, maior gasto, mais compras, nome ou aniversário.</li>
+          <li><b>Com celular</b>: só quem dá para chamar no WhatsApp.</li>
+          <li>Os botões de <b>loja</b> e de <b>segmento</b>, logo abaixo. Dá para marcar mais de um.</li>
+        </ul>
+        <p>Clique na linha para abrir a <a href="#ficha">ficha do cliente</a>. O sininho riscado 🔕 indica que o cliente pediu para não receber mensagens.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">06</div>
+      <div>
+        <h3>Distribuir clientes sem vendedor</h3>
+        <p>Com o filtro <b>Vendedor: — Sem vendedor —</b>, aparece um quadro com duas opções:</p>
+        <ul>
+          <li><span class="btn">Distribuir todos entre os vendedores da loja</span> reparte tudo de uma vez: quem tem a carteira menor recebe primeiro, e os clientes que mais gastaram são distribuídos antes.</li>
+          <li><b>Atribuir os marcados</b>: marque as caixinhas, escolha o vendedor e clique em <span class="btn">Atribuir</span>. A caixinha do cabeçalho marca a página inteira.</li>
+        </ul>
+        <div class="aviso"><b>Antes de distribuir, confira o cadastro de funcionários do Gestão.</b> Quase sempre, “sem vendedor” é um vendedor novo cujo código do Microvix ainda não foi ligado ao cadastro. Depois que o código é ligado, os clientes passam para esse vendedor na próxima atualização.</div>
+        <p class="atalho"><b>Vale até a próxima venda:</b> se o cliente comprar com outro vendedor, a carteira passa para quem vendeu.</p>
+      </div>
+    </li>
+
+    <li class="passo" id="ficha">
+      <div class="num">07</div>
+      <div>
+        <h3>Ficha do cliente</h3>
+        <p>Abre ao clicar em qualquer cliente, em qualquer tela. Mostra:</p>
+        <ul>
+          <li><b>Dados</b>: celular, CPF, aniversário e idade, e-mail, cidade, cliente desde, lojas onde comprou.</li>
+          <li><b>Carteira de</b>: o vendedor dono do cliente. Quando é o caso, a ficha avisa se ele foi <b>atribuído pelo gerente</b> ou <b>redistribuído</b> porque o vendedor anterior saiu. O campo <b>Última venda por</b> mostra quem fez a última venda.</li>
+          <li><b>Números</b>: última compra, quantidade de compras (total e 12 meses), gasto total e em 12 meses, ticket médio e peças.</li>
+          <li><b>Histórico de compras</b>: data, loja, vendedor, peças, valor e documento. Devolução aparece marcada, e venda cancelada aparece riscada.</li>
+        </ul>
+        <p>O botão <span class="btn">WhatsApp</span> abre a conversa com o cliente. Por aqui o gerente também pode <b>trocar o vendedor da carteira</b>, escolhendo entre os vendedores das lojas onde o cliente já comprou.</p>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase" id="campanhas"><span class="fase-nome">Parte 3 &middot; Campanhas</span><span class="fase-linha"></span></div>
+  <p class="h2-nota">Campanha é uma lista de clientes para os vendedores procurarem, com a mensagem de WhatsApp pronta. <b>Só admin e escritório criam campanhas.</b> O gerente e o supervisor acompanham as das suas lojas.</p>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">08</div>
+      <div>
+        <h3>Lista de campanhas</h3>
+        <p>Cada cartão mostra:</p>
+        <ul>
+          <li>o período e a situação (<b>Agendada</b>, <b>Ativa</b> ou <b>Encerrada</b>);</li>
+          <li>quantos clientes já foram contatados;</li>
+          <li>quantos compraram, e quantos compraram <b>depois do contato</b>;</li>
+          <li>o faturamento dessas compras.</li>
+        </ul>
+        <p>Clique no cartão para abrir a campanha.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">09</div>
+      <div>
+        <h3>Criar uma campanha <span class="quem">(admin e escritório)</span></h3>
+        <p>Clique em <span class="btn">Nova campanha</span>. Para começar rápido, use um modelo: <b>Aniversariantes</b>, <b>Sumindo</b>, <b>VIP</b> ou <b>Inativos que gastavam bem</b>. Depois preencha os dois quadros:</p>
+        <dl class="campos">
+          <div><dt>1. A campanha</dt><dd><em>nome, objetivo (o vendedor lê), início, fim e a mensagem. Os botões inserem <span class="mono">{nome}</span>, <span class="mono">{vendedor}</span> e <span class="mono">{loja}</span>: no envio, entram o primeiro nome do cliente, o primeiro nome do vendedor e o nome da loja. A prévia mostra como a mensagem fica.</em></dd></div>
+          <div><dt>2. Quem recebe</dt><dd><em>loja da última compra, segmento, aniversário (inclusive “faz aniversário durante a campanha”), dias sem comprar, gasto mínimo em 12 meses ou no total, mínimo de compras e “só quem tem celular”.</em></dd></div>
+        </dl>
+        <p>O quadro <b>Público</b> vai contando os clientes enquanto você mexe nos filtros, separa por loja e avisa quantos estão sem vendedor. Acima de 3.000 clientes, o CRM sugere filtrar mais, porque o contato é feito um a um.</p>
+        <div class="parada"><b>O público congela na hora de criar.</b> Cada cliente vai para a lista do vendedor da carteira dele naquele momento. Quem está sem vendedor fica com o gerente. Depois de criada, dá para mudar nome, objetivo, fim e mensagem, mas <b>nunca o público</b>. Para outro público, crie outra campanha.</div>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">10</div>
+      <div>
+        <h3>Acompanhar uma campanha</h3>
+        <p>Dentro da campanha ficam o objetivo, a mensagem e os números: público, contatados, responderam, compraram no período e faturamento. A tabela <b>Por loja e vendedor</b> mostra, para cada vendedor:</p>
+        <dl class="campos">
+          <div><dt>Recebeu</dt><dd><em>quantos clientes estão na lista dele</em></dd></div>
+          <div><dt>Mandou mensagem</dt><dd><em>quantos ele já contatou, com a barra de progresso</em></dd></div>
+          <div><dt>Compraram</dt><dd><em>quantos da lista compraram no período, em qualquer loja</em></dd></div>
+          <div><dt>Conversão com msg</dt><dd><em>dos que receberam mensagem, quantos compraram</em></dd></div>
+          <div><dt>Sem msg</dt><dd><em>dos que não receberam, quantos compraram mesmo assim</em></dd></div>
+          <div><dt>Depois do contato</dt><dd><em>quantos compraram depois de receber a mensagem</em></dd></div>
+        </dl>
+        <p>Comparar <b>com msg</b> e <b>sem msg</b> mostra se o contato está trazendo venda ou se o cliente compraria de qualquer jeito. Clique num vendedor para ver só a lista dele. Os botões de situação e a busca filtram a lista de clientes.</p>
+        <p class="atalho"><b>Conta como venda</b> a compra feita a partir do início da campanha (ou do dia em que ela foi criada, se for mais tarde) até o fim.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">11</div>
+      <div>
+        <h3>Editar, encerrar e excluir <span class="quem">(admin e escritório)</span></h3>
+        <ul>
+          <li><span class="btn">Editar</span>: muda nome, objetivo, fim e mensagem.</li>
+          <li><span class="btn">Encerrar</span>: termina a campanha hoje. Ela some da lista dos vendedores, e o resultado fica guardado.</li>
+          <li><span class="btn">Excluir</span>: apaga a campanha <b>com tudo o que os vendedores marcaram</b>. Não dá para desfazer. Para tirar uma campanha de circulação, prefira encerrar.</li>
+        </ul>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">12</div>
+      <div>
+        <h3>Resultados por loja e vendedor</h3>
+        <p>É a segunda aba da tela Campanhas. Ela soma <b>todas as campanhas ativas</b> no período escolhido e mostra, por loja e por vendedor:</p>
+        <ul>
+          <li>os contatos entregues aos vendedores e as mensagens enviadas;</li>
+          <li>quantos clientes compraram e a comparação com msg × sem msg;</li>
+          <li>o faturamento.</li>
+        </ul>
+        <p>Embaixo fica a lista das campanhas do período.</p>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase" id="equipe"><span class="fase-nome">Parte 4 &middot; Equipe e sistema</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">13</div>
+      <div>
+        <h3>Equipe: gerar o código de acesso</h3>
+        <p>A lista vem do <b>cadastro de funcionários ativos do Gestão</b>, separada por loja. Para dar acesso a alguém:</p>
+        <ul>
+          <li>Clique em <span class="btn">Gerar código</span> (ou <span class="btn">Novo código</span>, se a pessoa já tiver um).</li>
+          <li>Escolha o perfil: <b>Vendedor</b> (carteira de clientes) ou <b>Caixa</b> (consulta).</li>
+          <li><b>Anote o código e entregue à pessoa.</b> Ele aparece uma vez só.</li>
+        </ul>
+        <p><span class="btn">Revogar</span> corta o acesso na hora, até de quem estiver logado naquele momento. A coluna <b>Último login</b> mostra quem está usando.</p>
+        <div class="aviso"><b>Funcionário não aparece?</b> Ele precisa estar ativo no cadastro de funcionários do Gestão. A lista do CRM se atualiza a cada hora.</div>
+      </div>
+    </li>
+
+    <li class="passo" id="sistema">
+      <div class="num">14</div>
+      <div>
+        <h3>Sistema <span class="quem">(admin e escritório)</span></h3>
+        <p>A ligação com o Gestão e as regras dos segmentos.</p>
+        <ul>
+          <li><b>Números do alto</b>: clientes no CRM, vendas no histórico, última sincronização (deve dizer “ok”) e último recálculo dos segmentos.</li>
+          <li><span class="btn">Sincronizar agora</span>: busca no Gestão as vendas e os clientes novos sem esperar os 5 minutos. <span class="btn">Recalcular segmentos</span>: refaz os segmentos de todos os clientes.</li>
+          <li><b>Importar histórico de vendas</b>: busca no Microvix, mês a mês, as vendas com cliente de um período. Os últimos 24 meses já foram importados, então só use isto se faltar algum período.</li>
+          <li><b>Cadastro de clientes</b>: o Gestão lê os clientes alterados no Microvix a cada 2 horas. <span class="btn">Ler alterados agora</span> faz essa leitura na hora. <span class="btn">Recarregar tudo</span> lê o cadastro inteiro e demora alguns minutos.</li>
+          <li><b>Regras dos segmentos</b>: os dias e valores da tabela de segmentos. <span class="btn">Salvar e recalcular</span> aplica na hora.</li>
+        </ul>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">15</div>
+      <div>
+        <h3>Ver como vendedor <span class="quem">(admin e escritório)</span></h3>
+        <p>O botão no canto de cima mostra a tela do vendedor, para testar ou treinar. Uma faixa avisa que você está nesse modo. Para sair dele, clique em <span class="btn">Voltar ao admin</span>.</p>
+        <div class="aviso"><b>O que você marcar nesse modo vale de verdade.</b> E a lista mostra os clientes de todos os vendedores, não de um só.</div>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase" id="vendedor"><span class="fase-nome">Parte 5 &middot; Tela do vendedor</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">16</div>
+      <div>
+        <h3>Minha carteira</h3>
+        <p>Os clientes que o vendedor atendeu por último. <span class="btn">Toda a loja</span> mostra os clientes da loja inteira. Os atalhos do alto montam as listas mais usadas:</p>
+        <dl class="campos">
+          <div><dt>🎂 Aniversário esta semana</dt><dd><em>quem faz aniversário nos próximos 7 dias</em></dd></div>
+          <div><dt>Sumindo (3 a 6 meses)</dt><dd><em>clientes em risco, começando por quem mais gastou</em></dd></div>
+          <div><dt>VIP</dt><dd><em>quem mais compra</em></dd></div>
+          <div><dt>Compraram pela 1ª vez</dt><dd><em>clientes novos, bons para perguntar o que acharam da compra</em></dd></div>
+        </dl>
+        <p>A busca e os filtros de aniversário e de ordem funcionam como na tela Clientes. Tocando no cliente, abre a ficha com o histórico e o botão <span class="btn">WhatsApp</span>.</p>
+        <p class="atalho"><b>Carteira vazia?</b> Ela se forma com as vendas em que o código do vendedor aparece no Microvix. Venda lançada sem cliente, ou no código de outro vendedor, não entra.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">17</div>
+      <div>
+        <h3>Campanhas: chamar cada cliente</h3>
+        <p>O vendedor vê só as campanhas <b>ativas</b> em que ele tem clientes, e só os clientes dele. Para cada um:</p>
+        <ul>
+          <li>Toque em <span class="btn">WhatsApp</span>. A conversa abre com a mensagem pronta e o nome do cliente, e dá para editar antes de enviar.</li>
+          <li>Ao tocar, a situação muda sozinha para <b>Mensagem enviada</b>.</li>
+          <li>Quando a conversa terminar, troque a situação para <b>Respondeu</b>, <b>Não respondeu</b>, <b>Sem interesse</b> ou <b>Número errado</b>.</li>
+        </ul>
+        <p>Os botões de situação no alto filtram a lista. Use <b>A contatar</b> para ver quem ainda falta. Quando o cliente compra, aparece <b>Comprou</b> na linha dele, com o valor.</p>
+        <div class="aviso"><b>Cliente com 🔕 não recebe mensagem</b>, e o botão de WhatsApp não aparece. O mesmo vale para cliente sem celular.</div>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase" id="caixa"><span class="fase-nome">Parte 6 &middot; Tela do caixa</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">18</div>
+      <div>
+        <h3>Consulta</h3>
+        <p>Digite o <b>CPF, o celular ou o nome</b> (pelo menos 3 caracteres) e toque em <span class="btn">Buscar</span>. A busca acha o cliente em qualquer loja da rede e mostra até 20 resultados. Se o cliente não estiver entre eles, digite mais do nome ou o CPF inteiro. Tocando no cliente, abre a ficha com o histórico.</p>
+        <p class="atalho"><b>Em breve:</b> saldo e resgate de giftback nesta tela.</p>
+      </div>
+    </li>
+  </ol>
+
+  <section id="rotina">
+    <h2>Rotina sugerida</h2>
+    <p class="h2-nota">Marque na tela, ou imprima e marque à caneta.</p>
+    <ul class="check">
+      <li><label><input type="checkbox"><span><b>Vendedor, todo dia:</b> abrir Campanhas e chamar quem está “A contatar”; atualizar a situação de quem respondeu.</span></label></li>
+      <li><label><input type="checkbox"><span><b>Vendedor, toda segunda:</b> Minha carteira → 🎂 Aniversário esta semana e mandar os parabéns.</span></label></li>
+      <li><label><input type="checkbox"><span><b>Gerente, toda semana:</b> no Painel, resolver o aviso de clientes sem vendedor (ligar o código no Gestão ou distribuir).</span></label></li>
+      <li><label><input type="checkbox"><span><b>Gerente, toda semana:</b> em cada campanha, olhar a coluna Mandou mensagem por vendedor e cobrar quem está parado.</span></label></li>
+      <li><label><input type="checkbox"><span><b>Gerente, na admissão e no desligamento:</b> gerar ou revogar o código na tela Equipe.</span></label></li>
+      <li><label><input type="checkbox"><span><b>Escritório, todo mês:</b> criar as campanhas do mês e comparar com msg × sem msg em Resultados.</span></label></li>
+    </ul>
+  </section>
+
+  <div class="rodape"><span>Surfers &middot; Manual do CRM Lojas</span><span>Atualizado em 05/10/2026</span></div>
+</div>
+</body>
+</html>
