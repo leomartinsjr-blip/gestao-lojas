@@ -1397,6 +1397,7 @@ function renderDashboard() {
   const weekCol      = _slotEm(laneVendas);
   const compCol      = _slotEm(laneVendas);
   const margemCol    = userIsAdmin(S.user) ? _slotEm(laneVendas) : null;
+  const crmCol       = _slotEm(laneVendas);
 
   const laneAcao     = _lane('02', 'Ação',     2);
   const midCol       = _slotEm(laneAcao);      // Pendências + Reunião
@@ -2013,6 +2014,9 @@ function renderDashboard() {
   // ── CARD: Margem por Loja (foto diária das 08:00) — só adm ───────────────
   if (margemCol) renderMargemCard(margemCol);
 
+  // ── CARD: CRM — cadastro nas vendas e campanhas (resumo do /crm) ─────────
+  renderCrmCard(crmCol);
+
   // ── CARD: Pendências ─────────────────────────────────────────────────────
   renderPendenciasCard(midCol);
 
@@ -2196,6 +2200,91 @@ function renderMargemCard(col) {
   apiFetch('GET', '/api/margem-snapshot')
     .then(f => { _margemFoto = f; desenhar(f); })
     .catch(() => { body.innerHTML = '<div class="folga-mini-empty">Erro ao carregar a margem</div>'; });
+}
+
+// Resumo do CRM no painel: cadastro nas vendas contra a meta (90%) e o
+// andamento das campanhas, por loja — ou por vendedor, para quem vê uma loja
+// só. Os números vêm do app crm-lojas pelo /api/crm/dashboard; ficam
+// guardados por mês porque o painel se redesenha a cada clique.
+const CRM_META = 0.9, CRM_PISO = 0.8;
+let _crmResumo = { chave: null, dados: null };
+function renderCrmCard(col) {
+  const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+  const card = document.createElement('div');
+  card.className = 'main-card';
+  card.dataset.cardId = 'card-crm';
+  card.innerHTML = `
+    <div class="main-card-hdr">
+      <span class="main-card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+        </svg>
+        CRM
+      </span>
+      <span class="main-card-sub">${MESES[S.month - 1]} ${S.year} · meta de cadastro 90%</span>
+    </div>
+    <div class="main-card-body" id="crmCardBody"></div>`;
+  col.appendChild(card);
+  const body = card.querySelector('#crmCardBody');
+
+  const pad = n => String(n).padStart(2, '0');
+  const de = `${S.year}-${pad(S.month)}-01`;
+  const fimMes = `${S.year}-${pad(S.month)}-${pad(new Date(S.year, S.month, 0).getDate())}`;
+  const hoje = new Date(), hojeIso = `${hoje.getFullYear()}-${pad(hoje.getMonth() + 1)}-${pad(hoje.getDate())}`;
+  const ate = fimMes < hojeIso ? fimMes : hojeIso;
+  const chave = `${de}|${ate}`;
+
+  const pct = (n, d) => d ? (n / d * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—';
+  // Status da meta: célula colorida, e o número escrito (nunca só a cor)
+  const cls = x => x == null ? '' : x >= CRM_META ? 'kpi-pos' : x >= CRM_PISO ? 'kpi-warn' : 'kpi-neg';
+
+  const desenhar = d => {
+    if (d.semLojas) { card.remove(); return; }
+    const vs = d.vendedores || [];
+    const umaLoja = (d.lojas || []).length === 1;
+    // Uma linha por loja (ou por vendedor, quando é uma loja só)
+    const grupos = new Map();
+    for (const v of vs) {
+      if (umaLoja && !v.vendas && !v.publico && !v.agora) continue;
+      const k = umaLoja ? `${v.board}|${v.empId}` : v.board;
+      const g = grupos.get(k) || { board: v.board, nome: umaLoja ? v.nome : (BOARDS[v.board]?.label || v.board), vendas: 0, sem: 0, publico: 0, contatados: 0, agora: 0, atrasados: 0 };
+      g.vendas += v.vendas; g.sem += v.semCadastro; g.publico += v.publico; g.contatados += v.contatados; g.agora += v.agora; g.atrasados += v.atrasados;
+      grupos.set(k, g);
+    }
+    const linhas = [...grupos.values()].sort((a, b) => b.vendas - a.vendas);
+    if (!linhas.length) { body.innerHTML = '<div class="folga-mini-empty">Sem vendas no mês.</div>'; return; }
+    const tot = linhas.reduce((t, g) => { for (const k of ['vendas', 'sem', 'publico', 'contatados', 'agora', 'atrasados']) t[k] += g[k]; return t; },
+      { vendas: 0, sem: 0, publico: 0, contatados: 0, agora: 0, atrasados: 0 });
+    const linha = (g, total) => {
+      const x = g.vendas ? 1 - g.sem / g.vendas : null;
+      return `<tr class="${total ? 'dash-total-row' : 'dash-row'}">
+        <td class="dash-td ${total ? '' : 'dash-td-name'}">${total ? '<strong>' + (umaLoja ? 'Loja' : 'Rede') + '</strong>'
+          : `${umaLoja ? '' : `<span class="dash-store-dot" style="display:inline-block;background:${BOARDS[g.board]?.color || 'var(--muted)'}"></span> `}${g.nome}`}</td>
+        <td class="dash-td dash-td-num ${cls(x)}" title="${g.sem} de ${g.vendas} vendas em consumidor final ou sem cliente"><strong>${x == null ? '—' : pct(g.vendas - g.sem, g.vendas)}</strong></td>
+        <td class="dash-td dash-td-num" title="${g.contatados} de ${g.publico} clientes das campanhas">${g.publico ? pct(g.contatados, g.publico) : '—'}</td>
+        <td class="dash-td dash-td-num">${g.agora || '—'}</td>
+        <td class="dash-td dash-td-num ${g.atrasados ? 'kpi-neg' : ''}">${g.atrasados || '—'}</td>
+      </tr>`;
+    };
+    body.innerHTML = `
+      <table class="dash-table">
+        <thead><tr class="dash-thead-tr">
+          <th class="dash-th">${umaLoja ? 'Vendedor' : 'Loja'}</th>
+          <th class="dash-th" title="% das vendas com o cliente cadastrado. Meta 90%">Cadastro</th>
+          <th class="dash-th" title="Clientes das campanhas que já receberam mensagem">Contatos</th>
+          <th class="dash-th" title="Aniversário e pós-venda para chamar hoje">Fila hoje</th>
+          <th class="dash-th" title="Aniversário e pós-venda que passaram do prazo sem contato, no mês">Atrasados</th>
+        </tr></thead>
+        <tbody>${linhas.map(g => linha(g)).join('')}${linhas.length > 1 ? linha(tot, true) : ''}</tbody>
+      </table>
+      <div class="margem-nota">Cadastro: verde a partir de 90%, amarelo de 80% a 90%, vermelho abaixo · <a href="/crm" target="_blank" style="color:var(--accent)">ver o CRM completo →</a></div>`;
+  };
+
+  if (_crmResumo.chave === chave && _crmResumo.dados) return desenhar(_crmResumo.dados);
+  body.innerHTML = '<div class="folga-mini-empty">Carregando…</div>';
+  apiFetch('GET', `/api/crm/dashboard?de=${de}&ate=${ate}`)
+    .then(d => { _crmResumo = { chave, dados: d }; desenhar(d); })
+    .catch(() => { body.innerHTML = '<div class="folga-mini-empty">CRM indisponível agora</div>'; });
 }
 
 function renderAniversariantesCard(col) {
