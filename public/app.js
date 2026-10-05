@@ -10440,6 +10440,11 @@ function renderCaixaCard(container) {
   const ovlBody = ovl.querySelector('#caixaOvlBody');
   const ovlTabs = ovl.querySelector('#caixaOvlTabs');
 
+  // Lojas com dinheiro/sangria automáticos. Falhou a consulta: trata como
+  // Microvix (não libera); o servidor confere de novo no PUT.
+  let _mvxBoards = null;
+  const microvixBoards = () => (_mvxBoards ||= apiFetch('GET', '/api/caixa-microvix-boards').catch(() => null));
+
   // ── Shared render ──────────────────────────────────────────────────────────
   async function fetchAndRender(targetBody, board, onRefresh) {
     targetBody.innerHTML = '<div style="padding:.75rem .85rem;color:var(--muted);font-size:.8rem">Carregando…</div>';
@@ -10468,6 +10473,10 @@ function renderCaixaCard(container) {
         if (cm < 1) { cm = 12; cy -= 1; }
       }
     }
+
+    // Dinheiro e sangria vêm do Microvix e só o adm corrige. Loja fora do
+    // Microvix (Lez a Lez) não tem de onde puxar: ela mesma lança.
+    const editaMov = isAdmin || (await microvixBoards())?.includes(board) === false;
 
     const daysInMonth = new Date(S.year, S.month, 0).getDate();
     const today = new Date();
@@ -10508,8 +10517,8 @@ function renderCaixaCard(container) {
           <tbody>${rows.map(r => `
             <tr class="${r.d === todayDay ? 'caixa-today' : ''}" data-day="${r.d}">
               <td class="caixa-td-date">${pad(r.d)}/${pad(S.month)} <span style="color:var(--muted);font-size:.72rem">${r.dow}</span></td>
-              <td class="caixa-td-val${isAdmin?' caixa-deposito-cell':''}" ${isAdmin?`data-field="caixa" data-day="${r.d}" style="cursor:pointer" title="Clique para editar"`:''}>${r.caixa > 0 ? fmtCur(r.caixa) : dash}</td>
-              <td class="caixa-td-val${isAdmin?' caixa-deposito-cell':''}" ${isAdmin?`data-field="sangria" data-day="${r.d}" style="cursor:pointer" title="Clique para editar"`:''}>${r.sangria > 0 ? fmtCur(r.sangria) : dash}</td>
+              <td class="caixa-td-val${editaMov?' caixa-deposito-cell':''}" ${editaMov?`data-field="caixa" data-day="${r.d}" style="cursor:pointer" title="Clique para editar"`:''}>${r.caixa > 0 ? fmtCur(r.caixa) : dash}</td>
+              <td class="caixa-td-val${editaMov?' caixa-deposito-cell':''}" ${editaMov?`data-field="sangria" data-day="${r.d}" style="cursor:pointer" title="Clique para editar"`:''}>${r.sangria > 0 ? fmtCur(r.sangria) : dash}</td>
               <td class="caixa-td-val caixa-deposito-cell" data-field="deposito" data-day="${r.d}" style="cursor:pointer">${r.deposito > 0 ? fmtCur(r.deposito) : dash}</td>
               <td class="caixa-td-saldo ${!showSaldo(r) ? 'zero' : sc(r.saldo)}">${!showSaldo(r) ? dash : fmtCur(r.saldo)}</td>
             </tr>`).join('')}</tbody>

@@ -4269,6 +4269,14 @@ app.delete('/api/caixa/:year/:month/:board', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/caixa-microvix-boards — lojas com dinheiro/sangria do Microvix ─
+// Nessas, a loja só lança depósito. Fora delas (Lez a Lez), lança tudo.
+const caixaMicrovixBoards = () => Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}'));
+app.get('/api/caixa-microvix-boards', requireAuth, (req, res) => {
+  try { res.json(caixaMicrovixBoards()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── PUT /api/caixa/:year/:month/:board/:day ───────────────────────────────
 app.put('/api/caixa/:year/:month/:board/:day', requireAuth, async (req, res) => {
   try {
@@ -4277,6 +4285,8 @@ app.put('/api/caixa/:year/:month/:board/:day', requireAuth, async (req, res) => 
     const isAdminOrEscritorio = !user.board || user.board === 'escritorio';
     if (!isAdminOrEscritorio && user.board !== board) return res.status(403).json({ error: 'Sem acesso' });
     const { caixa, sangria, deposito } = req.body;
+    if (!isAdminOrEscritorio && (caixa !== undefined || sangria !== undefined) && caixaMicrovixBoards().includes(board))
+      return res.status(403).json({ error: 'Dinheiro e sangria desta loja vêm do Microvix' });
     const db  = await readDB();
     if (!db.caixa) db.caixa = {};
     const key = `${year}-${String(month).padStart(2,'0')}-${board}`;
