@@ -357,7 +357,7 @@
       </div>
       <div class="regra">
         <span class="regra-t">Consumidor final não é cliente</span>
-        <p>Venda lançada no cadastro de <b>consumidor final</b> (ou sem cliente) não entra em carteira, segmento nem campanha. Ela só conta no índice <b>Vendas sem cadastro</b>.</p>
+        <p>Venda lançada no cadastro de <b>consumidor final</b> (ou sem cliente) não entra em carteira, segmento nem campanha. Ela conta como venda sem cadastro no índice <b>Cadastro nas vendas</b>.</p>
       </div>
       <div class="regra">
         <span class="regra-t">Atualização</span>
@@ -393,7 +393,7 @@
         <dl class="campos">
           <div><dt>Clientes atendidos</dt><dd><em>quantas pessoas diferentes compraram no período, e quantas compras cada uma fez em média</em></dd></div>
           <div><dt>Faturamento identificado</dt><dd><em>só das vendas com cliente, por isso não bate com o faturamento total da loja</em></dd></div>
-          <div><dt>Vendas sem cadastro</dt><dd><em>quantas % das vendas foram lançadas em consumidor final ou sem cliente: são clientes que a loja deixou de cadastrar. Fica em amarelo a partir de 30%.</em></dd></div>
+          <div><dt>Cadastro nas vendas</dt><dd><em>quantas % das vendas foram lançadas com o cliente cadastrado. O resto foi em consumidor final ou sem cliente. <b>Meta: 90%.</b> Verde na meta, amarelo de 80% a 90%, vermelho abaixo de 80%.</em></dd></div>
           <div><dt>Ticket médio</dt><dd><em>faturamento identificado ÷ número de vendas</em></dd></div>
           <div><dt>Voltaram a comprar</dt><dd><em>quantos dos clientes do período já tinham comprado antes</em></dd></div>
           <div><dt>Clientes novos</dt><dd><em>fizeram a 1ª compra dentro do período</em></dd></div>
@@ -403,7 +403,7 @@
         <ul>
           <li>a <b>base por segmento</b> (clique numa barra para ver aqueles clientes);</li>
           <li>os <b>clientes atendidos por mês</b> nos últimos 12 meses;</li>
-          <li>as tabelas <b>por loja</b> e <b>por vendedor</b>, com a coluna <b>Sem cadastro</b>: o mesmo índice, para saber quem não está cadastrando. Clicar num vendedor abre a carteira dele.</li>
+          <li>as tabelas <b>por loja</b> e <b>por vendedor</b>, com a coluna <b>Cadastro</b>: o mesmo índice e as mesmas cores, para saber quem não está cadastrando. Clicar num vendedor abre a carteira dele.</li>
         </ul>
         <div class="aviso"><b>Aviso “clientes sem vendedor”.</b> Quando aparecer, clique nele: abre a lista desses clientes já pronta para distribuir (passo 06).</div>
       </div>
@@ -645,7 +645,7 @@
       <li><label><input type="checkbox"><span><b>Vendedor, todo dia:</b> abrir Aniversariantes e Pós-venda e zerar o “Para chamar agora”; depois, as outras campanhas. Atualizar a situação de quem respondeu.</span></label></li>
       <li><label><input type="checkbox"><span><b>Gerente, toda semana:</b> no Painel, resolver o aviso de clientes sem vendedor (ligar o código no Gestão ou distribuir).</span></label></li>
       <li><label><input type="checkbox"><span><b>Gerente, toda semana:</b> em cada campanha, olhar a coluna Mandou mensagem por vendedor e cobrar quem está parado.</span></label></li>
-      <li><label><input type="checkbox"><span><b>Gerente, toda semana:</b> no Painel, olhar a coluna Sem cadastro por vendedor e cobrar quem lança em consumidor final.</span></label></li>
+      <li><label><input type="checkbox"><span><b>Gerente, toda semana:</b> no Painel, olhar a coluna Cadastro por vendedor e cobrar quem está abaixo da meta de 90%.</span></label></li>
       <li><label><input type="checkbox"><span><b>Gerente, na admissão e no desligamento:</b> gerar ou revogar o código na tela Equipe.</span></label></li>
       <li><label><input type="checkbox"><span><b>Escritório, todo mês:</b> criar as campanhas do mês e comparar com msg × sem msg em Resultados.</span></label></li>
     </ul>
