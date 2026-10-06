@@ -92,6 +92,7 @@ function render() {
   renderResumo(d);
   renderAvisos(d);
   renderEmpresas(d);
+  renderSangria(d);
   renderGaveta(d);
   renderColab();
   mostraVista();
@@ -337,7 +338,7 @@ function modalDarAjuda(empId) {
     return abreModal('Ajuda de custo', `<div class="vt-erro">Cadastre primeiro uma empresa pagadora em Cartões → Empresas.</div>`);
   abreModal(`Ajuda de custo — ${p.nome}`, `
     <div class="vt-campo"><span class="dica">
-      Pagamento em dinheiro todo mês, no lugar do cartão.
+      Dinheiro todo mês, no lugar do cartão — sai em sangria no caixa da loja.
     </span></div>
     <div class="vt-dupla">
       <div class="vt-campo">
@@ -637,6 +638,28 @@ function renderEmpresas(d) {
       ${ajuda}
     </div>`;
   }).join('');
+}
+
+// A ajuda fica no bloco da empresa que paga, mas quem entrega o dinheiro é o
+// caixa de cada loja. Este quadro diz quanto cada uma retira em sangria.
+function renderSangria(d) {
+  const lojas = [...(d.lojasAjuda || [])]
+    .sort((a, b) => ORDEM_LOJA.indexOf(a.board) - ORDEM_LOJA.indexOf(b.board));
+  $('sangriaLojas').innerHTML = !lojas.length ? '' : `
+    <div class="vt-sec-titulo">
+      <h2>Ajuda de custo — sangria por loja</h2>
+      <span class="vt-sec-rule"></span>
+      <span class="vt-sec-cont">R$ ${fBRL(d.totais.ajuda)}</span>
+    </div>
+    <div class="vt-emp"><div class="vt-scroll"><table class="vt-t">
+      <thead><tr><th>Loja</th><th>Pessoas</th><th>Retirar em sangria</th><th>Já pago</th></tr></thead>
+      <tbody>${lojas.map(g => `<tr>
+        <td><span class="vt-nome"><i class="vt-tarja" style="background:${BOARD_COR[g.board] || 'var(--border2)'}"></i>${esc(BOARD_NOME[g.board] || g.board || 'Sem loja')}</span></td>
+        <td class="vt-num">${g.pessoas}</td>
+        <td class="vt-num vt-recarga">R$ ${fBRL(g.total)}</td>
+        <td class="vt-num">${g.pago ? 'R$ ' + fBRL(g.pago) : '—'}</td>
+      </tr>`).join('')}</tbody>
+    </table></div></div>`;
 }
 
 function linhaHtml(l) {

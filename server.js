@@ -14403,6 +14403,18 @@ function vtMontaMes(vt, employees, y, m, folgasPorEmp) {
   const linhasTodas = grupos.flatMap(g => g.linhas);
   const ajudasTodas = grupos.flatMap(g => g.ajudas);
 
+  // A ajuda é paga pela empresa, mas o dinheiro sai em sangria do caixa da
+  // loja da pessoa: o total por loja é o quanto cada uma precisa retirar.
+  const lojasAjuda = [];
+  for (const a of ajudasTodas) {
+    const k = a.board || '';
+    let g = lojasAjuda.find(x => x.board === k);
+    if (!g) lojasAjuda.push(g = { board: k, pessoas: 0, total: 0, pago: 0 });
+    if (!a.pular) g.pessoas++;
+    g.total = vt2(g.total + a.valor);
+    if (a.pago) g.pago = vt2(g.pago + a.valor);
+  }
+
   // A escala é pré-requisito: sem ela a conta usa o número fixo e passa a ser
   // chute. Por isso o mês diz, em número e em nome, quem ainda falta.
   // A ajuda de custo é valor fechado do mês: não depende de escala, então quem
@@ -14428,7 +14440,7 @@ function vtMontaMes(vt, employees, y, m, folgasPorEmp) {
       passou: hoje > diaRecarga,
       diasAte: Math.round((new Date(diaRecarga + 'T12:00:00') - new Date(hoje + 'T12:00:00')) / 86400000),
     },
-    grupos, gaveta,
+    grupos, gaveta, lojasAjuda,
     saldoPreso: {
       valor: vt2(presos.reduce((s, c) => s + Number(c.saldoNaPerda || 0), 0)),
       cartoes: presos.map(vtCartaoPublico),
