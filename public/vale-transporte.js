@@ -452,6 +452,7 @@ async function confirmaDarCartao(empId) {
         empresaId: val('cEmpresa'), empId,
         linhaId: val('cLinha') || null, passagensDia: val('cPassagens'),
         valorDia: paraNumero(val('cValorDia')), obs: c ? c.obs : '',
+        ano: S.ano, mes: S.mes,
       }),
     });
     await depoisDeCadastrar();
@@ -799,7 +800,9 @@ async function salvaAjudaMes(ajudaId, campos) {
 }
 
 function renderGaveta(d) {
-  $('gavetaCont').textContent = `${d.gaveta.length} cartão${d.gaveta.length === 1 ? '' : 'ões'}`;
+  const parado = d.totais.saldoGaveta || 0;
+  $('gavetaCont').textContent = `${d.gaveta.length} cartão${d.gaveta.length === 1 ? '' : 'ões'}`
+    + (parado > 0 ? ` · R$ ${fBRL(parado)} parados` : '');
   if (!d.gaveta.length) {
     $('gaveta').innerHTML = `<div class="vt-vazio">Todos os cartões cadastrados estão com alguém.</div>`;
     return;
@@ -819,7 +822,12 @@ function renderGaveta(d) {
         <td><span class="vt-chip ${est}">${ESTADO_NOME[est] || est}</span>
             ${c.perdidoEm ? `<span class="vt-kpi-sub"> ${fData(c.perdidoEm)}</span>` : ''}
             ${est === 'perdido' && c.saldoRecuperado ? ' <span class="vt-chip pago">saldo recuperado</span>' : ''}</td>
-        <td class="vt-num">${preso ? 'R$ ' + fBRL(c.saldoNaPerda) : '—'}</td>
+        <td class="vt-num">${['gaveta','bloqueado'].includes(est)
+          ? `<input class="vt-inp-saldo ${c.saldoGaveta == null ? 'vazio' : ''}" type="text" inputmode="decimal"
+                    value="${c.saldoGaveta == null ? '' : fBRL(c.saldoGaveta)}" placeholder="—"
+                    title="Saldo lido no portal. Vira o saldo do mês quando o cartão for entregue."
+                    data-cartao="${c.id}" onchange="salvaSaldoGaveta(this)">`
+          : preso ? 'R$ ' + fBRL(c.saldoNaPerda) : '—'}</td>
         <td>
           <div class="vt-acoes">
             ${est === 'gaveta' ? `<button class="vt-ico" onclick="modalEntregar(${c.id})">entregar</button>` : ''}
@@ -855,6 +863,22 @@ async function salvaSaldo(inp) {
     S.dados = await api(`/api/vt/${S.ano}/${S.mes}/linha`, {
       method: 'POST', body: JSON.stringify({ cartaoId, saldo: valor }),
     });
+    render();
+  } catch (e) { mostraErro(e.message); inp.classList.remove('salvando'); }
+}
+
+// Cartão sem dono: o saldo fica no cartão e só entra num mês quando for entregue.
+async function salvaSaldoGaveta(inp) {
+  const cartaoId = parseInt(inp.dataset.cartao);
+  const valor = inp.value.trim() === '' ? '' : paraNumero(inp.value);
+  if (valor !== '' && (valor === null || valor < 0)) { inp.classList.add('vazio'); return; }
+  inp.classList.add('salvando');
+  try {
+    S.dados = await api('/api/vt/cartao/saldo-gaveta', {
+      method: 'POST', body: JSON.stringify({ cartaoId, saldo: valor, ano: S.ano, mes: S.mes }),
+    });
+    const c = achaCartao(cartaoId);
+    if (c) c.saldoGaveta = valor === '' ? null : valor;
     render();
   } catch (e) { mostraErro(e.message); inp.classList.remove('salvando'); }
 }
@@ -958,7 +982,8 @@ function modalPerda(cartaoId) {
   const r = achaLinha(cartaoId);
   const c = achaCartao(cartaoId);
   const nome = r ? r.linha.nome : '';
-  const saldoAtual = r?.linha?.temSaldo ? fBRL(r.linha.saldo) : '';
+  const saldoAtual = r?.linha?.temSaldo ? fBRL(r.linha.saldo)
+    : c?.saldoGaveta != null ? fBRL(c.saldoGaveta) : '';
   abreModal('Perda de cartão', `
     <div class="vt-campo">
       <span class="dica">
@@ -1065,6 +1090,7 @@ async function confirmaSubstituir(cartaoId) {
         novoNumero:   val('sNovoNum') || null,
         empresaId:    val('sEmpresa'),
         valorDia:     paraNumero(val('sValorDia')),
+        ano: S.ano, mes: S.mes,
       }),
     });
     await recarregaBase();
@@ -1129,7 +1155,8 @@ function modalEntregar(cartaoId) {
   if (!c) return;
   abreModal('Entregar cartão', `
     <div class="vt-campo">
-      <span class="dica">Cartão <b>${esc(c.numero)}</b> sai da gaveta e passa a ser recarregado todo mês.</span>
+      <span class="dica">Cartão <b>${esc(c.numero)}</b> sai da gaveta e passa a ser recarregado todo mês.
+        ${c.saldoGaveta != null ? `O saldo de <b>R$ ${fBRL(c.saldoGaveta)}</b> entra como saldo de ${MESES[S.mes - 1]}.` : ''}</span>
     </div>
     <div class="vt-campo">
       <label>Colaborador</label>
@@ -1166,7 +1193,8 @@ async function confirmaEntregar(cartaoId) {
       body: JSON.stringify({
         id: cartaoId, numero: c.numero, empresaId: val('eEmpresa'),
         empId: val('eEmp'), valorDia: paraNumero(val('eValorDia')),
-        passagensDia: c.passagensDia, obs: c.obs,
+        linhaId: c.linhaId || null,
+        passagensDia: c.passagensDia, obs: c.obs, ano: S.ano, mes: S.mes,
       }),
     });
     await recarregaBase();
@@ -1266,6 +1294,7 @@ async function salvaCartao(id) {
         empId: val('cEmp') || null, valorDia: paraNumero(val('cValorDia')),
         linhaId: val('cLinha') || null,
         passagensDia: val('cPassagens'), estado: val('cEstado'), obs: val('cObs'),
+        ano: S.ano, mes: S.mes,
       }),
     });
     await recarregaBase();

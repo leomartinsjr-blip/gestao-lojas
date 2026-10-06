@@ -14335,6 +14335,8 @@ function vtCartaoPublico(c) {
     saldoNaPerda: c.saldoNaPerda == null ? null : vt2(c.saldoNaPerda),
     saldoRecuperado: !!c.saldoRecuperado,
     saldoRecuperadoEm: c.saldoRecuperadoEm || null,
+    saldoGaveta: c.saldoGaveta == null ? null : vt2(c.saldoGaveta),
+    saldoGavetaEm: c.saldoGavetaEm || null,
     substituidoPor: c.substituidoPor || null,
     substituiDe: c.substituiDe || null,
   };
@@ -14343,6 +14345,29 @@ function vtCartaoPublico(c) {
 function vtRegistra(cartao, quem, texto) {
   if (!Array.isArray(cartao.historico)) cartao.historico = [];
   cartao.historico.push({ em: new Date().toISOString(), quem, texto });
+}
+
+// Saldo de cartão parado na gaveta: quando ele sai para alguém, o valor vira o
+// saldo do mês em que foi entregue — senão a primeira recarga sai cheia por
+// cima de um dinheiro que já está no cartão. Se o mês já tem saldo lido, vale
+// a leitura, que é mais nova.
+function vtLevaSaldoGaveta(vt, c, y, m, quem) {
+  if (c.saldoGaveta == null) return;
+  const valor = vt2(c.saldoGaveta);
+  if (!y || !m) { const h = vtHojeISO(); y = parseInt(h.slice(0, 4)); m = parseInt(h.slice(5, 7)); }
+  const mk = vtMesKey(y, m);
+  if (!vt.meses[mk]) vt.meses[mk] = { linhas: {} };
+  const mes = vt.meses[mk];
+  if (!mes.linhas) mes.linhas = {};
+  const l = mes.linhas[String(c.id)] || (mes.linhas[String(c.id)] = {});
+  if (l.saldo == null || l.saldo === '') {
+    l.saldo = valor;
+    mes.atualizadoEm  = new Date().toISOString();
+    mes.atualizadoPor = quem;
+    vtRegistra(c, quem, `Saldo da gaveta (R$ ${valor.toFixed(2)}) lançado em ${mk}`);
+  }
+  c.saldoGaveta = null;
+  c.saldoGavetaEm = null;
 }
 
 function vtLinhaDoMes(mes, cartaoId) {
@@ -14532,6 +14557,7 @@ function vtMontaMes(vt, employees, y, m, folgasPorEmp) {
       semSaldo: linhasTodas.filter(l => !l.temSaldo && !l.pular).length,
       pulados:  linhasTodas.filter(l => l.pular).length,
       naGaveta: gaveta.filter(c => (c.estado || 'gaveta') === 'gaveta').length,
+      saldoGaveta: vt2(gaveta.reduce((s, c) => s + (c.saldoGaveta || 0), 0)),
       perdidos: vt.cartoes.filter(c => c.estado === 'perdido').length,
     },
     atualizadoEm:  mes.atualizadoEm  || null,
@@ -14769,6 +14795,7 @@ app.post('/api/vt/cartao', requireEscritorioOrAdmin, async (req, res) => {
       Object.assign(alvo, dados);
       if (antes !== dono) vtRegistra(alvo, req.session.user.username,
         dono ? 'Entregue ao colaborador #' + dono : 'Recolhido para a gaveta');
+      if (dono) vtLevaSaldoGaveta(vt, alvo, parseInt(req.body.ano), parseInt(req.body.mes), req.session.user.username);
     } else {
       const novo = { id: nextId(db), nomePlanilha: '', historico: [], ...dados };
       vtRegistra(novo, req.session.user.username, 'Cartão cadastrado');
@@ -14799,11 +14826,43 @@ app.post('/api/vt/cartao/perda', requireEscritorioOrAdmin, async (req, res) => {
     c.perdidoPor      = req.session.user.username;
     c.saldoNaPerda    = vt2(req.body.saldo);
     c.saldoRecuperado = false;
+    c.saldoGaveta     = null;
+    c.saldoGavetaEm   = null;
     if (req.body.obs) c.obs = String(req.body.obs).trim();
     vtRegistra(c, req.session.user.username,
       `Perda registrada com saldo de R$ ${c.saldoNaPerda.toFixed(2)}`);
 
     await writeDB(db);
+    res.json({ ok: true, cartoes: vt.cartoes.map(vtCartaoPublico) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/vt/cartao/saldo-gaveta — saldo do cartão que está sem dono ───
+// Lido no portal como os outros, mas fica no cartão e não num mês: só passa a
+// contar para a recarga quando o cartão for entregue a alguém.
+app.post('/api/vt/cartao/saldo-gaveta', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const vt = vtRoot(db);
+    const c = vt.cartoes.find(x => x.id === parseInt(req.body.cartaoId));
+    if (!c) return res.status(404).json({ error: 'Cartão não encontrado' });
+    if (c.empId) return res.status(400).json({ error: 'Cartão em uso: o saldo é digitado na recarga do mês' });
+    if (['perdido', 'substituido'].includes(c.estado))
+      return res.status(400).json({ error: 'Cartão perdido ou substituído não tem saldo de gaveta' });
+
+    const vazio = req.body.saldo === '' || req.body.saldo == null;
+    const novo = vazio ? null : vt2(req.body.saldo);
+    if (novo !== null && novo < 0) return res.status(400).json({ error: 'Saldo não pode ser negativo' });
+    if (novo !== (c.saldoGaveta == null ? null : vt2(c.saldoGaveta))) {
+      c.saldoGaveta   = novo;
+      c.saldoGavetaEm = novo === null ? null : new Date().toISOString();
+      vtRegistra(c, req.session.user.username,
+        novo === null ? 'Saldo da gaveta apagado' : `Saldo na gaveta: R$ ${novo.toFixed(2)}`);
+      await writeDB(db);
+    }
+
+    const y = parseInt(req.body.ano), m = parseInt(req.body.mes);
+    if (y && m) return vtResponde(res, db, vt, y, m);
     res.json({ ok: true, cartoes: vt.cartoes.map(vtCartaoPublico) });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -14846,6 +14905,8 @@ app.post('/api/vt/cartao/substituir', requireEscritorioOrAdmin, async (req, res)
     novo.passagensDia = Number(velho.passagensDia) || 2;
     novo.linhaId      = req.body.linhaId ? parseInt(req.body.linhaId) : (velho.linhaId || null);
     novo.substituiDe  = velho.id;
+
+    vtLevaSaldoGaveta(vt, novo, parseInt(req.body.ano), parseInt(req.body.mes), req.session.user.username);
 
     velho.empId          = null;
     velho.substituidoPor = novo.id;
