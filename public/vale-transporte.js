@@ -624,6 +624,11 @@ function renderEmpresas(d) {
         <span class="vt-oper">${esc(OPER_NOME(e.operadora))}</span>
         ${e.temSenha ? `<button class="vt-ico" onclick="verAcesso(${e.id})">🔑 acesso</button>` : ''}
         <span class="vt-emp-tot">
+          ${(() => {
+            const aFazer = g.linhas.filter(l => !l.pular);
+            const feitas = aFazer.filter(l => l.pago).length;
+            return aFazer.length ? `<span class="vt-chip ${feitas === aFazer.length ? 'pago' : 'pular'}">${feitas}/${aFazer.length} feitas</span>` : '';
+          })()}
           <span class="vt-emp-tot-rot">Recarga</span>
           <span class="vt-emp-tot-val">R$ ${fBRL(g.total)}</span>
         </span>
@@ -675,7 +680,7 @@ function linhaHtml(l) {
     l.substituiDe ? '<span class="vt-chip substituido">2ª via</span>' : '',
   ].filter(Boolean).join(' ');
 
-  return `<tr class="${l.pular ? 'vt-linha-pular' : ''}">
+  return `<tr class="${l.pular ? 'vt-linha-pular' : ''} ${l.pago ? 'vt-linha-feita' : ''}">
     <td>
       <span class="vt-nome">
         <i class="vt-tarja" style="background:${cor}" title="${esc(BOARD_NOME[l.board] || '')}"></i>
@@ -706,6 +711,10 @@ function linhaHtml(l) {
     <td class="vt-num vt-recarga ${l.recarga ? '' : 'zero'}">${l.recarga ? 'R$ ' + fBRL(l.recarga) : '—'}</td>
     <td>
       <div class="vt-acoes">
+        ${l.pular ? '' : `<button class="vt-feita ${l.pago ? 'ok' : ''}"
+            onclick="marcaFeita(this, ${l.cartaoId}, ${!l.pago})"
+            title="${l.pago ? `Feita${l.pagoEm ? ' em ' + fData(l.pagoEm) : ''} — clique para desmarcar` : 'Marcar que a recarga já foi feita no portal'}">
+            ${l.pago ? '✓ feita' : 'recarga feita'}</button>`}
         <button class="vt-ico" onclick="menuLinha(${l.cartaoId})" title="Ações">⋯</button>
       </div>
     </td>
@@ -881,6 +890,17 @@ async function salvaSaldoGaveta(inp) {
     if (c) c.saldoGaveta = valor === '' ? null : valor;
     render();
   } catch (e) { mostraErro(e.message); inp.classList.remove('salvando'); }
+}
+
+// Botão da própria linha: sem modal aberto, o erro vai para a faixa da página.
+async function marcaFeita(btn, cartaoId, pago) {
+  btn.disabled = true;
+  try {
+    S.dados = await api(`/api/vt/${S.ano}/${S.mes}/linha`, {
+      method: 'POST', body: JSON.stringify({ cartaoId, pago }),
+    });
+    render();
+  } catch (e) { mostraErro(e.message); btn.disabled = false; }
 }
 
 async function salvaLinha(cartaoId, campos) {

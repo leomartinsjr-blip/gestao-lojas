@@ -163,7 +163,19 @@ table.vt-t tr:hover td { background: rgba(var(--accent-rgb), .06); }
 .vt-cartao { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .72rem; color: var(--muted); }
 .vt-linha-pular td { opacity: .5; }
 .vt-linha-pular .vt-recarga { text-decoration: line-through; }
+.vt-linha-feita td { background: rgba(var(--up-rgb), .06); }
+.vt-linha-feita td:not(:last-child) { opacity: .55; }
 .vt-recarga { font-weight: 600; }
+
+/* Botão "recarga feita": contorno enquanto falta, verde cheio depois. */
+.vt-feita {
+  background: transparent; border: 1px solid var(--border2); border-radius: var(--r-sm);
+  color: var(--muted); cursor: pointer; font: inherit; font-size: .72rem; font-weight: 600;
+  padding: .22rem .55rem; line-height: 1.2; white-space: nowrap;
+}
+.vt-feita:hover { color: var(--up); border-color: rgba(var(--up-rgb), .5); }
+.vt-feita.ok { background: rgba(var(--up-rgb), .15); border-color: rgba(var(--up-rgb), .45); color: var(--up); }
+.vt-feita.ok:hover { background: transparent; color: var(--muted); border-color: var(--border2); }
 .vt-recarga.zero { color: var(--muted); font-weight: 400; }
 
 .vt-inp-saldo {
