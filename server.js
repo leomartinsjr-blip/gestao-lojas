@@ -14230,14 +14230,61 @@ const vtHojeISO = () => {
   return `${y}-${m}-${d}`;
 };
 
-// Quantas folgas cada um tem marcadas no mês. É a escala que a loja preenche
-// na tela de Folgas — aqui ela só é lida.
+// Os dias de cada um que não são de trabalho no mês, por data: as folgas da
+// escala (tela de Folgas) e as férias. Férias vêm de dois lugares, e os dois
+// valem: o Part% do Fechamento Diário (vsales …meta.vacationDays, por loja) e
+// o calendário de ausências (por nome). Por data, para que folga marcada no
+// meio das férias não seja descontada duas vezes.
+const vtNormNome = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').trim();
+
 function vtFolgasPorEmp(db, y, m) {
   const prefixo = vtMesKey(y, m);
   const mapa = new Map();
+  const de = id => {
+    if (!mapa.has(id)) mapa.set(id, { folgas: new Set(), ferias: new Set() });
+    return mapa.get(id);
+  };
   for (const f of (db.folgas || [])) {
     if (!f.date || !f.date.startsWith(prefixo)) continue;
-    mapa.set(f.employeeId, (mapa.get(f.employeeId) || 0) + 1);
+    de(f.employeeId).folgas.add(f.date);
+  }
+
+  // Part%: a chave é "AAAA-MM-loja-empId"; a pessoa pode ter passado por mais
+  // de uma loja no mês, então junta todas.
+  for (const [k, vs] of Object.entries(db.vsales || {})) {
+    if (!k.startsWith(prefixo + '-')) continue;
+    const empId = parseInt(k.slice(k.lastIndexOf('-') + 1));
+    if (!empId) continue;
+    for (const d of (vs?.meta?.vacationDays || []))
+      if (typeof d === 'string' && d.startsWith(prefixo)) de(empId).ferias.add(d);
+  }
+
+  // Férias da escala (aba Férias da tela de Folgas): lançadas por nome, com
+  // início e fim. A loja gravada é a de quem lançou, que nem sempre é a do
+  // cadastro — por isso ela só desempata quando dois têm o mesmo nome.
+  const ini = `${prefixo}-01`, fim = `${prefixo}-${String(vtDiasNoMes(y, m)).padStart(2, '0')}`;
+  const ferias = (db.ausencias || []).filter(a =>
+    a.tipo === 'ferias' && a.dataInicio && a.dataFim && a.dataInicio <= fim && a.dataFim >= ini);
+  if (ferias.length) {
+    const ativos = (db.employees || []).filter(e => !e.inativo);
+    const nomesDe = e => new Set([vtNormNome(e.apelido), vtNormNome(e.name)].filter(Boolean));
+    for (const e of ativos) {
+      const nomes = nomesDe(e);
+      for (const a of ferias) {
+        const nome = vtNormNome(a.colaborador);
+        if (!nomes.has(nome)) continue;
+        const xaras = ativos.filter(o => nomesDe(o).has(nome));
+        if (xaras.length > 1 && a.board && a.board !== e.board) continue;
+        const cur = new Date((a.dataInicio < ini ? ini : a.dataInicio) + 'T12:00:00');
+        const ate = a.dataFim > fim ? fim : a.dataFim;
+        while (true) {
+          const ds = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}-${String(cur.getDate()).padStart(2, '0')}`;
+          if (ds > ate) break;
+          de(e.id).ferias.add(ds);
+          cur.setDate(cur.getDate() + 1);
+        }
+      }
+    }
   }
   return mapa;
 }
@@ -14306,13 +14353,24 @@ function vtMontaMes(vt, employees, y, m, folgasPorEmp) {
   // Dias de trabalho de uma pessoa: o mês menos as folgas dela. Sem escala
   // feita, cai no número fixo — e a linha diz que caiu, porque comprar
   // passagem por um palpite é errar para os dois lados.
+  //
+  // Férias saem antes de tudo: férias no mês inteiro é zero dias e não pede
+  // escala; férias em parte do mês tiram esses dias da escala ou, sem escala,
+  // encolhem o número fixo na mesma proporção.
   const diasDe = empId => {
-    const qtd = folgas.get(empId) || 0;
-    const temEscala = qtd >= cfg.minFolgas;
+    const reg = folgas.get(empId) || { folgas: new Set(), ferias: new Set() };
+    const nFerias = reg.ferias.size;
+    const folgasFora = [...reg.folgas].filter(d => !reg.ferias.has(d)).length;
+    const qtd = reg.folgas.size;
+    const base = { folgas: qtd, ferias: nFerias };
+    if (nFerias >= diasNoMes) return { ...base, dias: 0, escalaOk: true, origem: 'ferias' };
+
+    const fracao = (diasNoMes - nFerias) / diasNoMes;
+    const temEscala = folgasFora >= Math.ceil(cfg.minFolgas * fracao);
     if (!cfg.usarEscala || !temEscala) {
-      return { dias: cfg.diasMes, folgas: qtd, escalaOk: false, origem: cfg.usarEscala ? 'padrao' : 'fixo' };
+      return { ...base, dias: Math.max(1, Math.ceil(cfg.diasMes * fracao)), escalaOk: false, origem: cfg.usarEscala ? 'padrao' : 'fixo' };
     }
-    return { dias: Math.max(1, diasNoMes - qtd), folgas: qtd, escalaOk: true, origem: 'escala' };
+    return { ...base, dias: Math.max(1, diasNoMes - nFerias - folgasFora), escalaOk: true, origem: 'escala' };
   };
 
   // Ajuda de custo: mesma lógica de linha do mês (pular, valor à mão, pago),
@@ -14343,6 +14401,10 @@ function vtMontaMes(vt, employees, y, m, folgasPorEmp) {
         pular: !!am.pular, motivo: am.motivo || '',
         pago: !!am.pago, pagoEm: am.pagoEm || null,
         obs: a.obs || '',
+        // A ajuda é valor fechado e não muda sozinha com as férias — mas a tela
+        // mostra, para quem paga decidir se marca "não pagar".
+        feriasNoMes: folgas.get(a.empId)?.ferias.size || 0,
+        feriasMesTodo: (folgas.get(a.empId)?.ferias.size || 0) >= diasNoMes,
       };
     })
     .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
@@ -14354,7 +14416,10 @@ function vtMontaMes(vt, employees, y, m, folgasPorEmp) {
       const pes  = empById.get(c.empId) || null;
       const esc  = diasDe(c.empId);
       const vd   = vtValorDia(c, cfg.linhas, mk);
-      const calc = vtCalcula(vd.valor, l.saldo, esc.dias, cfg.diasReserva);
+      // Férias no mês inteiro: nada a recarregar, nem a reserva — o saldo que
+      // está no cartão espera a volta.
+      const calc = esc.origem === 'ferias' ? { dias: 0, recarga: 0 }
+        : vtCalcula(vd.valor, l.saldo, esc.dias, cfg.diasReserva);
       const manual = l.recargaManual != null && l.recargaManual !== '';
       const recarga = l.pular ? 0 : (manual ? vt2(l.recargaManual) : calc.recarga);
       return {
@@ -14365,7 +14430,7 @@ function vtMontaMes(vt, employees, y, m, folgasPorEmp) {
         valorDia: vd.valor, origemValor: vd.origem,
         linha: vd.linha, tarifa: vd.tarifa,
         passagensDia: Number(c.passagensDia) || 2,
-        diasTrabalho: esc.dias, folgasNoMes: esc.folgas,
+        diasTrabalho: esc.dias, folgasNoMes: esc.folgas, feriasNoMes: esc.ferias,
         escalaOk: esc.escalaOk, origemDias: esc.origem,
         saldo: l.saldo == null || l.saldo === '' ? null : vt2(l.saldo),
         temSaldo: l.saldo != null && l.saldo !== '',

@@ -698,10 +698,13 @@ function linhaHtml(l) {
              data-cartao="${l.cartaoId}" onchange="salvaSaldo(this)"
              ${l.pular ? 'disabled' : ''}>
     </td>
-    <td class="vt-num" title="${l.escalaOk
-        ? `${l.folgasNoMes} folgas na escala do mês`
-        : 'Escala do mês não preenchida — usando o padrão'}">
-      ${l.diasTrabalho}${l.escalaOk ? '' : '<span class="vt-chip sem-cadastro" style="margin-left:.25rem">estimado</span>'}
+    <td class="vt-num" title="${l.origemDias === 'ferias'
+        ? 'Férias o mês inteiro — sem recarga, nem a reserva'
+        : (l.escalaOk ? `${l.folgasNoMes} folgas na escala do mês` : 'Escala do mês não preenchida — usando o padrão')
+          + (l.feriasNoMes ? ` · ${l.feriasNoMes} dias de férias descontados` : '')}">
+      ${l.diasTrabalho}${l.feriasNoMes
+        ? `<span class="vt-chip bloqueado" style="margin-left:.25rem">${l.origemDias === 'ferias' ? 'férias' : `férias ${l.feriasNoMes}d`}</span>` : ''}${
+        l.escalaOk ? '' : '<span class="vt-chip sem-cadastro" style="margin-left:.25rem">estimado</span>'}
     </td>
     <td class="vt-num">${l.dias || '—'}</td>
     <td class="vt-num vt-recarga ${l.recarga ? '' : 'zero'}">${l.recarga ? 'R$ ' + fBRL(l.recarga) : '—'}</td>
@@ -720,6 +723,7 @@ function ajudaHtml(a) {
     a.pular  ? `<span class="vt-chip pular" title="${esc(a.motivo)}">sem pagamento</span>` : '',
     a.manual ? '<span class="vt-chip manual">valor à mão</span>' : '',
     a.faixaFixada ? '<span class="vt-chip substituido">faixa fixada</span>' : '',
+    a.feriasNoMes ? `<span class="vt-chip bloqueado" title="Férias no mês — veja se paga a ajuda">${a.feriasMesTodo ? 'férias o mês todo' : 'férias ' + a.feriasNoMes + 'd'}</span>` : '',
   ].filter(Boolean).join(' ');
 
   return `<tr class="${a.pular ? 'vt-linha-pular' : ''}">
