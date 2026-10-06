@@ -273,6 +273,46 @@ table.vt-t tr:hover td { background: rgba(var(--accent-rgb), .06); }
 .vt-estado { text-align: center; padding: 3rem 1rem; color: var(--muted); font-size: .88rem; line-height: 1.6; }
 .hidden { display: none !important; }
 
+
+/* ── Abas: colaboradores (o início) e a recarga do mês ────────────────── */
+.vt-abas { display: flex; gap: .25rem; border-bottom: 1px solid var(--border); margin-bottom: 1.1rem; }
+.vt-aba {
+  background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  color: var(--muted); font: inherit; font-size: .84rem; font-weight: 500;
+  padding: .5rem .8rem; cursor: pointer; white-space: nowrap;
+  display: inline-flex; align-items: center; gap: .4rem;
+}
+.vt-aba:hover { color: var(--text); }
+.vt-aba.ativa { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.vt-aba-cont {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .66rem; font-weight: 600;
+  padding: .05rem .38rem; border-radius: 999px;
+  background: rgba(var(--down-rgb), .15); color: var(--down);
+}
+
+/* ── Colaboradores ────────────────────────────────────────────────────── */
+.vt-filtros { display: flex; gap: .4rem; flex-wrap: wrap; align-items: center; margin-bottom: .8rem; }
+.vt-filtro {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 999px;
+  color: var(--text2); font: inherit; font-size: .74rem; padding: .25rem .7rem; cursor: pointer;
+}
+.vt-filtro:hover { border-color: var(--border2); color: var(--text); }
+.vt-filtro.ativo { background: var(--text); border-color: var(--text); color: var(--bg); font-weight: 600; }
+.vt-busca {
+  margin-left: auto; min-width: 12rem;
+  background: var(--input-bg); border: 1px solid var(--border); border-radius: var(--r-sm);
+  color: var(--text); font: inherit; font-size: .8rem; padding: .3rem .6rem;
+}
+.vt-busca:focus { outline: none; border-color: var(--accent); }
+.vt-chip.pendente { background: rgba(var(--down-rgb), .15); color: var(--down); }
+.vt-chip.cartao, .vt-chip.ajuda, .vt-chip.dispensa { background: var(--surface3); color: var(--text2); }
+.vt-chip.novo { background: rgba(var(--accent-rgb), .15); color: var(--accent); }
+.vt-loja { font-size: .74rem; color: var(--muted); }
+.vt-detalhe { font-size: .76rem; color: var(--text2); text-align: left !important; }
+table.vt-t td.vt-detalhe, table.vt-t th.vt-detalhe { text-align: left; }
+.vt-linha-pendente td:first-child { box-shadow: inset 3px 0 0 var(--down); }
+.vt-inp-saldo.valor-ajuda { width: 7rem; }
+
 /* ── Celular ──────────────────────────────────────────────────────────── */
 @media (max-width: 1100px) {
   .vt-resumo { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -298,6 +338,8 @@ table.vt-t tr:hover td { background: rgba(var(--accent-rgb), .06); }
     box-shadow: 1px 0 0 rgba(var(--border-rgb), .9);
   }
   .vt-dupla { grid-template-columns: 1fr; }
+  .vt-busca { margin-left: 0; width: 100%; }
+  .vt-abas { overflow-x: auto; }
   .vt-overlay { padding: .3rem; }
   .vt-modal { max-height: 96dvh; }
   .vt-campo input, .vt-campo select { font-size: 16px; }
@@ -316,7 +358,7 @@ table.vt-t tr:hover td { background: rgba(var(--accent-rgb), .06); }
     <span class="vt-titulo">Vale-Transporte</span>
   </div>
   <div class="vt-top-acoes">
-    <div class="vt-mes">
+    <div class="vt-mes" id="mesNav">
       <button class="vt-btn mini" id="mesAnt" title="Mês anterior">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
       </button>
@@ -341,16 +383,32 @@ table.vt-t tr:hover td { background: rgba(var(--accent-rgb), .06); }
 <div class="vt-body">
   <div id="erroBox" class="vt-erro hidden"></div>
 
-  <div class="vt-resumo" id="resumo"></div>
-  <div id="avisos"></div>
-  <div id="empresas"></div>
+  <nav class="vt-abas">
+    <button class="vt-aba" data-vista="colab">Colaboradores <span class="vt-aba-cont hidden" id="abaPendentes"></span></button>
+    <button class="vt-aba" data-vista="recarga">Recarga do mês</button>
+  </nav>
 
-  <div class="vt-sec-titulo">
-    <h2>Cartões sem dono</h2>
-    <span class="vt-sec-rule"></span>
-    <span class="vt-sec-cont" id="gavetaCont"></span>
-  </div>
-  <div class="vt-emp" id="gaveta"></div>
+  <!-- Início: todo mundo que está ativo e o que cada um recebe. É daqui que
+       se vê quem ficou sem cartão e sem ajuda. -->
+  <section id="vistaColab" class="hidden">
+    <div class="vt-resumo" id="colabResumo"></div>
+    <div id="colabAvisos"></div>
+    <div class="vt-filtros" id="colabFiltros"></div>
+    <div class="vt-emp" id="colabLista"></div>
+  </section>
+
+  <section id="vistaRecarga" class="hidden">
+    <div class="vt-resumo" id="resumo"></div>
+    <div id="avisos"></div>
+    <div id="empresas"></div>
+
+    <div class="vt-sec-titulo">
+      <h2>Cartões sem dono</h2>
+      <span class="vt-sec-rule"></span>
+      <span class="vt-sec-cont" id="gavetaCont"></span>
+    </div>
+    <div class="vt-emp" id="gaveta"></div>
+  </section>
 
   <div id="carregando" class="vt-estado">Carregando…</div>
 </div>

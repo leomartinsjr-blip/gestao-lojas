@@ -12,6 +12,10 @@ const S = {
   mes: new Date().getMonth() + 1,
   dados: null,
   base: null,
+  // A tela abre nos colaboradores; #recarga no endereço abre direto no mês.
+  vista: location.hash === '#recarga' ? 'recarga' : 'colab',
+  filtro: 'todos',
+  busca: '',
 };
 
 const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho',
@@ -89,6 +93,395 @@ function render() {
   renderAvisos(d);
   renderEmpresas(d);
   renderGaveta(d);
+  renderColab();
+  mostraVista();
+}
+
+// O mês e o Excel só dizem respeito à recarga; nos colaboradores o que vale é
+// o cadastro de hoje.
+function mostraVista() {
+  const colab = S.vista === 'colab';
+  $('vistaColab').classList.toggle('hidden', !colab);
+  $('vistaRecarga').classList.toggle('hidden', colab);
+  $('mesNav').classList.toggle('hidden', colab);
+  $('btnExportar').classList.toggle('hidden', colab);
+  document.querySelectorAll('.vt-aba').forEach(b =>
+    b.classList.toggle('ativa', b.dataset.vista === S.vista));
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// COLABORADORES — a tela de início
+// Todo mundo que está ativo, e o que cada um recebe: cartão, ajuda de custo
+// ou nada de propósito. Quem não tem nenhum dos três é pendência — é a pessoa
+// que ficaria sem receber se ninguém olhasse.
+// ══════════════════════════════════════════════════════════════════════════
+const ORDEM_LOJA = Object.keys(BOARD_NOME);
+
+function situacaoDe(e) {
+  const b = S.base;
+  const cartao = (b.cartoes || []).find(c => c.empId === e.id) || null;
+  const ajuda  = (b.ajudas  || []).find(a => a.ativo && a.empId === e.id) || null;
+  const disp   = (b.dispensas || {})[String(e.id)] || null;
+  const tipo = cartao ? 'cartao' : ajuda ? 'ajuda' : disp ? 'dispensa' : 'pendente';
+  return { tipo, cartao, ajuda, disp };
+}
+
+// Faixa pelo km, com a mesma regra do servidor (primeira que cobre; a sem
+// teto pega o resto).
+function faixaDaAjuda(a) {
+  const fx = S.base.config.faixas || [];
+  if (a.faixaId) return fx.find(f => f.id === a.faixaId);
+  const ord = [...fx].sort((x, y) => (x.ateKm ?? 1e9) - (y.ateKm ?? 1e9));
+  return ord.find(f => f.ateKm != null && a.km <= f.ateKm) || ord.find(f => f.ateKm == null);
+}
+const valorDaAjuda = a => a.valorFixo != null ? a.valorFixo : (faixaDaAjuda(a)?.valor || 0);
+
+// Admitido há pouco: é quem mais corre o risco de passar o primeiro mês sem nada.
+const ehNovo = e => e.admissao && (Date.now() - new Date(e.admissao + 'T12:00:00')) / 86400000 <= 45;
+
+// A empresa que paga quem é da mesma loja — o palpite para o cadastro novo.
+function empresaSugerida(board) {
+  const b = S.base;
+  const lojaDe = new Map((b.colaboradores || []).map(e => [e.id, e.board]));
+  const conta = new Map();
+  for (const x of [...(b.cartoes || []), ...(b.ajudas || []).filter(a => a.ativo)]) {
+    if (x.empId && lojaDe.get(x.empId) === board)
+      conta.set(x.empresaId, (conta.get(x.empresaId) || 0) + 1);
+  }
+  const top = [...conta.entries()].sort((a, b) => b[1] - a[1])[0];
+  return top ? top[0] : (b.empresas[0]?.id || null);
+}
+
+function renderColab() {
+  const b = S.base;
+  if (!b) return;
+  const nomeEmp = id => (b.empresas || []).find(e => e.id === id)?.nome || '—';
+  const pessoas = (b.colaboradores || []).map(e => ({ ...e, sit: situacaoDe(e) }));
+  const conta = t => pessoas.filter(p => p.sit.tipo === t).length;
+  const nPend = conta('pendente');
+  const totalAjuda = pessoas.filter(p => p.sit.tipo === 'ajuda')
+    .reduce((s, p) => s + valorDaAjuda(p.sit.ajuda), 0);
+
+  const badge = $('abaPendentes');
+  badge.textContent = nPend;
+  badge.classList.toggle('hidden', !nPend);
+
+  $('colabResumo').innerHTML = `
+    <div class="vt-kpi">
+      <span class="vt-kpi-rot">Ativos</span>
+      <span class="vt-kpi-val">${pessoas.length}</span>
+      <span class="vt-kpi-sub">colaboradores no cadastro</span>
+    </div>
+    <div class="vt-kpi">
+      <span class="vt-kpi-rot">No cartão</span>
+      <span class="vt-kpi-val">${conta('cartao')}</span>
+      <span class="vt-kpi-sub">recarga todo mês</span>
+    </div>
+    <div class="vt-kpi">
+      <span class="vt-kpi-rot">Ajuda de custo</span>
+      <span class="vt-kpi-val">${conta('ajuda')}</span>
+      <span class="vt-kpi-sub">R$ ${fBRL(totalAjuda)} por mês</span>
+    </div>
+    <div class="vt-kpi">
+      <span class="vt-kpi-rot">Não recebe</span>
+      <span class="vt-kpi-val">${conta('dispensa')}</span>
+      <span class="vt-kpi-sub">marcado de propósito</span>
+    </div>
+    <div class="vt-kpi">
+      <span class="vt-kpi-rot">Sem definição</span>
+      <span class="vt-kpi-val ${nPend ? 'alerta' : ''}">${nPend}</span>
+      <span class="vt-kpi-sub">${nPend ? 'ficam sem receber' : 'ninguém esquecido'}</span>
+    </div>`;
+
+  const av = [];
+  if (nPend) {
+    av.push(`<div class="vt-aviso erro"><div>
+      <b>${nPend} ${nPend === 1 ? 'pessoa ativa está' : 'pessoas ativas estão'} sem cartão e sem ajuda de custo.</b>
+      Para cada uma, escolha: entregar um cartão, lançar a ajuda de custo com o valor,
+      ou marcar que não recebe (mora perto, vem de carro).
+    </div>
+    ${S.filtro !== 'pendente' ? `<div class="vt-aviso-acoes"><button class="vt-btn mini" onclick="filtraColab('pendente')">Ver só essas</button></div>` : ''}
+    </div>`);
+  }
+  // Quem saiu e ainda segura benefício: o cartão seguiria sendo recarregado.
+  if ((b.desligados || []).length) {
+    av.push(`<div class="vt-aviso"><div>
+      <b>${b.desligados.length} ${b.desligados.length === 1 ? 'desligado ainda está' : 'desligados ainda estão'} com benefício.</b>
+      ${b.desligados.map(x => `${esc(x.nome)} (${x.cartao ? 'cartão ' + esc(x.cartao) : 'ajuda de custo'})`).join(', ')}.
+      Recolha o cartão para a gaveta ou encerre a ajuda.
+    </div></div>`);
+  }
+  $('colabAvisos').innerHTML = av.join('');
+
+  const FILTROS = [
+    ['todos', 'Todos', pessoas.length], ['pendente', 'Sem definição', nPend],
+    ['cartao', 'Cartão', conta('cartao')], ['ajuda', 'Ajuda de custo', conta('ajuda')],
+    ['dispensa', 'Não recebe', conta('dispensa')],
+  ];
+  // A busca é redesenhada junto; guarda o foco para não perder o que se digita.
+  const buscando = document.activeElement?.id === 'colabBusca';
+  $('colabFiltros').innerHTML = FILTROS.map(([k, rot, n]) =>
+    `<button class="vt-filtro ${S.filtro === k ? 'ativo' : ''}" onclick="filtraColab('${k}')">${rot} · ${n}</button>`).join('') +
+    `<input class="vt-busca" id="colabBusca" type="search" placeholder="Buscar nome…" value="${esc(S.busca)}" oninput="buscaColab(this.value)">`;
+  if (buscando) { const i = $('colabBusca'); i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+
+  const q = S.busca.trim().toLocaleLowerCase('pt-BR');
+  const PESO = { pendente: 0, ajuda: 1, cartao: 2, dispensa: 3 };
+  const lista = pessoas
+    .filter(p => S.filtro === 'todos' || p.sit.tipo === S.filtro)
+    .filter(p => !q || p.nome.toLocaleLowerCase('pt-BR').includes(q))
+    .sort((a, b) => (PESO[a.sit.tipo] - PESO[b.sit.tipo])
+      || (ORDEM_LOJA.indexOf(a.board) - ORDEM_LOJA.indexOf(b.board))
+      || a.nome.localeCompare(b.nome, 'pt-BR'));
+
+  if (!lista.length) {
+    $('colabLista').innerHTML = `<div class="vt-vazio">${
+      S.filtro === 'pendente' && !q ? 'Ninguém sem definição — todo mundo ativo recebe ou foi dispensado.' : 'Ninguém neste filtro.'}</div>`;
+    return;
+  }
+
+  $('colabLista').innerHTML = `<div class="vt-scroll"><table class="vt-t">
+    <thead><tr>
+      <th>Colaborador</th><th>Loja</th><th class="vt-detalhe">Recebe</th>
+      <th class="vt-detalhe">Detalhe</th><th>Valor</th><th></th>
+    </tr></thead>
+    <tbody>${lista.map(p => colabHtml(p, nomeEmp)).join('')}</tbody>
+  </table></div>`;
+}
+
+function colabHtml(p, nomeEmp) {
+  const { tipo, cartao, ajuda, disp } = p.sit;
+  const cor = BOARD_COR[p.board] || 'var(--border2)';
+  let chip, detalhe, valor, acoes;
+
+  if (tipo === 'cartao') {
+    chip = '<span class="vt-chip cartao">Cartão VT</span>';
+    detalhe = `<span class="vt-cartao">${esc(cartao.numero)}</span> · ${esc(nomeEmp(cartao.empresaId))}`;
+    valor = cartao.valorDia ? `<span class="vt-num">R$ ${fBRL(cartao.valorDia)}</span><span class="vt-loja"> /dia</span>` : '—';
+    acoes = `<button class="vt-ico" onclick="modalCartao(${cartao.id})">editar</button>`;
+  } else if (tipo === 'ajuda') {
+    const fx = ajuda.valorFixo == null ? faixaDaAjuda(ajuda) : null;
+    chip = '<span class="vt-chip ajuda">Ajuda de custo</span>';
+    detalhe = `${esc(nomeEmp(ajuda.empresaId))}${fx ? ` · <span class="vt-loja">pela ${esc(fx.nome)} (${ajuda.km} km)</span>` : ''}`;
+    valor = `<input class="vt-inp-saldo valor-ajuda ${ajuda.valorFixo == null ? 'vazio' : ''}" type="text" inputmode="decimal"
+               value="${ajuda.valorFixo != null ? fBRL(ajuda.valorFixo) : ''}"
+               placeholder="${fx ? fBRL(fx.valor) : 'R$'}" title="Valor por mês"
+               onchange="salvaValorAjuda(${ajuda.id}, this)">`;
+    acoes = `<button class="vt-ico" onclick="modalAjuda(${ajuda.id})">editar</button>`;
+  } else if (tipo === 'dispensa') {
+    chip = '<span class="vt-chip dispensa">Não recebe</span>';
+    detalhe = `<span class="vt-loja">${esc(disp.motivo || 'sem motivo anotado')}</span>`;
+    valor = '—';
+    acoes = `<button class="vt-ico" onclick="desfazDispensa(${p.id})">desfazer</button>`;
+  } else {
+    chip = '<span class="vt-chip pendente">Sem definição</span>';
+    detalhe = `<div class="vt-acoes" style="justify-content:flex-start">
+      <button class="vt-btn mini" onclick="modalDarCartao(${p.id})">Cartão VT</button>
+      <button class="vt-btn mini" onclick="modalDarAjuda(${p.id})">Ajuda de custo</button>
+      <button class="vt-ico" onclick="modalDispensa(${p.id})">não recebe</button>
+    </div>`;
+    valor = '—';
+    acoes = '';
+  }
+
+  return `<tr class="${tipo === 'pendente' ? 'vt-linha-pendente' : ''}">
+    <td>
+      <span class="vt-nome">
+        <i class="vt-tarja" style="background:${cor}"></i>
+        ${esc(p.nome)} ${ehNovo(p) ? `<span class="vt-chip novo" title="Admitido em ${DIA_BR(p.admissao)}">novo</span>` : ''}
+      </span>
+    </td>
+    <td class="vt-loja" style="text-align:left">${esc(BOARD_NOME[p.board] || p.board || '—')}</td>
+    <td class="vt-detalhe">${chip}</td>
+    <td class="vt-detalhe">${detalhe}</td>
+    <td class="vt-num">${valor}</td>
+    <td><div class="vt-acoes">${acoes}</div></td>
+  </tr>`;
+}
+
+function filtraColab(f) { S.filtro = f; renderColab(); }
+function buscaColab(v) { S.busca = v; renderColab(); }
+
+async function depoisDeCadastrar() {
+  await recarregaBase();
+  fechaModal();
+  await carregar();
+}
+
+// Valor da ajuda digitado direto na linha. Em branco volta para a faixa.
+async function salvaValorAjuda(ajudaId, inp) {
+  const a = (S.base.ajudas || []).find(x => x.id === ajudaId);
+  if (!a) return;
+  const v = inp.value.trim() === '' ? null : paraNumero(inp.value);
+  if (inp.value.trim() !== '' && v === null) { inp.classList.add('vazio'); return; }
+  inp.classList.add('salvando');
+  try {
+    await api('/api/vt/ajuda', {
+      method: 'POST',
+      body: JSON.stringify({
+        id: a.id, empId: a.empId, empresaId: a.empresaId, km: a.km,
+        faixaId: a.faixaId, obs: a.obs, valor: v,
+      }),
+    });
+    await depoisDeCadastrar();
+  } catch (e) { mostraErro(e.message); inp.classList.remove('salvando'); }
+}
+
+const opcoesEmpresa = sel => (S.base.empresas || []).map(e =>
+  `<option value="${e.id}" ${e.id === sel ? 'selected' : ''}>${esc(e.nome)} · ${esc(e.operadora)}</option>`).join('');
+
+function modalDarAjuda(empId) {
+  const p = (S.base.colaboradores || []).find(e => e.id === empId);
+  if (!p) return;
+  if (!(S.base.empresas || []).length)
+    return abreModal('Ajuda de custo', `<div class="vt-erro">Cadastre primeiro uma empresa pagadora em Cartões → Empresas.</div>`);
+  abreModal(`Ajuda de custo — ${p.nome}`, `
+    <div class="vt-campo"><span class="dica">
+      Pagamento em dinheiro todo mês, no lugar do cartão.
+    </span></div>
+    <div class="vt-dupla">
+      <div class="vt-campo">
+        <label>Valor por mês (R$)</label>
+        <input id="dValor" type="text" inputmode="decimal" placeholder="0,00" autofocus>
+      </div>
+      <div class="vt-campo">
+        <label>Empresa pagadora</label>
+        <select id="dEmpresa">${opcoesEmpresa(empresaSugerida(p.board))}</select>
+      </div>
+    </div>
+    <div class="vt-campo">
+      <label>Observação</label>
+      <input id="dObs" type="text" maxlength="120">
+    </div>
+    <div class="vt-modal-pe">
+      <button class="vt-btn" onclick="fechaModal()">Cancelar</button>
+      <button class="vt-btn solido" onclick="confirmaDarAjuda(${empId})">Salvar</button>
+    </div>`);
+  $('dValor').focus();
+}
+
+async function confirmaDarAjuda(empId) {
+  const v = paraNumero(val('dValor'));
+  if (!v || v <= 0) return erroModal('Preencha o valor da ajuda.');
+  try {
+    await api('/api/vt/ajuda', {
+      method: 'POST',
+      body: JSON.stringify({ empId, empresaId: val('dEmpresa'), km: 0, valor: v, obs: val('dObs') }),
+    });
+    await depoisDeCadastrar();
+  } catch (e) { erroModal(e.message); }
+}
+
+// Cartão para quem está sem: um da gaveta, ou um número novo.
+function modalDarCartao(empId) {
+  const p = (S.base.colaboradores || []).find(e => e.id === empId);
+  if (!p) return;
+  if (!(S.base.empresas || []).length)
+    return abreModal('Cartão VT', `<div class="vt-erro">Cadastre primeiro uma empresa pagadora em Cartões → Empresas.</div>`);
+  const gaveta = (S.base.cartoes || []).filter(c => !c.empId && (c.estado || 'gaveta') === 'gaveta');
+  abreModal(`Cartão VT — ${p.nome}`, `
+    <div class="vt-campo">
+      <label>Cartão</label>
+      <select id="cGaveta" onchange="trocaCartaoGaveta()">
+        <option value="">— cartão novo —</option>
+        ${gaveta.map(c => `<option value="${c.id}">${esc(c.numero)} · na gaveta</option>`).join('')}
+      </select>
+    </div>
+    <div class="vt-campo" id="cNumeroCampo">
+      <label>Número do cartão</label>
+      <input id="cNumero" type="text" placeholder="como está impresso">
+    </div>
+    <div class="vt-dupla">
+      <div class="vt-campo">
+        <label>Empresa pagadora</label>
+        <select id="cEmpresa">${opcoesEmpresa(empresaSugerida(p.board))}</select>
+      </div>
+      <div class="vt-campo">
+        <label>Linha</label>
+        <select id="cLinha" onchange="previewValorDia()">
+          <option value="">— sem linha, valor digitado —</option>
+          ${(S.base.config.linhas || []).map(x =>
+            `<option value="${x.id}">${esc(x.nome)} · R$ ${fBRL(x.tarifaAtual)}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+    <div class="vt-dupla">
+      <div class="vt-campo">
+        <label>Passagens por dia</label>
+        <input id="cPassagens" type="number" min="1" max="8" value="2" onchange="previewValorDia()">
+      </div>
+      <div class="vt-campo">
+        <label>Valor do dia</label>
+        <input id="cValorDia" type="text" inputmode="decimal" placeholder="ida e volta">
+        <span class="dica" id="cValorDica"></span>
+      </div>
+    </div>
+    <div class="vt-modal-pe">
+      <button class="vt-btn" onclick="fechaModal()">Cancelar</button>
+      <button class="vt-btn solido" onclick="confirmaDarCartao(${empId})">Entregar cartão</button>
+    </div>`);
+  previewValorDia();
+}
+
+// Cartão da gaveta já tem número, empresa e linha: o formulário puxa dele.
+function trocaCartaoGaveta() {
+  const c = achaCartao(parseInt(val('cGaveta')));
+  $('cNumeroCampo').classList.toggle('hidden', !!c);
+  if (!c) return;
+  $('cEmpresa').value = c.empresaId;
+  $('cLinha').value = c.linhaId || '';
+  $('cPassagens').value = c.passagensDia || 2;
+  $('cValorDia').value = c.valorDia ? fBRL(c.valorDia) : '';
+  previewValorDia();
+}
+
+async function confirmaDarCartao(empId) {
+  const c = achaCartao(parseInt(val('cGaveta')));
+  if (!c && !val('cNumero')) return erroModal('Escolha um cartão da gaveta ou digite o número do novo.');
+  try {
+    await api('/api/vt/cartao', {
+      method: 'POST',
+      body: JSON.stringify({
+        id: c ? c.id : null, numero: c ? c.numero : val('cNumero'),
+        empresaId: val('cEmpresa'), empId,
+        linhaId: val('cLinha') || null, passagensDia: val('cPassagens'),
+        valorDia: paraNumero(val('cValorDia')), obs: c ? c.obs : '',
+      }),
+    });
+    await depoisDeCadastrar();
+  } catch (e) { erroModal(e.message); }
+}
+
+function modalDispensa(empId) {
+  const p = (S.base.colaboradores || []).find(e => e.id === empId);
+  if (!p) return;
+  abreModal(`Não recebe — ${p.nome}`, `
+    <div class="vt-campo"><span class="dica">
+      A pessoa sai da lista de pendências. Dá para desfazer a qualquer hora.
+    </span></div>
+    <div class="vt-campo">
+      <label>Motivo</label>
+      <input id="dMotivo" type="text" maxlength="120" placeholder="mora perto, vem de carro, abriu mão por escrito…">
+    </div>
+    <div class="vt-modal-pe">
+      <button class="vt-btn" onclick="fechaModal()">Cancelar</button>
+      <button class="vt-btn solido" onclick="confirmaDispensa(${empId})">Marcar</button>
+    </div>`);
+  $('dMotivo').focus();
+}
+
+async function confirmaDispensa(empId) {
+  try {
+    await api('/api/vt/dispensa', { method: 'POST', body: JSON.stringify({ empId, motivo: val('dMotivo') }) });
+    await depoisDeCadastrar();
+  } catch (e) { erroModal(e.message); }
+}
+
+async function desfazDispensa(empId) {
+  try {
+    await api('/api/vt/dispensa', { method: 'POST', body: JSON.stringify({ empId, remover: true }) });
+    await depoisDeCadastrar();
+  } catch (e) { mostraErro(e.message); }
 }
 
 function renderResumo(d) {
@@ -332,7 +725,7 @@ function menuAjuda(ajudaId) {
   abreModal(a.nome, `
     <div class="vt-campo">
       <span class="dica">
-        Ajuda de custo em dinheiro, ${esc(r.empresa.nome)} · ${a.km} km ·
+        Ajuda de custo em dinheiro, ${esc(r.empresa.nome)} ·${a.km ? ` ${a.km} km ·` : ""}
         ${esc(a.faixa)} (R$ ${fBRL(a.valorFaixa)}).
         ${a.pular ? `<br><b>Sem pagamento este mês</b>${a.motivo ? ' — ' + esc(a.motivo) : ''}.` : ''}
         ${a.manual ? `<br>Valor ajustado à mão: R$ ${fBRL(a.valor)} (a faixa daria R$ ${fBRL(a.valorFaixa)}).` : ''}
@@ -342,7 +735,7 @@ function menuAjuda(ajudaId) {
       <label>Valor deste mês</label>
       <div class="vt-dupla">
         <input id="aValor" type="text" inputmode="decimal"
-               value="${a.manual ? fBRL(a.valorManual) : ''}" placeholder="da faixa: ${fBRL(a.valorFaixa)}">
+               value="${a.manual ? fBRL(a.valorManual) : ''}" placeholder="${a.valorFixo ? "fixo" : "da faixa"}: ${fBRL(a.valorFaixa)}">
         <button class="vt-btn" onclick="salvaAjudaMes(${ajudaId}, { valorManual: paraNumero(val('aValor')) })">Ajustar valor</button>
       </div>
       <span class="dica">Em branco volta para o valor da faixa.</span>
@@ -916,9 +1309,10 @@ function painelAjudas() {
         return `<tr>
           <td>${esc(nomeCol(a.empId))}</td>
           <td>${esc(nomeEmp(a.empresaId))}</td>
-          <td class="vt-num">${a.km} km</td>
-          <td class="vt-num">${esc(f?.nome || '—')}${a.faixaId ? ' <span class="vt-chip substituido">fixada</span>' : ''}</td>
-          <td class="vt-num">${f ? 'R$ ' + fBRL(f.valor) : '—'}</td>
+          <td class="vt-num">${a.km ? a.km + ' km' : '—'}</td>
+          <td class="vt-num">${a.valorFixo != null ? 'valor fixo'
+            : esc(f?.nome || '—') + (a.faixaId ? ' <span class="vt-chip substituido">fixada</span>' : '')}</td>
+          <td class="vt-num">${a.valorFixo != null ? 'R$ ' + fBRL(a.valorFixo) : f ? 'R$ ' + fBRL(f.valor) : '—'}</td>
           <td><button class="vt-ico" onclick="modalAjuda(${a.id})">editar</button></td>
         </tr>`;
       }).join('')}</tbody>
@@ -959,6 +1353,11 @@ function modalAjuda(id) {
         <input id="jKm" type="number" min="0" step="1" value="${a?.km || ''}" onchange="previewFaixa()">
         <span class="dica" id="jFaixaDica">A faixa sai daqui.</span>
       </div>
+    </div>
+    <div class="vt-campo">
+      <label>Valor por mês (R$)</label>
+      <input id="jValor" type="text" inputmode="decimal" value="${a?.valorFixo != null ? fBRL(a.valorFixo) : ''}" placeholder="em branco: valor da faixa">
+      <span class="dica">Preenchido, vale este valor e o km/faixa ficam só de registro.</span>
     </div>
     <div class="vt-campo">
       <label>Faixa</label>
@@ -1006,6 +1405,7 @@ async function salvaAjuda(id) {
       body: JSON.stringify({
         id, empId: val('jEmp'), empresaId: val('jEmpresa'),
         km: val('jKm'), faixaId: val('jFaixa') || null, obs: val('jObs'),
+        valor: val('jValor') ? paraNumero(val('jValor')) : null,
       }),
     });
     await recarregaBase();
@@ -1138,7 +1538,7 @@ function modalLinha(id) {
           <td>${t.desde === '2000-01' ? 'sempre' : t.desde.split('-').reverse().join('/')}</td>
           <td class="vt-num">R$ ${fBRL(t.valor)}</td>
           <td>${l.tarifas.length > 1
-            ? `<button class="vt-ico perigo" onclick="salvaLinha(${l.id}, { removerTarifa: '${t.desde}' })">remover</button>`
+            ? `<button class="vt-ico perigo" onclick="salvaLinhaTarifa(${l.id}, { removerTarifa: '${t.desde}' })">remover</button>`
             : ''}</td>
         </tr>`).join('')}</tbody>
       </table></div>` : '<div class="vt-vazio">Nenhuma tarifa ainda.</div>'}` : ''}
@@ -1157,16 +1557,16 @@ function modalLinha(id) {
     </div>
     ${usos ? `<div class="vt-campo"><span class="dica">${usos} cartão${usos === 1 ? '' : 'ões'} usando esta linha.</span></div>` : ''}
     <div class="vt-modal-pe">
-      ${l && !usos ? `<button class="vt-btn" onclick="salvaLinha(${l.id}, { remover: ${l.id} })">Apagar</button>` : ''}
+      ${l && !usos ? `<button class="vt-btn" onclick="salvaLinhaTarifa(${l.id}, { remover: ${l.id} })">Apagar</button>` : ''}
       <button class="vt-btn" onclick="painelLinhas()">Voltar</button>
-      <button class="vt-btn solido" onclick="salvaLinha(${l ? l.id : 'null'}, {
+      <button class="vt-btn solido" onclick="salvaLinhaTarifa(${l ? l.id : 'null'}, {
         nome: val('lNome'), obs: val('lObs'),
         tarifa: val('lTarifa') ? paraNumero(val('lTarifa')) : null, desde: val('lDesde'),
       })">Salvar</button>
     </div>`);
 }
 
-async function salvaLinha(id, campos) {
+async function salvaLinhaTarifa(id, campos) {
   try {
     await api('/api/vt/linha', { method: 'POST', body: JSON.stringify({ id, ...campos }) });
     await recarregaBase();
@@ -1330,6 +1730,11 @@ $('btnCartoes').addEventListener('click', () => painelCartoes());
 $('btnExportar').addEventListener('click', () => {
   window.location.href = `/api/vt/${S.ano}/${S.mes}/export`;
 });
+document.querySelectorAll('.vt-aba').forEach(b => b.addEventListener('click', () => {
+  S.vista = b.dataset.vista;
+  history.replaceState(null, '', S.vista === 'recarga' ? '#recarga' : location.pathname);
+  mostraVista();
+}));
 $('modalFechar').addEventListener('click', fechaModal);
 $('overlay').addEventListener('click', e => { if (e.target === $('overlay')) fechaModal(); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape') fechaModal(); });

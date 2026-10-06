@@ -14149,8 +14149,14 @@ function vtRoot(db) {
   if (!Array.isArray(vt.ajudas)) vt.ajudas = [];
   if (!Array.isArray(vt.cartoes))         vt.cartoes = [];
   if (!vt.meses)                          vt.meses = {};
+  // Quem não recebe nada de propósito (mora perto, vem de carro). Sem essa
+  // marca a pessoa fica para sempre como pendência na tela de colaboradores.
+  if (!vt.dispensas || typeof vt.dispensas !== 'object') vt.dispensas = {};
   return vt;
 }
+
+// O valor da ajuda: o digitado na pessoa manda; sem ele, o da faixa do km.
+const vtTemValorFixo = a => a.valorFixo != null && Number(a.valorFixo) > 0;
 
 // A tarifa de uma linha muda com o tempo, e mês fechado não pode mudar junto:
 // cada alta entra como uma vigência nova ("desde 2026-03"), e o mês usa a que
@@ -14315,8 +14321,10 @@ function vtMontaMes(vt, employees, y, m, folgasPorEmp) {
     .map(a => {
       const am    = ajudasDoMes[String(a.id)] || {};
       const pes   = empById.get(a.empId) || null;
-      const faixa = a.faixaId ? (cfg.faixas || []).find(f => f.id === a.faixaId) : vtFaixaPara(a.km, cfg.faixas);
-      const base  = faixa ? vt2(faixa.valor) : 0;
+      const fixo  = vtTemValorFixo(a);
+      const faixa = fixo ? null
+        : a.faixaId ? (cfg.faixas || []).find(f => f.id === a.faixaId) : vtFaixaPara(a.km, cfg.faixas);
+      const base  = fixo ? vt2(a.valorFixo) : faixa ? vt2(faixa.valor) : 0;
       const manual = am.valorManual != null && am.valorManual !== '';
       return {
         ajudaId: a.id, empId: a.empId,
@@ -14324,8 +14332,9 @@ function vtMontaMes(vt, employees, y, m, folgasPorEmp) {
         board: pes ? pes.board : null,
         semCadastro: !pes,
         km: Number(a.km) || 0,
-        faixa: faixa ? faixa.nome : '—',
-        faixaFixada: !!a.faixaId,
+        faixa: fixo ? 'valor fixo' : faixa ? faixa.nome : '—',
+        faixaFixada: !fixo && !!a.faixaId,
+        valorFixo: fixo,
         valorFaixa: base,
         valor: am.pular ? 0 : (manual ? vt2(am.valorManual) : base),
         manual, valorManual: manual ? vt2(am.valorManual) : null,
@@ -14463,11 +14472,27 @@ app.get('/api/vt/base', requireEscritorioOrAdmin, async (req, res) => {
       ajudas: (vt.ajudas || []).map(a => ({
         id: a.id, empId: a.empId, empresaId: a.empresaId, km: Number(a.km) || 0,
         faixaId: a.faixaId || null, obs: a.obs || '', ativo: a.ativo !== false,
+        valorFixo: vtTemValorFixo(a) ? vt2(a.valorFixo) : null,
       })),
       colaboradores: (db.employees || [])
         .filter(e => !e.inativo)
-        .map(e => ({ id: e.id, nome: e.apelido || e.name, board: e.board }))
+        .map(e => ({
+          id: e.id, nome: e.apelido || e.name, board: e.board,
+          cargo: e.cargo || '', admissao: e.admissao || null,
+        }))
         .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR')),
+      dispensas: vt.dispensas,
+      // Quem saiu da empresa e ainda segura cartão ou ajuda: o cartão continua
+      // sendo recarregado e a ajuda continua saindo até alguém recolher.
+      desligados: (db.employees || [])
+        .filter(e => e.inativo)
+        .map(e => ({
+          id: e.id, nome: e.apelido || e.name, board: e.board,
+          desligamento: e.desligamento || null,
+          cartao: (vt.cartoes.find(c => c.empId === e.id) || {}).numero || null,
+          ajudaId: (vt.ajudas.find(a => a.empId === e.id && a.ativo !== false) || {}).id || null,
+        }))
+        .filter(e => e.cartao || e.ajudaId),
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
@@ -14657,6 +14682,7 @@ app.post('/api/vt/cartao', requireEscritorioOrAdmin, async (req, res) => {
       vtRegistra(novo, req.session.user.username, 'Cartão cadastrado');
       vt.cartoes.push(novo);
     }
+    if (dono) delete vt.dispensas[String(dono)];
 
     await writeDB(db);
     res.json({ ok: true, cartoes: vt.cartoes.map(vtCartaoPublico) });
@@ -15002,11 +15028,48 @@ app.post('/api/vt/ajuda', requireEscritorioOrAdmin, async (req, res) => {
       obs: String(obs || '').trim(),
       ativo: true,
     };
+    // Valor digitado na pessoa: passa por cima da faixa. Só mexe quando vem
+    // no pedido — o cadastro antigo (km/faixa) salva sem ele e não pode apagar.
+    if ('valor' in req.body) {
+      const v = req.body.valor === '' || req.body.valor == null ? null : vt2(req.body.valor);
+      if (v != null && v < 0) return res.status(400).json({ error: 'Valor inválido' });
+      dados.valorFixo = v || null;
+    }
     if (alvo) Object.assign(alvo, dados);
-    else vt.ajudas.push({ id: nextId(db), criadaEm: new Date().toISOString(), ...dados });
+    else vt.ajudas.push({ id: nextId(db), criadaEm: new Date().toISOString(), valorFixo: null, ...dados });
+    delete vt.dispensas[String(dono)];
 
     await writeDB(db);
     res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/vt/dispensa — quem não recebe nem cartão nem ajuda ───────────
+// É uma decisão, não um esquecimento: marcada, a pessoa sai da lista de
+// pendências da tela de colaboradores.
+app.post('/api/vt/dispensa', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const vt = vtRoot(db);
+    const dono = parseInt(req.body.empId);
+    if (!dono) return res.status(400).json({ error: 'Colaborador inválido' });
+
+    if (req.body.remover) {
+      delete vt.dispensas[String(dono)];
+    } else {
+      const comCartao = vt.cartoes.find(c => c.empId === dono);
+      if (comCartao) return res.status(400).json({ error: 'Este colaborador está com o cartão ' + comCartao.numero + '; recolha o cartão antes' });
+      if (vt.ajudas.some(a => a.empId === dono && a.ativo !== false))
+        return res.status(400).json({ error: 'Este colaborador recebe ajuda de custo; encerre a ajuda antes' });
+      vt.dispensas[String(dono)] = {
+        motivo: String(req.body.motivo || '').trim().slice(0, 120),
+        em: new Date().toISOString(),
+        por: req.session.user.username,
+      };
+    }
+
+    await writeDB(db);
+    res.json({ ok: true, dispensas: vt.dispensas });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
