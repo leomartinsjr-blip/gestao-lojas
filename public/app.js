@@ -10608,7 +10608,8 @@ function renderCaixaCard(container) {
       if (result.errors) {
         const errs = Object.entries(result.errors).map(([k,v]) => `${k}: ${v}`).join('; ');
         toast(`Sincronizado com erros — ${errs}`, true);
-      } else { toast('Microvix sincronizado'); }
+      } else if (result.skipped) { toast('Não sincronizado — ' + result.skipped); }
+      else { toast('Microvix sincronizado'); }
       await afterFn();
     } catch(e) { toast('Erro ao sincronizar: ' + e.message, true); }
     finally { btn.disabled = false; btn.innerHTML = `${syncSvg} Microvix`; }

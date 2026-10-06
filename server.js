@@ -4270,8 +4270,14 @@ app.delete('/api/caixa/:year/:month/:board', requireAdmin, async (req, res) => {
 });
 
 // ── GET /api/caixa-microvix-boards — lojas com dinheiro/sangria do Microvix ─
-// Nessas, a loja só lança depósito. Fora delas (Lez a Lez), lança tudo.
-const caixaMicrovixBoards = () => Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}'));
+// Nessas, a loja só lança depósito. Nas outras, lança tudo.
+// Estar em MICROVIX_LOJAS não basta: a Lez a Lez está lá (as vendas vêm do
+// Microvix), mas o dinheiro e a sangria dela não. Por isso a lista das lojas
+// de caixa manual é explícita — CAIXA_MANUAL_LOJAS="lez,outra", padrão "lez".
+const caixaManualBoards = () => (process.env.CAIXA_MANUAL_LOJAS ?? 'lez')
+  .split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+const caixaMicrovixBoards = () => Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}'))
+  .filter(b => !caixaManualBoards().includes(b));
 app.get('/api/caixa-microvix-boards', requireAuth, (req, res) => {
   try { res.json(caixaMicrovixBoards()); }
   catch (e) { res.status(500).json({ error: e.message }); }
@@ -4309,6 +4315,10 @@ app.put('/api/caixa/:year/:month/:board/:day', requireAuth, async (req, res) => 
 // Nunca inclui o dia de hoje — cap em d-1.
 // dayOnly: se fornecido, restringe busca e persistência a esse dia específico.
 async function syncCaixaBoard(board, year, month, dayOnly = null) {
+  // Caixa manual: o Microvix não tem esse dinheiro, e sincronizar gravaria
+  // zero por cima do que a loja lançou.
+  if (caixaManualBoards().includes(board))
+    return { skipped: 'dinheiro e sangria desta loja são lançados à mão', caixaByDay: {}, sangriaByDay: {} };
   const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
   const cnpj  = lojas[board];
   if (!cnpj) throw new Error(`Board "${board}" não mapeado em MICROVIX_LOJAS`);
