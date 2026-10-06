@@ -602,32 +602,19 @@ function renderAvisos(d) {
   $('avisos').innerHTML = av.join('');
 }
 
+// Só quem tem cartão vinculado: a recarga é a tarefa desta tela. Empresa sem
+// nenhum cartão não vira bloco, e a ajuda de custo vai para o fim da página.
 function renderEmpresas(d) {
   $('empresas').innerHTML = d.grupos.map(g => {
     const e = g.empresa;
-    const semCartao = e.operadora === SEM_CARTAO;
-    if (semCartao && !g.linhas.length && !g.ajudas.length) return '';
-    const linhas = semCartao && !g.linhas.length ? '' : g.linhas.length
-      ? `<div class="vt-scroll"><table class="vt-t">
+    if (!g.linhas.length) return '';
+    const linhas = `<div class="vt-scroll"><table class="vt-t">
           <thead><tr>
             <th>Colaborador</th><th>Cartão</th><th>Valor dia</th>
             <th>Saldo no portal</th><th>Dias trab.</th><th>Dias</th><th>Recarga</th><th></th>
           </tr></thead>
           <tbody>${g.linhas.map(l => linhaHtml(l)).join('')}</tbody>
-        </table></div>`
-      : `<div class="vt-vazio">Nenhum cartão vinculado a esta empresa. Vincule em <b>Cartões</b>.</div>`;
-
-    const ajuda = g.ajudas.length ? `
-      <div class="vt-sub-hdr">
-        <span>Ajuda de custo — em dinheiro, no lugar do cartão</span>
-        <span class="vt-sub-tot">R$ ${fBRL(g.totalAjuda)}</span>
-      </div>
-      <div class="vt-scroll"><table class="vt-t">
-        <thead><tr>
-          <th>Colaborador</th><th>Km</th><th>Faixa</th><th>Valor</th><th></th>
-        </tr></thead>
-        <tbody>${g.ajudas.map(a => ajudaHtml(a)).join('')}</tbody>
-      </table></div>` : '';
+        </table></div>`;
 
     return `<div class="vt-emp">
       <div class="vt-emp-hdr">
@@ -636,29 +623,37 @@ function renderEmpresas(d) {
         <span class="vt-oper">${esc(OPER_NOME(e.operadora))}</span>
         ${e.temSenha ? `<button class="vt-ico" onclick="verAcesso(${e.id})">🔑 acesso</button>` : ''}
         <span class="vt-emp-tot">
-          <span class="vt-emp-tot-rot">${semCartao ? 'Ajuda de custo' : g.totalAjuda ? 'Recarga' : 'Total do mês'}</span>
-          <span class="vt-emp-tot-val">R$ ${fBRL(semCartao ? g.totalAjuda : g.total)}</span>
+          <span class="vt-emp-tot-rot">Recarga</span>
+          <span class="vt-emp-tot-val">R$ ${fBRL(g.total)}</span>
         </span>
         <div class="vt-acesso hidden" id="acesso-${e.id}"></div>
       </div>
       ${linhas}
-      ${ajuda}
     </div>`;
-  }).join('');
+  }).join('') || `<div class="vt-vazio">Nenhum cartão vinculado ainda. Entregue os cartões pela aba <b>Colaboradores</b>.</div>`;
 }
 
-// A ajuda fica no bloco da empresa que paga, mas quem entrega o dinheiro é o
-// caixa de cada loja. Este quadro diz quanto cada uma retira em sangria.
+// Ajuda de custo do mês, no fim da página: quanto cada loja retira em sangria
+// e, embaixo, cada pessoa com a empresa a que pertence — é ali que se marca
+// pago ou "não pagar".
 function renderSangria(d) {
   const lojas = [...(d.lojasAjuda || [])]
     .sort((a, b) => ORDEM_LOJA.indexOf(a.board) - ORDEM_LOJA.indexOf(b.board));
-  $('sangriaLojas').innerHTML = !lojas.length ? '' : `
+  const ajudas = d.grupos.flatMap(g => g.ajudas.map(a => ({ ...a, empresaNome: g.empresa.nome })))
+    .sort((a, b) => (ORDEM_LOJA.indexOf(a.board) - ORDEM_LOJA.indexOf(b.board)) || a.nome.localeCompare(b.nome, 'pt-BR'));
+  $('sangriaLojas').innerHTML = !ajudas.length ? '' : `
     <div class="vt-sec-titulo">
-      <h2>Ajuda de custo — sangria por loja</h2>
+      <h2>Ajuda de custo</h2>
       <span class="vt-sec-rule"></span>
       <span class="vt-sec-cont">R$ ${fBRL(d.totais.ajuda)}</span>
     </div>
-    <div class="vt-emp"><div class="vt-scroll"><table class="vt-t">
+    <div class="vt-emp">
+      <div class="vt-scroll"><table class="vt-t">
+        <thead><tr><th>Colaborador</th><th>Empresa</th><th>Loja</th><th>Valor</th><th></th></tr></thead>
+        <tbody>${ajudas.map(a => ajudaHtml(a)).join('')}</tbody>
+      </table></div>
+    </div>
+    <div class="vt-emp"><div class="vt-sub-hdr" style="border-top:none"><span>Sangria por loja</span></div><div class="vt-scroll"><table class="vt-t">
       <thead><tr><th>Loja</th><th>Pessoas</th><th>Retirar em sangria</th><th>Já pago</th></tr></thead>
       <tbody>${lojas.map(g => `<tr>
         <td><span class="vt-nome"><i class="vt-tarja" style="background:${BOARD_COR[g.board] || 'var(--border2)'}"></i>${esc(BOARD_NOME[g.board] || g.board || 'Sem loja')}</span></td>
@@ -733,9 +728,9 @@ function ajudaHtml(a) {
         ${esc(a.nome)} ${marcas}
       </span>
     </td>
-    <td class="vt-num">${a.km ? a.km + ' km' : '—'}</td>
-    <td class="vt-num">${esc(a.faixa)}</td>
-    <td class="vt-num vt-recarga ${a.valor ? '' : 'zero'}">${a.valor ? 'R$ ' + fBRL(a.valor) : '—'}</td>
+    <td style="text-align:left">${esc(a.empresaNome || '—')}</td>
+    <td class="vt-loja" style="text-align:left">${esc(BOARD_NOME[a.board] || '—')}</td>
+    <td class="vt-num vt-recarga ${a.valor ? '' : 'zero'}" title="${esc(a.faixa)}${a.km ? ' · ' + a.km + ' km' : ''}">${a.valor ? 'R$ ' + fBRL(a.valor) : '—'}</td>
     <td>
       <div class="vt-acoes">
         <button class="vt-ico" onclick="menuAjuda(${a.ajudaId})" title="Ações">⋯</button>
