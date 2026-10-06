@@ -14116,7 +14116,9 @@ app.post('/api/seed-weights-tmp', async (req, res) => {
 // então quem está com menos de 4 folgas marcadas é escala por fazer, não gente
 // que folgou pouco.
 const VT_DEFAULTS = { diasMes: 26, diasReserva: 4, usarEscala: true, minFolgas: 4 };
-const VT_OPERADORAS = ['BHBUS', 'OTIMO'];
+// NENHUMA é a empresa sem cartão VT: existe só para ligar a ajuda de custo de
+// quem é dela (a LF, por exemplo), sem obrigar a escolher uma pagadora errada.
+const VT_OPERADORAS = ['BHBUS', 'OTIMO', 'NENHUMA'];
 
 // Quem não quer vale-transporte recebe ajuda de custo em dinheiro, num valor
 // fixo por faixa de distância. As quatro faixas abaixo são as que a casa já
@@ -14648,8 +14650,11 @@ app.post('/api/vt/cartao', requireEscritorioOrAdmin, async (req, res) => {
     const num = String(numero || '').trim();
     if (!num) return res.status(400).json({ error: 'Número do cartão é obrigatório' });
     const eid = parseInt(empresaId);
-    if (!vt.config.empresas.some(e => e.id === eid))
+    const empCartao = vt.config.empresas.find(e => e.id === eid);
+    if (!empCartao)
       return res.status(400).json({ error: 'Empresa pagadora inválida' });
+    if (empCartao.operadora === 'NENHUMA')
+      return res.status(400).json({ error: empCartao.nome + ' não tem cartão VT; escolha outra empresa' });
 
     const meuId = parseInt(id || 0) || null;
     const repetido = vt.cartoes.find(c => c.numero === num && c.id !== meuId);
@@ -15196,6 +15201,7 @@ app.get('/api/vt/:year/:month/export', requireEscritorioOrAdmin, async (req, res
              : l.pago ? 'Recarregado' : '',
         });
       }
+      if (!g.linhas.length) continue;
       const tot = ws.addRow({ nome: 'Total ' + g.empresa.nome, recarga: g.total });
       tot.font = { bold: true };
       ws.addRow({});

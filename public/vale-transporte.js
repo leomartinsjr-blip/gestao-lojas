@@ -35,6 +35,11 @@ const ESTADO_NOME = {
   substituido: 'Substituído', uso: 'Em uso',
 };
 
+// Empresa sem cartão VT: só serve para a ajuda de custo de quem é dela.
+const SEM_CARTAO = 'NENHUMA';
+const OPER_NOME = o => o === SEM_CARTAO ? 'Sem cartão' : o;
+const empresasDeCartao = () => (S.base?.empresas || []).filter(e => e.operadora !== SEM_CARTAO);
+
 const $  = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -328,8 +333,8 @@ async function salvaValorAjuda(ajudaId, inp) {
   } catch (e) { mostraErro(e.message); inp.classList.remove('salvando'); }
 }
 
-const opcoesEmpresa = sel => (S.base.empresas || []).map(e =>
-  `<option value="${e.id}" ${e.id === sel ? 'selected' : ''}>${esc(e.nome)} · ${esc(e.operadora)}</option>`).join('');
+const opcoesEmpresa = (sel, soCartao) => (soCartao ? empresasDeCartao() : (S.base.empresas || [])).map(e =>
+  `<option value="${e.id}" ${e.id === sel ? 'selected' : ''}>${esc(e.nome)} · ${esc(OPER_NOME(e.operadora))}</option>`).join('');
 
 function modalDarAjuda(empId) {
   const p = (S.base.colaboradores || []).find(e => e.id === empId);
@@ -377,7 +382,7 @@ async function confirmaDarAjuda(empId) {
 function modalDarCartao(empId) {
   const p = (S.base.colaboradores || []).find(e => e.id === empId);
   if (!p) return;
-  if (!(S.base.empresas || []).length)
+  if (!empresasDeCartao().length)
     return abreModal('Cartão VT', `<div class="vt-erro">Cadastre primeiro uma empresa pagadora em Cartões → Empresas.</div>`);
   const gaveta = (S.base.cartoes || []).filter(c => !c.empId && (c.estado || 'gaveta') === 'gaveta');
   abreModal(`Cartão VT — ${p.nome}`, `
@@ -395,7 +400,7 @@ function modalDarCartao(empId) {
     <div class="vt-dupla">
       <div class="vt-campo">
         <label>Empresa pagadora</label>
-        <select id="cEmpresa">${opcoesEmpresa(empresaSugerida(p.board))}</select>
+        <select id="cEmpresa">${opcoesEmpresa(empresaSugerida(p.board), true)}</select>
       </div>
       <div class="vt-campo">
         <label>Linha</label>
@@ -600,7 +605,9 @@ function renderAvisos(d) {
 function renderEmpresas(d) {
   $('empresas').innerHTML = d.grupos.map(g => {
     const e = g.empresa;
-    const linhas = g.linhas.length
+    const semCartao = e.operadora === SEM_CARTAO;
+    if (semCartao && !g.linhas.length && !g.ajudas.length) return '';
+    const linhas = semCartao && !g.linhas.length ? '' : g.linhas.length
       ? `<div class="vt-scroll"><table class="vt-t">
           <thead><tr>
             <th>Colaborador</th><th>Cartão</th><th>Valor dia</th>
@@ -626,11 +633,11 @@ function renderEmpresas(d) {
       <div class="vt-emp-hdr">
         <span class="vt-emp-nome">${esc(e.nome)}</span>
         ${e.cnpj ? `<span class="vt-emp-cnpj">${esc(e.cnpj)}</span>` : ''}
-        <span class="vt-oper">${esc(e.operadora)}</span>
+        <span class="vt-oper">${esc(OPER_NOME(e.operadora))}</span>
         ${e.temSenha ? `<button class="vt-ico" onclick="verAcesso(${e.id})">🔑 acesso</button>` : ''}
         <span class="vt-emp-tot">
-          <span class="vt-emp-tot-rot">${g.totalAjuda ? 'Recarga' : 'Total do mês'}</span>
-          <span class="vt-emp-tot-val">R$ ${fBRL(g.total)}</span>
+          <span class="vt-emp-tot-rot">${semCartao ? 'Ajuda de custo' : g.totalAjuda ? 'Recarga' : 'Total do mês'}</span>
+          <span class="vt-emp-tot-val">R$ ${fBRL(semCartao ? g.totalAjuda : g.total)}</span>
         </span>
         <div class="vt-acesso hidden" id="acesso-${e.id}"></div>
       </div>
@@ -1033,7 +1040,7 @@ function modalSubstituir(cartaoId) {
       <div class="vt-campo">
         <label>Empresa pagadora</label>
         <select id="sEmpresa">
-          ${(S.base.empresas || []).map(e => `<option value="${e.id}" ${e.id === c.empresaId ? 'selected' : ''}>${esc(e.nome)}</option>`).join('')}
+          ${empresasDeCartao().map(e => `<option value="${e.id}" ${e.id === c.empresaId ? 'selected' : ''}>${esc(e.nome)}</option>`).join('')}
         </select>
       </div>
       <div class="vt-campo">
@@ -1137,7 +1144,7 @@ function modalEntregar(cartaoId) {
       <div class="vt-campo">
         <label>Empresa pagadora</label>
         <select id="eEmpresa">
-          ${(S.base.empresas || []).map(e => `<option value="${e.id}" ${e.id === c.empresaId ? 'selected' : ''}>${esc(e.nome)}</option>`).join('')}
+          ${empresasDeCartao().map(e => `<option value="${e.id}" ${e.id === c.empresaId ? 'selected' : ''}>${esc(e.nome)}</option>`).join('')}
         </select>
       </div>
       <div class="vt-campo">
@@ -1172,7 +1179,7 @@ async function confirmaEntregar(cartaoId) {
 // ── Cadastro de cartão ─────────────────────────────────────────────────────
 function modalCartao(cartaoId) {
   const c = cartaoId ? achaCartao(cartaoId) : null;
-  const emps = S.base.empresas || [];
+  const emps = empresasDeCartao();
   if (!emps.length) return abreModal('Cartões', `<div class="vt-erro">Cadastre primeiro uma empresa pagadora.</div>`);
 
   abreModal(c ? 'Editar cartão' : 'Novo cartão', `
@@ -1184,7 +1191,7 @@ function modalCartao(cartaoId) {
       <div class="vt-campo">
         <label>Empresa pagadora</label>
         <select id="cEmpresa">
-          ${emps.map(e => `<option value="${e.id}" ${c && e.id === c.empresaId ? 'selected' : ''}>${esc(e.nome)} · ${esc(e.operadora)}</option>`).join('')}
+          ${emps.map(e => `<option value="${e.id}" ${c && e.id === c.empresaId ? 'selected' : ''}>${esc(e.nome)} · ${esc(OPER_NOME(e.operadora))}</option>`).join('')}
         </select>
       </div>
       <div class="vt-campo">
@@ -1602,6 +1609,8 @@ function painelEmpresas() {
   abreModal('Empresas pagadoras', `
     <div class="vt-campo"><span class="dica">
       Um bloco por CNPJ que paga vale-transporte — é assim que a operadora cobra.
+      Empresa que não tem cartão VT (só ajuda de custo) entra com a operadora
+      "Sem cartão".
       A senha fica guardada aqui e só aparece quando alguém pede, uma de cada vez.
     </span></div>
     <div class="vt-scroll"><table class="vt-t">
@@ -1609,7 +1618,7 @@ function painelEmpresas() {
       <tbody>${(S.base.empresas || []).map(e => `<tr>
         <td>${esc(e.nome)}</td>
         <td class="vt-cartao">${esc(e.cnpj || '—')}</td>
-        <td><span class="vt-oper">${esc(e.operadora)}</span></td>
+        <td><span class="vt-oper">${esc(OPER_NOME(e.operadora))}</span></td>
         <td>${e.temSenha ? '<span class="vt-chip pago">guardado</span>' : '<span class="vt-chip gaveta">sem senha</span>'}</td>
         <td><button class="vt-ico" onclick="modalEmpresa(${e.id})">editar</button></td>
       </tr>`).join('')}</tbody>
@@ -1636,7 +1645,7 @@ function modalEmpresa(id) {
         <label>Operadora</label>
         <select id="nEmpOper">
           ${(S.base.operadoras || ['BHBUS', 'OTIMO']).map(o =>
-            `<option value="${o}" ${e && e.operadora === o ? 'selected' : ''}>${o}</option>`).join('')}
+            `<option value="${o}" ${e && e.operadora === o ? 'selected' : ''}>${o === SEM_CARTAO ? 'Sem cartão — só ajuda de custo' : o}</option>`).join('')}
         </select>
       </div>
     </div>
