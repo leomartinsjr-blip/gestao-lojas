@@ -103,7 +103,7 @@ function desenhar() {
       <div class="kpi" title="Clientes das campanhas que compraram. Comparar com e sem mensagem mostra se o contato traz venda.">
         <div class="rot">Compraram depois da campanha</div>
         <div class="val">${int(compraram)}</div>
-        <div class="det">com mensagem ${pct(comMsg, contatados)} × sem ${pct(compraram - comMsg, semMsg)} · ${brl0(soma('faturamentoCamp'))}</div></div>
+        <div class="det">com mensagem ${pct(comMsg, contatados)} × sem ${pct(compraram - comMsg, semMsg)} · ${brl0(soma('faturamentoCampApos'))} após a mensagem</div></div>
       <div class="kpi" title="Faturamento das vendas com cliente cadastrado">
         <div class="rot">Faturamento identificado</div>
         <div class="val">${brl0(soma('faturamentoIdent'))}</div>
@@ -187,14 +187,14 @@ function blocoCampanhas() {
   const SIT = { ativa: 'Ativa', agendada: 'Agendada', encerrada: 'Encerrada' };
   const ICONE = { aniversario: '🎂 ', posvenda: '🛍️ ' };
   return `<div class="tabela fixa"><table>
-    <thead><tr><th>Campanha</th><th>Situação</th><th class="n">Recebeu</th><th class="n">Mandou mensagem</th><th class="n">Compraram</th><th class="n">Faturamento</th></tr></thead>
+    <thead><tr><th>Campanha</th><th>Situação</th><th class="n">Recebeu</th><th class="n">Mandou mensagem</th><th class="n">Compraram</th><th class="n" title="Compras do dia da mensagem até 30 dias depois">Faturamento após msg</th></tr></thead>
     <tbody>${cs.map(c => `<tr>
       <td><b>${ICONE[c.auto] || ''}${esc(c.nome)}</b>${c.auto ? ' <span class="tag">automática</span>' : ` <span class="tag">${dataBR(c.inicio)} a ${dataBR(c.fim)}</span>`}</td>
       <td>${SIT[c.situacao] || esc(c.situacao)}</td>
       <td class="n">${int(c.publico)}</td>
       <td class="n">${int(c.contatados)} <span class="tag">${pct(c.contatados, c.publico)}</span></td>
       <td class="n">${int(c.compraram)} <span class="tag">${pct(c.compraram, c.publico)}</span></td>
-      <td class="n">${brl0(c.faturamento)}</td></tr>`).join('')}</tbody></table></div>`;
+      <td class="n">${brl0(c.faturamentoAposContato ?? c.faturamento)}</td></tr>`).join('')}</tbody></table></div>`;
 }
 
 // Ranking: uma linha por vendedor, juntando cadastro, carteira e campanhas

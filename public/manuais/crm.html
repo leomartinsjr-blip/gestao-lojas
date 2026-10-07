@@ -473,7 +473,7 @@
           <li>o período e a situação (<b>Agendada</b>, <b>Ativa</b> ou <b>Encerrada</b>);</li>
           <li>quantos clientes já foram contatados;</li>
           <li>quantos compraram, e quantos compraram <b>depois do contato</b>;</li>
-          <li>o faturamento dessas compras.</li>
+          <li>o <b>faturamento após a mensagem</b> (veja o passo 10).</li>
         </ul>
         <p>Clique no cartão para abrir a campanha.</p>
       </div>
@@ -485,11 +485,11 @@
         <h3>Criar uma campanha <span class="quem">(admin e escritório)</span></h3>
         <p>Clique em <span class="btn">Nova campanha</span>. Para começar rápido, use um modelo: <b>Aniversariantes</b>, <b>Sumindo</b>, <b>VIP</b> ou <b>Inativos que gastavam bem</b>. Depois preencha os dois quadros:</p>
         <dl class="campos">
-          <div><dt>1. A campanha</dt><dd><em>nome, objetivo (o vendedor lê), início, fim e a mensagem. Os botões inserem <span class="mono">{nome}</span>, <span class="mono">{vendedor}</span> e <span class="mono">{loja}</span>: no envio, entram o primeiro nome do cliente, o primeiro nome do vendedor e o nome da loja. A prévia mostra como a mensagem fica.</em></dd></div>
+          <div><dt>1. A campanha</dt><dd><em>nome, objetivo (o vendedor lê), início, fim e a mensagem. Em <b>+ Outra opção de mensagem</b> dá para escrever <b>até 5 opções</b>: o vendedor escolhe qual mandar para cada cliente. Os botões inserem <span class="mono">{nome}</span>, <span class="mono">{vendedor}</span> e <span class="mono">{loja}</span>: no envio, entram o primeiro nome do cliente, o primeiro nome do vendedor e o nome da loja. A prévia mostra como fica a opção que você está escrevendo.</em></dd></div>
           <div><dt>2. Quem recebe</dt><dd><em>loja da última compra, segmento, aniversário (inclusive “faz aniversário durante a campanha”), dias sem comprar, gasto mínimo em 12 meses ou no total, mínimo de compras e “só quem tem celular”.</em></dd></div>
         </dl>
         <p>O quadro <b>Público</b> vai contando os clientes enquanto você mexe nos filtros, separa por loja e avisa quantos estão sem vendedor. Acima de 3.000 clientes, o CRM sugere filtrar mais, porque o contato é feito um a um.</p>
-        <div class="parada"><b>O público congela na hora de criar.</b> Cada cliente vai para a lista do vendedor da carteira dele naquele momento. Quem está sem vendedor fica com o gerente. Depois de criada, dá para mudar nome, objetivo, fim e mensagem, mas <b>nunca o público</b>. Para outro público, crie outra campanha.</div>
+        <div class="parada"><b>O público congela na hora de criar.</b> Cada cliente vai para a lista do vendedor da carteira dele naquele momento. Quem está sem vendedor fica com o gerente. Depois de criada, dá para mudar nome, objetivo, fim e mensagens, mas <b>nunca o público</b>. Para outro público, crie outra campanha.</div>
         <div class="aviso"><b>O vendedor acompanha a carteira.</b> Enquanto a campanha está ativa, o cliente ainda <b>a contatar</b> passa sozinho para o vendedor que tem ele na carteira agora: quando o gerente distribui os clientes sem vendedor, quando um código do Microvix é ligado no Gestão, quando o cliente compra com outro vendedor ou quando o vendedor sai. Quem já foi contatado fica com quem contatou. No pós-venda, o cliente só muda se o vendedor que fez a venda saiu.</div>
       </div>
     </li>
@@ -498,17 +498,22 @@
       <div class="num">10</div>
       <div>
         <h3>Acompanhar uma campanha</h3>
-        <p>Dentro da campanha ficam o objetivo, a mensagem e os números: público, contatados, responderam, compraram no período e faturamento. A tabela <b>Por loja e vendedor</b> mostra, para cada vendedor:</p>
+        <p>Dentro da campanha ficam o objetivo, as mensagens e os números: público, contatados, responderam, compraram no período e <b>faturamento após a mensagem</b>. A tabela <b>Por loja e vendedor</b> mostra, para cada vendedor:</p>
         <dl class="campos">
           <div><dt>Recebeu</dt><dd><em>quantos clientes estão na lista dele</em></dd></div>
           <div><dt>Mandou mensagem</dt><dd><em>quantos ele já contatou, com a barra de progresso</em></dd></div>
           <div><dt>Compraram</dt><dd><em>quantos da lista compraram no período, em qualquer loja</em></dd></div>
           <div><dt>Conversão com msg</dt><dd><em>dos que receberam mensagem, quantos compraram</em></dd></div>
           <div><dt>Sem msg</dt><dd><em>dos que não receberam, quantos compraram mesmo assim</em></dd></div>
-          <div><dt>Depois do contato</dt><dd><em>quantos compraram depois de receber a mensagem</em></dd></div>
+          <div><dt>Depois do contato</dt><dd><em>quantos compraram até 30 dias depois de receber a mensagem</em></dd></div>
+          <div><dt>Faturamento após msg</dt><dd><em>quanto esses clientes compraram do dia da mensagem até 30 dias depois</em></dd></div>
         </dl>
+        <p>Clique no nome de uma coluna para <b>ordenar</b> por ela; clique de novo para inverter. Em <b>Por loja</b> as lojas são ordenadas pelo total delas e os vendedores dentro de cada loja; em <b>Ranking de vendedores</b> todos os vendedores da rede ficam numa lista só. A escolha fica guardada no navegador.</p>
+        <p>O quadro <b>Quem comprou depois da mensagem</b> lista cada cliente que voltou: vendedor, dia da mensagem (e qual opção foi mandada), número de compras e valor.</p>
         <p>Comparar <b>com msg</b> e <b>sem msg</b> mostra se o contato está trazendo venda ou se o cliente compraria de qualquer jeito. Clique num vendedor para ver só a lista dele. Os botões de situação e a busca filtram a lista de clientes.</p>
-        <p class="atalho"><b>Conta como venda</b> a compra feita a partir do início da campanha (ou do dia em que ela foi criada, se for mais tarde) até o fim.</p>
+        <p class="atalho"><b>Compraram</b> conta a compra feita a partir do início da campanha (ou do dia em que ela foi criada, se for mais tarde) até o fim. O <b>faturamento após a mensagem</b> soma só as compras de cada cliente do dia em que ele recebeu a mensagem até <b>30 dias depois</b>, em qualquer loja, mesmo que a campanha já tenha acabado. Compra de quem não recebeu mensagem não entra no faturamento.</p>
+        <h3 style="margin-top:14px">Mensagens da loja <span class="quem">(gerente, supervisor, admin e escritório)</span></h3>
+        <p>No quadro <b>Mensagens</b>, cada loja aparece com <span class="btn">Personalizar</span>. A loja pode escrever <b>até 5 mensagens próprias</b>, que os vendedores dela veem <b>no lugar</b> das da campanha. O gerente só mexe na própria loja. <span class="btn">Usar as da campanha</span> apaga as próprias e volta às originais.</p>
       </div>
     </li>
 
@@ -517,7 +522,7 @@
       <div>
         <h3>Editar, encerrar e excluir <span class="quem">(admin e escritório)</span></h3>
         <ul>
-          <li><span class="btn">Editar</span>: muda nome, objetivo, fim e mensagem.</li>
+          <li><span class="btn">Editar</span>: muda nome, objetivo, fim e as mensagens (até 5). Loja que personalizou continua com as dela.</li>
           <li><span class="btn">Encerrar</span>: termina a campanha hoje. Ela some da lista dos vendedores, e o resultado fica guardado.</li>
           <li><span class="btn">Excluir</span>: apaga a campanha <b>com tudo o que os vendedores marcaram</b>. Não dá para desfazer. Para tirar uma campanha de circulação, prefira encerrar.</li>
         </ul>
@@ -532,9 +537,9 @@
         <ul>
           <li>os contatos entregues aos vendedores e as mensagens enviadas;</li>
           <li>quantos clientes compraram e a comparação com msg × sem msg;</li>
-          <li>o faturamento.</li>
+          <li>o <b>faturamento após a mensagem</b> (até 30 dias depois do envio).</li>
         </ul>
-        <p>Embaixo fica a lista das campanhas do período.</p>
+        <p>A tabela ordena por qualquer coluna e tem o modo <b>Ranking de vendedores</b>, como no passo 10. É aqui que se mede quem está fazendo o trabalho: compare a <b>% de Mandou mensagem</b> e o <b>Faturamento após msg</b> de cada loja e vendedor. Embaixo fica a lista das campanhas do período.</p>
       </div>
     </li>
   </ol>
@@ -622,13 +627,13 @@
         <h3>Campanhas: chamar cada cliente</h3>
         <p>O vendedor vê só as campanhas <b>ativas</b> em que ele tem clientes, e só os clientes dele. As automáticas (aniversariantes e pós-venda) vêm primeiro e abrem direto em <b>Para chamar agora</b>, a fila do dia. Para cada cliente:</p>
         <ul>
-          <li>Toque em <span class="btn">WhatsApp</span>. A conversa abre com a mensagem pronta e o nome do cliente, e dá para editar antes de enviar.</li>
+          <li>Toque em <span class="btn">WhatsApp</span>. A conversa abre com a mensagem pronta e o nome do cliente, e dá para editar antes de enviar. Se a campanha tem mais de uma opção (o botão mostra <b>WhatsApp ▾</b>), aparecem as mensagens já com o nome do cliente: toque na que quer mandar.</li>
           <li>Ao tocar, a situação muda sozinha para <b>Mensagem enviada</b>.</li>
           <li>Quando a conversa terminar, troque a situação para <b>Respondeu</b>, <b>Não respondeu</b>, <b>Sem interesse</b> ou <b>Número errado</b>.</li>
           <li>Se o cliente pedir para não receber mais mensagens, escolha <b>🔕 Não quer mensagens</b> na mesma lista. Ele sai das próximas campanhas.</li>
           <li>Número errado ou desatualizado? Toque em <b>✏️ contato</b>, embaixo do nome, e corrija.</li>
         </ul>
-        <p>Os botões de situação no alto filtram a lista. Use <b>A contatar</b> para ver quem ainda falta. Quando o cliente compra, aparece <b>Comprou</b> na linha dele, com o valor.</p>
+        <p>Os botões de situação no alto filtram a lista. Use <b>A contatar</b> para ver quem ainda falta. Quando o cliente compra depois da mensagem, aparece <b>Comprou</b> na linha dele, com o valor.</p>
         <div class="aviso"><b>Cliente com 🔕 não recebe mensagem</b>, e o botão de WhatsApp não aparece. O mesmo vale para cliente sem celular.</div>
       </div>
     </li>
