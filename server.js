@@ -14142,7 +14142,7 @@ Regras:
 - Quem está marcado como gerente não é cobrado por meta individual do mesmo jeito que vendedor.
 - Contrato de experiência vencendo é decisão que não pode ficar para depois da reunião.
 
-Responda SOMENTE com JSON válido, sem texto fora dele, neste formato:
+Responda no formato JSON pedido:
 {
   "resumo": "2 a 3 frases sobre como o mês foi",
   "pontosFortes": ["..."],
@@ -14156,8 +14156,27 @@ Responda SOMENTE com JSON válido, sem texto fora dele, neste formato:
     const { default: Anthropic } = require('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
+    // Saída estruturada: a API garante o JSON neste formato. O Sonnet pensa
+    // antes de responder (o 1º bloco da resposta é o raciocínio, vazio), então
+    // o texto é o bloco "text", e o max_tokens tem folga para pensar e escrever.
+    const lista = props => ({ type: 'array', items: { type: 'object', additionalProperties: false,
+      properties: Object.fromEntries(props.map(k => [k, { type: 'string' }])), required: props } });
+    const SCHEMA = {
+      type: 'object', additionalProperties: false,
+      properties: {
+        resumo:         { type: 'string' },
+        pontosFortes:   { type: 'array', items: { type: 'string' } },
+        pontosAtencao:  lista(['tema', 'evidencia', 'pergunta']),
+        vendedores:     lista(['nome', 'leitura', 'pergunta']),
+        rh:             lista(['tema', 'evidencia', 'encaminhamento']),
+        produtos:       lista(['tema', 'evidencia', 'pergunta']),
+        acoesSugeridas: lista(['texto', 'responsavel', 'prazoSugerido']),
+      },
+      required: ['resumo', 'pontosFortes', 'pontosAtencao', 'vendedores', 'rh', 'produtos', 'acoesSugeridas'],
+    };
     const pedir = model => client.messages.create({
-      model, max_tokens: 3000, system: systemPrompt,
+      model, max_tokens: 16000, system: systemPrompt,
+      output_config: { format: { type: 'json_schema', schema: SCHEMA } },
       messages: [{ role: 'user', content: `Dados da reunião:\n${JSON.stringify(contexto, null, 1)}` }],
     });
 
@@ -14165,15 +14184,20 @@ Responda SOMENTE com JSON válido, sem texto fora dele, neste formato:
     try { response = await pedir('claude-sonnet-5'); }
     catch (e) {
       console.warn('[Pauta IA] sonnet indisponível, caindo para haiku:', e.message);
-      response = await pedir('claude-haiku-4-5-20251001');
+      response = await pedir('claude-haiku-4-5');
     }
 
-    let txt = response.content?.[0]?.text || '';
-    const match = txt.match(/\{[\s\S]*\}/);
-    if (match) txt = match[0];
+    if (response.stop_reason === 'refusal')
+      return res.status(500).json({ error: 'A IA recusou montar o roteiro. Tente de novo.' });
+    if (response.stop_reason === 'max_tokens')
+      return res.status(500).json({ error: 'A resposta da IA veio cortada (passou do limite de tamanho). Tente de novo.' });
+    const txt = response.content.filter(b => b.type === 'text').map(b => b.text).join('').trim();
     let roteiro;
-    try { roteiro = JSON.parse(txt.trim()); }
-    catch (e) { return res.status(500).json({ error: `IA devolveu JSON inválido: ${e.message}` }); }
+    try { roteiro = JSON.parse(txt); }
+    catch (e) {
+      console.error('[Pauta IA] JSON inválido', response.stop_reason, JSON.stringify(response.content.map(b => b.type)), txt.slice(0, 300));
+      return res.status(500).json({ error: `IA devolveu JSON inválido: ${e.message}` });
+    }
 
     roteiro.geradoEm  = new Date().toISOString();
     roteiro.geradoPor = req.session.user.label || req.session.user.username;
