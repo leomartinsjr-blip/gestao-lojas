@@ -10261,24 +10261,38 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
         const { porEmp, semVinculo, lojas } = dadosLojaDoMes(db, year, month);
         return { dadosLoja: porEmp, dadosLojaSemVinculo: semVinculo, dadosLojaLojas: lojas };
       })(),
-      valoresLoja: db.folhaValoresLoja || {},
+      valoresLoja: folhaValoresLoja(db),
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// POST /api/folha/valores-loja — quadro de valores do Loja em Ação (feriado e
-// extensão por dia; VR, abertura e Instagram por mês). Vale para todas as lojas
-// e meses; folha já gerada guarda o valor que tinha.
+// POST /api/folha/valores-loja — quadro de valores do Loja em Ação, por loja
+// (feriado e extensão por dia; VR, abertura e Instagram por mês). Vale para
+// todos os meses; folha já gerada guarda o valor que tinha.
+// db.folhaValoresLoja = { [board]: { feriado, extensao, vr, abertura, instagram, at, por } }
+const FOLHA_VALORES_BOARDS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'lez', 'site', 'escritorio'];
+function folhaValoresLoja(db) {
+  const v = db.folhaValoresLoja || {};
+  // Formato de 07/10/2026 (um valor para todas as lojas): vira o de cada loja
+  if (typeof v.feriado === 'number' || typeof v.instagram === 'number') {
+    const { at, por, ...vals } = v;
+    return Object.fromEntries(FOLHA_VALORES_BOARDS.map(b => [b, { ...vals, at, por }]));
+  }
+  return v;
+}
 app.post('/api/folha/valores-loja', requireAdmin, async (req, res) => {
   try {
+    const board = String(req.body?.board || '');
+    if (!FOLHA_VALORES_BOARDS.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
     const db = await readDB();
     const v = {};
     for (const k of ['feriado', 'extensao', ...DADOS_LOJA_RESP]) {
-      const n = Math.round((parseFloat(req.body?.[k]) || 0) * 100) / 100;
+      const n = Math.round((parseFloat(req.body?.valores?.[k]) || 0) * 100) / 100;
       if (n < 0 || n > 100000) return res.status(400).json({ error: `Valor inválido: ${k}` });
       v[k] = n;
     }
-    db.folhaValoresLoja = { ...v, at: new Date().toISOString(), por: req.session.user?.username || '' };
+    db.folhaValoresLoja = { ...folhaValoresLoja(db),
+      [board]: { ...v, at: new Date().toISOString(), por: req.session.user?.username || '' } };
     await writeDB(db);
     res.json(db.folhaValoresLoja);
   } catch (e) { res.status(500).json({ error: e.message }); }

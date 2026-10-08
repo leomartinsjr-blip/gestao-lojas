@@ -593,38 +593,49 @@ function saveMensal() {
 }
 
 // ── Quadro de valores do Loja em Ação ─────────────────────────────────────
-// Preço de cada lançamento do Loja em Ação → Dados p/ Folha. Feriado e
-// extensão são por dia; VR, abertura e Instagram, por mês. Vale para todas as
-// lojas; o Gerar Folha usa estes valores (folha já gerada guarda os dela).
+// Preço de cada lançamento do Loja em Ação → Dados p/ Folha, por loja.
+// Feriado e extensão são por dia; VR, abertura e Instagram, por mês. O Gerar
+// Folha usa os valores da loja (folha já gerada guarda os dela).
 const VALORES_LOJA = [
-  ['feriado',   'Feriado',   'por dia'],
-  ['extensao',  'Extensão',  'por dia'],
+  ['feriado',   'Feriado',    'por dia'],
+  ['extensao',  'Extensão',   'por dia'],
   ['vr',        'VR da loja', 'no mês'],
-  ['abertura',  'Abertura',  'no mês'],
-  ['instagram', 'Instagram', 'no mês'],
+  ['abertura',  'Abertura',   'no mês'],
+  ['instagram', 'Instagram',  'no mês'],
 ];
+const valoresDe = (board = FP.board) => FP.valoresLoja?.[board] || {};
+
 function renderValoresLoja() {
-  const v = FP.valoresLoja || {};
+  const lojas = STORE_BOARDS.filter(b => FP.employees.some(e => e.board === b));
+  const inp = (b, k) => {
+    const v = valoresDe(b)[k];
+    return `<td style="padding:.15rem .3rem"><input type="number" data-val-board="${b}" data-val-k="${k}" value="${v ? r2(v).toFixed(2) : ''}" min="0" step="0.01" placeholder="0,00"
+      style="width:84px;text-align:right" onchange="saveValoresLoja('${b}')"></td>`;
+  };
   document.getElementById('fpValoresLoja').innerHTML = `
-    <span style="font-size:.8rem;color:#e6edf3;font-weight:600;margin-right:.25rem">Valores do Loja em Ação</span>
-    ${VALORES_LOJA.map(([k, rot, un]) => `
-      <span style="font-size:.8rem;color:#8b949e;margin-left:.5rem">${rot} R$</span>
-      <input type="number" id="fpVal-${k}" value="${v[k] ? r2(v[k]).toFixed(2) : ''}" min="0" step="0.01" placeholder="0,00"
-        style="width:76px;text-align:right" onchange="saveValoresLoja()">
-      <span style="font-size:.7rem;color:#484f58">${un}</span>`).join('')}
-    <span style="font-size:.72rem;color:#484f58;margin-left:.5rem">vale para todas as lojas · entra no Gerar Folha</span>`;
+    <div style="width:100%">
+      <div style="font-size:.8rem;color:#e6edf3;font-weight:600;margin-bottom:.35rem">Valores do Loja em Ação
+        <span style="font-size:.72rem;color:#484f58;font-weight:400;margin-left:.4rem">R$ por loja · feriado e extensão por dia, os demais por mês · entra no Gerar Folha</span></div>
+      <div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:.8rem">
+        <thead><tr><th style="text-align:left;color:#8b949e;font-weight:500;padding:.15rem .3rem">Loja</th>
+          ${VALORES_LOJA.map(([, rot, un]) => `<th style="text-align:right;color:#8b949e;font-weight:500;padding:.15rem .3rem">${rot} <span style="color:#484f58;font-size:.7rem">${un}</span></th>`).join('')}</tr></thead>
+        <tbody>${lojas.map(b => `<tr><td style="padding:.15rem .3rem;color:${BOARDS_INFO[b].color};font-weight:600;white-space:nowrap">${BOARDS_INFO[b].label}</td>
+          ${VALORES_LOJA.map(([k]) => inp(b, k)).join('')}</tr>`).join('')}</tbody>
+      </table></div>
+    </div>`;
 }
 
-let _valoresTimer;
-function saveValoresLoja() {
-  const body = {};
-  for (const [k] of VALORES_LOJA) body[k] = parseFloat(document.getElementById(`fpVal-${k}`)?.value) || 0;
-  FP.valoresLoja = { ...FP.valoresLoja, ...body };
-  clearTimeout(_valoresTimer);
-  _valoresTimer = setTimeout(async () => {
+const _valoresTimer = {};
+function saveValoresLoja(board) {
+  const valores = {};
+  for (const [k] of VALORES_LOJA)
+    valores[k] = parseFloat(document.querySelector(`[data-val-board="${board}"][data-val-k="${k}"]`)?.value) || 0;
+  FP.valoresLoja = { ...FP.valoresLoja, [board]: { ...valoresDe(board), ...valores } };
+  clearTimeout(_valoresTimer[board]);
+  _valoresTimer[board] = setTimeout(async () => {
     try {
-      FP.valoresLoja = await apiFetch('/api/folha/valores-loja', 'POST', body);
-      toast('Valores salvos. Clique em Gerar Folha para aplicar.');
+      FP.valoresLoja = await apiFetch('/api/folha/valores-loja', 'POST', { board, valores });
+      toast(`Valores de ${BOARDS_INFO[board].label} salvos. Clique em Gerar Folha para aplicar.`);
     } catch(e) { toast('Erro: ' + e.message, true); }
   }, 800);
 }
@@ -1318,7 +1329,7 @@ function lojaPreencheuDados(board = FP.board) {
   return (FP.dadosLojaLojas || []).includes(board);
 }
 function extrasDaLoja(emp) {
-  const d = dadosLojaDe(emp), v = FP.valoresLoja || {};
+  const d = dadosLojaDe(emp), v = valoresDe();
   const out = [];
   if (d.extensoes.length && v.extensao)
     out.push({ nome: `Extensão de horário (${d.extensoes.length} ${d.extensoes.length > 1 ? 'dias' : 'dia'}: ${faltasTexto(d.extensoes)})`,
@@ -1328,7 +1339,7 @@ function extrasDaLoja(emp) {
   return out;
 }
 function aplicarDadosLoja(entry, emp) {
-  const d = dadosLojaDe(emp), v = FP.valoresLoja || {};
+  const d = dadosLojaDe(emp), v = valoresDe();
   // O proventos do calcEntry não soma feriado nem extras (o form recalcula):
   // aqui entra só o que o Loja em Ação acrescenta
   const feriadoAntes = r2(entry.feriado || 0);
@@ -1345,7 +1356,7 @@ function aplicarDadosLoja(entry, emp) {
 function feriadoNota(emp) {
   const d = dadosLojaDe(emp);
   if (!d.feriados.length) return '';
-  const v = FP.valoresLoja?.feriado || 0;
+  const v = valoresDe().feriado || 0;
   return `<span class="fp-field-hint">Loja em Ação: ${faltasTexto(d.feriados)}${v ? ` · ${d.feriados.length} × ${brl(v)}` : ' · <span style="color:#d29922">sem valor no quadro</span>'}</span>`;
 }
 
@@ -2604,7 +2615,7 @@ function fpGerar() {
   if (dadosOrfaos.length)
     avisos.push(`Dados p/ Folha sem colaborador no cadastro: ${dadosOrfaos.map(f => `${f.colaborador} (${({ feriados: 'feriado', extensoes: 'extensão', vr: 'VR', abertura: 'abertura', instagram: 'Instagram' })[f.tipo] || f.tipo}${f.date ? ` ${f.date.slice(8,10)}/${f.date.slice(5,7)}` : ''})`).join(', ')}`);
   const semPreco = semPrecoNoQuadro(board);
-  if (semPreco.length) avisos.push(`Sem valor no quadro do Loja em Ação: ${semPreco.join(', ')}`);
+  if (semPreco.length) avisos.push(`Sem valor no quadro do Loja em Ação para ${BOARDS_INFO[board].label}: ${semPreco.join(', ')}`);
 
   if (avisos.length) toast(`Folha gerada. ⚠ ${avisos.join(' · ')} — lance à mão.`, 'warn', 9000);
   else toast('Folha gerada.');
@@ -2612,7 +2623,7 @@ function fpGerar() {
 
 // Lançado no Dados p/ Folha da loja, mas sem preço no quadro: não entra na folha
 function semPrecoNoQuadro(board) {
-  const v = FP.valoresLoja || {}, faltam = new Set();
+  const v = valoresDe(board), faltam = new Set();
   for (const emp of boardEmps(board)) {
     const d = dadosLojaDe(emp);
     if (d.feriados.length && !v.feriado) faltam.add('Feriado');
