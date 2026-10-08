@@ -140,7 +140,6 @@ function renderTudo() {
   renderHistorico();
   renderRH();
   renderPendencias();
-  renderLista('demandas');
   renderLista('acoes');
   renderProdutos();
   renderEstoqueManual();
@@ -1327,15 +1326,6 @@ async function init() {
     queueSave();
   });
 
-  $('demAdd').addEventListener('click', () => {
-    const t = $('demTitulo').value.trim(), d = $('demDetalhe').value.trim();
-    if (!t && !d) { toast('Escreva a demanda', true); return; }
-    S.pauta.demandas.push({ titulo: t, detalhe: d });
-    $('demTitulo').value = ''; $('demDetalhe').value = '';
-    renderLista('demandas');
-    queueSave();
-  });
-
   $('acaoAdd').addEventListener('click', () => {
     const t = $('acaoTexto').value.trim();
     if (!t) { toast('Escreva a ação', true); return; }
@@ -1346,7 +1336,7 @@ async function init() {
     avisoSeFechada();
   });
 
-  for (const [inp, btn] of [['rhDesc', 'rhAdd'], ['demDetalhe', 'demAdd'], ['acaoTexto', 'acaoAdd']]) {
+  for (const [inp, btn] of [['rhDesc', 'rhAdd'], ['acaoTexto', 'acaoAdd']]) {
     $(inp).addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); $(btn).click(); } });
   }
 
