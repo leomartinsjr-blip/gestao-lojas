@@ -1174,17 +1174,37 @@ function renderProdutos() {
 }
 
 // ── 8 · Roteiro da conversa (IA) ─────────────────────────────────────────────
+// A IA leva de 1 a 3 minutos: o servidor gera em segundo plano e a página
+// pergunta a cada 3 s se ficou pronto (conexão aberta tanto tempo cai no Render)
 async function gerarRoteiro() {
+  const pedido = `${S.year}-${S.month}-${S.board}`;
+  const url = `/api/pauta/${S.year}/${S.month}/${S.board}/roteiro`;
+  const aindaAqui = () => pedido === `${S.year}-${S.month}-${S.board}`;
   $('btnIA').disabled = true;
-  $('iaBody').innerHTML = '<div class="pa-state"><div class="pa-spin"></div><div>Lendo os números e montando o roteiro…</div></div>';
+  const espera = seg => `<div class="pa-state"><div class="pa-spin"></div><div>Lendo os números e montando o roteiro… ${seg ? `${seg}s` : ''}<br><span class="mut">costuma levar de 1 a 3 minutos</span></div></div>`;
+  $('iaBody').innerHTML = espera(0);
   try {
     const body = S.pauta.produtosResumo ? { produtos: S.pauta.produtosResumo } : {};
-    const r = await api('POST', `/api/pauta/${S.year}/${S.month}/${S.board}/roteiro`, body);
-    S.pauta.roteiro = r.roteiro;
-    renderRoteiro();
-    toast('Roteiro pronto');
+    await api('POST', url, body);
+    for (let i = 0; i < 200; i++) {          // até 10 minutos
+      await new Promise(r => setTimeout(r, 3000));
+      if (!aindaAqui()) return;               // trocou de loja/mês: o roteiro fica salvo na pauta
+      let r;
+      try { r = await api('GET', url); }
+      catch (_) { continue; }                 // instabilidade passageira: tenta de novo
+      if (r.status === 'ok') {
+        S.pauta.roteiro = r.roteiro;
+        renderRoteiro();
+        toast('Roteiro pronto');
+        return;
+      }
+      if (r.status === 'erro') throw new Error(r.erro || 'Falha ao gerar o roteiro');
+      if (r.status === 'nenhum') throw new Error('O servidor reiniciou no meio da geração. Clique em Gerar roteiro de novo.');
+      $('iaBody').innerHTML = espera(r.segundos);
+    }
+    throw new Error('Demorou demais. Clique em Gerar roteiro de novo.');
   } catch (e) {
-    $('iaBody').innerHTML = `<div class="pa-err">${esc(e.message)}</div>`;
+    if (aindaAqui()) $('iaBody').innerHTML = `<div class="pa-err">${esc(e.message)}</div>`;
   } finally {
     $('btnIA').disabled = false;
   }

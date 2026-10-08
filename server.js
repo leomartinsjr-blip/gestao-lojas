@@ -14007,120 +14007,114 @@ app.post('/api/pauta/:year/:month/:board/reabrir', requireEscritorioOrAdmin, asy
 
 // POST /api/pauta/:year/:month/:board/roteiro — a IA lê os números e devolve
 // por onde conduzir a conversa. Não decide nada: levanta pergunta e sugestão.
-app.post('/api/pauta/:year/:month/:board/roteiro', requireEscritorioOrAdmin, async (req, res) => {
-  try {
-    if (!process.env.ANTHROPIC_API_KEY)
-      return res.status(400).json({ error: 'ANTHROPIC_API_KEY não configurada no servidor' });
+// Monta o roteiro com a IA e grava na pauta. Roda em segundo plano: o Opus com
+// esforço alto passa do tempo que o Render segura uma requisição aberta (502).
+async function gerarRoteiroIA(y, m, board, quem, produtos) {
+  const db   = await readDB();
+  const hoje = todayBRT();
+  const p    = pautaDaLoja(db, y, m, board);
+  const { y: py, m: pm } = pautaMesAnterior(y, m);
+  const loja  = pautaTotaisLoja(db, y, m, board);
+  const ant   = pautaFaturamento(db, py, pm, board);
+  const anoA  = pautaFaturamento(db, y - 1, m, board);
+  const vends = pautaVendedores(db, y, m, board, loja.fechado ? loja.pct : loja.pctProj);
+  const rh    = pautaRH(db, board, y, m, hoje);
+  const hist  = pautaHistorico(db, y, m, board, 6);
+  const prem  = pautaPremiacoes(db, y, m, board);
+  const med   = pautaMedia3M(hist, vends, loja, prem.porEmp, 3);
 
-    const y = parseInt(req.params.year), m = parseInt(req.params.month);
-    const board = req.params.board;
-    if (!PAUTA_BOARDS.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
-
-    const db   = await readDB();
-    const hoje = todayBRT();
-    const p    = pautaDaLoja(db, y, m, board);
-    const { y: py, m: pm } = pautaMesAnterior(y, m);
-    const loja  = pautaTotaisLoja(db, y, m, board);
-    const ant   = pautaFaturamento(db, py, pm, board);
-    const anoA  = pautaFaturamento(db, y - 1, m, board);
-    const vends = pautaVendedores(db, y, m, board, loja.fechado ? loja.pct : loja.pctProj);
-    const rh    = pautaRH(db, board, y, m, hoje);
-    const hist  = pautaHistorico(db, y, m, board, 6);
-    const prem  = pautaPremiacoes(db, y, m, board);
-    const med   = pautaMedia3M(hist, vends, loja, prem.porEmp, 3);
-
-    const n = v => v == null ? null : Math.round(v * 100) / 100;
-    const contexto = {
-      loja: BOARDS_LABEL[board] || board,
-      mes: `${String(m).padStart(2, '0')}/${y}`,
-      performance: {
-        mesFechado: loja.fechado,
-        dadosAte: loja.corte,
-        pesoDoMesJaCorrido: loja.pesoAcum,
-        projecaoFechamento: n(loja.projecao),
-        pctMetaProjetado: n(loja.pctProj),
-        meta: loja.meta, faturado: n(loja.venda), pctMeta: n(loja.pct),
-        pecas: loja.pecas, atendimentos: loja.atend, fluxoPorta: loja.fluxo,
-        pa: n(loja.pa), ticketMedio: n(loja.tm), conversaoPct: n(loja.conv),
-        mesAnterior:        { mes: `${String(pm).padStart(2, '0')}/${py}`,    faturado: n(ant.venda)  },
-        mesmoMesAnoPassado: { mes: `${String(m).padStart(2, '0')}/${y - 1}`, faturado: n(anoA.venda) },
-        obs: loja.fechado
-          ? 'Mês fechado: o faturado é o número final.'
-          : 'Mês em curso. Compare SEMPRE pela projeção de fechamento, nunca pelo faturado parcial — o mês anterior e o ano passado são meses inteiros.',
-      },
-      vendedores: vends.map(v => ({
-        nome: v.nome, gerente: v.gerente, meta: v.meta, faturado: n(v.venda),
-        projecaoFechamento: n(v.projecao), pctMetaProjetado: n(v.pctProj),
-        pontosVsLoja: n(v.delta),
-        pctMeta: n(v.pct), pa: n(v.pa), ticketMedio: n(v.tm), conversaoPct: n(v.conv),
-        pecas: v.pecas, atendimentos: v.atend, diasFerias: v.diasFerias,
+  const n = v => v == null ? null : Math.round(v * 100) / 100;
+  const contexto = {
+    loja: BOARDS_LABEL[board] || board,
+    mes: `${String(m).padStart(2, '0')}/${y}`,
+    performance: {
+      mesFechado: loja.fechado,
+      dadosAte: loja.corte,
+      pesoDoMesJaCorrido: loja.pesoAcum,
+      projecaoFechamento: n(loja.projecao),
+      pctMetaProjetado: n(loja.pctProj),
+      meta: loja.meta, faturado: n(loja.venda), pctMeta: n(loja.pct),
+      pecas: loja.pecas, atendimentos: loja.atend, fluxoPorta: loja.fluxo,
+      pa: n(loja.pa), ticketMedio: n(loja.tm), conversaoPct: n(loja.conv),
+      mesAnterior:        { mes: `${String(pm).padStart(2, '0')}/${py}`,    faturado: n(ant.venda)  },
+      mesmoMesAnoPassado: { mes: `${String(m).padStart(2, '0')}/${y - 1}`, faturado: n(anoA.venda) },
+      obs: loja.fechado
+        ? 'Mês fechado: o faturado é o número final.'
+        : 'Mês em curso. Compare SEMPRE pela projeção de fechamento, nunca pelo faturado parcial — o mês anterior e o ano passado são meses inteiros.',
+    },
+    vendedores: vends.map(v => ({
+      nome: v.nome, gerente: v.gerente, meta: v.meta, faturado: n(v.venda),
+      projecaoFechamento: n(v.projecao), pctMetaProjetado: n(v.pctProj),
+      pontosVsLoja: n(v.delta),
+      pctMeta: n(v.pct), pa: n(v.pa), ticketMedio: n(v.tm), conversaoPct: n(v.conv),
+      pecas: v.pecas, atendimentos: v.atend, diasFerias: v.diasFerias,
+    })),
+    rh: {
+      colaboradoresAtivos: rh.ativos,
+      admissoesNoMes: rh.admissoes,
+      desligamentosNoMes: rh.desligamentos,
+      contratosExperiencia: rh.contratos.map(c => ({
+        nome: c.nome, venc1: c.venc1, venc2: c.venc2,
+        diasParaVenc1: c.dias1, diasParaVenc2: c.dias2,
+        precisaDecidirEfetivacao: c.decisao, semSegundoContrato: c.semSegundo,
       })),
-      rh: {
-        colaboradoresAtivos: rh.ativos,
-        admissoesNoMes: rh.admissoes,
-        desligamentosNoMes: rh.desligamentos,
-        contratosExperiencia: rh.contratos.map(c => ({
-          nome: c.nome, venc1: c.venc1, venc2: c.venc2,
-          diasParaVenc1: c.dias1, diasParaVenc2: c.dias2,
-          precisaDecidirEfetivacao: c.decisao, semSegundoContrato: c.semSegundo,
-        })),
-        ferias: rh.ferias,
-        ausenciasNoMes: rh.ausenciasMes,
-        pendenciasAnotadas: p.rhItens || [],
-      },
-      historicoMesesFechados: hist.map(h => ({
-        mes: `${String(h.month).padStart(2, '0')}/${h.year}`,
-        lojaPctMeta: n(h.loja.pct), lojaFaturado: n(h.loja.venda),
-        lojaPa: n(h.loja.pa), lojaTicketMedio: n(h.loja.tm), lojaConversaoPct: n(h.loja.conv),
-        premiacaoSemanalDaLoja: n(h.loja.premio),
-        vendedores: h.vendedores.map(v => ({
-          nome: v.nome, pctMeta: n(v.pct), pontosVsLoja: n(v.delta),
-          pa: n(v.pa), ticketMedio: n(v.tm), conversaoPct: n(v.conv),
-          premiacaoSemanal: n(v.premio),
-        })),
+      ferias: rh.ferias,
+      ausenciasNoMes: rh.ausenciasMes,
+      pendenciasAnotadas: p.rhItens || [],
+    },
+    historicoMesesFechados: hist.map(h => ({
+      mes: `${String(h.month).padStart(2, '0')}/${h.year}`,
+      lojaPctMeta: n(h.loja.pct), lojaFaturado: n(h.loja.venda),
+      lojaPa: n(h.loja.pa), lojaTicketMedio: n(h.loja.tm), lojaConversaoPct: n(h.loja.conv),
+      premiacaoSemanalDaLoja: n(h.loja.premio),
+      vendedores: h.vendedores.map(v => ({
+        nome: v.nome, pctMeta: n(v.pct), pontosVsLoja: n(v.delta),
+        pa: n(v.pa), ticketMedio: n(v.tm), conversaoPct: n(v.conv),
+        premiacaoSemanal: n(v.premio),
       })),
-      // Média dos meses fechados contra o mês em curso: é o que diz se melhorou
-      mediaUltimosMesesFechados: {
-        mesesUsados: med.meses.map(x => `${String(x.month).padStart(2, '0')}/${x.year}`),
-        obs: 'media = média dos meses fechados listados; atual = mês em curso (o % da meta usa a projeção); delta = atual − média, positivo é melhora. mesesComparados diz sobre quantos meses fechados aquela média foi tirada.',
-        loja: med.loja,
-        vendedores: med.vendedores,
-      },
-      premiacaoSemanalDoMes: {
-        obs: 'Prêmio semanal já ganho no mês corrente. individual = prêmio de meta do vendedor; loja = prêmio por a loja bater a semana; semanas = em quantas semanas ele ganhou algo, de semanasEncerradas possíveis.',
-        semanasEncerradas: prem.semanas,
-        porVendedor: vends.map(v => ({ nome: v.nome, ...(prem.porEmp[v.id] || { individual: 0, loja: 0, total: 0, semanas: 0 }) })),
-        totalDaLoja: Object.values(prem.porEmp).reduce((a, x) => a + x.total, 0),
-      },
-      produtosXEstoque: req.body?.produtos || p.produtosResumo || null,
-      estoqueDeclarado: (p.estoqueManual && (p.estoqueManual.custo || p.estoqueManual.venda)) ? p.estoqueManual : null,
-      estoqueUltimos12Meses: {
-        obs: 'Valor do estoque apurado pela loja/escritório em cada mês. custo e venda em R$; cobertura = quantos meses de venda daquele mês estão parados na loja; microvix = estoque que o sistema mostrava quando a pauta do mês foi montada. Mês sem apuração vem zerado — isso é falta de dado, não estoque zero.',
-        meses: pautaEstoqueHistorico(db, y, m, board, 12).map(x => ({
-          mes: `${String(x.month).padStart(2, '0')}/${x.year}`,
-          custo: n(x.custo), venda: n(x.venda), markup: n(x.markup),
-          coberturaMeses: n(x.cobertura), faturadoNoMes: n(x.faturado),
-          estoqueMicrovixRS: x.microvix ? n(x.microvix.valor) : null,
-        })),
-      },
-      fechamentoDeBalanco: (p.balanco && (p.balanco.diferenca || p.balanco.data || (p.balanco.imagens || []).length))
-        ? {
-            obs: 'Diferença total apurada no fechamento do balanço da loja, em R$. Negativo é falta de mercadoria contra o sistema; positivo é sobra. prints = quantas telas do fechamento foram anexadas na pauta (você não as vê).',
-            diferencaRS: n(p.balanco.diferenca),
-            balancoEm: p.balanco.data || null,
-            observacao: p.balanco.obs || '',
-            prints: (p.balanco.imagens || []).length,
-            percentualDoEstoqueACusto: (p.estoqueManual?.custo > 0 && p.balanco.diferenca)
-              ? n((Math.abs(p.balanco.diferenca) / p.estoqueManual.custo) * 100) : null,
-          }
-        : null,
-      pendenciasAbertas: pautaPendencias(db, board).map(x => x.text),
-      acoesDoMesAnterior: pautaAcoesAnteriores(db, y, m, board),
-      demandasAnotadas: p.demandas || [],
-      comentariosDoGestor: p.comentarios || {},
-    };
+    })),
+    // Média dos meses fechados contra o mês em curso: é o que diz se melhorou
+    mediaUltimosMesesFechados: {
+      mesesUsados: med.meses.map(x => `${String(x.month).padStart(2, '0')}/${x.year}`),
+      obs: 'media = média dos meses fechados listados; atual = mês em curso (o % da meta usa a projeção); delta = atual − média, positivo é melhora. mesesComparados diz sobre quantos meses fechados aquela média foi tirada.',
+      loja: med.loja,
+      vendedores: med.vendedores,
+    },
+    premiacaoSemanalDoMes: {
+      obs: 'Prêmio semanal já ganho no mês corrente. individual = prêmio de meta do vendedor; loja = prêmio por a loja bater a semana; semanas = em quantas semanas ele ganhou algo, de semanasEncerradas possíveis.',
+      semanasEncerradas: prem.semanas,
+      porVendedor: vends.map(v => ({ nome: v.nome, ...(prem.porEmp[v.id] || { individual: 0, loja: 0, total: 0, semanas: 0 }) })),
+      totalDaLoja: Object.values(prem.porEmp).reduce((a, x) => a + x.total, 0),
+    },
+    produtosXEstoque: produtos || p.produtosResumo || null,
+    estoqueDeclarado: (p.estoqueManual && (p.estoqueManual.custo || p.estoqueManual.venda)) ? p.estoqueManual : null,
+    estoqueUltimos12Meses: {
+      obs: 'Valor do estoque apurado pela loja/escritório em cada mês. custo e venda em R$; cobertura = quantos meses de venda daquele mês estão parados na loja; microvix = estoque que o sistema mostrava quando a pauta do mês foi montada. Mês sem apuração vem zerado — isso é falta de dado, não estoque zero.',
+      meses: pautaEstoqueHistorico(db, y, m, board, 12).map(x => ({
+        mes: `${String(x.month).padStart(2, '0')}/${x.year}`,
+        custo: n(x.custo), venda: n(x.venda), markup: n(x.markup),
+        coberturaMeses: n(x.cobertura), faturadoNoMes: n(x.faturado),
+        estoqueMicrovixRS: x.microvix ? n(x.microvix.valor) : null,
+      })),
+    },
+    fechamentoDeBalanco: (p.balanco && (p.balanco.diferenca || p.balanco.data || (p.balanco.imagens || []).length))
+      ? {
+          obs: 'Diferença total apurada no fechamento do balanço da loja, em R$. Negativo é falta de mercadoria contra o sistema; positivo é sobra. prints = quantas telas do fechamento foram anexadas na pauta (você não as vê).',
+          diferencaRS: n(p.balanco.diferenca),
+          balancoEm: p.balanco.data || null,
+          observacao: p.balanco.obs || '',
+          prints: (p.balanco.imagens || []).length,
+          percentualDoEstoqueACusto: (p.estoqueManual?.custo > 0 && p.balanco.diferenca)
+            ? n((Math.abs(p.balanco.diferenca) / p.estoqueManual.custo) * 100) : null,
+        }
+      : null,
+    pendenciasAbertas: pautaPendencias(db, board).map(x => x.text),
+    acoesDoMesAnterior: pautaAcoesAnteriores(db, y, m, board),
+    demandasAnotadas: p.demandas || [],
+    comentariosDoGestor: p.comentarios || {},
+  };
 
-    const systemPrompt = `Você prepara a reunião mensal de resultado de uma rede de lojas de surf/streetwear em Belo Horizonte. A reunião é individual com cada loja, na última semana do mês, entre o dono/administração e a gerente da loja.
+  const systemPrompt = `Você prepara a reunião mensal de resultado de uma rede de lojas de surf/streetwear em Belo Horizonte. A reunião é individual com cada loja, na última semana do mês, entre o dono/administração e a gerente da loja.
 
 Você recebe os números fechados do mês e a situação de RH e de estoque. Sua função é dar ao dono o roteiro da conversa: o que reconhecer, o que cobrar, que pergunta fazer para a gerente e que ação combinar.
 
@@ -14144,83 +14138,114 @@ Regras:
 
 Responda no formato JSON pedido:
 {
-  "resumo": "2 a 3 frases sobre como o mês foi",
-  "pontosFortes": ["..."],
-  "pontosAtencao": [{"tema":"...","evidencia":"...","pergunta":"..."}],
-  "vendedores": [{"nome":"...","leitura":"...","pergunta":"..."}],
-  "rh": [{"tema":"...","evidencia":"...","encaminhamento":"..."}],
-  "produtos": [{"tema":"...","evidencia":"...","pergunta":"..."}],
-  "acoesSugeridas": [{"texto":"...","responsavel":"...","prazoSugerido":"..."}]
+"resumo": "2 a 3 frases sobre como o mês foi",
+"pontosFortes": ["..."],
+"pontosAtencao": [{"tema":"...","evidencia":"...","pergunta":"..."}],
+"vendedores": [{"nome":"...","leitura":"...","pergunta":"..."}],
+"rh": [{"tema":"...","evidencia":"...","encaminhamento":"..."}],
+"produtos": [{"tema":"...","evidencia":"...","pergunta":"..."}],
+"acoesSugeridas": [{"texto":"...","responsavel":"...","prazoSugerido":"..."}]
 }`;
 
-    const { default: Anthropic } = require('@anthropic-ai/sdk');
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  const { default: Anthropic } = require('@anthropic-ai/sdk');
+  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-    // Saída estruturada: a API garante o JSON neste formato. O modelo pensa
-    // antes de responder (o 1º bloco da resposta é o raciocínio, vazio), então
-    // o texto é o bloco "text", e o max_tokens tem folga para pensar e escrever.
-    const lista = props => ({ type: 'array', items: { type: 'object', additionalProperties: false,
-      properties: Object.fromEntries(props.map(k => [k, { type: 'string' }])), required: props } });
-    const SCHEMA = {
-      type: 'object', additionalProperties: false,
-      properties: {
-        resumo:         { type: 'string' },
-        pontosFortes:   { type: 'array', items: { type: 'string' } },
-        pontosAtencao:  lista(['tema', 'evidencia', 'pergunta']),
-        vendedores:     lista(['nome', 'leitura', 'pergunta']),
-        rh:             lista(['tema', 'evidencia', 'encaminhamento']),
-        produtos:       lista(['tema', 'evidencia', 'pergunta']),
-        acoesSugeridas: lista(['texto', 'responsavel', 'prazoSugerido']),
-      },
-      required: ['resumo', 'pontosFortes', 'pontosAtencao', 'vendedores', 'rh', 'produtos', 'acoesSugeridas'],
-    };
-    const corpo = {
-      max_tokens: 16000, system: systemPrompt,
-      output_config: { effort: 'high', format: { type: 'json_schema', schema: SCHEMA } },
-      messages: [{ role: 'user', content: `Dados da reunião:\n${JSON.stringify(contexto, null, 1)}` }],
-    };
+  // Saída estruturada: a API garante o JSON neste formato. O modelo pensa
+  // antes de responder (o 1º bloco da resposta é o raciocínio, vazio), então
+  // o texto é o bloco "text", e o max_tokens tem folga para pensar e escrever.
+  const lista = props => ({ type: 'array', items: { type: 'object', additionalProperties: false,
+    properties: Object.fromEntries(props.map(k => [k, { type: 'string' }])), required: props } });
+  const SCHEMA = {
+    type: 'object', additionalProperties: false,
+    properties: {
+      resumo:         { type: 'string' },
+      pontosFortes:   { type: 'array', items: { type: 'string' } },
+      pontosAtencao:  lista(['tema', 'evidencia', 'pergunta']),
+      vendedores:     lista(['nome', 'leitura', 'pergunta']),
+      rh:             lista(['tema', 'evidencia', 'encaminhamento']),
+      produtos:       lista(['tema', 'evidencia', 'pergunta']),
+      acoesSugeridas: lista(['texto', 'responsavel', 'prazoSugerido']),
+    },
+    required: ['resumo', 'pontosFortes', 'pontosAtencao', 'vendedores', 'rh', 'produtos', 'acoesSugeridas'],
+  };
+  const corpo = {
+    max_tokens: 16000, system: systemPrompt,
+    output_config: { effort: 'high', format: { type: 'json_schema', schema: SCHEMA } },
+    messages: [{ role: 'user', content: `Dados da reunião:\n${JSON.stringify(contexto, null, 1)}` }],
+  };
 
-    // Opus 5.5 (análise e julgamento). Se o filtro de segurança recusar, a
-    // própria API refaz no modelo recomendado (fallbacks "default"); se o
-    // Opus estiver fora do ar, cai para o Sonnet 5.5.
-    let response;
-    try {
-      response = await client.beta.messages.create({
-        ...corpo, model: 'claude-opus-5-5',
-        betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
-      });
-    } catch (e) {
-      console.warn('[Pauta IA] opus indisponível, caindo para sonnet:', e.message);
-      response = await client.messages.create({ ...corpo, model: 'claude-sonnet-5-5' });
-    }
-
-    if (response.stop_reason === 'refusal')
-      return res.status(500).json({ error: 'A IA recusou montar o roteiro. Tente de novo.' });
-    if (response.stop_reason === 'max_tokens')
-      return res.status(500).json({ error: 'A resposta da IA veio cortada (passou do limite de tamanho). Tente de novo.' });
-    const txt = response.content.filter(b => b.type === 'text').map(b => b.text).join('').trim();
-    let roteiro;
-    try { roteiro = JSON.parse(txt); }
-    catch (e) {
-      console.error('[Pauta IA] JSON inválido', response.stop_reason, JSON.stringify(response.content.map(b => b.type)), txt.slice(0, 300));
-      return res.status(500).json({ error: `IA devolveu JSON inválido: ${e.message}` });
-    }
-
-    roteiro.geradoEm  = new Date().toISOString();
-    roteiro.geradoPor = req.session.user.label || req.session.user.username;
-
-    const dbw = await readDB();
-    if (!dbw.pautas) dbw.pautas = {};
-    const key = pautaKey(y, m, board);
-    dbw.pautas[key] = { ...pautaVazia(y, m, board), ...(dbw.pautas[key] || {}), roteiro, updatedAt: new Date().toISOString() };
-    await writeDB(dbw);
-
-    res.json({ roteiro });
+  // Opus 5.5 (análise e julgamento). Se o filtro de segurança recusar, a
+  // própria API refaz no modelo recomendado (fallbacks "default"); se o
+  // Opus estiver fora do ar, cai para o Sonnet 5.5.
+  let response;
+  try {
+    response = await client.beta.messages.create({
+      ...corpo, model: 'claude-opus-5-5',
+      betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+    });
   } catch (e) {
-    console.error('[Pauta IA]', e.message);
-    res.status(500).json({ error: e.message });
+    console.warn('[Pauta IA] opus indisponível, caindo para sonnet:', e.message);
+    response = await client.messages.create({ ...corpo, model: 'claude-sonnet-5-5' });
   }
+
+  if (response.stop_reason === 'refusal')
+    throw new Error('A IA recusou montar o roteiro. Tente de novo.');
+  if (response.stop_reason === 'max_tokens')
+    throw new Error('A resposta da IA veio cortada (passou do limite de tamanho). Tente de novo.');
+  const txt = response.content.filter(b => b.type === 'text').map(b => b.text).join('').trim();
+  let roteiro;
+  try { roteiro = JSON.parse(txt); }
+  catch (e) {
+    console.error('[Pauta IA] JSON inválido', response.stop_reason, JSON.stringify(response.content.map(b => b.type)), txt.slice(0, 300));
+    throw new Error(`IA devolveu JSON inválido: ${e.message}`);
+  }
+
+  roteiro.geradoEm  = new Date().toISOString();
+  roteiro.geradoPor = quem;
+
+  const dbw = await readDB();
+  if (!dbw.pautas) dbw.pautas = {};
+  const key = pautaKey(y, m, board);
+  dbw.pautas[key] = { ...pautaVazia(y, m, board), ...(dbw.pautas[key] || {}), roteiro, updatedAt: new Date().toISOString() };
+  await writeDB(dbw);
+
+  return roteiro;
+}
+
+// Geração em andamento ou terminada, por pauta (memória do processo: um
+// deploy no meio perde o pedido, e o botão pede de novo)
+const _roteiroJobs = new Map();
+
+// POST — começa a gerar e responde na hora; a página consulta o GET abaixo
+app.post('/api/pauta/:year/:month/:board/roteiro', requireEscritorioOrAdmin, async (req, res) => {
+  if (!process.env.ANTHROPIC_API_KEY)
+    return res.status(400).json({ error: 'ANTHROPIC_API_KEY não configurada no servidor' });
+  const y = parseInt(req.params.year), m = parseInt(req.params.month);
+  const board = req.params.board;
+  if (!PAUTA_BOARDS.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
+  const key = pautaKey(y, m, board);
+  const atual = _roteiroJobs.get(key);
+  if (atual?.status === 'gerando') return res.status(202).json({ status: 'gerando' });
+  const job = { status: 'gerando', inicio: Date.now() };
+  _roteiroJobs.set(key, job);
+  const quem = req.session.user.label || req.session.user.username;
+  gerarRoteiroIA(y, m, board, quem, req.body?.produtos)
+    .then(roteiro => Object.assign(job, { status: 'ok', roteiro, fim: Date.now() }))
+    .catch(e => {
+      console.error('[Pauta IA]', e.message);
+      Object.assign(job, { status: 'erro', erro: e.message, fim: Date.now() });
+    });
+  res.status(202).json({ status: 'gerando' });
 });
+
+// GET — situação da geração (gerando / ok com o roteiro / erro)
+app.get('/api/pauta/:year/:month/:board/roteiro', requireEscritorioOrAdmin, (req, res) => {
+  const y = parseInt(req.params.year), m = parseInt(req.params.month);
+  const job = _roteiroJobs.get(pautaKey(y, m, req.params.board));
+  if (!job) return res.json({ status: 'nenhum' });
+  res.json({ status: job.status, roteiro: job.roteiro || null, erro: job.erro || null, segundos: Math.round(((job.fim || Date.now()) - job.inicio) / 1000) });
+});
+
 
 // ── POST /api/seed-weights-tmp (TEMPORÁRIO — remover após uso) ────────────────
 // Exemplo: POST /api/seed-weights-tmp?secret=GL2026SEED  body: { year, month, weights }
