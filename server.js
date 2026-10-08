@@ -14156,7 +14156,7 @@ Responda no formato JSON pedido:
     const { default: Anthropic } = require('@anthropic-ai/sdk');
     const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
-    // Saída estruturada: a API garante o JSON neste formato. O Sonnet pensa
+    // Saída estruturada: a API garante o JSON neste formato. O modelo pensa
     // antes de responder (o 1º bloco da resposta é o raciocínio, vazio), então
     // o texto é o bloco "text", e o max_tokens tem folga para pensar e escrever.
     const lista = props => ({ type: 'array', items: { type: 'object', additionalProperties: false,
@@ -14174,17 +14174,24 @@ Responda no formato JSON pedido:
       },
       required: ['resumo', 'pontosFortes', 'pontosAtencao', 'vendedores', 'rh', 'produtos', 'acoesSugeridas'],
     };
-    const pedir = model => client.messages.create({
-      model, max_tokens: 16000, system: systemPrompt,
-      output_config: { format: { type: 'json_schema', schema: SCHEMA } },
+    const corpo = {
+      max_tokens: 16000, system: systemPrompt,
+      output_config: { effort: 'high', format: { type: 'json_schema', schema: SCHEMA } },
       messages: [{ role: 'user', content: `Dados da reunião:\n${JSON.stringify(contexto, null, 1)}` }],
-    });
+    };
 
+    // Opus 5.5 (análise e julgamento). Se o filtro de segurança recusar, a
+    // própria API refaz no modelo recomendado (fallbacks "default"); se o
+    // Opus estiver fora do ar, cai para o Sonnet 5.5.
     let response;
-    try { response = await pedir('claude-sonnet-5'); }
-    catch (e) {
-      console.warn('[Pauta IA] sonnet indisponível, caindo para haiku:', e.message);
-      response = await pedir('claude-haiku-4-5');
+    try {
+      response = await client.beta.messages.create({
+        ...corpo, model: 'claude-opus-5-5',
+        betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default',
+      });
+    } catch (e) {
+      console.warn('[Pauta IA] opus indisponível, caindo para sonnet:', e.message);
+      response = await client.messages.create({ ...corpo, model: 'claude-sonnet-5-5' });
     }
 
     if (response.stop_reason === 'refusal')
