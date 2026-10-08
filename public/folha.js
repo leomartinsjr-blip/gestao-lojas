@@ -612,17 +612,22 @@ function renderValoresLoja() {
     return `<td style="padding:.15rem .3rem"><input type="number" data-val-board="${b}" data-val-k="${k}" value="${v ? r2(v).toFixed(2) : ''}" min="0" step="0.01" placeholder="0,00"
       style="width:84px;text-align:right" onchange="saveValoresLoja('${b}')"></td>`;
   };
+  // Fica recolhido: é preço que se define uma vez e raramente muda. Quem abrir
+  // continua vendo aberto ao trocar de mês.
+  let aberto = false;
+  try { aberto = localStorage.getItem('fp.valoresLoja.aberto') === '1'; } catch {}
   document.getElementById('fpValoresLoja').innerHTML = `
-    <div style="width:100%">
-      <div style="font-size:.8rem;color:#e6edf3;font-weight:600;margin-bottom:.35rem">Valores do Loja em Ação
-        <span style="font-size:.72rem;color:#484f58;font-weight:400;margin-left:.4rem">R$ por loja · feriado e extensão por dia, os demais por mês · entra no Gerar Folha</span></div>
+    <details style="width:100%"${aberto ? ' open' : ''} ontoggle="try{localStorage.setItem('fp.valoresLoja.aberto',this.open?'1':'0')}catch(e){}">
+      <summary style="cursor:pointer;font-size:.8rem;color:#e6edf3;font-weight:600">Valores do Loja em Ação
+        <span style="font-size:.72rem;color:#484f58;font-weight:400;margin-left:.4rem">R$ por loja · feriado e extensão por dia, os demais por mês · entra no Gerar Folha</span></summary>
+      <div style="margin-top:.35rem"></div>
       <div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:.8rem">
         <thead><tr><th style="text-align:left;color:#8b949e;font-weight:500;padding:.15rem .3rem">Loja</th>
           ${VALORES_LOJA.map(([, rot, un]) => `<th style="text-align:right;color:#8b949e;font-weight:500;padding:.15rem .3rem">${rot} <span style="color:#484f58;font-size:.7rem">${un}</span></th>`).join('')}</tr></thead>
         <tbody>${lojas.map(b => `<tr><td style="padding:.15rem .3rem;color:${BOARDS_INFO[b].color};font-weight:600;white-space:nowrap">${BOARDS_INFO[b].label}</td>
           ${VALORES_LOJA.map(([k]) => inp(b, k)).join('')}</tr>`).join('')}</tbody>
       </table></div>
-    </div>`;
+    </details>`;
 }
 
 const _valoresTimer = {};
