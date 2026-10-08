@@ -609,6 +609,67 @@ function ultimaContagem(db, board, antesDe) {
   return contagensDaLoja(db, board).find(c => !antesDe || (c.data || '') < antesDe) || null;
 }
 
+// O que chegou na loja entre duas contagens (de < data <= ate), por chave de
+// item. Vale o recebimento lançado — quantidade e data reais, que é o que
+// existe de fato quando a entrega vem parcelada. Sem lançamento nenhum, cai no
+// atalho antigo: a requisição inteira, na data em que ela virou "recebido".
+// Fonte única de medirConsumo() e do aviso de aumento sem entrega na contagem.
+function recebidoEntre(db, board, de, ate) {
+  const recebido = {};
+  const porNome = Object.fromEntries(embalagensDaLoja(db, board, ate).map(i => [i.nome, i.key]));
+  const somar = (qtds) => {
+    for (const [nome, qtd] of Object.entries(qtds || {})) {
+      const k = porNome[nome];
+      if (k) recebido[k] = (recebido[k] || 0) + (Number(qtd) || 0);
+    }
+  };
+  // Entrega lançada direto na tela de embalagens — pelo admin, no rateio do
+  // pedido único das Surfers, ou pela própria loja antes de contar. Guarda a
+  // chave do item, não o nome.
+  for (const e of (db.entregasEmbalagem || [])) {
+    if (e.board !== board) continue;
+    if (!(e.data > de && e.data <= ate)) continue;
+    for (const [k, q] of Object.entries(e.itens || {})) {
+      recebido[k] = (recebido[k] || 0) + (Number(q) || 0);
+    }
+  }
+  for (const r of (db.requisicoes || [])) {
+    if (r.board !== board) continue;
+    if (r.recebimentos?.length) {
+      for (const rc of r.recebimentos) {
+        if (rc.data > de && rc.data <= ate) somar(rc.qtd);
+      }
+      continue;
+    }
+    if (r.status !== 'recebido') continue;
+    const quando = (r.updatedAt || r.createdAt || '').slice(0, 10);
+    if (quando <= de || quando > ate) continue;
+    somar(r.embalagens);
+  }
+  return recebido;
+}
+
+// Item que a loja contou MAIS do que tinha na contagem anterior somada ao que
+// recebeu desde então: só pode ser entrega não lançada (ou contagem anterior
+// errada). Deixar passar dá consumo negativo, o item sai da medição e o mix
+// P/M/G das sacolas não fecha naquele ciclo — por isso a contagem para e pede
+// a entrega antes. Folga de 10 pç e 10% para não travar a loja por erro miúdo.
+function aumentosSemEntrega(db, board, contagem, anterior, hoje) {
+  if (!anterior?.contagem) return [];
+  const recebido = recebidoEntre(db, board, anterior.data, hoje);
+  const out = [];
+  for (const it of embalagensDaLoja(db, board, hoje)) {
+    const antes = anterior.contagem[it.key];
+    const agora = contagem[it.key];
+    if (antes == null || agora == null) continue;
+    const tinha = antes + (recebido[it.key] || 0);
+    const sobra = agora - tinha;
+    if (sobra >= 10 && sobra >= tinha * 0.1)
+      out.push({ key: it.key, nome: it.nome, antes, recebido: recebido[it.key] || 0, agora, sobra });
+  }
+  return out;
+}
+
 // Mede o consumo real entre a contagem anterior e a de agora:
 //   consumo = tinha antes + recebeu no meio − tem agora
 // Para as sacolas de papel isso vira a DIVISÃO P/M/G (mix); para os demais
@@ -620,42 +681,7 @@ function medirConsumo(db, board, atual, anterior) {
   const dias = Math.round((new Date(`${atual.data}T12:00:00`) - new Date(`${anterior.data}T12:00:00`)) / 86400000);
   if (dias < 5 || dias > 90) return null;
 
-  // O que chegou na loja entre as duas contagens. Vale o recebimento lançado
-  // pelo admin — quantidade e data reais, que é o que existe de fato quando a
-  // entrega vem parcelada. Sem lançamento nenhum, cai no atalho antigo: a
-  // requisição inteira, na data em que ela virou "recebido".
-  const recebido = {};
-  const porNome = Object.fromEntries(embalagensDaLoja(db, board, atual.data).map(i => [i.nome, i.key]));
-  const somar = (qtds) => {
-    for (const [nome, qtd] of Object.entries(qtds || {})) {
-      const k = porNome[nome];
-      if (k) recebido[k] = (recebido[k] || 0) + (Number(qtd) || 0);
-    }
-  };
-  // Entrega lançada direto na tela de embalagens: é o caminho normal do
-  // pedido único das Surfers, que chega parcelado na sala 505 e é rateado
-  // entre as lojas sem passar por requisição nenhuma. Guarda a chave do item,
-  // não o nome.
-  for (const e of (db.entregasEmbalagem || [])) {
-    if (e.board !== board) continue;
-    if (!(e.data > anterior.data && e.data <= atual.data)) continue;
-    for (const [k, q] of Object.entries(e.itens || {})) {
-      recebido[k] = (recebido[k] || 0) + (Number(q) || 0);
-    }
-  }
-  for (const r of (db.requisicoes || [])) {
-    if (r.board !== board) continue;
-    if (r.recebimentos?.length) {
-      for (const rc of r.recebimentos) {
-        if (rc.data > anterior.data && rc.data <= atual.data) somar(rc.qtd);
-      }
-      continue;
-    }
-    if (r.status !== 'recebido') continue;
-    const quando = (r.updatedAt || r.createdAt || '').slice(0, 10);
-    if (quando <= anterior.data || quando > atual.data) continue;
-    somar(r.embalagens);
-  }
+  const recebido = recebidoEntre(db, board, anterior.data, atual.data);
 
   // Tickets do período
   let tickets = 0;
@@ -3497,6 +3523,13 @@ app.post('/api/embalagens/contagem', requireAuth, async (req, res) => {
       contagem[it.key] = Math.max(0, Math.round(Number(v) || 0));
     }
     const hoje = todayBRT();
+    // Estoque subiu sem entrega lançada: não salva ainda. A loja lança o que
+    // recebeu (POST /api/embalagens/entrega/loja) e salva de novo, ou confirma
+    // que a contagem anterior estava errada.
+    const anteriorDia = ultimaContagem(db, board, hoje);
+    const aumentos = aumentosSemEntrega(db, board, contagem, anteriorDia, hoje);
+    if (aumentos.length && !req.body.confirmarAumento)
+      return res.json({ bloqueado: 'aumento', aumentos, desde: anteriorDia.data });
     // Contar de novo no mesmo dia é corrigir a contagem, não fazer outra: a
     // anterior sai do histórico e a medição que ela gerou é desfeita, senão o
     // consumo seria suavizado duas vezes a partir do mesmo ciclo.
@@ -3522,6 +3555,8 @@ app.post('/api/embalagens/contagem', requireAuth, async (req, res) => {
       contagem,
       createdAt: new Date().toISOString(),
       createdBy: req.session.user.label || req.session.user.username,
+      // aumento sem entrega que a loja confirmou como erro da contagem anterior
+      ...(aumentos.length ? { aumentoConfirmado: aumentos } : {}),
       // o que estava em uso antes desta contagem medir — para desfazer
       mixAntes: {
         itens:    clone((db.embalagemMix || {})[board]),
@@ -3652,7 +3687,7 @@ function montarPedido(db) {
         for (const e of (db.entregasEmbalagem || [])) {
           if (!g.boards.includes(e.board)) continue;
           const k = e.lote || `av-${e.id}`;
-          if (!lotes[k]) lotes[k] = { lote: k, data: e.data, obs: e.obs || '', por: e.createdBy || '', porLoja: {} };
+          if (!lotes[k]) lotes[k] = { lote: k, data: e.data, obs: e.obs || '', por: e.createdBy || '', origem: e.origem || 'admin', porLoja: {} };
           if (e.data < lotes[k].data) lotes[k].data = e.data;
           lotes[k].porLoja[e.board] = e.itens || {};
         }
@@ -3733,12 +3768,57 @@ app.post('/api/embalagens/entrega', requireAdmin, async (req, res) => {
     const tarde = criados
       .filter(c => (db.contagensEmbalagem || []).some(x => x.board === c.board && (x.data || '') >= data))
       .map(c => c.board);
-    res.json({
-      lote, criados, grupos: montarPedido(db),
-      aviso: tarde.length
-        ? `Estas lojas já contaram nessa data ou depois: ${tarde.join(', ')}. O consumo daquele ciclo foi medido sem esta entrega e não será refeito — lance a entrega antes da contagem.`
-        : null,
-    });
+    // A loja pode ter lançado a mesma chegada na hora de contar: aí ela
+    // entraria duas vezes e o consumo medido sairia inflado.
+    const dias = (a, b) => Math.abs(new Date(`${a}T12:00:00`) - new Date(`${b}T12:00:00`)) / 86400000;
+    const dupl = criados
+      .filter(c => db.entregasEmbalagem.some(x => x.origem === 'loja' && x.board === c.board && dias(x.data, data) <= 15))
+      .map(c => c.board);
+    const avisos = [];
+    if (tarde.length) avisos.push(`Estas lojas já contaram nessa data ou depois: ${tarde.join(', ')}. O consumo daquele ciclo foi medido sem esta entrega e não será refeito — lance a entrega antes da contagem.`);
+    if (dupl.length) avisos.push(`Estas lojas já lançaram uma entrega própria perto dessa data: ${dupl.join(', ')}. Confira em "Entregas lançadas" se não é a mesma chegada — se for, desfaça uma das duas.`);
+    res.json({ lote, criados, grupos: montarPedido(db), aviso: avisos.join('\n\n') || null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/embalagens/entrega/loja ─────────────────────────────────────
+// A própria loja lança o que recebeu, na hora da contagem, quando o estoque
+// subiu e não há entrega lançada. Mesmo registro da entrega do admin (um lote
+// com uma loja só), marcado como origem 'loja' para o admin não lançar de novo.
+app.post('/api/embalagens/entrega/loja', requireAuth, async (req, res) => {
+  try {
+    const board = req.session.user.board;
+    if (!board || !EMBAL_STORE_BOARDS.includes(board))
+      return res.status(400).json({ error: 'Apenas lojas podem lançar entrega por aqui' });
+    const db = await readDB();
+    const hoje = todayBRT();
+    const data = String(req.body.data || '').slice(0, 10);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(data)) return res.status(400).json({ error: 'Data inválida' });
+    if (data > hoje) return res.status(400).json({ error: 'Data de entrega não pode ser futura' });
+    // Entrega de antes da última contagem já está naquela contagem.
+    const anterior = ultimaContagem(db, board, hoje);
+    if (anterior && data <= anterior.data)
+      return res.status(400).json({ error: `A última contagem foi em ${anterior.data.split('-').reverse().join('/')} — o que chegou até essa data já está nela` });
+
+    const validas = new Set(embalagensDaLoja(db, board, data).map(i => i.key));
+    const itens = {};
+    for (const [k, v] of Object.entries(req.body.itens || {})) {
+      if (!validas.has(k)) continue;
+      const n = Math.round(Number(v) || 0);
+      if (n > 0) itens[k] = n;
+    }
+    if (!Object.keys(itens).length) return res.status(400).json({ error: 'Informe o que chegou' });
+
+    if (!db.entregasEmbalagem) db.entregasEmbalagem = [];
+    const item = {
+      id: nextId(db), lote: `L${Date.now()}`, board, data, itens, origem: 'loja',
+      obs: String(req.body.obs || '').trim().slice(0, 300),
+      createdAt: new Date().toISOString(),
+      createdBy: req.session.user.label || req.session.user.username,
+    };
+    db.entregasEmbalagem.push(item);
+    await writeDB(db);
+    res.json({ entrega: item });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

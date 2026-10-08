@@ -3909,6 +3909,11 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .ct-help { font-size: .78rem; color: var(--muted); line-height: 1.5; margin: 0 0 .9rem; }
 .ct-alert { font-size: .8rem; line-height: 1.5; padding: .6rem .85rem; border-radius: 7px; margin-bottom: .9rem; border: 1px solid; }
 .ct-alert-late { background: rgba(var(--down-rgb),.08); border-color: rgba(var(--down-rgb),.35); color: var(--down); }
+.ct-aum-lista { margin: .4rem 0 .5rem 1.1rem; padding: 0; }
+.ct-aum-form { margin-top: .7rem; color: var(--text); }
+.ct-aum-data { display: inline-flex; align-items: center; gap: .4rem; font-size: .78rem; margin-bottom: .5rem; }
+.ct-aum-tab { min-width: 0; max-width: 420px; background: var(--card); border: 1px solid var(--border); border-radius: 6px; }
+.ct-ent-loja-tag { font-size: .62rem; font-weight: 700; text-transform: uppercase; padding: 0 .3rem; border-radius: 3px; background: rgba(var(--warn-rgb),.15); color: var(--warn); }
 .ct-alert-ok   { background: rgba(var(--up-rgb),.07); border-color: rgba(var(--up-rgb),.3);  color: var(--up); }
 .ct-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
 .ct-table { width: 100%; border-collapse: collapse; font-size: .8rem; min-width: 520px; }

@@ -11773,6 +11773,7 @@ function _renderContagemLojaView(body) {
       </table>
     </div>
     <div class="ct-total" id="ctResumo">Preencha a contagem para ver a sugestão.</div>
+    <div id="ctAumento"></div>
     <div class="req-form-actions">
       <button class="req-submit-btn" id="ctSalvarBtn">Salvar contagem e gerar sugestão</button>
     </div>
@@ -11813,7 +11814,53 @@ function _renderContagemLojaView(body) {
 
   body.querySelectorAll('.ct-input').forEach(inp => inp.addEventListener('input', recalc));
 
-  body.querySelector('#ctSalvarBtn').addEventListener('click', async () => {
+  // Estoque subiu sem entrega lançada: o servidor devolve o que subiu e a
+  // contagem só sai depois de a loja lançar o que recebeu (ou confirmar que a
+  // contagem anterior estava errada). Sem isso o consumo do ciclo sai
+  // negativo e a divisão P/M/G das sacolas não fecha.
+  function mostrarAumento(r) {
+    const box = body.querySelector('#ctAumento');
+    const desde = r.desde;
+    const amanha = (() => { const d = new Date(`${desde}T12:00:00`); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
+    const hoje = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+    const subiu = Object.fromEntries(r.aumentos.map(a => [a.key, a]));
+    box.innerHTML = `<div class="ct-alert ct-alert-late ct-aumento">
+      <b>📦 O estoque subiu desde a última contagem (${_fmtData(desde)}) e não há entrega registrada.</b>
+      <ul class="ct-aum-lista">${r.aumentos.map(a => `<li><b>${_escHtml(a.nome)}</b>: tinha ${a.antes}${a.recebido ? ` + ${a.recebido} recebidas` : ''}, agora ${a.agora} (<b>+${a.sobra}</b>)</li>`).join('')}</ul>
+      Registre abaixo <b>tudo</b> o que chegou desde ${_fmtData(desde)} — inclusive itens que não aparecem na lista, como as outras sacolas do mesmo pacote. É isso que permite acertar a % de P, M e G de cada loja.
+      <div class="ct-aum-form">
+        <label class="ct-aum-data">Chegou em <input type="date" class="ct-aum-dt" min="${amanha}" max="${hoje}" value="${hoje}"></label>
+        <table class="ct-table ct-aum-tab"><thead><tr><th>Item</th><th>Recebi (pç)</th></tr></thead><tbody>
+          ${itens.map(it => `<tr${subiu[it.key] ? ' class="ct-row-piso"' : ''}><td class="ct-nome">${_escHtml(it.nome)}</td>
+            <td><input type="number" class="ct-input ct-aum-qtd" data-key="${it.key}" min="0" max="99999" placeholder="0"></td></tr>`).join('')}
+        </tbody></table>
+        <div class="req-form-actions">
+          <button class="req-submit-btn" id="ctAumRegistrar">Registrar entrega e salvar contagem</button>
+          <button class="req-link-btn" id="ctAumIgnorar">Não chegou nada — a contagem anterior estava errada</button>
+        </div>
+      </div>
+    </div>`;
+    box.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    box.querySelector('#ctAumRegistrar').addEventListener('click', async (ev) => {
+      const itensEnt = {};
+      box.querySelectorAll('.ct-aum-qtd').forEach(i => { const q = parseInt(i.value) || 0; if (q > 0) itensEnt[i.dataset.key] = q; });
+      if (!Object.keys(itensEnt).length) { toast('Informe o que chegou', true); return; }
+      ev.target.disabled = true;
+      try {
+        await apiFetch('POST', '/api/embalagens/entrega/loja', { data: box.querySelector('.ct-aum-dt').value, itens: itensEnt });
+        toast('Entrega registrada ✓');
+        await salvar(false);
+      } catch (e) { toast('Erro: ' + e.message, true); ev.target.disabled = false; }
+    });
+    box.querySelector('#ctAumIgnorar').addEventListener('click', () => {
+      if (!confirm('Salvar a contagem sem registrar entrega? O consumo destes itens não será medido neste ciclo.')) return;
+      salvar(true);
+    });
+  }
+
+  body.querySelector('#ctSalvarBtn').addEventListener('click', () => salvar(false));
+
+  async function salvar(confirmarAumento) {
     const contagem = {};
     let algum = false;
     body.querySelectorAll('.ct-input').forEach(inp => {
@@ -11824,7 +11871,9 @@ function _renderContagemLojaView(body) {
     const btn = body.querySelector('#ctSalvarBtn');
     btn.disabled = true;
     try {
-      const r = await apiFetch('POST', '/api/embalagens/contagem', { contagem });
+      const r = await apiFetch('POST', '/api/embalagens/contagem', { contagem, confirmarAumento });
+      if (r.bloqueado === 'aumento') { btn.disabled = false; mostrarAumento(r); return; }
+      body.querySelector('#ctAumento').innerHTML = '';
       if (!S.embalagens.status) S.embalagens.status = {};
       S.embalagens.status[board] = r.status;
       // o banner do painel sai (ou entra) na hora, sem esperar o próximo login
@@ -11845,7 +11894,7 @@ function _renderContagemLojaView(body) {
       toast('Contagem salva ✓');
       _renderContagemRevisao(body, board, r.contagem.id, faltantes);
     } catch (e) { toast('Erro: ' + e.message, true); btn.disabled = false; }
-  });
+  }
 }
 
 // Passo 2 da contagem: a loja confere a sugestão e envia. A requisição de
@@ -12044,7 +12093,7 @@ function _entregaListaHtml(g) {
           <b>${Object.values(itens).reduce((s, q) => s + (Number(q) || 0), 0)}</b><span class="ct-chip-min">pç</span></span>`).join('')}
         ${e.obs ? `<span class="ct-ent-obs-txt">"${_escHtml(e.obs)}"</span>` : ''}
       </div>
-      <span class="ct-ent-por">${_escHtml(e.por || '—')}</span>
+      <span class="ct-ent-por">${_escHtml(e.por || '—')}${e.origem === 'loja' ? ' <span class="ct-ent-loja-tag" title="Lançada pela loja na hora da contagem">loja</span>' : ''}</span>
       <button class="ct-ent-del" data-lote="${_escHtml(e.lote)}" title="Desfazer esta entrega">✕</button>
     </div>`).join('')}
   </details>`;
