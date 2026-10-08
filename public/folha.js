@@ -490,6 +490,7 @@ let FP = {
   prevAjudaCusto: {},
   adiantamentos: {}, adiantamentosSemVinculo: [],
   faltasLoja: {}, faltasSemVinculo: [],
+  dadosLoja: {}, dadosLojaSemVinculo: [], dadosLojaLojas: [], valoresLoja: {},
   activeEmpId: null, dirty: false,
 };
 
@@ -544,11 +545,16 @@ async function loadPeriod() {
     FP.adiantamentosSemVinculo = d.adiantamentosSemVinculo || [];
     FP.faltasLoja              = d.faltasLoja              || {};
     FP.faltasSemVinculo        = d.faltasSemVinculo        || [];
+    FP.dadosLoja               = d.dadosLoja               || {};
+    FP.dadosLojaSemVinculo     = d.dadosLojaSemVinculo     || [];
+    FP.dadosLojaLojas          = d.dadosLojaLojas          || [];
+    FP.valoresLoja             = d.valoresLoja             || {};
     FP.mensal = {
       diasUteis:        d.folhaMensal?.diasUteis        || 22,
       domingosFeriados: d.folhaMensal?.domingosFeriados || 4,
     };
     renderMensalBar();
+    renderValoresLoja();
     renderStoreButtons('');
     document.getElementById('fpPanel').innerHTML =
       '<div class="fp-empty">Selecione uma loja para ver a folha.</div>';
@@ -583,6 +589,43 @@ function saveMensal() {
       await apiFetch(`/api/folha/${FP.year}/${FP.month}/mensal`, 'POST', FP.mensal);
       toast('Config mensal salva.');
     } catch(e) { toast('Erro: '+e.message, true); }
+  }, 800);
+}
+
+// ── Quadro de valores do Loja em Ação ─────────────────────────────────────
+// Preço de cada lançamento do Loja em Ação → Dados p/ Folha. Feriado e
+// extensão são por dia; VR, abertura e Instagram, por mês. Vale para todas as
+// lojas; o Gerar Folha usa estes valores (folha já gerada guarda os dela).
+const VALORES_LOJA = [
+  ['feriado',   'Feriado',   'por dia'],
+  ['extensao',  'Extensão',  'por dia'],
+  ['vr',        'VR da loja', 'no mês'],
+  ['abertura',  'Abertura',  'no mês'],
+  ['instagram', 'Instagram', 'no mês'],
+];
+function renderValoresLoja() {
+  const v = FP.valoresLoja || {};
+  document.getElementById('fpValoresLoja').innerHTML = `
+    <span style="font-size:.8rem;color:#e6edf3;font-weight:600;margin-right:.25rem">Valores do Loja em Ação</span>
+    ${VALORES_LOJA.map(([k, rot, un]) => `
+      <span style="font-size:.8rem;color:#8b949e;margin-left:.5rem">${rot} R$</span>
+      <input type="number" id="fpVal-${k}" value="${v[k] ? r2(v[k]).toFixed(2) : ''}" min="0" step="0.01" placeholder="0,00"
+        style="width:76px;text-align:right" onchange="saveValoresLoja()">
+      <span style="font-size:.7rem;color:#484f58">${un}</span>`).join('')}
+    <span style="font-size:.72rem;color:#484f58;margin-left:.5rem">vale para todas as lojas · entra no Gerar Folha</span>`;
+}
+
+let _valoresTimer;
+function saveValoresLoja() {
+  const body = {};
+  for (const [k] of VALORES_LOJA) body[k] = parseFloat(document.getElementById(`fpVal-${k}`)?.value) || 0;
+  FP.valoresLoja = { ...FP.valoresLoja, ...body };
+  clearTimeout(_valoresTimer);
+  _valoresTimer = setTimeout(async () => {
+    try {
+      FP.valoresLoja = await apiFetch('/api/folha/valores-loja', 'POST', body);
+      toast('Valores salvos. Clique em Gerar Folha para aplicar.');
+    } catch(e) { toast('Erro: ' + e.message, true); }
   }, 800);
 }
 
@@ -1263,12 +1306,55 @@ function faltasNota(emp) {
   return `<span class="fp-field-hint">Loja em Ação: ${faltasTexto(dias)}</span>`;
 }
 
+// Feriados, extensões e responsáveis (VR, abertura, Instagram) lançados pelo
+// gerente no Loja em Ação → Dados p/ Folha. Viram o campo Feriado e linhas de
+// extras com os preços do quadro "Valores do Loja em Ação".
+const DADOS_LOJA_EXTRAS = { vr: 'VR da loja', abertura: 'Abertura da loja', instagram: 'Instagram da loja' };
+const RE_EXTRA_LOJA = /instagram|abertura|extens|\bvr\b/i;
+function dadosLojaDe(emp) {
+  return FP.dadosLoja?.[emp.id] || { feriados: [], extensoes: [], resp: [] };
+}
+function lojaPreencheuDados(board = FP.board) {
+  return (FP.dadosLojaLojas || []).includes(board);
+}
+function extrasDaLoja(emp) {
+  const d = dadosLojaDe(emp), v = FP.valoresLoja || {};
+  const out = [];
+  if (d.extensoes.length && v.extensao)
+    out.push({ nome: `Extensão de horário (${d.extensoes.length} ${d.extensoes.length > 1 ? 'dias' : 'dia'}: ${faltasTexto(d.extensoes)})`,
+      valor: r2(d.extensoes.length * v.extensao), _loja: 'extensao' });
+  for (const r of ['vr', 'abertura', 'instagram'])
+    if (d.resp.includes(r) && v[r]) out.push({ nome: DADOS_LOJA_EXTRAS[r], valor: r2(v[r]), _loja: r });
+  return out;
+}
+function aplicarDadosLoja(entry, emp) {
+  const d = dadosLojaDe(emp), v = FP.valoresLoja || {};
+  // O proventos do calcEntry não soma feriado nem extras (o form recalcula):
+  // aqui entra só o que o Loja em Ação acrescenta
+  const feriadoAntes = r2(entry.feriado || 0);
+  if (d.feriados.length && v.feriado) entry.feriado = r2(d.feriados.length * v.feriado);
+  // Loja que preencheu o mês: Instagram/abertura/VR/extensão vêm daqui, não
+  // da sugestão do mês anterior (senão sai em dobro ou para quem não fez)
+  const prev = (entry.extras || []).filter(x => !(lojaPreencheuDados() && x._prev && RE_EXTRA_LOJA.test(x.nome || '')));
+  const daLoja = extrasDaLoja(emp);
+  entry.extras = [...prev, ...daLoja];
+  entry.proventos = r2((entry.proventos || 0) + entry.feriado - feriadoAntes + daLoja.reduce((s, x) => s + x.valor, 0));
+  entry.liquido   = r2((entry.proventos || 0) - (entry.totalDescontos || 0));
+  return entry;
+}
+function feriadoNota(emp) {
+  const d = dadosLojaDe(emp);
+  if (!d.feriados.length) return '';
+  const v = FP.valoresLoja?.feriado || 0;
+  return `<span class="fp-field-hint">Loja em Ação: ${faltasTexto(d.feriados)}${v ? ` · ${d.feriados.length} × ${brl(v)}` : ' · <span style="color:#d29922">sem valor no quadro</span>'}</span>`;
+}
+
 // O valor da falta é sempre manual — como a ajuda de custo, o cálculo não tem
 // como redescobri-lo, então volta por cima do calculado e sobrevive a todo
 // caminho que recria a entry: Gerar, férias, config. As datas seguem o
 // adiantamento: quem manda é o Loja em Ação, e o Gerar traz de lá.
 function defaultEntry(emp) {
-  const entry = calcEntry(emp);
+  const entry = aplicarDadosLoja(calcEntry(emp), emp);
   const ant   = FP.folha[FP.board]?.entries?.[emp.id] || {};
   const valor = r2(ant.faltasValor || 0);
   const dias  = faltasDaLoja(emp);
@@ -1787,7 +1873,7 @@ function buildEmpForm(emp, entry) {
   }
 
   provRows += `
-    <div class="fp-field"><label>Feriado (R$)</label>${inp(`fp-feriado-${emp.id}`, e.feriado)}</div>
+    <div class="fp-field fp-field-faltas"><label>Feriado (R$)</label>${inp(`fp-feriado-${emp.id}`, e.feriado)}${feriadoNota(emp)}</div>
     <div class="fp-extras" id="extras-prov-${emp.id}">${buildExtraRows(emp.id, e.extras||[], 'prov')}</div>
     <button class="fp-add-extra" onclick="addExtra(${emp.id},'prov')">+ Adicionar linha</button>`;
 
@@ -2048,10 +2134,12 @@ async function fpClearEmpCfg(empId) {
 
 function buildExtraRows(empId, extras, type) {
   return extras.map((ex,i) => {
-    const isPrev = !!ex._prev;
-    const rowStyle = isPrev ? 'border-left:2px solid #d29922;padding-left:.4rem;' : '';
+    const isPrev = !!ex._prev, isLoja = !!ex._loja;
+    const rowStyle = isPrev ? 'border-left:2px solid #d29922;padding-left:.4rem;'
+      : isLoja ? 'border-left:2px solid #388bfd;padding-left:.4rem;' : '';
     const hint = isPrev
       ? `<span title="Sugestão do mês anterior" style="font-size:.68rem;color:#d29922;white-space:nowrap">↩ mês ant.</span>`
+      : isLoja ? `<span title="Lançado no Loja em Ação → Dados p/ Folha" style="font-size:.68rem;color:#58a6ff;white-space:nowrap">Loja em Ação</span>`
       : '';
     return `<div class="fp-extra-row" style="${rowStyle}">
       ${hint}
@@ -2512,8 +2600,26 @@ function fpGerar() {
   if (faltasOrfas.length)
     avisos.push(`Falta sem colaborador no cadastro: ${faltasOrfas.map(f => `${f.colaborador} (${f.date.slice(8,10)}/${f.date.slice(5,7)})`).join(', ')}`);
 
+  const dadosOrfaos = (FP.dadosLojaSemVinculo || []).filter(f => f.board === board);
+  if (dadosOrfaos.length)
+    avisos.push(`Dados p/ Folha sem colaborador no cadastro: ${dadosOrfaos.map(f => `${f.colaborador} (${({ feriados: 'feriado', extensoes: 'extensão', vr: 'VR', abertura: 'abertura', instagram: 'Instagram' })[f.tipo] || f.tipo}${f.date ? ` ${f.date.slice(8,10)}/${f.date.slice(5,7)}` : ''})`).join(', ')}`);
+  const semPreco = semPrecoNoQuadro(board);
+  if (semPreco.length) avisos.push(`Sem valor no quadro do Loja em Ação: ${semPreco.join(', ')}`);
+
   if (avisos.length) toast(`Folha gerada. ⚠ ${avisos.join(' · ')} — lance à mão.`, 'warn', 9000);
   else toast('Folha gerada.');
+}
+
+// Lançado no Dados p/ Folha da loja, mas sem preço no quadro: não entra na folha
+function semPrecoNoQuadro(board) {
+  const v = FP.valoresLoja || {}, faltam = new Set();
+  for (const emp of boardEmps(board)) {
+    const d = dadosLojaDe(emp);
+    if (d.feriados.length && !v.feriado) faltam.add('Feriado');
+    if (d.extensoes.length && !v.extensao) faltam.add('Extensão');
+    for (const r of d.resp) if (!v[r]) faltam.add(VALORES_LOJA.find(x => x[0] === r)[1]);
+  }
+  return [...faltam];
 }
 
 function fpGerarEmp(empId) {

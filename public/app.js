@@ -2277,7 +2277,7 @@ function renderCrmCard(col) {
         </tr></thead>
         <tbody>${linhas.map(g => linha(g)).join('')}${linhas.length > 1 ? linha(tot, true) : ''}</tbody>
       </table>
-      <div class="margem-nota">Cadastro: verde a partir de 90%, amarelo de 80% a 90%, vermelho abaixo · <a href="/crm" target="_blank" style="color:var(--accent)">ver o CRM completo →</a></div>`;
+      <div class="margem-nota">Cadastro: verde a partir de 90%, amarelo de 80% a 90%, vermelho abaixo · <a href="/crm" target="_blank" style="color:var(--accent)">abrir o CRM →</a></div>`;
   };
 
   if (_crmResumo.chave === chave && _crmResumo.dados) return desenhar(_crmResumo.dados);
@@ -7359,6 +7359,7 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
   function render() {
     body.innerHTML = `<div class="df-wrap">
       <div class="df-title">${boardLabel} — ${monthLabel}</div>
+      <div style="font-size:.78rem;color:var(--muted);margin:-.25rem 0 .75rem">Feriados, extensões, faltas e os responsáveis da loja entram direto na folha de pagamento do mês.</div>
 
       <div class="df-section">
         <div class="df-sec-hdr">

@@ -398,13 +398,20 @@
           <div><dt>Voltaram a comprar</dt><dd><em>quantos dos clientes do período já tinham comprado antes</em></dd></div>
           <div><dt>Clientes novos</dt><dd><em>fizeram a 1ª compra dentro do período</em></dd></div>
           <div><dt>Aniversariantes</dt><dd><em>hoje e nos próximos 7 dias; clique para ver a lista</em></dd></div>
+          <div><dt>Contatos nas campanhas</dt><dd><em>quantos % dos clientes das campanhas receberam mensagem do vendedor</em></dd></div>
+          <div><dt>Fila de aniversário e pós-venda</dt><dd><em>quantos estão para chamar hoje e quantos passaram do prazo sem contato no período</em></dd></div>
+          <div><dt>Compraram depois da campanha</dt><dd><em>clientes das campanhas que compraram, comparando quem recebeu mensagem com quem não recebeu, e o faturamento até 30 dias depois da mensagem</em></dd></div>
         </dl>
         <p>Mais abaixo ficam:</p>
         <ul>
           <li>a <b>base por segmento</b> (clique numa barra para ver aqueles clientes);</li>
           <li>os <b>clientes atendidos por mês</b> nos últimos 12 meses;</li>
-          <li>as tabelas <b>por loja</b> e <b>por vendedor</b>, com a coluna <b>Cadastro</b>: o mesmo índice e as mesmas cores, para saber quem não está cadastrando. Clicar num vendedor abre a carteira dele.</li>
+          <li>a tabela <b>por loja</b>, com a coluna <b>Cadastro</b>: o mesmo índice e as mesmas cores;</li>
+          <li>o <b>cadastro mês a mês</b>: o % de cadastro de cada loja nos últimos 12 meses;</li>
+          <li>o <b>ranking de vendedores</b>: vendas, cadastro, clientes, quantos já eram clientes, contatos das campanhas, fila de hoje, atrasados, compras e faturamento. Clique no título de uma coluna para ordenar e no vendedor para abrir a carteira;</li>
+          <li>as <b>campanhas do período</b>, com quantos receberam, quantos o vendedor chamou, quantos compraram e o faturamento depois da mensagem. Clique numa campanha para abrir.</li>
         </ul>
+        <p>O botão <b>CRM</b> do Gestão (Vendas &amp; Comercial) abre este Painel direto.</p>
         <div class="aviso"><b>Aviso “clientes sem vendedor”.</b> Quando aparecer, clique nele: abre a lista desses clientes já pronta para distribuir (passo 06).</div>
       </div>
     </li>
@@ -490,7 +497,7 @@
         </dl>
         <p>O quadro <b>Público</b> vai contando os clientes enquanto você mexe nos filtros, separa por loja e avisa quantos estão sem vendedor. Acima de 3.000 clientes, o CRM sugere filtrar mais, porque o contato é feito um a um.</p>
         <div class="parada"><b>O público congela na hora de criar.</b> Cada cliente vai para a lista do vendedor da carteira dele naquele momento. Quem está sem vendedor fica com o gerente. Depois de criada, dá para mudar nome, objetivo, fim e mensagens, mas <b>nunca o público</b>. Para outro público, crie outra campanha.</div>
-        <div class="aviso"><b>O vendedor acompanha a carteira.</b> Enquanto a campanha está ativa, o cliente ainda <b>a contatar</b> passa sozinho para o vendedor que tem ele na carteira agora: quando o gerente distribui os clientes sem vendedor, quando um código do Microvix é ligado no Gestão, quando o cliente compra com outro vendedor ou quando o vendedor sai. Quem já foi contatado fica com quem contatou. No pós-venda, o cliente só muda se o vendedor que fez a venda saiu.</div>
+        <div class="aviso"><b>O vendedor acompanha a carteira.</b> Enquanto a campanha está ativa, o cliente ainda <b>a contatar</b> passa sozinho para o vendedor que tem ele na carteira agora: quando o gerente distribui os clientes sem vendedor, quando um código do Microvix é ligado no Gestão, quando o cliente compra com outro vendedor ou quando o vendedor sai. Quem já foi contatado fica com quem contatou. No pós-venda, o cliente só muda se o vendedor que fez a venda saiu. Vendedor de <b>aviso prévio</b> conta como quem saiu; o de <b>férias</b> passa os contatos para quem cobre enquanto estiver fora (passo 14).</div>
       </div>
     </li>
 
@@ -576,6 +583,12 @@
         </ul>
         <p><span class="btn">Revogar</span> corta o acesso na hora, até de quem estiver logado naquele momento. A coluna <b>Último login</b> mostra quem está usando.</p>
         <div class="aviso"><b>Funcionário não aparece?</b> Ele precisa estar ativo no cadastro de funcionários do Gestão. A lista do CRM se atualiza a cada hora.</div>
+        <p>A coluna <b>Carteira</b> mostra quantos clientes cada vendedor tem. Para quem está saindo ou de férias, há dois botões. Eles valem só no CRM: no Gestão nada muda (meta, comissão, premiação).</p>
+        <ul>
+          <li><span class="btn">Aviso prévio</span>: a carteira do vendedor é dividida na hora entre os outros vendedores da loja, começando por quem tem menos clientes. Os clientes ainda a contatar nas campanhas vão junto, e as próximas vendas dele não puxam cliente de volta. <span class="btn">Cancelar aviso</span> desfaz: os clientes em que ele fez a última venda voltam para ele.</li>
+          <li><span class="btn">Férias</span>: informe a saída, o último dia fora e quem chama os clientes (um colega, ou <b>dividir entre a equipe da loja</b>). A carteira não muda. Nesses dias, os contatos pendentes e os que entrarem (aniversário, pós-venda, campanhas) aparecem para quem cobre. Na volta, o que ainda estiver pendente volta para o dono. A venda conta para quem fez o contato. <span class="btn">Encerrar férias</span> devolve antes da data.</li>
+        </ul>
+        <div class="aviso"><b>Quando o desligamento entra no Gestão</b>, o aviso prévio some sozinho: daí em diante vale a regra de quem saiu.</div>
       </div>
     </li>
 
@@ -662,6 +675,7 @@
       <li><label><input type="checkbox"><span><b>Gerente, toda semana:</b> em cada campanha, olhar a coluna Mandou mensagem por vendedor e cobrar quem está parado.</span></label></li>
       <li><label><input type="checkbox"><span><b>Gerente, toda semana:</b> no Painel, olhar a coluna Cadastro por vendedor e cobrar quem está abaixo da meta de 90%.</span></label></li>
       <li><label><input type="checkbox"><span><b>Gerente, na admissão e no desligamento:</b> gerar ou revogar o código na tela Equipe.</span></label></li>
+      <li><label><input type="checkbox"><span><b>Gerente, no aviso prévio e nas férias:</b> marcar na tela Equipe, para os clientes não ficarem sem contato.</span></label></li>
       <li><label><input type="checkbox"><span><b>Escritório, todo mês:</b> criar as campanhas do mês e comparar com msg × sem msg em Resultados.</span></label></li>
     </ul>
   </section>

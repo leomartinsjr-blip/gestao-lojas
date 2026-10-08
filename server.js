@@ -4092,6 +4092,45 @@ function faltasDoMes(db, year, month) {
   return { porEmp, semVinculo };
 }
 
+// Feriados, extensões de horário e responsáveis da loja (VR, abertura,
+// Instagram) lançados em Loja em Ação → Dados p/ Folha, por colaborador. Na
+// folha viram o campo Feriado e linhas de extras, com os valores do quadro
+// "Valores do Loja em Ação" (db.folhaValoresLoja). Vínculo pelo nome, como
+// nas faltas. `lojas` = lojas que preencheram o mês: nelas as linhas de
+// Instagram/abertura/VR/extensão do mês anterior deixam de ser sugeridas.
+const DADOS_LOJA_RESP = ['vr', 'abertura', 'instagram'];
+function dadosLojaDoMes(db, year, month) {
+  const mk         = `${year}-${String(month).padStart(2, '0')}`;
+  const porEmp     = {};
+  const semVinculo = [];
+  const lojas      = [];
+  const doEmp = (board, nome) => (db.employees || []).find(e => e.board === board && _adiNomeIgual(e, nome));
+  const slot  = id => (porEmp[id] ||= { feriados: [], extensoes: [], resp: [] });
+  for (const [key, dados] of Object.entries(db.dadosFolha || {})) {
+    if (!key.startsWith(`${mk}-`)) continue;
+    const board = key.slice(mk.length + 1);
+    lojas.push(board);
+    for (const [lista, campo] of [['feriados', 'feriados'], ['extensoes', 'extensoes']]) {
+      for (const f of (dados[lista] || [])) {
+        if (!f.date) continue;
+        for (const nome of (f.colaboradores || [])) {
+          const emp = doEmp(board, nome);
+          if (!emp) { semVinculo.push({ board, colaborador: nome, tipo: campo, date: f.date }); continue; }
+          if (!slot(emp.id)[campo].includes(f.date)) slot(emp.id)[campo].push(f.date);
+        }
+      }
+    }
+    for (const r of DADOS_LOJA_RESP) {
+      if (!dados[r]) continue;
+      const emp = doEmp(board, dados[r]);
+      if (!emp) { semVinculo.push({ board, colaborador: dados[r], tipo: r }); continue; }
+      if (!slot(emp.id).resp.includes(r)) slot(emp.id).resp.push(r);
+    }
+  }
+  for (const v of Object.values(porEmp)) { v.feriados.sort(); v.extensoes.sort(); }
+  return { porEmp, semVinculo, lojas };
+}
+
 // ── GET /api/adiantamentos ────────────────────────────────────────────────
 app.get('/api/adiantamentos', requireAuth, async (req, res) => {
   try {
@@ -10218,7 +10257,30 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
         const { porEmp, semVinculo } = faltasDoMes(db, year, month);
         return { faltasLoja: porEmp, faltasSemVinculo: semVinculo };
       })(),
+      ...(() => {
+        const { porEmp, semVinculo, lojas } = dadosLojaDoMes(db, year, month);
+        return { dadosLoja: porEmp, dadosLojaSemVinculo: semVinculo, dadosLojaLojas: lojas };
+      })(),
+      valoresLoja: db.folhaValoresLoja || {},
     });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/folha/valores-loja — quadro de valores do Loja em Ação (feriado e
+// extensão por dia; VR, abertura e Instagram por mês). Vale para todas as lojas
+// e meses; folha já gerada guarda o valor que tinha.
+app.post('/api/folha/valores-loja', requireAdmin, async (req, res) => {
+  try {
+    const db = await readDB();
+    const v = {};
+    for (const k of ['feriado', 'extensao', ...DADOS_LOJA_RESP]) {
+      const n = Math.round((parseFloat(req.body?.[k]) || 0) * 100) / 100;
+      if (n < 0 || n > 100000) return res.status(400).json({ error: `Valor inválido: ${k}` });
+      v[k] = n;
+    }
+    db.folhaValoresLoja = { ...v, at: new Date().toISOString(), por: req.session.user?.username || '' };
+    await writeDB(db);
+    res.json(db.folhaValoresLoja);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -10693,13 +10755,12 @@ app.get('/api/internal/crm/status', requireCrmToken, async (req, res) => {
 });
 
 // ── CRM ────────────────────────────────────────────────────────────────────
-// Dashboard do CRM: os números vêm do app crm-lojas (API interna, mesmo
-// token do feed). Admin, escritório e supervisor veem as suas lojas; o
-// gerente, só a dele.
-app.get('/crm', (req, res) => {
-  if (!req.session?.user) return res.redirect('/');
-  res.sendFile(path.join(__dirname, 'public', 'crm.html'));
-});
+// O botão CRM abre o app crm-lojas direto: tudo o que o dashboard daqui
+// mostrava está no Painel de lá. Os números do card CRM do painel vêm da API
+// interna do CRM (mesmo token do feed). Admin, escritório e supervisor veem as
+// suas lojas; o gerente, só a dele.
+const crmBase = () => (process.env.CRM_URL || 'https://crm-lojas.onrender.com').replace(/\/+$/, '');
+app.get('/crm', (req, res) => res.redirect(crmBase() + '/'));
 
 function lojasCrmDoUsuario(u) {
   const microvix = Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}')).filter(b => b !== 'site');
@@ -10720,7 +10781,7 @@ app.get('/api/crm/dashboard', requireAuth, async (req, res) => {
   const c = _crmDashCache.get(chave);
   if (c && Date.now() - c.at < 120_000) return res.json({ ...c.dados, permitidas });
   try {
-    const base = (process.env.CRM_URL || 'https://crm-lojas.onrender.com').replace(/\/+$/, '');
+    const base = crmBase();
     const r = await fetch(`${base}/api/internal/dashboard?${chave}`, {
       headers: { 'x-crm-token': (process.env.CRM_INTERNAL_TOKEN || '').trim() },
       signal: AbortSignal.timeout(60000),
