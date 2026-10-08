@@ -125,6 +125,7 @@ async function carregar() {
     renderTudo();
     $('loading').style.display = 'none';
     $('content').style.display = '';
+    carregarCrm();
   } catch (e) {
     $('loading').style.display = 'none';
     erro(e.message);
@@ -135,6 +136,7 @@ function renderTudo() {
   renderCabecalho();
   renderLoja();
   renderVendedores();
+  renderCrm();
   renderHistorico();
   renderRH();
   renderPendencias();
@@ -405,7 +407,97 @@ function renderVendedores() {
   $('cmtVendedores').value = S.pauta.comentarios.vendedores || '';
 }
 
-// ── 3 · Histórico dos últimos meses ──────────────────────────────────────────
+// ── 3 · CRM ──────────────────────────────────────────────────────────────────
+// Vem do app crm-lojas numa chamada à parte: se o CRM demorar (serviço
+// dormindo) ou cair, o resto da pauta já está na tela.
+async function carregarCrm() {
+  const pedido = `${S.year}-${S.month}-${S.board}`;
+  S.crm = { carregando: true };
+  renderCrm();
+  let r;
+  try { r = await api('GET', `/api/pauta/${S.year}/${S.month}/${S.board}/crm`); }
+  catch (e) { r = { erro: e.message }; }
+  if (pedido !== `${S.year}-${S.month}-${S.board}`) return;   // trocou de loja/mês no meio
+  S.crm = r;
+  renderCrm();
+}
+
+const META_CAD = 90, PISO_CAD = 80;
+const clsCad = x => x == null ? 'mut' : x >= META_CAD ? 'pos' : x >= PISO_CAD ? 'warn' : 'neg';
+const pctDe = (n, de) => de ? n / de * 100 : null;
+
+function renderCrm() {
+  $('cmtCrm').value = S.pauta.comentarios.crm || '';
+  const c = S.crm, box = $('crmBox');
+  if (!c || c.carregando) { box.innerHTML = '<div class="pa-empty">Carregando os números do CRM…</div>'; $('crmSub').textContent = ''; return; }
+  if (c.erro) { box.innerHTML = `<div class="pa-empty">CRM indisponível agora (${esc(c.erro)}). <a href="#" id="crmTentar" style="color:#58a6ff">Tentar de novo</a></div>`; $('crmTentar').onclick = e => { e.preventDefault(); carregarCrm(); }; return; }
+  if (c.semMicrovix) { box.innerHTML = '<div class="pa-empty">Esta loja não vende pelo Microvix, então não tem números no CRM.</div>'; return; }
+  if (c.futuro) { box.innerHTML = '<div class="pa-empty">Mês ainda não começou.</div>'; return; }
+
+  const vs = c.vendedores.filter(v => v.vendas || v.publico || v.agora);
+  const soma = k => vs.reduce((a, v) => a + (v[k] || 0), 0);
+  const vendas = soma('vendas'), sem = soma('semCadastro');
+  const cad = pctDe(vendas - sem, vendas);
+  const fat = soma('faturamento'), fatIdent = soma('faturamentoIdent');
+  const publico = soma('publico'), contatados = soma('contatados'), compraram = soma('compraram'), comMsg = soma('compraramContatados');
+  // Mês anterior, para comparar o cadastro
+  const meses = (c.porMes || []).slice().sort((a, b) => a.mes.localeCompare(b.mes));
+  const mesAtual = `${S.year}-${String(S.month).padStart(2, '0')}`;
+  const ant = meses.filter(m => m.mes < mesAtual).pop();
+  const cadAnt = ant ? pctDe(ant.vendas - ant.semCadastro, ant.vendas) : null;
+  const dif = cad != null && cadAnt != null ? cad - cadAnt : null;
+  $('crmSub').textContent = `${fData(c.de)} a ${fData(c.ate)}`;
+
+  const kpi = (lbl, val, sub, cls = '') => `<div class="pa-kpi"><div class="pa-kpi-lbl" title="${esc(lbl)}">${lbl}</div><div class="pa-kpi-val ${cls}">${val}</div><div class="pa-kpi-sub">${sub}</div></div>`;
+  const kpis = [
+    kpi('Vendas em cliente real', fPct(cad), `${fNum(vendas - sem)} de ${fNum(vendas)} · meta ${META_CAD}%`, clsCad(cad)),
+    kpi('Vs mês anterior', dif == null ? '—' : `${dif >= 0 ? '+' : ''}${dif.toFixed(1)} pp`, cadAnt == null ? 'sem dado' : `era ${fPct(cadAnt)}`, dif == null ? 'mut' : dif >= 0 ? 'pos' : 'neg'),
+    kpi('Consumidor final', fNum(sem), `${fPct(pctDe(sem, vendas))} das vendas, sem cliente`),
+    kpi('Fat. em cliente real', fPct(pctDe(fatIdent, fat)), `${fBRL(fatIdent)} de ${fBRL(fat)}`),
+    kpi('Contatos campanhas', fPct(pctDe(contatados, publico)), `${fNum(contatados)} de ${fNum(publico)} clientes`),
+    kpi('Aniversário e pós-venda', fNum(soma('atrasados')), 'passaram do prazo sem contato', soma('atrasados') ? 'neg' : ''),
+    kpi('Compraram após camp.', fNum(compraram), `com msg ${fPct(pctDe(comMsg, contatados))} × sem ${fPct(pctDe(compraram - comMsg, publico - contatados))}`),
+    kpi('Fat. após mensagem', fBRL(soma('faturamentoCampApos')), 'até 30 dias da mensagem'),
+  ].join('');
+
+  const linhas = vs.slice().sort((a, b) => (a.empId == null) - (b.empId == null) || b.vendas - a.vendas);
+  const frac = (n, de) => de ? `${fNum(n)} <span class="mut">${fPct(n / de * 100)}</span>` : '<span class="mut">—</span>';
+  const tbl = !linhas.length ? '<tbody><tr><td class="pa-empty">Nenhuma venda nem campanha no mês.</td></tr></tbody>' : `
+    <thead><tr>
+      <th>Vendedor</th><th class="num">Vendas</th><th class="num">Cliente real</th><th class="num">Cons. final</th>
+      <th class="num">Fat. cliente real</th><th class="num">Clientes</th><th class="num">Já eram clientes</th>
+      <th class="num">Lista</th><th class="num">Chamou</th><th class="num">Atrasados</th><th class="num">Compraram</th><th class="num">Fat. após msg</th>
+    </tr></thead>
+    <tbody>${linhas.map(v => {
+      const x = pctDe(v.vendas - v.semCadastro, v.vendas);
+      return `<tr>
+        <td>${esc(v.nome)}${v.inativo ? '<span class="pa-tag out">saiu</span>' : ''}</td>
+        <td class="num">${fNum(v.vendas)}</td>
+        <td class="num ${clsCad(x)}" style="font-weight:700">${fPct(x)}</td>
+        <td class="num">${fNum(v.semCadastro)}</td>
+        <td class="num">${v.faturamento ? fPct(v.faturamentoIdent / v.faturamento * 100) : '—'}</td>
+        <td class="num">${fNum(v.clientes)}</td>
+        <td class="num">${v.clientes ? fPct(v.recompra / v.clientes * 100) : '—'}</td>
+        <td class="num">${fNum(v.publico)}</td>
+        <td class="num">${frac(v.contatados, v.publico)}</td>
+        <td class="num ${v.atrasados ? 'neg' : ''}">${fNum(v.atrasados)}</td>
+        <td class="num">${frac(v.compraram, v.publico)}</td>
+        <td class="num">${fBRL(v.faturamentoCampApos)}</td>
+      </tr>`;
+    }).join('')}</tbody>
+    <tfoot><tr>
+      <td>Loja</td><td class="num">${fNum(vendas)}</td><td class="num ${clsCad(cad)}">${fPct(cad)}</td><td class="num">${fNum(sem)}</td>
+      <td class="num">${fPct(pctDe(fatIdent, fat))}</td><td class="num">${fNum(soma('clientes'))}</td>
+      <td class="num">${fPct(pctDe(soma('recompra'), soma('clientes')))}</td><td class="num">${fNum(publico)}</td>
+      <td class="num">${frac(contatados, publico)}</td><td class="num">${fNum(soma('atrasados'))}</td>
+      <td class="num">${frac(compraram, publico)}</td><td class="num">${fBRL(soma('faturamentoCampApos'))}</td>
+    </tr></tfoot>`;
+
+  box.innerHTML = `<div class="pa-kpis">${kpis}</div>
+    <div class="pa-tbl-wrap" style="margin-top:.8rem"><table class="pa-tbl">${tbl}</table></div>`;
+}
+
+// ── 4 · Histórico dos últimos meses ──────────────────────────────────────────
 // A leitura que importa: o % do vendedor contra o % que a loja fez no mesmo
 // mês. Acima da loja, puxou; abaixo, foi puxado.
 function deltaCell(pct, delta) {
@@ -1218,7 +1310,7 @@ async function init() {
   $('btnProd').addEventListener('click', carregarProdutos);
   $('btnIA').addEventListener('click', gerarRoteiro);
 
-  for (const [id, campo] of [['cmtPerformance', 'performance'], ['cmtVendedores', 'vendedores'], ['cmtRh', 'rh'], ['cmtProdutos', 'produtos'], ['cmtBalanco', 'balanco']]) {
+  for (const [id, campo] of [['cmtPerformance', 'performance'], ['cmtVendedores', 'vendedores'], ['cmtCrm', 'crm'], ['cmtRh', 'rh'], ['cmtProdutos', 'produtos'], ['cmtBalanco', 'balanco']]) {
     $(id).addEventListener('input', () => { S.pauta.comentarios[campo] = $(id).value; queueSave(); });
   }
   for (const id of ['estCusto', 'estVenda']) {

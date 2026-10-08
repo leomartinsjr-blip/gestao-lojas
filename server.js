@@ -10769,27 +10769,32 @@ function lojasCrmDoUsuario(u) {
 }
 
 const _crmDashCache = new Map();   // 2 min: o painel recarrega e o CRM não sofre
+// Números do CRM (cadastro nas vendas, campanhas, ranking) das lojas e período
+async function crmDashboard(lojas, de, ate) {
+  const qs = new URLSearchParams({ lojas: lojas.join(',') });
+  if (/^\d{4}-\d{2}-\d{2}$/.test(de || '')) qs.set('de', de);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(ate || '')) qs.set('ate', ate);
+  const chave = qs.toString();
+  const c = _crmDashCache.get(chave);
+  if (c && Date.now() - c.at < 120_000) return c.dados;
+  const r = await fetch(`${crmBase()}/api/internal/dashboard?${chave}`, {
+    headers: { 'x-crm-token': (process.env.CRM_INTERNAL_TOKEN || '').trim() },
+    signal: AbortSignal.timeout(60000),
+  });
+  const dados = await r.json().catch(() => ({ error: `CRM respondeu ${r.status}` }));
+  if (!r.ok) throw new Error(dados.error || `CRM respondeu ${r.status}`);
+  _crmDashCache.set(chave, { at: Date.now(), dados });
+  return dados;
+}
+
 app.get('/api/crm/dashboard', requireAuth, async (req, res) => {
   const u = req.session.user;
   const permitidas = lojasCrmDoUsuario(u);
   const pedidas = String(req.query.loja || '').split(',').filter(b => permitidas.includes(b));
   const lojas = pedidas.length ? pedidas : permitidas;
   if (!lojas.length) return res.json({ semLojas: true, permitidas: [] });
-  const qs = new URLSearchParams({ lojas: lojas.join(',') });
-  for (const k of ['de', 'ate']) if (/^\d{4}-\d{2}-\d{2}$/.test(req.query[k] || '')) qs.set(k, req.query[k]);
-  const chave = qs.toString();
-  const c = _crmDashCache.get(chave);
-  if (c && Date.now() - c.at < 120_000) return res.json({ ...c.dados, permitidas });
   try {
-    const base = crmBase();
-    const r = await fetch(`${base}/api/internal/dashboard?${chave}`, {
-      headers: { 'x-crm-token': (process.env.CRM_INTERNAL_TOKEN || '').trim() },
-      signal: AbortSignal.timeout(60000),
-    });
-    const dados = await r.json().catch(() => ({ error: `CRM respondeu ${r.status}` }));
-    if (!r.ok) return res.status(502).json({ error: dados.error || `CRM respondeu ${r.status}` });
-    _crmDashCache.set(chave, { at: Date.now(), dados });
-    res.json({ ...dados, permitidas });
+    res.json({ ...(await crmDashboard(lojas, req.query.de, req.query.ate)), permitidas });
   } catch (e) {
     res.status(502).json({ error: 'CRM indisponível: ' + e.message });
   }
@@ -13594,7 +13599,7 @@ function pautaVazia(y, m, board) {
     year: y, month: m, board,
     status: 'rascunho',
     realizadaEm: '', participantes: '',
-    comentarios: { performance: '', vendedores: '', rh: '', produtos: '', balanco: '' },
+    comentarios: { performance: '', vendedores: '', crm: '', rh: '', produtos: '', balanco: '' },
     vendedorNotas: {},
     rhItens: [], demandas: [], acoes: [],
     estoqueManual: { custo: 0, venda: 0, data: '', obs: '' },
@@ -13733,6 +13738,35 @@ app.get('/api/pauta/:year/:month/:board', requireEscritorioOrAdmin, async (req, 
       },
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/pauta/:year/:month/:board/crm — números do CRM no mês: cadastro
+// nas vendas (venda em cliente real, fora consumidor final), campanhas e
+// contatos, da loja e de cada vendedor. Chamada à parte da pauta: o CRM é
+// outro serviço e, se demorar ou cair, a pauta abre do mesmo jeito.
+app.get('/api/pauta/:year/:month/:board/crm', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const y = parseInt(req.params.year), m = parseInt(req.params.month);
+    const board = req.params.board;
+    if (!PAUTA_BOARDS.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
+    const microvix = Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}'));
+    if (!microvix.includes(board)) return res.json({ semMicrovix: true });
+    const mk  = monthKey(y, m);
+    const fim = `${mk}-${String(new Date(y, m, 0).getDate()).padStart(2, '0')}`;
+    const hoje = todayBRT();
+    if (`${mk}-01` > hoje) return res.json({ futuro: true });
+    const d = await crmDashboard([board], `${mk}-01`, fim < hoje ? fim : hoje);
+    const db = await readDB();
+    // Nome e cargo do gestão (o CRM só conhece quem tem código no Microvix)
+    const emps = Object.fromEntries((db.employees || []).map(e => [e.id, e]));
+    res.json({
+      de: d.de, ate: d.ate, porMes: (d.porMes || []).filter(x => x.board === board),
+      vendedores: (d.vendedores || []).filter(v => v.board === board).map(v => ({
+        ...v, nome: emps[v.empId]?.apelido || emps[v.empId]?.name || v.nome,
+      })),
+      campanhas: d.campanhas || [],
+    });
+  } catch (e) { res.status(502).json({ error: 'CRM indisponível: ' + e.message }); }
 });
 
 // PUT /api/pauta/:year/:month/:board — salva o que foi escrito (autosave)
