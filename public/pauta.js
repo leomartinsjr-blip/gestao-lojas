@@ -434,67 +434,55 @@ function renderCrm() {
   if (c.semMicrovix) { box.innerHTML = '<div class="pa-empty">Esta loja não vende pelo Microvix, então não tem números no CRM.</div>'; return; }
   if (c.futuro) { box.innerHTML = '<div class="pa-empty">Mês ainda não começou.</div>'; return; }
 
+  // O foco é a agenda: quantos % dos clientes da lista cada vendedor chamou e
+  // quanto voltou em vendas influenciadas (compras até 30 dias após a mensagem)
   const vs = c.vendedores.filter(v => v.vendas || v.publico || v.agora);
   const soma = k => vs.reduce((a, v) => a + (v[k] || 0), 0);
   const vendas = soma('vendas'), sem = soma('semCadastro');
   const cad = pctDe(vendas - sem, vendas);
-  const fat = soma('faturamento'), fatIdent = soma('faturamentoIdent');
-  const publico = soma('publico'), contatados = soma('contatados'), compraram = soma('compraram'), comMsg = soma('compraramContatados');
-  // Mês anterior, para comparar o cadastro
-  const meses = (c.porMes || []).slice().sort((a, b) => a.mes.localeCompare(b.mes));
-  const mesAtual = `${S.year}-${String(S.month).padStart(2, '0')}`;
-  const ant = meses.filter(m => m.mes < mesAtual).pop();
-  const cadAnt = ant ? pctDe(ant.vendas - ant.semCadastro, ant.vendas) : null;
-  const dif = cad != null && cadAnt != null ? cad - cadAnt : null;
+  const publico = soma('publico'), contatados = soma('contatados');
+  const influ = soma('compraramAposContato'), influR = soma('faturamentoCampApos');
+  const agenda = pctDe(contatados, publico);
+  const clsAgenda = x => x == null ? 'mut' : x >= 80 ? 'pos' : x >= 50 ? 'warn' : 'neg';
   $('crmSub').textContent = `${fData(c.de)} a ${fData(c.ate)}`;
 
   const kpi = (lbl, val, sub, cls = '') => `<div class="pa-kpi"><div class="pa-kpi-lbl" title="${esc(lbl)}">${lbl}</div><div class="pa-kpi-val ${cls}">${val}</div><div class="pa-kpi-sub">${sub}</div></div>`;
   const kpis = [
-    kpi('Vendas em cliente real', fPct(cad), `${fNum(vendas - sem)} de ${fNum(vendas)} · meta ${META_CAD}%`, clsCad(cad)),
-    kpi('Vs mês anterior', dif == null ? '—' : `${dif >= 0 ? '+' : ''}${dif.toFixed(1)} pp`, cadAnt == null ? 'sem dado' : `era ${fPct(cadAnt)}`, dif == null ? 'mut' : dif >= 0 ? 'pos' : 'neg'),
-    kpi('Consumidor final', fNum(sem), `${fPct(pctDe(sem, vendas))} das vendas, sem cliente`),
-    kpi('Fat. em cliente real', fPct(pctDe(fatIdent, fat)), `${fBRL(fatIdent)} de ${fBRL(fat)}`),
-    kpi('Contatos campanhas', fPct(pctDe(contatados, publico)), `${fNum(contatados)} de ${fNum(publico)} clientes`),
-    kpi('Aniversário e pós-venda', fNum(soma('atrasados')), 'passaram do prazo sem contato', soma('atrasados') ? 'neg' : ''),
-    kpi('Compraram após camp.', fNum(compraram), `com msg ${fPct(pctDe(comMsg, contatados))} × sem ${fPct(pctDe(compraram - comMsg, publico - contatados))}`),
-    kpi('Fat. após mensagem', fBRL(soma('faturamentoCampApos')), 'até 30 dias da mensagem'),
+    kpi('Agenda realizada', fPct(agenda), `${fNum(contatados)} de ${fNum(publico)} clientes chamados`, clsAgenda(agenda)),
+    kpi('Vendas influenciadas', fBRL(influR), `${fNum(influ)} clientes compraram até 30 dias após a mensagem`),
+    kpi('Retorno das mensagens', fPct(pctDe(influ, contatados)), 'dos clientes chamados compraram'),
+    kpi('Atrasados', fNum(soma('atrasados')), 'aniversário e pós-venda fora do prazo', soma('atrasados') ? 'neg' : ''),
+    kpi('Cadastro', fPct(cad), `meta ${META_CAD}%`, clsCad(cad)),
   ].join('');
 
-  const linhas = vs.slice().sort((a, b) => (a.empId == null) - (b.empId == null) || b.vendas - a.vendas);
-  const frac = (n, de) => de ? `${fNum(n)} <span class="mut">${fPct(n / de * 100)}</span>` : '<span class="mut">—</span>';
-  const tbl = !linhas.length ? '<tbody><tr><td class="pa-empty">Nenhuma venda nem campanha no mês.</td></tr></tbody>' : `
+  const linhas = vs.slice().sort((a, b) => (a.empId == null) - (b.empId == null) || (b.faturamentoCampApos || 0) - (a.faturamentoCampApos || 0) || b.publico - a.publico);
+  const tbl = !linhas.length ? '<tbody><tr><td class="pa-empty">Nenhuma agenda nem venda no mês.</td></tr></tbody>' : `
     <thead><tr>
-      <th>Vendedor</th><th class="num">Vendas</th><th class="num">Cliente real</th><th class="num">Cons. final</th>
-      <th class="num">Fat. cliente real</th><th class="num">Clientes</th><th class="num">Já eram clientes</th>
-      <th class="num">Lista</th><th class="num">Chamou</th><th class="num">Atrasados</th><th class="num">Compraram</th><th class="num">Fat. após msg</th>
+      <th>Vendedor</th><th class="num">Agenda</th><th class="num">Chamou</th><th class="num">Realizada</th><th class="num">Atrasados</th>
+      <th class="num">Clientes que compraram</th><th class="num">Vendas influenciadas</th><th class="num">Cadastro</th>
     </tr></thead>
     <tbody>${linhas.map(v => {
-      const x = pctDe(v.vendas - v.semCadastro, v.vendas);
+      const ag = pctDe(v.contatados, v.publico), x = pctDe(v.vendas - v.semCadastro, v.vendas);
       return `<tr>
         <td>${esc(v.nome)}${v.inativo ? '<span class="pa-tag out">saiu</span>' : ''}</td>
-        <td class="num">${fNum(v.vendas)}</td>
-        <td class="num ${clsCad(x)}" style="font-weight:700">${fPct(x)}</td>
-        <td class="num">${fNum(v.semCadastro)}</td>
-        <td class="num">${v.faturamento ? fPct(v.faturamentoIdent / v.faturamento * 100) : '—'}</td>
-        <td class="num">${fNum(v.clientes)}</td>
-        <td class="num">${v.clientes ? fPct(v.recompra / v.clientes * 100) : '—'}</td>
         <td class="num">${fNum(v.publico)}</td>
-        <td class="num">${frac(v.contatados, v.publico)}</td>
+        <td class="num">${fNum(v.contatados)}</td>
+        <td class="num ${clsAgenda(ag)}" style="font-weight:700">${fPct(ag)}</td>
         <td class="num ${v.atrasados ? 'neg' : ''}">${fNum(v.atrasados)}</td>
-        <td class="num">${frac(v.compraram, v.publico)}</td>
-        <td class="num">${fBRL(v.faturamentoCampApos)}</td>
+        <td class="num">${v.contatados ? `${fNum(v.compraramAposContato)} <span class="mut">${fPct(pctDe(v.compraramAposContato, v.contatados))}</span>` : '<span class="mut">—</span>'}</td>
+        <td class="num" style="font-weight:700">${fBRL(v.faturamentoCampApos)}</td>
+        <td class="num ${clsCad(x)}">${fPct(x)}</td>
       </tr>`;
     }).join('')}</tbody>
     <tfoot><tr>
-      <td>Loja</td><td class="num">${fNum(vendas)}</td><td class="num ${clsCad(cad)}">${fPct(cad)}</td><td class="num">${fNum(sem)}</td>
-      <td class="num">${fPct(pctDe(fatIdent, fat))}</td><td class="num">${fNum(soma('clientes'))}</td>
-      <td class="num">${fPct(pctDe(soma('recompra'), soma('clientes')))}</td><td class="num">${fNum(publico)}</td>
-      <td class="num">${frac(contatados, publico)}</td><td class="num">${fNum(soma('atrasados'))}</td>
-      <td class="num">${frac(compraram, publico)}</td><td class="num">${fBRL(soma('faturamentoCampApos'))}</td>
+      <td>Loja</td><td class="num">${fNum(publico)}</td><td class="num">${fNum(contatados)}</td>
+      <td class="num ${clsAgenda(agenda)}">${fPct(agenda)}</td><td class="num">${fNum(soma('atrasados'))}</td>
+      <td class="num">${fNum(influ)} <span class="mut">${fPct(pctDe(influ, contatados))}</span></td>
+      <td class="num">${fBRL(influR)}</td><td class="num ${clsCad(cad)}">${fPct(cad)}</td>
     </tr></tfoot>`;
 
   box.innerHTML = `<div class="pa-kpis">${kpis}</div>
-    <div class="pa-tbl-wrap" style="margin-top:.8rem"><table class="pa-tbl">${tbl}</table></div>`;
+    <div class="pa-tbl-wrap" style="margin-top:.8rem"><table class="pa-tbl" style="min-width:640px">${tbl}</table></div>`;
 }
 
 // ── 4 · Histórico dos últimos meses ──────────────────────────────────────────
