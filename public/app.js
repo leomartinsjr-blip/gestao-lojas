@@ -2247,23 +2247,26 @@ function renderCrmCard(col) {
     for (const v of vs) {
       if (umaLoja && !v.vendas && !v.publico && !v.agora) continue;
       const k = umaLoja ? `${v.board}|${v.empId}` : v.board;
-      const g = grupos.get(k) || { board: v.board, nome: umaLoja ? v.nome : (BOARDS[v.board]?.label || v.board), vendas: 0, sem: 0, publico: 0, contatados: 0, agora: 0, atrasados: 0 };
+      const g = grupos.get(k) || { board: v.board, nome: umaLoja ? v.nome : (BOARDS[v.board]?.label || v.board), vendas: 0, sem: 0, publico: 0, contatados: 0, agora: 0, atrasados: 0, influ: 0, influR: 0 };
       g.vendas += v.vendas; g.sem += v.semCadastro; g.publico += v.publico; g.contatados += v.contatados; g.agora += v.agora; g.atrasados += v.atrasados;
+      g.influ += v.compraramAposContato || 0; g.influR += v.faturamentoCampApos || 0;
       grupos.set(k, g);
     }
     const linhas = [...grupos.values()].sort((a, b) => b.vendas - a.vendas);
     if (!linhas.length) { body.innerHTML = '<div class="folga-mini-empty">Sem vendas no mês.</div>'; return; }
-    const tot = linhas.reduce((t, g) => { for (const k of ['vendas', 'sem', 'publico', 'contatados', 'agora', 'atrasados']) t[k] += g[k]; return t; },
-      { vendas: 0, sem: 0, publico: 0, contatados: 0, agora: 0, atrasados: 0 });
+    const tot = linhas.reduce((t, g) => { for (const k of ['vendas', 'sem', 'publico', 'contatados', 'agora', 'atrasados', 'influ', 'influR']) t[k] += g[k]; return t; },
+      { vendas: 0, sem: 0, publico: 0, contatados: 0, agora: 0, atrasados: 0, influ: 0, influR: 0 });
+    const brl0 = v => 'R$ ' + Math.round(v).toLocaleString('pt-BR');
     const linha = (g, total) => {
       const x = g.vendas ? 1 - g.sem / g.vendas : null;
       return `<tr class="${total ? 'dash-total-row' : 'dash-row'}">
         <td class="dash-td ${total ? '' : 'dash-td-name'}">${total ? '<strong>' + (umaLoja ? 'Loja' : 'Rede') + '</strong>'
           : `${umaLoja ? '' : `<span class="dash-store-dot" style="display:inline-block;background:${BOARDS[g.board]?.color || 'var(--muted)'}"></span> `}${g.nome}`}</td>
         <td class="dash-td dash-td-num ${cls(x)}" title="${g.sem} de ${g.vendas} vendas em consumidor final ou sem cliente"><strong>${x == null ? '—' : pct(g.vendas - g.sem, g.vendas)}</strong></td>
-        <td class="dash-td dash-td-num" title="${g.contatados} de ${g.publico} clientes das campanhas">${g.publico ? pct(g.contatados, g.publico) : '—'}</td>
+        <td class="dash-td dash-td-num" title="${g.contatados} de ${g.publico} clientes da agenda chamados">${g.publico ? pct(g.contatados, g.publico) : '—'}</td>
         <td class="dash-td dash-td-num">${g.agora || '—'}</td>
         <td class="dash-td dash-td-num ${g.atrasados ? 'kpi-neg' : ''}">${g.atrasados || '—'}</td>
+        <td class="dash-td dash-td-num" title="${g.influ} clientes chamados compraram até 30 dias depois da mensagem">${g.influR ? brl0(g.influR) : '—'}</td>
       </tr>`;
     };
     body.innerHTML = `
@@ -2271,13 +2274,14 @@ function renderCrmCard(col) {
         <thead><tr class="dash-thead-tr">
           <th class="dash-th">${umaLoja ? 'Vendedor' : 'Loja'}</th>
           <th class="dash-th" title="% das vendas com o cliente cadastrado. Meta 90%">Cadastro</th>
-          <th class="dash-th" title="Clientes das campanhas que já receberam mensagem">Contatos</th>
+          <th class="dash-th" title="Dos clientes da agenda (campanhas, aniversário e pós-venda), quantos % foram chamados">Agenda</th>
           <th class="dash-th" title="Aniversário e pós-venda para chamar hoje">Fila hoje</th>
           <th class="dash-th" title="Aniversário e pós-venda que passaram do prazo sem contato, no mês">Atrasados</th>
+          <th class="dash-th" title="Compras dos clientes chamados, em qualquer loja, até 30 dias depois da mensagem">Influenciadas</th>
         </tr></thead>
         <tbody>${linhas.map(g => linha(g)).join('')}${linhas.length > 1 ? linha(tot, true) : ''}</tbody>
       </table>
-      <div class="margem-nota">Cadastro: verde a partir de 90%, amarelo de 80% a 90%, vermelho abaixo · <a href="/crm" target="_blank" style="color:var(--accent)">abrir o CRM →</a></div>`;
+      <div class="margem-nota">Cadastro: verde a partir de 90%, amarelo de 80% a 90%, vermelho abaixo · Influenciadas: vendas até 30 dias após a mensagem · <a href="/crm" target="_blank" style="color:var(--accent)">abrir o CRM →</a></div>`;
   };
 
   if (_crmResumo.chave === chave && _crmResumo.dados) return desenhar(_crmResumo.dados);
