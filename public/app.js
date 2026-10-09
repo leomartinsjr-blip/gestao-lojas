@@ -3090,8 +3090,10 @@ function _renderDashWeekBody(body, week, extraData) {
 
     const rows = allEmps.map(emp => {
       const k = kpiMap.get(emp.id);
-      const paEarned  = k.hitMeta && k.hitPA;
-      const pVendas   = !k.isFuture ? (k.hitMeta ? PREMIO_VENDAS : 0) : null;
+      // Mesma regra da visão do admin: quem não trabalhou a semana inteira não tem direito ao prêmio
+      const elegivel  = k.trabalhouSemanaInteira;
+      const paEarned  = k.hitMeta && k.hitPA && elegivel;
+      const pVendas   = !k.isFuture ? (k.hitMeta && elegivel ? PREMIO_VENDAS : 0) : null;
       const pPA       = !k.isFuture ? (paEarned ? PREMIO_PA : 0) : null;
       const pTotal    = pVendas != null ? pVendas + (pPA||0) : null;
       if (pTotal != null) totPremio += pTotal;
@@ -3099,7 +3101,9 @@ function _renderDashWeekBody(body, week, extraData) {
       const pctCls     = k.pctMeta  == null ? '' : k.pctMeta  >= 100 ? 'kpi-pos' : k.pctMeta  >= 80 ? 'kpi-warn' : 'kpi-neg';
       const pctProjCls = k.pctProj  == null ? '' : k.pctProj  >= 100 ? 'kpi-pos' : k.pctProj  >= 80 ? 'kpi-warn' : 'kpi-neg';
       const projCls = k.projecao == null ? '' : k.projecao >= k.wMeta ? 'kpi-pos' : 'kpi-neg';
-      const premioHtml = k.isFuture
+      const premioHtml = !elegivel
+        ? '<span class="dw-p dw-p-warn" title="Não trabalhou a semana inteira (férias ou admissão no meio da semana)" style="font-style:italic;opacity:.7">sem direito</span>'
+        : k.isFuture
         ? '<span class="dw-p-pending">—</span>'
         : `<span class="dw-p ${k.hitMeta?'dw-p-ok':'dw-p-warn'}">${fBRL(PREMIO_VENDAS)}${k.hitMeta?' ✓':''}</span>
            <span class="dw-p ${paEarned?'dw-p-ok':k.hitPA&&!k.hitMeta?'dw-p-no':'dw-p-warn'}" title="${k.hitPA&&!k.hitMeta?'PA atingido mas meta venda não':''}">+${fBRL(PREMIO_PA)}${paEarned?' ✓':k.hitPA&&!k.hitMeta?' ✗':''}</span>`;
