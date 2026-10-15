@@ -10861,8 +10861,10 @@ app.post('/api/internal/robo-site/auth', (req, res) => {
   if (!tokenOk) return res.status(401).json({ error: 'Token inválido' });
   const key  = String(req.body?.username || '').toLowerCase().trim();
   const user = readUsers()[key];
-  if (!user || user.password !== req.body?.password)
-    return res.status(401).json({ error: 'Usuário ou senha incorretos' });
+  // Diz ao robô qual dos dois falhou (só ele chama esta rota, com o token)
+  if (!user) return res.status(401).json({ error: `Usuário "${key}" não existe no gestão`, motivo: 'usuario' });
+  if (user.password !== req.body?.password)
+    return res.status(401).json({ error: 'Senha não confere com a do gestão', motivo: 'senha' });
   if (user.suspenso) return res.status(403).json({ error: 'Acesso suspenso. Fale com o administrador.' });
   if (user.board ? user.board !== 'escritorio' : (user.lojas && user.lojas.length))
     return res.status(403).json({ error: 'O robô do site é só para o escritório e o administrador' });
