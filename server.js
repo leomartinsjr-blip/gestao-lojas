@@ -10848,6 +10848,27 @@ app.get('/api/internal/crm/status', requireCrmToken, async (req, res) => {
   res.json({ vendas, clientes, estado, backfill: crmFeed.statusBackfill() });
 });
 
+// ── Login do robô do site (integracao-site) ────────────────────────────────
+// O painel do robô entra com o usuário e a senha do gestão. Servidor a servidor:
+// o robô manda o SERVICE_TOKEN dele em x-robo-token, que tem que ser igual a
+// ROBO_SITE_TOKEN daqui. Mesma regra do manual de produtos do site: admin e
+// escritório entram; supervisor e loja não.
+app.post('/api/internal/robo-site/auth', (req, res) => {
+  const esperado = process.env.ROBO_SITE_TOKEN || '';
+  const veio     = String(req.get('x-robo-token') || '');
+  const tokenOk  = esperado.length >= 24 && veio.length === esperado.length &&
+                   crypto.timingSafeEqual(Buffer.from(veio), Buffer.from(esperado));
+  if (!tokenOk) return res.status(401).json({ error: 'Token inválido' });
+  const key  = String(req.body?.username || '').toLowerCase().trim();
+  const user = readUsers()[key];
+  if (!user || user.password !== req.body?.password)
+    return res.status(401).json({ error: 'Usuário ou senha incorretos' });
+  if (user.suspenso) return res.status(403).json({ error: 'Acesso suspenso. Fale com o administrador.' });
+  if (user.board ? user.board !== 'escritorio' : (user.lojas && user.lojas.length))
+    return res.status(403).json({ error: 'O robô do site é só para o escritório e o administrador' });
+  res.json({ username: key, label: user.label || key, perfil: user.board === 'escritorio' ? 'escritorio' : 'admin' });
+});
+
 // ── CRM ────────────────────────────────────────────────────────────────────
 // O botão CRM abre o app crm-lojas direto: tudo o que o dashboard daqui
 // mostrava está no Painel de lá. Os números do card CRM do painel vêm da API
