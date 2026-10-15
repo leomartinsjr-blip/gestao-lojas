@@ -10871,6 +10871,103 @@ app.post('/api/internal/robo-site/auth', (req, res) => {
   res.json({ username: key, label: user.label || key, perfil: user.board === 'escritorio' ? 'escritorio' : 'admin' });
 });
 
+// ── NEXO (robô do site): atalho, aviso de faturamento e janela da loja ──────
+// O robô fica em outro serviço (integracao-site). Daqui saem três coisas:
+//   /nexo                 entra no painel do robô já logado (bilhete assinado de 60 s)
+//   /api/site/...         a janela "Pedidos do site" da loja e o aviso do adm/escritório,
+//                         lidos do robô servidor a servidor (Bearer ROBO_SITE_TOKEN)
+// Fluxo: pedido pago → a loja que tem a peça transfere para o SITE → o escritório
+// fatura pela empresa 6 e anexa a etiqueta → a loja imprime nota e etiqueta,
+// posta e informa o rastreio → o pedido é finalizado.
+const roboBase = () => (process.env.ROBO_SITE_URL || 'https://integracao-site.onrender.com').replace(/\/+$/, '');
+const roboToken = () => process.env.ROBO_SITE_TOKEN || '';
+const ehAdminOuEscritorio = u => !!u && (u.board ? u.board === 'escritorio' : !(u.lojas && u.lojas.length));
+
+async function roboFetch(caminho, opts = {}) {
+  return fetch(roboBase() + caminho, { ...opts, headers: { Authorization: `Bearer ${roboToken()}`, ...(opts.headers || {}) },
+    signal: AbortSignal.timeout(opts.timeout || 60_000) });
+}
+
+// Mesmo formato do cookie de sessão do robô: base64url(json).hmac
+function bilheteRobo(u) {
+  const corpo = Buffer.from(JSON.stringify({ u: u.username, n: u.label || u.username,
+    p: u.board === 'escritorio' ? 'escritorio' : 'admin', exp: Date.now() + 60_000 })).toString('base64url');
+  return `${corpo}.${crypto.createHmac('sha256', roboToken()).update(corpo).digest('base64url')}`;
+}
+
+app.get('/nexo', (req, res) => {
+  const u = req.session?.user;
+  if (!u) return res.redirect('/');
+  if (!ehAdminOuEscritorio(u) || !roboToken()) return res.redirect(roboBase() + '/painel');
+  const ir = /^[a-z]+$/.test(String(req.query.ir || '')) ? req.query.ir : '';
+  res.redirect(`${roboBase()}/sso?t=${encodeURIComponent(bilheteRobo(u))}${ir ? '&ir=' + ir : ''}`);
+});
+
+// Qual janela o usuário vê: a loja dele, o escritório (SITE e pedidos divididos) ou tudo (adm)
+function lojaSiteDoUsuario(u) {
+  if (!u.board) return null;
+  return u.board;
+}
+
+app.get('/api/site/pedidos', requireAuth, async (req, res) => {
+  const u = req.session.user;
+  if (!roboToken()) return res.json({ lista: [], desligado: true });
+  try {
+    const loja = lojaSiteDoUsuario(u);
+    const r = await roboFetch('/loja/pedidos' + (loja ? '?loja=' + encodeURIComponent(loja) : ''));
+    if (!r.ok) return res.status(502).json({ error: `robô respondeu HTTP ${r.status}` });
+    let { lista } = await r.json();
+    // Supervisor: só as lojas dele
+    if (!u.board && u.lojas && u.lojas.length) lista = lista.filter(p => u.lojas.includes(p.posta) || p.transferir.some(t => u.lojas.includes(t.empresa)));
+    res.json({ lista, loja });
+  } catch (e) { res.status(502).json({ error: 'robô do site fora do ar: ' + e.message }); }
+});
+
+app.get('/api/site/pendencias', requireAuth, async (req, res) => {
+  if (!ehAdminOuEscritorio(req.session.user) || !roboToken()) return res.json(null);
+  try {
+    const r = await roboFetch('/envio/pendencias', { timeout: 30_000 });
+    res.status(r.ok ? 200 : 502).json(r.ok ? await r.json() : { error: `robô respondeu HTTP ${r.status}` });
+  } catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+// A loja só mexe no pedido que ela posta (adm e escritório em todos)
+async function pedidoSiteDoUsuario(u, numero) {
+  const loja = lojaSiteDoUsuario(u);
+  const r = await roboFetch('/loja/pedidos' + (loja ? '?loja=' + encodeURIComponent(loja) : ''));
+  if (!r.ok) return null;
+  const p = (await r.json()).lista.find(x => String(x.numero) === String(numero));
+  if (!p) return null;
+  return ehAdminOuEscritorio(u) || p.posta === u.board ? p : null;
+}
+
+for (const tipo of ['danfe', 'etiqueta']) {
+  app.get(`/api/site/pedidos/:numero/${tipo}`, requireAuth, async (req, res) => {
+    try {
+      const p = await pedidoSiteDoUsuario(req.session.user, req.params.numero);
+      if (!p) return res.status(404).send('Pedido não encontrado para a sua loja');
+      const r = await roboFetch(`/pedido/${tipo}?numero=${encodeURIComponent(req.params.numero)}`);
+      if (!r.ok) return res.status(r.status).send((await r.json().catch(() => ({}))).erro || 'Ainda não disponível');
+      res.setHeader('Content-Type', r.headers.get('content-type') || 'application/octet-stream');
+      if (r.headers.get('content-disposition')) res.setHeader('Content-Disposition', r.headers.get('content-disposition'));
+      res.send(Buffer.from(await r.arrayBuffer()));
+    } catch (e) { res.status(502).send('Robô do site fora do ar: ' + e.message); }
+  });
+}
+
+app.post('/api/site/pedidos/:numero/rastreio', requireAuth, async (req, res) => {
+  try {
+    const u = req.session.user;
+    const p = await pedidoSiteDoUsuario(u, req.params.numero);
+    if (!p) return res.status(404).json({ error: 'Pedido não encontrado para a sua loja' });
+    const r = await roboFetch('/pedido/rastreio', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ numero: Number(req.params.numero), codigo: req.body?.codigo, quem: u.username }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return res.status(r.status).json({ error: j.erro || `robô respondeu HTTP ${r.status}` });
+    res.json(j);
+  } catch (e) { res.status(502).json({ error: 'Robô do site fora do ar: ' + e.message }); }
+});
+
 // ── CRM ────────────────────────────────────────────────────────────────────
 // O botão CRM abre o app crm-lojas direto: tudo o que o dashboard daqui
 // mostrava está no Painel de lá. Os números do card CRM do painel vêm da API

@@ -169,6 +169,9 @@ function applyUserPermissions(user) {
   // Dashboard do CRM: todos; o servidor recorta a loja de cada um
   const crmEl = document.getElementById('crmBtn');
   if (crmEl) crmEl.style.display = 'flex';
+  // NEXO (robô do site): adm e escritório — supervisor e loja não
+  const nexoEl = document.getElementById('nexoBtn');
+  if (nexoEl) nexoEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
   const indevaVisible = isAdmin || isSupervisor || user.board === 'escritorio' || INDEVA_STORES.includes(user.board);
   const indevaEl = document.getElementById('indevaBtn');
   if (indevaEl) indevaEl.style.display = indevaVisible ? '' : 'none';
@@ -944,6 +947,109 @@ function _renderContagemAviso(c) {
   c.appendChild(el);
 }
 
+// ── Pedidos do site (NEXO) ─────────────────────────────────────────────────
+// A loja que tem a peça vê o pedido no topo do painel: primeiro "separe e
+// transfira para o SITE"; depois que o escritório fatura (empresa 6), a nota
+// e a etiqueta aparecem para imprimir, e o pedido só sai daqui com o código
+// de rastreio. Adm e escritório veem a pílula "Pedidos do site a faturar".
+// Os dados vêm do robô (integracao-site), guardados 60 s para os redesenhos
+// do painel não ficarem batendo lá.
+let _siteCache = null;
+async function _carregarSite(forcar) {
+  if (!forcar && _siteCache && Date.now() - _siteCache.em < 60_000) return _siteCache;
+  const adm = !S.user?.board ? !(S.user?.lojas?.length) : S.user.board === 'escritorio';
+  const [ped, pend] = await Promise.all([
+    S.user?.board ? apiFetch('GET', '/api/site/pedidos').catch(() => null) : Promise.resolve(null),
+    adm ? apiFetch('GET', '/api/site/pendencias').catch(() => null) : Promise.resolve(null),
+  ]);
+  _siteCache = { em: Date.now(), lista: ped?.lista || [], pend };
+  return _siteCache;
+}
+
+function _renderPedidosSite(c) {
+  if (!S.user) return;
+  const lugar = document.createElement('div');
+  lugar.className = 'site-lugar';
+  c.prepend(lugar);
+  _carregarSite().then(d => _desenharPedidosSite(lugar, d)).catch(() => {});
+}
+
+function _desenharPedidosSite(lugar, d) {
+  if (!lugar.isConnected) return;
+  const esc = _escHtml;
+  const brl = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  // Pílula para adm/escritório: vai para a linha de Pendências (ou cria uma)
+  if (d.pend && (d.pend.aFaturar || d.pend.semEtiqueta)) {
+    const c = document.getElementById('boardContainer');
+    let strip = c.querySelector('.aviso-strip');
+    if (!strip) {
+      strip = document.createElement('div');
+      strip.className = 'aviso-strip';
+      strip.innerHTML = '<span class="aviso-strip-lbl">Pendências</span>';
+      lugar.after(strip);
+    }
+    if (d.pend.aFaturar) _avisoPilula(strip, { icone: '🧾', rotulo: 'Pedidos do site a faturar', n: d.pend.aFaturar, atraso: true,
+      detalhe: d.pend.pedidos.filter(p => p.etapa === 'transferir').map(p => `Pedido ${p.numero}`).join(' · '),
+      acao: () => window.open('/nexo?ir=pedidos', '_blank') });
+    if (d.pend.semEtiqueta) _avisoPilula(strip, { icone: '🏷', rotulo: 'Pedidos do site sem etiqueta', n: d.pend.semEtiqueta,
+      detalhe: d.pend.pedidos.filter(p => p.etapa === 'postar' && !p.etiqueta).map(p => `Pedido ${p.numero}`).join(' · '),
+      acao: () => window.open('/nexo?ir=pedidos', '_blank') });
+  }
+  const lista = (d.lista || []).filter(p => p.etapa !== 'enviado' || (p.rastreio && p.souQuemPosta));
+  if (!lista.length) return;
+  const board = S.user.board;
+  const feito = (n, k) => { try { return localStorage.getItem(`site_${n}_${k}`) === '1'; } catch { return false; } };
+  lugar.innerHTML = `<div class="site-janela">
+    <div class="site-topo"><b>🛍 Pedidos do site</b><span>${lista.filter(p => p.etapa !== 'enviado').length} em andamento</span>
+      <button class="site-atualizar" title="Atualizar">↻</button></div>
+    ${lista.map(p => {
+      const minhaTransf = (p.transferir || []).filter(t => t.empresa === board);
+      const cab = `<div class="site-ped-cab"><b>Pedido ${esc(p.numero)}</b><span>${esc(p.cliente || '')} · ${esc(p.entrega || '')} · ${esc(p.envioForma || '')} · ${brl(p.total)}</span>
+        <span class="site-etapa site-etapa-${p.etapa}">${p.etapa === 'transferir' ? 'aguardando nota' : p.etapa === 'postar' ? 'pronto para postar' : 'postado'}</span></div>`;
+      if (p.etapa === 'enviado') return `<div class="site-ped">${cab}<div class="site-linha ok">✓ Postado · rastreio <b>${esc(p.rastreio)}</b>${p.gravacao?.loja?.ok === false ? ' · <span class="site-erro">não atualizou na Loja Integrada — avise o escritório</span>' : ''}</div></div>`;
+      if (p.etapa === 'transferir') {
+        const itens = (minhaTransf.length ? minhaTransf : []).flatMap(t => t.itens);
+        return `<div class="site-ped">${cab}
+          ${itens.length ? `<div class="site-linha"><b>1.</b> Separe e transfira para o <b>SITE (empresa 6)</b> no Microvix:
+            <ul>${itens.map(i => `<li>${esc(i.qtd)} × ${esc(i.nome || '')} <code>${esc(i.sku || i.cod)}</code></li>`).join('')}</ul></div>` : ''}
+          <div class="site-linha espera">⏳ Aguardando o escritório faturar a nota. Quando sair, a nota e a etiqueta aparecem aqui.</div></div>`;
+      }
+      if (!p.souQuemPosta) return `<div class="site-ped">${cab}<div class="site-linha espera">Nota emitida — quem posta este pedido é ${esc(p.posta === 'escritorio' ? 'o escritório' : p.posta)}.</div></div>`;
+      const check = (k, txt) => `<label class="site-check"><input type="checkbox" data-n="${p.numero}" data-k="${k}" ${feito(p.numero, k) ? 'checked' : ''}> ${txt}</label>`;
+      return `<div class="site-ped">${cab}
+        <div class="site-passos">
+          <a class="site-btn" href="/api/site/pedidos/${p.numero}/danfe" target="_blank" rel="noopener">🧾 Imprimir nota ${esc(p.nfe?.numero || '')}</a>
+          ${p.etiqueta ? `<a class="site-btn" href="/api/site/pedidos/${p.numero}/etiqueta" target="_blank" rel="noopener">🏷 Imprimir etiqueta</a>`
+            : '<span class="site-btn off" title="O escritório anexa a etiqueta gerada no Microvix">🏷 Etiqueta: aguardando escritório</span>'}
+          ${check('separado', 'Separado')} ${check('embalado', 'Embalado')}
+        </div>
+        <div class="site-rastreio">Postou nos Correios? Código de rastreio:
+          <input maxlength="13" placeholder="AA123456789BR" data-n="${p.numero}">
+          <button class="site-finalizar" data-n="${p.numero}">Finalizar pedido</button></div>
+        <div class="site-itens">${p.itens.map(i => `${esc(i.qtd)} × ${esc(i.nome)} <code>${esc(i.sku)}</code>`).join('<br>')}</div></div>`;
+    }).join('')}
+  </div>`;
+  lugar.querySelector('.site-atualizar').onclick = () => _carregarSite(true).then(nd => { lugar.innerHTML = ''; _desenharPedidosSite(lugar, nd); });
+  lugar.querySelectorAll('.site-check input').forEach(cb => cb.onchange = () => {
+    try { localStorage.setItem(`site_${cb.dataset.n}_${cb.dataset.k}`, cb.checked ? '1' : '0'); } catch {}
+  });
+  lugar.querySelectorAll('.site-finalizar').forEach(bt => bt.onclick = async () => {
+    const n = bt.dataset.n;
+    const cod = lugar.querySelector(`.site-rastreio input[data-n="${n}"]`).value.trim().toUpperCase();
+    if (!/^[A-Z]{2}\d{9}[A-Z]{2}$/.test(cod)) return toast('Código de rastreio no formato AA123456789BR', true);
+    if (!confirm(`Finalizar o pedido ${n} com o rastreio ${cod}? O cliente recebe o código pela Loja Integrada.`)) return;
+    bt.disabled = true; bt.textContent = 'Finalizando…';
+    try {
+      const r = await apiFetch('POST', `/api/site/pedidos/${n}/rastreio`, { codigo: cod });
+      toast(r.loja?.ok === false ? `Rastreio salvo, mas não atualizou na Loja Integrada — avise o escritório` : `Pedido ${n} finalizado`, r.loja?.ok === false);
+      const nd = await _carregarSite(true); lugar.innerHTML = ''; _desenharPedidosSite(lugar, nd);
+    } catch (e) {
+      let msg = e.message; try { msg = JSON.parse(msg).error || msg; } catch {}
+      toast('Não finalizou: ' + msg, true); bt.disabled = false; bt.textContent = 'Finalizar pedido';
+    }
+  });
+}
+
 // ── Pendências do adm ──────────────────────────────────────────────────────
 // Eram uma faixa grande por aviso, e com quatro acesas elas empurravam o
 // faturamento para baixo da dobra. Viraram uma linha só de pílulas: o número
@@ -1292,6 +1398,7 @@ function renderDashboard() {
   c.innerHTML = '';
   _renderContagemAviso(c);
   _renderAvisosAdm(c);
+  _renderPedidosSite(c);
 
   const pad = n => String(n).padStart(2, '0');
   const today = new Date();

@@ -4657,3 +4657,33 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
   .users-table .users-tr:hover .users-td-user { background: var(--surface2); }
   .users-table .users-tr-susp .users-td-user { background: linear-gradient(rgba(var(--warn-rgb), .05), rgba(var(--warn-rgb), .05)), var(--surface); }
 }
+
+/* ── Pedidos do site (NEXO) — janela no topo do painel da loja ── */
+.site-janela { border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--r-md); background: var(--card); margin-bottom: 1.15rem; overflow: hidden; }
+.site-topo { display: flex; align-items: center; gap: .6rem; padding: .6rem 1rem; border-bottom: 1px solid var(--border); font-size: .85rem; }
+.site-topo span { color: var(--muted); font-size: .75rem; }
+.site-atualizar { margin-left: auto; background: transparent; border: 1px solid var(--border); color: var(--text2); border-radius: 6px; padding: .15rem .5rem; cursor: pointer; }
+.site-ped { padding: .7rem 1rem; border-bottom: 1px solid var(--border); }
+.site-ped:last-child { border-bottom: 0; }
+.site-ped-cab { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; font-size: .82rem; }
+.site-ped-cab span { color: var(--text2); }
+.site-etapa { margin-left: auto; font-size: .7rem; font-weight: 700; padding: .1rem .55rem; border-radius: 999px; border: 1px solid var(--border); }
+.site-etapa-transferir { color: var(--muted); }
+.site-etapa-postar { color: var(--accent); border-color: rgba(var(--accent-rgb),.45); }
+.site-etapa-enviado { color: var(--up); border-color: rgba(var(--up-rgb),.45); }
+.site-linha { font-size: .8rem; color: var(--text2); margin-top: .45rem; line-height: 1.5; }
+.site-linha ul { margin: .25rem 0 0 1.1rem; padding: 0; }
+.site-linha.espera { color: var(--muted); }
+.site-linha.ok { color: var(--up); }
+.site-erro { color: var(--down); }
+.site-passos { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: .55rem; }
+.site-btn { display: inline-flex; align-items: center; gap: .35rem; font-size: .8rem; font-weight: 600; padding: .4rem .8rem; border-radius: 8px; border: 1px solid rgba(var(--accent-rgb),.45); color: var(--accent); text-decoration: none; background: rgba(var(--accent-rgb),.06); }
+.site-btn:hover { background: rgba(var(--accent-rgb),.12); }
+.site-btn.off { color: var(--muted); border-style: dashed; border-color: var(--border); background: transparent; cursor: default; }
+.site-check { font-size: .8rem; color: var(--text2); display: inline-flex; align-items: center; gap: .3rem; }
+.site-rastreio { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: .6rem; font-size: .8rem; color: var(--text2); }
+.site-rastreio input { font: inherit; font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; padding: .35rem .6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); width: 150px; }
+.site-finalizar { background: var(--up-strong); border: 1px solid var(--up-strong); color: var(--on-solid); font-size: .8rem; font-weight: 600; padding: .38rem .9rem; border-radius: 6px; cursor: pointer; }
+.site-finalizar:disabled { opacity: .6; cursor: wait; }
+.site-itens { margin-top: .5rem; font-size: .74rem; color: var(--muted); }
+.site-itens code, .site-linha code { font-size: .7rem; }
