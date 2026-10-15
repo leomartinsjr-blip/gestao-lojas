@@ -1,0 +1,507 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Produtos no Site</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground:   #FBFAF8;
+    --surface:  #FFFFFF;
+    --surface2: #F4F1EC;
+    --ink:      #1B1E27;
+    --ink2:     #4A4640;
+    --muted:    #7A7267;
+    --border:   #E3DED6;
+    --rule:     #CFC7BC;
+    --accent:   #A85F14;
+    --accent-soft: rgba(168, 95, 20, .09);
+    --warn:     #8A6410;
+    --warn-soft: rgba(138, 100, 16, .10);
+    --stop:     #B23A2E;
+    --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+    --disp: "Big Shoulders Display", "IBM Plex Sans", Impact, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:   #14161C;
+      --surface:  #1B1E27;
+      --surface2: #232733;
+      --ink:      #E9E6E1;
+      --ink2:     #C3BDB4;
+      --muted:    #8E877D;
+      --border:   #2E333F;
+      --rule:     #3A4050;
+      --accent:   #F0A045;
+      --accent-soft: rgba(240, 160, 69, .12);
+      --warn:     #E3B93F;
+      --warn-soft: rgba(227, 185, 63, .12);
+      --stop:     #E36C5D;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:   #14161C;
+    --surface:  #1B1E27;
+    --surface2: #232733;
+    --ink:      #E9E6E1;
+    --ink2:     #C3BDB4;
+    --muted:    #8E877D;
+    --border:   #2E333F;
+    --rule:     #3A4050;
+    --accent:   #F0A045;
+    --accent-soft: rgba(240, 160, 69, .12);
+    --warn:     #E3B93F;
+    --warn-soft: rgba(227, 185, 63, .12);
+    --stop:     #E36C5D;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .folha { max-width: 46rem; margin: 0 auto; padding: 2.75rem 1.5rem 4rem; }
+  .mono { font-family: var(--mono); }
+
+  /* Cabecalho */
+  .kicker {
+    font-family: var(--mono); font-size: .68rem; font-weight: 600;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--accent);
+    margin: 0;
+  }
+  h1 {
+    font-family: var(--disp); font-weight: 700; font-size: clamp(2.6rem, 8vw, 4.1rem);
+    line-height: .92; letter-spacing: .005em; text-transform: uppercase;
+    margin: .5rem 0 .35rem; text-wrap: balance; color: var(--ink);
+  }
+  .sub { font-size: 1.02rem; color: var(--ink2); max-width: 34rem; margin: 0 0 1.6rem; }
+  .ficha {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 1px; background: var(--border); border: 1px solid var(--border);
+    border-radius: 3px; overflow: hidden; margin: 0;
+  }
+  .ficha > div { background: var(--surface); padding: .7rem .85rem; }
+  .ficha dt {
+    font-family: var(--mono); font-size: .64rem; font-weight: 600; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: .2rem;
+  }
+  .ficha dd { margin: 0; font-size: .88rem; color: var(--ink); font-weight: 500; }
+
+  /* Blocos */
+  section { margin-top: 2.75rem; }
+  h2 {
+    font-family: var(--disp); font-weight: 700; font-size: 1.75rem; text-transform: uppercase;
+    letter-spacing: .02em; margin: 0 0 .2rem; color: var(--ink);
+  }
+  .h2-nota { font-size: .85rem; color: var(--muted); margin: 0 0 1rem; }
+
+  .antes { list-style: none; padding: 0; margin: 0; display: grid; gap: .55rem; }
+  .antes li {
+    display: grid; grid-template-columns: .85rem 1fr; gap: .7rem;
+    align-items: start; font-size: .95rem; color: var(--ink2);
+  }
+  .antes li::before {
+    content: ""; width: .5rem; height: .5rem; margin-top: .48rem;
+    border: 1.5px solid var(--accent); border-radius: 50%;
+  }
+  .antes b { color: var(--ink); font-weight: 600; }
+
+  .regras { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+  @media (min-width: 34rem) { .regras { grid-template-columns: 1fr 1fr; } }
+  .regra { background: var(--surface); padding: .9rem 1rem; }
+  .regra-t {
+    font-family: var(--mono); font-size: .95rem; font-weight: 600; color: var(--accent);
+    display: block; margin-bottom: .2rem;
+  }
+  .regra p { margin: 0; font-size: .85rem; color: var(--ink2); line-height: 1.5; }
+  .regra b { color: var(--ink); font-weight: 600; }
+
+  /* Fases e passos */
+  .fase { display: flex; align-items: center; gap: .85rem; margin: 2.6rem 0 1.1rem; }
+  .fase-nome {
+    font-family: var(--mono); font-size: .68rem; font-weight: 600; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--muted); white-space: nowrap;
+  }
+  .fase-linha { flex: 1; height: 1px; background: var(--rule); }
+
+  .passos { list-style: none; margin: 0; padding: 0; display: grid; gap: 1.9rem; }
+  .passo { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; align-items: start; }
+  .num {
+    font-family: var(--disp); font-weight: 700; font-size: 2.5rem; line-height: .78;
+    color: var(--accent); font-variant-numeric: tabular-nums; padding-top: .15rem;
+  }
+  .passo h3 { font-size: 1.06rem; font-weight: 600; margin: 0 0 .35rem; line-height: 1.3; color: var(--ink); }
+  .passo p { margin: 0 0 .55rem; color: var(--ink2); }
+  .passo p:last-child { margin-bottom: 0; }
+  .passo b { color: var(--ink); font-weight: 600; }
+  .caminho {
+    font-family: var(--mono); font-size: .82rem; color: var(--ink2);
+    background: var(--surface2); border-left: 2px solid var(--accent);
+    padding: .5rem .7rem; margin: 0; overflow-x: auto; white-space: nowrap;
+  }
+  .caminho b { color: var(--accent); font-weight: 600; }
+  .btn {
+    font-family: var(--mono); font-size: .82rem; font-weight: 600; color: var(--ink);
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 3px; padding: .05rem .35rem; white-space: nowrap;
+  }
+
+  .campos { margin: 0 0 .75rem; border-top: 1px solid var(--border); }
+  .campos > div {
+    display: grid; grid-template-columns: minmax(8rem, 12.5rem) 1fr; gap: .2rem 1rem;
+    padding: .4rem 0; border-bottom: 1px solid var(--border); align-items: baseline;
+  }
+  .campos dt { font-size: .84rem; color: var(--muted); }
+  .campos dd {
+    margin: 0; font-family: var(--mono); font-size: .84rem; font-weight: 600;
+    color: var(--ink); overflow-wrap: anywhere;
+  }
+  .campos dd em { font-family: var(--sans); font-style: normal; font-weight: 400; color: var(--ink2); }
+
+  .aviso {
+    background: var(--warn-soft); border-left: 2px solid var(--warn);
+    padding: .7rem .85rem; margin: .8rem 0 0; font-size: .87rem; color: var(--ink2);
+  }
+  .aviso b { color: var(--warn); }
+  .aviso .cit { font-family: var(--mono); font-size: .8rem; }
+
+  .atalho { font-size: .85rem; color: var(--muted); }
+  .atalho b { color: var(--ink2); font-weight: 600; }
+
+  .parada {
+    background: var(--accent-soft); border: 1px solid var(--border); border-left: 2px solid var(--stop);
+    padding: .85rem .95rem; margin-top: 1.8rem; font-size: .9rem; color: var(--ink2);
+  }
+  .parada b { color: var(--stop); }
+
+  /* Checklist */
+  .check { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+  .check li { background: var(--surface); }
+  .check label { display: grid; grid-template-columns: 1.05rem 1fr; gap: .75rem; align-items: start; padding: .7rem .9rem; cursor: pointer; }
+  .check input { width: 1rem; height: 1rem; margin: .18rem 0 0; accent-color: var(--accent); }
+  .check input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .check span { font-size: .92rem; color: var(--ink2); }
+  .check input:checked + span { color: var(--muted); text-decoration: line-through; }
+
+  .rodape {
+    margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    font-family: var(--mono); font-size: .7rem; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; justify-content: space-between;
+  }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  /* Impressao — folha clara, cores mantidas. Só o fundo vira branco puro:
+     papel poupa tinta, mas o laranja é o que separa passo de passo. */
+  @page { size: A4; margin: 15mm 14mm; }
+  @media print {
+    /* Os três estados de tema de uma vez: o seletor do tema escuro tem
+       especificidade maior que um :root sozinho, e venceria aqui dentro —
+       papel branco com texto claro é o resultado. */
+    :root, :root:not([data-theme="light"]), :root[data-theme="dark"] {
+      --ground: #FFFFFF; --surface: #FFFFFF; --surface2: #F4F1EC; --ink: #14171F; --ink2: #3D3A35;
+      --muted: #6B655C; --border: #D9D3CA; --rule: #C4BCB1; --accent: #A85F14;
+      --accent-soft: rgba(168, 95, 20, .07);
+      --warn: #8A6410; --warn-soft: rgba(138, 100, 16, .09); --stop: #B23A2E;
+    }
+    body {
+      background: #fff; color: var(--ink); font-size: 10pt; line-height: 1.45;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .folha { max-width: none; padding: 0; }
+    h1 { font-size: 30pt; color: var(--ink); }
+    .num { font-size: 19pt; }
+    .passos { gap: 1.1rem; }
+    .passo, .regra, .check li, .aviso, .parada { break-inside: avoid; }
+    /* No papel o quadradinho é para marcar com caneta: sai vazio, não pintado */
+    .check input { appearance: none; -webkit-appearance: none; width: .8rem; height: .8rem;
+      border: 1.2px solid var(--ink2); background: #fff; border-radius: 1px; }
+    .fase, h2 { break-after: avoid; }
+    .caminho { white-space: normal; }
+  }
+
+  /* Prints do Microvix — exemplo real, não ilustração */
+  .tela { margin: .8rem 0 0; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; background: var(--surface); }
+  .tela img { display: block; width: 100%; height: auto; }
+  .tela.estreita { max-width: 15rem; }
+  .tela figcaption {
+    font-family: var(--mono); font-size: .68rem; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); padding: .4rem .7rem; border-top: 1px solid var(--border); background: var(--surface2);
+  }
+  .passo a, .antes a, .parada a { color: var(--accent); }
+
+  /* Tabelas de consulta */
+  .tab-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 3px; }
+  table.tab { width: 100%; border-collapse: collapse; font-size: .8rem; background: var(--surface); }
+  .tab th {
+    font-family: var(--mono); font-size: .62rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); text-align: left; padding: .5rem .6rem; background: var(--surface2);
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  .tab td { padding: .45rem .6rem; border-bottom: 1px solid var(--border); color: var(--ink2); vertical-align: top; }
+  .tab tr:last-child td { border-bottom: 0; }
+  .tab td:first-child { font-weight: 600; color: var(--ink); }
+  .tab .m { font-family: var(--mono); color: var(--ink); white-space: nowrap; }
+  .tab .vazio { color: var(--muted); font-style: italic; font-weight: 400; }
+  /* A tabela por marca tem 8 colunas: sai da coluna de texto para caber sem rolar */
+  .largo { width: min(68rem, calc(100vw - 2rem)); position: relative; left: 50%; transform: translateX(-50%); }
+  .chips { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0; padding: 0; list-style: none; }
+  .chips li {
+    font-family: var(--mono); font-size: .74rem; font-weight: 600; color: var(--ink);
+    border: 1px solid var(--border); background: var(--surface); border-radius: 3px; padding: .15rem .45rem;
+  }
+
+  @media print {
+    .tela { break-inside: avoid; }
+    .tela img { max-height: 95mm; width: auto; max-width: 100%; margin: 0 auto; }
+    .tab-wrap { overflow: visible; }
+    .largo { width: auto; left: 0; transform: none; }
+    .tab tr { break-inside: avoid; }
+  }
+</style>
+<style>body{margin:0}img{max-width:100%}</style>
+</head>
+<body>
+
+<div class="folha">
+
+  <header>
+    <p class="kicker">Manual do escritório &middot; Surfers</p>
+    <h1>Produtos<br>no Site</h1>
+    <p class="sub">Como subir um produto novo na Loja Integrada, reativar um produto parado e consertar o que o Robô do Site aponta: cadastro incompleto, código de barras, preço e estoque. Tudo começa no painel do robô.</p>
+    <dl class="ficha">
+      <div><dt>Quem faz</dt><dd>Escritório</dd></div>
+      <div><dt>Onde</dt><dd>Painel do Robô do Site &middot; Loja Integrada &middot; Microvix</dd></div>
+      <div><dt>Quando</dt><dd>Produto com estoque fora do site, ou quadro em vermelho no painel</dd></div>
+      <div><dt>Tamanho</dt><dd>3 partes &middot; 16 passos</dd></div>
+    </dl>
+  </header>
+
+  <section>
+    <h2>Antes de começar</h2>
+    <p class="h2-nota">Sem isto, a ficha vem vazia ou o produto sobe errado.</p>
+    <ul class="antes">
+      <li><span>O endereço do painel é <a href="https://integracao-site.onrender.com/painel" target="_blank" rel="noopener"><b>integracao-site.onrender.com/painel</b></a>. Na primeira vez ele pede uma <b>senha (token)</b>: peça ao Leonardo. Ela fica salva no navegador.</span></li>
+      <li><span>O produto precisa estar <b>bem cadastrado no Microvix</b>: setor, marca, cor, grade e código de barras GTIN-13. A ficha do site copia tudo de lá. Veja o <a href="/manuais/cadastro-produto">manual de Cadastro de Produto</a>.</span></li>
+      <li><span><b>Fotos</b> continuam sendo colocadas à mão, direto na Loja Integrada. Por isso o produto sempre sobe <b>inativo</b>.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>O que não muda</h2>
+    <p class="h2-nota">Vale para todo produto.</p>
+    <div class="regras">
+      <div class="regra">
+        <span class="regra-t">Preço e estoque vêm do Microvix</span>
+        <p>Preço cheio = <b>tabela 1 (padrão)</b>. Promoção = promoção da <b>empresa 6 (SITE)</b> cadastrada de 2024 para cá. Errou o preço? Corrija <b>no Microvix</b>, não na Loja Integrada.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">SKU da variação</span>
+        <p>Sempre <span class="cit">código-referência-cor-tamanho</span>, por exemplo <span class="cit">884895-VN0009QC-6BT-35</span>. O número do começo é o que liga o site ao Microvix: <b>nunca edite o SKU</b> de um produto que já está ligado.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Sobe inativo</span>
+        <p>O robô cria o produto <b>inativo</b>. Ele só aparece no site depois que alguém coloca as fotos e ativa.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Estação fora</span>
+        <p>O estoque da Estação <b>não entra</b> no site. O painel mostra isso no quadro do estoque.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>O painel em 1 minuto</h2>
+    <p class="h2-nota">Os quadros estão na ordem do que resolver primeiro. Clique num quadro para abrir a lista; o botão <span class="btn">Baixar planilha</span> leva o que estiver filtrado.</p>
+    <dl class="campos">
+      <div><dt>Visão geral</dt><dd>quanto o estoque vale e quanto dele está à venda no site</dd></div>
+      <div><dt>Estoque divergente</dt><dd>o site mostra quantidade diferente das lojas</dd></div>
+      <div><dt>Órfãos</dt><dd>produto no site que perdeu a ligação com o Microvix</dd></div>
+      <div><dt>Preço divergente</dt><dd>De/Por do site diferente do Microvix</dd></div>
+      <div><dt>Cadastro incompleto</dt><dd>produto no ar sem foto, descrição, peso/medidas, preço ou categoria</dd></div>
+      <div><dt>A cadastrar</dt><dd>tem estoque e não está à venda no site</dd></div>
+      <div><dt>Código de barras</dt><dd>produto com saldo e código fora do GTIN-13</dd></div>
+    </dl>
+    <div class="aviso"><b>Modo sombra.</b> Enquanto o selo laranja "modo sombra" aparecer no topo, o robô só compara: ele não mexe em estoque nem em preço do site. Quem atualiza o site ainda é o robô antigo (RoboTask).</div>
+  </section>
+
+  <div class="fase"><span class="fase-nome">Parte 1 &middot; Subir produto novo</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">01</div>
+      <div>
+        <h3>Abra a lista de produtos a cadastrar</h3>
+        <p class="caminho">Painel &rarr; quadro <b>Produtos a cadastrar</b></p>
+        <p>Use o campo <b>saldo maior que</b> para ver só o que vale a pena (por exemplo, mais de 5 peças somando os tamanhos da cor). Filtre por <b>Setor</b>, <b>Marca</b>, <b>Coleção</b> ou <b>Situação na LI</b>.</p>
+        <p class="atalho"><b>"inativo — reativar"</b> é produto que já existe na Loja Integrada, só está desligado. Esse não se cadastra de novo: veja a <a href="#reativar">Parte 2</a>.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">02</div>
+      <div>
+        <h3>Clique na linha do produto</h3>
+        <p>Abre a <b>ficha</b> já preenchida com o Microvix: título, categoria, marca, cor, preço, peso, medidas, NCM e a grade com o estoque de cada tamanho.</p>
+        <p>Embaixo dos campos aparece o que <b>falta</b> para poder subir, em laranja.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">03</div>
+      <div>
+        <h3>Confira categoria, marca e cor</h3>
+        <p>O robô escolhe sozinho o cadastro da Loja Integrada <b>de mesmo nome</b> do Microvix (setor TENIS &rarr; categoria Tênis, marca VANS &rarr; Vans). Do lado de cada campo aparece o valor do Microvix.</p>
+        <p>Se vier <b>— escolher —</b>, o nome não bateu: escolha na lista. Nas cores, as mais usadas no site aparecem primeiro, com a quantidade ao lado.</p>
+        <p class="atalho"><b>Cor com código</b> (ex.: Vans <span class="cit">6BT</span>, <span class="cit">Y28</span>): escolha a cor de verdade (Preto, Branco&hellip;). Se marcar <b>usar para todos</b> embaixo dos campos, essa escolha vale para todos os produtos com o mesmo código.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">04</div>
+      <div>
+        <h3>Confira preço e promoção</h3>
+        <p>O <b>preço</b> vem da tabela padrão. O <b>preço promocional</b> só vem preenchido se o produto estiver numa promoção ativa da empresa 6. Se estiver errado, corrija no Microvix e abra a ficha de novo.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">05</div>
+      <div>
+        <h3>Confira peso e medidas</h3>
+        <p>Sem peso e medidas a Loja Integrada <b>não calcula o frete</b>. Quando o Microvix não tem, a ficha usa o <b>padrão do setor</b>. Trocar a categoria troca o peso e as medidas para o padrão daquele setor.</p>
+        <dl class="campos">
+          <div><dt>Peso</dt><dd>em kg, com a caixa (ex.: 1,2)</dd></div>
+          <div><dt>Altura, largura, profundidade</dt><dd>em cm, da caixa ou embalagem</dd></div>
+        </dl>
+        <p class="atalho">O padrão de cada setor fica em <b>De-para do cadastro &rarr; Setor</b>. Mudou o tamanho da caixa de um tipo de produto? Ajuste lá e vale para todos os próximos.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">06</div>
+      <div>
+        <h3>Confira a grade</h3>
+        <p>Cada tamanho do Microvix aparece com o <b>tamanho na LI</b>, o SKU e o estoque para o site.</p>
+        <ul class="antes">
+          <li><span>Desmarque <b>Subir</b> nos tamanhos que não devem ir para o site.</span></li>
+          <li><span>Tamanho em <b>— escolher —</b>: escolha na lista. É o caso do <b>tamanho americano</b> (ex.: 9 &rarr; 41).</span></li>
+        </ul>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">07</div>
+      <div>
+        <h3>Gere os textos</h3>
+        <p>Clique em <span class="btn">Sugerir textos (IA)</span>. Em alguns segundos ele preenche <b>título</b>, <b>descrição</b> e <b>SEO</b>.</p>
+        <div class="aviso"><b>Leia antes de subir.</b> A IA só escreve o que os dados do Microvix permitem. Confira se não ficou nenhuma informação errada (material, tecnologia, medida) e ajuste o que quiser.</div>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">08</div>
+      <div>
+        <h3>Simule e suba</h3>
+        <p>Clique em <span class="btn">Simular envio</span> para ver exatamente o que vai para a Loja Integrada, sem enviar nada. Estando certo, clique em <span class="btn">Subir na LI (inativo)</span> e confirme.</p>
+        <p>O robô cria o produto, as variações, o preço e o estoque. A ficha passa a mostrar <b>"Já subiu"</b> e quantas variações foram criadas.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">09</div>
+      <div>
+        <h3>Faltou variação? Suba só as que faltam</h3>
+        <p>Se a ficha mostrar, por exemplo, <b>"Variações no site: 8 de 12"</b>, aparece o botão <span class="btn">Subir variações que faltam</span>. Ele cria só as que não existem, sem duplicar o produto.</p>
+        <p class="atalho">Se der erro de novo, a ficha mostra a mensagem da Loja Integrada. Mande essa mensagem para o Leonardo.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">10</div>
+      <div>
+        <h3>Coloque as fotos e ative na Loja Integrada</h3>
+        <p class="caminho">Loja Integrada &rarr; Produtos &rarr; buscar pelo <b>nome</b> do produto</p>
+        <p>Coloque as fotos, confira as variações e o preço, e marque o produto como <b>ativo</b>. Pronto: está à venda.</p>
+        <p class="atalho">A busca da Loja Integrada procura pelo <b>produto</b>, não pelo SKU do tamanho. Busque pelo nome.</p>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase" id="reativar"><span class="fase-nome">Parte 2 &middot; Reativar produto parado</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">11</div>
+      <div>
+        <h3>Ache os produtos para reativar</h3>
+        <p class="caminho">Painel &rarr; <b>Produtos a cadastrar</b> &rarr; filtro <b>Situação na LI = inativo — reativar</b></p>
+        <p>São produtos que já existem na Loja Integrada, estão desligados e voltaram a ter estoque nas lojas.</p>
+      </div>
+    </li>
+    <li class="passo">
+      <div class="num">12</div>
+      <div>
+        <h3>Confira e ative na Loja Integrada</h3>
+        <p>Busque pelo nome, confira fotos, descrição, peso e medidas e ative. <b>Não cadastre de novo</b>: o SKU já existe, e o robô recusa duplicado.</p>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase"><span class="fase-nome">Parte 3 &middot; Consertar o que o painel aponta</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">13</div>
+      <div>
+        <h3>Cadastro incompleto</h3>
+        <p>Abra o quadro, baixe a planilha e corrija cada produto <b>na Loja Integrada</b>, de acordo com o motivo:</p>
+        <dl class="campos">
+          <div><dt>sem foto</dt><dd>coloque ao menos uma foto</dd></div>
+          <div><dt>sem descrição</dt><dd>escreva a descrição (dá para gerar pela ficha e copiar)</dd></div>
+          <div><dt>sem peso ou medidas</dt><dd>preencha peso, altura, largura e profundidade</dd></div>
+          <div><dt>sem preço</dt><dd>confira o preço no Microvix (tabela 1)</dd></div>
+          <div><dt>sem categoria</dt><dd>escolha a categoria</dd></div>
+        </dl>
+        <p class="atalho">Se não der para completar logo, <b>inative</b> o produto: produto incompleto no ar vende mal ou nem fecha o carrinho. O painel atualiza esta lista uma vez por dia.</p>
+      </div>
+    </li>
+    <li class="passo">
+      <div class="num">14</div>
+      <div>
+        <h3>Código de barras fora do GTIN-13</h3>
+        <p>Corrija <b>no Microvix</b>: o código de barras principal tem que ser o EAN de 13 dígitos do fornecedor. A coluna <b>Problema</b> diz o que está errado (tamanho, letra ou dígito verificador).</p>
+      </div>
+    </li>
+    <li class="passo">
+      <div class="num">15</div>
+      <div>
+        <h3>Preço divergente</h3>
+        <p>A coluna <b>Situação</b> diz o que está diferente. O certo é sempre o Microvix: <b>De</b> = tabela padrão, <b>Por</b> = promoção da empresa 6. Se o Microvix está certo, quem precisa atualizar é o site; se o Microvix está errado, corrija lá.</p>
+      </div>
+    </li>
+    <li class="passo">
+      <div class="num">16</div>
+      <div>
+        <h3>Estoque divergente e órfãos</h3>
+        <p><b>Estoque divergente:</b> em modo sombra é só informativo. Avise o Leonardo se a lista crescer muito: pode ser o robô antigo parado.</p>
+        <p><b>Órfão</b> (produto no site sem ligação com o Microvix, com estoque): ele <b>vende o que não existe</b>. Ou o SKU no site está fora do padrão <span class="cit">código-referência-cor-tamanho</span> (corrija o SKU), ou o produto saiu de linha (inative).</p>
+      </div>
+    </li>
+  </ol>
+
+  <section>
+    <h2>Dúvida ou erro</h2>
+    <p>Mande para o Leonardo o <b>nome do produto</b>, o <b>print da ficha</b> e, se tiver, a <b>mensagem de erro</b> que a ficha mostrou.</p>
+  </section>
+
+  <div class="rodape">Surfers &middot; Manual do escritório &middot; Robô do Site</div>
+</div>
+</body>
+</html>
