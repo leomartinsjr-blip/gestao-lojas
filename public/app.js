@@ -160,7 +160,9 @@ function userIsAdmin(u) { return !u?.board && !(u?.lojas && u.lojas.length); }
 function irParaNexoSeSite(user) {
   if (user?.board !== 'site') return false;
   if (user.mustChangePassword) { hideLogin(); showChangePasswordModal(); return true; }
-  location.href = '/nexo';
+  // Veio de um manual (ex.: botão Manual do NEXO sem sessão no gestão): volta para ele
+  const voltar = new URLSearchParams(location.search).get('voltar') || '';
+  location.href = /^\/manuais\/[a-z0-9-]+$/.test(voltar) ? voltar : '/nexo';
   return true;
 }
 
@@ -578,7 +580,7 @@ function showChangePasswordModal() {
       await apiFetch('POST', '/api/change-password', { password: pwd });
       S.user.mustChangePassword = false;
       overlay.remove();
-      if (S.user.board === 'site') location.href = '/nexo';
+      irParaNexoSeSite(S.user);
     } catch (e) {
       let msg = 'Erro ao salvar';
       try { msg = JSON.parse(e.message).error || msg; } catch {}

@@ -1125,7 +1125,8 @@ app.get('/manuais/:slug', (req, res) => {
   if (!slug || !fs.existsSync(arq)) return res.redirect('/manuais');
   if (MANUAIS_ESCRITORIO.has(slug)) {
     const u = req.session?.user;
-    if (!u) return res.redirect('/');
+    // Sem sessão: entra e volta para este manual (o login Site cairia no NEXO)
+    if (!u) return res.redirect('/?voltar=' + encodeURIComponent('/manuais/' + slug));
     // Mesma regra do requireEscritorioOrAdmin, mais o supervisor fora. O manual do
     // NEXO (produtos-site) também abre para o login da loja Site (equipe do site)
     const site = slug === 'produtos-site' && u.board === 'site';
