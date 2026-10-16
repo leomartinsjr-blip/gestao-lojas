@@ -275,12 +275,12 @@
 <div class="folha">
 
   <header>
-    <p class="kicker">Manual do escritório &middot; Surfers</p>
+    <p class="kicker">Manual do escritório e do site &middot; Surfers</p>
     <h1>Produtos<br>no Site</h1>
     <p class="sub">Como subir um produto novo na Loja Integrada, reativar um produto parado e consertar o que o Robô do Site aponta: cadastro incompleto, código de barras, preço e estoque. Tudo começa no painel do robô.</p>
     <dl class="ficha">
-      <div><dt>Quem faz</dt><dd>Escritório</dd></div>
-      <div><dt>Onde</dt><dd>Painel do Robô do Site &middot; Loja Integrada &middot; Microvix</dd></div>
+      <div><dt>Quem faz</dt><dd>Escritório e equipe do site</dd></div>
+      <div><dt>Onde</dt><dd>NEXO (painel do robô do site) &middot; Loja Integrada &middot; Microvix</dd></div>
       <div><dt>Quando</dt><dd>Produto com estoque fora do site, ou quadro em vermelho no painel</dd></div>
       <div><dt>Tamanho</dt><dd>3 partes &middot; 16 passos</dd></div>
     </dl>
@@ -290,7 +290,7 @@
     <h2>Antes de começar</h2>
     <p class="h2-nota">Sem isto, a ficha vem vazia ou o produto sobe errado.</p>
     <ul class="antes">
-      <li><span>O endereço do painel é <a href="https://integracao-site.onrender.com/painel" target="_blank" rel="noopener"><b>integracao-site.onrender.com/painel</b></a>. Na primeira vez ele pede uma <b>senha (token)</b>: peça ao Leonardo. Ela fica salva no navegador.</span></li>
+      <li><span>O endereço do painel é <a href="https://integracao-site.onrender.com/painel" target="_blank" rel="noopener"><b>integracao-site.onrender.com/painel</b></a>. Entre com o <b>usuário e a senha do gestão</b>. Quem tem login da loja <b>Site</b> entra pelo gestão e cai direto no NEXO; o botão <b>Manual</b> no topo do NEXO abre esta página.</span></li>
       <li><span>O produto precisa estar <b>bem cadastrado no Microvix</b>: setor, marca, cor, grade e código de barras GTIN-13. A ficha do site copia tudo de lá. Veja o <a href="/manuais/cadastro-produto">manual de Cadastro de Produto</a>.</span></li>
       <li><span><b>Fotos</b> continuam sendo colocadas à mão, direto na Loja Integrada. Por isso o produto sempre sobe <b>inativo</b>.</span></li>
     </ul>
@@ -331,7 +331,7 @@
       <div><dt>A cadastrar</dt><dd>tem estoque e não está à venda no site</dd></div>
       <div><dt>Código de barras</dt><dd>produto com saldo e código fora do GTIN-13</dd></div>
     </dl>
-    <div class="aviso"><b>Modo sombra.</b> Enquanto o selo laranja "modo sombra" aparecer no topo, o robô só compara: ele não mexe em estoque nem em preço do site. Quem atualiza o site ainda é o robô antigo (RoboTask).</div>
+    <div class="aviso"><b>O robô grava no site sozinho.</b> Estoque, preço (De) e promoção (Por) vão do Microvix para o site a cada poucos minutos — o selo verde "gravando no site" no topo mostra isso. Produto com Por entra sozinho na categoria <b>Promoções</b> do site e sai quando a promoção acaba.</div>
   </section>
 
   <div class="fase"><span class="fase-nome">Parte 1 &middot; Subir produto novo</span><span class="fase-linha"></span></div>
@@ -402,7 +402,7 @@
       <div class="num">07</div>
       <div>
         <h3>Gere os textos</h3>
-        <p>Clique em <span class="btn">Sugerir textos (IA)</span>. Em alguns segundos ele preenche <b>título</b>, <b>descrição</b> e <b>SEO</b>.</p>
+        <p>Clique em <span class="btn">Sugerir textos (IA)</span>. Em alguns segundos ele preenche <b>título</b>, <b>descrição</b> e <b>SEO</b> (título e descrição para o Google, gravados no produto quando ele sobe). Os textos não citam coleção nem estação.</p>
         <div class="aviso"><b>Leia antes de subir.</b> A IA só escreve o que os dados do Microvix permitem. Confira se não ficou nenhuma informação errada (material, tecnologia, medida) e ajuste o que quiser.</div>
       </div>
     </li>
@@ -433,6 +433,7 @@
         <p>Coloque as fotos, confira as variações e o preço, e marque o produto como <b>ativo</b>. Pronto: está à venda.</p>
         <p class="atalho">A busca da Loja Integrada procura pelo <b>produto</b>, não pelo SKU do tamanho. Busque pelo nome.</p>
         <p>Enquanto não for ativado, o produto aparece em <b>Produtos a cadastrar</b> como <b>"subiu — falta foto e ativar"</b>, e o quadro mostra quantos estão esperando. Depois de ativar, ele sai da lista na conferência do dia seguinte.</p>
+        <div class="aviso"><b>Cadastro que conta.</b> O NEXO registra quem subiu cada produto (Painel &rarr; <b>Cadastros por pessoa</b>). Só conta o produto <b>ativo na Loja Integrada e completo</b>: com foto, descrição, preço, peso/medidas e categoria. A checagem é diária, então um produto recém-ativado pode levar até um dia para contar. Lá aparece o motivo de cada um que ainda não conta.</div>
       </div>
     </li>
   </ol>
@@ -478,21 +479,21 @@
       <div class="num">14</div>
       <div>
         <h3>Código de barras fora do GTIN-13</h3>
-        <p>Corrija <b>no Microvix</b>: o código de barras principal tem que ser o EAN de 13 dígitos do fornecedor. A coluna <b>Problema</b> diz o que está errado (tamanho, letra ou dígito verificador).</p>
+        <p>Corrija <b>no Microvix</b>: o produto precisa ter o EAN de 13 dígitos do fornecedor marcado como <b>principal</b> (pode ficar junto do código gerencial). O robô lê todos os códigos do produto e usa o GTIN válido. A coluna <b>Problema</b> diz o que está errado (tamanho, letra ou dígito verificador).</p>
       </div>
     </li>
     <li class="passo">
       <div class="num">15</div>
       <div>
         <h3>Preço divergente</h3>
-        <p>A coluna <b>Situação</b> diz o que está diferente. O certo é sempre o Microvix: <b>De</b> = tabela padrão, <b>Por</b> = promoção da empresa 6. Se o Microvix está certo, quem precisa atualizar é o site; se o Microvix está errado, corrija lá.</p>
+        <p>A coluna <b>Situação</b> diz o que está diferente. O certo é sempre o Microvix: <b>De</b> = tabela padrão, <b>Por</b> = promoção da empresa 6. O robô corrige o site sozinho a cada ciclo: se o produto continua na lista, o Microvix provavelmente está errado — corrija lá.</p>
       </div>
     </li>
     <li class="passo">
       <div class="num">16</div>
       <div>
         <h3>Estoque divergente e órfãos</h3>
-        <p><b>Estoque divergente:</b> em modo sombra é só informativo. Avise o Leonardo se a lista crescer muito: pode ser o robô antigo parado.</p>
+        <p><b>Estoque divergente:</b> o robô regrava o estoque do site a cada ciclo (ex.: pedido cancelado que não devolveu a peça). Avise o Leonardo se a lista crescer muito ou o mesmo produto ficar dias na lista.</p>
         <p><b>Órfão</b> (produto no site sem ligação com o Microvix, com estoque): ele <b>vende o que não existe</b>. Ou o SKU no site está fora do padrão <span class="cit">código-referência-cor-tamanho</span> (corrija o SKU), ou o produto saiu de linha (inative).</p>
       </div>
     </li>
@@ -503,7 +504,7 @@
     <p>Mande para o Leonardo o <b>nome do produto</b>, o <b>print da ficha</b> e, se tiver, a <b>mensagem de erro</b> que a ficha mostrou.</p>
   </section>
 
-  <div class="rodape">Surfers &middot; Manual do escritório &middot; Robô do Site</div>
+  <div class="rodape">Surfers &middot; Manual do escritório e do site &middot; NEXO &middot; atualizado em 16/10/2026</div>
 </div>
 </body>
 </html>

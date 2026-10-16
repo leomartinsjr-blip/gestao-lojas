@@ -1126,8 +1126,10 @@ app.get('/manuais/:slug', (req, res) => {
   if (MANUAIS_ESCRITORIO.has(slug)) {
     const u = req.session?.user;
     if (!u) return res.redirect('/');
-    // Mesma regra do requireEscritorioOrAdmin, mais o supervisor fora
-    if (u.board ? u.board !== 'escritorio' : (u.lojas && u.lojas.length)) return res.redirect('/manuais');
+    // Mesma regra do requireEscritorioOrAdmin, mais o supervisor fora. O manual do
+    // NEXO (produtos-site) também abre para o login da loja Site (equipe do site)
+    const site = slug === 'produtos-site' && u.board === 'site';
+    if (!site && (u.board ? u.board !== 'escritorio' : (u.lojas && u.lojas.length))) return res.redirect('/manuais');
   }
   res.sendFile(arq);
 });
