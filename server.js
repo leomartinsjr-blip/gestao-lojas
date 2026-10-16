@@ -10866,9 +10866,9 @@ app.post('/api/internal/robo-site/auth', (req, res) => {
   if (user.password !== req.body?.password)
     return res.status(401).json({ error: 'Senha não confere com a do gestão', motivo: 'senha' });
   if (user.suspenso) return res.status(403).json({ error: 'Acesso suspenso. Fale com o administrador.' });
-  if (user.board ? user.board !== 'escritorio' : (user.lojas && user.lojas.length))
-    return res.status(403).json({ error: 'O robô do site é só para o escritório e o administrador' });
-  res.json({ username: key, label: user.label || key, perfil: user.board === 'escritorio' ? 'escritorio' : 'admin' });
+  if (user.board ? !['escritorio', 'site'].includes(user.board) : (user.lojas && user.lojas.length))
+    return res.status(403).json({ error: 'O robô do site é só para o escritório, a loja Site e o administrador' });
+  res.json({ username: key, label: user.label || key, perfil: perfilRobo(user) });
 });
 
 // ── NEXO (robô do site): atalho, aviso de faturamento e janela da loja ──────
@@ -10889,16 +10889,21 @@ async function roboFetch(caminho, opts = {}) {
 }
 
 // Mesmo formato do cookie de sessão do robô: base64url(json).hmac
+// Perfil no NEXO: escritório, loja Site (funcionário do site: só o NEXO, nada do gestão) ou admin
+function perfilRobo(u) {
+  return u.board === 'escritorio' ? 'escritorio' : u.board === 'site' ? 'site' : 'admin';
+}
+
 function bilheteRobo(u) {
   const corpo = Buffer.from(JSON.stringify({ u: u.username, n: u.label || u.username,
-    p: u.board === 'escritorio' ? 'escritorio' : 'admin', exp: Date.now() + 60_000 })).toString('base64url');
+    p: perfilRobo(u), exp: Date.now() + 60_000 })).toString('base64url');
   return `${corpo}.${crypto.createHmac('sha256', roboToken()).update(corpo).digest('base64url')}`;
 }
 
 app.get('/nexo', (req, res) => {
   const u = req.session?.user;
   if (!u) return res.redirect('/');
-  if (!ehAdminOuEscritorio(u) || !roboToken()) return res.redirect(roboBase() + '/painel');
+  if (!(ehAdminOuEscritorio(u) || u.board === 'site') || !roboToken()) return res.redirect(roboBase() + '/painel');
   const ir = /^[a-z]+$/.test(String(req.query.ir || '')) ? req.query.ir : '';
   res.redirect(`${roboBase()}/sso?t=${encodeURIComponent(bilheteRobo(u))}${ir ? '&ir=' + ir : ''}`);
 });

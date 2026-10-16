@@ -155,6 +155,15 @@ function hideLogin() {
 
 function userIsAdmin(u) { return !u?.board && !(u?.lojas && u.lojas.length); }
 
+// Login da loja Site (funcionário do site): não usa o gestão, vai direto para o NEXO.
+// No primeiro acesso troca a senha antes (o modal manda para o NEXO depois).
+function irParaNexoSeSite(user) {
+  if (user?.board !== 'site') return false;
+  if (user.mustChangePassword) { hideLogin(); showChangePasswordModal(); return true; }
+  location.href = '/nexo';
+  return true;
+}
+
 function applyUserPermissions(user) {
   document.getElementById('userChip').textContent = user.label || user.username;
   const isAdmin = userIsAdmin(user);
@@ -257,6 +266,7 @@ async function checarFichaAdmissao() {
 async function checkAuth() {
   try {
     S.user = await apiFetch('GET', '/api/me');
+    if (irParaNexoSeSite(S.user)) return;
     hideLogin();
     applyUserPermissions(S.user);
     checarValeTransporte();
@@ -498,6 +508,7 @@ function initLoginForm() {
     try {
       S.user = await apiFetch('POST', '/api/login', { username, password });
       document.getElementById('loginPass').value = '';
+      if (irParaNexoSeSite(S.user)) return;
       applyUserPermissions(S.user);
       hideLogin();
       const now = new Date();
@@ -567,6 +578,7 @@ function showChangePasswordModal() {
       await apiFetch('POST', '/api/change-password', { password: pwd });
       S.user.mustChangePassword = false;
       overlay.remove();
+      if (S.user.board === 'site') location.href = '/nexo';
     } catch (e) {
       let msg = 'Erro ao salvar';
       try { msg = JSON.parse(e.message).error || msg; } catch {}
