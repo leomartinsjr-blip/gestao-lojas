@@ -1017,7 +1017,8 @@ function _desenharPedidosSite(lugar, d) {
     if (emp.length < 2) return '';
     const outras = emp.filter(e => e.id !== board);
     const nomes = outras.map(e => (e.id === 'site' ? 'SITE (empresa 6)' : e.nome)).join(', ');
-    return `<div class="site-linha site-atencao">⚠️ <b>Atenção:</b> esse pedido possui produtos de outra loja (${esc(nomes)}).</div>`;
+    return `<div class="site-linha site-atencao">⚠️ <b>Atenção:</b> esse pedido possui produtos de outra loja (${esc(nomes)}).`
+      + `${p.etapa === 'postar' ? ' Juntem as peças numa loja só: quem postar imprime nota e etiqueta e informa o rastreio.' : ''}</div>`;
   };
   lugar.innerHTML = `<div class="site-janela">
     <div class="site-topo"><b>🛍 Pedidos do site</b><span>${lista.filter(p => p.etapa !== 'enviado').length} em andamento</span>

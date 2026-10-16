@@ -10936,14 +10936,15 @@ app.get('/api/site/pendencias', requireAuth, async (req, res) => {
   } catch (e) { res.status(502).json({ error: e.message }); }
 });
 
-// A loja só mexe no pedido que ela posta (adm e escritório em todos)
+// A loja só mexe no pedido que ela posta — ou, no pedido dividido, em que ela tem peça
+// (souQuemPosta, calculado pelo robô para a loja) — adm e escritório em todos
 async function pedidoSiteDoUsuario(u, numero) {
   const loja = lojaSiteDoUsuario(u);
   const r = await roboFetch('/loja/pedidos' + (loja ? '?loja=' + encodeURIComponent(loja) : ''));
   if (!r.ok) return null;
   const p = (await r.json()).lista.find(x => String(x.numero) === String(numero));
   if (!p) return null;
-  return ehAdminOuEscritorio(u) || p.posta === u.board ? p : null;
+  return ehAdminOuEscritorio(u) || p.posta === u.board || (u.board && p.souQuemPosta) ? p : null;
 }
 
 for (const tipo of ['danfe', 'etiqueta']) {
