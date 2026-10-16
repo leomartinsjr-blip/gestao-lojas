@@ -999,13 +999,22 @@ function _desenharPedidosSite(lugar, d) {
   if (!lista.length) return;
   const board = S.user.board;
   const feito = (n, k) => { try { return localStorage.getItem(`site_${n}_${k}`) === '1'; } catch { return false; } };
+  // Pedido dividido (mais de uma empresa atende, SITE incluído): a loja não manda tudo
+  const avisoOutrasLojas = p => {
+    const emp = p.empresas || [];
+    if (emp.length < 2) return '';
+    const outras = emp.filter(e => e.id !== board);
+    const nomes = outras.map(e => (e.id === 'site' ? 'SITE (empresa 6)' : e.nome)).join(', ');
+    return `<div class="site-linha site-atencao">⚠️ <b>Atenção:</b> esse pedido possui produtos de outra loja (${esc(nomes)}).</div>`;
+  };
   lugar.innerHTML = `<div class="site-janela">
     <div class="site-topo"><b>🛍 Pedidos do site</b><span>${lista.filter(p => p.etapa !== 'enviado').length} em andamento</span>
       <button class="site-atualizar" title="Atualizar">↻</button></div>
     ${lista.map(p => {
       const minhaTransf = (p.transferir || []).filter(t => t.empresa === board);
       const cab = `<div class="site-ped-cab"><b>Pedido ${esc(p.numero)}</b><span>${esc(p.cliente || '')} · ${esc(p.entrega || '')} · ${esc(p.envioForma || '')} · ${brl(p.total)}</span>
-        <span class="site-etapa site-etapa-${p.etapa}">${p.etapa === 'transferir' ? 'aguardando nota' : p.etapa === 'postar' ? 'pronto para postar' : 'postado'}</span></div>`;
+        <span class="site-etapa site-etapa-${p.etapa}">${p.etapa === 'transferir' ? 'aguardando nota' : p.etapa === 'postar' ? 'pronto para postar' : 'postado'}</span></div>`
+        + avisoOutrasLojas(p);
       if (p.etapa === 'enviado') return `<div class="site-ped">${cab}<div class="site-linha ok">✓ Postado · rastreio <b>${esc(p.rastreio)}</b>${p.gravacao?.loja?.ok === false ? ' · <span class="site-erro">não atualizou na Loja Integrada — avise o escritório</span>' : ''}</div></div>`;
       if (p.etapa === 'transferir') {
         const itens = (minhaTransf.length ? minhaTransf : []).flatMap(t => t.itens);
