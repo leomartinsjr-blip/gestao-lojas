@@ -1041,6 +1041,7 @@ function _desenharPedidosSite(lugar, d) {
       if (!p.souQuemPosta) return `<div class="site-ped">${cab}<div class="site-linha espera">Nota emitida — quem posta este pedido é ${esc(p.posta === 'escritorio' ? 'o escritório' : p.posta)}.</div></div>`;
       const check = (k, txt) => `<label class="site-check"><input type="checkbox" data-n="${p.numero}" data-k="${k}" ${feito(p.numero, k) ? 'checked' : ''}> ${txt}</label>`;
       return `<div class="site-ped">${cab}
+        ${p.maoPropria ? '<div class="site-linha site-atencao">📮 <b>Postar com Mão Própria + Aviso de Recebimento (AR)</b> nos Correios — é a prova de entrega contra chargeback. Guarde o AR assinado quando voltar.</div>' : ''}
         <div class="site-passos">
           <a class="site-btn" href="/api/site/pedidos/${p.numero}/danfe" target="_blank" rel="noopener">🧾 Imprimir nota ${esc(p.nfe?.numero || '')}</a>
           ${p.etiqueta ? `<a class="site-btn" href="/api/site/pedidos/${p.numero}/etiqueta" target="_blank" rel="noopener">🏷 Imprimir etiqueta</a>`
