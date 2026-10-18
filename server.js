@@ -295,6 +295,32 @@ function nextId(db) {
 
 let _usersCache = null;
 
+// Senhas guardadas como scrypt ("scrypt$sal$hash"). As antigas, em texto, continuam
+// valendo até o próximo login certo, quando viram hash sozinhas — ninguém precisa trocar.
+function hashSenha(s) {
+  const sal = crypto.randomBytes(16).toString('hex');
+  return `scrypt$${sal}$${crypto.scryptSync(String(s), sal, 32).toString('hex')}`;
+}
+function senhaConfere(user, s) {
+  if (!user || typeof s !== 'string' || !s) return false;
+  const g = String(user.password || '');
+  if (g.startsWith('scrypt$')) {
+    const [, sal, h] = g.split('$');
+    const a = crypto.scryptSync(s, sal, 32), b = Buffer.from(h || '', 'hex');
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  }
+  return g.length > 0 && g === s;
+}
+// Depois de um login certo: senha antiga em texto vira hash
+function migrarSenha(key, s) {
+  const users = readUsers();
+  if (users[key] && !String(users[key].password || '').startsWith('scrypt$')) {
+    users[key].password = hashSenha(s);
+    writeUsers(users);
+  }
+}
+const SENHA_MIN = 8;
+
 function readUsers() {
   if (_usersCache) return _usersCache;
   const f = fs.existsSync(USERS_FILE) ? USERS_FILE : SEED_USERS;
@@ -1224,7 +1250,7 @@ app.post('/api/login', (req, res) => {
   const users = readUsers();
   const key   = (username || '').toLowerCase();
   const user  = users[key];
-  if (!user || user.password !== password) {
+  if (!user || !senhaConfere(user, password)) {
     registrarAcesso(req, { usuario: key, origem: 'gestão', ok: false, motivo: user ? 'senha errada' : 'usuário não existe' });
     return res.status(401).json({ error: 'Usuário ou senha incorretos' });
   }
@@ -1235,6 +1261,7 @@ app.post('/api/login', (req, res) => {
     return res.status(403).json({ error: 'Acesso suspenso. Fale com o administrador.' });
   }
   registrarAcesso(req, { usuario: key, origem: 'gestão', ok: true });
+  migrarSenha(key, password);
   req.session.user = { username: key, board: user.board, lojas: user.lojas || null, label: user.label, passwordChangedAt: user.passwordChangedAt || null, mustChangePassword: !!user.mustChangePassword };
   res.json({ username: key, board: user.board, lojas: user.lojas || null, label: user.label, mustChangePassword: !!user.mustChangePassword });
 });
@@ -1247,11 +1274,11 @@ app.post('/api/logout', (req, res) => {
 // ── POST /api/change-password  (próprio usuário) ───────────────────────────
 app.post('/api/change-password', requireAuth, (req, res) => {
   const { password } = req.body || {};
-  if (!password || password.length < 4) return res.status(400).json({ error: 'Senha muito curta (mínimo 4 caracteres)' });
+  if (!password || password.length < SENHA_MIN) return res.status(400).json({ error: `Senha muito curta (mínimo ${SENHA_MIN} caracteres)` });
   const users = readUsers();
   const key = req.session.user.username;
   const ts = Date.now().toString();
-  users[key].password = password;
+  users[key].password = hashSenha(password);
   users[key].passwordChangedAt = ts;
   users[key].mustChangePassword = false;
   writeUsers(users);
@@ -1302,8 +1329,8 @@ app.post('/api/forgot-password', async (req, res) => {
 // ── POST /api/reset-password (sem autenticação) ────────────────────────────
 app.post('/api/reset-password', (req, res) => {
   const { token, password } = req.body || {};
-  if (!token || !password || password.length < 4)
-    return res.status(400).json({ error: 'Senha inválida (mínimo 4 caracteres)' });
+  if (!token || !password || password.length < SENHA_MIN)
+    return res.status(400).json({ error: `Senha inválida (mínimo ${SENHA_MIN} caracteres)` });
   const entry = resetTokens.get(token);
   if (!entry || entry.expires < Date.now()) {
     resetTokens.delete(token);
@@ -1313,7 +1340,7 @@ app.post('/api/reset-password', (req, res) => {
   const { username } = entry;
   if (!users[username]) return res.status(400).json({ error: 'Usuário não encontrado' });
   const ts = Date.now().toString();
-  users[username].password = password;
+  users[username].password = hashSenha(password);
   users[username].passwordChangedAt = ts;
   users[username].mustChangePassword = false;
   writeUsers(users);
@@ -1342,7 +1369,7 @@ app.post('/api/users', requireAdmin, (req, res) => {
   // os admins que já existem. Fica com o dono.
   if (!board && !(lojas && lojas.length) && !souDono(req))
     return res.status(403).json({ error: 'Só o dono cria conta de admin' });
-  users[key] = { password, label: label || key, board: board || null, lojas: (lojas && lojas.length) ? lojas : null, mustChangePassword: true };
+  users[key] = { password: hashSenha(password), label: label || key, board: board || null, lojas: (lojas && lojas.length) ? lojas : null, mustChangePassword: true };
   writeUsers(users);
   res.json({ ok: true, username: key });
 });
@@ -1375,7 +1402,7 @@ app.put('/api/users/:username', requireAdmin, (req, res) => {
   }
   if (password) {
     const ts = Date.now().toString();
-    users[key].password = password;
+    users[key].password = hashSenha(password);
     users[key].passwordChangedAt = ts;
     if (key === req.session.user.username) {
       // Admin alterando a própria senha: atualiza sessão para não invalidar
@@ -10818,9 +10845,10 @@ function perfilCrm(u) {
 app.post('/api/internal/crm/auth', requireCrmToken, (req, res) => {
   const key  = String(req.body?.username || '').toLowerCase();
   const user = readUsers()[key];
-  if (!user || user.password !== req.body?.password)
+  if (!user || !senhaConfere(user, req.body?.password))
     return res.status(401).json({ error: 'Usuário ou senha incorretos' });
   if (user.suspenso) return res.status(403).json({ error: 'Acesso suspenso. Fale com o administrador.' });
+  migrarSenha(key, req.body.password);
   res.json({ username: key, label: user.label || key, board: user.board || null,
              lojas: user.lojas || null, perfil: perfilCrm(user) });
 });
@@ -10896,7 +10924,7 @@ app.post('/api/internal/robo-site/auth', (req, res) => {
   // (o IP registrado é o do robô: a pessoa entrou pela tela do NEXO)
   const nexo = (ok, motivo) => registrarAcesso(req, { usuario: key, origem: 'NEXO', ok, ...(motivo ? { motivo } : {}) });
   if (!user) { nexo(false, 'usuário não existe'); return res.status(401).json({ error: `Usuário "${key}" não existe no gestão`, motivo: 'usuario' }); }
-  if (user.password !== req.body?.password) {
+  if (!senhaConfere(user, req.body?.password)) {
     nexo(false, 'senha errada');
     return res.status(401).json({ error: 'Senha não confere com a do gestão', motivo: 'senha' });
   }
@@ -10906,6 +10934,7 @@ app.post('/api/internal/robo-site/auth', (req, res) => {
     return res.status(403).json({ error: 'O robô do site é só para o escritório, a loja Site e o administrador' });
   }
   nexo(true);
+  migrarSenha(key, req.body.password);
   res.json({ username: key, label: user.label || key, perfil: perfilRobo(user) });
 });
 
