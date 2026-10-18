@@ -13639,16 +13639,16 @@ async function _loadAcessos(usuario = '') {
   const curto = ua => /iPhone|iPad/.test(ua) ? 'iPhone/iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac/.test(ua) ? 'Mac' : (ua ? 'outro' : '—');
   if (!usuario) {
     document.getElementById('acessosUltimos').innerHTML = '<b>Último acesso de cada um:</b> '
-      + (d.ultimos.map(u => `${esc(u._id)} ${dt(u.em)} (${esc(u.origem)}, ${u.entradas}×)`).join(' · ') || 'nenhum ainda');
+      + (d.ultimos.map(u => `${_escHtml(u._id)} ${dt(u.em)} (${_escHtml(u.origem)}, ${u.entradas}×)`).join(' · ') || 'nenhum ainda');
     const sel = document.getElementById('acessosFiltro');
     const nomes = [...new Set(d.lista.map(a => a.usuario))].sort();
-    sel.innerHTML = '<option value="">Todos os usuários</option>' + nomes.map(n => `<option>${esc(n)}</option>`).join('');
+    sel.innerHTML = '<option value="">Todos os usuários</option>' + nomes.map(n => `<option>${_escHtml(n)}</option>`).join('');
     sel.onchange = () => _loadAcessos(sel.value);
   }
   document.getElementById('acessosLista').innerHTML = `<table style="width:100%;border-collapse:collapse">
     <tr style="text-align:left;opacity:.7"><th>Quando</th><th>Usuário</th><th>Onde</th><th>Resultado</th><th>Aparelho</th><th>IP</th></tr>
-    ${d.lista.map(a => `<tr style="border-top:1px solid rgba(128,128,128,.2)${a.ok ? '' : ';color:var(--down)'}"><td>${dt(a.em)}</td><td>${esc(a.usuario)}</td><td>${esc(a.origem)}</td>
-      <td>${a.ok ? 'entrou' : esc(a.motivo || 'recusado')}</td><td>${esc(curto(a.navegador))}</td><td>${a.origem === 'NEXO' ? '—' : esc(a.ip)}</td></tr>`).join('') || '<tr><td colspan="6">Nenhum acesso registrado ainda.</td></tr>'}
+    ${d.lista.map(a => `<tr style="border-top:1px solid rgba(128,128,128,.2)${a.ok ? '' : ';color:var(--down)'}"><td>${dt(a.em)}</td><td>${_escHtml(a.usuario)}</td><td>${_escHtml(a.origem)}</td>
+      <td>${a.ok ? 'entrou' : _escHtml(a.motivo || 'recusado')}</td><td>${_escHtml(curto(a.navegador))}</td><td>${a.origem === 'NEXO' ? '—' : _escHtml(a.ip)}</td></tr>`).join('') || '<tr><td colspan="6">Nenhum acesso registrado ainda.</td></tr>'}
   </table>`;
 }
 
