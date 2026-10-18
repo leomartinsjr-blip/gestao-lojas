@@ -10400,9 +10400,28 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
         return { dadosLoja: porEmp, dadosLojaSemVinculo: semVinculo, dadosLojaLojas: lojas };
       })(),
       valoresLoja: folhaValoresLoja(db),
+      cadastrosSite: await cadastrosSiteDoMes(db, year, month),
     });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// Cadastros de produto no site feitos no mês, por login do NEXO — só os que
+// contam (ativo e completo na LI). Quem tem "valor por produto do site" na
+// config recebe a linha por fora na folha. Sem ninguém configurado, não chama
+// o robô; robô fora do ar devolve null e a folha mostra o aviso.
+async function cadastrosSiteDoMes(db, year, month) {
+  const usa = Object.values(db.folhaEmpConfig || {}).some(c => c && Number(c.cadastroSiteValor) > 0);
+  if (!usa || !roboToken()) return null;
+  const mm = String(month).padStart(2, '0');
+  const ultimo = new Date(Date.UTC(Number(year), Number(month), 0)).getUTCDate();
+  try {
+    const r = await roboFetch(`/cadastros/produtividade?de=${year}-${mm}-01&ate=${year}-${mm}-${ultimo}`, { timeout: 20_000 });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return Object.fromEntries((j.pessoas || []).filter(p => !String(p.pessoa).startsWith('('))
+      .map(p => [String(p.pessoa).trim().toLowerCase(), p.total || 0]));
+  } catch { return null; }
+}
 
 // POST /api/folha/valores-loja — quadro de valores do Loja em Ação, por loja
 // (feriado e extensão por dia; VR, abertura e Instagram por mês). Vale para

@@ -400,7 +400,11 @@ function foraDe(empId) {
 // Depois de recalcular uma entry, reaplica o abatimento: proventos e líquido
 // passam a ser os valores DECLARADOS e totalGeral é o que o funcionário recebe.
 function applyFora(entry, emp, fora) {
-  if (!fora?.length) return entry;
+  // A linha dos cadastros do site é sempre refeita a partir do extra do mês
+  fora = (fora || []).filter(f => !f._site);
+  const site = (entry.extras || []).find(x => x._site);
+  if (site) fora = [...fora, { nome: 'Cadastros do site — pago por fora', origem: 'outros', valor: site.valor, _site: true }];
+  if (!fora.length) return entry;
   const tipo = entry.tipo || cargoTipo(emp.cargo);
   const ecfg = getEmpCfg(emp);
   entry.fora = fora;
@@ -457,6 +461,9 @@ function getEmpCfg(emp) {
     comissaoVRSemMeta:   v(fc.comissaoVRSemMeta,   0),
     comissaoVRMeta2:     v(fc.comissaoVRMeta2,     0),
     comissaoVRSuper:     v(fc.comissaoVRSuper,     0),
+    // Cadastro de produtos no site (NEXO): valor por produto, pago todo por fora
+    cadastroSiteLogin:   String(fc.cadastroSiteLogin || '').trim().toLowerCase(),
+    cadastroSiteValor:   v(fc.cadastroSiteValor,   0),
   };
 }
 
@@ -491,6 +498,7 @@ let FP = {
   adiantamentos: {}, adiantamentosSemVinculo: [],
   faltasLoja: {}, faltasSemVinculo: [],
   dadosLoja: {}, dadosLojaSemVinculo: [], dadosLojaLojas: [], valoresLoja: {},
+  cadastrosSite: null,
   activeEmpId: null, dirty: false,
 };
 
@@ -549,6 +557,7 @@ async function loadPeriod() {
     FP.dadosLojaSemVinculo     = d.dadosLojaSemVinculo     || [];
     FP.dadosLojaLojas          = d.dadosLojaLojas          || [];
     FP.valoresLoja             = d.valoresLoja             || {};
+    FP.cadastrosSite           = d.cadastrosSite           || null;
     FP.mensal = {
       diasUteis:        d.folhaMensal?.diasUteis        || 22,
       domingosFeriados: d.folhaMensal?.domingosFeriados || 4,
@@ -1369,8 +1378,35 @@ function feriadoNota(emp) {
 // como redescobri-lo, então volta por cima do calculado e sobrevive a todo
 // caminho que recria a entry: Gerar, férias, config. As datas seguem o
 // adiantamento: quem manda é o Loja em Ação, e o Gerar traz de lá.
+// Cadastros de produto no site (NEXO) no mês × valor por produto da config.
+// Entra como extra de provento e, no applyFora, como linha por fora "Outros"
+// do mesmo valor: não muda nada do que vai para a contabilidade, só o total
+// que a pessoa recebe. null = ninguém configurado; n null = robô não respondeu.
+const RE_CAD_SITE = /^Cadastros do site/;
+function cadastrosSiteDe(emp) {
+  const c = getEmpCfg(emp);
+  if (!c.cadastroSiteLogin || !(c.cadastroSiteValor > 0)) return null;
+  const n = FP.cadastrosSite ? (FP.cadastrosSite[c.cadastroSiteLogin] || 0) : null;
+  return { login: c.cadastroSiteLogin, valor: c.cadastroSiteValor, n, total: n == null ? 0 : r2(n * c.cadastroSiteValor) };
+}
+function aplicarCadastrosSite(entry, emp) {
+  const cs = cadastrosSiteDe(emp);
+  if (!cs) return entry;
+  const antes = (entry.extras || []).filter(x => x._site || RE_CAD_SITE.test(x.nome || ''));
+  entry.extras = (entry.extras || []).filter(x => !antes.includes(x));
+  // Robô fora do ar: mantém o que já estava lançado em vez de zerar
+  const linha = cs.n == null ? antes.find(x => x._site)
+    : cs.total ? { nome: `Cadastros do site (${cs.n} × ${brl(cs.valor)})`, valor: cs.total, _site: true } : null;
+  if (linha) {
+    entry.extras.push(linha);
+    entry.proventos = r2((entry.proventos || 0) + linha.valor);
+    entry.liquido   = r2((entry.proventos || 0) - (entry.totalDescontos || 0));
+  }
+  return entry;
+}
+
 function defaultEntry(emp) {
-  const entry = aplicarDadosLoja(calcEntry(emp), emp);
+  const entry = aplicarCadastrosSite(aplicarDadosLoja(calcEntry(emp), emp), emp);
   const ant   = FP.folha[FP.board]?.entries?.[emp.id] || {};
   const valor = r2(ant.faltasValor || 0);
   const dias  = faltasDaLoja(emp);
@@ -2044,6 +2080,13 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
       style="width:16px;height:16px;accent-color:#3fb950;cursor:pointer">
   </div>` + row('Valor prêm. loja/sem. (R$)', `ec-premioLojaValor-${emp.id}`, ecfg.premioLojaValor);
 
+  // Cadastro de produtos no site: login do NEXO + valor por produto que conta
+  const cadSite = `<div class="fp-emp-cfg-row" title="Login de quem cadastra no NEXO (o mesmo do gestão). Conta só produto ativo e completo na Loja Integrada.">
+    <label>Login no NEXO (cadastros do site)</label>
+    <input type="text" id="ec-cadastroSiteLogin-${emp.id}" value="${ecfg.cadastroSiteLogin || ''}" placeholder="ex.: larissa"
+      style="width:110px;background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:.2rem .4rem;border-radius:5px;font-size:.82rem">
+  </div>` + row('Valor por produto do site (R$)', `ec-cadastroSiteValor-${emp.id}`, ecfg.cadastroSiteValor);
+
   // Vendedor pode ser comissionista puro (com garantia mínima) ou fixo + comissão
   const chkVendFixo = tipo === 'vendedor'
     ? `<div class="fp-emp-cfg-row fp-emp-cfg-row--check" title="Paga salário fixo + comissão. Sem complemento de garantia mínima.">
@@ -2061,7 +2104,7 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
       <span id="empCfgArrow-${emp.id}" style="margin-left:auto;font-size:.75rem">▼</span>
     </div>
     <div class="fp-emp-cfg" id="empCfg-${emp.id}">
-      <div class="fp-emp-cfg-grid">${fields}${chkVendFixo}${chkPremiaoLoja}</div>
+      <div class="fp-emp-cfg-grid">${fields}${chkVendFixo}${chkPremiaoLoja}${cadSite}</div>
       <div class="fp-emp-cfg-actions">
         <button class="fp-btn primary" onclick="fpSaveEmpCfg(${emp.id})">Salvar</button>
         ${hasFolha ? `<button class="fp-btn" onclick="fpClearEmpCfg(${emp.id})">Resetar para cadastro</button>` : ''}
@@ -2114,6 +2157,8 @@ async function fpSaveEmpCfg(empId) {
   }
   cfg.recebePremiaoLoja = document.getElementById(`ec-recebePremiaoLoja-${empId}`)?.checked || false;
   cfg.premioLojaValor   = g(`ec-premioLojaValor-${empId}`);
+  cfg.cadastroSiteLogin = (document.getElementById(`ec-cadastroSiteLogin-${empId}`)?.value || '').trim().toLowerCase();
+  cfg.cadastroSiteValor = g(`ec-cadastroSiteValor-${empId}`);
 
   try {
     await apiFetch(`/api/folha/empconfig/${empId}`, 'POST', cfg);
@@ -2148,8 +2193,16 @@ async function fpClearEmpCfg(empId) {
   } catch (e) { toast('Erro: ' + e.message, true); }
 }
 
+// Linha automática dos cadastros do site: só leitura (vem do NEXO × valor da config)
+const linhaSiteFixa = (nome, valor) => `<div class="fp-extra-row" style="border-left:2px solid #a371f7;padding-left:.4rem;">
+      <span title="Produtos que contam no NEXO no mês × valor por produto (⚙ Configuração)" style="font-size:.68rem;color:#a371f7;white-space:nowrap">NEXO</span>
+      <span style="flex:1;font-size:.8rem;color:#e6edf3">${nome}</span>
+      <span style="font-size:.82rem;font-weight:600;color:#e6edf3">${brl(valor)}</span>
+    </div>`;
+
 function buildExtraRows(empId, extras, type) {
   return extras.map((ex,i) => {
+    if (ex._site) return linhaSiteFixa(ex.nome, ex.valor);
     const isPrev = !!ex._prev, isLoja = !!ex._loja;
     const rowStyle = isPrev ? 'border-left:2px solid #d29922;padding-left:.4rem;'
       : isLoja ? 'border-left:2px solid #388bfd;padding-left:.4rem;' : '';
@@ -2173,6 +2226,7 @@ function buildForaRows(empId, fora, tipo, temFixo = false) {
     return `<div class="fp-fora-empty">Nenhum valor por fora — tudo vai para a contabilidade.</div>`;
   const opts = foraOrigemOpts(tipo, temFixo);
   return fora.map((f, i) => {
+    if (f._site) return linhaSiteFixa(f.nome, f.valor);
     const org = opts[f.origem] ? f.origem : foraOrigemDefault(tipo);
     return `<div class="fp-fora-row">
       <input type="text" placeholder="Descrição (ex.: complemento comissão)" value="${f.nome||''}"
