@@ -10405,23 +10405,38 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// Cadastros de produto no site feitos no mês, por login do NEXO — só os que
-// contam (ativo e completo na LI). Quem tem "valor por produto do site" na
-// config recebe a linha por fora na folha. Sem ninguém configurado, não chama
-// o robô; robô fora do ar devolve null e a folha mostra o aviso.
+// Cadastros de produto no site feitos no mês, por login do NEXO — pagos pela
+// empresa SITE, por fora, a um valor único por produto (db.folhaCadastroSiteValor).
+// Conta só o que o robô considera ativo e completo na LI. Robô fora do ar:
+// pessoas null, e a folha usa a foto salva do mês.
 async function cadastrosSiteDoMes(db, year, month) {
-  const usa = Object.values(db.folhaEmpConfig || {}).some(c => c && Number(c.cadastroSiteValor) > 0);
-  if (!usa || !roboToken()) return null;
+  const valor = Number(db.folhaCadastroSiteValor) || 0;
+  if (!roboToken()) return { valor, pessoas: null };
   const mm = String(month).padStart(2, '0');
   const ultimo = new Date(Date.UTC(Number(year), Number(month), 0)).getUTCDate();
   try {
     const r = await roboFetch(`/cadastros/produtividade?de=${year}-${mm}-01&ate=${year}-${mm}-${ultimo}`, { timeout: 20_000 });
-    if (!r.ok) return null;
+    if (!r.ok) return { valor, pessoas: null };
     const j = await r.json();
-    return Object.fromEntries((j.pessoas || []).filter(p => !String(p.pessoa).startsWith('('))
-      .map(p => [String(p.pessoa).trim().toLowerCase(), p.total || 0]));
-  } catch { return null; }
+    const pessoas = (j.pessoas || []).filter(p => !String(p.pessoa).startsWith('(')).map(p => {
+      const login = String(p.pessoa).trim().toLowerCase();
+      return { login, nome: (db.users || {})[login]?.label || login,
+        novos: p.novos || 0, completados: p.completados || 0, total: p.total || 0, pendentes: p.pendentes || 0 };
+    });
+    return { valor, pessoas };
+  } catch { return { valor, pessoas: null }; }
 }
+
+// POST /api/folha/cadastro-site-valor — valor pago por produto cadastrado no site
+app.post('/api/folha/cadastro-site-valor', requireAdmin, async (req, res) => {
+  try {
+    const valor = Math.max(0, Math.round((parseFloat(req.body?.valor) || 0) * 100) / 100);
+    const db = await readDB();
+    db.folhaCadastroSiteValor = valor;
+    await writeDB(db);
+    res.json({ valor });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // POST /api/folha/valores-loja — quadro de valores do Loja em Ação, por loja
 // (feriado e extensão por dia; VR, abertura e Instagram por mês). Vale para
@@ -10507,6 +10522,9 @@ app.post('/api/folha/:year/:month', requireAuth, async (req, res) => {
           alvo[empId] = entry;
         }
       }
+      // Foto do mês dos cadastros do site (folha da empresa SITE); fechada não muda
+      if (boardData.cadastrosSite && (!estaEncerrada || reabrindo))
+        db.folhas[mk][board].cadastrosSite = boardData.cadastrosSite;
       if ('encerrada' in boardData) db.folhas[mk][board].encerrada = boardData.encerrada;
     }
     await writeDB(db);
