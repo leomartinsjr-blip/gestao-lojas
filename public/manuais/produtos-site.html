@@ -330,6 +330,7 @@
       <div><dt>Cadastro incompleto</dt><dd>produto no ar sem foto, descrição, peso/medidas, preço ou categoria</dd></div>
       <div><dt>A cadastrar</dt><dd>tem estoque e não está à venda no site</dd></div>
       <div><dt>Código de barras</dt><dd>produto com saldo e código fora do GTIN-13</dd></div>
+      <div><dt>Foto pequena</dt><dd>produto no ar com foto abaixo de 1000 px (geralmente print de tela)</dd></div>
     </dl>
     <div class="aviso"><b>O robô grava no site sozinho.</b> Estoque, preço (De) e promoção (Por) vão do Microvix para o site a cada poucos minutos — o selo verde "gravando no site" no topo mostra isso. Produto com Por entra sozinho na categoria <b>Promoções</b> do site e sai quando a promoção acaba.</div>
   </section>
@@ -432,6 +433,15 @@
         <p class="caminho">Loja Integrada &rarr; Produtos &rarr; buscar pelo <b>nome</b> do produto</p>
         <p>Coloque as fotos, confira as variações e o preço, e marque o produto como <b>ativo</b>. Pronto: está à venda.</p>
         <p class="atalho">A busca da Loja Integrada procura pelo <b>produto</b>, não pelo SKU do tamanho. Busque pelo nome.</p>
+        <div class="aviso"><b>Padrão das fotos.</b>
+          <ul>
+            <li><b>Quadrada, 1200 × 1200 px</b> (mínimo 1000 × 1000). Não quadrada? Coloque num quadrado branco antes de subir.</li>
+            <li><b>Nunca print de tela.</b> Baixe a foto original no site da marca ou no material do fornecedor.</li>
+            <li><b>Fundo branco ou cinza bem claro</b>, igual em todas as fotos; produto centralizado ocupando uns 80%, sem cortar.</li>
+            <li><b>JPG ou WEBP</b>, até 1 MB cada. Sem marca d'água, texto ou logo de outra loja.</li>
+            <li><b>Ordem:</b> 1ª lateral (a da vitrine), 2ª o par em 3/4, 3ª de cima, 4ª a sola, 5ª um detalhe. Mínimo 3, ideal 5.</li>
+          </ul>
+          O NEXO mede as fotos todo dia: produto com foto abaixo de 1000 px aparece em <b>Cadastro &rarr; produtos com foto pequena</b>.</div>
         <p>Enquanto não for ativado, o produto aparece em <b>Produtos a cadastrar</b> como <b>"subiu — falta foto e ativar"</b>, e o quadro mostra quantos estão esperando. Depois de ativar, ele sai da lista na conferência do dia seguinte.</p>
         <div class="aviso"><b>Cadastro que conta.</b> O NEXO registra quem subiu cada produto (Painel &rarr; <b>Cadastros por pessoa</b>). Só conta o produto <b>ativo na Loja Integrada e completo</b>: com foto, descrição, preço, peso/medidas e categoria. A checagem é diária, então um produto recém-ativado pode levar até um dia para contar. Lá aparece o motivo de cada um que ainda não conta.</div>
       </div>
