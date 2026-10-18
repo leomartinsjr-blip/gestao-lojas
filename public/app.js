@@ -1013,6 +1013,18 @@ function _desenharPedidosSite(lugar, d) {
   if (!lista.length) return;
   const board = S.user.board;
   const feito = (n, k) => { try { return localStorage.getItem(`site_${n}_${k}`) === '1'; } catch { return false; } };
+  // Itens do pedido; no pedido dividido, agrupados pela loja que manda cada um
+  const itensPorLoja = p => {
+    const linha = i => `${esc(i.qtd)} × ${esc(i.nome || '')} <code>${esc(i.sku || i.cod || '')}</code>`;
+    const emp = p.empresas || [];
+    if (emp.length < 2 || !(p.transferir || []).length) return (p.itens || []).map(linha).join('<br>');
+    const nomeDe = id => (id === 'site' ? 'SITE (empresa 6)' : ((emp.find(e => e.id === id) || {}).nome || id));
+    const deLojas = new Set(p.transferir.flatMap(t => t.itens.map(i => String(i.sku || i.cod))));
+    const grupos = p.transferir.map(t => `<b>${esc(nomeDe(t.empresa))}${t.empresa === board ? ' (vocês)' : ''}</b> manda:<br>${t.itens.map(linha).join('<br>')}`);
+    const doSite = (p.itens || []).filter(i => !deLojas.has(String(i.sku)));
+    if (doSite.length && emp.some(e => e.id === 'site')) grupos.push(`<b>SITE (empresa 6)</b> já tem:<br>${doSite.map(linha).join('<br>')}`);
+    return grupos.join('<br><br>');
+  };
   // Pedido dividido (mais de uma empresa atende, SITE incluído): a loja não manda tudo
   const avisoOutrasLojas = p => {
     const emp = p.empresas || [];
@@ -1051,7 +1063,7 @@ function _desenharPedidosSite(lugar, d) {
         <div class="site-rastreio">Postou nos Correios? Código de rastreio:
           <input maxlength="13" placeholder="AA123456789BR" data-n="${p.numero}">
           <button class="site-finalizar" data-n="${p.numero}">Finalizar pedido</button></div>
-        <div class="site-itens">${p.itens.map(i => `${esc(i.qtd)} × ${esc(i.nome)} <code>${esc(i.sku)}</code>`).join('<br>')}</div></div>`;
+        <div class="site-itens">${itensPorLoja(p)}</div></div>`;
     }).join('')}
   </div>`;
   lugar.querySelector('.site-atualizar').onclick = () => _carregarSite(true).then(nd => { lugar.innerHTML = ''; _desenharPedidosSite(lugar, nd); });
