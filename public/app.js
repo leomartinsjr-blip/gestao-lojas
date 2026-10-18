@@ -13628,9 +13628,34 @@ A sessão aberta cai no próximo clique e ele não entra mais até você reativa
   }
 }
 
+// Histórico de acessos — a rota só responde para o dono; para os outros o quadro fica escondido
+async function _loadAcessos(usuario = '') {
+  const box = document.getElementById('acessosBox');
+  let d;
+  try { d = await apiFetch('GET', '/api/acessos' + (usuario ? '?usuario=' + encodeURIComponent(usuario) : '')); }
+  catch { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  const dt = v => new Date(v).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: '2-digit', hour: '2-digit', minute: '2-digit' });
+  const curto = ua => /iPhone|iPad/.test(ua) ? 'iPhone/iPad' : /Android/.test(ua) ? 'Android' : /Windows/.test(ua) ? 'Windows' : /Mac/.test(ua) ? 'Mac' : (ua ? 'outro' : '—');
+  if (!usuario) {
+    document.getElementById('acessosUltimos').innerHTML = '<b>Último acesso de cada um:</b> '
+      + (d.ultimos.map(u => `${esc(u._id)} ${dt(u.em)} (${esc(u.origem)}, ${u.entradas}×)`).join(' · ') || 'nenhum ainda');
+    const sel = document.getElementById('acessosFiltro');
+    const nomes = [...new Set(d.lista.map(a => a.usuario))].sort();
+    sel.innerHTML = '<option value="">Todos os usuários</option>' + nomes.map(n => `<option>${esc(n)}</option>`).join('');
+    sel.onchange = () => _loadAcessos(sel.value);
+  }
+  document.getElementById('acessosLista').innerHTML = `<table style="width:100%;border-collapse:collapse">
+    <tr style="text-align:left;opacity:.7"><th>Quando</th><th>Usuário</th><th>Onde</th><th>Resultado</th><th>Aparelho</th><th>IP</th></tr>
+    ${d.lista.map(a => `<tr style="border-top:1px solid rgba(128,128,128,.2)${a.ok ? '' : ';color:var(--down)'}"><td>${dt(a.em)}</td><td>${esc(a.usuario)}</td><td>${esc(a.origem)}</td>
+      <td>${a.ok ? 'entrou' : esc(a.motivo || 'recusado')}</td><td>${esc(curto(a.navegador))}</td><td>${a.origem === 'NEXO' ? '—' : esc(a.ip)}</td></tr>`).join('') || '<tr><td colspan="6">Nenhum acesso registrado ainda.</td></tr>'}
+  </table>`;
+}
+
 function openUsersModal() {
   document.getElementById('usersOverlay').classList.remove('hidden');
   _loadUsersList();
+  _loadAcessos();
   document.getElementById('newUsername').focus();
 }
 

@@ -1014,6 +1014,13 @@
       </div>
       <!-- Lista de usuários -->
       <div id="usersList" class="users-list"></div>
+      <!-- Histórico de acessos: só aparece para o dono (a rota recusa os outros) -->
+      <div id="acessosBox" class="hidden" style="margin-top:18px">
+        <div class="users-form-title">Histórico de acessos <span style="font-weight:400;opacity:.7">(só você vê · últimos 180 dias)</span></div>
+        <div id="acessosUltimos" style="font-size:.8rem;margin:6px 0 10px"></div>
+        <select id="acessosFiltro" class="users-input users-select" style="max-width:240px"><option value="">Todos os usuários</option></select>
+        <div id="acessosLista" style="max-height:320px;overflow:auto;font-size:.78rem;margin-top:8px"></div>
+      </div>
     </div>
   </div>
 </div>

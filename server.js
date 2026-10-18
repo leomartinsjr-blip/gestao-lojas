@@ -1195,18 +1195,46 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// ── Histórico de acessos (só o dono vê) ────────────────────────────────────
+// Cada tentativa de entrar — no gestão ou no NEXO — com quem, quando, se entrou
+// e de onde (IP e navegador). Guardado 180 dias.
+function registrarAcesso(req, info) {
+  if (!mongoDb) return;
+  const ip = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '').split(',')[0].trim();
+  mongoDb.collection('acessos').insertOne({ em: new Date(), ip, navegador: String(req.headers['user-agent'] || '').slice(0, 200), ...info })
+    .catch(e => console.warn('[acessos]', e.message));
+}
+let acessosIndice = false;
+app.get('/api/acessos', requireAuth, async (req, res) => {
+  if (!souDono(req)) return res.status(403).json({ error: 'Só o dono vê o histórico de acessos' });
+  if (!mongoDb) return res.json({ lista: [], ultimos: [] });
+  const c = mongoDb.collection('acessos');
+  if (!acessosIndice) { acessosIndice = true; c.createIndex({ em: 1 }, { expireAfterSeconds: 180 * 86400 }).catch(() => {}); }
+  const filtro = req.query.usuario ? { usuario: String(req.query.usuario).toLowerCase() } : {};
+  const [lista, ultimos] = await Promise.all([
+    c.find(filtro).sort({ em: -1 }).limit(300).toArray(),
+    c.aggregate([{ $match: { ok: true } }, { $sort: { em: -1 } }, { $group: { _id: '$usuario', em: { $first: '$em' }, origem: { $first: '$origem' }, entradas: { $sum: 1 } } }, { $sort: { em: -1 } }]).toArray(),
+  ]);
+  res.json({ lista, ultimos });
+});
+
 // ── POST /api/login ────────────────────────────────────────────────────────
 app.post('/api/login', (req, res) => {
   const { username, password } = req.body;
   const users = readUsers();
   const key   = (username || '').toLowerCase();
   const user  = users[key];
-  if (!user || user.password !== password)
+  if (!user || user.password !== password) {
+    registrarAcesso(req, { usuario: key, origem: 'gestão', ok: false, motivo: user ? 'senha errada' : 'usuário não existe' });
     return res.status(401).json({ error: 'Usuário ou senha incorretos' });
+  }
   // Depois da senha, não antes: quem erra a senha não fica sabendo se a conta
   // existe nem em que estado ela está.
-  if (user.suspenso)
+  if (user.suspenso) {
+    registrarAcesso(req, { usuario: key, origem: 'gestão', ok: false, motivo: 'suspenso' });
     return res.status(403).json({ error: 'Acesso suspenso. Fale com o administrador.' });
+  }
+  registrarAcesso(req, { usuario: key, origem: 'gestão', ok: true });
   req.session.user = { username: key, board: user.board, lojas: user.lojas || null, label: user.label, passwordChangedAt: user.passwordChangedAt || null, mustChangePassword: !!user.mustChangePassword };
   res.json({ username: key, board: user.board, lojas: user.lojas || null, label: user.label, mustChangePassword: !!user.mustChangePassword });
 });
@@ -10865,12 +10893,19 @@ app.post('/api/internal/robo-site/auth', (req, res) => {
   const key  = String(req.body?.username || '').toLowerCase().trim();
   const user = readUsers()[key];
   // Diz ao robô qual dos dois falhou (só ele chama esta rota, com o token)
-  if (!user) return res.status(401).json({ error: `Usuário "${key}" não existe no gestão`, motivo: 'usuario' });
-  if (user.password !== req.body?.password)
+  // (o IP registrado é o do robô: a pessoa entrou pela tela do NEXO)
+  const nexo = (ok, motivo) => registrarAcesso(req, { usuario: key, origem: 'NEXO', ok, ...(motivo ? { motivo } : {}) });
+  if (!user) { nexo(false, 'usuário não existe'); return res.status(401).json({ error: `Usuário "${key}" não existe no gestão`, motivo: 'usuario' }); }
+  if (user.password !== req.body?.password) {
+    nexo(false, 'senha errada');
     return res.status(401).json({ error: 'Senha não confere com a do gestão', motivo: 'senha' });
-  if (user.suspenso) return res.status(403).json({ error: 'Acesso suspenso. Fale com o administrador.' });
-  if (user.board ? !['escritorio', 'site'].includes(user.board) : (user.lojas && user.lojas.length))
+  }
+  if (user.suspenso) { nexo(false, 'suspenso'); return res.status(403).json({ error: 'Acesso suspenso. Fale com o administrador.' }); }
+  if (user.board ? !['escritorio', 'site'].includes(user.board) : (user.lojas && user.lojas.length)) {
+    nexo(false, 'sem permissão no NEXO');
     return res.status(403).json({ error: 'O robô do site é só para o escritório, a loja Site e o administrador' });
+  }
+  nexo(true);
   res.json({ username: key, label: user.label || key, perfil: perfilRobo(user) });
 });
 
