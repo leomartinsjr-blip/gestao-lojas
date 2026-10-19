@@ -1803,7 +1803,7 @@ app.get('/api/employees/photos', requireAuth, async (req, res) => {
 // ── POST /api/employees ────────────────────────────────────────────────────
 app.post('/api/employees', requireAuth, async (req, res) => {
   try {
-    const { name, board, cpf, nascimento, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, omniChannel, inativo, desligamento, apelido, microvixCod, supervisedBoards } = req.body;
+    const { name, board, cpf, nascimento, admissao, admissaoContrato, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, omniChannel, inativo, desligamento, apelido, microvixCod, supervisedBoards } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
     if (!nascimento) return res.status(400).json({ error: 'Data de nascimento obrigatória' });
     const db = await readDB();
@@ -1813,6 +1813,8 @@ app.post('/api/employees', requireAuth, async (req, res) => {
       apelido: apelido || '',
       microvixCod: microvixCod ? String(microvixCod).trim() : '',
       cpf: cpf || '', nascimento: nascimento || '', admissao: admissao || '',
+      // Data do contrato de admissão (opcional): base da experiência; admissao é a entrada real na loja
+      admissaoContrato: admissaoContrato || '',
       contrato1: parseInt(contrato1) || 0, contrato2: parseInt(contrato2) || 0,
       cargo: cargo || '',
       salario: parseFloat(salario) || 0,
@@ -1839,7 +1841,7 @@ app.post('/api/employees', requireAuth, async (req, res) => {
 app.put('/api/employees/:id', requireAuth, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
-    const { name, board, cpf, nascimento, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, omniChannel, inativo, desligamento, apelido, microvixCod, foto, supervisedBoards } = req.body;
+    const { name, board, cpf, nascimento, admissao, admissaoContrato, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, omniChannel, inativo, desligamento, apelido, microvixCod, foto, supervisedBoards } = req.body;
     if (!name?.trim() || !board) return res.status(400).json({ error: 'name and board required' });
     if (!nascimento) return res.status(400).json({ error: 'Data de nascimento obrigatória' });
     const db  = await readDB();
@@ -1852,6 +1854,8 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
       apelido: apelido || '',
       microvixCod: microvixCod !== undefined ? String(microvixCod).trim() : (db.employees[idx].microvixCod || ''),
       cpf: cpf || '', nascimento: nascimento || '', admissao: admissao || '',
+      // Data do contrato de admissão (opcional): base da experiência; admissao é a entrada real na loja
+      admissaoContrato: admissaoContrato || '',
       contrato1: parseInt(contrato1) || 0, contrato2: parseInt(contrato2) || 0,
       cargo: cargo || '',
       salario: parseFloat(salario) || 0,
@@ -13838,13 +13842,14 @@ function pautaRH(db, board, y, m, hoje) {
   const contratos = [];
   for (const e of ativos) {
     if (!e.admissao || !(e.contrato1 || e.contrato2)) continue;
-    const venc1 = pautaVencContrato(e.admissao, e.contrato1);
-    const venc2 = (e.contrato1 && e.contrato2) ? pautaVencContrato(e.admissao, e.contrato1 + e.contrato2) : null;
+    const baseExp = e.admissaoContrato || e.admissao; // experiência conta do contrato
+    const venc1 = pautaVencContrato(baseExp, e.contrato1);
+    const venc2 = (e.contrato1 && e.contrato2) ? pautaVencContrato(baseExp, e.contrato1 + e.contrato2) : null;
     const d1 = venc1 ? pautaDiasEntre(hoje, venc1) : null;
     const d2 = venc2 ? pautaDiasEntre(hoje, venc2) : null;
     if (![d1, d2].some(d => d !== null && d >= -30 && d <= 60)) continue;
     contratos.push({
-      nome: e.apelido || e.name, cargo: e.cargo || '', admissao: e.admissao,
+      nome: e.apelido || e.name, cargo: e.cargo || '', admissao: baseExp,
       venc1, venc2, dias1: d1, dias2: d2,
       // 1º prazo já venceu e o 2º ainda corre: é a hora de decidir a efetivação
       decisao: d1 !== null && d1 < 0 && d2 !== null && d2 >= 0,

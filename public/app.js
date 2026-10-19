@@ -892,7 +892,8 @@ async function loadData() {
         if (e.inativo || !e.admissao || !(e.contrato1 || e.contrato2)) continue;
         const vencEm = dias => {
           if (!dias) return null;
-          const d = new Date(e.admissao + 'T00:00:00');
+          // Experiência conta do contrato de admissão; sem ele, da entrada na loja
+          const d = new Date((e.admissaoContrato || e.admissao) + 'T00:00:00');
           d.setDate(d.getDate() + dias - 1); // dia da admissão conta como 1º dia do prazo
           return d;
         };
@@ -8631,7 +8632,7 @@ function renderFuncionariosTable() {
       <td class="func-td-name">${nameHtml}</td>
       <td><span class="func-loja-badge" style="border-color:${lojaColor};color:${lojaColor}">${lojaLabel}</span></td>
       <td class="func-td-muted">${e.cargo || '—'}</td>
-      <td class="func-td-muted">${e.admissao ? e.admissao.split('-').reverse().join('/') : '—'}</td>
+      <td class="func-td-muted">${e.admissao ? e.admissao.split('-').reverse().join('/') : '—'}${e.admissaoContrato && e.admissaoContrato !== e.admissao ? `<div style="font-size:.7rem;opacity:.75" title="Data do contrato de admissão (base da experiência)">contrato ${e.admissaoContrato.split('-').reverse().join('/')}</div>` : ''}</td>
       <td class="func-td-muted">${comissao}</td>
       <td>${statusBadge}</td>
       <td class="func-actions">
@@ -8722,6 +8723,7 @@ function openFuncForm(id) {
   document.getElementById('funcNascimento').value   = emp?.nascimento   || '';
   document.getElementById('funcMicrovixCod').value  = emp?.microvixCod  || '';
   document.getElementById('funcAdmissao').value  = emp?.admissao  || '';
+  document.getElementById('funcAdmissaoContrato').value = emp?.admissaoContrato || '';
   document.getElementById('funcContrato1').value = emp?.contrato1 || '';
   document.getElementById('funcContrato2').value = emp?.contrato2 || '';
   document.getElementById('funcCargo').value     = emp?.cargo     || '';
@@ -8813,6 +8815,7 @@ async function saveFuncionario() {
   const nascimento   = document.getElementById('funcNascimento').value;
   const microvixCod  = document.getElementById('funcMicrovixCod').value.trim();
   const admissao  = document.getElementById('funcAdmissao').value;
+  const admissaoContrato = document.getElementById('funcAdmissaoContrato').value;
   const contrato1 = parseInt(document.getElementById('funcContrato1').value) || 0;
   const contrato2 = parseInt(document.getElementById('funcContrato2').value) || 0;
   const cargo     = document.getElementById('funcCargo').value;
@@ -8840,13 +8843,13 @@ async function saveFuncionario() {
   if (!name || !board) { toast('Nome e loja são obrigatórios', true); return; }
   if (!cargo) { toast('Cargo é obrigatório', true); return; }
   if (!nascimento) { toast('Data de nascimento é obrigatória', true); return; }
-  if (!admissao) { toast('Data de admissão é obrigatória', true); return; }
+  if (!admissao) { toast('Data de entrada na loja é obrigatória', true); return; }
   if (!contrato1) { toast('1º Contrato Experiência é obrigatório', true); return; }
 
   const btn = document.getElementById('funcSaveBtn');
   btn.disabled = true;
   try {
-    const body = { name, apelido, board, cpf, nascimento, microvixCod, admissao, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, omniChannel, inativo, desligamento, supervisedBoards };
+    const body = { name, apelido, board, cpf, nascimento, microvixCod, admissao, admissaoContrato, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, omniChannel, inativo, desligamento, supervisedBoards };
     if (fotoRemoved) body.foto = '';
     let emp;
     if (FE.editingId) {
@@ -10358,8 +10361,8 @@ function renderContratoCard(container) {
     for (const b of NF_STORES) {
       for (const e of S.employees) {
         if (e.board !== b || e.inativo || !e.admissao || !(e.contrato1 || e.contrato2)) continue;
-        const venc1 = calcVenc(e.admissao, e.contrato1);
-        const venc2 = e.contrato1 && e.contrato2 ? calcVenc(e.admissao, (e.contrato1||0)+(e.contrato2||0)) : null;
+        const venc1 = calcVenc(e.admissaoContrato || e.admissao, e.contrato1);
+        const venc2 = e.contrato1 && e.contrato2 ? calcVenc(e.admissaoContrato || e.admissao, (e.contrato1||0)+(e.contrato2||0)) : null;
         const d1 = diasRestantes(venc1), d2 = diasRestantes(venc2);
         const upcomings = [d1, d2].filter(d => d != null && d >= 0);
         if (upcomings.length === 0) continue;
@@ -10388,8 +10391,8 @@ function renderContratoCard(container) {
     const rows = [];
     for (const e of S.employees) {
       if (e.board !== board || e.inativo || !e.admissao || !(e.contrato1 || e.contrato2)) continue;
-      const venc1 = calcVenc(e.admissao, e.contrato1);
-      const venc2 = e.contrato1 && e.contrato2 ? calcVenc(e.admissao, (e.contrato1||0)+(e.contrato2||0)) : null;
+      const venc1 = calcVenc(e.admissaoContrato || e.admissao, e.contrato1);
+      const venc2 = e.contrato1 && e.contrato2 ? calcVenc(e.admissaoContrato || e.admissao, (e.contrato1||0)+(e.contrato2||0)) : null;
       const d1 = diasRestantes(venc1), d2 = diasRestantes(venc2);
       const upcomings = [d1, d2].filter(d => d != null && d >= 0);
       if (upcomings.length === 0) continue;

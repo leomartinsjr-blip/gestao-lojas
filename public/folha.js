@@ -986,6 +986,11 @@ function buildTotalForm(emps) {
   </div>`;
 }
 
+// Sem data do contrato de admissão no cadastro = funcionário não registrado.
+// Aviso só na tela da folha — o recibo é montado à parte e não leva isso.
+const naoRegistrado = emp => !emp.admissaoContrato;
+const TAG_NAO_REGISTRADO = '<span class="fp-nao-reg" title="Sem data do contrato de admissão no cadastro do funcionário">não registrado</span>';
+
 function renderEmpTabs(emps) {
   const lojaData = FP.folha[FP.board] || {};
   const totalBtn = `<button id="tab-total" class="fp-emp-tab" onclick="selectTotal()">
@@ -999,6 +1004,7 @@ function renderEmpTabs(emps) {
       onclick="selectEmp(${e.id})"${enc?' title="Folha individual encerrada"':''}>
       ${enc?'⊠ ':''}${e.apelido || e.name.split(' ')[0]}
       <span style="font-size:.68rem;opacity:.6;margin-left:.2rem">${e.cargo}</span>
+      ${naoRegistrado(e) ? TAG_NAO_REGISTRADO : ''}
     </button>`;
   }).join('');
 }
@@ -1991,6 +1997,7 @@ function buildEmpForm(emp, entry) {
   <div class="fp-emp-form active${encEmp ? ' fp-emp-encerrada' : ''}" id="empform-${emp.id}">
     <div style="font-size:.75rem;color:#8b949e;margin-bottom:.75rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
       <span>${emp.name} · ${emp.cargo}${ecfg.inssRate ? ` · INSS ${ecfg.inssRate}%` : ''}${ecfg.vtRate ? ` · VT ${ecfg.vtRate}%` : ''}${emp.banco ? ` · Banco ${emp.banco} / Cta ${emp.conta||'—'}` : ''}</span>
+      ${naoRegistrado(emp) ? '<span class="fp-nao-reg">Funcionário não registrado — sem data do contrato de admissão</span>' : ''}
       ${headBtns}
     </div>
     ${buildFeriasBox(emp, e)}
