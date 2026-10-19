@@ -1849,6 +1849,7 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
     if (idx === -1) return res.status(404).json({ error: 'not found' });
     // Se foto === '' → remover; se foto !== undefined → atualizar; se undefined → não mudar
     if (foto === '') await writePhoto(id, null);
+    const manter = (val, campo) => val !== undefined ? (parseFloat(val) || 0) : (db.employees[idx][campo] || 0);
     db.employees[idx] = {
       ...db.employees[idx], name: name.trim(), board,
       apelido: apelido || '',
@@ -1858,13 +1859,15 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
       admissaoContrato: admissaoContrato || '',
       contrato1: parseInt(contrato1) || 0, contrato2: parseInt(contrato2) || 0,
       cargo: cargo || '',
-      salario: parseFloat(salario) || 0,
-      comissaoSemMeta: parseFloat(comissaoSemMeta) || 0, comissao: parseFloat(comissao) || 0,
-      comissaoMeta2: parseFloat(comissaoMeta2) || 0, comissaoSuper: parseFloat(comissaoSuper) || 0,
-      comissaoVR: parseFloat(comissaoVR) || 0, aberturaLoja: parseFloat(aberturaLoja) || 0,
-      comissaoGerente: parseFloat(comissaoGerente) || 0,
-      inssRate: parseFloat(inssRate) || 0, vtRate: parseFloat(vtRate) || 0,
-      salarioFixo: parseFloat(salarioFixo) || 0, quebraCaixa: parseFloat(quebraCaixa) || 0,
+      // Dados de folha saíram do cadastro (ficam na configuração da folha): quando
+      // não vêm no corpo, mantém o que já estava gravado em vez de zerar.
+      salario: manter(salario, 'salario'),
+      comissaoSemMeta: manter(comissaoSemMeta, 'comissaoSemMeta'), comissao: manter(comissao, 'comissao'),
+      comissaoMeta2: manter(comissaoMeta2, 'comissaoMeta2'), comissaoSuper: manter(comissaoSuper, 'comissaoSuper'),
+      comissaoVR: manter(comissaoVR, 'comissaoVR'), aberturaLoja: manter(aberturaLoja, 'aberturaLoja'),
+      comissaoGerente: manter(comissaoGerente, 'comissaoGerente'),
+      inssRate: manter(inssRate, 'inssRate'), vtRate: manter(vtRate, 'vtRate'),
+      salarioFixo: manter(salarioFixo, 'salarioFixo'), quebraCaixa: manter(quebraCaixa, 'quebraCaixa'),
       banco: banco || '', conta: conta || '',
       isVendedor: isVendedor !== false,
       omniChannel: omniChannel === true || omniChannel === 'true',

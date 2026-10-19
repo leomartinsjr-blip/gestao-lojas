@@ -669,68 +669,17 @@
             </div>
           </div>
 
-          <!-- Seção: Contrato & Comissões -->
-          <div class="func-section-hdr">Contrato &amp; Comissões</div>
-          <div class="func-form-grid">
-            <div class="func-field">
-              <label>Salário Base (R$)</label>
-              <input type="number" id="funcSalario" placeholder="0,00" min="0" step="0.01">
-            </div>
-            <div class="func-field">
-              <label>Sem Meta (%)</label>
-              <input type="number" id="funcComissaoSemMeta" placeholder="0,00" min="0" step="0.01">
-            </div>
-            <div class="func-field">
-              <label>Meta 1 (%)</label>
-              <input type="number" id="funcComissao" placeholder="0,00" min="0" step="0.01">
-            </div>
-            <div class="func-field">
-              <label>Meta 2 (%)</label>
-              <input type="number" id="funcComissaoMeta2" placeholder="0,00" min="0" step="0.01">
-            </div>
-            <div class="func-field">
-              <label>Super Meta (%)</label>
-              <input type="number" id="funcComissaoSuper" placeholder="0,00" min="0" step="0.01">
-            </div>
-            <div class="func-field">
-              <label>Comissão VR (%)</label>
-              <input type="number" id="funcComissaoVR" placeholder="0,00" min="0" step="0.01">
-            </div>
-            <div class="func-field">
-              <label>Abertura de Loja (R$)</label>
-              <input type="number" id="funcAberturaLoja" placeholder="0,00" min="0" step="0.01">
-            </div>
-            <div class="func-field">
-              <label>Comissão Gerente (%)</label>
-              <input type="number" id="funcComissaoGerente" placeholder="0,00" min="0" step="0.01">
-            </div>
-          </div>
-
           <!-- Seção: Lojas Supervisionadas (visível só para Supervisor) -->
           <div id="funcSupervisedBoardsWrap" style="display:none">
             <div class="func-section-hdr">Lojas Supervisionadas</div>
             <div class="func-form-grid" id="funcSupervisedBoardsGrid" style="gap:.5rem 1rem"></div>
           </div>
 
-          <!-- Seção: Folha de Pagamento -->
-          <div class="func-section-hdr">Folha de Pagamento</div>
+          <!-- Seção: Dados Bancários -->
+          <!-- Comissões, salário fixo, quebra de caixa, INSS e VT ficam só na folha
+               (Folha de Pagamento → configuração do colaborador) -->
+          <div class="func-section-hdr">Dados Bancários</div>
           <div class="func-form-grid">
-            <div class="func-field">
-              <label>INSS (%)</label>
-              <input type="number" id="funcInssRate" placeholder="9" min="0" max="14" step="0.5">
-            </div>
-            <div class="func-field">
-              <label>VT (%)</label>
-              <input type="number" id="funcVtRate" placeholder="6" min="0" max="6" step="0.5">
-            </div>
-            <div class="func-field">
-              <label>Salário Fixo (R$)</label>
-              <input type="number" id="funcSalarioFixo" placeholder="0,00" min="0" step="0.01">
-            </div>
-            <div class="func-field">
-              <label>Quebra Caixa (R$)</label>
-              <input type="number" id="funcQuebraCaixa" placeholder="0,00" min="0" step="0.01">
-            </div>
             <div class="func-field">
               <label>Banco (código)</label>
               <input type="text" id="funcBanco" placeholder="Ex: 8261">

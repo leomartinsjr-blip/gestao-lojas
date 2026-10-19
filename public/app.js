@@ -8677,9 +8677,6 @@ async function abrirCadastroDaFicha(fichaId) {
     set('funcCPF', d.cpf);
     set('funcNascimento', d.nascimento);
     set('funcAdmissao', d.dataAdmissao);
-    // Salário chega como texto ("1.800,00"); o campo é numérico.
-    const sal = parseFloat(String(d.salario || '').replace(/\./g, '').replace(',', '.'));
-    if (sal > 0) set('funcSalario', sal.toFixed(2));
     // A ficha marca o total (30/45/90); o cadastro guarda os dois contratos.
     const exp = parseInt(d.contratoExp) || 0;
     if (exp === 90) { set('funcContrato1', 45); set('funcContrato2', 45); }
@@ -8728,18 +8725,6 @@ function openFuncForm(id) {
   document.getElementById('funcContrato2').value = emp?.contrato2 || '';
   document.getElementById('funcCargo').value     = emp?.cargo     || '';
   _toggleSupervisorSection(emp?.cargo || '', emp?.supervisedBoards || []);
-  document.getElementById('funcSalario').value   = emp?.salario   || '';
-  document.getElementById('funcComissaoSemMeta').value  = emp?.comissaoSemMeta  || '';
-  document.getElementById('funcComissao').value         = emp?.comissao         || '';
-  document.getElementById('funcComissaoMeta2').value    = emp?.comissaoMeta2    || '';
-  document.getElementById('funcComissaoSuper').value    = emp?.comissaoSuper    || '';
-  document.getElementById('funcComissaoVR').value       = emp?.comissaoVR       || '';
-  document.getElementById('funcAberturaLoja').value     = emp?.aberturaLoja     || '';
-  document.getElementById('funcComissaoGerente').value  = emp?.comissaoGerente  || '';
-  document.getElementById('funcInssRate').value      = emp?.inssRate      ?? '';
-  document.getElementById('funcVtRate').value        = emp?.vtRate        ?? '';
-  document.getElementById('funcSalarioFixo').value   = emp?.salarioFixo   || '';
-  document.getElementById('funcQuebraCaixa').value   = emp?.quebraCaixa   || '';
   document.getElementById('funcBanco').value         = emp?.banco         || '';
   document.getElementById('funcConta').value         = emp?.conta         || '';
   document.getElementById('funcIsVendedor').checked = emp ? emp.isVendedor !== false : true;
@@ -8819,18 +8804,6 @@ async function saveFuncionario() {
   const contrato1 = parseInt(document.getElementById('funcContrato1').value) || 0;
   const contrato2 = parseInt(document.getElementById('funcContrato2').value) || 0;
   const cargo     = document.getElementById('funcCargo').value;
-  const salario   = parseFloat(document.getElementById('funcSalario').value) || 0;
-  const comissaoSemMeta  = parseFloat(document.getElementById('funcComissaoSemMeta').value)  || 0;
-  const comissao         = parseFloat(document.getElementById('funcComissao').value)          || 0;
-  const comissaoMeta2    = parseFloat(document.getElementById('funcComissaoMeta2').value)     || 0;
-  const comissaoSuper    = parseFloat(document.getElementById('funcComissaoSuper').value)     || 0;
-  const comissaoVR       = parseFloat(document.getElementById('funcComissaoVR').value)        || 0;
-  const aberturaLoja     = parseFloat(document.getElementById('funcAberturaLoja').value)      || 0;
-  const comissaoGerente  = parseFloat(document.getElementById('funcComissaoGerente').value)   || 0;
-  const inssRate     = parseFloat(document.getElementById('funcInssRate').value)     || 0;
-  const vtRate       = parseFloat(document.getElementById('funcVtRate').value)       || 0;
-  const salarioFixo  = parseFloat(document.getElementById('funcSalarioFixo').value)  || 0;
-  const quebraCaixa  = parseFloat(document.getElementById('funcQuebraCaixa').value)  || 0;
   const banco        = document.getElementById('funcBanco').value.trim();
   const conta        = document.getElementById('funcConta').value.trim();
   const isVendedor = document.getElementById('funcIsVendedor').checked;
@@ -8849,7 +8822,7 @@ async function saveFuncionario() {
   const btn = document.getElementById('funcSaveBtn');
   btn.disabled = true;
   try {
-    const body = { name, apelido, board, cpf, nascimento, microvixCod, admissao, admissaoContrato, contrato1, contrato2, cargo, salario, comissaoSemMeta, comissao, comissaoMeta2, comissaoSuper, comissaoVR, aberturaLoja, comissaoGerente, inssRate, vtRate, salarioFixo, quebraCaixa, banco, conta, isVendedor, omniChannel, inativo, desligamento, supervisedBoards };
+    const body = { name, apelido, board, cpf, nascimento, microvixCod, admissao, admissaoContrato, contrato1, contrato2, cargo, banco, conta, isVendedor, omniChannel, inativo, desligamento, supervisedBoards };
     if (fotoRemoved) body.foto = '';
     let emp;
     if (FE.editingId) {
