@@ -1060,6 +1060,7 @@ function _desenharPedidosSite(lugar, d) {
             : '<span class="site-btn off" title="O escritório anexa a etiqueta gerada no Microvix">🏷 Etiqueta: aguardando escritório</span>'}
           ${check('separado', 'Separado')} ${check('embalado', 'Embalado')}
         </div>
+        ${p.maoPropria ? `<label class="site-check site-mp"><input type="checkbox" class="site-mp-ok" data-n="${p.numero}"> <b>Postei com Mão Própria + AR</b> (obrigatório para finalizar)</label>` : ''}
         <div class="site-rastreio">Postou nos Correios? Código de rastreio:
           <input maxlength="13" placeholder="AA123456789BR" data-n="${p.numero}">
           <button class="site-finalizar" data-n="${p.numero}">Finalizar pedido</button></div>
@@ -1074,10 +1075,13 @@ function _desenharPedidosSite(lugar, d) {
     const n = bt.dataset.n;
     const cod = lugar.querySelector(`.site-rastreio input[data-n="${n}"]`).value.trim().toUpperCase();
     if (!/^[A-Z]{2}\d{9}[A-Z]{2}$/.test(cod)) return toast('Código de rastreio no formato AA123456789BR', true);
+    // Antifraude pediu Mão Própria + AR: sem a confirmação o pedido não finaliza
+    const mp = lugar.querySelector(`.site-mp-ok[data-n="${n}"]`);
+    if (mp && !mp.checked) return toast('Este pedido exige Mão Própria + AR — marque a confirmação antes de finalizar', true);
     if (!confirm(`Finalizar o pedido ${n} com o rastreio ${cod}? O cliente recebe o código pela Loja Integrada.`)) return;
     bt.disabled = true; bt.textContent = 'Finalizando…';
     try {
-      const r = await apiFetch('POST', `/api/site/pedidos/${n}/rastreio`, { codigo: cod });
+      const r = await apiFetch('POST', `/api/site/pedidos/${n}/rastreio`, { codigo: cod, maoPropria: !!(mp && mp.checked) });
       toast(r.loja?.ok === false ? `Rastreio salvo, mas não atualizou na Loja Integrada — avise o escritório` : `Pedido ${n} finalizado`, r.loja?.ok === false);
       const nd = await _carregarSite(true); lugar.innerHTML = ''; _desenharPedidosSite(lugar, nd);
     } catch (e) {

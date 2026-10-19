@@ -11071,7 +11071,8 @@ app.post('/api/site/pedidos/:numero/rastreio', requireAuth, async (req, res) => 
     const p = await pedidoSiteDoUsuario(u, req.params.numero);
     if (!p) return res.status(404).json({ error: 'Pedido não encontrado para a sua loja' });
     const r = await roboFetch('/pedido/rastreio', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ numero: Number(req.params.numero), codigo: req.body?.codigo, quem: u.username }) });
+      body: JSON.stringify({ numero: Number(req.params.numero), codigo: req.body?.codigo, quem: u.username,
+        maoPropria: req.body?.maoPropria === true }) });
     const j = await r.json().catch(() => ({}));
     if (!r.ok) return res.status(r.status).json({ error: j.erro || `robô respondeu HTTP ${r.status}` });
     res.json(j);

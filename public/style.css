@@ -4683,6 +4683,7 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
 .site-btn:hover { background: rgba(var(--accent-rgb),.12); }
 .site-btn.off { color: var(--muted); border-style: dashed; border-color: var(--border); background: transparent; cursor: default; }
 .site-check { font-size: .8rem; color: var(--text2); display: inline-flex; align-items: center; gap: .3rem; }
+.site-mp { display: flex; margin: .45rem 0 .2rem; color: var(--text); }
 .site-rastreio { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: .6rem; font-size: .8rem; color: var(--text2); }
 .site-rastreio input { font: inherit; font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; padding: .35rem .6rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); width: 150px; }
 .site-finalizar { background: var(--up-strong); border: 1px solid var(--up-strong); color: var(--on-solid); font-size: .8rem; font-weight: 600; padding: .38rem .9rem; border-radius: 6px; cursor: pointer; }
