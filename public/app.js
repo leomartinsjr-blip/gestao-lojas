@@ -1042,7 +1042,9 @@ function _desenharPedidosSite(lugar, d) {
       const minhaTransf = (p.transferir || []).filter(t => t.empresa === board);
       const cab = `<div class="site-ped-cab"><b>Pedido ${esc(p.numero)}</b><span>${esc(p.cliente || '')} · ${esc(p.entrega || '')} · ${esc(p.envioForma || '')} · ${brl(p.total)}</span>
         <span class="site-etapa site-etapa-${p.etapa}">${p.etapa === 'transferir' ? 'aguardando nota' : p.etapa === 'postar' ? 'pronto para postar' : 'postado'}</span></div>`
-        + avisoOutrasLojas(p);
+        + avisoOutrasLojas(p)
+        // Mão Própria + AR aparece desde a separação, não só na hora de postar
+        + (p.maoPropria && p.etapa !== 'enviado' ? '<div class="site-linha site-atencao">📮 <b>Postar com Mão Própria + Aviso de Recebimento (AR)</b> nos Correios — é a prova de entrega contra chargeback. Guarde o AR assinado quando voltar.</div>' : '');
       if (p.etapa === 'enviado') return `<div class="site-ped">${cab}<div class="site-linha ok">✓ Postado · rastreio <b>${esc(p.rastreio)}</b>${p.gravacao?.loja?.ok === false ? ' · <span class="site-erro">não atualizou na Loja Integrada — avise o escritório</span>' : ''}</div></div>`;
       if (p.etapa === 'transferir') {
         const itens = (minhaTransf.length ? minhaTransf : []).flatMap(t => t.itens);
@@ -1054,7 +1056,6 @@ function _desenharPedidosSite(lugar, d) {
       if (!p.souQuemPosta) return `<div class="site-ped">${cab}<div class="site-linha espera">Nota emitida — quem posta este pedido é ${esc(p.posta === 'escritorio' ? 'o escritório' : p.posta)}.</div></div>`;
       const check = (k, txt) => `<label class="site-check"><input type="checkbox" data-n="${p.numero}" data-k="${k}" ${feito(p.numero, k) ? 'checked' : ''}> ${txt}</label>`;
       return `<div class="site-ped">${cab}
-        ${p.maoPropria ? '<div class="site-linha site-atencao">📮 <b>Postar com Mão Própria + Aviso de Recebimento (AR)</b> nos Correios — é a prova de entrega contra chargeback. Guarde o AR assinado quando voltar.</div>' : ''}
         <div class="site-passos">
           <a class="site-btn" href="/api/site/pedidos/${p.numero}/danfe" target="_blank" rel="noopener">🧾 Imprimir nota ${esc(p.nfe?.numero || '')}</a>
           ${p.etiqueta ? `<a class="site-btn" href="/api/site/pedidos/${p.numero}/etiqueta" target="_blank" rel="noopener">🏷 Imprimir etiqueta</a>`
