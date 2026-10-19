@@ -9339,163 +9339,180 @@ function todayBRT() {
     .split('/').reverse().join('-');
 }
 
-function getIndevaStore(db, board) {
+// O dia da loja (fila, atendimentos…) mora em db.indeva[board]. Cada clique grava
+// só esses campos ($set no Mongo) — regravar o documento principal inteiro (vários MB)
+// a cada clique era o que deixava a Lista da Vez lenta e travando.
+const INDEVA_CAMPOS_DIA = ['fila', 'atendendo', 'atendimentos', 'multiAtend', 'date'];
+
+function indevaCaminhosDia(board) {
+  return new Set(INDEVA_CAMPOS_DIA.map(c => `indeva.${board}.${c}`));
+}
+
+// caminhos (opcional): recebe o que mudou ao criar a loja ou virar o dia
+function getIndevaStore(db, board, caminhos) {
   if (!db.indeva) db.indeva = {};
   const today = todayBRT();
+  const marcar = c => caminhos && caminhos.add(c);
   if (!db.indeva[board]) {
     db.indeva[board] = { fila: [], atendendo: [], atendimentos: [], multiAtend: {}, date: today, historico: {} };
+    marcar(`indeva.${board}`);
   } else if (db.indeva[board].date !== today) {
     const s = db.indeva[board];
-    if (!s.historico) s.historico = {};
-    if (s.atendimentos?.length > 0) {
+    if (!s.historico) { s.historico = {}; marcar(`indeva.${board}.historico`); }
+    if (s.atendimentos?.length > 0 && s.date) {
       s.historico[s.date] = { date: s.date, atendimentos: s.atendimentos };
+      marcar(`indeva.${board}.historico.${s.date}`);
     }
     s.fila = [];
     s.atendendo = [];
     s.atendimentos = [];
     s.multiAtend = {};
     s.date = today;
+    for (const c of INDEVA_CAMPOS_DIA) marcar(`indeva.${board}.${c}`);
   }
   const s = db.indeva[board];
-  if (!Array.isArray(s.atendendo)) s.atendendo = s.atendendo != null ? [s.atendendo] : [];
-  if (!s.historico) s.historico = {};
-  if (!s.multiAtend) s.multiAtend = {};
+  if (!Array.isArray(s.atendendo)) { s.atendendo = s.atendendo != null ? [s.atendendo] : []; marcar(`indeva.${board}.atendendo`); }
+  if (!s.historico) { s.historico = {}; marcar(`indeva.${board}.historico`); }
+  if (!s.multiAtend) { s.multiAtend = {}; marcar(`indeva.${board}.multiAtend`); }
   return s;
+}
+
+// A tela só precisa do dia; o histórico (que cresce todo dia) vai em rota própria
+function indevaResposta(store) {
+  const { historico, ...dia } = store;
+  return dia;
+}
+
+function indevaAcesso(req, res) {
+  const { board } = req.params;
+  if (!INDEVA_STORES.includes(board)) { res.status(400).json({ error: 'Loja inválida' }); return null; }
+  const user = req.session.user;
+  if (user.board && user.board !== 'escritorio' && user.board !== board) {
+    res.status(403).json({ error: 'Sem acesso' }); return null;
+  }
+  return board;
+}
+
+// Altera o dia da loja e grava só os campos do dia (+ extras, ex. nextId)
+async function indevaAlterar(req, res, alterar, extras = []) {
+  try {
+    const board = indevaAcesso(req, res);
+    if (!board) return;
+    const db = await readDB();
+    const virada = new Set();
+    const store = getIndevaStore(db, board, virada);
+    const erro = alterar(store, db);
+    if (erro) {
+      if (virada.size) await writeDB(db, { caminhos: virada });   // não perde a virada do dia
+      return res.status(erro.status || 400).json({ error: erro.error });
+    }
+    const caminhos = new Set([...virada, ...indevaCaminhosDia(board), ...extras]);
+    await writeDB(db, { caminhos });
+    res.json(indevaResposta(store));
+  } catch (e) { res.status(500).json({ error: e.message }); }
 }
 
 app.get('/api/indeva/:board', requireAuth, async (req, res) => {
   try {
-    const { board } = req.params;
-    if (!INDEVA_STORES.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
-    const user = req.session.user;
-    if (user.board && user.board !== 'escritorio' && user.board !== board)
-      return res.status(403).json({ error: 'Sem acesso' });
+    const board = indevaAcesso(req, res);
+    if (!board) return;
     const db = await readDB();
-    const store = getIndevaStore(db, board);
-    await writeDB(db);
-    res.json(store);
+    const caminhos = new Set();
+    const store = getIndevaStore(db, board, caminhos);
+    if (caminhos.size) await writeDB(db, { caminhos });   // só grava se virou o dia
+    res.json(indevaResposta(store));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/indeva/:board/entrar', requireAuth, async (req, res) => {
+// Tudo o que a tela da Lista da Vez precisa numa chamada só (antes eram ~40:
+// funcionários com foto + uma por vendedor). Fotos vêm depois, em segundo plano.
+app.get('/api/indeva-boot/:year/:month', requireAuth, async (req, res) => {
   try {
-    const { board } = req.params;
-    const { empId } = req.body;
-    if (!INDEVA_STORES.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
-    const user = req.session.user;
-    if (user.board && user.board !== 'escritorio' && user.board !== board)
-      return res.status(403).json({ error: 'Sem acesso' });
+    const year = parseInt(req.params.year), month = parseInt(req.params.month);
+    const mk = monthKey(year, month);
     const db = await readDB();
-    const store = getIndevaStore(db, board);
-    const id = parseInt(empId);
-    if (!store.fila.includes(id)) store.fila.push(id);
-    await writeDB(db);
-    res.json(store);
+    const { board } = req.session.user;
+    const isAdminOrEscritorio = !board || board === 'escritorio';
+    const employees = (db.employees || [])
+      .filter(e => isAdminOrEscritorio || e.board === board)
+      .map(e => { const { foto, ...rest } = e; return rest; });
+    const vsalesAll = db.vsales || {};
+    const vsales = {};
+    for (const e of employees) {
+      if (!INDEVA_STORES.includes(e.board)) continue;
+      vsales[e.id] = vsalesAll[`${mk}-${e.board}-${e.id}`] || { meta: { mensal: 0 }, entries: {} };
+    }
+    const camps = db.campaigns || [];
+    res.json({
+      employees,
+      vsales,
+      weeklyMetas: (db.weeklyMetas || {})[mk] || {},
+      weights:     (db.globalWeights || {})[mk] || {},
+      campaigns:   board ? camps.filter(c => c.scope === 'rede' || (c.stores || []).includes(board)) : camps,
+    });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/indeva/:board/sair', requireAuth, async (req, res) => {
-  try {
-    const { board } = req.params;
-    const { empId } = req.body;
-    if (!INDEVA_STORES.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
-    const user = req.session.user;
-    if (user.board && user.board !== 'escritorio' && user.board !== board)
-      return res.status(403).json({ error: 'Sem acesso' });
-    const db = await readDB();
-    const store = getIndevaStore(db, board);
-    const rid = parseInt(empId);
-    store.fila = store.fila.filter(x => x !== rid);
-    store.atendendo = store.atendendo.filter(x => x !== rid);
-    await writeDB(db);
-    res.json(store);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+app.post('/api/indeva/:board/entrar', requireAuth, (req, res) => indevaAlterar(req, res, store => {
+  const id = parseInt(req.body.empId);
+  if (!store.fila.includes(id)) store.fila.push(id);
+}));
+
+app.post('/api/indeva/:board/sair', requireAuth, (req, res) => indevaAlterar(req, res, store => {
+  const rid = parseInt(req.body.empId);
+  store.fila = store.fila.filter(x => x !== rid);
+  store.atendendo = store.atendendo.filter(x => x !== rid);
+}));
 
 app.get('/api/indeva/:board/historico', requireAuth, async (req, res) => {
   try {
-    const { board } = req.params;
-    if (!INDEVA_STORES.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
-    const user = req.session.user;
-    if (user.board && user.board !== 'escritorio' && user.board !== board)
-      return res.status(403).json({ error: 'Sem acesso' });
+    const board = indevaAcesso(req, res);
+    if (!board) return;
     const db = await readDB();
-    const store = getIndevaStore(db, board);
-    await writeDB(db);
-    res.json(store.historico || {});
+    const caminhos = new Set();
+    const store = getIndevaStore(db, board, caminhos);
+    if (caminhos.size) await writeDB(db, { caminhos });
+    // Últimos 60 dias com movimento — a tela lista dia a dia e o histórico só cresce
+    const datas = Object.keys(store.historico || {}).sort().slice(-60);
+    res.json(Object.fromEntries(datas.map(d => [d, store.historico[d]])));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.post('/api/indeva/:board/atender', requireAuth, async (req, res) => {
-  try {
-    const { board } = req.params;
-    const { empId } = req.body;
-    if (!INDEVA_STORES.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
-    const user = req.session.user;
-    if (user.board && user.board !== 'escritorio' && user.board !== board)
-      return res.status(403).json({ error: 'Sem acesso' });
-    const db = await readDB();
-    const store = getIndevaStore(db, board);
-    const id = parseInt(empId);
-    if (!store.atendendo.includes(id)) store.atendendo.push(id);
+app.post('/api/indeva/:board/atender', requireAuth, (req, res) => indevaAlterar(req, res, store => {
+  const id = parseInt(req.body.empId);
+  if (!store.atendendo.includes(id)) store.atendendo.push(id);
+  store.fila = store.fila.filter(x => x !== id);
+}));
+
+app.post('/api/indeva/:board/mais-um', requireAuth, (req, res) => indevaAlterar(req, res, store => {
+  const id = parseInt(req.body.empId);
+  if (!store.atendendo.includes(id)) return { error: 'Vendedor não está em atendimento' };
+  store.multiAtend[id] = (store.multiAtend[id] || 1) + 1;
+}));
+
+app.post('/api/indeva/:board/atendimento', requireAuth, (req, res) => indevaAlterar(req, res, (store, db) => {
+  const { empId, vendeu, motivo } = req.body;
+  const id = parseInt(empId);
+  const emp = (db.employees || []).find(e => e.id === id);
+  const hora = new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+  store.atendimentos.push({
+    id: nextId(db),
+    empId: id,
+    nome: emp?.apelido || emp?.name || '—',
+    hora,
+    vendeu: !!vendeu,
+    motivo: vendeu ? null : (motivo || null)
+  });
+  const multiCur = store.multiAtend[id] || 1;
+  if (multiCur > 1) {
+    store.multiAtend[id] = multiCur - 1;
+  } else {
+    delete store.multiAtend[id];
+    store.atendendo = store.atendendo.filter(x => x !== id);
     store.fila = store.fila.filter(x => x !== id);
-    await writeDB(db);
-    res.json(store);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/indeva/:board/mais-um', requireAuth, async (req, res) => {
-  try {
-    const { board } = req.params;
-    const { empId } = req.body;
-    if (!INDEVA_STORES.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
-    const user = req.session.user;
-    if (user.board && user.board !== 'escritorio' && user.board !== board)
-      return res.status(403).json({ error: 'Sem acesso' });
-    const db = await readDB();
-    const store = getIndevaStore(db, board);
-    const id = parseInt(empId);
-    if (!store.atendendo.includes(id)) return res.status(400).json({ error: 'Vendedor não está em atendimento' });
-    store.multiAtend[id] = (store.multiAtend[id] || 1) + 1;
-    await writeDB(db);
-    res.json(store);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
-
-app.post('/api/indeva/:board/atendimento', requireAuth, async (req, res) => {
-  try {
-    const { board } = req.params;
-    const { empId, vendeu, motivo } = req.body;
-    if (!INDEVA_STORES.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
-    const user = req.session.user;
-    if (user.board && user.board !== 'escritorio' && user.board !== board)
-      return res.status(403).json({ error: 'Sem acesso' });
-    const db = await readDB();
-    const store = getIndevaStore(db, board);
-    const id = parseInt(empId);
-    const emp = (db.employees || []).find(e => e.id === id);
-    const hora = new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
-    store.atendimentos.push({
-      id: nextId(db),
-      empId: id,
-      nome: emp?.apelido || emp?.name || '—',
-      hora,
-      vendeu: !!vendeu,
-      motivo: vendeu ? null : (motivo || null)
-    });
-    const multiCur = store.multiAtend[id] || 1;
-    if (multiCur > 1) {
-      store.multiAtend[id] = multiCur - 1;
-    } else {
-      delete store.multiAtend[id];
-      store.atendendo = store.atendendo.filter(x => x !== id);
-      store.fila = store.fila.filter(x => x !== id);
-      store.fila.push(id);
-    }
-    await writeDB(db);
-    res.json(store);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+    store.fila.push(id);
+  }
+}, ['nextId']));
 
 app.get('/api/indeva-stats/:year/:month', requireAuth, async (req, res) => {
   try {
@@ -9549,23 +9566,12 @@ app.get('/api/indeva-stats/:year/:month', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-app.delete('/api/indeva/:board/atendimento/:id', requireAuth, async (req, res) => {
-  try {
-    const { board, id } = req.params;
-    if (!INDEVA_STORES.includes(board)) return res.status(400).json({ error: 'Loja inválida' });
-    const user = req.session.user;
-    if (user.board && user.board !== 'escritorio' && user.board !== board)
-      return res.status(403).json({ error: 'Sem acesso' });
-    const db = await readDB();
-    const store = getIndevaStore(db, board);
-    const atId = parseInt(id);
-    const before = store.atendimentos.length;
-    store.atendimentos = store.atendimentos.filter(a => a.id !== atId);
-    if (store.atendimentos.length === before) return res.status(404).json({ error: 'Atendimento não encontrado' });
-    await writeDB(db);
-    res.json(store);
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+app.delete('/api/indeva/:board/atendimento/:id', requireAuth, (req, res) => indevaAlterar(req, res, store => {
+  const atId = parseInt(req.params.id);
+  const before = store.atendimentos.length;
+  store.atendimentos = store.atendimentos.filter(a => a.id !== atId);
+  if (store.atendimentos.length === before) return { status: 404, error: 'Atendimento não encontrado' };
+}));
 
 app.get('/indeva', (req, res) => res.sendFile(path.join(__dirname, 'public/indeva.html')));
 

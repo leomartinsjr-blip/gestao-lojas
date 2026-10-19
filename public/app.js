@@ -13795,6 +13795,8 @@ function _buildIndevaTabs() {
   const isAdmin = !S.user?.board;
   const isEscritorio = S.user?.board === 'escritorio';
   const tabsEl = document.getElementById('indevaStoreTabs');
+  // Cor da loja aberta pinta o cabeçalho, contadores e o próximo da fila
+  if (window.INDEVA_STANDALONE) document.body.style.setProperty('--loja', BOARDS[_indevaBoard]?.color || 'var(--accent)');
   if (!isAdmin && !isEscritorio) { tabsEl.innerHTML = ''; return; }
   tabsEl.innerHTML = '';
   INDEVA_STORES.forEach(bk => {
@@ -13811,20 +13813,85 @@ function _buildIndevaTabs() {
   });
 }
 
-async function _loadIndeva() {
-  const body = document.getElementById('indevaBody');
-  body.innerHTML = '<div style="padding:2rem;color:var(--muted);text-align:center">Carregando…</div>';
+// fetch com tempo-limite: se o servidor engasga, mostra o erro em vez de
+// deixar "Carregando…" para sempre
+async function _indevaFetch(url, opts = {}, ms = 20000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ms);
   try {
-    if (_indevaView === 'historico') {
-      const r = await fetch(`/api/indeva/${_indevaBoard}/historico`);
-      if (!r.ok) throw new Error(await r.text());
-      _renderIndevaHistorico(body, await r.json());
-    } else {
-      const r = await fetch(`/api/indeva/${_indevaBoard}`);
-      if (!r.ok) throw new Error(await r.text());
-      _renderIndeva(body, await r.json());
+    const r = await fetch(url, { ...opts, signal: ctrl.signal });
+    if (r.status === 401) {
+      if (window.INDEVA_STANDALONE) window.location.href = '/';
+      throw new Error('Sessão expirada — entre de novo');
     }
-  } catch (e) { body.innerHTML = `<div style="padding:2rem;color:var(--down)">${e.message}</div>`; }
+    const text = await r.text();
+    let data = null;
+    try { data = JSON.parse(text); } catch {}
+    if (!r.ok) throw new Error(data?.error || text || `Erro ${r.status}`);
+    return data;
+  } catch (e) {
+    if (e.name === 'AbortError') throw new Error('O servidor demorou para responder.');
+    if (e instanceof TypeError) throw new Error('Sem conexão com o servidor.');
+    throw e;
+  } finally { clearTimeout(timer); }
+}
+
+function _indevaErro(body, msg, tentarDeNovo) {
+  body.innerHTML = `<div style="padding:2rem;text-align:center">
+    <div style="color:var(--down);margin-bottom:1rem">${msg}</div>
+    <button class="indeva-pill indeva-retry-btn">Tentar de novo</button>
+  </div>`;
+  body.querySelector('.indeva-retry-btn').addEventListener('click', () => (tentarDeNovo || _loadIndeva)());
+}
+
+// Cada carga/ação ganha um número; resposta de uma troca de aba antiga não
+// sobrescreve a tela da aba atual
+let _indevaSeq     = 0;
+let _indevaOcupado = false;
+
+// silencioso: atualiza sem trocar a tela por "Carregando…" (e erro vira só aviso)
+async function _loadIndeva(silencioso = false) {
+  const body  = document.getElementById('indevaBody');
+  const seq   = ++_indevaSeq;
+  const board = _indevaBoard, view = _indevaView;
+  if (!silencioso) body.innerHTML = '<div style="padding:2rem;color:var(--muted);text-align:center">Carregando…</div>';
+  try {
+    const data = await _indevaFetch(view === 'historico' ? `/api/indeva/${board}/historico` : `/api/indeva/${board}`);
+    if (seq !== _indevaSeq) return;
+    if (view === 'historico') _renderIndevaHistorico(body, data);
+    else _renderIndeva(body, data);
+  } catch (e) {
+    if (seq !== _indevaSeq) return;
+    if (silencioso) toast('Não foi possível atualizar a lista: ' + e.message, true);
+    else _indevaErro(body, e.message);
+  }
+}
+
+// Ações da tela de hoje (entrar, atender, vendeu…). Uma por vez: toque duplo
+// em "Vendeu" não registra a venda duas vezes.
+async function _indevaAcao(url, opts) {
+  if (_indevaOcupado) return null;
+  _indevaOcupado = true;
+  const body = document.getElementById('indevaBody');
+  const seq  = ++_indevaSeq;
+  body.classList.add('indeva-ocupado');
+  try {
+    const state = await _indevaFetch(url, opts);
+    if (seq === _indevaSeq && _indevaView === 'hoje') _renderIndeva(body, state);
+    return state;
+  } catch (e) {
+    toast('Erro: ' + e.message, true);
+    return null;
+  } finally {
+    _indevaOcupado = false;
+    body.classList.remove('indeva-ocupado');
+  }
+}
+
+function _indevaPost(acao, payload) {
+  return _indevaAcao(`/api/indeva/${_indevaBoard}/${acao}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+  });
 }
 
 function _renderIndeva(body, state) {
@@ -14021,13 +14088,7 @@ function _renderIndeva(body, state) {
   body.querySelectorAll('.log-del-btn').forEach(btn =>
     btn.addEventListener('click', async e => {
       e.stopPropagation();
-      const atId = btn.dataset.atid;
-      try {
-        const r = await fetch(`/api/indeva/${_indevaBoard}/atendimento/${atId}`, { method: 'DELETE' });
-        if (!r.ok) throw new Error(await r.text());
-        const state = await r.json();
-        _renderIndeva(document.getElementById('indevaBody'), state);
-      } catch(err) { toast('Erro: ' + err.message, true); }
+      await _indevaAcao(`/api/indeva/${_indevaBoard}/atendimento/${btn.dataset.atid}`, { method: 'DELETE' });
     })
   );
 }
@@ -14238,64 +14299,19 @@ function _showIndevaGoalsOverlay(emp, state) {
 }
 
 async function _indevaEntrar(empId) {
-  try {
-    const r = await fetch(`/api/indeva/${_indevaBoard}/entrar`, {
-      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({empId})
-    });
-    if (!r.ok) throw new Error(await r.text());
-    const state = await r.json();
-    _renderIndeva(document.getElementById('indevaBody'), state);
-    const isFirstEntry = !state.atendimentos.some(a => a.empId === empId);
-    if (isFirstEntry) {
-      const emp = (S.employees||[]).find(e => e.id === empId);
-      if (emp) _showIndevaGoalsOverlay(emp, state);
-    }
-  } catch(e) { toast('Erro: '+e.message, true); }
+  const state = await _indevaPost('entrar', { empId });
+  if (!state) return;
+  const isFirstEntry = !state.atendimentos.some(a => a.empId === empId);
+  if (isFirstEntry) {
+    const emp = (S.employees||[]).find(e => e.id === empId);
+    if (emp) _showIndevaGoalsOverlay(emp, state);
+  }
 }
 
-async function _indevaAtender(empId) {
-  try {
-    const r = await fetch(`/api/indeva/${_indevaBoard}/atender`, {
-      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({empId})
-    });
-    if (!r.ok) throw new Error(await r.text());
-    _renderIndeva(document.getElementById('indevaBody'), await r.json());
-  } catch(e) { toast('Erro: '+e.message, true); }
-}
-
-async function _indevaSair(empId) {
-  try {
-    const r = await fetch(`/api/indeva/${_indevaBoard}/sair`, {
-      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({empId})
-    });
-    if (!r.ok) throw new Error(await r.text());
-    _renderIndeva(document.getElementById('indevaBody'), await r.json());
-  } catch(e) { toast('Erro: '+e.message, true); }
-}
-
-async function _indevaMaisUm(empId) {
-  try {
-    const r = await fetch(`/api/indeva/${_indevaBoard}/mais-um`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ empId })
-    });
-    if (!r.ok) throw new Error(await r.text());
-    const state = await r.json();
-    _renderIndeva(document.getElementById('indevaBody'), state);
-  } catch(e) { toast('Erro: ' + e.message, true); }
-}
-
-async function _indevaAtend(empId, vendeu, motivo) {
-  try {
-    const r = await fetch(`/api/indeva/${_indevaBoard}/atendimento`, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({empId, vendeu, motivo})
-    });
-    if (!r.ok) throw new Error(await r.text());
-    _renderIndeva(document.getElementById('indevaBody'), await r.json());
-  } catch(e) { toast('Erro: '+e.message, true); }
-}
+function _indevaAtender(empId) { return _indevaPost('atender', { empId }); }
+function _indevaSair(empId)    { return _indevaPost('sair', { empId }); }
+function _indevaMaisUm(empId)  { return _indevaPost('mais-um', { empId }); }
+function _indevaAtend(empId, vendeu, motivo) { return _indevaPost('atendimento', { empId, vendeu, motivo }); }
 
 function _renderIndevaHistorico(body, historico) {
   const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && isVend(e) && !e.inativo);
@@ -14561,42 +14577,62 @@ function _openIndevaMetasOverlay() {
   document.body.appendChild(overlay);
 }
 
-async function initStandalone() {
-  try { S.user = await apiFetch('GET', '/api/me'); } catch { return; }
+// Vendas/metas do Microvix usadas nos painéis (Metas, Campanha, usabilidade).
+// A tela fica aberta o dia todo no tablet: recarrega ao voltar para ela depois de 10 min.
+let _indevaBaseEm = 0;
 
+async function _indevaCarregarBase() {
   const now = new Date();
-  S.year  = now.getFullYear();
-  S.month = now.getMonth() + 1;
+  const year = now.getFullYear(), month = now.getMonth() + 1;
+  const boot = await _indevaFetch(`/api/indeva-boot/${year}/${month}`);
+  S.year = year; S.month = month;
+  const fotos = Object.fromEntries((S.employees || []).filter(e => e.foto).map(e => [e.id, e.foto]));
+  S.employees   = (boot.employees || []).map(e => fotos[e.id] ? { ...e, foto: fotos[e.id] } : e);
+  S.vsales      = boot.vsales      || {};
+  S.weeklyMetas = boot.weeklyMetas || {};
+  S.weights     = boot.weights     || {};
+  S.campaigns   = boot.campaigns   || [];
+  _indevaBaseEm = Date.now();
+}
+
+// Fotos em segundo plano (são pesadas); quando chegam, redesenha se ninguém estiver no meio de uma ação
+function _indevaCarregarFotos() {
+  _indevaFetch('/api/employees/photos', {}, 60000).then(photos => {
+    if (!photos?.length) return;
+    const byId = Object.fromEntries(photos.map(p => [p.id, p.foto]));
+    for (const emp of S.employees) if (byId[emp.id]) emp.foto = byId[emp.id];
+    const body = document.getElementById('indevaBody');
+    const motivoAberto = body.querySelector('.indeva-motivos-wrap:not(.hidden)');
+    if (_indevaView === 'hoje' && _indevaLastState && !_indevaOcupado && !motivoAberto)
+      _renderIndeva(body, _indevaLastState);
+  }).catch(() => {});
+}
+
+async function _indevaIniciarDados() {
+  const body = document.getElementById('indevaBody');
+  body.innerHTML = '<div style="padding:2rem;color:var(--muted);text-align:center">Carregando…</div>';
+  try { await _indevaCarregarBase(); }
+  catch (e) { _indevaErro(body, 'Não foi possível carregar os vendedores: ' + e.message, _indevaIniciarDados); return; }
+  _loadIndeva();
+  _indevaCarregarFotos();
+}
+
+async function initStandalone() {
+  const body = document.getElementById('indevaBody');
+  body.innerHTML = '<div style="padding:2rem;color:var(--muted);text-align:center">Carregando…</div>';
+  try { S.user = await _indevaFetch('/api/me'); }
+  catch (e) { _indevaErro(body, e.message, initStandalone); return; }
 
   const userBoard    = S.user?.board;
   const isAdmin      = !userBoard;
   const isEscritorio = userBoard === 'escritorio';
 
   if (!isAdmin && !isEscritorio && !INDEVA_STORES.includes(userBoard)) {
-    document.getElementById('indevaBody').innerHTML =
-      '<div style="padding:2rem;color:var(--down)">Acesso não autorizado</div>';
+    body.innerHTML = '<div style="padding:2rem;color:var(--down)">Acesso não autorizado</div>';
     return;
   }
 
   _indevaBoard = (isAdmin || isEscritorio) ? INDEVA_STORES[0] : userBoard;
-
-  const allEmps = await apiFetch('GET', '/api/employees');
-  S.employees = allEmps;
-
-  const boardEmps = allEmps.filter(e =>
-    INDEVA_STORES.includes(e.board) && isVend(e) && !e.inativo
-  );
-  S.vsales = {};
-  await Promise.all(boardEmps.map(async emp => {
-    try {
-      S.vsales[emp.id] = await apiFetch('GET', `/api/vsales/${S.year}/${S.month}/${emp.board}/${emp.id}`);
-    } catch { S.vsales[emp.id] = { meta: { mensal: 0 }, entries: {} }; }
-  }));
-
-  S.weeklyMetas = await apiFetch('GET', `/api/weekly-metas/${S.year}/${S.month}`).catch(() => ({}));
-  S.campaigns   = await apiFetch('GET', '/api/campaigns').catch(() => []);
-  S.weights     = await apiFetch('GET', `/api/weights/${S.year}/${S.month}`).catch(() => ({}));
-
   document.title = `Lista da Vez${isAdmin || isEscritorio ? '' : ' — ' + (BOARDS[_indevaBoard]?.label || _indevaBoard)}`;
 
   // Botão Histórico — toggle entre hoje e histórico
@@ -14615,8 +14651,26 @@ async function initStandalone() {
   document.getElementById('indeva-camp-pill')?.addEventListener('click', _openIndevaCampanhasOverlay);
   document.getElementById('indeva-meta-pill')?.addEventListener('click', _openIndevaMetasOverlay);
 
+  // Voltou para a aba depois de um tempo: atualiza a fila (outro aparelho pode ter mexido)
+  // e, a cada 10 min, as vendas do Microvix
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState !== 'visible' || _indevaOcupado || !_indevaBaseEm) return;
+    if (Date.now() - _indevaBaseEm > 10 * 60_000) {
+      try { await _indevaCarregarBase(); } catch {}
+    }
+    if (_indevaView === 'hoje' && !document.querySelector('.ig-overlay')) _loadIndeva(true);
+  });
+
   _buildIndevaTabs();
-  _loadIndeva();
+  _indevaIniciarDados();
+
+  // Aviso único por aparelho de que a tela mudou
+  try {
+    if (localStorage.getItem('indevaLayout') !== '2') {
+      localStorage.setItem('indevaLayout', '2');
+      setTimeout(() => toast('Lista da Vez atualizada: tela nova e mais rápida', 'warn', 6000), 1200);
+    }
+  } catch {}
 }
 
 // ── DRE ─────────────────────────────────────────────────────────────────────
