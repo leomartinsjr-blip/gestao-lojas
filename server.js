@@ -11316,6 +11316,9 @@ async function computeConferenciaDashboard(dtIni, dtFin) {
         if (serie === '999') continue;
         if (serie === '4' && op !== 'DS') continue;
         if (serie === 'J') continue;
+        // Site: reserva B2C sem NF chega com documento 0 — ainda não é venda
+        // (mesma regra do sync do Site em microvixSync.js)
+        if (board === 'site' && !parseInt(r.documento || '0')) continue;
 
         const sign     = op === 'DS' ? -1 : 1;
 
@@ -11350,6 +11353,15 @@ async function computeConferenciaDashboard(dtIni, dtFin) {
           porVendedor[vkey].vlrBruto    += sign * vlrUnit * qty;
           porVendedor[vkey].vlrDesconto += sign * vlrDesc * qty;
           porVendedor[vkey].qtdItens    += sign;
+        }
+
+        // Site: venda líquida = soma do valor_total de cada item, igual ao sync
+        // do Site que alimenta a Performance Mensal.
+        if (board === 'site') {
+          const vlrItem = parseBR(r.valor_total||'0');
+          loja.vlrLiquido += sign * vlrItem;
+          if (cod && porVendedor[`${board}::${cod}`]) porVendedor[`${board}::${cod}`].vlrLiquido += sign * vlrItem;
+          continue;
         }
 
         // Venda líquida: por documento (igual ao sync de Performance Mensal)
