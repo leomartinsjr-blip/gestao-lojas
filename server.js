@@ -5378,9 +5378,16 @@ app.patch('/api/boletas/:id', requireAuth, async (req, res) => {
       if (req.body.status === 'resolvido' && !b.resolvedAt) {
         b.resolvedAt = new Date().toISOString();
         b.resolvedBy = req.session.user.label || req.session.user.username;
+      } else if (req.body.status === 'perdido') {
+        b.perdidoAt     = new Date().toISOString();
+        b.perdidoBy     = req.session.user.label || req.session.user.username;
+        b.perdidoMotivo = req.body.perdidoMotivo || null;
       } else if (req.body.status === 'pendente') {
         b.resolvedAt = null;
         b.resolvedBy = null;
+        b.perdidoAt = null;
+        b.perdidoBy = null;
+        b.perdidoMotivo = null;
       }
     }
     // Pipeline de devolução

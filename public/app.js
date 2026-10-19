@@ -11236,6 +11236,7 @@ function _boletasListHtml(isAdmin, userBoard) {
       <div class="bol-filter-tabs">
         <button class="bol-filter-tab active" data-filter="pendente">Pendentes</button>
         <button class="bol-filter-tab" data-filter="resolvido">Resolvidas</button>
+        <button class="bol-filter-tab" data-filter="perdido">Perdidas</button>
         <button class="bol-filter-tab" data-filter="all">Todas</button>
       </div>
       <div style="display:flex;gap:.5rem;align-items:center">
@@ -11271,6 +11272,7 @@ function _initBoletasList(body, isAdmin, userBoard) {
       if (!isAdmin && b.board !== userBoard) return false;
       if (filter === 'pendente') return b.status === 'pendente';
       if (filter === 'resolvido') return b.status === 'resolvido';
+      if (filter === 'perdido') return b.status === 'perdido';
       return true;
     }).filter(b => {
       if (pipeFilter === 'all') return true;
@@ -11289,7 +11291,9 @@ function _initBoletasList(body, isAdmin, userBoard) {
       const days = _boletaDaysLeft(b);
       const storeTag = isAdmin ? `<span class="bol-list-store" style="color:${BOARDS[b.board]?.color||'var(--muted)'}">${BOARDS[b.board]?.label||b.board}</span>` : '';
       const info = [b.produto, b.tamanho, b.cor].filter(Boolean).join(' · ');
-      const resolvedInfo = b.status === 'resolvido' ? `<span class="bol-resolved-tag">✓ Resolvida${b.resolvedAt ? ' em '+new Date(b.resolvedAt).toLocaleDateString('pt-BR') : ''}</span>` : _boletaBadge(days);
+      const resolvedInfo = b.status === 'resolvido' ? `<span class="bol-resolved-tag">✓ Resolvida${b.resolvedAt ? ' em '+new Date(b.resolvedAt).toLocaleDateString('pt-BR') : ''}</span>`
+        : b.status === 'perdido' ? `<span class="bol-perdido-tag">✕ Perdida${b.perdidoAt ? ' em '+new Date(b.perdidoAt).toLocaleDateString('pt-BR') : ''}</span>`
+        : _boletaBadge(days);
       return `<div class="bol-list-item" data-id="${b.id}">
         <div class="bol-list-item-left">
           <div class="bol-list-item-top"><span class="bol-num">#${String(b.numero).padStart(3,'0')}</span>${storeTag}</div>
@@ -11344,12 +11348,13 @@ function _boletaDetailHtml(b, isAdmin) {
         <div style="display:flex;align-items:center;gap:.75rem">
           <span class="bol-num" style="font-size:1.1rem">#${String(b.numero).padStart(3,'0')}</span>
           <span style="color:${storeColor};font-weight:600">${BOARDS[b.board]?.label||b.board}</span>
-          ${b.status==='resolvido' ? '<span class="bol-resolved-tag">✓ Resolvida</span>' : (days!==null?_boletaBadge(days):'')}
+          ${b.status==='resolvido' ? '<span class="bol-resolved-tag">✓ Resolvida</span>' : b.status==='perdido' ? '<span class="bol-perdido-tag">✕ Perdida</span>' : (days!==null?_boletaBadge(days):'')}
         </div>
         <div style="color:var(--muted);font-size:.8rem;margin-top:.25rem">Criada em ${fDate(b.createdAt?.slice(0,10))} por ${b.createdBy||'—'}</div>
       </div>
       <div style="display:flex;gap:.5rem">
-        ${b.status==='pendente' ? `<button class="bol-btn-primary" id="bolResolveBtn">✓ Resolver</button>` : `<button class="bol-btn-reopen" id="bolReopenBtn">↩ Reabrir</button>`}
+        ${b.status==='pendente' ? `<button class="bol-btn-primary" id="bolResolveBtn">✓ Resolver</button>
+        <button class="bol-btn-perdido" id="bolPerdidoBtn" title="Não deu pra mandar pro fornecedor — sai da lista de pendentes">✕ Perdido</button>` : `<button class="bol-btn-reopen" id="bolReopenBtn">↩ Reabrir</button>`}
         ${isAdmin ? `<button class="bol-btn-edit" id="bolEditBtn">Editar</button>
         <button class="bol-btn-del" id="bolDelBtn">Excluir</button>` : ''}
         <button class="bol-btn-secondary" id="bolBackBtn">← Voltar</button>
@@ -11376,6 +11381,8 @@ function _boletaDetailHtml(b, isAdmin) {
         ${row(b.origem === 'loja' ? 'Data de Identificação' : 'Data Entregue', fDate(b.dataEntregue))}
         ${row('Prazo', b.dataEntregue ? `30 dias → vence em ${fDate(new Date(new Date(b.dataEntregue).setDate(new Date(b.dataEntregue).getDate()+30)).toISOString().slice(0,10))}` : null)}
         ${b.status==='resolvido' ? row('Resolvida em', fDate(b.resolvedAt?.slice(0,10))+' por '+(b.resolvedBy||'—')) : ''}
+        ${b.status==='perdido' ? row('Perdida em', fDate(b.perdidoAt?.slice(0,10))+' por '+(b.perdidoBy||'—')) : ''}
+        ${b.status==='perdido' ? row('Motivo', b.perdidoMotivo) : ''}
       </div>
     </div>
 
@@ -11425,6 +11432,20 @@ function _initBoletaDetail(body, boleta, isAdmin) {
       renderDashboard();
       _renderBoletasModal('view', boleta.id);
       toast('Boleta resolvida ✓');
+    } catch(e) { toast('Erro: ' + e.message, true); }
+  });
+  // Perdido: não deu pra mandar pro fornecedor. Sai dos pendentes (e do card do
+  // dashboard) sem contar como resolvida — fica na aba "Perdidas".
+  body.querySelector('#bolPerdidoBtn')?.addEventListener('click', async () => {
+    const motivo = prompt(`Marcar boleta #${String(boleta.numero).padStart(3,'0')} como perdida?\nMotivo (opcional):`, '');
+    if (motivo === null) return;
+    try {
+      const updated = await apiFetch('PATCH', `/api/boletas/${boleta.id}`, { status: 'perdido', perdidoMotivo: motivo.trim() });
+      const idx = S.boletas.findIndex(b => b.id === boleta.id);
+      if (idx >= 0) S.boletas[idx] = updated;
+      renderDashboard();
+      _renderBoletasModal('list', null);
+      toast('Boleta marcada como perdida');
     } catch(e) { toast('Erro: ' + e.message, true); }
   });
   body.querySelector('#bolReopenBtn')?.addEventListener('click', async () => {

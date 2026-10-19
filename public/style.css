@@ -3016,6 +3016,10 @@ textarea.bol-input { resize: vertical; min-height: 60px; }
 .bol-btn-reopen { background: transparent; border: 1px solid var(--muted); color: var(--muted);
   border-radius: .375rem; padding: 6px 16px; font-size: .83rem; cursor: pointer; transition: border-color .15s, color .15s; }
 .bol-btn-reopen:hover { border-color: var(--accent); color: var(--accent); }
+.bol-btn-perdido { background: transparent; border: 1px solid var(--down); color: var(--down);
+  border-radius: .375rem; padding: 6px 16px; font-size: .83rem; cursor: pointer; }
+.bol-btn-perdido:hover { background: rgba(var(--down-rgb, 220,38,38),.08); }
+.bol-perdido-tag { font-size: .75rem; color: var(--down); font-weight: 600; }
 
 /* Detail */
 .bol-detail { display: flex; flex-direction: column; gap: 1rem; padding: 1.25rem; overflow-y: auto; }
