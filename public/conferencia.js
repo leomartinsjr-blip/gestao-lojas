@@ -1,7 +1,7 @@
 (() => {
   const LOJAS = ['delrey','minas','contagem','estacao','tommy','surfers'];
   const LOJA_LABEL = { delrey:'Del Rey', minas:'Minas', contagem:'Contagem', estacao:'Estação', tommy:'Tommy', surfers:'Surfers', lez:'Lez a Lez', site:'Site' };
-  const LOJA_COLORS = { delrey:'#4AA3FF', minas:'#a78bfa', contagem:'#34d399', estacao:'#FF9A4A', tommy:'#2dd4bf', surfers:'#FF6161' };
+  const LOJA_COLORS = { delrey:'#4AA3FF', minas:'#a78bfa', contagem:'#34d399', estacao:'#FF9A4A', tommy:'#2dd4bf', surfers:'#FF6161', site:'#f472b6' };
 
   const $ = id => document.getElementById(id);
   const fmtR = v => 'R$ ' + (+v||0).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});

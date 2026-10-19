@@ -11184,7 +11184,9 @@ app.put('/api/conferencia/taxas', requireEscritorioOrAdmin, async (req, res) => 
 async function computeConferenciaDashboard(dtIni, dtFin) {
   { // bloco só preserva a indentação de quando isto era o try da rota
     const lojas   = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-    const BOARDS  = ['delrey','minas','contagem','estacao','tommy','surfers'];
+    // O Site entra em tudo menos no detalhamento por modalidade (porTaxa), que
+    // é o mix das maquinetas das lojas físicas.
+    const BOARDS  = ['delrey','minas','contagem','estacao','tommy','surfers','site'];
     const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
 
     const { fetchMovimento, fetchVendedores, fetchMovimentoPlanos, fetchMovimentoCartoes } = require('./services/microvix');
@@ -11360,7 +11362,7 @@ async function computeConferenciaDashboard(dtIni, dtFin) {
           .reduce((s, k) => s + parseBR(r[k]||'0'), 0)
           || parseBR(r.valor_total||r.total_liquido||'0');
         loja.vlrLiquido += sign * vlrLiq;
-        vlrDinheiroGlobal += sign * parseBR(r.total_dinheiro||'0');
+        if (board !== 'site') vlrDinheiroGlobal += sign * parseBR(r.total_dinheiro||'0');
 
         // vlrLiquido do vendedor: por documento (após seenDocs)
         if (cod && porVendedor[`${board}::${cod}`]) {
@@ -11450,6 +11452,7 @@ async function computeConferenciaDashboard(dtIni, dtFin) {
         loja.vlrTaxa   += vlrTaxa;
         if (taxa === null) loja.vlrCartaoSemTaxa += p.valor;
 
+        if (board === 'site') continue; // fora das Taxas por Modalidade
         const gk = `${label}::${mod}`;
         if (!taxaGlobal[gk]) taxaGlobal[gk] = { bandeira: label, mod, taxa, valor: 0, vlrTaxa: 0, semTaxa: taxa === null };
         taxaGlobal[gk].valor   += p.valor;
