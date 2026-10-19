@@ -175,10 +175,15 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db, marcar = () =
 
     const sign = row.operacao === 'DS' ? -1 : 1; // devoluções reduzem o total
     const key = `${codVend}||${dateStr}`;
-    if (!agg[key]) agg[key] = { codVend, vendNorm, date: dateStr, value: 0, pecas: 0, docs: new Set(), retDocs: new Set() };
+    if (!agg[key]) agg[key] = { codVend, vendNorm, date: dateStr, value: 0, pecas: 0, docs: new Set(), retDocs: new Set(), horas: {} };
     agg[key].value += sign * parseBrNum(row.valor_total);
     agg[key].pecas += sign * (parseInt(row.quantidade || 0, 10) || 0);
-    if (sign > 0) agg[key].docs.add(row.documento);
+    if (sign > 0) {
+      agg[key].docs.add(row.documento);
+      // Hora da venda (NF) — base da análise de conversão por horário da Lista da Vez
+      const hh = String(row.hora_lancamento || '').trim().slice(0, 2);
+      if (/^\d\d$/.test(hh)) (agg[key].horas[hh] ||= new Set()).add(row.documento);
+    }
     else agg[key].retDocs.add(row.documento);
   }
 
@@ -188,7 +193,7 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db, marcar = () =
   const covered = new Set(); // "empId||date" seen in this sync run, for orphan cleanup below
 
   for (const entry of Object.values(agg)) {
-    const { codVend, vendNorm, date, value, pecas, docs, retDocs } = entry;
+    const { codVend, vendNorm, date, value, pecas, docs, retDocs, horas } = entry;
     const year  = parseInt(date.slice(0, 4));
     const month = parseInt(date.slice(5, 7));
 
@@ -215,6 +220,8 @@ async function syncStore(board, cnpj, dtIni, dtFin, employees, db, marcar = () =
       value:        parseFloat(value.toFixed(2)),
       pecas,
       atendimentos: docs.size - retDocs.size,
+      vendas:       docs.size,   // NFs de venda sem descontar devolução (usabilidade da Lista da Vez)
+      horas:        Object.fromEntries(Object.entries(horas).map(([h, d]) => [h, d.size])),
       syncedAt:     new Date().toISOString(),
     };
     updated++;

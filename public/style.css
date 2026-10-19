@@ -4734,3 +4734,27 @@ body.indeva-standalone .indeva-sa-body.indeva-ocupado .indeva-queue-card { opaci
   body.indeva-standalone .indeva-atend-card-top .func-avatar-img { display:none; }
   body.indeva-standalone .indeva-mais-um-btn { padding:4px 8px; }
 }
+
+/* Lista da Vez — histórico com gráfico e análise por horário */
+.ih-summary { align-items:stretch; }
+.ih-summary-left { display:flex; flex-direction:column; gap:.5rem; flex:0 1 330px; min-width:0; }
+.ih-sum-nota { font-size:.7rem; color:var(--muted); line-height:1.4; }
+.ih-summary-chart { flex:1 1 320px; min-width:0; display:flex; flex-direction:column; gap:.3rem; }
+.ih-chart-line { position:relative; height:150px; }
+.ih-chart-bar { position:relative; height:90px; }
+.ih-chart-hor { position:relative; height:220px; margin-bottom:.6rem; }
+.ih-filtros { display:flex; flex-wrap:wrap; gap:.5rem 1rem; margin-bottom:.75rem; }
+.ih-filtro-grupo { display:flex; gap:.3rem; flex-wrap:wrap; }
+.ih-filtro { background:var(--surface); border:1px solid var(--border); color:var(--muted); font-size:.74rem; font-weight:600; padding:.3rem .7rem; border-radius:999px; cursor:pointer; }
+.ih-filtro.active { background:var(--loja, var(--accent)); border-color:var(--loja, var(--accent)); color:var(--on-solid); }
+.ih-aviso { border:1px solid var(--border); border-left:4px solid var(--warn); background:var(--surface); border-radius:10px; padding:.65rem .85rem; margin-bottom:.75rem; font-size:.8rem; line-height:1.45; }
+.ih-aviso-forte { border-left-color:var(--down); }
+.ih-aviso ul, .ih-leituras ul { margin:.35rem 0; padding-left:1.1rem; }
+.ih-leituras { background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--loja, var(--accent)); border-radius:10px; padding:.65rem .85rem; margin-bottom:.75rem; font-size:.82rem; line-height:1.5; }
+.ih-leituras li + li { margin-top:.25rem; }
+.ih-table-wrap { overflow-x:auto; }
+.ih-table-wrap .ih-table { min-width:520px; }
+@media (max-width:640px) {
+  body.indeva-standalone .indeva-sa-body:has(.ih-summary, .ih-filtros) { overflow-y:auto; display:block; }
+  .ih-summary-left, .ih-summary-chart { flex-basis:100%; }
+}

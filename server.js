@@ -9342,7 +9342,7 @@ function todayBRT() {
 // O dia da loja (fila, atendimentos…) mora em db.indeva[board]. Cada clique grava
 // só esses campos ($set no Mongo) — regravar o documento principal inteiro (vários MB)
 // a cada clique era o que deixava a Lista da Vez lenta e travando.
-const INDEVA_CAMPOS_DIA = ['fila', 'atendendo', 'atendimentos', 'multiAtend', 'date'];
+const INDEVA_CAMPOS_DIA = ['fila', 'atendendo', 'atendimentos', 'multiAtend', 'eventos', 'date'];
 
 function indevaCaminhosDia(board) {
   return new Set(INDEVA_CAMPOS_DIA.map(c => `indeva.${board}.${c}`));
@@ -9360,13 +9360,14 @@ function getIndevaStore(db, board, caminhos) {
     const s = db.indeva[board];
     if (!s.historico) { s.historico = {}; marcar(`indeva.${board}.historico`); }
     if (s.atendimentos?.length > 0 && s.date) {
-      s.historico[s.date] = { date: s.date, atendimentos: s.atendimentos };
+      s.historico[s.date] = { date: s.date, atendimentos: s.atendimentos, ...(s.eventos?.length ? { eventos: s.eventos } : {}) };
       marcar(`indeva.${board}.historico.${s.date}`);
     }
     s.fila = [];
     s.atendendo = [];
     s.atendimentos = [];
     s.multiAtend = {};
+    s.eventos = [];
     s.date = today;
     for (const c of INDEVA_CAMPOS_DIA) marcar(`indeva.${board}.${c}`);
   }
@@ -9374,12 +9375,38 @@ function getIndevaStore(db, board, caminhos) {
   if (!Array.isArray(s.atendendo)) { s.atendendo = s.atendendo != null ? [s.atendendo] : []; marcar(`indeva.${board}.atendendo`); }
   if (!s.historico) { s.historico = {}; marcar(`indeva.${board}.historico`); }
   if (!s.multiAtend) { s.multiAtend = {}; marcar(`indeva.${board}.multiAtend`); }
+  if (!s.eventos) { s.eventos = []; marcar(`indeva.${board}.eventos`); }
   return s;
 }
 
 // A tela só precisa do dia; o histórico (que cresce todo dia) vai em rota própria
+// Hora em que o vendedor entrou/saiu da fila ou começou a atender: mostra quem
+// estava na loja em cada horário (a escala de folgas só diz o dia)
+function indevaEvento(store, empId, tipo) {
+  const h = new Date().toLocaleTimeString('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' });
+  store.eventos.push({ h, empId, tipo });
+}
+
+// Vendas do Microvix (NFs de venda, sem descontar devolução) da loja num dia,
+// por vendedor e por hora. Dado antigo sem "vendas" usa o líquido de atendimentos.
+function indevaMxDia(db, board, date) {
+  const mk = date.slice(0, 7);
+  const porEmp = {}, horas = {};
+  let total = 0;
+  for (const e of (db.employees || [])) {
+    if (e.board !== board) continue;
+    const en = db.vsales?.[`${mk}-${board}-${e.id}`]?.entries?.[date];
+    if (!en) continue;
+    const n = en.vendas ?? en.atendimentos ?? 0;
+    porEmp[e.id] = n;
+    total += n;
+    for (const [h, q] of Object.entries(en.horas || {})) horas[h] = (horas[h] || 0) + q;
+  }
+  return { porEmp, horas, total };
+}
+
 function indevaResposta(store) {
-  const { historico, ...dia } = store;
+  const { historico, eventos, ...dia } = store;
   return dia;
 }
 
@@ -9455,11 +9482,12 @@ app.get('/api/indeva-boot/:year/:month', requireAuth, async (req, res) => {
 
 app.post('/api/indeva/:board/entrar', requireAuth, (req, res) => indevaAlterar(req, res, store => {
   const id = parseInt(req.body.empId);
-  if (!store.fila.includes(id)) store.fila.push(id);
+  if (!store.fila.includes(id)) { store.fila.push(id); indevaEvento(store, id, 'entrou'); }
 }));
 
 app.post('/api/indeva/:board/sair', requireAuth, (req, res) => indevaAlterar(req, res, store => {
   const rid = parseInt(req.body.empId);
+  indevaEvento(store, rid, 'saiu');
   store.fila = store.fila.filter(x => x !== rid);
   store.atendendo = store.atendendo.filter(x => x !== rid);
 }));
@@ -9472,15 +9500,79 @@ app.get('/api/indeva/:board/historico', requireAuth, async (req, res) => {
     const caminhos = new Set();
     const store = getIndevaStore(db, board, caminhos);
     if (caminhos.size) await writeDB(db, { caminhos });
-    // Últimos 60 dias com movimento — a tela lista dia a dia e o histórico só cresce
+    // Últimos 60 dias com movimento — a tela lista dia a dia e o histórico só cresce.
+    // Cada dia leva as vendas do Microvix por vendedor (o front só tem o mês atual).
     const datas = Object.keys(store.historico || {}).sort().slice(-60);
-    res.json(Object.fromEntries(datas.map(d => [d, store.historico[d]])));
+    res.json(Object.fromEntries(datas.map(d => {
+      const { eventos, ...dia } = store.historico[d];
+      return [d, { ...dia, date: d, mx: indevaMxDia(db, board, d).porEmp }];
+    })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Análise de conversão por horário e escala: dia a dia, por hora, com
+// atendimentos/vendas da lista, vendas do Microvix, vendedores na loja e escalados
+app.get('/api/indeva/:board/horarios', requireAuth, async (req, res) => {
+  try {
+    const board = indevaAcesso(req, res);
+    if (!board) return;
+    const dias = Math.min(Math.max(parseInt(req.query.dias) || 30, 7), 90);
+    const db = await readDB();
+    const store = getIndevaStore(db, board);
+    const hoje = todayBRT();
+    const ini = new Date(hoje + 'T12:00:00Z'); ini.setUTCDate(ini.getUTCDate() - (dias - 1));
+    const corte = ini.toISOString().slice(0, 10);
+
+    const fontes = { ...(store.historico || {}) };
+    fontes[store.date] = { atendimentos: store.atendimentos, eventos: store.eventos };
+    const vendedores = (db.employees || []).filter(e => e.board === board && e.isVendedor !== false);
+    const folgas = new Set((db.folgas || []).map(f => `${f.employeeId}|${f.date}`));
+
+    const out = [];
+    for (let d = new Date(corte + 'T12:00:00Z'); d.toISOString().slice(0, 10) <= hoje; d.setUTCDate(d.getUTCDate() + 1)) {
+      const date = d.toISOString().slice(0, 10);
+      const dia  = fontes[date] || {};
+      const ats  = dia.atendimentos || [];
+      const evs  = dia.eventos || [];
+      const mx   = indevaMxDia(db, board, date);
+      const horas = {};
+      const H = h => (horas[h] ||= { at: 0, vl: 0, mx: 0, pres: 0 });
+      // Hora do atendimento = momento em que foi registrado (fim do atendimento)
+      for (const a of ats) {
+        const h = String(a.hora || '').slice(0, 2);
+        if (!/^\d\d$/.test(h)) continue;
+        H(h).at++;
+        if (a.vendeu) H(h).vl++;
+      }
+      for (const [h, n] of Object.entries(mx.horas)) H(h).mx += n;
+      // Vendedor "na loja" numa hora: entre a primeira e a última atividade dele na lista
+      const ativ = {};
+      for (const x of [...ats.map(a => ({ empId: a.empId, h: a.hora })), ...evs]) {
+        const hh = parseInt(String(x.h || '').slice(0, 2));
+        if (Number.isNaN(hh)) continue;
+        const r = (ativ[x.empId] ||= { min: hh, max: hh });
+        r.min = Math.min(r.min, hh); r.max = Math.max(r.max, hh);
+      }
+      for (const r of Object.values(ativ))
+        for (let h = r.min; h <= r.max; h++) H(String(h).padStart(2, '0')).pres++;
+      // Escalados = vendedores com vínculo ativo no dia e sem folga lançada
+      const escalados = vendedores.filter(e =>
+        (!e.admissao || date >= e.admissao) && (!e.desligamento || date <= e.desligamento) &&
+        !(e.inativo && !e.desligamento) && !folgas.has(`${e.id}|${date}`)
+      ).length;
+      out.push({
+        date, dow: new Date(date + 'T12:00:00Z').getUTCDay(), escalados,
+        at: ats.length, vl: ats.filter(a => a.vendeu).length, mx: mx.total,
+        mxComHora: Object.keys(mx.horas).length > 0, comEventos: evs.length > 0, horas,
+      });
+    }
+    res.json({ board, dias: out });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/indeva/:board/atender', requireAuth, (req, res) => indevaAlterar(req, res, store => {
   const id = parseInt(req.body.empId);
-  if (!store.atendendo.includes(id)) store.atendendo.push(id);
+  if (!store.atendendo.includes(id)) { store.atendendo.push(id); indevaEvento(store, id, 'atendendo'); }
   store.fila = store.fila.filter(x => x !== id);
 }));
 

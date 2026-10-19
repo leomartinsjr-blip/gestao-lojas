@@ -13856,8 +13856,10 @@ async function _loadIndeva(silencioso = false) {
   const board = _indevaBoard, view = _indevaView;
   if (!silencioso) body.innerHTML = '<div style="padding:2rem;color:var(--muted);text-align:center">Carregando…</div>';
   try {
+    if (view === 'horarios') return await _loadIndevaHorarios(body, seq);
     const data = await _indevaFetch(view === 'historico' ? `/api/indeva/${board}/historico` : `/api/indeva/${board}`);
     if (seq !== _indevaSeq) return;
+    _indevaLimpaCharts();
     if (view === 'historico') _renderIndevaHistorico(body, data);
     else _renderIndeva(body, data);
   } catch (e) {
@@ -14106,6 +14108,7 @@ function _showIndevaGoalsOverlay(emp, state) {
   const todayEntry  = vsale.entries?.[todayStr] || {};
   const todayValor  = todayEntry.value || 0;
   const todayAtendMx = todayEntry.atendimentos || 0;
+  const todayVendasMx = indevaMxEntrada(todayEntry);
   const todayPecas  = todayEntry.pecas || 0;
 
   // Meta diária — mesmo cálculo do faturamento diário
@@ -14135,8 +14138,8 @@ function _showIndevaGoalsOverlay(emp, state) {
   const indevaConv  = empAtend.filter(a => a.vendeu).length;
   const indevaConvPct = indevaTotal > 0 ? indevaConv / indevaTotal * 100 : null;
 
-  // Usabilidade = Indeva convertidos / vendas Microvix hoje
-  const usabilidade = todayAtendMx > 0 ? Math.min(indevaConv / todayAtendMx * 100, 100) : null;
+  // Usabilidade = quanto as vendas marcadas na lista batem com as NFs de venda do Microvix
+  const usabilidade = indevaUsab(indevaConv, todayVendasMx);
 
   // Médias da loja (para comparativo)
   const boardEmps = (S.employees||[]).filter(e => e.board===emp.board && isVend(e) && !e.inativo);
@@ -14222,8 +14225,8 @@ function _showIndevaGoalsOverlay(emp, state) {
           </div>
           <div class="ig-kpi-card">
             <div class="ig-kpi-lbl">Usabilidade</div>
-            <div class="ig-kpi-val ${usabilidade==null?'':usabilidade>=80?'ig-pos':'ig-neg'}">${fPct(usabilidade)}</div>
-            <div class="ig-kpi-ref">${indevaConv} Indeva / ${todayAtendMx} Microvix</div>
+            <div class="ig-kpi-val ${usabilidade==null?'':usabilidade>=90?'ig-pos':'ig-neg'}">${fPct(usabilidade)}</div>
+            <div class="ig-kpi-ref">${indevaConv} vendas lista / ${todayVendasMx} Microvix</div>
           </div>
         </div>
 
@@ -14313,9 +14316,58 @@ function _indevaSair(empId)    { return _indevaPost('sair', { empId }); }
 function _indevaMaisUm(empId)  { return _indevaPost('mais-um', { empId }); }
 function _indevaAtend(empId, vendeu, motivo) { return _indevaPost('atendimento', { empId, vendeu, motivo }); }
 
+// Usabilidade = quanto a lista bate com o Microvix: 100% quando as vendas marcadas
+// "Vendeu" são iguais às NFs de venda do dia; cada venda a mais OU a menos desconta
+// (lista 8 ou 12 com MX 10 → 80%). Passa a negativo se o desvio for maior que o MX.
+function indevaUsab(vendasLista, vendasMx) {
+  if (!(vendasMx > 0)) return null;
+  return 100 - Math.abs(vendasLista - vendasMx) / vendasMx * 100;
+}
+
+function indevaUsabCor(u) {
+  return u == null ? 'var(--muted)' : u >= 90 ? 'var(--up)' : u >= 70 ? 'var(--warn)' : 'var(--down)';
+}
+
+// Vendas Microvix de um lançamento de vsales (dado antigo sem "vendas" usa o líquido)
+function indevaMxEntrada(en) { return en?.vendas ?? en?.atendimentos ?? 0; }
+
+// Gráficos Chart.js abertos na tela — destruídos antes de redesenhar
+let _indevaCharts = [];
+function _indevaLimpaCharts() { _indevaCharts.forEach(c => c.destroy()); _indevaCharts = []; }
+
+function _indevaCoresGrafico() {
+  const escuro = temaEscuroAgora();
+  return {
+    s1: escuro ? '#3987e5' : '#2a78d6',   // azul
+    s2: escuro ? '#d95926' : '#eb6834',   // laranja
+    s3: escuro ? '#199e70' : '#1baf7a',   // verde-água
+    texto: cssVar('--muted', '#6B7080'),
+    grade: cssVar('--border', '#DBDEE6'),
+  };
+}
+
+function _indevaOpcoesGrafico(cores, { pct = false, legenda = true } = {}) {
+  return {
+    responsive: true, maintainAspectRatio: false, animation: false,
+    interaction: { mode: 'index', intersect: false },
+    plugins: {
+      legend: { display: legenda, position: 'top', align: 'start',
+        labels: { color: cores.texto, boxWidth: 10, boxHeight: 10, font: { size: 11 } } },
+      tooltip: { callbacks: pct ? { label: c => `${c.dataset.label}: ${c.raw == null ? '—' : Math.round(c.raw) + '%'}` } : {} },
+    },
+    scales: {
+      x: { grid: { display: false }, ticks: { color: cores.texto, font: { size: 10 } } },
+      y: { grid: { color: cores.grade }, border: { display: false },
+        ticks: { color: cores.texto, font: { size: 10 }, maxTicksLimit: 4, callback: v => pct ? v + '%' : v },
+        ...(pct ? { suggestedMin: 0, suggestedMax: 100 } : { beginAtZero: true }) },
+    },
+  };
+}
+
 function _renderIndevaHistorico(body, historico) {
-  const emps = (S.employees||[]).filter(e => e.board===_indevaBoard && isVend(e) && !e.inativo);
-  const empById = Object.fromEntries(emps.map(e => [e.id, e]));
+  _indevaLimpaCharts();
+  const doBoard = (S.employees||[]).filter(e => e.board===_indevaBoard);
+  const empById = Object.fromEntries(doBoard.map(e => [e.id, e]));
   const days = Object.values(historico).sort((a,b) => b.date.localeCompare(a.date));
 
   const fPct = (n,d) => d > 0 ? Math.round(n/d*100)+'%' : '—';
@@ -14326,65 +14378,68 @@ function _renderIndevaHistorico(body, historico) {
   };
 
   function usabChip(usab) {
-    if (usab === null) return '<span style="color:var(--muted);font-size:.75rem">s/dados MX</span>';
-    const c = usab>=80?'var(--up)':usab>=50?'var(--warn)':'var(--down)';
-    return `<span style="font-weight:700;color:${c}">${Math.round(usab)}%</span>`;
+    if (usab === null) return '<span style="color:var(--muted)" title="Sem venda no Microvix">—</span>';
+    return `<span style="font-weight:700;color:${indevaUsabCor(usab)}">${Math.round(usab)}%</span>`;
+  }
+
+  // Números do dia: lista (atendimentos, vendas) x Microvix (NFs de venda de todos os vendedores)
+  function resumoDia(day) {
+    const atend = day.atendimentos || [];
+    const vendas = atend.filter(a => a.vendeu).length;
+    const mx = Object.values(day.mx || {}).reduce((s, n) => s + n, 0);
+    return { total: atend.length, vendas, mx, usab: indevaUsab(vendas, mx) };
   }
 
   function dayCard(day) {
     const atend = day.atendimentos || [];
-    const total = atend.length;
-    const vendas = atend.filter(a=>a.vendeu).length;
-    const conv = total > 0 ? Math.round(vendas/total*100) : 0;
+    const r = resumoDia(day);
+    const conv = r.total > 0 ? Math.round(r.vendas/r.total*100) : 0;
 
-    // Per-vendor stats
     const vendorData = {};
     for (const a of atend) {
-      if (!vendorData[a.empId]) vendorData[a.empId] = { total:0, vendas:0 };
+      if (!vendorData[a.empId]) vendorData[a.empId] = { total:0, vendas:0, nome: a.nome };
       vendorData[a.empId].total++;
       if (a.vendeu) vendorData[a.empId].vendas++;
     }
-
-    // Store-level Microvix atendimentos
-    let mxTotal = 0;
-    for (const emp of emps) {
-      mxTotal += S.vsales?.[emp.id]?.entries?.[day.date]?.atendimentos || 0;
+    // Vendedor que vendeu no Microvix mas não usou a lista também aparece (usabilidade baixa)
+    for (const id of Object.keys(day.mx || {})) {
+      if (day.mx[id] > 0 && !vendorData[id]) vendorData[id] = { total:0, vendas:0, nome: null };
     }
-    const usab = mxTotal > 0 ? (total / mxTotal * 100) : null;
 
-    // Motivos breakdown
     const motivoMap = {};
     for (const a of atend) { if (!a.vendeu && a.motivo) motivoMap[a.motivo] = (motivoMap[a.motivo]||0)+1; }
     const motivos = Object.entries(motivoMap).sort((a,b)=>b[1]-a[1]).slice(0,4);
 
-    // Vendor rows
-    const vendorRows = emps.filter(e => vendorData[e.id]).map(e => {
-      const vd = vendorData[e.id];
-      const mxAtend = S.vsales?.[e.id]?.entries?.[day.date]?.atendimentos || 0;
-      const vUsab = mxAtend > 0 ? (vd.total / mxAtend * 100) : null;
-      return `<tr>
-        <td class="ih-td">${e.apelido||e.name}</td>
+    const vendorRows = Object.entries(vendorData).map(([id, vd]) => {
+      const e = empById[id];
+      const nome = e ? (e.apelido||e.name) : (vd.nome || '—');
+      const mxV = day.mx?.[id] || 0;
+      return { nome, vd, mxV, u: indevaUsab(vd.vendas, mxV) };
+    }).sort((a,b) => b.vd.total - a.vd.total || b.mxV - a.mxV).map(({ nome, vd, mxV, u }) => `<tr>
+        <td class="ih-td">${nome}</td>
         <td class="ih-td ih-num">${vd.total}</td>
-        <td class="ih-td ih-num">${mxAtend||'—'}</td>
-        <td class="ih-td ih-num">${usabChip(vUsab)}</td>
+        <td class="ih-td ih-num">${vd.vendas}</td>
+        <td class="ih-td ih-num">${mxV||'—'}</td>
+        <td class="ih-td ih-num">${usabChip(u)}</td>
         <td class="ih-td ih-num" style="color:${vd.total>0?(Math.round(vd.vendas/vd.total*100)>=50?'var(--up)':'var(--down)'):'var(--muted)'}">${fPct(vd.vendas,vd.total)}</td>
-      </tr>`;
-    }).join('');
+      </tr>`).join('');
 
     const convColor = conv>=50?'var(--up)':conv>=30?'var(--warn)':'var(--down)';
     return `<div class="ih-day-card">
       <div class="ih-day-hdr">
         <span class="ih-day-date">${fDate(day.date)}</span>
-        <span class="ih-day-pill">${total} atend.</span>
+        <span class="ih-day-pill">${r.total} atend.</span>
         <span class="ih-day-pill" style="color:${convColor}">${conv}% conv.</span>
-        <span class="ih-day-pill">Usab.: ${usabChip(usab)}</span>
+        <span class="ih-day-pill">${r.vendas} vendas lista / ${r.mx} MX</span>
+        <span class="ih-day-pill">Usab.: ${usabChip(r.usab)}</span>
       </div>
       ${vendorRows.length ? `
       <table class="ih-table">
         <thead><tr>
           <th class="ih-th">Vendedor</th>
-          <th class="ih-th ih-num">Indeva</th>
-          <th class="ih-th ih-num">Microvix</th>
+          <th class="ih-th ih-num">Atend.</th>
+          <th class="ih-th ih-num">Vendas lista</th>
+          <th class="ih-th ih-num">Vendas MX</th>
           <th class="ih-th ih-num">Usab.</th>
           <th class="ih-th ih-num">Conv.</th>
         </tr></thead>
@@ -14397,30 +14452,233 @@ function _renderIndevaHistorico(body, historico) {
     </div>`;
   }
 
-  // Aggregate last 7 days summary
+  // Últimos 7 dias: totais + gráfico (conversão e usabilidade em %, atendimentos em barras)
   const last7 = days.slice(0,7);
   let aggTotal = 0, aggVendas = 0, aggMx = 0;
-  for (const d of last7) {
-    aggTotal  += (d.atendimentos||[]).length;
-    aggVendas += (d.atendimentos||[]).filter(a=>a.vendeu).length;
-    for (const e of emps) aggMx += S.vsales?.[e.id]?.entries?.[d.date]?.atendimentos || 0;
-  }
+  const serie = [...last7].reverse().map(d => {
+    const r = resumoDia(d);
+    aggTotal += r.total; aggVendas += r.vendas; aggMx += r.mx;
+    return { rot: d.date.slice(8,10) + '/' + d.date.slice(5,7), conv: r.total > 0 ? r.vendas/r.total*100 : null, usab: r.usab, total: r.total };
+  });
   const aggConv = aggTotal > 0 ? Math.round(aggVendas/aggTotal*100) : 0;
-  const aggUsab = aggMx > 0 ? Math.round(aggTotal/aggMx*100) : null;
+  const aggUsab = indevaUsab(aggVendas, aggMx);
 
   body.innerHTML = `
     ${last7.length ? `
     <div class="ih-summary">
-      <div class="ih-summary-lbl">Últimos ${last7.length} dias</div>
-      <div class="ih-summary-pills">
-        <div class="ih-sum-pill"><span class="ih-sum-val">${aggTotal}</span><span class="ih-sum-lbl">atendimentos</span></div>
-        <div class="ih-sum-pill"><span class="ih-sum-val" style="color:${aggConv>=50?'var(--up)':aggConv>=30?'var(--warn)':'var(--down)'}">${aggConv}%</span><span class="ih-sum-lbl">conversão</span></div>
-        ${aggUsab!==null?`<div class="ih-sum-pill"><span class="ih-sum-val" style="color:${aggUsab>=80?'var(--up)':aggUsab>=50?'var(--warn)':'var(--down)'}">${aggUsab}%</span><span class="ih-sum-lbl">usabilidade</span></div>`:''}
+      <div class="ih-summary-left">
+        <div class="ih-summary-lbl">Últimos ${last7.length} dias</div>
+        <div class="ih-summary-pills">
+          <div class="ih-sum-pill"><span class="ih-sum-val">${aggTotal}</span><span class="ih-sum-lbl">atendimentos</span></div>
+          <div class="ih-sum-pill"><span class="ih-sum-val" style="color:${aggConv>=50?'var(--up)':aggConv>=30?'var(--warn)':'var(--down)'}">${aggConv}%</span><span class="ih-sum-lbl">conversão</span></div>
+          <div class="ih-sum-pill"><span class="ih-sum-val" style="color:${indevaUsabCor(aggUsab)}">${aggUsab==null?'—':Math.round(aggUsab)+'%'}</span><span class="ih-sum-lbl">usabilidade</span></div>
+        </div>
+        <div class="ih-sum-nota">Usabilidade: 100% quando as vendas marcadas na lista (${aggVendas}) batem com as NFs de venda do Microvix (${aggMx}). Cada venda a mais ou a menos desconta.</div>
+      </div>
+      <div class="ih-summary-chart">
+        <div class="ih-chart-line"><canvas id="ihChartPct" aria-label="Conversão e usabilidade por dia"></canvas></div>
+        <div class="ih-chart-bar"><canvas id="ihChartAt" aria-label="Atendimentos por dia"></canvas></div>
       </div>
     </div>` : ''}
     ${days.length === 0
       ? '<div style="padding:2rem;text-align:center;color:var(--muted)">Nenhum histórico disponível ainda.</div>'
       : days.map(dayCard).join('')}`;
+
+  if (last7.length && window.Chart) {
+    const cores = _indevaCoresGrafico();
+    const rotulos = serie.map(s => s.rot);
+    const linha = (label, cor, dados) => ({ label, data: dados, borderColor: cor, backgroundColor: cor,
+      borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, pointBorderColor: cssVar('--surface', '#fff'), pointBorderWidth: 2, tension: .25, spanGaps: true });
+    _indevaCharts.push(new Chart(body.querySelector('#ihChartPct'), {
+      type: 'line',
+      data: { labels: rotulos, datasets: [
+        linha('Conversão', cores.s1, serie.map(s => s.conv)),
+        linha('Usabilidade', cores.s2, serie.map(s => s.usab)),
+      ] },
+      options: _indevaOpcoesGrafico(cores, { pct: true }),
+    }));
+    const optBar = _indevaOpcoesGrafico(cores, { legenda: false });
+    optBar.plugins.title = { display: true, text: 'Atendimentos', align: 'start', color: cores.texto, font: { size: 11, weight: 'normal' }, padding: { bottom: 2 } };
+    _indevaCharts.push(new Chart(body.querySelector('#ihChartAt'), {
+      type: 'bar',
+      data: { labels: rotulos, datasets: [{ label: 'Atendimentos', data: serie.map(s => s.total),
+        backgroundColor: cores.s3, borderRadius: 4, maxBarThickness: 22 }] },
+      options: optBar,
+    }));
+  }
+}
+
+// ── Análise por horário e escala ────────────────────────────────────────────
+let _indevaHorFiltro = { dias: 30, dow: 'todos' };
+let _indevaHorDados  = null;
+
+const _INDEVA_DOW = { todos: null, semana: [1,2,3,4,5], sab: [6], dom: [0] };
+const _INDEVA_DOW_NOME = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
+
+async function _loadIndevaHorarios(body, seq) {
+  const data = await _indevaFetch(`/api/indeva/${_indevaBoard}/horarios?dias=${_indevaHorFiltro.dias}`);
+  if (seq !== _indevaSeq) return;
+  _indevaHorDados = data;
+  _renderIndevaHorarios(body, data);
+}
+
+function _renderIndevaHorarios(body, data) {
+  _indevaLimpaCharts();
+  const dows = _INDEVA_DOW[_indevaHorFiltro.dow];
+  const todos = data.dias || [];
+  const dias = todos.filter(d => !dows || dows.includes(d.dow));
+  const comLista = dias.filter(d => d.at > 0);
+  const comMxHora = comLista.filter(d => d.mxComHora);
+  const comEventos = comLista.filter(d => d.comEventos);
+
+  // Média por dia em que a loja usou a lista (dia sem lista distorceria a média)
+  const horas = {};
+  for (const d of comLista) for (const [h, v] of Object.entries(d.horas)) {
+    const x = (horas[h] ||= { at: 0, vl: 0, mx: 0, pres: 0 });
+    x.at += v.at; x.vl += v.vl; x.pres += v.pres;
+    if (d.mxComHora) x.mx += v.mx;
+  }
+  const nL = comLista.length || 1, nM = comMxHora.length || 1;
+  const faixas = Object.keys(horas).sort().filter(h => horas[h].at > 0 || horas[h].mx > 0).map(h => {
+    const x = horas[h];
+    const pres = x.pres / nL;
+    return { h, at: x.at / nL, vl: x.vl / nL, mx: comMxHora.length ? x.mx / nM : null,
+      conv: x.at > 0 ? x.vl / x.at * 100 : null, pres, porVend: pres > 0 ? (x.at / nL) / pres : null };
+  });
+
+  const totAt = comLista.reduce((s, d) => s + d.at, 0), totVl = comLista.reduce((s, d) => s + d.vl, 0);
+  const totMx = comLista.reduce((s, d) => s + d.mx, 0);
+  const convMedia = totAt > 0 ? totVl / totAt * 100 : null;
+  const usab = indevaUsab(totVl, totMx);
+
+  // Os dados só sustentam conclusão com dias suficientes e lista batendo com o Microvix
+  const avisos = [];
+  if (comLista.length < 7) avisos.push(`Só ${comLista.length} dia(s) com a lista usada no período — são precisos pelo menos 7.`);
+  if (usab != null && usab < 70) avisos.push(`A usabilidade no período é ${Math.round(usab)}%: a lista não está registrando todos os atendimentos, então o retrato por horário fica incompleto.`);
+  if (!comMxHora.length) avisos.push('O horário das vendas do Microvix ainda não foi sincronizado para estes dias (passa a ser gravado a partir desta versão).');
+  const confiavel = comLista.length >= 7 && (usab == null || usab >= 70);
+  const notas = [
+    'A hora de cada atendimento é a hora em que foi registrado (fim do atendimento).',
+    comEventos.length < comLista.length
+      ? 'Vendedores na loja: estimado pela primeira e última atividade de cada um na lista' + (comEventos.length ? '' : ' (entrada/saída da fila passa a ser registrada a partir desta versão)') + '. A escala de folgas só informa o dia, não o horário.'
+      : 'Vendedores na loja: entre a primeira e a última atividade de cada um na lista (entrada na fila, atendimento, saída).',
+  ];
+
+  // Leituras
+  const leituras = [];
+  if (confiavel && faixas.length) {
+    const atMedio = faixas.reduce((s, f) => s + f.at, 0) / faixas.length;
+    const pico = [...faixas].sort((a, b) => b.at - a.at).slice(0, 3);
+    leituras.push(`<strong>Maior movimento:</strong> ${pico.map(f => `${f.h}h (${f.at.toFixed(1)} atend./dia)`).join(', ')}.`);
+    const fracos = faixas.filter(f => f.at >= atMedio && f.conv != null && convMedia != null && f.conv <= convMedia - 10);
+    if (fracos.length) leituras.push(`<strong>Muitos atendimentos e poucas vendas:</strong> ${fracos.map(f => `${f.h}h (${Math.round(f.conv)}% de conversão x ${Math.round(convMedia)}% da média)`).join(', ')}. Vale ver abordagem, estoque e quem está escalado nesses horários.`);
+    const comVend = faixas.filter(f => f.porVend != null);
+    const pvMedio = comVend.length ? comVend.reduce((s, f) => s + f.porVend, 0) / comVend.length : null;
+    if (pvMedio) {
+      const curtos = comVend.filter(f => f.porVend >= pvMedio * 1.4 && f.at >= atMedio);
+      const sobra  = comVend.filter(f => f.porVend <= pvMedio * 0.6 && f.pres >= 2);
+      if (curtos.length) leituras.push(`<strong>Equipe curta para o movimento:</strong> ${curtos.map(f => `${f.h}h (${f.porVend.toFixed(1)} atend. por vendedor, média ${pvMedio.toFixed(1)})`).join(', ')}.`);
+      if (sobra.length)  leituras.push(`<strong>Equipe sobrando para o movimento:</strong> ${sobra.map(f => `${f.h}h (${f.pres.toFixed(1)} vendedores para ${f.at.toFixed(1)} atend./dia)`).join(', ')}.`);
+      if (curtos.length && sobra.length) leituras.push('Há horários com sobra e outros com falta: redistribuir a entrada/saída da equipe pode equilibrar sem aumentar o quadro.');
+      else if (!curtos.length && !sobra.length) leituras.push('A equipe na loja acompanha o movimento ao longo do dia; nenhum horário destoa muito da média.');
+    }
+  }
+
+  // Escala por dia da semana (folgas) x movimento e resultado
+  const porDow = {};
+  for (const d of comLista) {
+    const x = (porDow[d.dow] ||= { n: 0, esc: 0, at: 0, vl: 0 });
+    x.n++; x.esc += d.escalados; x.at += d.at; x.vl += d.vl;
+  }
+  const linhasDow = [1,2,3,4,5,6,0].filter(w => porDow[w]).map(w => {
+    const x = porDow[w];
+    const esc = x.esc / x.n, at = x.at / x.n;
+    return { w, n: x.n, esc, at, conv: x.at > 0 ? x.vl / x.at * 100 : null, porEsc: esc > 0 ? at / esc : null };
+  });
+
+  const pill = (grupo, val, rot, ativo) => `<button class="ih-filtro${ativo ? ' active' : ''}" data-grupo="${grupo}" data-val="${val}">${rot}</button>`;
+  const f1 = v => v == null ? '—' : v.toFixed(1);
+  const fP = v => v == null ? '—' : Math.round(v) + '%';
+  const corConv = v => v == null ? 'var(--muted)' : convMedia != null && v <= convMedia - 10 ? 'var(--down)' : convMedia != null && v >= convMedia + 10 ? 'var(--up)' : 'var(--text)';
+
+  body.innerHTML = `
+    <div class="ih-filtros">
+      <div class="ih-filtro-grupo">${[14,30,60].map(n => pill('dias', n, `${n} dias`, _indevaHorFiltro.dias === n)).join('')}</div>
+      <div class="ih-filtro-grupo">${[['todos','Todos os dias'],['semana','Seg a Sex'],['sab','Sábado'],['dom','Domingo']].map(([v, r]) => pill('dow', v, r, _indevaHorFiltro.dow === v)).join('')}</div>
+    </div>
+    ${avisos.length ? `<div class="ih-aviso${confiavel ? '' : ' ih-aviso-forte'}">
+      ${confiavel ? '' : '<strong>Ainda não dá para concluir sobre a escala.</strong> Antes, é preciso coletar mais dados:'}
+      <ul>${avisos.map(a => `<li>${a}</li>`).join('')}</ul>
+      ${confiavel ? '' : 'Peça às vendedoras para registrar todo atendimento na lista (inclusive quem não comprou) e entrar/sair da fila ao chegar e sair. Os números abaixo são só um retrato parcial.'}
+    </div>` : ''}
+    ${leituras.length ? `<div class="ih-leituras"><div class="ih-summary-lbl">Leitura do período</div><ul>${leituras.map(l => `<li>${l}</li>`).join('')}</ul></div>` : ''}
+    ${faixas.length ? `
+    <div class="ih-day-card">
+      <div class="ih-summary-lbl" style="margin-bottom:.4rem">Movimento por faixa de horário (média por dia, ${comLista.length} dia(s))</div>
+      <div class="ih-chart-hor"><canvas id="ihChartHor" aria-label="Atendimentos e vendas por horário"></canvas></div>
+      <div class="ih-table-wrap"><table class="ih-table">
+        <thead><tr>
+          <th class="ih-th">Faixa</th>
+          <th class="ih-th ih-num">Atend.</th>
+          <th class="ih-th ih-num">Vendas lista</th>
+          <th class="ih-th ih-num">Conv.</th>
+          <th class="ih-th ih-num">Vendas MX</th>
+          <th class="ih-th ih-num">Vendedores na loja</th>
+          <th class="ih-th ih-num">Atend./vendedor</th>
+        </tr></thead>
+        <tbody>${faixas.map(f => `<tr>
+          <td class="ih-td">${f.h}h–${String(+f.h + 1).padStart(2,'0')}h</td>
+          <td class="ih-td ih-num">${f1(f.at)}</td>
+          <td class="ih-td ih-num">${f1(f.vl)}</td>
+          <td class="ih-td ih-num" style="font-weight:700;color:${corConv(f.conv)}">${fP(f.conv)}</td>
+          <td class="ih-td ih-num">${f1(f.mx)}</td>
+          <td class="ih-td ih-num">${f1(f.pres)}</td>
+          <td class="ih-td ih-num">${f1(f.porVend)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>` : '<div style="padding:2rem;text-align:center;color:var(--muted)">Nenhum atendimento registrado na lista neste período.</div>'}
+    ${linhasDow.length ? `
+    <div class="ih-day-card">
+      <div class="ih-summary-lbl" style="margin-bottom:.4rem">Escala x movimento por dia da semana</div>
+      <div class="ih-table-wrap"><table class="ih-table">
+        <thead><tr>
+          <th class="ih-th">Dia</th>
+          <th class="ih-th ih-num">Dias</th>
+          <th class="ih-th ih-num">Escalados (sem folga)</th>
+          <th class="ih-th ih-num">Atend./dia</th>
+          <th class="ih-th ih-num">Atend. por escalado</th>
+          <th class="ih-th ih-num">Conv.</th>
+        </tr></thead>
+        <tbody>${linhasDow.map(l => `<tr>
+          <td class="ih-td">${_INDEVA_DOW_NOME[l.w]}</td>
+          <td class="ih-td ih-num">${l.n}</td>
+          <td class="ih-td ih-num">${f1(l.esc)}</td>
+          <td class="ih-td ih-num">${f1(l.at)}</td>
+          <td class="ih-td ih-num">${f1(l.porEsc)}</td>
+          <td class="ih-td ih-num" style="font-weight:700;color:${corConv(l.conv)}">${fP(l.conv)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>` : ''}
+    <div class="ih-sum-nota" style="padding:0 .2rem 1rem">${notas.join(' ')}</div>`;
+
+  body.querySelectorAll('.ih-filtro').forEach(b => b.addEventListener('click', () => {
+    if (b.dataset.grupo === 'dias') { _indevaHorFiltro.dias = +b.dataset.val; _loadIndeva(); }
+    else { _indevaHorFiltro.dow = b.dataset.val; _renderIndevaHorarios(body, _indevaHorDados); }
+  }));
+
+  if (faixas.length && window.Chart) {
+    const cores = _indevaCoresGrafico();
+    const barra = (label, cor, dados) => ({ label, data: dados, backgroundColor: cor, borderRadius: 4, maxBarThickness: 18 });
+    _indevaCharts.push(new Chart(body.querySelector('#ihChartHor'), {
+      type: 'bar',
+      data: { labels: faixas.map(f => f.h + 'h'), datasets: [
+        barra('Atendimentos (lista)', cores.s1, faixas.map(f => +f.at.toFixed(1))),
+        barra('Vendas (lista)', cores.s2, faixas.map(f => +f.vl.toFixed(1))),
+        ...(comMxHora.length ? [barra('Vendas (Microvix)', cores.s3, faixas.map(f => f.mx == null ? null : +f.mx.toFixed(1)))] : []),
+      ] },
+      options: _indevaOpcoesGrafico(cores),
+    }));
+  }
 }
 
 function initIndevaModal() {
@@ -14636,17 +14894,15 @@ async function initStandalone() {
   document.title = `Lista da Vez${isAdmin || isEscritorio ? '' : ' — ' + (BOARDS[_indevaBoard]?.label || _indevaBoard)}`;
 
   // Botão Histórico — toggle entre hoje e histórico
-  const histPill = document.getElementById('indeva-hist-pill');
-  histPill?.addEventListener('click', () => {
-    if (_indevaView === 'historico') {
-      _indevaView = 'hoje';
-      histPill.classList.remove('active');
-    } else {
-      _indevaView = 'historico';
-      histPill.classList.add('active');
-    }
-    _loadIndeva();
-  });
+  // Histórico e Horários alternam com a tela de hoje (clicar de novo volta para hoje)
+  const pills = { historico: document.getElementById('indeva-hist-pill'), horarios: document.getElementById('indeva-hor-pill') };
+  for (const [view, pill] of Object.entries(pills)) {
+    pill?.addEventListener('click', () => {
+      _indevaView = _indevaView === view ? 'hoje' : view;
+      for (const [v, p] of Object.entries(pills)) p?.classList.toggle('active', v === _indevaView);
+      _loadIndeva();
+    });
+  }
 
   document.getElementById('indeva-camp-pill')?.addEventListener('click', _openIndevaCampanhasOverlay);
   document.getElementById('indeva-meta-pill')?.addEventListener('click', _openIndevaMetasOverlay);
