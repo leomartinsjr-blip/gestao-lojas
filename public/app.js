@@ -994,7 +994,9 @@ function _desenharPedidosSite(lugar, d) {
   const esc = _escHtml;
   const brl = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   // Pílula para adm/escritório: vai para a linha de Pendências (ou cria uma)
-  if (d.pend && (d.pend.aFaturar || d.pend.semEtiqueta)) {
+  // A postar = nota e etiqueta prontas, falta a loja postar e informar o rastreio
+  const aPostar = d.pend ? (d.pend.pedidos || []).filter(p => p.etapa === 'postar' && p.etiqueta) : [];
+  if (d.pend && (d.pend.aFaturar || d.pend.semEtiqueta || aPostar.length)) {
     const c = document.getElementById('boardContainer');
     let strip = c.querySelector('.aviso-strip');
     if (!strip) {
@@ -1008,6 +1010,9 @@ function _desenharPedidosSite(lugar, d) {
       acao: () => window.open('/nexo?ir=pedidos', '_blank') });
     if (d.pend.semEtiqueta) _avisoPilula(strip, { icone: '🏷', rotulo: 'Pedidos do site sem etiqueta', n: d.pend.semEtiqueta,
       detalhe: d.pend.pedidos.filter(p => p.etapa === 'postar' && !p.etiqueta).map(p => `Pedido ${p.numero}`).join(' · '),
+      acao: () => window.open('/nexo?ir=pedidos', '_blank') });
+    if (aPostar.length) _avisoPilula(strip, { icone: '📮', rotulo: 'Pedidos do site a postar', n: aPostar.length,
+      detalhe: aPostar.map(p => `Pedido ${p.numero}`).join(' · '),
       acao: () => window.open('/nexo?ir=pedidos', '_blank') });
   }
   const lista = (d.lista || []).filter(p => p.etapa !== 'enviado' || (p.rastreio && p.souQuemPosta));
