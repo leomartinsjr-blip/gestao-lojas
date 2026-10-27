@@ -488,13 +488,13 @@
           <div><dt>Marca padrão</dt><dd>a do quadro do NEXO</dd></div>
           <div><dt>Coleção padrão</dt><dd>a do quadro do NEXO</dd></div>
           <div><dt>Os outros campos padrão</dt><dd><em>em branco</em></dd></div>
-          <div><dt>Criar cadastros auxiliares</dt><dd>desmarcado</dd></div>
+          <div><dt>Criar cadastros auxiliares</dt><dd>o que o quadro do NEXO disser <em>(marcado só quando o pedido tem cor ou tamanho que não existe no Microvix)</em></dd></div>
           <div><dt>Cadastrar código do produto como código de barras</dt><dd>desmarcado</dd></div>
         </dl>
         <figure class="tela"><img src="/manuais/pedidos-compra/importar.png" alt="Quadro do NEXO com as opções da importação: identificador Código do produto, formato GTIN13, estrutura por Descrição, fornecedor, marca e coleção do pedido" loading="lazy"><figcaption>NEXO &middot; o que escolher para este pedido</figcaption></figure>
         <figure class="tela"><img src="/manuais/pedidos-compra/microvix-importacao.png" alt="Tela Nova Importação de Produtos do Microvix com o arquivo, identificador, formato do código de barras e os campos padrão" loading="lazy"><figcaption>Microvix &middot; Nova importação de produtos</figcaption></figure>
         <div class="aviso">
-          <b>Por que esses valores.</b> <b>Código do produto</b>: a planilha vai com o código vazio, então todo produto entra como novo. <b>Nunca use Referência</b>: todos os tamanhos e cores têm a mesma referência, e o Microvix acharia que é um produto só. <b>Criar cadastros auxiliares desmarcado</b>: assim, uma cor ou um tamanho escrito diferente vira erro, em vez de virar um cadastro novo errado.
+          <b>Por que esses valores.</b> <b>Código do produto</b>: a planilha vai com o código vazio, então todo produto entra como novo. <b>Nunca use Referência</b>: todos os tamanhos e cores têm a mesma referência, e o Microvix acharia que é um produto só. <b>Criar cadastros auxiliares</b>: o NEXO confere no Microvix as cores, os tamanhos e os setores do pedido. Cor ou tamanho que ainda não existe (comum em marca que usa código de cor, como New Balance e Vans) aparece avisado no topo do pedido, e aí a opção vai <b>marcada</b> para eles serem criados. Setor que não existe vira pendência e o produto não vai para a planilha: setor errado não pode nascer.
         </div>
       </div>
     </li>
@@ -527,7 +527,7 @@
       <li><label><input type="checkbox"><span>Nenhuma pendência em vermelho, ou o produto ficou como "Fora" de propósito.</span></label></li>
       <li><label><input type="checkbox"><span>Preço de venda conferido: o do pedido ou custo &times; mark-up terminando em ,90.</span></label></li>
       <li><label><input type="checkbox"><span>Setor e descrição dos produtos novos fazem sentido (não é CINTO nem GERAL por engano).</span></label></li>
-      <li><label><input type="checkbox"><span>No Microvix: Código do produto e GTIN13; estrutura mercadológica em branco; cadastros auxiliares desmarcado.</span></label></li>
+      <li><label><input type="checkbox"><span>No Microvix: Código do produto e GTIN13; estrutura mercadológica em branco; cadastros auxiliares como o NEXO mandar.</span></label></li>
       <li><label><input type="checkbox"><span>Fornecedor, marca e coleção padrão iguais aos do quadro do NEXO.</span></label></li>
     </ul>
   </section>
