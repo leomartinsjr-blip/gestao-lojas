@@ -431,6 +431,7 @@
           <div><dt>Mark-up</dt><dd><em>vazio = o da marca (</em><a href="/manuais/cadastro-produto#marcas">tabela por marca</a><em>); ou digite, ex.: 2,3</em></dd></div>
         </dl>
         <p>Clique em <span class="btn">Aplicar</span>. O preço calculado <b>sempre termina em ,90</b>, o mais perto da conta: R$ 90,00 &times; 2,3 = R$ 207,00 &rarr; <b>R$ 209,90</b>.</p>
+        <p><b>Quer trocar também o preço que veio no pedido?</b> Marque <b>"Também onde o pedido tem preço"</b> e clique em <span class="btn">Aplicar</span>: o mark-up passa por cima do preço sugerido pelo fornecedor. Desmarcou, volta o preço do pedido.</p>
         <p>Preço digitado na tabela é seu: mudar o mark-up depois não troca ele.</p>
         <figure class="tela"><img src="/manuais/pedidos-compra/preco.png" alt="Pedido da Mizuno com mark-up 2,3: custo R$ 90,00 e venda R$ 209,90, com a anotação custo × 2,3" loading="lazy"><figcaption>Exemplo &middot; Mizuno com mark-up 2,3</figcaption></figure>
       </div>
@@ -482,7 +483,7 @@
         <dl class="campos">
           <div><dt>Identificador dos Produtos</dt><dd>Código do produto</dd></div>
           <div><dt>Formato do código de barras</dt><dd>GTIN13</dd></div>
-          <div><dt>Identificador da Estrutura Mercadológica</dt><dd>Descrição</dd></div>
+          <div><dt>Identificador da Estrutura Mercadológica</dt><dd><em>em branco</em></dd></div>
           <div><dt>Fornecedor padrão</dt><dd>o do quadro do NEXO</dd></div>
           <div><dt>Marca padrão</dt><dd>a do quadro do NEXO</dd></div>
           <div><dt>Coleção padrão</dt><dd>a do quadro do NEXO</dd></div>
@@ -493,7 +494,7 @@
         <figure class="tela"><img src="/manuais/pedidos-compra/importar.png" alt="Quadro do NEXO com as opções da importação: identificador Código do produto, formato GTIN13, estrutura por Descrição, fornecedor, marca e coleção do pedido" loading="lazy"><figcaption>NEXO &middot; o que escolher para este pedido</figcaption></figure>
         <figure class="tela"><img src="/manuais/pedidos-compra/microvix-importacao.png" alt="Tela Nova Importação de Produtos do Microvix com o arquivo, identificador, formato do código de barras e os campos padrão" loading="lazy"><figcaption>Microvix &middot; Nova importação de produtos</figcaption></figure>
         <div class="aviso">
-          <b>Por que esses valores.</b> <b>Código do produto</b>: a planilha vai com o código vazio, então todo produto entra como novo. <b>Nunca use Referência</b>: todos os tamanhos e cores têm a mesma referência, e o Microvix acharia que é um produto só. <b>Descrição</b>: a planilha manda setor, tamanho e cor pelo nome. <b>Criar cadastros auxiliares desmarcado</b>: assim, uma cor ou um tamanho escrito diferente vira erro, em vez de virar um cadastro novo errado.
+          <b>Por que esses valores.</b> <b>Código do produto</b>: a planilha vai com o código vazio, então todo produto entra como novo. <b>Nunca use Referência</b>: todos os tamanhos e cores têm a mesma referência, e o Microvix acharia que é um produto só. <b>Criar cadastros auxiliares desmarcado</b>: assim, uma cor ou um tamanho escrito diferente vira erro, em vez de virar um cadastro novo errado.
         </div>
       </div>
     </li>
@@ -526,7 +527,7 @@
       <li><label><input type="checkbox"><span>Nenhuma pendência em vermelho, ou o produto ficou como "Fora" de propósito.</span></label></li>
       <li><label><input type="checkbox"><span>Preço de venda conferido: o do pedido ou custo &times; mark-up terminando em ,90.</span></label></li>
       <li><label><input type="checkbox"><span>Setor e descrição dos produtos novos fazem sentido (não é CINTO nem GERAL por engano).</span></label></li>
-      <li><label><input type="checkbox"><span>No Microvix: Código do produto, GTIN13 e Descrição; cadastros auxiliares desmarcado.</span></label></li>
+      <li><label><input type="checkbox"><span>No Microvix: Código do produto e GTIN13; estrutura mercadológica em branco; cadastros auxiliares desmarcado.</span></label></li>
       <li><label><input type="checkbox"><span>Fornecedor, marca e coleção padrão iguais aos do quadro do NEXO.</span></label></li>
     </ul>
   </section>
