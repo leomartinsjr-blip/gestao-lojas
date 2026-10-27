@@ -8606,6 +8606,21 @@ function empAvatarHtml(emp, size) {
   return `<span class="func-avatar-ini" style="width:${size}px;height:${size}px;background:${color}22;color:${color};font-size:${Math.round(size*0.36)}px;">${initials}</span>`;
 }
 
+// Registro segue a data do contrato de admissão (mesma regra da folha):
+// preenchida = registrado; em branco = sem registro.
+function funcRegistroHtml(e) {
+  if (!e.admissaoContrato) return '<div class="func-reg func-reg-nao" title="Sem data do contrato de admissão no cadastro">sem registro</div>';
+  const data = e.admissaoContrato.split('-').reverse().join('/');
+  return `<div class="func-reg func-reg-ok" title="Contrato de admissão em ${data}">registrado${e.admissaoContrato !== e.admissao ? ` ${data}` : ''}</div>`;
+}
+
+function _updateFuncRegistroHint() {
+  const reg = !!document.getElementById('funcAdmissaoContrato').value;
+  const el = document.getElementById('funcRegistroHint');
+  el.textContent = reg ? 'Registrado' : 'Sem registro — preencha a data do contrato quando registrar';
+  el.className = `func-reg ${reg ? 'func-reg-ok' : 'func-reg-nao'}`;
+}
+
 function renderFuncionariosTable() {
   const filter      = document.getElementById('funcBoardFilter').value;
   const showInativo = document.getElementById('funcShowInativo')?.checked;
@@ -8638,7 +8653,7 @@ function renderFuncionariosTable() {
       <td class="func-td-name">${nameHtml}</td>
       <td><span class="func-loja-badge" style="border-color:${lojaColor};color:${lojaColor}">${lojaLabel}</span></td>
       <td class="func-td-muted">${e.cargo || '—'}</td>
-      <td class="func-td-muted">${e.admissao ? e.admissao.split('-').reverse().join('/') : '—'}${e.admissaoContrato && e.admissaoContrato !== e.admissao ? `<div style="font-size:.7rem;opacity:.75" title="Data do contrato de admissão (base da experiência)">contrato ${e.admissaoContrato.split('-').reverse().join('/')}</div>` : ''}</td>
+      <td class="func-td-muted">${e.admissao ? e.admissao.split('-').reverse().join('/') : '—'}${funcRegistroHtml(e)}</td>
       <td class="func-td-muted">${comissao}</td>
       <td>${statusBadge}</td>
       <td class="func-actions">
@@ -8727,6 +8742,7 @@ function openFuncForm(id) {
   document.getElementById('funcMicrovixCod').value  = emp?.microvixCod  || '';
   document.getElementById('funcAdmissao').value  = emp?.admissao  || '';
   document.getElementById('funcAdmissaoContrato').value = emp?.admissaoContrato || '';
+  _updateFuncRegistroHint();
   document.getElementById('funcContrato1').value = emp?.contrato1 || '';
   document.getElementById('funcContrato2').value = emp?.contrato2 || '';
   document.getElementById('funcCargo').value     = emp?.cargo     || '';
@@ -8895,6 +8911,7 @@ function initFuncionariosModal() {
   document.getElementById('funcSearch').addEventListener('input', renderFuncionariosTable);
   document.getElementById('funcNewBtn').addEventListener('click', () => openFuncForm(null));
   document.getElementById('funcCancelBtn').addEventListener('click', hideFuncForm);
+  document.getElementById('funcAdmissaoContrato').addEventListener('input', _updateFuncRegistroHint);
   document.getElementById('funcCancelBtn2').addEventListener('click', hideFuncForm);
   document.getElementById('funcSaveBtn').addEventListener('click', saveFuncionario);
   document.getElementById('funcNome').addEventListener('input', () => {

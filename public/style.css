@@ -2405,8 +2405,17 @@ td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { backgro
 }
 .func-drawer-close:hover { color: var(--text); border-color: var(--border); }
 .func-drawer-body {
-  flex: 1; overflow-y: auto; padding: .75rem 1.25rem .5rem; min-height: 0;
+  flex: 1; overflow-y: auto; overflow-x: hidden; padding: .75rem 1.25rem .5rem; min-height: 0;
 }
+/* Dentro do drawer (420px) são sempre 2 colunas que encolhem. Com auto-fill de 190px,
+   a barra de rolagem do Windows derrubava pra 1 coluna e o campo "wide" (span 2)
+   criava uma coluna extra, empurrando o formulário pra fora da tela. */
+.func-form .func-form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.func-form .func-form-grid-status { grid-template-columns: minmax(0, 1fr); }
+.func-form .func-field input:not([type=checkbox]), .func-form .func-field select { min-width: 0; width: 100%; box-sizing: border-box; }
+.func-reg { font-size: .7rem; margin-top: .1rem; }
+.func-reg-ok  { color: var(--up); }
+.func-reg-nao { color: var(--warn); }
 .func-section-hdr {
   font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em;
   color: var(--muted); padding: .6rem 0 .4rem; margin-top: .5rem;
