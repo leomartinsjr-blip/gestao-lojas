@@ -1,0 +1,522 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Pedidos de Compra</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@500;700&family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  :root {
+    --ground:   #FBFAF8;
+    --surface:  #FFFFFF;
+    --surface2: #F4F1EC;
+    --ink:      #1B1E27;
+    --ink2:     #4A4640;
+    --muted:    #7A7267;
+    --border:   #E3DED6;
+    --rule:     #CFC7BC;
+    --accent:   #A85F14;
+    --accent-soft: rgba(168, 95, 20, .09);
+    --warn:     #8A6410;
+    --warn-soft: rgba(138, 100, 16, .10);
+    --stop:     #B23A2E;
+    --sans: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+    --disp: "Big Shoulders Display", "IBM Plex Sans", Impact, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:   #14161C;
+      --surface:  #1B1E27;
+      --surface2: #232733;
+      --ink:      #E9E6E1;
+      --ink2:     #C3BDB4;
+      --muted:    #8E877D;
+      --border:   #2E333F;
+      --rule:     #3A4050;
+      --accent:   #F0A045;
+      --accent-soft: rgba(240, 160, 69, .12);
+      --warn:     #E3B93F;
+      --warn-soft: rgba(227, 185, 63, .12);
+      --stop:     #E36C5D;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:   #14161C;
+    --surface:  #1B1E27;
+    --surface2: #232733;
+    --ink:      #E9E6E1;
+    --ink2:     #C3BDB4;
+    --muted:    #8E877D;
+    --border:   #2E333F;
+    --rule:     #3A4050;
+    --accent:   #F0A045;
+    --accent-soft: rgba(240, 160, 69, .12);
+    --warn:     #E3B93F;
+    --warn-soft: rgba(227, 185, 63, .12);
+    --stop:     #E36C5D;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .folha { max-width: 46rem; margin: 0 auto; padding: 2.75rem 1.5rem 4rem; }
+  .mono { font-family: var(--mono); }
+
+  /* Cabecalho */
+  .kicker {
+    font-family: var(--mono); font-size: .68rem; font-weight: 600;
+    letter-spacing: .16em; text-transform: uppercase; color: var(--accent);
+    margin: 0;
+  }
+  h1 {
+    font-family: var(--disp); font-weight: 700; font-size: clamp(2.6rem, 8vw, 4.1rem);
+    line-height: .92; letter-spacing: .005em; text-transform: uppercase;
+    margin: .5rem 0 .35rem; text-wrap: balance; color: var(--ink);
+  }
+  .sub { font-size: 1.02rem; color: var(--ink2); max-width: 34rem; margin: 0 0 1.6rem; }
+  .ficha {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+    gap: 1px; background: var(--border); border: 1px solid var(--border);
+    border-radius: 3px; overflow: hidden; margin: 0;
+  }
+  .ficha > div { background: var(--surface); padding: .7rem .85rem; }
+  .ficha dt {
+    font-family: var(--mono); font-size: .64rem; font-weight: 600; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--muted); margin-bottom: .2rem;
+  }
+  .ficha dd { margin: 0; font-size: .88rem; color: var(--ink); font-weight: 500; }
+
+  /* Blocos */
+  section { margin-top: 2.75rem; }
+  h2 {
+    font-family: var(--disp); font-weight: 700; font-size: 1.75rem; text-transform: uppercase;
+    letter-spacing: .02em; margin: 0 0 .2rem; color: var(--ink);
+  }
+  .h2-nota { font-size: .85rem; color: var(--muted); margin: 0 0 1rem; }
+
+  .antes { list-style: none; padding: 0; margin: 0; display: grid; gap: .55rem; }
+  .antes li {
+    display: grid; grid-template-columns: .85rem 1fr; gap: .7rem;
+    align-items: start; font-size: .95rem; color: var(--ink2);
+  }
+  .antes li::before {
+    content: ""; width: .5rem; height: .5rem; margin-top: .48rem;
+    border: 1.5px solid var(--accent); border-radius: 50%;
+  }
+  .antes b { color: var(--ink); font-weight: 600; }
+
+  .regras { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+  @media (min-width: 34rem) { .regras { grid-template-columns: 1fr 1fr; } }
+  .regra { background: var(--surface); padding: .9rem 1rem; }
+  .regra-t {
+    font-family: var(--mono); font-size: .95rem; font-weight: 600; color: var(--accent);
+    display: block; margin-bottom: .2rem;
+  }
+  .regra p { margin: 0; font-size: .85rem; color: var(--ink2); line-height: 1.5; }
+  .regra b { color: var(--ink); font-weight: 600; }
+
+  /* Fases e passos */
+  .fase { display: flex; align-items: center; gap: .85rem; margin: 2.6rem 0 1.1rem; }
+  .fase-nome {
+    font-family: var(--mono); font-size: .68rem; font-weight: 600; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--muted); white-space: nowrap;
+  }
+  .fase-linha { flex: 1; height: 1px; background: var(--rule); }
+
+  .passos { list-style: none; margin: 0; padding: 0; display: grid; gap: 1.9rem; }
+  .passo { display: grid; grid-template-columns: 2.5rem 1fr; gap: 1rem; align-items: start; }
+  .num {
+    font-family: var(--disp); font-weight: 700; font-size: 2.5rem; line-height: .78;
+    color: var(--accent); font-variant-numeric: tabular-nums; padding-top: .15rem;
+  }
+  .passo h3 { font-size: 1.06rem; font-weight: 600; margin: 0 0 .35rem; line-height: 1.3; color: var(--ink); }
+  .passo p { margin: 0 0 .55rem; color: var(--ink2); }
+  .passo p:last-child { margin-bottom: 0; }
+  .passo b { color: var(--ink); font-weight: 600; }
+  .caminho {
+    font-family: var(--mono); font-size: .82rem; color: var(--ink2);
+    background: var(--surface2); border-left: 2px solid var(--accent);
+    padding: .5rem .7rem; margin: 0; overflow-x: auto; white-space: nowrap;
+  }
+  .caminho b { color: var(--accent); font-weight: 600; }
+  .btn {
+    font-family: var(--mono); font-size: .82rem; font-weight: 600; color: var(--ink);
+    background: var(--surface2); border: 1px solid var(--border);
+    border-radius: 3px; padding: .05rem .35rem; white-space: nowrap;
+  }
+
+  .campos { margin: 0 0 .75rem; border-top: 1px solid var(--border); }
+  .campos > div {
+    display: grid; grid-template-columns: minmax(8rem, 12.5rem) 1fr; gap: .2rem 1rem;
+    padding: .4rem 0; border-bottom: 1px solid var(--border); align-items: baseline;
+  }
+  .campos dt { font-size: .84rem; color: var(--muted); }
+  .campos dd {
+    margin: 0; font-family: var(--mono); font-size: .84rem; font-weight: 600;
+    color: var(--ink); overflow-wrap: anywhere;
+  }
+  .campos dd em { font-family: var(--sans); font-style: normal; font-weight: 400; color: var(--ink2); }
+
+  .aviso {
+    background: var(--warn-soft); border-left: 2px solid var(--warn);
+    padding: .7rem .85rem; margin: .8rem 0 0; font-size: .87rem; color: var(--ink2);
+  }
+  .aviso b { color: var(--warn); }
+  .aviso .cit { font-family: var(--mono); font-size: .8rem; }
+
+  .atalho { font-size: .85rem; color: var(--muted); }
+  .atalho b { color: var(--ink2); font-weight: 600; }
+
+  .parada {
+    background: var(--accent-soft); border: 1px solid var(--border); border-left: 2px solid var(--stop);
+    padding: .85rem .95rem; margin-top: 1.8rem; font-size: .9rem; color: var(--ink2);
+  }
+  .parada b { color: var(--stop); }
+
+  /* Checklist */
+  .check { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 3px; overflow: hidden; }
+  .check li { background: var(--surface); }
+  .check label { display: grid; grid-template-columns: 1.05rem 1fr; gap: .75rem; align-items: start; padding: .7rem .9rem; cursor: pointer; }
+  .check input { width: 1rem; height: 1rem; margin: .18rem 0 0; accent-color: var(--accent); }
+  .check input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .check span { font-size: .92rem; color: var(--ink2); }
+  .check input:checked + span { color: var(--muted); text-decoration: line-through; }
+
+  .rodape {
+    margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--border);
+    font-family: var(--mono); font-size: .7rem; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); display: flex; flex-wrap: wrap; gap: .4rem 1.2rem; justify-content: space-between;
+  }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+  /* Impressao — folha clara, cores mantidas. Só o fundo vira branco puro:
+     papel poupa tinta, mas o laranja é o que separa passo de passo. */
+  @page { size: A4; margin: 15mm 14mm; }
+  @media print {
+    /* Os três estados de tema de uma vez: o seletor do tema escuro tem
+       especificidade maior que um :root sozinho, e venceria aqui dentro —
+       papel branco com texto claro é o resultado. */
+    :root, :root:not([data-theme="light"]), :root[data-theme="dark"] {
+      --ground: #FFFFFF; --surface: #FFFFFF; --surface2: #F4F1EC; --ink: #14171F; --ink2: #3D3A35;
+      --muted: #6B655C; --border: #D9D3CA; --rule: #C4BCB1; --accent: #A85F14;
+      --accent-soft: rgba(168, 95, 20, .07);
+      --warn: #8A6410; --warn-soft: rgba(138, 100, 16, .09); --stop: #B23A2E;
+    }
+    body {
+      background: #fff; color: var(--ink); font-size: 10pt; line-height: 1.45;
+      -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    }
+    .folha { max-width: none; padding: 0; }
+    h1 { font-size: 30pt; color: var(--ink); }
+    .num { font-size: 19pt; }
+    .passos { gap: 1.1rem; }
+    .passo, .regra, .check li, .aviso, .parada { break-inside: avoid; }
+    /* No papel o quadradinho é para marcar com caneta: sai vazio, não pintado */
+    .check input { appearance: none; -webkit-appearance: none; width: .8rem; height: .8rem;
+      border: 1.2px solid var(--ink2); background: #fff; border-radius: 1px; }
+    .fase, h2 { break-after: avoid; }
+    .caminho { white-space: normal; }
+  }
+
+  /* Prints do Microvix — exemplo real, não ilustração */
+  .tela { margin: .8rem 0 0; border: 1px solid var(--border); border-radius: 3px; overflow: hidden; background: var(--surface); }
+  .tela img { display: block; width: 100%; height: auto; }
+  .tela.estreita { max-width: 15rem; }
+  .tela figcaption {
+    font-family: var(--mono); font-size: .68rem; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted); padding: .4rem .7rem; border-top: 1px solid var(--border); background: var(--surface2);
+  }
+  .passo a, .antes a, .parada a { color: var(--accent); }
+
+  /* Tabelas de consulta */
+  .tab-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 3px; }
+  table.tab { width: 100%; border-collapse: collapse; font-size: .8rem; background: var(--surface); }
+  .tab th {
+    font-family: var(--mono); font-size: .62rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase;
+    color: var(--muted); text-align: left; padding: .5rem .6rem; background: var(--surface2);
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  .tab td { padding: .45rem .6rem; border-bottom: 1px solid var(--border); color: var(--ink2); vertical-align: top; }
+  .tab tr:last-child td { border-bottom: 0; }
+  .tab td:first-child { font-weight: 600; color: var(--ink); }
+  .tab .m { font-family: var(--mono); color: var(--ink); white-space: nowrap; }
+  .tab .vazio { color: var(--muted); font-style: italic; font-weight: 400; }
+  /* A tabela por marca tem 8 colunas: sai da coluna de texto para caber sem rolar */
+  .largo { width: min(68rem, calc(100vw - 2rem)); position: relative; left: 50%; transform: translateX(-50%); }
+  .chips { display: flex; flex-wrap: wrap; gap: .35rem; margin: 0; padding: 0; list-style: none; }
+  .chips li {
+    font-family: var(--mono); font-size: .74rem; font-weight: 600; color: var(--ink);
+    border: 1px solid var(--border); background: var(--surface); border-radius: 3px; padding: .15rem .45rem;
+  }
+
+  @media print {
+    .tela { break-inside: avoid; }
+    .tela img { max-height: 95mm; width: auto; max-width: 100%; margin: 0 auto; }
+    .tab-wrap { overflow: visible; }
+    .largo { width: auto; left: 0; transform: none; }
+    .tab tr { break-inside: avoid; }
+  }
+</style>
+<style>body{margin:0}img{max-width:100%}</style>
+<style>
+  /* caminho do menu e nome de botão não quebram: sem isto a coluna do passo estoura no celular */
+  .passo > div { min-width: 0; }
+  .btn { white-space: normal; }
+  @media (max-width: 30rem) { .campos > div { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="folha">
+
+  <header>
+    <p class="kicker">Manual do escritório &middot; Surfers</p>
+    <h1>Pedidos de<br>Compra</h1>
+    <p class="sub">Do pedido do fornecedor ao produto cadastrado no Microvix. O NEXO lê o pedido, confere o que já existe e monta a planilha só com o que falta. Você confere, completa e importa no Microvix.</p>
+    <dl class="ficha">
+      <div><dt>Quem faz</dt><dd>ADM e escritório</dd></div>
+      <div><dt>Onde</dt><dd>NEXO &middot; aba Compras<br>Microvix &middot; Importação</dd></div>
+      <div><dt>Quando</dt><dd>Pedido fechado com o fornecedor</dd></div>
+      <div><dt>Tamanho</dt><dd>12 passos</dd></div>
+    </dl>
+  </header>
+
+  <section>
+    <h2>Antes de começar</h2>
+    <p class="h2-nota">Sem isto em mãos, você trava no meio.</p>
+    <ul class="antes">
+      <li><span>O <b>pedido do fornecedor</b> do jeito que ele mandou: PDF ou Excel. Não precisa arrumar nada no arquivo.</span></li>
+      <li><span>A <b>coleção</b> desse pedido (hoje SUMMER 27). Ela é escolhida antes de subir e vale para o pedido inteiro.</span></li>
+      <li><span>Login do gestão de <b>ADM ou escritório</b>. A aba Compras não aparece para outros logins, porque mostra custo e mark-up.</span></li>
+      <li><span><b>Vans:</b> se o pedido vier sem a referência VN (só o código global, tipo <span class="mono">V1001100170001</span>), tenha à mão a <b>carteira da Vans</b>. Ela ensina a referência ao NEXO.</span></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Fornecedores que o NEXO lê</h2>
+    <p class="h2-nota">Cada um tem um leitor próprio. Fornecedor fora da lista: cadastro manual, pelo <a href="/manuais/cadastro-produto">manual de Cadastro de Produto</a>.</p>
+    <ul class="chips">
+      <li>Vans</li><li>Oakley</li><li>New Era</li><li>Converse</li><li>MCD (Outside)</li><li>Hurley</li><li>Tommy Hilfiger</li><li>New Balance</li><li>Mizuno</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>O que o NEXO faz sozinho</h2>
+    <p class="h2-nota">Tudo sai do cadastro que já existe no Microvix. Você só confere.</p>
+    <div class="regras">
+      <div class="regra">
+        <span class="regra-t">Confere o que já existe</span>
+        <p>Cada referência, cor e tamanho do pedido é procurado no Microvix. O que já está cadastrado <b>não vai</b> para a planilha.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Monta no padrão da marca</span>
+        <p>Referência que já existe herda nome, setor, NCM e origem. Referência nova segue o jeito que a marca já está cadastrada.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Sugere o NCM</span>
+        <p>O do pedido; se não vier, o da referência, o mais usado no setor da marca e, por último, a <a href="/manuais/cadastro-produto#ncm">tabela de NCM</a>.</p>
+      </div>
+      <div class="regra">
+        <span class="regra-t">Confere o total de peças</span>
+        <p>Quando o pedido traz o total, o NEXO compara com o que leu. Se não bater, aparece em vermelho: <b>pare e confira</b>.</p>
+      </div>
+    </div>
+  </section>
+
+  <div class="fase"><span class="fase-nome">Parte 1 &middot; Ler o pedido no NEXO</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">01</div>
+      <div>
+        <h3>Abra a aba Compras do NEXO</h3>
+        <p class="caminho">Gestão &rarr; Aplicações &rarr; <b>NEXO</b> &rarr; aba <b>Compras</b></p>
+        <p class="atalho"><b>Atalho:</b> <span class="mono">integracao-site.onrender.com/painel#compras</span></p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">02</div>
+      <div>
+        <h3>Preencha e clique em Ler pedido</h3>
+        <dl class="campos">
+          <div><dt>Fornecedor</dt><dd><em>deixe "reconhecer pelo arquivo"; escolha só se ele não reconhecer</em></dd></div>
+          <div><dt>Coleção</dt><dd>a coleção do pedido <em>(obrigatória)</em></dd></div>
+          <div><dt>Pedido</dt><dd>o arquivo do fornecedor</dd></div>
+          <div><dt>Carteira da Vans</dt><dd><em>só para Vans sem referência VN</em></dd></div>
+          <div><dt>Preço quando o pedido não traz</dt><dd>custo &times; mark-up <em>ou</em> digitar na tela</dd></div>
+        </dl>
+        <figure class="tela"><img src="/manuais/pedidos-compra/form.png" alt="Formulário da aba Compras: fornecedor, coleção SUMMER 27, arquivo do pedido, carteira da Vans e preço quando o pedido não traz" loading="lazy"><figcaption>Aba Compras &middot; subir o pedido</figcaption></figure>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">03</div>
+      <div>
+        <h3>Confira o total de peças e os avisos</h3>
+        <p>Logo abaixo do nome do pedido aparece <b>"N peças = total do pedido"</b> em verde, ou <b>"li X de Y peças"</b> em vermelho. Em vermelho, ou com algum aviso amarelo, leia antes de seguir.</p>
+        <p>Todo pedido lido fica na lista <b>Pedidos lidos</b>, no fim da aba. Dá para fechar e voltar depois.</p>
+        <figure class="tela"><img src="/manuais/pedidos-compra/historico.png" alt="Lista de pedidos lidos com fornecedor, arquivo, coleção, peças e quantos SKUs faltam cadastrar" loading="lazy"><figcaption>Pedidos lidos</figcaption></figure>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase"><span class="fase-nome">Parte 2 &middot; Conferir e completar</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">04</div>
+      <div>
+        <h3>Entenda a situação de cada produto</h3>
+        <p>Cada linha é um produto (referência + cor). Os tamanhos aparecem nas etiquetas, com a quantidade do pedido.</p>
+        <dl class="campos">
+          <div><dt>Novo</dt><dd><em>a referência não existe no Microvix</em></dd></div>
+          <div><dt>Cor nova</dt><dd><em>a referência existe, essa cor não</em></dd></div>
+          <div><dt>Tamanho novo</dt><dd><em>referência e cor existem, falta tamanho</em></dd></div>
+          <div><dt>Já cadastrado</dt><dd><em>não vai para a planilha</em></dd></div>
+        </dl>
+        <p>Os botões de filtro em cima da tabela separam cada grupo. Comece por <span class="btn">A cadastrar</span>.</p>
+        <figure class="tela"><img src="/manuais/pedidos-compra/pedido.png" alt="Pedido da Oakley aberto: botão Baixar planilha, parâmetros do pedido, filtros e a tabela com situação, referência, descrição, cor, tamanhos, setor, NCM, origem, custo e venda" loading="lazy"><figcaption>Pedido aberto &middot; Oakley</figcaption></figure>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">05</div>
+      <div>
+        <h3>Resolva o que está em vermelho</h3>
+        <p>Use o filtro <span class="btn">Com pendência</span>. A coluna <b>Falta</b> diz o que falta, e o campo fica vermelho. Clique no campo, digite e saia dele: o NEXO salva e confere de novo na hora.</p>
+        <p>A correção vale para <b>todos os tamanhos</b> do produto. A referência digitada para um código da Vans e a cor digitada para um código de cor do fornecedor ficam guardadas: no próximo pedido, o NEXO já sabe.</p>
+        <figure class="tela"><img src="/manuais/pedidos-compra/pendencia.png" alt="Filtro Com pendência: campos de custo e venda vazios em vermelho e a coluna Falta pedindo custo e preço de venda" loading="lazy"><figcaption>Filtro Com pendência</figcaption></figure>
+        <div class="aviso">
+          <b>As pendências mais comuns.</b> Vans sem referência VN (suba a carteira ou digite). Oakley com custo zerado no próprio pedido (pergunte ao fornecedor). Hurley e Mizuno sem preço (o manual não tem mark-up delas: digite o mark-up no passo 06 ou o preço).
+        </div>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">06</div>
+      <div>
+        <h3>Confira o preço de venda</h3>
+        <p>O preço do pedido, quando vem, é usado como está. Quando não vem, nos <b>parâmetros do pedido</b>:</p>
+        <dl class="campos">
+          <div><dt>Preço sem o do pedido</dt><dd>custo &times; mark-up <em>ou</em> digitar na tela</dd></div>
+          <div><dt>Mark-up</dt><dd><em>vazio = o da marca (</em><a href="/manuais/cadastro-produto#marcas">tabela por marca</a><em>); ou digite, ex.: 2,3</em></dd></div>
+        </dl>
+        <p>Clique em <span class="btn">Aplicar</span>. O preço calculado <b>sempre termina em ,90</b>, o mais perto da conta: R$ 90,00 &times; 2,3 = R$ 207,00 &rarr; <b>R$ 209,90</b>.</p>
+        <p>Preço digitado na tabela é seu: mudar o mark-up depois não troca ele.</p>
+        <figure class="tela"><img src="/manuais/pedidos-compra/preco.png" alt="Pedido da Mizuno com mark-up 2,3: custo R$ 90,00 e venda R$ 209,90, com a anotação custo × 2,3" loading="lazy"><figcaption>Exemplo &middot; Mizuno com mark-up 2,3</figcaption></figure>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">07</div>
+      <div>
+        <h3>Tire o que não vai cadastrar agora</h3>
+        <p>Marque <b>Fora</b> na última coluna. A linha fica apagada e não vai para a planilha. Desmarque para voltar.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">08</div>
+      <div>
+        <h3>Veja os já cadastrados em outra coleção</h3>
+        <p>O filtro <span class="btn">Cadastrados em outra coleção</span> mostra o que já existe no Microvix, mas com outra coleção (embaixo de "Já cadastrado" aparece qual). <b>A importação não muda isso.</b> Se for para trocar, troque a coleção no cadastro do produto, no Microvix.</p>
+        <figure class="tela"><img src="/manuais/pedidos-compra/colecao.png" alt="Filtro Cadastrados em outra coleção: boné e tênis Oakley já cadastrados em WINTER 26" loading="lazy"><figcaption>Já cadastrados em WINTER 26</figcaption></figure>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase"><span class="fase-nome">Parte 3 &middot; Importar no Microvix</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">09</div>
+      <div>
+        <h3>Baixe a planilha</h3>
+        <p>Clique em <span class="btn">Baixar planilha do Microvix</span>. O número no botão é quantos SKUs (tamanhos) vão. Só entra o que é novo, sem pendência e sem "Fora".</p>
+        <p><b>Não mexa na planilha.</b> Fornecedor, marca e coleção saem em branco de propósito: eles são escolhidos na tela do Microvix, no passo 11.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">10</div>
+      <div>
+        <h3>Abra a importação de produtos</h3>
+        <p class="caminho">Suprimentos &rarr; Estoque &rarr; <b>Importação de Produtos</b> &rarr; <b>Nova importação</b></p>
+        <p>Arraste a planilha em <b>Arquivo Preenchido</b>.</p>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">11</div>
+      <div>
+        <h3>Escolha as opções</h3>
+        <p>O quadro no fim do pedido, no NEXO, mostra o fornecedor, a marca e a coleção certos para <b>esse</b> pedido.</p>
+        <dl class="campos">
+          <div><dt>Identificador dos Produtos</dt><dd>Código do produto</dd></div>
+          <div><dt>Formato do código de barras</dt><dd>GTIN13</dd></div>
+          <div><dt>Identificador da Estrutura Mercadológica</dt><dd>Descrição</dd></div>
+          <div><dt>Fornecedor padrão</dt><dd>o do quadro do NEXO</dd></div>
+          <div><dt>Marca padrão</dt><dd>a do quadro do NEXO</dd></div>
+          <div><dt>Coleção padrão</dt><dd>a do quadro do NEXO</dd></div>
+          <div><dt>Os outros campos padrão</dt><dd><em>em branco</em></dd></div>
+          <div><dt>Criar cadastros auxiliares</dt><dd>desmarcado</dd></div>
+          <div><dt>Cadastrar código do produto como código de barras</dt><dd>desmarcado</dd></div>
+        </dl>
+        <figure class="tela"><img src="/manuais/pedidos-compra/importar.png" alt="Quadro do NEXO com as opções da importação: identificador Código do produto, formato GTIN13, estrutura por Descrição, fornecedor, marca e coleção do pedido" loading="lazy"><figcaption>NEXO &middot; o que escolher para este pedido</figcaption></figure>
+        <figure class="tela"><img src="/manuais/pedidos-compra/microvix-importacao.png" alt="Tela Nova Importação de Produtos do Microvix com o arquivo, identificador, formato do código de barras e os campos padrão" loading="lazy"><figcaption>Microvix &middot; Nova importação de produtos</figcaption></figure>
+        <div class="aviso">
+          <b>Por que esses valores.</b> <b>Código do produto</b>: a planilha vai com o código vazio, então todo produto entra como novo. <b>Nunca use Referência</b>: todos os tamanhos e cores têm a mesma referência, e o Microvix acharia que é um produto só. <b>Descrição</b>: a planilha manda setor, tamanho e cor pelo nome. <b>Criar cadastros auxiliares desmarcado</b>: assim, uma cor ou um tamanho escrito diferente vira erro, em vez de virar um cadastro novo errado.
+        </div>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">12</div>
+      <div>
+        <h3>Confira o resultado</h3>
+        <p>Clique em <span class="btn">Próximo</span>. A importação aparece na lista com as contagens:</p>
+        <dl class="campos">
+          <div><dt>Verde</dt><dd>incluídos <em>(o esperado)</em></dd></div>
+          <div><dt>Amarelo</dt><dd>alterados <em>(tem que ser zero)</em></dd></div>
+          <div><dt>Vermelho</dt><dd>com divergência</dd></div>
+        </dl>
+        <p>Com vermelho: <span class="btn">Visualizar erros</span> mostra o motivo, e <span class="btn">Gerar Arquivo com Inconsistências</span> devolve só as linhas com erro. Corrija no NEXO, baixe a planilha de novo e importe só o que faltou.</p>
+        <p>Depois, procure dois ou três produtos na <b>Listagem de Produtos</b> e confira nome, fornecedor, marca, coleção e preço. Em mais ou menos uma hora o NEXO relê o cadastro: clique em <span class="btn">Conferir de novo</span> no pedido, e o que entrou passa para "Já cadastrado".</p>
+      </div>
+    </li>
+  </ol>
+
+  <div class="parada">
+    <b>Apareceu amarelo (alterado)?</b> A importação mexeu num produto que já existia. Pare e avise o escritório: campo em branco na planilha apaga o que estava no produto.
+  </div>
+
+  <section>
+    <h2>Antes de importar</h2>
+    <p class="h2-nota">Seis conferências, uma a uma.</p>
+    <ul class="check">
+      <li><label><input type="checkbox"><span>O total de peças bateu com o pedido, ou a diferença foi entendida.</span></label></li>
+      <li><label><input type="checkbox"><span>Nenhuma pendência em vermelho, ou o produto ficou como "Fora" de propósito.</span></label></li>
+      <li><label><input type="checkbox"><span>Preço de venda conferido: o do pedido ou custo &times; mark-up terminando em ,90.</span></label></li>
+      <li><label><input type="checkbox"><span>Setor e descrição dos produtos novos fazem sentido (não é CINTO nem GERAL por engano).</span></label></li>
+      <li><label><input type="checkbox"><span>No Microvix: Código do produto, GTIN13 e Descrição; cadastros auxiliares desmarcado.</span></label></li>
+      <li><label><input type="checkbox"><span>Fornecedor, marca e coleção padrão iguais aos do quadro do NEXO.</span></label></li>
+    </ul>
+  </section>
+
+  <div class="rodape">
+    <span>Surfers &middot; Manual do escritório</span>
+    <span>Pedidos de compra &middot; NEXO + Microvix</span>
+  </div>
+</div>
+
+</body>
+</html>

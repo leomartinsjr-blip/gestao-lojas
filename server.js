@@ -1143,7 +1143,7 @@ app.use(session(sessionOpts));
 //
 // A exceção são os manuais do escritório: o de cadastro traz mark-up por
 // marca, e isso não pode ficar aberto para quem tiver o link.
-const MANUAIS_ESCRITORIO = new Set(['cadastro-produto', 'produtos-site']);
+const MANUAIS_ESCRITORIO = new Set(['cadastro-produto', 'produtos-site', 'pedidos-compra']);
 app.get('/manuais', (req, res) => res.sendFile(path.join(__dirname, 'public/manuais.html')));
 app.get('/manuais/:slug', (req, res) => {
   const slug = String(req.params.slug || '').replace(/[^a-z0-9-]/gi, '');
