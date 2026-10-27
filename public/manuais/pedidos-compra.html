@@ -288,7 +288,7 @@
       <div><dt>Quem faz</dt><dd>ADM e escritório</dd></div>
       <div><dt>Onde</dt><dd>NEXO &middot; aba Compras<br>Microvix &middot; Importação e Pedido de compra</dd></div>
       <div><dt>Quando</dt><dd>Pedido fechado com o fornecedor</dd></div>
-      <div><dt>Tamanho</dt><dd>14 passos</dd></div>
+      <div><dt>Tamanho</dt><dd>16 passos</dd></div>
     </dl>
   </header>
 
@@ -357,7 +357,7 @@
           <div><dt>Preço quando o pedido não traz</dt><dd>custo &times; mark-up <em>ou</em> digitar na tela</dd></div>
         </dl>
         <div class="aviso"><b>Calendário das coleções.</b> SUMMER vai de 01/08 a 31/12 do ano anterior (SUMMER 27 = 01/08/2026 a 31/12/2026). WINTER vai de 01/01 a 31/07 do próprio ano (WINTER 27 = 01/01/2027 a 31/07/2027). O NEXO calcula qual é a atual pela data e confere no Microvix quais já estão cadastradas.</div>
-        <figure class="tela"><img src="/manuais/pedidos-compra/form.png" alt="Formulário da aba Compras: fornecedor, coleção SUMMER 27, arquivo do pedido, carteira da Vans e preço quando o pedido não traz" loading="lazy"><figcaption>Aba Compras &middot; subir o pedido</figcaption></figure>
+        <figure class="tela"><img src="/manuais/pedidos-compra/form.png" alt="Formulário da aba Compras: fornecedor, coleção WINTER 27, os 4 arquivos do pedido e o preço por custo vezes mark-up" loading="lazy"><figcaption>Aba Compras &middot; subir o pedido</figcaption></figure>
       </div>
     </li>
 
@@ -374,7 +374,7 @@
           <div><dt>Com pendência</dt><dd><em>falta algum dado</em></dd></div>
           <div><dt>Sem match no Microvix</dt><dd><em>referência nova, ou um produto que existe com outro código (passo 06)</em></dd></div>
         </dl>
-        <figure class="tela"><img src="/manuais/pedidos-compra/conferencia.png" alt="Tela de conferência da New Balance com 4 arquivos: 478 peças = total do pedido, quadros de total, já cadastrados, precisam cadastrar, com pendência e sem match, e a lista de produtos" loading="lazy"><figcaption>Conferência &middot; New Balance, 4 arquivos</figcaption></figure>
+        <figure class="tela"><img src="/manuais/pedidos-compra/conferencia.png" alt="Tela de conferência da Vans: aviso de cores novas, quadros de total, já cadastrados, precisam cadastrar, com pendência e sem match, e os filtros" loading="lazy"><figcaption>Conferência &middot; Vans 1T27</figcaption></figure>
         <p>O botão <span class="btn">&larr; Pedidos</span> volta para a lista. Todo pedido lido fica em <b>Pedidos lidos</b>: dá para fechar e voltar depois.</p>
       </div>
     </li>
@@ -442,15 +442,20 @@
       <div>
         <h3>Tire o que não vai cadastrar agora</h3>
         <p>Marque <b>Fora</b> na última coluna. A linha fica apagada e não vai para a planilha. Desmarque para voltar.</p>
+        <p><b>Item cancelado no pedido:</b> o leitor da Vans já pula as linhas com status Cancelado. Nos outros fornecedores, apague a linha no arquivo antes de ler.</p>
       </div>
     </li>
 
     <li class="passo">
       <div class="num">09</div>
       <div>
-        <h3>Veja os já cadastrados em outra coleção</h3>
-        <p>O filtro <span class="btn">Cadastrados em outra coleção</span> mostra o que já existe no Microvix, mas com outra coleção (embaixo de "Já cadastrado" aparece qual). <b>A importação não muda isso.</b> Se for para trocar, troque a coleção no cadastro do produto, no Microvix.</p>
-        <figure class="tela"><img src="/manuais/pedidos-compra/colecao.png" alt="Filtro Cadastrados em outra coleção: boné e tênis Oakley já cadastrados em WINTER 26" loading="lazy"><figcaption>Já cadastrados em WINTER 26</figcaption></figure>
+        <h3>Veja os já cadastrados em outra coleção e o custo</h3>
+        <p>O filtro <span class="btn">Cadastrados em outra coleção</span> mostra o que já existe no Microvix com outra coleção. O bloco <b>3b &middot; Já cadastrados: coleção e custo</b>, embaixo da tabela, abre sozinho e lê o Microvix: são duas listas.</p>
+        <dl class="campos">
+          <div><dt>Em outra coleção</dt><dd><em>esses vão na mesma planilha do passo 10, com o Código do produto: na importação mudam a coleção e o fornecedor (passa a ser o do pedido); custo, preço, códigos de barras e o resto ficam como estão no Microvix. O preço de venda de produto que já existe só muda quando os produtos da nova coleção começam a chegar</em></dd></div>
+          <div><dt>Custo do pedido diferente do Microvix</dt><dd><em>o cadastro não muda; o custo do pedido vai para o pedido de compra pelo arquivo de custo do fornecedor (passo 15)</em></dd></div>
+        </dl>
+        <figure class="tela"><img src="/manuais/pedidos-compra/colecao.png" alt="Bloco 3b: 90 SKUs em outra coleção indo para WINTER 27 e 20 SKUs com o custo do pedido diferente do custo do Microvix" loading="lazy"><figcaption>3b &middot; coleção e custo dos já cadastrados</figcaption></figure>
       </div>
     </li>
   </ol>
@@ -461,7 +466,11 @@
       <div class="num">10</div>
       <div>
         <h3>Baixe a planilha</h3>
-        <p>Clique em <span class="btn">Baixar planilha do Microvix</span>. O número no botão é quantos SKUs (tamanhos) vão. Só entra o que é novo, sem pendência e sem "Fora".</p>
+        <p>Clique em <span class="btn">Baixar planilha do Microvix</span>. O botão diz quantos vão: <b>"91 novos + 90 coleção"</b>, por exemplo. Uma planilha só leva as duas coisas:</p>
+        <dl class="campos">
+          <div><dt>Novos</dt><dd><em>o que falta cadastrar, sem pendência e sem "Fora"</em></dd></div>
+          <div><dt>Coleção</dt><dd><em>os já cadastrados em outra coleção, com o Código do produto (o fornecedor também passa a ser o do pedido)</em></dd></div>
+        </dl>
         <p><b>Não mexa na planilha.</b> Fornecedor, marca e coleção saem em branco de propósito: eles são escolhidos na tela do Microvix, no passo 12.</p>
       </div>
     </li>
@@ -471,6 +480,9 @@
       <div>
         <h3>Abra a importação de produtos</h3>
         <p class="caminho">Suprimentos &rarr; Estoque &rarr; <b>Importação de Produtos</b> &rarr; <b>Nova importação</b></p>
+        <p class="atalho"><b>Atalho:</b> no Microvix, <span class="mono">Ctrl+G</span> abre a busca de telas. Digite <b>produto</b> e escolha <b>Importação de Produtos</b> (Suprimentos &rsaquo; Estoque). Na <b>Listagem de Produtos</b> também tem o botão <span class="btn">+ Nova importação</span>.</p>
+        <figure class="tela"><img src="/manuais/pedidos-compra/microvix-busca.png" alt="Busca de telas do Microvix com a palavra produto e a lista de telas encontradas" loading="lazy"><figcaption>Microvix &middot; busca de telas (Ctrl+G)</figcaption></figure>
+        <figure class="tela"><img src="/manuais/pedidos-compra/microvix-importacoes.png" alt="Tela Importação de Produtos do Microvix com as últimas importações e as contagens em verde, amarelo, vermelho e cinza" loading="lazy"><figcaption>Microvix &middot; Importação de Produtos e o botão Nova importação</figcaption></figure>
         <p>Arraste a planilha em <b>Arquivo Preenchido</b>.</p>
       </div>
     </li>
@@ -479,22 +491,22 @@
       <div class="num">12</div>
       <div>
         <h3>Escolha as opções</h3>
-        <p>O quadro no fim do pedido, no NEXO, mostra o fornecedor, a marca e a coleção certos para <b>esse</b> pedido.</p>
+        <p>O bloco <b>3 &middot; Como importar no Microvix</b>, no NEXO, mostra o fornecedor, a marca e a coleção certos para <b>esse</b> pedido, e se os cadastros auxiliares vão marcados.</p>
         <dl class="campos">
           <div><dt>Identificador dos Produtos</dt><dd>Código do produto</dd></div>
           <div><dt>Formato do código de barras</dt><dd>GTIN13</dd></div>
           <div><dt>Identificador da Estrutura Mercadológica</dt><dd><em>em branco</em></dd></div>
-          <div><dt>Fornecedor padrão</dt><dd>o do quadro do NEXO</dd></div>
-          <div><dt>Marca padrão</dt><dd>a do quadro do NEXO</dd></div>
-          <div><dt>Coleção padrão</dt><dd>a do quadro do NEXO</dd></div>
-          <div><dt>Os outros campos padrão</dt><dd><em>em branco</em></dd></div>
-          <div><dt>Criar cadastros auxiliares</dt><dd>o que o quadro do NEXO disser <em>(marcado só quando o pedido tem cor ou tamanho que não existe no Microvix)</em></dd></div>
+          <div><dt>Fornecedor padrão</dt><dd>o do bloco 3 do NEXO</dd></div>
+          <div><dt>Marca padrão</dt><dd>a do bloco 3 do NEXO</dd></div>
+          <div><dt>Coleção padrão</dt><dd>a do bloco 3 do NEXO</dd></div>
+          <div><dt>Os outros campos padrão</dt><dd><em>em branco (custo e preço padrão ficam R$ 0,00: cada linha já leva o seu)</em></dd></div>
+          <div><dt>Criar cadastros auxiliares</dt><dd>o que o bloco 3 disser <em>(MARCADO quando o pedido tem cor ou tamanho que não existe no Microvix)</em></dd></div>
           <div><dt>Cadastrar código do produto como código de barras</dt><dd>desmarcado</dd></div>
         </dl>
-        <figure class="tela"><img src="/manuais/pedidos-compra/importar.png" alt="Quadro do NEXO com as opções da importação: identificador Código do produto, formato GTIN13, estrutura por Descrição, fornecedor, marca e coleção do pedido" loading="lazy"><figcaption>NEXO &middot; o que escolher para este pedido</figcaption></figure>
-        <figure class="tela"><img src="/manuais/pedidos-compra/microvix-importacao.png" alt="Tela Nova Importação de Produtos do Microvix com o arquivo, identificador, formato do código de barras e os campos padrão" loading="lazy"><figcaption>Microvix &middot; Nova importação de produtos</figcaption></figure>
+        <figure class="tela"><img src="/manuais/pedidos-compra/importar.png" alt="Bloco 3 do NEXO com as opções da importação: Código do produto, GTIN13, estrutura em branco, fornecedor AREZZO, marca VANS, coleção WINTER 27 e Criar cadastros auxiliares MARCADO" loading="lazy"><figcaption>NEXO &middot; o que escolher para este pedido</figcaption></figure>
+        <figure class="tela"><img src="/manuais/pedidos-compra/microvix-importacao.png" alt="Tela Nova Importação de Produtos do Microvix preenchida com o arquivo da Vans, Código do produto, GTIN13, fornecedor AREZZO, marca VANS, coleção WINTER 27 e Criar cadastros auxiliares marcado" loading="lazy"><figcaption>Microvix &middot; Nova importação de produtos preenchida</figcaption></figure>
         <div class="aviso">
-          <b>Por que esses valores.</b> <b>Código do produto</b>: a planilha vai com o código vazio, então todo produto entra como novo. <b>Nunca use Referência</b>: todos os tamanhos e cores têm a mesma referência, e o Microvix acharia que é um produto só. <b>Criar cadastros auxiliares</b>: o NEXO confere no Microvix as cores, os tamanhos e os setores do pedido. Cor ou tamanho que ainda não existe (comum em marca que usa código de cor, como New Balance e Vans) aparece avisado no topo do pedido, e aí a opção vai <b>marcada</b> para eles serem criados. Setor que não existe vira pendência e o produto não vai para a planilha: setor errado não pode nascer.
+          <b>Por que esses valores.</b> <b>Código do produto</b>: produto novo vai com o código vazio e entra como novo; o já cadastrado vai com o código dele, e o Microvix altera só aquele. <b>Nunca use Referência</b>: todos os tamanhos e cores têm a mesma referência, e o Microvix acharia que é um produto só. <b>Criar cadastros auxiliares</b>: o NEXO confere no Microvix as cores, os tamanhos e os setores do pedido. Cor ou tamanho que ainda não existe (comum em marca que usa código de cor, como New Balance e Vans) aparece avisado no topo do pedido, e aí a opção vai <b>marcada</b>. Setor que não existe vira pendência e o produto não vai para a planilha: setor errado não pode nascer.
         </div>
       </div>
     </li>
@@ -502,34 +514,90 @@
     <li class="passo">
       <div class="num">13</div>
       <div>
-        <h3>Confira o resultado</h3>
-        <p>Clique em <span class="btn">Próximo</span>. A importação aparece na lista com as contagens:</p>
+        <h3>Confira o resultado e marque como feito</h3>
+        <p>Clique em <span class="btn">Importar</span>. A importação aparece no alto da lista com as contagens:</p>
         <dl class="campos">
-          <div><dt>Verde</dt><dd>incluídos <em>(o esperado)</em></dd></div>
-          <div><dt>Amarelo</dt><dd>alterados <em>(tem que ser zero)</em></dd></div>
-          <div><dt>Vermelho</dt><dd>com divergência</dd></div>
+          <div><dt>Verde</dt><dd>incluídos <em>(tem que ser o número de novos do botão)</em></dd></div>
+          <div><dt>Amarelo</dt><dd>alterados <em>(tem que ser o número de "coleção" do botão)</em></dd></div>
+          <div><dt>Vermelho</dt><dd>com erro</dd></div>
+          <div><dt>Cinza</dt><dd>total de linhas</dd></div>
         </dl>
+        <figure class="tela"><img src="/manuais/pedidos-compra/microvix-resultado.png" alt="Lista de importações do Microvix: a importação da Vans com 91 verdes, 0 amarelo e 0 vermelho" loading="lazy"><figcaption>Microvix &middot; 91 incluídos, nenhum erro</figcaption></figure>
         <p>Com vermelho: <span class="btn">Visualizar erros</span> mostra o motivo, e <span class="btn">Gerar Arquivo com Inconsistências</span> devolve só as linhas com erro. Corrija no NEXO, baixe a planilha de novo e importe só o que faltou.</p>
-        <p>Depois, procure dois ou três produtos na <b>Listagem de Produtos</b> e confira nome, fornecedor, marca, coleção e preço. Em mais ou menos uma hora o NEXO relê o cadastro: clique em <span class="btn">Conferir de novo</span> no pedido, e o que entrou passa para "Já cadastrado".</p>
+        <p>Volte ao NEXO e clique em <span class="btn">Conferir de novo</span>: ele lê o cadastro do Microvix na hora. "Precisam cadastrar" tem que ir a <b>0</b> e "Cadastrados em outra coleção" também. Aí, no bloco 3, clique em <span class="btn">Marcar como feito</span>: fica gravado quem marcou e quando, e a etapa fica verde.</p>
+        <figure class="tela"><img src="/manuais/pedidos-compra/conferir-de-novo.png" alt="Conferência da Vans depois de Conferir de novo: 35 produtos já cadastrados e 0 a cadastrar" loading="lazy"><figcaption>Depois do Conferir de novo: tudo já cadastrado</figcaption></figure>
       </div>
     </li>
   </ol>
 
-  <div class="fase"><span class="fase-nome">Parte 4 &middot; Pedido de compra no Microvix</span><span class="fase-linha"></span></div>
+  <div class="fase"><span class="fase-nome">Parte 4 &middot; Autorização</span><span class="fase-linha"></span></div>
   <ol class="passos">
     <li class="passo">
       <div class="num">14</div>
       <div>
-        <h3>Lance o pedido de compra de cada loja</h3>
-        <p><b>Antes, o Leonardo autoriza:</b> no bloco <b>4 &middot; Autorização</b> ele confere fornecedor, marca, coleção e as peças e o valor de cada empresa (pode corrigir) e clica em <span class="btn">Computar e autorizar</span>. Só ele faz isso. Pedido computado entra no resumo e libera o pedido de compra; o cadastro dos produtos (Parte 3) pode ser feito antes.</p>
-        <p>O pedido de compra no Microvix é <b>um por loja</b>. Na conferência, o bloco <b>4 &middot; Pedido de compra no Microvix</b> mostra cada loja com os SKUs, as peças e o custo, e o botão <span class="btn">Baixar CSV</span>.</p>
-        <p>O botão só libera com o pedido autorizado e com todos os SKUs daquela loja já existindo no Microvix: importe o cadastro (Parte 3), espere o NEXO reler o cadastro (mais ou menos uma hora) e clique em <span class="btn">Conferir de novo</span>.</p>
+        <h3>O Leonardo computa e autoriza</h3>
+        <p>No bloco <b>4 &middot; Computar e autorizar</b>, o Leonardo confere fornecedor, marca, coleção e as peças e o valor de cada empresa (pode corrigir) e clica em <span class="btn">Computar e autorizar</span>. <b>Só ele faz isso.</b></p>
+        <p>Pedido computado entra no <b>Resumo dos pedidos</b> e libera a Parte 5. O cadastro (Parte 3) não precisa esperar a autorização.</p>
+        <figure class="tela"><img src="/manuais/pedidos-compra/computar.png" alt="Bloco 4 Computar e autorizar: fornecedor, marca, coleção e as peças e o valor de cada loja, com o botão Computar e autorizar" loading="lazy"><figcaption>Bloco 4 &middot; computar e autorizar</figcaption></figure>
+      </div>
+    </li>
+  </ol>
+
+  <div class="fase"><span class="fase-nome">Parte 5 &middot; Custo e pedido de compra</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">15</div>
+      <div>
+        <h3>Leve o custo do pedido para o fornecedor</h3>
+        <p>O custo do pedido vai para o <b>Relacionamento Produto x Fornecedor</b>, e não para o cadastro do produto. O pedido de compra puxa o custo de lá.</p>
+        <p>No NEXO, bloco <b>5 &middot; Pedido de compra</b>, clique em <span class="btn">Baixar custo do fornecedor</span>. Vai cada SKU já cadastrado do pedido, com o custo do pedido.</p>
+        <figure class="tela"><img src="/manuais/pedidos-compra/etapa5.png" alt="Bloco 5 do NEXO: botão Baixar custo do fornecedor e as quatro lojas com SKUs, peças, custo, situação pronto e o botão Baixar CSV ainda travado" loading="lazy"><figcaption>NEXO &middot; bloco 5, os CSVs travados até o custo ser feito</figcaption></figure>
+        <p class="caminho">Suprimentos &rarr; Estoque &rarr; <b>Opções dos Produtos</b> &rarr; <b>Relacionamento Produto x Fornecedor em Lote</b> &rarr; <b>Clique aqui para importar</b></p>
+        <figure class="tela"><img src="/manuais/pedidos-compra/microvix-opcoes-produtos.png" alt="Tela Opções dos Produtos do Microvix com os cards, entre eles Relacionamento Produto x Fornecedor em Lote" loading="lazy"><figcaption>Microvix &middot; Opções dos Produtos</figcaption></figure>
+        <figure class="tela"><img src="/manuais/pedidos-compra/microvix-relacionamento-lote.png" alt="Tela Relacionamento Produto x Fornecedor em Lote com os filtros e, embaixo, Importar e o link Clique aqui para importar" loading="lazy"><figcaption>Relacionamento Produto x Fornecedor em Lote</figcaption></figure>
         <dl class="campos">
-          <div><dt>No Microvix</dt><dd>abra o pedido de compra da loja &rarr; <b>Importação Lote</b></dd></div>
-          <div><dt>Enviar Arquivo com</dt><dd>Códigos dos produtos e quantidades</dd></div>
+          <div><dt>Identificador para produto</dt><dd>Código do produto</dd></div>
+          <div><dt>Identificador para fornecedor</dt><dd>Código do fornecedor</dd></div>
+          <div><dt>Anexos</dt><dd>o arquivo baixado do NEXO <em>(não mexa: ele já vem com o cabeçalho que o Microvix pede)</em></dd></div>
+        </dl>
+        <figure class="tela"><img src="/manuais/pedidos-compra/microvix-relacionamento-importar.png" alt="Janela Importar Relacionamento Produto x Fornecedor com Código do produto, Código do fornecedor, arquivos de apoio e a área para anexar o arquivo" loading="lazy"><figcaption>Importar relacionamento produto x fornecedor</figcaption></figure>
+        <figure class="tela"><img src="/manuais/pedidos-compra/microvix-relacionamento-sucesso.png" alt="Importação do relacionamento com sucesso: 181 linhas, 181 com sucesso e 0 com falha" loading="lazy"><figcaption>Resultado &middot; linhas com sucesso tem que ser o total</figcaption></figure>
+        <p>Clique em <span class="btn">Importar arquivo</span>. Depois, no NEXO, <span class="btn">Marcar como feito</span> ao lado do botão. <b>Os CSVs do pedido de compra só liberam depois disso.</b></p>
+        <div class="aviso"><b>Configuração do Microvix (uma vez só).</b> Em <b>Parâmetros gerais de Compras</b>: <b>"Usa custo do fornecedor no pedido de compra (manual)" = Custo do fornecedor</b> e <b>"Sugestão de preços do último pedido" = Não</b>. Sem isso o pedido puxa o custo do cadastro e o arquivo não serve.
+          <figure class="tela"><img src="/manuais/pedidos-compra/microvix-parametros-compras.png" alt="Parâmetros gerais de Compras com Usa custo do fornecedor no pedido de compra manual em Custo do fornecedor e Sugestão de preços do último pedido em Não" loading="lazy"><figcaption>Parâmetros gerais de Compras</figcaption></figure>
+        </div>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">16</div>
+      <div>
+        <h3>Lance o pedido de compra de cada loja</h3>
+        <p>O pedido de compra no Microvix é <b>um por loja</b>. O bloco 5 mostra cada loja com os SKUs, as peças e o custo, e o botão <span class="btn">Baixar CSV</span>.</p>
+        <p class="caminho">Suprimentos &rarr; Compras &rarr; <b>Pedido de Compra (Manual)</b></p>
+        <p class="atalho"><b>Atalho:</b> <span class="mono">Ctrl+G</span> e digite <b>manual</b>: aparece <b>Pedido de compra (manual)</b>.</p>
+        <figure class="tela"><img src="/manuais/pedidos-compra/microvix-busca-pedido.png" alt="Busca de telas do Microvix com a palavra manual e a opção Pedido de compra (manual) em Suprimentos, Compras" loading="lazy"><figcaption>Microvix &middot; Ctrl+G, manual</figcaption></figure>
+        <dl class="campos">
+          <div><dt>Fornecedor</dt><dd>o do pedido <em>(o mesmo do arquivo de custo, senão o custo não vem)</em></dd></div>
+          <div><dt>Empresa</dt><dd>a loja do CSV</dd></div>
+          <div><dt>Reajustar custo</dt><dd><b>Nenhum</b> <em>(com Markup ou Preço de venda, o Microvix pode mexer no cadastro)</em></dd></div>
+          <div><dt>Itens</dt><dd>Clique aqui para <b>Inserir Produtos</b> &rarr; <b>Inserir itens via arquivo em lote</b></dd></div>
+          <div><dt>Enviar arquivo com</dt><dd>Códigos dos produtos e quantidades</dd></div>
           <div><dt>Utilizar arquivos com cabeçalho</dt><dd><em>desmarcado</em></dd></div>
         </dl>
-        <div class="aviso"><b>Loja que o NEXO não reconhece.</b> Cada fornecedor escreve a loja de um jeito (razão social, CNPJ, código de cliente). Quando aparecer o aviso <b>"De qual loja é?"</b>, escolha a loja certa uma vez: fica guardado para os próximos pedidos daquela marca.</div>
+        <p>Confira <b>Itens</b> e <b>Peças</b> no pé da lista contra os SKUs e as peças da loja no NEXO, e o <b>Unitário</b> contra o custo do pedido.</p>
+        <div class="aviso"><b>Apareceu "Alguns registros podem não ter sido importados"?</b> Algum código do CSV não passou na busca: quase sempre é produto <b>desativado</b> no Microvix. Compare o total de registros com os SKUs da loja no NEXO. O NEXO já avisa "desativado no Microvix" na lista e no bloco 5; quando houver outro cadastro ativo do mesmo produto, ele usa o ativo.</div>
+        <figure class="tela"><img src="/manuais/pedidos-compra/microvix-pedido-custo.png" alt="Pedido de compra da NEW BRASIL: o item 883367 com unitário 263,62, o custo do pedido" loading="lazy"><figcaption>O unitário vem do custo do fornecedor (263,62), não do cadastro (239,11)</figcaption></figure>
+        <figure class="tela"><img src="/manuais/pedidos-compra/microvix-pedido-itens.png" alt="Pedido de compra depois da importação em lote: lista dos itens com quantidade e unitário e o total de itens, peças e valor" loading="lazy"><figcaption>Itens importados pelo CSV, com o total de itens e peças</figcaption></figure>
+        <p>Clique em <span class="btn">Prosseguir</span> para os dados complementares e depois em <span class="btn">Finalizar</span>.</p>
+        <dl class="campos">
+          <div><dt>Previsão de entrega</dt><dd><b>sempre preencher</b> <em>(a do pedido do fornecedor; se o pedido não trouxer, pergunte ao Leonardo)</em></dd></div>
+        </dl>
+        <figure class="tela"><img src="/manuais/pedidos-compra/microvix-pedido-finalizar.png" alt="Dados complementares do pedido de compra: itens 75, peças 163, total 31.571,67, previsão de entrega, observação, frete e o botão Finalizar" loading="lazy"><figcaption>Dados complementares &middot; previsão de entrega e Finalizar</figcaption></figure>
+        <figure class="tela"><img src="/manuais/pedidos-compra/microvix-pedido-finalizado.png" alt="Pedido de compra finalizado com êxito: pedido 1698 da AREZZO para a empresa 9" loading="lazy"><figcaption>Pedido finalizado &middot; anote o número</figcaption></figure>
+        <p>O pedido de compra <b>não muda o cadastro</b>: custo e preço de venda do produto continuam os mesmos (conferido no pedido 1698: custo do cadastro 250,00, pedido a 249,92).</p>
+        <p>Lançou a loja? No NEXO, na coluna <b>Lançado no Microvix</b> daquela loja, digite o <b>número do pedido de compra</b> do Microvix (o da tela de pedido finalizado) e clique em <span class="btn">Marcar como feito</span>. Sem o número não marca. Com todas as lojas marcadas, a etapa 5 fica verde.</p>
+        <div class="aviso"><b>Loja que o NEXO não reconhece.</b> Cada fornecedor escreve a loja de um jeito (razão social, CNPJ, código de cliente, nome do shopping). Quando aparecer o aviso <b>"De qual loja é?"</b>, escolha a loja certa uma vez e clique em <span class="btn">Salvar lojas</span>: fica guardado para os próximos pedidos daquela marca.</div>
       </div>
     </li>
   </ol>
@@ -541,19 +609,20 @@
   </section>
 
   <div class="parada">
-    <b>Apareceu amarelo (alterado)?</b> A importação mexeu num produto que já existia. Pare e avise o escritório: campo em branco na planilha apaga o que estava no produto.
+    <b>Amarelo diferente do número de "coleção" do botão?</b> A importação mexeu num produto que não devia. Pare e avise o escritório antes de importar de novo.
   </div>
 
   <section>
     <h2>Antes de importar</h2>
-    <p class="h2-nota">Seis conferências, uma a uma.</p>
+    <p class="h2-nota">Conferências, uma a uma.</p>
     <ul class="check">
       <li><label><input type="checkbox"><span>O total de peças bateu com o pedido, ou a diferença foi entendida.</span></label></li>
       <li><label><input type="checkbox"><span>Nenhuma pendência em vermelho, ou o produto ficou como "Fora" de propósito.</span></label></li>
       <li><label><input type="checkbox"><span>Preço de venda conferido: o do pedido ou custo &times; mark-up terminando em ,90.</span></label></li>
       <li><label><input type="checkbox"><span>Setor e descrição dos produtos novos fazem sentido (não é CINTO nem GERAL por engano).</span></label></li>
       <li><label><input type="checkbox"><span>No Microvix: Código do produto e GTIN13; estrutura mercadológica em branco; cadastros auxiliares como o NEXO mandar.</span></label></li>
-      <li><label><input type="checkbox"><span>Fornecedor, marca e coleção padrão iguais aos do quadro do NEXO.</span></label></li>
+      <li><label><input type="checkbox"><span>Fornecedor, marca e coleção padrão iguais aos do bloco 3 do NEXO.</span></label></li>
+      <li><label><input type="checkbox"><span>Pedido de compra: custo do fornecedor importado e marcado como feito, e "Reajustar custo" em Nenhum.</span></label></li>
     </ul>
   </section>
 
