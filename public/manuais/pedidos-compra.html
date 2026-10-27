@@ -288,7 +288,7 @@
       <div><dt>Quem faz</dt><dd>ADM e escritório</dd></div>
       <div><dt>Onde</dt><dd>NEXO &middot; aba Compras<br>Microvix &middot; Importação</dd></div>
       <div><dt>Quando</dt><dd>Pedido fechado com o fornecedor</dd></div>
-      <div><dt>Tamanho</dt><dd>12 passos</dd></div>
+      <div><dt>Tamanho</dt><dd>13 passos</dd></div>
     </dl>
   </header>
 
@@ -296,7 +296,7 @@
     <h2>Antes de começar</h2>
     <p class="h2-nota">Sem isto em mãos, você trava no meio.</p>
     <ul class="antes">
-      <li><span>O <b>pedido do fornecedor</b> do jeito que ele mandou: PDF ou Excel. Não precisa arrumar nada no arquivo.</span></li>
+      <li><span>O <b>pedido do fornecedor</b> do jeito que ele mandou: PDF ou Excel. Não precisa arrumar nada no arquivo. Fornecedor que manda <b>vários arquivos</b> (um por loja, por exemplo): suba todos juntos.</span></li>
       <li><span>A <b>coleção</b> desse pedido, <b>já cadastrada no Microvix</b>. Ela é escolhida antes de subir e vale para o pedido inteiro. Coleção que ainda não existe no Microvix aparece bloqueada na lista: cadastre lá primeiro.</span></li>
       <li><span>Login do gestão de <b>ADM ou escritório</b>. A aba Compras não aparece para outros logins, porque mostra custo e mark-up.</span></li>
       <li><span><b>Vans:</b> se o pedido vier sem a referência VN (só o código global, tipo <span class="mono">V1001100170001</span>), tenha à mão a <b>carteira da Vans</b>. Ela ensina a referência ao NEXO.</span></li>
@@ -352,7 +352,7 @@
         <dl class="campos">
           <div><dt>Fornecedor</dt><dd><em>deixe "reconhecer pelo arquivo"; escolha só se ele não reconhecer</em></dd></div>
           <div><dt>Coleção</dt><dd>a do pedido <em>(a lista mostra a atual e as próximas; a atual já vem escolhida)</em></dd></div>
-          <div><dt>Pedido</dt><dd>o arquivo do fornecedor</dd></div>
+          <div><dt>Pedido</dt><dd>o arquivo do fornecedor <em>(pode escolher vários de uma vez, do mesmo fornecedor: o NEXO junta e soma o mesmo produto)</em></dd></div>
           <div><dt>Carteira da Vans</dt><dd><em>só para Vans sem referência VN</em></dd></div>
           <div><dt>Preço quando o pedido não traz</dt><dd>custo &times; mark-up <em>ou</em> digitar na tela</dd></div>
         </dl>
@@ -364,10 +364,18 @@
     <li class="passo">
       <div class="num">03</div>
       <div>
-        <h3>Confira o total de peças e os avisos</h3>
-        <p>Logo abaixo do nome do pedido aparece <b>"N peças = total do pedido"</b> em verde, ou <b>"li X de Y peças"</b> em vermelho. Em vermelho, ou com algum aviso amarelo, leia antes de seguir.</p>
-        <p>Todo pedido lido fica na lista <b>Pedidos lidos</b>, no fim da aba. Dá para fechar e voltar depois.</p>
-        <figure class="tela"><img src="/manuais/pedidos-compra/historico.png" alt="Lista de pedidos lidos com fornecedor, arquivo, coleção, peças e quantos SKUs faltam cadastrar" loading="lazy"><figcaption>Pedidos lidos</figcaption></figure>
+        <h3>Confira a tela de conferência</h3>
+        <p>Depois de ler, o NEXO abre a <b>Conferência</b> do pedido. Embaixo do nome aparece <b>"N peças = total do pedido"</b> em verde, ou <b>"li X de Y peças"</b> em vermelho. Em vermelho, ou com algum aviso amarelo, leia antes de seguir.</p>
+        <p>Os quadros mostram o resumo; clique num quadro para ver só aqueles produtos.</p>
+        <dl class="campos">
+          <div><dt>Total do pedido</dt><dd><em>produtos, SKUs, peças, custo e venda</em></dd></div>
+          <div><dt>Já cadastrados no Microvix</dt><dd><em>não vão para a planilha</em></dd></div>
+          <div><dt>Precisam cadastrar</dt><dd><em>e quantos SKUs já estão prontos</em></dd></div>
+          <div><dt>Com pendência</dt><dd><em>falta algum dado</em></dd></div>
+          <div><dt>Sem match no Microvix</dt><dd><em>referência nova, ou um produto que existe com outro código (passo 06)</em></dd></div>
+        </dl>
+        <figure class="tela"><img src="/manuais/pedidos-compra/conferencia.png" alt="Tela de conferência da New Balance com 4 arquivos: 478 peças = total do pedido, quadros de total, já cadastrados, precisam cadastrar, com pendência e sem match, e a lista de produtos" loading="lazy"><figcaption>Conferência &middot; New Balance, 4 arquivos</figcaption></figure>
+        <p>O botão <span class="btn">&larr; Pedidos</span> volta para a lista. Todo pedido lido fica em <b>Pedidos lidos</b>: dá para fechar e voltar depois.</p>
       </div>
     </li>
   </ol>
@@ -385,8 +393,7 @@
           <div><dt>Tamanho novo</dt><dd><em>referência e cor existem, falta tamanho</em></dd></div>
           <div><dt>Já cadastrado</dt><dd><em>não vai para a planilha</em></dd></div>
         </dl>
-        <p>Os botões de filtro em cima da tabela separam cada grupo. Comece por <span class="btn">A cadastrar</span>.</p>
-        <figure class="tela"><img src="/manuais/pedidos-compra/pedido.png" alt="Pedido da Oakley aberto: botão Baixar planilha, parâmetros do pedido, filtros e a tabela com situação, referência, descrição, cor, tamanhos, setor, NCM, origem, custo e venda" loading="lazy"><figcaption>Pedido aberto &middot; Oakley</figcaption></figure>
+        <p>Os botões de filtro em cima da tabela separam cada grupo. A tela abre em <span class="btn">Todos</span>.</p>
       </div>
     </li>
 
@@ -398,7 +405,7 @@
         <p>A correção vale para <b>todos os tamanhos</b> do produto. A referência digitada para um código da Vans e a cor digitada para um código de cor do fornecedor ficam guardadas: no próximo pedido, o NEXO já sabe.</p>
         <figure class="tela"><img src="/manuais/pedidos-compra/pendencia.png" alt="Filtro Com pendência: campos de custo e venda vazios em vermelho e a coluna Falta pedindo custo e preço de venda" loading="lazy"><figcaption>Filtro Com pendência</figcaption></figure>
         <div class="aviso">
-          <b>As pendências mais comuns.</b> Vans sem referência VN (suba a carteira ou digite). Oakley com custo zerado no próprio pedido (pergunte ao fornecedor). Hurley e Mizuno sem preço (o manual não tem mark-up delas: digite o mark-up no passo 06 ou o preço).
+          <b>As pendências mais comuns.</b> Vans sem referência VN (suba a carteira, digite ou vincule). Oakley com custo zerado no próprio pedido (pergunte ao fornecedor). Hurley e Mizuno sem preço (o manual não tem mark-up delas: digite o mark-up no passo 07 ou o preço).
         </div>
       </div>
     </li>
@@ -406,8 +413,19 @@
     <li class="passo">
       <div class="num">06</div>
       <div>
+        <h3>Vincule o que já existe com outro código</h3>
+        <p>Às vezes o produto existe no Microvix, mas o fornecedor manda o código de outro jeito. Ex.: o pedido da New Balance traz <span class="mono">U480</span> cor <span class="mono">L7Q5</span>, e no Microvix é <span class="mono">U480L</span> cor <span class="mono">7Q5</span>.</p>
+        <p>Clique em <span class="btn">Vincular</span> na linha. O NEXO já busca pela referência (ou pelo modelo da descrição). Ajuste a busca se precisar, marque <b>todas as marcas</b> se não achar, e clique em <span class="btn">Usar este</span> no produto certo.</p>
+        <p>Referência, cor, descrição, setor, NCM e origem passam a ser os do Microvix. O tamanho que já existe vira "Já cadastrado". <b>O vínculo fica guardado:</b> no próximo pedido, esse código do fornecedor já cai no produto certo.</p>
+        <figure class="tela"><img src="/manuais/pedidos-compra/vincular.png" alt="Painel Vincular a um produto do Microvix: busca por U530 e a lista de referências e cores do Microvix com os tamanhos que existem e o botão Usar este" loading="lazy"><figcaption>Vincular &middot; busca no Microvix</figcaption></figure>
+      </div>
+    </li>
+
+    <li class="passo">
+      <div class="num">07</div>
+      <div>
         <h3>Confira o preço de venda</h3>
-        <p>O preço do pedido, quando vem, é usado como está. Quando não vem, nos <b>parâmetros do pedido</b>:</p>
+        <p>O preço do pedido, quando vem, é usado como está. Quando não vem, nos <b>parâmetros do pedido</b> (a faixa entre os quadros e a tabela):</p>
         <dl class="campos">
           <div><dt>Preço sem o do pedido</dt><dd>custo &times; mark-up <em>ou</em> digitar na tela</dd></div>
           <div><dt>Mark-up</dt><dd><em>vazio = o da marca (</em><a href="/manuais/cadastro-produto#marcas">tabela por marca</a><em>); ou digite, ex.: 2,3</em></dd></div>
@@ -419,7 +437,7 @@
     </li>
 
     <li class="passo">
-      <div class="num">07</div>
+      <div class="num">08</div>
       <div>
         <h3>Tire o que não vai cadastrar agora</h3>
         <p>Marque <b>Fora</b> na última coluna. A linha fica apagada e não vai para a planilha. Desmarque para voltar.</p>
@@ -427,7 +445,7 @@
     </li>
 
     <li class="passo">
-      <div class="num">08</div>
+      <div class="num">09</div>
       <div>
         <h3>Veja os já cadastrados em outra coleção</h3>
         <p>O filtro <span class="btn">Cadastrados em outra coleção</span> mostra o que já existe no Microvix, mas com outra coleção (embaixo de "Já cadastrado" aparece qual). <b>A importação não muda isso.</b> Se for para trocar, troque a coleção no cadastro do produto, no Microvix.</p>
@@ -439,16 +457,16 @@
   <div class="fase"><span class="fase-nome">Parte 3 &middot; Importar no Microvix</span><span class="fase-linha"></span></div>
   <ol class="passos">
     <li class="passo">
-      <div class="num">09</div>
+      <div class="num">10</div>
       <div>
         <h3>Baixe a planilha</h3>
         <p>Clique em <span class="btn">Baixar planilha do Microvix</span>. O número no botão é quantos SKUs (tamanhos) vão. Só entra o que é novo, sem pendência e sem "Fora".</p>
-        <p><b>Não mexa na planilha.</b> Fornecedor, marca e coleção saem em branco de propósito: eles são escolhidos na tela do Microvix, no passo 11.</p>
+        <p><b>Não mexa na planilha.</b> Fornecedor, marca e coleção saem em branco de propósito: eles são escolhidos na tela do Microvix, no passo 12.</p>
       </div>
     </li>
 
     <li class="passo">
-      <div class="num">10</div>
+      <div class="num">11</div>
       <div>
         <h3>Abra a importação de produtos</h3>
         <p class="caminho">Suprimentos &rarr; Estoque &rarr; <b>Importação de Produtos</b> &rarr; <b>Nova importação</b></p>
@@ -457,7 +475,7 @@
     </li>
 
     <li class="passo">
-      <div class="num">11</div>
+      <div class="num">12</div>
       <div>
         <h3>Escolha as opções</h3>
         <p>O quadro no fim do pedido, no NEXO, mostra o fornecedor, a marca e a coleção certos para <b>esse</b> pedido.</p>
@@ -481,7 +499,7 @@
     </li>
 
     <li class="passo">
-      <div class="num">12</div>
+      <div class="num">13</div>
       <div>
         <h3>Confira o resultado</h3>
         <p>Clique em <span class="btn">Próximo</span>. A importação aparece na lista com as contagens:</p>
