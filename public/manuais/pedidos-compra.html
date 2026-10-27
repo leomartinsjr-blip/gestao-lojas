@@ -286,9 +286,9 @@
     <p class="sub">Do pedido do fornecedor ao produto cadastrado no Microvix. O NEXO lê o pedido, confere o que já existe e monta a planilha só com o que falta. Você confere, completa e importa no Microvix.</p>
     <dl class="ficha">
       <div><dt>Quem faz</dt><dd>ADM e escritório</dd></div>
-      <div><dt>Onde</dt><dd>NEXO &middot; aba Compras<br>Microvix &middot; Importação</dd></div>
+      <div><dt>Onde</dt><dd>NEXO &middot; aba Compras<br>Microvix &middot; Importação e Pedido de compra</dd></div>
       <div><dt>Quando</dt><dd>Pedido fechado com o fornecedor</dd></div>
-      <div><dt>Tamanho</dt><dd>13 passos</dd></div>
+      <div><dt>Tamanho</dt><dd>14 passos</dd></div>
     </dl>
   </header>
 
@@ -514,6 +514,30 @@
       </div>
     </li>
   </ol>
+
+  <div class="fase"><span class="fase-nome">Parte 4 &middot; Pedido de compra no Microvix</span><span class="fase-linha"></span></div>
+  <ol class="passos">
+    <li class="passo">
+      <div class="num">14</div>
+      <div>
+        <h3>Lance o pedido de compra de cada loja</h3>
+        <p>O pedido de compra no Microvix é <b>um por loja</b>. Na conferência, o bloco <b>4 &middot; Pedido de compra no Microvix</b> mostra cada loja com os SKUs, as peças e o custo, e o botão <span class="btn">Baixar CSV</span>.</p>
+        <p>O botão só libera quando todos os SKUs daquela loja já existem no Microvix: importe o cadastro (Parte 3), espere o NEXO reler o cadastro (mais ou menos uma hora) e clique em <span class="btn">Conferir de novo</span>.</p>
+        <dl class="campos">
+          <div><dt>No Microvix</dt><dd>abra o pedido de compra da loja &rarr; <b>Importação Lote</b></dd></div>
+          <div><dt>Enviar Arquivo com</dt><dd>Códigos dos produtos e quantidades</dd></div>
+          <div><dt>Utilizar arquivos com cabeçalho</dt><dd><em>desmarcado</em></dd></div>
+        </dl>
+        <div class="aviso"><b>Loja que o NEXO não reconhece.</b> Cada fornecedor escreve a loja de um jeito (razão social, CNPJ, código de cliente). Quando aparecer o aviso <b>"De qual loja é?"</b>, escolha a loja certa uma vez: fica guardado para os próximos pedidos daquela marca.</div>
+      </div>
+    </li>
+  </ol>
+
+  <section>
+    <h2>Resumo dos pedidos</h2>
+    <p class="h2-nota">Na tela inicial da aba Compras, antes da lista de pedidos.</p>
+    <p>Mostra as peças de cada marca e coleção, uma coluna por loja, com custo, venda e quanto ainda falta cadastrar. Os filtros de <b>coleção</b>, <b>marca</b> e <b>empresa</b> valem também para a lista de pedidos embaixo. Pedido lido mais de uma vez (mesmo fornecedor, mesmos arquivos) conta uma vez só.</p>
+  </section>
 
   <div class="parada">
     <b>Apareceu amarelo (alterado)?</b> A importação mexeu num produto que já existia. Pare e avise o escritório: campo em branco na planilha apaga o que estava no produto.
