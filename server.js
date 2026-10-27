@@ -14056,6 +14056,7 @@ function pautaVazia(y, m, board) {
     vendedorNotas: {},
     rhItens: [], demandas: [], acoes: [],
     estoqueManual: { custo: 0, venda: 0, data: '', obs: '' },
+    metaProximoMes: { valor: 0, obs: '' },
     balanco: { diferenca: 0, data: '', obs: '', imagens: [] },
     produtosResumo: null, roteiro: null, snapshot: null,
     createdAt: null, updatedAt: null, updatedBy: '',
@@ -14235,7 +14236,7 @@ app.put('/api/pauta/:year/:month/:board', requireEscritorioOrAdmin, async (req, 
     const p   = { ...pautaVazia(y, m, board), ...(db.pautas[key] || {}) };
 
     const campos = ['participantes', 'realizadaEm', 'comentarios', 'vendedorNotas',
-                    'rhItens', 'demandas', 'acoes', 'estoqueManual', 'balanco', 'produtosResumo', 'roteiro'];
+                    'rhItens', 'demandas', 'acoes', 'estoqueManual', 'metaProximoMes', 'balanco', 'produtosResumo', 'roteiro'];
     for (const c of campos) if (c in req.body) p[c] = req.body[c];
 
     // A lista de prints é do servidor: quem manda nela são as rotas de imagem.

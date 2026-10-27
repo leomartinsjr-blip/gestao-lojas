@@ -89,6 +89,7 @@ async function salvar() {
       demandas:      p.demandas,
       acoes:         p.acoes,
       estoqueManual: p.estoqueManual,
+      metaProximoMes: p.metaProximoMes,
       balanco:       p.balanco,
       produtosResumo: p.produtosResumo,
     });
@@ -242,6 +243,25 @@ function renderLoja() {
       </div>` : '');
 
   $('cmtPerformance').value = S.pauta.comentarios.performance || '';
+  renderMetaProxima();
+}
+
+// Meta do próximo mês: digitada na reunião (não vem de lugar nenhum). Embaixo,
+// a comparação com a meta e o resultado deste mês, para a meta nova não sair do nada.
+function renderMetaProxima() {
+  const mp = S.pauta.metaProximoMes || { valor: 0, obs: '' };
+  S.pauta.metaProximoMes = mp;
+  const prox = S.month === 12 ? { m: 1, y: S.year + 1 } : { m: S.month + 1, y: S.year };
+  $('metaProxSub').textContent = `${MESES[prox.m - 1]}/${prox.y} · digitada na reunião`;
+  if (document.activeElement?.id !== 'metaProxValor') $('metaProxValor').value = mp.valor ? fBRL2(mp.valor) : '';
+  if (document.activeElement?.id !== 'metaProxObs') $('metaProxObs').value = mp.obs || '';
+  const d = S.dados.loja;
+  const base = d.fechado ? d.venda : (d.projecao ?? d.venda);
+  const partes = [];
+  const pct = (a, b) => { const v = (a / b - 1) * 100; return (v >= 0 ? '+' : '') + fDec(v, 1) + '%'; };
+  if (mp.valor > 0 && d.meta > 0) partes.push(`${pct(mp.valor, d.meta)} vs a meta deste mês (${fBRL(d.meta)})`);
+  if (mp.valor > 0 && base > 0) partes.push(`${pct(mp.valor, base)} vs ${d.fechado ? 'o faturado' : 'a projeção'} deste mês (${fBRL(base)})`);
+  $('metaProxDeriv').textContent = partes.join(' · ');
 }
 
 // ── 2 · Vendedores ───────────────────────────────────────────────────────────
@@ -1328,6 +1348,13 @@ async function init() {
     });
     $(id).addEventListener('blur', () => renderEstoqueManual());
   }
+  $('metaProxValor').addEventListener('input', () => {
+    S.pauta.metaProximoMes.valor = parseValor($('metaProxValor').value);
+    renderMetaProxima();
+    queueSave();
+  });
+  $('metaProxValor').addEventListener('blur', () => renderMetaProxima());
+  $('metaProxObs').addEventListener('input', () => { S.pauta.metaProximoMes.obs = $('metaProxObs').value; queueSave(); });
   $('estData').addEventListener('change', () => { S.pauta.estoqueManual.data = $('estData').value; queueSave(); });
   $('estObs').addEventListener('input', () => { S.pauta.estoqueManual.obs = $('estObs').value; queueSave(); });
 
