@@ -2021,6 +2021,7 @@ function renderDashboard() {
                         camp.endDate.slice(0,7)   === curMonthPrefix;
 
     const campPorLoja = isKpiLoja(camp.kpi);
+    const campBackend = isKpiBackend(camp.kpi);
 
     function _buildCampCard(ranking) {
       const top5     = ranking.slice(0, 5);
@@ -2049,7 +2050,7 @@ function renderDashboard() {
 
     // Ranking inicial: só S.vsales (rápido, sempre disponível).
     // KPI de loja não vem de S.vsales — fica vazio e é buscado no backend abaixo.
-    const campEmps = campPorLoja ? [] : S.employees.filter(e =>
+    const campEmps = campBackend ? [] : S.employees.filter(e =>
       isVend(e) && !e.inativo && (camp.scope === 'rede' || camp.stores.includes(e.board))
     );
     const quickRanking = campEmps.map(emp => {
@@ -2089,7 +2090,7 @@ function renderDashboard() {
         </span>
         <span class="main-card-sub">${campFmt(camp.startDate)} → ${campFmt(camp.endDate)}</span>
       </div>
-      <div class="main-card-body" id="campDashBody">${campPorLoja
+      <div class="main-card-body" id="campDashBody">${campBackend
         ? `<div class="camp-dash-kpi-lbl">${KPI_LABELS[camp.kpi] || camp.kpi}</div>
            <div style="color:var(--muted);font-size:.8rem;padding:.5rem 0">Calculando…</div>`
         : _buildCampCard(quickRanking)}</div>
@@ -2100,13 +2101,13 @@ function renderDashboard() {
     });
 
     // KPI de loja sempre busca; os demais só quando a campanha passa de 1 mês
-    if (campPorLoja || !singleMonth) {
+    if (campBackend || !singleMonth) {
       calcCampaignRanking(camp).then(fullRanking => {
         const bodyEl = campDashCard.querySelector('#campDashBody');
         if (bodyEl) bodyEl.innerHTML = _buildCampCard(fullRanking);
       }).catch(() => {
         const bodyEl = campDashCard.querySelector('#campDashBody');
-        if (bodyEl && campPorLoja) {
+        if (bodyEl && campBackend) {
           bodyEl.innerHTML = `<div class="camp-dash-kpi-lbl">${KPI_LABELS[camp.kpi] || camp.kpi}</div>
             <div style="color:var(--muted);font-size:.8rem;padding:.5rem 0">Não foi possível calcular</div>`;
         }
@@ -9006,18 +9007,23 @@ const KPI_LABELS = {
   pecas:        'Peças',
   desconto_pct: '% de Desconto (loja)',
   cmv_taxa_pct: 'CMV + Taxa (loja)',
+  crm_envio_pct: '% de envio do CRM',
 };
 
 // KPIs apurados por loja (vêm da Conferência, não de S.vsales) e onde
 // MENOR é melhor — o ranking desses é invertido.
 const KPIS_POR_LOJA = new Set(['desconto_pct', 'cmv_taxa_pct']);
 const isKpiLoja = kpi => KPIS_POR_LOJA.has(kpi);
+// KPI por vendedor que vem do CRM (agenda chamada ÷ agenda do período), não de S.vsales.
+const isKpiCrm  = kpi => kpi === 'crm_envio_pct';
+// Os dois só existem no backend: não dá para montar o ranking rápido no navegador.
+const isKpiBackend = kpi => isKpiLoja(kpi) || isKpiCrm(kpi);
 
 function formatKpiValue(kpi, val) {
   if (val === null || val === undefined) return '—';
   if (kpi === 'vendas')    return 'R$ ' + val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (kpi === 'pa')        return val.toFixed(2);
-  if (kpi === 'pct_meta')  return val.toFixed(1) + '%';
+  if (kpi === 'pct_meta' || isKpiCrm(kpi)) return val.toFixed(1) + '%';
   if (isKpiLoja(kpi))      return val.toFixed(2) + '%';
   return Math.round(val).toLocaleString('pt-BR');
 }
@@ -9041,8 +9047,19 @@ async function calcCampaignRankingLojas(campaign) {
   return data.ranking || [];
 }
 
+// Ranking "% de envio do CRM" — apurado no backend a partir do CRM.
+// Devolve { emp, kpiValue, contatados, publico } já ordenado (maior é melhor).
+async function calcCampaignRankingCrm(campaign) {
+  const data = await apiFetch('GET', `/api/campaigns/${campaign.id}/ranking-crm`);
+  return (data.ranking || []).map(r => ({
+    emp: (S.employees || []).find(e => e.id === r.empId) || { id: r.empId, name: r.nome || '—', board: r.board },
+    kpiValue: r.kpiValue, contatados: r.contatados, publico: r.publico,
+  }));
+}
+
 async function calcCampaignRanking(campaign) {
   if (isKpiLoja(campaign.kpi)) return calcCampaignRankingLojas(campaign);
+  if (isKpiCrm(campaign.kpi))  return calcCampaignRankingCrm(campaign);
 
   const emps = S.employees.filter(e =>
     isVend(e) &&
@@ -9235,7 +9252,9 @@ async function renderCampaignRanking(campaign) {
       ? (r.semCartao
           ? '<span style="color:var(--warn,var(--warn))">⚠ sem dados de cartão</span>'
           : `${fmtBRL(r.vlrLiquido || 0)} de venda líquida`)
-      : store;
+      : isKpiCrm(campaign.kpi)
+        ? `${store} · ${r.contatados} de ${r.publico} clientes chamados`
+        : store;
     return `
       <div class="camp-rank-row">
         <div class="camp-rank-pos">${medal}</div>
@@ -9289,6 +9308,11 @@ function renderCampaignForm(campaign) {
           Este KPI é apurado <strong>por loja</strong> (dados da Conferência), não por vendedor —
           o ranking compara as lojas participantes e <strong>vence a de menor valor</strong>.
         </div>
+        <div class="camp-form-field camp-field-wide" id="campKpiHintCrm"
+             style="${isKpiCrm(campaign?.kpi) ? '' : 'display:none'};font-size:.75rem;color:var(--muted);line-height:1.5">
+          % dos clientes da agenda do CRM (campanhas, aniversário e pós-venda) que o vendedor
+          <strong>chamou</strong> no período — a mesma "agenda realizada" da Pauta. Quem não teve agenda fica de fora.
+        </div>
         <div class="camp-form-field camp-field-wide">
           <label>Abrangência</label>
           <div class="camp-scope-toggle">
@@ -9323,6 +9347,7 @@ function renderCampaignForm(campaign) {
   // Mostra o aviso quando o KPI escolhido é apurado por loja
   document.getElementById('campKpi').addEventListener('change', e => {
     document.getElementById('campKpiHint').style.display = isKpiLoja(e.target.value) ? '' : 'none';
+    document.getElementById('campKpiHintCrm').style.display = isKpiCrm(e.target.value) ? '' : 'none';
   });
 
   // Toggle store selector based on scope
@@ -14724,7 +14749,7 @@ function _openIndevaCampanhasOverlay() {
   );
   // Esta tela ranqueia vendedor a partir de S.vsales; campanha com KPI de loja
   // é apurada no backend e não tem como ser montada aqui.
-  const activeCamps = todasAtivas.filter(c => !isKpiLoja(c.kpi));
+  const activeCamps = todasAtivas.filter(c => !isKpiBackend(c.kpi));
   const soPorLoja   = !activeCamps.length && todasAtivas.length > 0;
 
   const overlay = document.createElement('div');
@@ -14735,7 +14760,7 @@ function _openIndevaCampanhasOverlay() {
       <div class="ig-hdr"><div class="ig-hdr-info"><div class="ig-emp-name">Campanha</div></div><button class="ig-close">✕</button></div>
       <div class="ig-tab-body"><div style="color:var(--muted);text-align:center;padding:2rem;font-size:.9rem">${
         soPorLoja
-          ? 'A campanha ativa é apurada por loja — veja o ranking em Campanhas.'
+          ? 'A campanha ativa é apurada no servidor — veja o ranking em Campanhas.'
           : 'Nenhuma campanha ativa.'
       }</div></div>
     </div>`;

@@ -3003,6 +3003,47 @@ app.get('/api/campaigns/:id/ranking-lojas', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GET /api/campaigns/:id/ranking-crm ────────────────────────────────────
+// Ranking de campanha "% de envio do CRM": quantos % dos clientes da agenda
+// (campanhas, aniversário e pós-venda) cada vendedor chamou no período — a
+// mesma "agenda realizada" da Pauta. Vem do serviço do CRM, por isso é apurada
+// aqui e não a partir de S.vsales. Quem não teve agenda no período fica de fora:
+// 0 de 0 não é 0%.
+app.get('/api/campaigns/:id/ranking-crm', requireAuth, async (req, res) => {
+  try {
+    const id = parseInt(req.params.id);
+    const db = await readDB();
+    const camp = (db.campaigns || []).find(c => c.id === id);
+    if (!camp) return res.status(404).json({ error: 'Campanha não encontrada' });
+    if (camp.kpi !== 'crm_envio_pct') return res.status(400).json({ error: 'KPI da campanha não é do CRM' });
+
+    const board = req.session.user.board;
+    if (board && camp.scope !== 'rede' && !(camp.stores || []).includes(board)) {
+      return res.status(403).json({ error: 'Sem permissão' });
+    }
+
+    const microvix = Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}')).filter(b => b !== 'site');
+    const lojas = camp.scope === 'rede' ? microvix : microvix.filter(b => (camp.stores || []).includes(b));
+    const hoje = todayBRT();
+    if (!lojas.length || camp.startDate > hoje) return res.json({ kpi: camp.kpi, ranking: [] });
+
+    const d = await crmDashboard(lojas, camp.startDate, camp.endDate < hoje ? camp.endDate : hoje);
+    const emps = Object.fromEntries((db.employees || []).map(e => [e.id, e]));
+    const ranking = (d.vendedores || [])
+      .filter(v => v.empId != null && lojas.includes(v.board) && (v.publico || 0) > 0)
+      .map(v => ({
+        empId:      v.empId,
+        board:      v.board,
+        nome:       emps[v.empId]?.apelido || emps[v.empId]?.name || v.nome,
+        publico:    v.publico,
+        contatados: v.contatados || 0,
+        kpiValue:   (v.contatados || 0) / v.publico * 100,
+      }))
+      .sort((a, b) => b.kpiValue - a.kpiValue || b.publico - a.publico);
+    res.json({ kpi: camp.kpi, ranking });
+  } catch (e) { res.status(502).json({ error: 'CRM indisponível: ' + e.message }); }
+});
+
 // ── GET /api/nf-items ─────────────────────────────────────────────────────
 app.get('/api/nf-items', requireAuth, async (req, res) => {
   try {
