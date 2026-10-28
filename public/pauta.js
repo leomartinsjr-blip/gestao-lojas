@@ -449,7 +449,7 @@ function renderCrm() {
   $('cmtCrm').value = S.pauta.comentarios.crm || '';
   const c = S.crm, box = $('crmBox');
   if (!c || c.carregando) { box.innerHTML = '<div class="pa-empty">Carregando os números do CRM…</div>'; $('crmSub').textContent = ''; return; }
-  if (c.erro) { box.innerHTML = `<div class="pa-empty">CRM indisponível agora (${esc(c.erro)}). <a href="#" id="crmTentar" style="color:#58a6ff">Tentar de novo</a></div>`; $('crmTentar').onclick = e => { e.preventDefault(); carregarCrm(); }; return; }
+  if (c.erro) { box.innerHTML = `<div class="pa-empty">CRM indisponível agora (${esc(c.erro)}). <a href="#" id="crmTentar" class="pa-link">Tentar de novo</a></div>`; $('crmTentar').onclick = e => { e.preventDefault(); carregarCrm(); }; return; }
   if (c.semMicrovix) { box.innerHTML = '<div class="pa-empty">Esta loja não vende pelo Microvix, então não tem números no CRM.</div>'; return; }
   if (c.futuro) { box.innerHTML = '<div class="pa-empty">Mês ainda não começou.</div>'; return; }
 
