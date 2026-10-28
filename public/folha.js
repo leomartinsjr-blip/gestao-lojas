@@ -1,14 +1,14 @@
 'use strict';
 
 const BOARDS_INFO = {
-  delrey:     { label: 'DEL REY',    color: '#58A6FF' },
-  minas:      { label: 'MINAS',      color: '#3FB950' },
-  contagem:   { label: 'CONTAGEM',   color: '#D29922' },
-  estacao:    { label: 'ESTAÇÃO',    color: '#F85149' },
-  tommy:      { label: 'TOMMY',      color: '#22D3EE' },
-  lez:        { label: 'LEZ A LEZ',  color: '#F472B6' },
-  site:       { label: 'SITE',       color: '#A78BFA' },
-  escritorio: { label: 'ESCRITÓRIO', color: '#64748B' },
+  delrey:     { label: 'DEL REY',    color: 'var(--col-delrey)' },
+  minas:      { label: 'MINAS',      color: 'var(--col-minas)' },
+  contagem:   { label: 'CONTAGEM',   color: 'var(--col-contagem)' },
+  estacao:    { label: 'ESTAÇÃO',    color: 'var(--col-estacao)' },
+  tommy:      { label: 'TOMMY',      color: 'var(--col-tommy)' },
+  lez:        { label: 'LEZ A LEZ',  color: 'var(--col-lez)' },
+  site:       { label: 'SITE',       color: 'var(--col-site)' },
+  escritorio: { label: 'ESCRITÓRIO', color: 'var(--col-escritorio)' },
 };
 const STORE_BOARDS = Object.keys(BOARDS_INFO);
 
@@ -230,7 +230,7 @@ function rateioSrcFromDom(emp, tipo) {
 }
 
 const _biOf = b => {
-  const bi = BOARDS_INFO[b] || { label: b.toUpperCase(), color: '#8b949e' };
+  const bi = BOARDS_INFO[b] || { label: b.toUpperCase(), color: 'var(--muted)' };
   return AJUDA_BOARD_LABEL[b] ? { ...bi, label: AJUDA_BOARD_LABEL[b] } : bi;
 };
 
@@ -561,22 +561,22 @@ async function loadPeriod() {
       '<div class="fp-empty">Selecione uma loja para ver a folha.</div>';
   } catch(e) {
     document.getElementById('fpPanel').innerHTML =
-      `<div class="fp-empty" style="color:#f85149">${e.message}</div>`;
+      `<div class="fp-empty" style="color:var(--down)">${e.message}</div>`;
   }
 }
 
 // ── Barra de config mensal ─────────────────────────────────────────────────
 function renderMensalBar() {
   document.getElementById('fpMensalBar').innerHTML = `
-    <span style="font-size:.8rem;color:#8b949e">Dias úteis:</span>
+    <span style="font-size:.8rem;color:var(--muted)">Dias úteis:</span>
     <input type="number" id="fpDiasUteis" value="${FP.mensal.diasUteis}" min="1" max="31"
-      style="width:52px;background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:.25rem .4rem;border-radius:5px;font-size:.85rem;text-align:center"
+      style="width:52px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:.25rem .4rem;border-radius:5px;font-size:.85rem;text-align:center"
       onchange="saveMensal()">
-    <span style="font-size:.8rem;color:#8b949e;margin-left:.75rem">Dom./Feriados:</span>
+    <span style="font-size:.8rem;color:var(--muted);margin-left:.75rem">Dom./Feriados:</span>
     <input type="number" id="fpDomingosFeriados" value="${FP.mensal.domingosFeriados}" min="0" max="15"
-      style="width:52px;background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:.25rem .4rem;border-radius:5px;font-size:.85rem;text-align:center"
+      style="width:52px;background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:.25rem .4rem;border-radius:5px;font-size:.85rem;text-align:center"
       onchange="saveMensal()">
-    <span style="font-size:.72rem;color:#484f58;margin-left:.5rem">aplica a todas as lojas do mês</span>`;
+    <span style="font-size:.72rem;color:var(--muted);margin-left:.5rem">aplica a todas as lojas do mês</span>`;
 }
 
 let _mensalTimer;
@@ -619,12 +619,12 @@ function renderValoresLoja() {
   try { aberto = localStorage.getItem('fp.valoresLoja.aberto') === '1'; } catch {}
   document.getElementById('fpValoresLoja').innerHTML = `
     <details style="width:100%"${aberto ? ' open' : ''} ontoggle="try{localStorage.setItem('fp.valoresLoja.aberto',this.open?'1':'0')}catch(e){}">
-      <summary style="cursor:pointer;font-size:.8rem;color:#e6edf3;font-weight:600">Valores do Loja em Ação
-        <span style="font-size:.72rem;color:#484f58;font-weight:400;margin-left:.4rem">R$ por loja · feriado e extensão por dia, os demais por mês · entra no Gerar Folha</span></summary>
+      <summary style="cursor:pointer;font-size:.8rem;color:var(--text);font-weight:600">Valores do Loja em Ação
+        <span style="font-size:.72rem;color:var(--muted);font-weight:400;margin-left:.4rem">R$ por loja · feriado e extensão por dia, os demais por mês · entra no Gerar Folha</span></summary>
       <div style="margin-top:.35rem"></div>
       <div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:.8rem">
-        <thead><tr><th style="text-align:left;color:#8b949e;font-weight:500;padding:.15rem .3rem">Loja</th>
-          ${VALORES_LOJA.map(([, rot, un]) => `<th style="text-align:right;color:#8b949e;font-weight:500;padding:.15rem .3rem">${rot} <span style="color:#484f58;font-size:.7rem">${un}</span></th>`).join('')}</tr></thead>
+        <thead><tr><th style="text-align:left;color:var(--muted);font-weight:500;padding:.15rem .3rem">Loja</th>
+          ${VALORES_LOJA.map(([, rot, un]) => `<th style="text-align:right;color:var(--muted);font-weight:500;padding:.15rem .3rem">${rot} <span style="color:var(--muted);font-size:.7rem">${un}</span></th>`).join('')}</tr></thead>
         <tbody>${lojas.map(b => `<tr><td style="padding:.15rem .3rem;color:${BOARDS_INFO[b].color};font-weight:600;white-space:nowrap">${BOARDS_INFO[b].label}</td>
           ${VALORES_LOJA.map(([k]) => inp(b, k)).join('')}</tr>`).join('')}</tbody>
       </table></div>
@@ -689,7 +689,7 @@ function renderPanel() {
     <div class="fp-panel${enc ? ' fp-panel-encerrada' : ''}">
       <div class="fp-panel-header">
         <span class="fp-panel-title" style="color:${info.color}">${info.label}</span>
-        ${enc ? '<span style="font-size:.72rem;color:#3fb950;margin-left:.5rem">● Encerrada</span>' : '<div style="font-size:.72rem;color:#8b949e;margin-left:.4rem">vendas: Microvix</div>'}
+        ${enc ? '<span style="font-size:.72rem;color:var(--up);margin-left:.5rem">● Encerrada</span>' : '<div style="font-size:.72rem;color:var(--muted);margin-left:.4rem">vendas: Microvix</div>'}
         <div class="fp-panel-actions">${actionBtns}</div>
       </div>
       ${board === 'site' ? '<div id="fpCadSite"></div>' : ''}
@@ -731,24 +731,24 @@ function renderCadastrosSite() {
     FP.folha.site.cadastrosSite = { valor: d.valor, pessoas: d.pessoas, total: d.total, em: new Date().toISOString() };
   }
   const linhas = d.pessoas.map(p => `<div class="fp-fora-row" style="justify-content:space-between">
-      <span style="flex:1;color:#e6edf3;font-size:.82rem">${_esc(p.nome || p.login)}</span>
-      <span style="width:150px;font-size:.75rem;color:#8b949e">${p.novos} novos · ${p.completados} completados</span>
-      <span style="width:90px;font-size:.78rem;color:#8b949e;text-align:right">${p.total} × ${brl(d.valor)}</span>
-      <span style="width:100px;text-align:right;font-weight:700;color:#e6edf3">${brl(p.pagar)}</span>
+      <span style="flex:1;color:var(--text);font-size:.82rem">${_esc(p.nome || p.login)}</span>
+      <span style="width:150px;font-size:.75rem;color:var(--muted)">${p.novos} novos · ${p.completados} completados</span>
+      <span style="width:90px;font-size:.78rem;color:var(--muted);text-align:right">${p.total} × ${brl(d.valor)}</span>
+      <span style="width:100px;text-align:right;font-weight:700;color:var(--text)">${brl(p.pagar)}</span>
     </div>${p.pendentes ? `<div class="fp-fora-hint" style="margin:-.2rem 0 .3rem">${p.pendentes} ainda não contam (falta ativar ou completar na Loja Integrada)</div>` : ''}`).join('');
-  el.innerHTML = `<div class="fp-fora-box" style="margin:.5rem 0 1rem;border-left-color:#a371f7">
+  el.innerHTML = `<div class="fp-fora-box" style="margin:.5rem 0 1rem;border-left-color:var(--col-lez)">
     <div class="fp-fora-head">
-      <span class="fp-fora-title" style="color:#a371f7">Cadastros de produto do site — pago por fora</span>
+      <span class="fp-fora-title" style="color:var(--col-lez)">Cadastros de produto do site — pago por fora</span>
       <span class="fp-fora-note">empresa SITE · não entra na contabilidade</span>
-      <span class="fp-fora-total" style="color:#a371f7">${brl(d.total)}</span>
+      <span class="fp-fora-total" style="color:var(--col-lez)">${brl(d.total)}</span>
     </div>
     <div class="fp-fora-row">
-      <span style="font-size:.78rem;color:#8b949e">Valor por produto (R$)</span>
+      <span style="font-size:.78rem;color:var(--muted)">Valor por produto (R$)</span>
       <input type="number" step="0.01" min="0" value="${d.valor.toFixed(2)}" ${enc ? 'disabled' : ''}
         onchange="salvarValorCadSite(this.value)">
-      <span style="font-size:.72rem;color:#484f58">conta só produto ativo e completo na Loja Integrada (NEXO → Cadastros por pessoa)</span>
+      <span style="font-size:.72rem;color:var(--muted)">conta só produto ativo e completo na Loja Integrada (NEXO → Cadastros por pessoa)</span>
     </div>
-    ${d.erro ? '<div class="fp-fora-empty" style="color:#d29922">O NEXO não respondeu agora — recarregue a folha em instantes.</div>'
+    ${d.erro ? '<div class="fp-fora-empty" style="color:var(--warn)">O NEXO não respondeu agora — recarregue a folha em instantes.</div>'
       : linhas || '<div class="fp-fora-empty">Nenhum produto cadastrado no mês.</div>'}
     ${d.foto && !enc ? '<div class="fp-fora-hint">Mostrando o que foi salvo (o NEXO não respondeu agora).</div>' : ''}
   </div>`;
@@ -768,7 +768,7 @@ function boardEmps(board) {
 }
 
 function buildTotalForm(emps) {
-  if (!emps.length) return '<div style="padding:2rem;color:#8b949e;text-align:center">Nenhum funcionário nesta loja.</div>';
+  if (!emps.length) return '<div style="padding:2rem;color:var(--muted);text-align:center">Nenhum funcionário nesta loja.</div>';
   let totalProv = 0, totalDesc = 0, totalLiq = 0, totalFora = 0;
 
   // ── Acumuladores para o resumo de custos ──────────────────────────────────
@@ -846,15 +846,15 @@ function buildTotalForm(emps) {
     premiacaoNaLojaAll += entry.premiacaoNaLoja || 0;
 
     const _fer = feriasDe(emp);
-    return `<tr style="border-bottom:1px solid #21262d">
-      <td style="padding:.4rem .5rem;color:#e6edf3">${emp.apelido || emp.name.split(' ')[0]}${
+    return `<tr style="border-bottom:1px solid var(--surface2)">
+      <td style="padding:.4rem .5rem;color:var(--text)">${emp.apelido || emp.name.split(' ')[0]}${
         _fer ? ` <span class="fp-ferias-badge">🌴 férias ${fmtDiaMes(_fer.ini)}–${fmtDiaMes(_fer.fim)}</span>` : ''}</td>
-      <td style="padding:.4rem .5rem;color:#8b949e;font-size:.78rem">${emp.cargo}</td>
-      <td style="padding:.4rem .5rem;text-align:right;color:#e6edf3">${brl(entry.proventos||0)}</td>
-      <td style="padding:.4rem .5rem;text-align:right;color:#f85149">${brl(entry.totalDescontos||0)}</td>
-      <td style="padding:.4rem .5rem;text-align:right;color:#3fb950;font-weight:600">${brl(entry.liquido||0)}</td>
-      <td style="padding:.4rem .5rem;text-align:right;color:${_fb.total>0?'#d29922':'#484f58'}">${brl(_fb.total)}</td>
-      <td style="padding:.4rem .5rem;text-align:right;color:#e6edf3;font-weight:600">${brl(r2((entry.liquido||0)+_fb.total))}</td>
+      <td style="padding:.4rem .5rem;color:var(--muted);font-size:.78rem">${emp.cargo}</td>
+      <td style="padding:.4rem .5rem;text-align:right;color:var(--text)">${brl(entry.proventos||0)}</td>
+      <td style="padding:.4rem .5rem;text-align:right;color:var(--down)">${brl(entry.totalDescontos||0)}</td>
+      <td style="padding:.4rem .5rem;text-align:right;color:var(--up);font-weight:600">${brl(entry.liquido||0)}</td>
+      <td style="padding:.4rem .5rem;text-align:right;color:${_fb.total>0?'var(--warn)':'var(--muted)'}">${brl(_fb.total)}</td>
+      <td style="padding:.4rem .5rem;text-align:right;color:var(--text);font-weight:600">${brl(r2((entry.liquido||0)+_fb.total))}</td>
     </tr>`;
   }).join('');
 
@@ -878,17 +878,17 @@ function buildTotalForm(emps) {
   const diff             = r2(totalProvR - totalResumo);
   const confOk           = Math.abs(diff) < 0.02;
 
-  const pct = (v) => vendaLoja > 0 ? ` <span style="color:#8b949e;font-size:.75rem">(${(v/vendaLoja*100).toFixed(1)}%)</span>` : '';
+  const pct = (v) => vendaLoja > 0 ? ` <span style="color:var(--muted);font-size:.75rem">(${(v/vendaLoja*100).toFixed(1)}%)</span>` : '';
 
-  const custRow = (label, valor, color='#e6edf3') =>
-    `<tr style="border-bottom:1px solid #1a1f26">
+  const custRow = (label, valor, color='var(--text)') =>
+    `<tr style="border-bottom:1px solid rgba(var(--border-rgb),.55)">
       <td style="padding:.35rem .5rem;color:${color};font-size:.82rem">${label}</td>
       <td style="padding:.35rem .5rem;text-align:right;color:${color};white-space:nowrap">${brl(valor)}${pct(valor)}</td>
       <td></td>
     </tr>`;
 
   const subRow = (label, valor) =>
-    `<div style="display:flex;justify-content:space-between;font-size:.72rem;color:#8b949e;padding:.1rem .4rem .1rem 1rem"><span>${label}</span><span>${brl(valor)}</span></div>`;
+    `<div style="display:flex;justify-content:space-between;font-size:.72rem;color:var(--muted);padding:.1rem .4rem .1rem 1rem"><span>${label}</span><span>${brl(valor)}</span></div>`;
 
   const fixoSubHtml = fixoSubRows.map(r => subRow(`${r.nome} (${r.cargo})`, r.valor)).join('');
 
@@ -900,59 +900,59 @@ function buildTotalForm(emps) {
   ].filter(Boolean).join('');
 
   const resumo = `
-  <div style="margin-top:1.25rem;border:1px solid #30363d;border-radius:.5rem;overflow:hidden">
-    <div style="background:#161b22;padding:.5rem .75rem;font-size:.72rem;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:.05em;display:flex;justify-content:space-between;align-items:center">
+  <div style="margin-top:1.25rem;border:1px solid var(--border);border-radius:.5rem;overflow:hidden">
+    <div style="background:var(--surface);padding:.5rem .75rem;font-size:.72rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:flex;justify-content:space-between;align-items:center">
       <span>Custo da Folha — Composição</span>
-      ${vendaLoja > 0 ? `<span style="font-weight:400;color:#484f58">Vendas loja: ${brl(vendaLoja)}</span>` : ''}
+      ${vendaLoja > 0 ? `<span style="font-weight:400;color:var(--muted)">Vendas loja: ${brl(vendaLoja)}</span>` : ''}
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:.83rem">
       <tbody>
         ${fixoAll > 0 ? `
-        <tr style="border-bottom:${fixoSubHtml ? '0' : '1px solid #1a1f26'}">
-          <td style="padding:.35rem .5rem;font-size:.82rem;color:#e6edf3">Fixos (salário, pró-labore, quebra caixa)</td>
-          <td style="padding:.35rem .5rem;text-align:right;white-space:nowrap;color:#e6edf3">${brl(fixoAll)}${pct(fixoAll)}</td>
+        <tr style="border-bottom:${fixoSubHtml ? '0' : '1px solid rgba(var(--border-rgb),.55)'}">
+          <td style="padding:.35rem .5rem;font-size:.82rem;color:var(--text)">Fixos (salário, pró-labore, quebra caixa)</td>
+          <td style="padding:.35rem .5rem;text-align:right;white-space:nowrap;color:var(--text)">${brl(fixoAll)}${pct(fixoAll)}</td>
           <td></td>
         </tr>
         ${fixoSubHtml ? `<tr><td colspan="3" style="padding:0 0 .3rem">${fixoSubHtml}</td></tr>` : ''}` : ''}
         ${comVend > 0 ? custRow('Comissão Vendedores (individual)', comVend) : ''}
         ${comSup  > 0 ? custRow('Comissão Supervisor', comSup) : ''}
         ${comLoja > 0 ? custRow('Comissão sobre total da loja (gerência/caixa)', comLoja) : ''}
-        ${gmTotal > 0 ? custRow('Complemento Garantia Mínima', gmTotal, '#f59e0b') : ''}
+        ${gmTotal > 0 ? custRow('Complemento Garantia Mínima', gmTotal, 'var(--warn)') : ''}
         ${totalPremiacoes > 0 ? `
-        <tr style="border-bottom:${premSubHtml ? '0' : '1px solid #1a1f26'}">
-          <td style="padding:.35rem .5rem;font-size:.82rem;color:#e6edf3">Premiações</td>
-          <td style="padding:.35rem .5rem;text-align:right;white-space:nowrap;color:#e6edf3">${brl(totalPremiacoes)}${pct(totalPremiacoes)}</td>
+        <tr style="border-bottom:${premSubHtml ? '0' : '1px solid rgba(var(--border-rgb),.55)'}">
+          <td style="padding:.35rem .5rem;font-size:.82rem;color:var(--text)">Premiações</td>
+          <td style="padding:.35rem .5rem;text-align:right;white-space:nowrap;color:var(--text)">${brl(totalPremiacoes)}${pct(totalPremiacoes)}</td>
           <td></td>
         </tr>
         ${premSubHtml ? `<tr><td colspan="3" style="padding:0 0 .3rem">${premSubHtml}</td></tr>` : ''}` : ''}
         ${ajudaCustoAll > 0 ? custRow('Ajuda de custo', ajudaCustoAll) : ''}
         ${totalFora > 0 ? `
-        <tr style="border-bottom:1px solid #1a1f26">
-          <td style="padding:.35rem .5rem;color:#d29922;font-size:.82rem">(−) Pago por fora (não declarado)</td>
-          <td style="padding:.35rem .5rem;text-align:right;color:#d29922;white-space:nowrap">− ${brl(totalFora)}</td>
+        <tr style="border-bottom:1px solid rgba(var(--border-rgb),.55)">
+          <td style="padding:.35rem .5rem;color:var(--warn);font-size:.82rem">(−) Pago por fora (não declarado)</td>
+          <td style="padding:.35rem .5rem;text-align:right;color:var(--warn);white-space:nowrap">− ${brl(totalFora)}</td>
           <td></td>
         </tr>` : ''}
-        <tr style="border-top:2px solid #30363d;background:#0d1117">
-          <td style="padding:.5rem .5rem;color:#58a6ff;font-weight:700;font-size:.85rem">TOTAL PROVENTOS${totalFora > 0 ? ' (contabilidade)' : ''}</td>
-          <td style="padding:.5rem .5rem;text-align:right;color:#58a6ff;font-weight:700;font-size:.9rem;white-space:nowrap">${brl(totalResumo)}${pct(totalResumo)}</td>
+        <tr style="border-top:2px solid var(--border);background:var(--surface2)">
+          <td style="padding:.5rem .5rem;color:var(--accent);font-weight:700;font-size:.85rem">TOTAL PROVENTOS${totalFora > 0 ? ' (contabilidade)' : ''}</td>
+          <td style="padding:.5rem .5rem;text-align:right;color:var(--accent);font-weight:700;font-size:.9rem;white-space:nowrap">${brl(totalResumo)}${pct(totalResumo)}</td>
           <td style="padding:.5rem .5rem;font-size:.75rem;white-space:nowrap">
             ${confOk
-              ? `<span style="color:#3fb950">✓ confere com proventos</span>`
-              : `<span style="color:#f85149" title="Diferença: ${brl(diff)}">⚠ diferença ${brl(diff)}</span>`}
+              ? `<span style="color:var(--up)">✓ confere com proventos</span>`
+              : `<span style="color:var(--down)" title="Diferença: ${brl(diff)}">⚠ diferença ${brl(diff)}</span>`}
           </td>
         </tr>
         ${totalFora > 0 ? `
-        <tr style="background:#0d1117">
-          <td style="padding:.5rem .5rem;color:#d29922;font-weight:700;font-size:.85rem">TOTAL GERAL (contab. + por fora)</td>
-          <td style="padding:.5rem .5rem;text-align:right;color:#d29922;font-weight:700;font-size:.9rem;white-space:nowrap">${brl(totalBruto)}${pct(totalBruto)}</td>
+        <tr style="background:var(--surface2)">
+          <td style="padding:.5rem .5rem;color:var(--warn);font-weight:700;font-size:.85rem">TOTAL GERAL (contab. + por fora)</td>
+          <td style="padding:.5rem .5rem;text-align:right;color:var(--warn);font-weight:700;font-size:.9rem;white-space:nowrap">${brl(totalBruto)}${pct(totalBruto)}</td>
           <td></td>
         </tr>` : ''}
       </tbody>
     </table>
     ${premiacaoNaLojaAll > 0 ? `
-    <div style="border-top:1px solid #30363d;background:#12151b;padding:.5rem .75rem;display:flex;justify-content:space-between;align-items:center;gap:.75rem">
-      <span style="font-size:.78rem;color:#d29922">Premiação semanal paga pelo caixa da loja <span style="color:#484f58">— já quitada, fora dos proventos acima</span></span>
-      <span style="font-size:.83rem;color:#d29922;font-weight:600;white-space:nowrap">${brl(r2(premiacaoNaLojaAll))}</span>
+    <div style="border-top:1px solid var(--border);background:var(--surface2);padding:.5rem .75rem;display:flex;justify-content:space-between;align-items:center;gap:.75rem">
+      <span style="font-size:.78rem;color:var(--warn)">Premiação semanal paga pelo caixa da loja <span style="color:var(--muted)">— já quitada, fora dos proventos acima</span></span>
+      <span style="font-size:.83rem;color:var(--warn);font-weight:600;white-space:nowrap">${brl(r2(premiacaoNaLojaAll))}</span>
     </div>` : ''}
   </div>`;
 
@@ -960,25 +960,25 @@ function buildTotalForm(emps) {
   <div class="fp-emp-form active" id="empform-total" style="padding:.75rem 0">
     <table style="width:100%;border-collapse:collapse;font-size:.85rem">
       <thead>
-        <tr style="border-bottom:2px solid #30363d">
-          <th style="text-align:left;padding:.35rem .5rem;color:#8b949e;font-size:.73rem;text-transform:uppercase;font-weight:600">Funcionário</th>
-          <th style="text-align:left;padding:.35rem .5rem;color:#8b949e;font-size:.73rem;text-transform:uppercase;font-weight:600">Cargo</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;font-size:.73rem;text-transform:uppercase;font-weight:600">Proventos</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;font-size:.73rem;text-transform:uppercase;font-weight:600">Descontos</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;font-size:.73rem;text-transform:uppercase;font-weight:600">Líquido</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#d29922;font-size:.73rem;text-transform:uppercase;font-weight:600">Por Fora</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#8b949e;font-size:.73rem;text-transform:uppercase;font-weight:600">Total Geral</th>
+        <tr style="border-bottom:2px solid var(--border)">
+          <th style="text-align:left;padding:.35rem .5rem;color:var(--muted);font-size:.73rem;text-transform:uppercase;font-weight:600">Funcionário</th>
+          <th style="text-align:left;padding:.35rem .5rem;color:var(--muted);font-size:.73rem;text-transform:uppercase;font-weight:600">Cargo</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:var(--muted);font-size:.73rem;text-transform:uppercase;font-weight:600">Proventos</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:var(--muted);font-size:.73rem;text-transform:uppercase;font-weight:600">Descontos</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:var(--muted);font-size:.73rem;text-transform:uppercase;font-weight:600">Líquido</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:var(--warn);font-size:.73rem;text-transform:uppercase;font-weight:600">Por Fora</th>
+          <th style="text-align:right;padding:.35rem .5rem;color:var(--muted);font-size:.73rem;text-transform:uppercase;font-weight:600">Total Geral</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
       <tfoot>
-        <tr style="border-top:2px solid #30363d">
-          <td colspan="2" style="padding:.5rem .5rem;color:#8b949e;font-size:.75rem;text-transform:uppercase;font-weight:700">TOTAL DA LOJA</td>
-          <td style="padding:.5rem .5rem;text-align:right;color:#e6edf3;font-weight:700">${brl(r2(totalProv))}</td>
-          <td style="padding:.5rem .5rem;text-align:right;color:#f85149;font-weight:700">${brl(r2(totalDesc))}</td>
-          <td style="padding:.5rem .5rem;text-align:right;color:#3fb950;font-weight:700">${brl(r2(totalLiq))}</td>
-          <td style="padding:.5rem .5rem;text-align:right;color:#d29922;font-weight:700">${brl(totalFora)}</td>
-          <td style="padding:.5rem .5rem;text-align:right;color:#e6edf3;font-weight:700">${brl(r2(totalLiq + totalFora))}</td>
+        <tr style="border-top:2px solid var(--border)">
+          <td colspan="2" style="padding:.5rem .5rem;color:var(--muted);font-size:.75rem;text-transform:uppercase;font-weight:700">TOTAL DA LOJA</td>
+          <td style="padding:.5rem .5rem;text-align:right;color:var(--text);font-weight:700">${brl(r2(totalProv))}</td>
+          <td style="padding:.5rem .5rem;text-align:right;color:var(--down);font-weight:700">${brl(r2(totalDesc))}</td>
+          <td style="padding:.5rem .5rem;text-align:right;color:var(--up);font-weight:700">${brl(r2(totalLiq))}</td>
+          <td style="padding:.5rem .5rem;text-align:right;color:var(--warn);font-weight:700">${brl(totalFora)}</td>
+          <td style="padding:.5rem .5rem;text-align:right;color:var(--text);font-weight:700">${brl(r2(totalLiq + totalFora))}</td>
         </tr>
       </tfoot>
     </table>
@@ -1065,17 +1065,17 @@ function fpOpenCfg(board) {
     const super_ = r2(meta * 1.10 * 1.20);
     const vendas = tipo === 'gerente' ? vendaLoja : sumVendas(emp.id);
     const faixa  = calcFaixa(ecfg, vendas, meta);
-    const faixaColor = {'SEM META':'#8b949e','META 1':'#d29922','META 2':'#3fb950','SUPER META':'#22d3ee','—':'#484f58'};
-    const fc = faixaColor[faixa.label] || '#8b949e';
+    const faixaColor = {'SEM META':'var(--muted)','META 1':'var(--warn)','META 2':'var(--up)','SUPER META':'var(--col-tommy)','—':'var(--muted)'};
+    const fc = faixaColor[faixa.label] || 'var(--muted)';
     return `<tr>
-      <td style="padding:.3rem .5rem;color:#e6edf3">${emp.apelido || emp.name.split(' ')[0]}</td>
-      <td style="padding:.3rem .5rem;color:#8b949e;font-size:.78rem">${emp.cargo}</td>
-      <td style="padding:.3rem .5rem;text-align:right;color:#e6edf3">${brl(meta)}</td>
-      <td style="padding:.3rem .5rem;text-align:right;color:#d29922">${meta > 0 ? brl(meta2) : '—'}</td>
-      <td style="padding:.3rem .5rem;text-align:right;color:#22d3ee">${meta > 0 ? brl(super_) : '—'}</td>
-      <td style="padding:.3rem .5rem;text-align:right;color:#58a6ff">${brl(vendas)}</td>
+      <td style="padding:.3rem .5rem;color:var(--text)">${emp.apelido || emp.name.split(' ')[0]}</td>
+      <td style="padding:.3rem .5rem;color:var(--muted);font-size:.78rem">${emp.cargo}</td>
+      <td style="padding:.3rem .5rem;text-align:right;color:var(--text)">${brl(meta)}</td>
+      <td style="padding:.3rem .5rem;text-align:right;color:var(--warn)">${meta > 0 ? brl(meta2) : '—'}</td>
+      <td style="padding:.3rem .5rem;text-align:right;color:var(--col-tommy)">${meta > 0 ? brl(super_) : '—'}</td>
+      <td style="padding:.3rem .5rem;text-align:right;color:var(--accent)">${brl(vendas)}</td>
       <td style="padding:.3rem .4rem;text-align:center">
-        <span style="font-size:.72rem;padding:.1rem .35rem;border-radius:4px;background:${fc}22;color:${fc};border:1px solid ${fc}44">${faixa.label}</span>
+        <span style="font-size:.72rem;padding:.1rem .35rem;border-radius:4px;background:color-mix(in srgb,${fc} 13%,transparent);color:${fc};border:1px solid color-mix(in srgb,${fc} 27%,transparent)">${faixa.label}</span>
       </td>
     </tr>`;
   }).join('');
@@ -1104,8 +1104,8 @@ function fpOpenCfg(board) {
         <div class="fp-cfg-field"><label>Prêmio Gerente (R$)</label>
           <input type="number" step="0.01" id="cfg-premioGerente" value="${f2(cfg.premioGerente)}">
         </div>
-        <div style="grid-column:1/-1;margin-top:.4rem;padding-top:.7rem;border-top:1px solid #30363d">
-          <div style="font-size:.75rem;color:#8b949e;font-weight:600;margin-bottom:.55rem">Vendedor no regime fixo + comissão</div>
+        <div style="grid-column:1/-1;margin-top:.4rem;padding-top:.7rem;border-top:1px solid var(--border)">
+          <div style="font-size:.75rem;color:var(--muted);font-weight:600;margin-bottom:.55rem">Vendedor no regime fixo + comissão</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:.75rem">
             <div class="fp-cfg-field" style="margin-bottom:0"><label>Salário Fixo (R$)</label>
               <input type="number" step="0.01" id="cfg-salarioFixoVendedor" value="${f2(cfg.salarioFixoVendedor)}">
@@ -1114,17 +1114,17 @@ function fpOpenCfg(board) {
               <input type="number" step="0.01" id="cfg-premioVendedorMisto" value="${f2(cfg.premioVendedorMisto)}">
             </div>
           </div>
-          <span style="font-size:.72rem;color:#484f58;display:block;margin-top:.4rem">aplicado a quem está com "Fixo + comissão?" marcado · valor preenchido no colaborador tem prioridade</span>
+          <span style="font-size:.72rem;color:var(--muted);display:block;margin-top:.4rem">aplicado a quem está com "Fixo + comissão?" marcado · valor preenchido no colaborador tem prioridade</span>
         </div>
-        <div style="grid-column:1/-1;margin-top:.4rem;padding-top:.7rem;border-top:1px solid #30363d">
-          <label style="display:flex;align-items:center;gap:.5rem;font-size:.8rem;color:#e6edf3;cursor:pointer">
+        <div style="grid-column:1/-1;margin-top:.4rem;padding-top:.7rem;border-top:1px solid var(--border)">
+          <label style="display:flex;align-items:center;gap:.5rem;font-size:.8rem;color:var(--text);cursor:pointer">
             <input type="checkbox" id="cfg-premiacaoPagaNaLoja"${premiacaoPagaNaLoja(board) ? ' checked' : ''}>
             Premiação semanal paga pelo caixa da loja
           </label>
-          <span style="font-size:.72rem;color:#484f58;display:block;margin-top:.4rem">a loja quita o prêmio de meta na própria semana · o valor sai dos proventos, do INSS/VT e do líquido, e a folha passa a exibir só para conferência · não afeta o prêmio de loja/balanço nem folha já encerrada</span>
+          <span style="font-size:.72rem;color:var(--muted);display:block;margin-top:.4rem">a loja quita o prêmio de meta na própria semana · o valor sai dos proventos, do INSS/VT e do líquido, e a folha passa a exibir só para conferência · não afeta o prêmio de loja/balanço nem folha já encerrada</span>
         </div>
       </div>
-      <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid #30363d;display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem">
+      <div style="margin-top:1rem;padding-top:.75rem;border-top:1px solid var(--border);display:grid;grid-template-columns:1fr 1fr 1fr;gap:.75rem">
         <div class="fp-cfg-field" style="margin-bottom:0">
           <label>GM Vendedor (R$)</label>
           <input type="number" step="0.01" id="cfg-gm" value="${f2(cfg.garantiaMinima)}">
@@ -1137,25 +1137,25 @@ function fpOpenCfg(board) {
           <label>GM Sub / G.Vend (R$)</label>
           <input type="number" step="0.01" id="cfg-gmSub" value="${f2(cfg.garantiaMinimaSubGerente)}">
         </div>
-        <span style="font-size:.72rem;color:#484f58;grid-column:1/-1">fixo + comissão ≥ garantia mínima</span>
+        <span style="font-size:.72rem;color:var(--muted);grid-column:1/-1">fixo + comissão ≥ garantia mínima</span>
       </div>
     </div>
 
     <div class="fp-modal-content" id="cfg-tab-metas">
       <div style="margin:.6rem 0 .4rem;display:flex;gap:1.5rem;flex-wrap:wrap">
-        <span style="font-size:.8rem;color:#8b949e">Meta loja: <strong style="color:#e6edf3">${brl(metaLoja)}</strong></span>
-        <span style="font-size:.8rem;color:#8b949e">Vendas loja: <strong style="color:#58a6ff">${brl(vendaLoja)}</strong></span>
-        <span style="font-size:.75rem;color:#484f58">META 2 = meta × 1,10 · SUPER META = meta × 1,10 × 1,20</span>
+        <span style="font-size:.8rem;color:var(--muted)">Meta loja: <strong style="color:var(--text)">${brl(metaLoja)}</strong></span>
+        <span style="font-size:.8rem;color:var(--muted)">Vendas loja: <strong style="color:var(--accent)">${brl(vendaLoja)}</strong></span>
+        <span style="font-size:.75rem;color:var(--muted)">META 2 = meta × 1,10 · SUPER META = meta × 1,10 × 1,20</span>
       </div>
       <table style="width:100%;border-collapse:collapse;font-size:.82rem">
-        <thead><tr style="border-bottom:1px solid #30363d">
-          <th style="text-align:left;padding:.3rem .5rem;color:#8b949e">Funcionário</th>
-          <th style="text-align:left;padding:.3rem .5rem;color:#8b949e">Cargo</th>
-          <th style="text-align:right;padding:.3rem .5rem;color:#8b949e">META 1</th>
-          <th style="text-align:right;padding:.3rem .5rem;color:#d29922">META 2</th>
-          <th style="text-align:right;padding:.3rem .5rem;color:#22d3ee">SUPER META</th>
-          <th style="text-align:right;padding:.3rem .5rem;color:#58a6ff">Vendas</th>
-          <th style="text-align:center;padding:.3rem .5rem;color:#8b949e">Faixa</th>
+        <thead><tr style="border-bottom:1px solid var(--border)">
+          <th style="text-align:left;padding:.3rem .5rem;color:var(--muted)">Funcionário</th>
+          <th style="text-align:left;padding:.3rem .5rem;color:var(--muted)">Cargo</th>
+          <th style="text-align:right;padding:.3rem .5rem;color:var(--muted)">META 1</th>
+          <th style="text-align:right;padding:.3rem .5rem;color:var(--warn)">META 2</th>
+          <th style="text-align:right;padding:.3rem .5rem;color:var(--col-tommy)">SUPER META</th>
+          <th style="text-align:right;padding:.3rem .5rem;color:var(--accent)">Vendas</th>
+          <th style="text-align:center;padding:.3rem .5rem;color:var(--muted)">Faixa</th>
         </tr></thead>
         <tbody>${metaRows}</tbody>
       </table>
@@ -1294,7 +1294,7 @@ function buildFeriasBox(emp, e) {
   const invalido = on && fer.ini && fer.fim && fer.ini > fer.fim;
   const resumo = on && prop.diasFerias > 0
     ? `${prop.diasFerias} ${prop.diasFerias === 1 ? 'dia' : 'dias'} de férias · presente ${prop.dias}/${prop.totalDias} dias — fixo e comissão de loja a ${(prop.fator * 100).toFixed(0)}%`
-    : invalido ? '<span style="color:#f85149">início depois do fim — período ignorado</span>'
+    : invalido ? '<span style="color:var(--down)">início depois do fim — período ignorado</span>'
     : on ? 'informe o período para descontar os dias'
     : '';
 
@@ -1371,8 +1371,8 @@ function adiNota(emp) {
   }).join(' · ');
   const atual = r2(FP.folha[FP.board]?.entries?.[emp.id]?.adiantamento ?? total);
   const dif   = Math.abs(atual - total) > 0.005
-    ? `<br><span style="color:#d29922">⚠ folha com ${brl(atual)} — editado à mão</span>` : '';
-  return `<span style="font-size:.7rem;color:#484f58">Loja em Ação: ${det}${dif}</span>`;
+    ? `<br><span style="color:var(--warn)">⚠ folha com ${brl(atual)} — editado à mão</span>` : '';
+  return `<span style="font-size:.7rem;color:var(--muted)">Loja em Ação: ${det}${dif}</span>`;
 }
 
 // Faltas lançadas pelo gerente no Loja em Ação → Dados p/ Folha. Vêm do
@@ -1432,7 +1432,7 @@ function feriadoNota(emp) {
   const d = dadosLojaDe(emp);
   if (!d.feriados.length) return '';
   const v = valoresDe().feriado || 0;
-  return `<span class="fp-field-hint">Loja em Ação: ${faltasTexto(d.feriados)}${v ? ` · ${d.feriados.length} × ${brl(v)}` : ' · <span style="color:#d29922">sem valor no quadro</span>'}</span>`;
+  return `<span class="fp-field-hint">Loja em Ação: ${faltasTexto(d.feriados)}${v ? ` · ${d.feriados.length} × ${brl(v)}` : ' · <span style="color:var(--warn)">sem valor no quadro</span>'}</span>`;
 }
 
 // O valor da falta é sempre manual — como a ajuda de custo, o cálculo não tem
@@ -1667,7 +1667,7 @@ function buildEmpForm(emp, entry) {
 
   const propMes   = proporcaoMes(emp);
   const fatorNota = propMes.fator < 0.999
-    ? ` <span style="font-size:.7rem;color:#d29922">· proporcional: ${propMes.dias}/${propMes.totalDias} dias (${(propMes.fator*100).toFixed(0)}%)</span>`
+    ? ` <span style="font-size:.7rem;color:var(--warn)">· proporcional: ${propMes.dias}/${propMes.totalDias} dias (${(propMes.fator*100).toFixed(0)}%)</span>`
     : '';
 
   const inp = (id, v, extra='') =>
@@ -1691,14 +1691,14 @@ function buildEmpForm(emp, entry) {
            <span class="fp-prem-loja-val">${brl(e.premiacaoNaLoja ?? premiacaoCalculada(emp).premiacaoNaLoja)}</span>
            <span class="fp-prem-loja-tag">pago na loja</span>
          </div>
-         <span style="font-size:.7rem;color:#484f58">${hint}</span></div>`
+         <span style="font-size:.7rem;color:var(--muted)">${hint}</span></div>`
     : `<div class="fp-field"><label>${label}</label>${inp(`fp-premiacao-${emp.id}`, e.premiacao || 0)}
-         <span style="font-size:.7rem;color:#484f58">${hint}</span></div>`;
+         <span style="font-size:.7rem;color:var(--muted)">${hint}</span></div>`;
 
-  const faixaColor = {'SEM META':'#8b949e','META 1':'#d29922','META 2':'#3fb950','SUPER META':'#22d3ee','—':'#484f58'};
+  const faixaColor = {'SEM META':'var(--muted)','META 1':'var(--warn)','META 2':'var(--up)','SUPER META':'var(--col-tommy)','—':'var(--muted)'};
   const faixaBadge = label => {
-    const c = faixaColor[label] || '#8b949e';
-    return `<span style="font-size:.7rem;padding:.1rem .4rem;border-radius:4px;background:${c}22;color:${c};border:1px solid ${c}44;white-space:nowrap">${label}</span>`;
+    const c = faixaColor[label] || 'var(--muted)';
+    return `<span style="font-size:.7rem;padding:.1rem .4rem;border-radius:4px;background:color-mix(in srgb,${c} 13%,transparent);color:${c};border:1px solid color-mix(in srgb,${c} 27%,transparent);white-space:nowrap">${label}</span>`;
   };
 
   const _comLojaRow = () => {
@@ -1717,11 +1717,11 @@ function buildEmpForm(emp, entry) {
       <label>Comissão Loja</label>
       ${inpRO(`fp-vendaLoja-${emp.id}`, vLoja)}
       <span class="fp-times">×</span>
-      <span style="font-size:.85rem;color:#8b949e;padding:.15rem .2rem">${storeFaixa.comPct.toFixed(2)}%</span>
+      <span style="font-size:.85rem;color:var(--muted);padding:.15rem .2rem">${storeFaixa.comPct.toFixed(2)}%</span>
       ${faixaBadge(storeFaixa.label)}
       <span class="fp-equals">=</span>
       ${inp(`fp-comLoja-${emp.id}`, e.comissaoLoja || 0)}
-      <span style="font-size:.7rem;color:#8b949e;margin-left:.3rem">${pctStr}</span>
+      <span style="font-size:.7rem;color:var(--muted);margin-left:.3rem">${pctStr}</span>
     </div>`;
   };
 
@@ -1732,16 +1732,16 @@ function buildEmpForm(emp, entry) {
     const lojas = e.premiacaoLojas || premiacaoLojaPorBoard(emp.id, sBoards);
     if (!lojas.length) return '';
     const total = r2(lojas.reduce((s, l) => s + r2(l.valor), 0));
-    let html = `<div class="fp-field" style="border-top:1px solid #30363d;padding-top:.5rem;margin-top:.25rem">
+    let html = `<div class="fp-field" style="border-top:1px solid var(--border);padding-top:.5rem;margin-top:.25rem">
       <label style="font-weight:600">Premiação da Loja</label></div>`;
     lojas.forEach(lj => {
-      const bi   = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase(), color: '#8b949e' };
+      const bi   = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase(), color: 'var(--muted)' };
       const hint = (lj.semanas || []).length
         ? (lj.semanas || []).map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
         : 'nenhuma semana com meta batida';
       html += `<div class="fp-field">
         <label style="color:${bi.color}">${bi.label} (R$)</label>${inp(`fp-premLoja-${emp.id}-${lj.board}`, lj.valor)}
-        <span style="font-size:.7rem;color:#484f58">${hint}</span></div>`;
+        <span style="font-size:.7rem;color:var(--muted)">${hint}</span></div>`;
     });
     html += `<div class="fp-field fp-field-inline">
       <label style="font-weight:600">Total Premiação</label>
@@ -1757,14 +1757,14 @@ function buildEmpForm(emp, entry) {
     if (!sBoards.length) return '';
     const lojas = ajudaCustoPorBoard(emp.id, ajudaCustoBoards(emp), e);
     const total = somaAjuda(lojas);
-    let html = `<div class="fp-field" style="border-top:1px solid #30363d;padding-top:.5rem;margin-top:.25rem">
+    let html = `<div class="fp-field" style="border-top:1px solid var(--border);padding-top:.5rem;margin-top:.25rem">
       <label style="font-weight:600">Ajuda de Custo</label>
-      <span style="font-size:.7rem;color:#484f58">valor fixo por empresa — repete todo mês</span></div>`;
+      <span style="font-size:.7rem;color:var(--muted)">valor fixo por empresa — repete todo mês</span></div>`;
     lojas.forEach(lj => {
       const bi = _biOf(lj.board);
       html += `<div class="fp-field">
         <label style="color:${bi.color}">${bi.label} (R$)</label>${inp(`fp-ajuda-${emp.id}-${lj.board}`, lj.valor)}
-        ${lj._prev ? '<span style="font-size:.7rem;color:#d29922">repetido do mês anterior</span>' : ''}</div>`;
+        ${lj._prev ? '<span style="font-size:.7rem;color:var(--warn)">repetido do mês anterior</span>' : ''}</div>`;
     });
     html += `<div class="fp-field fp-field-inline">
       <label style="font-weight:600">Total Ajuda de Custo</label>
@@ -1788,7 +1788,7 @@ function buildEmpForm(emp, entry) {
         ? semGerDetC.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
         : semGerCalcC > 0 ? `calculado: ${brl(semGerCalcC)}` : 'nenhuma meta semanal encontrada';
       provRows += `<div class="fp-field"><label>Premiação da Loja (R$)</label>${inp(`fp-premiacaoBalanco-${emp.id}`, e.premiacaoBalanco || 0)}
-        <span style="font-size:.7rem;color:#484f58">${semGerHintC}</span></div>`;
+        <span style="font-size:.7rem;color:var(--muted)">${semGerHintC}</span></div>`;
     }
   } else if (tipo === 'socio') {
     const lojaComissoes = e.lojaComissoes || (emp.supervisedBoards || []).map(b => ({
@@ -1801,22 +1801,22 @@ function buildEmpForm(emp, entry) {
       <div class="fp-field"><label>Pró-Labore (R$)</label>${inp(`fp-proLabore-${emp.id}`, e.proLabore || 0)}${fatorNota}</div>
       <div class="fp-field"><label>Complemento (R$)</label>${inp(`fp-complemento-${emp.id}`, e.complemento || 0)}</div>`;
     lojaComissoes.forEach(lj => {
-      const bi = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase(), color: '#8b949e' };
+      const bi = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase(), color: 'var(--muted)' };
       provRows += `<div class="fp-field fp-field-inline">
         <label style="color:${bi.color};min-width:90px">${bi.label}</label>
         ${inpRO(`fp-supVendas-${emp.id}-${lj.board}`, lj.vendas)}
         <span class="fp-times">×</span>
-        <span style="font-size:.85rem;color:#8b949e;padding:.15rem .2rem">${r2(lj.comissaoPct).toFixed(2)}%</span>
+        <span style="font-size:.85rem;color:var(--muted);padding:.15rem .2rem">${r2(lj.comissaoPct).toFixed(2)}%</span>
         ${faixaBadge(e.faixaLabel || '—')}
         <span class="fp-equals">=</span>
         ${inp(`fp-supCom-${emp.id}-${lj.board}`, lj.comissao)}
       </div>`;
     });
-    provRows += `<div class="fp-field fp-field-inline" style="border-top:1px solid #30363d;padding-top:.5rem;margin-top:.25rem">
+    provRows += `<div class="fp-field fp-field-inline" style="border-top:1px solid var(--border);padding-top:.5rem;margin-top:.25rem">
       <label style="font-weight:600">Total Comissão</label>
       <span></span><span></span><span></span><span></span>
       <span class="fp-total-inline" id="fp-supComTotal-${emp.id}">${brl(e.comissaoTotal||0)}</span>
-      <span style="font-size:.7rem;color:#8b949e;margin-left:.3rem">${pctTotal}</span>
+      <span style="font-size:.7rem;color:var(--muted);margin-left:.3rem">${pctTotal}</span>
     </div>`;
     provRows += _premLojaRows();
     provRows += _ajudaCustoRows();
@@ -1829,22 +1829,22 @@ function buildEmpForm(emp, entry) {
     const pctTotal    = totalMeta > 0 ? `${r2(totalVendas/totalMeta*100).toFixed(1)}% da meta total` : 'sem meta';
     provRows += `<div class="fp-field"><label>Salário Fixo (R$)</label>${inp(`fp-fixo-${emp.id}`, e.fixo)}${fatorNota}</div>`;
     lojaComissoes.forEach(lj => {
-      const bi = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase(), color: '#8b949e' };
+      const bi = BOARDS_INFO[lj.board] || { label: lj.board.toUpperCase(), color: 'var(--muted)' };
       provRows += `<div class="fp-field fp-field-inline">
         <label style="color:${bi.color};min-width:90px">${bi.label}</label>
         ${inpRO(`fp-supVendas-${emp.id}-${lj.board}`, lj.vendas)}
         <span class="fp-times">×</span>
-        <span style="font-size:.85rem;color:#8b949e;padding:.15rem .2rem">${r2(lj.comissaoPct).toFixed(2)}%</span>
+        <span style="font-size:.85rem;color:var(--muted);padding:.15rem .2rem">${r2(lj.comissaoPct).toFixed(2)}%</span>
         ${faixaBadge(e.faixaLabel || '—')}
         <span class="fp-equals">=</span>
         ${inp(`fp-supCom-${emp.id}-${lj.board}`, lj.comissao)}
       </div>`;
     });
-    provRows += `<div class="fp-field fp-field-inline" style="border-top:1px solid #30363d;padding-top:.5rem;margin-top:.25rem">
+    provRows += `<div class="fp-field fp-field-inline" style="border-top:1px solid var(--border);padding-top:.5rem;margin-top:.25rem">
       <label style="font-weight:600">Total Comissão</label>
       <span></span><span></span><span></span><span></span>
       <span class="fp-total-inline" id="fp-supComTotal-${emp.id}">${brl(e.comissaoTotal||0)}</span>
-      <span style="font-size:.7rem;color:#8b949e;margin-left:.3rem">${pctTotal}</span>
+      <span style="font-size:.7rem;color:var(--muted);margin-left:.3rem">${pctTotal}</span>
     </div>`;
     provRows += _premLojaRows();
     provRows += _ajudaCustoRows();
@@ -1870,13 +1870,13 @@ function buildEmpForm(emp, entry) {
         ${faixaBadge(e.faixaLabel || '—')}
         <span class="fp-equals">=</span>
         <span class="fp-total-inline" id="fp-totalCom-${emp.id}">${brl(e.comissaoTotal)}</span>
-        <span style="font-size:.7rem;color:#8b949e;margin-left:.3rem">${pctDisplay}</span>
+        <span style="font-size:.7rem;color:var(--muted);margin-left:.3rem">${pctDisplay}</span>
       </div>
-      <div id="fp-declHint-${emp.id}" style="font-size:.72rem;color:#d29922;padding:0 0 .25rem .2rem"></div>
+      <div id="fp-declHint-${emp.id}" style="font-size:.72rem;color:var(--warn);padding:0 0 .25rem .2rem"></div>
       <div class="fp-split-box">
         <div class="fp-split-title" style="cursor:pointer;user-select:none"
           onclick="(function(el){const c=el.nextElementSibling;const open=c.style.display!=='none';c.style.display=open?'none':'block';el.querySelector('.fp-split-arrow').textContent=open?'▶':'▼';})(this)">
-          <span class="fp-split-arrow">▶</span> divisão para contabilidade${tipo === 'sub' ? ` <span style="font-weight:400;color:#8b949e">(${baseLabel})</span>` : ''}
+          <span class="fp-split-arrow">▶</span> divisão para contabilidade${tipo === 'sub' ? ` <span style="font-weight:400;color:var(--muted)">(${baseLabel})</span>` : ''}
         </div>
         <div style="display:none">
           <div class="fp-field fp-split-row">
@@ -1908,7 +1908,7 @@ function buildEmpForm(emp, entry) {
     const gmSalva = r2(e.gmComplement || 0);
     if (gmMin <= 0 && gmSalva > 0) {
       provRows += `<div class="fp-field"><label>GM (R$)</label>${inp(`fp-gm-${emp.id}`, gmSalva)}
-        <span style="font-size:.72rem;color:#d29922">valor da folha — a regra atual não gera GM para este cargo</span></div>`;
+        <span style="font-size:.72rem;color:var(--warn)">valor da folha — a regra atual não gera GM para este cargo</span></div>`;
     }
     if (gmMin > 0) {
       const gmMinEfetiva = r2(gmMin * propMes.fator);
@@ -1916,10 +1916,10 @@ function buildEmpForm(emp, entry) {
         ? `mín: ${brl(gmMinEfetiva)} (fixo + comissão própria)`
         : `mín: ${brl(gmMinEfetiva)}`;
       const gmNote = propMes.fator < 0.999
-        ? `${gmBase} <span style="color:#d29922">(proporcional: ${propMes.dias}/${propMes.totalDias} dias de ${brl(gmMin)})</span>`
+        ? `${gmBase} <span style="color:var(--warn)">(proporcional: ${propMes.dias}/${propMes.totalDias} dias de ${brl(gmMin)})</span>`
         : gmBase;
       provRows += `<div class="fp-field"><label>GM (R$)</label>${inp(`fp-gm-${emp.id}`, e.gmComplement)}
-        <span style="font-size:.72rem;color:#8b949e">${gmNote}</span></div>`;
+        <span style="font-size:.72rem;color:var(--muted)">${gmNote}</span></div>`;
     }
 
     if (tipo === 'gerente') {
@@ -1946,7 +1946,7 @@ function buildEmpForm(emp, entry) {
           ? semGerDet2.map(s => `sem. ${s.label}: ${brl(s.valor)}`).join(' · ')
           : semGerCalc2 > 0 ? `calculado: ${brl(semGerCalc2)}` : 'nenhuma meta semanal encontrada';
         provRows += `<div class="fp-field"><label>Premiação da Loja (R$)</label>${inp(`fp-premiacaoBalanco-${emp.id}`, e.premiacaoBalanco || 0)}
-          <span style="font-size:.7rem;color:#484f58">${semGerHint2}</span></div>`;
+          <span style="font-size:.7rem;color:var(--muted)">${semGerHint2}</span></div>`;
       }
     } else {
       const semDetalhe = FP.premiacaoSemanalDetalhe[emp.id] || [];
@@ -1995,7 +1995,7 @@ function buildEmpForm(emp, entry) {
 
   return `
   <div class="fp-emp-form active${encEmp ? ' fp-emp-encerrada' : ''}" id="empform-${emp.id}">
-    <div style="font-size:.75rem;color:#8b949e;margin-bottom:.75rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
+    <div style="font-size:.75rem;color:var(--muted);margin-bottom:.75rem;display:flex;align-items:center;gap:.75rem;flex-wrap:wrap">
       <span>${emp.name} · ${emp.cargo}${ecfg.inssRate ? ` · INSS ${ecfg.inssRate}%` : ''}${ecfg.vtRate ? ` · VT ${ecfg.vtRate}%` : ''}${emp.banco ? ` · Banco ${emp.banco} / Cta ${emp.conta||'—'}` : ''}</span>
       ${naoRegistrado(emp) ? '<span class="fp-nao-reg">Funcionário não registrado — sem data do contrato de admissão</span>' : ''}
       ${headBtns}
@@ -2015,7 +2015,7 @@ function buildEmpForm(emp, entry) {
         ${descRows}
         <div class="fp-total-row">
           <label>TOTAL DESCONTOS</label>
-          <span class="fp-total-val" style="color:#f85149" id="val-desc-${emp.id}">${brl(e.totalDescontos)}</span>
+          <span class="fp-total-val" style="color:var(--down)" id="val-desc-${emp.id}">${brl(e.totalDescontos)}</span>
         </div>
       </div>
     </div>
@@ -2032,15 +2032,15 @@ function buildEmpForm(emp, entry) {
     <div class="fp-liquido-bar">
       <div>
         <div class="fp-liquido-label">LÍQUIDO A RECEBER</div>
-        <div style="font-size:.72rem;color:#8b949e" id="liquido-note-${emp.id}"></div>
-        ${emp.banco?`<div style="font-size:.72rem;color:#8b949e">Banco ${emp.banco} · Cta ${emp.conta||'—'}</div>`:''}
+        <div style="font-size:.72rem;color:var(--muted)" id="liquido-note-${emp.id}"></div>
+        ${emp.banco?`<div style="font-size:.72rem;color:var(--muted)">Banco ${emp.banco} · Cta ${emp.conta||'—'}</div>`:''}
       </div>
       <span class="fp-liquido-val" id="val-liquido-${emp.id}">${brl(e.liquido)}</span>
     </div>
     <div class="fp-geral-bar" id="geral-bar-${emp.id}" style="display:none">
       <div>
         <div class="fp-geral-label">TOTAL GERAL A RECEBER</div>
-        <div style="font-size:.72rem;color:#484f58" id="geral-detail-${emp.id}"></div>
+        <div style="font-size:.72rem;color:var(--muted)" id="geral-detail-${emp.id}"></div>
       </div>
       <span class="fp-geral-val" id="val-totalgeral-${emp.id}">${brl(e.liquido)}</span>
     </div>
@@ -2052,12 +2052,12 @@ function buildEmpForm(emp, entry) {
 function buildEmpCfgSection(emp, ecfg, tipo) {
   const hasFolha = Object.keys(FP.empConfig[emp.id] || {}).length > 0;
   const src = hasFolha
-    ? '<span style="color:#3fb950">● valores da folha</span>'
-    : '<span style="color:#484f58">valores do cadastro</span>';
+    ? '<span style="color:var(--up)">● valores da folha</span>'
+    : '<span style="color:var(--muted)">valores do cadastro</span>';
 
   const inp = (id, v) =>
     `<input type="number" step="0.01" id="${id}" value="${r2(v).toFixed(2)}"
-      style="width:88px;background:#21262d;border:1px solid #30363d;color:#e6edf3;
+      style="width:88px;background:var(--surface2);border:1px solid var(--border);color:var(--text);
              padding:.2rem .4rem;border-radius:5px;font-size:.82rem;text-align:right">`;
 
   const row = (lbl, id, v) =>
@@ -2101,7 +2101,7 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
         ? row('Pró-Labore (R$)', `ec-salarioFixo-${emp.id}`, ecfg.salarioFixo) : '') +
       (tipo === 'vendedor'
         ? `<div class="fp-emp-cfg-row" title="Deixe 0 para usar o Salário Fixo cadastrado na loja (Configurar → Vendedor no regime fixo + comissão)">
-             <label>Salário Fixo (R$) <span style="color:#484f58;font-weight:400">0 = usa o da loja</span></label>
+             <label>Salário Fixo (R$) <span style="color:var(--muted);font-weight:400">0 = usa o da loja</span></label>
              ${inp(`ec-salarioFixo-${emp.id}`, ecfg.salarioFixo)}
            </div>` : '') +
       row('INSS (%)',           `ec-inssRate-${emp.id}`,        ecfg.inssRate) +
@@ -2112,7 +2112,7 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
   const chkPremiaoLoja = `<div class="fp-emp-cfg-row fp-emp-cfg-row--check">
     <label>Prêmio da loja?</label>
     <input type="checkbox" id="ec-recebePremiaoLoja-${emp.id}"${ecfg.recebePremiaoLoja ? ' checked' : ''}
-      style="width:16px;height:16px;accent-color:#3fb950;cursor:pointer">
+      style="width:16px;height:16px;accent-color:var(--up);cursor:pointer">
   </div>` + row('Valor prêm. loja/sem. (R$)', `ec-premioLojaValor-${emp.id}`, ecfg.premioLojaValor);
 
   // Vendedor pode ser comissionista puro (com garantia mínima) ou fixo + comissão
@@ -2120,7 +2120,7 @@ function buildEmpCfgSection(emp, ecfg, tipo) {
     ? `<div class="fp-emp-cfg-row fp-emp-cfg-row--check" title="Paga salário fixo + comissão. Sem complemento de garantia mínima.">
         <label>Fixo + comissão?</label>
         <input type="checkbox" id="ec-vendedorComFixo-${emp.id}"${ecfg.vendedorComFixo ? ' checked' : ''}
-          style="width:16px;height:16px;accent-color:#3fb950;cursor:pointer">
+          style="width:16px;height:16px;accent-color:var(--up);cursor:pointer">
       </div>`
     : '';
 
@@ -2222,11 +2222,11 @@ async function fpClearEmpCfg(empId) {
 function buildExtraRows(empId, extras, type) {
   return extras.map((ex,i) => {
     const isPrev = !!ex._prev, isLoja = !!ex._loja;
-    const rowStyle = isPrev ? 'border-left:2px solid #d29922;padding-left:.4rem;'
-      : isLoja ? 'border-left:2px solid #388bfd;padding-left:.4rem;' : '';
+    const rowStyle = isPrev ? 'border-left:2px solid var(--warn);padding-left:.4rem;'
+      : isLoja ? 'border-left:2px solid var(--accent);padding-left:.4rem;' : '';
     const hint = isPrev
-      ? `<span title="Sugestão do mês anterior" style="font-size:.68rem;color:#d29922;white-space:nowrap">↩ mês ant.</span>`
-      : isLoja ? `<span title="Lançado no Loja em Ação → Dados p/ Folha" style="font-size:.68rem;color:#58a6ff;white-space:nowrap">Loja em Ação</span>`
+      ? `<span title="Sugestão do mês anterior" style="font-size:.68rem;color:var(--warn);white-space:nowrap">↩ mês ant.</span>`
+      : isLoja ? `<span title="Lançado no Loja em Ação → Dados p/ Folha" style="font-size:.68rem;color:var(--accent);white-space:nowrap">Loja em Ação</span>`
       : '';
     return `<div class="fp-extra-row" style="${rowStyle}">
       ${hint}
@@ -2248,7 +2248,7 @@ function buildForaRows(empId, fora, tipo, temFixo = false) {
     return `<div class="fp-fora-row">
       <input type="text" placeholder="Descrição (ex.: complemento comissão)" value="${f.nome||''}"
         onchange="onForaField(${empId},${i},'nome',this.value)">
-      <span style="font-size:.7rem;color:#8b949e">abate de</span>
+      <span style="font-size:.7rem;color:var(--muted)">abate de</span>
       <select onchange="onForaField(${empId},${i},'origem',this.value);onForaChange(${empId})">
         ${Object.entries(opts).map(([k,l]) =>
           `<option value="${k}"${k===org?' selected':''}>${l}</option>`).join('')}
@@ -2376,7 +2376,7 @@ function recalc(empId) {
     if (declEl) {
       declEl.innerHTML = fb.com > 0
         ? `↳ contabilidade: <strong>${brl(comDecl)}</strong> · por fora: <strong>${brl(fb.com)}</strong>` +
-          (comDecl < 0 ? ` <span style="color:#f85149">⚠ por fora maior que a comissão</span>` : '')
+          (comDecl < 0 ? ` <span style="color:var(--down)">⚠ por fora maior que a comissão</span>` : '')
         : '';
     }
 
@@ -2385,8 +2385,8 @@ function recalc(empId) {
       const soma = r2(comContab + dsrVal + premioVal);
       const ok   = Math.abs(soma - baseContab) < 0.02;
       checkEl.innerHTML = ok
-        ? `<span style="color:#3fb950;font-size:.75rem">✓ ${brl(comContab)} + ${brl(dsrVal)} + ${brl(premioVal)} = ${brl(baseContab)}</span>`
-        : `<span style="color:#f85149;font-size:.75rem">⚠ soma ${brl(soma)} ≠ ${brl(baseContab)}</span>`;
+        ? `<span style="color:var(--up);font-size:.75rem">✓ ${brl(comContab)} + ${brl(dsrVal)} + ${brl(premioVal)} = ${brl(baseContab)}</span>`
+        : `<span style="color:var(--down);font-size:.75rem">⚠ soma ${brl(soma)} ≠ ${brl(baseContab)}</span>`;
     }
 
     proventos = r2(g(`fp-fixo-${empId}`) + comTotal + comLoja + g(`fp-gm-${empId}`)
@@ -3177,6 +3177,6 @@ let _toast;
 function toast(msg, err, ms = 3000) {
   const el = document.getElementById('fpToast');
   el.textContent = msg; el.style.display = 'block';
-  el.style.borderColor = err === 'warn' ? '#d29922' : err ? '#f85149' : '#3fb950';
+  el.style.borderColor = err === 'warn' ? 'var(--warn)' : err ? 'var(--down)' : 'var(--up)';
   clearTimeout(_toast); _toast = setTimeout(()=>el.style.display='none', ms);
 }

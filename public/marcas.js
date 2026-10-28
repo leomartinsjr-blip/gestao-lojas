@@ -1,12 +1,12 @@
 // ── Vendas por Marca / Setor ─────────────────────────────────────────────────
 const STORE_BOARDS = {
-  delrey:   { label: 'DEL REY',   color: '#58A6FF' },
-  minas:    { label: 'MINAS',     color: '#3FB950' },
-  contagem: { label: 'CONTAGEM',  color: '#D29922' },
-  estacao:  { label: 'ESTAÇÃO',   color: '#F85149' },
-  tommy:    { label: 'TOMMY',     color: '#22D3EE' },
-  lez:      { label: 'LEZ A LEZ', color: '#F472B6' },
-  site:     { label: 'SITE',      color: '#A78BFA' },
+  delrey:   { label: 'DEL REY',   color: 'var(--col-delrey)' },
+  minas:    { label: 'MINAS',     color: 'var(--col-minas)' },
+  contagem: { label: 'CONTAGEM',  color: 'var(--col-contagem)' },
+  estacao:  { label: 'ESTAÇÃO',   color: 'var(--col-estacao)' },
+  tommy:    { label: 'TOMMY',     color: 'var(--col-tommy)' },
+  lez:      { label: 'LEZ A LEZ', color: 'var(--col-lez)' },
+  site:     { label: 'SITE',      color: 'var(--col-site)' },
 };
 
 const fBRL = v => 'R$ ' + Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -34,12 +34,26 @@ function _hideAltViews() {
   $('tkResult').innerHTML = '';
 }
 
+// A caixa de estado ("Selecione o período…", carregando, vazio) e o erro são da
+// visão de marca/setor: nas visões de vendedor e ticket ficavam em cima do resultado.
+function _stateBoxNaVisao(outraVisao) {
+  const box = $('stateBox'), err = $('errorBox');
+  if (outraVisao) {
+    if (!('antes' in box.dataset)) { box.dataset.antes = box.style.display; err.dataset.antes = err.style.display; }
+    box.style.display = 'none'; err.style.display = 'none';
+  } else if ('antes' in box.dataset) {
+    box.style.display = box.dataset.antes; err.style.display = err.dataset.antes || 'none';
+    delete box.dataset.antes; delete err.dataset.antes;
+  }
+}
+
 function setVendedorView(active) {
   $('mxMainControls').style.display = active ? 'none' : 'contents';
   $('vvControls').style.display     = active ? 'flex' : 'none';
   $('tkControls').style.display     = 'none';
   $('summaryStrip').style.display   = active ? 'none' : ($('summaryStrip').dataset.wasVisible === '1' ? '' : 'none');
   $('brandList').style.display      = active ? 'none' : '';
+  _stateBoxNaVisao(active);
   $('vvResult').style.display       = active ? ''     : 'none';
   $('tkResult').style.display       = 'none';
   if (!active) { $('vvResult').innerHTML = ''; }
@@ -51,6 +65,7 @@ function setTicketView(active) {
   $('vvControls').style.display     = 'none';
   $('summaryStrip').style.display   = active ? 'none' : ($('summaryStrip').dataset.wasVisible === '1' ? '' : 'none');
   $('brandList').style.display      = active ? 'none' : '';
+  _stateBoxNaVisao(active);
   $('tkResult').style.display       = active ? ''     : 'none';
   $('vvResult').style.display       = 'none';
   if (!active) { $('tkResult').innerHTML = ''; }
@@ -187,7 +202,7 @@ async function fetchVendedor() {
     renderVendedor(data);
     $('vvXlsBtn').style.display = '';
   } catch (e) {
-    $('vvResult').innerHTML = `<div class="mx-error">${e.message}</div>`;
+    $('vvResult').innerHTML = `<div class="mx-error">${_esc(e.message)}</div>`;
   } finally {
     btn.disabled = false;
   }
@@ -201,15 +216,10 @@ function renderVendedor(data) {
     return;
   }
 
-  let html = `<table style="width:100%;border-collapse:collapse;font-size:.82rem">
-    <thead><tr style="background:#0d1117">
-      <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Loja</th>
-      <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Vendedor</th>
-      <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Marca</th>
-      <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Código</th>
-      <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Descrição</th>
-      <th style="text-align:right;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d;width:45px">Qtd</th>
-      <th style="text-align:right;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d;width:110px">Valor Líq.</th>
+  let html = `<div class="mx-card"><div class="mx-scroll"><table class="mx-t">
+    <thead><tr>
+      <th>Loja</th><th>Vendedor</th><th>Marca</th><th>Código</th><th>Descrição</th>
+      <th class="r" style="width:45px">Qtd</th><th class="r" style="width:120px">Valor líq.</th>
     </tr></thead><tbody>`;
 
   let prevLoja = null, prevVend = null;
@@ -218,34 +228,27 @@ function renderVendedor(data) {
     const isNewVend = isNewLoja || row.vendedor !== prevVend;
 
     if (isNewLoja) {
-      html += `<tr style="background:#161b22">
-        <td colspan="7" style="padding:.55rem .7rem;font-weight:800;font-size:.78rem;color:#58a6ff;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid #30363d">${row.loja}</td>
-      </tr>`;
+      html += `<tr class="vv-loja"><td colspan="7">${_esc(row.loja)}</td></tr>`;
       prevLoja = row.loja; prevVend = null;
     }
     if (isNewVend) {
-      html += `<tr style="background:#0f1419">
-        <td></td>
-        <td colspan="6" style="padding:.45rem .6rem;font-weight:700;color:#e6edf3;border-bottom:1px solid #1a1f26">
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#8b949e" stroke-width="2" style="margin-right:5px;vertical-align:middle"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
-          ${row.vendedor}
-        </td>
-      </tr>`;
+      html += `<tr class="vv-vend"><td></td><td colspan="6">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>${_esc(row.vendedor)}
+        </td></tr>`;
       prevVend = row.vendedor;
     }
 
-    html += `<tr style="border-bottom:1px solid #1a1f26" onmouseover="this.style.background='#1c2128'" onmouseout="this.style.background=''">
-      <td></td>
-      <td></td>
-      <td style="padding:.38rem .6rem;color:#8b949e;font-size:.78rem">${row.marca}</td>
-      <td style="padding:.38rem .6rem;color:#8b949e;font-size:.78rem">${row.cod || '—'}</td>
-      <td style="padding:.38rem .6rem;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${row.desc}">${row.desc}</td>
-      <td style="padding:.38rem .6rem;text-align:right;font-variant-numeric:tabular-nums">${row.qty}</td>
-      <td style="padding:.38rem .6rem;text-align:right;font-weight:700;color:#58a6ff;font-variant-numeric:tabular-nums">${fmtR(row.venda_total)}</td>
+    html += `<tr class="vv-item">
+      <td></td><td></td>
+      <td>${_esc(row.marca)}</td>
+      <td class="mx-num">${_esc(row.cod || '—')}</td>
+      <td class="vv-desc" title="${_esc(row.desc)}">${_esc(row.desc)}</td>
+      <td class="r mx-num">${row.qty}</td>
+      <td class="r mx-num" style="font-weight:600;color:var(--text)">${fmtR(row.venda_total)}</td>
     </tr>`;
   }
 
-  html += '</tbody></table>';
+  html += '</tbody></table></div></div>';
   $('vvResult').innerHTML = html;
 }
 
@@ -295,7 +298,7 @@ async function fetchTicket() {
     renderTicket(_tkData);
     if (_tkData.vendas?.length) $('tkXlsBtn').style.display = '';
   } catch (e) {
-    $('tkResult').innerHTML = `<div class="mx-state" style="color:#ef4444">Erro: ${e.message}</div>`;
+    $('tkResult').innerHTML = `<div class="mx-error">Erro: ${_esc(e.message)}</div>`;
   } finally {
     btn.disabled = false;
   }
@@ -306,10 +309,16 @@ const LOJA_LABEL_MX = {
   tommy:'Tommy', lez:'Lez a Lez', site:'Site', surfers:'Total Surfers',
 };
 
+// Cor da loja = a mesma tarja do painel (tokens --col-* do style.css)
+const LOJA_COR_MX = {
+  delrey:'var(--col-delrey)', minas:'var(--col-minas)', contagem:'var(--col-contagem)', estacao:'var(--col-estacao)',
+  tommy:'var(--col-tommy)', lez:'var(--col-lez)', site:'var(--col-site)', surfers:'var(--col-surfers)',
+};
+
 function renderTicket(data) {
   const fmtD = s => s ? s.slice(8,10)+'/'+s.slice(5,7)+'/'+s.slice(0,4) : '—';
   const fmtR = v => 'R$ ' + (+v||0).toLocaleString('pt-BR', {minimumFractionDigits:2, maximumFractionDigits:2});
-  const esc  = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const esc  = _esc;
 
   const vendas = data.vendas || [];
   if (!vendas.length) {
@@ -317,116 +326,93 @@ function renderTicket(data) {
     return;
   }
 
+  const forma = f => `${esc(f.forma)}${f.bandeira?' · '+esc(f.bandeira):''}${f.parcelas>1?' · '+f.parcelas+'x':''}`;
+
   const rows = vendas.map((v, idx) => {
-    const formasChips = (v.formas||[]).map(f =>
-      `<span style="background:#21262d;border:1px solid #30363d;border-radius:4px;padding:2px 7px;font-size:.73rem;white-space:nowrap">${esc(f.forma)}${f.bandeira?' · '+esc(f.bandeira):''}${f.parcelas>1?' · '+f.parcelas+'x':''} <strong>${fmtR(f.valor)}</strong></span>`
-    ).join(' ');
-    const lojaLabel = LOJA_LABEL_MX[v.board] || esc(v.board||'');
+    const formasChips = (v.formas||[]).map(f => `<span class="tk-forma">${forma(f)} <b>${fmtR(f.valor)}</b></span>`).join('');
+    const lojaLabel = LOJA_LABEL_MX[v.board] || v.board || '';
     const descVal = v.desconto?.valor||0;
     const itens = v.itens || [];
-    const hasItens = itens.length > 0;
-    const zebra = idx%2===1 ? 'background:#0d1117' : '';
 
-    // Linha de detalhe (accordion)
-    const formasBlock = (v.formas||[]).map(f =>
-      `<span style="background:#21262d;border:1px solid #30363d;border-radius:6px;padding:4px 12px;font-size:.8rem">${esc(f.forma)}${f.bandeira?' · '+esc(f.bandeira):''}${f.parcelas>1?' · '+f.parcelas+'x':''} <strong>${fmtR(f.valor)}</strong></span>`
-    ).join('');
-
-    const itensBlock = !hasItens ? '<div style="color:#8b949e;font-size:.82rem;padding:.5rem 0">Sem itens detalhados.</div>' :
-      `<table style="width:100%;border-collapse:collapse;font-size:.78rem;margin-top:.5rem">
-        <thead><tr style="background:#060a0f">
-          <th style="text-align:left;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d">Produto</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:40px">Qtd</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:88px">Tabela</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:88px">Promo</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:88px">Bruto</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:78px">Desc.</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:42px">%</th>
-          <th style="text-align:right;padding:.35rem .5rem;color:#6b7280;border-bottom:1px solid #21262d;width:90px">Líquido</th>
+    const itensBlock = !itens.length ? '<div class="tk-sem">Sem itens detalhados.</div>' :
+      `<table class="tk-it">
+        <thead><tr>
+          <th>Produto</th><th style="width:40px">Qtd</th><th style="width:92px">Tabela</th><th style="width:92px">Promo</th>
+          <th style="width:92px">Bruto</th><th style="width:82px">Desc.</th><th style="width:48px">%</th><th style="width:96px">Líquido</th>
         </tr></thead>
-        <tbody>${itens.map((it, i) => {
+        <tbody>${itens.map(it => {
           const liq = it.vlrLiquido ?? (it.vlrBruto - it.vlrDesconto);
           const vlrLiqUnit = it.quantidade > 0 ? liq / it.quantidade : liq;
           const baseDesc = (it.emPromocao && it.precoPromocao) ? it.precoPromocao : it.vlrUnitario;
           const percDesc = baseDesc > 0 ? ((baseDesc - vlrLiqUnit) / baseDesc * 100) : 0;
           const nome = it.nome || it.descricao || it.cod_produto || '';
           const tags = [
-            it.cod_produto ? `<span style="background:#1a1f28;border-radius:3px;padding:1px 5px;font-size:.67rem;color:#6b7280">${esc(it.cod_produto)}</span>` : '',
-            it.referencia  ? `<span style="background:#1a1f28;border-radius:3px;padding:1px 5px;font-size:.67rem;color:#6b7280">Ref ${esc(it.referencia)}</span>` : '',
-            it.marca       ? `<span style="background:#162032;border-radius:3px;padding:1px 5px;font-size:.67rem;color:#60a5fa">${esc(it.marca)}</span>` : '',
-            it.setor       ? `<span style="background:#1a2a1a;border-radius:3px;padding:1px 5px;font-size:.67rem;color:#6ee7b7">${esc(it.setor)}</span>` : '',
-          ].filter(Boolean).join(' ');
-          const zb = i%2===1 ? 'background:#060a0f' : '';
-          const promoCell = it.emPromocao && it.precoPromocao
-            ? `<span style="color:#2dd4bf;font-weight:700">${fmtR(it.precoPromocao)}</span>` : '—';
-          return `<tr style="${zb}">
-            <td style="padding:.4rem .5rem">
-              <div style="font-weight:700;font-size:.85rem;color:#e6edf3;letter-spacing:.01em">${esc(nome)}</div>
-              ${tags ? `<div style="margin-top:3px;display:flex;flex-wrap:wrap;gap:3px">${tags}</div>` : ''}
+            it.referencia  ? `<span class="tk-tag">Ref ${esc(it.referencia)}</span>` : '',
+            it.cod_produto ? `<span class="tk-tag">${esc(it.cod_produto)}</span>` : '',
+            it.marca       ? `<span class="tk-tag marca">${esc(it.marca)}</span>` : '',
+            it.setor       ? `<span class="tk-tag setor">${esc(it.setor)}</span>` : '',
+          ].filter(Boolean).join('');
+          const promoCell = it.emPromocao && it.precoPromocao ? `<span class="tk-promo">${fmtR(it.precoPromocao)}</span>` : '<span class="mx-fraco">—</span>';
+          return `<tr>
+            <td>
+              <div><span class="tk-prod">${esc(nome)}</span>${it.cor ? `<span class="tk-cor">${esc(it.cor)}</span>` : ''}</div>
+              ${tags ? `<div class="tk-tags">${tags}</div>` : ''}
             </td>
-            <td style="padding:.3rem .5rem;text-align:right">${it.quantidade}</td>
-            <td style="padding:.3rem .5rem;text-align:right">${fmtR(it.vlrUnitario||0)}</td>
-            <td style="padding:.3rem .5rem;text-align:right">${promoCell}</td>
-            <td style="padding:.3rem .5rem;text-align:right">${fmtR(it.vlrBruto||0)}</td>
-            <td style="padding:.3rem .5rem;text-align:right;color:#DC2626">${it.vlrDesconto>0?fmtR(it.vlrDesconto):'—'}</td>
-            <td style="padding:.3rem .5rem;text-align:right;color:#DC2626;font-size:.71rem">${percDesc>0.05?percDesc.toFixed(1)+'%':'—'}</td>
-            <td style="padding:.3rem .5rem;text-align:right;font-weight:700">${fmtR(liq)}</td>
+            <td>${it.quantidade}</td>
+            <td>${fmtR(it.vlrUnitario||0)}</td>
+            <td>${promoCell}</td>
+            <td>${fmtR(it.vlrBruto||0)}</td>
+            <td class="${it.vlrDesconto>0?'mx-neg':'mx-fraco'}">${it.vlrDesconto>0?fmtR(it.vlrDesconto):'—'}</td>
+            <td class="${percDesc>0.05?'mx-neg':'mx-fraco'}">${percDesc>0.05?percDesc.toFixed(1)+'%':'—'}</td>
+            <td style="font-weight:600;color:var(--text)">${fmtR(liq)}</td>
           </tr>`;
         }).join('')}</tbody>
       </table>`;
 
     return `
-    <tr class="tk-row" data-idx="${idx}" style="cursor:pointer;${zebra};border-top:1px solid #21262d">
-      <td style="padding:.4rem .35rem;width:18px;color:#4b5563;font-size:.75rem">▶</td>
-      <td style="padding:.4rem .6rem;font-weight:700;white-space:nowrap">${fmtD(v.data)}</td>
-      <td style="padding:.4rem .6rem;color:#8b949e;white-space:nowrap">${esc(v.hora||'—')}</td>
-      <td style="padding:.4rem .6rem;font-family:monospace;font-size:.78rem">${esc(v.doc)}</td>
-      <td style="padding:.4rem .6rem;font-size:.8rem;color:#8b949e">${esc(lojaLabel)}</td>
-      <td style="padding:.4rem .6rem">${esc(v.vendedor||'—')}</td>
-      <td style="padding:.4rem .6rem"><div style="display:flex;gap:4px;flex-wrap:wrap">${formasChips}</div></td>
-      <td style="padding:.4rem .6rem;text-align:right;color:#DC2626;font-weight:700">${descVal>0?fmtR(descVal):'<span style="color:#374151">—</span>'}</td>
-      <td style="padding:.4rem .6rem;text-align:right;font-weight:800">${fmtR(v.valorTotal)}</td>
+    <tr class="tk-row" data-idx="${idx}">
+      <td class="tk-chev"><span>▶</span></td>
+      <td class="tk-data">${fmtD(v.data)}</td>
+      <td class="tk-hora mx-num">${esc(v.hora||'—')}</td>
+      <td class="tk-doc">${esc(v.doc)}</td>
+      <td><span class="tk-loja"><span class="tk-tarja" style="background:${LOJA_COR_MX[v.board] || 'var(--muted)'}"></span>${esc(lojaLabel)}</span></td>
+      <td class="tk-vend">${esc(v.vendedor||'—')}</td>
+      <td><div class="tk-formas">${formasChips}</div></td>
+      <td class="r mx-num ${descVal>0?'mx-neg':'mx-fraco'}">${descVal>0?fmtR(descVal):'—'}</td>
+      <td class="r tk-total">${fmtR(v.valorTotal)}</td>
     </tr>
     <tr class="tk-detail" data-idx="${idx}" style="display:none">
-      <td colspan="9" style="padding:.75rem 1rem 1rem 2.5rem;background:#0a0e14;border-bottom:2px solid #30363d">
-        <div style="overflow-x:auto">${itensBlock}</div>
-      </td>
+      <td colspan="9"><div class="tk-itens mx-scroll">${itensBlock}</div></td>
     </tr>`;
   }).join('');
 
   const total = vendas.reduce((s,v)=>s+(v.valorTotal||0),0);
   const totalDesc = vendas.reduce((s,v)=>s+(v.desconto?.valor||0),0);
+  const pecas = vendas.reduce((s,v)=>s+(v.itens||[]).reduce((a,it)=>a+(+it.quantidade||0),0),0);
 
   $('tkResult').innerHTML = `
-    <div style="font-size:.78rem;color:#8b949e;margin-bottom:.5rem;padding:.25rem 0">
-      ${vendas.length} venda${vendas.length!==1?'s':''} · Total: <strong style="color:#e6edf3">${fmtR(total)}</strong>${totalDesc>0?' · Desc.: <strong style="color:#DC2626">'+fmtR(totalDesc)+'</strong>':''}
+    <div class="mx-summary">
+      <div class="mx-sum-card"><div class="mx-sum-label">Vendas</div><div class="mx-sum-val">${vendas.length}</div></div>
+      <div class="mx-sum-card"><div class="mx-sum-label">Total</div><div class="mx-sum-val blue">${fmtR(total)}</div></div>
+      <div class="mx-sum-card"><div class="mx-sum-label">Ticket médio · ${fNum(pecas)} peça${pecas!==1?'s':''}</div><div class="mx-sum-val">${fmtR(total / vendas.length)}</div></div>
+      <div class="mx-sum-card"><div class="mx-sum-label">Descontos</div><div class="mx-sum-val${totalDesc>0?' neg':''}">${totalDesc>0?fmtR(totalDesc):'—'}</div></div>
     </div>
-    <div style="overflow-x:auto">
-    <table style="width:100%;border-collapse:collapse;font-size:.82rem">
-      <thead><tr style="background:#0d1117">
-        <th style="width:18px;padding:0"></th>
-        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Data</th>
-        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Hora</th>
-        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Doc</th>
-        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Loja</th>
-        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Vendedor</th>
-        <th style="text-align:left;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d">Pagamento</th>
-        <th style="text-align:right;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d;width:100px">Desconto</th>
-        <th style="text-align:right;padding:.45rem .6rem;color:#8b949e;font-weight:600;border-bottom:1px solid #21262d;width:110px">Total</th>
+    <div class="mx-card"><div class="mx-scroll">
+    <table class="mx-t">
+      <thead><tr>
+        <th style="width:26px"></th><th>Data</th><th>Hora</th><th>Doc</th><th>Loja</th><th>Vendedor</th><th>Pagamento</th>
+        <th class="r" style="width:100px">Desconto</th><th class="r" style="width:110px">Total</th>
       </tr></thead>
       <tbody>${rows}</tbody>
-    </table></div>`;
+    </table></div></div>`;
 
   $('tkResult').querySelectorAll('.tk-row').forEach(row => {
     row.addEventListener('click', () => {
-      const idx = row.dataset.idx;
-      const detail = $('tkResult').querySelector(`.tk-detail[data-idx="${idx}"]`);
+      const detail = $('tkResult').querySelector(`.tk-detail[data-idx="${row.dataset.idx}"]`);
       if (!detail) return;
-      const open = detail.style.display === '';
-      detail.style.display = open ? 'none' : '';
-      const chevron = row.querySelector('td:first-child');
-      if (chevron) chevron.textContent = open ? '▶' : '▼';
-      row.style.background = open ? (idx%2===1?'#0d1117':'') : '#111827';
+      const abrir = detail.style.display === 'none';
+      detail.style.display = abrir ? '' : 'none';
+      row.classList.toggle('aberto', abrir);
     });
   });
 }
@@ -566,7 +552,7 @@ function renderPorMarca(marcas, totalValor, periodDias) {
 
     const stBlock = n ? `
       <div class="mx-st-block">
-        <div class="mx-st-lbl-row">${lojas.map(l => `<span class="mx-st-col" style="color:${l.color}">${abbr(l.label)}</span>`).join('')}<span class="mx-cob-lbl">cob</span></div>
+        <div class="mx-st-lbl-row">${lojas.map(l => `<span class="mx-st-col" style="color:${LOJA_COR_MX[l.board] || l.color}">${abbr(l.label)}</span>`).join('')}<span class="mx-cob-lbl">cob</span></div>
         <div class="mx-st-tot-row">${lojas.map(l => `<span class="mx-st-col"${cobClrM ? ` style="color:${cobClrM}"` : ''}>${fNum(l.qtd)}</span>`).join('')}${cobBadge(cobM)}</div>
       </div>` : '';
 
@@ -666,7 +652,7 @@ function renderPorSetor(marcas, totalValor, periodDias) {
 
     const stBlock = n ? `
       <div class="mx-st-block">
-        <div class="mx-st-lbl-row">${refLojas.map(l => `<span class="mx-st-col" style="color:${l.color}">${abbr(l.label)}</span>`).join('')}<span class="mx-cob-lbl">cob</span></div>
+        <div class="mx-st-lbl-row">${refLojas.map(l => `<span class="mx-st-col" style="color:${LOJA_COR_MX[l.board] || l.color}">${abbr(l.label)}</span>`).join('')}<span class="mx-cob-lbl">cob</span></div>
         <div class="mx-st-tot-row">${stCols(se?.totals, cobClrS)}${cobBadge(cobS)}</div>
       </div>` : '';
 
@@ -732,7 +718,7 @@ const STORE_ABBR = { 'DEL REY': 'DR', 'MINAS': 'MNS', 'CONTAGEM': 'CTG', 'ESTAÇ
 function abbr(label) { return STORE_ABBR[label] || label.slice(0, 3).toUpperCase(); }
 function cobColor(cob) {
   if (cob === null || cob === undefined || !isFinite(cob) || cob < 0) return null;
-  return cob < 4 ? '#f85149' : cob < 6 ? '#f97316' : '#3fb950';
+  return cob < 4 ? 'var(--down)' : cob < 6 ? 'var(--warn)' : 'var(--up)';
 }
 function cobBadge(cob) {
   const clr = cobColor(cob);
@@ -741,7 +727,7 @@ function cobBadge(cob) {
 }
 
 function stockBoxHtml(marca) {
-  const empty = '<div class="mx-stock-box" style="display:flex;align-items:center;justify-content:center;min-height:60px"><span style="color:#21262d;font-size:.7rem">—</span></div>';
+  const empty = '<div class="mx-stock-box" style="display:flex;align-items:center;justify-content:center;min-height:60px"><span style="color:var(--muted);font-size:.7rem">—</span></div>';
   if (!stockData) return empty;
   const e = stockMap[marca.toUpperCase()];
   if (!e || !e.lojas.length) return empty;
@@ -759,7 +745,7 @@ function stockBoxHtml(marca) {
     ).join('');
   };
 
-  const hdrCols   = lojas.map(l => `<span class="mx-sb-qty" style="color:${l.color}">${abbr(l.label)}</span>`).join('');
+  const hdrCols   = lojas.map(l => `<span class="mx-sb-qty" style="color:${LOJA_COR_MX[l.board] || l.color}">${abbr(l.label)}</span>`).join('');
   const totalCols = lojas.map(l => `<span class="mx-sb-qty">${fNum(l.qtd)}</span>`).join('');
   const valRow    = hasValor ? `
     <div class="mx-sb-row mx-sb-val-row">
@@ -795,7 +781,7 @@ function prodTable(produtos, stockRefs, lojas, periodDias) {
   });
   const hasStock = lojas && lojas.length > 0;
   const stHdr = hasStock
-    ? lojas.map(l => `<th class="mx-prod-tbl-st" style="color:${l.color}" title="${l.label}">${abbr(l.label)}</th>`).join('') + '<th class="mx-prod-tbl-st mx-cob-lbl">cob</th>'
+    ? lojas.map(l => `<th class="mx-prod-tbl-st" style="color:${LOJA_COR_MX[l.board] || l.color}" title="${l.label}">${abbr(l.label)}</th>`).join('') + '<th class="mx-prod-tbl-st mx-cob-lbl">cob</th>'
     : '';
 
   const rows = (produtos || []).map((p, i) => {

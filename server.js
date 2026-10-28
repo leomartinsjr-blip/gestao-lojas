@@ -12366,6 +12366,7 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
           colecao:      (catInfo.linha || '').trim(),
           marca:        (catInfo.marca || '').trim(),
           setor:        (catInfo.setor || r.desc_setor || '').trim(),
+          cor:          (catInfo.desc_cor || r.desc_cor || '').trim(),
           quantidade:   qty,
           vlrUnitario:  +vlrUnit.toFixed(2),
           vlrBruto:     +vlrBruto.toFixed(2),

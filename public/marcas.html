@@ -2,172 +2,334 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12151D" media="(prefers-color-scheme: dark)">
 <title>Produtos Vendidos</title>
 <link rel="icon" type="image/jpeg" href="favicon.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800;900&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<!-- Herda os tokens da Torre (cores, fontes, claro/escuro), como o Vale-Transporte.
+     A folha abaixo só desenha o que é desta tela. -->
+<link rel="stylesheet" href="/style.css">
 <style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', system-ui, sans-serif; }
+.mx-num { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
-/* ── Header ── */
-.mx-header{background:#161b22;border-bottom:1px solid #30363d;padding:0 1.25rem;display:flex;align-items:center;gap:.75rem;height:52px;position:sticky;top:0;z-index:100;flex-wrap:wrap}
-.mx-back{font-size:.8rem;color:#8b949e;padding:.28rem .6rem;border-radius:6px;border:1px solid #30363d;background:transparent;cursor:pointer;white-space:nowrap}
-.mx-back:hover{background:#21262d;color:#e6edf3}
-.mx-title{font-weight:700;font-size:.95rem;color:#58a6ff;white-space:nowrap;margin-right:.25rem}
-.mx-controls{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-left:auto}
-.mx-inp{background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:.3rem .5rem;border-radius:6px;font-size:.82rem}
-.mx-inp:focus{outline:none;border-color:#388bfd}
-.mx-sel{background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:.3rem .5rem;border-radius:6px;font-size:.82rem;cursor:pointer}
-.mx-shortcut{font-size:.75rem;color:#8b949e;padding:.25rem .5rem;border-radius:5px;border:1px solid #30363d;background:transparent;cursor:pointer;white-space:nowrap}
-.mx-shortcut:hover{background:#21262d;color:#e6edf3}
-.mx-search-btn{background:#1f6feb;border:1px solid #388bfd;color:#fff;font-size:.82rem;font-weight:600;padding:.32rem .85rem;border-radius:6px;cursor:pointer;white-space:nowrap}
-.mx-search-btn:hover{background:#388bfd}
-.mx-search-btn:disabled{opacity:.5;cursor:default}
+/* ── Topo: identidade à esquerda, as quatro visões à direita ──────────── */
+.mx-top {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 0 1.25rem; padding-top: env(safe-area-inset-top, 0px);
+  height: calc(54px + env(safe-area-inset-top, 0px));
+  display: flex; align-items: center; gap: .75rem;
+}
+.mx-back {
+  display: flex; align-items: center; gap: .3rem;
+  background: transparent; border: 1px solid var(--border); border-radius: var(--r-sm);
+  color: var(--muted); font: inherit; font-size: .78rem; padding: .3rem .6rem;
+  cursor: pointer; white-space: nowrap;
+}
+.mx-back:hover { color: var(--text); border-color: var(--border2); }
+.mx-ident { display: flex; flex-direction: column; gap: .1rem; min-width: 0; }
+.mx-kicker, .mx-titulo { font-family: 'Big Shoulders Display', 'Archivo Narrow', system-ui, sans-serif; text-transform: uppercase; line-height: 1; }
+.mx-kicker { font-weight: 700; font-size: .68rem; letter-spacing: .12em; color: var(--muted); }
+.mx-titulo { font-weight: 800; font-size: 1.15rem; letter-spacing: .02em; color: var(--text); white-space: nowrap; }
 
-/* ── Body ── */
-.mx-body{max-width:960px;margin:0 auto;padding:1.25rem 1rem}
+.mx-view-toggle {
+  margin-left: auto; display: flex; gap: 2px; flex-shrink: 0;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: var(--r-md); padding: 2px;
+}
+.mx-view-btn {
+  background: transparent; border: none; border-radius: var(--r-sm);
+  color: var(--muted); font: inherit; font-size: .76rem; font-weight: 600;
+  padding: .3rem .75rem; cursor: pointer; white-space: nowrap; transition: background .12s, color .12s;
+}
+.mx-view-btn:hover { color: var(--text); }
+.mx-view-btn.active { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px var(--shadow-1), inset 0 -2px 0 var(--accent); }
 
-/* ── Summary strip ── */
-.mx-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1.25rem}
-@media(max-width:640px){.mx-summary{grid-template-columns:repeat(2,1fr)}}
-.mx-sum-card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:.65rem .9rem}
-.mx-sum-label{font-size:.72rem;color:#8b949e;margin-bottom:.2rem}
-.mx-sum-val{font-size:1.15rem;font-weight:700;color:#e6edf3}
-.mx-sum-val.blue{color:#58a6ff}
+/* ── Corpo ─────────────────────────────────────────────────────────────── */
+.mx-body { max-width: 1180px; margin: 0 auto; padding: 1.15rem 1.25rem calc(3rem + env(safe-area-inset-bottom, 0px)); }
 
-/* ── Loading / empty ── */
-.mx-state{text-align:center;padding:3rem 1rem;color:#8b949e;font-size:.88rem}
-.mx-spinner{display:inline-block;width:22px;height:22px;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:spin .7s linear infinite;margin-bottom:.5rem}
-@keyframes spin{to{transform:rotate(360deg)}}
+/* Filtros numa faixa própria, fora do topo: loja, período, atalhos e as ações */
+.mx-controls {
+  display: flex; align-items: center; gap: .5rem; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
+  padding: .6rem .75rem; margin-bottom: 1.1rem; box-shadow: 0 1px 2px var(--shadow-1);
+}
+.mx-grupo { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.mx-ate { color: var(--muted); font-size: .76rem; }
+.mx-inp, .mx-sel {
+  background: var(--input-bg); border: 1px solid var(--border); border-radius: var(--r-sm);
+  color: var(--text); font: inherit; font-size: .8rem; padding: .32rem .5rem;
+}
+.mx-inp { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .76rem; }
+.mx-sel { cursor: pointer; font-weight: 500; }
+.mx-inp:focus, .mx-sel:focus { outline: none; border-color: var(--accent); }
+.mx-shortcuts-row { display: flex; gap: .3rem; flex-wrap: wrap; align-items: center; }
+.mx-shortcut {
+  background: transparent; border: 1px solid var(--border); border-radius: 999px;
+  color: var(--text2); font: inherit; font-size: .72rem; padding: .22rem .6rem; cursor: pointer; white-space: nowrap;
+}
+.mx-shortcut:hover { color: var(--text); border-color: var(--border2); }
+.mx-acoes { margin-left: auto; display: flex; gap: .4rem; }
+.mx-search-btn, .mx-xls-btn {
+  display: inline-flex; align-items: center; gap: .35rem;
+  border-radius: var(--r-sm); font: inherit; font-size: .78rem; font-weight: 600;
+  padding: .36rem .9rem; cursor: pointer; white-space: nowrap;
+}
+.mx-search-btn { background: var(--accent); border: 1px solid var(--accent); color: var(--on-accent); }
+.mx-search-btn:hover { opacity: .9; }
+.mx-search-btn:disabled { opacity: .5; cursor: default; }
+.mx-xls-btn { background: var(--surface2); border: 1px solid var(--border); color: var(--text2); }
+.mx-xls-btn:hover { color: var(--text); border-color: var(--border2); }
 
-/* ── Brand list ── */
-.mx-brand-card{background:#161b22;border:1px solid #30363d;border-radius:8px;margin-bottom:.6rem;overflow:hidden}
-.mx-brand-hdr{display:flex;align-items:center;gap:.75rem;padding:.65rem .9rem;cursor:pointer;transition:background .12s}
-.mx-brand-hdr:hover{background:#1c2128}
-.mx-brand-rank{font-size:.78rem;font-weight:700;color:#8b949e;min-width:1.6rem;text-align:right}
-.mx-brand-name{font-size:.9rem;font-weight:700;color:#e6edf3;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.mx-brand-right{display:flex;align-items:center;gap:.75rem;flex-shrink:0}
-.mx-brand-val{font-size:.9rem;font-weight:700;color:#58a6ff;white-space:nowrap}
-.mx-brand-pecas{font-size:.78rem;color:#8b949e;white-space:nowrap}
-.mx-brand-chevron{color:#8b949e;font-size:.85rem;transition:transform .2s;line-height:1}
-.mx-brand-card.open .mx-brand-chevron{transform:rotate(180deg)}
+/* ── Faixa de números ─────────────────────────────────────────────────── */
+.mx-summary {
+  display: grid; grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px; background: var(--border); border: 1px solid var(--border);
+  border-radius: var(--r-lg); overflow: hidden; margin-bottom: 1.1rem;
+  box-shadow: 0 1px 2px var(--shadow-1);
+}
+.mx-sum-card { background: var(--surface); padding: .7rem .85rem; display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.mx-sum-label {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: .62rem; font-weight: 500; letter-spacing: .07em; text-transform: uppercase;
+  color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mx-sum-val {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 1.35rem; font-weight: 600; letter-spacing: -.025em;
+  font-variant-numeric: tabular-nums; line-height: 1.15; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.mx-sum-val.blue { color: var(--accent); }
+.mx-sum-val.pequeno { font-size: .82rem; font-weight: 500; letter-spacing: 0; padding-top: .3rem; white-space: normal; }
+.mx-sum-val.neg { color: var(--down); }
 
-/* ── Bar ── */
-.mx-bar-wrap{padding:.1rem .9rem .55rem;padding-left:calc(.9rem + 1.6rem + .75rem)}
-.mx-bar-row{display:flex;align-items:center;gap:.6rem}
-.mx-bar-track{flex:1;height:6px;background:#21262d;border-radius:3px;overflow:hidden}
-.mx-bar-fill{height:100%;border-radius:3px;transition:width .4s ease;background:#1f6feb}
-.mx-bar-pct{font-size:.74rem;color:#8b949e;white-space:nowrap;min-width:3rem;text-align:right}
+/* ── Estado / erro ────────────────────────────────────────────────────── */
+.mx-state { text-align: center; padding: 3rem 1rem; color: var(--muted); font-size: .88rem; line-height: 1.6; }
+.mx-state strong { color: var(--text); }
+.mx-spinner {
+  display: inline-block; width: 22px; height: 22px; margin-bottom: .5rem;
+  border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%;
+  animation: mxGira .7s linear infinite;
+}
+@keyframes mxGira { to { transform: rotate(360deg); } }
+.mx-error {
+  background: rgba(var(--down-rgb), .1); border: 1px solid rgba(var(--down-rgb), .35);
+  color: var(--down); border-radius: var(--r-md); padding: .65rem .85rem; font-size: .82rem; margin-bottom: 1rem;
+}
 
-/* ── Product wrap (setor container) ── */
-.mx-prod-wrap{border-top:1px solid #21262d;overflow:hidden;max-height:0;transition:max-height .35s ease}
-.mx-brand-card.open .mx-prod-wrap{max-height:9000px}
-.mx-prod-tbl{width:100%;border-collapse:collapse;font-size:.8rem}
-.mx-prod-tbl th{background:#0d1117;color:#8b949e;font-weight:600;text-align:left;padding:.45rem .6rem;border-bottom:1px solid #21262d}
-.mx-prod-tbl th:nth-child(4),.mx-prod-tbl td:nth-child(4){text-align:right}
-.mx-prod-tbl-st{text-align:right!important;font-variant-numeric:tabular-nums;white-space:nowrap;padding-left:.3rem}
-.mx-prod-tbl td.mx-prod-tbl-st{color:#c9d1d9;font-size:.77rem}
-.mx-prod-tbl th.mx-prod-tbl-st{font-size:.65rem;font-weight:700;letter-spacing:.03em}
-.mx-prod-tbl td{padding:.4rem .6rem;border-bottom:1px solid #1a1f26;color:#e6edf3}
-.mx-prod-tbl tr:last-child td{border-bottom:none}
-.mx-prod-tbl tr:hover td{background:#1c2128}
-.mx-tipo-badge{font-size:.67rem;padding:.1rem .35rem;border-radius:3px;font-weight:600}
-.mx-tipo-badge.prod{background:#1f6feb22;color:#58a6ff}
-.mx-tipo-badge.svc{background:#3fb95022;color:#3fb950}
+/* ── Marca / setor ────────────────────────────────────────────────────── */
+.mx-brand-card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
+  margin-bottom: .55rem; overflow: hidden; box-shadow: 0 1px 2px var(--shadow-1);
+}
+.mx-brand-hdr { display: flex; align-items: center; gap: .75rem; padding: .65rem .9rem .35rem; cursor: pointer; transition: background .12s; }
+.mx-brand-hdr:hover { background: var(--hover-bg); }
+.mx-brand-rank { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .72rem; font-weight: 500; color: var(--muted); min-width: 1.8rem; text-align: right; }
+.mx-brand-name { font-size: .9rem; font-weight: 600; letter-spacing: -.012em; color: var(--text); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mx-brand-right { display: flex; align-items: center; gap: .75rem; flex-shrink: 0; }
+.mx-brand-val { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: .92rem; font-weight: 600; color: var(--text); white-space: nowrap; }
+.mx-brand-pecas { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .74rem; color: var(--muted); white-space: nowrap; }
+.mx-brand-chevron { color: var(--muted); font-size: .7rem; transition: transform .2s; line-height: 1; }
+.mx-brand-card.open .mx-brand-chevron { transform: rotate(180deg); }
 
-/* ── Setor rows ── */
-.mx-setor-row{border-top:1px solid #1a1f26}
-.mx-setor-hdr{display:flex;align-items:center;gap:.65rem;padding:.42rem .9rem .42rem calc(.9rem + 1.6rem + .75rem);cursor:pointer;background:#0d1117;user-select:none}
-.mx-setor-hdr:hover{background:#131820}
-.mx-setor-chevron{color:#8b949e;font-size:.68rem;transition:transform .18s;line-height:1;flex-shrink:0}
-.mx-setor-row.open .mx-setor-chevron{transform:rotate(90deg)}
-.mx-setor-name{font-size:.78rem;font-weight:600;color:#8b949e;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;text-transform:uppercase;letter-spacing:.03em}
-.mx-setor-val{font-size:.78rem;font-weight:600;color:#c9d1d9;white-space:nowrap}
-.mx-setor-pecas{font-size:.72rem;color:#8b949e;white-space:nowrap}
-.mx-setor-pct{font-size:.72rem;font-weight:600;color:#58a6ff;white-space:nowrap;background:#1f6feb18;padding:.1rem .35rem;border-radius:4px}
-.mx-setor-pct-total{font-size:.69rem;color:#8b949e;white-space:nowrap}
-.mx-setor-prods{max-height:0;overflow:hidden;transition:max-height .22s ease}
-.mx-setor-row.open .mx-setor-prods{max-height:3000px}
+.mx-bar-wrap { padding: .15rem .9rem .6rem calc(.9rem + 1.8rem + .75rem); }
+.mx-bar-row { display: flex; align-items: center; gap: .6rem; }
+.mx-bar-track { flex: 1; height: 5px; background: var(--surface3); border-radius: 3px; overflow: hidden; }
+.mx-bar-fill { height: 100%; border-radius: 3px; transition: width .4s ease; background: var(--accent); }
+.mx-bar-pct { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .72rem; color: var(--muted); white-space: nowrap; min-width: 3rem; text-align: right; }
 
-/* ── View toggle ── */
-.mx-view-toggle{display:flex;gap:0;background:#21262d;border:1px solid #30363d;border-radius:6px;padding:2px;flex-shrink:0}
-.mx-view-btn{background:transparent;border:none;color:#8b949e;font-size:.78rem;font-weight:600;padding:.28rem .75rem;border-radius:4px;cursor:pointer;white-space:nowrap;transition:background .12s,color .12s}
-.mx-view-btn:hover{color:#e6edf3}
-.mx-view-btn.active{background:#388bfd;color:#fff}
+.mx-prod-wrap { border-top: 1px solid var(--border); overflow: hidden; max-height: 0; transition: max-height .35s ease; }
+.mx-brand-card:not(.open) .mx-prod-wrap { border-top-color: transparent; }
+.mx-brand-card.open .mx-prod-wrap { max-height: 9000px; }
+.mx-prod-tbl { width: 100%; border-collapse: collapse; font-size: .8rem; }
+.mx-prod-tbl th {
+  color: var(--muted); font-size: .62rem; font-weight: 500; text-transform: uppercase; letter-spacing: .07em;
+  text-align: left; padding: .5rem .6rem .4rem; border-bottom: 1px solid var(--border); white-space: nowrap;
+}
+.mx-prod-tbl th:nth-child(3), .mx-prod-tbl td:nth-child(3),
+.mx-prod-tbl th:nth-child(4), .mx-prod-tbl td:nth-child(4) { text-align: right; }
+.mx-prod-tbl td:nth-child(3), .mx-prod-tbl td:nth-child(4) { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mx-prod-tbl td { padding: .4rem .6rem; border-bottom: 1px solid rgba(var(--border-rgb), .55); color: var(--text); }
+.mx-prod-tbl tr:last-child td { border-bottom: none; }
+.mx-prod-tbl tr:hover td { background: rgba(var(--accent-rgb), .06); }
+.mx-prod-tbl-st { text-align: right !important; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; padding-left: .3rem; }
+.mx-prod-tbl td.mx-prod-tbl-st { color: var(--text2); font-size: .75rem; }
+.mx-prod-tbl th.mx-prod-tbl-st { font-size: .6rem; font-weight: 600; letter-spacing: .03em; }
 
-/* ── Ref / Cor rows ── */
-.mx-ref-row td:first-child{cursor:pointer;user-select:none}
-.mx-ref-chevron{display:inline-block;font-size:.65rem;color:#8b949e;transition:transform .15s;margin-right:.35rem}
-.mx-ref-row.open .mx-ref-chevron{transform:rotate(90deg)}
-.mx-cor-row{display:none}
-.mx-cor-row td{background:#0a0e14;color:#8b949e;font-size:.75rem;padding:.3rem .6rem .3rem 1.8rem;border-bottom:1px solid #1a1f26}
-.mx-cor-row td:first-child{color:#6e7681;font-style:italic}
+.mx-setor-row { border-top: 1px solid rgba(var(--border-rgb), .55); }
+.mx-setor-row:first-child { border-top: none; }
+.mx-setor-hdr { display: flex; align-items: center; gap: .65rem; padding: .45rem .9rem .45rem calc(.9rem + 1.8rem + .75rem); cursor: pointer; background: var(--surface2); user-select: none; }
+.mx-setor-hdr:hover { background: var(--hover-bg); }
+.mx-setor-chevron { color: var(--muted); font-size: .62rem; transition: transform .18s; line-height: 1; flex-shrink: 0; }
+.mx-setor-row.open .mx-setor-chevron { transform: rotate(90deg); }
+.mx-setor-name { font-size: .74rem; font-weight: 600; color: var(--text2); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-transform: uppercase; letter-spacing: .05em; }
+.mx-setor-val { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; font-size: .78rem; font-weight: 600; color: var(--text); white-space: nowrap; }
+.mx-setor-pecas { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .72rem; color: var(--muted); white-space: nowrap; }
+.mx-setor-pct { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .68rem; font-weight: 600; color: var(--accent); white-space: nowrap; background: rgba(var(--accent-rgb), .12); padding: .08rem .38rem; border-radius: 999px; }
+.mx-setor-prods { max-height: 0; overflow: hidden; transition: max-height .22s ease; background: var(--surface); }
+.mx-setor-row.open .mx-setor-prods { max-height: 3000px; }
 
-/* ── Error ── */
-.mx-error{background:#f8514915;border:1px solid #f8514944;border-radius:8px;padding:.75rem 1rem;color:#f85149;font-size:.83rem;margin-bottom:1rem}
+.mx-ref-row td:first-child { cursor: pointer; user-select: none; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .76rem; }
+.mx-ref-chevron { display: inline-block; font-size: .6rem; color: var(--muted); transition: transform .15s; margin-right: .35rem; width: .6rem; }
+.mx-ref-row.open .mx-ref-chevron { transform: rotate(90deg); }
+.mx-cor-row { display: none; }
+.mx-cor-row td { background: var(--surface2); color: var(--text2); font-size: .75rem; padding: .3rem .6rem .3rem 1.6rem; }
+.mx-cor-row td:first-child { color: var(--muted); }
 
-/* ── Colunas de estoque integradas ── */
-.mx-st-block{display:flex;flex-direction:column;align-items:flex-end;flex-shrink:0;gap:.04rem}
-.mx-st-lbl-row,.mx-st-tot-row,.mx-st-setor{display:flex;align-items:center}
-.mx-st-col{width:var(--sb-col-w,34px);text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}
-.mx-st-lbl-row .mx-st-col{font-size:.6rem;font-weight:700;letter-spacing:.02em}
-.mx-st-tot-row .mx-st-col{font-size:.85rem;font-weight:700;color:#e6edf3}
-.mx-st-setor .mx-st-col{font-size:.75rem;color:#c9d1d9}
-/* ── Badge de cobertura ── */
-.mx-cob{font-size:.72rem;font-weight:700;width:36px;text-align:right;flex-shrink:0;font-variant-numeric:tabular-nums}
-.mx-cob-lbl{font-size:.6rem;font-weight:700;color:#8b949e;width:36px;text-align:right;flex-shrink:0;letter-spacing:.03em}
+/* Estoque por loja ao lado da marca */
+.mx-st-block { display: flex; flex-direction: column; align-items: flex-end; flex-shrink: 0; gap: .04rem; }
+.mx-st-lbl-row, .mx-st-tot-row, .mx-st-setor { display: flex; align-items: center; }
+.mx-st-col { width: var(--sb-col-w, 34px); text-align: right; flex-shrink: 0; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+.mx-st-lbl-row .mx-st-col { font-size: .58rem; font-weight: 600; letter-spacing: .02em; }
+.mx-st-tot-row .mx-st-col { font-size: .8rem; font-weight: 600; color: var(--text); }
+.mx-st-setor .mx-st-col { font-size: .72rem; color: var(--text2); }
+.mx-cob { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .7rem; font-weight: 600; width: 38px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; }
+.mx-cob-lbl { font-size: .58rem; font-weight: 600; color: var(--muted); width: 38px; text-align: right; flex-shrink: 0; letter-spacing: .03em; }
 
-/* ── Mobile ── */
-@media(max-width:600px){
-  .mx-header{height:auto;padding:.5rem .75rem;gap:.4rem}
-  .mx-controls{margin-left:0;width:100%;flex-direction:column;align-items:stretch;gap:.4rem}
-  .mx-controls > div:first-child{display:flex;gap:.3rem}
-  .mx-controls > div:first-child input{flex:1;min-width:0}
-  .mx-shortcuts-row{display:flex;gap:.3rem;flex-wrap:wrap}
-  .mx-search-btn{width:100%;padding:.45rem;font-size:.85rem}
-  .mx-view-toggle{align-self:stretch}
-  .mx-view-btn{flex:1}
-  .mx-body{padding:.75rem .5rem;margin-top:0}
-  /* Tabela de produtos: scroll horizontal */
-  .mx-prod-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  .mx-prod-tbl{min-width:480px}
-  /* Setor header: compactar */
-  .mx-setor-hdr{padding:.4rem .6rem .4rem calc(.6rem + 1.2rem + .5rem);gap:.4rem}
-  .mx-setor-pct-total{display:none}
-  /* Bar: reduzir indent */
-  .mx-bar-wrap{padding-left:calc(.6rem + 1.2rem + .5rem)}
-  /* Brand header: nome na 1ª linha, valor na 2ª */
-  .mx-brand-hdr{padding:.6rem .75rem;gap:.4rem;flex-wrap:wrap}
-  .mx-brand-rank{min-width:1.2rem;flex-shrink:0}
-  .mx-brand-name{white-space:normal;font-size:.85rem;width:0;flex-basis:0;flex-grow:1}
-  .mx-brand-right{width:100%;padding-left:calc(1.2rem + .4rem);justify-content:space-between}
-  .mx-brand-pecas{display:none}
-  .mx-brand-val{font-size:.85rem}
-  /* Setor header: nome visível */
-  .mx-setor-name{white-space:normal;font-size:.75rem}
-  .mx-setor-hdr{padding:.4rem .6rem .4rem calc(.6rem + 1.2rem + .4rem);gap:.35rem;flex-wrap:wrap}
-  .mx-setor-val{font-size:.75rem}
-  .mx-setor-pecas{display:none}
-  .mx-setor-pct-total{display:none}
-  /* Bar: reduzir indent */
-  .mx-bar-wrap{padding-left:calc(.6rem + 1.2rem + .5rem)}
-  /* Summary cards: 2 colunas */
-  .mx-summary{grid-template-columns:repeat(2,1fr);gap:.5rem;margin-bottom:.75rem}
+/* ── Tabelas das visões Por Vendedor e Por Ticket ─────────────────────── */
+.mx-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; box-shadow: 0 1px 2px var(--shadow-1); }
+.mx-scroll { overflow-x: auto; overscroll-behavior-x: contain; }
+table.mx-t { width: 100%; border-collapse: collapse; font-size: .8rem; }
+table.mx-t th {
+  padding: .55rem .7rem .45rem; text-align: left; white-space: nowrap;
+  font-size: .62rem; font-weight: 500; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--muted); border-bottom: 1px solid var(--border);
+}
+table.mx-t td { padding: .5rem .7rem; border-bottom: 1px solid rgba(var(--border-rgb), .55); vertical-align: middle; }
+table.mx-t th.r, table.mx-t td.r { text-align: right; }
+table.mx-t tbody tr:last-child td { border-bottom: none; }
+.mx-fraco { color: var(--muted); }
+.mx-neg { color: var(--down); }
+
+/* Por Vendedor: loja como faixa, vendedor como sub-faixa */
+.vv-loja td {
+  background: var(--surface2); padding: .5rem .7rem; border-bottom: 1px solid var(--border);
+  font-family: 'Big Shoulders Display', 'Archivo Narrow', system-ui, sans-serif;
+  font-weight: 700; font-size: .92rem; letter-spacing: .04em; text-transform: uppercase; color: var(--text);
+}
+.vv-vend td { padding: .45rem .7rem; font-weight: 600; color: var(--text); }
+.vv-vend svg { vertical-align: -1px; margin-right: .35rem; color: var(--muted); }
+.vv-item td { color: var(--text2); }
+.vv-item:hover td { background: rgba(var(--accent-rgb), .05); }
+.vv-desc { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+
+/* Por Ticket: linha da venda abre os itens */
+.tk-row { cursor: pointer; }
+.tk-row:hover td { background: rgba(var(--accent-rgb), .05); }
+.tk-row.aberto td { background: rgba(var(--accent-rgb), .08); border-bottom-color: transparent; }
+.tk-chev { width: 26px; padding-right: 0 !important; color: var(--muted); font-size: .6rem; }
+.tk-chev span { display: inline-block; transition: transform .15s; }
+.tk-row.aberto .tk-chev span { transform: rotate(90deg); color: var(--accent); }
+.tk-data { font-weight: 600; white-space: nowrap; }
+.tk-hora { color: var(--muted); }
+.tk-doc { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .74rem; color: var(--text2); }
+.tk-loja { display: inline-flex; align-items: center; gap: .4rem; white-space: nowrap; color: var(--text2); }
+.tk-tarja { display: inline-block; width: 3px; height: 13px; border-radius: 2px; flex-shrink: 0; }
+.tk-vend { font-weight: 500; }
+.tk-formas { display: flex; gap: .3rem; flex-wrap: wrap; }
+.tk-forma {
+  display: inline-flex; align-items: baseline; gap: .35rem; white-space: nowrap;
+  background: var(--surface2); border: 1px solid var(--border); border-radius: 999px;
+  padding: .12rem .55rem; font-size: .7rem; color: var(--text2);
+}
+.tk-forma b { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-weight: 600; color: var(--text); }
+.tk-total { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; font-weight: 600; font-size: .86rem; white-space: nowrap; }
+
+.tk-detail > td { padding: 0 !important; background: var(--surface2); border-bottom: 1px solid var(--border) !important; }
+.tk-itens { padding: .5rem .9rem .8rem 2.4rem; }
+table.tk-it { width: 100%; border-collapse: collapse; font-size: .78rem; }
+table.tk-it th {
+  padding: .45rem .55rem .35rem; text-align: right; white-space: nowrap;
+  font-size: .6rem; font-weight: 500; text-transform: uppercase; letter-spacing: .07em;
+  color: var(--muted); border-bottom: 1px solid var(--border);
+}
+table.tk-it th:first-child, table.tk-it td:first-child { text-align: left; }
+table.tk-it td {
+  padding: .5rem .55rem; text-align: right; white-space: nowrap; vertical-align: top;
+  font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums;
+  border-bottom: 1px solid rgba(var(--border-rgb), .55);
+}
+table.tk-it td:first-child { font-family: inherit; white-space: normal; min-width: 240px; }
+table.tk-it tr:last-child td { border-bottom: none; }
+.tk-prod { font-weight: 600; font-size: .84rem; color: var(--text); letter-spacing: -.01em; }
+/* A cor vem logo depois do nome: é o que distingue dois itens da mesma referência */
+.tk-cor { font-weight: 500; color: var(--text2); }
+.tk-cor::before { content: '·'; margin: 0 .35rem; color: var(--muted); }
+.tk-tags { margin-top: .25rem; display: flex; flex-wrap: wrap; gap: .25rem; }
+.tk-tag {
+  font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .62rem; font-weight: 500;
+  padding: .05rem .38rem; border-radius: 4px; background: var(--surface3); color: var(--muted); white-space: nowrap;
+}
+.tk-tag.marca { background: rgba(var(--accent-rgb), .12); color: var(--accent); }
+.tk-tag.setor { background: rgba(var(--up-rgb), .12); color: var(--up); }
+.tk-promo { color: var(--up); font-weight: 600; }
+.tk-sem { color: var(--muted); font-size: .8rem; padding: .6rem 0; }
+
+/* ── Celular ──────────────────────────────────────────────────────────── */
+@media (max-width: 900px) {
+  .mx-top { padding: calc(.4rem + env(safe-area-inset-top, 0px)) .6rem .4rem; gap: .5rem; height: auto; min-height: 54px; flex-wrap: wrap; }
+  .mx-kicker { display: none; }
+  .mx-titulo { font-size: 1rem; }
+  .mx-view-toggle { margin-left: 0; width: 100%; order: 3; }
+  .mx-view-btn { flex: 1; padding: .35rem .3rem; }
+  .mx-body { padding: .8rem .6rem calc(2.5rem + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 640px) {
+  .mx-controls { padding: .55rem; }
+  .mx-grupo { width: 100%; }
+  .mx-grupo .mx-inp { flex: 1; min-width: 0; font-size: 16px; }
+  .mx-sel { font-size: 16px; width: 100%; }
+  .mx-acoes { margin-left: 0; width: 100%; }
+  .mx-search-btn { flex: 1; justify-content: center; padding: .5rem; }
+  .mx-summary { grid-template-columns: 1fr 1fr; }
+  .mx-sum-val { font-size: 1.1rem; }
+  .mx-prod-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .mx-prod-tbl { min-width: 480px; }
+  .mx-brand-hdr { padding: .6rem .7rem .3rem; gap: .4rem; flex-wrap: wrap; }
+  .mx-brand-rank { min-width: 1.4rem; }
+  .mx-brand-name { white-space: normal; font-size: .85rem; width: 0; flex-basis: 0; flex-grow: 1; }
+  .mx-brand-right { width: 100%; padding-left: calc(1.4rem + .4rem); justify-content: space-between; }
+  .mx-brand-pecas { display: none; }
+  .mx-bar-wrap { padding-left: calc(.7rem + 1.4rem + .4rem); }
+  .mx-setor-hdr { padding: .4rem .6rem .4rem calc(.6rem + 1.4rem + .4rem); gap: .35rem; flex-wrap: wrap; }
+  .mx-setor-name { white-space: normal; }
+  .mx-setor-pecas { display: none; }
+  .tk-itens { padding: .4rem .5rem .6rem; }
 }
 </style>
 </head>
 <body>
 
-<header class="mx-header">
-  <button class="mx-back" onclick="history.back()">← Voltar</button>
-  <span class="mx-title">Produtos Vendidos</span>
+<header class="mx-top">
+  <button class="mx-back" onclick="history.back()">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+    Voltar
+  </button>
+  <div class="mx-ident">
+    <span class="mx-kicker">Torre de Controle</span>
+    <span class="mx-titulo">Produtos Vendidos</span>
+  </div>
+  <div class="mx-view-toggle">
+    <button class="mx-view-btn active" data-view="marca">Por Marca</button>
+    <button class="mx-view-btn" data-view="setor">Por Setor</button>
+    <button class="mx-view-btn" data-view="vendedor">Por Vendedor</button>
+    <button class="mx-view-btn" data-view="ticket">Por Ticket</button>
+  </div>
+</header>
 
+<div class="mx-body">
   <div class="mx-controls">
-    <!-- Controles de período (marca / setor) -->
+    <!-- Período (marca / setor) -->
     <div id="mxMainControls" style="display:contents">
-      <div style="display:flex;gap:.3rem;align-items:center">
+      <select id="boardSel" class="mx-sel" style="display:none"></select>
+      <div class="mx-grupo">
         <input type="date" id="dtIni" class="mx-inp">
-        <span style="color:#8b949e;font-size:.8rem">até</span>
+        <span class="mx-ate">até</span>
         <input type="date" id="dtFin" class="mx-inp">
       </div>
       <div class="mx-shortcuts-row">
@@ -175,13 +337,14 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
         <button class="mx-shortcut" data-s="mesant">Mês ant.</button>
         <button class="mx-shortcut" data-s="30d">30 dias</button>
         <button class="mx-shortcut" data-s="3m">3 meses</button>
-        <select id="boardSel" class="mx-sel" style="display:none"></select>
       </div>
-      <button class="mx-search-btn" id="searchBtn">Buscar</button>
+      <div class="mx-acoes">
+        <button class="mx-search-btn" id="searchBtn">Buscar</button>
+      </div>
     </div>
 
-    <!-- Controles exclusivos da view Por Vendedor -->
-    <div id="vvControls" style="display:none;align-items:center;gap:.5rem;flex-wrap:wrap">
+    <!-- Por Vendedor -->
+    <div id="vvControls" class="mx-grupo" style="display:none;flex:1">
       <select id="vvBoard" class="mx-sel">
         <option value="minas">Minas</option>
         <option value="estacao">Estação</option>
@@ -190,15 +353,19 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
         <option value="tommy">Tommy</option>
         <option value="surfers">Surfers</option>
       </select>
-      <input type="date" id="vvDtIni" class="mx-inp">
-      <span style="color:#8b949e;font-size:.8rem">até</span>
-      <input type="date" id="vvDtFin" class="mx-inp">
-      <button class="mx-search-btn" id="vvSearchBtn">Buscar</button>
-      <button id="vvXlsBtn" style="display:none;background:#21262d;border:1px solid #30363d;color:#8b949e;padding:.32rem .85rem;border-radius:6px;font-size:.82rem;font-weight:600;cursor:pointer">↓ XLS</button>
+      <div class="mx-grupo">
+        <input type="date" id="vvDtIni" class="mx-inp">
+        <span class="mx-ate">até</span>
+        <input type="date" id="vvDtFin" class="mx-inp">
+      </div>
+      <div class="mx-acoes">
+        <button id="vvXlsBtn" class="mx-xls-btn" style="display:none">↓ XLS</button>
+        <button class="mx-search-btn" id="vvSearchBtn">Buscar</button>
+      </div>
     </div>
 
-    <!-- Controles exclusivos da view Por Ticket -->
-    <div id="tkControls" style="display:none;align-items:center;gap:.5rem;flex-wrap:wrap">
+    <!-- Por Ticket -->
+    <div id="tkControls" class="mx-grupo" style="display:none;flex:1">
       <select id="tkBoard" class="mx-sel">
         <option value="minas">Minas</option>
         <option value="estacao">Estação</option>
@@ -207,31 +374,25 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
         <option value="tommy">Tommy</option>
         <option value="surfers">Surfers</option>
       </select>
-      <input type="date" id="tkDtIni" class="mx-inp">
-      <span style="color:#8b949e;font-size:.8rem">até</span>
-      <input type="date" id="tkDtFin" class="mx-inp">
-      <button class="mx-search-btn" id="tkSearchBtn">Buscar</button>
-      <button id="tkXlsBtn" style="display:none;background:#21262d;border:1px solid #30363d;color:#8b949e;padding:.32rem .85rem;border-radius:6px;font-size:.82rem;font-weight:600;cursor:pointer">↓ XLS</button>
-    </div>
-
-    <!-- Toggle sempre visível -->
-    <div class="mx-view-toggle">
-      <button class="mx-view-btn active" data-view="marca">Por Marca</button>
-      <button class="mx-view-btn" data-view="setor">Por Setor</button>
-      <button class="mx-view-btn" data-view="vendedor">Por Vendedor</button>
-      <button class="mx-view-btn" data-view="ticket">Por Ticket</button>
+      <div class="mx-grupo">
+        <input type="date" id="tkDtIni" class="mx-inp">
+        <span class="mx-ate">até</span>
+        <input type="date" id="tkDtFin" class="mx-inp">
+      </div>
+      <div class="mx-acoes">
+        <button id="tkXlsBtn" class="mx-xls-btn" style="display:none">↓ XLS</button>
+        <button class="mx-search-btn" id="tkSearchBtn">Buscar</button>
+      </div>
     </div>
   </div>
-</header>
 
-<div class="mx-body">
   <div id="summaryStrip" class="mx-summary" style="display:none">
     <div class="mx-sum-card">
-      <div class="mx-sum-label">Total Faturado</div>
+      <div class="mx-sum-label">Total faturado</div>
       <div class="mx-sum-val blue" id="sumValor">—</div>
     </div>
     <div class="mx-sum-card">
-      <div class="mx-sum-label">Total Peças</div>
+      <div class="mx-sum-label">Total peças</div>
       <div class="mx-sum-val" id="sumPecas">—</div>
     </div>
     <div class="mx-sum-card">
@@ -240,7 +401,7 @@ body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFo
     </div>
     <div class="mx-sum-card">
       <div class="mx-sum-label">Período</div>
-      <div class="mx-sum-val" style="font-size:.82rem;padding-top:.1rem" id="sumPeriodo">—</div>
+      <div class="mx-sum-val pequeno" id="sumPeriodo">—</div>
     </div>
   </div>
 
