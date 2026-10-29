@@ -6493,6 +6493,37 @@ function renderVendedorSheet() {
       } catch (e) { toast('Erro: ' + e.message, true); }
     });
 
+    // Baixa por fetch, não pelo link direto: quando o servidor dá erro, o link
+    // salvava a mensagem como "lez.json" e o navegador acusava "site não disponível".
+    const down = body.querySelector('#dsExcelDown');
+    down?.addEventListener('click', async ev => {
+      ev.preventDefault();
+      if (down.dataset.baixando) return;
+      down.dataset.baixando = '1';
+      const rotulo = down.textContent;
+      down.textContent = '⏳ Gerando…';
+      try {
+        const res = await fetch(down.getAttribute('href'), { credentials: 'same-origin' });
+        if (!res.ok) {
+          let msg = `Erro ${res.status}`;
+          try { msg = (await res.json()).error || msg; } catch {}
+          throw new Error(msg);
+        }
+        const nome = (res.headers.get('Content-Disposition') || '').match(/filename="([^"]+)"/)?.[1]
+          || `fechamento-${PD.board}-${PD.month}-${PD.year}.xlsx`;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(await res.blob());
+        a.download = nome;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      } catch (e) {
+        toast('Não foi possível gerar o Excel: ' + e.message, true);
+      } finally {
+        down.textContent = rotulo;
+        delete down.dataset.baixando;
+      }
+    });
+
     const upInput = body.querySelector('#dsExcelUpInput');
     upInput?.addEventListener('change', async () => {
       const file = upInput.files[0];

@@ -2401,6 +2401,34 @@ app.get('/api/perf-monthly-total/:board/:year/:month', requireAuth, async (req, 
 });
 
 // ── GET /api/excel/:year/:month/:board — download fechamento ──────────────
+// Vendedores do Excel do fechamento: os mesmos que a tela mostra no mês
+// (desligado antes do mês fica de fora).
+function vendedoresDoFechamento(db, board, y, m) {
+  const primeiro = `${y}-${String(m).padStart(2, '0')}-01`;
+  return (db.employees || []).filter(e => e.board === board && e.isVendedor !== false
+    && (!e.desligamento || e.desligamento >= primeiro));
+}
+
+// Nome da aba de cada vendedor. O Excel recusa nome com * ? : \ / [ ], com
+// mais de 31 caracteres ou repetido (sem diferenciar maiúscula), e um caso
+// desses derrubava o download inteiro. O upload usa a mesma função para achar
+// o vendedor pela aba.
+function abasDoFechamento(emps) {
+  const usados = new Set(['total']);
+  const abas = new Map();
+  for (const e of emps) {
+    const base = String(e.apelido || e.name || '').replace(/[*?:\\/[\]]/g, '-').trim().slice(0, 31) || `Vendedor ${e.id}`;
+    let nome = base, n = 2;
+    while (usados.has(nome.toLowerCase())) {
+      const suf = ` (${n++})`;
+      nome = base.slice(0, 31 - suf.length) + suf;
+    }
+    usados.add(nome.toLowerCase());
+    abas.set(e.id, nome);
+  }
+  return abas;
+}
+
 app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
   try {
     const { year, month, board } = req.params;
@@ -2418,8 +2446,8 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
     const storeColor = BOARD_COLORS[board] || 'FF4F8B5A';
     const storeName  = BOARD_NAMES[board]  || board;
 
-    const isVendedor = e => e.isVendedor !== false;
-    const emps     = (db.employees || []).filter(e => e.board === board && isVendedor(e));
+    const emps     = vendedoresDoFechamento(db, board, y, m);
+    const abas     = abasDoFechamento(emps);
     const mkKey    = `${y}-${pad(m)}`;
     const dsKey    = `${y}-${pad(m)}-${board}`;
     const metaLoja = db.dailySales?.[dsKey]?.meta?.mensal || 0;
@@ -2482,7 +2510,7 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
         { key:'pa',    width:7  },
       ];
       const isTotal = empId === 'total';
-      const empSheetNames = isTotal ? emps.map(e => (e.apelido || e.name).slice(0, 31)) : [];
+      const empSheetNames = isTotal ? emps.map(e => abas.get(e.id)) : [];
       const crossSum = (col, row) => {
         if (!empSheetNames.length) return null;
         const refs = empSheetNames.map(n => `'${n.replace(/'/g, "''")}'!${col}${row}`);
@@ -2669,7 +2697,7 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
     wb.calcProperties = { fullCalcOnLoad: true };
     await buildSheet(wb, 'TOTAL', 'total');
     for (const emp of emps)
-      await buildSheet(wb, (emp.apelido || emp.name).slice(0, 31), emp.id);
+      await buildSheet(wb, abas.get(emp.id), emp.id);
 
     res.setHeader('Content-Disposition', `attachment; filename="fechamento-${board}-${pad(m)}-${y}.xlsx"`);
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -2703,6 +2731,7 @@ app.get('/api/excel-vendedor/:year/:month/:board', requireAuth, async (req, res)
     const firstOfMonth = `${y}-${pad(m)}-01`;
     const emps = (db.employees || []).filter(e => e.board === board && isVendedor(e) &&
       (!e.desligamento || e.desligamento >= firstOfMonth));
+    const abasVend = abasDoFechamento(emps);
 
     // Config (metaLoja/pesos) por mês, com cache — dias de semanas incompletas
     // no início/fim do mês (sáb–sex) usam a config do mês a que realmente pertencem.
@@ -2822,7 +2851,7 @@ app.get('/api/excel-vendedor/:year/:month/:board', requireAuth, async (req, res)
     wb.creator = 'Gestão Lojas'; wb.created = new Date();
     wb.calcProperties = { fullCalcOnLoad: true };
     for (const emp of emps)
-      buildSheet(wb, (emp.apelido || emp.name).slice(0, 31), emp.id);
+      buildSheet(wb, abasVend.get(emp.id), emp.id);
     if (!emps.length) wb.addWorksheet('Sem vendedores');
 
     res.setHeader('Content-Disposition', `attachment; filename="fechamento-vendedor-${board}-${pad(m)}-${y}.xlsx"`);
@@ -2841,12 +2870,10 @@ app.post('/api/excel/:year/:month/:board', requireAuth, excelUpload.single('file
     const db = await readDB();
     if (!db.vsales) db.vsales = {};
 
-    const emps = (db.employees || []).filter(e => e.board === board && e.isVendedor !== false);
+    const emps = vendedoresDoFechamento(db, board, y, m);
+    const abas = abasDoFechamento(emps);
     const empByName = {};
-    for (const e of emps) {
-      const key = (e.apelido || e.name).slice(0, 31).toLowerCase();
-      empByName[key] = e;
-    }
+    for (const e of emps) empByName[abas.get(e.id).toLowerCase()] = e;
 
     const wb = XLSX.read(req.file.buffer, { type: 'buffer', cellFormula: false, cellNF: false });
     let updated = 0;
