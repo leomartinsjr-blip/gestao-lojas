@@ -13909,7 +13909,9 @@ async function _loadIndeva(silencioso = false) {
   if (!silencioso) body.innerHTML = '<div style="padding:2rem;color:var(--muted);text-align:center">Carregando…</div>';
   try {
     if (view === 'horarios') return await _loadIndevaHorarios(body, seq);
-    const data = await _indevaFetch(view === 'historico' ? `/api/indeva/${board}/historico` : `/api/indeva/${board}`);
+    const data = await _indevaFetch(view === 'historico'
+      ? `/api/indeva/${board}/historico?de=${_indevaHistFiltro.de}&ate=${_indevaHistFiltro.ate}`
+      : `/api/indeva/${board}`);
     if (seq !== _indevaSeq) return;
     _indevaLimpaCharts();
     if (view === 'historico') _renderIndevaHistorico(body, data);
@@ -14416,6 +14418,32 @@ function _indevaOpcoesGrafico(cores, { pct = false, legenda = true } = {}) {
   };
 }
 
+// Período do histórico: começa nos últimos 30 dias; os atalhos e as datas
+// livres refazem a busca no servidor (que devolve só os dias do período).
+const _isoDia = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const _INDEVA_ATALHOS = [['7', '7 dias'], ['30', '30 dias'], ['90', '90 dias'], ['mes', 'Este mês'], ['mesant', 'Mês passado']];
+function _indevaPeriodoAtalho(qual) {
+  const hoje = new Date();
+  const menos = n => { const d = new Date(hoje); d.setDate(d.getDate() - n); return d; };
+  if (qual === '7')  return { de: _isoDia(menos(6)),  ate: _isoDia(hoje) };
+  if (qual === '30') return { de: _isoDia(menos(29)), ate: _isoDia(hoje) };
+  if (qual === '90') return { de: _isoDia(menos(89)), ate: _isoDia(hoje) };
+  if (qual === 'mes') return { de: _isoDia(new Date(hoje.getFullYear(), hoje.getMonth(), 1)), ate: _isoDia(hoje) };
+  return { de: _isoDia(new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1)),
+           ate: _isoDia(new Date(hoje.getFullYear(), hoje.getMonth(), 0)) };
+}
+let _indevaHistFiltro = { atalho: '30', ..._indevaPeriodoAtalho('30') };
+let _indevaHistOrdem  = 'mx';   // coluna que ordena o quadro por vendedor
+
+// Usabilidade de um período somando o desvio de cada dia: um dia com venda a
+// mais na lista não compensa outro com venda a menos. Mesma escala de
+// indevaUsab (100% = bateu todo dia com o Microvix).
+function indevaUsabPeriodo(pares) {
+  const mx = pares.reduce((s, p) => s + p.mx, 0);
+  if (!(mx > 0)) return null;
+  return 100 - pares.reduce((s, p) => s + Math.abs(p.vl - p.mx), 0) / mx * 100;
+}
+
 function _renderIndevaHistorico(body, historico) {
   _indevaLimpaCharts();
   const doBoard = (S.employees||[]).filter(e => e.board===_indevaBoard);
@@ -14428,6 +14456,9 @@ function _renderIndevaHistorico(body, historico) {
     const dt = new Date(+y,+m-1,+d);
     return dt.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'});
   };
+  const fCurta = s => s.slice(8,10) + '/' + s.slice(5,7);
+  const convCor = c => c == null ? 'var(--muted)' : c >= 50 ? 'var(--up)' : c >= 30 ? 'var(--warn)' : 'var(--down)';
+  const nomeDe = (id, nome) => { const e = empById[id]; return e ? (e.apelido || e.name) : (nome || '—'); };
 
   function usabChip(usab) {
     if (usab === null) return '<span style="color:var(--muted)" title="Sem venda no Microvix">—</span>';
@@ -14442,32 +14473,36 @@ function _renderIndevaHistorico(body, historico) {
     return { total: atend.length, vendas, mx, usab: indevaUsab(vendas, mx) };
   }
 
+  // Por vendedor, num dia: atendimentos e vendas da lista + vendas do Microvix.
+  // Quem vendeu no Microvix sem usar a lista também entra (é o que derruba a usabilidade).
+  function vendedoresDoDia(day) {
+    const vd = {};
+    for (const a of day.atendimentos || []) {
+      const v = (vd[a.empId] ||= { total: 0, vendas: 0, nome: a.nome, motivos: {} });
+      v.total++;
+      if (a.vendeu) v.vendas++;
+      else if (a.motivo) v.motivos[a.motivo] = (v.motivos[a.motivo] || 0) + 1;
+    }
+    for (const id of Object.keys(day.mx || {})) {
+      if (day.mx[id] > 0 && !vd[id]) vd[id] = { total: 0, vendas: 0, nome: null, motivos: {} };
+    }
+    for (const [id, v] of Object.entries(vd)) v.mx = day.mx?.[id] || 0;
+    return vd;
+  }
+
   function dayCard(day) {
     const atend = day.atendimentos || [];
     const r = resumoDia(day);
     const conv = r.total > 0 ? Math.round(r.vendas/r.total*100) : 0;
-
-    const vendorData = {};
-    for (const a of atend) {
-      if (!vendorData[a.empId]) vendorData[a.empId] = { total:0, vendas:0, nome: a.nome };
-      vendorData[a.empId].total++;
-      if (a.vendeu) vendorData[a.empId].vendas++;
-    }
-    // Vendedor que vendeu no Microvix mas não usou a lista também aparece (usabilidade baixa)
-    for (const id of Object.keys(day.mx || {})) {
-      if (day.mx[id] > 0 && !vendorData[id]) vendorData[id] = { total:0, vendas:0, nome: null };
-    }
+    const vendorData = vendedoresDoDia(day);
 
     const motivoMap = {};
     for (const a of atend) { if (!a.vendeu && a.motivo) motivoMap[a.motivo] = (motivoMap[a.motivo]||0)+1; }
     const motivos = Object.entries(motivoMap).sort((a,b)=>b[1]-a[1]).slice(0,4);
 
-    const vendorRows = Object.entries(vendorData).map(([id, vd]) => {
-      const e = empById[id];
-      const nome = e ? (e.apelido||e.name) : (vd.nome || '—');
-      const mxV = day.mx?.[id] || 0;
-      return { nome, vd, mxV, u: indevaUsab(vd.vendas, mxV) };
-    }).sort((a,b) => b.vd.total - a.vd.total || b.mxV - a.mxV).map(({ nome, vd, mxV, u }) => `<tr>
+    const vendorRows = Object.entries(vendorData).map(([id, vd]) => ({
+      nome: nomeDe(id, vd.nome), vd, mxV: vd.mx, u: indevaUsab(vd.vendas, vd.mx),
+    })).sort((a,b) => b.vd.total - a.vd.total || b.mxV - a.mxV).map(({ nome, vd, mxV, u }) => `<tr>
         <td class="ih-td">${nome}</td>
         <td class="ih-td ih-num">${vd.total}</td>
         <td class="ih-td ih-num">${vd.vendas}</td>
@@ -14476,12 +14511,11 @@ function _renderIndevaHistorico(body, historico) {
         <td class="ih-td ih-num" style="color:${vd.total>0?(Math.round(vd.vendas/vd.total*100)>=50?'var(--up)':'var(--down)'):'var(--muted)'}">${fPct(vd.vendas,vd.total)}</td>
       </tr>`).join('');
 
-    const convColor = conv>=50?'var(--up)':conv>=30?'var(--warn)':'var(--down)';
     return `<div class="ih-day-card">
       <div class="ih-day-hdr">
         <span class="ih-day-date">${fDate(day.date)}</span>
         <span class="ih-day-pill">${r.total} atend.</span>
-        <span class="ih-day-pill" style="color:${convColor}">${conv}% conv.</span>
+        <span class="ih-day-pill" style="color:${convCor(conv)}">${conv}% conv.</span>
         <span class="ih-day-pill">${r.vendas} vendas lista / ${r.mx} MX</span>
         <span class="ih-day-pill">Usab.: ${usabChip(r.usab)}</span>
       </div>
@@ -14504,43 +14538,138 @@ function _renderIndevaHistorico(body, historico) {
     </div>`;
   }
 
-  // Últimos 7 dias: totais + gráfico (conversão e usabilidade em %, atendimentos em barras)
-  const last7 = days.slice(0,7);
+  // ── Período: totais + gráfico (conversão e usabilidade em %, atendimentos em barras)
+  const cronologico = [...days].reverse();
   let aggTotal = 0, aggVendas = 0, aggMx = 0;
-  const serie = [...last7].reverse().map(d => {
+  const serie = cronologico.map(d => {
     const r = resumoDia(d);
     aggTotal += r.total; aggVendas += r.vendas; aggMx += r.mx;
-    return { rot: d.date.slice(8,10) + '/' + d.date.slice(5,7), conv: r.total > 0 ? r.vendas/r.total*100 : null, usab: r.usab, total: r.total };
+    return { rot: fCurta(d.date), conv: r.total > 0 ? r.vendas/r.total*100 : null, usab: r.usab, total: r.total, vl: r.vendas, mx: r.mx };
   });
-  const aggConv = aggTotal > 0 ? Math.round(aggVendas/aggTotal*100) : 0;
-  const aggUsab = indevaUsab(aggVendas, aggMx);
+  const aggConv = aggTotal > 0 ? Math.round(aggVendas/aggTotal*100) : null;
+  const aggUsab = indevaUsabPeriodo(serie);
 
+  // ── Por vendedor no período
+  const porVend = {};
+  for (const d of cronologico) {
+    for (const [id, v] of Object.entries(vendedoresDoDia(d))) {
+      const p = (porVend[id] ||= { id, nome: v.nome, dias: 0, total: 0, vendas: 0, mx: 0, pares: [], motivos: {} });
+      if (v.total > 0) p.dias++;
+      p.total += v.total; p.vendas += v.vendas; p.mx += v.mx;
+      p.pares.push({ vl: v.vendas, mx: v.mx });
+      for (const [m, c] of Object.entries(v.motivos)) p.motivos[m] = (p.motivos[m] || 0) + c;
+    }
+  }
+  const vendedores = Object.values(porVend).map(p => {
+    const [motivo, qtd] = Object.entries(p.motivos).sort((a, b) => b[1] - a[1])[0] || [];
+    return { ...p, nome: nomeDe(p.id, p.nome), conv: p.total > 0 ? p.vendas / p.total * 100 : null,
+      usab: indevaUsabPeriodo(p.pares), motivo, qtdMotivo: qtd };
+  });
+  const ORDENS = {
+    nome: (a, b) => a.nome.localeCompare(b.nome),
+    dias: (a, b) => b.dias - a.dias,
+    total: (a, b) => b.total - a.total,
+    vendas: (a, b) => b.vendas - a.vendas,
+    mx: (a, b) => b.mx - a.mx || b.total - a.total,
+    usab: (a, b) => (b.usab ?? -1e9) - (a.usab ?? -1e9),
+    conv: (a, b) => (b.conv ?? -1) - (a.conv ?? -1),
+  };
+  vendedores.sort(ORDENS[_indevaHistOrdem] || ORDENS.mx);
+  const thOrd = (chave, rotulo, num = true) =>
+    `<th class="ih-th${num ? ' ih-num' : ''} ih-th-ord${_indevaHistOrdem === chave ? ' on' : ''}" data-hist-ordem="${chave}" title="Ordenar">${rotulo}${_indevaHistOrdem === chave ? ' ▾' : ''}</th>`;
+  const barra = (v, cor) => v == null ? '<span style="color:var(--muted)">—</span>'
+    : `<span class="ih-barra"><i style="width:${Math.max(0, Math.min(100, v)).toFixed(0)}%;background:${cor}"></i></span><b style="color:${cor}">${Math.round(v)}%</b>`;
+
+  const quadroVendedores = vendedores.length ? `
+    <div class="ih-day-card">
+      <div class="ih-day-hdr">
+        <span class="ih-day-date">Por vendedor no período</span>
+        <span class="ih-day-pill">${vendedores.length} vendedores</span>
+      </div>
+      <div class="ih-table-wrap"><table class="ih-table ih-table-vend">
+        <thead><tr>
+          ${thOrd('nome', 'Vendedor', false)}${thOrd('dias', 'Dias na lista')}${thOrd('total', 'Atend.')}
+          ${thOrd('vendas', 'Vendas lista')}${thOrd('mx', 'Vendas MX')}${thOrd('usab', 'Usabilidade')}${thOrd('conv', 'Conversão')}
+          <th class="ih-th">Mais perdeu por</th>
+        </tr></thead>
+        <tbody>${vendedores.map(v => `<tr>
+          <td class="ih-td"><b>${v.nome}</b></td>
+          <td class="ih-td ih-num">${v.dias}</td>
+          <td class="ih-td ih-num">${v.total}</td>
+          <td class="ih-td ih-num">${v.vendas}</td>
+          <td class="ih-td ih-num">${v.mx || '—'}</td>
+          <td class="ih-td ih-num ih-td-barra">${barra(v.usab, indevaUsabCor(v.usab))}</td>
+          <td class="ih-td ih-num ih-td-barra">${barra(v.conv, convCor(v.conv))}</td>
+          <td class="ih-td" style="color:var(--muted)">${v.motivo ? `${v.motivo} <strong style="color:var(--text)">${v.qtdMotivo}</strong>` : '—'}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+      <div class="ih-sum-nota">
+        <b>Usabilidade</b>: quanto as vendas que o vendedor marcou na lista batem com as NFs dele no Microvix, dia a dia (100% = bateu todo dia; venda a mais ou a menos desconta).
+        <b>Conversão</b>: vendas marcadas na lista ÷ atendimentos. Vendedor sem nenhum atendimento e com venda no Microvix vendeu sem usar a lista.
+      </div>
+    </div>` : '';
+
+  const atalhos = _INDEVA_ATALHOS.map(([k, l]) =>
+    `<button class="ih-filtro${_indevaHistFiltro.atalho === k ? ' active' : ''}" data-hist-atalho="${k}">${l}</button>`).join('');
+  const filtro = `
+    <div class="ih-filtros ih-hist-filtros">
+      <div class="ih-filtro-grupo">${atalhos}</div>
+      <div class="ih-filtro-grupo ih-datas">
+        <label>De <input type="date" id="ihDe" value="${_indevaHistFiltro.de}" max="${_indevaHistFiltro.ate}"></label>
+        <label>Até <input type="date" id="ihAte" value="${_indevaHistFiltro.ate}" min="${_indevaHistFiltro.de}"></label>
+      </div>
+    </div>`;
+
+  const periodo = `${fCurta(_indevaHistFiltro.de)} a ${fCurta(_indevaHistFiltro.ate)}`;
   body.innerHTML = `
-    ${last7.length ? `
+    ${filtro}
+    ${days.length ? `
     <div class="ih-summary">
       <div class="ih-summary-left">
-        <div class="ih-summary-lbl">Últimos ${last7.length} dias</div>
+        <div class="ih-summary-lbl">${periodo} · ${days.length} ${days.length === 1 ? 'dia' : 'dias'} com lista</div>
         <div class="ih-summary-pills">
           <div class="ih-sum-pill"><span class="ih-sum-val">${aggTotal}</span><span class="ih-sum-lbl">atendimentos</span></div>
-          <div class="ih-sum-pill"><span class="ih-sum-val" style="color:${aggConv>=50?'var(--up)':aggConv>=30?'var(--warn)':'var(--down)'}">${aggConv}%</span><span class="ih-sum-lbl">conversão</span></div>
+          <div class="ih-sum-pill"><span class="ih-sum-val" style="color:${convCor(aggConv)}">${aggConv == null ? '—' : aggConv + '%'}</span><span class="ih-sum-lbl">conversão</span></div>
           <div class="ih-sum-pill"><span class="ih-sum-val" style="color:${indevaUsabCor(aggUsab)}">${aggUsab==null?'—':Math.round(aggUsab)+'%'}</span><span class="ih-sum-lbl">usabilidade</span></div>
         </div>
-        <div class="ih-sum-nota">Usabilidade: 100% quando as vendas marcadas na lista (${aggVendas}) batem com as NFs de venda do Microvix (${aggMx}). Cada venda a mais ou a menos desconta.</div>
+        <div class="ih-sum-nota">Usabilidade: 100% quando as vendas marcadas na lista (${aggVendas}) batem com as NFs de venda do Microvix (${aggMx}) em todos os dias. Cada venda a mais ou a menos, em cada dia, desconta.</div>
       </div>
       <div class="ih-summary-chart">
         <div class="ih-chart-line"><canvas id="ihChartPct" aria-label="Conversão e usabilidade por dia"></canvas></div>
         <div class="ih-chart-bar"><canvas id="ihChartAt" aria-label="Atendimentos por dia"></canvas></div>
       </div>
-    </div>` : ''}
-    ${days.length === 0
-      ? '<div style="padding:2rem;text-align:center;color:var(--muted)">Nenhum histórico disponível ainda.</div>'
-      : days.map(dayCard).join('')}`;
+    </div>
+    ${quadroVendedores}
+    <div class="ih-summary-lbl" style="margin:1rem 0 .5rem">Dia a dia</div>
+    ${days.map(dayCard).join('')}`
+    : '<div style="padding:2rem;text-align:center;color:var(--muted)">Nenhum dia com a lista usada nesse período.</div>'}`;
 
-  if (last7.length && window.Chart) {
+  body.querySelectorAll('[data-hist-atalho]').forEach(b => b.addEventListener('click', () => {
+    _indevaHistFiltro = { atalho: b.dataset.histAtalho, ..._indevaPeriodoAtalho(b.dataset.histAtalho) };
+    _loadIndeva();
+  }));
+  ['ihDe', 'ihAte'].forEach(id => body.querySelector('#' + id)?.addEventListener('change', () => {
+    let de = body.querySelector('#ihDe').value, ate = body.querySelector('#ihAte').value;
+    if (!de || !ate) return;
+    // Data inicial depois da final: as duas viram o mesmo dia, em vez de não fazer nada.
+    if (de > ate) { if (id === 'ihDe') ate = de; else de = ate; }
+    _indevaHistFiltro = { atalho: null, de, ate };
+    _loadIndeva();
+  }));
+  // Reordenar não busca de novo: só redesenha com os mesmos dados.
+  body.querySelectorAll('[data-hist-ordem]').forEach(th => th.addEventListener('click', () => {
+    _indevaHistOrdem = th.dataset.histOrdem;
+    const rolagem = body.scrollTop;
+    _renderIndevaHistorico(body, historico);
+    body.scrollTop = rolagem;
+  }));
+
+  if (days.length && window.Chart) {
     const cores = _indevaCoresGrafico();
     const rotulos = serie.map(s => s.rot);
+    const ponto = serie.length > 31 ? 0 : 4;
     const linha = (label, cor, dados) => ({ label, data: dados, borderColor: cor, backgroundColor: cor,
-      borderWidth: 2, pointRadius: 4, pointHoverRadius: 6, pointBorderColor: cssVar('--surface', '#fff'), pointBorderWidth: 2, tension: .25, spanGaps: true });
+      borderWidth: 2, pointRadius: ponto, pointHoverRadius: 6, pointBorderColor: cssVar('--surface', '#fff'), pointBorderWidth: 2, tension: .25, spanGaps: true });
     _indevaCharts.push(new Chart(body.querySelector('#ihChartPct'), {
       type: 'line',
       data: { labels: rotulos, datasets: [

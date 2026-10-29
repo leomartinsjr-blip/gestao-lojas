@@ -4763,6 +4763,18 @@ body.indeva-standalone .indeva-sa-body.indeva-ocupado .indeva-queue-card { opaci
 .ih-leituras li + li { margin-top:.25rem; }
 .ih-table-wrap { overflow-x:auto; }
 .ih-table-wrap .ih-table { min-width:520px; }
+/* Histórico: período livre e quadro por vendedor */
+.ih-hist-filtros { align-items:center; justify-content:space-between; }
+.ih-datas label { display:flex; align-items:center; gap:.3rem; font-size:.74rem; color:var(--muted); font-weight:600; }
+.ih-datas input { background:var(--surface); border:1px solid var(--border); color:var(--text); border-radius:8px; padding:.25rem .45rem; font:inherit; font-size:.78rem; color-scheme:light dark; }
+.ih-datas input:focus { outline:none; border-color:var(--loja, var(--accent)); }
+.ih-th-ord { cursor:pointer; user-select:none; white-space:nowrap; }
+.ih-th-ord:hover, .ih-th-ord.on { color:var(--text); }
+.ih-table-vend .ih-td { white-space:nowrap; }
+.ih-td-barra { min-width:120px; }
+.ih-td-barra b { display:inline-block; min-width:2.6rem; font-variant-numeric:tabular-nums; }
+.ih-barra { display:inline-block; width:56px; height:6px; border-radius:3px; background:var(--surface3); overflow:hidden; vertical-align:middle; margin-right:.4rem; }
+.ih-barra i { display:block; height:100%; border-radius:3px; }
 @media (max-width:640px) {
   body.indeva-standalone .indeva-sa-body:has(.ih-summary, .ih-filtros) { overflow-y:auto; display:block; }
   .ih-summary-left, .ih-summary-chart { flex-basis:100%; }

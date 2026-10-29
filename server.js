@@ -9583,9 +9583,15 @@ app.get('/api/indeva/:board/historico', requireAuth, async (req, res) => {
     const caminhos = new Set();
     const store = getIndevaStore(db, board, caminhos);
     if (caminhos.size) await writeDB(db, { caminhos });
-    // Últimos 60 dias com movimento — a tela lista dia a dia e o histórico só cresce.
-    // Cada dia leva as vendas do Microvix por vendedor (o front só tem o mês atual).
-    const datas = Object.keys(store.historico || {}).sort().slice(-60);
+    // Período escolhido na tela (?de=&ate=, AAAA-MM-DD); sem ele, os últimos 60
+    // dias com movimento. Cada dia leva as vendas do Microvix por vendedor (o
+    // front só tem o mês atual). Teto de 400 dias para a resposta não explodir.
+    const iso = s => /^\d{4}-\d{2}-\d{2}$/.test(String(s || '')) ? String(s) : null;
+    const de = iso(req.query.de), ate = iso(req.query.ate);
+    let datas = Object.keys(store.historico || {}).sort();
+    datas = de || ate
+      ? datas.filter(d => (!de || d >= de) && (!ate || d <= ate)).slice(-400)
+      : datas.slice(-60);
     res.json(Object.fromEntries(datas.map(d => {
       const { eventos, ...dia } = store.historico[d];
       return [d, { ...dia, date: d, mx: indevaMxDia(db, board, d).porEmp }];
