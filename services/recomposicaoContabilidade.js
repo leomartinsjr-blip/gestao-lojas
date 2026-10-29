@@ -49,18 +49,24 @@ function parseRecomposicao(buffer) {
 
       if (/AL[ÍI]QUOTA\s+INTERESTADUAL\s*12/.test(texto)) { aliquota = 12; continue; }
       if (/AL[ÍI]QUOTA\s+INTERESTADUAL\s*4/.test(texto)) { aliquota = 4; continue; }
-      if (/NOTA\s+FIC?AL/.test(texto)) continue;          // cabeçalho ("NOTA FICAL" no original)
-      if (/TOTAL\s+GERAL/.test(texto)) { aliquota = null; continue; }
+      if (/NOTA\s+FI?S?C?AL/.test(texto)) continue;       // cabeçalho ("NOTA FICAL" em algumas)
+      // Fim de bloco. O total já veio como "TOTAL" sozinho na coluna da nota,
+      // e lido como nota ele somava o bloco inteiro de novo.
+      if (/\bTOTAL\b/.test(texto)) { aliquota = null; continue; }
+      // Seções que vêm depois dos blocos e não são diferencial a pagar.
+      if (/ITENS\s+COM\s+ST|N[ÃA]O\s+ENTRARAM/.test(texto)) { aliquota = null; continue; }
       if (!aliquota) continue;
 
-      const nNF = String(linha[0] || '').trim();
+      // Só é nota se a primeira coluna for um número de nota. Qualquer outra
+      // coisa (rótulo, observação, resto de fórmula) fica de fora.
+      const nNF = String(linha[0] ?? '').trim();
       const base = _num(linha[1]);
-      if (!nNF || !base) continue;
+      if (!/^\d+(\s*\/\s*\d+)?$/.test(nNF) || !base) continue;
 
       notas.push({
         competencia,
         aliquota,
-        nNF: nNF.replace(/\D/g, '').replace(/^0+/, ''),
+        nNF: nNF.split('/')[0].replace(/\D/g, '').replace(/^0+/, ''),
         nNFOriginal: nNF,
         base,
         aPagar: _num(linha[6]),
@@ -132,12 +138,15 @@ function conferir(resultado, contabilidade, { competencia } = {}) {
   for (const [, deles] of daContabilidade) soDeles.push(deles);
 
   const somaNossa = [...nossas.values()].reduce((s, n) => s + n.difal, 0);
-  const somaDeles = contabilidade.notas
-    .filter(n => !competencia || !n.competencia || n.competencia === competencia)
-    .reduce((s, n) => s + n.aPagar, 0);
+  const notasDeles = contabilidade.notas
+    .filter(n => !competencia || !n.competencia || n.competencia === competencia);
+  const somaDeles = notasDeles.reduce((s, n) => s + n.aPagar, 0);
 
   return {
     competencia: competencia || null,
+    // Vai junto para a tela refazer o confronto depois de uma inclusão manual
+    // sem precisar reenviar os zips.
+    notasContabilidade: notasDeles,
     conferem,
     divergentes,
     soNossas,

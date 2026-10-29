@@ -2,148 +2,256 @@
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <title>Diferencial de Alíquota — ICMS</title>
 <link rel="icon" type="image/jpeg" href="favicon.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800;900&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<!-- Herda os tokens da Torre (cores, fontes, claro/escuro), como a Pauta. -->
+<link rel="stylesheet" href="/style.css">
+<!-- Mesmo tema escolhido no painel (ui:tema); sem escolha, segue o sistema. -->
+<script>try{var t=localStorage.getItem('ui:tema');if(t==='light'||t==='dark')document.documentElement.setAttribute('data-theme',t)}catch(e){}</script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;min-height:100vh}
+body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-ui,sans-serif;min-height:100vh}
+:root{color-scheme:light}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark}}
+:root[data-theme="dark"]{color-scheme:dark}
+/* Origem 4% (importado) e 12% (nacional) têm cor fixa em toda a tela: é o que
+   permite ler a barra do resumo sem voltar na legenda. */
+:root{--o4:var(--col-lez);--o12:var(--col-delrey)}
 
-.mx-header{background:#161b22;border-bottom:1px solid #30363d;padding:0 1.25rem;display:flex;align-items:center;gap:.75rem;height:52px;position:sticky;top:0;z-index:100;flex-wrap:wrap}
-.mx-back{font-size:.8rem;color:#8b949e;padding:.28rem .6rem;border-radius:6px;border:1px solid #30363d;background:transparent;cursor:pointer;white-space:nowrap}
-.mx-back:hover{background:#21262d;color:#e6edf3}
-.mx-title{font-weight:700;font-size:.95rem;color:#58a6ff;white-space:nowrap}
-.mx-controls{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-left:auto}
-.mx-inp{background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:.3rem .5rem;border-radius:6px;font-size:.82rem}
-.mx-inp:focus{outline:none;border-color:#388bfd}
-.mx-btn{background:#1f6feb;border:1px solid #388bfd;color:#fff;font-size:.82rem;font-weight:600;padding:.32rem .85rem;border-radius:6px;cursor:pointer;white-space:nowrap}
-.mx-btn:hover{background:#388bfd}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.big{font-family:'Big Shoulders Display','Archivo Narrow',system-ui,sans-serif;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums}
+.pos{color:var(--up)}.neg{color:var(--down)}.warn{color:var(--warn)}.mut{color:var(--muted)}
+
+/* ── Topo ── */
+.mx-header{background:var(--surface);border-bottom:1px solid var(--border);padding:0 1.25rem;padding-top:env(safe-area-inset-top,0px);display:flex;align-items:center;gap:.75rem;min-height:calc(56px + env(safe-area-inset-top,0px));position:sticky;top:0;z-index:100;flex-wrap:wrap}
+.mx-back{font:inherit;font-size:.78rem;color:var(--muted);padding:.3rem .6rem;border-radius:var(--r-sm);border:1px solid var(--border);background:transparent;cursor:pointer;white-space:nowrap}
+.mx-back:hover{color:var(--text);border-color:var(--border2)}
+.mx-ident{display:flex;flex-direction:column;gap:.1rem;min-width:0}
+.mx-kicker,.mx-title{font-family:'Big Shoulders Display','Archivo Narrow',system-ui,sans-serif;text-transform:uppercase;line-height:1}
+.mx-kicker{font-weight:700;font-size:.68rem;letter-spacing:.12em;color:var(--muted)}
+.mx-title{font-weight:800;font-size:1.15rem;letter-spacing:.02em;color:var(--text);white-space:nowrap}
+.mx-tabs{display:flex;gap:.15rem;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-sm);padding:.15rem}
+.mx-tab{font:inherit;font-size:.78rem;font-weight:600;color:var(--muted);background:transparent;border:none;border-radius:4px;padding:.3rem .75rem;cursor:pointer}
+.mx-tab:hover{color:var(--text)}
+.mx-tab.on{background:var(--surface);color:var(--text);box-shadow:0 1px 2px var(--shadow-2)}
+.mx-controls{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;margin-left:auto;padding:.45rem 0}
+.mx-inp{background:var(--input-bg);border:1px solid var(--border);color:var(--text);padding:.32rem .5rem;border-radius:var(--r-sm);font:inherit;font-size:.8rem}
+.mx-inp:focus{outline:none;border-color:var(--accent);background:var(--surface)}
+.mx-btn{background:var(--accent);border:1px solid var(--accent);color:var(--on-solid);font:inherit;font-size:.8rem;font-weight:600;padding:.34rem .85rem;border-radius:var(--r-sm);cursor:pointer;white-space:nowrap}
+.mx-btn:hover{background:var(--accent-strong);border-color:var(--accent-strong)}
 .mx-btn:disabled{opacity:.45;cursor:default}
-.mx-btn.ghost{background:transparent;border-color:#30363d;color:#8b949e}
-.mx-btn.ghost:hover{background:#21262d;color:#e6edf3}
+.mx-btn.ghost{background:transparent;border-color:var(--border);color:var(--text2)}
+.mx-btn.ghost:hover{background:var(--surface2);border-color:var(--border2);color:var(--text)}
+.mx-btn.ok{background:var(--up);border-color:var(--up)}
+.mx-btn.ok:hover{background:var(--up-strong);border-color:var(--up-strong)}
+.mx-btn.mini{font-size:.72rem;padding:.15rem .5rem}
 
-.mx-body{max-width:1120px;margin:0 auto;padding:1.25rem 1rem 4rem}
+.mx-body{max-width:1180px;margin:0 auto;padding:1.25rem 1.25rem 4rem}
 
 /* ── Upload ── */
 .mx-drop-grid{display:grid;grid-template-columns:1fr 1fr;gap:.85rem;margin-bottom:1.25rem}
 @media(max-width:720px){.mx-drop-grid{grid-template-columns:1fr}}
-.mx-drop{background:#161b22;border:1px dashed #30363d;border-radius:8px;padding:1rem;cursor:pointer;transition:border-color .15s,background .15s}
-.mx-drop:hover,.mx-drop.over{border-color:#388bfd;background:#1c2128}
-.mx-drop.ok{border-style:solid;border-color:#238636}
-.mx-drop-t{font-size:.85rem;font-weight:700;margin-bottom:.25rem}
-.mx-drop-d{font-size:.75rem;color:#8b949e;line-height:1.45}
-.mx-drop-files{font-size:.75rem;color:#3fb950;margin-top:.45rem;word-break:break-all}
+.mx-drop{background:var(--surface);border:1px dashed var(--border2);border-radius:var(--r-lg);padding:1rem;cursor:pointer;transition:border-color .15s,background .15s}
+.mx-drop:hover,.mx-drop.over{border-color:var(--accent);background:var(--surface2)}
+.mx-drop.ok{border-style:solid;border-color:rgba(var(--up-rgb),.6)}
+.mx-drop-t{font-size:.86rem;font-weight:700;margin-bottom:.25rem;display:flex;align-items:baseline;gap:.5rem}
+.mx-drop-n{font-family:'Big Shoulders Display','Archivo Narrow',system-ui,sans-serif;font-size:1.15rem;font-weight:800;color:var(--accent);line-height:1}
+.mx-drop-d{font-size:.76rem;color:var(--muted);line-height:1.5}
+.mx-drop-files{font-size:.74rem;color:var(--up);margin-top:.45rem;word-break:break-all}
 
-/* ── Resumo ── */
-.mx-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:.75rem;margin-bottom:1.25rem}
+/* ── Cartões de número ── */
+.mx-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:.6rem;margin-bottom:1.25rem}
 @media(max-width:640px){.mx-summary{grid-template-columns:repeat(2,1fr)}}
-.mx-sum-card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:.65rem .9rem}
-.mx-sum-label{font-size:.72rem;color:#8b949e;margin-bottom:.2rem}
-.mx-sum-val{font-size:1.15rem;font-weight:700}
-.mx-sum-val.blue{color:#58a6ff}
-.mx-sum-val.warn{color:#d29922}
+.mx-sum-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-md);padding:.65rem .85rem;box-shadow:0 1px 2px var(--shadow-1)}
+.mx-sum-label{font-size:.66rem;font-weight:600;color:var(--muted);margin-bottom:.25rem;text-transform:uppercase;letter-spacing:.05em}
+.mx-sum-val{font-family:'Big Shoulders Display','Archivo Narrow',system-ui,sans-serif;font-size:1.5rem;font-weight:800;line-height:1.05;font-variant-numeric:tabular-nums}
+.mx-sum-val.blue{color:var(--accent)}
+.mx-sum-val.warn{color:var(--warn)}
+.mx-sum-sub{font-size:.7rem;color:var(--muted);margin-top:.2rem;line-height:1.35}
 
 /* ── Empresa ── */
-.mx-emp{background:#161b22;border:1px solid #30363d;border-radius:8px;margin-bottom:.85rem;overflow:hidden}
-.mx-emp-hdr{display:flex;align-items:center;gap:.75rem;padding:.7rem .9rem;cursor:pointer}
-.mx-emp-hdr:hover{background:#1c2128}
-.mx-emp-nome{font-size:.9rem;font-weight:700;flex:1;min-width:0}
-.mx-emp-cnpj{font-size:.74rem;color:#8b949e;font-weight:400;margin-left:.4rem}
-.mx-emp-val{font-size:1rem;font-weight:700;color:#3fb950;white-space:nowrap}
-.mx-emp-chev{color:#8b949e;transition:transform .2s}
+.mx-emp{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);margin-bottom:.85rem;overflow:hidden;box-shadow:0 1px 2px var(--shadow-1)}
+.mx-emp-hdr{display:flex;align-items:center;gap:.75rem;padding:.75rem 1rem;cursor:pointer}
+.mx-emp-hdr:hover{background:var(--surface2)}
+.mx-emp-nome{font-size:.92rem;font-weight:700;flex:1;min-width:0}
+.mx-emp-cnpj{font-size:.72rem;color:var(--muted);font-weight:400;margin-left:.4rem}
+.mx-emp-val{font-family:'Big Shoulders Display','Archivo Narrow',system-ui,sans-serif;font-size:1.25rem;font-weight:800;color:var(--text);white-space:nowrap;font-variant-numeric:tabular-nums}
+.mx-emp-chev{color:var(--muted);transition:transform .2s}
 .mx-emp.open .mx-emp-chev{transform:rotate(180deg)}
-.mx-emp-body{display:none;padding:0 .9rem .9rem}
+.mx-emp-body{display:none;padding:0 1rem 1rem}
 .mx-emp.open .mx-emp-body{display:block}
 
-.mx-sec{font-size:.76rem;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:.03em;margin:1rem 0 .4rem}
-table.mx-t{width:100%;border-collapse:collapse;font-size:.78rem}
-table.mx-t th{text-align:right;color:#8b949e;font-weight:600;padding:.3rem .45rem;border-bottom:1px solid #30363d;white-space:nowrap}
-table.mx-t th:first-child,table.mx-t td:first-child{text-align:left}
-table.mx-t th:nth-child(2),table.mx-t td:nth-child(2){text-align:left}
-table.mx-t td{padding:.3rem .45rem;border-bottom:1px solid #21262d;text-align:right;white-space:nowrap}
-table.mx-t tr.tot td{font-weight:700;border-top:1px solid #30363d;border-bottom:none;color:#e6edf3}
-.mx-scroll{overflow-x:auto}
+.mx-sec{font-size:.68rem;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin:1.1rem 0 .5rem;display:flex;align-items:center;gap:.5rem}
+.mx-sec::after{content:'';flex:1;height:1px;background:var(--border)}
 
-.mx-tag{display:inline-block;font-size:.68rem;padding:.1rem .4rem;border-radius:4px;background:#21262d;color:#8b949e;border:1px solid #30363d}
-.mx-tag.warn{color:#d29922;border-color:#d2992240}
+/* ── Tabelas ── */
+.mx-scroll{overflow-x:auto;border:1px solid var(--border);border-radius:var(--r-md)}
+table.mx-t{width:100%;border-collapse:separate;border-spacing:0;font-size:.78rem}
+table.mx-t th{background:var(--surface2);text-align:right;color:var(--muted);font-weight:600;font-size:.64rem;text-transform:uppercase;letter-spacing:.05em;padding:.45rem .55rem;border-bottom:1px solid var(--border);white-space:nowrap}
+table.mx-t td{background:var(--surface);padding:.4rem .55rem;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap;color:var(--text);font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.75rem;font-variant-numeric:tabular-nums}
+table.mx-t th:first-child,table.mx-t td:first-child,table.mx-t th.txt,table.mx-t td.txt{text-align:left}
+table.mx-t td.txt{font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:.78rem}
+table.mx-t tr:last-child td{border-bottom:none}
+table.mx-t tr:hover td{background:var(--surface2)}
+table.mx-t tr.tot td{font-weight:700;background:var(--surface2);border-top:1px solid var(--border2)}
+/* Primeira coluna presa à esquerda: rolando até o total, a linha não perde a nota. */
+table.mx-t th:first-child,table.mx-t td:first-child{position:sticky;left:0;z-index:1;box-shadow:1px 0 0 var(--border)}
+table.mx-t th:first-child{z-index:2}
+.vazio{color:var(--border2)}
 
-.mx-state{text-align:center;padding:3rem 1rem;color:#8b949e;font-size:.88rem;line-height:1.6}
-.mx-spinner{display:inline-block;width:22px;height:22px;border:2px solid #30363d;border-top-color:#58a6ff;border-radius:50%;animation:spin .7s linear infinite;margin-bottom:.5rem}
+.mx-tag{display:inline-block;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:.64rem;font-weight:600;padding:.08rem .4rem;border-radius:999px;background:var(--surface3);color:var(--muted)}
+.mx-tag.warn{background:rgba(var(--warn-rgb),.12);color:var(--warn)}
+
+.mx-state{text-align:center;padding:2.5rem 1rem;color:var(--muted);font-size:.86rem;line-height:1.6}
+.mx-spinner{display:inline-block;width:20px;height:20px;border:2px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;margin-bottom:.5rem}
 @keyframes spin{to{transform:rotate(360deg)}}
-.mx-error{background:#3d1418;border:1px solid #f85149;color:#ffa198;padding:.7rem .9rem;border-radius:8px;font-size:.82rem;margin-bottom:1rem}
-.mx-alert{background:#2b2413;border:1px solid #d29922;color:#e3b341;padding:.7rem .9rem;border-radius:8px;font-size:.8rem;margin-bottom:1rem;line-height:1.5}
-.mx-alert.dup{background:#3d1418;border-color:#f85149;color:#ffa198}
+.mx-error{background:rgba(var(--down-rgb),.08);border:1px solid rgba(var(--down-rgb),.35);color:var(--down);padding:.65rem .85rem;border-radius:var(--r-md);font-size:.82rem;margin-bottom:1rem}
+.mx-alert{background:rgba(var(--warn-rgb),.08);border:1px solid rgba(var(--warn-rgb),.35);color:var(--text);padding:.65rem .85rem;border-radius:var(--r-md);font-size:.8rem;margin-bottom:1rem;line-height:1.5}
 
 /* ── Seleção ── */
 table.mx-t td.sel,table.mx-t th.sel{text-align:center;width:2rem}
-table.mx-t tr.off{opacity:.4}
-table.mx-t tr.dup td{background:#2a1416}
-.mx-badge-dup{display:inline-block;font-size:.66rem;padding:.05rem .35rem;border-radius:4px;background:#3d1418;color:#ffa198;border:1px solid #f8514966;margin-left:.35rem}
-.mx-selbar{display:flex;align-items:center;gap:.6rem;font-size:.75rem;color:#8b949e;margin:.5rem 0 .1rem}
-.mx-link{background:none;border:none;color:#58a6ff;font-size:.75rem;cursor:pointer;padding:0;text-decoration:underline}
+table.mx-t tr.off td{color:var(--muted)}
+table.mx-t tr.off td input{opacity:1}
+table.mx-t tr.dup td{background:rgba(var(--down-rgb),.07)}
+.mx-badge-dup,.mx-badge-ed{display:inline-block;font-family:'IBM Plex Sans',system-ui,sans-serif;font-size:.64rem;font-weight:600;padding:.05rem .4rem;border-radius:999px;margin-left:.35rem}
+.mx-badge-dup{background:rgba(var(--down-rgb),.12);color:var(--down)}
+.mx-badge-ed{background:rgba(var(--accent-rgb),.12);color:var(--accent)}
+.mx-selbar{display:flex;align-items:center;gap:.7rem;font-size:.76rem;color:var(--muted);margin:.2rem 0 .6rem;flex-wrap:wrap}
+.mx-link{background:none;border:none;color:var(--accent);font:inherit;font-size:.76rem;cursor:pointer;padding:0;text-decoration:underline}
+.mx-link.neg{color:var(--down)}
+.mx-link.warn{color:var(--warn)}
+.mx-ajuste td{font-family:'IBM Plex Sans',system-ui,sans-serif !important;font-size:.72rem !important;color:var(--accent) !important;text-align:left !important}
+.mx-incluir{margin-top:.6rem}
 
 /* ── Pendências ── */
-.mx-pend{background:#161b22;border:1px solid #30363d;border-left-width:3px;border-radius:8px;margin-bottom:.6rem;overflow:hidden}
-.mx-pend.grave{border-left-color:#f85149}
-.mx-pend.aviso{border-left-color:#d29922}
-.mx-pend.ok{border-left-color:#30363d}
+.mx-pend{background:var(--surface);border:1px solid var(--border);border-left-width:3px;border-radius:var(--r-md);margin-bottom:.6rem;overflow:hidden}
+.mx-pend.grave{border-left-color:var(--down)}
+.mx-pend.aviso{border-left-color:var(--warn)}
+.mx-pend.ok{border-left-color:var(--up)}
 .mx-pend-hdr{display:flex;align-items:center;gap:.6rem;padding:.6rem .9rem;cursor:pointer}
-.mx-pend-hdr:hover{background:#1c2128}
+.mx-pend-hdr:hover{background:var(--surface2)}
+.mx-pend-hdr.estatico{cursor:default;padding-bottom:.2rem}
+.mx-pend-hdr.estatico:hover{background:transparent}
 .mx-pend-ico{font-size:.9rem;width:1rem;text-align:center}
-.mx-pend.grave .mx-pend-ico{color:#f85149}
-.mx-pend.aviso .mx-pend-ico{color:#d29922}
-.mx-pend.ok .mx-pend-ico{color:#3fb950}
+.mx-pend.grave .mx-pend-ico{color:var(--down)}
+.mx-pend.aviso .mx-pend-ico{color:var(--warn)}
+.mx-pend.ok .mx-pend-ico{color:var(--up)}
 .mx-pend-tit{font-size:.85rem;font-weight:600;flex:1;min-width:0}
-.mx-pend-qtd{font-size:.75rem;color:#8b949e;background:#21262d;border:1px solid #30363d;border-radius:10px;padding:.05rem .5rem}
+.mx-pend-det{font-size:.78rem;color:var(--muted);line-height:1.55;padding:0 .9rem .7rem 2.5rem}
+.mx-pend-qtd{font-size:.72rem;color:var(--muted);background:var(--surface3);border-radius:999px;padding:.05rem .55rem;font-variant-numeric:tabular-nums}
 .mx-pend-body{display:none;padding:0 .9rem .8rem}
 .mx-pend.open .mx-pend-body{display:block}
 .mx-pend.open .mx-emp-chev{transform:rotate(180deg)}
-.mx-pend-acao{font-size:.78rem;color:#e3b341;background:#2b2413;border:1px solid #d2992255;border-radius:6px;padding:.45rem .7rem;margin-bottom:.6rem}
-.mx-pend.grave .mx-pend-acao{color:#ffa198;background:#3d1418;border-color:#f8514955}
+.mx-pend-acao{font-size:.78rem;color:var(--text);background:rgba(var(--warn-rgb),.10);border-radius:var(--r-sm);padding:.45rem .7rem;margin-bottom:.6rem}
+.mx-pend.grave .mx-pend-acao{background:rgba(var(--down-rgb),.10)}
 
-/* ── Confronto com a contabilidade ── */
-.mx-conf{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:.9rem;margin-bottom:1rem}
-.mx-conf-topo{display:flex;align-items:center;gap:1rem;flex-wrap:wrap;margin-bottom:.7rem}
-.mx-conf-num{font-size:1.15rem;font-weight:700}
-.mx-conf-ok{color:#3fb950}
-.mx-conf-dif{color:#f85149}
-.mx-chip{font-size:.72rem;padding:.15rem .5rem;border-radius:10px;border:1px solid #30363d;background:#21262d;color:#8b949e}
-.mx-chip.ok{color:#3fb950;border-color:#3fb95055}
-.mx-chip.dif{color:#f85149;border-color:#f8514955}
+/* ── Conferência com a contabilidade ── */
+.mx-conf{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);margin-bottom:1rem;overflow:hidden;box-shadow:0 1px 2px var(--shadow-1)}
+.mx-conf-hdr{display:flex;align-items:center;gap:.6rem;padding:.75rem 1rem;border-bottom:1px solid var(--border)}
+.mx-conf-hdr h2{font-size:.92rem;font-weight:700;flex:1}
+.mx-conf-sit{font-size:.7rem;font-weight:700;padding:.18rem .6rem;border-radius:999px;text-transform:uppercase;letter-spacing:.04em}
+.mx-conf-sit.ok{background:rgba(var(--up-rgb),.12);color:var(--up)}
+.mx-conf-sit.dif{background:rgba(var(--down-rgb),.12);color:var(--down)}
+.mx-conf-body{padding:1rem}
+.mx-conf-kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:.6rem;margin-bottom:1rem}
+@media(max-width:560px){.mx-conf-kpis{grid-template-columns:1fr}}
+.mx-conf-kpi{background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md);padding:.6rem .8rem}
+.mx-conf-kpi .mx-sum-val{font-size:1.6rem}
+/* A diferença decomposta: cada linha é um motivo, e a soma delas é o número de cima. */
+.mx-mot{border:1px solid var(--border);border-radius:var(--r-md);margin-bottom:.5rem;overflow:hidden}
+.mx-mot>summary{list-style:none;display:flex;align-items:center;gap:.6rem;padding:.55rem .8rem;cursor:pointer;font-size:.84rem}
+.mx-mot>summary::-webkit-details-marker{display:none}
+.mx-mot>summary:hover{background:var(--surface2)}
+.mx-mot-ico{width:1.1rem;text-align:center;font-weight:700}
+.mx-mot-tit{flex:1;min-width:0}
+.mx-mot-tit small{display:block;font-size:.72rem;color:var(--muted);margin-top:.1rem}
+.mx-mot-val{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.82rem;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}
+.mx-mot>.mx-scroll{margin:0 .8rem .8rem}
+.mx-mot.ok .mx-mot-ico{color:var(--up)}
+.mx-mot.dif .mx-mot-ico{color:var(--down)}
+.mx-mot.aviso .mx-mot-ico{color:var(--warn)}
+.mx-conta{display:flex;justify-content:flex-end;gap:.6rem;font-size:.78rem;color:var(--muted);padding:.3rem .8rem 0}
+.mx-conta b{color:var(--text);font-family:'IBM Plex Mono',ui-monospace,monospace}
 
-/* ── Edição manual ── */
-.mx-edit{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:.6rem;margin:.4rem 0}
-.mx-edit label{font-size:.72rem;color:#8b949e;display:block;margin-bottom:.15rem}
-.mx-edit-linha{display:flex;gap:.6rem;flex-wrap:wrap;align-items:flex-end}
-.mx-edit input{background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:.28rem .45rem;border-radius:5px;font-size:.8rem;width:8rem}
-.mx-edit input.largo{width:16rem}
-.mx-badge-ed{display:inline-block;font-size:.66rem;padding:.05rem .35rem;border-radius:4px;background:#1c2a3a;color:#79c0ff;border:1px solid #388bfd55;margin-left:.35rem}
+/* ── Janela de inclusão / ajuste ── */
+dialog.mx-dlg{border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);color:var(--text);padding:0;width:min(520px,calc(100vw - 2rem));box-shadow:0 12px 40px var(--shadow-3);margin:auto}
+dialog.mx-dlg::backdrop{background:rgba(0,0,0,.45)}
+.mx-dlg-hdr{padding:.9rem 1.1rem .7rem;border-bottom:1px solid var(--border)}
+.mx-dlg-hdr h3{font-size:1rem;font-weight:700}
+.mx-dlg-hdr p{font-size:.76rem;color:var(--muted);margin-top:.2rem;line-height:1.45}
+.mx-dlg-body{padding:1rem 1.1rem;display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+.mx-fld{display:flex;flex-direction:column;gap:.25rem;min-width:0}
+.mx-fld.full{grid-column:1/-1}
+.mx-fld label{font-size:.66rem;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.mx-fld label .o4,.mx-fld label .o12{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:.3rem}
+.o4{background:var(--o4)}.o12{background:var(--o12)}
+.mx-fld .mx-inp{font-size:.88rem;padding:.45rem .6rem;width:100%}
+.mx-fld .mx-inp.valor{font-family:'IBM Plex Mono',ui-monospace,monospace;text-align:right}
+.mx-fld small{font-size:.7rem;color:var(--muted)}
+.mx-calc{grid-column:1/-1;background:var(--surface2);border:1px solid var(--border);border-radius:var(--r-md);padding:.7rem .8rem}
+.mx-calc-lin{display:flex;justify-content:space-between;align-items:baseline;font-size:.8rem;padding:.15rem 0;color:var(--text2)}
+.mx-calc-lin span:last-child{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.mx-calc-tot{display:flex;justify-content:space-between;align-items:baseline;border-top:1px solid var(--border2);margin-top:.4rem;padding-top:.45rem}
+.mx-calc-tot span:first-child{font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)}
+.mx-calc-tot .big{font-size:1.7rem;color:var(--accent)}
+.mx-dlg-aviso{grid-column:1/-1;font-size:.76rem;line-height:1.45;background:rgba(var(--warn-rgb),.10);border-radius:var(--r-sm);padding:.45rem .65rem;display:none}
+.mx-dlg-aviso.on{display:block}
+.mx-dlg-ft{display:flex;justify-content:flex-end;gap:.5rem;padding:.75rem 1.1rem;border-top:1px solid var(--border);background:var(--surface2)}
 
-/* ── Filtro do resumo ── */
-.mx-filtro{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:.7rem .9rem;margin-bottom:1.25rem}
-.mx-flabel{font-size:.78rem;color:#8b949e;display:flex;align-items:center;gap:.35rem}
-.mx-efet{font-size:1.4rem;font-weight:700;color:#3fb950}
-.mx-barra{height:8px;border-radius:4px;background:#21262d;overflow:hidden;display:flex;margin:.35rem 0}
+/* ── Resumo ── */
+.mx-filtro{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:.7rem .9rem;margin-bottom:1.25rem}
+.mx-flabel{font-size:.78rem;color:var(--muted);display:flex;align-items:center;gap:.35rem}
+.mx-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);padding:1rem;margin-bottom:1rem;box-shadow:0 1px 2px var(--shadow-1)}
+.mx-card-t{font-size:.92rem;font-weight:700;margin-bottom:.2rem}
+.mx-card-d{font-size:.76rem;color:var(--muted);margin-bottom:.9rem;line-height:1.5}
+.mx-orig{display:grid;grid-template-columns:1fr 1fr;gap:.75rem}
+@media(max-width:640px){.mx-orig{grid-template-columns:1fr}}
+.mx-orig-c{border:1px solid var(--border);border-top:3px solid var(--o12);border-radius:var(--r-md);padding:.7rem .85rem}
+.mx-orig-c.i4{border-top-color:var(--o4)}
+.mx-orig-n{font-size:.8rem;font-weight:700}
+.mx-orig-n small{font-weight:400;color:var(--muted)}
+.mx-orig-v{font-size:1.6rem;margin:.3rem 0 .15rem}
+.mx-orig-l{display:flex;justify-content:space-between;font-size:.76rem;color:var(--text2);padding:.12rem 0}
+.mx-orig-l b{font-family:'IBM Plex Mono',ui-monospace,monospace;font-weight:500;color:var(--text)}
+.mx-barra{height:10px;border-radius:5px;background:var(--surface3);overflow:hidden;display:flex;margin:.9rem 0 .35rem}
 .mx-barra i{display:block;height:100%}
-.mx-leg{display:flex;gap:1rem;font-size:.72rem;color:#8b949e;flex-wrap:wrap}
-.mx-leg b{color:#e6edf3}
+.mx-leg{display:flex;gap:1rem;font-size:.72rem;color:var(--muted);flex-wrap:wrap}
+.mx-leg b{color:var(--text)}
 .mx-dot{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:.3rem}
+.comp-l{display:block;font-size:.66rem;color:var(--muted);font-weight:400}
+.mx-part{display:inline-block;height:6px;border-radius:3px;background:var(--accent);vertical-align:middle;margin-right:.4rem;opacity:.75}
+
+/* ── Celular ── */
+@media(max-width:720px){
+  .mx-header{padding:0 .9rem}
+  .mx-controls{margin-left:0;width:100%}
+  .mx-body{padding:1rem .9rem 4rem}
+  .mx-dlg-body{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
 
 <header class="mx-header">
   <button class="mx-back" onclick="history.back()">← Voltar</button>
-  <span class="mx-title">Diferencial de Alíquota — ICMS</span>
+  <div class="mx-ident">
+    <span class="mx-kicker">Fiscal · ICMS</span>
+    <span class="mx-title">Diferencial de alíquota</span>
+  </div>
+  <div class="mx-tabs" role="tablist">
+    <button class="mx-tab" id="tabApurar">Apurar</button>
+    <button class="mx-tab" id="tabResumo">Resumo</button>
+    <button class="mx-tab" id="tabHistorico">Histórico</button>
+  </div>
   <div class="mx-controls">
-    <button class="mx-btn ghost" id="tabApurar">Apurar</button>
-    <button class="mx-btn ghost" id="tabResumo">Resumo</button>
-    <button class="mx-btn ghost" id="tabHistorico">Histórico</button>
-    <span style="width:1px;height:20px;background:#30363d"></span>
-    <input type="month" id="competencia" class="mx-inp">
+    <input type="month" id="competencia" class="mx-inp" title="Competência">
     <button class="mx-btn" id="btnApurar" disabled>Apurar</button>
     <button class="mx-btn ghost" id="btnExportar" disabled>Exportar xlsx</button>
-    <button class="mx-btn" id="btnFinalizar" disabled style="background:#238636;border-color:#2ea043">Finalizar</button>
+    <button class="mx-btn ok" id="btnFinalizar" disabled>Finalizar</button>
   </div>
 </header>
 
@@ -152,7 +260,7 @@ table.mx-t tr.dup td{background:#2a1416}
  <div id="viewApurar">
   <div class="mx-drop-grid">
     <label class="mx-drop" id="dropRel">
-      <div class="mx-drop-t">1. Relatório de Notas de Compra</div>
+      <div class="mx-drop-t"><span class="mx-drop-n">1</span>Relatório de Notas de Compra</div>
       <div class="mx-drop-d">
         Microvix → Relatórios → Notas de Compra. Exporte com
         <strong>Natureza de Operação = Todos</strong>, uma empresa por vez.
@@ -163,7 +271,7 @@ table.mx-t tr.dup td{background:#2a1416}
     </label>
 
     <label class="mx-drop" id="dropXml">
-      <div class="mx-drop-t">2. XMLs das notas</div>
+      <div class="mx-drop-t"><span class="mx-drop-n">2</span>XMLs das notas</div>
       <div class="mx-drop-d">
         Microvix → Entrada NF-e → <strong>Status: Todas</strong> → Download XML.
         Use uma janela maior que o mês: o filtro é por emissão e o cálculo
@@ -174,11 +282,11 @@ table.mx-t tr.dup td{background:#2a1416}
     </label>
 
     <label class="mx-drop" id="dropCont" style="grid-column:1/-1">
-      <div class="mx-drop-t">3. Planilha da contabilidade <span style="font-weight:400;color:#8b949e">(opcional)</span></div>
+      <div class="mx-drop-t"><span class="mx-drop-n">3</span>Planilha da contabilidade <span style="font-weight:400;color:var(--muted)">(opcional)</span></div>
       <div class="mx-drop-d">
-        A planilha de recomposição que a contabilidade envia, com uma aba por
-        competência. Se você subir, a apuração sai com o confronto pronto:
-        o que bate, o que diverge, o que só nós temos e o que só eles têm.
+        A planilha de recomposição que a contabilidade envia. Se você subir,
+        a apuração mostra quanto cada lado deu e de onde vem a diferença,
+        nota por nota.
       </div>
       <div class="mx-drop-files" id="contFiles"></div>
       <input type="file" id="inpCont" accept=".xlsx,.xls" multiple hidden>
@@ -187,28 +295,33 @@ table.mx-t tr.dup td{background:#2a1416}
 
   <div id="errorBox" class="mx-error" style="display:none"></div>
   <div id="alertBox" class="mx-alert" style="display:none"></div>
-  <div id="avisos"></div>
-  <div id="conferencia"></div>
-  <div id="pendencias"></div>
 
   <div id="summaryStrip" class="mx-summary" style="display:none">
     <div class="mx-sum-card">
       <div class="mx-sum-label">Total a pagar</div>
       <div class="mx-sum-val blue" id="sumTotal">—</div>
+      <div class="mx-sum-sub">soma das notas marcadas</div>
     </div>
     <div class="mx-sum-card">
-      <div class="mx-sum-label">Notas apuradas</div>
+      <div class="mx-sum-label">Notas no cálculo</div>
       <div class="mx-sum-val" id="sumNotas">—</div>
+      <div class="mx-sum-sub">marcadas para pagar</div>
     </div>
     <div class="mx-sum-card">
-      <div class="mx-sum-label">Fora do cálculo</div>
+      <div class="mx-sum-label">Ficaram de fora</div>
       <div class="mx-sum-val" id="sumFora">—</div>
+      <div class="mx-sum-sub">sem diferencial ou fora do mês</div>
     </div>
     <div class="mx-sum-card">
-      <div class="mx-sum-label">Precisam de conferência</div>
+      <div class="mx-sum-label">Pedem conferência</div>
       <div class="mx-sum-val warn" id="sumConferir">—</div>
+      <div class="mx-sum-sub">itens para olhar antes de fechar</div>
     </div>
   </div>
+
+  <div id="conferencia"></div>
+  <div id="avisos"></div>
+  <div id="pendencias"></div>
 
   <div id="stateBox" class="mx-state">
     Envie o relatório e os XMLs, escolha a competência e clique em <strong>Apurar</strong>.
@@ -222,19 +335,67 @@ table.mx-t tr.dup td{background:#2a1416}
       <label class="mx-flabel">Até <input type="date" id="resAte" class="mx-inp"></label>
       <select id="resCnpj" class="mx-inp"><option value="">Todas as empresas</option></select>
       <button class="mx-btn" id="btnResumo">Consultar</button>
-      <span class="mx-drop-d" style="margin-left:auto">Corte pela data de lançamento, sobre o que já foi finalizado.</span>
+      <span class="mx-drop-d" style="margin-left:auto">Só o que já foi finalizado, pela data de lançamento da nota.</span>
     </div>
     <div id="resumoBox"></div>
   </div>
 
   <div id="viewHistorico" style="display:none">
     <div class="mx-filtro">
-      <span class="mx-drop-d">Competências já finalizadas, por loja. Só aparece aqui o que foi finalizado — apuração não finalizada não deixa rastro.</span>
-      <button class="mx-btn" id="btnHistorico" style="margin-left:auto">Atualizar</button>
+      <span class="mx-drop-d">Competências já finalizadas, por loja. Apuração que não foi finalizada não aparece aqui.</span>
+      <button class="mx-btn ghost" id="btnHistorico" style="margin-left:auto">Atualizar</button>
     </div>
     <div id="historicoBox"></div>
   </div>
 </div>
+
+<!-- Inclusão de nota / ajuste de base -->
+<dialog class="mx-dlg" id="dlgNota">
+  <form method="dialog" id="frmNota">
+    <div class="mx-dlg-hdr">
+      <h3 id="dlgTitulo">Incluir nota</h3>
+      <p id="dlgSub">Para nota que não veio no lote. Informe o valor dos produtos de cada alíquota; o imposto é calculado aqui.</p>
+    </div>
+    <div class="mx-dlg-body">
+      <div class="mx-fld full" id="fldEmpresa">
+        <label for="dlgEmpresa">Empresa</label>
+        <select id="dlgEmpresa" class="mx-inp"></select>
+      </div>
+      <div class="mx-fld">
+        <label for="dlgNumero">Nota fiscal</label>
+        <input id="dlgNumero" class="mx-inp" inputmode="numeric" placeholder="ex: 13321577" autocomplete="off" required>
+      </div>
+      <div class="mx-fld">
+        <label for="dlgFornecedor">Fornecedor</label>
+        <input id="dlgFornecedor" class="mx-inp" placeholder="opcional" autocomplete="off">
+      </div>
+      <div class="mx-fld">
+        <label for="dlgBase12"><span class="o12"></span>Valor a 12%</label>
+        <input id="dlgBase12" class="mx-inp valor" inputmode="decimal" placeholder="0,00" autocomplete="off">
+        <small>produtos nacionais</small>
+      </div>
+      <div class="mx-fld">
+        <label for="dlgBase4"><span class="o4"></span>Valor a 4%</label>
+        <input id="dlgBase4" class="mx-inp valor" inputmode="decimal" placeholder="0,00" autocomplete="off">
+        <small>produtos importados</small>
+      </div>
+      <div class="mx-calc">
+        <div class="mx-calc-lin"><span>Imposto sobre os 12%</span><span id="dlgImp12">R$ 0,00</span></div>
+        <div class="mx-calc-lin"><span>Imposto sobre os 4%</span><span id="dlgImp4">R$ 0,00</span></div>
+        <div class="mx-calc-tot"><span>Diferencial a pagar</span><span class="big" id="dlgImpTot">R$ 0,00</span></div>
+      </div>
+      <div class="mx-dlg-aviso" id="dlgAviso"></div>
+      <div class="mx-fld full">
+        <label for="dlgMotivo">Motivo</label>
+        <input id="dlgMotivo" class="mx-inp" placeholder="ex: consta na planilha da contabilidade, sem XML" autocomplete="off">
+      </div>
+    </div>
+    <div class="mx-dlg-ft">
+      <button type="button" class="mx-btn ghost" id="dlgCancelar">Cancelar</button>
+      <button type="submit" class="mx-btn" id="dlgConfirmar" value="ok">Confirmar inclusão</button>
+    </div>
+  </form>
+</dialog>
 
 <script src="icms.js"></script>
 </body>

@@ -520,6 +520,54 @@ cf = conferir(nossa, {
 ok('nota partida em duas alíquotas é somada antes de comparar',
   perto(cf.divergentes[0]?.deles.base12 ?? 0, 600) && perto(cf.divergentes[0]?.deles.base4 ?? 0, 400));
 
+// ── Leitura da planilha da contabilidade ─────────────────────────────────────
+console.log('\nPlanilha da contabilidade');
+{
+  const XLSX = require('xlsx');
+  const { parseRecomposicao } = require('../services/recomposicaoContabilidade');
+  const cab = ['NOTA FICAL', 'VALOR PRODUTO', 'EXCLUSÃO', 'INCLUSÃO', 'DEBITO', 'CRED', 'ICMS A PAGAR'];
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['PLANILHA CALCULO RECOMPOSIÇÃO ALÍQUOTA'],
+    ['', 'QUANDO ALIQUOTA INTERESTADUAL 12%'],
+    cab,
+    [13226171, 5089.28, 0, 0, 0, 0, 372.39],
+    [13321577, 2072.04, 0, 0, 0, 0, 151.61],
+    ['', '', 0, 0, 0, 0, 0],
+    // O total já veio como "TOTAL" sozinho na coluna da nota.
+    ['TOTAL', 7161.32, 0, 0, 0, 0, 523.99],
+    ['', 'QUANDO ALÍQUOTA INTERESTADUAL 4%'],
+    cab,
+    [13226171, 1739.28, 0, 0, 0, 0, 296.95],
+    [' ', 1739.28, 0, 0, 0, 0, 296.95],
+    ['', '', '', '', '', 'TOTAL A PAGAR', 820.94],
+    ['', 'ITENS COM ST EM MINAS GERAIS'],
+    ['NOTA FICAL', 'NCM', 'BASE ICMS NORMAL'],
+    [555, 61091000, 100, 0, 0, 0, 18],
+    ['Notas que não entraram nesse mês', '', '', 'Entrada de bonificação'],
+    [777, 500, 0, 0, 0, 0, 30],
+  ]);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, '09-2026  ');
+  const lido = parseRecomposicao(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+  const soma = lido.notas.reduce((s, n) => s + n.aPagar, 0);
+  ok('aba com espaço no nome vira competência', lido.competencias[0] === '2026-09', lido.competencias.join());
+  ok('linha TOTAL não é lida como nota', !lido.notas.some(n => !/^\d+$/.test(n.nNF)));
+  ok('seções de ST e de notas que não entraram ficam de fora', !lido.notas.some(n => n.nNF === '555' || n.nNF === '777'));
+  ok('soma bate com o total a pagar da planilha', perto(soma, 820.94, 0.01), soma.toFixed(2));
+}
+
+// ── Ajuste digitado sem a série ──────────────────────────────────────────────
+{
+  const ajustes = require('../services/icmsAjustes');
+  const { recalcularLinha } = require('../services/difal');
+  const a3 = apuracaoBase();
+  const antes = a3.empresas[0].linhas.length;
+  const doc = a3.empresas[0].linhas[0].doc;
+  ajustes.aplicar(a3, [{ cnpj: a3.empresas[0].cnpj, competencia: '2025-09', doc: doc.split('/')[0].trim(), tipo: 'manual', base12: 500, motivo: 'x' }], l => recalcularLinha(l));
+  ok('nota digitada sem série ajusta a do lote, sem duplicar', a3.empresas[0].linhas.length === antes
+    && perto(a3.empresas[0].linhas[0].base12, 500));
+}
+
 // ── Apuração completa, se vierem arquivos ────────────────────────────────────
 const args = process.argv.slice(2);
 const iEsp = args.indexOf('--esperado');

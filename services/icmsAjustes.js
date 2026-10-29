@@ -64,6 +64,20 @@ async function remover(db, _id) {
   return { removidos: r.deletedCount };
 }
 
+const _soDigitos = s => String(s || '').replace(/\D/g, '').replace(/^0+/, '');
+
+// Acha a nota do lote a que o ajuste se refere. Quem digita a nota à mão
+// costuma pôr só o número ("13321577"), sem a série que o lote traz
+// ("13321577 /0"); sem esse segundo passo a nota entrava duplicada. Só casa
+// pelo número quando ele é único na empresa.
+function linhaDoAjuste(emp, aj) {
+  const doc = String(aj.doc).replace(/\s/g, '');
+  const exata = emp.linhas.find(l => String(l.doc).replace(/\s/g, '') === doc);
+  if (exata || doc.includes('/')) return exata || null;
+  const mesmas = emp.linhas.filter(l => _soDigitos(l.nNF || String(l.doc).split('/')[0]) === _soDigitos(doc));
+  return mesmas.length === 1 ? mesmas[0] : null;
+}
+
 /**
  * Aplica os ajustes sobre o resultado de calcularPorEmpresa.
  * Recebe `recalcular(linha)` para refazer os passos e o difal da linha depois
@@ -82,7 +96,7 @@ function aplicar(resultado, ajustes, recalcular) {
       continue;
     }
 
-    const linha = emp.linhas.find(l => l.doc.replace(/\s/g, '') === String(aj.doc).replace(/\s/g, ''));
+    const linha = linhaDoAjuste(emp, aj);
 
     if (aj.tipo === 'exclusao') {
       if (linha) {
