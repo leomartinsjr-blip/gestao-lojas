@@ -155,9 +155,15 @@ function hideLogin() {
 
 function userIsAdmin(u) { return !u?.board && !(u?.lojas && u.lojas.length); }
 
-// Login da loja Site (funcionário do site): não usa o gestão, vai direto para o NEXO.
-// No primeiro acesso troca a senha antes (o modal manda para o NEXO depois).
-function irParaNexoSeSite(user) {
+// Logins que não usam o gestão: o da loja Site vai direto para o NEXO, e o da
+// lista da vez (aparelho do salão) vai para a lista da própria loja.
+// No primeiro acesso troca a senha antes (o modal chama esta função de novo).
+function desviarLoginRestrito(user) {
+  if (user?.lista) {
+    if (user.mustChangePassword) { hideLogin(); showChangePasswordModal(); return true; }
+    location.href = '/indeva';
+    return true;
+  }
   if (user?.board !== 'site') return false;
   if (user.mustChangePassword) { hideLogin(); showChangePasswordModal(); return true; }
   // Veio de um manual (ex.: botão Manual do NEXO sem sessão no gestão): volta para ele
@@ -268,7 +274,7 @@ async function checarFichaAdmissao() {
 async function checkAuth() {
   try {
     S.user = await apiFetch('GET', '/api/me');
-    if (irParaNexoSeSite(S.user)) return;
+    if (desviarLoginRestrito(S.user)) return;
     hideLogin();
     applyUserPermissions(S.user);
     checarValeTransporte();
@@ -510,7 +516,7 @@ function initLoginForm() {
     try {
       S.user = await apiFetch('POST', '/api/login', { username, password });
       document.getElementById('loginPass').value = '';
-      if (irParaNexoSeSite(S.user)) return;
+      if (desviarLoginRestrito(S.user)) return;
       applyUserPermissions(S.user);
       hideLogin();
       const now = new Date();
@@ -580,7 +586,7 @@ function showChangePasswordModal() {
       await apiFetch('POST', '/api/change-password', { password: pwd });
       S.user.mustChangePassword = false;
       overlay.remove();
-      irParaNexoSeSite(S.user);
+      desviarLoginRestrito(S.user);
     } catch (e) {
       let msg = 'Erro ao salvar';
       try { msg = JSON.parse(e.message).error || msg; } catch {}
@@ -13547,14 +13553,26 @@ const SUPERVISOR_STORES = [
   ['delrey','Del Rey'],['minas','Minas'],['contagem','Contagem'],
   ['estacao','Estação'],['tommy','Tommy'],['lez','Lez a Lez']
 ];
+// "lista:<loja>" é o login do aparelho do salão: só abre a lista da vez da loja.
 const TIPO_OPTIONS = [
   ['admin','Admin'],['supervisor','Supervisor'],['escritorio','Escritório'],
   ['delrey','Del Rey'],['minas','Minas'],['contagem','Contagem'],
-  ['estacao','Estação'],['tommy','Tommy'],['lez','Lez a Lez']
+  ['estacao','Estação'],['tommy','Tommy'],['lez','Lez a Lez'],
+  ['lista:delrey','Lista da vez — Del Rey'],['lista:minas','Lista da vez — Minas'],
+  ['lista:contagem','Lista da vez — Contagem'],['lista:estacao','Lista da vez — Estação'],
+  ['lista:tommy','Lista da vez — Tommy']
 ];
 function userTipo(u) {
   if (u.lojas && u.lojas.length) return 'supervisor';
+  if (u.lista) return 'lista:' + u.board;
   return u.board || 'admin';
+}
+// Tipo escolhido no seletor → campos que o servidor guarda.
+function camposDoTipo(tipo, lojasMarcadas) {
+  if (tipo === 'supervisor') return { board: null, lojas: lojasMarcadas, lista: false };
+  if (tipo === 'admin') return { board: null, lojas: null, lista: false };
+  if (tipo.startsWith('lista:')) return { board: tipo.slice(6), lojas: null, lista: true };
+  return { board: tipo, lojas: null, lista: false };
 }
 
 async function _loadUsersList() {
@@ -13622,17 +13640,8 @@ async function _loadUsersList() {
         const body = {};
         row.querySelectorAll('[data-field]').forEach(el => {
           if (el.dataset.field === 'tipo') {
-            const tipo = el.value;
-            if (tipo === 'supervisor') {
-              body.board = null;
-              body.lojas = [...row.querySelectorAll('[data-role="lojas-box"] input:checked')].map(cb => cb.value);
-            } else if (tipo === 'admin') {
-              body.board = null;
-              body.lojas = null;
-            } else {
-              body.board = tipo;
-              body.lojas = null;
-            }
+            Object.assign(body, camposDoTipo(el.value,
+              [...row.querySelectorAll('[data-role="lojas-box"] input:checked')].map(cb => cb.value)));
           } else if (el.dataset.field !== 'password') {
             if (el.value.trim()) body[el.dataset.field] = el.value.trim();
           } else if (el.value.trim()) {
@@ -13731,15 +13740,11 @@ function initUsersModal() {
     errEl.classList.add('hidden');
     if (!username || !password) { errEl.textContent = 'Usuário e senha são obrigatórios'; errEl.classList.remove('hidden'); return; }
 
-    let board = null, lojas = null;
-    if (tipo === 'supervisor') {
-      lojas = [...document.querySelectorAll('#newLojasSupervisor input:checked')].map(cb => cb.value);
-    } else if (tipo !== 'admin') {
-      board = tipo;
-    }
+    const campos = camposDoTipo(tipo,
+      [...document.querySelectorAll('#newLojasSupervisor input:checked')].map(cb => cb.value));
 
     try {
-      await apiFetch('POST', '/api/users', { username, label, board, lojas, password });
+      await apiFetch('POST', '/api/users', { username, label, ...campos, password });
       document.getElementById('newUsername').value = '';
       document.getElementById('newLabel').value = '';
       document.getElementById('newPassword').value = '';
@@ -14953,6 +14958,16 @@ async function initStandalone() {
 
   document.getElementById('indeva-camp-pill')?.addEventListener('click', _openIndevaCampanhasOverlay);
   document.getElementById('indeva-meta-pill')?.addEventListener('click', _openIndevaMetasOverlay);
+
+  const sair = document.getElementById('indeva-sair-pill');
+  if (sair && S.user?.lista) {
+    sair.classList.remove('hidden');
+    sair.addEventListener('click', async () => {
+      if (!confirm('Sair da lista da vez neste aparelho?')) return;
+      try { await fetch('/api/logout', { method: 'POST' }); } catch {}
+      location.href = '/';
+    });
+  }
 
   // Voltou para a aba depois de um tempo: atualiza a fila (outro aparelho pode ter mexido)
   // e, a cada 10 min, as vendas do Microvix

@@ -1132,6 +1132,36 @@ app.use(compress());
 app.use(express.json({ limit: '50mb' }));
 app.use(session(sessionOpts));
 
+// ── Login da lista da vez ───────────────────────────────────────────────────
+// Conta que fica no aparelho do salão: abre só a lista da vez da própria loja.
+// A equipe usava o login da loja, que abre o gestão inteiro e as vendas de
+// todas as lojas. O bloqueio é aqui, no servidor, e não só no menu: digitar o
+// endereço de outra tela ou chamar a API direto também não passa.
+//
+// A marca é lida do cadastro a cada pedido, não da sessão: marcar uma conta
+// como "só lista" vale na hora, sem esperar ela sair e entrar de novo.
+const LISTA_APIS = [
+  /^\/api\/me$/, /^\/api\/logout$/, /^\/api\/change-password$/, /^\/api\/login$/,
+  /^\/api\/indeva\/[a-z]+(\/.*)?$/, /^\/api\/indeva-boot\/\d+\/\d+$/, /^\/api\/employees\/photos$/,
+];
+function ehLoginLista(req) {
+  const u = req.session?.user;
+  return !!(u && readUsers()[u.username]?.lista);
+}
+app.use((req, res, next) => {
+  if (!ehLoginLista(req)) return next();
+  const p = req.path;
+  if (p.startsWith('/api/')) {
+    if (LISTA_APIS.some(r => r.test(p))) return next();
+    return res.status(403).json({ error: 'Este login abre só a lista da vez' });
+  }
+  if (p.startsWith('/uploads/')) return res.status(403).end();
+  // Qualquer página que não seja a lista (inclusive o painel em "/") volta para ela.
+  const pagina = req.method === 'GET' && (p === '/' || p.endsWith('.html') || !path.extname(p));
+  if (pagina && !/^\/indeva(\.html)?$/.test(p) && !p.startsWith('/manuais')) return res.redirect('/indeva');
+  next();
+});
+
 // ── Manuais ─────────────────────────────────────────────────────────────────
 // Índice e manuais em si. Antes do express.static de propósito: existe uma
 // pasta public/manuais, e o static responderia /manuais com um 301 para
@@ -1263,7 +1293,7 @@ app.post('/api/login', (req, res) => {
   registrarAcesso(req, { usuario: key, origem: 'gestão', ok: true });
   migrarSenha(key, password);
   req.session.user = { username: key, board: user.board, lojas: user.lojas || null, label: user.label, passwordChangedAt: user.passwordChangedAt || null, mustChangePassword: !!user.mustChangePassword };
-  res.json({ username: key, board: user.board, lojas: user.lojas || null, label: user.label, mustChangePassword: !!user.mustChangePassword });
+  res.json({ username: key, board: user.board, lojas: user.lojas || null, label: user.label, mustChangePassword: !!user.mustChangePassword, lista: !!user.lista });
 });
 
 // ── POST /api/logout ───────────────────────────────────────────────────────
@@ -1353,15 +1383,16 @@ app.get('/api/users', requireAdmin, (req, res) => {
   const users = readUsers();
   const list = Object.entries(users).map(([username, u]) => ({
     username, label: u.label || username, board: u.board || null, lojas: u.lojas || null, email: u.email || null,
-    suspenso: !!u.suspenso, dono: username === OWNER_USER, admin: ehAdminUser(u)
+    suspenso: !!u.suspenso, dono: username === OWNER_USER, admin: ehAdminUser(u), lista: !!u.lista
   }));
   res.json(list);
 });
 
 // ── POST /api/users  (admin) ───────────────────────────────────────────────
 app.post('/api/users', requireAdmin, (req, res) => {
-  const { username, password, label, board, lojas } = req.body || {};
+  const { username, password, label, board, lojas, lista } = req.body || {};
   if (!username || !password) return res.status(400).json({ error: 'Informe usuário e senha' });
+  if (lista && !INDEVA_STORES.includes(board)) return res.status(400).json({ error: 'Login da lista da vez precisa de uma loja com lista' });
   const key = username.toLowerCase().trim();
   const users = readUsers();
   if (users[key]) return res.status(409).json({ error: 'Usuário já existe' });
@@ -1370,6 +1401,7 @@ app.post('/api/users', requireAdmin, (req, res) => {
   if (!board && !(lojas && lojas.length) && !souDono(req))
     return res.status(403).json({ error: 'Só o dono cria conta de admin' });
   users[key] = { password: hashSenha(password), label: label || key, board: board || null, lojas: (lojas && lojas.length) ? lojas : null, mustChangePassword: true };
+  if (lista) users[key].lista = true;
   writeUsers(users);
   res.json({ ok: true, username: key });
 });
@@ -1381,7 +1413,9 @@ app.put('/api/users/:username', requireAdmin, (req, res) => {
   if (!users[key]) return res.status(404).json({ error: 'Usuário não encontrado' });
   if (key === OWNER_USER && req.session.user.username !== OWNER_USER)
     return res.status(403).json({ error: 'A conta do dono só é alterada por ela mesma' });
-  const { password, label, board, email, lojas, suspenso } = req.body || {};
+  const { password, label, board, email, lojas, suspenso, lista } = req.body || {};
+  if (lista && !INDEVA_STORES.includes(board !== undefined ? board : users[key].board))
+    return res.status(400).json({ error: 'Login da lista da vez precisa de uma loja com lista' });
   // Admin manda em loja, escritório e supervisor. Em outro admin, não: podia
   // suspender o colega, trocar a senha dele ou promover alguém e ficar sozinho
   // no comando. Mexer em conta de admin é do dono. Na própria conta cada um
@@ -1416,6 +1450,7 @@ app.put('/api/users/:username', requireAdmin, (req, res) => {
   if (board !== undefined) users[key].board = board;
   if (email !== undefined) users[key].email = email || null;
   if (lojas !== undefined) users[key].lojas = (lojas && lojas.length) ? lojas : null;
+  if (lista !== undefined) { if (lista) users[key].lista = true; else delete users[key].lista; }
   writeUsers(users);
   if (password && key === req.session.user.username) {
     return req.session.save(() => res.json({ ok: true }));
@@ -1487,7 +1522,7 @@ app.post('/api/restore', requireAdmin, async (req, res) => {
 // ── GET /api/me ────────────────────────────────────────────────────────────
 app.get('/api/me', (req, res) => {
   if (!req.session?.user) return res.status(401).json({ error: 'Não autenticado' });
-  res.json(req.session.user);
+  res.json({ ...req.session.user, lista: ehLoginLista(req) });
 });
 
 // ── GET /api/months ────────────────────────────────────────────────────────
@@ -1796,7 +1831,14 @@ app.get('/api/employees', requireAuth, async (req, res) => {
 app.get('/api/employees/photos', requireAuth, async (req, res) => {
   try {
     const photos = await readPhotos();
-    res.json(Object.entries(photos).map(([id, foto]) => ({ id: parseInt(id), foto })));
+    let lista = Object.entries(photos).map(([id, foto]) => ({ id: parseInt(id), foto }));
+    // O login da lista vê só a equipe da própria loja.
+    if (ehLoginLista(req)) {
+      const db = await readDB();
+      const daLoja = new Set((db.employees || []).filter(e => e.board === req.session.user.board).map(e => e.id));
+      lista = lista.filter(p => daLoja.has(p.id));
+    }
+    res.json(lista);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
