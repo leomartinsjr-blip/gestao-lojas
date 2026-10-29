@@ -11314,6 +11314,18 @@ function _cdPipelineHtml(item) {
 }
 
 
+// Marca da boleta: o Fabricante digitado ou, sem ele, a marca que aparece no nome do produto
+const _BOL_MARCAS = [['NEW BALANCE','New Balance'],['NEW ERA','New Era'],['RIP CURL','Rip Curl'],['CHUCK TAYLOR','Converse'],
+  ['CONVERSE','Converse'],['VANS','Vans'],['OAKLEY','Oakley'],['MIZUNO','Mizuno'],['KENNER','Kenner'],['HURLEY','Hurley'],
+  ['TOMMY','Tommy'],['REDLEY','Redley'],['TESLA','Tesla'],['MCD','MCD'],['QUIKSILVER','Quiksilver'],['BILLABONG','Billabong']];
+function _boletaMarca(b) {
+  const fab = String(b.fabricante || '').trim();
+  const txt = (fab + ' ' + (b.produto || '')).toUpperCase();
+  const m = _BOL_MARCAS.find(([k]) => new RegExp('\\b' + k + '\\b').test(txt));
+  if (m) return m[1];
+  return fab ? fab.toUpperCase() : '';
+}
+
 function _boletasListHtml(isAdmin, userBoard) {
   return `<div class="bol-list-wrap">
     <div class="bol-list-header">
@@ -11339,6 +11351,10 @@ function _boletasListHtml(isAdmin, userBoard) {
       <button class="bol-filter-tab" data-pipe="enviado">Env. Fábrica</button>
       <button class="bol-filter-tab" data-pipe="credito">Crédito</button>
     </div>
+    <div style="display:flex;gap:.5rem;padding:.25rem .75rem .5rem;flex-wrap:wrap">
+      <select id="bolMarcaFilter" class="bol-input" style="width:auto;padding:4px 8px"><option value="">Todas as marcas</option></select>
+      <input id="bolProdFilter" class="bol-input" type="search" placeholder="Produto, referência ou código" style="flex:1;min-width:180px;padding:4px 8px">
+    </div>
     <div id="bolListBody" class="bol-list-body"></div>
   </div>`;
 }
@@ -11347,8 +11363,14 @@ function _initBoletasList(body, isAdmin, userBoard) {
   let filter = 'pendente';
   let pipeFilter = 'all';
   let storeFilter = isAdmin ? '' : userBoard;
+  let marcaFilter = '';
+  let prodFilter = '';
+  const semAcento = t => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
 
   const listBody = body.querySelector('#bolListBody');
+  const marcaSelect = body.querySelector('#bolMarcaFilter');
+  const marcas = [...new Set((S.boletas||[]).filter(b => isAdmin || b.board === userBoard).map(_boletaMarca).filter(Boolean))].sort();
+  marcaSelect.innerHTML += marcas.map(m => `<option value="${m}">${m}</option>`).join('');
 
   function renderList() {
     const items = (S.boletas||[]).filter(b => {
@@ -11361,6 +11383,13 @@ function _initBoletasList(body, isAdmin, userBoard) {
     }).filter(b => {
       if (pipeFilter === 'all') return true;
       return _cdStatus(b) === pipeFilter;
+    }).filter(b => {
+      if (marcaFilter && _boletaMarca(b) !== marcaFilter) return false;
+      if (prodFilter) {
+        const txt = semAcento([b.produto, b.ref, b.codigo, b.cor, b.fabricante].join(' '));
+        if (!prodFilter.split(/\s+/).every(p => txt.includes(p))) return false;
+      }
+      return true;
     }).sort((a, b) => {
       if (filter === 'pendente') return (_boletaDaysLeft(a)??9999) - (_boletaDaysLeft(b)??9999);
       return new Date(b.createdAt) - new Date(a.createdAt);
@@ -11416,6 +11445,8 @@ function _initBoletasList(body, isAdmin, userBoard) {
 
   const storeSelect = body.querySelector('#bolStoreFilter');
   if (storeSelect) storeSelect.addEventListener('change', () => { storeFilter = storeSelect.value; renderList(); });
+  marcaSelect.addEventListener('change', () => { marcaFilter = marcaSelect.value; renderList(); });
+  body.querySelector('#bolProdFilter').addEventListener('input', e => { prodFilter = semAcento(e.target.value).trim(); renderList(); });
 
   body.querySelector('#bolNewBtn').addEventListener('click', () => _renderBoletasModal('new', null));
 }
