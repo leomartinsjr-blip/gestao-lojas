@@ -12202,6 +12202,38 @@ app.get('/api/conferencia/colecoes', requireEscritorioOrAdmin, async (req, res) 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Ordem de coleção pelo nome: "SUMMER 26" (verão 25/26) vem antes de
+// "WINTER 26". Nome sem estação + ano fica no começo, para o usuário arrumar.
+function _colecaoChave(nome) {
+  const n   = _campNorm(nome);
+  const ano = n.match(/(?:^|\D)(20\d{2}|\d{2})(?:\D|$)/);
+  if (!ano) return null;
+  const a = ano[1].length === 2 ? 2000 + +ano[1] : +ano[1];
+  const estacao = /WINTER|INVERNO|\bINV\b|\bW\b/.test(n) ? 1
+                : /SUMMER|VERAO|\bVER\b|\bS\b/.test(n)  ? 0 : null;
+  if (estacao == null) return null;
+  return a * 2 + estacao;
+}
+
+// GET /api/conferencia/colecoes/catalogo — coleções do catálogo Microvix,
+// já na ordem antiga → nova
+app.get('/api/conferencia/colecoes/catalogo', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const lojas   = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+    const catalog = await _getCatalog(lojas);
+    const vistos  = new Map();
+    for (const p of Object.values(catalog || {})) {
+      const c = String(p?.linha || '').trim();
+      if (c && !vistos.has(_campNorm(c))) vistos.set(_campNorm(c), c);
+    }
+    const nomes = [...vistos.values()];
+    const semChave = nomes.filter(c => _colecaoChave(c) == null).sort();
+    const comChave = nomes.filter(c => _colecaoChave(c) != null)
+      .sort((x, y) => _colecaoChave(x) - _colecaoChave(y) || x.localeCompare(y));
+    res.json({ colecoes: [...semChave, ...comChave], semOrdem: semChave });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // PUT /api/conferencia/colecoes — body: ["WINTER 23","SUMMER 24",...] (antiga → nova)
 app.put('/api/conferencia/colecoes', requireEscritorioOrAdmin, async (req, res) => {
   try {

@@ -2508,6 +2508,31 @@
     $('colecoesCount').textContent = colecoesData.length
       ? `${colecoesData.length} coleções · mais nova: ${colecoesData[colecoesData.length - 1]}` : '';
   });
+  // Ao sair do quadro, o "Coleção até" das campanhas passa a listar a ordem nova
+  $('colecoesTxt').addEventListener('change', renderCampanhas);
+
+  // Preenche a ordem com as coleções do catálogo. As que já estavam no quadro
+  // mantêm a posição; as novas entram na ordem sugerida pelo servidor.
+  $('puxarColecoesBtn').addEventListener('click', async () => {
+    const btn = $('puxarColecoesBtn');
+    btn.disabled = true; btn.textContent = 'Puxando…';
+    try {
+      const r = await api('GET', '/api/conferencia/colecoes/catalogo');
+      const sugeridas = r.colecoes || [];
+      let lista;
+      if (!colecoesData.length) lista = sugeridas;
+      else {
+        const tem = new Set(colecoesData.map(c => c.toUpperCase()));
+        lista = colecoesData.concat(sugeridas.filter(c => !tem.has(c.toUpperCase())));
+      }
+      colecoesData = lista;
+      $('colecoesTxt').value = lista.join('\n');
+      renderCampanhas();
+      if (r.semOrdem?.length)
+        alert(`Confira a ordem: não deu para saber a data destas coleções e elas ficaram no começo da lista:\n\n${r.semOrdem.join('\n')}\n\nDepois clique em Salvar.`);
+    } catch (e) { alert('Erro: ' + e.message); }
+    btn.disabled = false; btn.textContent = '⟳ Puxar do catálogo';
+  });
 
   $('salvarCampanhasBtn').addEventListener('click', async () => {
     const btn = $('salvarCampanhasBtn');
