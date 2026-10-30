@@ -2385,8 +2385,9 @@
   }
 
   function _campColecaoOpts(sel) {
-    // Sem a ordem cadastrada o "até" não funciona — o menu fica só com a opção vazia
-    const lista = colecoesData.slice();
+    // Sem ordem cadastrada no quadro, vale a ordem automática do catálogo
+    // (a mesma que o servidor usa na conferência)
+    const lista = (colecoesData.length ? colecoesData : (campOpcoes?.colecoes || [])).slice();
     if (sel && !lista.some(c => _campNormEq(c, sel))) lista.push(sel);
     return ['<option value="">— sem limite de coleção —</option>']
       .concat(lista.map(c => `<option value="${_escA(c)}"${_campNormEq(c, sel) ? ' selected' : ''}>${esc(c)}</option>`))
@@ -2533,7 +2534,7 @@
               value="${_escA(f.descContem)}" placeholder="ex: CHINELO"></div>
           <div class="camp-f"><label>Coleção até</label>
             <select data-idx="${i}" data-path="filtro.colecaoAte">${_campColecaoOpts(f.colecaoAte)}</select>
-            <span class="camp-hint">essa coleção e todas anteriores</span></div>
+            <span class="camp-hint">essa coleção e todas anteriores${colecoesData.length ? '' : ' · ordem automática (ajuste no quadro acima)'}</span></div>
           <div class="camp-f"><label>Ou coleções específicas</label>${_msHtml(i, 'filtro.colecoes')}
             <span class="camp-hint">se marcar alguma, ignora o "até"</span></div>
 

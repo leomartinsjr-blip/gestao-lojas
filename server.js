@@ -12209,17 +12209,21 @@ function _colecaoChave(nome) {
   const ano = n.match(/(?:^|\D)(20\d{2}|\d{2})(?:\D|$)/);
   if (!ano) return null;
   const a = ano[1].length === 2 ? 2000 + +ano[1] : +ano[1];
-  const estacao = /WINTER|INVERNO|\bINV\b|\bW\b/.test(n) ? 1
-                : /SUMMER|VERAO|\bVER\b|\bS\b/.test(n)  ? 0 : null;
+  // FALL (Tommy) anda junto com o WINTER do mesmo ano; SPRING com o SUMMER
+  const estacao = /WINTER|INVERNO|\bINV\b|\bW\b|FALL|OUTONO|AUTUMN/.test(n) ? 1
+                : /SUMMER|VERAO|\bVER\b|\bS\b|SPRING|PRIMAVERA/.test(n)  ? 0 : null;
   if (estacao == null) return null;
   return a * 2 + estacao;
 }
 
 // Valores distintos de um campo do catálogo Microvix (sem repetir por acento/caixa)
 async function _catalogoDistintos(campo) {
-  const lojas   = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-  const catalog = await _getCatalog(lojas);
-  const vistos  = new Map();
+  const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+  return _distintosDe(await _getCatalog(lojas), campo);
+}
+
+function _distintosDe(catalog, campo) {
+  const vistos = new Map();
   for (const p of Object.values(catalog || {})) {
     if (p?.tipo === 'servico') continue;
     const v = String(p?.[campo] || '').trim();
@@ -12382,7 +12386,7 @@ app.get('/api/conferencia/vendas', requireEscritorioOrAdmin, async (req, res) =>
 
 async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMin, descontoMaxItem, descontoMaxVenda, descontoSomenteAVista, marcasSemDesconto, cnpj, promoCfg = {}) {
     const campanhas    = Array.isArray(promoCfg.campanhas) ? promoCfg.campanhas : [];
-    const colecaoOrdem = Array.isArray(promoCfg.colecoes)  ? promoCfg.colecoes  : [];
+    let colecaoOrdem   = Array.isArray(promoCfg.colecoes)  ? promoCfg.colecoes  : [];
     const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
     const cnpjClean = cnpj.replace(/\D/g, '');
@@ -12407,6 +12411,10 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
     ]);
 
     const parseBR = s => { const t = String(s||'').trim(); if (!t) return 0; return t.includes(',') ? parseFloat(t.replace(/\./g,'').replace(',','.')) || 0 : parseFloat(t) || 0; };
+
+    // Sem ordem cadastrada no quadro, o "até" usa a ordem automática do catálogo
+    if (!colecaoOrdem.length && campanhas.some(c => c.filtro?.colecaoAte))
+      colecaoOrdem = _ordenarColecoes(_distintosDe(catalog, 'linha')).colecoes;
 
     // Mapa de preços promocionais: cod_produto → preco_promocao
     // Filtra apenas promoções vigentes hoje (API retorna range amplo)
