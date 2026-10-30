@@ -12150,13 +12150,48 @@ function _campanhaDoItem(campanhas, ordem, ctx) {
 // A campanha cobre o item, mas o preço praticado atende ao que ela permite?
 // Condições preenchidas são cumulativas; campanha sem condição libera o item.
 function _campanhaLibera(camp, { precoUnit, percDesc }) {
+  return _campanhaPrecoOk(camp, precoUnit) && _campanhaDescOk(camp, percDesc);
+}
+
+function _campanhaPrecoOk(camp, precoUnit) {
   const p = camp?.permite || {};
-  let ok = true;
   if (p.precoMinimo != null && p.precoMinimo !== '' && +p.precoMinimo > 0)
-    ok = ok && precoUnit >= +p.precoMinimo - 0.005;
+    return precoUnit >= +p.precoMinimo - 0.005;
+  return true;
+}
+
+function _campanhaDescOk(camp, percDesc) {
+  const p = camp?.permite || {};
   if (p.descontoMaxItem != null && p.descontoMaxItem !== '')
-    ok = ok && percDesc <= +p.descontoMaxItem + 0.05;
-  return ok;
+    return percDesc <= +p.descontoMaxItem + 0.05;
+  return true;
+}
+
+// "Compra 1 leve 2": a loja lança 0% numa peça e 100% na outra. O % máximo
+// da campanha vale para o conjunto das peças dela na mesma venda — se a soma
+// fica dentro do limite, todas são liberadas e os alertas delas saem.
+// A peça sozinha com 100% continua alertando.
+function _campanhaAgruparVenda(d, alertasPorItem) {
+  const grupos = new Map();
+  d.itens.forEach((it, idx) => {
+    if (!it._camp || it.campanhaOk || !it._precoOk) return;
+    if (!grupos.has(it._camp)) grupos.set(it._camp, []);
+    grupos.get(it._camp).push(idx);
+  });
+  for (const [camp, idxs] of grupos) {
+    const membros = d.itens.filter(it => it._camp === camp && it._precoOk);
+    const bruto = membros.reduce((s, i) => s + i.vlrBruto,    0);
+    const desc  = membros.reduce((s, i) => s + i.vlrDesconto, 0);
+    const perc  = bruto > 0 && desc > 0 ? (desc / bruto) * 100 : 0;
+    if (!_campanhaDescOk(camp, perc)) continue;
+    const remover = new Set();
+    for (const idx of idxs) {
+      d.itens[idx].campanhaOk = true;
+      for (const a of (alertasPorItem[idx] || [])) remover.add(a);
+    }
+    if (remover.size) d.alertas = d.alertas.filter(a => !remover.has(a));
+  }
+  for (const it of d.itens) { delete it._camp; delete it._precoOk; }
 }
 
 // GET /api/conferencia/colecoes — ordem cronológica das coleções
@@ -12391,6 +12426,7 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
     // ── Processar LinxMovimento ─────────────────────────────────────────────
     // LinxMovimento retorna UMA LINHA POR ITEM — agrupamos por documento
     const identMap = {};
+    const alertasPorItem = {}; // doc → { idxItem: [alertas] }
     const docMap   = {}; // doc → { doc, data, hora, valorTotal, vendedorCod, vendedorNome, formas[], alertas[], itens[] }
 
     for (const r of movRows) {
@@ -12474,6 +12510,12 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
         });
         const campOk = camp ? _campanhaLibera(camp, { precoUnit: vlrLiq, percDesc: _percItem }) : false;
 
+        // Alertas deste item ficam anotados: se a campanha fechar no conjunto
+        // da venda (_campanhaAgruparVenda), eles são retirados.
+        const itemIdx = docMap[doc].itens.length;
+        const alertasItem = (alertasPorItem[doc] ||= {})[itemIdx] = [];
+        const pushAlertaItem = a => { alertasItem.push(a); docMap[doc].alertas.push(a); };
+
         docMap[doc].itens.push({
           cod_produto:  codProd,
           referencia:   (catInfo.referencia || r.referencia || '').trim(),
@@ -12493,6 +12535,8 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
           precoPromocao: precoPromo,
           campanha:     camp ? camp.nome : null,
           campanhaOk:   campOk,
+          _camp:        camp,
+          _precoOk:     camp ? _campanhaPrecoOk(camp, vlrLiq) : false,
         });
 
         // Se tem preço promo: desconto é relativo ao preço promo, não ao de tabela
@@ -12506,12 +12550,12 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
         // campOk = campanha vigente cobre o item e o preço praticado respeita o
         // que ela permite → o desconto foi autorizado, não vira alerta.
         if (abaixoPromo && !campOk) {
-          docMap[doc].alertas.push({
+          pushAlertaItem({
             tipo: 'desconto_item',
             msg:  `"${(r.descricao || r.referencia || codProd || '').trim()}" vendido abaixo do preço promo (R$${vlrLiqUnit.toFixed(2)} < R$${precoPromo.toFixed(2)})`,
           });
         } else if (!emPromocao && !campOk && descontoMaxItem < 100 && percItem > descontoMaxItem && vlrDesc > 0) {
-          docMap[doc].alertas.push({
+          pushAlertaItem({
             tipo: 'desconto_item',
             msg:  `"${(r.descricao || r.referencia || codProd || '').trim()}" ${percItem.toFixed(1)}% desc (máx ${descontoMaxItem}%)`,
           });
@@ -12520,7 +12564,7 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
         const marcaItem    = (catInfo.marca || '').trim().toUpperCase();
         const cobertoPelaPromo = (emPromocao && !abaixoPromo) || campOk;
         if (marcasSemDesconto.length && marcaItem && marcasSemDesconto.includes(marcaItem) && vlrDesc > 0 && !cobertoPelaPromo) {
-          docMap[doc].alertas.push({
+          pushAlertaItem({
             tipo: 'marca_sem_desconto',
             msg:  `"${(r.descricao || r.referencia || codProd || '').trim()}" (${catInfo.marca}) não permite desconto`,
           });
@@ -12530,6 +12574,7 @@ async function _buildConferenciaVendasCore(board, dtIni, dtFin, regra, parcelaMi
 
     // Alertas de desconto por venda e totais de desconto
     for (const d of Object.values(docMap)) {
+      _campanhaAgruparVenda(d, alertasPorItem[d.doc] || {});
       const totalBruto   = d.itens.reduce((s, i) => s + i.vlrBruto, 0);
       const totalDesc    = d.itens.reduce((s, i) => s + i.vlrDesconto, 0);
       const totalLiquido = d.itens.reduce((s, i) => s + i.vlrLiquido, 0);
