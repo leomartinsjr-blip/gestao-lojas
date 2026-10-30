@@ -78,7 +78,10 @@ async function finalizar(db, { competencia, cnpj, empresa, linhas, usuario }) {
     })), { ordered: false });
   }
 
-  const soma = campo => novas.reduce((s, l) => s + (l[campo] || 0), 0);
+  // O total da competência sai de todas as notas gravadas nela, não só das
+  // novas: salvar de novo o mesmo mês (todas "duplicadas") zerava o resumo.
+  const daCompetencia = await col.find({ cnpj, competencia }).toArray();
+  const soma = campo => daCompetencia.reduce((s, l) => s + (l[campo] || 0), 0);
   await db.collection(COL_APURACOES).updateOne(
     { _id: `${cnpj}-${competencia}` },
     {
@@ -86,7 +89,7 @@ async function finalizar(db, { competencia, cnpj, empresa, linhas, usuario }) {
         cnpj,
         empresa,
         competencia,
-        qtdNotas: novas.length,
+        qtdNotas: daCompetencia.length,
         base4: soma('base4'),
         base12: soma('base12'),
         difal4: soma('difal4'),
