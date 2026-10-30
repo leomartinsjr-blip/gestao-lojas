@@ -2385,10 +2385,107 @@
   }
 
   function _campColecaoOpts(sel) {
+    // Sem a ordem cadastrada o "até" não funciona — o menu fica só com a opção vazia
+    const lista = colecoesData.slice();
+    if (sel && !lista.some(c => _campNormEq(c, sel))) lista.push(sel);
     return ['<option value="">— sem limite de coleção —</option>']
-      .concat(colecoesData.map(c => `<option value="${_escA(c)}"${_campNormEq(c, sel) ? ' selected' : ''}>${esc(c)}</option>`))
+      .concat(lista.map(c => `<option value="${_escA(c)}"${_campNormEq(c, sel) ? ' selected' : ''}>${esc(c)}</option>`))
       .join('');
   }
+
+  // ── Seletor múltiplo (marcas, setores, coleções) ─────────────────────────
+  // As opções vêm do catálogo Microvix; o valor continua sendo uma lista de
+  // nomes. Valor salvo que não está mais no catálogo (ou com curinga *)
+  // aparece como etiqueta tracejada, para não sumir sem ninguém ver.
+  let campOpcoes = null; // { marcas, setores, colecoes } — null = carregando
+  const MS_FONTE = { 'filtro.marcas': 'marcas', 'filtro.setores': 'setores', 'filtro.colecoes': 'colecoes' };
+  const MS_VAZIO = { 'filtro.marcas': 'todas as marcas', 'filtro.setores': 'todos os setores', 'filtro.colecoes': 'nenhuma' };
+  const _campGet = (obj, path) => path.split('.').reduce((o, k) => o?.[k], obj);
+
+  async function loadCampOpcoes() {
+    try { campOpcoes = await api('GET', '/api/conferencia/campanhas/opcoes'); }
+    catch (e) { campOpcoes = { marcas: [], setores: [], colecoes: [], erro: e.message }; }
+    // Redesenha para marcar as etiquetas que não estão no catálogo
+    if (msAlvo) _msRenderPop(); else renderCampanhas();
+  }
+
+  function _msChips(path, vals) {
+    const fonte = campOpcoes?.[MS_FONTE[path]];
+    if (!vals.length) return `<span class="ms-vazio">${MS_VAZIO[path]}</span>`;
+    return vals.map(v => {
+      const fora = fonte && !fonte.some(o => _campNormEq(o, v));
+      return `<span class="ms-chip${fora ? ' fora' : ''}"${fora ? ' title="Não está no catálogo do Microvix"' : ''}>${esc(v)}<button type="button" data-ms-rm="${_escA(v)}" aria-label="Tirar ${_escA(v)}">×</button></span>`;
+    }).join('');
+  }
+
+  function _msHtml(i, path) {
+    const vals = _campGet(campanhasData[i], path) || [];
+    return `<div class="ms" data-ms-idx="${i}" data-ms-path="${path}" tabindex="0" role="button" aria-haspopup="listbox">${_msChips(path, vals)}</div>`;
+  }
+
+  let msAlvo = null; // elemento .ms com a lista aberta
+  const msPop = document.createElement('div');
+  msPop.className = 'ms-pop';
+  msPop.hidden = true;
+  msPop.innerHTML = '<input type="search" class="ms-busca" placeholder="Buscar…"><div class="ms-lista" role="listbox" aria-multiselectable="true"></div>';
+  document.body.appendChild(msPop);
+  const msBusca = msPop.querySelector('.ms-busca'), msLista = msPop.querySelector('.ms-lista');
+
+  function _msVals() {
+    if (!msAlvo) return [];
+    const c = campanhasData[+msAlvo.dataset.msIdx];
+    return (c && _campGet(c, msAlvo.dataset.msPath)) || [];
+  }
+  function _msSetVals(vals) {
+    const c = campanhasData[+msAlvo.dataset.msIdx];
+    if (!c) return;
+    _campSet(c, msAlvo.dataset.msPath, vals);
+    msAlvo.innerHTML = _msChips(msAlvo.dataset.msPath, vals);
+  }
+
+  function _msRenderPop() {
+    if (!msAlvo) return;
+    if (!campOpcoes) { msLista.innerHTML = '<div class="ms-msg">Carregando do Microvix…</div>'; return; }
+    if (campOpcoes.erro) { msLista.innerHTML = `<div class="ms-msg">Não carregou: ${esc(campOpcoes.erro)}</div>`; return; }
+    const vals = _msVals();
+    const q = _campNormTxt(msBusca.value);
+    const fonte = campOpcoes[MS_FONTE[msAlvo.dataset.msPath]] || [];
+    const extras = vals.filter(v => !fonte.some(o => _campNormEq(o, v)));
+    const opts = extras.concat(fonte).filter(o => !q || _campNormTxt(o).includes(q));
+    msLista.innerHTML = opts.length ? opts.map(o => `
+      <label class="ms-opt"><input type="checkbox" value="${_escA(o)}" ${vals.some(v => _campNormEq(v, o)) ? 'checked' : ''}>${esc(o)}</label>`).join('')
+      : '<div class="ms-msg">Nada encontrado</div>';
+  }
+  const _campNormTxt = s => String(s || '').toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
+
+  function _msAbrir(el) {
+    msAlvo = el;
+    msBusca.value = '';
+    msPop.hidden = false;
+    const r = el.getBoundingClientRect();
+    msPop.style.width = Math.max(r.width, 240) + 'px';
+    msPop.style.left  = Math.min(r.left, window.innerWidth - Math.max(r.width, 240) - 8) + 'px';
+    const abaixo = window.innerHeight - r.bottom;
+    if (abaixo < 300 && r.top > abaixo) { msPop.style.top = ''; msPop.style.bottom = (window.innerHeight - r.top + 4) + 'px'; }
+    else { msPop.style.bottom = ''; msPop.style.top = (r.bottom + 4) + 'px'; }
+    _msRenderPop();
+    msBusca.focus();
+  }
+  function _msFechar() { msPop.hidden = true; msAlvo = null; }
+
+  msBusca.addEventListener('input', _msRenderPop);
+  msBusca.addEventListener('keydown', e => { if (e.key === 'Escape') { const el = msAlvo; _msFechar(); el?.focus(); } });
+  msLista.addEventListener('change', e => {
+    const cb = e.target;
+    let vals = _msVals().filter(v => !_campNormEq(v, cb.value));
+    if (cb.checked) vals.push(cb.value);
+    _msSetVals(vals);
+  });
+  document.addEventListener('mousedown', e => {
+    if (msPop.hidden || msPop.contains(e.target) || msAlvo?.contains(e.target)) return;
+    _msFechar();
+  });
+  window.addEventListener('scroll', e => { if (!msPop.contains(e.target)) _msFechar(); }, true);
   const _campNormEq = (a, b) => String(a || '').trim().toUpperCase() === String(b || '').trim().toUpperCase();
 
   function renderCampanhas() {
@@ -2424,13 +2521,10 @@
           </div>
 
           <div class="camp-sec">Quais itens a campanha cobre</div>
-          <div class="camp-f"><label>Marcas</label>
-            <input type="text" data-idx="${i}" data-path="filtro.marcas" data-type="tags"
-              value="${_escA(_tagsStr(f.marcas))}" placeholder="ex: MIZUNO">
-            <span class="camp-hint">vírgula separa · * é curinga</span></div>
-          <div class="camp-f"><label>Setores</label>
-            <input type="text" data-idx="${i}" data-path="filtro.setores" data-type="tags"
-              value="${_escA(_tagsStr(f.setores))}" placeholder="ex: T-SHIRT*"></div>
+          <div class="camp-f"><label>Marcas</label>${_msHtml(i, 'filtro.marcas')}
+            <span class="camp-hint">nenhuma = todas as marcas</span></div>
+          <div class="camp-f"><label>Setores</label>${_msHtml(i, 'filtro.setores')}
+            <span class="camp-hint">nenhum = todos os setores</span></div>
           <div class="camp-f"><label>Referências / códigos</label>
             <input type="text" data-idx="${i}" data-path="filtro.refs" data-type="tags"
               value="${_escA(_tagsStr(f.refs))}" placeholder="ex: 12345, 67890"></div>
@@ -2440,10 +2534,8 @@
           <div class="camp-f"><label>Coleção até</label>
             <select data-idx="${i}" data-path="filtro.colecaoAte">${_campColecaoOpts(f.colecaoAte)}</select>
             <span class="camp-hint">essa coleção e todas anteriores</span></div>
-          <div class="camp-f"><label>Ou coleções específicas</label>
-            <input type="text" data-idx="${i}" data-path="filtro.colecoes" data-type="tags"
-              value="${_escA(_tagsStr(f.colecoes))}" placeholder="ex: WINTER 25, WINTER 24">
-            <span class="camp-hint">se preenchido, ignora o "até"</span></div>
+          <div class="camp-f"><label>Ou coleções específicas</label>${_msHtml(i, 'filtro.colecoes')}
+            <span class="camp-hint">se marcar alguma, ignora o "até"</span></div>
 
           <div class="camp-sec">O que a campanha autoriza</div>
           <div class="camp-f"><label>Desconto máx. por item (%)</label>
@@ -2486,6 +2578,17 @@
     else                      _campSet(c, path, el.value);
   });
   $('campanhasList').addEventListener('click', e => {
+    const rm = e.target.closest('[data-ms-rm]');
+    if (rm) {
+      const ms = rm.closest('.ms'), c = campanhasData[+ms.dataset.msIdx];
+      const vals = (_campGet(c, ms.dataset.msPath) || []).filter(v => !_campNormEq(v, rm.dataset.msRm));
+      _campSet(c, ms.dataset.msPath, vals);
+      ms.innerHTML = _msChips(ms.dataset.msPath, vals);
+      if (msAlvo === ms) _msRenderPop();
+      return;
+    }
+    const ms = e.target.closest('.ms');
+    if (ms) { msAlvo === ms ? _msFechar() : _msAbrir(ms); return; }
     const del = e.target.dataset.del;
     if (del == null) return;
     if (!confirm(`Remover a campanha "${campanhasData[+del]?.nome || ''}"?`)) return;
@@ -2547,7 +2650,13 @@
     } catch (e) { alert('Erro: ' + e.message); btn.innerHTML = '💾 Salvar'; btn.disabled = false; }
   });
 
+  $('campanhasList').addEventListener('keydown', e => {
+    const ms = e.target.closest?.('.ms');
+    if (ms && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); _msAbrir(ms); }
+  });
+
   loadCampanhas();
+  loadCampOpcoes();
 
   // ════════════════════════════════════════════════════════════════════════
   // TAXAS DE CARTÃO

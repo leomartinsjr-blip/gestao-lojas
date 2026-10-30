@@ -12215,22 +12215,42 @@ function _colecaoChave(nome) {
   return a * 2 + estacao;
 }
 
+// Valores distintos de um campo do catálogo Microvix (sem repetir por acento/caixa)
+async function _catalogoDistintos(campo) {
+  const lojas   = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+  const catalog = await _getCatalog(lojas);
+  const vistos  = new Map();
+  for (const p of Object.values(catalog || {})) {
+    if (p?.tipo === 'servico') continue;
+    const v = String(p?.[campo] || '').trim();
+    if (v && !vistos.has(_campNorm(v))) vistos.set(_campNorm(v), v);
+  }
+  return [...vistos.values()];
+}
+
+function _ordenarColecoes(nomes) {
+  const semOrdem = nomes.filter(c => _colecaoChave(c) == null).sort();
+  const comChave = nomes.filter(c => _colecaoChave(c) != null)
+    .sort((x, y) => _colecaoChave(x) - _colecaoChave(y) || x.localeCompare(y));
+  return { colecoes: [...semOrdem, ...comChave], semOrdem };
+}
+
 // GET /api/conferencia/colecoes/catalogo — coleções do catálogo Microvix,
 // já na ordem antiga → nova
 app.get('/api/conferencia/colecoes/catalogo', requireEscritorioOrAdmin, async (req, res) => {
   try {
-    const lojas   = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
-    const catalog = await _getCatalog(lojas);
-    const vistos  = new Map();
-    for (const p of Object.values(catalog || {})) {
-      const c = String(p?.linha || '').trim();
-      if (c && !vistos.has(_campNorm(c))) vistos.set(_campNorm(c), c);
-    }
-    const nomes = [...vistos.values()];
-    const semChave = nomes.filter(c => _colecaoChave(c) == null).sort();
-    const comChave = nomes.filter(c => _colecaoChave(c) != null)
-      .sort((x, y) => _colecaoChave(x) - _colecaoChave(y) || x.localeCompare(y));
-    res.json({ colecoes: [...semChave, ...comChave], semOrdem: semChave });
+    res.json(_ordenarColecoes(await _catalogoDistintos('linha')));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/conferencia/campanhas/opcoes — o que dá para escolher nos filtros
+// da campanha: marcas, setores e coleções que existem no catálogo Microvix
+app.get('/api/conferencia/campanhas/opcoes', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const [marcas, setores, colecoes] = await Promise.all(
+      ['marca', 'setor', 'linha'].map(c => _catalogoDistintos(c)));
+    const abc = l => l.sort((a, b) => a.localeCompare(b, 'pt-BR'));
+    res.json({ marcas: abc(marcas), setores: abc(setores), colecoes: _ordenarColecoes(colecoes).colecoes });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

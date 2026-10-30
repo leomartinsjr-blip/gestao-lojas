@@ -408,6 +408,22 @@ td.muted  { color: var(--cf-muted); }
 .camp-f input:focus, .camp-f select:focus { outline: none; border-color: var(--cf-primary); }
 .camp-f .camp-hint { font-size: 10px; color: var(--cf-muted); }
 .camp-lojas { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 10px; }
+.ms { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 31px; background: var(--cf-card2); border: 1px solid var(--cf-border); border-radius: 7px; padding: 4px 26px 4px 6px; cursor: pointer; position: relative; }
+.ms::after { content: '▾'; position: absolute; right: 9px; top: 50%; transform: translateY(-50%); color: var(--cf-muted); font-size: 11px; }
+.ms:focus { outline: none; border-color: var(--cf-primary); }
+.ms-vazio { font-size: 12px; color: var(--cf-muted); padding: 1px 3px; }
+.ms-chip { display: inline-flex; align-items: center; gap: 3px; background: var(--cf-card); border: 1px solid var(--cf-border); border-radius: 5px; padding: 1px 2px 1px 7px; font-size: 11px; font-weight: 600; color: var(--cf-text); }
+.ms-chip.fora { border-style: dashed; color: var(--cf-muted); }
+.ms-chip button { background: none; border: none; color: var(--cf-muted); cursor: pointer; font-size: 13px; line-height: 1; padding: 0 4px; font-family: inherit; }
+.ms-chip button:hover { color: var(--cf-primary); }
+.ms-pop { position: fixed; z-index: 1000; background: var(--cf-card); border: 1px solid var(--cf-border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.35); padding: 6px; }
+.ms-busca { width: 100%; background: var(--cf-card2); border: 1px solid var(--cf-border); color: var(--cf-text); padding: 6px 9px; border-radius: 6px; font-size: 12px; font-family: inherit; margin-bottom: 4px; }
+.ms-busca:focus { outline: none; border-color: var(--cf-primary); }
+.ms-lista { max-height: 260px; overflow-y: auto; }
+.ms-opt { display: flex; align-items: center; gap: 7px; padding: 5px 6px; border-radius: 5px; font-size: 12px; color: var(--cf-text); cursor: pointer; }
+.ms-opt:hover { background: var(--cf-card2); }
+.ms-opt input { width: 14px; height: 14px; accent-color: var(--cf-primary); cursor: pointer; }
+.ms-msg { font-size: 11px; color: var(--cf-muted); padding: 8px 6px; }
 .camp-add { background: transparent; border: 1px dashed var(--cf-border); color: var(--cf-primary); border-radius: var(--r); padding: 10px 16px; font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit; width: 100%; }
 .camp-add:hover { border-color: var(--cf-primary); }
 .camp-empty { color: var(--cf-muted); font-size: 12px; padding: 18px; text-align: center; }
