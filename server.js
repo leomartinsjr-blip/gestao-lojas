@@ -13394,6 +13394,13 @@ app.post('/api/conferencia/conciliacao-rede', requireEscritorioOrAdmin, async (r
 });
 
 // ════════════════════════════════════════════════════════════════════════════
+// BALANÇO DE LOJA — leitura do coletor × estoque (services/balancoRotas.js)
+// ════════════════════════════════════════════════════════════════════════════
+require('./services/balancoRotas').register(app, {
+  getDb: () => mongoDb, requireAuth, requireEscritorioOrAdmin, boardsLabel: BOARDS_LABEL,
+});
+
+// ════════════════════════════════════════════════════════════════════════════
 // CERTIFICADOS DIGITAIS
 // ════════════════════════════════════════════════════════════════════════════
 

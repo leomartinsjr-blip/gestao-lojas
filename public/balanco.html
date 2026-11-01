@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Balanço de Loja · Gestão de Lojas</title>
+<link rel="stylesheet" href="/style.css"/>
+<style>
+:root { --r: 10px; }
+*, *::before, *::after { box-sizing: border-box; }
+body { background: var(--bg); color: var(--text); font-family: 'Inter', system-ui, -apple-system, sans-serif; margin: 0; font-size: 13px; min-height: 100vh; }
+
+.bl-topbar { display: flex; align-items: center; gap: 16px; padding: 0 24px; height: 54px; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; }
+.bl-logo { display: flex; align-items: center; gap: 10px; }
+.bl-logo-icon { width: 28px; height: 28px; background: var(--accent); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+.bl-logo-title { font-size: 15px; font-weight: 700; }
+.bl-logo-sub { font-size: 11px; color: var(--muted); }
+#userLabel { margin-left: auto; font-size: 12px; color: var(--muted); }
+
+.page { max-width: 1280px; margin: 0 auto; padding: 22px 20px 60px; }
+.tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.tab { background: none; border: none; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; padding: 9px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+.inp, .sel { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 6px 10px; font: inherit; font-size: 13px; height: 34px; outline: none; }
+.inp:focus, .sel:focus { border-color: var(--accent); }
+.btn { background: var(--surface); border: 1px solid var(--border); color: var(--text); border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 13px; height: 34px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; text-decoration: none; }
+.btn:hover { background: var(--surface2); border-color: var(--muted); }
+.btn.primary { border-color: var(--accent); color: var(--accent); }
+.btn.danger:hover { border-color: var(--down); color: var(--down); }
+.btn:disabled { opacity: .5; cursor: default; }
+.grow { flex: 1; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 10px; }
+.bcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 14px 16px; cursor: pointer; border-left: 3px solid var(--border); }
+.bcard:hover { border-color: var(--accent); }
+.bcard.st-recontagem { border-left-color: var(--warn); }
+.bcard.st-finalizado { border-left-color: var(--up); }
+.bcard.st-erro { border-left-color: var(--down); }
+.bcard.st-processando { border-left-color: var(--accent); }
+.bcard-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.bcard-loja { font-size: 15px; font-weight: 700; }
+.bcard-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.bcard-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 12px; }
+.bcard-nums div { font-size: 11px; color: var(--muted); }
+.bcard-nums b { display: block; font-size: 14px; color: var(--text); }
+
+.badge { font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 20px; white-space: nowrap; background: var(--surface2); color: var(--muted); }
+.badge.recontagem { background: rgba(var(--warn-rgb), .12); color: var(--warn); }
+.badge.finalizado { background: rgba(var(--up-rgb), .12); color: var(--up); }
+.badge.erro { background: rgba(var(--down-rgb), .12); color: var(--down); }
+.badge.processando { background: var(--accent)22; color: var(--accent); }
+
+.empty { text-align: center; color: var(--muted); padding: 3rem 0; }
+.muted { color: var(--muted); }
+.pos { color: var(--up); } .neg { color: var(--down); }
+
+/* Detalhe */
+.det-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
+.det-title { font-size: 18px; font-weight: 700; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 14px; }
+.kpi { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 10px 12px; }
+.kpi .lb { font-size: 11px; color: var(--muted); }
+.kpi .vl { font-size: 18px; font-weight: 700; margin-top: 3px; }
+.kpi .sb { font-size: 11px; color: var(--muted); margin-top: 2px; }
+.aviso { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--warn); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; font-size: 12px; }
+.aviso.erro { border-left-color: var(--down); }
+.proc { display: flex; align-items: center; gap: 10px; padding: 26px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); }
+.spin { width: 18px; height: 18px; border: 2px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: sp 0.9s linear infinite; }
+@keyframes sp { to { transform: rotate(360deg); } }
+
+.tbl-wrap { overflow: auto; border: 1px solid var(--border); border-radius: var(--r); background: var(--surface); max-height: calc(100vh - 250px); }
+table.tbl { border-collapse: collapse; width: 100%; font-size: 12px; }
+.tbl th { position: sticky; top: 0; background: var(--surface2); color: var(--muted); font-weight: 600; text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; z-index: 1; }
+.tbl td { padding: 5px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.tbl tr:hover td { background: var(--surface2); }
+.tbl .n { text-align: right; font-variant-numeric: tabular-nums; }
+.tbl .c { text-align: center; }
+.tbl td.desc { white-space: normal; min-width: 240px; }
+.tbl tfoot td { font-weight: 700; background: var(--surface2); position: sticky; bottom: 0; }
+.tbl input.rc { width: 64px; text-align: center; height: 28px; padding: 2px 4px; font-weight: 700; }
+.tbl input.ob { width: 180px; height: 28px; padding: 2px 6px; }
+.tbl input.salvo { border-color: var(--up); }
+.tbl input.falhou { border-color: var(--down); }
+.tbl tr.clic { cursor: pointer; }
+
+.st { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 6px; white-space: nowrap; }
+.st-A-RECONTAR { background: #FFEB9C; color: #9C6500; }
+.st-VENDA-PARCIAL { background: #FFE0B2; color: #7F4F00; }
+.st-VER-VENDA { background: #DDEBF7; color: #1F4E79; }
+.st-VER-TRANSITO { background: #E2D0BB; color: #7B3F00; }
+.st-DIVERGENTE { background: #FFC7CE; color: #9C0006; }
+.st-OK { background: #C6EFCE; color: #006100; }
+
+.mcards { display: flex; flex-direction: column; gap: 8px; }
+.mcard { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 10px 12px; }
+.mcard-top { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: 11px; }
+.mcard-desc { font-size: 13px; font-weight: 600; margin: 4px 0 6px; }
+.mcard-nums { display: flex; gap: 12px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+.mcard-nums b { color: var(--text); }
+.mcard-inp { display: grid; grid-template-columns: 90px 1fr; gap: 6px; margin-top: 8px; }
+.mcard-inp input.rc { font-size: 16px; font-weight: 700; text-align: center; }
+.mcard-inp input.ob { font-size: 14px; }
+.mcard input.salvo { border-color: var(--up); }
+.mcard input.falhou { border-color: var(--down); }
+
+.cfg { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.box { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); padding: 14px; }
+.box h4 { margin: 0 0 10px; font-size: 13px; }
+.grupos { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 4px 10px; max-height: 340px; overflow: auto; font-size: 12px; }
+.grupos label { display: flex; gap: 6px; align-items: center; }
+.fld { margin-bottom: 10px; }
+.fld label { display: block; font-size: 11px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px; }
+.fld .inp, .fld .sel { width: 100%; }
+
+.modal-bg { position: fixed; inset: 0; background: rgba(var(--shadow-rgb), .6); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 1rem; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px; width: 100%; max-width: 460px; }
+.modal h3 { margin: 0 0 16px; font-size: 15px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.modal-err { color: var(--down); font-size: 12px; min-height: 16px; margin-top: 4px; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+.hint { font-size: 11px; color: var(--muted); margin-top: 3px; }
+.hidden { display: none !important; }
+
+@media (max-width: 640px) {
+  .page { padding: 14px 10px 50px; }
+  .bl-topbar { padding: 0 12px; }
+  .row2 { grid-template-columns: 1fr; }
+  .tbl-wrap { max-height: none; }
+}
+@media print {
+  .bl-topbar, .tabs, .toolbar, .det-head .btn, .noprint { display: none !important; }
+  body { background: #fff; color: #000; }
+  .tbl-wrap { max-height: none; overflow: visible; border: none; }
+  .tbl th { position: static; }
+}
+</style>
+</head>
+<body>
+<div class="bl-topbar">
+  <div class="bl-logo">
+    <div class="bl-logo-icon">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M3 5v14"/><path d="M7 5v14"/><path d="M11 5v14"/><path d="M14 5v14"/><path d="M18 5v14"/><path d="M21 5v14"/></svg>
+    </div>
+    <div>
+      <div class="bl-logo-title">Balanço de Loja</div>
+      <div class="bl-logo-sub">Leitura do coletor × estoque do Microvix</div>
+    </div>
+  </div>
+  <span id="userLabel"></span>
+</div>
+
+<div class="page">
+  <!-- Lista e histórico -->
+  <div id="vLista">
+    <div class="tabs">
+      <button class="tab active" data-tab="mes">Balanços do mês</button>
+      <button class="tab" data-tab="hist">Histórico</button>
+    </div>
+    <div class="toolbar">
+      <input type="month" id="fMes" class="inp"/>
+      <select id="fLoja" class="sel"><option value="">Todas as lojas</option></select>
+      <span class="grow"></span>
+      <button id="btnNovo" class="btn primary hidden">+ Novo balanço</button>
+    </div>
+    <div id="lista"></div>
+  </div>
+
+  <!-- Um balanço -->
+  <div id="vDet" class="hidden"></div>
+</div>
+
+<div id="modal" class="modal-bg hidden">
+  <form class="modal" id="fNovo">
+    <h3>Novo balanço</h3>
+    <div class="row2">
+      <div class="fld"><label>Loja</label><select id="nLoja" class="sel" required></select></div>
+      <div class="fld"><label>Mês do balanço</label><input type="month" id="nMes" class="inp" required/></div>
+    </div>
+    <div class="row2">
+      <div class="fld"><label>Data da contagem</label><input type="date" id="nData" class="inp" required/></div>
+      <div class="fld"><label>Hora (opcional)</label><input type="time" id="nHora" class="inp"/>
+        <div class="hint">Estoque nesse horário. Vazio = fim do dia.</div></div>
+    </div>
+    <div class="row2">
+      <div class="fld"><label>Agrupar por</label>
+        <select id="nAgrupar" class="sel"><option value="">Padrão da loja</option><option value="setor">Setor</option><option value="linha">Linha</option></select></div>
+      <div class="fld"><label>Trânsito (dias antes)</label><input type="number" id="nDias" class="inp" min="0" max="60" value="7"/>
+        <div class="hint">Entradas desses dias explicam falta.</div></div>
+    </div>
+    <div class="fld"><label>Arquivo da leitura (TXT)</label><input type="file" id="nArq" class="inp" accept=".txt,.csv,text/plain" required style="padding:5px"/>
+      <div class="hint">O mesmo arquivo do "Enviar arquivo" do Microvix: código de barras,quantidade.</div></div>
+    <div class="fld"><label>Observação</label><input type="text" id="nObs" class="inp" maxlength="500"/></div>
+    <div class="modal-err" id="nErr"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn" id="nCancelar">Cancelar</button>
+      <button type="submit" class="btn primary" id="nEnviar">Processar</button>
+    </div>
+  </form>
+</div>
+
+<input type="file" id="impArq" accept=".xlsx" class="hidden"/>
+<script src="/balanco.js"></script>
+</body>
+</html>
