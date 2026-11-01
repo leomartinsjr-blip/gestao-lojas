@@ -68,6 +68,8 @@
   .fc-saldo-item .row { display: flex; gap: 6px; flex-wrap: wrap; }
   .fc-saldo-item .row > * { min-width: 0; }
   .fc-saldo-item input[type=text] { flex: 1 1 110px; text-align: right; }
+  .fc-chk { display: inline-flex; align-items: center; gap: 5px; color: var(--text2); font-size: 12px; cursor: pointer; white-space: nowrap; }
+  tr.fora td { opacity: .5; }
   #fc-msg { padding: 40px 16px; text-align: center; color: var(--text2); }
   #fc-err { display: none; background: rgba(248,81,73,.1); border: 1px solid var(--red); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; color: var(--red); }
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
@@ -91,6 +93,7 @@
   </div>
   <div class="fc-filters">
     <select id="fc-loja" title="Loja"><option value="">Consolidado</option></select>
+    <label class="fc-chk" title="Faturas vencidas sem baixa no Microvix — quase sempre já pagas (folha, empréstimo, impostos)"><input type="checkbox" id="fc-atraso"> Incluir vencidas sem baixa</label>
     <select id="fc-dias" title="Horizonte">
       <option value="30">30 dias</option><option value="60">60 dias</option>
       <option value="90" selected>90 dias</option><option value="180">180 dias</option><option value="365">12 meses</option>
@@ -178,6 +181,7 @@ function serie() {
   const dias = D.linhas.map(l => {
     const x = { d: l.d, vendas: 0, recebe: 0, paga: 0, atraso: 0 };
     for (const b of bs) if (l.b[b]) for (const k of ['vendas', 'recebe', 'paga', 'atraso']) x[k] += l.b[b][k];
+    if (!$('fc-atraso').checked) x.paga -= x.atraso;
     saldo += x.recebe - x.paga;
     x.saldo = saldo;
     return x;
@@ -209,7 +213,7 @@ function render() {
   $('fc-cards').innerHTML = [
     ['Saldo em conta', R(ini), semSaldo.length ? `<span class="warn">falta informar ${semSaldo.length === bs.length ? 'o saldo' : semSaldo.length + ' loja(s)'}</span>` : (datasSaldo.length === 1 ? 'em ' + DM(datasSaldo[0]) : 'datas diferentes'), ''],
     ['Entradas previstas', R(tot.recebe), `venda prevista ${R(tot.vendas)}`, 'pos'],
-    ['Contas a pagar', R(tot.paga), tot.atraso ? `<span class="neg">${R(tot.atraso)} em atraso</span>` : 'nenhuma em atraso', 'neg'],
+    ['Contas a pagar', R(tot.paga), !tot.atraso ? 'nenhuma vencida sem baixa' : $('fc-atraso').checked ? `<span class="neg">inclui ${R(tot.atraso)} vencidas sem baixa</span>` : `<span class="warn">+ ${R(tot.atraso)} vencidas sem baixa, fora do saldo</span>`, 'neg'],
     ['Resultado do período', R(tot.recebe - tot.paga), `${DM(D.hoje)} a ${DM(D.ate)}`, tot.recebe - tot.paga >= 0 ? 'pos' : 'neg'],
     ['Saldo final previsto', R(fim), 'em ' + DM(D.ate), fim >= 0 ? 'pos' : 'neg'],
     ['Menor saldo', min.d ? R(min.saldo) : '—', min.d ? 'em ' + DM(min.d) : '', min.saldo < 0 ? 'neg' : ''],
@@ -257,14 +261,14 @@ function render() {
       <td>${rotuloGrupo(g.k, g.ini, g.fim)}</td>
       <td class="muted">${R(g.vendas)}</td>
       <td class="pos">${R(g.recebe)}</td>
-      <td class="neg">${g.paga ? R(g.paga) : '—'}${g.atraso ? ' <span class="tag tag-atraso">atraso</span>' : ''}</td>
+      <td class="neg">${g.paga ? R(g.paga) : '—'}${g.atraso ? ` <span class="tag tag-atraso" title="${R(g.atraso)} vencidas sem baixa">${$('fc-atraso').checked ? 'atraso' : '+ ' + R(g.atraso) + ' sem baixa'}</span>` : ''}</td>
       <td class="${res >= 0 ? 'pos' : 'neg'}">${R(res)}</td>
       <td class="${g.saldo >= 0 ? '' : 'neg'}"><b>${R(g.saldo)}</b></td></tr>`;
     if (aberto) {
       const cs = contas.filter(c => c.d >= g.ini && c.d <= g.fim);
       h += `<tr class="fc-det"><td colspan="6"><div class="fc-det-wrap">${cs.length ? `<table>
         <tr><th>Paga em</th><th>Vencimento</th>${bs.length > 1 ? '<th>Loja</th>' : ''}<th>Fornecedor</th><th>Documento</th><th>Parcela</th><th>Valor</th></tr>
-        ${cs.map(c => `<tr><td>${DM(c.d)}</td><td>${DM(c.venc)}${c.atraso ? ' <span class="tag tag-atraso">atraso</span>' : ''}</td>${bs.length > 1 ? `<td>${esc(D.labels[c.b])}</td>` : ''}<td style="text-align:left">${esc(c.forn)}</td><td>${esc(c.doc && c.doc !== '0' ? c.doc : '')}</td><td>${esc(c.parc)}</td><td>${R2(c.v)}</td></tr>`).join('')}
+        ${cs.map(c => `<tr${c.atraso && !$('fc-atraso').checked ? ' class="fora" title="fora do saldo"' : ''}><td>${DM(c.d)}</td><td>${DM(c.venc)}${c.atraso ? ' <span class="tag tag-atraso">atraso</span>' : ''}</td>${bs.length > 1 ? `<td>${esc(D.labels[c.b])}</td>` : ''}<td style="text-align:left">${esc(c.forn)}</td><td>${esc(c.doc && c.doc !== '0' ? c.doc : '')}</td><td>${esc(c.parc)}</td><td>${R2(c.v)}</td></tr>`).join('')}
         </table>` : '<span class="muted">Nenhuma conta a pagar neste período.</span>'}</div></td></tr>`;
     }
   }
@@ -287,7 +291,7 @@ function render() {
   const metodo = D.projecao[bs[0]]?.metodo === 'ritmo'
     ? 'Mês atual pelo ritmo de venda (realizado ÷ peso corrido); meses seguintes pelo mesmo mês do ano anterior × crescimento médio (2 meses fechados + ritmo do mês).'
     : 'Até o dia 15, cada mês = mesmo mês do ano anterior × crescimento médio dos 3 últimos meses fechados. Depois do dia 15 o mês atual passa a ser projetado pelo ritmo.';
-  $('fc-proj-note').innerHTML = `${metodo} Venda recebida no dia útil seguinte (D+1), descontada a taxa média de cartão dos últimos 3 meses (Conferência). Contas a pagar: faturas sem baixa do Microvix (sincronizadas ${D.faturasSyncedAt ? new Date(D.faturasSyncedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}); vencidas há mais de ${D.diasAtraso} dias são tratadas como pagas, e as em atraso entram hoje.`;
+  $('fc-proj-note').innerHTML = `${metodo} Venda recebida no dia útil seguinte (D+1), descontada a taxa média de cartão dos últimos 3 meses (Conferência). Contas a pagar: faturas sem baixa do Microvix (sincronizadas ${D.faturasSyncedAt ? new Date(D.faturasSyncedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}); vencidas há mais de ${D.diasAtraso} dias são tratadas como pagas; as vencidas mais recentes sem baixa ficam fora do saldo (marque "Incluir vencidas sem baixa" para lançá-las no próximo dia útil).`;
 
   // Saldos
   $('fc-saldos').innerHTML = D.boards.map(b => {
@@ -327,6 +331,7 @@ $('fc-saldos').addEventListener('click', async e => {
   } catch (err) { alert('Não salvou: ' + err.message); btn.disabled = false; btn.textContent = 'Salvar'; }
 });
 $('fc-loja').addEventListener('change', () => { abertos.clear(); render(); });
+$('fc-atraso').addEventListener('change', render);
 $('fc-dias').addEventListener('change', carregar);
 $('fc-reload').addEventListener('click', carregar);
 carregar();
