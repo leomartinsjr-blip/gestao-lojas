@@ -58,13 +58,12 @@ async function linx(cmd, cnpj, chave, params, timeout = 90_000) {
 
 // ── Cadastro de produtos (nome, referência, setor, linha) ──────────────────
 // O catálogo geral do gestão não guarda código nem descrição completa (com
-// tamanho), que a Lista de Críticas precisa. Aqui fica uma cópia enxuta por
-// portal, sincronizada pelo timestamp do LinxProdutos: a primeira vez baixa
-// tudo, depois só o que mudou.
-function criarCadastro(getDb, getNexoDb) {
-  const mem = {};       // portal → { ts, porCod: Map, porBarra: Map } (sem Mongo)
-  const syncs = {};     // portal → Promise em andamento
-
+// tamanho), que a Lista de Críticas precisa. Nada disso fica gravado: o Atlas
+// é o gratuito (512 MB) e uma cópia do portal da Tommy (82 mil produtos)
+// sozinha disparou o alerta de espaço. Cada processamento percorre o
+// LinxProdutos e guarda em memória só os produtos do balanço, e para assim
+// que achou todos.
+function criarCadastro(getNexoDb) {
   const enxuto = r => ({
     cod:   String(r.cod_produto || '').trim(),
     barra: String(r.cod_barra || '').trim(),
@@ -74,95 +73,48 @@ function criarCadastro(getDb, getNexoDb) {
     linha: String(r.desc_linha || '').trim(),
   });
 
-  async function sync(portal, cnpj, chave, onProgress) {
-    if (syncs[portal]) return syncs[portal];
-    syncs[portal] = (async () => {
-      const db = getDb();
-      const metaCol = db?.collection('balanco_meta');
-      const prodCol = db?.collection('balanco_produtos');
-      if (prodCol) {
-        prodCol.createIndex({ portal: 1, cod: 1 }, { background: true }).catch(() => {});
-        prodCol.createIndex({ portal: 1, barraN: 1 }, { background: true }).catch(() => {});
-      }
-      const m = mem[portal] || (mem[portal] = { ts: 0, porCod: new Map(), porBarra: new Map() });
-      let ts = prodCol ? Number((await metaCol.findOne({ _id: 'prod:' + portal }))?.ts || 0) : m.ts;
-      const fim = hojeISO();
-      let total = 0;
-      for (let page = 0; page < 200; page++) {
-        const rows = await linx('LinxProdutos', cnpj, chave, [
-          { id: 'timestamp', valor: String(ts) },
-          { id: 'dt_update_inicio', valor: '2000-01-01' },
-          { id: 'dt_update_fim', valor: fim },
-        ], 120_000);
-        if (!rows.length) break;
-        const docs = rows.map(enxuto).filter(p => p.cod);
-        if (prodCol) {
-          await prodCol.bulkWrite(docs.map(p => ({
-            replaceOne: {
-              filter: { _id: portal + ':' + p.cod },
-              replacement: { _id: portal + ':' + p.cod, portal, ...p, barraN: normBarra(p.barra) },
-              upsert: true,
-            },
-          })), { ordered: false });
-        } else {
-          for (const p of docs) { m.porCod.set(p.cod, p); m.porBarra.set(normBarra(p.barra), p); }
-        }
-        total += rows.length;
-        const maxTs = Math.max(...rows.map(r => parseInt(r.timestamp) || 0));
-        if (maxTs <= ts) break;
-        ts = maxTs;
-        if (prodCol) await metaCol.updateOne({ _id: 'prod:' + portal }, { $set: { ts, em: new Date() } }, { upsert: true });
-        else m.ts = ts;
-        onProgress?.(total);
-        if (rows.length < 5000) break;
-      }
-      return total;
-    })().finally(() => { delete syncs[portal]; });
-    return syncs[portal];
-  }
-
-  async function buscar(portal, { cods = [], barrasN = [] }) {
-    const db = getDb();
+  async function buscarMicrovix(cnpj, chave, { cods = [], barrasN = [] }, onProgress) {
+    const faltaCod = new Set(cods), faltaBarra = new Set(barrasN);
     const out = { porCod: new Map(), porBarra: new Map() };
-    if (db) {
-      const col = db.collection('balanco_produtos');
-      const docs = await col.find({ portal, $or: [{ cod: { $in: cods } }, { barraN: { $in: barrasN } }] },
-        { projection: { _id: 0, portal: 0 } }).toArray();
-      for (const p of docs) { out.porCod.set(p.cod, p); out.porBarra.set(p.barraN, p); }
-    } else {
-      const m = mem[portal];
-      if (m) {
-        for (const c of cods) if (m.porCod.has(c)) out.porCod.set(c, m.porCod.get(c));
-        for (const b of barrasN) if (m.porBarra.has(b)) { const p = m.porBarra.get(b); out.porBarra.set(b, p); out.porCod.set(p.cod, p); }
+    const fim = hojeISO();
+    let ts = 0, lidos = 0;
+    for (let page = 0; page < 200 && (faltaCod.size || faltaBarra.size); page++) {
+      const rows = await linx('LinxProdutos', cnpj, chave, [
+        { id: 'timestamp', valor: String(ts) },
+        { id: 'dt_update_inicio', valor: '2000-01-01' },
+        { id: 'dt_update_fim', valor: fim },
+      ], 120_000);
+      if (!rows.length) break;
+      for (const r of rows) {
+        const p = enxuto(r);
+        if (!p.cod) continue;
+        const bn = normBarra(p.barra);
+        // o código gerencial às vezes é lido no lugar do código de barras
+        const gerencial = faltaBarra.has(p.cod);
+        if (!faltaCod.has(p.cod) && !faltaBarra.has(bn) && !gerencial) continue;
+        out.porCod.set(p.cod, p);
+        out.porBarra.set(bn, p);
+        if (gerencial) out.porBarra.set(p.cod, p);
+        faltaCod.delete(p.cod); faltaBarra.delete(bn); faltaBarra.delete(p.cod);
       }
+      lidos += rows.length;
+      onProgress?.(lidos);
+      const maxTs = Math.max(...rows.map(r => parseInt(r.timestamp) || 0));
+      if (maxTs <= ts || rows.length < 5000) break;
+      ts = maxTs;
     }
     return out;
   }
 
-  // Um produto avulso (fora da sincronização) — vira cadastro também
-  async function buscarUm(portal, cnpj, chave, cod) {
+  // Um produto avulso, quando a varredura não achou
+  async function buscarUm(cnpj, chave, cod) {
     const rows = await linx('LinxProdutos', cnpj, chave, [
       { id: 'timestamp', valor: '0' },
       { id: 'dt_update_inicio', valor: '2000-01-01' },
       { id: 'dt_update_fim', valor: hojeISO() },
       { id: 'cod_produto', valor: String(cod) },
     ]);
-    if (!rows[0]) return null;
-    const p = enxuto(rows[0]);
-    const db = getDb();
-    if (db) {
-      await db.collection('balanco_produtos').replaceOne({ _id: portal + ':' + p.cod },
-        { _id: portal + ':' + p.cod, portal, ...p, barraN: normBarra(p.barra) }, { upsert: true });
-    } else if (mem[portal]) {
-      mem[portal].porCod.set(p.cod, p); mem[portal].porBarra.set(normBarra(p.barra), p);
-    }
-    return p;
-  }
-
-  async function sincronizado(portal) {
-    const db = getDb();
-    if (db) return !!(await db.collection('balanco_meta').findOne({ _id: 'prod:' + portal }))?.ts;
-    return !!mem[portal]?.ts;
+    return rows[0] ? enxuto(rows[0]) : null;
   }
 
   // Cadastro do NEXO: ele já mantém o portal das Surfers inteiro (coleção
@@ -196,7 +148,7 @@ function criarCadastro(getDb, getNexoDb) {
     } catch (e) { console.warn('[balanco] cadastro do NEXO indisponível:', e.message); return null; }
   }
 
-  return { sync, buscar, buscarUm, sincronizado, nexoServe };
+  return { buscarMicrovix, buscarUm, nexoServe };
 }
 
 // ── Processamento ──────────────────────────────────────────────────────────
@@ -266,19 +218,11 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
   etapa('Conferindo o cadastro dos produtos…');
   const amostra = [...barraDoCod].slice(0, 40).map(([cod, barra]) => ({ cod, barra }));
   const buscarNexo = await cadastro.nexoServe(amostra);
-  if (buscarNexo) {
-    // cadastro vem do NEXO
-  } else if (!(await cadastro.sincronizado(portal))) {
-    etapa('Primeira vez neste portal: baixando o cadastro de produtos do Microvix (pode levar alguns minutos)…');
-    await cadastro.sync(portal, cnpj, chave, n => etapa(`Baixando o cadastro de produtos… ${n.toLocaleString('pt-BR')} produtos`));
-  } else {
-    await cadastro.sync(portal, cnpj, chave).catch(e => console.warn('[balanco] sync cadastro:', e.message));
-  }
-
   const codsEscopo = new Set([...lidoPorCod.keys()]);
   for (const [cod, q] of est) if (q !== 0) codsEscopo.add(cod);
   const consulta = { cods: [...codsEscopo], barrasN: barrasSemCod };
-  let info = buscarNexo ? await buscarNexo(consulta) : await cadastro.buscar(portal, consulta);
+  let info = buscarNexo ? await buscarNexo(consulta)
+    : await cadastro.buscarMicrovix(cnpj, chave, consulta, n => etapa(`Lendo o cadastro de produtos no Microvix… ${n.toLocaleString('pt-BR')} produtos`));
 
   const naoCadastrados = [];
   for (const bn of barrasSemCod) {
@@ -294,7 +238,7 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
   // Produto com saldo que não veio na sincronização: busca um a um (raro)
   const faltam = [...codsEscopo].filter(c => !info.porCod.has(c)).slice(0, 150);
   for (const c of faltam) {
-    try { const p = await cadastro.buscarUm(portal, cnpj, chave, c); if (p) info.porCod.set(c, p); }
+    try { const p = await cadastro.buscarUm(cnpj, chave, c); if (p) info.porCod.set(c, p); }
     catch (e) { console.warn('[balanco] produto', c, e.message); }
   }
 

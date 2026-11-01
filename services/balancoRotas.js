@@ -25,10 +25,13 @@ const NOMES_LOJA = {
 
 function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin, boardsLabel }) {
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
-  const cadastro = criarCadastro(getDb, getNexoDb);
+  const cadastro = criarCadastro(getNexoDb);
   const lojas = () => JSON.parse(process.env.MICROVIX_LOJAS || '{}');
   const chaveDe = b => process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
   const label = b => boardsLabel[b] || String(b || '').toUpperCase();
+
+  // O multer entrega o nome do arquivo em latin1 ("BALANÃO" no lugar de "BALANÇO")
+  const nomeArquivo = f => Buffer.from(f.originalname, 'latin1').toString('utf8');
 
   // ── Armazenamento ────────────────────────────────────────────────────────
   const LOCAL = path.join(os.tmpdir(), 'gestao-balancos');
@@ -97,30 +100,38 @@ function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin
       Object.assign(bal, { status: 'erro', etapa: null, erro: 'O processamento foi interrompido (o servidor reiniciou). Clique em Reprocessar.' });
       await salvar(bal.id, { status: bal.status, etapa: null, erro: bal.erro });
     }
-    await reagruparPorLinha(bal);
     return bal;
   }
 
-  // Balanço processado antes da regra "setor igual em tudo → linha" (Tommy
-  // com tudo em TOMMY HILFIGER): troca o grupo pela linha do cadastro já
-  // guardado, sem ir ao Microvix e sem mexer nas recontagens
-  async function reagruparPorLinha(bal) {
-    if (!bal.itens?.length || bal.agrupar === 'linha' || bal.origem === 'planilha' || !bal.portal) return;
-    const grupos = new Set(bal.itens.filter(it => it.c).map(it => it.g));
-    if (grupos.size > 1) return;
+  // Uma vez, no boot: a primeira versão gravava uma cópia do cadastro de
+  // produtos (balanco_produtos) e só a da Tommy levou o Atlas gratuito ao
+  // alerta de espaço. Antes de apagar, usa a cópia para reagrupar pela linha
+  // o balanço processado com tudo em TOMMY HILFIGER (sem mexer na recontagem).
+  const limpeza = setInterval(async () => {
+    const db = getDb();
+    if (!db) return;
+    clearInterval(limpeza);
     try {
-      const info = await cadastro.buscar(bal.portal, { cods: bal.itens.map(it => it.c).filter(Boolean), barrasN: [] });
-      let n = 0;
-      for (const it of bal.itens) {
-        const ln = info.porCod.get(it.c)?.linha;
-        if (ln) { it.g = ln; n++; }
+      const prod = db.collection('balanco_produtos');
+      if (!(await prod.estimatedDocumentCount())) return;
+      const lista = await col().find({ agrupar: { $ne: 'linha' }, origem: { $ne: 'planilha' }, portal: { $exists: true } }).toArray();
+      for (const bal of lista) {
+        if (new Set((bal.itens || []).filter(it => it.c).map(it => it.g)).size > 1) continue;
+        const docs = await prod.find({ portal: bal.portal, cod: { $in: bal.itens.map(it => it.c).filter(Boolean) } },
+          { projection: { cod: 1, linha: 1 } }).toArray();
+        const linha = new Map(docs.map(d => [d.cod, d.linha]));
+        let n = 0;
+        for (const it of bal.itens) { const l = linha.get(it.c); if (l) { it.g = l; n++; } }
+        if (!n) continue;
+        await col().updateOne({ id: bal.id }, { $set: { itens: bal.itens, agrupar: 'linha', gruposFora: [] } });
+        await gerarPdf({ ...bal, agrupar: 'linha', gruposFora: [] });
+        console.log(`[balanco] ${bal.id} reagrupado pela linha (${n} itens)`);
       }
-      if (!n) return;
-      Object.assign(bal, { agrupar: 'linha', gruposFora: [] });
-      await salvar(bal.id, { itens: bal.itens, agrupar: 'linha', gruposFora: [] });
-      await gerarPdf(bal);
-    } catch (e) { console.warn('[balanco] reagrupar', bal.id, e.message); }
-  }
+      await prod.drop();
+      await db.collection('balanco_meta').deleteMany({ _id: /^prod:/ });
+      console.log('[balanco] cópia do cadastro de produtos apagada');
+    } catch (e) { console.warn('[balanco] limpeza do cadastro:', e.message); }
+  }, 5000);
 
   // Resumo enxuto para a lista e o histórico
   function cabecalho(bal) {
@@ -220,7 +231,7 @@ function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin
         diasTransito: Math.min(60, Math.max(0, parseInt(diasTransito) || 7)),
         incluirNaoLidos: true, gruposFora: [],
         obs: String(obs || '').slice(0, 500),
-        arquivoNome: req.file.originalname, leituraTexto,
+        arquivoNome: nomeArquivo(req.file), leituraTexto,
         status: 'processando', etapa: 'Na fila…',
         criadoPor: quem(req), criadoEm: new Date().toISOString(),
       };
@@ -265,7 +276,7 @@ function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin
         mes: /^\d{4}-\d{2}$/.test(mes || '') ? mes : data.slice(0, 7),
         agrupar: board === 'tommy' ? 'linha' : 'setor', diasTransito: 7,
         incluirNaoLidos: true, gruposFora: [], obs: String(obs || '').slice(0, 500),
-        arquivoNome: planilha.originalname, leituraTexto: txt ? txt.buffer.toString('latin1') : null,
+        arquivoNome: nomeArquivo(planilha), leituraTexto: txt ? txt.buffer.toString('latin1') : null,
         itens, leitura: null, janelaTransito: null, duplicadasRemovidas: lida.duplicadas,
         status: situacao === 'recontagem' ? 'recontagem' : 'finalizado',
         criadoPor: quem(req), criadoEm: agora, processadoEm: agora,
