@@ -145,6 +145,7 @@ function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin
       const set = {
         status: 'recontagem', etapa: null, erro: null, itens: r.itens, portal: r.portal,
         origem: null, // importado de planilha com o TXT: agora é um balanço completo
+        agrupar: r.agrupar, ...(r.agrupar !== bal.agrupar ? { gruposFora: [] } : {}),
         leitura: r.leitura, janelaTransito: r.janelaTransito, movDepoisDaHora: r.movDepoisDaHora,
         naoCadastrados: r.naoCadastrados, processadoEm: new Date().toISOString(),
       };

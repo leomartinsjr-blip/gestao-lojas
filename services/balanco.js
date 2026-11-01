@@ -318,6 +318,12 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
     } catch (e) { console.warn('[balanco] preço', c, e.message); }
   }
 
+  // Setor igual em tudo (na Tommy é sempre "TOMMY HILFIGER") não separa nada:
+  // agrupa pela linha, como o Microvix faz lá
+  if (agrupar !== 'linha') {
+    const setores = new Set([...codsEscopo].map(c => info.porCod.get(c)?.setor).filter(Boolean));
+    if (setores.size <= 1) agrupar = 'linha';
+  }
   const itens = [];
   for (const cod of codsEscopo) {
     const p = info.porCod.get(cod) || {};
@@ -353,6 +359,7 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
     janelaTransito: { ini: iniTransito, fim: data },
     movDepoisDaHora,
     naoCadastrados: naoCadastrados.length,
+    agrupar,
   };
 }
 
