@@ -13398,6 +13398,8 @@ app.post('/api/conferencia/conciliacao-rede', requireEscritorioOrAdmin, async (r
 // ════════════════════════════════════════════════════════════════════════════
 require('./services/balancoRotas').register(app, {
   getDb: () => mongoDb, requireAuth, requireEscritorioOrAdmin, boardsLabel: BOARDS_LABEL,
+  // Cadastro de produtos que o NEXO já mantém, se estiver no mesmo cluster
+  getNexoDb: () => mongoDb ? mongoDb.client.db(process.env.NEXO_MONGODB_DB || 'integracao_site') : null,
 });
 
 // ════════════════════════════════════════════════════════════════════════════

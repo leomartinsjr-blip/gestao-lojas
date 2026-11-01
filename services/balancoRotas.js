@@ -23,9 +23,9 @@ const NOMES_LOJA = {
   estacao: 'Surfers Estação', tommy: 'Tommy Hilfiger Del Rey', lez: 'Lez a Lez',
 };
 
-function register(app, { getDb, requireAuth, requireEscritorioOrAdmin, boardsLabel }) {
-  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
-  const cadastro = criarCadastro(getDb);
+function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin, boardsLabel }) {
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+  const cadastro = criarCadastro(getDb, getNexoDb);
   const lojas = () => JSON.parse(process.env.MICROVIX_LOJAS || '{}');
   const chaveDe = b => process.env[`MICROVIX_CHAVE_${b.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
   const label = b => boardsLabel[b] || String(b || '').toUpperCase();
@@ -119,6 +119,7 @@ function register(app, { getDb, requireAuth, requireEscritorioOrAdmin, boardsLab
   async function gerarPdf(bal) {
     const buf = await pdfListaCriticas(bal, { lojaLabel: NOMES_LOJA[bal.board] || label(bal.board) });
     await guardarArquivo(bal.id, 'pdf', buf);
+    await salvar(bal.id, { temPdf: true });
   }
 
   // Processa em segundo plano: a primeira vez num portal baixa o cadastro todo
@@ -143,6 +144,7 @@ function register(app, { getDb, requireAuth, requireEscritorioOrAdmin, boardsLab
       }
       const set = {
         status: 'recontagem', etapa: null, erro: null, itens: r.itens, portal: r.portal,
+        origem: null, // importado de planilha com o TXT: agora é um balanço completo
         leitura: r.leitura, janelaTransito: r.janelaTransito, movDepoisDaHora: r.movDepoisDaHora,
         naoCadastrados: r.naoCadastrados, processadoEm: new Date().toISOString(),
       };
@@ -206,12 +208,69 @@ function register(app, { getDb, requireAuth, requireEscritorioOrAdmin, boardsLab
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── Arquivar balanço feito fora do gestão (planilha de recontagem) ───────
+  // Para o histórico dos meses de antes e para o balanço que já estava em
+  // recontagem na planilha. O PDF da Lista de Críticas e o TXT são opcionais;
+  // com o TXT dá para reprocessar depois e gerar o TXT corrigido.
+  const uploadArquivar = upload.fields([{ name: 'arquivo', maxCount: 1 }, { name: 'pdf', maxCount: 1 }, { name: 'txt', maxCount: 1 }]);
+  app.post('/api/balancos/arquivar', requireEscritorioOrAdmin, uploadArquivar, async (req, res) => {
+    try {
+      const { board, mes, obs, situacao } = req.body;
+      const planilha = req.files?.arquivo?.[0];
+      if (!board || !lojas()[board]) return res.status(400).json({ error: 'Escolha a loja.' });
+      if (!planilha) return res.status(400).json({ error: 'Envie a planilha de recontagem (.xlsx).' });
+      const lida = await lerPlanilhaRecontagem(planilha.buffer);
+      if (!lida.completa) return res.status(400).json({ error: 'A aba RECONTAGEM precisa das colunas Estoque, Balanço e Preço Unit.' });
+      if (!lida.linhas.length) return res.status(400).json({ error: 'Nenhum item na aba RECONTAGEM.' });
+      // A "Data:" da planilha é =HOJE(): mostra quando foi salva, não a contagem
+      const data = /^\d{4}-\d{2}-\d{2}$/.test(req.body.data || '') ? req.body.data : null;
+      if (!data) return res.status(400).json({ error: 'Informe a data da contagem.' });
+      const agora = new Date().toISOString();
+      const itens = lida.linhas.map(l => {
+        const extra = l.extra ? `${l.extraNome.replace(/\?$/, '')}: ${l.extra}` : '';
+        return {
+          c: l.cod, b: '', d: l.desc, r: l.ref, g: l.setor || '(SEM SETOR)',
+          e: l.e || 0, l: l.l || 0, lido: (l.l || 0) > 0, o: null, p: l.p || 0, v: l.v || 0, t: l.t || 0,
+          rc: l.rc, ob: [l.ob, extra].filter(Boolean).join(' · '),
+          rp: l.rc !== null ? 'planilha' : undefined, rt: l.rc !== null ? agora : undefined,
+        };
+      });
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      const txt = req.files?.txt?.[0];
+      const doc = {
+        id, board, data, hora: null, origem: 'planilha',
+        mes: /^\d{4}-\d{2}$/.test(mes || '') ? mes : data.slice(0, 7),
+        agrupar: board === 'tommy' ? 'linha' : 'setor', diasTransito: 7,
+        incluirNaoLidos: true, gruposFora: [], obs: String(obs || '').slice(0, 500),
+        arquivoNome: planilha.originalname, leituraTexto: txt ? txt.buffer.toString('latin1') : null,
+        itens, leitura: null, janelaTransito: null, duplicadasRemovidas: lida.duplicadas,
+        status: situacao === 'recontagem' ? 'recontagem' : 'finalizado',
+        criadoPor: quem(req), criadoEm: agora, processadoEm: agora,
+      };
+      if (doc.status === 'finalizado') {
+        const r = resumo(doc);
+        Object.assign(doc, { finalizadoPor: quem(req), finalizadoEm: agora,
+          resumoFinal: { total: r.total, grupos: r.grupos, pecasLidas: r.pecasLidas, pecasEstoque: r.pecasEstoque } });
+      }
+      const c = col();
+      if (c) await c.insertOne({ ...doc }); else local.gravar(doc);
+      // O PDF impresso do Microvix passa fácil de 15 MB: não cabe num documento
+      // do Mongo e come o espaço do plano gratuito
+      const pdf = req.files?.pdf?.[0];
+      let aviso = null;
+      if (pdf && pdf.size > 8 * 1024 * 1024) aviso = `O PDF tem ${(pdf.size / 1048576).toFixed(1)} MB (limite 8 MB) e não foi guardado.`;
+      else if (pdf) { await guardarArquivo(id, 'pdf', pdf.buffer); await salvar(id, { temPdf: true }); }
+      res.json({ id, itens: itens.length, duplicadas: lida.duplicadas, recontados: itens.filter(i => i.rc !== null).length, aviso });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── Um balanço ───────────────────────────────────────────────────────────
   app.get('/api/balancos/:id', requireAuth, async (req, res) => {
     try {
       const bal = await carregar(req, res); if (!bal) return;
       const { leituraTexto, ...resto } = bal;
-      res.json({ ...resto, lojaLabel: label(bal.board), escritorio: ehEscritorio(req),
+      res.json({ ...resto, temLeitura: !!leituraTexto, temPdf: bal.temPdf || bal.origem !== 'planilha',
+        lojaLabel: label(bal.board), escritorio: ehEscritorio(req),
         resumo: bal.itens ? resumo(bal) : null });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
@@ -278,7 +337,7 @@ function register(app, { getDb, requireAuth, requireEscritorioOrAdmin, boardsLab
       const bal = await carregar(req, res); if (!bal) return;
       if (bal.status !== 'recontagem') return res.status(409).json({ error: 'Este balanço não está aberto para recontagem.' });
       if (!req.file) return res.status(400).json({ error: 'Envie a planilha.' });
-      const linhas = await lerPlanilhaRecontagem(req.file.buffer);
+      const { linhas } = await lerPlanilhaRecontagem(req.file.buffer);
       const chaves = new Set((bal.itens || []).map(it => String(it.c || it.b)));
       const conhecidas = linhas.filter(l => chaves.has(String(l.cod)));
       // Célula vazia na planilha não apaga o que já foi lançado no gestão
@@ -292,6 +351,7 @@ function register(app, { getDb, requireAuth, requireEscritorioOrAdmin, boardsLab
     try {
       const bal = await carregar(req, res); if (!bal) return;
       if (rodando.has(bal.id)) return res.status(409).json({ error: 'Já está processando.' });
+      if (!bal.leituraTexto) return res.status(409).json({ error: 'Balanço importado de planilha sem o TXT da leitura: não dá para reprocessar.' });
       if (bal.status === 'finalizado') return res.status(409).json({ error: 'Reabra o balanço antes de reprocessar.' });
       const set = { status: 'processando', etapa: 'Na fila…', erro: null };
       const b = req.body || {};
@@ -331,7 +391,8 @@ function register(app, { getDb, requireAuth, requireEscritorioOrAdmin, boardsLab
     try {
       const bal = await carregar(req, res); if (!bal) return;
       let buf = await lerArquivo(bal.id, 'pdf');
-      if (!buf && bal.itens) { await gerarPdf(bal); buf = await lerArquivo(bal.id, 'pdf'); }
+      // Importado de planilha só tem os divergentes: a Lista de Críticas sairia pela metade
+      if (!buf && bal.itens && bal.origem !== 'planilha') { await gerarPdf(bal); buf = await lerArquivo(bal.id, 'pdf'); }
       if (!buf) return res.status(404).json({ error: 'PDF ainda não gerado.' });
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent('Lista de Críticas — ' + nomeBase(bal) + '.pdf')}`);
@@ -354,6 +415,7 @@ function register(app, { getDb, requireAuth, requireEscritorioOrAdmin, boardsLab
     try {
       const bal = await carregar(req, res); if (!bal) return;
       if (!bal.itens) return res.status(409).json({ error: 'Balanço ainda não processado.' });
+      if (!bal.leituraTexto) return res.status(409).json({ error: 'Este balanço veio de planilha, sem o TXT da leitura.' });
       anexo(res, `${nomeBase(bal)} corrigido.txt`, 'text/plain; charset=utf-8');
       res.send(txtCorrigido(bal));
     } catch (e) { res.status(500).json({ error: e.message }); }

@@ -61,7 +61,7 @@ async function linx(cmd, cnpj, chave, params, timeout = 90_000) {
 // tamanho), que a Lista de Críticas precisa. Aqui fica uma cópia enxuta por
 // portal, sincronizada pelo timestamp do LinxProdutos: a primeira vez baixa
 // tudo, depois só o que mudou.
-function criarCadastro(getDb) {
+function criarCadastro(getDb, getNexoDb) {
   const mem = {};       // portal → { ts, porCod: Map, porBarra: Map } (sem Mongo)
   const syncs = {};     // portal → Promise em andamento
 
@@ -165,7 +165,38 @@ function criarCadastro(getDb) {
     return !!mem[portal]?.ts;
   }
 
-  return { sync, buscar, buscarUm, sincronizado };
+  // Cadastro do NEXO: ele já mantém o portal das Surfers inteiro (coleção
+  // produtos, _id = cod_produto). Se estiver no mesmo Mongo e for o mesmo
+  // portal (a amostra do estoque bate código e código de barras), usa ele em
+  // vez de guardar uma segunda cópia. A Tommy é outro portal e cai na própria.
+  async function nexoServe(amostra) {
+    const ndb = getNexoDb?.();
+    if (!ndb || !amostra.length) return null;
+    try {
+      const col = ndb.collection('produtos');
+      const docs = await col.find({ _id: { $in: amostra.map(a => a.cod) } }, { projection: { cod_barra: 1 } }).toArray();
+      const porCod = new Map(docs.map(d => [String(d._id), normBarra(d.cod_barra)]));
+      const batem = amostra.filter(a => porCod.get(a.cod) === normBarra(a.barra)).length;
+      if (batem < amostra.length * 0.9) return null;
+      const doNexo = d => ({ cod: String(d._id), barra: String(d.cod_barra || ''), nome: String(d.nome || '').replace(/\s+/g, ' ').trim(),
+        ref: String(d.referencia || '').trim(), setor: String(d.setor || '').trim(), linha: String(d.linha || '').trim() });
+      return async function buscarNexo({ cods = [], barrasN = [] }) {
+        const variantes = barrasN.flatMap(b => [b, b.padStart(8, '0'), b.padStart(13, '0')]);
+        const ds = await col.find({ $or: [{ _id: { $in: [...cods, ...barrasN] } }, { cod_barra: { $in: variantes } }] },
+          { projection: { cod_barra: 1, nome: 1, referencia: 1, setor: 1, linha: 1 } }).toArray();
+        const out = { porCod: new Map(), porBarra: new Map() };
+        for (const d of ds) {
+          const p = doNexo(d);
+          out.porCod.set(p.cod, p);
+          out.porBarra.set(normBarra(p.barra), p);
+          if (barrasN.includes(p.cod)) out.porBarra.set(p.cod, p); // código gerencial lido no lugar do de barras
+        }
+        return out;
+      };
+    } catch (e) { console.warn('[balanco] cadastro do NEXO indisponível:', e.message); return null; }
+  }
+
+  return { sync, buscar, buscarUm, sincronizado, nexoServe };
 }
 
 // ── Processamento ──────────────────────────────────────────────────────────
@@ -233,7 +264,11 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
   }
 
   etapa('Conferindo o cadastro dos produtos…');
-  if (!(await cadastro.sincronizado(portal))) {
+  const amostra = [...barraDoCod].slice(0, 40).map(([cod, barra]) => ({ cod, barra }));
+  const buscarNexo = await cadastro.nexoServe(amostra);
+  if (buscarNexo) {
+    // cadastro vem do NEXO
+  } else if (!(await cadastro.sincronizado(portal))) {
     etapa('Primeira vez neste portal: baixando o cadastro de produtos do Microvix (pode levar alguns minutos)…');
     await cadastro.sync(portal, cnpj, chave, n => etapa(`Baixando o cadastro de produtos… ${n.toLocaleString('pt-BR')} produtos`));
   } else {
@@ -242,7 +277,8 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
 
   const codsEscopo = new Set([...lidoPorCod.keys()]);
   for (const [cod, q] of est) if (q !== 0) codsEscopo.add(cod);
-  let info = await cadastro.buscar(portal, { cods: [...codsEscopo], barrasN: barrasSemCod });
+  const consulta = { cods: [...codsEscopo], barrasN: barrasSemCod };
+  let info = buscarNexo ? await buscarNexo(consulta) : await cadastro.buscar(portal, consulta);
 
   const naoCadastrados = [];
   for (const bn of barrasSemCod) {
@@ -370,8 +406,10 @@ function resumo(bal) {
   }
   const fora = new Set(bal.gruposFora || []);
   const escopo = (bal.itens || []).filter(it => !fora.has(it.g));
-  const pecasLidas = escopo.reduce((a, it) => a + it.l, 0);
-  const pecasEstoque = escopo.reduce((a, it) => a + it.e, 0);
+  // Importado de planilha só traz os itens com diferença: total de peças não existe
+  const daPlanilha = bal.origem === 'planilha';
+  const pecasLidas = daPlanilha ? null : escopo.reduce((a, it) => a + it.l, 0);
+  const pecasEstoque = daPlanilha ? null : escopo.reduce((a, it) => a + it.e, 0);
   return {
     grupos: [...porGrupo.values()].sort((a, b) => a.grupo.localeCompare(b.grupo)),
     total: tot,

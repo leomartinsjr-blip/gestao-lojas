@@ -363,8 +363,13 @@ async function excelRecontagem(bal) {
   return wb.xlsx.writeBuffer();
 }
 
-// ── Recontagem preenchida na planilha → gestão ─────────────────────────────
-// Lê a aba RECONTAGEM (B = Código, J = Qtde Recontada, M = Observação).
+// ── Planilha de recontagem → gestão ────────────────────────────────────────
+// Lê a aba RECONTAGEM pelo nome das colunas: as planilhas antigas seguem o
+// modelo mas mudam de lugar (coluna vazia antes do Status, AJUSTADO?,
+// REGULARIZADO?, "1ª ocorrência?"…). Serve tanto para trazer a recontagem de
+// volta quanto para arquivar um balanço feito fora do gestão.
+const semAcento = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
+
 async function lerPlanilhaRecontagem(buffer) {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buffer);
@@ -372,20 +377,66 @@ async function lerPlanilhaRecontagem(buffer) {
   if (!ws) throw new Error('Planilha vazia.');
   const val = c => {
     const v = c.value;
+    if (v instanceof Date) return v;
     if (v && typeof v === 'object') return v.result ?? v.text ?? (v.richText ? v.richText.map(t => t.text).join('') : null);
     return v;
   };
-  const out = [];
+  const numero = v => {
+    if (v === null || v === undefined || String(v).trim() === '' || String(v).trim() === '-') return null;
+    const n = typeof v === 'number' ? v : Number(String(v).replace(/[R$\s.]/g, '').replace(',', '.'));
+    return Number.isFinite(n) ? n : null;
+  };
+
+  // Cabeçalho: a primeira linha (até a 10ª) com uma coluna "Código"
+  let hdr = 0;
+  const nomes = {};
+  for (let r = 1; r <= 10 && !hdr; r++) {
+    const row = ws.getRow(r);
+    row.eachCell((c, i) => { if (semAcento(val(c)) === 'codigo') hdr = r; });
+    if (hdr) row.eachCell((c, i) => { nomes[i] = semAcento(val(c)); });
+  }
+  if (!hdr) throw new Error('Não achei o cabeçalho (coluna "Código") na aba RECONTAGEM.');
+  const acha = re => { const e = Object.entries(nomes).find(([, n]) => re.test(n)); return e ? +e[0] : null; };
+  const C = {
+    setor: acha(/^setor/), cod: acha(/^codigo$/), desc: acha(/^descri/), ref: acha(/^refer/),
+    e: acha(/^estoque$/), l: acha(/^balanco$/), p: acha(/^preco/), rc: acha(/^qtde recont/),
+    ob: acha(/^observ/), v: acha(/^vendas/), t: acha(/transito|recebid/), extra: acha(/ajustado|regularizado/),
+  };
+  if (!C.rc) C.rc = 10;
+  if (!C.ob) C.ob = 13;
+
+  // Data do balanço: célula ao lado de "Data:" acima do cabeçalho
+  let data = null;
+  for (let r = 1; r < hdr && !data; r++) {
+    ws.getRow(r).eachCell((c, i) => {
+      if (data || !/^data/.test(semAcento(val(c)))) return;
+      const d = val(ws.getRow(r).getCell(i + 1));
+      if (d instanceof Date) data = d.toISOString().slice(0, 10);
+      else if (typeof d === 'number' && d > 30000) data = new Date(Math.round((d - 25569) * 864e5)).toISOString().slice(0, 10);
+    });
+  }
+
+  const linhas = [];
+  const vistos = new Set();
+  let duplicadas = 0;
   ws.eachRow((row, r) => {
-    if (r < 4) return;
-    const cod = String(val(row.getCell(2)) ?? '').trim();
-    if (!cod || cod === 'TOTAL') return;
-    const rcRaw = val(row.getCell(10));
-    const rc = rcRaw === null || rcRaw === undefined || String(rcRaw).trim() === '' ? null : Number(String(rcRaw).replace(',', '.'));
-    const ob = String(val(row.getCell(13)) ?? '').trim();
-    out.push({ cod, rc: Number.isFinite(rc) ? rc : null, ob });
+    if (r <= hdr) return;
+    const g = i => (i ? val(row.getCell(i)) : null);
+    const cod = String(g(C.cod) ?? '').trim();
+    if (!cod || /total/i.test(cod) || !/\d/.test(cod)) return;
+    const l = {
+      setor: String(g(C.setor) ?? '').trim(), cod, desc: String(g(C.desc) ?? '').replace(/\s+/g, ' ').trim(),
+      ref: String(g(C.ref) ?? '').trim(), e: numero(g(C.e)), l: numero(g(C.l)), p: numero(g(C.p)),
+      rc: numero(g(C.rc)), ob: String(g(C.ob) ?? '').trim(), v: numero(g(C.v)), t: numero(g(C.t)),
+      extra: C.extra ? String(g(C.extra) ?? '').trim() : '', extraNome: C.extra ? nomes[C.extra].toUpperCase() : '',
+    };
+    // O export às vezes repete um bloco de setor inteiro: a mesma linha duas vezes
+    const chave = [l.cod, l.e, l.l].join('|');
+    if (vistos.has(chave)) { duplicadas++; return; }
+    vistos.add(chave);
+    linhas.push(l);
   });
-  return out;
+  return { data, linhas, duplicadas, completa: C.e !== null && C.l !== null && C.p !== null };
 }
 
 module.exports = { pdfListaCriticas, excelRecontagem, lerPlanilhaRecontagem };

@@ -116,7 +116,7 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 12px; }
 .fld .inp, .fld .sel { width: 100%; }
 
 .modal-bg { position: fixed; inset: 0; background: rgba(var(--shadow-rgb), .6); display: flex; align-items: center; justify-content: center; z-index: 200; padding: 1rem; }
-.modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px; width: 100%; max-width: 460px; }
+.modal { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 22px; width: 100%; max-width: 460px; max-height: calc(100vh - 2rem); overflow-y: auto; }
 .modal h3 { margin: 0 0 16px; font-size: 15px; }
 .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .modal-err { color: var(--down); font-size: 12px; min-height: 16px; margin-top: 4px; }
@@ -163,6 +163,7 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 12px; }
       <input type="month" id="fMes" class="inp"/>
       <select id="fLoja" class="sel"><option value="">Todas as lojas</option></select>
       <span class="grow"></span>
+      <button id="btnArquivar" class="btn hidden" title="Arquivar um balanço feito na planilha (meses anteriores ou em andamento)">Importar balanço antigo</button>
       <button id="btnNovo" class="btn primary hidden">+ Novo balanço</button>
     </div>
     <div id="lista"></div>
@@ -197,6 +198,33 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 12px; }
     <div class="modal-actions">
       <button type="button" class="btn" id="nCancelar">Cancelar</button>
       <button type="submit" class="btn primary" id="nEnviar">Processar</button>
+    </div>
+  </form>
+</div>
+
+<div id="modalArq" class="modal-bg hidden">
+  <form class="modal" id="fArq">
+    <h3>Importar balanço antigo</h3>
+    <div class="hint" style="margin:-8px 0 14px">A planilha de recontagem (aba RECONTAGEM) de um balanço feito fora do gestão. Fica no histórico com as recontagens que já estiverem nela.</div>
+    <div class="fld"><label>Planilha de recontagem (.xlsx)</label><input type="file" id="aPlan" class="inp" accept=".xlsx" required style="padding:5px"/></div>
+    <div class="row2">
+      <div class="fld"><label>Loja</label><select id="aLoja" class="sel" required></select></div>
+      <div class="fld"><label>Mês do balanço</label><input type="month" id="aMes" class="inp"/>
+        <div class="hint">Vazio = mês da data da planilha.</div></div>
+    </div>
+    <div class="row2">
+      <div class="fld"><label>Data da contagem</label><input type="date" id="aData" class="inp" required/>
+        <div class="hint">A "Data:" da planilha é a de quando foi salva.</div></div>
+      <div class="fld"><label>Situação</label><select id="aSit" class="sel"><option value="finalizado">Finalizado (arquivo)</option><option value="recontagem">Ainda em recontagem</option></select></div>
+    </div>
+    <div class="fld"><label>Lista de Críticas em PDF (opcional)</label><input type="file" id="aPdf" class="inp" accept=".pdf" style="padding:5px"/></div>
+    <div class="fld"><label>TXT da leitura (opcional)</label><input type="file" id="aTxt" class="inp" accept=".txt,text/plain" style="padding:5px"/>
+      <div class="hint">Com o TXT dá para gerar o TXT corrigido no fim.</div></div>
+    <div class="fld"><label>Observação</label><input type="text" id="aObs" class="inp" maxlength="500"/></div>
+    <div class="modal-err" id="aErr"></div>
+    <div class="modal-actions">
+      <button type="button" class="btn" id="aCancelar">Cancelar</button>
+      <button type="submit" class="btn primary" id="aEnviar">Importar</button>
     </div>
   </form>
 </div>

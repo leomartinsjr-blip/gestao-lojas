@@ -48,6 +48,7 @@ async function carregarLista() {
       if (j.lojas.length === 1) $('fLoja').classList.add('hidden');
     }
     $('btnNovo').classList.toggle('hidden', !S.escritorio);
+    $('btnArquivar').classList.toggle('hidden', !S.escritorio);
     for (const b of j.balancos) S.lojaLbl[b.board] = b.lojaLabel;
     S.tab === 'mes' ? desenharCards(j.balancos) : desenharHistorico(j.balancos);
     if (j.balancos.some(b => b.status === 'processando')) setTimeout(() => { if (!S.bal) carregarLista(); }, 4000);
@@ -138,10 +139,10 @@ function desenharDetalhe() {
     `<span class="det-title">${esc(b.lojaLabel)} · ${dBR(b.data)}${b.hora ? ' ' + b.hora : ''}</span>`,
     `<span class="badge ${b.status}">${STATUS_LBL[b.status] || b.status}</span>`,
     `<span class="grow"></span>`,
-    pronto ? `<a class="btn" href="${base}/pdf" target="_blank">Lista de Críticas (PDF)</a>` : '',
+    pronto && b.temPdf ? `<a class="btn" href="${base}/pdf" target="_blank">Lista de Críticas (PDF)</a>` : '',
     pronto ? `<a class="btn" href="${base}/planilha">Planilha de recontagem</a>` : '',
     pronto && aberto ? `<button class="btn" id="dImportar">Importar planilha</button>` : '',
-    pronto && esc_ ? `<a class="btn" href="${base}/txt">TXT corrigido</a>` : '',
+    pronto && esc_ && b.temLeitura ? `<a class="btn" href="${base}/txt">TXT corrigido</a>` : '',
     esc_ && aberto ? `<button class="btn primary" id="dFinalizar">Finalizar</button>` : '',
     esc_ && b.status === 'finalizado' ? `<button class="btn" id="dReabrir">Reabrir</button>` : '',
   ].join('');
@@ -155,13 +156,14 @@ function desenharDetalhe() {
     const t = r.total;
     const avisos = [];
     if (b.status === 'erro') avisos.push(`<div class="aviso erro">${esc(b.erro)}</div>`);
+    if (b.origem === 'planilha') avisos.push(`<div class="aviso">Importado da planilha <b>${esc(b.arquivoNome)}</b>: só os itens com diferença${b.duplicadasRemovidas ? ` (${b.duplicadasRemovidas} linhas repetidas do export foram ignoradas)` : ''}.${b.temLeitura ? '' : ' Sem o TXT da leitura, não há reprocessamento nem TXT corrigido.'}</div>`);
     if (b.naoCadastrados) avisos.push(`<div class="aviso">${b.naoCadastrados} código(s) lido(s) não existem no cadastro do Microvix — estão no grupo (NÃO CADASTRADO).</div>`);
     if (b.leitura?.invalidas?.length) avisos.push(`<div class="aviso">${b.leitura.invalidas.length} linha(s) do arquivo não foram entendidas (ex.: linha ${b.leitura.invalidas[0].linha}: "${esc(b.leitura.invalidas[0].texto)}").</div>`);
     if (b.status === 'finalizado') avisos.push(`<div class="aviso" style="border-left-color:var(--up)">Finalizado por ${esc(b.finalizadoPor)} em ${new Date(b.finalizadoEm).toLocaleString('pt-BR')}. Para lançar mais recontagens, reabra.</div>`);
     corpo = avisos.join('') + `
       <div class="kpis">
-        <div class="kpi"><div class="lb">Peças lidas</div><div class="vl">${fInt(r.pecasLidas)}</div><div class="sb">${fInt(b.leitura?.codigos)} códigos no arquivo</div></div>
-        <div class="kpi"><div class="lb">Estoque no sistema</div><div class="vl">${fInt(r.pecasEstoque)}</div><div class="sb">${fInt(r.naoLidos)} itens com saldo não lidos</div></div>
+        ${b.origem === 'planilha' ? '' : `<div class="kpi"><div class="lb">Peças lidas</div><div class="vl">${fInt(r.pecasLidas)}</div><div class="sb">${fInt(b.leitura?.codigos)} códigos no arquivo</div></div>
+        <div class="kpi"><div class="lb">Estoque no sistema</div><div class="vl">${fInt(r.pecasEstoque)}</div><div class="sb">${fInt(r.naoLidos)} itens com saldo não lidos</div></div>`}
         <div class="kpi"><div class="lb">Diferença (peças)</div><div class="vl ${cls(t.pecasDif)}">${fInt(t.pecasDif)}</div><div class="sb">após recontagem: ${fInt(t.pecasDifFinal)}</div></div>
         <div class="kpi"><div class="lb">Impacto sistema</div><div class="vl ${cls(t.impactoSistema)}">${fRS(t.impactoSistema)}</div><div class="sb">${t.itens} itens divergentes</div></div>
         <div class="kpi"><div class="lb">Impacto confirmado</div><div class="vl ${cls(t.impactoConfirmado)}">${fRS(t.impactoConfirmado)}</div><div class="sb">${t.recontados} recontados (${t.ok} OK · ${t.divergentes} div.)</div></div>
@@ -329,7 +331,7 @@ function desenharConfig() {
       <div class="fld"><label>Observação</label><input type="text" id="cObs" class="inp" value="${esc(b.obs || '')}" maxlength="500"/></div>
       <button class="btn primary" id="cSalvar">Salvar</button>
     </div>
-    <div class="box"><h4>Reprocessar</h4>
+    ${b.temLeitura ? `<div class="box"><h4>Reprocessar</h4>
       <div class="hint" style="margin:-4px 0 8px">Busca de novo estoque, vendas e preços no Microvix. As recontagens já lançadas são mantidas.</div>
       <div class="row2"><div class="fld"><label>Data</label><input type="date" id="pData" class="inp" value="${esc(b.data)}"/></div>
         <div class="fld"><label>Hora</label><input type="time" id="pHora" class="inp" value="${esc(b.hora || '')}"/></div></div>
@@ -337,7 +339,7 @@ function desenharConfig() {
         <div class="fld"><label>Trânsito (dias)</label><input type="number" id="pDias" class="inp" min="0" max="60" value="${b.diasTransito ?? 7}"/></div></div>
       <div class="toolbar"><button class="btn primary" id="pRodar">Reprocessar</button><a class="btn" href="/api/balancos/${b.id}/leitura">TXT original</a></div>
       <div class="hint">Processado em ${b.processadoEm ? new Date(b.processadoEm).toLocaleString('pt-BR') : '—'} · criado por ${esc(b.criadoPor)}${b.movDepoisDaHora ? ` · ${b.movDepoisDaHora} movimentos depois da hora desfeitos` : ''}</div>
-    </div>
+    </div>` : ''}
     <div class="box"><h4>Excluir</h4><div class="hint" style="margin-bottom:10px">Apaga o balanço, o PDF e as recontagens. Não tem volta.</div>
       <button class="btn danger" id="cExcluir">Excluir balanço</button></div>
   </div>`;
@@ -345,7 +347,7 @@ function desenharConfig() {
   $('cNenhum').onclick = () => document.querySelectorAll('.cg').forEach(c => c.checked = false);
   $('cSalvarG').onclick = () => patchBal({ gruposFora: [...document.querySelectorAll('.cg')].filter(c => !c.checked).map(c => c.value) });
   $('cSalvar').onclick = () => patchBal({ incluirNaoLidos: $('cNaoLidos').checked, mes: $('cMes').value, obs: $('cObs').value });
-  $('pRodar').onclick = () => reprocessar({ data: $('pData').value, hora: $('pHora').value, agrupar: $('pAgr').value, diasTransito: $('pDias').value });
+  if ($('pRodar')) $('pRodar').onclick = () => reprocessar({ data: $('pData').value, hora: $('pHora').value, agrupar: $('pAgr').value, diasTransito: $('pDias').value });
   $('cExcluir').onclick = excluir;
 }
 
@@ -407,6 +409,41 @@ $('fNovo').onsubmit = async e => {
     abrir(j.id);
   } catch (err) { $('nErr').textContent = err.message; }
   finally { $('nEnviar').disabled = false; }
+};
+
+// ── Importar balanço antigo (planilha) ────────────────────────────────────
+// A loja sai do nome do arquivo quando dá ("DIFERENÇAS DEL REY.xlsx")
+const LOJA_NO_NOME = [['delrey', /DEL\s*REY/], ['minas', /MINAS/], ['contagem', /CONTAGEM/], ['estacao', /ESTA[CÇ][AÃ]O/], ['tommy', /TOMMY/], ['lez', /LEZ/]];
+$('btnArquivar').onclick = () => {
+  $('aLoja').innerHTML = '<option value="">Escolha…</option>' + S.lojas.map(b => `<option value="${b}">${b.toUpperCase()}</option>`).join('');
+  if ($('fLoja').value) $('aLoja').value = $('fLoja').value;
+  $('aErr').textContent = '';
+  $('modalArq').classList.remove('hidden');
+};
+$('aPlan').onchange = () => {
+  const nome = ($('aPlan').files[0]?.name || '').toUpperCase();
+  const achou = LOJA_NO_NOME.find(([b, re]) => re.test(nome) && S.lojas.includes(b));
+  if (achou) $('aLoja').value = achou[0];
+  const m = nome.match(/(\d{2})(20\d{2})/);
+  if (m && +m[1] >= 1 && +m[1] <= 12) $('aMes').value = `${m[2]}-${m[1]}`;
+};
+$('aCancelar').onclick = () => $('modalArq').classList.add('hidden');
+$('fArq').onsubmit = async e => {
+  e.preventDefault();
+  if (!$('aLoja').value) { $('aErr').textContent = 'Escolha a loja.'; return; }
+  const fd = new FormData();
+  fd.append('arquivo', $('aPlan').files[0]); fd.append('board', $('aLoja').value);
+  fd.append('mes', $('aMes').value); fd.append('data', $('aData').value); fd.append('situacao', $('aSit').value); fd.append('obs', $('aObs').value);
+  if ($('aPdf').files[0]) fd.append('pdf', $('aPdf').files[0]);
+  if ($('aTxt').files[0]) fd.append('txt', $('aTxt').files[0]);
+  $('aEnviar').disabled = true; $('aErr').textContent = '';
+  try {
+    const j = await api('/api/balancos/arquivar', { method: 'POST', body: fd });
+    $('modalArq').classList.add('hidden'); $('fArq').reset();
+    if (j.aviso) alert(j.aviso);
+    abrir(j.id);
+  } catch (err) { $('aErr').textContent = err.message; }
+  finally { $('aEnviar').disabled = false; }
 };
 
 // ── Início ─────────────────────────────────────────────────────────────────
