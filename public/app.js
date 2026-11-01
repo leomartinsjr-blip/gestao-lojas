@@ -195,6 +195,8 @@ function applyUserPermissions(user) {
 
   const icmsEl = document.getElementById('icmsBtn');
   if (icmsEl) icmsEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
+  const fluxoCaixaEl = document.getElementById('fluxoCaixaBtn');
+  if (fluxoCaixaEl) fluxoCaixaEl.style.display = isAdmin ? 'flex' : 'none';
   const conferenciaEl = document.getElementById('conferenciaBtn');
   if (conferenciaEl) conferenciaEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
   const pautaEl = document.getElementById('pautaBtn');
@@ -3573,21 +3575,7 @@ const PERF_LAST3  = [PERF_CUR-3, PERF_CUR-2, PERF_CUR-1]; // últimos 3 meses co
 // PERF_HIST e _ALL_STORES_FOR_TOTAL vivem em public/perf-hist.js (carregado antes deste arquivo),
 // porque o servidor usa a mesma tabela para calcular o mínimo de embalagem.
 
-const PERF_2026 = {
-  surfers:  [383139,345885,413975,396776,null,null,null,null,null,null,null,null],
-  delrey:   [134642,119759,128296,128061,null,null,null,null,null,null,null,null],
-  minas:    [ 90962, 65116, 90731, 68912,null,null,null,null,null,null,null,null],
-  contagem: [ 79523, 81210, 93198,110985,null,null,null,null,null,null,null,null],
-  estacao:  [ 72779, 77070, 95819, 78318,null,null,null,null,null,null,null,null],
-  tommy:    [ 52889, 64108, 77176, 83443,null,null,null,null,null,null,null,null],
-  lez:      [112699, 57373, 49583, 81151,70185,null,null,null,null,null,null,null],
-  site:     [  5233,  2730,  5931, 10500,null,null,null,null,null,null,null,null],
-};
-// Computa total geral 2026 como soma dos stores; null se todos os stores daquele mês são null
-PERF_2026.total = Array.from({length:12}, (_,i) => {
-  const vals = _ALL_STORES_FOR_TOTAL.map(b => PERF_2026[b][i]);
-  return vals.every(v => v === null) ? null : vals.reduce((s,v) => s + (v||0), 0);
-});
+// PERF_2026 (jan–abr/2026 fechados à mão) vive em public/perf-hist.js — o fluxo de caixa usa no servidor.
 
 function fmtBRL(n)  { if (n === null || n === undefined) return '—'; return 'R$ ' + Math.round(n).toLocaleString('pt-BR'); }
 function fmtBRLk(n) {

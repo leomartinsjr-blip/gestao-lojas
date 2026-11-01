@@ -10015,6 +10015,76 @@ app.get('/api/contas-pagar/status', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Fluxo de Caixa previsto ───────────────────────────────────────────────
+// Venda projetada (regra do Dash de Performance) recebida em D+1 sem a taxa
+// de cartão, menos as faturas a pagar do LinxFaturas. Ver services/fluxoCaixa.js.
+const fluxoCaixa = require('./services/fluxoCaixa');
+let _fluxoTaxas = null; // { em, taxas } — taxa efetiva dos 3 últimos meses, renovada a cada 12h
+async function fluxoTaxas(hoje) {
+  if (_fluxoTaxas && Date.now() - _fluxoTaxas.em < 12 * 3600e3) return _fluxoTaxas.taxas;
+  const [y, m] = hoje.split('-').map(Number);
+  const ini = new Date(Date.UTC(y, m - 4, 1)).toISOString().slice(0, 10);
+  const fim = fluxoCaixa.addDias(`${y}-${String(m).padStart(2, '0')}-01`, -1);
+  const taxas = {};
+  try {
+    const { porLoja } = await computeConferenciaDashboard(ini, fim);
+    for (const l of porLoja || []) if (l.vlrLiquido > 0) taxas[l.board] = (l.vlrTaxa || 0) / l.vlrLiquido;
+  } catch (e) { console.warn('[fluxoCaixa] taxas:', e.message); }
+  _fluxoTaxas = { em: Date.now(), taxas };
+  return taxas;
+}
+
+app.get('/fluxo-caixa', (req, res) => res.sendFile(path.join(__dirname, 'public/fluxo-caixa.html')));
+
+app.get('/api/fluxo-caixa', requireAdmin, async (req, res) => {
+  try {
+    const hoje  = fluxoCaixa.hojeBRT();
+    const dias  = Math.min(Math.max(parseInt(req.query.dias) || 90, 7), 400);
+    const boards = Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}'));
+    const ate   = fluxoCaixa.addDias(hoje, dias);
+    const corte = fluxoCaixa.addDias(hoje, -95);
+    const [db, taxas] = await Promise.all([readDB(), fluxoTaxas(hoje)]);
+    let faturas, saldos = {};
+    if (mongoDb) {
+      [faturas] = await Promise.all([
+        mongoDb.collection('cpFaturas').find(
+          { isPagar: true, vencimento: { $gte: corte, $lte: ate }, baixa: { $in: ['', null] } },
+          { projection: { _id: 0, board: 1, fornecedor: 1, documento: 1, parcela: 1, vencimento: 1, baixa: 1, valor: 1, valorPago: 1, isPagar: 1 } },
+        ).toArray(),
+        mongoDb.collection('fluxoSaldos').find().forEach(s => { saldos[s._id] = { valor: s.valor, data: s.data, por: s.por }; }),
+      ]);
+    } else {
+      faturas = (await readContasPagar(corte, ate)).rows;
+      saldos = db.fluxoSaldos || {};
+    }
+    const meta = mongoDb ? await mongoDb.collection('cpMeta').findOne({ _id: 'main' }) : db.contasPagar;
+    res.json({
+      ...fluxoCaixa.calcular({ db, faturas, taxas, saldos, boards, hoje, dias }),
+      labels: Object.fromEntries(boards.map(b => [b, BOARDS_LABEL[b] || b.toUpperCase()])),
+      faturasSyncedAt: meta?.syncedAt || null,
+    });
+  } catch (e) { console.error('[fluxoCaixa]', e); res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/fluxo-caixa/saldo — saldo em conta informado à mão { board, valor, data }
+app.put('/api/fluxo-caixa/saldo', requireAdmin, async (req, res) => {
+  try {
+    const { board, data } = req.body || {};
+    const valor = Number(req.body?.valor);
+    if (!board || !Number.isFinite(valor) || !/^\d{4}-\d{2}-\d{2}$/.test(data || ''))
+      return res.status(400).json({ error: 'board, valor e data obrigatórios' });
+    const por = req.session.user?.name || req.session.user?.login || '';
+    if (mongoDb) {
+      await mongoDb.collection('fluxoSaldos').replaceOne({ _id: board }, { _id: board, valor, data, por, em: new Date() }, { upsert: true });
+    } else {
+      const db = await readDB();
+      (db.fluxoSaldos ||= {})[board] = { valor, data, por };
+      await writeDB(db);
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Folha de Pagamento ─────────────────────────────────────────────────────
 
 app.get('/folha',  (req, res) => res.sendFile(path.join(__dirname, 'public/folha.html')));

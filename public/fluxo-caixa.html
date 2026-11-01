@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Fluxo de Caixa</title>
+<link rel="icon" type="image/jpeg" href="favicon.jpg">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --bg2: #161b22; --bg3: #1c2128; --border: #30363d; --border2: #444c56;
+    --text: #e6edf3; --text2: #8b949e; --green: #3fb950; --red: #f85149; --yellow: #fbbf24;
+    --blue: #58a6ff; --topbar-h: 52px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; min-height: 100vh; }
+  #fc-topbar {
+    position: fixed; top: 0; left: 0; right: 0; min-height: var(--topbar-h);
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; padding: 8px 16px; z-index: 100; flex-wrap: wrap;
+  }
+  .fc-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .fc-btn {
+    background: none; border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text2); cursor: pointer; padding: 4px 10px; font-size: 12px; display: inline-flex; align-items: center; gap: 5px;
+  }
+  .fc-btn:hover, .fc-btn.active { color: var(--blue); border-color: var(--blue); }
+  .fc-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+  select, input[type=date], input[type=text] {
+    background: var(--bg3); border: 1px solid var(--border); border-radius: 6px;
+    color: var(--text); padding: 4px 8px; font-size: 12px;
+  }
+  select:focus, input:focus { outline: none; border-color: var(--blue); }
+  #fc-body { margin-top: calc(var(--topbar-h) + 4px); padding: 16px; max-width: 1400px; }
+  #fc-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .fc-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+  .fc-card-label { color: var(--text2); font-size: 11px; margin-bottom: 4px; }
+  .fc-card-value { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .fc-card-sub { color: var(--text2); font-size: 11px; margin-top: 3px; }
+  .pos { color: var(--green); } .neg { color: var(--red); } .warn { color: var(--yellow); }
+  .fc-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px; overflow: hidden; }
+  .fc-panel-hd { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .fc-panel-hd h2 { font-size: 13px; font-weight: 600; flex: 1; }
+  .fc-panel-note { color: var(--text2); font-size: 11px; padding: 8px 14px; border-top: 1px solid var(--border); line-height: 1.5; }
+  .fc-chart { height: 260px; padding: 10px 14px; }
+  .fc-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: var(--bg3); color: var(--text2); font-size: 10px; font-weight: 600; padding: 7px 12px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; text-transform: uppercase; letter-spacing: .03em; }
+  th:first-child, td:first-child { text-align: left; }
+  td { padding: 7px 12px; border-bottom: 1px solid var(--border); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tr.fc-row { cursor: pointer; }
+  tr.fc-row:hover td { background: var(--bg3); }
+  tr.fc-row.open td { background: var(--bg3); }
+  tr.fc-det td { background: var(--bg); padding: 0; }
+  .fc-det-wrap { padding: 6px 12px 10px 28px; }
+  .fc-det-wrap table td, .fc-det-wrap table th { font-size: 11px; padding: 4px 8px; }
+  .fc-det-wrap table th { background: none; }
+  tfoot td { font-weight: 700; background: var(--bg3); }
+  .tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 9px; }
+  .tag-atraso { background: rgba(248,81,73,.15); color: var(--red); }
+  .muted { color: var(--text2); }
+  .fc-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .fc-seg button { background: none; border: none; color: var(--text2); padding: 4px 10px; font-size: 12px; cursor: pointer; }
+  .fc-seg button.active { background: rgba(88,166,255,.12); color: var(--blue); }
+  .fc-saldo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 10px; padding: 12px 14px; }
+  .fc-saldo-item { border: 1px solid var(--border); border-radius: 8px; padding: 10px; display: grid; gap: 6px; }
+  .fc-saldo-item b { font-size: 12px; }
+  .fc-saldo-item .row { display: flex; gap: 6px; flex-wrap: wrap; }
+  .fc-saldo-item .row > * { min-width: 0; }
+  .fc-saldo-item input[type=text] { flex: 1 1 110px; text-align: right; }
+  #fc-msg { padding: 40px 16px; text-align: center; color: var(--text2); }
+  #fc-err { display: none; background: rgba(248,81,73,.1); border: 1px solid var(--red); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; color: var(--red); }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @media (max-width: 640px) {
+    #fc-body { padding: 12px; margin-top: 104px; }
+    .fc-filters { margin-left: 0; }
+    th, td { padding: 6px 8px; }
+  }
+</style>
+</head>
+<body>
+<div id="fc-topbar">
+  <button class="fc-btn" onclick="location.href='/'">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+    Voltar
+  </button>
+  <div class="fc-title">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    Fluxo de Caixa
+  </div>
+  <div class="fc-filters">
+    <select id="fc-loja" title="Loja"><option value="">Consolidado</option></select>
+    <select id="fc-dias" title="Horizonte">
+      <option value="30">30 dias</option><option value="60">60 dias</option>
+      <option value="90" selected>90 dias</option><option value="180">180 dias</option><option value="365">12 meses</option>
+    </select>
+    <button class="fc-btn" id="fc-reload" title="Recalcular">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+      Atualizar
+    </button>
+  </div>
+</div>
+
+<div id="fc-body">
+  <div id="fc-err"></div>
+  <div id="fc-msg"><span class="spinner"></span> Calculando a previsão…</div>
+  <div id="fc-main" style="display:none">
+    <div id="fc-cards"></div>
+
+    <div class="fc-panel">
+      <div class="fc-panel-hd"><h2>Saldo previsto</h2><span class="muted" id="fc-chart-sub"></span></div>
+      <div class="fc-chart"><canvas id="fc-chart"></canvas></div>
+    </div>
+
+    <div class="fc-panel">
+      <div class="fc-panel-hd">
+        <h2>Entradas e saídas</h2>
+        <div class="fc-seg" id="fc-agrup">
+          <button data-g="dia">Dia</button><button data-g="semana" class="active">Semana</button><button data-g="mes">Mês</button>
+        </div>
+      </div>
+      <div class="fc-scroll"><table id="fc-tab"></table></div>
+      <div class="fc-panel-note">Clique numa linha para ver as contas a pagar do período.</div>
+    </div>
+
+    <div class="fc-panel">
+      <div class="fc-panel-hd"><h2>Projeção de vendas</h2><span class="muted">mesma regra do Dash de Performance</span></div>
+      <div class="fc-scroll"><table id="fc-proj"></table></div>
+      <div class="fc-panel-note" id="fc-proj-note"></div>
+    </div>
+
+    <div class="fc-panel">
+      <div class="fc-panel-hd"><h2>Saldo em conta</h2><span class="muted">ponto de partida do fluxo, informado à mão</span></div>
+      <div class="fc-saldo-grid" id="fc-saldos"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const R = n => (n < 0 ? '−' : '') + 'R$ ' + Math.abs(Math.round(n)).toLocaleString('pt-BR');
+const R2 = n => 'R$ ' + n.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const DM = s => s.slice(8, 10) + '/' + s.slice(5, 7);
+const MES = ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'];
+const nomeMes = mk => MES[+mk.slice(5, 7) - 1] + '/' + mk.slice(2, 4);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const addDias = (s, n) => { const d = new Date(s + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+
+let D = null, chart = null, agrup = 'semana';
+const abertos = new Set();
+
+async function carregar() {
+  $('fc-msg').style.display = ''; $('fc-err').style.display = 'none';
+  try {
+    const r = await fetch('/api/fluxo-caixa?dias=' + $('fc-dias').value);
+    if (r.status === 401 || r.status === 403) { location.href = '/'; return; }
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.status);
+    D = j;
+    const sel = $('fc-loja'), atual = sel.value;
+    sel.innerHTML = '<option value="">Consolidado</option>' + D.boards.map(b => `<option value="${b}">${esc(D.labels[b])}</option>`).join('');
+    sel.value = atual;
+    $('fc-msg').style.display = 'none'; $('fc-main').style.display = '';
+    render();
+  } catch (e) {
+    $('fc-msg').style.display = 'none';
+    $('fc-err').style.display = ''; $('fc-err').textContent = 'Erro ao calcular: ' + e.message;
+  }
+}
+
+const lojasSel = () => $('fc-loja').value ? [$('fc-loja').value] : D.boards;
+
+function serie() {
+  const bs = lojasSel();
+  let saldo = bs.reduce((s, b) => s + (D.saldos[b]?.valor || 0), 0);
+  const ini = saldo;
+  const dias = D.linhas.map(l => {
+    const x = { d: l.d, vendas: 0, recebe: 0, paga: 0, atraso: 0 };
+    for (const b of bs) if (l.b[b]) for (const k of ['vendas', 'recebe', 'paga', 'atraso']) x[k] += l.b[b][k];
+    saldo += x.recebe - x.paga;
+    x.saldo = saldo;
+    return x;
+  });
+  return { ini, dias };
+}
+
+function chaveGrupo(d) {
+  if (agrup === 'dia') return d;
+  if (agrup === 'mes') return d.slice(0, 7);
+  const dt = new Date(d + 'T12:00:00Z'); const dow = (dt.getUTCDay() + 6) % 7; // segunda = 0
+  return addDias(d, -dow);
+}
+function rotuloGrupo(k, primeiro, ultimo) {
+  if (agrup === 'dia') { const dow = ['dom','seg','ter','qua','qui','sex','sáb'][new Date(k + 'T12:00:00Z').getUTCDay()]; return `${DM(k)} <span class="muted">${dow}</span>`; }
+  if (agrup === 'mes') return nomeMes(k);
+  return `${DM(primeiro)} a ${DM(ultimo)}`;
+}
+
+function render() {
+  const bs = lojasSel();
+  const { ini, dias } = serie();
+  const tot = dias.reduce((a, x) => ({ vendas: a.vendas + x.vendas, recebe: a.recebe + x.recebe, paga: a.paga + x.paga, atraso: a.atraso + x.atraso }), { vendas: 0, recebe: 0, paga: 0, atraso: 0 });
+  const fim = dias.length ? dias[dias.length - 1].saldo : ini;
+  const min = dias.reduce((m, x) => x.saldo < m.saldo ? x : m, { saldo: Infinity, d: '' });
+  const semSaldo = bs.filter(b => !D.saldos[b]);
+  const datasSaldo = [...new Set(bs.map(b => D.saldos[b]?.data).filter(Boolean))];
+
+  $('fc-cards').innerHTML = [
+    ['Saldo em conta', R(ini), semSaldo.length ? `<span class="warn">falta informar ${semSaldo.length === bs.length ? 'o saldo' : semSaldo.length + ' loja(s)'}</span>` : (datasSaldo.length === 1 ? 'em ' + DM(datasSaldo[0]) : 'datas diferentes'), ''],
+    ['Entradas previstas', R(tot.recebe), `venda prevista ${R(tot.vendas)}`, 'pos'],
+    ['Contas a pagar', R(tot.paga), tot.atraso ? `<span class="neg">${R(tot.atraso)} em atraso</span>` : 'nenhuma em atraso', 'neg'],
+    ['Resultado do período', R(tot.recebe - tot.paga), `${DM(D.hoje)} a ${DM(D.ate)}`, tot.recebe - tot.paga >= 0 ? 'pos' : 'neg'],
+    ['Saldo final previsto', R(fim), 'em ' + DM(D.ate), fim >= 0 ? 'pos' : 'neg'],
+    ['Menor saldo', min.d ? R(min.saldo) : '—', min.d ? 'em ' + DM(min.d) : '', min.saldo < 0 ? 'neg' : ''],
+  ].map(([l, v, s, c]) => `<div class="fc-card"><div class="fc-card-label">${l}</div><div class="fc-card-value ${c}">${v}</div><div class="fc-card-sub">${s}</div></div>`).join('');
+
+  // Gráfico
+  $('fc-chart-sub').textContent = bs.length > 1 ? 'todas as lojas' : D.labels[bs[0]];
+  const css = getComputedStyle(document.documentElement);
+  const cor = v => css.getPropertyValue(v).trim();
+  const cfg = {
+    data: {
+      labels: dias.map(x => DM(x.d)),
+      datasets: [
+        { type: 'line', label: 'Saldo', data: dias.map(x => Math.round(x.saldo)), borderColor: cor('--blue'), backgroundColor: 'rgba(88,166,255,.08)', fill: true, pointRadius: 0, tension: .2, yAxisID: 'y', order: 0 },
+        { type: 'bar', label: 'Entradas', data: dias.map(x => Math.round(x.recebe)), backgroundColor: 'rgba(63,185,80,.55)', yAxisID: 'y', order: 1 },
+        { type: 'bar', label: 'Saídas', data: dias.map(x => -Math.round(x.paga)), backgroundColor: 'rgba(248,81,73,.55)', yAxisID: 'y', order: 1 },
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
+      plugins: { legend: { labels: { color: cor('--text2'), boxWidth: 12 } },
+        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${R(c.dataset.label === 'Saídas' ? -c.raw : c.raw)}` } } },
+      scales: {
+        x: { ticks: { color: cor('--text2'), maxTicksLimit: 14 }, grid: { display: false } },
+        y: { ticks: { color: cor('--text2'), callback: v => (v / 1000).toLocaleString('pt-BR') + 'k' }, grid: { color: 'rgba(139,148,158,.12)' } },
+      },
+    },
+  };
+  if (chart) chart.destroy();
+  chart = new Chart($('fc-chart'), cfg);
+
+  // Tabela agrupada
+  const grupos = [];
+  for (const x of dias) {
+    const k = chaveGrupo(x.d);
+    let g = grupos[grupos.length - 1];
+    if (!g || g.k !== k) grupos.push(g = { k, ini: x.d, fim: x.d, vendas: 0, recebe: 0, paga: 0, atraso: 0, saldo: 0 });
+    g.fim = x.d; g.vendas += x.vendas; g.recebe += x.recebe; g.paga += x.paga; g.atraso += x.atraso; g.saldo = x.saldo;
+  }
+  const contas = D.contas.filter(c => bs.includes(c.b));
+  let h = `<thead><tr><th>Período</th><th>Venda prevista</th><th>Entradas</th><th>Contas a pagar</th><th>Resultado</th><th>Saldo</th></tr></thead><tbody>`;
+  for (const g of grupos) {
+    const res = g.recebe - g.paga, aberto = abertos.has(agrup + g.k);
+    h += `<tr class="fc-row${aberto ? ' open' : ''}" data-k="${g.k}">
+      <td>${rotuloGrupo(g.k, g.ini, g.fim)}</td>
+      <td class="muted">${R(g.vendas)}</td>
+      <td class="pos">${R(g.recebe)}</td>
+      <td class="neg">${g.paga ? R(g.paga) : '—'}${g.atraso ? ' <span class="tag tag-atraso">atraso</span>' : ''}</td>
+      <td class="${res >= 0 ? 'pos' : 'neg'}">${R(res)}</td>
+      <td class="${g.saldo >= 0 ? '' : 'neg'}"><b>${R(g.saldo)}</b></td></tr>`;
+    if (aberto) {
+      const cs = contas.filter(c => c.d >= g.ini && c.d <= g.fim);
+      h += `<tr class="fc-det"><td colspan="6"><div class="fc-det-wrap">${cs.length ? `<table>
+        <tr><th>Paga em</th><th>Vencimento</th>${bs.length > 1 ? '<th>Loja</th>' : ''}<th>Fornecedor</th><th>Documento</th><th>Parcela</th><th>Valor</th></tr>
+        ${cs.map(c => `<tr><td>${DM(c.d)}</td><td>${DM(c.venc)}${c.atraso ? ' <span class="tag tag-atraso">atraso</span>' : ''}</td>${bs.length > 1 ? `<td>${esc(D.labels[c.b])}</td>` : ''}<td style="text-align:left">${esc(c.forn)}</td><td>${esc(c.doc && c.doc !== '0' ? c.doc : '')}</td><td>${esc(c.parc)}</td><td>${R2(c.v)}</td></tr>`).join('')}
+        </table>` : '<span class="muted">Nenhuma conta a pagar neste período.</span>'}</div></td></tr>`;
+    }
+  }
+  h += `</tbody><tfoot><tr><td>Total</td><td class="muted">${R(tot.vendas)}</td><td class="pos">${R(tot.recebe)}</td><td class="neg">${R(tot.paga)}</td><td class="${tot.recebe - tot.paga >= 0 ? 'pos' : 'neg'}">${R(tot.recebe - tot.paga)}</td><td>${R(fim)}</td></tr></tfoot>`;
+  $('fc-tab').innerHTML = h;
+
+  // Projeção de vendas
+  const meses = D.projecao[D.boards[0]]?.meses.map(m => m.mes) || [];
+  const pct = v => v == null ? '—' : (v >= 0 ? '+' : '') + (v * 100).toFixed(1).replace('.', ',') + '%';
+  let p = `<thead><tr><th>Loja</th><th>Crescimento</th><th>Taxa cartão</th>${meses.map(m => `<th>${nomeMes(m)}</th>`).join('')}</tr></thead><tbody>`;
+  const soma = meses.map(() => 0);
+  for (const b of bs) {
+    const pj = D.projecao[b];
+    p += `<tr><td>${esc(D.labels[b])}</td><td class="${pj.crescimento >= 0 ? 'pos' : 'neg'}" title="${pj.crescimentos.map(pct).join(' · ')}">${pct(pj.crescimento)}</td><td class="muted">${pct(pj.taxa).replace('+', '')}</td>`;
+    pj.meses.forEach((m, i) => { soma[i] += m.projecao; p += `<td title="mesmo mês do ano anterior: ${m.base ? R(m.base) : '—'}${m.realizado != null ? ' · vendido até ontem: ' + R(m.realizado) : ''}">${R(m.projecao)}</td>`; });
+    p += '</tr>';
+  }
+  if (bs.length > 1) p += `</tbody><tfoot><tr><td>Total</td><td></td><td></td>${soma.map(v => `<td>${R(v)}</td>`).join('')}</tr></tfoot>`;
+  $('fc-proj').innerHTML = p;
+  const metodo = D.projecao[bs[0]]?.metodo === 'ritmo'
+    ? 'Mês atual pelo ritmo de venda (realizado ÷ peso corrido); meses seguintes pelo mesmo mês do ano anterior × crescimento médio (2 meses fechados + ritmo do mês).'
+    : 'Até o dia 15, cada mês = mesmo mês do ano anterior × crescimento médio dos 3 últimos meses fechados. Depois do dia 15 o mês atual passa a ser projetado pelo ritmo.';
+  $('fc-proj-note').innerHTML = `${metodo} Venda recebida no dia útil seguinte (D+1), descontada a taxa média de cartão dos últimos 3 meses (Conferência). Contas a pagar: faturas sem baixa do Microvix (sincronizadas ${D.faturasSyncedAt ? new Date(D.faturasSyncedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '—'}); vencidas há mais de ${D.diasAtraso} dias são tratadas como pagas, e as em atraso entram hoje.`;
+
+  // Saldos
+  $('fc-saldos').innerHTML = D.boards.map(b => {
+    const s = D.saldos[b];
+    return `<div class="fc-saldo-item" data-b="${b}"><b>${esc(D.labels[b])}</b>
+      <div class="row"><input type="text" inputmode="decimal" placeholder="0,00" value="${s ? s.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}">
+      <input type="date" value="${s?.data || D.hoje}"><button class="fc-btn">Salvar</button></div>
+      <span class="muted" style="font-size:11px">${s ? `informado${s.por ? ' por ' + esc(s.por) : ''}` : 'ainda não informado'}</span></div>`;
+  }).join('');
+}
+
+$('fc-tab').addEventListener('click', e => {
+  const tr = e.target.closest('tr.fc-row'); if (!tr) return;
+  const k = agrup + tr.dataset.k;
+  abertos.has(k) ? abertos.delete(k) : abertos.add(k);
+  render();
+});
+$('fc-agrup').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  agrup = b.dataset.g;
+  document.querySelectorAll('#fc-agrup button').forEach(x => x.classList.toggle('active', x === b));
+  render();
+});
+$('fc-saldos').addEventListener('click', async e => {
+  const btn = e.target.closest('button'); if (!btn) return;
+  const it = btn.closest('.fc-saldo-item');
+  const txt = it.querySelector('input[type=text]').value.trim();
+  const valor = parseFloat(txt.replace(/\./g, '').replace(',', '.'));
+  if (!Number.isFinite(valor)) { alert('Informe o saldo, ex.: 12.345,67'); return; }
+  btn.disabled = true; btn.textContent = '…';
+  try {
+    const r = await fetch('/api/fluxo-caixa/saldo', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ board: it.dataset.b, valor, data: it.querySelector('input[type=date]').value }) });
+    if (!r.ok) throw new Error((await r.json()).error || r.status);
+    D.saldos[it.dataset.b] = { valor, data: it.querySelector('input[type=date]').value, por: 'você' };
+    render();
+  } catch (err) { alert('Não salvou: ' + err.message); btn.disabled = false; btn.textContent = 'Salvar'; }
+});
+$('fc-loja').addEventListener('change', () => { abertos.clear(); render(); });
+$('fc-dias').addEventListener('change', carregar);
+$('fc-reload').addEventListener('click', carregar);
+carregar();
+</script>
+</body>
+</html>

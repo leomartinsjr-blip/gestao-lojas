@@ -61,6 +61,24 @@ for (const y of [2022,2023,2024,2025]) {
   );
 }
 
+// Faturamento 2026 dos meses anteriores ao lançamento diário (vsales começa em mai/2026).
+// null = vem do vsales.
+const PERF_2026 = {
+  surfers:  [383139,345885,413975,396776,null,null,null,null,null,null,null,null],
+  delrey:   [134642,119759,128296,128061,null,null,null,null,null,null,null,null],
+  minas:    [ 90962, 65116, 90731, 68912,null,null,null,null,null,null,null,null],
+  contagem: [ 79523, 81210, 93198,110985,null,null,null,null,null,null,null,null],
+  estacao:  [ 72779, 77070, 95819, 78318,null,null,null,null,null,null,null,null],
+  tommy:    [ 52889, 64108, 77176, 83443,null,null,null,null,null,null,null,null],
+  lez:      [112699, 57373, 49583, 81151,70185,null,null,null,null,null,null,null],
+  site:     [  5233,  2730,  5931, 10500,null,null,null,null,null,null,null,null],
+};
+// Computa total geral 2026 como soma dos stores; null se todos os stores daquele mês são null
+PERF_2026.total = Array.from({length:12}, (_,i) => {
+  const vals = _ALL_STORES_FOR_TOTAL.map(b => PERF_2026[b][i]);
+  return vals.every(v => v === null) ? null : vals.reduce((s,v) => s + (v||0), 0);
+});
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { PERF_HIST, ALL_STORES_FOR_TOTAL: _ALL_STORES_FOR_TOTAL };
+  module.exports = { PERF_HIST, PERF_2026, ALL_STORES_FOR_TOTAL: _ALL_STORES_FOR_TOTAL };
 }
