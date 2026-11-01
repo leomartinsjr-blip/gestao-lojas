@@ -97,7 +97,29 @@ function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin
       Object.assign(bal, { status: 'erro', etapa: null, erro: 'O processamento foi interrompido (o servidor reiniciou). Clique em Reprocessar.' });
       await salvar(bal.id, { status: bal.status, etapa: null, erro: bal.erro });
     }
+    await reagruparPorLinha(bal);
     return bal;
+  }
+
+  // Balanço processado antes da regra "setor igual em tudo → linha" (Tommy
+  // com tudo em TOMMY HILFIGER): troca o grupo pela linha do cadastro já
+  // guardado, sem ir ao Microvix e sem mexer nas recontagens
+  async function reagruparPorLinha(bal) {
+    if (!bal.itens?.length || bal.agrupar === 'linha' || bal.origem === 'planilha' || !bal.portal) return;
+    const grupos = new Set(bal.itens.filter(it => it.c).map(it => it.g));
+    if (grupos.size > 1) return;
+    try {
+      const info = await cadastro.buscar(bal.portal, { cods: bal.itens.map(it => it.c).filter(Boolean), barrasN: [] });
+      let n = 0;
+      for (const it of bal.itens) {
+        const ln = info.porCod.get(it.c)?.linha;
+        if (ln) { it.g = ln; n++; }
+      }
+      if (!n) return;
+      Object.assign(bal, { agrupar: 'linha', gruposFora: [] });
+      await salvar(bal.id, { itens: bal.itens, agrupar: 'linha', gruposFora: [] });
+      await gerarPdf(bal);
+    } catch (e) { console.warn('[balanco] reagrupar', bal.id, e.message); }
   }
 
   // Resumo enxuto para a lista e o histórico
