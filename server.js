@@ -9880,6 +9880,11 @@ function _normalizeFatura(r, loja, board, hoje) {
     status,
     isPagar,
     forma_pgto:    get('forma_pgto'),
+    // previsao = conta lançada como previsão (não é fatura de verdade); o relatório
+    // "Faturas a Pagar por Período" do Microvix não soma essas
+    previsao:      get('previsao'),
+    empresa:       get('empresa'),
+    data_lanc:     get('data_lanc'),
     centrocusto:   get('centrocusto'),
   };
 }
