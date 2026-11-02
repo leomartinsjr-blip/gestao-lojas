@@ -10105,7 +10105,7 @@ app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
     const boards = Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}'));
     const [db, taxas, lancamentos] = await Promise.all([readDB(), fluxoTaxas(hoje), fluxoLancamentos()]);
     let faturasMes = [], catManual = {};
-    const saldosAno = {};
+    const saldosAno = {}, saldosMes = {};
     if (mongoDb) {
       [faturasMes] = await Promise.all([
         mongoDb.collection('cpFaturas').aggregate([
@@ -10118,6 +10118,7 @@ app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
         ]).toArray(),
         mongoDb.collection('fluxoSaldosAno').find({ ano }).forEach(s => { saldosAno[s.board] = s.valor; }),
         mongoDb.collection('fluxoCategorias').find().forEach(c => { catManual[c._id] = c.cat; }),
+        mongoDb.collection('fluxoSaldosMes').find({ mes: { $regex: `^${ano}-` } }).forEach(x => { (saldosMes[x.board] ||= {})[x.mes] = x.valor; }),
       ]);
     } else {
       for (const f of (await readContasPagar(`${ano}-01-01`, `${ano}-12-31`)).rows)
@@ -10125,11 +10126,13 @@ app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
           v: f.baixa && f.valorPago > 0 ? f.valorPago : (f.valorLiquido ?? f.valor) });
       for (const [k, v] of Object.entries(db.fluxoSaldosAno || {})) if (k.startsWith(ano + '-')) saldosAno[k.slice(5)] = v;
       catManual = db.fluxoCategorias || {};
+      for (const [k, v] of Object.entries(db.fluxoSaldosMes || {})) { const [b, mes] = k.split('|'); if (mes.startsWith(ano + '-')) (saldosMes[b] ||= {})[mes] = v; }
     }
     res.json({
       ...fluxoCaixa.calcularMensal({ db, faturasMes, catManual, lancamentos, taxas, saldosAno, boards, hoje, ano }),
       labels: Object.fromEntries(boards.map(b => [b, BOARDS_LABEL[b] || b.toUpperCase()])),
       lancamentos: lancamentos.filter(l => l.data.startsWith(ano + '-')),
+      saldosMes,
       faturasSyncedAt: (mongoDb ? await mongoDb.collection('cpMeta').findOne({ _id: 'main' }) : db.contasPagar)?.syncedAt || null,
     });
   } catch (e) { console.error('[fluxoCaixa mensal]', e); res.status(500).json({ error: e.message }); }
@@ -10196,6 +10199,29 @@ app.put('/api/fluxo-caixa/categoria', requireAdmin, async (req, res) => {
       const db = await readDB();
       db.fluxoCategorias ||= {};
       if (cat) db.fluxoCategorias[nome] = cat; else delete db.fluxoCategorias[nome];
+      await writeDB(db);
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/fluxo-caixa/saldo-mes { board, mes: 'YYYY-MM', valor|null } — saldo real que
+// havia na conta no dia 01 do mês seguinte; substitui o acumulado calculado daquele mês.
+app.put('/api/fluxo-caixa/saldo-mes', requireAdmin, async (req, res) => {
+  try {
+    const { board, mes } = req.body || {};
+    const valor = req.body?.valor === null ? null : Number(req.body?.valor);
+    if (!board || !/^\d{4}-\d{2}$/.test(mes || '') || (valor !== null && !Number.isFinite(valor)))
+      return res.status(400).json({ error: 'board, mes e valor obrigatórios' });
+    const por = req.session.user?.name || req.session.user?.login || '';
+    if (mongoDb) {
+      const col = mongoDb.collection('fluxoSaldosMes');
+      if (valor === null) await col.deleteOne({ _id: `${board}|${mes}` });
+      else await col.replaceOne({ _id: `${board}|${mes}` }, { _id: `${board}|${mes}`, board, mes, valor, por, em: new Date() }, { upsert: true });
+    } else {
+      const db = await readDB();
+      db.fluxoSaldosMes ||= {};
+      if (valor === null) delete db.fluxoSaldosMes[`${board}|${mes}`]; else db.fluxoSaldosMes[`${board}|${mes}`] = valor;
       await writeDB(db);
     }
     res.json({ ok: true });

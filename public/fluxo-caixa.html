@@ -73,27 +73,53 @@
   .tag-man { background: rgba(88,166,255,.15); color: var(--blue); }
   .so-dia, .so-mes { display: contents; }
   body.modo-mes .so-dia, body.modo-dia .so-mes { display: none; }
-  /* Quadro mensal no formato da planilha */
-  #fm-tab th, #fm-tab td { padding: 5px 9px; font-size: 12px; }
-  #fm-tab th.st { font-size: 9px; font-weight: 500; text-transform: none; padding-top: 0; }
-  #fm-tab td:first-child, #fm-tab th:first-child { position: sticky; left: 0; background: var(--bg2); z-index: 1; min-width: 190px; }
-  #fm-tab tr.fm-emp td:first-child { white-space: nowrap; overflow: visible; }
-  #fm-tab tr.fm-emp td { background: var(--bg3); font-weight: 700; font-size: 13px; padding-top: 12px; border-top: 2px solid var(--border2); }
-  #fm-tab tr.fm-rec td { background: #192625; font-weight: 600; }
-  #fm-tab tr.fm-tot td { background: #261f25; font-weight: 600; }
-  #fm-tab tr.fm-res td { background: #242522; }
-  #fm-tab tr.fm-acum td { background: #2d2b22; font-weight: 700; }
-  #fm-tab tr.fm-sub td:first-child { padding-left: 22px; color: var(--text2); }
-  #fm-tab td.prev { font-style: italic; color: #a5c8f0; }
-  #fm-tab .fm-tog { cursor: pointer; user-select: none; }
-  #fm-tab .fm-tog:hover { color: var(--blue); }
-  #fm-tab .fm-seta { display: inline-block; width: 14px; color: var(--text2); }
-  #fm-tab tr.fm-sub2 td { font-size: 11px; color: var(--text2); }
-  #fm-tab tr.fm-sub2 td:first-child { padding-left: 40px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
-  #fm-tab tr.fm-semcat td:first-child { color: var(--yellow); }
-  #fm-tab select.fm-cat { font-size: 10px; padding: 1px 4px; max-width: 130px; }
-  #fm-tab td.ini { color: var(--text2); }
-  #fm-tab input.fm-ini { width: 110px; text-align: right; padding: 2px 6px; }
+  /* Quadro mensal */
+  body.modo-mes #fc-body { max-width: 1680px; }
+  .fm-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .fm-chip { background: var(--bg2); border: 1px solid var(--border); border-radius: 18px; color: var(--text2); padding: 6px 14px; font-size: 12px; cursor: pointer; }
+  .fm-chip b { color: var(--text); font-weight: 600; margin-right: 5px; }
+  .fm-chip:hover { border-color: var(--border2); }
+  .fm-chip.active { border-color: var(--blue); color: var(--blue); background: rgba(88,166,255,.10); }
+  .fm-chip.active b { color: var(--blue); }
+  #fm-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 16px; }
+  .fm-legenda { display: flex; gap: 14px; flex-wrap: wrap; color: var(--text2); font-size: 11px; }
+  .fm-legenda i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; vertical-align: -1px; margin-right: 4px; }
+  .fm-tab th, .fm-tab td { padding: 7px 10px; font-size: 12px; min-width: 86px; }
+  .fm-tab th { vertical-align: bottom; }
+  .fm-tab th .st { display: block; font-size: 9px; font-weight: 400; text-transform: none; letter-spacing: 0; margin-top: 2px; opacity: .75; }
+  .fm-tab td:first-child, .fm-tab th:first-child { position: sticky; left: 0; z-index: 1; background: var(--bg2); min-width: 220px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
+  .fm-tab th:first-child { background: var(--bg3); }
+  .fm-tab td.fut { background: rgba(88,166,255,.045); }
+  .fm-tab th.fut { background: #1a2230; }
+  .fm-tab th.cur { box-shadow: inset 0 -2px 0 var(--blue); color: var(--blue); }
+  .fm-tab td.tot, .fm-tab th.tot { border-left: 1px solid var(--border); }
+  .fm-tab tr.main td { font-weight: 600; }
+  .fm-tab tr.ini td { color: var(--text2); }
+  .fm-tab tr.sub td { color: var(--text2); font-size: 11.5px; }
+  .fm-tab tr.sub td:first-child { padding-left: 30px; }
+  .fm-tab tr.sub2 td { color: var(--text2); font-size: 11px; opacity: .9; }
+  .fm-tab tr.sub2 td:first-child { padding-left: 50px; }
+  .fm-tab tr.res td { border-top: 1px solid var(--border2); font-weight: 600; }
+  .fm-tab tr.saldo td { background: #1e2633; font-weight: 700; font-size: 13px; }
+  .fm-tab tr.saldo td:first-child { background: #1e2633; }
+  .fm-tab tr.emp { cursor: pointer; }
+  .fm-tab tr.emp:hover td { background: var(--bg3); }
+  .fm-tab tr.totalr td { font-weight: 700; border-top: 1px solid var(--border2); background: var(--bg3); }
+  .fm-tab .z { color: var(--border2); }
+  .fm-tab .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; }
+  .fm-tog { cursor: pointer; user-select: none; }
+  .fm-tog:hover { color: var(--blue); }
+  .fm-seta { display: inline-block; width: 14px; color: var(--text2); font-size: 10px; }
+  .fm-tab tr.semcat td:first-child { color: var(--yellow); }
+  .fm-tab select.fm-cat { font-size: 10px; padding: 1px 4px; max-width: 120px; margin-left: 6px; }
+  .fm-tab .man { font-size: 9px; color: var(--blue); border: 1px solid rgba(88,166,255,.4); border-radius: 8px; padding: 0 5px; margin-left: 5px; }
+  input.fm-sal, input.fm-ini { width: 100%; min-width: 78px; background: transparent; border: 1px dashed transparent; border-radius: 4px;
+    color: var(--text); text-align: right; font: inherit; font-weight: inherit; padding: 2px 4px; }
+  input.fm-sal:hover, input.fm-ini:hover { border-color: var(--border2); }
+  input.fm-sal:focus, input.fm-ini:focus { border: 1px solid var(--blue); background: var(--bg3); outline: none; }
+  input.fm-sal::placeholder, input.fm-ini::placeholder { color: inherit; opacity: .45; }
+  input.fm-sal.neg, input.fm-ini.neg { color: var(--red); }
+  input.fm-sal.inf { text-decoration: underline; text-decoration-color: var(--yellow); text-underline-offset: 3px; }
   .fm-form { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px; align-items: center; border-bottom: 1px solid var(--border); }
   .fm-form input[type=number] { width: 60px; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 4px 8px; font-size: 12px; }
   .fm-x { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 15px; }
@@ -121,7 +147,7 @@
   </div>
   <div class="fc-seg" id="fc-modo"><button data-m="mes" class="active">Mensal</button><button data-m="dia">Diário</button></div>
   <div class="fc-filters">
-    <select id="fc-loja" title="Empresa"><option value="">Consolidado</option></select>
+    <span class="so-dia"><select id="fc-loja" title="Empresa"><option value="">Consolidado</option></select></span>
     <span class="so-mes"><select id="fc-ano" title="Ano"></select></span>
     <span class="so-dia">
     <label class="fc-chk" title="Faturas vencidas sem baixa no Microvix — quase sempre já pagas (folha, empréstimo, impostos)"><input type="checkbox" id="fc-atraso"> Incluir vencidas sem baixa</label>
@@ -142,10 +168,16 @@
   <div id="fc-err"></div>
   <div id="fc-msg"><span class="spinner"></span> Calculando a previsão…</div>
   <div id="fm-main" style="display:none">
+    <div class="fm-chips" id="fm-chips"></div>
+    <div id="fm-cards"></div>
+    <div class="fc-panel" id="fm-resumo-panel">
+      <div class="fc-panel-hd"><h2>Saldo no fim de cada mês, por empresa</h2><span class="muted">clique numa empresa para abrir</span></div>
+      <div class="fc-scroll"><table class="fm-tab" id="fm-resumo"></table></div>
+    </div>
     <div class="fc-panel">
       <div class="fc-panel-hd"><h2 id="fm-titulo">Fluxo de caixa mensal</h2>
-        <span class="muted"><i style="color:#a5c8f0">itálico</i> = previsto</span></div>
-      <div class="fc-scroll"><table id="fm-tab"></table></div>
+        <div class="fm-legenda"><span><i style="background:#1a2230"></i>previsto</span><span><u style="text-decoration-color:var(--yellow)">sublinhado</u> = saldo real informado</span><span style="opacity:.6">apagado = calculado</span></div></div>
+      <div class="fc-scroll"><table class="fm-tab" id="fm-tab"></table></div>
       <div class="fc-panel-note" id="fm-note"></div>
     </div>
     <div class="fc-panel">
@@ -264,26 +296,23 @@ async function carregarMensal() {
 
 const soma12 = arrs => arrs.reduce((t, a) => t.map((v, i) => v + (a[i] || 0)), Array(12).fill(0));
 
-// Linhas de um bloco no mesmo desenho da planilha.
-// Despesas do Microvix abrem em categorias, e cada categoria nos fornecedores.
-const abertosM = new Set();
-function linhasDespesas(chave, x, linha) {
-  const kD = chave + '|desp', aberto = abertosM.has(kD);
-  const seta = a => `<span class="fm-seta">${a ? '▾' : '▸'}</span>`;
-  let h = linha(`<span class="fm-tog" data-k="${esc(kD)}">${seta(aberto)}(−) DESPESAS (Microvix)</span>`, x.despesas);
-  if (!aberto) return h;
-  const cats = Object.entries(x.categorias || {}).sort((a, b) => b[1].total.reduce((s, v) => s + v, 0) - a[1].total.reduce((s, v) => s + v, 0));
-  for (const [cat, c] of cats) {
-    const kC = `${chave}|cat|${cat}`, abC = abertosM.has(kC);
-    h += linha(`<span class="fm-tog" data-k="${esc(kC)}">${seta(abC)}${esc(cat)}</span>`, c.total, 'fm-sub' + (cat === 'A classificar' ? ' fm-semcat' : ''));
-    if (!abC) continue;
-    const fs = Object.entries(c.forn).sort((a, b) => b[1].reduce((s, v) => s + v, 0) - a[1].reduce((s, v) => s + v, 0));
-    for (const [f, arr] of fs)
-      h += linha(`<span title="${esc(f)}">${esc(f)}</span>`, arr, 'fm-sub2',
-        `<select class="fm-cat" data-f="${esc(f)}" title="Mudar a categoria deste fornecedor">${M.nomesCategorias.map(n => `<option${n === cat ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>`);
-  }
-  return h;
-}
+// Uma empresa por vez (abas no topo). Linhas: saldo no início, entradas, saídas,
+// resultado e saldo no fim do mês. Entradas e saídas abrem no detalhe; as saídas
+// do Microvix abrem em categoria e fornecedor. O saldo do fim do mês é editável:
+// o saldo real do dia 01 do mês seguinte substitui o calculado e o acumulado
+// segue dali.
+const togM = new Set();
+const abertoM = k => k.endsWith('|sai') ? !togM.has(k) : togM.has(k); // saídas abertas por padrão
+const N = v => Math.abs(v) < .5 ? '<span class="z">—</span>' : (v < 0 ? '−' : '') + Math.abs(Math.round(v)).toLocaleString('pt-BR');
+const tot12 = a => a.reduce((s, v) => s + v, 0);
+const fmt2 = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const parseBR = t => {
+  t = String(t).trim().replace(/[R$\s]/g, '').replace('−', '-');
+  if (t === '') return null;
+  const v = parseFloat(t.replace(/\./g, '').replace(',', '.'));
+  return Number.isFinite(v) ? v : NaN;
+};
+const corEmp = b => ({ delrey: '#58a6ff', minas: '#3fb950', contagem: '#d29922', estacao: '#bc8cff', tommy: '#f85149', site: '#39c5cf' }[b] || '#8b949e');
 
 // Soma as categorias de várias empresas (consolidado).
 function juntaCategorias(es) {
@@ -296,53 +325,161 @@ function juntaCategorias(es) {
   return out;
 }
 
-function blocoMensal(titulo, x, ini, editIni, chave) {
-  const rec = soma12([x.vendas, ...Object.values(x.entradas)]);
-  const desp = soma12([x.despesas, x.taxaV, ...Object.values(x.saidas)]);
-  const res = rec.map((v, i) => v - desp[i]);
-  let acc = ini || 0;
-  const acum = res.map(v => (acc += v));
-  const total = a => a.reduce((s, v) => s + v, 0);
-  const cel = (v, i, cls = '') => `<td class="${cls}${M.status[i] !== 'real' ? ' prev' : ''}">${v ? R(v) : '<span class="muted">—</span>'}</td>`;
-  const linha = (rot, arr, cls = '', iniCel = '', corCel = null, tot = true) =>
-    `<tr class="${cls}"><td>${rot}</td><td class="ini">${iniCel}</td>${arr.map((v, i) => cel(v, i, corCel ? corCel(v) : '')).join('')}<td>${tot ? R(total(arr)) : ''}</td></tr>`;
+// Entradas, saídas e resultado de um bloco (empresa ou consolidado).
+function contas(x) {
+  const ent = soma12([x.vendas, ...Object.values(x.entradas)]);
+  const sai = soma12([x.despesas, x.taxaV, ...Object.values(x.saidas)]);
+  return { ent, sai, res: ent.map((v, i) => v - sai[i]) };
+}
+
+// Fim do mês = saldo real informado (dia 01 do mês seguinte) ou início + resultado.
+function serieSaldo(ini, res, informados = {}) {
+  const inicio = [], fim = [], calc = [];
+  let s = ini || 0;
+  res.forEach((r, i) => {
+    inicio.push(s);
+    const c = s + r;
+    calc.push(c);
+    s = informados[M.meses[i]] ?? c;
+    fim.push(s);
+  });
+  return { inicio, fim, calc };
+}
+
+function empresaSel() { return $('fc-loja').value || ''; }
+
+function serieEmpresa(b) {
+  const e = M.empresas[b];
+  return serieSaldo(e.saldoIni, contas(e).res, M.saldosMes?.[b] || {});
+}
+
+function blocoConsolidado() {
+  const es = M.boards.map(b => M.empresas[b]);
+  // Transferências entre as empresas se anulam e saem da conta.
+  const outrasE = soma12(es.flatMap(e => [...Object.values(e.entradas), e.transf.entra.map(v => -v)]));
+  const outrasS = soma12(es.flatMap(e => [...Object.values(e.saidas), e.transf.sai.map(v => -v)]));
+  return {
+    vendas: soma12(es.map(e => e.vendas)), despesas: soma12(es.map(e => e.despesas)), taxaV: soma12(es.map(e => e.taxaV)),
+    entradas: outrasE.some(v => Math.abs(v) > .5) ? { 'Outras entradas': outrasE } : {},
+    saidas: outrasS.some(v => Math.abs(v) > .5) ? { 'Outras saídas': outrasS } : {},
+    categorias: juntaCategorias(es), taxa: null,
+  };
+}
+
+function cabecalho(rotulo) {
+  const ST = { real: 'realizado', parcial: 'mês atual', prev: 'previsto' };
+  return `<thead><tr><th>${rotulo}</th>${M.meses.map((mk, i) =>
+    `<th class="${M.status[i] === 'prev' ? 'fut' : ''}${M.status[i] === 'parcial' ? ' cur fut' : ''}">${nomeMes(mk)}<span class="st">${ST[M.status[i]]}</span></th>`).join('')}<th class="tot">Total</th></tr></thead>`;
+}
+
+function blocoMensal(x, chave, sal, editBoard) {
+  const { ent, sai, res } = contas(x);
+  const td = (v, i, extra = '') => `<td class="${M.status[i] !== 'real' ? 'fut' : ''} ${extra}">${N(v)}</td>`;
+  const linha = (rot, arr, cls = '', comTotal = true, cor = false) =>
+    `<tr class="${cls}"><td>${rot}</td>${arr.map((v, i) => td(v, i, cor && v < -.5 ? 'neg' : '')).join('')}<td class="tot${cor && tot12(arr) < -.5 ? ' neg' : ''}">${comTotal ? N(tot12(arr)) : ''}</td></tr>`;
+  const tog = (k, rot) => `<span class="fm-tog" data-k="${esc(k)}"><span class="fm-seta">${abertoM(k) ? '▼' : '▶'}</span>${rot}</span>`;
+  let h = '';
+
+  // Saldo no início do mês (01/jan editável na empresa)
+  h += `<tr class="ini"><td>Saldo no início do mês</td>${sal.inicio.map((v, i) => {
+    if (i === 0 && editBoard) {
+      const ini = M.empresas[editBoard].saldoIni;
+      return `<td><input type="text" class="fm-ini${(ini ?? 0) < 0 ? ' neg' : ''}" data-b="${editBoard}" inputmode="decimal" placeholder="01/jan" value="${ini != null ? fmt2(ini) : ''}" title="Saldo em conta em 01/jan"></td>`;
+    }
+    return td(v, i, v < -.5 ? 'neg' : '');
+  }).join('')}<td class="tot"></td></tr>`;
+
+  // Entradas
+  const kE = chave + '|ent';
+  h += linha(tog(kE, 'Entradas'), ent, 'main');
+  if (abertoM(kE)) {
+    h += linha('Vendas (cartão)', x.vendas, 'sub');
+    for (const [k, a] of Object.entries(x.entradas)) h += linha(`${esc(k)}<span class="man">manual</span>`, a, 'sub');
+  }
+
+  // Saídas
+  const kS = chave + '|sai';
+  h += linha(tog(kS, 'Saídas'), sai, 'main');
+  if (abertoM(kS)) {
+    const cats = Object.entries(x.categorias || {}).sort((a, b) => tot12(b[1].total) - tot12(a[1].total));
+    for (const [cat, c] of cats) {
+      const kC = `${chave}|cat|${cat}`;
+      h += linha(tog(kC, esc(cat)), c.total, 'sub' + (cat === 'A classificar' ? ' semcat' : ''));
+      if (!abertoM(kC)) continue;
+      for (const [f, arr] of Object.entries(c.forn).sort((a, b) => tot12(b[1]) - tot12(a[1])))
+        h += linha(`<span title="${esc(f)}">${esc(f)}</span><select class="fm-cat" data-f="${esc(f)}" title="Mudar a categoria deste fornecedor">${M.nomesCategorias.map(n => `<option${n === cat ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>`, arr, 'sub2');
+    }
+    h += linha(`Taxa da maquineta${x.taxa != null ? ` <span class="muted">${(x.taxa * 100).toFixed(2).replace('.', ',')}%</span>` : ''}`, x.taxaV, 'sub');
+    for (const [k, a] of Object.entries(x.saidas)) h += linha(`${esc(k)}<span class="man">manual</span>`, a, 'sub');
+  }
+
+  h += linha('Resultado do mês', res, 'res', true, true);
+
+  // Saldo no fim do mês: editável nos meses que já viraram (e no atual)
+  h += `<tr class="saldo"><td>Saldo no fim do mês</td>${sal.fim.map((v, i) => {
+    const mk = M.meses[i];
+    if (editBoard && M.status[i] !== 'prev') {
+      const inf = M.saldosMes?.[editBoard]?.[mk];
+      const ultimo = new Date(+mk.slice(0, 4), +mk.slice(5, 7), 1);
+      const dia01 = `01/${String(ultimo.getMonth() + 1).padStart(2, '0')}`;
+      const tip = inf != null
+        ? `Saldo real em ${dia01}: ${R2(inf)} · calculado ${R2(sal.calc[i])} · diferença ${R2(inf - sal.calc[i])}. Apague para voltar ao calculado.`
+        : `Calculado: ${R2(sal.calc[i])}. Digite o saldo real que havia nas contas em ${dia01}.`;
+      return `<td class="${M.status[i] !== 'real' ? 'fut' : ''}"><input type="text" class="fm-sal${inf != null ? ' inf' : ''}${v < 0 ? ' neg' : ''}" data-b="${editBoard}" data-mes="${mk}" inputmode="decimal"
+        placeholder="${N(sal.calc[i]).replace(/<[^>]+>/g, '')}" value="${inf != null ? fmt2(inf) : ''}" title="${esc(tip)}"></td>`;
+    }
+    return td(v, i, v < -.5 ? 'neg' : '');
+  }).join('')}<td class="tot"></td></tr>`;
+  return h;
+}
+
+function cardsMensal(sal, res) {
+  const iReal = M.status.lastIndexOf('real');
+  const iAtual = Math.max(0, M.status.indexOf('parcial'));
+  const futuros = sal.fim.map((v, i) => ({ v, i })).filter(o => M.status[o.i] !== 'real');
+  const min = futuros.reduce((m, o) => o.v < m.v ? o : m, { v: Infinity, i: -1 });
+  const dia01 = i => { const d = new Date(+M.meses[i].slice(0, 4), +M.meses[i].slice(5, 7), 1); return `01/${String(d.getMonth() + 1).padStart(2, '0')}`; };
+  const c = (l, v, s, cls) => `<div class="fc-card"><div class="fc-card-label">${l}</div><div class="fc-card-value ${cls}">${v}</div><div class="fc-card-sub">${s}</div></div>`;
   const sinal = v => v < 0 ? 'neg' : 'pos';
-  const iniTxt = editIni
-    ? `<input type="text" class="fm-ini" data-b="${editIni}" inputmode="decimal" placeholder="saldo 01/jan" value="${ini != null ? ini.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}">`
-    : (ini ? R(ini) : '');
-  return `<tr class="fm-emp"><td>${esc(titulo)}</td><td colspan="14"></td></tr>`
-    + linha('(+) RECEBIMENTOS', rec, 'fm-rec')
-    + linha('Vendas (cartão)', x.vendas, 'fm-sub')
-    + Object.entries(x.entradas).map(([k, a]) => linha(esc(k), a, 'fm-sub')).join('')
-    + linhasDespesas(chave, x, linha)
-    + linha('(−) TAXA MAQUINETA', x.taxaV, '', x.taxa != null ? (x.taxa * 100).toFixed(2).replace('.', ',') + '%' : '')
-    + Object.entries(x.saidas).map(([k, a]) => linha(esc(k), a, 'fm-sub')).join('')
-    + linha('(−) TOTAL DESPESAS', desp, 'fm-tot')
-    + linha('(=) Resultado mês', res, 'fm-res', '', sinal)
-    + linha('(=) Saldo acumulado', acum, 'fm-acum', iniTxt, sinal, false);
+  const resPrev = tot12(res.slice(iAtual));
+  return [
+    iReal >= 0 ? c(`Saldo em ${dia01(iReal)}`, R(sal.fim[iReal]), 'fim de ' + nomeMes(M.meses[iReal]), sinal(sal.fim[iReal])) : '',
+    c(`Resultado ${M.ano}`, R(tot12(res)), 'realizado + previsto', sinal(tot12(res))),
+    M.status.includes('real') && M.status.some(s => s !== 'real') ? c('Resultado previsto', R(resPrev), `${nomeMes(M.meses[iAtual])} a dez`, sinal(resPrev)) : '',
+    c('Saldo previsto em 31/12', R(sal.fim[11]), 'fim do ano', sinal(sal.fim[11])),
+    min.i >= 0 ? c('Menor saldo previsto', R(min.v), 'fim de ' + nomeMes(M.meses[min.i]), sinal(min.v)) : '',
+  ].join('');
 }
 
 function renderMensal() {
-  const bs = $('fc-loja').value ? [$('fc-loja').value] : M.boards;
-  const ST = { real: 'realizado', parcial: 'parcial', prev: 'previsto' };
-  let h = `<thead><tr><th></th><th>Início</th>${M.meses.map(mk => `<th>${nomeMes(mk)}</th>`).join('')}<th>Total</th></tr>
-    <tr><th class="st"></th><th class="st"></th>${M.status.map(s => `<th class="st">${ST[s]}</th>`).join('')}<th class="st"></th></tr></thead><tbody>`;
-  for (const b of bs) h += blocoMensal(nomeEmp(M, b), M.empresas[b], M.empresas[b].saldoIni, b, b);
-  if (bs.length > 1) {
-    // Consolidado: transferências entre as empresas se anulam e saem da conta.
-    const es = bs.map(b => M.empresas[b]);
-    const outrasE = soma12(es.flatMap(e => [...Object.values(e.entradas), e.transf.entra.map(v => -v)]));
-    const outrasS = soma12(es.flatMap(e => [...Object.values(e.saidas), e.transf.sai.map(v => -v)]));
-    const c = { vendas: soma12(es.map(e => e.vendas)), despesas: soma12(es.map(e => e.despesas)), taxaV: soma12(es.map(e => e.taxaV)),
-      entradas: outrasE.some(v => Math.abs(v) > .5) ? { 'Outras entradas': outrasE } : {},
-      saidas: outrasS.some(v => Math.abs(v) > .5) ? { 'Outras saídas': outrasS } : {}, taxa: null };
-    c.categorias = juntaCategorias(es);
-    h += blocoMensal('CONSOLIDADO (sem transferências entre empresas)', c, es.reduce((s, e) => s + (e.saldoIni || 0), 0), null, 'cons');
-  }
-  $('fm-tab').innerHTML = h + '</tbody>';
-  $('fm-titulo').textContent = `Fluxo de caixa ${M.ano}`;
-  $('fm-note').innerHTML = `Vendas: meses fechados = realizado (lançamento diário do Dash); mês atual = projeção do Dash de Performance ou o vendido até ontem, o que for maior; meses seguintes = projeção. Taxa da maquineta = média dos últimos 3 meses da Conferência. Despesas = faturas a pagar do Microvix pelo vencimento, com ou sem baixa: as pagas pelo valor pago, as em aberto pelo valor líquido (já sem desconto e abatimento). Saldo acumulado parte do saldo de 01/jan digitado na coluna Início.`;
+  const b = empresaSel();
+  $('fm-chips').innerHTML = [['', '<b>Consolidado</b>todas']].concat(M.boards.map(x => [x, `<b>${esc(EMP[x] || x)}</b>${esc(M.labels[x])}`]))
+    .map(([v, t]) => `<button class="fm-chip${v === b ? ' active' : ''}" data-b="${v}">${t}</button>`).join('');
 
+  let x, sal, chave;
+  if (b) {
+    x = M.empresas[b]; chave = b; sal = serieEmpresa(b);
+    $('fm-titulo').textContent = `${nomeEmp(M, b)} — ${M.ano}`;
+  } else {
+    x = blocoConsolidado(); chave = 'cons';
+    const series = M.boards.map(serieEmpresa);
+    const fim = soma12(series.map(s => s.fim));
+    const ini = M.boards.reduce((s, k) => s + (M.empresas[k].saldoIni || 0), 0);
+    sal = { fim, calc: fim, inicio: fim.map((_, i) => i ? fim[i - 1] : ini) };
+    $('fm-titulo').textContent = `Consolidado — ${M.ano} (sem transferências entre empresas)`;
+    // Resumo: saldo no fim de cada mês por empresa
+    $('fm-resumo').innerHTML = cabecalho('Empresa') + '<tbody>' + M.boards.map((k, j) =>
+      `<tr class="emp" data-b="${k}"><td><span class="dot" style="background:${corEmp(k)}"></span><b>${esc(EMP[k] || k)}</b> <span class="muted">${esc(M.labels[k])}</span></td>${series[j].fim.map((v, i) =>
+        `<td class="${M.status[i] !== 'real' ? 'fut' : ''} ${v < -.5 ? 'neg' : ''}">${N(v)}</td>`).join('')}<td class="tot"></td></tr>`).join('')
+      + `<tr class="totalr"><td>Total</td>${fim.map((v, i) => `<td class="${M.status[i] !== 'real' ? 'fut' : ''} ${v < -.5 ? 'neg' : ''}">${N(v)}</td>`).join('')}<td class="tot"></td></tr></tbody>`;
+  }
+  $('fm-resumo-panel').style.display = b ? 'none' : '';
+  $('fm-cards').innerHTML = cardsMensal(sal, contas(x).res);
+  $('fm-tab').innerHTML = cabecalho('R$') + '<tbody>' + blocoMensal(x, chave, sal, b || null) + '</tbody>';
+  $('fm-note').innerHTML = `Vendas: meses fechados = realizado (lançamento diário do Dash); mês atual = projeção do Dash ou o vendido até ontem, o que for maior; meses seguintes = projeção. Taxa da maquineta = média dos últimos 3 meses da Conferência. Saídas do Microvix pelo vencimento, com ou sem baixa: as pagas pelo valor pago, as em aberto pelo valor líquido (sem desconto e abatimento).
+    ${b ? 'Saldo: digite o de 01/jan no início e, em cada mês que fechou, o saldo real que havia nas contas no dia 01 seguinte — o acumulado passa a partir dele.' : 'Saldo do consolidado = soma das empresas (abra uma empresa para informar os saldos reais).'}`;
+
+  const bs = b ? [b] : M.boards;
   const ls = M.lancamentos.filter(l => bs.includes(l.board) || bs.includes(l.para));
   const TIPO = { entrada: 'Entrada', saida: 'Saída', transf: 'Transferência' };
   $('fl-tab').innerHTML = ls.length ? `<thead><tr><th>Data</th><th>Empresa</th><th>Tipo</th><th>Descrição</th><th>Parcela</th><th>Valor</th><th></th></tr></thead><tbody>
@@ -353,11 +490,14 @@ function renderMensal() {
     : '<tbody><tr><td class="muted" style="text-align:left">Nenhum lançamento manual neste ano.</td></tr></tbody>';
 }
 
-$('fm-tab').addEventListener('click', e => {
+$('fm-main').addEventListener('click', e => {
+  const chip = e.target.closest('.fm-chip, tr.emp');
+  if (chip) { $('fc-loja').value = chip.dataset.b; abertos.clear(); if (D) render(); renderMensal(); window.scrollTo({ top: 0, behavior: 'smooth' }); return; }
   const t = e.target.closest('.fm-tog'); if (!t) return;
-  abertosM.has(t.dataset.k) ? abertosM.delete(t.dataset.k) : abertosM.add(t.dataset.k);
+  togM.has(t.dataset.k) ? togM.delete(t.dataset.k) : togM.add(t.dataset.k);
   renderMensal();
 });
+$('fm-tab').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('input')) e.target.blur(); });
 $('fm-tab').addEventListener('change', async e => {
   const sel = e.target.closest('select.fm-cat');
   if (sel) {
@@ -370,15 +510,18 @@ $('fm-tab').addEventListener('change', async e => {
     } catch (err) { alert('Não salvou: ' + err.message); sel.disabled = false; }
     return;
   }
-  const inp = e.target.closest('input.fm-ini'); if (!inp) return;
-  const txt = inp.value.trim();
-  const valor = txt === '' ? null : parseFloat(txt.replace(/\./g, '').replace(',', '.'));
-  if (valor !== null && !Number.isFinite(valor)) { alert('Informe o saldo, ex.: 23.810,00 ou -5.000,00'); return; }
+  const inp = e.target.closest('input.fm-ini, input.fm-sal'); if (!inp) return;
+  const valor = parseBR(inp.value);
+  if (Number.isNaN(valor)) { alert('Informe o saldo, ex.: 23.810,00 ou -5.000,00'); return; }
+  const mensal = inp.classList.contains('fm-sal');
   try {
-    const r = await fetch('/api/fluxo-caixa/saldo-ano', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ board: inp.dataset.b, ano: M.ano, valor }) });
+    const r = await fetch(mensal ? '/api/fluxo-caixa/saldo-mes' : '/api/fluxo-caixa/saldo-ano', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(mensal ? { board: inp.dataset.b, mes: inp.dataset.mes, valor } : { board: inp.dataset.b, ano: M.ano, valor }) });
     if (!r.ok) throw new Error((await r.json()).error || r.status);
-    M.empresas[inp.dataset.b].saldoIni = valor;
+    if (mensal) {
+      const m = ((M.saldosMes ||= {})[inp.dataset.b] ||= {});
+      if (valor === null) delete m[inp.dataset.mes]; else m[inp.dataset.mes] = valor;
+    } else M.empresas[inp.dataset.b].saldoIni = valor;
     renderMensal();
   } catch (err) { alert('Não salvou: ' + err.message); }
 });
@@ -430,9 +573,21 @@ $('fc-sync').addEventListener('click', async () => {
   if (!confirm('Reler todas as faturas a pagar do Microvix agora? Leva alguns minutos.')) return;
   btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Lendo o Microvix…';
   try {
-    const r = await fetch('/api/contas-pagar/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-    const d = await r.json();
-    if (!d.ok) throw new Error(d.error || r.status);
+    const antes = (await (await fetch('/api/contas-pagar/status')).json()).syncedAt;
+    // O Render corta a requisição depois de ~100 s, mas a leitura segue no servidor:
+    // nesse caso espera o status registrar a leitura nova (até 15 min).
+    const d = await fetch('/api/contas-pagar/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      .then(r => r.json()).catch(() => null);
+    if (d && !d.ok) throw new Error(d.error || 'erro');
+    if (!d) {
+      const limite = Date.now() + 15 * 60e3;
+      for (;;) {
+        await new Promise(r => setTimeout(r, 15000));
+        const st = await (await fetch('/api/contas-pagar/status')).json().catch(() => ({}));
+        if (st.syncedAt && st.syncedAt !== antes) break;
+        if (Date.now() > limite) throw new Error('a leitura ainda não terminou — atualize a página daqui a pouco');
+      }
+    }
     D = null; M = null;
     modo === 'mes' ? await carregarMensal() : await carregar();
     btn.textContent = 'Sincronizado ✓';
