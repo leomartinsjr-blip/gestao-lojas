@@ -10067,12 +10067,20 @@ app.get('/api/fluxo-caixa', requireAdmin, async (req, res) => {
       saldos = db.fluxoSaldos || {};
     }
     const meta = mongoDb ? await mongoDb.collection('cpMeta').findOne({ _id: 'main' }) : db.contasPagar;
+    const ag = await agendaApi.saldosParaFluxo(+hoje.slice(0, 4)).catch(() => null);
+    if (ag) for (const [b, v] of Object.entries(ag.atual))
+      if (!saldos[b] || (saldos[b].data || '') <= ag.ultimo) saldos[b] = { valor: v, data: ag.ultimo, por: 'agenda' };
     res.json({
       ...fluxoCaixa.calcular({ db, faturas, taxas, saldos, boards, lancamentos, hoje, dias }),
       labels: Object.fromEntries(boards.map(b => [b, BOARDS_LABEL[b] || b.toUpperCase()])),
       faturasSyncedAt: meta?.syncedAt || null,
     });
   } catch (e) { console.error('[fluxoCaixa]', e); res.status(500).json({ error: e.message }); }
+});
+
+// Agenda bancária (extrato C/C e C/G por empresa) — services/agendaRotas.js
+const agendaApi = require('./services/agendaRotas').register(app, {
+  getDb: () => mongoDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, boardsLabel: BOARDS_LABEL,
 });
 
 // GET /api/fluxo-caixa/dia — card do painel: a pagar × venda a receber no próximo dia útil
@@ -10138,6 +10146,7 @@ app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
       labels: Object.fromEntries(boards.map(b => [b, BOARDS_LABEL[b] || b.toUpperCase()])),
       lancamentos: lancamentos.filter(l => l.data.startsWith(ano + '-')),
       saldosMes,
+      agenda: await agendaApi.saldosParaFluxo(ano).catch(() => null),
       faturasSyncedAt: (mongoDb ? await mongoDb.collection('cpMeta').findOne({ _id: 'main' }) : db.contasPagar)?.syncedAt || null,
     });
   } catch (e) { console.error('[fluxoCaixa mensal]', e); res.status(500).json({ error: e.message }); }

@@ -8,9 +8,9 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   :root {
-    --bg: #0d1117; --bg2: #161b22; --bg3: #1c2128; --border: #30363d; --border2: #444c56;
-    --text: #e6edf3; --text2: #8b949e; --green: #3fb950; --red: #f85149; --yellow: #fbbf24;
-    --blue: #58a6ff; --topbar-h: 52px;
+    --bg: #f4f6f9; --bg2: #ffffff; --bg3: #f0f3f7; --border: #dde3ea; --border2: #b9c2cd;
+    --text: #1f2328; --text2: #636c76; --green: #1a7f37; --red: #cf222e; --yellow: #9a6700;
+    --blue: #0969da; --topbar-h: 52px; color-scheme: light;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; min-height: 100vh; }
@@ -89,8 +89,8 @@
   .fm-tab th .st { display: block; font-size: 9px; font-weight: 400; text-transform: none; letter-spacing: 0; margin-top: 2px; opacity: .75; }
   .fm-tab td:first-child, .fm-tab th:first-child { position: sticky; left: 0; z-index: 1; background: var(--bg2); min-width: 220px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; }
   .fm-tab th:first-child { background: var(--bg3); }
-  .fm-tab td.fut { background: rgba(88,166,255,.045); }
-  .fm-tab th.fut { background: #1a2230; }
+  .fm-tab td.fut { background: #f5f9fe; }
+  .fm-tab th.fut { background: #e8f0fb; }
   .fm-tab th.cur { box-shadow: inset 0 -2px 0 var(--blue); color: var(--blue); }
   .fm-tab td.tot, .fm-tab th.tot { border-left: 1px solid var(--border); }
   .fm-tab tr.main td { font-weight: 600; }
@@ -100,8 +100,8 @@
   .fm-tab tr.sub2 td { color: var(--text2); font-size: 11px; opacity: .9; }
   .fm-tab tr.sub2 td:first-child { padding-left: 50px; }
   .fm-tab tr.res td { border-top: 1px solid var(--border2); font-weight: 600; }
-  .fm-tab tr.saldo td { background: #1e2633; font-weight: 700; font-size: 13px; }
-  .fm-tab tr.saldo td:first-child { background: #1e2633; }
+  .fm-tab tr.saldo td { background: #eef3fa; font-weight: 700; font-size: 13px; }
+  .fm-tab tr.saldo td:first-child { background: #eef3fa; }
   .fm-tab tr.emp { cursor: pointer; }
   .fm-tab tr.emp:hover td { background: var(--bg3); }
   .fm-tab tr.totalr td { font-weight: 700; border-top: 1px solid var(--border2); background: var(--bg3); }
@@ -124,6 +124,39 @@
   .fm-form input[type=number] { width: 60px; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 4px 8px; font-size: 12px; }
   .fm-x { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 15px; }
   .fm-x:hover { color: var(--red); }
+  /* Agenda bancária */
+  body.modo-agenda .so-dia, body.modo-agenda .so-mes { display: none; }
+  body.modo-agenda #fc-body { max-width: 1500px; }
+  .ag-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
+  @media (max-width: 1000px) { .ag-grid { grid-template-columns: 1fr; } }
+  .ag-bar { position: relative; height: 8px; border-radius: 4px; background: var(--bg3); overflow: hidden; min-width: 90px; }
+  .ag-bar i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 4px; }
+  .ag-nav { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .ag-nav input[type=date] { font-size: 13px; font-weight: 600; }
+  .ag-dow { color: var(--text2); font-size: 12px; min-width: 60px; }
+  #ag-dia td input { width: 100%; background: transparent; border: 1px dashed transparent; border-radius: 4px; color: inherit; font: inherit; padding: 2px 4px; }
+  #ag-dia td input:hover { border-color: var(--border2); }
+  #ag-dia td input:focus { border: 1px solid var(--blue); background: var(--bg3); outline: none; }
+  #ag-dia td.v input { text-align: right; }
+  #ag-dia tr.ag-saldo td { background: var(--bg3); font-weight: 700; }
+  #ag-dia tr.ag-sweep td { color: var(--text2); }
+  #ag-dia td.sal { color: var(--text2); font-size: 11.5px; }
+  .ag-conta { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px; background: var(--bg3); color: var(--text2); }
+  .ag-conta.CG { background: rgba(207,34,46,.10); color: var(--red); }
+  .ag-form { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); align-items: center; }
+  .ag-sug { padding: 10px 14px; border-bottom: 1px solid var(--border); }
+  .ag-sug:last-child { border-bottom: none; }
+  .ag-sug h3 { font-size: 12px; margin-bottom: 6px; display: flex; justify-content: space-between; gap: 8px; }
+  .ag-linha { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+  .ag-linha .lbl { color: var(--text2); }
+  .ag-linha b { font-variant-numeric: tabular-nums; }
+  .ag-dif { font-size: 11px; }
+  .ag-fat { font-size: 11px; color: var(--text2); display: flex; justify-content: space-between; gap: 8px; padding: 2px 0 2px 10px; }
+  .ag-fat.pago { opacity: .55; text-decoration: line-through; }
+  .ag-imp { padding: 12px 14px; display: grid; gap: 8px; font-size: 12px; }
+  input.fm-sal.ag { color: var(--blue); }
+  input.fm-sal.ag::placeholder { opacity: 1; }
+  input.fm-sal.ag.neg { color: var(--red); }
   #fc-msg { padding: 40px 16px; text-align: center; color: var(--text2); }
   #fc-err { display: none; background: rgba(248,81,73,.1); border: 1px solid var(--red); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; color: var(--red); }
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
@@ -145,7 +178,7 @@
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
     Fluxo de Caixa
   </div>
-  <div class="fc-seg" id="fc-modo"><button data-m="mes" class="active">Mensal</button><button data-m="dia">Diário</button></div>
+  <div class="fc-seg" id="fc-modo"><button data-m="mes" class="active">Mensal</button><button data-m="dia">Diário</button><button data-m="agenda">Agenda</button></div>
   <div class="fc-filters">
     <span class="so-dia"><select id="fc-loja" title="Empresa"><option value="">Consolidado</option></select></span>
     <span class="so-mes"><select id="fc-ano" title="Ano"></select></span>
@@ -176,7 +209,7 @@
     </div>
     <div class="fc-panel">
       <div class="fc-panel-hd"><h2 id="fm-titulo">Fluxo de caixa mensal</h2>
-        <div class="fm-legenda"><span><i style="background:#1a2230"></i>previsto</span><span><u style="text-decoration-color:var(--yellow)">sublinhado</u> = saldo real informado</span><span style="opacity:.6">apagado = calculado</span></div></div>
+        <div class="fm-legenda"><span><i style="background:#e8f0fb;border:1px solid #c8d8ef"></i>previsto</span><span><u style="text-decoration-color:var(--yellow)">sublinhado</u> = saldo real informado</span><span style="color:var(--blue)">azul = saldo da agenda</span><span style="opacity:.6">apagado = calculado</span></div></div>
       <div class="fc-scroll"><table class="fm-tab" id="fm-tab"></table></div>
       <div class="fc-panel-note" id="fm-note"></div>
     </div>
@@ -193,6 +226,50 @@
         <button class="fc-btn" id="fl-add">Adicionar</button>
       </div>
       <div class="fc-scroll"><table id="fl-tab"></table></div>
+    </div>
+  </div>
+  <div id="ag-main" style="display:none">
+    <div class="fc-panel">
+      <div class="fc-panel-hd"><h2>Conta garantida</h2><span class="muted" id="ag-painel-sub"></span></div>
+      <div class="fc-scroll"><table id="ag-painel"></table></div>
+    </div>
+    <div class="fm-chips" id="ag-chips"></div>
+    <div class="ag-grid">
+      <div class="fc-panel">
+        <div class="fc-panel-hd">
+          <div class="ag-nav">
+            <button class="fc-btn" id="ag-prev" title="Dia útil anterior">←</button>
+            <input type="date" id="ag-data">
+            <button class="fc-btn" id="ag-next" title="Próximo dia útil">→</button>
+            <span class="ag-dow" id="ag-dow"></span>
+            <button class="fc-btn" id="ag-hoje">Hoje</button>
+          </div>
+          <span style="flex:1"></span>
+          <button class="fc-btn" id="ag-zerar" title="Leva a sobra (ou a falta) da conta corrente para a conta garantida">Zerar C/C na C/G</button>
+        </div>
+        <div class="fc-scroll"><table id="ag-dia"></table></div>
+        <div class="ag-form">
+          <select id="ag-conta" title="Conta"></select>
+          <input type="text" id="ag-desc" list="ag-descs" placeholder="Descrição (REDE, DUPLI, PIX…)" style="flex:1 1 180px">
+          <datalist id="ag-descs"></datalist>
+          <input type="text" id="ag-valor" inputmode="decimal" placeholder="Valor (− saída)" style="width:130px;text-align:right">
+          <button class="fc-btn" id="ag-add">Lançar</button>
+        </div>
+      </div>
+      <div>
+        <div class="fc-panel">
+          <div class="fc-panel-hd"><h2>Previsto para o dia</h2><span class="muted" id="ag-sug-sub"></span></div>
+          <div id="ag-sug"></div>
+        </div>
+        <div class="fc-panel">
+          <div class="fc-panel-hd"><h2>Importar da planilha</h2></div>
+          <div class="ag-imp">
+            <span class="muted">Lê a AGENDA (abas LMJ, JDG, PV, 3L, LF e o limite do PAINEL) e substitui tudo o que está aqui.</span>
+            <input type="file" id="ag-arq" accept=".xlsx,.xlsm">
+            <div id="ag-imp-res"></div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
   <div id="fc-main" style="display:none">
@@ -312,7 +389,7 @@ const parseBR = t => {
   const v = parseFloat(t.replace(/\./g, '').replace(',', '.'));
   return Number.isFinite(v) ? v : NaN;
 };
-const corEmp = b => ({ delrey: '#58a6ff', minas: '#3fb950', contagem: '#d29922', estacao: '#bc8cff', tommy: '#f85149', site: '#39c5cf' }[b] || '#8b949e');
+const corEmp = b => ({ delrey: '#0969da', minas: '#1a7f37', contagem: '#bf8700', estacao: '#8250df', tommy: '#cf222e', site: '#1b7c83' }[b] || '#8b949e');
 
 // Soma as categorias de várias empresas (consolidado).
 function juntaCategorias(es) {
@@ -348,9 +425,10 @@ function serieSaldo(ini, res, informados = {}) {
 
 function empresaSel() { return $('fc-loja').value || ''; }
 
+const saldoIniDe = b => M.empresas[b].saldoIni ?? M.agenda?.abertura?.[b] ?? null;
 function serieEmpresa(b) {
   const e = M.empresas[b];
-  return serieSaldo(e.saldoIni, contas(e).res, M.saldosMes?.[b] || {});
+  return serieSaldo(saldoIniDe(b), contas(e).res, { ...(M.agenda?.fimMes?.[b] || {}), ...(M.saldosMes?.[b] || {}) });
 }
 
 function blocoConsolidado() {
@@ -383,8 +461,8 @@ function blocoMensal(x, chave, sal, editBoard) {
   // Saldo no início do mês (01/jan editável na empresa)
   h += `<tr class="ini"><td>Saldo no início do mês</td>${sal.inicio.map((v, i) => {
     if (i === 0 && editBoard) {
-      const ini = M.empresas[editBoard].saldoIni;
-      return `<td><input type="text" class="fm-ini${(ini ?? 0) < 0 ? ' neg' : ''}" data-b="${editBoard}" inputmode="decimal" placeholder="01/jan" value="${ini != null ? fmt2(ini) : ''}" title="Saldo em conta em 01/jan"></td>`;
+      const ini = M.empresas[editBoard].saldoIni, agIni = M.agenda?.abertura?.[editBoard];
+      return `<td><input type="text" class="fm-ini${(ini ?? agIni ?? 0) < 0 ? ' neg' : ''}${ini == null && agIni != null ? ' ag' : ''}" data-b="${editBoard}" inputmode="decimal" placeholder="${agIni != null ? fmt2(agIni) : '01/jan'}" value="${ini != null ? fmt2(ini) : ''}" title="${agIni != null && ini == null ? 'Saldo de partida da agenda' : 'Saldo em conta em 01/jan'}"></td>`;
     }
     return td(v, i, v < -.5 ? 'neg' : '');
   }).join('')}<td class="tot"></td></tr>`;
@@ -419,14 +497,15 @@ function blocoMensal(x, chave, sal, editBoard) {
   h += `<tr class="saldo"><td>Saldo no fim do mês</td>${sal.fim.map((v, i) => {
     const mk = M.meses[i];
     if (editBoard && M.status[i] !== 'prev') {
-      const inf = M.saldosMes?.[editBoard]?.[mk];
+      const inf = M.saldosMes?.[editBoard]?.[mk], agV = M.agenda?.fimMes?.[editBoard]?.[mk];
       const ultimo = new Date(+mk.slice(0, 4), +mk.slice(5, 7), 1);
       const dia01 = `01/${String(ultimo.getMonth() + 1).padStart(2, '0')}`;
       const tip = inf != null
         ? `Saldo real em ${dia01}: ${R2(inf)} · calculado ${R2(sal.calc[i])} · diferença ${R2(inf - sal.calc[i])}. Apague para voltar ao calculado.`
+        : agV != null ? `Saldo da agenda no fim do mês: ${R2(agV)} · calculado ${R2(sal.calc[i])} · diferença ${R2(agV - sal.calc[i])}. Digite para corrigir.`
         : `Calculado: ${R2(sal.calc[i])}. Digite o saldo real que havia nas contas em ${dia01}.`;
-      return `<td class="${M.status[i] !== 'real' ? 'fut' : ''}"><input type="text" class="fm-sal${inf != null ? ' inf' : ''}${v < 0 ? ' neg' : ''}" data-b="${editBoard}" data-mes="${mk}" inputmode="decimal"
-        placeholder="${N(sal.calc[i]).replace(/<[^>]+>/g, '')}" value="${inf != null ? fmt2(inf) : ''}" title="${esc(tip)}"></td>`;
+      return `<td class="${M.status[i] !== 'real' ? 'fut' : ''}"><input type="text" class="fm-sal${inf != null ? ' inf' : agV != null ? ' ag' : ''}${v < 0 ? ' neg' : ''}" data-b="${editBoard}" data-mes="${mk}" inputmode="decimal"
+        placeholder="${N(agV ?? sal.calc[i]).replace(/<[^>]+>/g, '')}" value="${inf != null ? fmt2(inf) : ''}" title="${esc(tip)}"></td>`;
     }
     return td(v, i, v < -.5 ? 'neg' : '');
   }).join('')}<td class="tot"></td></tr>`;
@@ -464,7 +543,7 @@ function renderMensal() {
     x = blocoConsolidado(); chave = 'cons';
     const series = M.boards.map(serieEmpresa);
     const fim = soma12(series.map(s => s.fim));
-    const ini = M.boards.reduce((s, k) => s + (M.empresas[k].saldoIni || 0), 0);
+    const ini = M.boards.reduce((s, k) => s + (saldoIniDe(k) || 0), 0);
     sal = { fim, calc: fim, inicio: fim.map((_, i) => i ? fim[i - 1] : ini) };
     $('fm-titulo').textContent = `Consolidado — ${M.ano} (sem transferências entre empresas)`;
     // Resumo: saldo no fim de cada mês por empresa
@@ -552,14 +631,230 @@ $('fl-tab').addEventListener('click', async e => {
   D = null; carregarMensal();
 });
 
+
+// ── Agenda bancária ──────────────────────────────────────────────────────────
+// Extrato do dia por empresa (C/C, C/G e contas extras), com o saldo correndo
+// linha a linha, o previsto do dia (REDE e DUPLI) e o uso da conta garantida.
+let A = null, AS = null, agEmp = 'LMJ';
+const NOME_CONTA = { CC: 'C/C', CG: 'C/G' };
+const nomeConta = c => NOME_CONTA[c] || c;
+const DOW_AG = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+const diaUtilAg = (d, passo) => { do { d = addDias(d, passo); } while ([0, 6].includes(new Date(d + 'T12:00:00Z').getUTCDay())); return d; };
+
+async function carregarAgenda(data) {
+  $('fc-msg').style.display = A ? 'none' : ''; $('fc-err').style.display = 'none';
+  try {
+    const q = new URLSearchParams({ emp: agEmp, ...(data ? { data } : {}) });
+    const r = await fetch('/api/agenda?' + q);
+    if (r.status === 401 || r.status === 403) { location.href = '/'; return; }
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.status);
+    A = j; AS = null;
+    $('fc-msg').style.display = 'none'; $('ag-main').style.display = '';
+    renderAgenda();
+    fetch(`/api/agenda/sugestoes?emp=${agEmp}&data=${A.data}`).then(r => r.json()).then(s => { if (s.itens && A && s.data) { AS = s; renderSugestoes(); } }).catch(() => {});
+  } catch (e) {
+    $('fc-msg').style.display = 'none';
+    $('fc-err').style.display = ''; $('fc-err').textContent = 'Erro na agenda: ' + e.message;
+  }
+}
+
+function linhasDoDia() {
+  const s = { ...A.antes };
+  return A.dia.slice().sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0)).map(l => {
+    s[l.conta] = (s[l.conta] || 0) + l.valor;
+    if (l.espelho) s.CG = (s.CG || 0) - l.valor;
+    return { l, s: { ...s } };
+  });
+}
+
+function renderAgenda() {
+  const brl = v => v == null ? '—' : R2(v).replace('R$ ', '');
+  const cls = v => v < -0.005 ? 'neg' : '';
+  // Painel da conta garantida
+  const tot = { cc: 0, cg: 0, lim: 0 };
+  $('ag-painel').innerHTML = `<thead><tr><th>Empresa</th><th>Último lançamento</th><th>Saldo C/C</th><th>Saldo C/G</th><th>Limite C/G</th><th>Disponível</th><th style="text-align:left">Uso</th><th>Outras contas</th></tr></thead><tbody>`
+    + A.empresas.map(e => {
+      const cc = e.saldos.CC || 0, cg = e.saldos.CG || 0, lim = e.limite;
+      tot.cc += cc; tot.cg += cg; tot.lim += lim || 0;
+      const uso = lim ? -cg / lim : null;
+      const cor = uso == null ? 'var(--border2)' : uso >= .95 ? 'var(--red)' : uso >= .75 ? 'var(--yellow)' : 'var(--green)';
+      const outras = Object.entries(e.saldos).filter(([c, v]) => c !== 'CC' && c !== 'CG' && Math.abs(v) > .005).map(([c, v]) => `${c} ${brl(v)}`).join(' · ');
+      return `<tr class="${e.emp === agEmp ? 'fc-row open' : 'fc-row'}" data-emp="${e.emp}">
+        <td><b>${e.emp}</b></td><td>${e.ultimo ? DM(e.ultimo) + '/' + e.ultimo.slice(2, 4) : '—'}</td>
+        <td class="${cls(cc)}">${brl(cc)}</td><td class="${cls(cg)}">${brl(cg)}</td>
+        <td><input type="text" class="ag-lim" data-emp="${e.emp}" inputmode="decimal" value="${lim != null ? fmt2(lim) : ''}" placeholder="informar" style="width:110px;text-align:right"></td>
+        <td class="${lim != null && lim + cg < 0 ? 'neg' : ''}">${lim != null ? brl(lim + cg) : '—'}</td>
+        <td style="text-align:left"><div style="display:flex;align-items:center;gap:6px"><div class="ag-bar"><i style="width:${Math.min(100, (uso || 0) * 100)}%;background:${cor}"></i></div><span>${uso == null ? '' : (uso * 100).toFixed(0) + '%'}</span></div></td>
+        <td class="muted" style="font-size:11px">${outras || ''}</td></tr>`;
+    }).join('')
+    + `<tr class="dash-total-row"><td><b>Total</b></td><td></td><td class="${cls(tot.cc)}"><b>${brl(tot.cc)}</b></td><td class="${cls(tot.cg)}"><b>${brl(tot.cg)}</b></td><td><b>${brl(tot.lim)}</b></td><td><b>${brl(tot.lim + tot.cg)}</b></td><td style="text-align:left">${tot.lim ? (-tot.cg / tot.lim * 100).toFixed(0) + '%' : ''}</td><td></td></tr></tbody>`;
+  $('ag-painel-sub').textContent = 'saldo atual de cada conta · clique para abrir a empresa';
+
+  $('ag-chips').innerHTML = A.empresas.map(e => `<button class="fm-chip${e.emp === agEmp ? ' active' : ''}" data-emp="${e.emp}"><b>${e.emp}</b>${e.ultimo ? 'até ' + DM(e.ultimo) : 'sem lançamentos'}</button>`).join('');
+
+  // Dia
+  const emp = A.empresas.find(e => e.emp === agEmp);
+  $('ag-data').value = A.data;
+  $('ag-dow').textContent = DOW_AG[new Date(A.data + 'T12:00:00Z').getUTCDay()];
+  const extras = emp.contas.filter(c => c !== 'CC' && c !== 'CG');
+  const linhas = linhasDoDia();
+  const fim = linhas.length ? linhas[linhas.length - 1].s : A.antes;
+  const outrasTxt = s => extras.map(c => Math.abs(s[c] || 0) > .005 ? `${c} ${brl(s[c])}` : '').filter(Boolean).join(' · ');
+  $('ag-dia').innerHTML = `<thead><tr><th>Conta</th><th style="text-align:left">Descrição</th><th>Valor</th><th>Saldo C/C</th><th>Saldo C/G</th>${extras.length ? '<th>Outras</th>' : ''}<th></th></tr></thead><tbody>
+    <tr class="ag-saldo"><td colspan="3">Saldo anterior</td><td class="${cls(A.antes.CC || 0)}">${brl(A.antes.CC || 0)}</td><td class="${cls(A.antes.CG || 0)}">${brl(A.antes.CG || 0)}</td>${extras.length ? `<td class="sal">${outrasTxt(A.antes)}</td>` : ''}<td></td></tr>
+    ${linhas.map(({ l, s }) => `<tr class="${l.espelho ? 'ag-sweep' : ''}">
+      <td><span class="ag-conta ${l.conta}">${nomeConta(l.conta)}${l.espelho ? ' → C/G' : ''}</span></td>
+      <td><input type="text" data-id="${l.id}" data-f="desc" value="${esc(l.desc)}" list="ag-descs"></td>
+      <td class="v ${l.valor < 0 ? 'neg' : 'pos'}"><input type="text" data-id="${l.id}" data-f="valor" inputmode="decimal" value="${fmt2(l.valor)}"></td>
+      <td class="sal ${cls(s.CC || 0)}">${brl(s.CC || 0)}</td><td class="sal ${cls(s.CG || 0)}">${brl(s.CG || 0)}</td>
+      ${extras.length ? `<td class="sal">${extras.includes(l.conta) ? `${l.conta} ${brl(s[l.conta])}` : ''}</td>` : ''}
+      <td><button class="fm-x" data-id="${l.id}" title="Apagar">×</button></td></tr>`).join('')}
+    ${linhas.length ? '' : `<tr><td colspan="${extras.length ? 7 : 6}" class="muted" style="text-align:left">Nenhum lançamento neste dia.</td></tr>`}
+    <tr class="ag-saldo"><td colspan="3">Saldo do dia</td><td class="${cls(fim.CC || 0)}">${brl(fim.CC || 0)}</td><td class="${cls(fim.CG || 0)}">${brl(fim.CG || 0)}</td>${extras.length ? `<td class="sal">${outrasTxt(fim)}</td>` : ''}<td></td></tr>
+    </tbody>`;
+  const atual = $('ag-conta').value;
+  $('ag-conta').innerHTML = emp.contas.map(c => `<option value="${c}">${nomeConta(c)}</option>`).join('');
+  if (emp.contas.includes(atual)) $('ag-conta').value = atual;
+  $('ag-descs').innerHTML = A.descricoes.map(d => `<option value="${esc(d)}">`).join('');
+  $('ag-zerar').disabled = Math.abs(fim.CC || 0) < 0.005;
+  renderSugestoes();
+}
+
+// Previsto do dia × o que já foi lançado
+function renderSugestoes() {
+  if (!A) return;
+  if (!AS) { $('ag-sug').innerHTML = '<div class="ag-sug muted"><span class="spinner"></span> Calculando…</div>'; $('ag-sug-sub').textContent = ''; return; }
+  if (!AS.itens.length) { $('ag-sug').innerHTML = '<div class="ag-sug muted">Empresa sem Microvix: nada previsto.</div>'; $('ag-sug-sub').textContent = ''; return; }
+  const faixa = ds => ds.length === 1 ? DM(ds[0]) : `${DM(ds[0])} a ${DM(ds[ds.length - 1])}`;
+  $('ag-sug-sub').textContent = `venda de ${faixa(AS.venda)} · vencimentos de ${faixa(AS.pagar)}`;
+  const lancado = (conta, re) => A.dia.filter(l => l.conta === conta && re.test(l.desc)).reduce((s, l) => s + l.valor, 0);
+  $('ag-sug').innerHTML = AS.itens.map(it => {
+    const rede = lancado(it.conta, /^(REDE|CIELO|STONE|PAGALI|PAGARME)/), dupli = lancado(it.conta, /^DUPLI/);
+    const dif = (prev, real) => real ? `<span class="ag-dif ${Math.abs(real - prev) > 1 ? 'warn' : 'pos'}">lançado ${R2(real)}${Math.abs(real - prev) > 1 ? ` · diferença ${R2(real - prev)}` : ' ✓'}</span>` : '';
+    return `<div class="ag-sug">
+      <h3><span>${esc(it.label)} <span class="ag-conta">${nomeConta(it.conta)}</span></span></h3>
+      <div class="ag-linha"><span class="lbl" title="venda ${R2(it.venda)} − taxa ${(it.taxa * 100).toFixed(2).replace('.', ',')}%">REDE (cartão, líquido)</span><b class="pos">${R2(it.rede)}</b>
+        <button class="fc-btn ag-lancar" data-conta="${it.conta}" data-desc="REDE" data-valor="${it.rede}" ${it.rede ? '' : 'disabled'}>Lançar</button></div>
+      ${dif(it.rede, rede)}
+      <div class="ag-linha"><span class="lbl">DUPLI (${it.faturas.length} fatura${it.faturas.length === 1 ? '' : 's'})</span><b class="neg">${R2(-it.dupli)}</b>
+        <button class="fc-btn ag-lancar" data-conta="${it.conta}" data-desc="DUPLI" data-valor="${-it.dupli}" ${it.dupli ? '' : 'disabled'}>Lançar</button></div>
+      ${dif(-it.dupli, dupli)}
+      ${it.faturas.length ? `<details><summary class="muted" style="font-size:11px;cursor:pointer">ver faturas</summary>${it.faturas.map(f =>
+        `<div class="ag-fat${f.pago ? ' pago' : ''}"><span>${esc(f.forn)}${f.parc ? ' · ' + esc(f.parc) : ''}${AS.pagar.length > 1 ? ' · ' + DM(f.venc) : ''}${f.pago ? ' (pago)' : ''}</span><span>${R2(f.v)}</span></div>`).join('')}</details>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function agPost(corpo) {
+  const r = await fetch('/api/agenda/lanc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ emp: agEmp, data: A.data, ...corpo }) });
+  if (!r.ok) throw new Error((await r.json()).error || r.status);
+  M = null; D = null; // saldos do fluxo mudam
+  await carregarAgenda(A.data);
+}
+
+$('ag-add').addEventListener('click', async () => {
+  const valor = parseBR($('ag-valor').value);
+  if (!valor) { alert('Informe o valor (negativo para saída), ex.: -1.234,56'); return; }
+  try {
+    await agPost({ conta: $('ag-conta').value, desc: $('ag-desc').value, valor });
+    $('ag-valor').value = ''; $('ag-desc').value = ''; $('ag-desc').focus();
+  } catch (e) { alert('Não lançou: ' + e.message); }
+});
+$('ag-valor').addEventListener('keydown', e => { if (e.key === 'Enter') $('ag-add').click(); });
+$('ag-zerar').addEventListener('click', async () => {
+  const linhas = linhasDoDia();
+  const fim = linhas.length ? linhas[linhas.length - 1].s : A.antes;
+  const cc = Math.round((fim.CC || 0) * 100) / 100;
+  if (Math.abs(cc) < 0.005) return;
+  const emp = A.empresas.find(e => e.emp === agEmp);
+  const novoCG = (fim.CG || 0) + cc;
+  if (emp.limite && -novoCG > emp.limite + 0.01 && !confirm(`A C/G passa do limite: ficaria em ${R2(novoCG)} (limite ${R2(emp.limite)}). Lançar mesmo assim?`)) return;
+  try { await agPost({ conta: 'CC', desc: 'C/G', valor: -cc, espelho: true }); } catch (e) { alert('Não lançou: ' + e.message); }
+});
+$('ag-sug').addEventListener('click', async e => {
+  const b = e.target.closest('.ag-lancar'); if (!b) return;
+  b.disabled = true;
+  try { await agPost({ conta: b.dataset.conta, desc: b.dataset.desc, valor: Math.round(+b.dataset.valor * 100) / 100 }); }
+  catch (err) { alert('Não lançou: ' + err.message); b.disabled = false; }
+});
+$('ag-dia').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('input')) e.target.blur(); });
+$('ag-dia').addEventListener('change', async e => {
+  const inp = e.target.closest('input[data-id]'); if (!inp) return;
+  const corpo = {};
+  if (inp.dataset.f === 'valor') { const v = parseBR(inp.value); if (!v) { alert('Valor inválido'); return; } corpo.valor = v; }
+  else corpo.desc = inp.value;
+  const r = await fetch('/api/agenda/lanc/' + inp.dataset.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+  if (!r.ok) { alert('Não salvou'); return; }
+  M = null; D = null;
+  carregarAgenda(A.data);
+});
+$('ag-dia').addEventListener('click', async e => {
+  const b = e.target.closest('button.fm-x'); if (!b || !confirm('Apagar este lançamento?')) return;
+  const r = await fetch('/api/agenda/lanc/' + b.dataset.id, { method: 'DELETE' });
+  if (!r.ok) { alert('Não apagou'); return; }
+  M = null; D = null;
+  carregarAgenda(A.data);
+});
+$('ag-painel').addEventListener('change', async e => {
+  const inp = e.target.closest('input.ag-lim'); if (!inp) return;
+  const limite = parseBR(inp.value);
+  if (Number.isNaN(limite)) { alert('Limite inválido'); return; }
+  const r = await fetch('/api/agenda/limite', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ emp: inp.dataset.emp, limite }) });
+  if (!r.ok) { alert('Não salvou'); return; }
+  carregarAgenda(A.data);
+});
+const trocaEmpAgenda = emp => { agEmp = emp; carregarAgenda(); };
+$('ag-painel').addEventListener('click', e => { const tr = e.target.closest('tr[data-emp]'); if (tr && !e.target.matches('input')) trocaEmpAgenda(tr.dataset.emp); });
+$('ag-chips').addEventListener('click', e => { const b = e.target.closest('.fm-chip'); if (b) trocaEmpAgenda(b.dataset.emp); });
+$('ag-prev').addEventListener('click', () => carregarAgenda(diaUtilAg(A.data, -1)));
+$('ag-next').addEventListener('click', () => carregarAgenda(diaUtilAg(A.data, 1)));
+$('ag-hoje').addEventListener('click', () => carregarAgenda(A.hoje));
+$('ag-data').addEventListener('change', () => { if ($('ag-data').value) carregarAgenda($('ag-data').value); });
+
+// Importar a planilha: primeiro confere, depois substitui
+let agArquivo = null;
+async function agImportar(confirmar) {
+  const fd = new FormData(); fd.append('arquivo', agArquivo);
+  const r = await fetch('/api/agenda/importar' + (confirmar ? '?confirmar=1' : ''), { method: 'POST', body: fd });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error || r.status);
+  return j;
+}
+$('ag-arq').addEventListener('change', async () => {
+  agArquivo = $('ag-arq').files[0]; if (!agArquivo) return;
+  $('ag-imp-res').innerHTML = '<span class="spinner"></span> Lendo…';
+  try {
+    const j = await agImportar(false);
+    const conf = Object.entries(j.conferencia).map(([emp, cs]) => `<tr><td><b>${emp}</b></td>${Object.entries(cs).map(([c, v]) =>
+      `<td title="calculado ${R2(v.calc)} · planilha ${R2(v.planilha)}">${nomeConta(c)} ${Math.abs(v.calc - v.planilha) < 0.05 ? '<span class="pos">✓</span>' : `<span class="neg">≠ ${R2(v.calc - v.planilha)}</span>`}</td>`).join('')}</tr>`).join('');
+    $('ag-imp-res').innerHTML = `<div>${j.lancamentos.toLocaleString('pt-BR')} lançamentos de ${DM(j.de)}/${j.de.slice(2, 4)} a ${DM(j.ate)}/${j.ate.slice(2, 4)}. Saldo final calculado × planilha:</div>
+      <table style="font-size:11px">${conf}</table>
+      <button class="fc-btn" id="ag-imp-ok" style="justify-self:start">Importar e substituir a agenda</button>`;
+  } catch (e) { $('ag-imp-res').innerHTML = `<span class="neg">${esc(e.message)}</span>`; }
+});
+$('ag-imp-res').addEventListener('click', async e => {
+  if (e.target.id !== 'ag-imp-ok') return;
+  if (!confirm('Substituir todos os lançamentos da agenda pelos da planilha?')) return;
+  e.target.disabled = true; e.target.textContent = 'Importando…';
+  try {
+    const j = await agImportar(true);
+    $('ag-imp-res').innerHTML = `<span class="pos">Importado: ${j.lancamentos.toLocaleString('pt-BR')} lançamentos.</span>`;
+    $('ag-arq').value = ''; M = null; D = null;
+    carregarAgenda();
+  } catch (err) { alert('Não importou: ' + err.message); e.target.disabled = false; e.target.textContent = 'Importar e substituir a agenda'; }
+});
+
 function trocaModo(m) {
   modo = m;
   document.body.className = 'modo-' + m;
   document.querySelectorAll('#fc-modo button').forEach(x => x.classList.toggle('active', x.dataset.m === m));
   $('fm-main').style.display = m === 'mes' && M ? '' : 'none';
   $('fc-main').style.display = m === 'dia' && D ? '' : 'none';
+  $('ag-main').style.display = m === 'agenda' && A ? '' : 'none';
   if (m === 'mes' && !M) carregarMensal();
   if (m === 'dia' && !D) carregar();
+  if (m === 'agenda') carregarAgenda(A?.data);
 }
 $('fc-modo').addEventListener('click', e => { const b = e.target.closest('button'); if (b) trocaModo(b.dataset.m); });
 $('fc-ano').addEventListener('change', carregarMensal);
@@ -754,7 +1049,7 @@ $('fc-saldos').addEventListener('click', async e => {
 $('fc-loja').addEventListener('change', () => { abertos.clear(); if (D) render(); if (M) renderMensal(); });
 $('fc-atraso').addEventListener('change', render);
 $('fc-dias').addEventListener('change', carregar);
-$('fc-reload').addEventListener('click', () => modo === 'mes' ? carregarMensal() : carregar());
+$('fc-reload').addEventListener('click', () => modo === 'mes' ? carregarMensal() : modo === 'agenda' ? carregarAgenda(A?.data) : carregar());
 carregarMensal();
 </script>
 </body>
