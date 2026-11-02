@@ -13,12 +13,22 @@ const vazio = v => v === null || v === undefined || v === '';
 
 function causa(it) {
   const dif = it.l - it.e;
-  if (it.t && dif < 0 && -dif === it.t) return 'VER TRÂNSITO';
+  if (it.t && dif < 0 && -dif <= it.t) return 'VER TRÂNSITO';
   if (it.v > 0 && Math.abs(dif) === it.v) return 'VER VENDA';
   if (it.v > 0) return 'VENDA PARCIAL';
   return 'A RECONTAR';
 }
-const status = it => vazio(it.rc) ? causa(it) : (Number(it.rc) === it.e ? 'OK' : 'DIVERGENTE');
+function statusAuto(it) {
+  if (vazio(it.rc)) return causa(it);
+  const rc = Number(it.rc);
+  if (rc === it.e) return 'OK';
+  if (it.t && rc < it.e && it.e - rc <= it.t) return 'VER TRÂNSITO';
+  return 'DIVERGENTE';
+}
+const status = it => it.st || statusAuto(it);
+const STATUS_MANUAL = ['OK', 'DIVERGENTE', 'VER VENDA', 'VER TRÂNSITO', 'A RECONTAR', 'TROCA', 'AJUSTAR'];
+// NFs de entrada que explicam o trânsito
+const nfsTxt = it => (it.tn || []).map(n => `<span class="nf" title="Entrada em ${esc(n.d)}: ${fInt(n.q)} peça(s)">NF ${esc(n.n)} · ${esc(n.d)} · ${fInt(n.q)}</span>`).join('');
 const stCls = s => 'st st-' + s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ /g, '-');
 const STATUS_LBL = { recontagem: 'Em recontagem', finalizado: 'Finalizado', processando: 'Processando', erro: 'Erro' };
 
@@ -143,7 +153,8 @@ function desenharDetalhe() {
     pronto ? `<a class="btn" href="${base}/planilha">Planilha de recontagem</a>` : '',
     pronto && aberto ? `<button class="btn" id="dImportar">Importar planilha</button>` : '',
     pronto && esc_ && b.temLeitura ? `<a class="btn" href="${base}/txt">TXT corrigido</a>` : '',
-    esc_ && aberto ? `<button class="btn primary" id="dFinalizar">Finalizar</button>` : '',
+    esc_ && aberto ? `<button class="btn ${b.ajustadoMicrovix ? 'ok' : ''}" id="dAjustado" title="${b.ajustadoMicrovix ? `Marcado por ${esc(b.ajustadoMicrovix.por)} em ${new Date(b.ajustadoMicrovix.em).toLocaleString('pt-BR')} — clique para desmarcar` : 'Marque depois de lançar o ajuste de estoque no Microvix'}">${b.ajustadoMicrovix ? '✓ Ajustado no Microvix' : 'Marcar ajustado no Microvix'}</button>` : '',
+    esc_ && aberto ? `<button class="btn primary" id="dFinalizar" ${b.ajustadoMicrovix ? '' : 'disabled title="Marque como ajustado no Microvix antes de finalizar"'}>Finalizar</button>` : '',
     esc_ && b.status === 'finalizado' ? `<button class="btn" id="dReabrir">Reabrir</button>` : '',
   ].join('');
 
@@ -172,6 +183,7 @@ function desenharDetalhe() {
       <div class="tabs noprint">
         <button class="tab ${S.sub === 'recont' ? 'active' : ''}" data-sub="recont">Recontagem</button>
         <button class="tab ${S.sub === 'resumo' ? 'active' : ''}" data-sub="resumo">Resumo das diferenças</button>
+        ${esc_ || b.trocas?.enviadaEm ? `<button class="tab ${S.sub === 'trocas' ? 'active' : ''}" data-sub="trocas">Trocas${b.trocas?.itens?.length ? ` (${b.trocas.itens.filter(t => !t.feita).length})` : ''}</button>` : ''}
         ${esc_ ? `<button class="tab ${S.sub === 'cfg' ? 'active' : ''}" data-sub="cfg">Configurar</button>` : ''}
       </div>
       <div id="sub"></div>`;
@@ -180,10 +192,15 @@ function desenharDetalhe() {
   $('dVoltar').onclick = voltar;
   $('dImportar') && ($('dImportar').onclick = () => $('impArq').click());
   $('dFinalizar') && ($('dFinalizar').onclick = finalizar);
+  $('dAjustado') && ($('dAjustado').onclick = () => {
+    const marcar = !b.ajustadoMicrovix;
+    if (marcar && !confirm('O ajuste de estoque já foi lançado no Microvix?')) return;
+    patchBal({ ajustadoMicrovix: marcar });
+  });
   $('dReabrir') && ($('dReabrir').onclick = () => patchBal({ status: 'recontagem' }));
   $('dReproc2') && ($('dReproc2').onclick = () => reprocessar({}));
   document.querySelectorAll('[data-sub]').forEach(el => el.onclick = () => { S.sub = el.dataset.sub; desenharDetalhe(); });
-  if ($('sub')) ({ recont: desenharRecontagem, resumo: desenharResumo, cfg: desenharConfig })[S.sub]();
+  if ($('sub')) ({ recont: desenharRecontagem, resumo: desenharResumo, cfg: desenharConfig, trocas: desenharTrocas })[S.sub]();
 }
 
 // ── Aba Recontagem ─────────────────────────────────────────────────────────
@@ -195,7 +212,7 @@ function desenharRecontagem() {
   const q = f.q.trim().toUpperCase();
   const lista = todos.filter(it => (!f.g || grupoCurto(it.g) === f.g) && (!f.st || status(it) === f.st)
     && (!f.pend || vazio(it.rc)) && (!q || (it.d + ' ' + it.c + ' ' + it.b + ' ' + it.r).toUpperCase().includes(q)));
-  const sts = ['A RECONTAR', 'VENDA PARCIAL', 'VER VENDA', 'VER TRÂNSITO', 'OK', 'DIVERGENTE'];
+  const sts = ['A RECONTAR', 'VENDA PARCIAL', 'VER VENDA', 'VER TRÂNSITO', 'OK', 'DIVERGENTE', 'TROCA', 'AJUSTAR'];
   const tot = lista.reduce((a, it) => { a.e += it.e; a.l += it.l; a.i += (it.l - it.e) * it.p; return a; }, { e: 0, l: 0, i: 0 });
   $('sub').innerHTML = `
     <div class="toolbar noprint">
@@ -218,6 +235,7 @@ function desenharRecontagem() {
   $('rPend').onchange = e => { f.pend = e.target.checked; desenharRecontagem(); };
   let tq; $('rQ').oninput = e => { clearTimeout(tq); tq = setTimeout(() => { f.q = e.target.value; desenharRecontagem(); const el = $('rQ'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 300); };
   document.querySelectorAll('#sub input.rc, #sub input.ob').forEach(el => el.onchange = () => salvarItem(el));
+  document.querySelectorAll('#sub select.stsel').forEach(el => el.onchange = () => salvarStatus(el));
   // Enter no campo da recontagem pula para o próximo item
   document.querySelectorAll('#sub input.rc').forEach((el, i, arr) => el.onkeydown = e => {
     if (e.key === 'Enter') { e.preventDefault(); el.blur(); arr[i + 1]?.focus(); arr[i + 1]?.select(); }
@@ -231,11 +249,11 @@ const linhaRecont = aberto => it => {
   const difF = vazio(it.rc) ? '' : fInt(Number(it.rc) - it.e);
   const quem = it.rp ? ` title="Lançado por ${esc(it.rp)} em ${new Date(it.rt).toLocaleString('pt-BR')}"` : '';
   return `<tr class="linha-item" data-k="${k}">
-    <td>${esc(grupoCurto(it.g))}</td><td>${esc(it.c || it.b)}</td><td class="desc">${esc(it.d)}${it.lido ? '' : ' <span class="badge">não lido</span>'}</td><td>${esc(it.r)}</td>
+    <td>${esc(grupoCurto(it.g))}</td><td>${esc(it.c || it.b)}</td><td class="desc">${esc(it.d)}${it.lido ? '' : ' <span class="badge">não lido</span>'}${nfsTxt(it)}</td><td>${esc(it.r)}</td>
     <td class="n">${fInt(it.e)}</td><td class="n">${fInt(it.l)}</td><td class="n ${cls(dif)}">${fInt(dif)}</td>
     <td class="n">${fRS(it.p)}</td><td class="n ${cls(dif * it.p)}">${fRS(dif * it.p)}</td>
     <td class="c">${aberto ? `<input class="inp rc" inputmode="numeric" data-k="${k}" value="${vazio(it.rc) ? '' : it.rc}"${quem}/>` : (vazio(it.rc) ? '' : `<b${quem}>${it.rc}</b>`)}</td>
-    <td class="n dif-f">${difF}</td><td class="stc"><span class="${stCls(s)}">${s}</span></td>
+    <td class="n dif-f">${difF}</td><td class="stc">${celStatus(it, aberto)}</td>
     <td>${aberto ? `<input class="inp ob" data-k="${k}" value="${esc(it.ob || '')}" maxlength="300"/>` : esc(it.ob || '')}</td></tr>`;
 };
 
@@ -246,13 +264,35 @@ const cartaoRecont = aberto => it => {
   const dif = it.l - it.e;
   return `<div class="linha-item mcard" data-k="${k}">
     <div class="mcard-top"><span class="muted">${esc(grupoCurto(it.g))} · ${esc(it.c || it.b)}</span><span class="stc"><span class="${stCls(s)}">${s}</span></span></div>
-    <div class="mcard-desc">${esc(it.d)}${it.lido ? '' : ' <span class="badge">não lido</span>'}</div>
+    <div class="mcard-desc">${esc(it.d)}${it.lido ? '' : ' <span class="badge">não lido</span>'}${nfsTxt(it)}</div>
     <div class="mcard-nums"><span>Estoque <b>${fInt(it.e)}</b></span><span>Lido <b>${fInt(it.l)}</b></span><span>Dif. <b class="${cls(dif)}">${fInt(dif)}</b></span><span>Final <b class="dif-f">${vazio(it.rc) ? '' : fInt(Number(it.rc) - it.e)}</b></span></div>
     ${aberto ? `<div class="mcard-inp"><input class="inp rc" inputmode="numeric" placeholder="Contei" data-k="${k}" value="${vazio(it.rc) ? '' : it.rc}"/>
       <input class="inp ob" placeholder="Observação" data-k="${k}" value="${esc(it.ob || '')}" maxlength="300"/></div>`
       : (vazio(it.rc) ? '' : `<div class="mcard-desc">Recontado: <b>${it.rc}</b> ${esc(it.ob || '')}</div>`)}
   </div>`;
 };
+
+// Escritório troca o status na mão; "automático" volta à regra
+function celStatus(it, aberto) {
+  const s = status(it);
+  if (!S.escritorio || !aberto) return `<span class="${stCls(s)}" ${it.st ? 'title="definido à mão"' : ''}>${s}</span>`;
+  const auto = statusAuto(it);
+  return `<select class="stsel ${stCls(s)}" data-k="${esc(it.c || it.b)}" title="${it.st ? 'Definido à mão' : 'Automático'}">
+    <option value="" ${it.st ? '' : 'selected'}>${auto} (auto)</option>
+    ${STATUS_MANUAL.map(x => `<option ${it.st === x ? 'selected' : ''}>${x}</option>`).join('')}</select>`;
+}
+async function salvarStatus(el) {
+  const k = el.dataset.k, st = el.value || null;
+  try {
+    const j = await api(`/api/balancos/${S.bal.id}/status-item`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ k, st }) });
+    const it = S.bal.itens.find(x => (x.c || x.b) === k);
+    if (it) it.st = st;
+    S.bal.resumo = j.resumo;
+    el.closest('.stc').innerHTML = celStatus(it, true);
+    document.querySelector(`.stc select[data-k="${CSS.escape(k)}"]`)?.addEventListener('change', e => salvarStatus(e.target));
+    atualizarKpis();
+  } catch (e) { alert(e.message); }
+}
 
 async function salvarItem(el) {
   const k = el.dataset.k;
@@ -271,7 +311,7 @@ async function salvarItem(el) {
     // Atualiza a linha e os indicadores sem redesenhar a tabela (não perde o foco)
     const s = status(it);
     tr.querySelector('.dif-f').textContent = vazio(it.rc) ? '' : fInt(Number(it.rc) - it.e);
-    tr.querySelector('.stc').innerHTML = `<span class="${stCls(s)}">${s}</span>`;
+    tr.querySelector('.stc').innerHTML = celStatus(it, S.bal.status === 'recontagem');
     atualizarKpis();
   } catch (e) { el.classList.add('falhou'); el.title = e.message; }
 }
@@ -310,6 +350,52 @@ function desenharResumo() {
     <h4 style="margin:0 0 8px">Maiores impactos (recontado quando houver)</h4>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Setor</th><th>Código</th><th>Descrição</th><th class="n">Estoque</th><th class="n">Balanço</th><th class="n">Recontada</th><th class="n">Impacto</th><th>Status</th><th>Observação</th></tr></thead>
     <tbody>${maiores.map(({ it, imp }) => `<tr><td>${esc(grupoCurto(it.g))}</td><td>${esc(it.c || it.b)}</td><td class="desc">${esc(it.d)}</td><td class="n">${fInt(it.e)}</td><td class="n">${fInt(it.l)}</td><td class="n">${vazio(it.rc) ? '' : it.rc}</td><td class="n ${cls(imp)}">${fRS(imp)}</td><td><span class="${stCls(status(it))}">${status(it)}</span></td><td>${esc(it.ob || '')}</td></tr>`).join('')}</tbody></table></div>`;
+}
+
+// ── Aba Trocas ─────────────────────────────────────────────────────────────
+// Sobra × falta do mesmo valor: mesma referência primeiro, depois o mesmo setor.
+// Na loja: entra (devolução) o código que sobrou e sai o que faltou.
+function desenharTrocas() {
+  const b = S.bal, T = b.trocas, esc_ = S.escritorio;
+  const itens = T?.itens || [];
+  const feitas = itens.filter(t => t.feita).length;
+  const total = itens.reduce((a, t) => a + t.q * t.p, 0);
+  const sit = !T ? 'Nenhuma sugestão gerada ainda.'
+    : `${itens.length} troca(s) · ${feitas} feita(s) · ${fRS(total)} · gerada por ${esc(T.geradaPor)} em ${new Date(T.geradaEm).toLocaleString('pt-BR')}`
+      + (T.enviadaEm ? ` · <b>enviada para a loja</b> em ${new Date(T.enviadaEm).toLocaleString('pt-BR')}` : ' · <b>ainda não enviada para a loja</b>');
+  $('sub').innerHTML = `
+    <div class="toolbar noprint">
+      ${esc_ ? `<button class="btn" id="tGerar">${T ? 'Gerar de novo' : 'Sugerir trocas'}</button>` : ''}
+      ${esc_ && itens.length && !T.enviadaEm ? '<button class="btn primary" id="tEnviar">Enviar para a loja</button>' : ''}
+      <span class="muted">${sit}</span><span class="grow"></span>
+      ${itens.length ? '<button class="btn" onclick="window.print()">Imprimir</button>' : ''}
+    </div>
+    <div class="hint" style="margin-bottom:8px">Pega o que sobrou e o que faltou depois da recontagem (itens explicados por venda ou trânsito ficam fora). Casa primeiro pela mesma referência e mesmo preço; depois pelo mesmo setor e mesmo preço. Setores diferentes não trocam.
+      Na loja, faça a troca no Microvix: <span class="troca-ent">entra</span> (devolução) o código que sobrou e <span class="troca-sai">sai</span> o que faltou.</div>
+    ${itens.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr>
+      <th>Setor</th><th>Entra (sobrou)</th><th>Sai (faltou)</th><th class="n">Qtd</th><th class="n">Valor</th><th>Por</th><th class="c">Feita</th>
+    </tr></thead><tbody>${itens.map(t => `<tr class="${t.feita ? 'feita' : ''}">
+      <td>${esc(t.setor)}</td>
+      <td><span class="troca-ent">${esc(t.entra.c)}</span> ${esc(t.entra.d)}<div class="muted" style="font-size:11px">${esc(t.entra.r)}</div></td>
+      <td><span class="troca-sai">${esc(t.sai.c)}</span> ${esc(t.sai.d)}<div class="muted" style="font-size:11px">${esc(t.sai.r)}</div></td>
+      <td class="n">${fInt(t.q)}</td><td class="n">${fRS(t.q * t.p)}</td><td>${t.criterio === 'referência' ? 'mesma referência' : 'mesmo setor'}</td>
+      <td class="c"><input type="checkbox" class="tFeita" data-id="${t.id}" ${t.feita ? 'checked' : ''} title="${t.feita ? `Feita por ${esc(t.feitaPor)} em ${new Date(t.feitaEm).toLocaleString('pt-BR')}` : 'Marcar como feita'}"/></td></tr>`).join('')}</tbody></table></div>`
+      : (T ? '<div class="empty">Nenhuma troca possível: não há sobra e falta do mesmo valor no mesmo setor.</div>' : '')}`;
+  if ($('tGerar')) $('tGerar').onclick = async () => {
+    if (T?.enviadaEm && !confirm('Gerar de novo? A lista enviada para a loja é substituída (as já feitas ficam).')) return;
+    try { await api(`/api/balancos/${b.id}/trocas`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }); abrir(b.id, true); } catch (e) { alert(e.message); }
+  };
+  if ($('tEnviar')) $('tEnviar').onclick = async () => {
+    if (!confirm(`Enviar ${itens.length} troca(s) para a loja?`)) return;
+    try { await api(`/api/balancos/${b.id}/trocas`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enviar: true }) }); abrir(b.id, true); } catch (e) { alert(e.message); }
+  };
+  document.querySelectorAll('.tFeita').forEach(el => el.onchange = async () => {
+    try {
+      await api(`/api/balancos/${b.id}/trocas/${el.dataset.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ feita: el.checked }) });
+      const t = itens.find(x => x.id === el.dataset.id); Object.assign(t, { feita: el.checked, feitaPor: 'você', feitaEm: new Date().toISOString() });
+      el.closest('tr').classList.toggle('feita', el.checked);
+    } catch (e) { alert(e.message); el.checked = !el.checked; }
+  });
 }
 
 // ── Aba Configurar (escritório) ────────────────────────────────────────────

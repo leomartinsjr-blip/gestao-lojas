@@ -181,7 +181,7 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
   const mov = await fetchMovimento(cnpj, iniTransito, data, chave).catch(e => { console.warn('[balanco] movimento:', e.message); return []; });
 
   const dataBR = data.split('-').reverse().join('/');
-  const vendas = new Map(), transito = new Map();
+  const vendas = new Map(), transito = new Map(), transitoNF = new Map();
   let movDepoisDaHora = 0;
   for (const r of mov) {
     if (r.cancelado === 'S' || r.excluido === 'S') continue;
@@ -203,7 +203,14 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
     }
     if (ajuste) continue;
     if (op === 'S' && tipo === 'V' && doDia) vendas.set(cod, (vendas.get(cod) || 0) + q);
-    if (op === 'E' && !/devolu/i.test(r.desc_cfop || '')) transito.set(cod, (transito.get(cod) || 0) + q);
+    if (op === 'E' && !/devolu/i.test(r.desc_cfop || '')) {
+      transito.set(cod, (transito.get(cod) || 0) + q);
+      const nfs = transitoNF.get(cod) || [];
+      const doc = String(r.documento || '').trim(), d = String(r.data_documento || '').slice(0, 5);
+      const ja = nfs.find(x => x.n === doc);
+      if (ja) ja.q += q; else nfs.push({ n: doc, d, q });
+      transitoNF.set(cod, nfs);
+    }
   }
 
   // Código de barras lido → produto
@@ -286,6 +293,7 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
       p: preco.get(cod) || 0,
       v: vendas.get(cod) || 0,
       t: transito.get(cod) || 0,
+      ...(transitoNF.get(cod) ? { tn: transitoNF.get(cod) } : {}),
       rc: null, ob: '',
     });
   }
@@ -310,14 +318,45 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
 // ── Regras da recontagem (as mesmas fórmulas da planilha) ──────────────────
 function causaProvavel(it) {
   const dif = it.l - it.e;
-  if (it.t && dif < 0 && -dif === it.t) return 'VER TRÂNSITO';
+  if (it.t && dif < 0 && -dif <= it.t) return 'VER TRÂNSITO';
   if (it.v > 0 && Math.abs(dif) === it.v) return 'VER VENDA';
   if (it.v > 0) return 'VENDA PARCIAL';
   return 'A RECONTAR';
 }
 function statusItem(it) {
+  if (it.st) return it.st;
   if (it.rc === null || it.rc === undefined || it.rc === '') return causaProvavel(it);
-  return Number(it.rc) === it.e ? 'OK' : 'DIVERGENTE';
+  const rc = Number(it.rc);
+  if (rc === it.e) return 'OK';
+  if (it.t && rc < it.e && it.e - rc <= it.t) return 'VER TRÂNSITO';
+  return 'DIVERGENTE';
+}
+
+// Trocas sugeridas: o que sobrou × o que faltou (diferença final, recontada ou
+// lida). Primeiro pela mesma referência e preço; depois pelo mesmo setor e
+// preço. Setores diferentes não trocam. Item explicado por venda ou trânsito fica fora.
+// Na loja a troca é: entra (devolução) o código que sobrou, sai o que faltou.
+function sugerirTrocas(bal) {
+  const fd = it => (it.rc === null || it.rc === undefined || it.rc === '' ? it.l : Number(it.rc)) - it.e;
+  const lista = itensRecontagem(bal).filter(it => it.c && !['VER VENDA', 'VER TRÂNSITO', 'VENDA PARCIAL'].includes(statusItem(it)));
+  const sobras = lista.filter(it => fd(it) > 0).map(it => ({ it, q: fd(it) }));
+  const faltas = lista.filter(it => fd(it) < 0).map(it => ({ it, q: -fd(it) }));
+  const trocas = [];
+  const casar = (criterio, mesmo) => {
+    for (const f of faltas) {
+      for (const s of sobras) {
+        if (!f.q) break;
+        if (!s.q || s.it.p !== f.it.p || !mesmo(s.it, f.it)) continue;
+        const q = Math.min(f.q, s.q);
+        f.q -= q; s.q -= q;
+        trocas.push({ criterio, q, p: f.it.p, setor: grupoCurto(f.it.g),
+          entra: { c: s.it.c, d: s.it.d, r: s.it.r }, sai: { c: f.it.c, d: f.it.d, r: f.it.r } });
+      }
+    }
+  };
+  casar('referência', (a, b) => a.r && a.r === b.r);
+  casar('setor', (a, b) => grupoCurto(a.g) === grupoCurto(b.g));
+  return trocas;
 }
 // Itens que vão para a recontagem: lidos com diferença (e, se o balanço pedir,
 // os que têm saldo e não foram lidos)
@@ -384,6 +423,6 @@ function txtCorrigido(bal) {
 }
 
 module.exports = {
-  parseLeitura, processar, criarCadastro, causaProvavel, statusItem,
+  parseLeitura, processar, criarCadastro, causaProvavel, statusItem, sugerirTrocas,
   itensRecontagem, resumo, txtCorrigido, grupoCurto, normBarra,
 };

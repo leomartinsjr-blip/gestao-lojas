@@ -14,7 +14,7 @@ const os = require('os');
 const path = require('path');
 const multer = require('multer');
 const {
-  processar, criarCadastro, resumo, txtCorrigido, statusItem,
+  processar, criarCadastro, resumo, txtCorrigido, statusItem, sugerirTrocas,
 } = require('./balanco');
 const { pdfListaCriticas, excelRecontagem, lerPlanilhaRecontagem } = require('./balancoArquivos');
 
@@ -172,7 +172,7 @@ function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin
       if (recontagensAntigas) {
         for (const it of r.itens) {
           const old = recontagensAntigas.get(it.c || it.b);
-          if (old) { it.rc = old.rc; it.ob = old.ob; it.rp = old.rp; it.rt = old.rt; }
+          if (old) { it.rc = old.rc; it.ob = old.ob; it.rp = old.rp; it.rt = old.rt; if (old.st) it.st = old.st; }
         }
       }
       const set = {
@@ -319,7 +319,11 @@ function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin
       if (typeof b.incluirNaoLidos === 'boolean') set.incluirNaoLidos = b.incluirNaoLidos;
       if (/^\d{4}-\d{2}$/.test(b.mes || '')) set.mes = b.mes;
       if (typeof b.obs === 'string') set.obs = b.obs.slice(0, 500);
+      if (typeof b.ajustadoMicrovix === 'boolean')
+        set.ajustadoMicrovix = b.ajustadoMicrovix ? { por: quem(req), em: new Date().toISOString() } : null;
       if (b.status === 'finalizado' && bal.status === 'recontagem') {
+        if (!(set.ajustadoMicrovix ?? bal.ajustadoMicrovix))
+          return res.status(409).json({ error: 'Marque o balanço como ajustado no Microvix antes de finalizar.' });
         const r = resumo({ ...bal, ...set });
         Object.assign(set, { status: 'finalizado', finalizadoPor: quem(req), finalizadoEm: new Date().toISOString(),
           resumoFinal: { total: r.total, grupos: r.grupos, pecasLidas: r.pecasLidas, pecasEstoque: r.pecasEstoque } });
@@ -366,6 +370,58 @@ function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // Status manual do item (escritório). st vazio volta ao automático.
+  const STATUS_MANUAL = ['OK', 'DIVERGENTE', 'VER VENDA', 'VER TRÂNSITO', 'A RECONTAR', 'TROCA', 'AJUSTAR'];
+  app.patch('/api/balancos/:id/status-item', requireEscritorioOrAdmin, async (req, res) => {
+    try {
+      const bal = await carregar(req, res); if (!bal) return;
+      const k = String(req.body?.k || ''), st = req.body?.st || null;
+      if (st && !STATUS_MANUAL.includes(st)) return res.status(400).json({ error: 'status inválido' });
+      const i = (bal.itens || []).findIndex(it => String(it.c || it.b) === k);
+      if (i < 0) return res.status(404).json({ error: 'item não encontrado' });
+      bal.itens[i].st = st;
+      if (col()) await salvar(bal.id, { [`itens.${i}.st`]: st, atualizadoEm: new Date().toISOString() });
+      else await salvar(bal.id, { itens: bal.itens });
+      res.json({ ok: true, resumo: resumo(bal) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Trocas: o escritório gera a sugestão (rascunho) e envia para a loja; a loja marca as feitas.
+  app.post('/api/balancos/:id/trocas', requireEscritorioOrAdmin, async (req, res) => {
+    try {
+      const bal = await carregar(req, res); if (!bal) return;
+      const agora = new Date().toISOString();
+      if (req.body?.enviar) {
+        if (!bal.trocas?.itens?.length) return res.status(409).json({ error: 'Gere as trocas antes de enviar.' });
+        const trocas = { ...bal.trocas, enviadaEm: agora, enviadaPor: quem(req) };
+        await salvar(bal.id, { trocas });
+        return res.json({ ok: true, trocas });
+      }
+      // Gerar de novo mantém as que a loja já marcou como feitas
+      const feitas = (bal.trocas?.itens || []).filter(t => t.feita);
+      const chave = t => `${t.entra.c}>${t.sai.c}`;
+      const jaFeitas = new Set(feitas.map(chave));
+      const novas = sugerirTrocas(bal).filter(t => !jaFeitas.has(chave(t)))
+        .map((t, i) => ({ id: `${Date.now().toString(36)}${i}`, ...t, feita: false }));
+      const trocas = { itens: [...feitas, ...novas], geradaEm: agora, geradaPor: quem(req), enviadaEm: null, enviadaPor: null };
+      await salvar(bal.id, { trocas });
+      res.json({ ok: true, trocas });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  app.patch('/api/balancos/:id/trocas/:tid', requireAuth, async (req, res) => {
+    try {
+      const bal = await carregar(req, res); if (!bal) return;
+      const i = (bal.trocas?.itens || []).findIndex(t => t.id === req.params.tid);
+      if (i < 0 || (!bal.trocas.enviadaEm && !ehEscritorio(req))) return res.status(404).json({ error: 'troca não encontrada' });
+      const feita = !!req.body?.feita;
+      const campos = { feita, feitaPor: feita ? quem(req) : null, feitaEm: feita ? new Date().toISOString() : null };
+      Object.assign(bal.trocas.itens[i], campos);
+      if (col()) await salvar(bal.id, Object.fromEntries(Object.entries(campos).map(([c, v]) => [`trocas.itens.${i}.${c}`, v])));
+      else await salvar(bal.id, { trocas: bal.trocas });
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   app.post('/api/balancos/:id/importar', requireAuth, upload.single('arquivo'), async (req, res) => {
     try {
       const bal = await carregar(req, res); if (!bal) return;
@@ -393,7 +449,7 @@ function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin
       if (/^\d{4}-\d{2}-\d{2}$/.test(b.data || '')) set.data = b.data;
       if (b.agrupar === 'setor' || b.agrupar === 'linha') { set.agrupar = b.agrupar; set.gruposFora = []; }
       if (b.diasTransito !== undefined) set.diasTransito = Math.min(60, Math.max(0, parseInt(b.diasTransito) || 0));
-      const antigas = new Map((bal.itens || []).filter(it => it.rc !== null || it.ob).map(it => [it.c || it.b, it]));
+      const antigas = new Map((bal.itens || []).filter(it => it.rc !== null || it.ob || it.st).map(it => [it.c || it.b, it]));
       await salvar(bal.id, set);
       rodar(bal.id, antigas);
       res.json({ ok: true });

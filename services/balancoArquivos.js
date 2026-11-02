@@ -221,13 +221,13 @@ async function excelRecontagem(bal) {
       { formula: `G${r}*H${r}`, result: (it.l - it.e) * it.p },
       recont,
       { formula: `IF($J${r}="","",$J${r}-$E${r})` },
-      { formula: `IF($J${r}="",$R${r},IF($J${r}=$E${r},"OK","DIVERGENTE"))`, result: statusItem(it) },
+      it.st ? it.st : { formula: `IF($J${r}="",$R${r},IF($J${r}=$E${r},"OK",IF(AND($Q${r}<>"",$J${r}<$E${r},$E${r}-$J${r}<=$Q${r}),"VER TRÂNSITO","DIVERGENTE")))`, result: statusItem(it) },
       it.ob || null,
       { formula: `IF($J${r}="",0,($J${r}-$E${r})*$H${r})` },
       { formula: `IF($J${r}="",$I${r},0)` },
       it.v || null,
       it.t || null,
-      { formula: `IF(AND($Q${r}<>"",$G${r}<0,-$G${r}=$Q${r}),"VER TRÂNSITO",IF(AND($P${r}<>"",$P${r}>0,ABS($G${r})=$P${r}),"VER VENDA",IF(AND($P${r}<>"",$P${r}>0),"VENDA PARCIAL","A RECONTAR")))` },
+      { formula: `IF(AND($Q${r}<>"",$G${r}<0,-$G${r}<=$Q${r}),"VER TRÂNSITO",IF(AND($P${r}<>"",$P${r}>0,ABS($G${r})=$P${r}),"VER VENDA",IF(AND($P${r}<>"",$P${r}>0),"VENDA PARCIAL","A RECONTAR")))` },
     ];
     vals.forEach((v, i) => {
       const c = row.getCell(i + 1);
