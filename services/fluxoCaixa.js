@@ -23,6 +23,28 @@ const DIAS_ATRASO_CONSIDERADO = 90;
 // Empresa (CNPJ) de cada loja — os blocos da planilha de fluxo do usuário. Ver services/empresas.js.
 const EMPRESA = { delrey: 'LMJ', minas: 'JDG', contagem: 'PV', estacao: 'TTS', tommy: '3L', site: 'SITE' };
 
+// Categorias resumidas das despesas, pelo nome do fornecedor (o LinxFaturas não tem
+// plano de contas). Mapa da planilha FECHAMENTO CAIXA; a ordem importa (1º que casar).
+// O que não casar vai para "A classificar" e o usuário escolhe na tela (fluxoCategorias).
+const CATEGORIAS = [
+  ['Empréstimos e juros', ['EMPRESTIMO', 'EMPRÉSTIMO', 'PRONAMPE', 'FINANCIAMENTO', 'JUROS', 'IOF']],
+  ['Impostos', ['SIMPLES NACIONAL', 'ICMS', 'DIFAL', 'DARF', 'DAS ', 'IMPOSTO', 'RECEITA FEDERAL', 'SEFAZ']],
+  ['Folha e encargos', ['FOLHA', 'ADIANTAMENTO', 'TRCT', 'RESCIS', 'FERIAS', 'FÉRIAS', 'INSS', 'FGTS', 'UNIMED', 'VALE TRANSPORTE', 'TRANSFACIL', 'PRO LABORE', 'PRÓ LABORE', 'PROLABORE']],
+  ['Aluguel e shopping', ['ALUGUEL', 'CONDOMINIO', 'CONDOMÍNIO', 'IPTU', 'FUNDO DE PROMO', 'SHOPPING']],
+  ['Sistemas e serviços', ['MICROVIX', 'GIVER', 'VIVO', 'TELEFONE', 'INTERNET', 'CONTABILIDADE', 'CEMIG', 'ENERGIA', 'COPASA']],
+  ['Mercadoria', ['AREZZO', 'LUXOTTICA', 'COOPERSHOES', 'OUTSIDE', 'DASS', 'TESS', 'NEW BRASIL', 'VULCANOR', 'NEW ERA', 'MOZART', 'LOTUS', 'CASIO', 'PVH', 'TOMMY', 'HURLEY', 'OAKLEY', 'BILLABONG', 'QUIKSILVER', 'VANS', 'RIP CURL', 'OSKLEN']],
+  ['Diversos', ['CARTAO DE CREDITO', 'CARTÃO DE CREDITO', 'CARTÃO DE CRÉDITO', 'MDIAS', 'ESTACIONAMENTO', 'EXTINFRAN', 'TARIFA', 'EMBALAGEN']],
+];
+const SEM_CATEGORIA = 'A classificar';
+const NOMES_CATEGORIAS = [...CATEGORIAS.map(c => c[0]), SEM_CATEGORIA];
+const normForn = s => String(s || '').trim().toUpperCase().replace(/\s+/g, ' ');
+function categoria(fornecedor, manual = {}) {
+  const n = normForn(fornecedor);
+  if (manual[n]) return manual[n];
+  for (const [cat, chaves] of CATEGORIAS) if (chaves.some(k => n.includes(k))) return cat;
+  return SEM_CATEGORIA;
+}
+
 // Lançamento manual { board, data, tipo: entrada|saida|transf, valor, desc, para } vira
 // movimentos com sinal. Transferência sai de board e entra em para; a linha de cada lado
 // leva o nome da outra empresa, como na planilha ("3L" na LMJ, "LMJ" na 3L).
@@ -212,13 +234,25 @@ function calcular({ db, faturas, taxas, saldos, boards, lancamentos = [], hoje =
 // Meses fechados = realizado; mês atual = o maior entre a projeção e o vendido até
 // ontem; meses seguintes = projeção. Despesas = faturas a pagar pelo vencimento
 // (com ou sem baixa: o Microvix não baixa boa parte do que já foi pago).
-// faturasMes: { board: { 'YYYY-MM': valor } } · saldosAno: { board: valor em 01/jan }
-function calcularMensal({ db, faturasMes, lancamentos = [], taxas, saldosAno = {}, boards, hoje = hojeBRT(), ano }) {
+// faturasMes: [{ b, m: 'YYYY-MM', f: fornecedor, v }] · saldosAno: { board: valor em 01/jan }
+// catManual: { FORNECEDOR: categoria } escolhida na tela
+function calcularMensal({ db, faturasMes, catManual = {}, lancamentos = [], taxas, saldosAno = {}, boards, hoje = hojeBRT(), ano }) {
   const [hy, hm] = hoje.split('-').map(Number);
   const mesAtual = `${hy}-${pad(hm)}`;
   const meses = Array.from({ length: 12 }, (_, i) => `${ano}-${pad(i + 1)}`);
   const status = meses.map(mk => mk < mesAtual ? 'real' : mk === mesAtual ? 'parcial' : 'prev');
   const manuais = movimentosManuais(lancamentos).filter(m => m.d.startsWith(`${ano}-`));
+  // board → categoria → { total[12], forn: { nome: [12] } }
+  const porCat = {};
+  for (const g of faturasMes) {
+    const i = +g.m.slice(5, 7) - 1;
+    if (!(i >= 0 && i < 12)) continue;
+    const nome = normForn(g.f) || '(sem nome)';
+    const c = ((porCat[g.b] ||= {})[categoria(nome, catManual)] ||= { total: Array(12).fill(0), forn: {} });
+    c.total[i] += g.v || 0;
+    (c.forn[nome] ||= Array(12).fill(0))[i] += g.v || 0;
+  }
+  const r2 = a => a.map(v => Math.round(v * 100) / 100);
   const empresas = {};
   for (const b of boards) {
     const pj = criarProjecao(db, b, hoje);
@@ -240,11 +274,15 @@ function calcularMensal({ db, faturasMes, lancamentos = [], taxas, saldosAno = {
     empresas[b] = {
       empresa: EMPRESA[b] || b.toUpperCase(), taxa, saldoIni: saldosAno[b] ?? null,
       vendas, taxaV: vendas.map(v => Math.round(v * taxa * 100) / 100),
-      despesas: meses.map(mk => Math.round((faturasMes[b]?.[mk] || 0) * 100) / 100),
+      despesas: r2(Object.values(porCat[b] || {}).reduce((t, c) => t.map((v, i) => v + c.total[i]), Array(12).fill(0))),
+      categorias: Object.fromEntries(NOMES_CATEGORIAS.filter(c => porCat[b]?.[c]).map(c => [c, {
+        total: r2(porCat[b][c].total),
+        forn: Object.fromEntries(Object.entries(porCat[b][c].forn).map(([n, a]) => [n, r2(a)])),
+      }])),
       entradas, saidas, transf,
     };
   }
-  return { ano, hoje, meses, status, boards, empresas };
+  return { ano, hoje, meses, status, boards, empresas, nomesCategorias: NOMES_CATEGORIAS };
 }
 
-module.exports = { calcular, calcularMensal, criarProjecao, diaUtil, hojeBRT, addDias, EMPRESA };
+module.exports = { calcular, calcularMensal, criarProjecao, diaUtil, hojeBRT, addDias, EMPRESA, NOMES_CATEGORIAS, normForn };

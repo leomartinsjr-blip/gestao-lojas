@@ -85,6 +85,13 @@
   #fm-tab tr.fm-acum td { background: #2d2b22; font-weight: 700; }
   #fm-tab tr.fm-sub td:first-child { padding-left: 22px; color: var(--text2); }
   #fm-tab td.prev { font-style: italic; color: #a5c8f0; }
+  #fm-tab .fm-tog { cursor: pointer; user-select: none; }
+  #fm-tab .fm-tog:hover { color: var(--blue); }
+  #fm-tab .fm-seta { display: inline-block; width: 14px; color: var(--text2); }
+  #fm-tab tr.fm-sub2 td { font-size: 11px; color: var(--text2); }
+  #fm-tab tr.fm-sub2 td:first-child { padding-left: 40px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+  #fm-tab tr.fm-semcat td:first-child { color: var(--yellow); }
+  #fm-tab select.fm-cat { font-size: 10px; padding: 1px 4px; max-width: 130px; }
   #fm-tab td.ini { color: var(--text2); }
   #fm-tab input.fm-ini { width: 110px; text-align: right; padding: 2px 6px; }
   .fm-form { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px; align-items: center; border-bottom: 1px solid var(--border); }
@@ -255,7 +262,38 @@ async function carregarMensal() {
 const soma12 = arrs => arrs.reduce((t, a) => t.map((v, i) => v + (a[i] || 0)), Array(12).fill(0));
 
 // Linhas de um bloco no mesmo desenho da planilha.
-function blocoMensal(titulo, x, ini, editIni) {
+// Despesas do Microvix abrem em categorias, e cada categoria nos fornecedores.
+const abertosM = new Set();
+function linhasDespesas(chave, x, linha) {
+  const kD = chave + '|desp', aberto = abertosM.has(kD);
+  const seta = a => `<span class="fm-seta">${a ? '▾' : '▸'}</span>`;
+  let h = linha(`<span class="fm-tog" data-k="${esc(kD)}">${seta(aberto)}(−) DESPESAS (Microvix)</span>`, x.despesas);
+  if (!aberto) return h;
+  const cats = Object.entries(x.categorias || {}).sort((a, b) => b[1].total.reduce((s, v) => s + v, 0) - a[1].total.reduce((s, v) => s + v, 0));
+  for (const [cat, c] of cats) {
+    const kC = `${chave}|cat|${cat}`, abC = abertosM.has(kC);
+    h += linha(`<span class="fm-tog" data-k="${esc(kC)}">${seta(abC)}${esc(cat)}</span>`, c.total, 'fm-sub' + (cat === 'A classificar' ? ' fm-semcat' : ''));
+    if (!abC) continue;
+    const fs = Object.entries(c.forn).sort((a, b) => b[1].reduce((s, v) => s + v, 0) - a[1].reduce((s, v) => s + v, 0));
+    for (const [f, arr] of fs)
+      h += linha(`<span title="${esc(f)}">${esc(f)}</span>`, arr, 'fm-sub2',
+        `<select class="fm-cat" data-f="${esc(f)}" title="Mudar a categoria deste fornecedor">${M.nomesCategorias.map(n => `<option${n === cat ? ' selected' : ''}>${esc(n)}</option>`).join('')}</select>`);
+  }
+  return h;
+}
+
+// Soma as categorias de várias empresas (consolidado).
+function juntaCategorias(es) {
+  const out = {};
+  for (const e of es) for (const [cat, c] of Object.entries(e.categorias || {})) {
+    const o = (out[cat] ||= { total: Array(12).fill(0), forn: {} });
+    o.total = soma12([o.total, c.total]);
+    for (const [f, a] of Object.entries(c.forn)) o.forn[f] = soma12([o.forn[f] || [], a]);
+  }
+  return out;
+}
+
+function blocoMensal(titulo, x, ini, editIni, chave) {
   const rec = soma12([x.vendas, ...Object.values(x.entradas)]);
   const desp = soma12([x.despesas, x.taxaV, ...Object.values(x.saidas)]);
   const res = rec.map((v, i) => v - desp[i]);
@@ -273,7 +311,7 @@ function blocoMensal(titulo, x, ini, editIni) {
     + linha('(+) RECEBIMENTOS', rec, 'fm-rec')
     + linha('Vendas (cartão)', x.vendas, 'fm-sub')
     + Object.entries(x.entradas).map(([k, a]) => linha(esc(k), a, 'fm-sub')).join('')
-    + linha('(−) DESPESAS (Microvix)', x.despesas)
+    + linhasDespesas(chave, x, linha)
     + linha('(−) TAXA MAQUINETA', x.taxaV, '', x.taxa != null ? (x.taxa * 100).toFixed(2).replace('.', ',') + '%' : '')
     + Object.entries(x.saidas).map(([k, a]) => linha(esc(k), a, 'fm-sub')).join('')
     + linha('(−) TOTAL DESPESAS', desp, 'fm-tot')
@@ -286,7 +324,7 @@ function renderMensal() {
   const ST = { real: 'realizado', parcial: 'parcial', prev: 'previsto' };
   let h = `<thead><tr><th></th><th>Início</th>${M.meses.map(mk => `<th>${nomeMes(mk)}</th>`).join('')}<th>Total</th></tr>
     <tr><th class="st"></th><th class="st"></th>${M.status.map(s => `<th class="st">${ST[s]}</th>`).join('')}<th class="st"></th></tr></thead><tbody>`;
-  for (const b of bs) h += blocoMensal(nomeEmp(M, b), M.empresas[b], M.empresas[b].saldoIni, b);
+  for (const b of bs) h += blocoMensal(nomeEmp(M, b), M.empresas[b], M.empresas[b].saldoIni, b, b);
   if (bs.length > 1) {
     // Consolidado: transferências entre as empresas se anulam e saem da conta.
     const es = bs.map(b => M.empresas[b]);
@@ -295,7 +333,8 @@ function renderMensal() {
     const c = { vendas: soma12(es.map(e => e.vendas)), despesas: soma12(es.map(e => e.despesas)), taxaV: soma12(es.map(e => e.taxaV)),
       entradas: outrasE.some(v => Math.abs(v) > .5) ? { 'Outras entradas': outrasE } : {},
       saidas: outrasS.some(v => Math.abs(v) > .5) ? { 'Outras saídas': outrasS } : {}, taxa: null };
-    h += blocoMensal('CONSOLIDADO (sem transferências entre empresas)', c, es.reduce((s, e) => s + (e.saldoIni || 0), 0), null);
+    c.categorias = juntaCategorias(es);
+    h += blocoMensal('CONSOLIDADO (sem transferências entre empresas)', c, es.reduce((s, e) => s + (e.saldoIni || 0), 0), null, 'cons');
   }
   $('fm-tab').innerHTML = h + '</tbody>';
   $('fm-titulo').textContent = `Fluxo de caixa ${M.ano}`;
@@ -311,7 +350,23 @@ function renderMensal() {
     : '<tbody><tr><td class="muted" style="text-align:left">Nenhum lançamento manual neste ano.</td></tr></tbody>';
 }
 
+$('fm-tab').addEventListener('click', e => {
+  const t = e.target.closest('.fm-tog'); if (!t) return;
+  abertosM.has(t.dataset.k) ? abertosM.delete(t.dataset.k) : abertosM.add(t.dataset.k);
+  renderMensal();
+});
 $('fm-tab').addEventListener('change', async e => {
+  const sel = e.target.closest('select.fm-cat');
+  if (sel) {
+    sel.disabled = true;
+    try {
+      const r = await fetch('/api/fluxo-caixa/categoria', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fornecedor: sel.dataset.f, cat: sel.value }) });
+      if (!r.ok) throw new Error((await r.json()).error || r.status);
+      await carregarMensal();
+    } catch (err) { alert('Não salvou: ' + err.message); sel.disabled = false; }
+    return;
+  }
   const inp = e.target.closest('input.fm-ini'); if (!inp) return;
   const txt = inp.value.trim();
   const valor = txt === '' ? null : parseFloat(txt.replace(/\./g, '').replace(',', '.'));

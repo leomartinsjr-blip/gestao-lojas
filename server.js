@@ -10080,24 +10080,26 @@ app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
     const ano   = parseInt(req.query.ano) || +hoje.slice(0, 4);
     const boards = Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}'));
     const [db, taxas, lancamentos] = await Promise.all([readDB(), fluxoTaxas(hoje), fluxoLancamentos()]);
-    const faturasMes = {}, saldosAno = {};
-    const soma = (b, mk, v) => { (faturasMes[b] ||= {})[mk] = (faturasMes[b][mk] || 0) + (v || 0); };
+    let faturasMes = [], catManual = {};
+    const saldosAno = {};
     if (mongoDb) {
-      const [grupos] = await Promise.all([
+      [faturasMes] = await Promise.all([
         mongoDb.collection('cpFaturas').aggregate([
           { $match: { isPagar: true, vencimento: { $gte: `${ano}-01-01`, $lte: `${ano}-12-31` } } },
-          { $group: { _id: { b: '$board', m: { $substrCP: ['$vencimento', 0, 7] } }, v: { $sum: '$valor' } } },
+          { $group: { _id: { b: '$board', m: { $substrCP: ['$vencimento', 0, 7] }, f: '$fornecedor' }, v: { $sum: '$valor' } } },
+          { $project: { _id: 0, b: '$_id.b', m: '$_id.m', f: '$_id.f', v: 1 } },
         ]).toArray(),
         mongoDb.collection('fluxoSaldosAno').find({ ano }).forEach(s => { saldosAno[s.board] = s.valor; }),
+        mongoDb.collection('fluxoCategorias').find().forEach(c => { catManual[c._id] = c.cat; }),
       ]);
-      for (const g of grupos) soma(g._id.b, g._id.m, g.v);
     } else {
       for (const f of (await readContasPagar(`${ano}-01-01`, `${ano}-12-31`)).rows)
-        if (f.isPagar) soma(f.board, f.vencimento.slice(0, 7), f.valor);
+        if (f.isPagar) faturasMes.push({ b: f.board, m: f.vencimento.slice(0, 7), f: f.fornecedor, v: f.valor });
       for (const [k, v] of Object.entries(db.fluxoSaldosAno || {})) if (k.startsWith(ano + '-')) saldosAno[k.slice(5)] = v;
+      catManual = db.fluxoCategorias || {};
     }
     res.json({
-      ...fluxoCaixa.calcularMensal({ db, faturasMes, lancamentos, taxas, saldosAno, boards, hoje, ano }),
+      ...fluxoCaixa.calcularMensal({ db, faturasMes, catManual, lancamentos, taxas, saldosAno, boards, hoje, ano }),
       labels: Object.fromEntries(boards.map(b => [b, BOARDS_LABEL[b] || b.toUpperCase()])),
       lancamentos: lancamentos.filter(l => l.data.startsWith(ano + '-')),
     });
@@ -10144,6 +10146,27 @@ app.delete('/api/fluxo-caixa/lancamento/:id', requireAdmin, async (req, res) => 
     else {
       const db = await readDB();
       db.fluxoLancamentos = (db.fluxoLancamentos || []).filter(l => !(filtro.grupo ? l.grupo === filtro.grupo : l.id === filtro.id));
+      await writeDB(db);
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/fluxo-caixa/categoria { fornecedor, cat } — categoria escolhida na tela
+// (cat vazia volta para a regra automática pelo nome)
+app.put('/api/fluxo-caixa/categoria', requireAdmin, async (req, res) => {
+  try {
+    const nome = fluxoCaixa.normForn(req.body?.fornecedor);
+    const cat = req.body?.cat || null;
+    if (!nome || (cat && !fluxoCaixa.NOMES_CATEGORIAS.includes(cat))) return res.status(400).json({ error: 'fornecedor e categoria válidos' });
+    if (mongoDb) {
+      const col = mongoDb.collection('fluxoCategorias');
+      if (cat) await col.replaceOne({ _id: nome }, { _id: nome, cat, em: new Date() }, { upsert: true });
+      else await col.deleteOne({ _id: nome });
+    } else {
+      const db = await readDB();
+      db.fluxoCategorias ||= {};
+      if (cat) db.fluxoCategorias[nome] = cat; else delete db.fluxoCategorias[nome];
       await writeDB(db);
     }
     res.json({ ok: true });
