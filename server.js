@@ -10049,7 +10049,7 @@ app.get('/api/fluxo-caixa', requireAdmin, async (req, res) => {
       [faturas] = await Promise.all([
         mongoDb.collection('cpFaturas').find(
           { isPagar: true, vencimento: { $gte: corte, $lte: ate }, baixa: { $in: ['', null] } },
-          { projection: { _id: 0, board: 1, fornecedor: 1, documento: 1, parcela: 1, vencimento: 1, baixa: 1, valor: 1, valorPago: 1, isPagar: 1 } },
+          { projection: { _id: 0, board: 1, fornecedor: 1, documento: 1, parcela: 1, vencimento: 1, baixa: 1, valor: 1, valorLiquido: 1, valorPago: 1, isPagar: 1 } },
         ).toArray(),
         mongoDb.collection('fluxoSaldos').find().forEach(s => { saldos[s._id] = { valor: s.valor, data: s.data, por: s.por }; }),
       ]);
@@ -10086,7 +10086,10 @@ app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
       [faturasMes] = await Promise.all([
         mongoDb.collection('cpFaturas').aggregate([
           { $match: { isPagar: true, vencimento: { $gte: `${ano}-01-01`, $lte: `${ano}-12-31` } } },
-          { $group: { _id: { b: '$board', m: { $substrCP: ['$vencimento', 0, 7] }, f: '$fornecedor' }, v: { $sum: '$valor' } } },
+          { $group: { _id: { b: '$board', m: { $substrCP: ['$vencimento', 0, 7] }, f: '$fornecedor' }, v: { $sum: {
+            // paga = o que saiu (com juros/multa); em aberto = líquido de desconto e abatimento
+            $cond: [{ $and: [{ $gt: ['$baixa', ''] }, { $gt: ['$valorPago', 0] }] }, '$valorPago', { $ifNull: ['$valorLiquido', '$valor'] }],
+          } } } },
           { $project: { _id: 0, b: '$_id.b', m: '$_id.m', f: '$_id.f', v: 1 } },
         ]).toArray(),
         mongoDb.collection('fluxoSaldosAno').find({ ano }).forEach(s => { saldosAno[s.board] = s.valor; }),
@@ -10094,7 +10097,8 @@ app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
       ]);
     } else {
       for (const f of (await readContasPagar(`${ano}-01-01`, `${ano}-12-31`)).rows)
-        if (f.isPagar) faturasMes.push({ b: f.board, m: f.vencimento.slice(0, 7), f: f.fornecedor, v: f.valor });
+        if (f.isPagar) faturasMes.push({ b: f.board, m: f.vencimento.slice(0, 7), f: f.fornecedor,
+          v: f.baixa && f.valorPago > 0 ? f.valorPago : (f.valorLiquido ?? f.valor) });
       for (const [k, v] of Object.entries(db.fluxoSaldosAno || {})) if (k.startsWith(ano + '-')) saldosAno[k.slice(5)] = v;
       catManual = db.fluxoCategorias || {};
     }
@@ -10102,6 +10106,7 @@ app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
       ...fluxoCaixa.calcularMensal({ db, faturasMes, catManual, lancamentos, taxas, saldosAno, boards, hoje, ano }),
       labels: Object.fromEntries(boards.map(b => [b, BOARDS_LABEL[b] || b.toUpperCase()])),
       lancamentos: lancamentos.filter(l => l.data.startsWith(ano + '-')),
+      faturasSyncedAt: (mongoDb ? await mongoDb.collection('cpMeta').findOne({ _id: 'main' }) : db.contasPagar)?.syncedAt || null,
     });
   } catch (e) { console.error('[fluxoCaixa mensal]', e); res.status(500).json({ error: e.message }); }
 });

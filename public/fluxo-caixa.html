@@ -130,6 +130,7 @@
       <option value="90" selected>90 dias</option><option value="180">180 dias</option><option value="365">12 meses</option>
     </select>
     </span>
+    <button class="fc-btn" id="fc-sync" title="Relê as faturas do Microvix agora (automático todo dia às 7h)">Sincronizar Microvix</button>
     <button class="fc-btn" id="fc-reload" title="Recalcular">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
       Atualizar
@@ -216,6 +217,7 @@ async function carregar() {
     if (!r.ok) throw new Error(j.error || r.status);
     D = j;
     preencheLojas(D);
+    mostraSync(D.faturasSyncedAt);
     $('fc-msg').style.display = 'none'; $('fc-main').style.display = '';
     render();
   } catch (e) {
@@ -249,6 +251,7 @@ async function carregarMensal() {
     if (!r.ok) throw new Error(j.error || r.status);
     M = j;
     preencheLojas(M);
+    mostraSync(M.faturasSyncedAt);
     const opts = M.boards.map(b => `<option value="${b}">${esc(nomeEmp(M, b))}</option>`).join('');
     if (!$('fl-board').options.length) { $('fl-board').innerHTML = opts; $('fl-para').innerHTML = opts; $('fl-data').value = M.hoje; }
     $('fc-msg').style.display = 'none'; $('fm-main').style.display = '';
@@ -338,7 +341,7 @@ function renderMensal() {
   }
   $('fm-tab').innerHTML = h + '</tbody>';
   $('fm-titulo').textContent = `Fluxo de caixa ${M.ano}`;
-  $('fm-note').innerHTML = `Vendas: meses fechados = realizado (lançamento diário do Dash); mês atual = projeção do Dash de Performance ou o vendido até ontem, o que for maior; meses seguintes = projeção. Taxa da maquineta = média dos últimos 3 meses da Conferência. Despesas = faturas a pagar do Microvix pelo vencimento, com ou sem baixa. Saldo acumulado parte do saldo de 01/jan digitado na coluna Início.`;
+  $('fm-note').innerHTML = `Vendas: meses fechados = realizado (lançamento diário do Dash); mês atual = projeção do Dash de Performance ou o vendido até ontem, o que for maior; meses seguintes = projeção. Taxa da maquineta = média dos últimos 3 meses da Conferência. Despesas = faturas a pagar do Microvix pelo vencimento, com ou sem baixa: as pagas pelo valor pago, as em aberto pelo valor líquido (já sem desconto e abatimento). Saldo acumulado parte do saldo de 01/jan digitado na coluna Início.`;
 
   const ls = M.lancamentos.filter(l => bs.includes(l.board) || bs.includes(l.para));
   const TIPO = { entrada: 'Entrada', saida: 'Saída', transf: 'Transferência' };
@@ -417,6 +420,25 @@ function trocaModo(m) {
 }
 $('fc-modo').addEventListener('click', e => { const b = e.target.closest('button'); if (b) trocaModo(b.dataset.m); });
 $('fc-ano').addEventListener('change', carregarMensal);
+
+// Faturas alteradas no Microvix só chegam no sync das 7h; aqui dá para puxar na hora.
+function mostraSync(iso) {
+  if (iso) $('fc-sync').title = 'Faturas lidas do Microvix em ' + new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) + ' — clique para reler agora (automático todo dia às 7h)';
+}
+$('fc-sync').addEventListener('click', async () => {
+  const btn = $('fc-sync');
+  if (!confirm('Reler todas as faturas a pagar do Microvix agora? Leva alguns minutos.')) return;
+  btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Lendo o Microvix…';
+  try {
+    const r = await fetch('/api/contas-pagar/sync', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error || r.status);
+    D = null; M = null;
+    modo === 'mes' ? await carregarMensal() : await carregar();
+    btn.textContent = 'Sincronizado ✓';
+  } catch (e) { alert('Não sincronizou: ' + e.message); btn.textContent = 'Sincronizar Microvix'; }
+  btn.disabled = false;
+});
 
 function serie() {
   const bs = lojasSel();

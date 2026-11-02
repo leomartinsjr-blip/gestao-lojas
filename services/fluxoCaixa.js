@@ -194,7 +194,8 @@ function calcular({ db, faturas, taxas, saldos, boards, lancamentos = [], hoje =
 
   for (const f of faturas) {
     if (!boards.includes(f.board) || !f.isPagar || f.baixa) continue;
-    const resta = (f.valor || 0) - (f.valorPago || 0);
+    // Valor líquido = fatura − desconto − abatimento + juros + multa (o que de fato vai sair).
+    const resta = (f.valorLiquido ?? f.valor ?? 0) - (f.valorPago || 0);
     if (resta <= 0.009 || !f.vencimento || f.vencimento < corteAtraso || f.vencimento > ate) continue;
     const atrasada = f.vencimento < hoje;
     const d = diaUtil(atrasada ? hoje : f.vencimento);
