@@ -193,7 +193,7 @@ function calcular({ db, faturas, taxas, saldos, boards, lancamentos = [], hoje =
   }
 
   for (const f of faturas) {
-    if (!boards.includes(f.board) || !f.isPagar || f.baixa) continue;
+    if (!boards.includes(f.board) || !f.isPagar || f.baixa || f.previsao === 'S') continue;
     // Valor líquido = fatura − desconto − abatimento + juros + multa (o que de fato vai sair).
     const resta = (f.valorLiquido ?? f.valor ?? 0) - (f.valorPago || 0);
     if (resta <= 0.009 || !f.vencimento || f.vencimento < corteAtraso || f.vencimento > ate) continue;
@@ -267,7 +267,7 @@ function resumoDoDia({ db, faturas, taxas, boards, hoje = hojeBRT() }) {
   }
   for (const f of faturas) {
     const e = empresas[f.board];
-    if (!e || !f.isPagar || f.baixa || !j.pagar.includes(f.vencimento)) continue;
+    if (!e || !f.isPagar || f.baixa || f.previsao === 'S' || !j.pagar.includes(f.vencimento)) continue;
     const resta = (f.valorLiquido ?? f.valor ?? 0) - (f.valorPago || 0);
     if (resta <= 0.009) continue;
     e.paga += resta;

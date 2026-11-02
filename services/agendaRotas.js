@@ -181,7 +181,7 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, bo
       const [db, taxas] = await Promise.all([readDB(), fluxoTaxas(fluxoCaixa.hojeBRT())]);
       const mongo = getDb();
       const faturas = mongo
-        ? await mongo.collection('cpFaturas').find({ isPagar: true, board: { $in: boards }, vencimento: { $in: jan.pagar } },
+        ? await mongo.collection('cpFaturas').find({ isPagar: true, previsao: { $ne: 'S' }, board: { $in: boards }, vencimento: { $in: jan.pagar } },
             { projection: { _id: 0, board: 1, fornecedor: 1, parcela: 1, vencimento: 1, baixa: 1, valor: 1, valorLiquido: 1, valorPago: 1, previsao: 1 } }).toArray()
         : [];
       const r = fluxoCaixa.resumoDoDia({ db, faturas: [], taxas, boards, hoje: data });

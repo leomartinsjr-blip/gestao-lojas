@@ -9831,7 +9831,10 @@ async function _fetchFaturas(cnpj, chave, dtIni, dtFin, onRow) {
 function _normalizeFatura(r, loja, board, hoje) {
   const get = k => String(r[k] ?? '').trim();
 
-  if (get('excluido') === '1' || get('cancelado') === '1') return null;
+  // O LinxFaturas marca com "S"/"N" (não "1"): fatura excluída ou cancelada no
+  // Microvix entrava como conta a pagar (cópias de folha, aluguel, condomínio…)
+  const sim = v => v === 'S' || v === '1';
+  if (sim(get('excluido')) || sim(get('cancelado'))) return null;
 
   const receber_pagar = get('receber_pagar').toUpperCase();
   const isPagar       = receber_pagar === 'P';
@@ -10057,7 +10060,7 @@ app.get('/api/fluxo-caixa', requireAdmin, async (req, res) => {
     if (mongoDb) {
       [faturas] = await Promise.all([
         mongoDb.collection('cpFaturas').find(
-          { isPagar: true, vencimento: { $gte: corte, $lte: ate }, baixa: { $in: ['', null] } },
+          { isPagar: true, previsao: { $ne: 'S' }, vencimento: { $gte: corte, $lte: ate }, baixa: { $in: ['', null] } },
           { projection: { _id: 0, board: 1, fornecedor: 1, documento: 1, parcela: 1, vencimento: 1, baixa: 1, valor: 1, valorLiquido: 1, valorPago: 1, isPagar: 1 } },
         ).toArray(),
         mongoDb.collection('fluxoSaldos').find().forEach(s => { saldos[s._id] = { valor: s.valor, data: s.data, por: s.por }; }),
@@ -10092,7 +10095,7 @@ app.get('/api/fluxo-caixa/dia', requireAdmin, async (req, res) => {
     const [db, taxas] = await Promise.all([readDB(), fluxoTaxas(hoje)]);
     const faturas = mongoDb
       ? await mongoDb.collection('cpFaturas').find(
-          { isPagar: true, vencimento: { $in: pagar }, baixa: { $in: ['', null] } },
+          { isPagar: true, previsao: { $ne: 'S' }, vencimento: { $in: pagar }, baixa: { $in: ['', null] } },
           { projection: { _id: 0, board: 1, fornecedor: 1, documento: 1, parcela: 1, vencimento: 1, baixa: 1, valor: 1, valorLiquido: 1, valorPago: 1, isPagar: 1 } },
         ).toArray()
       : (await readContasPagar(pagar[0], pagar[pagar.length - 1])).rows;
@@ -10122,7 +10125,7 @@ app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
     if (mongoDb) {
       [faturasMes] = await Promise.all([
         mongoDb.collection('cpFaturas').aggregate([
-          { $match: { isPagar: true, vencimento: { $gte: `${ano}-01-01`, $lte: `${ano}-12-31` } } },
+          { $match: { isPagar: true, previsao: { $ne: 'S' }, vencimento: { $gte: `${ano}-01-01`, $lte: `${ano}-12-31` } } },
           // vp = pago (com baixa, o que saiu com juros/multa); va = em aberto (líquido de desconto e abatimento)
           { $group: { _id: { b: '$board', m: { $substrCP: ['$vencimento', 0, 7] }, f: '$fornecedor' },
             vp: { $sum: { $cond: [{ $and: [{ $gt: ['$baixa', ''] }, { $gt: ['$valorPago', 0] }] }, '$valorPago', 0] } },
@@ -10135,7 +10138,7 @@ app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
       ]);
     } else {
       for (const f of (await readContasPagar(`${ano}-01-01`, `${ano}-12-31`)).rows)
-        if (f.isPagar) faturasMes.push({ b: f.board, m: f.vencimento.slice(0, 7), f: f.fornecedor,
+        if (f.isPagar && f.previsao !== 'S') faturasMes.push({ b: f.board, m: f.vencimento.slice(0, 7), f: f.fornecedor,
           vp: f.baixa ? (f.valorPago || 0) : 0, va: f.baixa ? 0 : (f.valorLiquido ?? f.valor) - (f.valorPago || 0) });
       for (const [k, v] of Object.entries(db.fluxoSaldosAno || {})) if (k.startsWith(ano + '-')) saldosAno[k.slice(5)] = v;
       catManual = db.fluxoCategorias || {};
