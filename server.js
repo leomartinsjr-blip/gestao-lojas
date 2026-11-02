@@ -9793,7 +9793,11 @@ async function _fetchFaturas(cnpj, chave, dtIni, dtFin, onRow) {
   const useCallback = typeof onRow === 'function';
   const all = useCallback ? null : [];
   let ts = 0;
-  for (let page = 0; page < 20; page++) {
+  // A Del Rey passa de 100 mil linhas desde 2020 (recebimentos de cartão contam junto):
+  // com o teto antigo de 20 páginas as faturas depois de abr/2025 nunca chegavam.
+  const MAX_PAGINAS = 200;
+  for (let page = 0; page < MAX_PAGINAS; page++) {
+    if (page === MAX_PAGINAS - 1) throw new Error(`LinxFaturas passou de ${MAX_PAGINAS} páginas — leitura incompleta`);
     const params = [
       { id: 'data_inicial', valor: dtIni },
       { id: 'data_fim',     valor: dtFin },
