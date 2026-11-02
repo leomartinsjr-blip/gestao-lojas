@@ -281,7 +281,8 @@ function resumoDoDia({ db, faturas, taxas, boards, hoje = hojeBRT() }) {
 // Meses fechados = realizado; mês atual = o maior entre a projeção e o vendido até
 // ontem; meses seguintes = projeção. Despesas = faturas a pagar pelo vencimento
 // (com ou sem baixa: o Microvix não baixa boa parte do que já foi pago).
-// faturasMes: [{ b, m: 'YYYY-MM', f: fornecedor, v }] · saldosAno: { board: valor em 01/jan }
+// faturasMes: [{ b, m: 'YYYY-MM', f: fornecedor, vp: pago, va: em aberto }]. Mês fechado conta só o
+// pago (como o Fechamento de Caixa); vencido sem baixa ali não entra. Mês atual e seguintes: pago + aberto. · saldosAno: { board: valor em 01/jan }
 // catManual: { FORNECEDOR: categoria } escolhida na tela
 function calcularMensal({ db, faturasMes, catManual = {}, lancamentos = [], taxas, saldosAno = {}, boards, hoje = hojeBRT(), ano }) {
   const [hy, hm] = hoje.split('-').map(Number);
@@ -294,6 +295,8 @@ function calcularMensal({ db, faturasMes, catManual = {}, lancamentos = [], taxa
   for (const g of faturasMes) {
     const i = +g.m.slice(5, 7) - 1;
     if (!(i >= 0 && i < 12)) continue;
+    g.v = (g.vp || 0) + (status[i] === 'real' ? 0 : Math.max(0, g.va || 0));
+    if (Math.abs(g.v) < 0.005) continue;
     const nome = normForn(g.f) || '(sem nome)';
     const c = ((porCat[g.b] ||= {})[categoria(nome, catManual)] ||= { total: Array(12).fill(0), forn: {} });
     c.total[i] += g.v || 0;

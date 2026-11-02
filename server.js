@@ -10110,11 +10110,11 @@ app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
       [faturasMes] = await Promise.all([
         mongoDb.collection('cpFaturas').aggregate([
           { $match: { isPagar: true, vencimento: { $gte: `${ano}-01-01`, $lte: `${ano}-12-31` } } },
-          { $group: { _id: { b: '$board', m: { $substrCP: ['$vencimento', 0, 7] }, f: '$fornecedor' }, v: { $sum: {
-            // paga = o que saiu (com juros/multa); em aberto = líquido de desconto e abatimento
-            $cond: [{ $and: [{ $gt: ['$baixa', ''] }, { $gt: ['$valorPago', 0] }] }, '$valorPago', { $ifNull: ['$valorLiquido', '$valor'] }],
-          } } } },
-          { $project: { _id: 0, b: '$_id.b', m: '$_id.m', f: '$_id.f', v: 1 } },
+          // vp = pago (com baixa, o que saiu com juros/multa); va = em aberto (líquido de desconto e abatimento)
+          { $group: { _id: { b: '$board', m: { $substrCP: ['$vencimento', 0, 7] }, f: '$fornecedor' },
+            vp: { $sum: { $cond: [{ $and: [{ $gt: ['$baixa', ''] }, { $gt: ['$valorPago', 0] }] }, '$valorPago', 0] } },
+            va: { $sum: { $cond: [{ $gt: ['$baixa', ''] }, 0, { $subtract: [{ $ifNull: ['$valorLiquido', '$valor'] }, { $ifNull: ['$valorPago', 0] }] }] } } } },
+          { $project: { _id: 0, b: '$_id.b', m: '$_id.m', f: '$_id.f', vp: 1, va: 1 } },
         ]).toArray(),
         mongoDb.collection('fluxoSaldosAno').find({ ano }).forEach(s => { saldosAno[s.board] = s.valor; }),
         mongoDb.collection('fluxoCategorias').find().forEach(c => { catManual[c._id] = c.cat; }),
@@ -10123,7 +10123,7 @@ app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
     } else {
       for (const f of (await readContasPagar(`${ano}-01-01`, `${ano}-12-31`)).rows)
         if (f.isPagar) faturasMes.push({ b: f.board, m: f.vencimento.slice(0, 7), f: f.fornecedor,
-          v: f.baixa && f.valorPago > 0 ? f.valorPago : (f.valorLiquido ?? f.valor) });
+          vp: f.baixa ? (f.valorPago || 0) : 0, va: f.baixa ? 0 : (f.valorLiquido ?? f.valor) - (f.valorPago || 0) });
       for (const [k, v] of Object.entries(db.fluxoSaldosAno || {})) if (k.startsWith(ano + '-')) saldosAno[k.slice(5)] = v;
       catManual = db.fluxoCategorias || {};
       for (const [k, v] of Object.entries(db.fluxoSaldosMes || {})) { const [b, mes] = k.split('|'); if (mes.startsWith(ano + '-')) (saldosMes[b] ||= {})[mes] = v; }

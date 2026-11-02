@@ -476,7 +476,7 @@ function renderMensal() {
   $('fm-resumo-panel').style.display = b ? 'none' : '';
   $('fm-cards').innerHTML = cardsMensal(sal, contas(x).res);
   $('fm-tab').innerHTML = cabecalho('R$') + '<tbody>' + blocoMensal(x, chave, sal, b || null) + '</tbody>';
-  $('fm-note').innerHTML = `Vendas: meses fechados = realizado (lançamento diário do Dash); mês atual = projeção do Dash ou o vendido até ontem, o que for maior; meses seguintes = projeção. Taxa da maquineta = média dos últimos 3 meses da Conferência. Saídas do Microvix pelo vencimento, com ou sem baixa: as pagas pelo valor pago, as em aberto pelo valor líquido (sem desconto e abatimento).
+  $('fm-note').innerHTML = `Vendas: meses fechados = realizado (lançamento diário do Dash); mês atual = projeção do Dash ou o vendido até ontem, o que for maior; meses seguintes = projeção. Taxa da maquineta = média dos últimos 3 meses da Conferência. Saídas do Microvix pelo vencimento: nos meses fechados só o que foi pago (com baixa, como no Fechamento de Caixa); no mês atual e nos seguintes também o que está em aberto, pelo valor líquido (sem desconto e abatimento).
     ${b ? 'Saldo: digite o de 01/jan no início e, em cada mês que fechou, o saldo real que havia nas contas no dia 01 seguinte — o acumulado passa a partir dele.' : 'Saldo do consolidado = soma das empresas (abra uma empresa para informar os saldos reais).'}`;
 
   const bs = b ? [b] : M.boards;
