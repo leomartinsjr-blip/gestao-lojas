@@ -10066,6 +10066,26 @@ app.get('/api/fluxo-caixa', requireAdmin, async (req, res) => {
   } catch (e) { console.error('[fluxoCaixa]', e); res.status(500).json({ error: e.message }); }
 });
 
+// GET /api/fluxo-caixa/dia — card do painel: a pagar × venda a receber no próximo dia útil
+app.get('/api/fluxo-caixa/dia', requireAdmin, async (req, res) => {
+  try {
+    const hoje = fluxoCaixa.hojeBRT();
+    const boards = Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}'));
+    const { pagar } = fluxoCaixa.janelaDoDia(hoje);
+    const [db, taxas] = await Promise.all([readDB(), fluxoTaxas(hoje)]);
+    const faturas = mongoDb
+      ? await mongoDb.collection('cpFaturas').find(
+          { isPagar: true, vencimento: { $in: pagar }, baixa: { $in: ['', null] } },
+          { projection: { _id: 0, board: 1, fornecedor: 1, documento: 1, parcela: 1, vencimento: 1, baixa: 1, valor: 1, valorLiquido: 1, valorPago: 1, isPagar: 1 } },
+        ).toArray()
+      : (await readContasPagar(pagar[0], pagar[pagar.length - 1])).rows;
+    res.json({
+      ...fluxoCaixa.resumoDoDia({ db, faturas, taxas, boards, hoje }),
+      labels: Object.fromEntries(boards.map(b => [b, BOARDS_LABEL[b] || b.toUpperCase()])),
+    });
+  } catch (e) { console.error('[fluxoCaixa dia]', e); res.status(500).json({ error: e.message }); }
+});
+
 // Lançamentos manuais (aporte, empréstimo, financiamento, transferência entre empresas)
 // e saldo de 01/jan por empresa — o que o Microvix não tem.
 async function fluxoLancamentos() {

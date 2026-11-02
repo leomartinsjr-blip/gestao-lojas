@@ -231,6 +231,52 @@ function calcular({ db, faturas, taxas, saldos, boards, lancamentos = [], hoje =
   return { hoje, ate, boards, saldos, projecao, linhas, contas, diasAtraso: DIAS_ATRASO_CONSIDERADO };
 }
 
+// ── Resumo do dia (card do painel) ──────────────────────────────────────────
+// Próximo dia útil (no fim de semana já é a segunda). Paga o que vence desde o
+// dia seguinte ao último dia útil até ele (segunda = sáb + dom + seg) e recebe a
+// venda dos dias desde o último dia útil (segunda = sex + sáb + dom).
+function janelaDoDia(hoje = hojeBRT()) {
+  const alvo = diaUtil(hoje);
+  let ant = addDias(alvo, -1);
+  while ([0, 6].includes(new Date(ant + 'T12:00:00Z').getUTCDay())) ant = addDias(ant, -1);
+  const pagar = [], venda = [];
+  for (let d = addDias(ant, 1); d <= alvo; d = addDias(d, 1)) pagar.push(d);
+  for (let d = ant; d < alvo; d = addDias(d, 1)) venda.push(d);
+  return { alvo, pagar, venda };
+}
+
+function vendaNosDias(db, board, dias) {
+  const emps = (db.employees || []).filter(e => e.board === board && e.isVendedor !== false);
+  const out = {};
+  for (const d of dias) {
+    let v = 0;
+    for (const e of emps) v += db.vsales?.[`${d.slice(0, 7)}-${board}-${e.id}`]?.entries?.[d]?.value || 0;
+    out[d] = Math.round(v * 100) / 100;
+  }
+  return out;
+}
+
+function resumoDoDia({ db, faturas, taxas, boards, hoje = hojeBRT() }) {
+  const j = janelaDoDia(hoje);
+  const empresas = {};
+  for (const b of boards) {
+    const vendas = vendaNosDias(db, b, j.venda);
+    const venda = Object.values(vendas).reduce((s, v) => s + v, 0);
+    const taxa = taxas[b] ?? 0.025;
+    empresas[b] = { empresa: EMPRESA[b] || b.toUpperCase(), vendas, venda, taxa, entra: Math.round(venda * (1 - taxa) * 100) / 100, paga: 0, contas: [] };
+  }
+  for (const f of faturas) {
+    const e = empresas[f.board];
+    if (!e || !f.isPagar || f.baixa || !j.pagar.includes(f.vencimento)) continue;
+    const resta = (f.valorLiquido ?? f.valor ?? 0) - (f.valorPago || 0);
+    if (resta <= 0.009) continue;
+    e.paga += resta;
+    e.contas.push({ venc: f.vencimento, forn: f.fornecedor, doc: f.documento, parc: f.parcela, v: Math.round(resta * 100) / 100 });
+  }
+  for (const e of Object.values(empresas)) { e.paga = Math.round(e.paga * 100) / 100; e.contas.sort((a, b) => b.v - a.v); }
+  return { hoje, ...j, boards, empresas };
+}
+
 // ── Quadro mensal por empresa (formato da planilha FLUXO CAIXA do usuário) ──
 // Meses fechados = realizado; mês atual = o maior entre a projeção e o vendido até
 // ontem; meses seguintes = projeção. Despesas = faturas a pagar pelo vencimento
@@ -286,4 +332,4 @@ function calcularMensal({ db, faturasMes, catManual = {}, lancamentos = [], taxa
   return { ano, hoje, meses, status, boards, empresas, nomesCategorias: NOMES_CATEGORIAS };
 }
 
-module.exports = { calcular, calcularMensal, criarProjecao, diaUtil, hojeBRT, addDias, EMPRESA, NOMES_CATEGORIAS, normForn };
+module.exports = { calcular, calcularMensal, resumoDoDia, janelaDoDia, criarProjecao, diaUtil, hojeBRT, addDias, EMPRESA, NOMES_CATEGORIAS, normForn };

@@ -1565,6 +1565,7 @@ function renderDashboard() {
   const laneAcao     = _lane('02', 'Ação',     2);
   const midCol       = _slotEm(laneAcao);      // Pendências + Reunião
   const caixaCol     = _slotEm(laneAcao);      // Conferência + NF
+  const pagDiaCol    = userIsAdmin(S.user) ? _slotEm(laneAcao) : null; // A pagar × a receber
 
   const lanePessoas  = _lane('03', 'Pessoas',  3);
   const anivCol      = _slotEm(lanePessoas);
@@ -2181,6 +2182,9 @@ function renderDashboard() {
   // ── CARD: CRM — cadastro nas vendas e campanhas (resumo do /crm) ─────────
   renderCrmCard(crmCol);
 
+  // ── CARD: Pagamentos do dia — a pagar × venda a receber, por empresa ─────
+  if (pagDiaCol) renderPagamentosDiaCard(pagDiaCol);
+
   // ── CARD: Pendências ─────────────────────────────────────────────────────
   renderPendenciasCard(midCol);
 
@@ -2372,6 +2376,80 @@ function renderMargemCard(col) {
 // guardados por mês porque o painel se redesenha a cada clique.
 const CRM_META = 0.9, CRM_PISO = 0.8;
 let _crmResumo = { chave: null, dados: null };
+// Próximo dia útil: o que vence (faturas sem baixa do Microvix) e o que entra
+// (venda do dia útil anterior, já sem a taxa de cartão). Na segunda junta os
+// pagamentos de sáb–seg e a venda de sex–dom. Mesma regra de /fluxo-caixa.
+let _pagDia = null; // { em, dados } — 5 min de cache
+function renderPagamentosDiaCard(col) {
+  const card = document.createElement('div');
+  card.className = 'main-card';
+  card.dataset.cardId = 'card-pagamentos-dia';
+  card.innerHTML = `
+    <div class="main-card-hdr">
+      <span class="main-card-title">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+        Pagamentos do dia
+      </span>
+      <span class="main-card-sub" id="pagDiaSub"></span>
+    </div>
+    <div class="main-card-body" id="pagDiaBody"></div>`;
+  col.appendChild(card);
+  const body = card.querySelector('#pagDiaBody');
+  const DOW = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+  const dm = d => d.slice(8, 10) + '/' + d.slice(5, 7);
+  const dow = d => DOW[new Date(d + 'T12:00:00Z').getUTCDay()];
+  const faixa = ds => ds.length === 1 ? `${dow(ds[0])} ${dm(ds[0])}` : `${dow(ds[0]).slice(0, 3)} a ${dow(ds[ds.length - 1]).slice(0, 3)} (${dm(ds[0])}–${dm(ds[ds.length - 1])})`;
+  const brl = v => (v < 0 ? '−' : '') + 'R$ ' + Math.abs(Math.round(v)).toLocaleString('pt-BR');
+  const brl2 = v => 'R$ ' + v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const abertos = new Set();
+
+  const desenhar = d => {
+    card.querySelector('#pagDiaSub').textContent = `${dow(d.alvo)} ${dm(d.alvo)}`;
+    const linhas = d.boards.map(b => ({ b, ...d.empresas[b] })).filter(e => e.venda || e.paga);
+    const tot = linhas.reduce((t, e) => ({ venda: t.venda + e.venda, entra: t.entra + e.entra, paga: t.paga + e.paga }), { venda: 0, entra: 0, paga: 0 });
+    const linha = e => {
+      const saldo = e.entra - e.paga, ab = abertos.has(e.b);
+      let h = `<tr class="dash-row" data-b="${e.b}" style="cursor:${e.contas.length ? 'pointer' : 'default'}">
+        <td class="dash-td dash-td-name"><span class="dash-store-dot" style="display:inline-block;background:${BOARDS[e.b]?.color || 'var(--muted)'}"></span> ${esc(e.empresa)} <span style="color:var(--muted);font-size:11px">${esc(d.labels[e.b])}</span>${e.contas.length ? ` <span style="color:var(--muted);font-size:10px">${ab ? '▾' : '▸'} ${e.contas.length}</span>` : ''}</td>
+        <td class="dash-td dash-td-num kpi-pos" title="venda ${brl2(e.venda)} − taxa ${(e.taxa * 100).toFixed(2).replace('.', ',')}%">${e.entra ? brl(e.entra) : '—'}</td>
+        <td class="dash-td dash-td-num ${e.paga ? 'kpi-neg' : ''}">${e.paga ? brl(e.paga) : '—'}</td>
+        <td class="dash-td dash-td-num ${saldo < 0 ? 'kpi-neg' : 'kpi-pos'}"><strong>${brl(saldo)}</strong></td></tr>`;
+      if (ab) h += e.contas.map(c => `<tr class="dash-row"><td class="dash-td" colspan="2" style="padding-left:26px;font-size:11px;color:var(--muted)">${esc(c.forn)}${c.parc ? ' · ' + esc(c.parc) : ''}${d.pagar.length > 1 ? ' · vence ' + dm(c.venc) : ''}</td><td class="dash-td dash-td-num" style="font-size:11px">${brl2(c.v)}</td><td></td></tr>`).join('');
+      return h;
+    };
+    body.innerHTML = linhas.length ? `
+      <table class="dash-table">
+        <thead><tr class="dash-thead-tr">
+          <th class="dash-th">Empresa</th>
+          <th class="dash-th" title="Venda de ${faixa(d.venda)}, já sem a taxa média de cartão">Entra</th>
+          <th class="dash-th" title="Faturas sem baixa no Microvix que vencem em ${faixa(d.pagar)}">A pagar</th>
+          <th class="dash-th">Saldo</th>
+        </tr></thead>
+        <tbody>${linhas.map(linha).join('')}
+          <tr class="dash-total-row"><td class="dash-td"><strong>Total</strong></td>
+            <td class="dash-td dash-td-num kpi-pos"><strong>${brl(tot.entra)}</strong></td>
+            <td class="dash-td dash-td-num kpi-neg"><strong>${brl(tot.paga)}</strong></td>
+            <td class="dash-td dash-td-num ${tot.entra - tot.paga < 0 ? 'kpi-neg' : 'kpi-pos'}"><strong>${brl(tot.entra - tot.paga)}</strong></td></tr>
+        </tbody>
+      </table>
+      <div class="margem-nota">Entra: venda de ${faixa(d.venda)} (${brl(tot.venda)} bruto) · A pagar: vencimentos de ${faixa(d.pagar)} · clique na empresa para ver as contas · <a href="/fluxo-caixa" target="_blank" style="color:var(--accent)">abrir o fluxo →</a></div>`
+      : '<div class="folga-mini-empty">Nada a pagar nem a receber.</div>';
+  };
+
+  body.addEventListener('click', e => {
+    const tr = e.target.closest('tr[data-b]'); if (!tr || !_pagDia) return;
+    abertos.has(tr.dataset.b) ? abertos.delete(tr.dataset.b) : abertos.add(tr.dataset.b);
+    desenhar(_pagDia.dados);
+  });
+
+  if (_pagDia && Date.now() - _pagDia.em < 5 * 60e3) return desenhar(_pagDia.dados);
+  body.innerHTML = '<div class="folga-mini-empty">Carregando…</div>';
+  apiFetch('GET', '/api/fluxo-caixa/dia')
+    .then(d => { _pagDia = { em: Date.now(), dados: d }; desenhar(d); })
+    .catch(() => { body.innerHTML = '<div class="folga-mini-empty">Indisponível agora</div>'; });
+}
+
 function renderCrmCard(col) {
   const MESES = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
   const card = document.createElement('div');
