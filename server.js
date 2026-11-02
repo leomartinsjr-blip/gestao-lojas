@@ -10043,7 +10043,7 @@ app.get('/api/fluxo-caixa', requireAdmin, async (req, res) => {
     const boards = Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}'));
     const ate   = fluxoCaixa.addDias(hoje, dias);
     const corte = fluxoCaixa.addDias(hoje, -95);
-    const [db, taxas] = await Promise.all([readDB(), fluxoTaxas(hoje)]);
+    const [db, taxas, lancamentos] = await Promise.all([readDB(), fluxoTaxas(hoje), fluxoLancamentos()]);
     let faturas, saldos = {};
     if (mongoDb) {
       [faturas] = await Promise.all([
@@ -10059,11 +10059,115 @@ app.get('/api/fluxo-caixa', requireAdmin, async (req, res) => {
     }
     const meta = mongoDb ? await mongoDb.collection('cpMeta').findOne({ _id: 'main' }) : db.contasPagar;
     res.json({
-      ...fluxoCaixa.calcular({ db, faturas, taxas, saldos, boards, hoje, dias }),
+      ...fluxoCaixa.calcular({ db, faturas, taxas, saldos, boards, lancamentos, hoje, dias }),
       labels: Object.fromEntries(boards.map(b => [b, BOARDS_LABEL[b] || b.toUpperCase()])),
       faturasSyncedAt: meta?.syncedAt || null,
     });
   } catch (e) { console.error('[fluxoCaixa]', e); res.status(500).json({ error: e.message }); }
+});
+
+// Lançamentos manuais (aporte, empréstimo, financiamento, transferência entre empresas)
+// e saldo de 01/jan por empresa — o que o Microvix não tem.
+async function fluxoLancamentos() {
+  if (mongoDb) return mongoDb.collection('fluxoLancamentos').find({}, { projection: { _id: 0 } }).sort({ data: 1 }).toArray();
+  return ((await readDB()).fluxoLancamentos || []).slice().sort((a, b) => a.data.localeCompare(b.data));
+}
+
+// GET /api/fluxo-caixa/mensal?ano= — quadro mês a mês por empresa
+app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
+  try {
+    const hoje  = fluxoCaixa.hojeBRT();
+    const ano   = parseInt(req.query.ano) || +hoje.slice(0, 4);
+    const boards = Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}'));
+    const [db, taxas, lancamentos] = await Promise.all([readDB(), fluxoTaxas(hoje), fluxoLancamentos()]);
+    const faturasMes = {}, saldosAno = {};
+    const soma = (b, mk, v) => { (faturasMes[b] ||= {})[mk] = (faturasMes[b][mk] || 0) + (v || 0); };
+    if (mongoDb) {
+      const [grupos] = await Promise.all([
+        mongoDb.collection('cpFaturas').aggregate([
+          { $match: { isPagar: true, vencimento: { $gte: `${ano}-01-01`, $lte: `${ano}-12-31` } } },
+          { $group: { _id: { b: '$board', m: { $substrCP: ['$vencimento', 0, 7] } }, v: { $sum: '$valor' } } },
+        ]).toArray(),
+        mongoDb.collection('fluxoSaldosAno').find({ ano }).forEach(s => { saldosAno[s.board] = s.valor; }),
+      ]);
+      for (const g of grupos) soma(g._id.b, g._id.m, g.v);
+    } else {
+      for (const f of (await readContasPagar(`${ano}-01-01`, `${ano}-12-31`)).rows)
+        if (f.isPagar) soma(f.board, f.vencimento.slice(0, 7), f.valor);
+      for (const [k, v] of Object.entries(db.fluxoSaldosAno || {})) if (k.startsWith(ano + '-')) saldosAno[k.slice(5)] = v;
+    }
+    res.json({
+      ...fluxoCaixa.calcularMensal({ db, faturasMes, lancamentos, taxas, saldosAno, boards, hoje, ano }),
+      labels: Object.fromEntries(boards.map(b => [b, BOARDS_LABEL[b] || b.toUpperCase()])),
+      lancamentos: lancamentos.filter(l => l.data.startsWith(ano + '-')),
+    });
+  } catch (e) { console.error('[fluxoCaixa mensal]', e); res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/fluxo-caixa/lancamento { board, data, tipo, valor, desc, para, repetir }
+// repetir = nº de meses (parcelas mensais no mesmo dia).
+app.post('/api/fluxo-caixa/lancamento', requireAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const boards = Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}'));
+    const valor = Math.abs(Number(b.valor));
+    if (!boards.includes(b.board) || !/^\d{4}-\d{2}-\d{2}$/.test(b.data || '') || !Number.isFinite(valor) || !valor
+      || !['entrada', 'saida', 'transf'].includes(b.tipo))
+      return res.status(400).json({ error: 'empresa, data, tipo e valor obrigatórios' });
+    if (b.tipo === 'transf' && (!boards.includes(b.para) || b.para === b.board))
+      return res.status(400).json({ error: 'escolha a empresa que recebe a transferência' });
+    const n = Math.min(Math.max(parseInt(b.repetir) || 1, 1), 120);
+    const grupo = n > 1 ? crypto.randomUUID() : null;
+    const por = req.session.user?.name || req.session.user?.login || '';
+    const [y, m, d] = b.data.split('-').map(Number);
+    const docs = Array.from({ length: n }, (_, i) => {
+      const ult = new Date(Date.UTC(y, m - 1 + i + 1, 0)).getUTCDate();
+      const dt = new Date(Date.UTC(y, m - 1 + i, Math.min(d, ult))).toISOString().slice(0, 10);
+      return { id: crypto.randomUUID(), board: b.board, data: dt, tipo: b.tipo, valor: Math.round(valor * 100) / 100,
+        desc: String(b.desc || '').trim().slice(0, 80), para: b.tipo === 'transf' ? b.para : null,
+        grupo, parc: n > 1 ? `${i + 1}/${n}` : null, por, em: new Date() };
+    });
+    if (mongoDb) await mongoDb.collection('fluxoLancamentos').insertMany(docs);
+    else { const db = await readDB(); (db.fluxoLancamentos ||= []).push(...docs); await writeDB(db); }
+    res.json({ ok: true, n });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/fluxo-caixa/lancamento/:id[?grupo=1] — grupo=1 apaga todas as parcelas
+app.delete('/api/fluxo-caixa/lancamento/:id', requireAdmin, async (req, res) => {
+  try {
+    const todos = await fluxoLancamentos();
+    const alvo = todos.find(l => l.id === req.params.id);
+    if (!alvo) return res.status(404).json({ error: 'não encontrado' });
+    const filtro = req.query.grupo === '1' && alvo.grupo ? { grupo: alvo.grupo } : { id: alvo.id };
+    if (mongoDb) await mongoDb.collection('fluxoLancamentos').deleteMany(filtro);
+    else {
+      const db = await readDB();
+      db.fluxoLancamentos = (db.fluxoLancamentos || []).filter(l => !(filtro.grupo ? l.grupo === filtro.grupo : l.id === filtro.id));
+      await writeDB(db);
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/fluxo-caixa/saldo-ano { board, ano, valor } — saldo em 01/jan, início do saldo acumulado
+app.put('/api/fluxo-caixa/saldo-ano', requireAdmin, async (req, res) => {
+  try {
+    const { board } = req.body || {};
+    const ano = parseInt(req.body?.ano), valor = req.body?.valor === null ? null : Number(req.body?.valor);
+    if (!board || !ano || (valor !== null && !Number.isFinite(valor))) return res.status(400).json({ error: 'board, ano e valor obrigatórios' });
+    if (mongoDb) {
+      const col = mongoDb.collection('fluxoSaldosAno');
+      if (valor === null) await col.deleteOne({ _id: `${ano}-${board}` });
+      else await col.replaceOne({ _id: `${ano}-${board}` }, { _id: `${ano}-${board}`, ano, board, valor, em: new Date() }, { upsert: true });
+    } else {
+      const db = await readDB();
+      db.fluxoSaldosAno ||= {};
+      if (valor === null) delete db.fluxoSaldosAno[`${ano}-${board}`]; else db.fluxoSaldosAno[`${ano}-${board}`] = valor;
+      await writeDB(db);
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 // PUT /api/fluxo-caixa/saldo — saldo em conta informado à mão { board, valor, data }

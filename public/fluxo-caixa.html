@@ -70,6 +70,27 @@
   .fc-saldo-item input[type=text] { flex: 1 1 110px; text-align: right; }
   .fc-chk { display: inline-flex; align-items: center; gap: 5px; color: var(--text2); font-size: 12px; cursor: pointer; white-space: nowrap; }
   tr.fora td { opacity: .5; }
+  .tag-man { background: rgba(88,166,255,.15); color: var(--blue); }
+  .so-dia, .so-mes { display: contents; }
+  body.modo-mes .so-dia, body.modo-dia .so-mes { display: none; }
+  /* Quadro mensal no formato da planilha */
+  #fm-tab th, #fm-tab td { padding: 5px 9px; font-size: 12px; }
+  #fm-tab th.st { font-size: 9px; font-weight: 500; text-transform: none; padding-top: 0; }
+  #fm-tab td:first-child, #fm-tab th:first-child { position: sticky; left: 0; background: var(--bg2); z-index: 1; min-width: 190px; }
+  #fm-tab tr.fm-emp td:first-child { white-space: nowrap; overflow: visible; }
+  #fm-tab tr.fm-emp td { background: var(--bg3); font-weight: 700; font-size: 13px; padding-top: 12px; border-top: 2px solid var(--border2); }
+  #fm-tab tr.fm-rec td { background: #192625; font-weight: 600; }
+  #fm-tab tr.fm-tot td { background: #261f25; font-weight: 600; }
+  #fm-tab tr.fm-res td { background: #242522; }
+  #fm-tab tr.fm-acum td { background: #2d2b22; font-weight: 700; }
+  #fm-tab tr.fm-sub td:first-child { padding-left: 22px; color: var(--text2); }
+  #fm-tab td.prev { font-style: italic; color: #a5c8f0; }
+  #fm-tab td.ini { color: var(--text2); }
+  #fm-tab input.fm-ini { width: 110px; text-align: right; padding: 2px 6px; }
+  .fm-form { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px; align-items: center; border-bottom: 1px solid var(--border); }
+  .fm-form input[type=number] { width: 60px; background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 4px 8px; font-size: 12px; }
+  .fm-x { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 15px; }
+  .fm-x:hover { color: var(--red); }
   #fc-msg { padding: 40px 16px; text-align: center; color: var(--text2); }
   #fc-err { display: none; background: rgba(248,81,73,.1); border: 1px solid var(--red); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; color: var(--red); }
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
@@ -81,7 +102,7 @@
   }
 </style>
 </head>
-<body>
+<body class="modo-mes">
 <div id="fc-topbar">
   <button class="fc-btn" onclick="location.href='/'">
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
@@ -91,13 +112,17 @@
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
     Fluxo de Caixa
   </div>
+  <div class="fc-seg" id="fc-modo"><button data-m="mes" class="active">Mensal</button><button data-m="dia">Diário</button></div>
   <div class="fc-filters">
-    <select id="fc-loja" title="Loja"><option value="">Consolidado</option></select>
+    <select id="fc-loja" title="Empresa"><option value="">Consolidado</option></select>
+    <span class="so-mes"><select id="fc-ano" title="Ano"></select></span>
+    <span class="so-dia">
     <label class="fc-chk" title="Faturas vencidas sem baixa no Microvix — quase sempre já pagas (folha, empréstimo, impostos)"><input type="checkbox" id="fc-atraso"> Incluir vencidas sem baixa</label>
     <select id="fc-dias" title="Horizonte">
       <option value="30">30 dias</option><option value="60">60 dias</option>
       <option value="90" selected>90 dias</option><option value="180">180 dias</option><option value="365">12 meses</option>
     </select>
+    </span>
     <button class="fc-btn" id="fc-reload" title="Recalcular">
       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
       Atualizar
@@ -108,6 +133,28 @@
 <div id="fc-body">
   <div id="fc-err"></div>
   <div id="fc-msg"><span class="spinner"></span> Calculando a previsão…</div>
+  <div id="fm-main" style="display:none">
+    <div class="fc-panel">
+      <div class="fc-panel-hd"><h2 id="fm-titulo">Fluxo de caixa mensal</h2>
+        <span class="muted"><i style="color:#a5c8f0">itálico</i> = previsto</span></div>
+      <div class="fc-scroll"><table id="fm-tab"></table></div>
+      <div class="fc-panel-note" id="fm-note"></div>
+    </div>
+    <div class="fc-panel">
+      <div class="fc-panel-hd"><h2>Lançamentos manuais</h2><span class="muted">aporte, empréstimo, financiamento, transferência entre empresas — o que não está no Microvix</span></div>
+      <div class="fm-form">
+        <select id="fl-board" title="Empresa"></select>
+        <select id="fl-tipo"><option value="entrada">Entrada</option><option value="saida">Saída</option><option value="transf">Transferência para…</option></select>
+        <select id="fl-para" title="Empresa que recebe" style="display:none"></select>
+        <input type="date" id="fl-data">
+        <input type="text" id="fl-valor" inputmode="decimal" placeholder="Valor" style="width:110px;text-align:right">
+        <input type="text" id="fl-desc" placeholder="Descrição (ex.: APORTE JR, PRONAMPE)" style="flex:1 1 200px">
+        <label class="fc-chk" title="Repete todo mês no mesmo dia (parcelas)">repetir <input type="number" id="fl-rep" min="1" max="120" value="1"> mês(es)</label>
+        <button class="fc-btn" id="fl-add">Adicionar</button>
+      </div>
+      <div class="fc-scroll"><table id="fl-tab"></table></div>
+    </div>
+  </div>
   <div id="fc-main" style="display:none">
     <div id="fc-cards"></div>
 
@@ -161,9 +208,7 @@ async function carregar() {
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || r.status);
     D = j;
-    const sel = $('fc-loja'), atual = sel.value;
-    sel.innerHTML = '<option value="">Consolidado</option>' + D.boards.map(b => `<option value="${b}">${esc(D.labels[b])}</option>`).join('');
-    sel.value = atual;
+    preencheLojas(D);
     $('fc-msg').style.display = 'none'; $('fc-main').style.display = '';
     render();
   } catch (e) {
@@ -173,6 +218,150 @@ async function carregar() {
 }
 
 const lojasSel = () => $('fc-loja').value ? [$('fc-loja').value] : D.boards;
+
+const EMP = { delrey: 'LMJ', minas: 'JDG', contagem: 'PV', estacao: 'TTS', tommy: '3L', site: 'SITE' };
+const nomeEmp = (X, b) => `${EMP[b] || b.toUpperCase()} · ${X.labels[b]}`;
+function preencheLojas(X) {
+  const sel = $('fc-loja'), atual = sel.value;
+  if (sel.options.length > 1) return;
+  sel.innerHTML = '<option value="">Consolidado</option>' + X.boards.map(b => `<option value="${b}">${esc(nomeEmp(X, b))}</option>`).join('');
+  sel.value = atual;
+}
+
+// ── Quadro mensal por empresa ───────────────────────────────────────────────
+let M = null, modo = 'mes';
+const anoAtual = new Date(Date.now() - 3 * 3600e3).getUTCFullYear();
+$('fc-ano').innerHTML = [anoAtual - 1, anoAtual].map(a => `<option${a === anoAtual ? ' selected' : ''}>${a}</option>`).join('');
+
+async function carregarMensal() {
+  $('fc-msg').style.display = ''; $('fc-err').style.display = 'none';
+  try {
+    const r = await fetch('/api/fluxo-caixa/mensal?ano=' + $('fc-ano').value);
+    if (r.status === 401 || r.status === 403) { location.href = '/'; return; }
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.status);
+    M = j;
+    preencheLojas(M);
+    const opts = M.boards.map(b => `<option value="${b}">${esc(nomeEmp(M, b))}</option>`).join('');
+    if (!$('fl-board').options.length) { $('fl-board').innerHTML = opts; $('fl-para').innerHTML = opts; $('fl-data').value = M.hoje; }
+    $('fc-msg').style.display = 'none'; $('fm-main').style.display = '';
+    renderMensal();
+  } catch (e) {
+    $('fc-msg').style.display = 'none';
+    $('fc-err').style.display = ''; $('fc-err').textContent = 'Erro ao calcular: ' + e.message;
+  }
+}
+
+const soma12 = arrs => arrs.reduce((t, a) => t.map((v, i) => v + (a[i] || 0)), Array(12).fill(0));
+
+// Linhas de um bloco no mesmo desenho da planilha.
+function blocoMensal(titulo, x, ini, editIni) {
+  const rec = soma12([x.vendas, ...Object.values(x.entradas)]);
+  const desp = soma12([x.despesas, x.taxaV, ...Object.values(x.saidas)]);
+  const res = rec.map((v, i) => v - desp[i]);
+  let acc = ini || 0;
+  const acum = res.map(v => (acc += v));
+  const total = a => a.reduce((s, v) => s + v, 0);
+  const cel = (v, i, cls = '') => `<td class="${cls}${M.status[i] !== 'real' ? ' prev' : ''}">${v ? R(v) : '<span class="muted">—</span>'}</td>`;
+  const linha = (rot, arr, cls = '', iniCel = '', corCel = null, tot = true) =>
+    `<tr class="${cls}"><td>${rot}</td><td class="ini">${iniCel}</td>${arr.map((v, i) => cel(v, i, corCel ? corCel(v) : '')).join('')}<td>${tot ? R(total(arr)) : ''}</td></tr>`;
+  const sinal = v => v < 0 ? 'neg' : 'pos';
+  const iniTxt = editIni
+    ? `<input type="text" class="fm-ini" data-b="${editIni}" inputmode="decimal" placeholder="saldo 01/jan" value="${ini != null ? ini.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : ''}">`
+    : (ini ? R(ini) : '');
+  return `<tr class="fm-emp"><td>${esc(titulo)}</td><td colspan="14"></td></tr>`
+    + linha('(+) RECEBIMENTOS', rec, 'fm-rec')
+    + linha('Vendas (cartão)', x.vendas, 'fm-sub')
+    + Object.entries(x.entradas).map(([k, a]) => linha(esc(k), a, 'fm-sub')).join('')
+    + linha('(−) DESPESAS (Microvix)', x.despesas)
+    + linha('(−) TAXA MAQUINETA', x.taxaV, '', x.taxa != null ? (x.taxa * 100).toFixed(2).replace('.', ',') + '%' : '')
+    + Object.entries(x.saidas).map(([k, a]) => linha(esc(k), a, 'fm-sub')).join('')
+    + linha('(−) TOTAL DESPESAS', desp, 'fm-tot')
+    + linha('(=) Resultado mês', res, 'fm-res', '', sinal)
+    + linha('(=) Saldo acumulado', acum, 'fm-acum', iniTxt, sinal, false);
+}
+
+function renderMensal() {
+  const bs = $('fc-loja').value ? [$('fc-loja').value] : M.boards;
+  const ST = { real: 'realizado', parcial: 'parcial', prev: 'previsto' };
+  let h = `<thead><tr><th></th><th>Início</th>${M.meses.map(mk => `<th>${nomeMes(mk)}</th>`).join('')}<th>Total</th></tr>
+    <tr><th class="st"></th><th class="st"></th>${M.status.map(s => `<th class="st">${ST[s]}</th>`).join('')}<th class="st"></th></tr></thead><tbody>`;
+  for (const b of bs) h += blocoMensal(nomeEmp(M, b), M.empresas[b], M.empresas[b].saldoIni, b);
+  if (bs.length > 1) {
+    // Consolidado: transferências entre as empresas se anulam e saem da conta.
+    const es = bs.map(b => M.empresas[b]);
+    const outrasE = soma12(es.flatMap(e => [...Object.values(e.entradas), e.transf.entra.map(v => -v)]));
+    const outrasS = soma12(es.flatMap(e => [...Object.values(e.saidas), e.transf.sai.map(v => -v)]));
+    const c = { vendas: soma12(es.map(e => e.vendas)), despesas: soma12(es.map(e => e.despesas)), taxaV: soma12(es.map(e => e.taxaV)),
+      entradas: outrasE.some(v => Math.abs(v) > .5) ? { 'Outras entradas': outrasE } : {},
+      saidas: outrasS.some(v => Math.abs(v) > .5) ? { 'Outras saídas': outrasS } : {}, taxa: null };
+    h += blocoMensal('CONSOLIDADO (sem transferências entre empresas)', c, es.reduce((s, e) => s + (e.saldoIni || 0), 0), null);
+  }
+  $('fm-tab').innerHTML = h + '</tbody>';
+  $('fm-titulo').textContent = `Fluxo de caixa ${M.ano}`;
+  $('fm-note').innerHTML = `Vendas: meses fechados = realizado (lançamento diário do Dash); mês atual = projeção do Dash de Performance ou o vendido até ontem, o que for maior; meses seguintes = projeção. Taxa da maquineta = média dos últimos 3 meses da Conferência. Despesas = faturas a pagar do Microvix pelo vencimento, com ou sem baixa. Saldo acumulado parte do saldo de 01/jan digitado na coluna Início.`;
+
+  const ls = M.lancamentos.filter(l => bs.includes(l.board) || bs.includes(l.para));
+  const TIPO = { entrada: 'Entrada', saida: 'Saída', transf: 'Transferência' };
+  $('fl-tab').innerHTML = ls.length ? `<thead><tr><th>Data</th><th>Empresa</th><th>Tipo</th><th>Descrição</th><th>Parcela</th><th>Valor</th><th></th></tr></thead><tbody>
+    ${ls.map(l => `<tr><td>${DM(l.data)}/${l.data.slice(2, 4)}</td><td style="text-align:left">${esc(EMP[l.board] || l.board)}${l.tipo === 'transf' ? ' → ' + esc(EMP[l.para] || l.para) : ''}</td>
+      <td style="text-align:left">${TIPO[l.tipo]}</td><td style="text-align:left">${esc(l.desc)}</td><td>${esc(l.parc || '')}</td>
+      <td class="${l.tipo === 'entrada' ? 'pos' : l.tipo === 'saida' ? 'neg' : ''}">${R2(l.valor)}</td>
+      <td><button class="fm-x" data-id="${l.id}" data-grupo="${l.grupo ? 1 : ''}" data-parc="${esc(l.parc || '')}" title="Apagar">×</button></td></tr>`).join('')}</tbody>`
+    : '<tbody><tr><td class="muted" style="text-align:left">Nenhum lançamento manual neste ano.</td></tr></tbody>';
+}
+
+$('fm-tab').addEventListener('change', async e => {
+  const inp = e.target.closest('input.fm-ini'); if (!inp) return;
+  const txt = inp.value.trim();
+  const valor = txt === '' ? null : parseFloat(txt.replace(/\./g, '').replace(',', '.'));
+  if (valor !== null && !Number.isFinite(valor)) { alert('Informe o saldo, ex.: 23.810,00 ou -5.000,00'); return; }
+  try {
+    const r = await fetch('/api/fluxo-caixa/saldo-ano', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ board: inp.dataset.b, ano: M.ano, valor }) });
+    if (!r.ok) throw new Error((await r.json()).error || r.status);
+    M.empresas[inp.dataset.b].saldoIni = valor;
+    renderMensal();
+  } catch (err) { alert('Não salvou: ' + err.message); }
+});
+$('fl-tipo').addEventListener('change', () => { $('fl-para').style.display = $('fl-tipo').value === 'transf' ? '' : 'none'; });
+$('fl-add').addEventListener('click', async () => {
+  const valor = parseFloat($('fl-valor').value.trim().replace(/\./g, '').replace(',', '.'));
+  if (!Number.isFinite(valor) || valor <= 0) { alert('Informe o valor, ex.: 50.000,00'); return; }
+  const btn = $('fl-add'); btn.disabled = true;
+  try {
+    const r = await fetch('/api/fluxo-caixa/lancamento', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ board: $('fl-board').value, tipo: $('fl-tipo').value, para: $('fl-para').value, data: $('fl-data').value,
+        valor, desc: $('fl-desc').value, repetir: $('fl-rep').value }) });
+    if (!r.ok) throw new Error((await r.json()).error || r.status);
+    $('fl-valor').value = ''; $('fl-desc').value = ''; $('fl-rep').value = 1;
+    D = null; await carregarMensal();
+  } catch (err) { alert('Não salvou: ' + err.message); }
+  btn.disabled = false;
+});
+$('fl-tab').addEventListener('click', async e => {
+  const b = e.target.closest('button.fm-x'); if (!b) return;
+  let grupo = '';
+  if (b.dataset.grupo) {
+    if (confirm(`Parcela ${b.dataset.parc}. Apagar TODAS as parcelas deste lançamento?`)) grupo = '1';
+    else if (!confirm('Apagar só esta parcela?')) return;
+  } else if (!confirm('Apagar este lançamento?')) return;
+  const r = await fetch(`/api/fluxo-caixa/lancamento/${b.dataset.id}${grupo ? '?grupo=1' : ''}`, { method: 'DELETE' });
+  if (!r.ok) { alert('Não apagou'); return; }
+  D = null; carregarMensal();
+});
+
+function trocaModo(m) {
+  modo = m;
+  document.body.className = 'modo-' + m;
+  document.querySelectorAll('#fc-modo button').forEach(x => x.classList.toggle('active', x.dataset.m === m));
+  $('fm-main').style.display = m === 'mes' && M ? '' : 'none';
+  $('fc-main').style.display = m === 'dia' && D ? '' : 'none';
+  if (m === 'mes' && !M) carregarMensal();
+  if (m === 'dia' && !D) carregar();
+}
+$('fc-modo').addEventListener('click', e => { const b = e.target.closest('button'); if (b) trocaModo(b.dataset.m); });
+$('fc-ano').addEventListener('change', carregarMensal);
 
 function serie() {
   const bs = lojasSel();
@@ -268,7 +457,7 @@ function render() {
       const cs = contas.filter(c => c.d >= g.ini && c.d <= g.fim);
       h += `<tr class="fc-det"><td colspan="6"><div class="fc-det-wrap">${cs.length ? `<table>
         <tr><th>Paga em</th><th>Vencimento</th>${bs.length > 1 ? '<th>Loja</th>' : ''}<th>Fornecedor</th><th>Documento</th><th>Parcela</th><th>Valor</th></tr>
-        ${cs.map(c => `<tr${c.atraso && !$('fc-atraso').checked ? ' class="fora" title="fora do saldo"' : ''}><td>${DM(c.d)}</td><td>${DM(c.venc)}${c.atraso ? ' <span class="tag tag-atraso">atraso</span>' : ''}</td>${bs.length > 1 ? `<td>${esc(D.labels[c.b])}</td>` : ''}<td style="text-align:left">${esc(c.forn)}</td><td>${esc(c.doc && c.doc !== '0' ? c.doc : '')}</td><td>${esc(c.parc)}</td><td>${R2(c.v)}</td></tr>`).join('')}
+        ${cs.map(c => `<tr${c.atraso && !$('fc-atraso').checked ? ' class="fora" title="fora do saldo"' : ''}><td>${DM(c.d)}</td><td>${DM(c.venc)}${c.atraso ? ' <span class="tag tag-atraso">atraso</span>' : ''}</td>${bs.length > 1 ? `<td>${esc(D.labels[c.b])}</td>` : ''}<td style="text-align:left">${c.manual ? '<span class="tag tag-man">manual</span> ' : ''}${esc(c.forn)}</td><td>${esc(c.doc && c.doc !== '0' ? c.doc : '')}</td><td>${esc(c.parc)}</td><td class="${c.entrada ? 'pos' : ''}">${c.entrada ? '+ ' : ''}${R2(c.v)}</td></tr>`).join('')}
         </table>` : '<span class="muted">Nenhuma conta a pagar neste período.</span>'}</div></td></tr>`;
     }
   }
@@ -330,11 +519,11 @@ $('fc-saldos').addEventListener('click', async e => {
     render();
   } catch (err) { alert('Não salvou: ' + err.message); btn.disabled = false; btn.textContent = 'Salvar'; }
 });
-$('fc-loja').addEventListener('change', () => { abertos.clear(); render(); });
+$('fc-loja').addEventListener('change', () => { abertos.clear(); if (D) render(); if (M) renderMensal(); });
 $('fc-atraso').addEventListener('change', render);
 $('fc-dias').addEventListener('change', carregar);
-$('fc-reload').addEventListener('click', carregar);
-carregar();
+$('fc-reload').addEventListener('click', () => modo === 'mes' ? carregarMensal() : carregar());
+carregarMensal();
 </script>
 </body>
 </html>

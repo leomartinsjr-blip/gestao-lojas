@@ -20,6 +20,28 @@ function diaUtil(s) {
 // Faturas antes disso sem baixa no Microvix são tratadas como pagas (lixo de 2020–2025).
 const DIAS_ATRASO_CONSIDERADO = 90;
 
+// Empresa (CNPJ) de cada loja — os blocos da planilha de fluxo do usuário. Ver services/empresas.js.
+const EMPRESA = { delrey: 'LMJ', minas: 'JDG', contagem: 'PV', estacao: 'TTS', tommy: '3L', site: 'SITE' };
+
+// Lançamento manual { board, data, tipo: entrada|saida|transf, valor, desc, para } vira
+// movimentos com sinal. Transferência sai de board e entra em para; a linha de cada lado
+// leva o nome da outra empresa, como na planilha ("3L" na LMJ, "LMJ" na 3L).
+function movimentosManuais(lancamentos) {
+  const out = [];
+  for (const l of lancamentos || []) {
+    const v = Math.abs(Number(l.valor) || 0);
+    if (!v || !l.board || !l.data) continue;
+    const base = { d: l.data, id: l.id, desc: l.desc || '' };
+    if (l.tipo === 'transf' && l.para) {
+      out.push({ ...base, b: l.board, v: -v, rot: EMPRESA[l.para] || l.para.toUpperCase(), transf: true });
+      out.push({ ...base, b: l.para, v, rot: EMPRESA[l.board] || l.board.toUpperCase(), transf: true });
+    } else {
+      out.push({ ...base, b: l.board, v: l.tipo === 'saida' ? -v : v, rot: (l.desc || (l.tipo === 'saida' ? 'Saída' : 'Entrada')).toUpperCase() });
+    }
+  }
+  return out;
+}
+
 // ── Projeção de venda (mesma regra de calcPerfMetrics/computeCurMonthProj) ──
 function criarProjecao(db, board, hoje) {
   const emps = (db.employees || []).filter(e => e.board === board && e.isVendedor !== false);
@@ -119,7 +141,7 @@ function criarProjecao(db, board, hoje) {
 // ── Cálculo do fluxo ──────────────────────────────────────────────────────
 // taxas: { board: fração descontada da venda (ex.: 0.025) }
 // saldos: { board: { valor, data } }
-function calcular({ db, faturas, taxas, saldos, boards, hoje = hojeBRT(), dias = 90 }) {
+function calcular({ db, faturas, taxas, saldos, boards, lancamentos = [], hoje = hojeBRT(), dias = 90 }) {
   const ate = addDias(hoje, dias - 1);
   const corteAtraso = addDias(hoje, -DIAS_ATRASO_CONSIDERADO);
   const porDia = {}; // data → board → { vendas, recebe, paga, atraso }
@@ -162,6 +184,15 @@ function calcular({ db, faturas, taxas, saldos, boards, hoje = hojeBRT(), dias =
       parc: f.parcela, v: Math.round(resta * 100) / 100, atraso: atrasada });
   }
 
+  for (const m of movimentosManuais(lancamentos)) {
+    if (!boards.includes(m.b) || m.d < hoje) continue;
+    const d = diaUtil(m.d);
+    if (d > ate) continue;
+    if (m.v > 0) slot(d, m.b).recebe += m.v; else slot(d, m.b).paga -= m.v;
+    contas.push({ d, venc: m.d, b: m.b, forn: m.rot + (m.desc && m.desc.toUpperCase() !== m.rot ? ' · ' + m.desc : ''),
+      doc: '', parc: '', v: Math.abs(m.v), manual: true, entrada: m.v > 0 });
+  }
+
   const linhas = [];
   for (let d = hoje; d <= ate; d = addDias(d, 1)) {
     const pb = porDia[d] || {};
@@ -177,4 +208,43 @@ function calcular({ db, faturas, taxas, saldos, boards, hoje = hojeBRT(), dias =
   return { hoje, ate, boards, saldos, projecao, linhas, contas, diasAtraso: DIAS_ATRASO_CONSIDERADO };
 }
 
-module.exports = { calcular, criarProjecao, diaUtil, hojeBRT, addDias };
+// ── Quadro mensal por empresa (formato da planilha FLUXO CAIXA do usuário) ──
+// Meses fechados = realizado; mês atual = o maior entre a projeção e o vendido até
+// ontem; meses seguintes = projeção. Despesas = faturas a pagar pelo vencimento
+// (com ou sem baixa: o Microvix não baixa boa parte do que já foi pago).
+// faturasMes: { board: { 'YYYY-MM': valor } } · saldosAno: { board: valor em 01/jan }
+function calcularMensal({ db, faturasMes, lancamentos = [], taxas, saldosAno = {}, boards, hoje = hojeBRT(), ano }) {
+  const [hy, hm] = hoje.split('-').map(Number);
+  const mesAtual = `${hy}-${pad(hm)}`;
+  const meses = Array.from({ length: 12 }, (_, i) => `${ano}-${pad(i + 1)}`);
+  const status = meses.map(mk => mk < mesAtual ? 'real' : mk === mesAtual ? 'parcial' : 'prev');
+  const manuais = movimentosManuais(lancamentos).filter(m => m.d.startsWith(`${ano}-`));
+  const empresas = {};
+  for (const b of boards) {
+    const pj = criarProjecao(db, b, hoje);
+    const taxa = taxas[b] ?? 0.025;
+    const vendas = meses.map((mk, i) => {
+      const m = i + 1;
+      if (status[i] === 'real') return Math.round(pj.base(ano, m) || 0);
+      if (status[i] === 'parcial') return Math.round(Math.max(pj.projMes(ano, m), pj.realAteOntem));
+      return Math.round(pj.projMes(ano, m));
+    });
+    // transf = parte das entradas/saídas que é transferência entre empresas
+    // (some no consolidado, onde os dois lados se anulam).
+    const entradas = {}, saidas = {}, transf = { entra: Array(12).fill(0), sai: Array(12).fill(0) };
+    for (const m of manuais) if (m.b === b) {
+      const i = +m.d.slice(5, 7) - 1;
+      (((m.v > 0 ? entradas : saidas)[m.rot]) ||= Array(12).fill(0))[i] += Math.abs(m.v);
+      if (m.transf) transf[m.v > 0 ? 'entra' : 'sai'][i] += Math.abs(m.v);
+    }
+    empresas[b] = {
+      empresa: EMPRESA[b] || b.toUpperCase(), taxa, saldoIni: saldosAno[b] ?? null,
+      vendas, taxaV: vendas.map(v => Math.round(v * taxa * 100) / 100),
+      despesas: meses.map(mk => Math.round((faturasMes[b]?.[mk] || 0) * 100) / 100),
+      entradas, saidas, transf,
+    };
+  }
+  return { ano, hoje, meses, status, boards, empresas };
+}
+
+module.exports = { calcular, calcularMensal, criarProjecao, diaUtil, hojeBRT, addDias, EMPRESA };
