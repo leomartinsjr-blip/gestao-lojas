@@ -2078,9 +2078,48 @@ app.post('/api/dados-folha/:year/:month/:board', requireAuth, async (req, res) =
     const db  = await readDB();
     if (!db.dadosFolha) db.dadosFolha = {};
     const key = `${year}-${String(month).padStart(2,'0')}-${board}`;
-    db.dadosFolha[key] = req.body;
+    // Salvar de novo não desfaz o "já enviei" da loja
+    const enviado = db.dadosFolha[key]?.enviado;
+    db.dadosFolha[key] = { ...req.body, ...(enviado ? { enviado } : {}) };
     await writeDB(db);
     res.json(db.dadosFolha[key]);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// A partir do dia 1 a loja tem de mandar os Dados p/ Folha do mês que fechou.
+// GET devolve o mês passado e quem já marcou; POST marca/desmarca a loja.
+const _mesPassadoBRT = () => {
+  const d = new Date(Date.now() - 3 * 3600e3);
+  const y = d.getUTCFullYear(), m = d.getUTCMonth() + 1;
+  return m === 1 ? { year: y - 1, month: 12 } : { year: y, month: m - 1 };
+};
+app.get('/api/dados-folha-pendencia', requireAuth, async (req, res) => {
+  try {
+    const { year, month } = _mesPassadoBRT();
+    const db = await readDB();
+    const pref = `${year}-${String(month).padStart(2,'0')}-`;
+    const enviados = {};
+    for (const [k, v] of Object.entries(db.dadosFolha || {})) if (k.startsWith(pref) && v?.enviado) enviados[k.slice(pref.length)] = v.enviado;
+    const user = req.session.user;
+    const isAdmin = !user.board || user.board === 'escritorio';
+    res.json({ year, month, enviados: isAdmin ? enviados : (enviados[user.board] ? { [user.board]: enviados[user.board] } : {}) });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+app.post('/api/dados-folha/:year/:month/:board/enviado', requireAuth, async (req, res) => {
+  try {
+    const { year, month, board } = req.params;
+    const user = req.session.user;
+    const isAdmin = !user.board || user.board === 'escritorio';
+    if (!isAdmin && user.board !== board) return res.status(403).json({ error: 'Sem acesso' });
+    const db  = await readDB();
+    if (!db.dadosFolha) db.dadosFolha = {};
+    const key = `${year}-${String(month).padStart(2,'0')}-${board}`;
+    const cur = db.dadosFolha[key] || { feriados: [], extensoes: [], faltas: [], vr: '', abertura: '', instagram: '', obs: '' };
+    if (req.body?.enviado === false) delete cur.enviado;
+    else cur.enviado = { por: user.label || user.username || '', em: new Date().toISOString() };
+    db.dadosFolha[key] = cur;
+    await writeDB(db);
+    res.json({ ok: true, enviado: cur.enviado || null });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

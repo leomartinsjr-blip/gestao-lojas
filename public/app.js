@@ -255,6 +255,47 @@ async function _vtMarcarFeito(dia) {
   } catch (e) { toast('Erro: ' + e.message, true); return false; }
 }
 
+// ── Aviso dos Dados p/ Folha ───────────────────────────────────────────────
+// Do dia 1 em diante a loja precisa mandar os Dados p/ Folha do mês que
+// fechou. A loja vê a faixa até marcar "Já enviei"; o adm vê uma pílula com
+// as lojas que ainda não marcaram.
+const _MESES_PT = ['janeiro','fevereiro','março','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro'];
+let _dadosFolhaMes = null; // abre a aba Dados p/ Folha neste mês, uma vez
+
+function _abrirDadosFolhaMes(year, month, board) {
+  _dadosFolhaMes = { year, month, board };
+  _lojaAcaoTab = 'dados';
+  openLojaAcaoModal();
+}
+
+async function _folhaMarcarEnviado(year, month, board) {
+  if (!confirm(`Marcar os Dados p/ Folha de ${_MESES_PT[month - 1]} como enviados?`)) return false;
+  try {
+    const r = await apiFetch('POST', `/api/dados-folha/${year}/${month}/${board}/enviado`, { enviado: true });
+    if (S.folhaPend) S.folhaPend.enviados[board] = r.enviado;
+    toast('Dados p/ Folha marcados como enviados');
+    return true;
+  } catch (e) { toast('Erro: ' + e.message, true); return false; }
+}
+
+async function checarDadosFolha() {
+  try {
+    const p = await apiFetch('GET', '/api/dados-folha-pendencia');
+    S.folhaPend = p;
+    const board = S.user?.board;
+    if (!board || board === 'escritorio') { _atualizarAvisosAdm(); return; }
+    const banner = document.getElementById('folhaBanner');
+    if (!banner || p.enviados[board]) return;
+    document.getElementById('folhaBannerText').textContent = `Enviar os Dados p/ Folha de ${_MESES_PT[p.month - 1]}`;
+    banner.classList.remove('hidden');
+    document.getElementById('folhaBannerClose').onclick = () => banner.classList.add('hidden');
+    document.getElementById('folhaBannerOpen').onclick = () => _abrirDadosFolhaMes(p.year, p.month, board);
+    document.getElementById('folhaBannerFeito').onclick = async () => {
+      if (await _folhaMarcarEnviado(p.year, p.month, board)) banner.classList.add('hidden');
+    };
+  } catch { /* sem permissão: o aviso não aparece */ }
+}
+
 // ── Aviso da Ficha de Admissão ─────────────────────────────────────────────
 // A loja vê a ficha que o escritório mandou e ainda não foi digitada; o
 // escritório vê a que a loja já devolveu preenchida e ninguém conferiu.
@@ -281,6 +322,7 @@ async function checkAuth() {
     applyUserPermissions(S.user);
     checarValeTransporte();
     checarFichaAdmissao();
+    checarDadosFolha();
     // O aviso do VT manda para cá quando falta escala: abrir o painel já com
     // as Folgas na tela poupa o passo de procurar no menu.
     if (location.hash === '#folgas') openFolgas();
@@ -1130,6 +1172,7 @@ function _renderAvisosAdm(c) {
   _avisoLojaAcao(strip);
   _avisoContagem(strip);
   _avisoPauta(strip);
+  _avisoDadosFolha(strip);
   if (strip.querySelector('.aviso-pill')) c.prepend(strip);
 }
 
@@ -1258,6 +1301,20 @@ function _avisoVt(strip) {
     if (!strip.querySelector('.aviso-pill')) strip.remove();
   });
   pill.after(ok);
+}
+
+// Lojas que ainda não marcaram o envio dos Dados p/ Folha do mês passado.
+// Site não tem folha própria na Estação, fica fora.
+function _avisoDadosFolha(strip) {
+  const p = S.folhaPend;
+  if (!p) return;
+  const falta = _avisoLojas().filter(b => b !== 'site' && !p.enviados[b]);
+  if (!falta.length) return;
+  _avisoPilula(strip, {
+    icone: '📋', rotulo: `Dados p/ Folha de ${_MESES_PT[p.month - 1]}`, n: falta.length,
+    detalhe: 'Falta enviar: ' + falta.map(_avisoNomeLoja).join(' · '),
+    acao: () => _abrirDadosFolhaMes(p.year, p.month, falta[0]),
+  });
 }
 
 // Item que a loja escreveu na pauta depois da última vez que este usuário
@@ -13630,13 +13687,16 @@ function _renderDadosLojaAcaoView(body) {
   const STORE_BOARDS = Object.keys(BOARDS).filter(b => b && b !== 'escritorio');
   const userBoard = S.user?.board;
 
+  // Vindo do aviso do mês fechado: abre naquele mês (só desta vez)
+  const alvo = _dadosFolhaMes; _dadosFolhaMes = null;
+  const ano = alvo?.year || S.year, mes = alvo?.month || S.month;
   if (userBoard) {
-    _renderDadosFolha(body, userBoard, S.year, S.month, S.allEmployees || S.employees);
+    _renderDadosFolha(body, userBoard, ano, mes, S.allEmployees || S.employees);
     return;
   }
 
   // Admin: seletor de loja
-  let filterBoard = STORE_BOARDS[0] || '';
+  let filterBoard = alvo?.board || STORE_BOARDS[0] || '';
   function render() {
     const wrapper = document.createElement('div');
     wrapper.innerHTML = `<div style="padding:.75rem 1.25rem .25rem">
@@ -13651,7 +13711,7 @@ function _renderDadosLojaAcaoView(body) {
     wrapper.querySelectorAll('.req-board-chip').forEach(btn => btn.addEventListener('click', () => {
       filterBoard = btn.dataset.b; render();
     }));
-    _renderDadosFolha(body.querySelector('#dadosLojaAcaoContent'), filterBoard, S.year, S.month, S.allEmployees || S.employees);
+    _renderDadosFolha(body.querySelector('#dadosLojaAcaoContent'), filterBoard, ano, mes, S.allEmployees || S.employees);
   }
   render();
 }
