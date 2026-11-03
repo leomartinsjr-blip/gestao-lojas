@@ -117,7 +117,7 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, bo
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  // PUT /api/agenda/lanc/:id { desc, valor, conta }
+  // PUT /api/agenda/lanc/:id { desc, valor, conta, data }
   app.put('/api/agenda/lanc/:id', requireAdmin, async (req, res) => {
     try {
       const campos = {};
@@ -128,6 +128,17 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, bo
         campos.valor = Math.round(v * 100) / 100;
       }
       if (req.body?.conta) campos.conta = String(req.body.conta).toUpperCase();
+      if (req.body?.data != null) {
+        if (!/^d{4}-d{2}-d{2}$/.test(req.body.data)) return res.status(400).json({ error: 'data inválida' });
+        const [l] = await store.lancs({ id: req.params.id });
+        if (!l) return res.status(404).json({ error: 'não encontrado' });
+        if (l.data !== req.body.data) {
+          // Muda de dia: entra no fim do dia novo
+          const doDia = (await store.lancs({ emp: l.emp })).filter(x => x.data === req.body.data);
+          campos.data = req.body.data;
+          campos.seq = doDia.reduce((m, x) => Math.max(m, x.seq ?? 0), -1) + 1;
+        }
+      }
       campos.por = por(req); campos.em = new Date();
       if (!(await store.atualizar(req.params.id, campos))) return res.status(404).json({ error: 'não encontrado' });
       res.json({ ok: true });

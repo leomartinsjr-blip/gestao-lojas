@@ -141,6 +141,8 @@
   #ag-dia tr.ag-saldo td { background: var(--bg3); font-weight: 700; }
   #ag-dia tr.ag-sweep td { color: var(--text2); }
   #ag-dia td.sal { color: var(--text2); font-size: 11.5px; }
+  #ag-dia td.dt { width: 118px; }
+  #ag-dia td.dt input { font-size: 11.5px; color: var(--text2); }
   .ag-conta { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 8px; background: var(--bg3); color: var(--text2); }
   .ag-conta.CG { background: rgba(207,34,46,.10); color: var(--red); }
   .ag-form { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--border); align-items: center; }
@@ -700,18 +702,20 @@ function renderAgenda() {
   const extras = emp.contas.filter(c => c !== 'CC' && c !== 'CG');
   const linhas = linhasDoDia();
   const fim = linhas.length ? linhas[linhas.length - 1].s : A.antes;
-  const outrasTxt = s => extras.map(c => Math.abs(s[c] || 0) > .005 ? `${c} ${brl(s[c])}` : '').filter(Boolean).join(' · ');
-  $('ag-dia').innerHTML = `<thead><tr><th>Conta</th><th style="text-align:left">Descrição</th><th>Valor</th><th>Saldo C/C</th><th>Saldo C/G</th>${extras.length ? '<th>Outras</th>' : ''}<th></th></tr></thead><tbody>
-    <tr class="ag-saldo"><td colspan="3">Saldo anterior</td><td class="${cls(A.antes.CC || 0)}">${brl(A.antes.CC || 0)}</td><td class="${cls(A.antes.CG || 0)}">${brl(A.antes.CG || 0)}</td>${extras.length ? `<td class="sal">${outrasTxt(A.antes)}</td>` : ''}<td></td></tr>
+  // Uma coluna de saldo por conta extra (FJDG, FLMJ, SITE…), como C/C e C/G
+  const salExtras = s => extras.map(c => `<td class="sal ${cls(s[c] || 0)}">${brl(s[c] || 0)}</td>`).join('');
+  $('ag-dia').innerHTML = `<thead><tr><th>Conta</th><th style="text-align:left">Descrição</th><th>Valor</th><th>Saldo C/C</th><th>Saldo C/G</th>${extras.map(c => `<th>Saldo ${esc(nomeConta(c))}</th>`).join('')}<th>Data</th><th></th></tr></thead><tbody>
+    <tr class="ag-saldo"><td colspan="3">Saldo anterior</td><td class="${cls(A.antes.CC || 0)}">${brl(A.antes.CC || 0)}</td><td class="${cls(A.antes.CG || 0)}">${brl(A.antes.CG || 0)}</td>${salExtras(A.antes).replace(/class="sal /g, 'class="')}<td></td><td></td></tr>
     ${linhas.map(({ l, s }) => `<tr class="${l.espelho ? 'ag-sweep' : ''}">
       <td><span class="ag-conta ${l.conta}">${nomeConta(l.conta)}${l.espelho ? ' → C/G' : ''}</span></td>
       <td><input type="text" data-id="${l.id}" data-f="desc" value="${esc(l.desc)}" list="ag-descs"></td>
       <td class="v ${l.valor < 0 ? 'neg' : 'pos'}"><input type="text" data-id="${l.id}" data-f="valor" inputmode="decimal" value="${fmt2(l.valor)}"></td>
       <td class="sal ${cls(s.CC || 0)}">${brl(s.CC || 0)}</td><td class="sal ${cls(s.CG || 0)}">${brl(s.CG || 0)}</td>
-      ${extras.length ? `<td class="sal">${extras.includes(l.conta) ? `${l.conta} ${brl(s[l.conta])}` : ''}</td>` : ''}
+      ${salExtras(s)}
+      <td class="dt"><input type="date" data-id="${l.id}" data-f="data" value="${l.data}" title="Mudar o lançamento de dia"></td>
       <td><button class="fm-x" data-id="${l.id}" title="Apagar">×</button></td></tr>`).join('')}
-    ${linhas.length ? '' : `<tr><td colspan="${extras.length ? 7 : 6}" class="muted" style="text-align:left">Nenhum lançamento neste dia.</td></tr>`}
-    <tr class="ag-saldo"><td colspan="3">Saldo do dia</td><td class="${cls(fim.CC || 0)}">${brl(fim.CC || 0)}</td><td class="${cls(fim.CG || 0)}">${brl(fim.CG || 0)}</td>${extras.length ? `<td class="sal">${outrasTxt(fim)}</td>` : ''}<td></td></tr>
+    ${linhas.length ? '' : `<tr><td colspan="${7 + extras.length}" class="muted" style="text-align:left">Nenhum lançamento neste dia.</td></tr>`}
+    <tr class="ag-saldo"><td colspan="3">Saldo do dia</td><td class="${cls(fim.CC || 0)}">${brl(fim.CC || 0)}</td><td class="${cls(fim.CG || 0)}">${brl(fim.CG || 0)}</td>${salExtras(fim).replace(/class="sal /g, 'class="')}<td></td><td></td></tr>
     </tbody>`;
   const atual = $('ag-conta').value;
   $('ag-conta').innerHTML = emp.contas.map(c => `<option value="${c}">${nomeConta(c)}</option>`).join('');
@@ -783,6 +787,8 @@ $('ag-dia').addEventListener('change', async e => {
   const inp = e.target.closest('input[data-id]'); if (!inp) return;
   const corpo = {};
   if (inp.dataset.f === 'valor') { const v = parseBR(inp.value); if (!v) { alert('Valor inválido'); return; } corpo.valor = v; }
+  // Digitando o ano o campo já dispara com 0002, 0020…: só salva data completa
+  else if (inp.dataset.f === 'data') { if (!/^20\d\d-/.test(inp.value)) return; corpo.data = inp.value; }
   else corpo.desc = inp.value;
   const r = await fetch('/api/agenda/lanc/' + inp.dataset.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
   if (!r.ok) { alert('Não salvou'); return; }
