@@ -26,6 +26,11 @@ function statusAuto(it) {
   return 'DIVERGENTE';
 }
 const status = it => it.st || statusAuto(it);
+// Diferença depois da recontagem: OK/troca/venda/trânsito dado pelo escritório (ou trânsito
+// automático já recontado) não conta. null = pendente. Igual ao difFinal do servidor.
+const EXPLICADO = ['OK', 'TROCA', 'VER VENDA', 'VER TRÂNSITO'];
+const difFinal = it => EXPLICADO.includes(status(it)) && (it.st || !vazio(it.rc)) ? 0 : vazio(it.rc) ? null : Number(it.rc) - it.e;
+const fDifF = it => difFinal(it) === null ? '' : fInt(difFinal(it));
 const STATUS_MANUAL = ['OK', 'DIVERGENTE', 'VER VENDA', 'VER TRÂNSITO', 'A RECONTAR', 'TROCA', 'AJUSTAR'];
 // NFs de entrada que explicam o trânsito
 const nfsTxt = it => (it.tn || []).map(n => `<span class="nf" title="Entrada em ${esc(n.d)}: ${fInt(n.q)} peça(s)">NF ${esc(n.n)} · ${esc(n.d)} · ${fInt(n.q)}</span>`).join('');
@@ -224,7 +229,7 @@ function desenharRecontagem() {
     </div>
     ${matchMedia('(max-width: 640px)').matches
       ? `<div class="mcards">${lista.map(cartaoRecont(aberto)).join('') || '<div class="empty">Nada com esse filtro.</div>'}</div>`
-      : `<div class="tbl-wrap"><table class="tbl fit"><colgroup><col style="width:78px"><col style="width:62px"><col><col style="width:108px">
+      : `<div class="tbl-wrap"><table class="tbl fit"><colgroup><col style="width:78px"><col style="width:62px"><col><col style="width:118px">
       <col style="width:52px"><col style="width:56px"><col style="width:40px"><col style="width:82px"><col style="width:88px"><col style="width:66px">
       <col style="width:46px"><col style="width:128px"><col style="width:140px"></colgroup><thead><tr>
       <th>Setor</th><th>Código</th><th>Descrição</th><th>Referência</th><th class="n">Estoque</th><th class="n">Balanço</th><th class="n">Dif.</th>
@@ -248,7 +253,7 @@ const linhaRecont = aberto => it => {
   const k = esc(it.c || it.b);
   const s = status(it);
   const dif = it.l - it.e;
-  const difF = vazio(it.rc) ? '' : fInt(Number(it.rc) - it.e);
+  const difF = fDifF(it);
   const quem = it.rp ? ` title="Lançado por ${esc(it.rp)} em ${new Date(it.rt).toLocaleString('pt-BR')}"` : '';
   return `<tr class="linha-item" data-k="${k}">
     <td>${esc(grupoCurto(it.g))}</td><td>${esc(it.c || it.b)}</td><td class="desc">${esc(it.d)}${it.lido ? '' : ' <span class="badge">não lido</span>'}${nfsTxt(it)}</td><td>${esc(it.r)}</td>
@@ -267,7 +272,7 @@ const cartaoRecont = aberto => it => {
   return `<div class="linha-item mcard" data-k="${k}">
     <div class="mcard-top"><span class="muted">${esc(grupoCurto(it.g))} · ${esc(it.c || it.b)}</span><span class="stc"><span class="${stCls(s)}">${s}</span></span></div>
     <div class="mcard-desc">${esc(it.d)}${it.lido ? '' : ' <span class="badge">não lido</span>'}${nfsTxt(it)}</div>
-    <div class="mcard-nums"><span>Estoque <b>${fInt(it.e)}</b></span><span>Lido <b>${fInt(it.l)}</b></span><span>Dif. <b class="${cls(dif)}">${fInt(dif)}</b></span><span>Final <b class="dif-f">${vazio(it.rc) ? '' : fInt(Number(it.rc) - it.e)}</b></span></div>
+    <div class="mcard-nums"><span>Estoque <b>${fInt(it.e)}</b></span><span>Lido <b>${fInt(it.l)}</b></span><span>Dif. <b class="${cls(dif)}">${fInt(dif)}</b></span><span>Final <b class="dif-f">${fDifF(it)}</b></span></div>
     ${aberto ? `<div class="mcard-inp"><input class="inp rc" inputmode="numeric" placeholder="Contei" data-k="${k}" value="${vazio(it.rc) ? '' : it.rc}"/>
       <input class="inp ob" placeholder="Observação" data-k="${k}" value="${esc(it.ob || '')}" maxlength="300"/></div>`
       : (vazio(it.rc) ? '' : `<div class="mcard-desc">Recontado: <b>${it.rc}</b> ${esc(it.ob || '')}</div>`)}
@@ -290,6 +295,7 @@ async function salvarStatus(el) {
     const it = S.bal.itens.find(x => (x.c || x.b) === k);
     if (it) it.st = st;
     S.bal.resumo = j.resumo;
+    el.closest('.linha-item')?.querySelector('.dif-f')?.replaceChildren(fDifF(it));
     el.closest('.stc').innerHTML = celStatus(it, true);
     document.querySelector(`.stc select[data-k="${CSS.escape(k)}"]`)?.addEventListener('change', e => salvarStatus(e.target));
     atualizarKpis();
@@ -312,7 +318,7 @@ async function salvarItem(el) {
     el.classList.add('salvo');
     // Atualiza a linha e os indicadores sem redesenhar a tabela (não perde o foco)
     const s = status(it);
-    tr.querySelector('.dif-f').textContent = vazio(it.rc) ? '' : fInt(Number(it.rc) - it.e);
+    tr.querySelector('.dif-f').textContent = fDifF(it);
     tr.querySelector('.stc').innerHTML = celStatus(it, S.bal.status === 'recontagem');
     atualizarKpis();
   } catch (e) { el.classList.add('falhou'); el.title = e.message; }
@@ -335,7 +341,7 @@ function desenharResumo() {
     <td class="n ${cls(g.pecasDif)}">${fInt(g.pecasDif)}</td><td class="n ${cls(g.pecasDifFinal)}">${fInt(g.pecasDifFinal)}</td>
     <td class="n ${cls(g.impactoSistema)}">${fRS(g.impactoSistema)}</td><td class="n ${cls(g.impactoConfirmado)}">${fRS(g.impactoConfirmado)}</td><td class="n ${cls(g.impactoApurar)}">${fRS(g.impactoApurar)}</td>
     <td class="n">${g.explicadoVenda}</td><td class="n">${fInt(g.vendas)}</td><td class="n">${g.explicadoTransito}</td><td class="n">${fInt(g.transito)}</td></tr>`;
-  const maiores = itensRecontagem(b).map(it => ({ it, imp: (vazio(it.rc) ? it.l - it.e : Number(it.rc) - it.e) * it.p }))
+  const maiores = itensRecontagem(b).map(it => ({ it, imp: (difFinal(it) ?? it.l - it.e) * it.p }))
     .filter(x => x.imp).sort((a, c) => Math.abs(c.imp) - Math.abs(a.imp)).slice(0, 15);
   const jan = b.janelaTransito || {};
   $('sub').innerHTML = `

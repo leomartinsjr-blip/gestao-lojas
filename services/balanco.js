@@ -331,6 +331,15 @@ function statusItem(it) {
   if (it.t && rc < it.e && it.e - rc <= it.t) return 'VER TRÂNSITO';
   return 'DIVERGENTE';
 }
+// Diferença que fica depois da recontagem. Item que o escritório deu como OK, troca,
+// venda ou trânsito (ou trânsito automático depois de recontado) não conta: fica 0.
+// null = ainda pendente.
+const EXPLICADO = ['OK', 'TROCA', 'VER VENDA', 'VER TRÂNSITO'];
+function difFinal(it) {
+  const recontado = it.rc !== null && it.rc !== undefined && it.rc !== '';
+  if (EXPLICADO.includes(statusItem(it)) && (it.st || recontado)) return 0;
+  return recontado ? Number(it.rc) - it.e : null;
+}
 
 // Trocas sugeridas: o que sobrou × o que faltou (diferença final, recontada ou
 // lida). Primeiro pela mesma referência e preço; depois pelo mesmo setor e
@@ -378,20 +387,22 @@ function resumo(bal) {
     const s = statusItem(it);
     const dif = it.l - it.e;
     const recontado = it.rc !== null && it.rc !== undefined && it.rc !== '';
+    const df = difFinal(it);
     for (const o of [porGrupo.get(g), tot]) {
       o.itens++;
-      if (recontado) o.recontados++; else o.pendentes++;
+      if (recontado) o.recontados++;
+      if (df === null) o.pendentes++;
       if (s === 'OK') o.ok++;
       if (s === 'DIVERGENTE') o.divergentes++;
       if (s === 'VER VENDA') o.explicadoVenda++;
       if (s === 'VER TRÂNSITO') o.explicadoTransito++;
       o.impactoSistema += dif * it.p;
-      if (recontado) o.impactoConfirmado += (Number(it.rc) - it.e) * it.p;
+      if (df !== null) o.impactoConfirmado += df * it.p;
       else o.impactoApurar += dif * it.p;
       o.vendas += it.v || 0;
       o.transito += it.t || 0;
       o.pecasDif += dif;
-      o.pecasDifFinal += recontado ? Number(it.rc) - it.e : dif;
+      o.pecasDifFinal += df !== null ? df : dif;
     }
   }
   const fora = new Set(bal.gruposFora || []);
@@ -423,6 +434,6 @@ function txtCorrigido(bal) {
 }
 
 module.exports = {
-  parseLeitura, processar, criarCadastro, causaProvavel, statusItem, sugerirTrocas,
+  parseLeitura, processar, criarCadastro, causaProvavel, statusItem, difFinal, sugerirTrocas,
   itensRecontagem, resumo, txtCorrigido, grupoCurto, normBarra,
 };
