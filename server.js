@@ -1173,7 +1173,7 @@ app.use((req, res, next) => {
 //
 // A exceção são os manuais do escritório: o de cadastro traz mark-up por
 // marca, e isso não pode ficar aberto para quem tiver o link.
-const MANUAIS_ESCRITORIO = new Set(['cadastro-produto', 'produtos-site', 'pedidos-compra']);
+const MANUAIS_ESCRITORIO = new Set(['cadastro-produto', 'produtos-site', 'pedidos-compra', 'contratos-locacao']);
 app.get('/manuais', (req, res) => res.sendFile(path.join(__dirname, 'public/manuais.html')));
 app.get('/manuais/:slug', (req, res) => {
   const slug = String(req.params.slug || '').replace(/[^a-z0-9-]/gi, '');
@@ -13876,6 +13876,92 @@ app.get('/api/seguros/alertas', requireAuth, async (req, res) => {
     const limite = new Date(hoje); limite.setDate(limite.getDate() + dias);
     const docs = await col.find({ validade: { $lte: limite.toISOString().slice(0,10) } }).sort({ validade: 1 }).toArray();
     res.json(docs);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ════════════════════════════════════════════════════════════════════════════
+// CONTRATOS DE LOCAÇÃO (lojas × shoppings)
+// ════════════════════════════════════════════════════════════════════════════
+const contratosLocacao = require('./services/contratosLocacao');
+
+// Valor de aluguel não abre para supervisor, que passaria no requireEscritorioOrAdmin
+function requireContratosLocacao(req, res, next) {
+  requireEscritorioOrAdmin(req, res, () => {
+    if (!ehAdminOuEscritorio(req.session.user)) return res.status(403).json({ error: 'Acesso restrito ao escritório' });
+    next();
+  });
+}
+const gravarContratosLocacao = db => writeDB(db, { caminhos: new Set(['contratosLocacao']) });
+
+// GET /contratos-locacao — serve a página
+app.get('/contratos-locacao', requireContratosLocacao, (req, res) =>
+  res.sendFile(path.join(__dirname, 'public', 'contratos-locacao.html')));
+
+// GET /api/contratos-locacao
+app.get('/api/contratos-locacao', requireContratosLocacao, async (req, res) => {
+  try {
+    const db = await readDB();
+    res.json({
+      lojas: contratosLocacao.LOJAS,
+      contratos: contratosLocacao.classificarTodos(db.contratosLocacao, todayBRT()),
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// GET /api/contratos-locacao/alertas — o que pede atenção, para a linha de Pendências
+app.get('/api/contratos-locacao/alertas', requireContratosLocacao, async (req, res) => {
+  try {
+    const db = await readDB();
+    res.json(contratosLocacao.classificarTodos(db.contratosLocacao, todayBRT())
+      .filter(c => c.faixa !== 'ok')
+      .map(({ loja, shopping, faixa, marco, alvo, dias }) =>
+        ({ loja: contratosLocacao.LOJAS[loja] || loja, shopping, faixa, marco, alvo, dias })));
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/contratos-locacao
+app.post('/api/contratos-locacao', requireContratosLocacao, async (req, res) => {
+  try {
+    const { erro, dados } = contratosLocacao.normalizar(req.body);
+    if (erro) return res.status(400).json({ error: erro });
+    const db = await readDB();
+    const doc = {
+      id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      ...dados,
+      criadoPor: req.session?.user?.username || '?',
+      criadoEm: new Date().toISOString(),
+      atualizadoPor: null, atualizadoEm: null,
+    };
+    db.contratosLocacao = [...(db.contratosLocacao || []), doc];
+    await gravarContratosLocacao(db);
+    res.json(doc);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// PUT /api/contratos-locacao/:id
+app.put('/api/contratos-locacao/:id', requireContratosLocacao, async (req, res) => {
+  try {
+    const { erro, dados } = contratosLocacao.normalizar(req.body);
+    if (erro) return res.status(400).json({ error: erro });
+    const db = await readDB();
+    const atual = (db.contratosLocacao || []).find(c => c.id === req.params.id);
+    if (!atual) return res.status(404).json({ error: 'não encontrado' });
+    Object.assign(atual, dados, {
+      atualizadoPor: req.session?.user?.username || '?',
+      atualizadoEm: new Date().toISOString(),
+    });
+    await gravarContratosLocacao(db);
+    res.json(atual);
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// DELETE /api/contratos-locacao/:id
+app.delete('/api/contratos-locacao/:id', requireContratosLocacao, async (req, res) => {
+  try {
+    const db = await readDB();
+    db.contratosLocacao = (db.contratosLocacao || []).filter(c => c.id !== req.params.id);
+    await gravarContratosLocacao(db);
+    res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

@@ -203,6 +203,8 @@ function applyUserPermissions(user) {
   if (pautaEl) pautaEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
   const certificadosEl = document.getElementById('certificadosBtn');
   if (certificadosEl) certificadosEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
+  const contratosLocacaoEl = document.getElementById('contratosLocacaoBtn');
+  if (contratosLocacaoEl) contratosLocacaoEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
   const vtEl = document.getElementById('valeTransporteBtn');
   if (vtEl) vtEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
 }
@@ -242,6 +244,16 @@ async function checarValeTransporte() {
       if (await _vtMarcarFeito(a.dia)) banner.classList.add('hidden');
     });
   } catch { /* sem VT configurado ou sem permissão: o aviso simplesmente não aparece */ }
+}
+
+// Contratos de locação que vencem (ou cujo prazo de negociar acaba) em até 6
+// meses. Vira pílula na linha de Pendências, que só o adm tem.
+async function checarContratosLocacao() {
+  if (!userIsAdmin(S.user)) return;
+  try {
+    S.contratosLocacaoAlerta = await apiFetch('GET', '/api/contratos-locacao/alertas');
+    _atualizarAvisosAdm();
+  } catch { /* sem permissão ou fora do ar: o aviso simplesmente não aparece */ }
 }
 
 // "Já fiz" cala o aviso desta recarga; o da recarga seguinte volta sozinho.
@@ -321,6 +333,7 @@ async function checkAuth() {
     hideLogin();
     applyUserPermissions(S.user);
     checarValeTransporte();
+    checarContratosLocacao();
     checarFichaAdmissao();
     checarDadosFolha();
     // O aviso do VT manda para cá quando falta escala: abrir o painel já com
@@ -1173,6 +1186,7 @@ function _renderAvisosAdm(c) {
   _avisoContagem(strip);
   _avisoPauta(strip);
   _avisoDadosFolha(strip);
+  _avisoContratosLocacao(strip);
   if (strip.querySelector('.aviso-pill')) c.prepend(strip);
 }
 
@@ -1278,6 +1292,17 @@ function _avisoNotas(strip) {
     icone: '🧾', rotulo: 'Notas para conferir', n: pend.length,
     detalhe: [...grupos].map(([b, itens]) => `${_avisoNomeLoja(b)}: ${itens.length}`).join(' · '),
     acao: () => _irParaCard('nfCardBody', primeira),
+  });
+}
+
+function _avisoContratosLocacao(strip) {
+  const itens = S.contratosLocacaoAlerta || [];
+  if (!itens.length) return;
+  _avisoPilula(strip, {
+    icone: '🏬', rotulo: 'Contratos de locação', n: itens.length,
+    atraso: itens.some(c => c.faixa === 'vencido' || c.faixa === 'prazo'),
+    detalhe: itens.map(c => `${c.loja} (${c.shopping}): ${c.marco === 'prazo' ? 'negociar até' : 'fim em'} ${c.alvo.split('-').reverse().join('/')}`).join(' · '),
+    acao: () => window.open('/contratos-locacao', '_blank'),
   });
 }
 

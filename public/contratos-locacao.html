@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12151D" media="(prefers-color-scheme: dark)">
+<title>Contratos de Locação</title>
+<link rel="icon" type="image/jpeg" href="favicon.jpg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;700;800;900&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/style.css">
+<style>
+body { background: var(--bg); color: var(--text); font-family: 'IBM Plex Sans', system-ui, sans-serif; margin: 0; font-size: 14px; min-height: 100vh; }
+*, *::before, *::after { box-sizing: border-box; }
+
+/* ── Topo ─────────────────────────────────────────────────────────────── */
+.cl-top {
+  position: sticky; top: 0; z-index: 100;
+  background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: 0 1.25rem; padding-top: env(safe-area-inset-top, 0px);
+  height: calc(54px + env(safe-area-inset-top, 0px));
+  display: flex; align-items: center; gap: .75rem;
+}
+.cl-back {
+  background: transparent; border: 1px solid var(--border); border-radius: var(--r-sm);
+  color: var(--muted); font-size: .78rem; padding: .3rem .6rem; text-decoration: none; white-space: nowrap;
+}
+.cl-back:hover { color: var(--text); border-color: var(--border2); }
+.cl-title {
+  font-family: 'Big Shoulders Display', 'Archivo Narrow', system-ui, sans-serif;
+  font-weight: 800; font-size: 1.15rem; letter-spacing: .02em; text-transform: uppercase;
+}
+.cl-user { margin-left: auto; font-size: .78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.cl-page { max-width: 980px; margin: 0 auto; padding: 1.5rem 1.25rem 4rem; }
+
+/* ── Resumo: cada cartão é um filtro ──────────────────────────────────── */
+.cl-resumo { display: grid; grid-template-columns: repeat(4, 1fr); gap: .5rem; margin-bottom: 1.1rem; }
+.cl-sum {
+  background: var(--surface); border: 1px solid var(--border); border-top: 3px solid var(--cl-cor);
+  border-radius: var(--r-md); padding: .85rem .9rem; text-align: left; cursor: pointer;
+  font: inherit; color: var(--text);
+}
+.cl-sum:hover { border-color: var(--border2); border-top-color: var(--cl-cor); }
+.cl-sum[aria-pressed="true"] { background: var(--surface3); }
+.cl-sum-n {
+  display: block; font-family: 'Big Shoulders Display', 'Archivo Narrow', system-ui, sans-serif;
+  font-weight: 800; font-size: 2.1rem; line-height: 1; color: var(--cl-cor);
+}
+.cl-sum-l { display: block; font-size: .76rem; color: var(--text2); margin-top: .3rem; }
+
+.f-atraso { --cl-cor: var(--down); }
+.f-m3     { --cl-cor: var(--accent); }
+.f-m6     { --cl-cor: var(--warn); }
+.f-ok     { --cl-cor: var(--muted); }
+
+/* ── Barra de ações ───────────────────────────────────────────────────── */
+.cl-barra { display: flex; gap: .5rem; margin-bottom: 1.1rem; flex-wrap: wrap; }
+.cl-input {
+  background: var(--surface); border: 1px solid var(--border); color: var(--text);
+  border-radius: var(--r-md); padding: .45rem .7rem; font: inherit; font-size: .85rem;
+  min-height: 36px; width: 100%; outline: none;
+}
+.cl-input:focus { border-color: var(--accent); }
+.cl-barra .cl-input { flex: 1; min-width: 180px; width: auto; }
+textarea.cl-input { min-height: 62px; resize: vertical; }
+.cl-btn {
+  background: var(--surface); border: 1px solid var(--border); color: var(--text2);
+  border-radius: var(--r-md); padding: .45rem .85rem; font: inherit; font-size: .85rem;
+  min-height: 36px; cursor: pointer; white-space: nowrap;
+}
+.cl-btn:hover { color: var(--text); border-color: var(--border2); }
+.cl-btn.solido { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.cl-btn.solido:hover { color: var(--on-accent); opacity: .9; }
+.cl-btn:disabled { opacity: .45; cursor: default; }
+.cl-btn.mini { min-height: 0; padding: .15rem .45rem; font-size: .72rem; }
+
+/* ── Lista ────────────────────────────────────────────────────────────── */
+.cl-grupo-t {
+  font-family: 'Big Shoulders Display', 'Archivo Narrow', system-ui, sans-serif;
+  font-weight: 700; font-size: 1.05rem; letter-spacing: .02em; text-transform: uppercase;
+  color: var(--text2); margin: 1.4rem 0 .5rem;
+}
+.cl-card {
+  background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--cl-cor);
+  border-radius: var(--r-md); padding: .8rem 1rem; margin-bottom: .45rem;
+  display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .6rem 1rem;
+}
+.cl-nome { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+.cl-tarja { width: 3px; height: 1.05rem; border-radius: 2px; flex-shrink: 0; }
+.cl-loja { font-weight: 600; font-size: .95rem; }
+.cl-shop { color: var(--text2); font-size: .85rem; }
+.cl-chip {
+  font-size: .68rem; font-weight: 600; padding: .08rem .45rem; border-radius: 999px;
+  background: var(--surface3); color: var(--text2);
+}
+.cl-datas { display: flex; flex-wrap: wrap; gap: .25rem 1.4rem; margin-top: .45rem; }
+.cl-dado { font-size: .74rem; color: var(--muted); }
+.cl-dado b { display: block; font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: .84rem; font-weight: 600; color: var(--text); }
+.cl-nota { font-size: .8rem; color: var(--text2); margin-top: .4rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.cl-audit { font-size: .68rem; color: var(--muted); margin-top: .35rem; }
+.cl-lado { display: flex; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: .5rem; }
+.cl-badge {
+  font-size: .76rem; font-weight: 600; color: var(--cl-cor); text-align: right; white-space: nowrap;
+  border: 1px solid var(--cl-cor); border-radius: 999px; padding: .12rem .6rem;
+}
+.cl-acoes { display: flex; gap: .3rem; }
+.cl-vazio { text-align: center; color: var(--muted); padding: 3rem 1rem; }
+.cl-vazio .cl-btn { margin-top: .8rem; }
+
+/* ── Modal ────────────────────────────────────────────────────────────── */
+.cl-overlay {
+  position: fixed; inset: 0; background: rgba(var(--shadow-rgb), .65); z-index: 200;
+  display: flex; align-items: flex-start; justify-content: center; padding: 1.5rem 1rem; overflow-y: auto;
+}
+.cl-overlay[hidden] { display: none; }
+.cl-modal {
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg);
+  padding: 1.3rem; width: 100%; max-width: 520px;
+}
+.cl-modal h2 {
+  font-family: 'Big Shoulders Display', 'Archivo Narrow', system-ui, sans-serif;
+  font-weight: 800; font-size: 1.3rem; text-transform: uppercase; letter-spacing: .02em; margin: 0 0 1rem;
+}
+.cl-campo { margin-bottom: .75rem; min-width: 0; }
+.cl-campo label { display: block; font-size: .74rem; font-weight: 600; color: var(--text2); margin-bottom: .25rem; }
+.cl-campo label span { font-weight: 400; color: var(--muted); }
+.cl-linha { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; }
+.cl-ajuda { font-size: .72rem; color: var(--muted); margin-top: .25rem; display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.cl-erro { font-size: .8rem; color: var(--down); min-height: 1.2rem; }
+.cl-modal-acoes { display: flex; gap: .5rem; justify-content: flex-end; margin-top: .4rem; }
+
+@media (max-width: 640px) {
+  .cl-resumo { grid-template-columns: repeat(2, 1fr); }
+  .cl-card { grid-template-columns: minmax(0, 1fr); }
+  .cl-lado { flex-direction: row; align-items: center; flex-wrap: wrap; }
+  .cl-badge { white-space: normal; text-align: left; }
+  .cl-barra .cl-input { flex-basis: 100%; }
+  .cl-barra .cl-btn { flex: 1; }
+  .cl-linha { grid-template-columns: 1fr; gap: 0; }
+  .cl-user { display: none; }
+  .cl-top { padding-left: 1rem; padding-right: 1rem; }
+  .cl-page { padding-left: 1rem; padding-right: 1rem; }
+}
+</style>
+</head>
+<body>
+
+<div class="cl-top">
+  <a href="/" class="cl-back">&larr; Início</a>
+  <div class="cl-title">Contratos de Locação</div>
+  <div class="cl-user" id="clUser"></div>
+</div>
+
+<div class="cl-page">
+  <div class="cl-resumo" id="clResumo"></div>
+  <div class="cl-barra">
+    <input type="search" id="clBusca" class="cl-input" placeholder="Buscar loja, shopping ou observação…" aria-label="Buscar contrato">
+    <button class="cl-btn solido" id="clNovo">+ Novo contrato</button>
+  </div>
+  <div id="clLista"><div class="cl-vazio">Carregando…</div></div>
+</div>
+
+<div class="cl-overlay" id="clOverlay" hidden>
+  <form class="cl-modal" id="clForm" role="dialog" aria-modal="true" aria-labelledby="clModalT" novalidate>
+    <h2 id="clModalT">Novo contrato</h2>
+    <div class="cl-linha">
+      <div class="cl-campo">
+        <label for="fLoja">Loja</label>
+        <select id="fLoja" class="cl-input"></select>
+      </div>
+      <div class="cl-campo">
+        <label for="fShopping">Shopping</label>
+        <input type="text" id="fShopping" class="cl-input" list="clShoppings" autocomplete="off">
+        <datalist id="clShoppings"></datalist>
+      </div>
+    </div>
+    <div class="cl-linha">
+      <div class="cl-campo">
+        <label for="fInicio">Início do contrato</label>
+        <input type="date" id="fInicio" class="cl-input">
+      </div>
+      <div class="cl-campo">
+        <label for="fFim">Fim do contrato</label>
+        <input type="date" id="fFim" class="cl-input">
+      </div>
+    </div>
+    <div class="cl-linha">
+      <div class="cl-campo">
+        <label for="fPrazo">Data limite para negociar</label>
+        <input type="date" id="fPrazo" class="cl-input">
+        <div class="cl-ajuda">
+          <button type="button" class="cl-btn mini" id="fPrazo6">6 meses antes do fim</button>
+        </div>
+      </div>
+      <div class="cl-campo">
+        <label for="fSituacao">Situação da renovação</label>
+        <select id="fSituacao" class="cl-input">
+          <option value="nao_iniciada">Não iniciada</option>
+          <option value="em_negociacao">Em negociação</option>
+          <option value="nao_renovar">Não vamos renovar</option>
+        </select>
+      </div>
+    </div>
+    <div class="cl-campo">
+      <label for="fAluguel">Aluguel mensal (R$) <span>— opcional</span></label>
+      <input type="number" id="fAluguel" class="cl-input" min="0" step="0.01" inputmode="decimal">
+    </div>
+    <div class="cl-campo">
+      <label for="fCondicoes">Condições <span>— opcional</span></label>
+      <textarea id="fCondicoes" class="cl-input" placeholder="Índice de reajuste, % sobre faturamento, 13º aluguel, garantia…"></textarea>
+    </div>
+    <div class="cl-campo">
+      <label for="fObs">Observações <span>— opcional</span></label>
+      <textarea id="fObs" class="cl-input"></textarea>
+    </div>
+    <div class="cl-erro" id="clErro" role="alert"></div>
+    <div class="cl-modal-acoes">
+      <button type="button" class="cl-btn" id="clCancelar">Cancelar</button>
+      <button type="submit" class="cl-btn solido" id="clSalvar">Salvar</button>
+    </div>
+  </form>
+</div>
+
+<script src="/contratos-locacao.js"></script>
+</body>
+</html>
