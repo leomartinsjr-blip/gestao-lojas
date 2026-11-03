@@ -341,8 +341,9 @@ function desenharResumo() {
     <td class="n ${cls(g.pecasDif)}">${fInt(g.pecasDif)}</td><td class="n ${cls(g.pecasDifFinal)}">${fInt(g.pecasDifFinal)}</td>
     <td class="n ${cls(g.impactoSistema)}">${fRS(g.impactoSistema)}</td><td class="n ${cls(g.impactoConfirmado)}">${fRS(g.impactoConfirmado)}</td><td class="n ${cls(g.impactoApurar)}">${fRS(g.impactoApurar)}</td>
     <td class="n">${g.explicadoVenda}</td><td class="n">${fInt(g.vendas)}</td><td class="n">${g.explicadoTransito}</td><td class="n">${fInt(g.transito)}</td></tr>`;
-  const maiores = itensRecontagem(b).map(it => ({ it, imp: (difFinal(it) ?? it.l - it.e) * it.p }))
-    .filter(x => x.imp).sort((a, c) => Math.abs(c.imp) - Math.abs(a.imp)).slice(0, 15);
+  const divergencias = itensRecontagem(b).map(it => { const q = difFinal(it) ?? it.l - it.e; return { it, q, imp: q * it.p }; })
+    .filter(x => x.q).sort((a, c) => grupoCurto(a.it.g).localeCompare(grupoCurto(c.it.g)) || Math.abs(c.imp) - Math.abs(a.imp));
+  const totQ = divergencias.reduce((a, x) => a + x.q, 0), totImp = divergencias.reduce((a, x) => a + x.imp, 0);
   const jan = b.janelaTransito || {};
   $('sub').innerHTML = `
     <div class="toolbar noprint"><span class="muted">Vendas do dia da contagem · entradas de ${dBR(jan.ini)} a ${dBR(jan.fim)} contam como trânsito.</span><span class="grow"></span><button class="btn" onclick="window.print()">Imprimir</button></div>
@@ -355,9 +356,10 @@ function desenharResumo() {
       <th class="n">Dif. peças</th><th class="n">Dif. final</th><th class="n">Impacto sistema</th><th class="n">Confirmado</th><th class="n">A apurar</th>
       <th class="n">Expl. venda</th><th class="n">Vendas</th><th class="n">Expl. trânsito</th><th class="n">Trânsito</th>
     </tr></thead><tbody>${r.grupos.map(linha).join('')}</tbody><tfoot>${linha(t)}</tfoot></table></div>
-    <h4 style="margin:0 0 8px">Maiores impactos (recontado quando houver)</h4>
-    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Setor</th><th>Código</th><th>Descrição</th><th class="n">Estoque</th><th class="n">Balanço</th><th class="n">Recontada</th><th class="n">Impacto</th><th>Status</th><th>Observação</th></tr></thead>
-    <tbody>${maiores.map(({ it, imp }) => `<tr><td>${esc(grupoCurto(it.g))}</td><td>${esc(it.c || it.b)}</td><td class="desc">${esc(it.d)}</td><td class="n">${fInt(it.e)}</td><td class="n">${fInt(it.l)}</td><td class="n">${vazio(it.rc) ? '' : it.rc}</td><td class="n ${cls(imp)}">${fRS(imp)}</td><td><span class="${stCls(status(it))}">${status(it)}</span></td><td>${esc(it.ob || '')}</td></tr>`).join('')}</tbody></table></div>`;
+    <h4 style="margin:0 0 8px">Divergências (${divergencias.length} ${divergencias.length === 1 ? 'item' : 'itens'}, recontado quando houver)</h4>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Setor</th><th>Código</th><th>Descrição</th><th class="n">Estoque</th><th class="n">Balanço</th><th class="n">Recontada</th><th class="n">Diferença</th><th class="n">Impacto</th><th>Status</th><th>Observação</th></tr></thead>
+    <tbody>${divergencias.map(({ it, q, imp }) => `<tr><td>${esc(grupoCurto(it.g))}</td><td>${esc(it.c || it.b)}</td><td class="desc">${esc(it.d)}</td><td class="n">${fInt(it.e)}</td><td class="n">${fInt(it.l)}</td><td class="n">${vazio(it.rc) ? '' : it.rc}</td><td class="n ${cls(q)}">${fInt(q)}</td><td class="n ${cls(imp)}">${fRS(imp)}</td><td><span class="${stCls(status(it))}">${status(it)}</span></td><td>${esc(it.ob || '')}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">Nenhuma divergência.</td></tr>'}</tbody>
+    <tfoot><tr><td colspan="6">Total</td><td class="n ${cls(totQ)}">${fInt(totQ)}</td><td class="n ${cls(totImp)}">${fRS(totImp)}</td><td colspan="2"></td></tr></tfoot></table></div>`;
 }
 
 // ── Aba Trocas ─────────────────────────────────────────────────────────────
