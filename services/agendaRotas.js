@@ -180,7 +180,8 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, bo
   });
 
   // GET /api/agenda/sugestoes?emp=&data= — o que deve cair/sair no dia: REDE (venda do dia
-  // útil anterior sem a taxa; segunda = sex–dom) e DUPLI (faturas que vencem; segunda = sáb–seg)
+  // útil anterior sem a taxa; segunda = sex–dom) e DUPLI (faturas que vencem; segunda = sáb–seg).
+  // Feriado acumula conta e recebimento para o dia útil seguinte (fluxoCaixa.janelaDoDia).
   app.get('/api/agenda/sugestoes', requireAdmin, async (req, res) => {
     try {
       const emp = req.query.emp;

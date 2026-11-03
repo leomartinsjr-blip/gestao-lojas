@@ -1,7 +1,7 @@
 'use strict';
 // Fluxo de caixa previsto por loja: entradas = venda projetada (mesma regra do
 // Dash de Performance) recebida em D+1 já sem a taxa de cartão; saídas = faturas
-// a pagar em aberto do LinxFaturas (cpFaturas). Datas em dia útil (sáb/dom → seg).
+// a pagar em aberto do LinxFaturas (cpFaturas). Datas em dia útil (sáb/dom/feriado → próximo dia útil).
 
 const { PERF_HIST, PERF_2026 } = require('../public/perf-hist.js');
 
@@ -11,10 +11,32 @@ const addDias = (s, n) => { const d = new Date(s + 'T12:00:00Z'); d.setUTCDate(d
 const diasNoMes = (y, m) => new Date(Date.UTC(y, m, 0)).getUTCDate();
 const hojeBRT = () => ymd(new Date(Date.now() - 3 * 3600e3));
 
-// Sábado e domingo caem na segunda (o banco e a Rede não liquidam no fim de semana).
+// Feriados bancários: nacionais, os móveis (Carnaval seg/ter, Sexta-feira Santa,
+// Corpus Christi) e os de Belo Horizonte (15/08 e 08/12). Neles o banco e a Rede
+// não liquidam: conta e recebimento passam para o próximo dia útil.
+const FIXOS = ['01-01', '04-21', '05-01', '08-15', '09-07', '10-12', '11-02', '11-15', '11-20', '12-08', '12-25'];
+function pascoa(y) { // algoritmo de Meeus
+  const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4;
+  const f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const mes = Math.floor((h + l - 7 * m + 114) / 31), dia = ((h + l - 7 * m + 114) % 31) + 1;
+  return `${y}-${pad(mes)}-${pad(dia)}`;
+}
+const _feriados = {};
+function feriadosDoAno(y) {
+  if (!_feriados[y]) {
+    const p = pascoa(y);
+    _feriados[y] = new Set([...FIXOS.map(md => `${y}-${md}`), addDias(p, -48), addDias(p, -47), addDias(p, -2), addDias(p, 60)]);
+  }
+  return _feriados[y];
+}
+const ehFeriado = s => feriadosDoAno(+s.slice(0, 4)).has(s);
+const ehDiaUtil = s => ![0, 6].includes(new Date(s + 'T12:00:00Z').getUTCDay()) && !ehFeriado(s);
+
+// Sábado, domingo e feriado caem no próximo dia útil.
 function diaUtil(s) {
-  const dow = new Date(s + 'T12:00:00Z').getUTCDay();
-  return dow === 6 ? addDias(s, 2) : dow === 0 ? addDias(s, 1) : s;
+  while (!ehDiaUtil(s)) s = addDias(s, 1);
+  return s;
 }
 
 // Faturas antes disso sem baixa no Microvix são tratadas como pagas (lixo de 2020–2025).
@@ -233,12 +255,12 @@ function calcular({ db, faturas, taxas, saldos, boards, lancamentos = [], hoje =
 
 // ── Resumo do dia (card do painel) ──────────────────────────────────────────
 // Próximo dia útil (no fim de semana já é a segunda). Paga o que vence desde o
-// dia seguinte ao último dia útil até ele (segunda = sáb + dom + seg) e recebe a
+// dia seguinte ao último dia útil até ele (segunda = sáb + dom + seg; depois de feriado junta o feriado) e recebe a
 // venda dos dias desde o último dia útil (segunda = sex + sáb + dom).
 function janelaDoDia(hoje = hojeBRT()) {
   const alvo = diaUtil(hoje);
   let ant = addDias(alvo, -1);
-  while ([0, 6].includes(new Date(ant + 'T12:00:00Z').getUTCDay())) ant = addDias(ant, -1);
+  while (!ehDiaUtil(ant)) ant = addDias(ant, -1);
   const pagar = [], venda = [];
   for (let d = addDias(ant, 1); d <= alvo; d = addDias(d, 1)) pagar.push(d);
   for (let d = ant; d < alvo; d = addDias(d, 1)) venda.push(d);
@@ -335,4 +357,4 @@ function calcularMensal({ db, faturasMes, catManual = {}, lancamentos = [], taxa
   return { ano, hoje, meses, status, boards, empresas, nomesCategorias: NOMES_CATEGORIAS };
 }
 
-module.exports = { calcular, calcularMensal, resumoDoDia, janelaDoDia, criarProjecao, diaUtil, hojeBRT, addDias, EMPRESA, NOMES_CATEGORIAS, normForn };
+module.exports = { calcular, calcularMensal, resumoDoDia, janelaDoDia, criarProjecao, diaUtil, ehDiaUtil, ehFeriado, hojeBRT, addDias, EMPRESA, NOMES_CATEGORIAS, normForn };
