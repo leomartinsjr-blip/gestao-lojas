@@ -425,7 +425,8 @@ function txtCorrigido(bal) {
   const linhas = [];
   const fora = new Set(bal.gruposFora || []);
   const itens = (bal.itens || []).filter(it => it.b && !fora.has(it.g));
-  const final = it => (it.rc !== null && it.rc !== undefined && it.rc !== '') ? Number(it.rc) : it.l;
+  // Recontado vale a recontagem; explicado (OK/troca/venda/trânsito) fica com o estoque do sistema
+  const final = it => { const df = difFinal(it); return df === null ? it.l : Math.max(0, it.e + df); };
   const lidos = itens.filter(it => it.lido).sort((a, b) => a.o - b.o);
   for (const it of lidos) linhas.push(`${it.b},${final(it)}`);
   // Não lido que a loja achou na recontagem
