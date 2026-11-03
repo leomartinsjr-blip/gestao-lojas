@@ -393,9 +393,12 @@ function desenharTrocas() {
   };
   document.querySelectorAll('.tFeita').forEach(el => el.onchange = async () => {
     try {
-      await api(`/api/balancos/${b.id}/trocas/${el.dataset.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ feita: el.checked }) });
+      const j = await api(`/api/balancos/${b.id}/trocas/${el.dataset.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ feita: el.checked }) });
       const t = itens.find(x => x.id === el.dataset.id); Object.assign(t, { feita: el.checked, feitaPor: 'você', feitaEm: new Date().toISOString() });
       el.closest('tr').classList.toggle('feita', el.checked);
+      // Os dois itens da troca mudam de status na recontagem
+      Object.entries(j.sts || {}).forEach(([k, st]) => { const it = b.itens.find(x => (x.c || x.b) === k); if (it) it.st = st; });
+      if (j.resumo) { b.resumo = j.resumo; atualizarKpis(); }
     } catch (e) { alert(e.message); el.checked = !el.checked; }
   });
 }

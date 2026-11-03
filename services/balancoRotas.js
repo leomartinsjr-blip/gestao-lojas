@@ -416,9 +416,23 @@ function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin
       const feita = !!req.body?.feita;
       const campos = { feita, feitaPor: feita ? quem(req) : null, feitaEm: feita ? new Date().toISOString() : null };
       Object.assign(bal.trocas.itens[i], campos);
-      if (col()) await salvar(bal.id, Object.fromEntries(Object.entries(campos).map(([c, v]) => [`trocas.itens.${i}.${c}`, v])));
-      else await salvar(bal.id, { trocas: bal.trocas });
-      res.json({ ok: true });
+      const set = Object.fromEntries(Object.entries(campos).map(([c, v]) => [`trocas.itens.${i}.${c}`, v]));
+      // Troca feita: os dois códigos passam a TROCA na recontagem. Desmarcar só volta ao automático
+      // o que ainda está como TROCA e não faz parte de outra troca feita.
+      const t = bal.trocas.itens[i];
+      const emOutraFeita = c => bal.trocas.itens.some(o => o.feita && o.id !== t.id && (o.entra.c === c || o.sai.c === c));
+      const sts = {};
+      [t.entra.c, t.sai.c].forEach(c => {
+        const j = (bal.itens || []).findIndex(it => String(it.c || it.b) === String(c));
+        if (j < 0) return;
+        const it = bal.itens[j];
+        const st = feita ? 'TROCA' : (it.st === 'TROCA' && !emOutraFeita(c) ? null : it.st || null);
+        if ((it.st || null) === st) return;
+        it.st = st; set[`itens.${j}.st`] = st; sts[it.c || it.b] = st;
+      });
+      if (col()) await salvar(bal.id, set);
+      else await salvar(bal.id, { trocas: bal.trocas, itens: bal.itens });
+      res.json({ ok: true, sts, resumo: resumo(bal) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
