@@ -79,6 +79,14 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 12px; }
 .tbl .n { text-align: right; font-variant-numeric: tabular-nums; }
 .tbl .c { text-align: center; }
 .tbl td.desc { white-space: normal; min-width: 240px; }
+/* Recontagem cabe na largura da página: colunas fixas, descrição/setor/referência quebram linha */
+table.tbl.fit { table-layout: fixed; }
+.tbl.fit th, .tbl.fit td { padding-left: 5px; padding-right: 5px; }
+.tbl.fit th { white-space: normal; line-height: 1.2; }
+.tbl.fit td { overflow: hidden; text-overflow: ellipsis; }
+.tbl.fit td.desc { min-width: 0; }
+.tbl.fit td:nth-child(1), .tbl.fit td:nth-child(4) { white-space: normal; overflow-wrap: anywhere; }
+.tbl.fit input.rc, .tbl.fit input.ob, .tbl.fit select.stsel { width: 100%; max-width: 100%; }
 .tbl tfoot td { font-weight: 700; background: var(--surface2); position: sticky; bottom: 0; }
 .tbl input.rc { width: 64px; text-align: center; height: 28px; padding: 2px 4px; font-weight: 700; }
 .tbl input.ob { width: 180px; height: 28px; padding: 2px 6px; }
