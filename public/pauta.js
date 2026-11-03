@@ -482,8 +482,20 @@ function renderCrm() {
     </tr></thead>
     <tbody>${linhas.map(v => {
       const ag = pctDe(v.contatados, v.publico), x = pctDe(v.vendas - v.semCadastro, v.vendas);
-      return `<tr>
-        <td>${esc(v.nome)}${v.inativo ? '<span class="pa-tag out">saiu</span>' : ''}</td>
+      const k = `${v.board}|${v.empId}`, camps = v.campanhas || [], aberto = crmAbertos.has(k);
+      // Clique no vendedor abre a agenda dele campanha a campanha
+      const sub = !aberto ? '' : camps.slice().sort((a, b) => b.publico - a.publico).map(cp => {
+        const agc = pctDe(cp.contatados, cp.publico);
+        return `<tr class="crm-sub">
+          <td style="padding-left:2rem">${esc(cp.nome)}</td>
+          <td class="num">${fNum(cp.publico)}</td><td class="num">${fNum(cp.contatados)}</td>
+          <td class="num ${clsAgenda(agc)}">${fPct(agc)}</td><td class="num mut">—</td>
+          <td class="num">${cp.contatados ? `${fNum(cp.compraramAposContato)} <span class="mut">${fPct(pctDe(cp.compraramAposContato, cp.contatados))}</span>` : '<span class="mut">—</span>'}</td>
+          <td class="num">${fBRL(cp.faturamentoCampApos)}</td><td class="num mut">—</td>
+        </tr>`;
+      }).join('');
+      return `<tr ${camps.length ? `data-crmv="${esc(k)}" style="cursor:pointer" title="Ver por campanha"` : ''}>
+        <td>${camps.length ? `<span class="mut" style="display:inline-block;width:.9rem">${aberto ? '▾' : '▸'}</span>` : ''}${esc(v.nome)}${v.inativo ? '<span class="pa-tag out">saiu</span>' : ''}</td>
         <td class="num">${fNum(v.publico)}</td>
         <td class="num">${fNum(v.contatados)}</td>
         <td class="num ${clsAgenda(ag)}" style="font-weight:700">${fPct(ag)}</td>
@@ -491,7 +503,7 @@ function renderCrm() {
         <td class="num">${v.contatados ? `${fNum(v.compraramAposContato)} <span class="mut">${fPct(pctDe(v.compraramAposContato, v.contatados))}</span>` : '<span class="mut">—</span>'}</td>
         <td class="num" style="font-weight:700">${fBRL(v.faturamentoCampApos)}</td>
         <td class="num ${clsCad(x)}">${fPct(x)}</td>
-      </tr>`;
+      </tr>${sub}`;
     }).join('')}</tbody>
     <tfoot><tr>
       <td>Loja</td><td class="num">${fNum(publico)}</td><td class="num">${fNum(contatados)}</td>
@@ -500,9 +512,20 @@ function renderCrm() {
       <td class="num">${fBRL(influR)}</td><td class="num ${clsCad(cad)}">${fPct(cad)}</td>
     </tr></tfoot>`;
 
+  const chaves = linhas.filter(v => v.campanhas?.length).map(v => `${v.board}|${v.empId}`);
+  const tudo = chaves.length && chaves.every(k => crmAbertos.has(k));
   box.innerHTML = `<div class="pa-kpis">${kpis}</div>
-    <div class="pa-tbl-wrap" style="margin-top:.8rem"><table class="pa-tbl" style="min-width:640px">${tbl}</table></div>`;
+    ${chaves.length ? `<div style="margin-top:.8rem"><button type="button" class="pa-link" id="crmTodas" style="background:none;border:0;cursor:pointer;padding:0">${tudo ? '▾ Fechar campanhas' : '▸ Abrir por campanha'}</button></div>` : ''}
+    <div class="pa-tbl-wrap" style="margin-top:.5rem"><table class="pa-tbl" style="min-width:640px">${tbl}</table></div>`;
+  box.querySelectorAll('[data-crmv]').forEach(tr => tr.onclick = () => {
+    const k = tr.dataset.crmv;
+    crmAbertos.has(k) ? crmAbertos.delete(k) : crmAbertos.add(k);
+    renderCrm();
+  });
+  const bt = $('crmTodas');
+  if (bt) bt.onclick = () => { chaves.forEach(k => tudo ? crmAbertos.delete(k) : crmAbertos.add(k)); renderCrm(); };
 }
+const crmAbertos = new Set();
 
 // ── 4 · Histórico dos últimos meses ──────────────────────────────────────────
 // A leitura que importa: o % do vendedor contra o % que a loja fez no mesmo

@@ -80,6 +80,7 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-u
 .pa-tbl td{background:var(--surface);padding:.45rem .6rem;border-bottom:1px solid var(--border);color:var(--text);white-space:nowrap;vertical-align:middle}
 .pa-tbl tbody tr:last-child td{border-bottom:none}
 .pa-tbl tbody tr:hover td{background:var(--surface2)}
+.pa-tbl tr.crm-sub td{color:var(--muted);font-size:.74rem;padding-top:.3rem;padding-bottom:.3rem}
 .pa-tbl .num{text-align:right;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:.76rem;font-variant-numeric:tabular-nums}
 .pa-tbl th.num{font-family:inherit;font-size:.66rem}
 .pa-tbl tfoot td{font-weight:700;background:var(--surface2);border-top:1px solid var(--border2);border-bottom:none}
@@ -360,6 +361,11 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-u
       </div>
       <div class="pa-card-body">
         <div class="pa-tbl-wrap"><table class="pa-tbl" id="vendTbl"></table></div>
+        <div class="pa-sub-hdr">Histórico mês a mês <span class="pa-card-sub" id="histSub"></span></div>
+        <div class="pa-tbl-wrap"><table class="pa-tbl" id="histTbl"></table></div>
+        <div class="pa-legend">Só a equipe do mês — quem saiu no meio dele continua aqui. O número grande é o % da meta do vendedor no mês; embaixo, a diferença em pontos para o % que a loja fez no mesmo mês.
+        Verde ficou acima da loja — puxou o resultado. Vermelho ficou abaixo. Num mês fraco da loja, 85% pode ser bom; num mês forte, 100% pode ser pouco.
+        A média desses meses e a comparação com o mês atual estão no quadro dos vendedores, acima.</div>
         <div class="pa-ta-lbl">Comentário sobre a equipe</div>
         <textarea class="pa-ta" id="cmtVendedores" placeholder="Quem puxou o resultado, quem precisa de acompanhamento, o que foi combinado individualmente…"></textarea>
       </div>
@@ -380,24 +386,10 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-u
       </div>
     </div>
 
-    <!-- 4 · Histórico -->
+    <!-- 4 · RH -->
     <div class="pa-card">
       <div class="pa-card-hdr">
         <span class="pa-card-num">04</span>
-        <span class="pa-card-title">Histórico mês a mês <span class="pa-card-sub" id="histSub"></span></span>
-      </div>
-      <div class="pa-card-body">
-        <div class="pa-tbl-wrap"><table class="pa-tbl" id="histTbl"></table></div>
-        <div class="pa-legend">Só a equipe do mês — quem saiu no meio dele continua aqui. O número grande é o % da meta do vendedor no mês; embaixo, a diferença em pontos para o % que a loja fez no mesmo mês.
-        Verde ficou acima da loja — puxou o resultado. Vermelho ficou abaixo. Num mês fraco da loja, 85% pode ser bom; num mês forte, 100% pode ser pouco.
-        A média desses meses e a comparação com o mês atual estão no quadro dos vendedores, acima.</div>
-      </div>
-    </div>
-
-    <!-- 5 · RH -->
-    <div class="pa-card">
-      <div class="pa-card-hdr">
-        <span class="pa-card-num">05</span>
         <span class="pa-card-title">Pendências de RH <span class="pa-card-sub" id="rhSub"></span></span>
       </div>
       <div class="pa-card-body">
@@ -424,10 +416,10 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-u
       </div>
     </div>
 
-    <!-- 6 · Produtos e serviços vendidos x estoque -->
+    <!-- 5 · Produtos e serviços vendidos x estoque -->
     <div class="pa-card">
       <div class="pa-card-hdr">
-        <span class="pa-card-num">06</span>
+        <span class="pa-card-num">05</span>
         <span class="pa-card-title">Produtos e serviços vendidos × estoque <span class="pa-card-sub" id="prodSub"></span></span>
       </div>
       <div class="pa-card-body">
@@ -457,10 +449,10 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-u
       </div>
     </div>
 
-    <!-- 7 · Fechamento de balanço -->
+    <!-- 6 · Fechamento de balanço -->
     <div class="pa-card">
       <div class="pa-card-hdr">
-        <span class="pa-card-num">07</span>
+        <span class="pa-card-num">06</span>
         <span class="pa-card-title">Fechamento de balanço <span class="pa-card-sub" id="balSub"></span></span>
       </div>
       <div class="pa-card-body">
@@ -486,19 +478,19 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-u
       </div>
     </div>
 
-    <!-- 8 · Pendências abertas -->
+    <!-- 7 · Pendências abertas -->
     <div class="pa-card">
       <div class="pa-card-hdr">
-        <span class="pa-card-num">08</span>
+        <span class="pa-card-num">07</span>
         <span class="pa-card-title">Pendências e ações anteriores <span class="pa-card-sub" id="pendSub"></span></span>
       </div>
       <div class="pa-card-body" id="pendBody"></div>
     </div>
 
-    <!-- 9 · Ações combinadas -->
+    <!-- 8 · Ações combinadas -->
     <div class="pa-card">
       <div class="pa-card-hdr">
-        <span class="pa-card-num">09</span>
+        <span class="pa-card-num">08</span>
         <span class="pa-card-title">Ações combinadas <span class="pa-card-sub">viram itens de pauta da loja ao fechar a reunião</span></span>
       </div>
       <div class="pa-card-body">
@@ -512,10 +504,10 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-u
       </div>
     </div>
 
-    <!-- 10 · Roteiro da conversa -->
+    <!-- 9 · Roteiro da conversa -->
     <div class="pa-card">
       <div class="pa-card-hdr">
-        <span class="pa-card-num">10</span>
+        <span class="pa-card-num">09</span>
         <span class="pa-card-title">Roteiro da conversa <span class="pa-card-sub" id="iaSub">gerado a partir dos números acima</span></span>
         <button class="pa-btn" id="btnIA">Gerar roteiro</button>
       </div>
