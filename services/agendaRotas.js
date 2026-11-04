@@ -179,36 +179,56 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, bo
     } catch (e) { console.error('[agenda importar]', e); res.status(500).json({ error: e.message }); }
   });
 
-  // GET /api/agenda/sugestoes?emp=&data= — o que deve cair/sair no dia: REDE (venda do dia
-  // útil anterior sem a taxa; segunda = sex–dom) e DUPLI (faturas que vencem; segunda = sáb–seg).
-  // Feriado acumula conta e recebimento para o dia útil seguinte (fluxoCaixa.janelaDoDia).
+  // O que deve cair/sair no dia: REDE (venda do dia útil anterior sem a taxa; segunda = sex–dom)
+  // e DUPLI (faturas que vencem; segunda = sáb–seg). Feriado acumula conta e recebimento para o
+  // dia útil seguinte (fluxoCaixa.janelaDoDia). Fonte única do Previsto e do Resumo do dia.
+  const boardsDe = emp => [...new Set(Object.entries(agenda.BOARD[emp] || {}).filter(([c]) => c !== 'CG').map(([, b]) => b))];
+  const dataDe = q => /^\d{4}-\d{2}-\d{2}$/.test(q || '') ? q : fluxoCaixa.hojeBRT();
+  async function previstoDoDia(boards, data) {
+    const jan = fluxoCaixa.janelaDoDia(data);
+    const [db, taxas] = await Promise.all([readDB(), fluxoTaxas(fluxoCaixa.hojeBRT())]);
+    const mongo = getDb();
+    const faturas = mongo
+      ? await mongo.collection('cpFaturas').find({ isPagar: true, previsao: { $ne: 'S' }, board: { $in: boards }, vencimento: { $in: jan.pagar } },
+          { projection: { _id: 0, board: 1, fornecedor: 1, parcela: 1, vencimento: 1, baixa: 1, valor: 1, valorLiquido: 1, valorPago: 1, previsao: 1 } }).toArray()
+      : [];
+    const r = fluxoCaixa.resumoDoDia({ db, faturas: [], taxas, boards, hoje: data });
+    const itens = boards.map(b => {
+      const conta = b === 'site' ? 'SITE' : 'CC';
+      const fs_ = faturas.filter(f => f.board === b).map(f => ({
+        forn: f.fornecedor, venc: f.vencimento, parc: f.parcela, pago: !!f.baixa, previsao: f.previsao,
+        v: Math.round((f.baixa ? (f.valorPago || 0) : (f.valorLiquido ?? f.valor) - (f.valorPago || 0)) * 100) / 100,
+      })).filter(f => f.v > 0.005).sort((a, b2) => b2.v - a.v);
+      const e = r.empresas[b];
+      return { board: b, label: boardsLabel[b] || b, conta, venda: e.venda, taxa: e.taxa, rede: e.entra,
+        dupli: Math.round(fs_.reduce((s, f) => s + f.v, 0) * 100) / 100, faturas: fs_ };
+    });
+    return { data: jan.alvo, pagar: jan.pagar, venda: jan.venda, itens };
+  }
+
+  // GET /api/agenda/sugestoes?emp=&data= — previsto do dia de uma empresa
   app.get('/api/agenda/sugestoes', requireAdmin, async (req, res) => {
     try {
-      const emp = req.query.emp;
-      const data = /^\d{4}-\d{2}-\d{2}$/.test(req.query.data || '') ? req.query.data : fluxoCaixa.hojeBRT();
-      const contaDe = Object.entries(agenda.BOARD[emp] || {}).filter(([c]) => c !== 'CG');
-      const boards = [...new Set(contaDe.map(([, b]) => b))];
+      const data = dataDe(req.query.data);
+      const boards = boardsDe(req.query.emp);
       if (!boards.length) return res.json({ data, boards: [], itens: [] });
-      const jan = fluxoCaixa.janelaDoDia(data);
-      const [db, taxas] = await Promise.all([readDB(), fluxoTaxas(fluxoCaixa.hojeBRT())]);
-      const mongo = getDb();
-      const faturas = mongo
-        ? await mongo.collection('cpFaturas').find({ isPagar: true, previsao: { $ne: 'S' }, board: { $in: boards }, vencimento: { $in: jan.pagar } },
-            { projection: { _id: 0, board: 1, fornecedor: 1, parcela: 1, vencimento: 1, baixa: 1, valor: 1, valorLiquido: 1, valorPago: 1, previsao: 1 } }).toArray()
-        : [];
-      const r = fluxoCaixa.resumoDoDia({ db, faturas: [], taxas, boards, hoje: data });
-      const itens = boards.map(b => {
-        const conta = b === 'site' ? 'SITE' : 'CC';
-        const fs_ = faturas.filter(f => f.board === b).map(f => ({
-          forn: f.fornecedor, venc: f.vencimento, parc: f.parcela, pago: !!f.baixa, previsao: f.previsao,
-          v: Math.round((f.baixa ? (f.valorPago || 0) : (f.valorLiquido ?? f.valor) - (f.valorPago || 0)) * 100) / 100,
-        })).filter(f => f.v > 0.005).sort((a, b2) => b2.v - a.v);
-        const e = r.empresas[b];
-        return { board: b, label: boardsLabel[b] || b, conta, venda: e.venda, taxa: e.taxa, rede: e.entra,
-          dupli: Math.round(fs_.reduce((s, f) => s + f.v, 0) * 100) / 100, faturas: fs_ };
-      });
-      res.json({ data: jan.alvo, pagar: jan.pagar, venda: jan.venda, itens });
+      res.json(await previstoDoDia(boards, data));
     } catch (e) { console.error('[agenda sugestoes]', e); res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/agenda/resumo-dia?data= — o mesmo previsto, de todas as empresas da agenda
+  app.get('/api/agenda/resumo-dia', requireAdmin, async (req, res) => {
+    try {
+      const p = await previstoDoDia([...new Set(agenda.EMPRESAS.flatMap(boardsDe))], dataDe(req.query.data));
+      const soma = (its, f) => Math.round(its.reduce((s, i) => s + f(i), 0) * 100) / 100;
+      const empresas = agenda.EMPRESAS.map(emp => {
+        const bs = boardsDe(emp), its = p.itens.filter(i => bs.includes(i.board));
+        const faturas = its.flatMap(i => i.faturas.map(f => ({ ...f, loja: i.label }))).sort((a, b) => b.v - a.v);
+        return { emp, microvix: bs.length > 0, lojas: its.map(i => i.label), venda: soma(its, i => i.venda), rede: soma(its, i => i.rede),
+          dupli: soma(its, i => i.dupli), baixado: soma(faturas, f => f.pago ? f.v : 0), faturas };
+      });
+      res.json({ hoje: fluxoCaixa.hojeBRT(), data: p.data, pagar: p.pagar, venda: p.venda, empresas });
+    } catch (e) { console.error('[agenda resumo-dia]', e); res.status(500).json({ error: e.message }); }
   });
 
   // Saldo da agenda por loja, para o fluxo: atual e no fim de cada mês.

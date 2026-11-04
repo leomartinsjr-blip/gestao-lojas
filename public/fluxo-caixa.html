@@ -156,6 +156,10 @@
   .ag-fat { font-size: 11px; color: var(--text2); display: flex; justify-content: space-between; gap: 8px; padding: 2px 0 2px 10px; }
   .ag-fat.pago { opacity: .55; text-decoration: line-through; }
   .ag-imp { padding: 12px 14px; display: grid; gap: 8px; font-size: 12px; }
+  .rd-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px 24px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  #rd-tab tr.off td { color: var(--text2); cursor: default; }
+  #rd-tab tr.pago td { opacity: .55; text-decoration: line-through; }
+  #rd-corpo .ag-sug { border-bottom: none; }
   input.fm-sal.ag { color: var(--blue); }
   input.fm-sal.ag::placeholder { opacity: 1; }
   input.fm-sal.ag.neg { color: var(--red); }
@@ -231,6 +235,19 @@
     </div>
   </div>
   <div id="ag-main" style="display:none">
+    <div class="fc-panel">
+      <div class="fc-panel-hd">
+        <h2>Resumo do dia</h2>
+        <span class="muted" id="rd-sub"></span>
+        <div class="ag-nav">
+          <button class="fc-btn" id="rd-prev" title="Dia útil anterior">←</button>
+          <b id="rd-dia"></b>
+          <button class="fc-btn" id="rd-next" title="Próximo dia útil">→</button>
+          <button class="fc-btn" id="rd-hoje">Hoje</button>
+        </div>
+      </div>
+      <div id="rd-corpo"></div>
+    </div>
     <div class="fc-panel">
       <div class="fc-panel-hd"><h2>Conta garantida</h2><span class="muted" id="ag-painel-sub"></span></div>
       <div class="fc-scroll"><table id="ag-painel"></table></div>
@@ -654,6 +671,7 @@ async function carregarAgenda(data) {
     A = j; AS = null;
     $('fc-msg').style.display = 'none'; $('ag-main').style.display = '';
     renderAgenda();
+    if (!RD) carregarResumoDia();
     fetch(`/api/agenda/sugestoes?emp=${agEmp}&data=${A.data}`).then(r => r.json()).then(s => { if (s.itens && A && s.data) { AS = s; renderSugestoes(); } }).catch(() => {});
   } catch (e) {
     $('fc-msg').style.display = 'none';
@@ -749,6 +767,70 @@ function renderSugestoes() {
     </div>`;
   }).join('');
 }
+
+// Resumo do dia: todas as empresas, com data própria (abre em hoje, mesmo que o
+// extrato abaixo esteja no último dia lançado). Valores iguais aos do Previsto.
+let RD = null, rdPedido = 0;
+const rdAbertos = new Set();
+async function carregarResumoDia(data) {
+  const pedido = ++rdPedido;
+  if (!RD) $('rd-corpo').innerHTML = '<div class="ag-sug muted"><span class="spinner"></span> Calculando…</div>';
+  try {
+    const r = await fetch('/api/agenda/resumo-dia' + (data ? '?data=' + data : ''));
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.status);
+    if (pedido !== rdPedido) return; // clicou em outro dia antes de responder
+    RD = j; renderResumoDia();
+  } catch (e) {
+    if (pedido === rdPedido) $('rd-corpo').innerHTML = `<div class="ag-sug neg">Não calculou o resumo: ${esc(e.message)}</div>`;
+  }
+}
+
+function renderResumoDia() {
+  const dowDe = d => DOW_AG[new Date(d + 'T12:00:00Z').getUTCDay()];
+  const dias = ds => ds.length === 1 ? `${dowDe(ds[0])} ${DM(ds[0])}` : `${DM(ds[0])} a ${DM(ds[ds.length - 1])}`;
+  const brl = v => v ? R2(v).replace('R$ ', '') : '—';
+  const sinal = v => v < -0.005 ? 'neg' : v > 0.005 ? 'pos' : '';
+  const soma = f => RD.empresas.reduce((s, e) => s + f(e), 0);
+  const venda = soma(e => e.venda), rede = soma(e => e.rede), dupli = soma(e => e.dupli), baixado = soma(e => e.baixado);
+  const nFat = soma(e => e.faturas.length);
+  $('rd-dia').textContent = `${dowDe(RD.data)} ${DM(RD.data)}`;
+  $('rd-sub').textContent = RD.data === RD.hoje ? 'hoje' : '';
+  const kpi = (l, v, sub, c = '') => `<div><div class="fc-card-label">${l}</div><div class="fc-card-value ${c}">${v}</div><div class="fc-card-sub">${sub}</div></div>`;
+  const linha = e => {
+    if (!e.microvix) return `<tr class="off"><td><span class="fm-seta"></span><b>${e.emp}</b></td><td colspan="4" class="muted">sem Microvix</td></tr>`;
+    const n = e.faturas.length, ab = n && rdAbertos.has(e.emp), saldo = e.rede - e.dupli;
+    const variasLojas = e.lojas.length > 1, variosDias = RD.pagar.length > 1;
+    return `<tr class="${n ? 'fc-row' : ''}${ab ? ' open' : ''}" data-rd="${e.emp}">
+      <td><span class="fm-seta">${n ? (ab ? '▾' : '▸') : ''}</span><b>${e.emp}</b> <span class="muted" style="font-size:11px">${esc(e.lojas.join(' + '))}</span></td>
+      <td>${brl(e.venda)}</td><td class="${e.rede ? 'pos' : ''}">${brl(e.rede)}</td>
+      <td class="${e.dupli ? 'neg' : ''}">${brl(e.dupli)}${n ? ` <span class="muted" style="font-size:11px">(${n})</span>` : ''}</td>
+      <td class="${sinal(saldo)}"><b>${brl(saldo)}</b></td></tr>`
+      + (ab ? `<tr class="fc-det"><td colspan="5"><div class="fc-det-wrap"><table>
+        <thead><tr><th>Fornecedor</th><th style="text-align:left">Parcela</th>${variasLojas ? '<th style="text-align:left">Loja</th>' : ''}${variosDias ? '<th>Vencimento</th>' : ''}<th>Valor</th></tr></thead>
+        <tbody>${e.faturas.map(f => `<tr class="${f.pago ? 'pago' : ''}"><td>${esc(f.forn)}${f.pago ? ' (pago)' : ''}</td><td style="text-align:left">${esc(f.parc || '')}</td>${variasLojas ? `<td style="text-align:left">${esc(f.loja)}</td>` : ''}${variosDias ? `<td>${DM(f.venc)}</td>` : ''}<td>${brl(f.v)}</td></tr>`).join('')}</tbody>
+      </table></div></td></tr>` : '');
+  };
+  $('rd-corpo').innerHTML = `<div class="rd-kpis">
+      ${kpi('Vendeu', R2(venda), dias(RD.venda))}
+      ${kpi('Previsão de recebimento', R2(rede), `cartão sem a taxa · cai ${DM(RD.data)}`, 'pos')}
+      ${kpi('A pagar', R2(dupli), `${nFat} fatura${nFat === 1 ? '' : 's'} · vence${nFat === 1 ? '' : 'm'} ${dias(RD.pagar)}${baixado > 0.005 ? ` · ${R2(baixado)} já baixado` : ''}`, dupli ? 'neg' : '')}
+      ${kpi('Saldo do dia', R2(rede - dupli), 'recebimento − a pagar', sinal(rede - dupli))}
+    </div>
+    <div class="fc-scroll"><table id="rd-tab">
+      <thead><tr><th>Empresa</th><th>Vendeu</th><th>Recebimento</th><th>A pagar</th><th>Saldo do dia</th></tr></thead>
+      <tbody>${RD.empresas.map(linha).join('')}</tbody>
+    </table></div>`;
+}
+$('rd-corpo').addEventListener('click', e => {
+  const tr = e.target.closest('tr.fc-row[data-rd]'); if (!tr) return;
+  rdAbertos.has(tr.dataset.rd) ? rdAbertos.delete(tr.dataset.rd) : rdAbertos.add(tr.dataset.rd);
+  renderResumoDia();
+});
+// RD.venda[0] é o dia útil anterior já contando feriado
+$('rd-prev').addEventListener('click', () => RD && carregarResumoDia(RD.venda[0]));
+$('rd-next').addEventListener('click', () => RD && carregarResumoDia(diaUtilAg(RD.data, 1)));
+$('rd-hoje').addEventListener('click', () => carregarResumoDia());
 
 async function agPost(corpo) {
   const r = await fetch('/api/agenda/lanc', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ emp: agEmp, data: A.data, ...corpo }) });
@@ -1055,7 +1137,7 @@ $('fc-saldos').addEventListener('click', async e => {
 $('fc-loja').addEventListener('change', () => { abertos.clear(); if (D) render(); if (M) renderMensal(); });
 $('fc-atraso').addEventListener('change', render);
 $('fc-dias').addEventListener('change', carregar);
-$('fc-reload').addEventListener('click', () => modo === 'mes' ? carregarMensal() : modo === 'agenda' ? carregarAgenda(A?.data) : carregar());
+$('fc-reload').addEventListener('click', () => modo === 'mes' ? carregarMensal() : modo === 'agenda' ? (carregarAgenda(A?.data), RD && carregarResumoDia(RD.data)) : carregar());
 carregarMensal();
 </script>
 </body>
