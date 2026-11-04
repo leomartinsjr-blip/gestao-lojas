@@ -29,6 +29,11 @@
   thead th { background:var(--bg3); font-size:12px; color:var(--text2); }
   tr.total td { font-weight:700; background:var(--bg3); }
   td small { display:block; color:var(--text2); font-size:11px; }
+  .abas { display:flex; gap:6px; padding:0 0 12px; }
+  .abas button.ativa { color:var(--blue); border-color:var(--blue); font-weight:600; }
+  tr.abre { cursor:pointer; } tr.abre td:first-child::before { content:'▸ '; color:var(--text2); }
+  tr.abre.aberta td:first-child::before { content:'▾ '; }
+  tr.sub td { background:var(--bg3); font-size:12px; color:var(--text2); } tr.sub td:first-child { background:var(--bg3); padding-left:30px; white-space:normal; min-width:240px; }
   .dif { color:var(--red); } .falta { color:var(--yellow); font-weight:600; }
   .nota { color:var(--text2); padding:0 2px 14px; line-height:1.6; }
   #msg { padding:20px; color:var(--text2); }
@@ -44,8 +49,15 @@
   <div id="msg">Carregando…</div>
   <div id="conteudo" hidden>
     <div class="painel manual" id="manuais"></div>
-    <div class="painel"><h2 id="titulo"></h2><table id="tabela"></table></div>
-    <p class="nota" id="nota"></p>
+    <div class="abas"><button id="abaDre" class="ativa">DRE</button><button id="abaCaixa">Fechamento de Caixa</button></div>
+    <div id="vDre">
+      <div class="painel"><h2 id="titulo"></h2><table id="tabela"></table></div>
+      <p class="nota" id="nota"></p>
+    </div>
+    <div id="vCaixa" hidden>
+      <div class="painel"><h2 id="tituloCaixa"></h2><table id="tabelaCaixa"></table></div>
+      <p class="nota">Só o que foi pago, pelo vencimento, como na skill do Fechamento de Caixa. Clique na linha para ver os fornecedores.</p>
+    </div>
   </div>
 </main>
 <script>
@@ -89,9 +101,25 @@ function desenhar(d) {
   const [a, m] = d.mes.split('-');
   $('titulo').textContent = `Resultado parcial de ${m}/${a}`;
   const cab = `<thead><tr><th>Linha</th>${d.ordem.map(b => `<th>${nome(b)}</th>`).join('')}</tr></thead>`;
-  const corpo = LINHAS.map(([k, rot]) => `<tr><td>${rot}</td>${d.ordem.map(b =>
-    celula(d.lojas[b][k], d.planilha?.[b]?.[k])).join('')}</tr>`).join('');
+  const subs = itens => itens.map(i => `<tr class="sub" hidden><td>${i.nome}</td>${d.ordem.map(b =>
+    `<td>${i.lojas[b] ? num(i.lojas[b]) : ''}</td>`).join('')}</tr>`).join('');
+  const corpo = LINHAS.map(([k, rot]) => {
+    const itens = d.detalhe?.[k] || [];
+    return `<tr class="${itens.length ? 'abre' : ''}"><td>${rot}</td>${d.ordem.map(b =>
+      celula(d.lojas[b][k], d.planilha?.[b]?.[k])).join('')}</tr>${subs(itens)}`;
+  }).join('');
   $('tabela').innerHTML = cab + `<tbody>${corpo}</tbody>`;
+  $('tituloCaixa').textContent = `Fechamento de Caixa de ${m}/${a}`;
+  const linhaTotal = (rot, valores) => `<tr class="total"><td>${rot}</td>${d.ordem.map(b => `<td>${num(valores[b] || 0)}</td>`).join('')}</tr>`;
+  $('tabelaCaixa').innerHTML = cab + '<tbody>' + d.caixa.linhas.map(l =>
+    `<tr class="${l.detalhe.length ? 'abre' : ''}"><td>${l.nome}</td>${d.ordem.map(b =>
+      `<td>${l.lojas[b] ? num(l.lojas[b]) : ''}</td>`).join('')}</tr>${subs(l.detalhe)}`).join('') +
+    linhaTotal('Soma despesas (-)', d.caixa.soma) + linhaTotal('Recebimentos (+)', d.caixa.recebimentos) +
+    linhaTotal('Resultado (=)', d.caixa.resultado) + '</tbody>';
+  document.querySelectorAll('tr.abre').forEach(tr => tr.addEventListener('click', () => {
+    tr.classList.toggle('aberta');
+    for (let n = tr.nextElementSibling; n && n.classList.contains('sub'); n = n.nextElementSibling) n.hidden = !n.hidden;
+  }));
   const quando = d.conferenciaEm ? new Date(d.conferenciaEm).toLocaleString('pt-BR') : '';
   $('nota').textContent = `Primeira parte: faltam as demais linhas da DRE, por isso ainda não há resultado final. ` +
     `Juros e empréstimos vêm das faturas pelo vencimento, pagas ou em aberto. Conferência lida em ${quando}.`;
@@ -132,6 +160,12 @@ async function carregar(recalcular) {
 // Abre no último mês fechado
 const ref = new Date(); ref.setDate(1); ref.setMonth(ref.getMonth() - 1);
 $('mes').value = `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}`;
+const aba = caixa => {
+  $('vDre').hidden = caixa; $('vCaixa').hidden = !caixa;
+  $('abaDre').classList.toggle('ativa', !caixa); $('abaCaixa').classList.toggle('ativa', caixa);
+};
+$('abaDre').addEventListener('click', () => aba(false));
+$('abaCaixa').addEventListener('click', () => aba(true));
 $('mes').addEventListener('change', () => carregar(false));
 $('recalcular').addEventListener('click', () => carregar(true));
 carregar(false);

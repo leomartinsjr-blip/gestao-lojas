@@ -75,8 +75,9 @@ function lerFaturas(rows) {
   const cab = rows[1];
   const iForn = coluna(cab, 'Nome Fornecedor'), iValor = coluna(cab, 'Valor Líquido');
   const iComp = coluna(cab, 'Data de Competencia');
+  const iBaixado = coluna(cab, 'Valor Baixado'), iAberto = coluna(cab, 'Valor Em Aberto');
   const mes = mesDoFiltro(rows[0][1]);
-  const totais = {}, aClassificar = {};
+  const totais = {}, aClassificar = {}, fornecedores = {};
   let documentos = 0, foraDoMes = 0;
   for (const r of rows.slice(2)) {
     const fornecedor = rotulo(r[iForn]);
@@ -84,12 +85,16 @@ function lerFaturas(rows) {
     if (dataSerial(r[iComp]) !== mes) { foraDoMes++; continue; }
     documentos++;
     const valor = Number(r[iValor]) || 0;
+    const nome = norm(fornecedor);
+    const f = (fornecedores[nome] ||= { pago: 0, aberto: 0 });
+    f.pago = r2(f.pago + (Number(r[iBaixado]) || 0));
+    f.aberto = r2(f.aberto + (Number(r[iAberto]) || 0));
     const linha = linhaLez(fornecedor);
     if (linha === 'ignorar') continue;
     if (linha) totais[linha] = r2((totais[linha] || 0) + valor);
     else aClassificar[norm(fornecedor)] = r2((aClassificar[norm(fornecedor)] || 0) + valor);
   }
-  return { tipo: 'faturas', mes, totais, aClassificar, documentos, foraDoMes };
+  return { tipo: 'faturas', mes, totais, aClassificar, fornecedores, documentos, foraDoMes };
 }
 
 function lerRelatorio(buffer) {

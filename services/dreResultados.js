@@ -11,6 +11,7 @@
 
 const multer = require('multer');
 const { lerRelatorio } = require('./dreImportar');
+const { montarCaixa } = require('./dreCaixa');
 
 const LOJAS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'lez', 'site'];
 
@@ -52,11 +53,27 @@ function somarSangria(caixaMes) {
 function montar({ mes, conferencia = [], caixa = {}, faturas = [], manual = {} }) {
   const conf = Object.fromEntries(conferencia.map(l => [l.board, l]));
   const fin = {};
+  const detalhe = { juros: {}, emprestimos: {}, caixinha: {} };
+  const somarDetalhe = (linha, nome, b, v) => {
+    if (!v) return;
+    const alvo = (detalhe[linha][nome] ||= {});
+    alvo[b] = r2((alvo[b] || 0) + v);
+  };
   for (const g of faturas) {
     const linha = linhaFinanceira(g.f);
     if (!linha) continue;
     const alvo = (fin[g.b] ||= { juros: 0, emprestimos: 0 });
-    alvo[linha] += (g.vp || 0) + Math.max(0, g.va || 0);
+    const v = (g.vp || 0) + Math.max(0, g.va || 0);
+    alvo[linha] += v;
+    somarDetalhe(linha, normForn(g.f) + (g.va > 0 ? ' (em aberto)' : ''), g.b, v);
+  }
+  for (const [nome, f] of Object.entries(manual.lez?.faturas?.fornecedores || {})) {
+    const linha = linhaFinanceira(nome);
+    if (linha) somarDetalhe(linha, nome, 'lez', (f.pago || 0) + (f.aberto || 0));
+  }
+  for (const b of LOJAS) {
+    for (const [dia, d] of Object.entries(caixa[`${mes}-${b}`] || {}))
+      somarDetalhe('caixinha', `Dia ${String(dia).padStart(2, '0')}`, b, Number(d?.sangria) || 0);
   }
 
   const lojas = {};
@@ -87,7 +104,10 @@ function montar({ mes, conferencia = [], caixa = {}, faturas = [], manual = {} }
     if (b === 'site') item(b, 'publicidade', 'Google Ads (relatório)', 'numero', m.publicidade);
   }
   const pendencias = manuais.filter(i => !i.feito);
-  return { mes, lojas, manuais, pendencias, planilha: PLANILHA[mes] || null };
+  const lista = l => Object.entries(detalhe[l]).map(([nome, valores]) => ({ nome, lojas: valores }))
+    .sort((a, c) => a.nome.localeCompare(c.nome, 'pt-BR'));
+  return { mes, lojas, manuais, pendencias, planilha: PLANILHA[mes] || null,
+    detalhe: { juros: lista('juros'), emprestimos: lista('emprestimos'), caixinha: lista('caixinha') } };
 }
 
 const CAMPOS_MANUAIS = { lez: ['taxa'], site: ['taxa', 'publicidade'] };
@@ -164,8 +184,15 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
         readDB(),
         lerManual(mes),
       ]);
+      const dre = montar({ mes, conferencia: foto.lojas, caixa: db.caixa || {}, faturas, manual });
+      const pagos = faturas.map(g => ({ b: g.b, f: g.f, v: g.vp || 0 }));
+      for (const [nome, f] of Object.entries(manual.lez?.faturas?.fornecedores || {}))
+        pagos.push({ b: 'lez', f: nome, v: f.pago || 0 });
+      const coluna = k => Object.fromEntries(LOJAS.map(b => [b, dre.lojas[b][k] || 0]));
       res.json({
-        ...montar({ mes, conferencia: foto.lojas, caixa: db.caixa || {}, faturas, manual }),
+        ...dre,
+        caixa: montarCaixa({ lojas: LOJAS, pagos, recebimentos: coluna('receita'),
+          extras: { taxa: coluna('taxa'), caixinha: coluna('caixinha') } }),
         conferenciaEm: foto.em,
         labels: Object.fromEntries(LOJAS.map(b => [b, boardsLabel[b] || b])),
         ordem: LOJAS,
@@ -180,7 +207,7 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
       const rel = lerRelatorio(req.file.buffer);
       const em = new Date().toISOString();
       if (rel.tipo === 'vendas') await gravarManual(rel.mes, 'lez', { vendas: { receita: rel.receita, cmv: rel.cmv, em } });
-      else await gravarManual(rel.mes, 'lez', { faturas: { totais: rel.totais, aClassificar: rel.aClassificar, em } });
+      else await gravarManual(rel.mes, 'lez', { faturas: { totais: rel.totais, aClassificar: rel.aClassificar, fornecedores: rel.fornecedores, em } });
       res.json(rel);
     } catch (e) { res.status(400).json({ error: e.message }); }
   });

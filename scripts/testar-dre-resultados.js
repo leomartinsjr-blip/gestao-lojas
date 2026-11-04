@@ -74,4 +74,20 @@ if (pasta) {
   assert.strictEqual(f.totais.sistema, 1163.26); assert.strictEqual(f.totais.plano, 2706.23);
   assert.deepStrictEqual(f.aClassificar, {});
 }
+
+// Fechamento de Caixa: distribuição da skill, só o pago. Contagem, outubro/2026.
+const { linhaCaixa, montarCaixa } = require('../services/dreCaixa');
+for (const [f, l] of [['PARCELAMENTO SIMPLES NACIONAL', 'parcelamento'], ['SIMPLES NACIONAL', 'simples'], ['FGTS / MULTA RESCISORIA', 'fgts'],
+  ['ICMS DIFERENÇA DE AL', 'difal'], ['MDIAS REFRIGERAÇOES LTDA', 'diversos'], ['MIDIAS SOCIAIS E IMPULSIONAMENTOS', 'marketing'],
+  ['ALOSHOPPING - ASSOCIAÇÃO DOS LOJISTAS', 'diversos'], ['CONDOMINIO SHOPPING', 'shopping'], ['OTIMO DE BILHETAGEM ELETRONICA', 'vt'],
+  ['SOUTH CENTRAL COMERCIO DE ROUPAS LTDA', 'fornecedor'], ['FORNECEDOR NOVO', 'classificar']])
+  assert.strictEqual(linhaCaixa(f), l, f);
+const cx = montarCaixa({ lojas: ['contagem'], recebimentos: { contagem: 100 }, extras: { taxa: { contagem: 10 } }, pagos: [
+  { b: 'contagem', f: 'ALUGUEL SHOPPING', v: 6747.05 }, { b: 'contagem', f: 'CONDOMINIO SHOPPING', v: 7615.79 }, { b: 'contagem', f: 'X', v: 0 },
+] });
+assert.strictEqual(cx.linhas.find(l => l.id === 'shopping').lojas.contagem, 14362.84);
+assert.strictEqual(cx.soma.contagem, 14372.84);
+assert.strictEqual(cx.resultado.contagem, -14272.84);
+assert.strictEqual(r2det(), 2);
+function r2det() { return montar({ mes: '2026-10', caixa, faturas, conferencia }).detalhe.juros.length; }
 console.log('ok: DRE/Resultados confere com outubro/2026');
