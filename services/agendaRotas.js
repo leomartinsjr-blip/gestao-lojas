@@ -129,7 +129,7 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, bo
       }
       if (req.body?.conta) campos.conta = String(req.body.conta).toUpperCase();
       if (req.body?.data != null) {
-        if (!/^d{4}-d{2}-d{2}$/.test(req.body.data)) return res.status(400).json({ error: 'data inválida' });
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(req.body.data)) return res.status(400).json({ error: 'data inválida' });
         const [l] = await store.lancs({ id: req.params.id });
         if (!l) return res.status(404).json({ error: 'não encontrado' });
         if (l.data !== req.body.data) {
