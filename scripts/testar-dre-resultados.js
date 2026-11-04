@@ -107,15 +107,15 @@ assert.strictEqual(fp.contagem.comissoes, 4471.63);
 assert.strictEqual(fp.contagem.premiacoes, 1130);
 assert.strictEqual(fp.minas.ajuda, 1200);
 const comExtras = L.folhaPorLoja({ delrey: { entries: { 7: { tipo: 'vendedor', proventos: 4000, fixo: 1000, extras: [
-  { desc: '13o Salário Proporcional 8/12 avos', valor: 1416.72 }, { desc: 'Terço Constitucional de Férias', valor: 472.24 },
-  { desc: 'Salário Família', valor: 135.08 }, { desc: 'Instagram da loja', valor: 600 }] } } } }, []);
+  { nome: '13o Salário Proporcional 8/12 avos', valor: 1416.72 }, { nome: 'Terço Constitucional de Férias', valor: 472.24 },
+  { nome: 'Salário Família', valor: 135.08 }, { nome: 'Instagram da loja', valor: 600 }] } } } }, []);
 assert.strictEqual(comExtras.delrey.premiacoes, 975.96, 'só o que é prêmio fica em Premiações');
 assert.strictEqual(Math.round(L.aliquotaSimples('delrey', '2026-10') * 10000), 1019);
 assert.strictEqual(L.linhaDre('MAGNUM LUIZ - TECNICO', 'tommy'), 'magnum');
 assert.strictEqual(L.linhaDre('FOLHA DE PAGAMENTO', 'delrey'), null);
 assert.strictEqual(L.linhaDre('CONDOMINIO SHOPPING', 'delrey'), null);
 assert.strictEqual(L.linhaDre('CONDOMINIO SHOPPING', 'site'), 'sala');
-const dc = montarCompleta(montar({ mes: '2026-10', conferencia, caixa, faturas }), { mes: '2026-10', manual: { contagem: { ponto: 16226.63 } }, faturas,
+const dc = montarCompleta(montar({ mes: '2026-10', conferencia, caixa, faturas }), { mes: '2026-10', manual: { contagem: { boletos: { a: { total: 16226.63, valores: { aluguel: 8433.68, condominio: 4993.42, fpp: 1686.74, ar: 244.69, iptu: 261.58, energia: 606.52 } } } } }, faturas,
   apuracoes: [{ competencia: '2026-09', empresa: 'PV COMERCIO', difal: 10.55, base4: 100, base12: 0 }], embalagem: { pago: { contagem: 45 }, venda: { contagem: 10000 } },
   folhaMes, employees, freteTommy: 485.91, faturamentoExtra: {} });
 assert.strictEqual(dc.lojas.contagem.ponto, 16226.63);
@@ -123,4 +123,26 @@ assert.strictEqual(dc.lojas.contagem.encargos, 2749.84);
 assert.strictEqual(dc.lojas.tommy.frete, 485.91);
 assert.ok(dc.lojas.lez.faltam.includes('receita'));
 assert.ok(dc.estrutura.length > 25);
-console.log('ok: DRE/Resultados confere com outubro/2026');
+
+// Boletos reais de outubro, com o total que a DRE da planilha usava
+const { lerBoleto, fecharBoleto } = require('../services/dreBoletos');
+const minas = fecharBoleto({ loja: 'minas', total: 25089.61, chave: '1', itens: [
+  ['Aluguel Minimo', '10/2026', 15284.95], ['Cota Condominial Comum', '11/2026', 4504.77], ['Energia(For+Infr)', '09/2026', 667.37], ['Ar Condicionado', '10/2026', 634.31],
+  ['IPTU', '11/2026', 802.93], ['Fundo de reserva', '10/2026', 450.48], ['Seguros', '10/2026', 33.25], ['Dedetização/Desratização', '10/2026', 14.21], ['Cota Ordinária Lojista FPP', '10/2026', 2697.34],
+].map(([descricao, competencia, valor]) => ({ descricao, competencia, valor })) });
+assert.strictEqual(minas.valores.condominio, 5002.71);
+assert.strictEqual(minas.mes, '2026-10');
+assert.throws(() => fecharBoleto({ loja: 'minas', total: 100, itens: [{ descricao: 'Aluguel Minimo', competencia: '10/2026', valor: 90 }] }), /não bate/);
+(async () => {
+  if (pasta) {
+    const esperado = { 'boleto (83).pdf': ['delrey', 27933.42, 8961.11, 12566.26, 3360.42], 'boleto (81).pdf': ['lez', 19495.46, 5184, 9928.43, 2592],
+      'boleto (80).pdf': ['tommy', 24671.65, 5200, 14895.35, 1560], 'SCO02028SURFERS202610000234.PDF': ['contagem', 16226.63, 8433.68, 4993.42, 1686.74] };
+    for (const [arq, [loja, total, aluguel, cond, fpp]] of Object.entries(esperado)) {
+      const b = await lerBoleto(fs.readFileSync(pasta + '/' + arq));
+      assert.deepStrictEqual([b.loja, b.mes, b.total, b.valores.aluguel, b.valores.condominio, b.valores.fpp], [loja, '2026-10', total, aluguel, cond, fpp], arq);
+    }
+    const iptu = await lerBoleto(fs.readFileSync(pasta + '/boleto (82).pdf'));
+    assert.deepStrictEqual([iptu.loja, iptu.mes, iptu.valores.iptu], ['delrey', '2026-10', 114.24]);
+  }
+  console.log('ok: DRE/Resultados confere com outubro/2026');
+})().catch(e => { console.error(e); process.exit(1); });

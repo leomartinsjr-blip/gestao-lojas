@@ -79,7 +79,7 @@ function folhaPorLoja(folhaMes, employees = []) {
       const proventos = e.proventosBruto ?? e.proventos ?? 0;
       const fixo = e.fixo || 0, compl = e.gmComplement || 0, quebra = e.quebra || 0;
       const comissao = (e.comissaoTotal || 0) + (e.comissaoLoja || 0), ajuda = e.ajudaCustoTotal || 0;
-      const foraDaLinha = (e.extras || []).reduce((s, x) => s + (EXTRA_FORA.test(norm(x.desc)) ? Number(x.valor) || 0 : 0), 0);
+      const foraDaLinha = (e.extras || []).reduce((s, x) => s + (EXTRA_FORA.test(norm(x.nome)) ? Number(x.valor) || 0 : 0), 0);
       const resto = r2(proventos - fixo - compl - quebra - comissao - ajuda - foraDaLinha);
       const lojas = empPorId[id]?.supervisedBoards || [];
       if (e.tipo === 'supervisor' && lojas.length) {
@@ -148,7 +148,9 @@ const ESTRUTURA = [
   ['lucroBruto', 'Lucro bruto', 'total'],
   ['fixos', 'Salários fixos', 'item'], ['comissoes', 'Comissões', 'item'], ['encargos', 'Encargos', 'item'],
   ['escritorio', 'Escritório', 'item'], ['premiacoes', 'Premiações', 'item'], ['vt', 'V.T. e ajuda de custo', 'item'],
-  ['ponto', 'Ponto comercial', 'item'],
+  ['aluguel', 'Aluguel mínimo', 'item'], ['aluguelPct', 'Aluguel percentual', 'item'], ['condominio', 'Condomínio', 'item'],
+  ['fpp', 'FPP', 'item'], ['ar', 'Ar condicionado', 'item'], ['iptu', 'IPTU', 'item'], ['energia', 'Energia elétrica', 'item'],
+  ['ponto', 'Ponto comercial', 'total'],
   ['caixinha', 'Despesas caixinha', 'item'], ['sistema', 'Sistema ERP', 'item'], ['contabilidade', 'Contabilidade', 'item'],
   ['seguro', 'Seguro', 'item'], ['plano', 'Plano de saúde', 'item'], ['diversos', 'Despesas diversas', 'item'],
   ['telefone', 'Telefone/Internet', 'item'], ['publicidade', 'Publicidade', 'item'],
@@ -176,5 +178,16 @@ function fechar(l) {
   return out;
 }
 
-module.exports = { aliquotaSimples, percentualIcms, percentuaisEmbalagem, folhaPorLoja, linhaDre, somarFaturas, escritorio, fechar,
+// Boletos do mês somados. Aluguel percentual: 5% da receita acima do mínimo.
+function pontoComercial(boletos, receita) {
+  const lista = Object.values(boletos || {});
+  if (!lista.length) return { aluguel: null, aluguelPct: null, condominio: null, fpp: null, ar: null, iptu: null, energia: null, ponto: null };
+  const out = { aluguel: 0, condominio: 0, fpp: 0, ar: 0, iptu: 0, energia: 0 };
+  for (const b of lista) for (const k of Object.keys(out)) out[k] = r2(out[k] + (b.valores[k] || 0));
+  out.aluguelPct = r2(Math.max(0, (receita || 0) * 0.05 - out.aluguel));
+  out.ponto = r2(Object.values(out).reduce((s, v) => s + v, 0));
+  return out;
+}
+
+module.exports = { pontoComercial, aliquotaSimples, percentualIcms, percentuaisEmbalagem, folhaPorLoja, linhaDre, somarFaturas, escritorio, fechar,
   mesesAntes, ESTRUTURA, EMPRESA, TAXA_ENCARGOS, REF };

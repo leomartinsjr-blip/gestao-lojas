@@ -34,6 +34,7 @@
   tr.abre { cursor:pointer; } tr.abre td:first-child::before { content:'▸ '; color:var(--text2); }
   tr.abre.aberta td:first-child::before { content:'▾ '; }
   tr.sub td { background:var(--bg3); font-size:12px; color:var(--text2); } tr.sub td:first-child { background:var(--bg3); padding-left:30px; white-space:normal; min-width:240px; }
+  .filtros { display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding-bottom:12px; } select { background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:5px 8px; font-size:12px; }
   .dif { color:var(--red); } .falta { color:var(--yellow); font-weight:600; }
   .nota { color:var(--text2); padding:0 2px 14px; line-height:1.6; }
   #msg { padding:20px; color:var(--text2); }
@@ -49,10 +50,21 @@
   <div id="msg">Carregando…</div>
   <div id="conteudo" hidden>
     <div class="painel manual" id="manuais"></div>
-    <div class="abas"><button id="abaDre" class="ativa">DRE</button><button id="abaCaixa">Fechamento de Caixa</button></div>
+    <div class="abas"><button id="abaDre" class="ativa">DRE</button><button id="abaCaixa">Fechamento de Caixa</button><button id="abaAno">Consolidado do ano</button></div>
     <div id="vDre">
       <div class="painel"><h2 id="titulo"></h2><table id="tabela"></table></div>
       <p class="nota" id="nota"></p>
+    </div>
+    <div id="vAno" hidden>
+      <div class="filtros">
+        <label>Ano <input type="number" id="anoSel" style="width:80px"></label>
+        <label>Visão <select id="anoVisao"><option value="dre">DRE</option><option value="caixa">Fechamento de Caixa</option></select></label>
+        <label>Mostrar <select id="anoModo"><option value="mes">Mês a mês</option><option value="loja">Por loja</option></select></label>
+        <label id="anoLojaRot">Loja <select id="anoLoja"></select></label>
+        <span id="anoMsg"></span>
+      </div>
+      <div class="painel"><table id="tabelaAno"></table></div>
+      <p class="nota">Traço indica mês sem o dado. Mês sem boleto ou sem folha sai parcial. A primeira abertura busca mês a mês e pode demorar; depois fica guardado.</p>
     </div>
     <div id="vCaixa" hidden>
       <div class="painel"><h2 id="tituloCaixa"></h2><table id="tabelaCaixa"></table></div>
@@ -85,7 +97,7 @@ function desenhar(d) {
       const estado = i.feito ? '<span class="feito">✓ ok</span>' : '<span class="pend">falta</span>';
       const campo = i.tipo === 'numero'
         ? `<input type="number" step="0.01" data-loja="${i.loja}" data-campo="${i.id}" value="${i.valor ?? ''}">`
-        : i.tipo === 'arquivo' ? '<input type="file" accept=".xlsx" class="arquivo">' : '';
+        : i.tipo === 'arquivo' ? `<input type="file" multiple accept="${i.id === 'boleto' ? '.pdf' : '.xlsx'}" class="arquivo">` : '';
       return `<div class="item"><b>${nome(i.loja)}</b><span class="r">${i.rotulo}</span>${campo}${estado}</div>`;
     }).join('')}`;
   document.querySelectorAll('#manuais input[type=number]').forEach(el => el.addEventListener('change', () => salvar(el)));
@@ -129,15 +141,20 @@ async function salvar(el) {
 }
 
 async function enviar(el) {
-  const fd = new FormData();
-  fd.append('arquivo', el.files[0]);
-  const r = await fetch('/api/dre-resultados/importar', { method: 'POST', body: fd });
-  const d = await r.json();
-  if (!r.ok) { alert(d.error || 'Não foi possível importar'); return; }
-  if (d.mes !== $('mes').value) {
-    alert(`O arquivo é de ${d.mes.split('-').reverse().join('/')}. Abrindo esse mês.`);
-    $('mes').value = d.mes;
+  let mes = null;
+  for (const arquivo of el.files) {
+    const fd = new FormData();
+    fd.append('arquivo', arquivo);
+    const r = await fetch('/api/dre-resultados/importar', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (!r.ok) { alert(`${arquivo.name}: ${d.error || 'não foi possível importar'}`); continue; }
+    mes = d.mes;
   }
+  if (mes && mes !== $('mes').value) {
+    alert(`O arquivo é de ${mes.split('-').reverse().join('/')}. Abrindo esse mês.`);
+    $('mes').value = mes;
+  }
+  cache = {};
   carregar(false);
 }
 
@@ -156,12 +173,70 @@ async function carregar(recalcular) {
 // Abre no último mês fechado
 const ref = new Date(); ref.setDate(1); ref.setMonth(ref.getMonth() - 1);
 $('mes').value = `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}`;
-const aba = caixa => {
-  $('vDre').hidden = caixa; $('vCaixa').hidden = !caixa;
-  $('abaDre').classList.toggle('ativa', !caixa); $('abaCaixa').classList.toggle('ativa', caixa);
+const aba = qual => {
+  for (const [v, b, k] of [['vDre', 'abaDre', 'dre'], ['vCaixa', 'abaCaixa', 'caixa'], ['vAno', 'abaAno', 'ano']]) {
+    $(v).hidden = k !== qual; $(b).classList.toggle('ativa', k === qual);
+  }
+  if (qual === 'ano') carregarAno();
 };
-$('abaDre').addEventListener('click', () => aba(false));
-$('abaCaixa').addEventListener('click', () => aba(true));
+$('abaDre').addEventListener('click', () => aba('dre'));
+$('abaCaixa').addEventListener('click', () => aba('caixa'));
+$('abaAno').addEventListener('click', () => aba('ano'));
+
+// Consolidado: lê o mesmo retorno de cada mês e soma aqui.
+let cache = {};
+const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+async function carregarAno() {
+  const ano = +$('anoSel').value, hoje = new Date();
+  const ultimo = ano < hoje.getFullYear() ? 12 : ano === hoje.getFullYear() ? hoje.getMonth() + 1 : 0;
+  for (let m = 1; m <= ultimo; m++) {
+    const mk = `${ano}-${String(m).padStart(2, '0')}`;
+    if (cache[mk]) continue;
+    $('anoMsg').textContent = `Lendo ${MESES[m - 1]}/${ano}…`;
+    try { const r = await fetch('/api/dre-resultados?mes=' + mk); if (r.ok) cache[mk] = await r.json(); } catch {}
+    desenharAno();
+  }
+  $('anoMsg').textContent = '';
+  desenharAno();
+}
+function valorDe(d, id, lojas, visao) {
+  if (!d) return null;
+  if (visao === 'dre') {
+    const vs = lojas.map(b => d.lojas[b]?.[id]);
+    return vs.every(v => v == null) ? null : vs.reduce((s, v) => s + (v || 0), 0);
+  }
+  const fonte = id === 'soma' ? d.caixa.soma : id === 'recebimentos' ? d.caixa.recebimentos : id === 'resultado' ? d.caixa.resultado
+    : d.caixa.linhas.find(l => l.id === id)?.lojas || {};
+  return lojas.reduce((s, b) => s + (fonte[b] || 0), 0);
+}
+function desenharAno() {
+  const ano = $('anoSel').value, visao = $('anoVisao').value, modo = $('anoModo').value;
+  const meses = Object.keys(cache).filter(k => k.startsWith(ano + '-')).sort();
+  if (!meses.length) { $('tabelaAno').innerHTML = ''; return; }
+  const base = cache[meses[0]], ordem = base.ordem, nome = b => base.labels[b] || b;
+  $('anoLojaRot').hidden = modo === 'loja';
+  if (!$('anoLoja').options.length) $('anoLoja').innerHTML = '<option value="">Consolidado</option>' + ordem.map(b => `<option value="${b}">${nome(b)}</option>`).join('');
+  const lojas = $('anoLoja').value ? [$('anoLoja').value] : ordem;
+  let linhas;
+  if (visao === 'dre') linhas = base.estrutura.map(([id, rot, tipo]) => [id, rot, tipo]);
+  else {
+    const vistos = new Map();
+    for (const mk of meses) for (const l of cache[mk].caixa.linhas) vistos.set(l.id, l.nome);
+    linhas = [...vistos].map(([id, rot]) => [id, rot, 'item']).concat([['soma', 'Soma despesas (-)', 'total'], ['recebimentos', 'Recebimentos (+)', 'total'], ['resultado', 'Resultado (=)', 'total']]);
+  }
+  const cel = v => `<td>${v == null ? '–' : num(v)}</td>`;
+  const soma = vs => (vs.every(v => v == null) ? null : vs.reduce((s, v) => s + (v || 0), 0));
+  const cab = modo === 'mes' ? meses.map(mk => MESES[+mk.slice(5) - 1]) : ordem.map(nome);
+  const corpo = linhas.map(([id, rot, tipo]) => {
+    const vs = modo === 'mes' ? meses.map(mk => valorDe(cache[mk], id, lojas, visao))
+      : ordem.map(b => soma(meses.map(mk => valorDe(cache[mk], id, [b], visao))));
+    return `<tr class="${tipo === 'total' ? 'total' : ''}"><td>${rot}</td>${vs.map(cel).join('')}${cel(soma(vs))}</tr>`;
+  }).join('');
+  $('tabelaAno').innerHTML = `<thead><tr><th>Linha</th>${cab.map(c => `<th>${c}</th>`).join('')}<th>Total</th></tr></thead><tbody>${corpo}</tbody>`;
+}
+for (const id of ['anoVisao', 'anoModo', 'anoLoja']) $(id).addEventListener('change', desenharAno);
+$('anoSel').addEventListener('change', carregarAno);
+$('anoSel').value = new Date().getFullYear();
 $('mes').addEventListener('change', () => carregar(false));
 $('recalcular').addEventListener('click', () => carregar(true));
 carregar(false);

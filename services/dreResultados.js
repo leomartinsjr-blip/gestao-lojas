@@ -12,6 +12,7 @@
 const multer = require('multer');
 const { lerRelatorio } = require('./dreImportar');
 const { montarCaixa } = require('./dreCaixa');
+const { lerBoleto } = require('./dreBoletos');
 const L = require('./dreLinhas');
 
 const LOJAS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'lez', 'site'];
@@ -111,8 +112,7 @@ function montar({ mes, conferencia = [], caixa = {}, faturas = [], manual = {} }
     detalhe: { juros: lista('juros'), emprestimos: lista('emprestimos'), caixinha: lista('caixinha') } };
 }
 
-const CAMPOS_MANUAIS = { lez: ['taxa', 'ponto'], site: ['taxa', 'publicidade'], delrey: ['ponto'], minas: ['ponto'],
-  contagem: ['ponto'], tommy: ['ponto'], estacao: ['ponto'] };
+const CAMPOS_MANUAIS = { lez: ['taxa'], site: ['taxa', 'publicidade'] };
 
 // A DRE inteira de um mês. base: resultado de montar(); ctx: dados já lidos.
 function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folhaMes, employees, freteTommy, faturamentoExtra }) {
@@ -147,7 +147,7 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
       premiacoes: f ? f.premiacoes : semFolha,
       escritorio: esc[b],
       vt: temFaturas ? r2((t.vt || 0) + (f?.ajuda || 0)) : null,
-      ponto: b === 'site' ? 0 : manual[b]?.ponto ?? null,
+      ...(b === 'site' ? { ponto: 0, aluguel: 0, aluguelPct: 0, condominio: 0, fpp: 0, ar: 0, iptu: 0, energia: 0 } : L.pontoComercial(manual[b]?.boletos, d.receita)),
       sistema: fat('sistema'), contabilidade: fat('contabilidade'), seguro: fat('seguro'), plano: fat('plano'),
       diversos: fat('diversos'), telefone: fat('telefone'), tarifa: fat('tarifa'), acordos: fat('acordos'),
       publicidade: b === 'site' ? manual.site?.publicidade ?? null : fat('publicidade'),
@@ -155,7 +155,12 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
     percentuais[b] = { simples: aliq, icms, embalagens: emb };
   }
   const manuais = base.manuais.slice();
-  for (const b of LOJAS) if (b !== 'site') manuais.push({ loja: b, id: 'ponto', rotulo: 'Boleto do shopping (total do mês)', tipo: 'numero', valor: manual[b]?.ponto ?? null, feito: manual[b]?.ponto != null });
+  for (const b of LOJAS) {
+    if (b === 'site') continue;
+    const bs = Object.values(manual[b]?.boletos || {});
+    const total = r2(bs.reduce((s, x) => s + x.total, 0));
+    manuais.push({ loja: b, id: 'boleto', rotulo: bs.length ? `Boleto do shopping: ${bs.length} arquivo(s), total ${total}` : 'Boleto do shopping (PDF)', tipo: 'arquivo', feito: bs.length > 0 });
+  }
   const lista = o => Object.entries(o || {}).map(([nome, valores]) => ({ nome, lojas: valores })).sort((a, c) => a.nome.localeCompare(c.nome, 'pt-BR'));
   const det = { ...base.detalhe };
   for (const k of ['sistema', 'contabilidade', 'seguro', 'plano', 'diversos', 'telefone', 'publicidade', 'tarifa', 'vt', 'acordos']) det[k] = lista(detalhe[k]);
@@ -312,6 +317,11 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
   app.post('/api/dre-resultados/importar', requireAuth, soDono, upload.single('arquivo'), async (req, res) => {
     try {
       if (!req.file) return res.status(400).json({ error: 'Envie o arquivo' });
+      if (/\.pdf$/i.test(req.file.originalname)) {
+        const bol = await lerBoleto(req.file.buffer);
+        await gravarManual(bol.mes, bol.loja, { [`boletos.${bol.chave}`]: { total: bol.total, valores: bol.valores } });
+        return res.json(bol);
+      }
       const rel = lerRelatorio(req.file.buffer);
       const em = new Date().toISOString();
       if (rel.tipo === 'vendas') await gravarManual(rel.mes, 'lez', { vendas: { receita: rel.receita, cmv: rel.cmv, em } });
