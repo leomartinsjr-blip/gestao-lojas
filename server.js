@@ -1293,7 +1293,7 @@ app.post('/api/login', (req, res) => {
   registrarAcesso(req, { usuario: key, origem: 'gestão', ok: true });
   migrarSenha(key, password);
   req.session.user = { username: key, board: user.board, lojas: user.lojas || null, label: user.label, passwordChangedAt: user.passwordChangedAt || null, mustChangePassword: !!user.mustChangePassword };
-  res.json({ username: key, board: user.board, lojas: user.lojas || null, label: user.label, mustChangePassword: !!user.mustChangePassword, lista: !!user.lista });
+  res.json({ username: key, dono: key === OWNER_USER, board: user.board, lojas: user.lojas || null, label: user.label, mustChangePassword: !!user.mustChangePassword, lista: !!user.lista });
 });
 
 // ── POST /api/logout ───────────────────────────────────────────────────────
@@ -1522,7 +1522,7 @@ app.post('/api/restore', requireAdmin, async (req, res) => {
 // ── GET /api/me ────────────────────────────────────────────────────────────
 app.get('/api/me', (req, res) => {
   if (!req.session?.user) return res.status(401).json({ error: 'Não autenticado' });
-  res.json({ ...req.session.user, lista: ehLoginLista(req) });
+  res.json({ ...req.session.user, lista: ehLoginLista(req), dono: souDono(req) });
 });
 
 // ── GET /api/months ────────────────────────────────────────────────────────
@@ -10161,6 +10161,16 @@ app.get('/api/fluxo-caixa', requireAdmin, async (req, res) => {
 // Agenda bancária (extrato C/C e C/G por empresa) — services/agendaRotas.js
 const agendaApi = require('./services/agendaRotas').register(app, {
   getDb: () => mongoDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, boardsLabel: BOARDS_LABEL,
+});
+
+// DRE/Resultados, só do dono — services/dreResultados.js
+app.get('/dre-resultados', (req, res) => {
+  if (!souDono(req)) return res.redirect('/');
+  res.sendFile(path.join(__dirname, 'public/dre-resultados.html'));
+});
+require('./services/dreResultados').register(app, {
+  getDb: () => mongoDb, readDB, readContasPagar, requireAuth, souDono, computeConferenciaDashboard,
+  hojeBRT: fluxoCaixa.hojeBRT, boardsLabel: BOARDS_LABEL,
 });
 
 // GET /api/fluxo-caixa/dia — card do painel: a pagar × venda a receber no próximo dia útil

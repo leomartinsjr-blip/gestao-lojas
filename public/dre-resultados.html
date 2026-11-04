@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DRE/Resultados</title>
+<link rel="icon" type="image/jpeg" href="favicon.jpg">
+<style>
+  :root { --bg:#f4f6f9; --bg2:#fff; --bg3:#f0f3f7; --border:#dde3ea; --text:#1f2328; --text2:#636c76;
+    --green:#1a7f37; --red:#cf222e; --yellow:#9a6700; --yellowbg:#fff8c5; --blue:#0969da; color-scheme:light; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--text); font:13px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
+  header { background:var(--bg2); border-bottom:1px solid var(--border); padding:10px 16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  h1 { font-size:15px; font-weight:600; margin-right:auto; }
+  input, button { background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:5px 10px; font-size:12px; color:var(--text); }
+  button { cursor:pointer; } button:hover { color:var(--blue); border-color:var(--blue); }
+  main { padding:16px; max-width:1300px; }
+  .painel { background:var(--bg2); border:1px solid var(--border); border-radius:8px; margin-bottom:16px; overflow-x:auto; }
+  .painel h2 { font-size:13px; font-weight:600; padding:10px 14px; border-bottom:1px solid var(--border); }
+  .manual { background:var(--yellowbg); border-color:#d4a72c; }
+  .manual h2 { border-color:#d4a72c; color:var(--yellow); }
+  .manual ul { padding:10px 14px 10px 30px; line-height:1.7; }
+  table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
+  th, td { padding:7px 12px; text-align:right; border-bottom:1px solid var(--border); white-space:nowrap; }
+  th:first-child, td:first-child { text-align:left; position:sticky; left:0; background:var(--bg2); }
+  thead th { background:var(--bg3); font-size:12px; color:var(--text2); }
+  tr.total td { font-weight:700; background:var(--bg3); }
+  td small { display:block; color:var(--text2); font-size:11px; }
+  .dif { color:var(--red); } .falta { color:var(--yellow); font-weight:600; }
+  .nota { color:var(--text2); padding:0 2px 14px; line-height:1.6; }
+  #msg { padding:20px; color:var(--text2); }
+</style>
+</head>
+<body>
+<header>
+  <h1>DRE/Resultados</h1>
+  <label>Mês <input type="month" id="mes"></label>
+  <button id="recalcular" title="Busca de novo no Microvix">Recalcular</button>
+</header>
+<main>
+  <div id="msg">Carregando…</div>
+  <div id="conteudo" hidden>
+    <div class="painel manual" id="manuais"></div>
+    <div class="painel"><h2 id="titulo"></h2><table id="tabela"></table></div>
+    <p class="nota" id="nota"></p>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const num = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const LINHAS = [
+  ['receita', 'Venda de produtos'],
+  ['cmv', 'CMV'],
+  ['taxa', 'Descontos de cartão'],
+  ['caixinha', 'Despesas caixinha'],
+  ['juros', 'Juros'],
+  ['emprestimos', 'Pagamentos de dívida: empréstimos'],
+];
+// Diferença acima disso aparece em vermelho: arredondamento não é erro.
+const TOLERANCIA = 50;
+
+function celula(valor, ref) {
+  if (valor == null) return '<td class="falta">falta</td>';
+  let extra = '';
+  if (ref != null) {
+    const d = valor - ref;
+    extra = `<small class="${Math.abs(d) > TOLERANCIA ? 'dif' : ''}">planilha ${num(ref)}</small>`;
+  }
+  return `<td>${num(valor)}${extra}</td>`;
+}
+
+function desenhar(d) {
+  const nome = b => d.labels[b] || b;
+  $('manuais').innerHTML = `<h2>Antes de finalizar: itens manuais deste mês</h2><ul>${
+    d.pendencias.map(p => `<li><b>${nome(p.loja)}:</b> ${p.item}</li>`).join('')}</ul>`;
+  const [a, m] = d.mes.split('-');
+  $('titulo').textContent = `Resultado parcial de ${m}/${a}`;
+  const cab = `<thead><tr><th>Linha</th>${d.ordem.map(b => `<th>${nome(b)}</th>`).join('')}</tr></thead>`;
+  const corpo = LINHAS.map(([k, rot]) => `<tr><td>${rot}</td>${d.ordem.map(b =>
+    celula(d.lojas[b][k], d.planilha?.[b]?.[k])).join('')}</tr>`).join('');
+  $('tabela').innerHTML = cab + `<tbody>${corpo}</tbody>`;
+  const quando = d.conferenciaEm ? new Date(d.conferenciaEm).toLocaleString('pt-BR') : '';
+  $('nota').textContent = `Primeira parte: faltam as demais linhas da DRE, por isso ainda não há resultado final. ` +
+    `Juros e empréstimos vêm das faturas pelo vencimento, pagas ou em aberto. Conferência lida em ${quando}.`;
+}
+
+async function carregar(recalcular) {
+  $('msg').hidden = false; $('msg').textContent = 'Carregando…'; $('conteudo').hidden = true;
+  try {
+    const r = await fetch(`/api/dre-resultados?mes=${$('mes').value}${recalcular ? '&recalcular=1' : ''}`);
+    if (r.status === 401 || r.status === 403) { location.href = '/'; return; }
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Erro ao carregar');
+    desenhar(d);
+    $('msg').hidden = true; $('conteudo').hidden = false;
+  } catch (e) { $('msg').textContent = 'Não foi possível carregar: ' + e.message; }
+}
+
+// Abre no último mês fechado
+const ref = new Date(); ref.setDate(1); ref.setMonth(ref.getMonth() - 1);
+$('mes').value = `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}`;
+$('mes').addEventListener('change', () => carregar(false));
+$('recalcular').addEventListener('click', () => carregar(true));
+carregar(false);
+</script>
+</body>
+</html>
