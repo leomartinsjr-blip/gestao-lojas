@@ -7647,16 +7647,43 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
   const boardLabel = BOARDS[board]?.label || board;
   const monthLabel = `${MONTHS_PT[month-1]} ${year}`;
 
+  // A folha liga pelo id: { id, nome } em cada lançamento. Apelido repetido no mês
+  // mostra o nome completo. Lançamento antigo só tem o nome; o que não casa com
+  // ninguém do mês continua gravado como veio.
+  const _rotulo = e => {
+    const n = e.apelido || e.name;
+    return boardEmps.filter(x => (x.apelido || x.name) === n).length > 1 ? e.name : n;
+  };
+  const _normNome = s => String(s || '').trim().toUpperCase();
+  const _pessoa = (id, nome) => {
+    const e = boardEmps.find(x => x.id === id)
+      || (nome ? boardEmps.find(x => [x.apelido, x.name].some(n => _normNome(n) === _normNome(nome))) : null);
+    return e ? { id: e.id, nome: _rotulo(e) } : { id: id || null, nome: nome || '' };
+  };
+  const _pessoaDoId = v => {
+    const e = boardEmps.find(x => String(x.id) === String(v));
+    return e ? { id: e.id, nome: _rotulo(e) } : { id: null, nome: '' };
+  };
+  const _comPessoas = f => ({ ...f, pessoas: (f.colaboradores || []).map((n, i) => _pessoa(f.empIds?.[i], n)) });
+  feriados  = feriados.map(_comPessoas);
+  extensoes = extensoes.map(_comPessoas);
+  faltas    = faltas.map(f => ({ ...f, pessoa: _pessoa(f.empId, f.colaborador) }));
+  vr        = _pessoa(data.vrId, vr);
+  abertura  = _pessoa(data.aberturaId, abertura);
+  instagram = _pessoa(data.instagramId, instagram);
+  const _marcar = (f, chk) => {
+    const p = _pessoaDoId(chk.dataset.id);
+    f.pessoas = (f.pessoas || []).filter(x => x.id !== p.id);
+    if (chk.checked) f.pessoas.push(p);
+  };
+
   function _empOpts(selected) {
     return `<option value="">— nenhum —</option>` +
-      boardEmps.map(e => {
-        const n = e.apelido || e.name;
-        return `<option value="${_escHtml(n)}"${selected === n ? ' selected' : ''}>${_escHtml(n)}</option>`;
-      }).join('');
+      boardEmps.map(e => `<option value="${e.id}"${selected?.id === e.id ? ' selected' : ''}>${_escHtml(_rotulo(e))}</option>`).join('');
   }
 
   function _feriadoHtml(f, i) {
-    const checked = new Set(f.colaboradores || []);
+    const checked = new Set((f.pessoas || []).map(p => p.id));
     return `<div class="df-entry" data-feriado="${i}">
       <div class="df-entry-top">
         <label class="df-resp-label" style="white-space:nowrap">Data:</label>
@@ -7665,13 +7692,10 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
       </div>
       <div class="df-entry-label">Quem trabalhou:</div>
       <div class="df-emp-checks">
-        ${boardEmps.length ? boardEmps.map(e => {
-          const n = e.apelido || e.name;
-          return `<label class="df-chk-label">
-            <input type="checkbox" class="df-feriado-chk" data-feriado-idx="${i}" data-name="${_escHtml(n)}"${checked.has(n) ? ' checked' : ''}>
-            <span>${_escHtml(n)}</span>
-          </label>`;
-        }).join('') : '<span style="color:var(--muted);font-size:.8rem">Nenhum funcionário cadastrado</span>'}
+        ${boardEmps.length ? boardEmps.map(e => `<label class="df-chk-label">
+            <input type="checkbox" class="df-feriado-chk" data-feriado-idx="${i}" data-id="${e.id}"${checked.has(e.id) ? ' checked' : ''}>
+            <span>${_escHtml(_rotulo(e))}</span>
+          </label>`).join('') : '<span style="color:var(--muted);font-size:.8rem">Nenhum funcionário cadastrado</span>'}
       </div>
     </div>`;
   }
@@ -7679,13 +7703,13 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
   function _faltaHtml(f, i) {
     return `<div class="df-entry df-falta-row" data-falta="${i}">
       <input type="date" class="df-date df-falta-date" value="${f.date||''}" data-idx="${i}">
-      <select class="df-emp-sel df-falta-emp" data-idx="${i}">${_empOpts(f.colaborador)}</select>
+      <select class="df-emp-sel df-falta-emp" data-idx="${i}">${_empOpts(f.pessoa)}</select>
       <button class="df-remove-btn" data-falta-rm="${i}" title="Remover">✕</button>
     </div>`;
   }
 
   function _extensaoHtml(f, i) {
-    const checked = new Set(f.colaboradores || []);
+    const checked = new Set((f.pessoas || []).map(p => p.id));
     return `<div class="df-entry" data-extensao="${i}">
       <div class="df-entry-top">
         <label class="df-resp-label" style="white-space:nowrap">Data:</label>
@@ -7694,13 +7718,10 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
       </div>
       <div class="df-entry-label">Quem ficou:</div>
       <div class="df-emp-checks">
-        ${boardEmps.length ? boardEmps.map(e => {
-          const n = e.apelido || e.name;
-          return `<label class="df-chk-label">
-            <input type="checkbox" class="df-ext-chk" data-ext-idx="${i}" data-name="${_escHtml(n)}"${checked.has(n) ? ' checked' : ''}>
-            <span>${_escHtml(n)}</span>
-          </label>`;
-        }).join('') : '<span style="color:var(--muted);font-size:.8rem">Nenhum funcionário cadastrado</span>'}
+        ${boardEmps.length ? boardEmps.map(e => `<label class="df-chk-label">
+            <input type="checkbox" class="df-ext-chk" data-ext-idx="${i}" data-id="${e.id}"${checked.has(e.id) ? ' checked' : ''}>
+            <span>${_escHtml(_rotulo(e))}</span>
+          </label>`).join('') : '<span style="color:var(--muted);font-size:.8rem">Nenhum funcionário cadastrado</span>'}
       </div>
     </div>`;
   }
@@ -7784,10 +7805,7 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
     body.querySelectorAll('.df-feriado-chk').forEach(chk => {
       chk.addEventListener('change', () => {
         const f = feriados[parseInt(chk.dataset.feriadoIdx)];
-        if (!f) return;
-        if (!f.colaboradores) f.colaboradores = [];
-        if (chk.checked) { if (!f.colaboradores.includes(chk.dataset.name)) f.colaboradores.push(chk.dataset.name); }
-        else { f.colaboradores = f.colaboradores.filter(n => n !== chk.dataset.name); }
+        if (f) _marcar(f, chk);
       });
     });
     body.querySelectorAll('.df-ext-date').forEach(inp => {
@@ -7796,21 +7814,18 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
     body.querySelectorAll('.df-ext-chk').forEach(chk => {
       chk.addEventListener('change', () => {
         const f = extensoes[parseInt(chk.dataset.extIdx)];
-        if (!f) return;
-        if (!f.colaboradores) f.colaboradores = [];
-        if (chk.checked) { if (!f.colaboradores.includes(chk.dataset.name)) f.colaboradores.push(chk.dataset.name); }
-        else { f.colaboradores = f.colaboradores.filter(n => n !== chk.dataset.name); }
+        if (f) _marcar(f, chk);
       });
     });
     body.querySelectorAll('.df-falta-date').forEach(inp => {
       inp.addEventListener('change', () => { faltas[parseInt(inp.dataset.idx)].date = inp.value; });
     });
     body.querySelectorAll('.df-falta-emp').forEach(sel => {
-      sel.addEventListener('change', () => { faltas[parseInt(sel.dataset.idx)].colaborador = sel.value; });
+      sel.addEventListener('change', () => { faltas[parseInt(sel.dataset.idx)].pessoa = _pessoaDoId(sel.value); });
     });
-    body.querySelector('#dfVr').addEventListener('change', e => { vr = e.target.value; });
-    body.querySelector('#dfAbertura').addEventListener('change', e => { abertura = e.target.value; });
-    body.querySelector('#dfInstagram').addEventListener('change', e => { instagram = e.target.value; });
+    body.querySelector('#dfVr').addEventListener('change', e => { vr = _pessoaDoId(e.target.value); });
+    body.querySelector('#dfAbertura').addEventListener('change', e => { abertura = _pessoaDoId(e.target.value); });
+    body.querySelector('#dfInstagram').addEventListener('change', e => { instagram = _pessoaDoId(e.target.value); });
     // 'input': o render() é refeito a cada linha adicionada/removida, e o texto
     // digitado só sobrevive se a variável já estiver atualizada na hora.
     body.querySelector('#dfObs').addEventListener('input', e => { obs = e.target.value; });
@@ -7819,11 +7834,12 @@ async function _renderDadosFolha(body, board, year, month, empsList) {
       const btn = body.querySelector('#dfSaveBtn');
       btn.disabled = true;
       try {
+        const _grupo = f => ({ date: f.date, colaboradores: (f.pessoas || []).map(p => p.nome), empIds: (f.pessoas || []).map(p => p.id) });
         const payload = {
-          feriados:  feriados.filter(f => f.date),
-          extensoes: extensoes.filter(f => f.date),
-          faltas:    faltas.filter(f => f.date && f.colaborador),
-          vr, abertura, instagram,
+          feriados:  feriados.filter(f => f.date).map(_grupo),
+          extensoes: extensoes.filter(f => f.date).map(_grupo),
+          faltas:    faltas.filter(f => f.date && f.pessoa?.nome).map(f => ({ date: f.date, colaborador: f.pessoa.nome, empId: f.pessoa.id })),
+          vr: vr.nome, vrId: vr.id, abertura: abertura.nome, aberturaId: abertura.id, instagram: instagram.nome, instagramId: instagram.id,
           obs: obs.trim(),
         };
         await apiFetch('POST', `/api/dados-folha/${year}/${month}/${board}`, payload);

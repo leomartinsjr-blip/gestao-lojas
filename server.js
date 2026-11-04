@@ -4364,9 +4364,20 @@ function adiantamentosDoMes(db, year, month) {
   return { porEmp, semVinculo };
 }
 
+// Colaborador de um lançamento do Dados p/ Folha. Quem manda é o id; lançamento
+// antigo só tem o nome, e aí vale quem estava na loja no mês: dois cadastros com
+// o mesmo apelido não podem cair no desligado (Luciana da Lez, out/2026).
+function _empDoLancamento(db, board, mk, id, nome) {
+  const emps = db.employees || [];
+  if (id) { const e = emps.find(x => x.id === id); if (e) return e; }
+  const iguais = emps.filter(e => e.board === board && _adiNomeIgual(e, nome));
+  const noMes = e => !(e.inativo && !e.desligamento) && (!e.admissao || e.admissao.slice(0, 7) <= mk)
+    && (!e.desligamento || e.desligamento.slice(0, 7) >= mk);
+  return iguais.find(noMes) || iguais[0];
+}
+
 // Faltas que o gerente lançou em Loja em Ação → Dados p/ Folha, agrupadas por
-// colaborador. O lançamento guarda só o nome, então o vínculo é pelo nome
-// normalizado dentro da própria loja — mesma regra do adiantamento.
+// colaborador.
 function faltasDoMes(db, year, month) {
   const mk         = `${year}-${String(month).padStart(2, '0')}`;
   const porEmp     = {};
@@ -4376,7 +4387,7 @@ function faltasDoMes(db, year, month) {
     const board = key.slice(mk.length + 1);
     for (const f of (dados.faltas || [])) {
       if (!f.date || !f.colaborador) continue;
-      const emp = (db.employees || []).find(e => e.board === board && _adiNomeIgual(e, f.colaborador));
+      const emp = _empDoLancamento(db, board, mk, f.empId, f.colaborador);
       if (!emp) { semVinculo.push({ board, colaborador: f.colaborador, date: f.date }); continue; }
       if (!porEmp[emp.id]) porEmp[emp.id] = { dias: [] };
       if (!porEmp[emp.id].dias.includes(f.date)) porEmp[emp.id].dias.push(f.date);
@@ -4384,6 +4395,28 @@ function faltasDoMes(db, year, month) {
   }
   for (const v of Object.values(porEmp)) v.dias.sort();
   return { porEmp, semVinculo };
+}
+
+// Folha do mês com as faltas da loja nas entries já gravadas: o gerente pode
+// lançar depois do Gerar. Só acrescenta a data que falta no texto, não grava
+// no banco e não toca em folha encerrada. Tela e planilhas leem por aqui.
+function folhaDoMesComFaltas(db, year, month) {
+  const mk    = `${year}-${String(month).padStart(2, '0')}`;
+  const folha = { ...((db.folhas || {})[mk] || {}) };
+  const { porEmp } = faltasDoMes(db, year, month);
+  for (const [board, dadosBoard] of Object.entries(folha)) {
+    if (dadosBoard.encerrada || !dadosBoard.entries) continue;
+    for (const [id, { dias }] of Object.entries(porEmp)) {
+      const entry = dadosBoard.entries[id];
+      if (!entry || entry.encerrada) continue;
+      const texto = String(entry.faltas || '').trim();
+      const novas = dias.map(d => `${d.slice(8, 10)}/${d.slice(5, 7)}`).filter(d => !texto.includes(d));
+      if (!novas.length) continue;
+      if (folha[board] === dadosBoard) folha[board] = { ...dadosBoard, entries: { ...dadosBoard.entries } };
+      folha[board].entries[id] = { ...entry, faltas: [texto, ...novas].filter(Boolean).join(' · ') };
+    }
+  }
+  return folha;
 }
 
 // Feriados, extensões de horário e responsáveis da loja (VR, abertura,
@@ -4398,7 +4431,6 @@ function dadosLojaDoMes(db, year, month) {
   const porEmp     = {};
   const semVinculo = [];
   const lojas      = [];
-  const doEmp = (board, nome) => (db.employees || []).find(e => e.board === board && _adiNomeIgual(e, nome));
   const slot  = id => (porEmp[id] ||= { feriados: [], extensoes: [], resp: [] });
   for (const [key, dados] of Object.entries(db.dadosFolha || {})) {
     if (!key.startsWith(`${mk}-`)) continue;
@@ -4407,8 +4439,8 @@ function dadosLojaDoMes(db, year, month) {
     for (const [lista, campo] of [['feriados', 'feriados'], ['extensoes', 'extensoes']]) {
       for (const f of (dados[lista] || [])) {
         if (!f.date) continue;
-        for (const nome of (f.colaboradores || [])) {
-          const emp = doEmp(board, nome);
+        for (const [i, nome] of (f.colaboradores || []).entries()) {
+          const emp = _empDoLancamento(db, board, mk, f.empIds?.[i], nome);
           if (!emp) { semVinculo.push({ board, colaborador: nome, tipo: campo, date: f.date }); continue; }
           if (!slot(emp.id)[campo].includes(f.date)) slot(emp.id)[campo].push(f.date);
         }
@@ -4416,7 +4448,7 @@ function dadosLojaDoMes(db, year, month) {
     }
     for (const r of DADOS_LOJA_RESP) {
       if (!dados[r]) continue;
-      const emp = doEmp(board, dados[r]);
+      const emp = _empDoLancamento(db, board, mk, dados[r + 'Id'], dados[r]);
       if (!emp) { semVinculo.push({ board, colaborador: dados[r], tipo: r }); continue; }
       if (!slot(emp.id).resp.includes(r)) slot(emp.id).resp.push(r);
     }
@@ -10907,7 +10939,7 @@ app.get('/api/folha/:year/:month', requireAuth, async (req, res) => {
     }
 
     res.json({
-      folha:             (db.folhas || {})[mk] || {},
+      folha:             folhaDoMesComFaltas(db, year, month),
       employees,
       vsales,
       folhaConfig:       db.folhaConfig    || {},
@@ -11080,7 +11112,7 @@ app.get('/api/folha/:year/:month/export', requireAuth, async (req, res) => {
     const mk    = `${year}-${String(month).padStart(2,'0')}`;
     const board = req.query.board; // loja específica ou todas
     const db    = await readDB();
-    const folha = (db.folhas || {})[mk] || {};
+    const folha = folhaDoMesComFaltas(db, year, month);
     const savedFolhaEmpIds = new Set(
       Object.values(folha).flatMap(bd => Object.keys(bd.entries || {}).map(Number))
     );
@@ -11226,7 +11258,7 @@ app.get('/api/folha/:year/:month/contabilidade', requireAuth, async (req, res) =
     const mk    = `${year}-${String(month).padStart(2,'0')}`;
     const board = req.query.board;
     const db    = await readDB();
-    const folha = (db.folhas || {})[mk] || {};
+    const folha = folhaDoMesComFaltas(db, year, month);
     const savedFolhaEmpIds2 = new Set(
       Object.values(folha).flatMap(bd => Object.keys(bd.entries || {}).map(Number))
     );
