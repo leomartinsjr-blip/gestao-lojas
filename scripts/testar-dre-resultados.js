@@ -45,4 +45,33 @@ for (const b of ['delrey', 'minas', 'contagem', 'tommy']) {
 assert.strictEqual(linhaFinanceira('ALUGUEL SHOPPING'), null);
 assert.strictEqual(linhaFinanceira('PARCELAMENTO SIMPLES NACIONAL'), null);
 assert.strictEqual(linhaFinanceira('IOF'), 'juros');
+
+// Manual: Lez importada e taxa digitada saem das pendências
+const m = montar({ mes: '2026-10', conferencia, caixa, faturas, manual: {
+  lez: { vendas: { receita: 68930.63, cmv: 23531.85, em: 'x' }, faturas: { totais: { juros: 4033.86 }, aClassificar: {}, em: 'x' }, taxa: 2916 },
+  site: { taxa: 696, publicidade: 1178 },
+} });
+assert.strictEqual(m.lojas.lez.receita, 68930.63);
+assert.strictEqual(m.lojas.lez.juros, 4033.86);
+assert.strictEqual(m.lojas.lez.emprestimos, 0);
+assert.strictEqual(m.lojas.lez.taxa, 2916);
+assert.strictEqual(m.lojas.site.taxa, 696);
+assert.strictEqual(m.pendencias.length, 0);
+
+// Arquivos reais, quando informados em DRE_ARQUIVOS (não vão para o repositório)
+const fs = require('fs');
+const { lerRelatorio, mesDoFiltro } = require('../services/dreImportar');
+assert.strictEqual(mesDoFiltro('>= 30/09/2026, 21:00:00 e <= 31/10/2026, 20:59:59'), '2026-10');
+const pasta = process.env.DRE_ARQUIVOS;
+if (pasta) {
+  const v = lerRelatorio(fs.readFileSync(pasta + '/VResumoVendas_Sku (23).xlsx'));
+  assert.strictEqual(v.mes, '2026-10'); assert.strictEqual(v.receita, 68930.63); assert.strictEqual(v.cmv, 23531.85);
+  const s9 = lerRelatorio(fs.readFileSync(pasta + '/VResumoVendas_Sku (24).xlsx'));
+  assert.strictEqual(s9.mes, '2026-09'); assert.strictEqual(s9.receita, 81584.42);
+  const f = lerRelatorio(fs.readFileSync(pasta + '/FinPagarAnalitico (10).xlsx'));
+  console.log(f);
+  assert.strictEqual(f.totais.juros, 4033.86); assert.strictEqual(f.totais.publicidade, 5736.71);
+  assert.strictEqual(f.totais.sistema, 1163.26); assert.strictEqual(f.totais.plano, 2706.23);
+  assert.deepStrictEqual(f.aClassificar, {});
+}
 console.log('ok: DRE/Resultados confere com outubro/2026');

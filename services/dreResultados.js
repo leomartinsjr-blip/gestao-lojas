@@ -9,6 +9,9 @@
 //  - parcela de empréstimo não é despesa: fica abaixo do Resultado Líquido;
 //  - o que depende de digitação fica em destaque antes de finalizar o mês.
 
+const multer = require('multer');
+const { lerRelatorio } = require('./dreImportar');
+
 const LOJAS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'lez', 'site'];
 
 // A Lez não tem Microvix; o Site troca de gateway e tem a taxa digitada.
@@ -46,7 +49,7 @@ function somarSangria(caixaMes) {
 }
 
 // conferencia: porLoja do Dashboard · caixa: db.caixa · faturas: { b, f, vp, va }
-function montar({ mes, conferencia = [], caixa = {}, faturas = [] }) {
+function montar({ mes, conferencia = [], caixa = {}, faturas = [], manual = {} }) {
   const conf = Object.fromEntries(conferencia.map(l => [l.board, l]));
   const fin = {};
   for (const g of faturas) {
@@ -57,29 +60,40 @@ function montar({ mes, conferencia = [], caixa = {}, faturas = [] }) {
   }
 
   const lojas = {};
-  const pendencias = [];
+  const manuais = [];
+  const item = (loja, id, rotulo, tipo, valor) =>
+    manuais.push({ loja, id, rotulo, tipo, valor: valor ?? null, feito: valor != null });
   for (const b of LOJAS) {
+    const m = manual[b] || {};
     const c = conf[b];
     const temConf = c && !SEM_CONFERENCIA.has(b);
-    const receita = temConf ? r2(c.vlrLiquido || 0) : null;
-    const cmv = temConf ? r2(c.vlrCusto || 0) : null;
-    const taxa = temConf && !TAXA_MANUAL.has(b) ? r2(c.vlrTaxa || 0) : null;
+    const receita = temConf ? r2(c.vlrLiquido || 0) : m.vendas?.receita ?? null;
+    const cmv = temConf ? r2(c.vlrCusto || 0) : m.vendas?.cmv ?? null;
+    const taxa = TAXA_MANUAL.has(b) ? m.taxa ?? null : temConf ? r2(c.vlrTaxa || 0) : null;
     const caixinha = SEM_CAIXINHA.has(b) ? 0 : somarSangria(caixa[`${mes}-${b}`]);
     // A Lez não tem faturas no Microvix: juros e dívida vêm do relatório dela
-    const juros = SEM_CONFERENCIA.has(b) ? null : r2(fin[b]?.juros || 0);
-    const emprestimos = SEM_CONFERENCIA.has(b) ? null : r2(fin[b]?.emprestimos || 0);
+    const semFaturas = SEM_CONFERENCIA.has(b);
+    const juros = semFaturas ? (m.faturas ? m.faturas.totais.juros || 0 : null) : r2(fin[b]?.juros || 0);
+    const emprestimos = semFaturas ? (m.faturas ? m.faturas.totais.emprestimos || 0 : null) : r2(fin[b]?.emprestimos || 0);
     lojas[b] = { receita, cmv, taxa, caixinha, juros, emprestimos };
 
-    if (SEM_CONFERENCIA.has(b)) {
-      pendencias.push({ loja: b, item: 'Relatório de vendas e CMV (VResumoVendas)' });
-      pendencias.push({ loja: b, item: 'Relatório de faturas (FinPagarAnalitico)' });
+    if (semFaturas) {
+      item(b, 'vendas', 'Relatório de vendas e CMV (VResumoVendas)', 'arquivo', m.vendas?.em);
+      item(b, 'faturas', 'Relatório de faturas (FinPagarAnalitico)', 'arquivo', m.faturas?.em);
+      for (const [nome, valor] of Object.entries(m.faturas?.aClassificar || {}))
+        manuais.push({ loja: b, id: 'classificar', rotulo: `Fornecedor sem linha: ${nome} (${valor})`, tipo: 'aviso', feito: false });
     }
-    if (TAXA_MANUAL.has(b)) pendencias.push({ loja: b, item: 'Taxa de cartão digitada' });
+    if (TAXA_MANUAL.has(b)) item(b, 'taxa', 'Taxa de cartão (total do mês)', 'numero', m.taxa);
+    if (b === 'site') item(b, 'publicidade', 'Google Ads (relatório)', 'numero', m.publicidade);
   }
-  return { mes, lojas, pendencias, planilha: PLANILHA[mes] || null };
+  const pendencias = manuais.filter(i => !i.feito);
+  return { mes, lojas, manuais, pendencias, planilha: PLANILHA[mes] || null };
 }
 
+const CAMPOS_MANUAIS = { lez: ['taxa'], site: ['taxa', 'publicidade'] };
+
 function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, computeConferenciaDashboard, hojeBRT, boardsLabel }) {
+  const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
   const memoria = {}; // sem Mongo, a foto do mês fica só enquanto o servidor roda
 
   const soDono = (req, res, next) => {
@@ -110,6 +124,19 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     return { lojas, em };
   }
 
+  async function lerManual(mes) {
+    const db = getDb();
+    const doc = db ? await db.collection('dreManual').findOne({ _id: mes }) : memoria['manual-' + mes];
+    return doc?.lojas || {};
+  }
+  async function gravarManual(mes, loja, campos) {
+    const db = getDb();
+    const set = Object.fromEntries(Object.entries(campos).map(([k, v]) => [`lojas.${loja}.${k}`, v]));
+    if (db) return db.collection('dreManual').updateOne({ _id: mes }, { $set: set }, { upsert: true });
+    const doc = (memoria['manual-' + mes] ||= { lojas: {} });
+    Object.assign((doc.lojas[loja] ||= {}), campos);
+  }
+
   async function faturasDoMes(mes) {
     const db = getDb();
     const de = `${mes}-01`, ate = `${mes}-31`;
@@ -131,18 +158,43 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     try {
       const hoje = hojeBRT();
       const mes = /^\d{4}-\d{2}$/.test(req.query.mes || '') ? req.query.mes : hoje.slice(0, 7);
-      const [foto, faturas, db] = await Promise.all([
+      const [foto, faturas, db, manual] = await Promise.all([
         conferenciaDoMes(mes, req.query.recalcular === '1', hoje),
         faturasDoMes(mes),
         readDB(),
+        lerManual(mes),
       ]);
       res.json({
-        ...montar({ mes, conferencia: foto.lojas, caixa: db.caixa || {}, faturas }),
+        ...montar({ mes, conferencia: foto.lojas, caixa: db.caixa || {}, faturas, manual }),
         conferenciaEm: foto.em,
         labels: Object.fromEntries(LOJAS.map(b => [b, boardsLabel[b] || b])),
         ordem: LOJAS,
       });
     } catch (e) { console.error('[dreResultados]', e); res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/dre-resultados/importar — relatório da Lez; o mês vem do próprio arquivo
+  app.post('/api/dre-resultados/importar', requireAuth, soDono, upload.single('arquivo'), async (req, res) => {
+    try {
+      if (!req.file) return res.status(400).json({ error: 'Envie o arquivo' });
+      const rel = lerRelatorio(req.file.buffer);
+      const em = new Date().toISOString();
+      if (rel.tipo === 'vendas') await gravarManual(rel.mes, 'lez', { vendas: { receita: rel.receita, cmv: rel.cmv, em } });
+      else await gravarManual(rel.mes, 'lez', { faturas: { totais: rel.totais, aClassificar: rel.aClassificar, em } });
+      res.json(rel);
+    } catch (e) { res.status(400).json({ error: e.message }); }
+  });
+
+  // PUT /api/dre-resultados/manual { mes, loja, campo, valor } — valor vazio limpa
+  app.put('/api/dre-resultados/manual', requireAuth, soDono, async (req, res) => {
+    try {
+      const { mes, loja, campo } = req.body || {};
+      const valor = req.body?.valor === '' || req.body?.valor == null ? null : Number(req.body.valor);
+      if (!/^\d{4}-\d{2}$/.test(mes || '') || !CAMPOS_MANUAIS[loja]?.includes(campo) || Number.isNaN(valor))
+        return res.status(400).json({ error: 'Campo ou valor inválido' });
+      await gravarManual(mes, loja, { [campo]: valor });
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
   });
 }
 

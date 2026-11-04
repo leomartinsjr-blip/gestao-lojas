@@ -19,7 +19,10 @@
   .painel h2 { font-size:13px; font-weight:600; padding:10px 14px; border-bottom:1px solid var(--border); }
   .manual { background:var(--yellowbg); border-color:#d4a72c; }
   .manual h2 { border-color:#d4a72c; color:var(--yellow); }
-  .manual ul { padding:10px 14px 10px 30px; line-height:1.7; }
+  .manual.ok { background:#dafbe1; border-color:#4ac26b; } .manual.ok h2 { color:var(--green); border-color:#4ac26b; }
+  .item { display:flex; align-items:center; gap:10px; padding:7px 14px; flex-wrap:wrap; }
+  .item b { min-width:90px; } .item .feito { color:var(--green); } .item .pend { color:var(--yellow); font-weight:600; }
+  .item input[type=number] { width:130px; background:#fff; } .item span.r { flex:1; min-width:220px; }
   table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
   th, td { padding:7px 12px; text-align:right; border-bottom:1px solid var(--border); white-space:nowrap; }
   th:first-child, td:first-child { text-align:left; position:sticky; left:0; background:var(--bg2); }
@@ -71,8 +74,18 @@ function celula(valor, ref) {
 
 function desenhar(d) {
   const nome = b => d.labels[b] || b;
-  $('manuais').innerHTML = `<h2>Antes de finalizar: itens manuais deste mês</h2><ul>${
-    d.pendencias.map(p => `<li><b>${nome(p.loja)}:</b> ${p.item}</li>`).join('')}</ul>`;
+  const falta = d.pendencias.length;
+  $('manuais').className = 'painel manual' + (falta ? '' : ' ok');
+  $('manuais').innerHTML = `<h2>Antes de finalizar: ${falta ? falta + ' item(ns) manual(is) em aberto' : 'itens manuais completos'}</h2>${
+    d.manuais.map(i => {
+      const estado = i.feito ? '<span class="feito">✓ ok</span>' : '<span class="pend">falta</span>';
+      const campo = i.tipo === 'numero'
+        ? `<input type="number" step="0.01" data-loja="${i.loja}" data-campo="${i.id}" value="${i.valor ?? ''}">`
+        : i.tipo === 'arquivo' ? '<input type="file" accept=".xlsx" class="arquivo">' : '';
+      return `<div class="item"><b>${nome(i.loja)}</b><span class="r">${i.rotulo}</span>${campo}${estado}</div>`;
+    }).join('')}`;
+  document.querySelectorAll('#manuais input[type=number]').forEach(el => el.addEventListener('change', () => salvar(el)));
+  document.querySelectorAll('#manuais .arquivo').forEach(el => el.addEventListener('change', () => enviar(el)));
   const [a, m] = d.mes.split('-');
   $('titulo').textContent = `Resultado parcial de ${m}/${a}`;
   const cab = `<thead><tr><th>Linha</th>${d.ordem.map(b => `<th>${nome(b)}</th>`).join('')}</tr></thead>`;
@@ -82,6 +95,26 @@ function desenhar(d) {
   const quando = d.conferenciaEm ? new Date(d.conferenciaEm).toLocaleString('pt-BR') : '';
   $('nota').textContent = `Primeira parte: faltam as demais linhas da DRE, por isso ainda não há resultado final. ` +
     `Juros e empréstimos vêm das faturas pelo vencimento, pagas ou em aberto. Conferência lida em ${quando}.`;
+}
+
+async function salvar(el) {
+  const r = await fetch('/api/dre-resultados/manual', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ mes: $('mes').value, loja: el.dataset.loja, campo: el.dataset.campo, valor: el.value }) });
+  if (!r.ok) alert((await r.json()).error || 'Não foi possível salvar');
+  carregar(false);
+}
+
+async function enviar(el) {
+  const fd = new FormData();
+  fd.append('arquivo', el.files[0]);
+  const r = await fetch('/api/dre-resultados/importar', { method: 'POST', body: fd });
+  const d = await r.json();
+  if (!r.ok) { alert(d.error || 'Não foi possível importar'); return; }
+  if (d.mes !== $('mes').value) {
+    alert(`O arquivo é de ${d.mes.split('-').reverse().join('/')}. Abrindo esse mês.`);
+    $('mes').value = d.mes;
+  }
+  carregar(false);
 }
 
 async function carregar(recalcular) {
