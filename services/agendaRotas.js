@@ -231,6 +231,38 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, bo
     } catch (e) { console.error('[agenda resumo-dia]', e); res.status(500).json({ error: e.message }); }
   });
 
+  // Planilha externa, sem sessão: o token vai no cabeçalho x-planilha-token, nunca
+  // na URL. Sem PLANILHA_TOKEN configurado a rota fica fechada.
+  const hash = s => crypto.createHash('sha256').update(s).digest();
+  function requirePlanilhaToken(req, res, next) {
+    const esperado = process.env.PLANILHA_TOKEN || '';
+    const veio = String(req.get('x-planilha-token') || '');
+    if (esperado.length < 24 || !crypto.timingSafeEqual(hash(veio), hash(esperado)))
+      return res.status(401).json({ error: 'Token inválido' });
+    next();
+  }
+
+  // GET /api/planilha/saldos?data=YYYY-MM-DD — uma linha por conta, só leitura.
+  // Sem data, até hoje: lançamento futuro não entra no saldo.
+  app.get('/api/planilha/saldos', requirePlanilhaToken, async (req, res) => {
+    try {
+      const data = dataDe(req.query.data);
+      const [todos, cfg] = await Promise.all([store.lancs(), store.config()]);
+      const ate = todos.filter(l => l.data <= data);
+      const saldos = agenda.saldos(ate);
+      const ultimo = {};
+      for (const l of ate) if (!ultimo[l.emp] || l.data > ultimo[l.emp]) ultimo[l.emp] = l.data;
+      res.json(agenda.EMPRESAS.flatMap(emp => {
+        const contas = new Set([...(cfg[emp]?.contas || contasPadrao(emp)), ...Object.keys(saldos[emp] || {})]);
+        return [...contas].map(conta => ({
+          data, empresa: emp, conta, saldo: saldos[emp]?.[conta] ?? 0,
+          limite: conta === 'CG' ? cfg[emp]?.limite ?? null : null,
+          ultimoLancamento: ultimo[emp] || null,
+        }));
+      }));
+    } catch (e) { console.error('[planilha saldos]', e); res.status(500).json({ error: 'Erro ao calcular os saldos' }); }
+  });
+
   // Saldo da agenda por loja, para o fluxo: atual e no fim de cada mês.
   return {
     async saldosParaFluxo(ano) {
