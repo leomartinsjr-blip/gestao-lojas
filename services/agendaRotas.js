@@ -284,7 +284,16 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, bo
       for (const l of todos) if (l.abertura && l.data.startsWith(ano + '-')) {
         const b = agenda.boardDe(l.emp, l.conta); if (b) abertura[b] = Math.round(((abertura[b] || 0) + l.valor) * 100) / 100;
       }
-      return { ultimo: ult, atual, fimMes, abertura };
+      // Ponto de partida do mês atual: saldo até hoje e o último lançamento de cada loja
+      const hoje = fluxoCaixa.hojeBRT();
+      const ateHoje = todos.filter(l => l.data <= hoje);
+      const partida = {};
+      for (const [b, valor] of Object.entries(agenda.saldoPorBoard(ateHoje))) partida[b] = { valor, ultimo: '' };
+      for (const l of ateHoje) {
+        const p = partida[agenda.boardDe(l.emp, l.conta)];
+        if (p && l.data > p.ultimo) p.ultimo = l.data;
+      }
+      return { ultimo: ult, atual, fimMes, abertura, partida };
     },
   };
 }

@@ -37,6 +37,8 @@
   .fc-card-label { color: var(--text2); font-size: 11px; margin-bottom: 4px; }
   .fc-card-value { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .fc-card-sub { color: var(--text2); font-size: 11px; margin-top: 3px; }
+  #fm-atual { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; line-height: 1.7; }
+  #fm-atual b { font-variant-numeric: tabular-nums; }
   .pos { color: var(--green); } .neg { color: var(--red); } .warn { color: var(--yellow); }
   .fc-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 16px; overflow: hidden; }
   .fc-panel-hd { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
@@ -209,6 +211,7 @@
   <div id="fm-main" style="display:none">
     <div class="fm-chips" id="fm-chips"></div>
     <div id="fm-cards"></div>
+    <div id="fm-atual" style="display:none"></div>
     <div class="fc-panel" id="fm-resumo-panel">
       <div class="fc-panel-hd"><h2>Saldo no fim de cada mês, por empresa</h2><span class="muted">clique numa empresa para abrir</span></div>
       <div class="fc-scroll"><table class="fm-tab" id="fm-resumo"></table></div>
@@ -447,7 +450,31 @@ function empresaSel() { return $('fc-loja').value || ''; }
 const saldoIniDe = b => M.empresas[b].saldoIni ?? M.agenda?.abertura?.[b] ?? null;
 function serieEmpresa(b) {
   const e = M.empresas[b];
-  return serieSaldo(saldoIniDe(b), contas(e).res, { ...(M.agenda?.fimMes?.[b] || {}), ...(M.saldosMes?.[b] || {}) });
+  const peloBanco = e.atual ? { [M.meses[M.status.indexOf('parcial')]]: e.atual.fim } : {};
+  return serieSaldo(saldoIniDe(b), contas(e).res, { ...peloBanco, ...(M.agenda?.fimMes?.[b] || {}), ...(M.saldosMes?.[b] || {}) });
+}
+
+// Mês atual pela agenda, das empresas que têm lançamento no mês
+const atuaisDe = b => (b ? [b] : M.boards).map(k => M.empresas[k].atual).filter(Boolean);
+const somaAtual = (as, k) => as.reduce((s, a) => s + a[k], 0);
+
+// Como o saldo do mês atual fecha: a coluna do mês mostra o mês inteiro, este quadro o que falta.
+function resumoAtual(b) {
+  const iA = M.status.indexOf('parcial');
+  if (iA < 0) return '';
+  const fora = (b ? [b] : M.boards).filter(k => !M.empresas[k].atual);
+  const semAgenda = fora.length ? `<div class="warn">Sem lançamento na Agenda em ${nomeMes(M.meses[iA])}: ${fora.map(k => esc(EMP[k] || k)).join(', ')}. O saldo fica pela conta do mês inteiro, com as vencidas dentro.</div>` : '';
+  const as = atuaisDe(b);
+  if (!as.length) return semAgenda;
+  const datas = as.map(a => a.ultimo).sort();
+  const quando = datas[0] === datas[datas.length - 1] ? DM(datas[0]) : `${DM(datas[0])} a ${DM(datas[datas.length - 1])}`;
+  const manual = somaAtual(as, 'manual');
+  const digitado = b && M.saldosMes?.[b]?.[M.meses[iA]] != null;
+  return `<div><b>${nomeMes(M.meses[iA])}:</b> saldo da Agenda (último lançamento ${quando}) <b>${R(somaAtual(as, 'saldo'))}</b>
+    + venda a receber <b>${R(somaAtual(as, 'venda'))}</b> − taxa <b>${R(somaAtual(as, 'taxa'))}</b>
+    − faturas a vencer <b>${R(somaAtual(as, 'aPagar'))}</b>${Math.abs(manual) >= .5 ? ` ${manual < 0 ? '−' : '+'} lançamentos manuais <b>${R(Math.abs(manual))}</b>` : ''}
+    = <b>${R(somaAtual(as, 'fim'))}</b> no fim do mês${digitado ? ' (o saldo digitado na tabela tem prioridade)' : ''}.</div>
+    <div class="warn">Vencidas sem baixa, fora do saldo: <b>${R(somaAtual(as, 'vencidas'))}</b></div>${semAgenda}`;
 }
 
 function blocoConsolidado() {
@@ -516,11 +543,13 @@ function blocoMensal(x, chave, sal, editBoard) {
   h += `<tr class="saldo"><td>Saldo no fim do mês</td>${sal.fim.map((v, i) => {
     const mk = M.meses[i];
     if (editBoard && M.status[i] !== 'prev') {
-      const inf = M.saldosMes?.[editBoard]?.[mk], agV = M.agenda?.fimMes?.[editBoard]?.[mk];
+      const atualEmp = M.status[i] === 'parcial' ? M.empresas[editBoard].atual : null;
+      const inf = M.saldosMes?.[editBoard]?.[mk], agV = atualEmp?.fim ?? M.agenda?.fimMes?.[editBoard]?.[mk];
       const ultimo = new Date(+mk.slice(0, 4), +mk.slice(5, 7), 1);
       const dia01 = `01/${String(ultimo.getMonth() + 1).padStart(2, '0')}`;
       const tip = inf != null
         ? `Saldo real em ${dia01}: ${R2(inf)} · calculado ${R2(sal.calc[i])} · diferença ${R2(inf - sal.calc[i])}. Apague para voltar ao calculado.`
+        : atualEmp ? `Previsto a partir do saldo da Agenda de ${DM(atualEmp.ultimo)}: ${R2(agV)}. Digite para corrigir.`
         : agV != null ? `Saldo da agenda no fim do mês: ${R2(agV)} · calculado ${R2(sal.calc[i])} · diferença ${R2(agV - sal.calc[i])}. Digite para corrigir.`
         : `Calculado: ${R2(sal.calc[i])}. Digite o saldo real que havia nas contas em ${dia01}.`;
       return `<td class="${M.status[i] !== 'real' ? 'fut' : ''}"><input type="text" class="fm-sal${inf != null ? ' inf' : agV != null ? ' ag' : ''}${v < 0 ? ' neg' : ''}" data-b="${editBoard}" data-mes="${mk}" inputmode="decimal"
@@ -528,6 +557,9 @@ function blocoMensal(x, chave, sal, editBoard) {
     }
     return td(v, i, v < -.5 ? 'neg' : '');
   }).join('')}<td class="tot"></td></tr>`;
+
+  const as = atuaisDe(editBoard), iA = M.status.indexOf('parcial');
+  if (iA >= 0 && as.length) h += linha('Vencidas sem baixa <span class="muted">fora do saldo</span>', M.meses.map((_, i) => i === iA ? somaAtual(as, 'vencidas') : 0), 'sub', false);
   return h;
 }
 
@@ -573,8 +605,11 @@ function renderMensal() {
   }
   $('fm-resumo-panel').style.display = b ? 'none' : '';
   $('fm-cards').innerHTML = cardsMensal(sal, contas(x).res);
+  const quadro = resumoAtual(b);
+  $('fm-atual').innerHTML = quadro;
+  $('fm-atual').style.display = quadro ? '' : 'none';
   $('fm-tab').innerHTML = cabecalho('R$') + '<tbody>' + blocoMensal(x, chave, sal, b || null) + '</tbody>';
-  $('fm-note').innerHTML = `Vendas: meses fechados = realizado (lançamento diário do Dash); mês atual = projeção do Dash ou o vendido até ontem, o que for maior; meses seguintes = projeção. Taxa da maquineta = média dos últimos 3 meses da Conferência. Saídas do Microvix pelo vencimento: nos meses fechados só o que foi pago (com baixa, como no Fechamento de Caixa); no mês atual e nos seguintes também o que está em aberto, pelo valor líquido (sem desconto e abatimento).
+  $('fm-note').innerHTML = `Vendas: meses fechados = realizado (lançamento diário do Dash); mês atual = projeção do Dash ou o vendido até ontem, o que for maior; meses seguintes = projeção. Taxa da maquineta = média dos últimos 3 meses da Conferência. Saídas do Microvix pelo vencimento: nos meses fechados só o que foi pago (com baixa, como no Fechamento de Caixa); no mês atual e nos seguintes também o que está em aberto, pelo valor líquido (sem desconto e abatimento). A coluna do mês atual mostra o mês inteiro; o saldo no fim dele parte do saldo real da Agenda e soma só o que falta, como no quadro acima.
     ${b ? 'Saldo: digite o de 01/jan no início e, em cada mês que fechou, o saldo real que havia nas contas no dia 01 seguinte — o acumulado passa a partir dele.' : 'Saldo do consolidado = soma das empresas (abra uma empresa para informar os saldos reais).'}`;
 
   const bs = b ? [b] : M.boards;

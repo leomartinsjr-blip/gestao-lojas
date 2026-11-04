@@ -10221,12 +10221,24 @@ app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
       catManual = db.fluxoCategorias || {};
       for (const [k, v] of Object.entries(db.fluxoSaldosMes || {})) { const [b, mes] = k.split('|'); if (mes.startsWith(ano + '-')) (saldosMes[b] ||= {})[mes] = v; }
     }
+    const agenda = await agendaApi.saldosParaFluxo(ano).catch(() => null);
+    let atual = {};
+    if (agenda && ano === +hoje.slice(0, 4)) {
+      const corte = fluxoCaixa.addDias(hoje, -95), fimAno = `${ano}-12-31`;
+      const faturasAbertas = mongoDb
+        ? await mongoDb.collection('cpFaturas').find(
+            { isPagar: true, previsao: { $ne: 'S' }, vencimento: { $gte: corte, $lte: fimAno }, baixa: { $in: ['', null] } },
+            { projection: { _id: 0, board: 1, vencimento: 1, baixa: 1, valor: 1, valorLiquido: 1, valorPago: 1, isPagar: 1, previsao: 1 } },
+          ).toArray()
+        : (await readContasPagar(corte, fimAno)).rows;
+      atual = fluxoCaixa.mesAtualPelaAgenda({ db, faturasAbertas, taxas, lancamentos, partida: agenda.partida, boards, hoje });
+    }
     res.json({
-      ...fluxoCaixa.calcularMensal({ db, faturasMes, catManual, lancamentos, taxas, saldosAno, boards, hoje, ano }),
+      ...fluxoCaixa.calcularMensal({ db, faturasMes, catManual, lancamentos, taxas, saldosAno, boards, hoje, ano, atual }),
       labels: Object.fromEntries(boards.map(b => [b, BOARDS_LABEL[b] || b.toUpperCase()])),
       lancamentos: lancamentos.filter(l => l.data.startsWith(ano + '-')),
       saldosMes,
-      agenda: await agendaApi.saldosParaFluxo(ano).catch(() => null),
+      agenda,
       faturasSyncedAt: (mongoDb ? await mongoDb.collection('cpMeta').findOne({ _id: 'main' }) : db.contasPagar)?.syncedAt || null,
     });
   } catch (e) { console.error('[fluxoCaixa mensal]', e); res.status(500).json({ error: e.message }); }

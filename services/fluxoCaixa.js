@@ -177,7 +177,7 @@ function criarProjecao(db, board, hoje) {
 
   return {
     avgD, ritmo, realAteOntem, vendaOntem: vendaDia[ontem] || 0, metodo: ritmo != null ? 'ritmo' : '3meses',
-    projMes, realizado, base, vendaPrevistaPorDia,
+    projMes, realizado, base, vendaPrevistaPorDia, vendaDoDia: d => vendaDia[d] || 0,
     crescimentos: cres,
   };
 }
@@ -306,7 +306,42 @@ function resumoDoDia({ db, faturas, taxas, boards, hoje = hojeBRT() }) {
 // faturasMes: [{ b, m: 'YYYY-MM', f: fornecedor, vp: pago, va: em aberto }]. Mês fechado conta só o
 // pago (como o Fechamento de Caixa); vencido sem baixa ali não entra. Mês atual e seguintes: pago + aberto. · saldosAno: { board: valor em 01/jan }
 // catManual: { FORNECEDOR: categoria } escolhida na tela
-function calcularMensal({ db, faturasMes, catManual = {}, lancamentos = [], taxas, saldosAno = {}, boards, hoje = hojeBRT(), ano }) {
+// Fim do mês atual a partir do saldo real da agenda. O que já aconteceu está no
+// saldo, então só entra o que falta: a venda desde o último lançamento (a do dia
+// anterior já caiu, em D+1) e as faturas abertas que ainda vão vencer. Vencida sem
+// baixa fica fora: se foi paga já saiu do saldo, se não foi segue à parte como risco.
+// Loja sem lançamento no mês não entra e o mês atual fica pela conta do Mensal.
+function mesAtualPelaAgenda({ db, faturasAbertas = [], taxas, lancamentos = [], partida = {}, boards, hoje = hojeBRT() }) {
+  const [hy, hm] = hoje.split('-').map(Number);
+  const mk = `${hy}-${pad(hm)}`, fim = `${mk}-${pad(diasNoMes(hy, hm))}`;
+  const corte = addDias(hoje, -DIAS_ATRASO_CONSIDERADO);
+  const manuais = movimentosManuais(lancamentos);
+  const r2 = v => Math.round(v * 100) / 100;
+  const out = {};
+  for (const b of boards) {
+    const p = partida[b];
+    if (!p?.ultimo?.startsWith(mk)) continue;
+    // Lançamento de hoje na agenda: os pagamentos de hoje já estão no saldo.
+    const desde = p.ultimo >= hoje ? addDias(hoje, 1) : hoje;
+    const pj = criarProjecao(db, b, hoje);
+    const prev = pj.vendaPrevistaPorDia(fim);
+    let venda = 0, aPagar = 0, vencidas = 0;
+    for (let d = p.ultimo; d <= fim; d = addDias(d, 1)) venda += d < hoje ? pj.vendaDoDia(d) : prev[d] || 0;
+    for (const f of faturasAbertas) {
+      if (f.board !== b || !f.isPagar || f.baixa || f.previsao === 'S' || !f.vencimento) continue;
+      const resta = (f.valorLiquido ?? f.valor ?? 0) - (f.valorPago || 0);
+      if (resta <= 0.009 || f.vencimento > fim || f.vencimento < corte) continue;
+      if (f.vencimento >= desde) aPagar += resta; else vencidas += resta;
+    }
+    const manual = manuais.filter(m => m.b === b && m.d >= desde && m.d <= fim).reduce((s, m) => s + m.v, 0);
+    const taxa = venda * (taxas[b] ?? 0.025);
+    out[b] = { saldo: p.valor, ultimo: p.ultimo, venda: r2(venda), taxa: r2(taxa), aPagar: r2(aPagar), manual: r2(manual),
+      vencidas: r2(vencidas), fim: r2(p.valor + venda - taxa - aPagar + manual) };
+  }
+  return out;
+}
+
+function calcularMensal({ db, faturasMes, catManual = {}, lancamentos = [], taxas, saldosAno = {}, boards, hoje = hojeBRT(), ano, atual = {} }) {
   const [hy, hm] = hoje.split('-').map(Number);
   const mesAtual = `${hy}-${pad(hm)}`;
   const meses = Array.from({ length: 12 }, (_, i) => `${ano}-${pad(i + 1)}`);
@@ -351,10 +386,10 @@ function calcularMensal({ db, faturasMes, catManual = {}, lancamentos = [], taxa
         total: r2(porCat[b][c].total),
         forn: Object.fromEntries(Object.entries(porCat[b][c].forn).map(([n, a]) => [n, r2(a)])),
       }])),
-      entradas, saidas, transf,
+      entradas, saidas, transf, atual: atual[b] || null,
     };
   }
   return { ano, hoje, meses, status, boards, empresas, nomesCategorias: NOMES_CATEGORIAS };
 }
 
-module.exports = { calcular, calcularMensal, resumoDoDia, janelaDoDia, criarProjecao, diaUtil, ehDiaUtil, ehFeriado, hojeBRT, addDias, EMPRESA, NOMES_CATEGORIAS, normForn };
+module.exports = { calcular, calcularMensal, mesAtualPelaAgenda, resumoDoDia, janelaDoDia, criarProjecao, diaUtil, ehDiaUtil, ehFeriado, hojeBRT, addDias, EMPRESA, NOMES_CATEGORIAS, normForn };
