@@ -7898,7 +7898,11 @@ function _renderAusenciasView(body, tipo) {
             <label>Funcionário</label>
             <select id="ausColab">
               <option value="">— selecione —</option>
-              ${emps.map(e => `<option value="${_escHtml(e.apelido||e.name)}">${_escHtml(e.apelido||e.name)}</option>`).join('')}
+              ${emps.map(e => {
+                const n = e.apelido || e.name;
+                const repetido = emps.filter(x => (x.apelido || x.name) === n).length > 1;
+                return `<option value="${e.id}">${_escHtml(repetido ? e.name : n)}</option>`;
+              }).join('')}
               <option value="__outro">Outro (digitar)</option>
             </select>
           </div>
@@ -7949,8 +7953,10 @@ function _renderAusenciasView(body, tipo) {
     }
 
     body.querySelector('#ausSubmitBtn')?.addEventListener('click', async () => {
-      const sel  = body.querySelector('#ausColab').value;
-      const colaborador = sel === '__outro' ? body.querySelector('#ausColabOutro').value.trim() : sel;
+      const selEl = body.querySelector('#ausColab');
+      const sel   = selEl.value;
+      const outro = sel === '__outro';
+      const colaborador = outro ? body.querySelector('#ausColabOutro').value.trim() : (sel ? selEl.selectedOptions[0].textContent : '');
       const dataInicio  = body.querySelector('#ausInicio').value;
       const dataFim     = body.querySelector('#ausFim').value;
       const observacao  = body.querySelector('#ausObs').value.trim();
@@ -7964,7 +7970,7 @@ function _renderAusenciasView(body, tipo) {
       btn.disabled = true;
       try {
         const item = await apiFetch('POST', '/api/ausencias', {
-          tipo, colaborador, dataInicio, dataFim, observacao,
+          tipo, colaborador, empId: sel && !outro ? parseInt(sel) : null, dataInicio, dataFim, observacao,
           board: fb,
         });
         FC.ausencias = [...(FC.ausencias || []), item];

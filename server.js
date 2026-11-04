@@ -2025,8 +2025,11 @@ app.post('/api/ausencias', requireAuth, async (req, res) => {
     if (!dataFim)    return res.status(400).json({ error: 'Data fim obrigatória' });
     const db = await readDB();
     if (!db.ausencias) db.ausencias = [];
+    // Vínculo com o colaborador: quem usa compara o empId; o nome fica como rótulo
+    const empId = parseInt(req.body.empId) ||
+      (db.employees || []).find(e => e.board === board && !e.inativo && _adiNomeIgual(e, colaborador))?.id || null;
     const item = {
-      id: nextId(db), tipo, board,
+      id: nextId(db), tipo, board, empId,
       colaborador: colaborador.trim(),
       dataInicio, dataFim,
       observacao: (observacao || '').trim(),
@@ -4363,6 +4366,9 @@ function adiantamentosDoMes(db, year, month) {
   }
   return { porEmp, semVinculo };
 }
+
+// Atestado/férias de um colaborador: pelo id; o registro antigo, sem id, pelo nome.
+const _ausDoEmp = (a, emp, mesmoNome) => a.empId ? a.empId === emp.id : mesmoNome();
 
 // Colaborador de um lançamento do Dados p/ Folha. Quem manda é o id; lançamento
 // antigo só tem o nome, e aí vale quem estava na loja no mês: dois cadastros com
@@ -10433,7 +10439,7 @@ app.get('/api/folha/debug-premiacao/:year/:month', requireAdmin, async (req, res
         const empNorm = _normNameDbg(emp.apelido || emp.name);
         const empAus  = ausenciasAll.filter(a =>
           ['ferias','atestado'].includes(a.tipo) &&
-          _normNameDbg(a.colaborador) === empNorm &&
+          _ausDoEmp(a, emp, () => _normNameDbg(a.colaborador) === empNorm) &&
           a.dataFim >= monthStart && a.dataInicio <= lastDayStr
         );
         if (!empAus.length) continue;
@@ -10593,7 +10599,7 @@ function calcPremiacaoSemanal(db, year, month, employees) {
     const empNorm = _normName(emp.apelido || emp.name);
     const empAus  = ausencias.filter(a =>
       ['ferias','atestado'].includes(a.tipo) &&
-      _normName(a.colaborador) === empNorm &&
+      _ausDoEmp(a, emp, () => _normName(a.colaborador) === empNorm) &&
       a.dataFim >= rangeStart && a.dataInicio <= lastDayStr
     );
     if (!empAus.length) continue;
@@ -14639,7 +14645,7 @@ function pautaRH(db, board, y, m, hoje) {
   for (const e of ativos) {
     if (!e.admissao) continue;
     const zerado  = e.feriasZeradoAte || '';
-    const gozos   = feriasAus.filter(a => pautaMesmaPessoa(a.colaborador, e) && a.dataInicio >= (zerado || e.admissao));
+    const gozos   = feriasAus.filter(a => _ausDoEmp(a, e, () => pautaMesmaPessoa(a.colaborador, e)) && a.dataInicio >= (zerado || e.admissao));
     const futuras = gozos.filter(a => a.dataInicio > hoje).sort((a, b) => a.dataInicio.localeCompare(b.dataInicio));
     const passadas = gozos.filter(a => a.dataInicio <= hoje).sort((a, b) => a.dataFim.localeCompare(b.dataFim));
     const ultimo  = passadas.length ? passadas[passadas.length - 1].dataFim : null;
@@ -15544,9 +15550,8 @@ function vtFolgasPorEmp(db, y, m) {
       const nomes = nomesDe(e);
       for (const a of ferias) {
         const nome = vtNormNome(a.colaborador);
-        if (!nomes.has(nome)) continue;
         const xaras = ativos.filter(o => nomesDe(o).has(nome));
-        if (xaras.length > 1 && a.board && a.board !== e.board) continue;
+        if (!_ausDoEmp(a, e, () => nomes.has(nome) && !(xaras.length > 1 && a.board && a.board !== e.board))) continue;
         const cur = new Date((a.dataInicio < ini ? ini : a.dataInicio) + 'T12:00:00');
         const ate = a.dataFim > fim ? fim : a.dataFim;
         while (true) {
