@@ -90,4 +90,33 @@ assert.strictEqual(cx.soma.contagem, 14372.84);
 assert.strictEqual(cx.resultado.contagem, -14272.84);
 assert.strictEqual(r2det(), 2);
 function r2det() { return montar({ mes: '2026-10', caixa, faturas, conferencia }).detalhe.juros.length; }
+
+// DRE completa: folha de Contagem de outubro, com supervisor rateado por Minas, Contagem e Estação
+const { montarCompleta } = require('../services/dreResultados');
+const L = require('../services/dreLinhas');
+const folhaMes = {
+  contagem: { entries: { 1: { tipo: 'caixa', fixo: 3400, gmComplement: 567.17, quebra: 247.3, comissaoTotal: 3832.83, proventos: 9177.3 } } },
+  minas: { entries: { 9: { tipo: 'supervisor', fixo: 2388.34, comissaoTotal: 1881.59, proventos: 5669.93, ajudaCustoTotal: 1200,
+    lojaComissoes: [{ board: 'minas', comissao: 580.23 }, { board: 'contagem', comissao: 638.8 }, { board: 'estacao', comissao: 662.56 }] } } },
+  site: { entries: { 2: { tipo: 'socio', proventos: 3674.66 }, 3: { tipo: 'socio', proventos: 18000 } } },
+};
+const employees = [{ id: 9, supervisedBoards: ['minas', 'contagem', 'estacao'] }, { id: 2, name: 'INGRID MUNIZ' }, { id: 3, name: 'LEONARDO MARTINS JUNIOR' }];
+const fp = L.folhaPorLoja(folhaMes, employees);
+assert.strictEqual(fp.contagem.fixos, 5010.58);
+assert.strictEqual(fp.contagem.comissoes, 4471.63);
+assert.strictEqual(fp.contagem.premiacoes, 1130);
+assert.strictEqual(fp.minas.ajuda, 1200);
+assert.strictEqual(Math.round(L.aliquotaSimples('delrey', '2026-10') * 10000), 1019);
+assert.strictEqual(L.linhaDre('MAGNUM LUIZ - TECNICO', 'tommy'), 'magnum');
+assert.strictEqual(L.linhaDre('FOLHA DE PAGAMENTO', 'delrey'), null);
+assert.strictEqual(L.linhaDre('CONDOMINIO SHOPPING', 'delrey'), null);
+assert.strictEqual(L.linhaDre('CONDOMINIO SHOPPING', 'site'), 'sala');
+const dc = montarCompleta(montar({ mes: '2026-10', conferencia, caixa, faturas }), { mes: '2026-10', manual: { contagem: { ponto: 16226.63 } }, faturas,
+  apuracoes: [{ competencia: '2026-09', empresa: 'PV COMERCIO', difal: 10.55, base4: 100, base12: 0 }], embalagem: { pago: { contagem: 45 }, venda: { contagem: 10000 } },
+  folhaMes, employees, freteTommy: 485.91, faturamentoExtra: {} });
+assert.strictEqual(dc.lojas.contagem.ponto, 16226.63);
+assert.strictEqual(dc.lojas.contagem.encargos, 2749.84);
+assert.strictEqual(dc.lojas.tommy.frete, 485.91);
+assert.ok(dc.lojas.lez.faltam.includes('receita'));
+assert.ok(dc.estrutura.length > 25);
 console.log('ok: DRE/Resultados confere com outubro/2026');

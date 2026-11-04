@@ -63,14 +63,6 @@
 <script>
 const $ = id => document.getElementById(id);
 const num = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-const LINHAS = [
-  ['receita', 'Venda de produtos'],
-  ['cmv', 'CMV'],
-  ['taxa', 'Descontos de cartão'],
-  ['caixinha', 'Despesas caixinha'],
-  ['juros', 'Juros'],
-  ['emprestimos', 'Pagamentos de dívida: empréstimos'],
-];
 // Diferença acima disso aparece em vermelho: arredondamento não é erro.
 const TOLERANCIA = 50;
 
@@ -99,15 +91,17 @@ function desenhar(d) {
   document.querySelectorAll('#manuais input[type=number]').forEach(el => el.addEventListener('change', () => salvar(el)));
   document.querySelectorAll('#manuais .arquivo').forEach(el => el.addEventListener('change', () => enviar(el)));
   const [a, m] = d.mes.split('-');
-  $('titulo').textContent = `Resultado parcial de ${m}/${a}`;
+  $('titulo').textContent = `DRE de ${m}/${a}`;
   const cab = `<thead><tr><th>Linha</th>${d.ordem.map(b => `<th>${nome(b)}</th>`).join('')}</tr></thead>`;
   const subs = itens => itens.map(i => `<tr class="sub" hidden><td>${i.nome}</td>${d.ordem.map(b =>
     `<td>${i.lojas[b] ? num(i.lojas[b]) : ''}</td>`).join('')}</tr>`).join('');
-  const corpo = LINHAS.map(([k, rot]) => {
+  const corpo = d.estrutura.map(([k, rot, tipo]) => {
     const itens = d.detalhe?.[k] || [];
-    return `<tr class="${itens.length ? 'abre' : ''}"><td>${rot}</td>${d.ordem.map(b =>
-      celula(d.lojas[b][k], d.planilha?.[b]?.[k])).join('')}</tr>${subs(itens)}`;
+    const pct = b => (tipo === 'total' && d.lojas[b].receita ? `<small>${num(d.lojas[b][k] / d.lojas[b].receita * 100)}%</small>` : '');
+    return `<tr class="${[itens.length ? 'abre' : '', tipo === 'total' ? 'total' : ''].join(' ')}"><td>${rot}</td>${d.ordem.map(b =>
+      celula(d.lojas[b][k], d.planilha?.[b]?.[k]).replace('</td>', pct(b) + '</td>')).join('')}</tr>${subs(itens)}`;
   }).join('');
+  const parciais = d.ordem.filter(b => d.lojas[b].faltam.length);
   $('tabela').innerHTML = cab + `<tbody>${corpo}</tbody>`;
   $('tituloCaixa').textContent = `Fechamento de Caixa de ${m}/${a}`;
   const linhaTotal = (rot, valores) => `<tr class="total"><td>${rot}</td>${d.ordem.map(b => `<td>${num(valores[b] || 0)}</td>`).join('')}</tr>`;
@@ -121,8 +115,10 @@ function desenhar(d) {
     for (let n = tr.nextElementSibling; n && n.classList.contains('sub'); n = n.nextElementSibling) n.hidden = !n.hidden;
   }));
   const quando = d.conferenciaEm ? new Date(d.conferenciaEm).toLocaleString('pt-BR') : '';
-  $('nota').textContent = `Primeira parte: faltam as demais linhas da DRE, por isso ainda não há resultado final. ` +
-    `Juros e empréstimos vêm das faturas pelo vencimento, pagas ou em aberto. Conferência lida em ${quando}.`;
+  const abertas = d.ordem.filter(b => !d.folhaFechada[b] && b !== 'site').map(nome);
+  $('nota').textContent = (parciais.length ? `Resultado parcial em ${parciais.map(nome).join(', ')}: falta informar as linhas marcadas. ` : '') +
+    (abertas.length ? `Folha ainda aberta em ${abertas.join(', ')}. ` : '') +
+    `Faturas pelo vencimento, pagas ou em aberto. Conferência lida em ${quando}.`;
 }
 
 async function salvar(el) {

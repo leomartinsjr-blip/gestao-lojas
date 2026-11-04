@@ -12,6 +12,7 @@
 const multer = require('multer');
 const { lerRelatorio } = require('./dreImportar');
 const { montarCaixa } = require('./dreCaixa');
+const L = require('./dreLinhas');
 
 const LOJAS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'lez', 'site'];
 
@@ -110,7 +111,59 @@ function montar({ mes, conferencia = [], caixa = {}, faturas = [], manual = {} }
     detalhe: { juros: lista('juros'), emprestimos: lista('emprestimos'), caixinha: lista('caixinha') } };
 }
 
-const CAMPOS_MANUAIS = { lez: ['taxa'], site: ['taxa', 'publicidade'] };
+const CAMPOS_MANUAIS = { lez: ['taxa', 'ponto'], site: ['taxa', 'publicidade'], delrey: ['ponto'], minas: ['ponto'],
+  contagem: ['ponto'], tommy: ['ponto'], estacao: ['ponto'] };
+
+// A DRE inteira de um mês. base: resultado de montar(); ctx: dados já lidos.
+function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folhaMes, employees, freteTommy, faturamentoExtra }) {
+  const lanc = faturas.map(g => ({ b: g.b, f: g.f, v: (g.vp || 0) + Math.max(0, g.va || 0) }));
+  for (const [nome, f] of Object.entries(manual.lez?.faturas?.fornecedores || {}))
+    lanc.push({ b: 'lez', f: nome, v: (f.pago || 0) + (f.aberto || 0) });
+  const { totais, detalhe } = L.somarFaturas(lanc);
+  const folha = L.folhaPorLoja(folhaMes, employees);
+  const site = folhaMes?.site?.entries || {};
+  const nomes = Object.fromEntries(employees.map(e => [String(e.id), e.name || '']));
+  const pessoal = Object.entries(site).reduce((s, [id, e]) =>
+    (e.tipo === 'socio' && !/LEONARDO MARTINS|LEILA FERNANDES/i.test(nomes[id] || '') ? s + (e.proventos || 0) : s), 0);
+  const magnum = Object.values(totais).reduce((s, t) => s + (t.magnum || 0), 0);
+  const esc = L.escritorio({ pessoal, sala: totais.site?.sala || 0, magnum });
+  const embPct = L.percentuaisEmbalagem(embalagem.pago, embalagem.venda);
+  const lojas = {}, percentuais = {};
+  for (const b of LOJAS) {
+    const d = base.lojas[b], t = totais[b] || {}, f = folha?.[b];
+    const aliq = L.aliquotaSimples(b, mes, faturamentoExtra), icms = L.percentualIcms(b, mes, apuracoes), emb = embPct[b];
+    const temFaturas = b !== 'lez' || !!manual.lez?.faturas;
+    const fat = k => (temFaturas ? t[k] || 0 : null);
+    const semFolha = b === 'site' ? 0 : null;
+    const fixos = f ? f.fixos : semFolha, comissoes = f ? f.comissoes : semFolha;
+    lojas[b] = L.fechar({
+      receita: d.receita, cmv: d.cmv, taxa: d.taxa, caixinha: d.caixinha, juros: d.juros, emprestimos: d.emprestimos,
+      simples: d.receita != null && aliq != null ? r2(d.receita * aliq) : null,
+      icms: d.cmv != null && icms != null ? r2(d.cmv * icms) : null,
+      embalagens: d.receita != null && emb != null ? r2(d.receita * emb) : null,
+      frete: b === 'tommy' ? freteTommy ?? null : 0,
+      fixos, comissoes,
+      encargos: fixos != null ? r2((fixos + comissoes) * L.TAXA_ENCARGOS) : null,
+      premiacoes: f ? f.premiacoes : semFolha,
+      escritorio: esc[b],
+      vt: temFaturas ? r2((t.vt || 0) + (f?.ajuda || 0)) : null,
+      ponto: b === 'site' ? 0 : manual[b]?.ponto ?? null,
+      sistema: fat('sistema'), contabilidade: fat('contabilidade'), seguro: fat('seguro'), plano: fat('plano'),
+      diversos: fat('diversos'), telefone: fat('telefone'), tarifa: fat('tarifa'), acordos: fat('acordos'),
+      publicidade: b === 'site' ? manual.site?.publicidade ?? null : fat('publicidade'),
+    });
+    percentuais[b] = { simples: aliq, icms, embalagens: emb };
+  }
+  const manuais = base.manuais.slice();
+  for (const b of LOJAS) if (b !== 'site') manuais.push({ loja: b, id: 'ponto', rotulo: 'Boleto do shopping (total do mês)', tipo: 'numero', valor: manual[b]?.ponto ?? null, feito: manual[b]?.ponto != null });
+  const lista = o => Object.entries(o || {}).map(([nome, valores]) => ({ nome, lojas: valores })).sort((a, c) => a.nome.localeCompare(c.nome, 'pt-BR'));
+  const det = { ...base.detalhe };
+  for (const k of ['sistema', 'contabilidade', 'seguro', 'plano', 'diversos', 'telefone', 'publicidade', 'tarifa', 'vt', 'acordos']) det[k] = lista(detalhe[k]);
+  const ref = L.REF.planilha[mes];
+  return { ...base, lojas, percentuais, detalhe: det, manuais, pendencias: manuais.filter(i => !i.feito), estrutura: L.ESTRUTURA,
+    planilha: ref ? Object.fromEntries(Object.entries(ref).map(([b, p]) => [b, { ...p, sobra: p.liquido, liquido: undefined }])) : null,
+    folhaFechada: Object.fromEntries(LOJAS.map(b => [b, !!folhaMes?.[b]?.encerrada])) };
+}
 
 function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, computeConferenciaDashboard, hojeBRT, boardsLabel }) {
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
@@ -127,21 +180,67 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     const db = getDb();
     if (!recalcular) {
       const foto = db ? await db.collection('dreFoto').findOne({ _id: mes }) : memoria[mes];
-      if (foto) return { lojas: foto.lojas, em: foto.em };
+      if (foto && foto.freteTommy !== undefined) return { lojas: foto.lojas, em: foto.em, freteTommy: foto.freteTommy };
     }
     const [y, m] = mes.split('-').map(Number);
     const ultimo = new Date(Date.UTC(y, m, 0)).getUTCDate();
     const fim = ehMesFechado(mes, hoje) ? `${mes}-${String(ultimo).padStart(2, '0')}` : hoje;
-    const { porLoja } = await computeConferenciaDashboard(`${mes}-01`, fim);
+    const [{ porLoja }, freteTommy] = await Promise.all([computeConferenciaDashboard(`${mes}-01`, fim), freteDaTommy(mes, fim)]);
     const lojas = porLoja.filter(l => l?.board).map(l => ({
       board: l.board, vlrLiquido: l.vlrLiquido, vlrCusto: l.vlrCusto, vlrTaxa: l.vlrTaxa,
     }));
     const em = new Date().toISOString();
     if (ehMesFechado(mes, hoje)) {
-      if (db) await db.collection('dreFoto').replaceOne({ _id: mes }, { lojas, em }, { upsert: true });
-      else memoria[mes] = { lojas, em };
+      if (db) await db.collection('dreFoto').replaceOne({ _id: mes }, { lojas, em, freteTommy }, { upsert: true });
+      else memoria[mes] = { lojas, em, freteTommy };
     }
-    return { lojas, em };
+    return { lojas, em, freteTommy };
+  }
+
+  // Frete das notas de compra da Tommy no mês (campo frete do LinxMovimento)
+  async function freteDaTommy(mes, fim) {
+    const { fetchMovimento, parseBrNum } = require('./microvix');
+    const cnpj = JSON.parse(process.env.MICROVIX_LOJAS || '{}').tommy;
+    if (!cnpj) return null;
+    const rows = await fetchMovimento(cnpj, `${mes}-01`, fim, process.env.MICROVIX_CHAVE_TOMMY || process.env.MICROVIX_CHAVE);
+    return r2(rows.reduce((s, r) => ((r.operacao || '').trim().toUpperCase() === 'E' && r.cancelado !== 'S' && /Compra/i.test(r.desc_cfop || '')
+      ? s + parseBrNum(r.frete || '0') : s), 0));
+  }
+
+  async function dadosDoHistorico(mes) {
+    const db = getDb();
+    const janela = L.mesesAntes(mes, 12);
+    const faturamentoExtra = {};
+    const out = { apuracoes: [], pago: {}, faturamentoExtra };
+    if (!db) return out;
+    const [fotos, manuais, apuracoes, emb] = await Promise.all([
+      db.collection('dreFoto').find({ _id: { $in: janela } }).toArray(),
+      db.collection('dreManual').find({ _id: { $in: janela } }).toArray(),
+      db.collection('icmsApuracoes').find({}, { projection: { competencia: 1, empresa: 1, difal: 1, base4: 1, base12: 1 } }).toArray(),
+      db.collection('cpFaturas').aggregate([
+        { $match: { isPagar: true, previsao: { $ne: 'S' }, fornecedor: /EMBALAGEN/i, vencimento: { $gte: `${janela[11]}-01`, $lte: `${janela[0]}-31` } } },
+        { $group: { _id: '$board', v: { $sum: { $ifNull: ['$valorPago', 0] } } } },
+      ]).toArray(),
+    ]);
+    for (const f of fotos) {
+      const alvo = (faturamentoExtra[f._id] ||= {});
+      for (const l of f.lojas) if (L.EMPRESA[l.board]) alvo[L.EMPRESA[l.board]] = (alvo[L.EMPRESA[l.board]] || 0) + (l.vlrLiquido || 0);
+    }
+    for (const m of manuais) if (m.lojas?.lez?.vendas) (faturamentoExtra[m._id] ||= {}).LF = m.lojas.lez.vendas.receita;
+    out.apuracoes = apuracoes;
+    for (const e of emb) out.pago[e._id] = e.v;
+    return out;
+  }
+
+  function vendaDe12Meses(db, mes) {
+    const janela = new Set(L.mesesAntes(mes, 12));
+    const venda = {};
+    for (const [k, v] of Object.entries(db.vsales || {})) {
+      const [y, m, b] = k.split('-');
+      if (!janela.has(`${y}-${m}`)) continue;
+      venda[b] = (venda[b] || 0) + Object.values(v.entries || {}).reduce((s, e) => s + (e?.value || 0), 0);
+    }
+    return venda;
   }
 
   async function lerManual(mes) {
@@ -178,13 +277,17 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     try {
       const hoje = hojeBRT();
       const mes = /^\d{4}-\d{2}$/.test(req.query.mes || '') ? req.query.mes : hoje.slice(0, 7);
-      const [foto, faturas, db, manual] = await Promise.all([
+      const [foto, faturas, db, manual, hist] = await Promise.all([
         conferenciaDoMes(mes, req.query.recalcular === '1', hoje),
         faturasDoMes(mes),
         readDB(),
         lerManual(mes),
+        dadosDoHistorico(mes),
       ]);
-      const dre = montar({ mes, conferencia: foto.lojas, caixa: db.caixa || {}, faturas, manual });
+      const parcial = montar({ mes, conferencia: foto.lojas, caixa: db.caixa || {}, faturas, manual });
+      const dre = montarCompleta(parcial, { mes, manual, faturas, apuracoes: hist.apuracoes,
+        embalagem: { pago: hist.pago, venda: vendaDe12Meses(db, mes) }, folhaMes: (db.folhas || {})[mes],
+        employees: db.employees || [], freteTommy: foto.freteTommy, faturamentoExtra: hist.faturamentoExtra });
       const pagos = faturas.map(g => ({ b: g.b, f: g.f, v: g.vp || 0 }));
       for (const [nome, f] of Object.entries(manual.lez?.faturas?.fornecedores || {}))
         pagos.push({ b: 'lez', f: nome, v: f.pago || 0 });
@@ -225,4 +328,4 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
   });
 }
 
-module.exports = { register, montar, linhaFinanceira, somarSangria, LOJAS, PLANILHA };
+module.exports = { register, montar, montarCompleta, linhaFinanceira, somarSangria, LOJAS, PLANILHA };
