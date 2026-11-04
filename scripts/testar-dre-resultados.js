@@ -106,6 +106,10 @@ assert.strictEqual(fp.contagem.fixos, 5010.58);
 assert.strictEqual(fp.contagem.comissoes, 4471.63);
 assert.strictEqual(fp.contagem.premiacoes, 1130);
 assert.strictEqual(fp.minas.ajuda, 1200);
+const comExtras = L.folhaPorLoja({ delrey: { entries: { 7: { tipo: 'vendedor', proventos: 4000, fixo: 1000, extras: [
+  { desc: '13o Salário Proporcional 8/12 avos', valor: 1416.72 }, { desc: 'Terço Constitucional de Férias', valor: 472.24 },
+  { desc: 'Salário Família', valor: 135.08 }, { desc: 'Instagram da loja', valor: 600 }] } } } }, []);
+assert.strictEqual(comExtras.delrey.premiacoes, 975.96, 'só o que é prêmio fica em Premiações');
 assert.strictEqual(Math.round(L.aliquotaSimples('delrey', '2026-10') * 10000), 1019);
 assert.strictEqual(L.linhaDre('MAGNUM LUIZ - TECNICO', 'tommy'), 'magnum');
 assert.strictEqual(L.linhaDre('FOLHA DE PAGAMENTO', 'delrey'), null);

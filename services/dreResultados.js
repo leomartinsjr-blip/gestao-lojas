@@ -165,7 +165,12 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
     folhaFechada: Object.fromEntries(LOJAS.map(b => [b, !!folhaMes?.[b]?.encerrada])) };
 }
 
-function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, computeConferenciaDashboard, hojeBRT, boardsLabel }) {
+function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, computeConferenciaDashboard, hojeBRT, boardsLabel, folhaDoMesComFaltas }) {
+  // Mesma folha que a tela de Folha mostra, para os valores baterem com ela
+  const folhaDoMes = (db, mes) => {
+    const [y, m] = mes.split('-').map(Number);
+    return folhaDoMesComFaltas(db, y, m);
+  };
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
   const memoria = {}; // sem Mongo, a foto do mês fica só enquanto o servidor roda
 
@@ -232,13 +237,13 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     return out;
   }
 
-  function vendaDe12Meses(db, mes) {
-    const janela = new Set(L.mesesAntes(mes, 12));
+  // Venda de 12 meses por empresa. A venda por vendedor só existe de maio/2026 em
+  // diante; o arquivo do Simples tem o histórico. O Site já está dentro da LMJ.
+  function vendaDe12Meses(mes, faturamentoExtra) {
     const venda = {};
-    for (const [k, v] of Object.entries(db.vsales || {})) {
-      const [y, m, b] = k.split('-');
-      if (!janela.has(`${y}-${m}`)) continue;
-      venda[b] = (venda[b] || 0) + Object.values(v.entries || {}).reduce((s, e) => s + (e?.value || 0), 0);
+    for (const b of ['delrey', 'minas', 'contagem', 'estacao', 'tommy']) {
+      const emp = L.EMPRESA[b];
+      venda[b] = L.mesesAntes(mes, 12).reduce((s, mk) => s + (L.REF.faturamento[mk]?.[emp] ?? faturamentoExtra[mk]?.[emp] ?? 0), 0);
     }
     return venda;
   }
@@ -286,7 +291,7 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
       ]);
       const parcial = montar({ mes, conferencia: foto.lojas, caixa: db.caixa || {}, faturas, manual });
       const dre = montarCompleta(parcial, { mes, manual, faturas, apuracoes: hist.apuracoes,
-        embalagem: { pago: hist.pago, venda: vendaDe12Meses(db, mes) }, folhaMes: (db.folhas || {})[mes],
+        embalagem: { pago: hist.pago, venda: vendaDe12Meses(mes, hist.faturamentoExtra) }, folhaMes: folhaDoMes(db, mes),
         employees: db.employees || [], freteTommy: foto.freteTommy, faturamentoExtra: hist.faturamentoExtra });
       const pagos = faturas.map(g => ({ b: g.b, f: g.f, v: g.vp || 0 }));
       for (const [nome, f] of Object.entries(manual.lez?.faturas?.fornecedores || {}))
