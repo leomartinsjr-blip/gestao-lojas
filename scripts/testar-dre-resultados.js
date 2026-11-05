@@ -130,6 +130,16 @@ assert.ok(dj.lojas.contagem.ajustado.simples > 7000, 'guarda o calculado');
 const cxAj = montarCaixa({ lojas: ['contagem'], pagos: [{ b: 'contagem', f: 'ALUGUEL SHOPPING', v: 100 }], ajustes: { contagem: { shopping: 250 } } });
 assert.strictEqual(cxAj.soma.contagem, 250);
 assert.strictEqual(cxAj.linhas[0].ajustado.contagem, 100);
+// Conferência antes de finalizar
+const { conferirLoja } = require('../services/dreResultados');
+const conf1 = conferirLoja({ loja: 'lez', manual: {}, folhaFechada: false, dados: { lojas: { lez: { faltam: ['ponto'], ajustado: {} } }, caixa: { linhas: [] } } });
+assert.ok(conf1.find(i => i.id === 'linhas').bloqueia && !conf1.find(i => i.id === 'linhas').ok);
+assert.strictEqual(conf1.find(i => i.id === 'folha').ok, false);
+const conf2 = conferirLoja({ loja: 'site', manual: { site: { conferidos: { simples: 1 } } }, folhaFechada: false, dados: { lojas: { site: { faltam: [], ajustado: { taxa: 1 } } }, caixa: { linhas: [{ id: 'classificar', lojas: { site: 10 } }] } } });
+assert.ok(!conf2.some(i => i.id === 'folha'), 'Site não tem folha para conferir');
+assert.strictEqual(conf2.find(i => i.id === 'fornecedores').ok, false);
+assert.strictEqual(conf2.find(i => i.id === 'simples').ok, true);
+assert.ok(conf2.some(i => i.id === 'editados'));
 const H = require('../services/dreHistorico.json');
 assert.strictEqual(H['2026-06'].lojas.delrey.receita, 157161, 'junho corrigido pela Conferência');
 assert.strictEqual(H['2026-09'].lojas.lez.operacional, null, 'o resultado de setembro da Lez era outubro');

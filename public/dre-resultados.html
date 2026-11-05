@@ -28,7 +28,7 @@
   th:first-child, td:first-child { text-align:left; position:sticky; left:0; background:var(--bg2); }
   thead th { background:var(--bg3); font-size:12px; color:var(--text2); }
   tr.total td { font-weight:700; background:var(--bg3); }
-  td small { display:block; color:var(--text2); font-size:11px; }
+  td small { display:block; color:var(--text2); font-size:11px; } td small.pct { color:var(--blue); }
   .abas { display:flex; gap:6px; padding:0 0 12px; }
   .abas button.ativa { color:var(--blue); border-color:var(--blue); font-weight:600; }
   tr.abre { cursor:pointer; } tr.abre td:first-child::before { content:'▸ '; color:var(--text2); }
@@ -40,6 +40,9 @@
   #percentuais label { display:inline-block; width:210px; } a { color:var(--blue); } .tira { padding:0 6px; }
   .ed { cursor:pointer; color:var(--text2); margin-left:5px; opacity:.35; font-size:11px; } td:hover .ed { opacity:1; color:var(--blue); }
   td.aj { background:var(--yellowbg) !important; }
+  .fim { padding:9px 14px; border-top:1px solid var(--border); display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+  .fim b { min-width:95px; } .fim ul { flex:1; min-width:280px; list-style:none; line-height:1.6; } .fim .ok { color:var(--green); } .fim .nao { color:var(--yellow); font-weight:600; }
+  .fim .trava { color:var(--red); } th.fechada { color:var(--green); }
   .dif { color:var(--red); } .falta { color:var(--yellow); font-weight:600; }
   .nota { color:var(--text2); padding:0 2px 14px; line-height:1.6; }
   #msg { padding:20px; color:var(--text2); }
@@ -59,6 +62,7 @@
   <div id="msg">Carregando…</div>
   <div id="conteudo" hidden>
     <div class="painel manual" id="manuais"></div>
+    <div class="painel" id="finalizar"></div>
     <div class="abas"><button id="abaDre" class="ativa">DRE</button><button id="abaCaixa">Fechamento de Caixa</button><button id="abaAno">Consolidado do ano</button><button id="abaCad">Cadastros</button></div>
     <div id="vDre">
       <div class="painel"><h2 id="titulo"></h2><table id="tabela"></table></div>
@@ -97,6 +101,7 @@ const num = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFr
 // Diferença acima disso aparece em vermelho: arredondamento não é erro.
 const TOLERANCIA = 50;
 
+const percentual = (v, base) => (base ? `<small class="pct">${num(v / base * 100)}%</small>` : '');
 const lapis = (grupo, k, b) => `<span class="ed" title="Editar valor" data-grupo="${grupo}" data-k="${k}" data-b="${b}">✎</span>`;
 function celula(valor, ref, extra = '', cls = '') {
   if (valor == null) return `<td class="falta">falta${extra}</td>`;
@@ -131,24 +136,41 @@ function desenhar(d) {
   }));
   const [a, m] = d.mes.split('-');
   $('titulo').textContent = `DRE de ${m}/${a}`;
-  const cab = `<thead><tr><th>Linha</th>${d.ordem.map(b => `<th>${nome(b)}</th>`).join('')}</tr></thead>`;
+  const fechada = b => !!d.fechamentos?.[b];
+  const cab = `<thead><tr><th>Linha</th>${d.ordem.map(b => `<th class="${fechada(b) ? 'fechada' : ''}">${fechada(b) ? '🔒 ' : ''}${nome(b)}</th>`).join('')}</tr></thead>`;
+  $('finalizar').innerHTML = '<h2>Finalizar loja a loja</h2>' + d.ordem.map(b => {
+    if (fechada(b)) return `<div class="fim"><b>${nome(b)}</b><ul><li class="ok">🔒 Finalizada em ${new Date(d.fechamentos[b].em).toLocaleString('pt-BR')}</li></ul><button data-reabrir="${b}">Reabrir</button></div>`;
+    const itens = (d.conferencia?.[b] || []).map(i => `<li class="${i.ok ? 'ok' : i.bloqueia ? 'trava' : 'nao'}">${i.ok ? '✓' : '✗'} ${i.rotulo}${i.id === 'simples' ? ` <input type="checkbox" data-simples="${b}" ${i.ok ? 'checked' : ''}>` : ''}</li>`).join('');
+    return `<div class="fim"><b>${nome(b)}</b><ul>${itens}</ul><button data-finalizar="${b}">Finalizar</button></div>`;
+  }).join('');
+  document.querySelectorAll('[data-finalizar]').forEach(el => el.addEventListener('click', () => finalizar(d.mes, el.dataset.finalizar, false, nome(el.dataset.finalizar))));
+  document.querySelectorAll('[data-reabrir]').forEach(el => el.addEventListener('click', async () => {
+    if (!confirm(`Reabrir ${nome(el.dataset.reabrir)}? Os números voltam a ser calculados.`)) return;
+    await fetch(`/api/dre-resultados/finalizar/${d.mes}/${el.dataset.reabrir}`, { method: 'DELETE' });
+    cache = {}; carregar(false);
+  }));
+  document.querySelectorAll('[data-simples]').forEach(el => el.addEventListener('change', async () => {
+    await fetch('/api/dre-resultados/manual', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mes: d.mes, loja: el.dataset.simples, campo: 'conferidos.simples', valor: el.checked ? 1 : '' }) });
+    carregar(false);
+  }));
   const subs = itens => itens.map(i => `<tr class="sub" hidden><td>${i.nome}</td>${d.ordem.map(b =>
     `<td>${i.lojas[b] ? num(i.lojas[b]) : ''}</td>`).join('')}</tr>`).join('');
   const corpo = d.estrutura.map(([k, rot, tipo]) => {
     const itens = d.detalhe?.[k] || [];
-    const pct = b => (tipo === 'total' && d.lojas[b].receita ? `<small>${num(d.lojas[b][k] / d.lojas[b].receita * 100)}%</small>` : '');
+    const pct = b => (d.lojas[b].receita && d.lojas[b][k] != null ? percentual(d.lojas[b][k], d.lojas[b].receita) : '');
     return `<tr class="${[itens.length ? 'abre' : '', tipo === 'total' ? 'total' : ''].join(' ')}"><td>${rot}</td>${d.ordem.map(b =>
-      celula(d.lojas[b][k], d.planilha?.[b]?.[k], (tipo === 'item' ? lapis('ajustes', k, b) : '') +
+      celula(d.lojas[b][k], d.planilha?.[b]?.[k], (tipo === 'item' && !fechada(b) ? lapis('ajustes', k, b) : '') +
         (k in (d.lojas[b].ajustado || {}) ? `<small>calculado ${d.lojas[b].ajustado[k] == null ? 'sem valor' : num(d.lojas[b].ajustado[k])}</small>` : ''),
         k in (d.lojas[b].ajustado || {}) ? 'aj' : '').replace('</td>', pct(b) + '</td>')).join('')}</tr>${subs(itens)}`;
   }).join('');
   const parciais = d.ordem.filter(b => d.lojas[b].faltam.length);
   $('tabela').innerHTML = cab + `<tbody>${corpo}</tbody>`;
   $('tituloCaixa').textContent = `Fechamento de Caixa de ${m}/${a}`;
-  const linhaTotal = (rot, valores) => `<tr class="total"><td>${rot}</td>${d.ordem.map(b => `<td>${num(valores[b] || 0)}</td>`).join('')}</tr>`;
+  const linhaTotal = (rot, valores) => `<tr class="total"><td>${rot}</td>${d.ordem.map(b => `<td>${num(valores[b] || 0)}${percentual(valores[b] || 0, d.caixa.recebimentos[b])}</td>`).join('')}</tr>`;
   $('tabelaCaixa').innerHTML = cab + '<tbody>' + d.caixa.linhas.map(l =>
     `<tr class="${l.detalhe.length ? 'abre' : ''}"><td>${l.nome}</td>${d.ordem.map(b =>
-      `<td class="${b in (l.ajustado || {}) ? 'aj' : ''}">${l.lojas[b] ? num(l.lojas[b]) : ''}${lapis('ajustesCaixa', l.id, b)}${b in (l.ajustado || {}) ? `<small>calculado ${num(l.ajustado[b])}</small>` : ''}</td>`).join('')}</tr>${subs(l.detalhe)}`).join('') +
+      `<td class="${b in (l.ajustado || {}) ? 'aj' : ''}">${l.lojas[b] ? num(l.lojas[b]) : ''}${fechada(b) ? '' : lapis('ajustesCaixa', l.id, b)}${b in (l.ajustado || {}) ? `<small>calculado ${num(l.ajustado[b])}</small>` : ''}${l.lojas[b] ? percentual(l.lojas[b], d.caixa.recebimentos[b]) : ''}</td>`).join('')}</tr>${subs(l.detalhe)}`).join('') +
     linhaTotal('Soma despesas (-)', d.caixa.soma) + linhaTotal('Recebimentos (+)', d.caixa.recebimentos) +
     linhaTotal('Resultado (=)', d.caixa.resultado) + '</tbody>';
   document.querySelectorAll('.ed').forEach(el => el.addEventListener('click', async ev => {
@@ -172,6 +194,17 @@ function desenhar(d) {
   $('nota').textContent = (parciais.length ? `Resultado parcial em ${parciais.map(nome).join(', ')}: falta informar as linhas marcadas. ` : '') +
     (abertas.length ? `Folha ainda aberta em ${abertas.join(', ')}. ` : '') +
     `Faturas pelo vencimento, pagas ou em aberto. Para editar, clique no ✎ da célula; o valor fica em amarelo com o calculado embaixo. Conferência lida em ${quando}.`;
+}
+
+async function finalizar(mes, loja, forcar, rotulo) {
+  const r = await fetch('/api/dre-resultados/finalizar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mes, loja, forcar }) });
+  const d = await r.json();
+  if (r.status === 409) {
+    if (confirm(`${rotulo} tem pendências:\n\n- ${d.pendentes.join('\n- ')}\n\nFinalizar mesmo assim?`)) return finalizar(mes, loja, true, rotulo);
+    return;
+  }
+  if (!r.ok) { alert(d.error || 'Não foi possível finalizar'); return; }
+  cache = {}; carregar(false);
 }
 
 async function salvar(el) {
@@ -368,13 +401,16 @@ function desenharAno() {
     for (const mk of meses) for (const l of cache[mk].caixa.linhas) vistos.set(l.id, l.nome);
     linhas = [...vistos].map(([id, rot]) => [id, rot, 'item']).concat([['soma', 'Soma despesas (-)', 'total'], ['recebimentos', 'Recebimentos (+)', 'total'], ['resultado', 'Resultado (=)', 'total']]);
   }
-  const cel = v => `<td>${v == null ? '–' : num(v)}</td>`;
+  const cel = (v, base) => `<td>${v == null ? '–' : num(v) + percentual(v, base)}</td>`;
+  const idBase = visao === 'dre' ? 'receita' : 'recebimentos';
   const soma = vs => (vs.every(v => v == null) ? null : vs.reduce((s, v) => s + (v || 0), 0));
   const cab = modo === 'mes' ? meses.map(mk => MESES[+mk.slice(5) - 1]) : ordem.map(nome);
   const corpo = linhas.map(([id, rot, tipo]) => {
     const vs = modo === 'mes' ? meses.map(mk => valorDe(cache[mk], id, lojas, visao))
       : ordem.map(b => soma(meses.map(mk => valorDe(cache[mk], id, [b], visao))));
-    return `<tr class="${tipo === 'total' ? 'total' : ''}"><td>${rot}</td>${vs.map(cel).join('')}${cel(soma(vs))}</tr>`;
+    const bases = modo === 'mes' ? meses.map(mk => valorDe(cache[mk], idBase, lojas, visao))
+      : ordem.map(b => soma(meses.map(mk => valorDe(cache[mk], idBase, [b], visao))));
+    return `<tr class="${tipo === 'total' ? 'total' : ''}"><td>${rot}</td>${vs.map((v, i) => cel(v, bases[i])).join('')}${cel(soma(vs), soma(bases))}</tr>`;
   }).join('');
   $('tabelaAno').innerHTML = `<thead><tr><th>Linha</th>${cab.map(c => `<th>${c}</th>`).join('')}<th>Total</th></tr></thead><tbody>${corpo}</tbody>`;
 }

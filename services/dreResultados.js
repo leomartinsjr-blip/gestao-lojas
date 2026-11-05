@@ -121,6 +121,21 @@ function montar({ mes, conferencia = [], caixa = {}, faturas = [], manual = {}, 
     detalhe: { juros: lista('juros'), emprestimos: lista('emprestimos'), caixinha: lista('caixinha') } };
 }
 
+// Conferência de uma loja antes de finalizar. bloqueia: sem isso o resultado não fecha.
+function conferirLoja({ loja, dados, manual, folhaFechada }) {
+  const l = dados.lojas[loja];
+  const itens = [];
+  const add = (id, rotulo, ok, bloqueia = false) => itens.push({ id, rotulo, ok, bloqueia });
+  add('linhas', l.faltam.length ? `Linhas sem dado: ${l.faltam.join(', ')}` : 'Todas as linhas têm dado', !l.faltam.length, true);
+  if (loja !== 'site') add('folha', folhaFechada ? 'Folha do mês encerrada' : 'Folha do mês ainda aberta', folhaFechada);
+  const semLinha = dados.caixa.linhas.find(x => x.id === 'classificar')?.lojas[loja] || 0;
+  add('fornecedores', semLinha ? `Fornecedores sem linha: ${semLinha}` : 'Fornecedores classificados', !semLinha);
+  add('simples', 'Extrato do Simples conferido', !!manual[loja]?.conferidos?.simples);
+  const editados = Object.keys(l.ajustado || {}).length;
+  if (editados) add('editados', `${editados} valor(es) editado(s) à mão`, true);
+  return itens;
+}
+
 const HISTORICO = require('./dreHistorico.json');
 const INICIO_MODULO = '2026-10';
 const CAMPOS_MANUAIS = { lez: ['taxa'], site: ['taxa', 'publicidade'] };
@@ -339,12 +354,36 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
       .map(f => ({ b: f.board, f: f.fornecedor, vp: f.baixa ? (f.valorPago || 0) : 0, va: f.baixa ? 0 : (f.valorLiquido ?? f.valor) - (f.valorPago || 0) }));
   }
 
-  app.get('/api/dre-resultados', requireAuth, soDono, async (req, res) => {
-    try {
+  async function lerFechamentos(mes) {
+    const db = getDb();
+    const out = {};
+    if (db) for (const f of await db.collection('dreFechamentos').find({ mes }).toArray()) out[f.loja] = f;
+    else for (const f of Object.values(memoria.fechamentos || {})) if (f.mes === mes) out[f.loja] = f;
+    return out;
+  }
+  const lojaFechada = async (mes, loja) => !!(await lerFechamentos(mes))[loja];
+
+  // Coloca na resposta os números congelados das lojas finalizadas
+  function aplicarFechamentos(dados, fechamentos) {
+    for (const [b, f] of Object.entries(fechamentos)) {
+      dados.lojas[b] = f.dre;
+      for (const l of dados.caixa.linhas) { l.lojas[b] = f.caixa.linhas[l.id] || 0; delete l.ajustado[b]; }
+      for (const [id, v] of Object.entries(f.caixa.linhas)) {
+        if (dados.caixa.linhas.some(l => l.id === id)) continue;
+        dados.caixa.linhas.push({ id, nome: f.caixa.nomes[id] || id, lojas: { [b]: v }, detalhe: [], ajustado: {} });
+      }
+      dados.caixa.soma[b] = f.caixa.soma;
+      dados.caixa.recebimentos[b] = f.caixa.recebimentos;
+      dados.caixa.resultado[b] = f.caixa.resultado;
+    }
+    dados.fechamentos = Object.fromEntries(Object.entries(fechamentos).map(([b, f]) => [b, { em: f.em }]));
+    return dados;
+  }
+
+  async function dadosDoMes(mes, recalcular) {
       const hoje = hojeBRT();
-      const mes = /^\d{4}-\d{2}$/.test(req.query.mes || '') ? req.query.mes : hoje.slice(0, 7);
       const [foto, faturas, db, manual, hist, config] = await Promise.all([
-        conferenciaDoMes(mes, req.query.recalcular === '1', hoje),
+        conferenciaDoMes(mes, recalcular, hoje),
         faturasDoMes(mes),
         readDB(),
         lerManual(mes),
@@ -361,15 +400,56 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
         pagos.push({ b: 'lez', f: nome, v: f.pago || 0 });
       const coluna = k => Object.fromEntries(LOJAS.map(b => [b, dre.lojas[b][k] || 0]));
       const ajustesCaixa = Object.fromEntries(LOJAS.map(b => [b, Object.fromEntries(Object.entries(manual[b]?.ajustesCaixa || {}).filter(([, v]) => v != null))]));
-      res.json({
+      const dados = {
         ...dre,
         caixa: montarCaixa({ lojas: LOJAS, pagos, escolhidos, ajustes: ajustesCaixa, recebimentos: coluna('receita'),
           extras: { taxa: coluna('taxa'), caixinha: coluna('caixinha') } }),
         conferenciaEm: foto.em,
         labels: Object.fromEntries(LOJAS.map(b => [b, boardsLabel[b] || b])),
         ordem: LOJAS,
-      });
+      };
+      dados.conferencia = Object.fromEntries(LOJAS.map(b => [b, conferirLoja({ loja: b, dados, manual, folhaFechada: !!dre.folhaFechada[b] })]));
+      return dados;
+  }
+
+  app.get('/api/dre-resultados', requireAuth, soDono, async (req, res) => {
+    try {
+      const mes = /^\d{4}-\d{2}$/.test(req.query.mes || '') ? req.query.mes : hojeBRT().slice(0, 7);
+      res.json(aplicarFechamentos(await dadosDoMes(mes, req.query.recalcular === '1'), await lerFechamentos(mes)));
     } catch (e) { console.error('[dreResultados]', e); res.status(500).json({ error: e.message }); }
+  });
+
+  // POST { mes, loja, forcar } — congela os números da loja no mês
+  app.post('/api/dre-resultados/finalizar', requireAuth, soDono, async (req, res) => {
+    try {
+      const { mes, loja, forcar } = req.body || {};
+      if (!/^\d{4}-\d{2}$/.test(mes || '') || !LOJAS.includes(loja)) return res.status(400).json({ error: 'Mês ou loja inválidos' });
+      if (await lojaFechada(mes, loja)) return res.status(400).json({ error: 'Esta loja já está finalizada' });
+      const dados = await dadosDoMes(mes, false);
+      const itens = dados.conferencia[loja];
+      const bloqueio = itens.find(i => i.bloqueia && !i.ok);
+      if (bloqueio) return res.status(400).json({ error: bloqueio.rotulo });
+      if (itens.some(i => !i.ok) && !forcar) return res.status(409).json({ pendentes: itens.filter(i => !i.ok).map(i => i.rotulo) });
+      const linhas = {}, nomes = {};
+      for (const l of dados.caixa.linhas) if (l.lojas[loja]) { linhas[l.id] = l.lojas[loja]; nomes[l.id] = l.nome; }
+      const doc = { mes, loja, em: new Date().toISOString(), dre: dados.lojas[loja], conferencia: itens,
+        caixa: { linhas, nomes, soma: dados.caixa.soma[loja], recebimentos: dados.caixa.recebimentos[loja], resultado: dados.caixa.resultado[loja] } };
+      const db = getDb();
+      if (db) await db.collection('dreFechamentos').replaceOne({ _id: `${mes}-${loja}` }, doc, { upsert: true });
+      else (memoria.fechamentos ||= {})[`${mes}-${loja}`] = doc;
+      res.json({ ok: true });
+    } catch (e) { console.error('[dreResultados finalizar]', e); res.status(500).json({ error: e.message }); }
+  });
+
+  app.delete('/api/dre-resultados/finalizar/:mes/:loja', requireAuth, soDono, async (req, res) => {
+    try {
+      const { mes, loja } = req.params;
+      if (!/^\d{4}-\d{2}$/.test(mes) || !LOJAS.includes(loja)) return res.status(400).json({ error: 'Mês ou loja inválidos' });
+      const db = getDb();
+      if (db) await db.collection('dreFechamentos').deleteOne({ _id: `${mes}-${loja}` });
+      else delete memoria.fechamentos?.[`${mes}-${loja}`];
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // POST /api/dre-resultados/importar — relatório da Lez; o mês vem do próprio arquivo
@@ -378,11 +458,13 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
       if (!req.file) return res.status(400).json({ error: 'Envie o arquivo' });
       if (/\.pdf$/i.test(req.file.originalname)) {
         const bol = await lerBoleto(req.file.buffer);
+        if (await lojaFechada(bol.mes, bol.loja)) return res.status(400).json({ error: 'Esta loja está finalizada neste mês: reabra para enviar' });
         await guardarBoleto(bol.mes, bol.loja, bol.chave, req.file.buffer);
         await gravarManual(bol.mes, bol.loja, { [`boletos.${bol.chave}`]: { total: bol.total, valores: bol.valores, arquivo: req.file.originalname } });
         return res.json(bol);
       }
       const rel = lerRelatorio(req.file.buffer);
+      if (await lojaFechada(rel.mes, 'lez')) return res.status(400).json({ error: 'A Lez está finalizada neste mês: reabra para enviar' });
       const em = new Date().toISOString();
       if (rel.tipo === 'vendas') await gravarManual(rel.mes, 'lez', { vendas: { receita: rel.receita, cmv: rel.cmv, em } });
       else await gravarManual(rel.mes, 'lez', { faturas: { totais: rel.totais, aClassificar: rel.aClassificar, fornecedores: rel.fornecedores, em } });
@@ -445,6 +527,7 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     try {
       const { mes, loja, chave } = req.params;
       if (!paramsOk(req.params)) return res.status(400).json({ error: 'Boleto inválido' });
+      if (await lojaFechada(mes, loja)) return res.status(400).json({ error: 'Esta loja está finalizada neste mês: reabra para alterar' });
       const db = getDb();
       if (db) await db.collection('dreManual').updateOne({ _id: mes }, { $unset: { [`lojas.${loja}.boletos.${chave}`]: '' } });
       else delete memoria['manual-' + mes]?.lojas?.[loja]?.boletos?.[chave];
@@ -537,13 +620,14 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
       const valor = req.body?.valor === '' || req.body?.valor == null ? null : Number(req.body.valor);
       const [grupo, linha] = String(campo || '').split('.');
       const ajusteOk = LOJAS.includes(loja) && ((grupo === 'ajustes' && L.ESTRUTURA.some(([id, , tipo]) => id === linha && tipo === 'item'))
-        || (grupo === 'ajustesCaixa' && LINHAS_CAIXA.some(([id]) => id === linha)));
+        || (grupo === 'ajustesCaixa' && LINHAS_CAIXA.some(([id]) => id === linha)) || campo === 'conferidos.simples');
       if (!/^\d{4}-\d{2}$/.test(mes || '') || !(CAMPOS_MANUAIS[loja]?.includes(campo) || ajusteOk) || Number.isNaN(valor))
         return res.status(400).json({ error: 'Campo ou valor inválido' });
+      if (await lojaFechada(mes, loja)) return res.status(400).json({ error: 'Esta loja está finalizada neste mês: reabra para alterar' });
       await gravarManual(mes, loja, { [campo]: valor });
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 }
 
-module.exports = { register, montar, montarCompleta, linhaFinanceira, somarSangria, LOJAS, PLANILHA };
+module.exports = { register, montar, montarCompleta, conferirLoja, linhaFinanceira, somarSangria, LOJAS, PLANILHA };
