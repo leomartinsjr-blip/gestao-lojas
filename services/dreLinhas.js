@@ -22,9 +22,10 @@ function mesesAntes(mes, n) {
 
 // Alíquota efetiva do Simples: 12 meses anteriores da empresa. faturamentoExtra
 // cobre os meses depois da tabela da planilha (fotos da Conferência e Lez importada).
-function aliquotaSimples(board, mes, faturamentoExtra = {}) {
+function aliquotaSimples(board, mes, faturamentoExtra = {}, extrato = null) {
   const emp = EMPRESA[board];
-  const rbt = mesesAntes(mes, 12).reduce((s, mk) => s + (REF.faturamento[mk]?.[emp] ?? faturamentoExtra[mk]?.[emp] ?? 0), 0);
+  // O extrato do mês anterior é a fonte oficial; sem ele, tabela da planilha e fotos do módulo
+  const rbt = mesesAntes(mes, 12).reduce((s, mk) => s + (extrato?.faturamento?.[mk] ?? REF.faturamento[mk]?.[emp] ?? faturamentoExtra[mk]?.[emp] ?? 0), 0);
   if (!rbt) return null;
   const [, aliq, deduzir] = FAIXAS.find(f => rbt <= f[0]) || FAIXAS[FAIXAS.length - 1];
   return (rbt * aliq - deduzir) / rbt;
@@ -129,27 +130,53 @@ function somarFaturas(lancamentos, escolhidos = {}) {
   return { totais, detalhe };
 }
 
+// Categorias da DRE: cada grupo soma as linhas logo abaixo dele
+const GRUPOS = {
+  deducoes: ['simples', 'icms'],
+  custos: ['cmv', 'embalagens', 'frete'],
+  salarios: ['fixos', 'comissoes', 'encargos', 'escritorio', 'premiacoes', 'vt'],
+  administrativo: ['caixinha', 'sistema', 'contabilidade', 'seguro', 'plano', 'diversos', 'telefone'],
+  marketing: ['publicidade'],
+  taxas: ['taxa', 'tarifa'],
+  dividas: ['emprestimos', 'acordos'],
+};
+
 const ESTRUTURA = [
   ['receita', 'Venda de produtos', 'total'],
+  ['deducoes', 'Deduções da receita', 'grupo'],
   ['simples', 'Simples', 'item'], ['icms', 'ICMS de entrada', 'item'],
   ['receitaLiquida', 'Receita líquida', 'total'],
+  ['custos', 'Custos das vendas', 'grupo'],
   ['cmv', 'CMV', 'item'], ['embalagens', 'Embalagens', 'item'], ['frete', 'Frete', 'item'],
   ['lucroBruto', 'Lucro bruto', 'total'],
+  ['salarios', 'Salários', 'grupo'],
   ['fixos', 'Salários fixos', 'item'], ['comissoes', 'Comissões', 'item'], ['encargos', 'Encargos', 'item'],
   ['escritorio', 'Escritório', 'item'], ['premiacoes', 'Premiações', 'item'], ['vt', 'V.T. e ajuda de custo', 'item'],
+  ['ponto', 'CTO (custo total de ocupação)', 'grupo'],
   ['aluguel', 'Aluguel mínimo', 'item'], ['aluguelPct', 'Aluguel percentual', 'item'], ['condominio', 'Condomínio', 'item'],
   ['fpp', 'FPP', 'item'], ['ar', 'Ar condicionado', 'item'], ['iptu', 'IPTU', 'item'], ['energia', 'Energia elétrica', 'item'],
-  ['ponto', 'Ponto comercial', 'total'],
+  ['administrativo', 'Administrativo', 'grupo'],
   ['caixinha', 'Despesas caixinha', 'item'], ['sistema', 'Sistema ERP', 'item'], ['contabilidade', 'Contabilidade', 'item'],
   ['seguro', 'Seguro', 'item'], ['plano', 'Plano de saúde', 'item'], ['diversos', 'Despesas diversas', 'item'],
-  ['telefone', 'Telefone/Internet', 'item'], ['publicidade', 'Publicidade', 'item'],
+  ['telefone', 'Telefone/Internet', 'item'],
+  ['marketing', 'Marketing', 'grupo'],
+  ['publicidade', 'Publicidade', 'item'],
+  ['taxas', 'Taxas e tarifas', 'grupo'],
   ['taxa', 'Descontos de cartão', 'item'], ['tarifa', 'Tarifa', 'item'],
   ['operacional', 'Resultado operacional', 'total'],
   ['juros', 'Juros', 'item'],
   ['liquido', 'Resultado líquido', 'total'],
+  ['dividas', 'Pagamentos de dívida', 'grupo'],
   ['emprestimos', 'Empréstimos', 'item'], ['acordos', 'Acordos de dívida', 'item'],
   ['sobra', 'Sobra depois das dívidas', 'total'],
 ];
+
+function somarGrupos(l) {
+  const out = {};
+  for (const [g, linhas] of Object.entries(GRUPOS))
+    out[g] = linhas.every(k => l[k] == null) ? null : r2(linhas.reduce((s, k) => s + (l[k] || 0), 0));
+  return out;
+}
 
 // Lojas sem dado numa linha ficam null, e o resultado sai como parcial.
 function fechar(l) {
@@ -157,7 +184,7 @@ function fechar(l) {
   const despesas = ['fixos', 'comissoes', 'encargos', 'escritorio', 'premiacoes', 'vt', 'ponto', 'caixinha', 'sistema', 'contabilidade',
     'seguro', 'plano', 'diversos', 'telefone', 'publicidade', 'taxa', 'tarifa'];
   const obrigatorias = ['receita', 'simples', 'icms', 'cmv', 'embalagens', ...despesas, 'juros'];
-  const out = { ...l };
+  const out = { ...l, ...somarGrupos(l) };
   out.receitaLiquida = r2(v('receita') - v('simples') - v('icms'));
   out.lucroBruto = r2(out.receitaLiquida - v('cmv') - v('embalagens') - v('frete'));
   out.operacional = r2(out.lucroBruto - despesas.reduce((s, k) => s + v(k), 0));
@@ -179,4 +206,4 @@ function pontoComercial(boletos, receita, percentual = 5) {
 }
 
 module.exports = { pontoComercial, aliquotaSimples, percentualIcms, percentuaisEmbalagem, folhaPorLoja, linhaDre, somarFaturas, fechar,
-  mesesAntes, ESTRUTURA, EMPRESA, REF };
+  mesesAntes, ESTRUTURA, EMPRESA, REF, somarGrupos };

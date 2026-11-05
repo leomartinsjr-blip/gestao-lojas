@@ -24,7 +24,7 @@
   .acoes button.prim { background:var(--blue); color:#fff; border-color:var(--blue); }
   details { border-top:1px solid var(--border); padding:10px 14px; } summary { cursor:pointer; color:var(--text2); }
   .pilulas { display:flex; gap:6px; flex-wrap:wrap; padding-bottom:10px; } .pilulas button.ativa { background:var(--blue); color:#fff; border-color:var(--blue); }
-  .item { display:flex; align-items:center; gap:10px; padding:7px 14px; flex-wrap:wrap; }
+  div.item { display:flex; align-items:center; gap:10px; padding:7px 14px; flex-wrap:wrap; }
   .item b { min-width:90px; } .item .feito { color:var(--green); } .item .pend { color:var(--yellow); font-weight:600; }
   .item input[type=number] { width:130px; background:#fff; } .item span.r { flex:1; min-width:220px; }
   table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
@@ -34,6 +34,8 @@
   td.neg { color:var(--red); }
   th:first-child, td:first-child { text-align:left; position:sticky; left:0; background:var(--bg2); }
   thead th { background:var(--bg3); font-size:12px; color:var(--text2); }
+  tbody tr.grupo td, tbody tr.grupo:nth-child(even) td { font-weight:600; background:#ddf4ff; color:#0a3069; border-top:1px solid #b6e3ff; }
+  tbody tr.grupo td.neg { color:var(--red); } tbody tr.item td:first-child { padding-left:24px; }
   tr.total td, tbody tr.total:nth-child(even) td { font-weight:700; background:#e4eaf2; border-top:1px solid #b9c2cd; }
   td small { margin-left:6px; color:var(--text2); font-size:11px; font-weight:400; } td small.pct { color:var(--blue); display:inline-block; min-width:48px; text-align:right; }
   .abas { display:flex; gap:6px; padding:0 0 12px; }
@@ -141,7 +143,7 @@ function desenhar(d) {
     `<td>${i.lojas[b] ? num(i.lojas[b]) : ''}</td>`).join('')}${extra ? '<td></td>' : ''}</tr>`).join('');
   const corpo = d.estrutura.map(([k, rot, tipo]) => {
     const itens = (d.detalhe?.[k] || []).filter(i => colunas.some(b => i.lojas[b]));
-    return `<tr class="${[itens.length ? 'abre' : '', tipo === 'total' ? 'total' : ''].join(' ')}"><td>${rot}</td>${colunas.map(b => celula({
+    return `<tr class="${[itens.length ? 'abre' : '', tipo].join(' ')}"><td>${rot}</td>${colunas.map(b => celula({
       valor: d.lojas[b][k], base: d.lojas[b].receita, ref: d.planilha?.[b]?.[k],
       editar: tipo === 'item' && !fechada(b) ? lapis('ajustes', k, b) : '',
       calculado: k in (d.lojas[b].ajustado || {}) ? d.lojas[b].ajustado[k] : undefined,
@@ -178,7 +180,7 @@ function desenhar(d) {
   }));
 
   // Finalizar fica embaixo: uma loja por vez; no resumo, só a situação de cada uma
-  const conf = b => (d.conferencia?.[b] || []).map(i => `<li class="${i.ok ? 'ok' : i.bloqueia ? 'trava' : 'nao'}">${i.ok ? '✓' : '✗'} ${i.rotulo}${i.id === 'simples' ? ` <input type="checkbox" data-simples="${b}" ${i.ok ? 'checked' : ''}>` : ''}</li>`).join('');
+  const conf = b => (d.conferencia?.[b] || []).map(i => `<li class="${i.ok ? 'ok' : i.bloqueia ? 'trava' : 'nao'}">${i.ok ? '✓' : '✗'} ${i.rotulo}</li>`).join('');
   $('finalizar').innerHTML = soUma
     ? `<h2>Conferir e finalizar ${nome(lojaAtual)}</h2>` + (fechada(lojaAtual)
       ? `<div class="fim"><ul><li class="ok">🔒 Finalizada em ${new Date(d.fechamentos[lojaAtual].em).toLocaleString('pt-BR')}</li></ul><button data-reabrir="${lojaAtual}">Reabrir</button></div>`
@@ -190,15 +192,11 @@ function desenhar(d) {
     await fetch(`/api/dre-resultados/finalizar/${d.mes}/${el.dataset.reabrir}`, { method: 'DELETE' });
     cache = {}; carregar(false);
   }));
-  document.querySelectorAll('[data-simples]').forEach(el => el.addEventListener('change', async () => {
-    await fetch('/api/dre-resultados/manual', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mes: d.mes, loja: el.dataset.simples, campo: 'conferidos.simples', valor: el.checked ? 1 : '' }) });
-    carregar(false);
-  }));
 
   $('manuais').innerHTML = d.manuais.map(i => {
-    const arquivos = (i.arquivos || []).map(a => `<a href="/api/dre-resultados/boleto/${d.mes}/${i.loja}/${a.chave}">${a.nome || 'boleto'}</a>
-      <button class="tira" data-loja="${i.loja}" data-chave="${a.chave}" title="Tirar este boleto">×</button>`).join(' ');
+    const arquivos = (i.arquivos || []).map(a => (a.url ? `<a href="${a.url}">${a.nome || 'extrato'}</a>`
+      : `<a href="/api/dre-resultados/boleto/${d.mes}/${i.loja}/${a.chave}">${a.nome || 'boleto'}</a>
+      <button class="tira" data-loja="${i.loja}" data-chave="${a.chave}" title="Tirar este boleto">×</button>`)).join(' ');
     return `<div class="item"><b>${nome(i.loja)}</b><span class="r">${i.rotulo} ${arquivos}</span><span class="${i.feito ? 'feito' : 'pend'}">${i.feito ? '✓ ok' : 'falta'}</span></div>`;
   }).join('');
   document.querySelectorAll('#manuais .tira').forEach(el => el.addEventListener('click', async () => {
@@ -225,7 +223,7 @@ function desenharPasso() {
     return;
   }
   const campo = p.tipo === 'numero' ? '<input type="number" step="0.01" id="pValor" placeholder="Valor">'
-    : `<input type="file" multiple accept="${p.id === 'boleto' ? '.pdf' : '.xlsx'}" id="pArquivo">`;
+    : `<input type="file" multiple accept="${['boleto', 'extrato'].includes(p.id) ? '.pdf' : '.xlsx'}" id="pArquivo">`;
   $('passo').innerHTML = `<small>Passo ${passoI + 1} de ${passos.length} · ${d.labels[p.loja] || p.loja}</small><h3>${p.rotulo}</h3>${campo}
     <div class="acoes"><button class="prim" id="pSalvar">Salvar e continuar</button><button id="pPular">Pular</button><button id="pFechar">Fechar</button></div>`;
   const prox = () => { passoI++; desenharPasso(); };
@@ -363,12 +361,23 @@ $('abaCaixa').addEventListener('click', () => aba('caixa'));
 $('abaAno').addEventListener('click', () => aba('ano'));
 
 // Exportação: lê as tabelas da tela, com as linhas abertas ou não.
-function tabelaParaLinhas(id) {
-  return [...$(id).querySelectorAll('tr')].map(tr => [...tr.children].map((c, i) => {
-    const t = c.firstChild?.nodeType === 3 ? c.firstChild.textContent.trim() : '';
-    if (i === 0 || !/^-?[\d.]+,\d{2}$/.test(t)) return t;
-    return Number(t.replace(/\./g, '').replace(',', '.'));
-  }));
+const numeroBR = t => Number(String(t).replace('%', '').replace(/\./g, '').replace(',', '.'));
+// Só o que está visível: linha de detalhe entra se estiver aberta na tela
+function tabelaParaAba(id, nome, titulo) {
+  const colunas = [...$(id).querySelectorAll('thead th')].slice(1).map(th => th.textContent.trim());
+  const linhas = [...$(id).querySelectorAll('tbody tr')].filter(tr => !tr.hidden).map(tr => {
+    const [primeira, ...resto] = tr.children;
+    return {
+      tipo: ['total', 'grupo', 'sub'].find(t => tr.classList.contains(t)) || 'item',
+      rotulo: primeira.textContent.trim(),
+      valores: resto.map(c => {
+        const t = c.firstChild?.nodeType === 3 ? c.firstChild.textContent.trim() : '';
+        const pct = c.querySelector('.pct');
+        return { v: /^-?[\d.]+,\d{2}$/.test(t) ? numeroBR(t) : t === 'falta' ? 'falta' : null, p: pct ? numeroBR(pct.textContent) : null };
+      }),
+    };
+  });
+  return { nome, titulo, subtitulo: `Gerado em ${new Date().toLocaleString('pt-BR')}`, colunas, linhas };
 }
 async function baixar(nome, abas) {
   const r = await fetch('/api/dre-resultados/exportar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome, abas }) });
@@ -379,20 +388,21 @@ async function baixar(nome, abas) {
   a.click();
   URL.revokeObjectURL(a.href);
 }
-const abaAno = () => ({ nome: `Ano ${$('anoSel').value}`, linhas: tabelaParaLinhas('tabelaAno') });
+const abaAno = () => tabelaParaAba('tabelaAno', `Ano ${$('anoSel').value}`, `Consolidado de ${$('anoSel').value}`);
+const rotuloMes = () => $('mes').value.split('-').reverse().join('/');
 $('expAba').addEventListener('click', async () => {
   const mes = $('mes').value;
-  if (!$('vCaixa').hidden) return baixar(`fechamento-caixa-${mes}`, [{ nome: 'Fechamento de Caixa', linhas: tabelaParaLinhas('tabelaCaixa') }]);
+  if (!$('vCaixa').hidden) return baixar(`fechamento-caixa-${mes}`, [tabelaParaAba('tabelaCaixa', 'Fechamento de Caixa', $('tituloCaixa').textContent)]);
   if (!$('vAno').hidden) return baixar(`consolidado-${$('anoSel').value}`, [abaAno()]);
   if (!$('vCad').hidden) return alert('Abra a DRE, o Fechamento de Caixa ou o Consolidado para exportar.');
-  return baixar(`dre-${mes}`, [{ nome: 'DRE', linhas: tabelaParaLinhas('tabela') }]);
+  return baixar(`dre-${mes}`, [tabelaParaAba('tabela', 'DRE', $('titulo').textContent)]);
 });
 $('expTudo').addEventListener('click', async () => {
   $('anoMsg').textContent = '';
   await carregarAno();
   const voltar = lojaAtual;
   lojaAtual = 'resumo'; desenhar(ultimo);
-  const abas = [{ nome: 'DRE', linhas: tabelaParaLinhas('tabela') }, { nome: 'Fechamento de Caixa', linhas: tabelaParaLinhas('tabelaCaixa') }, abaAno()];
+  const abas = [tabelaParaAba('tabela', 'DRE', `DRE de ${rotuloMes()}`), tabelaParaAba('tabelaCaixa', 'Fechamento de Caixa', `Fechamento de Caixa de ${rotuloMes()}`), abaAno()];
   lojaAtual = voltar; desenhar(ultimo);
   baixar(`dre-resultados-${$('mes').value}`, abas);
 });
@@ -461,7 +471,7 @@ function desenharAno() {
       : ordem.map(b => soma(meses.map(mk => valorDe(cache[mk], id, [b], visao))));
     const bases = modo === 'mes' ? meses.map(mk => valorDe(cache[mk], idBase, lojas, visao))
       : ordem.map(b => soma(meses.map(mk => valorDe(cache[mk], idBase, [b], visao))));
-    return `<tr class="${tipo === 'total' ? 'total' : ''}"><td>${rot}</td>${vs.map((v, i) => cel(v, bases[i])).join('')}${cel(soma(vs), soma(bases))}</tr>`;
+    return `<tr class="${tipo}"><td>${rot}</td>${vs.map((v, i) => cel(v, bases[i])).join('')}${cel(soma(vs), soma(bases))}</tr>`;
   }).join('');
   $('tabelaAno').innerHTML = `<thead><tr><th>Linha</th>${cab.map(c => `<th>${c}</th>`).join('')}<th>Total</th></tr></thead><tbody>${corpo}</tbody>`;
 }

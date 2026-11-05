@@ -14,9 +14,10 @@ const { lerRelatorio } = require('./dreImportar');
 const { montarCaixa, linhaCaixa, LINHAS: LINHAS_CAIXA, norm: normCaixa } = require('./dreCaixa');
 const fs = require('fs');
 const path = require('path');
-const XLSX = require('xlsx');
 const JSZip = require('jszip');
 const { lerBoleto } = require('./dreBoletos');
+const { gerarExcel } = require('./dreExportar');
+const extratoSimples = require('./dreExtrato');
 const C = require('./dreCadastros');
 const L = require('./dreLinhas');
 
@@ -121,7 +122,17 @@ function montar({ mes, conferencia = [], caixa = {}, faturas = [], manual = {}, 
 }
 
 // Conferência de uma loja antes de finalizar. bloqueia: sem isso o resultado não fecha.
-function conferirLoja({ loja, dados, manual, folhaFechada }) {
+const brl = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const LOJAS_DA_EMPRESA = { LMJ: ['delrey', 'site'], JDG: ['minas'], PV: ['contagem'], TTS: ['estacao'], '3L': ['tommy'], LF: ['lez'] };
+
+// Receita do mês do extrato no gestão, somando as lojas da empresa
+function receitaNoGestao(empresa, pa, faturamentoExtra = {}) {
+  const h = HISTORICO[pa];
+  if (h) return LOJAS_DA_EMPRESA[empresa].reduce((s, b) => s + (h.lojas[b]?.receita || 0), 0);
+  return faturamentoExtra[pa]?.[empresa] ?? null;
+}
+
+function conferirLoja({ loja, dados, manual, folhaFechada, extratos = {}, faturamentoExtra = {} }) {
   const l = dados.lojas[loja];
   const itens = [];
   const add = (id, rotulo, ok, bloqueia = false) => itens.push({ id, rotulo, ok, bloqueia });
@@ -129,7 +140,15 @@ function conferirLoja({ loja, dados, manual, folhaFechada }) {
   if (loja !== 'site') add('folha', folhaFechada ? 'Folha do mês encerrada' : 'Folha do mês ainda aberta', folhaFechada);
   const semLinha = dados.caixa.linhas.find(x => x.id === 'classificar')?.lojas[loja] || 0;
   add('fornecedores', semLinha ? `Fornecedores sem linha: ${semLinha}` : 'Fornecedores classificados', !semLinha);
-  add('simples', 'Extrato do Simples conferido', !!manual[loja]?.conferidos?.simples);
+  const empresa = L.EMPRESA[loja], ex = extratos[empresa];
+  if (!ex) add('simples', `Extrato do Simples de ${empresa} não enviado`, false);
+  else {
+    const [ano, mes] = ex.pa.split('-');
+    add('simples', `Extrato ${mes}/${ano} de ${empresa}: DAS ${brl(ex.das)}, RBT12 usado ${brl(ex.rbtMes)}`, true);
+    const gestao = receitaNoGestao(empresa, ex.pa, faturamentoExtra);
+    if (gestao != null) add('extrato-receita', Math.abs(gestao - ex.rpa) <= 1 ? `Receita de ${mes}/${ano} bate com o extrato`
+      : `Receita de ${mes}/${ano}: extrato ${brl(ex.rpa)}, gestão ${brl(gestao)}`, Math.abs(gestao - ex.rpa) <= 1);
+  }
   const editados = Object.keys(l.ajustado || {}).length;
   if (editados) add('editados', `${editados} valor(es) editado(s) à mão`, true);
   return itens;
@@ -140,7 +159,7 @@ const INICIO_MODULO = '2026-10';
 const CAMPOS_MANUAIS = { lez: ['taxa'], site: ['taxa', 'publicidade'] };
 
 // A DRE inteira de um mês. base: resultado de montar(); ctx: dados já lidos.
-function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folhaMes, employees, freteTommy, faturamentoExtra, config, googleAds = null }) {
+function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folhaMes, employees, freteTommy, faturamentoExtra, config, googleAds = null, extratos = {} }) {
   const cfg = C.comPadrao(config);
   const pct = cfg.percentuais;
   const lanc = faturas.map(g => ({ b: g.b, f: g.f, v: (g.vp || 0) + Math.max(0, g.va || 0) }));
@@ -157,7 +176,7 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
   const lojas = {}, percentuais = {};
   for (const b of LOJAS) {
     const d = base.lojas[b], t = totais[b] || {}, f = folha?.[b];
-    const aliq = L.aliquotaSimples(b, mes, faturamentoExtra), icms = L.percentualIcms(b, mes, apuracoes, icmsCadastrado), emb = embPct[b];
+    const aliq = L.aliquotaSimples(b, mes, faturamentoExtra, extratos[L.EMPRESA[b]]), icms = L.percentualIcms(b, mes, apuracoes, icmsCadastrado), emb = embPct[b];
     const temFaturas = b !== 'lez' || !!manual.lez?.faturas;
     const fat = k => (temFaturas ? t[k] || 0 : null);
     const semFolha = b === 'site' ? 0 : null;
@@ -194,12 +213,18 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
     manuais.push({ loja: b, id: 'boleto', rotulo: bs.length ? `Boleto do shopping: total ${total}` : 'Boleto do shopping (PDF)', tipo: 'arquivo', feito: bs.length > 0,
       arquivos: bs.map(x => ({ chave: x.chave, nome: x.arquivo || null, total: x.total })) });
   }
+  for (const [empresa, [loja]] of Object.entries(LOJAS_DA_EMPRESA)) {
+    const ex = extratos[empresa];
+    const [a, m] = L.mesesAntes(mes, 1)[0].split('-');
+    manuais.push({ loja, id: 'extrato', rotulo: `Extrato do Simples de ${m}/${a} (${empresa})`, tipo: 'arquivo', feito: !!ex,
+      arquivos: ex ? [{ url: `/api/dre-resultados/extrato/${mes}/${empresa}`, nome: ex.arquivo }] : [] });
+  }
   const lista = o => Object.entries(o || {}).map(([nome, valores]) => ({ nome, lojas: valores })).sort((a, c) => a.nome.localeCompare(c.nome, 'pt-BR'));
   const det = { ...base.detalhe, escritorio: esc.detalhe };
   for (const k of ['sistema', 'contabilidade', 'seguro', 'plano', 'diversos', 'telefone', 'publicidade', 'tarifa', 'vt', 'acordos']) det[k] = lista(detalhe[k]);
   const ref = L.REF.planilha[mes];
   return { ...base, lojas, percentuais, detalhe: det, manuais, pendencias: manuais.filter(i => !i.feito), estrutura: L.ESTRUTURA,
-    planilha: ref ? Object.fromEntries(Object.entries(ref).map(([b, p]) => [b, { ...p, sobra: p.liquido, liquido: undefined }])) : null,
+    planilha: ref ? Object.fromEntries(Object.entries(ref).map(([b, p]) => [b, { ...p, ...L.somarGrupos(p), sobra: p.liquido, liquido: undefined }])) : null,
     folhaFechada: Object.fromEntries(LOJAS.map(b => [b, !!folhaMes?.[b]?.encerrada])) };
 }
 
@@ -337,6 +362,23 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     }
   }
 
+  async function lerExtratos(mes) {
+    const db = getDb();
+    const doc = db ? await db.collection('dreManual').findOne({ _id: mes }) : memoria['extratos-' + mes];
+    const out = {};
+    for (const [emp, ex] of Object.entries(doc?.extratos || {}))
+      out[emp] = { ...ex, rbtMes: r2(L.mesesAntes(mes, 12).reduce((s, mk) => s + (ex.faturamento?.[mk] || 0), 0)) };
+    return out;
+  }
+  async function gravarExtrato(ex, nome, buffer) {
+    const db = getDb();
+    const dados = { pa: ex.pa, rpa: ex.rpa, rbt12: ex.rbt12, das: ex.das, faturamento: ex.faturamento, arquivo: nome };
+    if (db) {
+      await db.collection('dreManual').updateOne({ _id: ex.mes }, { $set: { [`extratos.${ex.empresa}`]: dados } }, { upsert: true });
+      await db.collection('dreBoletosArquivos').replaceOne({ _id: `${ex.mes}-extrato-${ex.empresa}` }, { mes: ex.mes, empresa: ex.empresa, dados: buffer }, { upsert: true });
+    } else ((memoria['extratos-' + ex.mes] ||= { extratos: {} }).extratos[ex.empresa] = dados);
+  }
+
   async function faturasDoMes(mes) {
     const db = getDb();
     const de = `${mes}-01`, ate = `${mes}-31`;
@@ -396,20 +438,21 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
 
   async function dadosDoMes(mes, recalcular) {
       const hoje = hojeBRT();
-      const [foto, faturas, db, manual, hist, config] = await Promise.all([
+      const [foto, faturas, db, manual, hist, config, extratos] = await Promise.all([
         conferenciaDoMes(mes, recalcular, hoje),
         faturasDoMes(mes),
         readDB(),
         lerManual(mes),
         dadosDoHistorico(mes),
         lerConfig(),
+        lerExtratos(mes),
       ]);
       const escolhidos = C.escolhidosDe(config);
       const googleAds = await googleAdsDoMes(mes, manual, hoje);
       const parcial = montar({ mes, conferencia: foto.lojas, caixa: db.caixa || {}, faturas, manual, escolhidos });
       const dre = montarCompleta(parcial, { mes, manual, faturas, apuracoes: hist.apuracoes,
         embalagem: { pago: hist.pago, venda: vendaDe12Meses(mes, hist.faturamentoExtra) }, folhaMes: folhaDoMes(db, mes),
-        employees: db.employees || [], freteTommy: foto.freteTommy, faturamentoExtra: hist.faturamentoExtra, config, googleAds });
+        employees: db.employees || [], freteTommy: foto.freteTommy, faturamentoExtra: hist.faturamentoExtra, config, googleAds, extratos });
       const pagos = faturas.map(g => ({ b: g.b, f: g.f, v: g.vp || 0 }));
       for (const [nome, f] of Object.entries(manual.lez?.faturas?.fornecedores || {}))
         pagos.push({ b: 'lez', f: nome, v: f.pago || 0 });
@@ -423,7 +466,7 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
         labels: Object.fromEntries(LOJAS.map(b => [b, boardsLabel[b] || b])),
         ordem: LOJAS,
       };
-      dados.conferencia = Object.fromEntries(LOJAS.map(b => [b, conferirLoja({ loja: b, dados, manual, folhaFechada: !!dre.folhaFechada[b] })]));
+      dados.conferencia = Object.fromEntries(LOJAS.map(b => [b, conferirLoja({ loja: b, dados, manual, folhaFechada: !!dre.folhaFechada[b], extratos, faturamentoExtra: hist.faturamentoExtra })]));
       return dados;
   }
 
@@ -472,6 +515,14 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     try {
       if (!req.file) return res.status(400).json({ error: 'Envie o arquivo' });
       if (/\.pdf$/i.test(req.file.originalname)) {
+        const { text } = await require('pdf-parse')(req.file.buffer);
+        if (/Extrato do Simples Nacional/i.test(text)) {
+          const ex = extratoSimples.lerTexto(text);
+          const fechadas = await lerFechamentos(ex.mes);
+          if (LOJAS_DA_EMPRESA[ex.empresa].some(b => fechadas[b])) return res.status(400).json({ error: 'Loja finalizada neste mês: reabra para enviar o extrato' });
+          await gravarExtrato(ex, req.file.originalname, req.file.buffer);
+          return res.json({ tipo: 'extrato', mes: ex.mes, empresa: ex.empresa, das: ex.das });
+        }
         const bol = await lerBoleto(req.file.buffer);
         if (await lojaFechada(bol.mes, bol.loja)) return res.status(400).json({ error: 'Esta loja está finalizada neste mês: reabra para enviar' });
         await guardarBoleto(bol.mes, bol.loja, bol.chave, req.file.buffer);
@@ -497,6 +548,17 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     res.attachment(nome).type('application/pdf').send(dados);
   });
 
+  app.get('/api/dre-resultados/extrato/:mes/:empresa', requireAuth, soDono, async (req, res) => {
+    try {
+      const { mes, empresa } = req.params;
+      const db = getDb();
+      const doc = db && /^\d{4}-\d{2}$/.test(mes) && LOJAS_DA_EMPRESA[empresa] ? await db.collection('dreBoletosArquivos').findOne({ _id: `${mes}-extrato-${empresa}` }) : null;
+      if (!doc) return res.status(404).json({ error: 'Extrato não guardado' });
+      const nome = (await lerExtratos(mes))[empresa]?.arquivo || 'extrato.pdf';
+      res.attachment(nome).type('application/pdf').send(Buffer.from(doc.dados.buffer || doc.dados));
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // Todos os boletos do mês, ou do ano (?mes=2026), num zip por pasta de mês
   app.get('/api/dre-resultados/boletos.zip', requireAuth, soDono, async (req, res) => {
     try {
@@ -515,6 +577,13 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
             total++;
           }
         }
+        const db = getDb();
+        for (const [emp, ex] of Object.entries(await lerExtratos(mes))) {
+          const doc = db && await db.collection('dreBoletosArquivos').findOne({ _id: `${mes}-extrato-${emp}` });
+          if (!doc) continue;
+          zip.file(`${mes}/Extrato Simples ${emp} - ${ex.arquivo || 'extrato.pdf'}`, Buffer.from(doc.dados.buffer || doc.dados));
+          total++;
+        }
       }
       if (!total) return res.status(404).json({ error: 'Nenhum boleto guardado neste período' });
       res.attachment(`boletos-${alvo}.zip`).type('application/zip').send(await zip.generateAsync({ type: 'nodebuffer' }));
@@ -523,18 +592,13 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
 
   // POST /api/dre-resultados/exportar { nome, abas: [{ nome, linhas }] } — a tela
   // manda as tabelas como estão, e o Excel sai igual ao que se vê.
-  app.post('/api/dre-resultados/exportar', requireAuth, soDono, (req, res) => {
+  app.post('/api/dre-resultados/exportar', requireAuth, soDono, async (req, res) => {
     try {
-      const wb = XLSX.utils.book_new();
-      for (const a of req.body?.abas || []) {
-        const ws = XLSX.utils.aoa_to_sheet(a.linhas || []);
-        ws['!cols'] = [{ wch: 42 }, ...Array(20).fill({ wch: 13 })];
-        XLSX.utils.book_append_sheet(wb, ws, String(a.nome || 'Aba').slice(0, 31));
-      }
-      if (!wb.SheetNames.length) return res.status(400).json({ error: 'Nada para exportar' });
+      const abas = req.body?.abas || [];
+      if (!abas.length) return res.status(400).json({ error: 'Nada para exportar' });
       res.attachment(`${String(req.body.nome || 'dre-resultados').replace(/[^\w-]/g, '_')}.xlsx`)
         .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        .send(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+        .send(await gerarExcel(abas));
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
@@ -645,4 +709,4 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
   });
 }
 
-module.exports = { register, montar, montarCompleta, conferirLoja, linhaFinanceira, somarSangria, LOJAS, PLANILHA };
+module.exports = { receitaNoGestao, register, montar, montarCompleta, conferirLoja, linhaFinanceira, somarSangria, LOJAS, PLANILHA };

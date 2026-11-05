@@ -138,7 +138,11 @@ assert.strictEqual(conf1.find(i => i.id === 'folha').ok, false);
 const conf2 = conferirLoja({ loja: 'site', manual: { site: { conferidos: { simples: 1 } } }, folhaFechada: false, dados: { lojas: { site: { faltam: [], ajustado: { taxa: 1 } } }, caixa: { linhas: [{ id: 'classificar', lojas: { site: 10 } }] } } });
 assert.ok(!conf2.some(i => i.id === 'folha'), 'Site não tem folha para conferir');
 assert.strictEqual(conf2.find(i => i.id === 'fornecedores').ok, false);
-assert.strictEqual(conf2.find(i => i.id === 'simples').ok, true);
+assert.strictEqual(conf2.find(i => i.id === 'simples').ok, false, 'sem extrato fica pendente');
+const conf3 = conferirLoja({ loja: 'minas', manual: {}, folhaFechada: true, dados: { lojas: { minas: { faltam: [], ajustado: {} } }, caixa: { linhas: [] } },
+  extratos: { JDG: { pa: '2026-09', rpa: 48251.5, das: 4326.21, rbtMes: 1246101.73 } } });
+assert.strictEqual(conf3.find(i => i.id === 'simples').ok, true);
+assert.strictEqual(conf3.find(i => i.id === 'extrato-receita').ok, false, 'setembro difere da planilha');
 assert.ok(conf2.some(i => i.id === 'editados'));
 const H = require('../services/dreHistorico.json');
 assert.strictEqual(H['2026-06'].lojas.delrey.receita, 157161, 'junho corrigido pela Conferência');
@@ -164,6 +168,9 @@ assert.strictEqual(dc.lojas.contagem.encargos, 2749.84);
 assert.strictEqual(dc.lojas.tommy.frete, 485.91);
 assert.ok(dc.lojas.lez.faltam.includes('receita'));
 assert.ok(dc.estrutura.length > 25);
+assert.strictEqual(dc.lojas.contagem.salarios, r2t(dc.lojas.contagem.fixos + dc.lojas.contagem.comissoes + dc.lojas.contagem.encargos + dc.lojas.contagem.escritorio + dc.lojas.contagem.premiacoes + dc.lojas.contagem.vt));
+assert.strictEqual(dc.lojas.contagem.operacional, r2t(dc.lojas.contagem.lucroBruto - dc.lojas.contagem.salarios - dc.lojas.contagem.ponto - dc.lojas.contagem.administrativo - dc.lojas.contagem.marketing - dc.lojas.contagem.taxas));
+function r2t(v) { return Math.round(v * 100) / 100; }
 
 // Boletos reais de outubro, com o total que a DRE da planilha usava
 const { lerBoleto, fecharBoleto } = require('../services/dreBoletos');
@@ -184,6 +191,19 @@ assert.throws(() => fecharBoleto({ loja: 'minas', total: 100, itens: [{ descrica
     }
     const iptu = await lerBoleto(fs.readFileSync(pasta + '/boleto (82).pdf'));
     assert.deepStrictEqual([iptu.loja, iptu.mes, iptu.valores.iptu], ['delrey', '2026-10', 114.24]);
+  }
+  if (pasta) {
+    const pdf = require('pdf-parse');
+    const { lerTexto } = require('../services/dreExtrato');
+    const esperado = { '07202628881034296': ['LMJ', 143198.14, 14608.68, 2126375.81], '07202628885737682': ['JDG', 48251.5, 4326.21, 1246101.73], '07202628691719158': ['PV', 81146, 7494.12, 1517547.39],
+      '07202628889910281': ['TTS', 81038.99, 7383.76, 1392389.53], '07202628802703149': ['3L', 95971, 8660.3, 1355080.06], '07202628733231417': ['LF', 81951.99, 7099.11, 1117400.85] };
+    for (const [n, [emp, rpa, das, rbt]] of Object.entries(esperado)) {
+      const e = lerTexto((await pdf(fs.readFileSync(`${pasta}/PGDASD-EXTRATO-${n}.pdf`))).text);
+      assert.deepStrictEqual([e.empresa, e.pa, e.mes, e.rpa, e.das], [emp, '2026-09', '2026-10', rpa, das], n);
+      const soma = L.mesesAntes('2026-10', 12).reduce((s, mk) => s + (e.faturamento[mk] || 0), 0);
+      assert.ok(Math.abs(soma - rbt) < 0.01, emp);
+      assert.ok(Math.abs(L.aliquotaSimples({ LMJ: 'delrey', JDG: 'minas', PV: 'contagem', TTS: 'estacao', '3L': 'tommy', LF: 'lez' }[emp], '2026-10', {}, e) - L.aliquotaSimples({ LMJ: 'delrey', JDG: 'minas', PV: 'contagem', TTS: 'estacao', '3L': 'tommy', LF: 'lez' }[emp], '2026-10')) < 0.0001, emp);
+    }
   }
   console.log('ok: DRE/Resultados confere com outubro/2026');
 })().catch(e => { console.error(e); process.exit(1); });
