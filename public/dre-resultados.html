@@ -38,6 +38,8 @@
   #tabCustos input[type=text], #tabCustos input[type=number], #percentuais input { background:#fff; width:100%; min-width:90px; }
   #tabCustos td { white-space:normal; text-align:left; } #tabCustos label { display:inline-block; margin-right:6px; font-size:11px; }
   #percentuais label { display:inline-block; width:210px; } a { color:var(--blue); } .tira { padding:0 6px; }
+  .ed { cursor:pointer; color:var(--text2); margin-left:5px; opacity:.35; font-size:11px; } td:hover .ed { opacity:1; color:var(--blue); }
+  td.aj { background:var(--yellowbg) !important; }
   .dif { color:var(--red); } .falta { color:var(--yellow); font-weight:600; }
   .nota { color:var(--text2); padding:0 2px 14px; line-height:1.6; }
   #msg { padding:20px; color:var(--text2); }
@@ -81,7 +83,7 @@
         <span id="anoMsg"></span>
       </div>
       <div class="painel"><table id="tabelaAno"></table></div>
-      <p class="nota">Traço indica mês sem o dado. Mês sem boleto ou sem folha sai parcial. A primeira abertura busca mês a mês e pode demorar; depois fica guardado.</p>
+      <p class="nota">Antes de outubro/2026 o quadro mostra só o que existe nas planilhas: venda, resultado operacional, sobra e Fechamento de Caixa. O módulo completo calcula de outubro em diante. Traço indica mês sem o dado.</p>
     </div>
     <div id="vCaixa" hidden>
       <div class="painel"><h2 id="tituloCaixa"></h2><table id="tabelaCaixa"></table></div>
@@ -95,14 +97,15 @@ const num = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFr
 // Diferença acima disso aparece em vermelho: arredondamento não é erro.
 const TOLERANCIA = 50;
 
-function celula(valor, ref) {
-  if (valor == null) return '<td class="falta">falta</td>';
-  let extra = '';
+const lapis = (grupo, k, b) => `<span class="ed" title="Editar valor" data-grupo="${grupo}" data-k="${k}" data-b="${b}">✎</span>`;
+function celula(valor, ref, extra = '', cls = '') {
+  if (valor == null) return `<td class="falta">falta${extra}</td>`;
+  let refTxt = '';
   if (ref != null) {
     const d = valor - ref;
-    extra = `<small class="${Math.abs(d) > TOLERANCIA ? 'dif' : ''}">planilha ${num(ref)}</small>`;
+    refTxt = `<small class="${Math.abs(d) > TOLERANCIA ? 'dif' : ''}">planilha ${num(ref)}</small>`;
   }
-  return `<td>${num(valor)}${extra}</td>`;
+  return `<td class="${cls}">${num(valor)}${refTxt}${extra}</td>`;
 }
 
 function desenhar(d) {
@@ -135,7 +138,9 @@ function desenhar(d) {
     const itens = d.detalhe?.[k] || [];
     const pct = b => (tipo === 'total' && d.lojas[b].receita ? `<small>${num(d.lojas[b][k] / d.lojas[b].receita * 100)}%</small>` : '');
     return `<tr class="${[itens.length ? 'abre' : '', tipo === 'total' ? 'total' : ''].join(' ')}"><td>${rot}</td>${d.ordem.map(b =>
-      celula(d.lojas[b][k], d.planilha?.[b]?.[k]).replace('</td>', pct(b) + '</td>')).join('')}</tr>${subs(itens)}`;
+      celula(d.lojas[b][k], d.planilha?.[b]?.[k], (tipo === 'item' ? lapis('ajustes', k, b) : '') +
+        (k in (d.lojas[b].ajustado || {}) ? `<small>calculado ${d.lojas[b].ajustado[k] == null ? 'sem valor' : num(d.lojas[b].ajustado[k])}</small>` : ''),
+        k in (d.lojas[b].ajustado || {}) ? 'aj' : '').replace('</td>', pct(b) + '</td>')).join('')}</tr>${subs(itens)}`;
   }).join('');
   const parciais = d.ordem.filter(b => d.lojas[b].faltam.length);
   $('tabela').innerHTML = cab + `<tbody>${corpo}</tbody>`;
@@ -143,9 +148,21 @@ function desenhar(d) {
   const linhaTotal = (rot, valores) => `<tr class="total"><td>${rot}</td>${d.ordem.map(b => `<td>${num(valores[b] || 0)}</td>`).join('')}</tr>`;
   $('tabelaCaixa').innerHTML = cab + '<tbody>' + d.caixa.linhas.map(l =>
     `<tr class="${l.detalhe.length ? 'abre' : ''}"><td>${l.nome}</td>${d.ordem.map(b =>
-      `<td>${l.lojas[b] ? num(l.lojas[b]) : ''}</td>`).join('')}</tr>${subs(l.detalhe)}`).join('') +
+      `<td class="${b in (l.ajustado || {}) ? 'aj' : ''}">${l.lojas[b] ? num(l.lojas[b]) : ''}${lapis('ajustesCaixa', l.id, b)}${b in (l.ajustado || {}) ? `<small>calculado ${num(l.ajustado[b])}</small>` : ''}</td>`).join('')}</tr>${subs(l.detalhe)}`).join('') +
     linhaTotal('Soma despesas (-)', d.caixa.soma) + linhaTotal('Recebimentos (+)', d.caixa.recebimentos) +
     linhaTotal('Resultado (=)', d.caixa.resultado) + '</tbody>';
+  document.querySelectorAll('.ed').forEach(el => el.addEventListener('click', async ev => {
+    ev.stopPropagation();
+    const atual = el.closest('td').firstChild?.nodeType === 3 ? el.closest('td').firstChild.textContent.trim() : '';
+    const novo = prompt(`${nome(el.dataset.b)}: novo valor. Deixe vazio para voltar ao calculado.`, atual);
+    if (novo === null) return;
+    const valor = novo.trim() === '' ? '' : Number(novo.replace(/\./g, '').replace(',', '.'));
+    if (Number.isNaN(valor)) { alert('Valor inválido'); return; }
+    const r = await fetch('/api/dre-resultados/manual', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mes: d.mes, loja: el.dataset.b, campo: `${el.dataset.grupo}.${el.dataset.k}`, valor }) });
+    if (!r.ok) { alert((await r.json()).error || 'Não foi possível salvar'); return; }
+    cache = {}; carregar(false);
+  }));
   document.querySelectorAll('tr.abre').forEach(tr => tr.addEventListener('click', () => {
     tr.classList.toggle('aberta');
     for (let n = tr.nextElementSibling; n && n.classList.contains('sub'); n = n.nextElementSibling) n.hidden = !n.hidden;
@@ -154,7 +171,7 @@ function desenhar(d) {
   const abertas = d.ordem.filter(b => !d.folhaFechada[b] && b !== 'site').map(nome);
   $('nota').textContent = (parciais.length ? `Resultado parcial em ${parciais.map(nome).join(', ')}: falta informar as linhas marcadas. ` : '') +
     (abertas.length ? `Folha ainda aberta em ${abertas.join(', ')}. ` : '') +
-    `Faturas pelo vencimento, pagas ou em aberto. Conferência lida em ${quando}.`;
+    `Faturas pelo vencimento, pagas ou em aberto. Para editar, clique no ✎ da célula; o valor fica em amarelo com o calculado embaixo. Conferência lida em ${quando}.`;
 }
 
 async function salvar(el) {
@@ -267,7 +284,7 @@ $('abaAno').addEventListener('click', () => aba('ano'));
 // Exportação: lê as tabelas da tela, com as linhas abertas ou não.
 function tabelaParaLinhas(id) {
   return [...$(id).querySelectorAll('tr')].map(tr => [...tr.children].map((c, i) => {
-    const t = (c.firstChild?.textContent ?? c.textContent).trim();
+    const t = c.firstChild?.nodeType === 3 ? c.firstChild.textContent.trim() : '';
     if (i === 0 || !/^-?[\d.]+,\d{2}$/.test(t)) return t;
     return Number(t.replace(/\./g, '').replace(',', '.'));
   }));
@@ -313,9 +330,12 @@ const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'O
 async function carregarAno() {
   const ano = +$('anoSel').value, hoje = new Date();
   const ultimo = ano < hoje.getFullYear() ? 12 : ano === hoje.getFullYear() ? hoje.getMonth() + 1 : 0;
+  const hist = await (await fetch('/api/dre-resultados/historico?ano=' + ano)).json();
+  Object.assign(cache, hist.meses);
+  desenharAno();
   for (let m = 1; m <= ultimo; m++) {
     const mk = `${ano}-${String(m).padStart(2, '0')}`;
-    if (cache[mk]) continue;
+    if (cache[mk] || mk < hist.inicio) continue;
     $('anoMsg').textContent = `Lendo ${MESES[m - 1]}/${ano}…`;
     try { const r = await fetch('/api/dre-resultados?mes=' + mk); if (r.ok) cache[mk] = await r.json(); } catch {}
     desenharAno();

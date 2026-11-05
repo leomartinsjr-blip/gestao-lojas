@@ -49,7 +49,8 @@ function linhaCaixa(fornecedor, escolhidos = {}) {
 }
 
 // pagos: [{ b, f, v }] · extras: { taxa: { loja: valor }, caixinha: {...} } · recebimentos: { loja: valor }
-function montarCaixa({ lojas, pagos, extras = {}, recebimentos = {}, escolhidos = {} }) {
+// ajustes: { loja: { linha: valor } } digitados na tela, que substituem o calculado
+function montarCaixa({ lojas, pagos, extras = {}, recebimentos = {}, escolhidos = {}, ajustes = {} }) {
   const porLinha = Object.fromEntries(LINHAS.map(([id]) => [id, {}]));
   for (const { b, f, v } of pagos) {
     if (!v) continue;
@@ -59,16 +60,18 @@ function montarCaixa({ lojas, pagos, extras = {}, recebimentos = {}, escolhidos 
   }
   const soma = Object.fromEntries(lojas.map(b => [b, 0]));
   const linhas = LINHAS.map(([id, nome]) => {
-    const total = {};
+    const total = {}, ajustado = {};
     for (const b of lojas) {
       const fat = Object.values(porLinha[id]).reduce((s, x) => s + (x[b] || 0), 0);
-      total[b] = r2(fat + (extras[id]?.[b] || 0));
+      const calculado = r2(fat + (extras[id]?.[b] || 0));
+      total[b] = ajustes[b]?.[id] ?? calculado;
+      if (ajustes[b]?.[id] != null) ajustado[b] = calculado;
       soma[b] = r2(soma[b] + total[b]);
     }
     const detalhe = Object.entries(porLinha[id])
       .map(([n, valores]) => ({ nome: n, lojas: valores }))
       .sort((a, c) => a.nome.localeCompare(c.nome, 'pt-BR'));
-    return { id, nome, lojas: total, detalhe };
+    return { id, nome, lojas: total, detalhe, ajustado };
   }).filter(l => Object.values(l.lojas).some(Boolean));
   const resultado = Object.fromEntries(lojas.map(b => [b, r2((recebimentos[b] || 0) - soma[b])]));
   return { linhas, soma, recebimentos, resultado };

@@ -121,6 +121,8 @@ function montar({ mes, conferencia = [], caixa = {}, faturas = [], manual = {}, 
     detalhe: { juros: lista('juros'), emprestimos: lista('emprestimos'), caixinha: lista('caixinha') } };
 }
 
+const HISTORICO = require('./dreHistorico.json');
+const INICIO_MODULO = '2026-10';
 const CAMPOS_MANUAIS = { lez: ['taxa'], site: ['taxa', 'publicidade'] };
 
 // A DRE inteira de um mês. base: resultado de montar(); ctx: dados já lidos.
@@ -146,7 +148,7 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
     const fat = k => (temFaturas ? t[k] || 0 : null);
     const semFolha = b === 'site' ? 0 : null;
     const fixos = f ? f.fixos : semFolha, comissoes = f ? f.comissoes : semFolha;
-    lojas[b] = L.fechar({
+    const calculado = {
       receita: d.receita, cmv: d.cmv, taxa: d.taxa, caixinha: d.caixinha, juros: d.juros, emprestimos: d.emprestimos,
       simples: d.receita != null && aliq != null ? r2(d.receita * aliq) : null,
       icms: d.cmv != null && icms != null ? r2(d.cmv * icms) : null,
@@ -161,7 +163,12 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
       sistema: fat('sistema'), contabilidade: fat('contabilidade'), seguro: fat('seguro'), plano: fat('plano'),
       diversos: fat('diversos'), telefone: fat('telefone'), tarifa: fat('tarifa'), acordos: fat('acordos'),
       publicidade: b === 'site' ? manual.site?.publicidade ?? null : fat('publicidade'),
-    });
+    };
+    // Valor digitado na tela vence o calculado; o original fica para mostrar
+    const ajustes = Object.fromEntries(Object.entries(manual[b]?.ajustes || {}).filter(([, v]) => v != null));
+    const final = { ...calculado, ...ajustes };
+    if (final.aluguel != null) final.ponto = r2(['aluguel', 'aluguelPct', 'condominio', 'fpp', 'ar', 'iptu', 'energia'].reduce((s, k) => s + (final[k] || 0), 0));
+    lojas[b] = { ...L.fechar(final), ajustado: Object.fromEntries(Object.keys(ajustes).map(k => [k, calculado[k] ?? null])) };
     percentuais[b] = { simples: aliq, icms, embalagens: emb };
   }
   const manuais = base.manuais.slice();
@@ -307,7 +314,12 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     const set = Object.fromEntries(Object.entries(campos).map(([k, v]) => [`lojas.${loja}.${k}`, v]));
     if (db) return db.collection('dreManual').updateOne({ _id: mes }, { $set: set }, { upsert: true });
     const doc = (memoria['manual-' + mes] ||= { lojas: {} });
-    Object.assign((doc.lojas[loja] ||= {}), campos);
+    for (const [k, v] of Object.entries(campos)) {
+      const partes = k.split('.'), fim = partes.pop();
+      let alvo = (doc.lojas[loja] ||= {});
+      for (const p of partes) alvo = (alvo[p] ||= {});
+      alvo[fim] = v;
+    }
   }
 
   async function faturasDoMes(mes) {
@@ -348,9 +360,10 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
       for (const [nome, f] of Object.entries(manual.lez?.faturas?.fornecedores || {}))
         pagos.push({ b: 'lez', f: nome, v: f.pago || 0 });
       const coluna = k => Object.fromEntries(LOJAS.map(b => [b, dre.lojas[b][k] || 0]));
+      const ajustesCaixa = Object.fromEntries(LOJAS.map(b => [b, Object.fromEntries(Object.entries(manual[b]?.ajustesCaixa || {}).filter(([, v]) => v != null))]));
       res.json({
         ...dre,
-        caixa: montarCaixa({ lojas: LOJAS, pagos, escolhidos, recebimentos: coluna('receita'),
+        caixa: montarCaixa({ lojas: LOJAS, pagos, escolhidos, ajustes: ajustesCaixa, recebimentos: coluna('receita'),
           extras: { taxa: coluna('taxa'), caixinha: coluna('caixinha') } }),
         conferenciaEm: foto.em,
         labels: Object.fromEntries(LOJAS.map(b => [b, boardsLabel[b] || b])),
@@ -457,6 +470,29 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // Antes de outubro/2026 o módulo não calcula: mostra o que as planilhas têm
+  app.get('/api/dre-resultados/historico', requireAuth, soDono, (req, res) => {
+    const ano = String(req.query.ano || '');
+    const meses = {};
+    for (const [mk, h] of Object.entries(HISTORICO)) {
+      if (!mk.startsWith(ano + '-')) continue;
+      const lojas = {}, recebimentos = {}, soma = {}, resultado = {};
+      for (const b of LOJAS) {
+        const l = h.lojas[b] || {};
+        lojas[b] = { receita: l.receita ?? null, operacional: l.operacional ?? null,
+          sobra: l.operacional != null ? r2(l.operacional - (l.dividas || 0)) : null };
+        recebimentos[b] = l.receita || 0;
+        soma[b] = r2(Object.values(h.caixa[b] || {}).reduce((s, v) => s + v, 0));
+        resultado[b] = r2(recebimentos[b] - soma[b]);
+      }
+      const linhas = LINHAS_CAIXA.map(([id, nome]) => ({ id, nome, detalhe: [],
+        lojas: Object.fromEntries(LOJAS.map(b => [b, h.caixa[b]?.[id] || 0])) })).filter(l => Object.values(l.lojas).some(Boolean));
+      meses[mk] = { lojas, caixa: { linhas, soma, recebimentos, resultado }, historico: true, proLabore: h.proLabore,
+        estrutura: L.ESTRUTURA, ordem: LOJAS, labels: Object.fromEntries(LOJAS.map(b => [b, boardsLabel[b] || b])) };
+    }
+    res.json({ meses, inicio: INICIO_MODULO });
+  });
+
   // Mapa de fornecedores: todos os que têm fatura no ano, mais os da Lez importados
   app.get('/api/dre-resultados/fornecedores', requireAuth, soDono, async (req, res) => {
     try {
@@ -499,7 +535,10 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     try {
       const { mes, loja, campo } = req.body || {};
       const valor = req.body?.valor === '' || req.body?.valor == null ? null : Number(req.body.valor);
-      if (!/^\d{4}-\d{2}$/.test(mes || '') || !CAMPOS_MANUAIS[loja]?.includes(campo) || Number.isNaN(valor))
+      const [grupo, linha] = String(campo || '').split('.');
+      const ajusteOk = LOJAS.includes(loja) && ((grupo === 'ajustes' && L.ESTRUTURA.some(([id, , tipo]) => id === linha && tipo === 'item'))
+        || (grupo === 'ajustesCaixa' && LINHAS_CAIXA.some(([id]) => id === linha)));
+      if (!/^\d{4}-\d{2}$/.test(mes || '') || !(CAMPOS_MANUAIS[loja]?.includes(campo) || ajusteOk) || Number.isNaN(valor))
         return res.status(400).json({ error: 'Campo ou valor inválido' });
       await gravarManual(mes, loja, { [campo]: valor });
       res.json({ ok: true });

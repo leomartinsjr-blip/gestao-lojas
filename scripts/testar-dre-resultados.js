@@ -1,6 +1,7 @@
 // Confere a montagem da DRE/Resultados contra outubro/2026 das planilhas.
 // Os números de entrada foram lidos do gestão em produção em 04/11/2026.
 const assert = require('assert');
+const { linhaCaixa, montarCaixa } = require('../services/dreCaixa');
 const { montar, linhaFinanceira, PLANILHA } = require('../services/dreResultados');
 
 const conferencia = [
@@ -76,7 +77,6 @@ if (pasta) {
 }
 
 // Fechamento de Caixa: distribuição da skill, só o pago. Contagem, outubro/2026.
-const { linhaCaixa, montarCaixa } = require('../services/dreCaixa');
 for (const [f, l] of [['PARCELAMENTO SIMPLES NACIONAL', 'parcelamento'], ['SIMPLES NACIONAL', 'simples'], ['FGTS / MULTA RESCISORIA', 'fgts'],
   ['ICMS DIFERENÇA DE AL', 'difal'], ['MDIAS REFRIGERAÇOES LTDA', 'diversos'], ['MIDIAS SOCIAIS E IMPULSIONAMENTOS', 'marketing'],
   ['ALOSHOPPING - ASSOCIAÇÃO DOS LOJISTAS', 'diversos'], ['CONDOMINIO SHOPPING', 'shopping'], ['OTIMO DE BILHETAGEM ELETRONICA', 'vt'],
@@ -120,6 +120,20 @@ const dc = montarCompleta(montar({ mes: '2026-10', conferencia, caixa, faturas }
   apuracoes: [{ competencia: '2026-09', empresa: 'PV COMERCIO', difal: 10.55, base4: 100, base12: 0 }], embalagem: { pago: { contagem: 45 }, venda: { contagem: 10000 } },
   folhaMes, employees, freteTommy: 485.91, faturamentoExtra: {} });
 assert.strictEqual(dc.lojas.contagem.ponto, 16226.63);
+// Valor digitado vence o calculado e recalcula o resultado
+const manualAj = { contagem: { ajustes: { simples: 1000, energia: 700 }, boletos: { a: { total: 16226.63, valores: { aluguel: 8433.68, condominio: 4993.42, fpp: 1686.74, ar: 244.69, iptu: 261.58, energia: 606.52 } } } } };
+const ctxAj = { mes: '2026-10', manual: manualAj, faturas, apuracoes: [], embalagem: { pago: {}, venda: {} }, folhaMes, employees, freteTommy: 0, faturamentoExtra: {} };
+const dj = montarCompleta(montar({ mes: '2026-10', conferencia, caixa, faturas }), ctxAj);
+assert.strictEqual(dj.lojas.contagem.simples, 1000);
+assert.strictEqual(dj.lojas.contagem.ponto, 16320.11, 'ponto soma o item editado');
+assert.ok(dj.lojas.contagem.ajustado.simples > 7000, 'guarda o calculado');
+const cxAj = montarCaixa({ lojas: ['contagem'], pagos: [{ b: 'contagem', f: 'ALUGUEL SHOPPING', v: 100 }], ajustes: { contagem: { shopping: 250 } } });
+assert.strictEqual(cxAj.soma.contagem, 250);
+assert.strictEqual(cxAj.linhas[0].ajustado.contagem, 100);
+const H = require('../services/dreHistorico.json');
+assert.strictEqual(H['2026-06'].lojas.delrey.receita, 157161, 'junho corrigido pela Conferência');
+assert.strictEqual(H['2026-09'].lojas.lez.operacional, null, 'o resultado de setembro da Lez era outubro');
+assert.ok(!H['2026-10'], 'outubro em diante vem do módulo');
 // Escritório de outubro pelos cadastros padrão: mesmo número combinado
 const C = require('../services/dreCadastros');
 const lancE = [{ b: 'site', f: 'ALUGUEL - ED MONTEREY OFFICE', v: 1912.3 }, { b: 'site', f: 'CEMIG', v: 307.09 }, { b: 'site', f: 'CONDOMINIO SHOPPING', v: 853.12 },
