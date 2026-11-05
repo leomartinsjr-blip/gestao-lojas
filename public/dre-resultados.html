@@ -67,6 +67,9 @@
         <div class="item"><button id="novoCusto">Adicionar custo</button></div></div>
       <div class="painel"><h2>Percentuais</h2><div id="percentuais"></div></div>
       <div class="item"><button id="salvarCad">Salvar cadastros</button><span id="cadMsg"></span></div>
+      <div class="painel"><h2>Mapa de fornecedores</h2>
+        <div class="item"><input type="text" id="fornBusca" placeholder="Buscar fornecedor" style="width:260px"><label><input type="checkbox" id="fornSem"> Só sem linha</label><span id="fornMsg"></span></div>
+        <table id="tabForn"></table></div>
       <p class="nota">Folha: busca a pessoa na folha do escritório (board Site). Faturas: busca o fornecedor no mês; o valor sai da loja que pagou e entra no rateio. Vale para todos os meses.</p>
     </div>
     <div id="vAno" hidden>
@@ -205,7 +208,28 @@ $('abaCad').addEventListener('click', () => aba('cad'));
 
 let cad = null;
 const ROT_PCT = { encargos: 'Encargos sobre folha (%)', aluguelPct: 'Aluguel percentual (%)', icmsSite: 'ICMS do Site (%)', icmsLez: 'ICMS da Lez (%)', embalagemLez: 'Embalagens da Lez (%)' };
-async function carregarCad() { cad = await (await fetch('/api/dre-resultados/cadastros')).json(); desenharCad(); }
+let forn = null;
+async function carregarCad() {
+  cad = await (await fetch('/api/dre-resultados/cadastros')).json(); desenharCad();
+  forn = await (await fetch('/api/dre-resultados/fornecedores?ano=' + $('mes').value.slice(0, 4))).json(); desenharForn();
+}
+function desenharForn() {
+  const busca = $('fornBusca').value.trim().toUpperCase(), so = $('fornSem').checked;
+  const lista = forn.lista.filter(f => f.nome.includes(busca) && (!so || f.linha === 'classificar'));
+  $('fornMsg').textContent = `${lista.length} de ${forn.lista.length} · ${forn.lista.filter(f => f.linha === 'classificar').length} sem linha`;
+  $('tabForn').innerHTML = '<thead><tr><th>Fornecedor</th><th>No ano</th><th>Linha</th></tr></thead><tbody>' + lista.map(f => `<tr>
+    <td>${f.nome}${f.escolhido ? ' <small>(escolhido)</small>' : ''}</td><td>${num(f.valor)}</td>
+    <td><select data-forn="${f.nome.replace(/"/g, '&quot;')}">${forn.linhas.map(([id, rot]) => `<option value="${id}" ${id === f.linha ? 'selected' : ''}>${rot}</option>`).join('')}</select></td></tr>`).join('') + '</tbody>';
+  $('tabForn').querySelectorAll('select').forEach(el => el.addEventListener('change', async () => {
+    const r = await fetch('/api/dre-resultados/fornecedores', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome: el.dataset.forn, linha: el.value }) });
+    if (!r.ok) { alert((await r.json()).error); return; }
+    const f = forn.lista.find(x => x.nome === el.dataset.forn);
+    f.linha = el.value; f.escolhido = true;
+    cache = {}; desenharForn(); carregar(false);
+  }));
+}
+$('fornBusca').addEventListener('input', () => forn && desenharForn());
+$('fornSem').addEventListener('change', () => forn && desenharForn());
 function desenharCad() {
   const rot = b => cad.labels[b] || b;
   $('tabCustos').innerHTML = '<thead><tr><th>Custo</th><th>Origem</th><th>Valor ou busca</th><th>Encargos %</th><th>Divide entre</th><th></th></tr></thead><tbody>' + cad.escritorio.map((c, i) => `<tr data-i="${i}">

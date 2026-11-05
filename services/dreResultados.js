@@ -11,7 +11,7 @@
 
 const multer = require('multer');
 const { lerRelatorio } = require('./dreImportar');
-const { montarCaixa } = require('./dreCaixa');
+const { montarCaixa, linhaCaixa, LINHAS: LINHAS_CAIXA, norm: normCaixa } = require('./dreCaixa');
 const fs = require('fs');
 const path = require('path');
 const XLSX = require('xlsx');
@@ -57,7 +57,11 @@ function somarSangria(caixaMes) {
 }
 
 // conferencia: porLoja do Dashboard · caixa: db.caixa · faturas: { b, f, vp, va }
-function montar({ mes, conferencia = [], caixa = {}, faturas = [], manual = {} }) {
+function montar({ mes, conferencia = [], caixa = {}, faturas = [], manual = {}, escolhidos = {} }) {
+  const linhaDe = nome => {
+    const e = escolhidos[normForn(nome)];
+    return e ? { juros: 'juros', emprestimo: 'emprestimos' }[e] || null : linhaFinanceira(nome);
+  };
   const conf = Object.fromEntries(conferencia.map(l => [l.board, l]));
   const fin = {};
   const detalhe = { juros: {}, emprestimos: {}, caixinha: {} };
@@ -67,7 +71,7 @@ function montar({ mes, conferencia = [], caixa = {}, faturas = [], manual = {} }
     alvo[b] = r2((alvo[b] || 0) + v);
   };
   for (const g of faturas) {
-    const linha = linhaFinanceira(g.f);
+    const linha = linhaDe(g.f);
     if (!linha) continue;
     const alvo = (fin[g.b] ||= { juros: 0, emprestimos: 0 });
     const v = (g.vp || 0) + Math.max(0, g.va || 0);
@@ -75,7 +79,7 @@ function montar({ mes, conferencia = [], caixa = {}, faturas = [], manual = {} }
     somarDetalhe(linha, normForn(g.f) + (g.va > 0 ? ' (em aberto)' : ''), g.b, v);
   }
   for (const [nome, f] of Object.entries(manual.lez?.faturas?.fornecedores || {})) {
-    const linha = linhaFinanceira(nome);
+    const linha = linhaDe(nome);
     if (linha) somarDetalhe(linha, nome, 'lez', (f.pago || 0) + (f.aberto || 0));
   }
   for (const b of LOJAS) {
@@ -130,7 +134,7 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
   const pessoas = Object.entries(folhaMes?.site?.entries || {}).map(([id, e]) => ({ nome: nomes[id] || '', valor: e.proventos || 0 }));
   const esc = C.calcularEscritorio({ itens: cfg.escritorio, pessoas, lancamentos: lanc });
   // O que foi para o rateio do escritório sai das linhas da loja que pagou
-  const { totais, detalhe } = L.somarFaturas(lanc.filter(l => !esc.usados.has(l)));
+  const { totais, detalhe } = L.somarFaturas(lanc.filter(l => !esc.usados.has(l)), C.escolhidosDe(config));
   const folha = L.folhaPorLoja(folhaMes, employees);
   const embPct = L.percentuaisEmbalagem(embalagem.pago, embalagem.venda, { lez: pct.embalagemLez / 100 });
   const icmsCadastrado = { site: pct.icmsSite / 100, lez: pct.icmsLez / 100 };
@@ -335,7 +339,8 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
         dadosDoHistorico(mes),
         lerConfig(),
       ]);
-      const parcial = montar({ mes, conferencia: foto.lojas, caixa: db.caixa || {}, faturas, manual });
+      const escolhidos = C.escolhidosDe(config);
+      const parcial = montar({ mes, conferencia: foto.lojas, caixa: db.caixa || {}, faturas, manual, escolhidos });
       const dre = montarCompleta(parcial, { mes, manual, faturas, apuracoes: hist.apuracoes,
         embalagem: { pago: hist.pago, venda: vendaDe12Meses(mes, hist.faturamentoExtra) }, folhaMes: folhaDoMes(db, mes),
         employees: db.employees || [], freteTommy: foto.freteTommy, faturamentoExtra: hist.faturamentoExtra, config });
@@ -345,7 +350,7 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
       const coluna = k => Object.fromEntries(LOJAS.map(b => [b, dre.lojas[b][k] || 0]));
       res.json({
         ...dre,
-        caixa: montarCaixa({ lojas: LOJAS, pagos, recebimentos: coluna('receita'),
+        caixa: montarCaixa({ lojas: LOJAS, pagos, escolhidos, recebimentos: coluna('receita'),
           extras: { taxa: coluna('taxa'), caixinha: coluna('caixinha') } }),
         conferenciaEm: foto.em,
         labels: Object.fromEntries(LOJAS.map(b => [b, boardsLabel[b] || b])),
@@ -444,7 +449,44 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     try {
       const erro = C.validar(req.body);
       if (erro) return res.status(400).json({ error: erro });
-      const doc = { escritorio: req.body.escritorio, percentuais: req.body.percentuais };
+      const doc = { escritorio: req.body.escritorio, percentuais: req.body.percentuais, fornecedores: (await lerConfig())?.fornecedores || [] };
+      const db = getDb();
+      if (db) await db.collection('dreConfig').replaceOne({ _id: 'main' }, doc, { upsert: true });
+      else memoriaConfig = doc;
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Mapa de fornecedores: todos os que têm fatura no ano, mais os da Lez importados
+  app.get('/api/dre-resultados/fornecedores', requireAuth, soDono, async (req, res) => {
+    try {
+      const ano = /^\d{4}$/.test(req.query.ano || '') ? req.query.ano : hojeBRT().slice(0, 4);
+      const db = getDb();
+      const total = {};
+      const somar = (nome, v) => { const n = normCaixa(nome); if (n) total[n] = r2((total[n] || 0) + (v || 0)); };
+      if (db) {
+        const grupos = await db.collection('cpFaturas').aggregate([
+          { $match: { isPagar: true, previsao: { $ne: 'S' }, vencimento: { $gte: `${ano}-01-01`, $lte: `${ano}-12-31` } } },
+          { $group: { _id: '$fornecedor', v: { $sum: { $ifNull: ['$valorLiquido', '$valor'] } } } },
+        ]).toArray();
+        for (const g of grupos) somar(g._id, g.v);
+        for (const d of await db.collection('dreManual').find({ _id: { $regex: `^${ano}-` } }).toArray())
+          for (const [nome, f] of Object.entries(d.lojas?.lez?.faturas?.fornecedores || {})) somar(nome, (f.pago || 0) + (f.aberto || 0));
+      }
+      const escolhidos = C.escolhidosDe(await lerConfig());
+      const lista = Object.entries(total).map(([nome, valor]) => ({ nome, valor, linha: linhaCaixa(nome, escolhidos), escolhido: !!escolhidos[nome] }))
+        .sort((a, c) => (a.linha === 'classificar' ? 0 : 1) - (c.linha === 'classificar' ? 0 : 1) || a.nome.localeCompare(c.nome, 'pt-BR'));
+      res.json({ lista, linhas: LINHAS_CAIXA.filter(([id]) => !['taxa', 'caixinha'].includes(id)) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // PUT { nome, linha } — linha vazia volta para o mapa padrão
+  app.put('/api/dre-resultados/fornecedores', requireAuth, soDono, async (req, res) => {
+    try {
+      const nome = normCaixa(req.body?.nome), linha = req.body?.linha || null;
+      if (!nome || (linha && !LINHAS_CAIXA.some(([id]) => id === linha))) return res.status(400).json({ error: 'Fornecedor ou linha inválidos' });
+      const atual = C.comPadrao(await lerConfig());
+      const doc = { ...atual, fornecedores: [...atual.fornecedores.filter(f => f.nome !== nome), ...(linha ? [{ nome, linha }] : [])] };
       const db = getDb();
       if (db) await db.collection('dreConfig').replaceOne({ _id: 'main' }, doc, { upsert: true });
       else memoriaConfig = doc;

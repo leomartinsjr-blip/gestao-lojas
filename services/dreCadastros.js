@@ -31,8 +31,13 @@ function comPadrao(salvo) {
       ? salvo.escritorio.map(i => ({ ...i, encargosPct: i.encargosPct ?? PADRAO.escritorio.find(p => p.id === i.id)?.encargosPct ?? 0 }))
       : PADRAO.escritorio,
     percentuais: { ...PADRAO.percentuais, ...(salvo?.percentuais || {}) },
+    fornecedores: salvo?.fornecedores || [],
   };
 }
+
+// Lista [{ nome, linha }] vira { NOME: linha }. É lista porque nome de fornecedor
+// tem ponto ("S.A"), o que não serve como chave no Mongo.
+const escolhidosDe = config => Object.fromEntries((config?.fornecedores || []).map(f => [f.nome, f.linha]));
 
 function validar(body) {
   const lista = Array.isArray(body?.escritorio) ? body.escritorio : null;
@@ -75,4 +80,4 @@ function calcularEscritorio({ itens, pessoas, lancamentos }) {
   return { porLoja, detalhe, usados };
 }
 
-module.exports = { PADRAO, comPadrao, validar, calcularEscritorio, SEIS };
+module.exports = { escolhidosDe, PADRAO, comPadrao, validar, calcularEscritorio, SEIS };

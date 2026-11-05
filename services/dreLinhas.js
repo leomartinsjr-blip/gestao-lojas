@@ -101,23 +101,25 @@ function folhaPorLoja(folhaMes, employees = []) {
 
 // Fornecedor → linha da DRE. null: sai de outra fonte (CMV, folha, Simples, ICMS,
 // boleto) ou vai para o Escritório.
-function linhaDre(fornecedor, board) {
+const DA_CAIXA_PARA_DRE = { sistema: 'sistema', plano: 'plano', telefone: 'telefone', contabilidade: 'contabilidade', seguros: 'seguro',
+  diversos: 'diversos', marketing: 'publicidade', correios: 'diversos', vt: 'vt', classificar: 'diversos' };
+
+function linhaDre(fornecedor, board, escolhidos = {}) {
   const n = norm(fornecedor);
+  if (escolhidos[n]) return DA_CAIXA_PARA_DRE[escolhidos[n]] || null;
   if (/PRO INDIVISO/.test(n)) return 'acordos';
   if (/TARIFA/.test(n)) return 'tarifa';
   if (/MAGNUM/.test(n)) return 'magnum';
   if (/MN ADVOGADOS/.test(n)) return 'mantuano';
   if (/APPMAX/.test(n)) return null;
   if (board === 'site' && /MONTEREY|CEMIG|CONDOMINIO/.test(n)) return 'sala';
-  const mapa = { sistema: 'sistema', plano: 'plano', telefone: 'telefone', contabilidade: 'contabilidade', seguros: 'seguro',
-    diversos: 'diversos', marketing: 'publicidade', correios: 'diversos', vt: 'vt', classificar: 'diversos' };
-  return mapa[linhaCaixa(n)] || null;
+  return DA_CAIXA_PARA_DRE[linhaCaixa(n)] || null;
 }
 
-function somarFaturas(lancamentos) {
+function somarFaturas(lancamentos, escolhidos = {}) {
   const totais = {}, detalhe = {};
   for (const { b, f, v } of lancamentos) {
-    const linha = linhaDre(f, b);
+    const linha = linhaDre(f, b, escolhidos);
     if (!linha || !v) continue;
     const t = (totais[b] ||= {});
     t[linha] = r2((t[linha] || 0) + v);

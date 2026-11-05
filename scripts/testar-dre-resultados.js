@@ -128,6 +128,12 @@ const ce = C.calcularEscritorio({ itens: C.PADRAO.escritorio, lancamentos: lancE
 assert.strictEqual(ce.porLoja.delrey, 2379.77);
 assert.strictEqual(ce.porLoja.estacao, 1810.43);
 assert.ok(!ce.usados.has(lancE[3]), 'condomínio da loja não vai para o rateio');
+// Mapa de fornecedores: a escolha vence o mapa padrão, na DRE e no caixa
+const esc2 = C.escolhidosDe({ fornecedores: [{ nome: 'GRAFICA JR DIGITAL LTDA', linha: 'marketing' }, { nome: 'NOVO S.A', linha: 'fornecedor' }] });
+assert.strictEqual(linhaCaixa('Grafica JR Digital Ltda', esc2), 'marketing');
+assert.strictEqual(L.linhaDre('GRAFICA JR DIGITAL LTDA', 'site', esc2), 'publicidade');
+assert.strictEqual(L.linhaDre('NOVO S.A', 'site', esc2), null, 'mercadoria não entra em despesa');
+assert.strictEqual(montar({ mes: '2026-10', faturas: [{ b: 'delrey', f: 'JUROS X', vp: 10 }], escolhidos: { 'JUROS X': 'diversos' } }).lojas.delrey.juros, 0);
 assert.strictEqual(C.comPadrao({ escritorio: [{ id: 'ingrid', nome: 'Ingrid', encargos: true }] }).escritorio[0].encargosPct, 19.44);
 assert.strictEqual(C.validar({ escritorio: [{ nome: '', origem: 'fixo', lojas: ['lez'] }] }), 'Todo custo precisa de nome');
 assert.strictEqual(dc.lojas.contagem.encargos, 2749.84);

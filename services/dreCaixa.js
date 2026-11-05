@@ -40,19 +40,21 @@ const MAPA = [
 const r2 = v => Math.round(v * 100) / 100;
 const norm = s => String(s || '').trim().toUpperCase().replace(/\s+/g, ' ');
 
-function linhaCaixa(fornecedor) {
+// escolhidos: { FORNECEDOR: linha } do Mapa de fornecedores, que vence o mapa padrão
+function linhaCaixa(fornecedor, escolhidos = {}) {
   const n = norm(fornecedor);
+  if (escolhidos[n]) return escolhidos[n];
   for (const [re, linha] of MAPA) if (re.test(n)) return linha;
   return 'classificar';
 }
 
 // pagos: [{ b, f, v }] · extras: { taxa: { loja: valor }, caixinha: {...} } · recebimentos: { loja: valor }
-function montarCaixa({ lojas, pagos, extras = {}, recebimentos = {} }) {
+function montarCaixa({ lojas, pagos, extras = {}, recebimentos = {}, escolhidos = {} }) {
   const porLinha = Object.fromEntries(LINHAS.map(([id]) => [id, {}]));
   for (const { b, f, v } of pagos) {
     if (!v) continue;
     const nome = norm(f) || '(sem nome)';
-    const alvo = (porLinha[linhaCaixa(nome)][nome] ||= {});
+    const alvo = (porLinha[linhaCaixa(nome, escolhidos)][nome] ||= {});
     alvo[b] = r2((alvo[b] || 0) + v);
   }
   const soma = Object.fromEntries(lojas.map(b => [b, 0]));
@@ -72,4 +74,4 @@ function montarCaixa({ lojas, pagos, extras = {}, recebimentos = {} }) {
   return { linhas, soma, recebimentos, resultado };
 }
 
-module.exports = { linhaCaixa, montarCaixa, LINHAS };
+module.exports = { linhaCaixa, montarCaixa, LINHAS, norm };
