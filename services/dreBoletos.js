@@ -11,7 +11,7 @@ const LOJA_POR_CNPJ = { 28519094: 'delrey', 32473768: 'minas', 35041602: 'contag
 function linhaDoItem(descricao) {
   const n = String(descricao).toUpperCase();
   if (/ALUGUEL M|DESCONTO/.test(n)) return 'aluguel';
-  if (/FUNDO (DE )?PROMO|FPP/.test(n)) return 'fpp';
+  if (/FUNDO (DE )?PROMO|FPP|COTA ORDIN[AÁ]RIA/.test(n)) return 'fpp';
   if (/AR CONDICIONADO/.test(n)) return 'ar';
   if (/I\.?P\.?T\.?U/.test(n)) return 'iptu';
   if (/ENERGIA/.test(n)) return 'energia';

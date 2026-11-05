@@ -12,7 +12,12 @@
 const multer = require('multer');
 const { lerRelatorio } = require('./dreImportar');
 const { montarCaixa } = require('./dreCaixa');
+const fs = require('fs');
+const path = require('path');
+const XLSX = require('xlsx');
+const JSZip = require('jszip');
 const { lerBoleto } = require('./dreBoletos');
+const C = require('./dreCadastros');
 const L = require('./dreLinhas');
 
 const LOJAS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'lez', 'site'];
@@ -115,23 +120,24 @@ function montar({ mes, conferencia = [], caixa = {}, faturas = [], manual = {} }
 const CAMPOS_MANUAIS = { lez: ['taxa'], site: ['taxa', 'publicidade'] };
 
 // A DRE inteira de um mês. base: resultado de montar(); ctx: dados já lidos.
-function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folhaMes, employees, freteTommy, faturamentoExtra }) {
+function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folhaMes, employees, freteTommy, faturamentoExtra, config }) {
+  const cfg = C.comPadrao(config);
+  const pct = cfg.percentuais;
   const lanc = faturas.map(g => ({ b: g.b, f: g.f, v: (g.vp || 0) + Math.max(0, g.va || 0) }));
   for (const [nome, f] of Object.entries(manual.lez?.faturas?.fornecedores || {}))
     lanc.push({ b: 'lez', f: nome, v: (f.pago || 0) + (f.aberto || 0) });
-  const { totais, detalhe } = L.somarFaturas(lanc);
-  const folha = L.folhaPorLoja(folhaMes, employees);
-  const site = folhaMes?.site?.entries || {};
   const nomes = Object.fromEntries(employees.map(e => [String(e.id), e.name || '']));
-  const pessoal = Object.entries(site).reduce((s, [id, e]) =>
-    (e.tipo === 'socio' && !/LEONARDO MARTINS|LEILA FERNANDES/i.test(nomes[id] || '') ? s + (e.proventos || 0) : s), 0);
-  const magnum = Object.values(totais).reduce((s, t) => s + (t.magnum || 0), 0);
-  const esc = L.escritorio({ pessoal, sala: totais.site?.sala || 0, magnum });
-  const embPct = L.percentuaisEmbalagem(embalagem.pago, embalagem.venda);
+  const pessoas = Object.entries(folhaMes?.site?.entries || {}).map(([id, e]) => ({ nome: nomes[id] || '', valor: e.proventos || 0 }));
+  const esc = C.calcularEscritorio({ itens: cfg.escritorio, encargos: pct.encargos, pessoas, lancamentos: lanc });
+  // O que foi para o rateio do escritório sai das linhas da loja que pagou
+  const { totais, detalhe } = L.somarFaturas(lanc.filter(l => !esc.usados.has(l)));
+  const folha = L.folhaPorLoja(folhaMes, employees);
+  const embPct = L.percentuaisEmbalagem(embalagem.pago, embalagem.venda, { lez: pct.embalagemLez / 100 });
+  const icmsCadastrado = { site: pct.icmsSite / 100, lez: pct.icmsLez / 100 };
   const lojas = {}, percentuais = {};
   for (const b of LOJAS) {
     const d = base.lojas[b], t = totais[b] || {}, f = folha?.[b];
-    const aliq = L.aliquotaSimples(b, mes, faturamentoExtra), icms = L.percentualIcms(b, mes, apuracoes), emb = embPct[b];
+    const aliq = L.aliquotaSimples(b, mes, faturamentoExtra), icms = L.percentualIcms(b, mes, apuracoes, icmsCadastrado), emb = embPct[b];
     const temFaturas = b !== 'lez' || !!manual.lez?.faturas;
     const fat = k => (temFaturas ? t[k] || 0 : null);
     const semFolha = b === 'site' ? 0 : null;
@@ -143,11 +149,11 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
       embalagens: d.receita != null && emb != null ? r2(d.receita * emb) : null,
       frete: b === 'tommy' ? freteTommy ?? null : 0,
       fixos, comissoes,
-      encargos: fixos != null ? r2((fixos + comissoes) * L.TAXA_ENCARGOS) : null,
+      encargos: fixos != null ? r2((fixos + comissoes) * pct.encargos / 100) : null,
       premiacoes: f ? f.premiacoes : semFolha,
-      escritorio: esc[b],
+      escritorio: esc.porLoja[b] || 0,
       vt: temFaturas ? r2((t.vt || 0) + (f?.ajuda || 0)) : null,
-      ...(b === 'site' ? { ponto: 0, aluguel: 0, aluguelPct: 0, condominio: 0, fpp: 0, ar: 0, iptu: 0, energia: 0 } : L.pontoComercial(manual[b]?.boletos, d.receita)),
+      ...(b === 'site' ? { ponto: 0, aluguel: 0, aluguelPct: 0, condominio: 0, fpp: 0, ar: 0, iptu: 0, energia: 0 } : L.pontoComercial(manual[b]?.boletos, d.receita, pct.aluguelPct)),
       sistema: fat('sistema'), contabilidade: fat('contabilidade'), seguro: fat('seguro'), plano: fat('plano'),
       diversos: fat('diversos'), telefone: fat('telefone'), tarifa: fat('tarifa'), acordos: fat('acordos'),
       publicidade: b === 'site' ? manual.site?.publicidade ?? null : fat('publicidade'),
@@ -157,12 +163,13 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
   const manuais = base.manuais.slice();
   for (const b of LOJAS) {
     if (b === 'site') continue;
-    const bs = Object.values(manual[b]?.boletos || {});
+    const bs = Object.entries(manual[b]?.boletos || {}).map(([chave, x]) => ({ chave, ...x }));
     const total = r2(bs.reduce((s, x) => s + x.total, 0));
-    manuais.push({ loja: b, id: 'boleto', rotulo: bs.length ? `Boleto do shopping: ${bs.length} arquivo(s), total ${total}` : 'Boleto do shopping (PDF)', tipo: 'arquivo', feito: bs.length > 0 });
+    manuais.push({ loja: b, id: 'boleto', rotulo: bs.length ? `Boleto do shopping: total ${total}` : 'Boleto do shopping (PDF)', tipo: 'arquivo', feito: bs.length > 0,
+      arquivos: bs.map(x => ({ chave: x.chave, nome: x.arquivo || null, total: x.total })) });
   }
   const lista = o => Object.entries(o || {}).map(([nome, valores]) => ({ nome, lojas: valores })).sort((a, c) => a.nome.localeCompare(c.nome, 'pt-BR'));
-  const det = { ...base.detalhe };
+  const det = { ...base.detalhe, escritorio: esc.detalhe };
   for (const k of ['sistema', 'contabilidade', 'seguro', 'plano', 'diversos', 'telefone', 'publicidade', 'tarifa', 'vt', 'acordos']) det[k] = lista(detalhe[k]);
   const ref = L.REF.planilha[mes];
   return { ...base, lojas, percentuais, detalhe: det, manuais, pendencias: manuais.filter(i => !i.feito), estrutura: L.ESTRUTURA,
@@ -170,7 +177,40 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
     folhaFechada: Object.fromEntries(LOJAS.map(b => [b, !!folhaMes?.[b]?.encerrada])) };
 }
 
-function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, computeConferenciaDashboard, hojeBRT, boardsLabel, folhaDoMesComFaltas }) {
+function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, computeConferenciaDashboard, hojeBRT, boardsLabel, folhaDoMesComFaltas, dataDir }) {
+  // Boleto como foi enviado: no Mongo; sem Mongo (rodando local), em disco. Só a rota
+  // do dono entrega, por isso nada vai para /uploads, que é público.
+  const pastaBoletos = path.join(dataDir, 'dre-boletos');
+  const caminhoBoleto = (mes, loja, chave) => path.join(pastaBoletos, mes, `${loja}-${chave}.pdf`);
+  const idBoleto = (mes, loja, chave) => `${mes}-${loja}-${chave}`;
+  async function guardarBoleto(mes, loja, chave, buffer) {
+    const db = getDb();
+    if (db) return db.collection('dreBoletosArquivos').replaceOne({ _id: idBoleto(mes, loja, chave) }, { mes, loja, dados: buffer }, { upsert: true });
+    fs.mkdirSync(path.join(pastaBoletos, mes), { recursive: true });
+    fs.writeFileSync(caminhoBoleto(mes, loja, chave), buffer);
+  }
+  async function lerBoletoGuardado(mes, loja, chave) {
+    const db = getDb();
+    if (db) {
+      const doc = await db.collection('dreBoletosArquivos').findOne({ _id: idBoleto(mes, loja, chave) });
+      return doc ? Buffer.from(doc.dados.buffer || doc.dados) : null;
+    }
+    const arq = caminhoBoleto(mes, loja, chave);
+    return fs.existsSync(arq) ? fs.readFileSync(arq) : null;
+  }
+  async function apagarBoleto(mes, loja, chave) {
+    const db = getDb();
+    if (db) return db.collection('dreBoletosArquivos').deleteOne({ _id: idBoleto(mes, loja, chave) });
+    fs.rmSync(caminhoBoleto(mes, loja, chave), { force: true });
+  }
+  const paramsOk = p => /^\d{4}-\d{2}$/.test(p.mes) && LOJAS.includes(p.loja) && /^\d+$/.test(p.chave);
+
+  async function lerConfig() {
+    const db = getDb();
+    return db ? db.collection('dreConfig').findOne({ _id: 'main' }) : memoriaConfig;
+  }
+  let memoriaConfig = null;
+
   // Mesma folha que a tela de Folha mostra, para os valores baterem com ela
   const folhaDoMes = (db, mes) => {
     const [y, m] = mes.split('-').map(Number);
@@ -287,17 +327,18 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     try {
       const hoje = hojeBRT();
       const mes = /^\d{4}-\d{2}$/.test(req.query.mes || '') ? req.query.mes : hoje.slice(0, 7);
-      const [foto, faturas, db, manual, hist] = await Promise.all([
+      const [foto, faturas, db, manual, hist, config] = await Promise.all([
         conferenciaDoMes(mes, req.query.recalcular === '1', hoje),
         faturasDoMes(mes),
         readDB(),
         lerManual(mes),
         dadosDoHistorico(mes),
+        lerConfig(),
       ]);
       const parcial = montar({ mes, conferencia: foto.lojas, caixa: db.caixa || {}, faturas, manual });
       const dre = montarCompleta(parcial, { mes, manual, faturas, apuracoes: hist.apuracoes,
         embalagem: { pago: hist.pago, venda: vendaDe12Meses(mes, hist.faturamentoExtra) }, folhaMes: folhaDoMes(db, mes),
-        employees: db.employees || [], freteTommy: foto.freteTommy, faturamentoExtra: hist.faturamentoExtra });
+        employees: db.employees || [], freteTommy: foto.freteTommy, faturamentoExtra: hist.faturamentoExtra, config });
       const pagos = faturas.map(g => ({ b: g.b, f: g.f, v: g.vp || 0 }));
       for (const [nome, f] of Object.entries(manual.lez?.faturas?.fornecedores || {}))
         pagos.push({ b: 'lez', f: nome, v: f.pago || 0 });
@@ -319,7 +360,8 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
       if (!req.file) return res.status(400).json({ error: 'Envie o arquivo' });
       if (/\.pdf$/i.test(req.file.originalname)) {
         const bol = await lerBoleto(req.file.buffer);
-        await gravarManual(bol.mes, bol.loja, { [`boletos.${bol.chave}`]: { total: bol.total, valores: bol.valores } });
+        await guardarBoleto(bol.mes, bol.loja, bol.chave, req.file.buffer);
+        await gravarManual(bol.mes, bol.loja, { [`boletos.${bol.chave}`]: { total: bol.total, valores: bol.valores, arquivo: req.file.originalname } });
         return res.json(bol);
       }
       const rel = lerRelatorio(req.file.buffer);
@@ -328,6 +370,86 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
       else await gravarManual(rel.mes, 'lez', { faturas: { totais: rel.totais, aClassificar: rel.aClassificar, fornecedores: rel.fornecedores, em } });
       res.json(rel);
     } catch (e) { res.status(400).json({ error: e.message }); }
+  });
+
+  // Boleto como foi enviado
+  app.get('/api/dre-resultados/boleto/:mes/:loja/:chave', requireAuth, soDono, async (req, res) => {
+    if (!paramsOk(req.params)) return res.status(400).json({ error: 'Boleto inválido' });
+    const { mes, loja, chave } = req.params;
+    const dados = await lerBoletoGuardado(mes, loja, chave);
+    if (!dados) return res.status(404).json({ error: 'Arquivo não guardado: envie este boleto de novo' });
+    const nome = (await lerManual(mes))[loja]?.boletos?.[chave]?.arquivo || 'boleto.pdf';
+    res.attachment(nome).type('application/pdf').send(dados);
+  });
+
+  // Todos os boletos do mês, ou do ano (?mes=2026), num zip por pasta de mês
+  app.get('/api/dre-resultados/boletos.zip', requireAuth, soDono, async (req, res) => {
+    try {
+      const alvo = String(req.query.mes || '');
+      if (!/^\d{4}(-\d{2})?$/.test(alvo)) return res.status(400).json({ error: 'Período inválido' });
+      const meses = alvo.length === 7 ? [alvo] : Array.from({ length: 12 }, (_, i) => `${alvo}-${String(i + 1).padStart(2, '0')}`);
+      const zip = new JSZip();
+      let total = 0;
+      for (const mes of meses) {
+        const manual = await lerManual(mes);
+        for (const [loja, m] of Object.entries(manual)) {
+          for (const [chave, b] of Object.entries(m.boletos || {})) {
+            const dados = await lerBoletoGuardado(mes, loja, chave);
+            if (!dados) continue;
+            zip.file(`${mes}/${boardsLabel[loja] || loja} - ${b.arquivo || chave + '.pdf'}`, dados);
+            total++;
+          }
+        }
+      }
+      if (!total) return res.status(404).json({ error: 'Nenhum boleto guardado neste período' });
+      res.attachment(`boletos-${alvo}.zip`).type('application/zip').send(await zip.generateAsync({ type: 'nodebuffer' }));
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/dre-resultados/exportar { nome, abas: [{ nome, linhas }] } — a tela
+  // manda as tabelas como estão, e o Excel sai igual ao que se vê.
+  app.post('/api/dre-resultados/exportar', requireAuth, soDono, (req, res) => {
+    try {
+      const wb = XLSX.utils.book_new();
+      for (const a of req.body?.abas || []) {
+        const ws = XLSX.utils.aoa_to_sheet(a.linhas || []);
+        ws['!cols'] = [{ wch: 42 }, ...Array(20).fill({ wch: 13 })];
+        XLSX.utils.book_append_sheet(wb, ws, String(a.nome || 'Aba').slice(0, 31));
+      }
+      if (!wb.SheetNames.length) return res.status(400).json({ error: 'Nada para exportar' });
+      res.attachment(`${String(req.body.nome || 'dre-resultados').replace(/[^\w-]/g, '_')}.xlsx`)
+        .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        .send(XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' }));
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.delete('/api/dre-resultados/boleto/:mes/:loja/:chave', requireAuth, soDono, async (req, res) => {
+    try {
+      const { mes, loja, chave } = req.params;
+      if (!paramsOk(req.params)) return res.status(400).json({ error: 'Boleto inválido' });
+      const db = getDb();
+      if (db) await db.collection('dreManual').updateOne({ _id: mes }, { $unset: { [`lojas.${loja}.boletos.${chave}`]: '' } });
+      else delete memoria['manual-' + mes]?.lojas?.[loja]?.boletos?.[chave];
+      await apagarBoleto(mes, loja, chave);
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.get('/api/dre-resultados/cadastros', requireAuth, soDono, async (req, res) => {
+    try { res.json({ ...C.comPadrao(await lerConfig()), lojas: C.SEIS, labels: boardsLabel }); }
+    catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.put('/api/dre-resultados/cadastros', requireAuth, soDono, async (req, res) => {
+    try {
+      const erro = C.validar(req.body);
+      if (erro) return res.status(400).json({ error: erro });
+      const doc = { escritorio: req.body.escritorio, percentuais: req.body.percentuais };
+      const db = getDb();
+      if (db) await db.collection('dreConfig').replaceOne({ _id: 'main' }, doc, { upsert: true });
+      else memoriaConfig = doc;
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
   // PUT /api/dre-resultados/manual { mes, loja, campo, valor } — valor vazio limpa

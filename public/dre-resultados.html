@@ -35,6 +35,9 @@
   tr.abre.aberta td:first-child::before { content:'▾ '; }
   tr.sub td { background:var(--bg3); font-size:12px; color:var(--text2); } tr.sub td:first-child { background:var(--bg3); padding-left:30px; white-space:normal; min-width:240px; }
   .filtros { display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding-bottom:12px; } select { background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:5px 8px; font-size:12px; }
+  #tabCustos input[type=text], #tabCustos input[type=number], #percentuais input { background:#fff; width:100%; min-width:90px; }
+  #tabCustos td { white-space:normal; text-align:left; } #tabCustos label { display:inline-block; margin-right:6px; font-size:11px; }
+  #percentuais label { display:inline-block; width:210px; } a { color:var(--blue); } .tira { padding:0 6px; }
   .dif { color:var(--red); } .falta { color:var(--yellow); font-weight:600; }
   .nota { color:var(--text2); padding:0 2px 14px; line-height:1.6; }
   #msg { padding:20px; color:var(--text2); }
@@ -45,15 +48,26 @@
   <h1>DRE/Resultados</h1>
   <label>Mês <input type="month" id="mes"></label>
   <button id="recalcular" title="Busca de novo no Microvix">Recalcular</button>
+  <button id="expAba">Exportar esta aba</button>
+  <button id="expTudo">Exportar tudo</button>
+  <button id="expBoletos">Boletos do mês</button>
+  <button id="expBoletosAno">Boletos do ano</button>
 </header>
 <main>
   <div id="msg">Carregando…</div>
   <div id="conteudo" hidden>
     <div class="painel manual" id="manuais"></div>
-    <div class="abas"><button id="abaDre" class="ativa">DRE</button><button id="abaCaixa">Fechamento de Caixa</button><button id="abaAno">Consolidado do ano</button></div>
+    <div class="abas"><button id="abaDre" class="ativa">DRE</button><button id="abaCaixa">Fechamento de Caixa</button><button id="abaAno">Consolidado do ano</button><button id="abaCad">Cadastros</button></div>
     <div id="vDre">
       <div class="painel"><h2 id="titulo"></h2><table id="tabela"></table></div>
       <p class="nota" id="nota"></p>
+    </div>
+    <div id="vCad" hidden>
+      <div class="painel"><h2>Custos do Escritório</h2><table id="tabCustos"></table>
+        <div class="item"><button id="novoCusto">Adicionar custo</button></div></div>
+      <div class="painel"><h2>Percentuais</h2><div id="percentuais"></div></div>
+      <div class="item"><button id="salvarCad">Salvar cadastros</button><span id="cadMsg"></span></div>
+      <p class="nota">Folha: busca a pessoa na folha do escritório (board Site). Faturas: busca o fornecedor no mês; o valor sai da loja que pagou e entra no rateio. Vale para todos os meses.</p>
     </div>
     <div id="vAno" hidden>
       <div class="filtros">
@@ -98,10 +112,17 @@ function desenhar(d) {
       const campo = i.tipo === 'numero'
         ? `<input type="number" step="0.01" data-loja="${i.loja}" data-campo="${i.id}" value="${i.valor ?? ''}">`
         : i.tipo === 'arquivo' ? `<input type="file" multiple accept="${i.id === 'boleto' ? '.pdf' : '.xlsx'}" class="arquivo">` : '';
-      return `<div class="item"><b>${nome(i.loja)}</b><span class="r">${i.rotulo}</span>${campo}${estado}</div>`;
+      const arquivos = (i.arquivos || []).map(a => `<a href="/api/dre-resultados/boleto/${d.mes}/${i.loja}/${a.chave}">${a.nome || 'boleto'} (${num(a.total)})</a>
+        <button class="tira" data-loja="${i.loja}" data-chave="${a.chave}" title="Tirar este boleto">×</button>`).join(' ');
+      return `<div class="item"><b>${nome(i.loja)}</b><span class="r">${i.rotulo} ${arquivos}</span>${campo}${estado}</div>`;
     }).join('')}`;
   document.querySelectorAll('#manuais input[type=number]').forEach(el => el.addEventListener('change', () => salvar(el)));
   document.querySelectorAll('#manuais .arquivo').forEach(el => el.addEventListener('change', () => enviar(el)));
+  document.querySelectorAll('#manuais .tira').forEach(el => el.addEventListener('click', async () => {
+    if (!confirm('Tirar este boleto do mês?')) return;
+    await fetch(`/api/dre-resultados/boleto/${d.mes}/${el.dataset.loja}/${el.dataset.chave}`, { method: 'DELETE' });
+    cache = {}; carregar(false);
+  }));
   const [a, m] = d.mes.split('-');
   $('titulo').textContent = `DRE de ${m}/${a}`;
   const cab = `<thead><tr><th>Linha</th>${d.ordem.map(b => `<th>${nome(b)}</th>`).join('')}</tr></thead>`;
@@ -174,14 +195,93 @@ async function carregar(recalcular) {
 const ref = new Date(); ref.setDate(1); ref.setMonth(ref.getMonth() - 1);
 $('mes').value = `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}`;
 const aba = qual => {
-  for (const [v, b, k] of [['vDre', 'abaDre', 'dre'], ['vCaixa', 'abaCaixa', 'caixa'], ['vAno', 'abaAno', 'ano']]) {
+  for (const [v, b, k] of [['vDre', 'abaDre', 'dre'], ['vCaixa', 'abaCaixa', 'caixa'], ['vAno', 'abaAno', 'ano'], ['vCad', 'abaCad', 'cad']]) {
     $(v).hidden = k !== qual; $(b).classList.toggle('ativa', k === qual);
   }
   if (qual === 'ano') carregarAno();
+  if (qual === 'cad') carregarCad();
 };
+$('abaCad').addEventListener('click', () => aba('cad'));
+
+let cad = null;
+const ROT_PCT = { encargos: 'Encargos sobre folha (%)', aluguelPct: 'Aluguel percentual (%)', icmsSite: 'ICMS do Site (%)', icmsLez: 'ICMS da Lez (%)', embalagemLez: 'Embalagens da Lez (%)' };
+async function carregarCad() { cad = await (await fetch('/api/dre-resultados/cadastros')).json(); desenharCad(); }
+function desenharCad() {
+  const rot = b => cad.labels[b] || b;
+  $('tabCustos').innerHTML = '<thead><tr><th>Custo</th><th>Origem</th><th>Valor ou busca</th><th>Encargos</th><th>Divide entre</th><th></th></tr></thead><tbody>' + cad.escritorio.map((c, i) => `<tr data-i="${i}">
+    <td><input type="text" data-k="nome" value="${c.nome}"></td>
+    <td><select data-k="origem">${['fixo', 'folha', 'faturas'].map(o => `<option ${o === c.origem ? 'selected' : ''}>${o}</option>`).join('')}</select></td>
+    <td>${c.origem === 'fixo' ? `<input type="number" step="0.01" data-k="valor" value="${c.valor ?? ''}">` : `<input type="text" data-k="termo" value="${c.termo ?? ''}">`}</td>
+    <td><input type="checkbox" data-k="encargos" ${c.encargos ? 'checked' : ''}></td>
+    <td>${cad.lojas.map(b => `<label><input type="checkbox" data-loja="${b}" ${c.lojas.includes(b) ? 'checked' : ''}> ${rot(b)}</label>`).join('')}</td>
+    <td><button class="tira" data-del="${i}">×</button></td></tr>`).join('') + '</tbody>';
+  $('percentuais').innerHTML = Object.entries(cad.percentuais).map(([k, v]) => `<div class="item"><label>${ROT_PCT[k] || k}</label><input type="number" step="0.01" data-pct="${k}" value="${v}" style="width:110px"></div>`).join('');
+  $('tabCustos').querySelectorAll('tr[data-i]').forEach(tr => {
+    const c = cad.escritorio[+tr.dataset.i];
+    tr.querySelectorAll('[data-k]').forEach(el => el.addEventListener('change', () => {
+      c[el.dataset.k] = el.type === 'checkbox' ? el.checked : el.type === 'number' ? Number(el.value) : el.value;
+      if (el.dataset.k === 'origem') desenharCad();
+    }));
+    tr.querySelectorAll('[data-loja]').forEach(el => el.addEventListener('change', () => {
+      c.lojas = el.checked ? [...c.lojas, el.dataset.loja] : c.lojas.filter(b => b !== el.dataset.loja);
+    }));
+  });
+  $('tabCustos').querySelectorAll('[data-del]').forEach(el => el.addEventListener('click', () => { cad.escritorio.splice(+el.dataset.del, 1); desenharCad(); }));
+  $('percentuais').querySelectorAll('[data-pct]').forEach(el => el.addEventListener('change', () => { cad.percentuais[el.dataset.pct] = Number(el.value); }));
+}
+$('novoCusto').addEventListener('click', () => { cad.escritorio.push({ id: 'n' + Date.now(), nome: 'Novo custo', origem: 'fixo', valor: 0, lojas: [...cad.lojas] }); desenharCad(); });
+$('salvarCad').addEventListener('click', async () => {
+  const r = await fetch('/api/dre-resultados/cadastros', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ escritorio: cad.escritorio, percentuais: cad.percentuais }) });
+  const d = await r.json();
+  $('cadMsg').textContent = r.ok ? 'Salvo.' : d.error;
+  if (r.ok) { cache = {}; carregar(false); }
+});
 $('abaDre').addEventListener('click', () => aba('dre'));
 $('abaCaixa').addEventListener('click', () => aba('caixa'));
 $('abaAno').addEventListener('click', () => aba('ano'));
+
+// Exportação: lê as tabelas da tela, com as linhas abertas ou não.
+function tabelaParaLinhas(id) {
+  return [...$(id).querySelectorAll('tr')].map(tr => [...tr.children].map((c, i) => {
+    const t = (c.firstChild?.textContent ?? c.textContent).trim();
+    if (i === 0 || !/^-?[\d.]+,\d{2}$/.test(t)) return t;
+    return Number(t.replace(/\./g, '').replace(',', '.'));
+  }));
+}
+async function baixar(nome, abas) {
+  const r = await fetch('/api/dre-resultados/exportar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ nome, abas }) });
+  if (!r.ok) { alert((await r.json()).error || 'Não foi possível exportar'); return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(await r.blob());
+  a.download = nome + '.xlsx';
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+const abaAno = () => ({ nome: `Ano ${$('anoSel').value}`, linhas: tabelaParaLinhas('tabelaAno') });
+$('expAba').addEventListener('click', async () => {
+  const mes = $('mes').value;
+  if (!$('vCaixa').hidden) return baixar(`fechamento-caixa-${mes}`, [{ nome: 'Fechamento de Caixa', linhas: tabelaParaLinhas('tabelaCaixa') }]);
+  if (!$('vAno').hidden) return baixar(`consolidado-${$('anoSel').value}`, [abaAno()]);
+  if (!$('vCad').hidden) return alert('Abra a DRE, o Fechamento de Caixa ou o Consolidado para exportar.');
+  return baixar(`dre-${mes}`, [{ nome: 'DRE', linhas: tabelaParaLinhas('tabela') }]);
+});
+$('expTudo').addEventListener('click', async () => {
+  $('anoMsg').textContent = '';
+  await carregarAno();
+  baixar(`dre-resultados-${$('mes').value}`, [{ nome: 'DRE', linhas: tabelaParaLinhas('tabela') },
+    { nome: 'Fechamento de Caixa', linhas: tabelaParaLinhas('tabelaCaixa') }, abaAno()]);
+});
+const zipBoletos = async alvo => {
+  const r = await fetch('/api/dre-resultados/boletos.zip?mes=' + alvo);
+  if (!r.ok) { alert((await r.json()).error || 'Não foi possível baixar'); return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(await r.blob());
+  a.download = `boletos-${alvo}.zip`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+};
+$('expBoletos').addEventListener('click', () => zipBoletos($('mes').value));
+$('expBoletosAno').addEventListener('click', () => zipBoletos($('mes').value.slice(0, 4)));
 
 // Consolidado: lê o mesmo retorno de cada mês e soma aqui.
 let cache = {};

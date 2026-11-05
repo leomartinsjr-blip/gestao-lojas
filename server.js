@@ -10170,7 +10170,7 @@ app.get('/dre-resultados', (req, res) => {
 });
 require('./services/dreResultados').register(app, {
   getDb: () => mongoDb, readDB, readContasPagar, requireAuth, souDono, computeConferenciaDashboard,
-  hojeBRT: fluxoCaixa.hojeBRT, boardsLabel: BOARDS_LABEL, folhaDoMesComFaltas,
+  hojeBRT: fluxoCaixa.hojeBRT, boardsLabel: BOARDS_LABEL, folhaDoMesComFaltas, dataDir: DATA_DIR,
 });
 
 // GET /api/fluxo-caixa/dia — card do painel: a pagar × venda a receber no próximo dia útil

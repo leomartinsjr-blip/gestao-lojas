@@ -9,13 +9,7 @@ const r2 = v => Math.round(v * 100) / 100;
 const norm = s => String(s || '').trim().toUpperCase().replace(/\s+/g, ' ');
 
 const EMPRESA = { delrey: 'LMJ', site: 'LMJ', minas: 'JDG', contagem: 'PV', estacao: 'TTS', tommy: '3L', lez: 'LF' };
-const ICMS_CADASTRADO = { site: 0.0931, lez: 0.0898 }; // sem apuração própria no módulo
-const EMBALAGEM_CADASTRADA = { lez: 0.014 };
 const GRUPO_SURFERS = ['delrey', 'minas', 'contagem', 'estacao', 'site'];
-const TAXA_ENCARGOS = 0.29; // até haver 12 meses de folha no gestão
-const PLANO_SOCIOS = 2249.16; // Leonardo e Leila, dividido por 5 (fora Estação e Site)
-const MANTUANO_MES = 1401.08; // 6 empresas, 2 meses cada
-const COTA_RATEIO = ['delrey', 'minas', 'contagem', 'tommy', 'lez'];
 const FAIXAS = [[180000, 0.04, 0], [360000, 0.073, 5940], [720000, 0.095, 13860], [1800000, 0.107, 22500], [3600000, 0.143, 87300], [4800000, 0.19, 378000]];
 
 function mesesAntes(mes, n) {
@@ -37,8 +31,8 @@ function aliquotaSimples(board, mes, faturamentoExtra = {}) {
 }
 
 // DIFAL ÷ base das notas, nas apurações dos últimos 12 meses da empresa.
-function percentualIcms(board, mes, apuracoes = []) {
-  if (ICMS_CADASTRADO[board] != null) return ICMS_CADASTRADO[board];
+function percentualIcms(board, mes, apuracoes = [], cadastrado = {}) {
+  if (cadastrado[board] != null) return cadastrado[board];
   const janela = new Set([mes, ...mesesAntes(mes, 11)]);
   let difal = 0, base = 0;
   for (const a of apuracoes) {
@@ -50,9 +44,9 @@ function percentualIcms(board, mes, apuracoes = []) {
 }
 
 // Pago em embalagens ÷ venda, nos últimos 12 meses. As Surfers e o Site formam um grupo.
-function percentuaisEmbalagem(pagoPorLoja, vendaPorLoja) {
+function percentuaisEmbalagem(pagoPorLoja, vendaPorLoja, cadastrado = {}) {
   const soma = (obj, lojas) => lojas.reduce((s, b) => s + (obj[b] || 0), 0);
-  const out = { ...EMBALAGEM_CADASTRADA };
+  const out = { ...cadastrado };
   const venda = soma(vendaPorLoja, GRUPO_SURFERS);
   const grupo = venda ? soma(pagoPorLoja, GRUPO_SURFERS) / venda : null;
   for (const b of GRUPO_SURFERS) out[b] = grupo;
@@ -131,15 +125,6 @@ function somarFaturas(lancamentos) {
   return { totais, detalhe };
 }
 
-// Escritório: pessoal com encargos e sala por 6; plano e Magnum sem a Estação;
-// Mantuano nas 6 empresas. O Site não recebe rateio.
-function escritorio({ pessoal, sala, magnum }) {
-  const base = (pessoal * (1 + TAXA_ENCARGOS) + sala) / 6 + MANTUANO_MES / 6;
-  const out = { estacao: r2(base), site: 0 };
-  for (const b of COTA_RATEIO) out[b] = r2(base + PLANO_SOCIOS / 5 + magnum / 5);
-  return out;
-}
-
 const ESTRUTURA = [
   ['receita', 'Venda de produtos', 'total'],
   ['simples', 'Simples', 'item'], ['icms', 'ICMS de entrada', 'item'],
@@ -179,15 +164,15 @@ function fechar(l) {
 }
 
 // Boletos do mês somados. Aluguel percentual: 5% da receita acima do mínimo.
-function pontoComercial(boletos, receita) {
+function pontoComercial(boletos, receita, percentual = 5) {
   const lista = Object.values(boletos || {});
   if (!lista.length) return { aluguel: null, aluguelPct: null, condominio: null, fpp: null, ar: null, iptu: null, energia: null, ponto: null };
   const out = { aluguel: 0, condominio: 0, fpp: 0, ar: 0, iptu: 0, energia: 0 };
   for (const b of lista) for (const k of Object.keys(out)) out[k] = r2(out[k] + (b.valores[k] || 0));
-  out.aluguelPct = r2(Math.max(0, (receita || 0) * 0.05 - out.aluguel));
+  out.aluguelPct = r2(Math.max(0, (receita || 0) * percentual / 100 - out.aluguel));
   out.ponto = r2(Object.values(out).reduce((s, v) => s + v, 0));
   return out;
 }
 
-module.exports = { pontoComercial, aliquotaSimples, percentualIcms, percentuaisEmbalagem, folhaPorLoja, linhaDre, somarFaturas, escritorio, fechar,
-  mesesAntes, ESTRUTURA, EMPRESA, TAXA_ENCARGOS, REF };
+module.exports = { pontoComercial, aliquotaSimples, percentualIcms, percentuaisEmbalagem, folhaPorLoja, linhaDre, somarFaturas, fechar,
+  mesesAntes, ESTRUTURA, EMPRESA, REF };

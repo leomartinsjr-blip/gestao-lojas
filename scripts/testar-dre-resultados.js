@@ -119,6 +119,15 @@ const dc = montarCompleta(montar({ mes: '2026-10', conferencia, caixa, faturas }
   apuracoes: [{ competencia: '2026-09', empresa: 'PV COMERCIO', difal: 10.55, base4: 100, base12: 0 }], embalagem: { pago: { contagem: 45 }, venda: { contagem: 10000 } },
   folhaMes, employees, freteTommy: 485.91, faturamentoExtra: {} });
 assert.strictEqual(dc.lojas.contagem.ponto, 16226.63);
+// Escritório de outubro pelos cadastros padrão: mesmo número combinado
+const C = require('../services/dreCadastros');
+const lancE = [{ b: 'site', f: 'ALUGUEL - ED MONTEREY OFFICE', v: 1912.3 }, { b: 'site', f: 'CEMIG', v: 307.09 }, { b: 'site', f: 'CONDOMINIO SHOPPING', v: 853.12 },
+  { b: 'delrey', f: 'CONDOMINIO SHOPPING', v: 17559.15 }, { b: 'minas', f: 'MAGNUM CONSULTORIA', v: 157.5 }, { b: 'contagem', f: 'MAGNUM CONSULTORIA', v: 157.5 }, { b: 'site', f: 'MAGNUM CONSULTORIA', v: 157.5 }, { b: 'tommy', f: 'MAGNUM LUIZ - TECNICO', v: 125 }];
+const ce = C.calcularEscritorio({ itens: C.PADRAO.escritorio, encargos: 29, lancamentos: lancE, pessoas: [{ nome: 'INGRID MUNIZ', valor: 3674.66 }, { nome: 'LAURA FARIA DE MATOS', valor: 2000 }, { nome: 'LEONARDO', valor: 18000 }] });
+assert.strictEqual(ce.porLoja.delrey, 2534.98);
+assert.strictEqual(ce.porLoja.estacao, 1965.65);
+assert.ok(!ce.usados.has(lancE[3]), 'condomínio da loja não vai para o rateio');
+assert.strictEqual(C.validar({ escritorio: [{ nome: '', origem: 'fixo', lojas: ['lez'] }] }), 'Todo custo precisa de nome');
 assert.strictEqual(dc.lojas.contagem.encargos, 2749.84);
 assert.strictEqual(dc.lojas.tommy.frete, 485.91);
 assert.ok(dc.lojas.lez.faltam.includes('receita'));
