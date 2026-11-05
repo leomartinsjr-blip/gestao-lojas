@@ -225,7 +225,7 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
   const det = { ...base.detalhe, escritorio: esc.detalhe };
   for (const k of ['sistema', 'contabilidade', 'seguro', 'plano', 'diversos', 'telefone', 'publicidade', 'tarifa', 'vt', 'acordos']) det[k] = lista(detalhe[k]);
   const ref = L.REF.planilha[mes];
-  return { ...base, lojas, percentuais, detalhe: det, manuais, pendencias: manuais.filter(i => !i.feito), estrutura: L.ESTRUTURA,
+  return { ...base, lojas, percentuais, proLabore: pct.proLabore, detalhe: det, manuais, pendencias: manuais.filter(i => !i.feito), estrutura: L.ESTRUTURA,
     planilha: ref ? Object.fromEntries(Object.entries(ref).map(([b, p]) => [b, { ...p, ...L.somarGrupos(p), sobra: p.liquido, liquido: undefined }])) : null,
     folhaFechada: Object.fromEntries(LOJAS.map(b => [b, !!folhaMes?.[b]?.encerrada])) };
 }
@@ -687,7 +687,7 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
       const lojas = {}, recebimentos = {}, soma = {}, resultado = {};
       for (const b of LOJAS) {
         const l = h.lojas[b] || {};
-        lojas[b] = { receita: l.receita ?? null, operacional: l.operacional ?? null,
+        lojas[b] = { receita: l.receita ?? null, operacional: l.operacional ?? null, dividas: l.dividas ?? null,
           sobra: l.operacional != null ? r2(l.operacional - (l.dividas || 0)) : null };
         recebimentos[b] = l.receita || 0;
         soma[b] = r2(Object.values(h.caixa[b] || {}).reduce((s, v) => s + v, 0));

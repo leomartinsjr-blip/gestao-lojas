@@ -21,7 +21,7 @@ const PADRAO = {
     { id: 'magnum', nome: 'Magnum (técnico de informática)', origem: 'faturas', termo: 'MAGNUM', lojas: CINCO },
     { id: 'mantuano', nome: 'Mantuano (MN Advogados)', origem: 'fixo', valor: 1401.08, lojas: SEIS },
   ],
-  percentuais: { encargos: 29, aluguelPct: 5, icmsSite: 9.31, icmsLez: 8.98, embalagemLez: 1.4 },
+  percentuais: { encargos: 29, aluguelPct: 5, icmsSite: 9.31, icmsLez: 8.98, embalagemLez: 1.4, proLabore: 30000 },
 };
 
 function comPadrao(salvo) {

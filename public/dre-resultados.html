@@ -40,6 +40,8 @@
   body:not(.uma-loja) #tabela td small, body:not(.uma-loja) #tabelaCaixa td small, #tabelaAno td small { font-size:10px; }
   body:not(.uma-loja) #tabela td:first-child, body:not(.uma-loja) #tabelaCaixa td:first-child { max-width:190px; white-space:normal; }
   #tabelaBal .cel { grid-template-columns:minmax(90px,auto); } #tabelaBal .cel small { display:none; }
+  #vGrupo .cel { grid-template-columns:minmax(76px,auto) 42px; column-gap:2px; } #gPart .cel, #gAcum .cel { grid-template-columns:minmax(60px,auto) 0; column-gap:0; }
+  #gPart td, #gAcum td, #gPart th, #gAcum th { padding:3px 3px; font-size:11.5px; }
   #tabela td, #tabelaCaixa td, #tabelaAno td { font-size:12.5px; }
   tbody tr:nth-child(even) td { background:#f8fafc; } tbody tr:hover td { background:#e8f1fb; }
   td.neg { color:var(--red); }
@@ -67,6 +69,22 @@
   .dif { color:var(--red); } .falta { color:var(--yellow); font-weight:600; }
   .nota { color:var(--text2); padding:0 2px 14px; line-height:1.6; }
   #msg { padding:20px; color:var(--text2); }
+  /* Resumo: uma linha entre as lojas e outra, mais forte, antes do Total */
+  body:not(.uma-loja) #tabela :is(td,th):not(:first-child), body:not(.uma-loja) #tabelaCaixa :is(td,th):not(:first-child) { border-left:1px solid #c3ccd6; }
+  body:not(.uma-loja) #tabela :is(td,th):last-child, body:not(.uma-loja) #tabelaCaixa :is(td,th):last-child { border-left:2px solid #8c98a6; }
+  .cmp { max-width:960px; margin:0 auto; padding:12px 14px; }
+  .cmp .pilulas { padding-bottom:12px; }
+  .cmp-l { display:grid; grid-template-columns:96px 1fr 62px 190px; column-gap:10px; align-items:center; height:24px; }
+  .cmp-l.cab { height:20px; color:var(--text2); font-size:11px; }
+  .cmp-l .pc { text-align:right; font-weight:600; } .cmp-l .df { text-align:right; color:var(--text2); font-size:12px; } .cmp-l .df.pior { color:var(--red); }
+  .trilho { position:relative; height:100%; display:block; }
+  .trilho .barra { position:absolute; top:7px; height:10px; background:var(--blue); }
+  .trilho .marca { position:absolute; top:0; bottom:0; width:2px; margin-left:-1px; background:var(--text); }
+  .trilho .zero { position:absolute; top:0; bottom:0; width:1px; background:#b9c2cd; }
+  .trilho .rot { position:absolute; bottom:1px; transform:translateX(-50%); white-space:nowrap; color:var(--text); font-weight:600; }
+  .cmp .obs { color:var(--text2); font-size:12px; padding-top:8px; line-height:1.5; text-align:center; }
+  .cmp h3 { font-size:12.5px; text-align:center; padding:16px 0 8px; font-weight:600; }
+  #tabOport tbody tr { cursor:pointer; }
 </style>
 </head>
 <body>
@@ -85,12 +103,22 @@
 <main>
   <div id="msg">Carregando…</div>
   <div id="conteudo" hidden>
-    <div class="abas"><button id="abaDre" class="ativa">DRE</button><button id="abaCaixa">Fechamento de Caixa</button><button id="abaAno">Consolidado do ano</button><button id="abaBal">Balancete</button><button id="abaCad">Cadastros</button></div>
+    <div class="abas"><button id="abaDre" class="ativa">DRE</button><button id="abaCaixa">Fechamento de Caixa</button><button id="abaAno">Consolidado do ano</button><button id="abaBal">Balancete</button><button id="abaGrupo">Resumo do grupo</button><button id="abaCad">Cadastros</button></div>
     <div class="pilulas" id="pilulas"></div>
     <div id="vDre">
       <div class="painel"><h2 id="titulo"></h2><table id="tabela"></table></div>
+      <div class="painel" id="comparar" hidden></div>
       <div class="painel" id="finalizar"></div>
       <p class="nota" id="nota"></p>
+    </div>
+    <div id="vGrupo" hidden>
+      <div class="filtros"><label>Ano <input type="number" id="grupoAno" style="width:80px"></label><span id="grupoMsg"></span></div>
+      <div class="painel"><h2>Comparativo anual</h2><table id="gAnual"></table></div>
+      <div class="painel"><h2 id="gMesTit"></h2><table id="gMes"></table></div>
+      <div class="painel"><h2 id="gLojaTit"></h2><table id="gLoja"></table></div>
+      <div class="painel"><h2 id="gPartTit"></h2><table id="gPart"></table></div>
+      <div class="painel"><h2 id="gAcumTit"></h2><table id="gAcum"></table></div>
+      <p class="nota">Até setembro/2026 vem do histórico das planilhas; de outubro em diante, do módulo. As margens consideram só a venda das lojas com resultado no mês. A Estação entra no faturamento e, no resultado, a partir de outubro/2026.</p>
     </div>
     <div id="vBal" hidden>
       <div class="painel"><h2 id="tituloBal"></h2><table id="tabelaBal"></table></div>
@@ -141,6 +169,73 @@ function celula({ valor, base, ref, editar = '', calculado }) {
   return `<td class="${cls}" title="${dica}">${par(num(valor), percentual(valor, base))}${editar}</td>`;
 }
 
+// Comparação entre as lojas no Resumo, sempre em % da venda. Loja sem dado na linha
+// fica fora, para não puxar a média do grupo.
+const COMPARAR = [['cmv', 'CMV'], ['salarios', 'Salários'], ['ponto', 'CTO'], ['administrativo', 'Administrativo'],
+  ['marketing', 'Marketing'], ['taxas', 'Taxas e tarifas'], ['deducoes', 'Deduções'], ['operacional', 'Resultado operacional']];
+const SO_RESULTADO = 'operacional';
+let linhaComparada = 'cmv';
+
+function compararLinha(d, k) {
+  const i = d.estrutura.findIndex(e => e[0] === k);
+  const membros = [k];
+  if (d.estrutura[i]?.[2] === 'grupo') for (let j = i + 1; d.estrutura[j]?.[2] === 'item'; j++) membros.push(d.estrutura[j][0]);
+  const completa = b => {
+    const l = d.lojas[b];
+    if (!(l.receita > 0) || l[k] == null) return false;
+    return k === SO_RESULTADO ? !l.faltam?.length : !membros.some(m => l.faltam?.includes(m));
+  };
+  const dentro = d.ordem.filter(completa);
+  const soma = pegar => dentro.reduce((s, b) => s + pegar(d.lojas[b]), 0);
+  const grupo = dentro.length ? soma(l => l[k]) / soma(l => l.receita) * 100 : null;
+  const lojas = dentro.map(b => {
+    const l = d.lojas[b], pct = l[k] / l.receita * 100, dif = (pct - grupo) / 100 * l.receita;
+    return { b, pct, dif: k === SO_RESULTADO ? -dif : dif }; // dif > 0 é sempre pior que o grupo
+  }).sort((x, y) => x.dif / d.lojas[x.b].receita - y.dif / d.lojas[y.b].receita);
+  return { grupo, lojas, fora: d.ordem.filter(b => !completa(b)) };
+}
+
+function desenharComparar(d, mostrar) {
+  const painel = $('comparar');
+  const c = mostrar ? compararLinha(d, linhaComparada) : null;
+  const temDados = mostrar && COMPARAR.some(([k]) => compararLinha(d, k).lojas.length >= 2);
+  painel.hidden = !temDados;
+  if (!temDados) return;
+  const nome = b => d.labels[b] || b;
+  const pc = v => `${num(v)}%`;
+  const reais = v => `R$ ${Math.abs(v).toLocaleString('pt-BR', { maximumFractionDigits: 0 })}`;
+
+  const valores = [...c.lojas.map(l => l.pct), c.grupo ?? 0];
+  const lo = Math.min(0, ...valores), hi = Math.max(0, ...valores), faixa = (hi - lo) || 1;
+  const x = v => (v - lo) / faixa * 100;
+  const zero = lo < 0 ? `<i class="zero" style="left:${x(0)}%"></i>` : '';
+  const linhas = c.lojas.map(l => {
+    const ini = Math.min(x(0), x(l.pct)), larg = Math.abs(x(l.pct) - x(0));
+    const canto = l.pct < 0 ? '4px 0 0 4px' : '0 4px 4px 0';
+    const texto = Math.abs(l.dif) < 1 ? 'igual ao grupo' : `${reais(l.dif)} ${l.dif > 0 ? 'pior' : 'melhor'} que o grupo`;
+    return `<div class="cmp-l" title="${nome(l.b)}: ${pc(l.pct)} da venda; grupo ${pc(c.grupo)}"><span>${nome(l.b)}</span>
+      <span class="trilho">${zero}<i class="barra" style="left:${ini}%;width:max(${larg}%,2px);border-radius:${canto}"></i><i class="marca" style="left:${x(c.grupo)}%"></i></span>
+      <span class="pc ${l.pct < 0 ? 'dif' : ''}">${pc(l.pct)}</span><span class="df ${l.dif >= 1 ? 'pior' : ''}">${texto}</span></div>`;
+  }).join('');
+  const rotulo = Math.min(92, Math.max(8, x(c.grupo ?? 0)));
+  const cab = c.lojas.length ? `<div class="cmp-l cab"><span></span><span class="trilho"><span class="rot" style="left:${rotulo}%">Grupo ${pc(c.grupo)}</span></span><span></span><span></span></div>` : '';
+
+  // Maior diferença em reais de cada loja, só nas linhas de despesa que a gestão mexe
+  const despesas = COMPARAR.filter(([k]) => k !== SO_RESULTADO && k !== 'deducoes');
+  const medidas = despesas.map(([k, rot]) => ({ k, rot, ...compararLinha(d, k) }));
+  const oport = d.ordem.map(b => medidas.flatMap(m => m.lojas.filter(l => l.b === b && l.dif >= 1).map(l => ({ ...l, k: m.k, rot: m.rot, grupo: m.grupo })))
+    .sort((p, q) => q.dif - p.dif)[0]).filter(Boolean).sort((p, q) => q.dif - p.dif);
+  const tabela = oport.length ? `<h3>Onde cada loja mais se afasta do grupo</h3><table id="tabOport"><thead><tr><th>Loja</th><th>Linha</th><th>% da loja</th><th>% do grupo</th><th>Acima do grupo</th></tr></thead>
+    <tbody>${oport.map(o => `<tr data-linha="${o.k}"><td>${nome(o.b)}</td><td>${o.rot}</td><td>${pc(o.pct)}</td><td>${pc(o.grupo)}</td><td>${reais(o.dif)}</td></tr>`).join('')}</tbody></table>` : '';
+
+  painel.innerHTML = `<h2>Comparar lojas: % da venda</h2><div class="cmp"><div class="pilulas">${COMPARAR.map(([k, rot]) =>
+    `<button data-linha="${k}" class="${k === linhaComparada ? 'ativa' : ''}">${rot}</button>`).join('')}</div>
+    ${cab}${linhas || '<p class="obs">Nenhuma loja tem esta linha completa no mês.</p>'}
+    ${c.fora.length ? `<p class="obs">Fora desta linha, por falta de dado: ${c.fora.map(nome).join(', ')}.</p>` : ''}
+    ${tabela}<p class="obs">Melhor em cima. O valor em reais é a diferença da loja para o que seria no % do grupo, com a venda dela.</p></div>`;
+  painel.querySelectorAll('[data-linha]').forEach(el => el.addEventListener('click', () => { linhaComparada = el.dataset.linha; desenharComparar(d, true); }));
+}
+
 function desenhar(d) {
   ultimo = d;
   const nome = b => d.labels[b] || b;
@@ -175,6 +270,7 @@ function desenhar(d) {
     })).join('')}${colTotal(b => d.lojas[b][k], b => d.lojas[b].receita)}${mostraPlanilha ? `<td>${d.planilha[lojaAtual][k] != null ? `<span class="v">${num(d.planilha[lojaAtual][k])}</span>` : ''}</td>` : ''}</tr>${subs(itens, mostraPlanilha)}`;
   }).join('');
   $('tabela').innerHTML = cab + `<tbody>${corpo}</tbody>`;
+  desenharComparar(d, !soUma);
 
   $('tituloCaixa').textContent = `Fechamento de Caixa de ${m}/${a}: ${soUma ? nome(lojaAtual) : 'todas as lojas'}`;
   const cabCx = `<thead><tr><th>Linha</th>${colunas.map(b => `<th>${soUma ? 'Valor e % dos recebimentos' : nome(b)}</th>`).join('')}${thTotal}</tr></thead>`;
@@ -346,16 +442,124 @@ async function carregar(recalcular) {
 const ref = new Date(); ref.setDate(1); ref.setMonth(ref.getMonth() - 1);
 $('mes').value = `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}`;
 const aba = qual => {
-  for (const [v, b, k] of [['vDre', 'abaDre', 'dre'], ['vCaixa', 'abaCaixa', 'caixa'], ['vAno', 'abaAno', 'ano'], ['vBal', 'abaBal', 'bal'], ['vCad', 'abaCad', 'cad']]) {
+  for (const [v, b, k] of [['vDre', 'abaDre', 'dre'], ['vCaixa', 'abaCaixa', 'caixa'], ['vAno', 'abaAno', 'ano'], ['vBal', 'abaBal', 'bal'], ['vGrupo', 'abaGrupo', 'grupo'], ['vCad', 'abaCad', 'cad']]) {
     $(v).hidden = k !== qual; $(b).classList.toggle('ativa', k === qual);
   }
-  $('pilulas').hidden = ['ano', 'cad', 'bal'].includes(qual);
+  $('pilulas').hidden = ['ano', 'cad', 'bal', 'grupo'].includes(qual);
+  if (qual === 'grupo') carregarGrupo();
   if (qual === 'bal') carregarBal();
   if (qual === 'ano') carregarAno();
   if (qual === 'cad') carregarCad();
 };
 $('abaCad').addEventListener('click', () => aba('cad'));
 $('abaBal').addEventListener('click', () => aba('bal'));
+$('abaGrupo').addEventListener('click', () => aba('grupo'));
+
+// Resumo do grupo: mesmos quadros do RESUMO do FECHAMENTO RESULTADO
+const MES_CURTO = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+async function mesesDoGrupo(ano) {
+  const hist = await (await fetch('/api/dre-resultados/historico?ano=' + ano)).json();
+  Object.assign(cache, hist.meses);
+  const hoje = new Date(), limite = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+  for (let m = 1; m <= 12; m++) {
+    const mk = `${ano}-${String(m).padStart(2, '0')}`;
+    if (cache[mk] || mk < hist.inicio || mk >= limite) continue;
+    $('grupoMsg').textContent = `Lendo ${MES_CURTO[m - 1]}/${ano}…`;
+    try { const r = await fetch('/api/dre-resultados?mes=' + mk); if (r.ok) cache[mk] = await r.json(); } catch {}
+  }
+}
+function numerosDoMes(d) {
+  const out = { fat: 0, op: 0, div: 0, base: 0, pro: d.proLabore || 0, lojas: {} };
+  for (const b of d.ordem) {
+    const l = d.lojas[b];
+    const op = d.historico ? l.operacional : (l.faltam?.length ? null : l.operacional);
+    const div = d.historico ? (l.dividas || 0) : (l.juros || 0) + (l.emprestimos || 0) + (l.acordos || 0);
+    const fat = l.receita || 0;
+    out.fat += fat;
+    if (op != null) { out.op += op; out.div += div; out.base += fat; }
+    out.lojas[b] = { fat, op, div: op != null ? div : 0, final: op != null ? op - div : null };
+  }
+  out.final = out.op - out.div - out.pro;
+  return out;
+}
+function doAno(ano) {
+  const meses = Array.from({ length: 12 }, (_, i) => {
+    const d = cache[`${ano}-${String(i + 1).padStart(2, '0')}`];
+    return d ? numerosDoMes(d) : null;
+  });
+  const fechados = meses.filter(Boolean);
+  const soma = k => fechados.reduce((s, m) => s + m[k], 0);
+  return { meses, n: fechados.length, fat: soma('fat'), op: soma('op'), div: soma('div'), pro: soma('pro'), base: soma('base'), final: soma('final') };
+}
+const gCel = (v, pct) => (v == null ? `<td>${par('–')}</td>` : `<td class="${v < 0 ? 'neg' : ''}">${par(num(v), pct == null ? undefined : `<small class="pct">${num(pct)}%</small>`)}</td>`);
+const gLinha = (rot, cels, tipo = 'item') => `<tr class="${tipo}"><td>${rot}</td>${cels.join('')}</tr>`;
+const gCab = (titulos) => `<thead><tr><th>Linha</th>${titulos.map(t => `<th>${t}</th>`).join('')}</tr></thead>`;
+const pctDe = (v, base) => (base ? v / base * 100 : null);
+
+async function carregarGrupo() {
+  const ano = +$('grupoAno').value;
+  const anos = [ano - 3, ano - 2, ano - 1, ano];
+  for (const a of anos) await mesesDoGrupo(a);
+  $('grupoMsg').textContent = '';
+  const dados = Object.fromEntries(anos.map(a => [a, doAno(a)]));
+  const atual = dados[ano], antes = dados[ano - 1];
+  const exemplo = Object.values(cache).find(d => d.ordem);
+  if (!exemplo) return;
+  const ordem = exemplo.ordem, nome = b => exemplo.labels[b] || b;
+
+  $('gAnual').innerHTML = gCab(anos) + '<tbody>' + [
+    gLinha('Faturamento', anos.map(a => gCel(dados[a].fat))),
+    gLinha('Resultado operacional', anos.map(a => gCel(dados[a].op, pctDe(dados[a].op, dados[a].base))), 'total'),
+    gLinha('Dívidas e juros', anos.map(a => gCel(dados[a].div))),
+    gLinha('Pró-labore', anos.map(a => gCel(dados[a].pro))),
+    gLinha('Resultado final', anos.map(a => gCel(dados[a].final, pctDe(dados[a].final, dados[a].base))), 'total'),
+    gLinha('Meses com dado', anos.map(a => `<td>${par(String(dados[a].n))}</td>`)),
+  ].join('') + '</tbody>';
+
+  $('gMesTit').textContent = `${ano} contra ${ano - 1}, mês a mês`;
+  let acA = 0, acB = 0;
+  const linhasMes = MES_CURTO.map((rot, i) => {
+    const a = antes.meses[i], b = atual.meses[i];
+    if (a) acA += a.final; if (b) acB += b.final;
+    const varFat = a && b && a.fat ? (b.fat / a.fat - 1) * 100 : null;
+    return gLinha(rot, [gCel(a ? a.fat : null), gCel(b ? b.fat : null), varFat == null ? gCel(null) : `<td class="${varFat < 0 ? 'neg' : ''}">${par(num(varFat) + '%')}</td>`,
+      gCel(a ? a.final : null), gCel(b ? b.final : null), gCel(a ? acA : null), gCel(b ? acB : null)]);
+  }).join('');
+  const comparaveis = atual.meses.map((m, i) => (m ? antes.meses[i] : null)).filter(Boolean);
+  const soma = (l, k) => l.reduce((s, m) => s + m[k], 0);
+  const totalVar = soma(comparaveis, 'fat') ? (atual.fat / soma(comparaveis, 'fat') - 1) * 100 : null;
+  $('gMes').innerHTML = gCab([`Fat. ${ano - 1}`, `Fat. ${ano}`, 'Var. %', `Final ${ano - 1}`, `Final ${ano}`, `Acum. ${ano - 1}`, `Acum. ${ano}`]) + '<tbody>' + linhasMes +
+    gLinha('Mesmo período', [gCel(soma(comparaveis, 'fat')), gCel(atual.fat), totalVar == null ? gCel(null) : `<td class="${totalVar < 0 ? 'neg' : ''}">${par(num(totalVar) + '%')}</td>`,
+      gCel(soma(comparaveis, 'final')), gCel(atual.final), gCel(null), gCel(null)], 'total') + '</tbody>';
+
+  $('gLojaTit').textContent = `Desempenho por loja em ${ano}`;
+  const porLoja = b => {
+    const ms = atual.meses.filter(Boolean).map(m => m.lojas[b]).filter(Boolean);
+    const comOp = ms.filter(x => x.op != null);
+    return { fat: ms.reduce((s, x) => s + x.fat, 0), base: comOp.reduce((s, x) => s + x.fat, 0), op: comOp.reduce((s, x) => s + x.op, 0), div: comOp.reduce((s, x) => s + x.div, 0), n: comOp.length };
+  };
+  $('gLoja').innerHTML = gCab(['Faturamento', '% do total', 'Result. operacional', 'Dívidas e juros', 'Resultado final', 'Meses com resultado']) + '<tbody>' + ordem.map(b => {
+    const x = porLoja(b);
+    return gLinha(nome(b), [gCel(x.fat), `<td>${par(atual.fat ? num(x.fat / atual.fat * 100) + '%' : '')}</td>`, gCel(x.n ? x.op : null, x.n ? pctDe(x.op, x.base) : null), gCel(x.n ? x.div : null),
+      gCel(x.n ? x.op - x.div : null, x.n ? pctDe(x.op - x.div, x.base) : null), `<td>${par(String(x.n))}</td>`]);
+  }).join('') + gLinha('Total', [gCel(atual.fat), `<td>${par('100,00%')}</td>`, gCel(atual.op, pctDe(atual.op, atual.base)), gCel(atual.div), gCel(atual.op - atual.div, pctDe(atual.op - atual.div, atual.base)), `<td></td>`], 'total') + '</tbody>';
+
+  $('gPartTit').textContent = `Participação no faturamento mensal em ${ano}`;
+  $('gPart').innerHTML = gCab([...MES_CURTO, 'Ano']) + '<tbody>' + ordem.map(b => gLinha(nome(b), [...atual.meses.map(m => (m ? `<td>${par(m.fat ? num(m.lojas[b].fat / m.fat * 100) + '%' : '')}</td>` : `<td>${par('–')}</td>`)),
+    `<td>${par(atual.fat ? num(porLoja(b).fat / atual.fat * 100) + '%' : '')}</td>`])).join('') + '</tbody>';
+
+  $('gAcumTit').textContent = `Resultado final acumulado por loja em ${ano} (antes do pró-labore)`;
+  $('gAcum').innerHTML = gCab([...MES_CURTO]) + '<tbody>' + ordem.map(b => {
+    let ac = 0, teve = false;
+    return gLinha(nome(b), atual.meses.map(m => {
+      if (!m) return gCel(null);
+      if (m.lojas[b].final != null) { ac += m.lojas[b].final; teve = true; }
+      return gCel(teve ? ac : null);
+    }));
+  }).join('') + '</tbody>';
+}
+$('grupoAno').addEventListener('change', carregarGrupo);
+$('grupoAno').value = new Date().getFullYear();
 
 async function carregarBal() {
   const b = await (await fetch('/api/dre-resultados/balancete?mes=' + $('mes').value)).json();
@@ -387,7 +591,7 @@ async function carregarBal() {
 }
 
 let cad = null;
-const ROT_PCT = { encargos: 'Encargos sobre folha (%)', aluguelPct: 'Aluguel percentual (%)', icmsSite: 'ICMS do Site (%)', icmsLez: 'ICMS da Lez (%)', embalagemLez: 'Embalagens da Lez (%)' };
+const ROT_PCT = { proLabore: 'Pró-labore do grupo (R$ por mês)', encargos: 'Encargos sobre folha (%)', aluguelPct: 'Aluguel percentual (%)', icmsSite: 'ICMS do Site (%)', icmsLez: 'ICMS da Lez (%)', embalagemLez: 'Embalagens da Lez (%)' };
 let forn = null;
 async function carregarCad() {
   cad = await (await fetch('/api/dre-resultados/cadastros')).json(); desenharCad();
@@ -478,6 +682,7 @@ $('expAba').addEventListener('click', async () => {
   const mes = $('mes').value;
   if (!$('vCaixa').hidden) return baixar(`fechamento-caixa-${mes}`, [tabelaParaAba('tabelaCaixa', 'Fechamento de Caixa', $('tituloCaixa').textContent)]);
   if (!$('vAno').hidden) return baixar(`consolidado-${$('anoSel').value}`, [abaAno()]);
+  if (!$('vGrupo').hidden) return baixar(`resumo-grupo-${$('grupoAno').value}`, [['gAnual', 'Comparativo anual'], ['gMes', 'Mês a mês'], ['gLoja', 'Por loja'], ['gPart', 'Participação'], ['gAcum', 'Acumulado']].map(([id, n]) => tabelaParaAba(id, n, `Resumo do grupo: ${n}`)));
   if (!$('vBal').hidden) return baixar(`balancete-${mes}`, [tabelaParaAba('tabelaBal', 'Balancete', $('tituloBal').textContent)]);
   if (!$('vCad').hidden) return alert('Abra a DRE, o Fechamento de Caixa ou o Consolidado para exportar.');
   return baixar(`dre-${mes}`, [tabelaParaAba('tabela', 'DRE', $('titulo').textContent)]);
