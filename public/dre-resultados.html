@@ -14,7 +14,8 @@
   h1 { font-size:15px; font-weight:600; margin-right:14px; }
   input, button { background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:5px 10px; font-size:12px; color:var(--text); }
   button { cursor:pointer; } button:hover { color:var(--blue); border-color:var(--blue); }
-  main { padding:16px; max-width:1300px; margin:0 auto; }
+  main { padding:16px; max-width:1360px; margin:0 auto; }
+  #tabForn td, #tabForn th { text-align:left; } #tabForn td:nth-child(2) { text-align:right; }
   body.uma-loja #vDre .painel, body.uma-loja #vCaixa .painel, body.uma-loja #vDre .nota { max-width:860px; margin-left:auto; margin-right:auto; }
   #vDre .nota, #vCaixa .nota, #vAno .nota { text-align:center; }
   .painel { background:var(--bg2); border:1px solid var(--border); border-radius:8px; margin-bottom:16px; overflow-x:auto; }
@@ -30,7 +31,15 @@
   .item b { min-width:90px; } .item .feito { color:var(--green); } .item .pend { color:var(--yellow); font-weight:600; }
   .item input[type=number] { width:130px; background:#fff; } .item span.r { flex:1; min-width:220px; }
   table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
-  th, td { padding:3px 10px; text-align:right; border-bottom:1px solid var(--border); white-space:nowrap; line-height:1.45; }
+  th, td { padding:3px 8px; text-align:center; border-bottom:1px solid var(--border); white-space:nowrap; line-height:1.45; position:relative; }
+  .cel { display:inline-grid; grid-template-columns:minmax(84px,auto) 50px; align-items:baseline; column-gap:4px; }
+  .cel .v { text-align:right; } .cel small.pct { text-align:right; margin:0; min-width:0; }
+  #tabelaAno .cel { grid-template-columns:minmax(72px,auto) 42px; column-gap:2px; }
+  body:not(.uma-loja) #tabela .cel, body:not(.uma-loja) #tabelaCaixa .cel { grid-template-columns:minmax(70px,auto) 42px; column-gap:2px; }
+  body:not(.uma-loja) #tabela td, body:not(.uma-loja) #tabelaCaixa td, #tabelaAno td { padding:3px 4px; font-size:12px; }
+  body:not(.uma-loja) #tabela td small, body:not(.uma-loja) #tabelaCaixa td small, #tabelaAno td small { font-size:10px; }
+  body:not(.uma-loja) #tabela td:first-child, body:not(.uma-loja) #tabelaCaixa td:first-child { max-width:190px; white-space:normal; }
+  #tabelaBal .cel { grid-template-columns:minmax(90px,auto); } #tabelaBal .cel small { display:none; }
   #tabela td, #tabelaCaixa td, #tabelaAno td { font-size:12.5px; }
   tbody tr:nth-child(even) td { background:#f8fafc; } tbody tr:hover td { background:#e8f1fb; }
   td.neg { color:var(--red); }
@@ -38,7 +47,7 @@
   thead th { background:var(--bg3); font-size:12px; color:var(--text2); }
   tbody tr.grupo td, tbody tr.grupo:nth-child(even) td { font-weight:600; background:#ddf4ff; color:#0a3069; border-top:1px solid #b6e3ff; }
   #tabela th:last-child, #tabelaCaixa th:last-child { white-space:nowrap; }
-  tbody tr.grupo td.neg { color:var(--red); } tbody tr.item td:first-child { padding-left:24px; }
+  tbody tr.grupo td.neg { color:var(--red); } tbody tr.item td:first-child { padding-left:22px !important; }
   tr.total td, tbody tr.total:nth-child(even) td { font-weight:700; background:#e4eaf2; border-top:1px solid #b9c2cd; }
   td small { margin-left:6px; color:var(--text2); font-size:11px; font-weight:400; } td small.pct { color:var(--blue); display:inline-block; min-width:48px; text-align:right; }
   .abas { display:flex; gap:6px; padding:0 0 12px; justify-content:center; flex-wrap:wrap; }
@@ -50,7 +59,7 @@
   #tabCustos input[type=text], #tabCustos input[type=number], #percentuais input { background:#fff; width:100%; min-width:90px; }
   #tabCustos td { white-space:normal; text-align:left; } #tabCustos label { display:inline-block; margin-right:6px; font-size:11px; }
   #percentuais label { display:inline-block; width:210px; } a { color:var(--blue); } .tira { padding:0 6px; }
-  .ed { cursor:pointer; margin-left:5px; visibility:hidden; font-size:11px; color:var(--blue); } td:hover .ed { visibility:visible; }
+  .ed { position:absolute; right:1px; top:3px; cursor:pointer; visibility:hidden; font-size:11px; color:var(--blue); } td:hover .ed { visibility:visible; }
   td.aj { background:var(--yellowbg) !important; }
   .fim { padding:9px 14px; border-top:1px solid var(--border); display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
   .fim b { min-width:95px; } .fim ul { flex:1; min-width:280px; list-style:none; line-height:1.6; } .fim .ok { color:var(--green); } .fim .nao { color:var(--yellow); font-weight:600; }
@@ -119,15 +128,17 @@
 const $ = id => document.getElementById(id);
 const num = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-const percentual = (v, base) => (base ? `<small class="pct">${num(v / base * 100)}%</small>` : '');
+const percentual = (v, base) => (base ? `<small class="pct">${num(v / base * 100)}%</small>` : '<small class="pct"></small>');
+// Valor e % em duas casas de largura fixa: a coluna fica centrada sob o título
+const par = (valor, pct = '<small class="pct"></small>') => `<span class="cel"><span class="v">${valor}</span>${pct}</span>`;
 const lapis = (grupo, k, b) => `<span class="ed" title="Editar valor" data-grupo="${grupo}" data-k="${k}" data-b="${b}">✎</span>`;
 let ultimo = null, lojaAtual = null, passos = [], passoI = 0;
 
 function celula({ valor, base, ref, editar = '', calculado }) {
-  if (valor == null) return `<td class="falta">falta${editar}</td>`;
+  if (valor == null) return `<td class="falta">${par('falta')}${editar}</td>`;
   const cls = [valor < 0 ? 'neg' : '', calculado !== undefined ? 'aj' : ''].join(' ');
   const dica = [ref != null ? `Planilha: ${num(ref)}` : '', calculado !== undefined ? `Calculado: ${calculado == null ? 'sem valor' : num(calculado)}` : ''].filter(Boolean).join(' · ');
-  return `<td class="${cls}" title="${dica}">${num(valor)}${percentual(valor, base)}${editar}</td>`;
+  return `<td class="${cls}" title="${dica}">${par(num(valor), percentual(valor, base))}${editar}</td>`;
 }
 
 function desenhar(d) {
@@ -154,14 +165,14 @@ function desenhar(d) {
   $('titulo').textContent = `DRE de ${m}/${a}: ${soUma ? nome(lojaAtual) : 'todas as lojas'}`;
   const cab = `<thead><tr><th>Linha</th>${colunas.map(b => `<th class="${fechada(b) ? 'fechada' : ''}">${soUma ? 'Valor e % da venda' : nome(b)}</th>`).join('')}${thTotal}${mostraPlanilha ? '<th>Planilha</th>' : ''}</tr></thead>`;
   const subs = (itens, extra) => itens.filter(i => colunas.some(b => i.lojas[b])).map(i => `<tr class="sub" hidden><td>${i.nome}</td>${colunas.map(b =>
-    `<td>${i.lojas[b] ? num(i.lojas[b]) : ''}</td>`).join('')}${soUma ? '' : `<td>${num(somaLojas(b => i.lojas[b]) || 0)}</td>`}${extra ? '<td></td>' : ''}</tr>`).join('');
+    `<td>${par(i.lojas[b] ? num(i.lojas[b]) : '')}</td>`).join('')}${soUma ? '' : `<td>${par(num(somaLojas(b => i.lojas[b]) || 0))}</td>`}${extra ? '<td></td>' : ''}</tr>`).join('');
   const corpo = d.estrutura.map(([k, rot, tipo]) => {
     const itens = (d.detalhe?.[k] || []).filter(i => colunas.some(b => i.lojas[b]));
     return `<tr class="${[itens.length ? 'abre' : '', tipo].join(' ')}"><td>${rot}</td>${colunas.map(b => celula({
       valor: d.lojas[b][k], base: d.lojas[b].receita, ref: d.planilha?.[b]?.[k],
       editar: tipo === 'item' && !fechada(b) ? lapis('ajustes', k, b) : '',
       calculado: k in (d.lojas[b].ajustado || {}) ? d.lojas[b].ajustado[k] : undefined,
-    })).join('')}${colTotal(b => d.lojas[b][k], b => d.lojas[b].receita)}${mostraPlanilha ? `<td>${d.planilha[lojaAtual][k] != null ? num(d.planilha[lojaAtual][k]) : ''}</td>` : ''}</tr>${subs(itens, mostraPlanilha)}`;
+    })).join('')}${colTotal(b => d.lojas[b][k], b => d.lojas[b].receita)}${mostraPlanilha ? `<td>${d.planilha[lojaAtual][k] != null ? `<span class="v">${num(d.planilha[lojaAtual][k])}</span>` : ''}</td>` : ''}</tr>${subs(itens, mostraPlanilha)}`;
   }).join('');
   $('tabela').innerHTML = cab + `<tbody>${corpo}</tbody>`;
 
@@ -178,7 +189,7 @@ function desenhar(d) {
 
   document.querySelectorAll('.ed').forEach(el => el.addEventListener('click', async ev => {
     ev.stopPropagation();
-    const atual = el.closest('td').firstChild?.nodeType === 3 ? el.closest('td').firstChild.textContent.trim() : '';
+    const atual = el.closest('td').querySelector('.v')?.textContent.trim() || '';
     const novo = prompt(`${nome(el.dataset.b)}: novo valor. Deixe vazio para voltar ao calculado.`, atual);
     if (novo === null) return;
     const valor = novo.trim() === '' ? '' : Number(novo.replace(/\./g, '').replace(',', '.'));
@@ -354,9 +365,9 @@ async function carregarBal() {
   const soma = k => b.ordem.reduce((s, e) => s + (b.empresas[e.id][k] || 0), 0);
   const celBal = (v, tipo, e, k) => {
     const lap = editaveis.includes(k) && e ? `<span class="ed" title="Editar valor" data-b="${e.board}" data-k="${k}">✎</span>` : '';
-    if (v == null) return `<td class="${k === 'dividas' ? '' : 'falta'}">${k === 'dividas' ? '-' : k === 'pctPago' ? '' : 'falta'}${lap}</td>`;
+    if (v == null) return `<td class="${k === 'dividas' ? '' : 'falta'}">${par(k === 'dividas' ? '-' : k === 'pctPago' ? '' : 'falta')}${lap}</td>`;
     const aj = e && b.empresas[e.id].digitado.includes(k) ? 'aj' : '';
-    return `<td class="${v < 0 ? 'neg' : ''} ${aj}">${num(v)}${tipo === 'pct' ? '%' : ''}${lap}</td>`;
+    return `<td class="${v < 0 ? 'neg' : ''} ${aj}">${par(num(v) + (tipo === 'pct' ? '%' : ''))}${lap}</td>`;
   };
   $('tabelaBal').innerHTML = `<thead><tr><th>Linha</th>${b.ordem.map(e => `<th>${e.id}<small> ${b.labels[e.id]}</small></th>`).join('')}<th>Grupo</th></tr></thead><tbody>` +
     b.linhas.map(([k, rot, tipo]) => {
@@ -444,8 +455,8 @@ function tabelaParaAba(id, nome, titulo) {
       tipo: ['total', 'grupo', 'sub'].find(t => tr.classList.contains(t)) || 'item',
       rotulo: primeira.textContent.trim(),
       valores: resto.map(c => {
-        const t = c.firstChild?.nodeType === 3 ? c.firstChild.textContent.trim() : '';
-        const pct = c.querySelector('.pct');
+        const t = (c.querySelector('.v')?.textContent || '').trim();
+        const pct = c.querySelector('.pct')?.textContent ? c.querySelector('.pct') : null;
         return { v: /^-?[\d.]+,\d{2}$/.test(t) ? numeroBR(t) : t === 'falta' ? 'falta' : null, p: pct ? numeroBR(pct.textContent) : null };
       }),
     };
@@ -536,7 +547,7 @@ function desenharAno() {
     for (const mk of meses) for (const l of cache[mk].caixa.linhas) vistos.set(l.id, l.nome);
     linhas = [...vistos].map(([id, rot]) => [id, rot, 'item']).concat([['soma', 'Soma despesas (-)', 'total'], ['recebimentos', 'Recebimentos (+)', 'total'], ['resultado', 'Resultado (=)', 'total']]);
   }
-  const cel = (v, base) => `<td class="${v < 0 ? 'neg' : ''}">${v == null ? '–' : num(v) + percentual(v, base)}</td>`;
+  const cel = (v, base) => `<td class="${v < 0 ? 'neg' : ''}">${v == null ? par('–') : par(num(v), percentual(v, base))}</td>`;
   const idBase = visao === 'dre' ? 'receita' : 'recebimentos';
   const soma = vs => (vs.every(v => v == null) ? null : vs.reduce((s, v) => s + (v || 0), 0));
   const cab = modo === 'mes' ? meses.map(mk => MESES[+mk.slice(5) - 1]) : ordem.map(nome);
