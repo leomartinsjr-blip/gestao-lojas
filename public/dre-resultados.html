@@ -10,20 +10,22 @@
     --green:#1a7f37; --red:#cf222e; --yellow:#9a6700; --yellowbg:#fff8c5; --blue:#0969da; color-scheme:light; }
   * { box-sizing:border-box; margin:0; padding:0; }
   body { background:var(--bg); color:var(--text); font:13px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
-  header { background:var(--bg2); border-bottom:1px solid var(--border); padding:10px 16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
-  h1 { font-size:15px; font-weight:600; margin-right:auto; }
+  header { background:var(--bg2); border-bottom:1px solid var(--border); padding:10px 16px; display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap; }
+  h1 { font-size:15px; font-weight:600; margin-right:14px; }
   input, button { background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:5px 10px; font-size:12px; color:var(--text); }
   button { cursor:pointer; } button:hover { color:var(--blue); border-color:var(--blue); }
-  main { padding:16px; max-width:1300px; }
+  main { padding:16px; max-width:1300px; margin:0 auto; }
+  body.uma-loja #vDre .painel, body.uma-loja #vCaixa .painel, body.uma-loja #vDre .nota { max-width:860px; margin-left:auto; margin-right:auto; }
+  #vDre .nota, #vCaixa .nota, #vAno .nota { text-align:center; }
   .painel { background:var(--bg2); border:1px solid var(--border); border-radius:8px; margin-bottom:16px; overflow-x:auto; }
-  .painel h2 { font-size:13px; font-weight:600; padding:10px 14px; border-bottom:1px solid var(--border); }
+  .painel h2 { font-size:13px; font-weight:600; padding:10px 14px; border-bottom:1px solid var(--border); text-align:center; }
   dialog { border:1px solid var(--border); border-radius:10px; padding:0; width:min(620px,92vw); margin:auto; }
   dialog::backdrop { background:rgba(0,0,0,.35); }
   #passo { padding:18px; } #passo h3 { font-size:15px; margin:6px 0 14px; } #passo small { color:var(--text2); }
   #passo input[type=number] { font-size:15px; width:200px; background:#fff; } .acoes { display:flex; gap:8px; margin-top:16px; }
   .acoes button.prim { background:var(--blue); color:#fff; border-color:var(--blue); }
   details { border-top:1px solid var(--border); padding:10px 14px; } summary { cursor:pointer; color:var(--text2); }
-  .pilulas { display:flex; gap:6px; flex-wrap:wrap; padding-bottom:10px; } .pilulas button.ativa { background:var(--blue); color:#fff; border-color:var(--blue); }
+  .pilulas { display:flex; gap:6px; flex-wrap:wrap; padding-bottom:10px; justify-content:center; } .pilulas button.ativa { background:var(--blue); color:#fff; border-color:var(--blue); }
   div.item { display:flex; align-items:center; gap:10px; padding:7px 14px; flex-wrap:wrap; }
   .item b { min-width:90px; } .item .feito { color:var(--green); } .item .pend { color:var(--yellow); font-weight:600; }
   .item input[type=number] { width:130px; background:#fff; } .item span.r { flex:1; min-width:220px; }
@@ -35,15 +37,16 @@
   th:first-child, td:first-child { text-align:left; position:sticky; left:0; background:var(--bg2); }
   thead th { background:var(--bg3); font-size:12px; color:var(--text2); }
   tbody tr.grupo td, tbody tr.grupo:nth-child(even) td { font-weight:600; background:#ddf4ff; color:#0a3069; border-top:1px solid #b6e3ff; }
+  #tabela th:last-child, #tabelaCaixa th:last-child { white-space:nowrap; }
   tbody tr.grupo td.neg { color:var(--red); } tbody tr.item td:first-child { padding-left:24px; }
   tr.total td, tbody tr.total:nth-child(even) td { font-weight:700; background:#e4eaf2; border-top:1px solid #b9c2cd; }
   td small { margin-left:6px; color:var(--text2); font-size:11px; font-weight:400; } td small.pct { color:var(--blue); display:inline-block; min-width:48px; text-align:right; }
-  .abas { display:flex; gap:6px; padding:0 0 12px; }
+  .abas { display:flex; gap:6px; padding:0 0 12px; justify-content:center; flex-wrap:wrap; }
   .abas button.ativa { color:var(--blue); border-color:var(--blue); font-weight:600; }
   tr.abre { cursor:pointer; } tr.abre td:first-child::before { content:'▸ '; color:var(--text2); }
   tr.abre.aberta td:first-child::before { content:'▾ '; }
   tr.sub td { background:var(--bg3); font-size:12px; color:var(--text2); } tr.sub td:first-child { background:var(--bg3); padding-left:30px; white-space:normal; min-width:240px; }
-  .filtros { display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding-bottom:12px; } select { background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:5px 8px; font-size:12px; }
+  .filtros { display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap; padding-bottom:12px; } select { background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:5px 8px; font-size:12px; }
   #tabCustos input[type=text], #tabCustos input[type=number], #percentuais input { background:#fff; width:100%; min-width:90px; }
   #tabCustos td { white-space:normal; text-align:left; } #tabCustos label { display:inline-block; margin-right:6px; font-size:11px; }
   #percentuais label { display:inline-block; width:210px; } a { color:var(--blue); } .tira { padding:0 6px; }
@@ -130,6 +133,11 @@ function desenhar(d) {
   const colunas = lojaAtual === 'resumo' ? d.ordem : [lojaAtual];
   const soUma = colunas.length === 1;
   const mostraPlanilha = soUma && d.planilha?.[lojaAtual];
+  document.body.classList.toggle('uma-loja', soUma);
+  // Resumo: coluna Total, somando as lojas, com o % sobre a venda do grupo
+  const somaLojas = pegar => { const vs = colunas.map(pegar); return vs.every(v => v == null) ? null : vs.reduce((s, v) => s + (v || 0), 0); };
+  const colTotal = (pegar, pegarBase) => (soUma ? '' : celula({ valor: somaLojas(pegar), base: somaLojas(pegarBase) }).replace('falta', '–'));
+  const thTotal = soUma ? '' : '<th>Total</th>';
 
   $('abrirPassos').textContent = d.pendencias.length ? `Informações do mês (${d.pendencias.length})` : 'Informações do mês';
   $('pilulas').innerHTML = d.ordem.map(b => `<button data-loja-sel="${b}" class="${b === lojaAtual ? 'ativa' : ''}">${fechada(b) ? '🔒 ' : ''}${nome(b)}</button>`).join('') +
@@ -138,28 +146,28 @@ function desenhar(d) {
 
   const [a, m] = d.mes.split('-');
   $('titulo').textContent = `DRE de ${m}/${a}: ${soUma ? nome(lojaAtual) : 'todas as lojas'}`;
-  const cab = `<thead><tr><th>Linha</th>${colunas.map(b => `<th class="${fechada(b) ? 'fechada' : ''}">${soUma ? 'Valor e % da venda' : nome(b)}</th>`).join('')}${mostraPlanilha ? '<th>Planilha</th>' : ''}</tr></thead>`;
+  const cab = `<thead><tr><th>Linha</th>${colunas.map(b => `<th class="${fechada(b) ? 'fechada' : ''}">${soUma ? 'Valor e % da venda' : nome(b)}</th>`).join('')}${thTotal}${mostraPlanilha ? '<th>Planilha</th>' : ''}</tr></thead>`;
   const subs = (itens, extra) => itens.filter(i => colunas.some(b => i.lojas[b])).map(i => `<tr class="sub" hidden><td>${i.nome}</td>${colunas.map(b =>
-    `<td>${i.lojas[b] ? num(i.lojas[b]) : ''}</td>`).join('')}${extra ? '<td></td>' : ''}</tr>`).join('');
+    `<td>${i.lojas[b] ? num(i.lojas[b]) : ''}</td>`).join('')}${soUma ? '' : `<td>${num(somaLojas(b => i.lojas[b]) || 0)}</td>`}${extra ? '<td></td>' : ''}</tr>`).join('');
   const corpo = d.estrutura.map(([k, rot, tipo]) => {
     const itens = (d.detalhe?.[k] || []).filter(i => colunas.some(b => i.lojas[b]));
     return `<tr class="${[itens.length ? 'abre' : '', tipo].join(' ')}"><td>${rot}</td>${colunas.map(b => celula({
       valor: d.lojas[b][k], base: d.lojas[b].receita, ref: d.planilha?.[b]?.[k],
       editar: tipo === 'item' && !fechada(b) ? lapis('ajustes', k, b) : '',
       calculado: k in (d.lojas[b].ajustado || {}) ? d.lojas[b].ajustado[k] : undefined,
-    })).join('')}${mostraPlanilha ? `<td>${d.planilha[lojaAtual][k] != null ? num(d.planilha[lojaAtual][k]) : ''}</td>` : ''}</tr>${subs(itens, mostraPlanilha)}`;
+    })).join('')}${colTotal(b => d.lojas[b][k], b => d.lojas[b].receita)}${mostraPlanilha ? `<td>${d.planilha[lojaAtual][k] != null ? num(d.planilha[lojaAtual][k]) : ''}</td>` : ''}</tr>${subs(itens, mostraPlanilha)}`;
   }).join('');
   $('tabela').innerHTML = cab + `<tbody>${corpo}</tbody>`;
 
   $('tituloCaixa').textContent = `Fechamento de Caixa de ${m}/${a}: ${soUma ? nome(lojaAtual) : 'todas as lojas'}`;
-  const cabCx = `<thead><tr><th>Linha</th>${colunas.map(b => `<th>${soUma ? 'Valor e % dos recebimentos' : nome(b)}</th>`).join('')}</tr></thead>`;
-  const linhaTotal = (rot, valores) => `<tr class="total"><td>${rot}</td>${colunas.map(b => celula({ valor: valores[b] || 0, base: d.caixa.recebimentos[b] })).join('')}</tr>`;
+  const cabCx = `<thead><tr><th>Linha</th>${colunas.map(b => `<th>${soUma ? 'Valor e % dos recebimentos' : nome(b)}</th>`).join('')}${thTotal}</tr></thead>`;
+  const linhaTotal = (rot, valores) => `<tr class="total"><td>${rot}</td>${colunas.map(b => celula({ valor: valores[b] || 0, base: d.caixa.recebimentos[b] })).join('')}${colTotal(b => valores[b] || 0, b => d.caixa.recebimentos[b])}</tr>`;
   const visiveis = d.caixa.linhas.filter(l => colunas.some(b => l.lojas[b]));
   $('tabelaCaixa').innerHTML = cabCx + '<tbody>' + visiveis.map(l => {
     const itens = l.detalhe.filter(i => colunas.some(b => i.lojas[b]));
     return `<tr class="${itens.length ? 'abre' : ''}"><td>${l.nome}</td>${colunas.map(b => (l.lojas[b] || !soUma
       ? celula({ valor: l.lojas[b] || 0, base: d.caixa.recebimentos[b], editar: fechada(b) ? '' : lapis('ajustesCaixa', l.id, b), calculado: b in (l.ajustado || {}) ? l.ajustado[b] : undefined })
-      : '<td></td>')).join('')}</tr>${subs(itens)}`;
+      : '<td></td>')).join('')}${colTotal(b => l.lojas[b] || 0, b => d.caixa.recebimentos[b])}</tr>${subs(itens)}`;
   }).join('') + linhaTotal('Soma despesas (-)', d.caixa.soma) + linhaTotal('Recebimentos (+)', d.caixa.recebimentos) + linhaTotal('Resultado (=)', d.caixa.resultado) + '</tbody>';
 
   document.querySelectorAll('.ed').forEach(el => el.addEventListener('click', async ev => {
