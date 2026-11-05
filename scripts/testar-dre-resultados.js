@@ -108,8 +108,9 @@ assert.strictEqual(fp.contagem.premiacoes, 1130);
 assert.strictEqual(fp.minas.ajuda, 1200);
 const comExtras = L.folhaPorLoja({ delrey: { entries: { 7: { tipo: 'vendedor', proventos: 4000, fixo: 1000, extras: [
   { nome: '13o Salário Proporcional 8/12 avos', valor: 1416.72 }, { nome: 'Terço Constitucional de Férias', valor: 472.24 },
-  { nome: 'Salário Família', valor: 135.08 }, { nome: 'Instagram da loja', valor: 600 }] } } } }, []);
-assert.strictEqual(comExtras.delrey.premiacoes, 975.96, 'só o que é prêmio fica em Premiações');
+  { nome: 'Salário Família', valor: 135.08 }, { nome: 'Instagram da loja', valor: 600 }, { nome: 'DIFERENÇA DE FÉRIAS', valor: 100 }] } } } }, []);
+assert.strictEqual(comExtras.delrey.premiacoes, 875.96, 'só o que é prêmio fica em Premiações');
+assert.strictEqual(comExtras.delrey.fixos, 1100, 'diferença de férias vai para salário');
 assert.strictEqual(Math.round(L.aliquotaSimples('delrey', '2026-10') * 10000), 1019);
 assert.strictEqual(L.linhaDre('MAGNUM LUIZ - TECNICO', 'tommy'), 'magnum');
 assert.strictEqual(L.linhaDre('FOLHA DE PAGAMENTO', 'delrey'), null);
@@ -123,10 +124,11 @@ assert.strictEqual(dc.lojas.contagem.ponto, 16226.63);
 const C = require('../services/dreCadastros');
 const lancE = [{ b: 'site', f: 'ALUGUEL - ED MONTEREY OFFICE', v: 1912.3 }, { b: 'site', f: 'CEMIG', v: 307.09 }, { b: 'site', f: 'CONDOMINIO SHOPPING', v: 853.12 },
   { b: 'delrey', f: 'CONDOMINIO SHOPPING', v: 17559.15 }, { b: 'minas', f: 'MAGNUM CONSULTORIA', v: 157.5 }, { b: 'contagem', f: 'MAGNUM CONSULTORIA', v: 157.5 }, { b: 'site', f: 'MAGNUM CONSULTORIA', v: 157.5 }, { b: 'tommy', f: 'MAGNUM LUIZ - TECNICO', v: 125 }];
-const ce = C.calcularEscritorio({ itens: C.PADRAO.escritorio, encargos: 29, lancamentos: lancE, pessoas: [{ nome: 'INGRID MUNIZ', valor: 3674.66 }, { nome: 'LAURA FARIA DE MATOS', valor: 2000 }, { nome: 'LEONARDO', valor: 18000 }] });
-assert.strictEqual(ce.porLoja.delrey, 2534.98);
-assert.strictEqual(ce.porLoja.estacao, 1965.65);
+const ce = C.calcularEscritorio({ itens: C.PADRAO.escritorio, lancamentos: lancE, pessoas: [{ nome: 'INGRID MUNIZ', valor: 3674.66 }, { nome: 'LAURA FARIA DE MATOS', valor: 2000 }, { nome: 'LEONARDO', valor: 18000 }] });
+assert.strictEqual(ce.porLoja.delrey, 2379.77);
+assert.strictEqual(ce.porLoja.estacao, 1810.43);
 assert.ok(!ce.usados.has(lancE[3]), 'condomínio da loja não vai para o rateio');
+assert.strictEqual(C.comPadrao({ escritorio: [{ id: 'ingrid', nome: 'Ingrid', encargos: true }] }).escritorio[0].encargosPct, 19.44);
 assert.strictEqual(C.validar({ escritorio: [{ nome: '', origem: 'fixo', lojas: ['lez'] }] }), 'Todo custo precisa de nome');
 assert.strictEqual(dc.lojas.contagem.encargos, 2749.84);
 assert.strictEqual(dc.lojas.tommy.frete, 485.91);

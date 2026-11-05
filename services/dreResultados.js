@@ -128,7 +128,7 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
     lanc.push({ b: 'lez', f: nome, v: (f.pago || 0) + (f.aberto || 0) });
   const nomes = Object.fromEntries(employees.map(e => [String(e.id), e.name || '']));
   const pessoas = Object.entries(folhaMes?.site?.entries || {}).map(([id, e]) => ({ nome: nomes[id] || '', valor: e.proventos || 0 }));
-  const esc = C.calcularEscritorio({ itens: cfg.escritorio, encargos: pct.encargos, pessoas, lancamentos: lanc });
+  const esc = C.calcularEscritorio({ itens: cfg.escritorio, pessoas, lancamentos: lanc });
   // O que foi para o rateio do escritório sai das linhas da loja que pagou
   const { totais, detalhe } = L.somarFaturas(lanc.filter(l => !esc.usados.has(l)));
   const folha = L.folhaPorLoja(folhaMes, employees);

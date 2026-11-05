@@ -11,8 +11,9 @@ const CINCO = ['delrey', 'minas', 'contagem', 'tommy', 'lez'];
 // origem: fixo (valor) · folha (pessoa na folha do board site) · faturas (fornecedor)
 const PADRAO = {
   escritorio: [
-    { id: 'ingrid', nome: 'Ingrid', origem: 'folha', termo: 'INGRID', encargos: true, lojas: SEIS },
-    { id: 'laura', nome: 'Laura', origem: 'folha', termo: 'LAURA', encargos: true, lojas: SEIS },
+    // Ingrid é PJ: só férias, 1/3 e 13º (1/12 + 1/36 + 1/12). Laura não tem encargo.
+    { id: 'ingrid', nome: 'Ingrid', origem: 'folha', termo: 'INGRID', encargosPct: 19.44, lojas: SEIS },
+    { id: 'laura', nome: 'Laura', origem: 'folha', termo: 'LAURA', encargosPct: 0, lojas: SEIS },
     { id: 'sala-aluguel', nome: 'Sala: aluguel e IPTU', origem: 'faturas', termo: 'ED MONTEREY', empresa: 'site', lojas: SEIS },
     { id: 'sala-condominio', nome: 'Sala: condomínio', origem: 'faturas', termo: 'CONDOMINIO SHOPPING', empresa: 'site', lojas: SEIS },
     { id: 'sala-energia', nome: 'Sala: energia', origem: 'faturas', termo: 'CEMIG', empresa: 'site', lojas: SEIS },
@@ -25,7 +26,10 @@ const PADRAO = {
 
 function comPadrao(salvo) {
   return {
-    escritorio: salvo?.escritorio?.length ? salvo.escritorio : PADRAO.escritorio,
+    // Cadastro salvo antes do campo encargosPct herda o valor padrão do mesmo custo
+    escritorio: salvo?.escritorio?.length
+      ? salvo.escritorio.map(i => ({ ...i, encargosPct: i.encargosPct ?? PADRAO.escritorio.find(p => p.id === i.id)?.encargosPct ?? 0 }))
+      : PADRAO.escritorio,
     percentuais: { ...PADRAO.percentuais, ...(salvo?.percentuais || {}) },
   };
 }
@@ -37,6 +41,7 @@ function validar(body) {
     if (!String(i.nome || '').trim()) return 'Todo custo precisa de nome';
     if (!['fixo', 'folha', 'faturas'].includes(i.origem)) return `Origem inválida em ${i.nome}`;
     if (i.origem === 'fixo' && !(Number(i.valor) >= 0)) return `Valor inválido em ${i.nome}`;
+    if (i.encargosPct != null && !(Number(i.encargosPct) >= 0)) return `Encargos inválidos em ${i.nome}`;
     if (i.origem !== 'fixo' && !String(i.termo || '').trim()) return `Informe a busca em ${i.nome}`;
     if (!Array.isArray(i.lojas) || !i.lojas.length || i.lojas.some(l => !SEIS.includes(l))) return `Escolha as lojas de ${i.nome}`;
   }
@@ -46,7 +51,7 @@ function validar(body) {
 }
 
 // lancamentos: [{ b, f, v }] do mês · pessoas: [{ nome, valor }] da folha do escritório
-function calcularEscritorio({ itens, encargos, pessoas, lancamentos }) {
+function calcularEscritorio({ itens, pessoas, lancamentos }) {
   const porLoja = {}, detalhe = [], usados = new Set();
   for (const item of itens) {
     let valor = 0;
@@ -60,7 +65,7 @@ function calcularEscritorio({ itens, encargos, pessoas, lancamentos }) {
         usados.add(l);
       }
     }
-    if (item.encargos) valor *= 1 + encargos / 100;
+    valor *= 1 + (Number(item.encargosPct) || 0) / 100;
     const cota = valor / item.lojas.length;
     const lojas = {};
     for (const b of item.lojas) { lojas[b] = r2(cota); porLoja[b] = (porLoja[b] || 0) + cota; }

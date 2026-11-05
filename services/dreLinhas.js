@@ -57,6 +57,7 @@ function percentuaisEmbalagem(pagoPorLoja, vendaPorLoja, cadastrado = {}) {
 // Extras que não são prêmio: verbas de rescisão já estão na taxa de encargos, e
 // salário-família e empréstimo consignado não são custo da loja.
 const EXTRA_FORA = /13O SALÁRIO|13º SALÁRIO|FÉRIAS PROPORCIONAIS|TERÇO CONSTITUCIONAL|SALÁRIO FAMÍLIA|EMPRÉSTIMO|AVISO PRÉVIO/;
+const EXTRA_SALARIO = /DIFERENÇA DE FÉRIAS/; // decisão do Leonardo: conta como salário
 
 // Folha do mês: fixos, comissões, premiações e ajuda por loja. O supervisor é
 // rateado como na própria folha; sócio é pró-labore e não entra na loja.
@@ -73,20 +74,21 @@ function folhaPorLoja(folhaMes, employees = []) {
       const proventos = e.proventosBruto ?? e.proventos ?? 0;
       const fixo = e.fixo || 0, compl = e.gmComplement || 0, quebra = e.quebra || 0;
       const comissao = (e.comissaoTotal || 0) + (e.comissaoLoja || 0), ajuda = e.ajudaCustoTotal || 0;
-      const foraDaLinha = (e.extras || []).reduce((s, x) => s + (EXTRA_FORA.test(norm(x.nome)) ? Number(x.valor) || 0 : 0), 0);
-      const resto = r2(proventos - fixo - compl - quebra - comissao - ajuda - foraDaLinha);
+      const somaExtras = re => (e.extras || []).reduce((s, x) => s + (re.test(norm(x.nome)) ? Number(x.valor) || 0 : 0), 0);
+      const diferencaFerias = somaExtras(EXTRA_SALARIO);
+      const resto = r2(proventos - fixo - compl - quebra - comissao - ajuda - somaExtras(EXTRA_FORA) - diferencaFerias);
       const lojas = empPorId[id]?.supervisedBoards || [];
       if (e.tipo === 'supervisor' && lojas.length) {
         for (const b of lojas) {
           loja(b).fixos += fixo / lojas.length;
           loja(b).comissoes += (e.lojaComissoes || []).find(l => l.board === b)?.comissao || 0;
         }
-        loja(board).fixos += compl + quebra;
+        loja(board).fixos += compl + quebra + diferencaFerias;
         loja(board).premiacoes += resto;
         loja(board).ajuda += ajuda;
       } else {
         const l = loja(board);
-        l.fixos += fixo + compl + quebra;
+        l.fixos += fixo + compl + quebra + diferencaFerias;
         l.comissoes += comissao;
         l.premiacoes += resto;
         l.ajuda += ajuda;

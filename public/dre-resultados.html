@@ -208,11 +208,11 @@ const ROT_PCT = { encargos: 'Encargos sobre folha (%)', aluguelPct: 'Aluguel per
 async function carregarCad() { cad = await (await fetch('/api/dre-resultados/cadastros')).json(); desenharCad(); }
 function desenharCad() {
   const rot = b => cad.labels[b] || b;
-  $('tabCustos').innerHTML = '<thead><tr><th>Custo</th><th>Origem</th><th>Valor ou busca</th><th>Encargos</th><th>Divide entre</th><th></th></tr></thead><tbody>' + cad.escritorio.map((c, i) => `<tr data-i="${i}">
+  $('tabCustos').innerHTML = '<thead><tr><th>Custo</th><th>Origem</th><th>Valor ou busca</th><th>Encargos %</th><th>Divide entre</th><th></th></tr></thead><tbody>' + cad.escritorio.map((c, i) => `<tr data-i="${i}">
     <td><input type="text" data-k="nome" value="${c.nome}"></td>
     <td><select data-k="origem">${['fixo', 'folha', 'faturas'].map(o => `<option ${o === c.origem ? 'selected' : ''}>${o}</option>`).join('')}</select></td>
     <td>${c.origem === 'fixo' ? `<input type="number" step="0.01" data-k="valor" value="${c.valor ?? ''}">` : `<input type="text" data-k="termo" value="${c.termo ?? ''}">`}</td>
-    <td><input type="checkbox" data-k="encargos" ${c.encargos ? 'checked' : ''}></td>
+    <td><input type="number" step="0.01" data-k="encargosPct" value="${c.encargosPct ?? 0}" style="width:70px;min-width:70px"></td>
     <td>${cad.lojas.map(b => `<label><input type="checkbox" data-loja="${b}" ${c.lojas.includes(b) ? 'checked' : ''}> ${rot(b)}</label>`).join('')}</td>
     <td><button class="tira" data-del="${i}">×</button></td></tr>`).join('') + '</tbody>';
   $('percentuais').innerHTML = Object.entries(cad.percentuais).map(([k, v]) => `<div class="item"><label>${ROT_PCT[k] || k}</label><input type="number" step="0.01" data-pct="${k}" value="${v}" style="width:110px"></div>`).join('');
