@@ -17,18 +17,25 @@
   main { padding:16px; max-width:1300px; }
   .painel { background:var(--bg2); border:1px solid var(--border); border-radius:8px; margin-bottom:16px; overflow-x:auto; }
   .painel h2 { font-size:13px; font-weight:600; padding:10px 14px; border-bottom:1px solid var(--border); }
-  .manual { background:var(--yellowbg); border-color:#d4a72c; }
-  .manual h2 { border-color:#d4a72c; color:var(--yellow); }
-  .manual.ok { background:#dafbe1; border-color:#4ac26b; } .manual.ok h2 { color:var(--green); border-color:#4ac26b; }
+  dialog { border:1px solid var(--border); border-radius:10px; padding:0; width:min(620px,92vw); margin:auto; }
+  dialog::backdrop { background:rgba(0,0,0,.35); }
+  #passo { padding:18px; } #passo h3 { font-size:15px; margin:6px 0 14px; } #passo small { color:var(--text2); }
+  #passo input[type=number] { font-size:15px; width:200px; background:#fff; } .acoes { display:flex; gap:8px; margin-top:16px; }
+  .acoes button.prim { background:var(--blue); color:#fff; border-color:var(--blue); }
+  details { border-top:1px solid var(--border); padding:10px 14px; } summary { cursor:pointer; color:var(--text2); }
+  .pilulas { display:flex; gap:6px; flex-wrap:wrap; padding-bottom:10px; } .pilulas button.ativa { background:var(--blue); color:#fff; border-color:var(--blue); }
   .item { display:flex; align-items:center; gap:10px; padding:7px 14px; flex-wrap:wrap; }
   .item b { min-width:90px; } .item .feito { color:var(--green); } .item .pend { color:var(--yellow); font-weight:600; }
   .item input[type=number] { width:130px; background:#fff; } .item span.r { flex:1; min-width:220px; }
   table { border-collapse:collapse; width:100%; font-variant-numeric:tabular-nums; }
-  th, td { padding:7px 12px; text-align:right; border-bottom:1px solid var(--border); white-space:nowrap; }
+  th, td { padding:3px 10px; text-align:right; border-bottom:1px solid var(--border); white-space:nowrap; line-height:1.45; }
+  #tabela td, #tabelaCaixa td, #tabelaAno td { font-size:12.5px; }
+  tbody tr:nth-child(even) td { background:#f8fafc; } tbody tr:hover td { background:#e8f1fb; }
+  td.neg { color:var(--red); }
   th:first-child, td:first-child { text-align:left; position:sticky; left:0; background:var(--bg2); }
   thead th { background:var(--bg3); font-size:12px; color:var(--text2); }
-  tr.total td { font-weight:700; background:var(--bg3); }
-  td small { display:block; color:var(--text2); font-size:11px; } td small.pct { color:var(--blue); }
+  tr.total td, tbody tr.total:nth-child(even) td { font-weight:700; background:#e4eaf2; border-top:1px solid #b9c2cd; }
+  td small { margin-left:6px; color:var(--text2); font-size:11px; font-weight:400; } td small.pct { color:var(--blue); display:inline-block; min-width:48px; text-align:right; }
   .abas { display:flex; gap:6px; padding:0 0 12px; }
   .abas button.ativa { color:var(--blue); border-color:var(--blue); font-weight:600; }
   tr.abre { cursor:pointer; } tr.abre td:first-child::before { content:'▸ '; color:var(--text2); }
@@ -38,7 +45,7 @@
   #tabCustos input[type=text], #tabCustos input[type=number], #percentuais input { background:#fff; width:100%; min-width:90px; }
   #tabCustos td { white-space:normal; text-align:left; } #tabCustos label { display:inline-block; margin-right:6px; font-size:11px; }
   #percentuais label { display:inline-block; width:210px; } a { color:var(--blue); } .tira { padding:0 6px; }
-  .ed { cursor:pointer; color:var(--text2); margin-left:5px; opacity:.35; font-size:11px; } td:hover .ed { opacity:1; color:var(--blue); }
+  .ed { cursor:pointer; margin-left:5px; visibility:hidden; font-size:11px; color:var(--blue); } td:hover .ed { visibility:visible; }
   td.aj { background:var(--yellowbg) !important; }
   .fim { padding:9px 14px; border-top:1px solid var(--border); display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
   .fim b { min-width:95px; } .fim ul { flex:1; min-width:280px; list-style:none; line-height:1.6; } .fim .ok { color:var(--green); } .fim .nao { color:var(--yellow); font-weight:600; }
@@ -52,6 +59,7 @@
 <header>
   <h1>DRE/Resultados</h1>
   <label>Mês <input type="month" id="mes"></label>
+  <button id="abrirPassos">Informações do mês</button>
   <button id="recalcular" title="Busca de novo no Microvix">Recalcular</button>
   <button id="expAba">Exportar esta aba</button>
   <button id="expTudo">Exportar tudo</button>
@@ -61,11 +69,11 @@
 <main>
   <div id="msg">Carregando…</div>
   <div id="conteudo" hidden>
-    <div class="painel manual" id="manuais"></div>
-    <div class="painel" id="finalizar"></div>
     <div class="abas"><button id="abaDre" class="ativa">DRE</button><button id="abaCaixa">Fechamento de Caixa</button><button id="abaAno">Consolidado do ano</button><button id="abaCad">Cadastros</button></div>
+    <div class="pilulas" id="pilulas"></div>
     <div id="vDre">
       <div class="painel"><h2 id="titulo"></h2><table id="tabela"></table></div>
+      <div class="painel" id="finalizar"></div>
       <p class="nota" id="nota"></p>
     </div>
     <div id="vCad" hidden>
@@ -95,84 +103,63 @@
     </div>
   </div>
 </main>
+<dialog id="assistente"><div id="passo"></div><details><summary>Ver todas as informações do mês</summary><div id="manuais"></div></details></dialog>
 <script>
 const $ = id => document.getElementById(id);
 const num = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-// Diferença acima disso aparece em vermelho: arredondamento não é erro.
-const TOLERANCIA = 50;
 
 const percentual = (v, base) => (base ? `<small class="pct">${num(v / base * 100)}%</small>` : '');
 const lapis = (grupo, k, b) => `<span class="ed" title="Editar valor" data-grupo="${grupo}" data-k="${k}" data-b="${b}">✎</span>`;
-function celula(valor, ref, extra = '', cls = '') {
-  if (valor == null) return `<td class="falta">falta${extra}</td>`;
-  let refTxt = '';
-  if (ref != null) {
-    const d = valor - ref;
-    refTxt = `<small class="${Math.abs(d) > TOLERANCIA ? 'dif' : ''}">planilha ${num(ref)}</small>`;
-  }
-  return `<td class="${cls}">${num(valor)}${refTxt}${extra}</td>`;
+let ultimo = null, lojaAtual = null, passos = [], passoI = 0;
+
+function celula({ valor, base, ref, editar = '', calculado }) {
+  if (valor == null) return `<td class="falta">falta${editar}</td>`;
+  const cls = [valor < 0 ? 'neg' : '', calculado !== undefined ? 'aj' : ''].join(' ');
+  const dica = [ref != null ? `Planilha: ${num(ref)}` : '', calculado !== undefined ? `Calculado: ${calculado == null ? 'sem valor' : num(calculado)}` : ''].filter(Boolean).join(' · ');
+  return `<td class="${cls}" title="${dica}">${num(valor)}${percentual(valor, base)}${editar}</td>`;
 }
 
 function desenhar(d) {
+  ultimo = d;
   const nome = b => d.labels[b] || b;
-  const falta = d.pendencias.length;
-  $('manuais').className = 'painel manual' + (falta ? '' : ' ok');
-  $('manuais').innerHTML = `<h2>Antes de finalizar: ${falta ? falta + ' item(ns) manual(is) em aberto' : 'itens manuais completos'}</h2>${
-    d.manuais.map(i => {
-      const estado = i.feito ? '<span class="feito">✓ ok</span>' : '<span class="pend">falta</span>';
-      const campo = i.tipo === 'numero'
-        ? `<input type="number" step="0.01" data-loja="${i.loja}" data-campo="${i.id}" value="${i.valor ?? ''}">`
-        : i.tipo === 'arquivo' ? `<input type="file" multiple accept="${i.id === 'boleto' ? '.pdf' : '.xlsx'}" class="arquivo">` : '';
-      const arquivos = (i.arquivos || []).map(a => `<a href="/api/dre-resultados/boleto/${d.mes}/${i.loja}/${a.chave}">${a.nome || 'boleto'} (${num(a.total)})</a>
-        <button class="tira" data-loja="${i.loja}" data-chave="${a.chave}" title="Tirar este boleto">×</button>`).join(' ');
-      return `<div class="item"><b>${nome(i.loja)}</b><span class="r">${i.rotulo} ${arquivos}</span>${campo}${estado}</div>`;
-    }).join('')}`;
-  document.querySelectorAll('#manuais input[type=number]').forEach(el => el.addEventListener('change', () => salvar(el)));
-  document.querySelectorAll('#manuais .arquivo').forEach(el => el.addEventListener('change', () => enviar(el)));
-  document.querySelectorAll('#manuais .tira').forEach(el => el.addEventListener('click', async () => {
-    if (!confirm('Tirar este boleto do mês?')) return;
-    await fetch(`/api/dre-resultados/boleto/${d.mes}/${el.dataset.loja}/${el.dataset.chave}`, { method: 'DELETE' });
-    cache = {}; carregar(false);
-  }));
-  const [a, m] = d.mes.split('-');
-  $('titulo').textContent = `DRE de ${m}/${a}`;
   const fechada = b => !!d.fechamentos?.[b];
-  const cab = `<thead><tr><th>Linha</th>${d.ordem.map(b => `<th class="${fechada(b) ? 'fechada' : ''}">${fechada(b) ? '🔒 ' : ''}${nome(b)}</th>`).join('')}</tr></thead>`;
-  $('finalizar').innerHTML = '<h2>Finalizar loja a loja</h2>' + d.ordem.map(b => {
-    if (fechada(b)) return `<div class="fim"><b>${nome(b)}</b><ul><li class="ok">🔒 Finalizada em ${new Date(d.fechamentos[b].em).toLocaleString('pt-BR')}</li></ul><button data-reabrir="${b}">Reabrir</button></div>`;
-    const itens = (d.conferencia?.[b] || []).map(i => `<li class="${i.ok ? 'ok' : i.bloqueia ? 'trava' : 'nao'}">${i.ok ? '✓' : '✗'} ${i.rotulo}${i.id === 'simples' ? ` <input type="checkbox" data-simples="${b}" ${i.ok ? 'checked' : ''}>` : ''}</li>`).join('');
-    return `<div class="fim"><b>${nome(b)}</b><ul>${itens}</ul><button data-finalizar="${b}">Finalizar</button></div>`;
-  }).join('');
-  document.querySelectorAll('[data-finalizar]').forEach(el => el.addEventListener('click', () => finalizar(d.mes, el.dataset.finalizar, false, nome(el.dataset.finalizar))));
-  document.querySelectorAll('[data-reabrir]').forEach(el => el.addEventListener('click', async () => {
-    if (!confirm(`Reabrir ${nome(el.dataset.reabrir)}? Os números voltam a ser calculados.`)) return;
-    await fetch(`/api/dre-resultados/finalizar/${d.mes}/${el.dataset.reabrir}`, { method: 'DELETE' });
-    cache = {}; carregar(false);
-  }));
-  document.querySelectorAll('[data-simples]').forEach(el => el.addEventListener('change', async () => {
-    await fetch('/api/dre-resultados/manual', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mes: d.mes, loja: el.dataset.simples, campo: 'conferidos.simples', valor: el.checked ? 1 : '' }) });
-    carregar(false);
-  }));
-  const subs = itens => itens.map(i => `<tr class="sub" hidden><td>${i.nome}</td>${d.ordem.map(b =>
-    `<td>${i.lojas[b] ? num(i.lojas[b]) : ''}</td>`).join('')}</tr>`).join('');
+  const todas = d.ordem.every(fechada);
+  if (!d.ordem.includes(lojaAtual) && lojaAtual !== 'resumo') lojaAtual = todas ? 'resumo' : d.ordem.find(b => !fechada(b));
+  const colunas = lojaAtual === 'resumo' ? d.ordem : [lojaAtual];
+  const soUma = colunas.length === 1;
+  const mostraPlanilha = soUma && d.planilha?.[lojaAtual];
+
+  $('abrirPassos').textContent = d.pendencias.length ? `Informações do mês (${d.pendencias.length})` : 'Informações do mês';
+  $('pilulas').innerHTML = d.ordem.map(b => `<button data-loja-sel="${b}" class="${b === lojaAtual ? 'ativa' : ''}">${fechada(b) ? '🔒 ' : ''}${nome(b)}</button>`).join('') +
+    `<button data-loja-sel="resumo" class="${lojaAtual === 'resumo' ? 'ativa' : ''}">Resumo de todas</button>`;
+  document.querySelectorAll('[data-loja-sel]').forEach(el => el.addEventListener('click', () => { lojaAtual = el.dataset.lojaSel; desenhar(d); }));
+
+  const [a, m] = d.mes.split('-');
+  $('titulo').textContent = `DRE de ${m}/${a}: ${soUma ? nome(lojaAtual) : 'todas as lojas'}`;
+  const cab = `<thead><tr><th>Linha</th>${colunas.map(b => `<th class="${fechada(b) ? 'fechada' : ''}">${soUma ? 'Valor e % da venda' : nome(b)}</th>`).join('')}${mostraPlanilha ? '<th>Planilha</th>' : ''}</tr></thead>`;
+  const subs = (itens, extra) => itens.filter(i => colunas.some(b => i.lojas[b])).map(i => `<tr class="sub" hidden><td>${i.nome}</td>${colunas.map(b =>
+    `<td>${i.lojas[b] ? num(i.lojas[b]) : ''}</td>`).join('')}${extra ? '<td></td>' : ''}</tr>`).join('');
   const corpo = d.estrutura.map(([k, rot, tipo]) => {
-    const itens = d.detalhe?.[k] || [];
-    const pct = b => (d.lojas[b].receita && d.lojas[b][k] != null ? percentual(d.lojas[b][k], d.lojas[b].receita) : '');
-    return `<tr class="${[itens.length ? 'abre' : '', tipo === 'total' ? 'total' : ''].join(' ')}"><td>${rot}</td>${d.ordem.map(b =>
-      celula(d.lojas[b][k], d.planilha?.[b]?.[k], (tipo === 'item' && !fechada(b) ? lapis('ajustes', k, b) : '') +
-        (k in (d.lojas[b].ajustado || {}) ? `<small>calculado ${d.lojas[b].ajustado[k] == null ? 'sem valor' : num(d.lojas[b].ajustado[k])}</small>` : ''),
-        k in (d.lojas[b].ajustado || {}) ? 'aj' : '').replace('</td>', pct(b) + '</td>')).join('')}</tr>${subs(itens)}`;
+    const itens = (d.detalhe?.[k] || []).filter(i => colunas.some(b => i.lojas[b]));
+    return `<tr class="${[itens.length ? 'abre' : '', tipo === 'total' ? 'total' : ''].join(' ')}"><td>${rot}</td>${colunas.map(b => celula({
+      valor: d.lojas[b][k], base: d.lojas[b].receita, ref: d.planilha?.[b]?.[k],
+      editar: tipo === 'item' && !fechada(b) ? lapis('ajustes', k, b) : '',
+      calculado: k in (d.lojas[b].ajustado || {}) ? d.lojas[b].ajustado[k] : undefined,
+    })).join('')}${mostraPlanilha ? `<td>${d.planilha[lojaAtual][k] != null ? num(d.planilha[lojaAtual][k]) : ''}</td>` : ''}</tr>${subs(itens, mostraPlanilha)}`;
   }).join('');
-  const parciais = d.ordem.filter(b => d.lojas[b].faltam.length);
   $('tabela').innerHTML = cab + `<tbody>${corpo}</tbody>`;
-  $('tituloCaixa').textContent = `Fechamento de Caixa de ${m}/${a}`;
-  const linhaTotal = (rot, valores) => `<tr class="total"><td>${rot}</td>${d.ordem.map(b => `<td>${num(valores[b] || 0)}${percentual(valores[b] || 0, d.caixa.recebimentos[b])}</td>`).join('')}</tr>`;
-  $('tabelaCaixa').innerHTML = cab + '<tbody>' + d.caixa.linhas.map(l =>
-    `<tr class="${l.detalhe.length ? 'abre' : ''}"><td>${l.nome}</td>${d.ordem.map(b =>
-      `<td class="${b in (l.ajustado || {}) ? 'aj' : ''}">${l.lojas[b] ? num(l.lojas[b]) : ''}${fechada(b) ? '' : lapis('ajustesCaixa', l.id, b)}${b in (l.ajustado || {}) ? `<small>calculado ${num(l.ajustado[b])}</small>` : ''}${l.lojas[b] ? percentual(l.lojas[b], d.caixa.recebimentos[b]) : ''}</td>`).join('')}</tr>${subs(l.detalhe)}`).join('') +
-    linhaTotal('Soma despesas (-)', d.caixa.soma) + linhaTotal('Recebimentos (+)', d.caixa.recebimentos) +
-    linhaTotal('Resultado (=)', d.caixa.resultado) + '</tbody>';
+
+  $('tituloCaixa').textContent = `Fechamento de Caixa de ${m}/${a}: ${soUma ? nome(lojaAtual) : 'todas as lojas'}`;
+  const cabCx = `<thead><tr><th>Linha</th>${colunas.map(b => `<th>${soUma ? 'Valor e % dos recebimentos' : nome(b)}</th>`).join('')}</tr></thead>`;
+  const linhaTotal = (rot, valores) => `<tr class="total"><td>${rot}</td>${colunas.map(b => celula({ valor: valores[b] || 0, base: d.caixa.recebimentos[b] })).join('')}</tr>`;
+  const visiveis = d.caixa.linhas.filter(l => colunas.some(b => l.lojas[b]));
+  $('tabelaCaixa').innerHTML = cabCx + '<tbody>' + visiveis.map(l => {
+    const itens = l.detalhe.filter(i => colunas.some(b => i.lojas[b]));
+    return `<tr class="${itens.length ? 'abre' : ''}"><td>${l.nome}</td>${colunas.map(b => (l.lojas[b] || !soUma
+      ? celula({ valor: l.lojas[b] || 0, base: d.caixa.recebimentos[b], editar: fechada(b) ? '' : lapis('ajustesCaixa', l.id, b), calculado: b in (l.ajustado || {}) ? l.ajustado[b] : undefined })
+      : '<td></td>')).join('')}</tr>${subs(itens)}`;
+  }).join('') + linhaTotal('Soma despesas (-)', d.caixa.soma) + linhaTotal('Recebimentos (+)', d.caixa.recebimentos) + linhaTotal('Resultado (=)', d.caixa.resultado) + '</tbody>';
+
   document.querySelectorAll('.ed').forEach(el => el.addEventListener('click', async ev => {
     ev.stopPropagation();
     const atual = el.closest('td').firstChild?.nodeType === 3 ? el.closest('td').firstChild.textContent.trim() : '';
@@ -189,11 +176,71 @@ function desenhar(d) {
     tr.classList.toggle('aberta');
     for (let n = tr.nextElementSibling; n && n.classList.contains('sub'); n = n.nextElementSibling) n.hidden = !n.hidden;
   }));
+
+  // Finalizar fica embaixo: uma loja por vez; no resumo, só a situação de cada uma
+  const conf = b => (d.conferencia?.[b] || []).map(i => `<li class="${i.ok ? 'ok' : i.bloqueia ? 'trava' : 'nao'}">${i.ok ? '✓' : '✗'} ${i.rotulo}${i.id === 'simples' ? ` <input type="checkbox" data-simples="${b}" ${i.ok ? 'checked' : ''}>` : ''}</li>`).join('');
+  $('finalizar').innerHTML = soUma
+    ? `<h2>Conferir e finalizar ${nome(lojaAtual)}</h2>` + (fechada(lojaAtual)
+      ? `<div class="fim"><ul><li class="ok">🔒 Finalizada em ${new Date(d.fechamentos[lojaAtual].em).toLocaleString('pt-BR')}</li></ul><button data-reabrir="${lojaAtual}">Reabrir</button></div>`
+      : `<div class="fim"><ul>${conf(lojaAtual)}</ul><button data-finalizar="${lojaAtual}">Finalizar ${nome(lojaAtual)}</button></div>`)
+    : `<h2>Situação do mês</h2>` + d.ordem.map(b => `<div class="fim"><b>${nome(b)}</b><ul><li class="${fechada(b) ? 'ok' : 'nao'}">${fechada(b) ? '🔒 Finalizada' : 'Em aberto'}</li></ul></div>`).join('');
+  document.querySelectorAll('[data-finalizar]').forEach(el => el.addEventListener('click', () => finalizar(d.mes, el.dataset.finalizar, false, nome(el.dataset.finalizar))));
+  document.querySelectorAll('[data-reabrir]').forEach(el => el.addEventListener('click', async () => {
+    if (!confirm(`Reabrir ${nome(el.dataset.reabrir)}? Os números voltam a ser calculados.`)) return;
+    await fetch(`/api/dre-resultados/finalizar/${d.mes}/${el.dataset.reabrir}`, { method: 'DELETE' });
+    cache = {}; carregar(false);
+  }));
+  document.querySelectorAll('[data-simples]').forEach(el => el.addEventListener('change', async () => {
+    await fetch('/api/dre-resultados/manual', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mes: d.mes, loja: el.dataset.simples, campo: 'conferidos.simples', valor: el.checked ? 1 : '' }) });
+    carregar(false);
+  }));
+
+  $('manuais').innerHTML = d.manuais.map(i => {
+    const arquivos = (i.arquivos || []).map(a => `<a href="/api/dre-resultados/boleto/${d.mes}/${i.loja}/${a.chave}">${a.nome || 'boleto'}</a>
+      <button class="tira" data-loja="${i.loja}" data-chave="${a.chave}" title="Tirar este boleto">×</button>`).join(' ');
+    return `<div class="item"><b>${nome(i.loja)}</b><span class="r">${i.rotulo} ${arquivos}</span><span class="${i.feito ? 'feito' : 'pend'}">${i.feito ? '✓ ok' : 'falta'}</span></div>`;
+  }).join('');
+  document.querySelectorAll('#manuais .tira').forEach(el => el.addEventListener('click', async () => {
+    if (!confirm('Tirar este boleto do mês?')) return;
+    await fetch(`/api/dre-resultados/boleto/${d.mes}/${el.dataset.loja}/${el.dataset.chave}`, { method: 'DELETE' });
+    cache = {}; carregar(false);
+  }));
   const quando = d.conferenciaEm ? new Date(d.conferenciaEm).toLocaleString('pt-BR') : '';
-  const abertas = d.ordem.filter(b => !d.folhaFechada[b] && b !== 'site').map(nome);
-  $('nota').textContent = (parciais.length ? `Resultado parcial em ${parciais.map(nome).join(', ')}: falta informar as linhas marcadas. ` : '') +
-    (abertas.length ? `Folha ainda aberta em ${abertas.join(', ')}. ` : '') +
-    `Faturas pelo vencimento, pagas ou em aberto. Para editar, clique no ✎ da célula; o valor fica em amarelo com o calculado embaixo. Conferência lida em ${quando}.`;
+  $('nota').textContent = `Faturas pelo vencimento, pagas ou em aberto. Passe o mouse no valor para editar (✎) ou ver a planilha. Conferência lida em ${quando}.`;
+}
+
+// Passo a passo: uma informação por vez, só o que falta no mês
+function abrirPassos() {
+  passos = ultimo.pendencias.filter(p => p.tipo !== 'aviso');
+  passoI = 0;
+  desenharPasso();
+  $('assistente').showModal();
+}
+function desenharPasso() {
+  const d = ultimo, p = passos[passoI];
+  if (!p) {
+    $('passo').innerHTML = `<h3>${passos.length ? 'Fim das informações' : 'Nada pendente neste mês'}</h3><small>Agora confira loja a loja e finalize embaixo da DRE.</small><div class="acoes"><button class="prim" id="pFechar">Fechar</button></div>`;
+    $('pFechar').addEventListener('click', () => $('assistente').close());
+    return;
+  }
+  const campo = p.tipo === 'numero' ? '<input type="number" step="0.01" id="pValor" placeholder="Valor">'
+    : `<input type="file" multiple accept="${p.id === 'boleto' ? '.pdf' : '.xlsx'}" id="pArquivo">`;
+  $('passo').innerHTML = `<small>Passo ${passoI + 1} de ${passos.length} · ${d.labels[p.loja] || p.loja}</small><h3>${p.rotulo}</h3>${campo}
+    <div class="acoes"><button class="prim" id="pSalvar">Salvar e continuar</button><button id="pPular">Pular</button><button id="pFechar">Fechar</button></div>`;
+  const prox = () => { passoI++; desenharPasso(); };
+  $('pPular').addEventListener('click', prox);
+  $('pFechar').addEventListener('click', () => $('assistente').close());
+  $('pSalvar').addEventListener('click', async () => {
+    if (p.tipo === 'numero') {
+      if ($('pValor').value === '') return;
+      await salvar({ dataset: { loja: p.loja, campo: p.id }, value: $('pValor').value });
+    } else {
+      if (!$('pArquivo').files.length) return;
+      await enviar($('pArquivo'));
+    }
+    prox();
+  });
 }
 
 async function finalizar(mes, loja, forcar, rotulo) {
@@ -251,6 +298,7 @@ const aba = qual => {
   for (const [v, b, k] of [['vDre', 'abaDre', 'dre'], ['vCaixa', 'abaCaixa', 'caixa'], ['vAno', 'abaAno', 'ano'], ['vCad', 'abaCad', 'cad']]) {
     $(v).hidden = k !== qual; $(b).classList.toggle('ativa', k === qual);
   }
+  $('pilulas').hidden = qual === 'ano' || qual === 'cad';
   if (qual === 'ano') carregarAno();
   if (qual === 'cad') carregarCad();
 };
@@ -342,8 +390,11 @@ $('expAba').addEventListener('click', async () => {
 $('expTudo').addEventListener('click', async () => {
   $('anoMsg').textContent = '';
   await carregarAno();
-  baixar(`dre-resultados-${$('mes').value}`, [{ nome: 'DRE', linhas: tabelaParaLinhas('tabela') },
-    { nome: 'Fechamento de Caixa', linhas: tabelaParaLinhas('tabelaCaixa') }, abaAno()]);
+  const voltar = lojaAtual;
+  lojaAtual = 'resumo'; desenhar(ultimo);
+  const abas = [{ nome: 'DRE', linhas: tabelaParaLinhas('tabela') }, { nome: 'Fechamento de Caixa', linhas: tabelaParaLinhas('tabelaCaixa') }, abaAno()];
+  lojaAtual = voltar; desenhar(ultimo);
+  baixar(`dre-resultados-${$('mes').value}`, abas);
 });
 const zipBoletos = async alvo => {
   const r = await fetch('/api/dre-resultados/boletos.zip?mes=' + alvo);
@@ -401,7 +452,7 @@ function desenharAno() {
     for (const mk of meses) for (const l of cache[mk].caixa.linhas) vistos.set(l.id, l.nome);
     linhas = [...vistos].map(([id, rot]) => [id, rot, 'item']).concat([['soma', 'Soma despesas (-)', 'total'], ['recebimentos', 'Recebimentos (+)', 'total'], ['resultado', 'Resultado (=)', 'total']]);
   }
-  const cel = (v, base) => `<td>${v == null ? '–' : num(v) + percentual(v, base)}</td>`;
+  const cel = (v, base) => `<td class="${v < 0 ? 'neg' : ''}">${v == null ? '–' : num(v) + percentual(v, base)}</td>`;
   const idBase = visao === 'dre' ? 'receita' : 'recebimentos';
   const soma = vs => (vs.every(v => v == null) ? null : vs.reduce((s, v) => s + (v || 0), 0));
   const cab = modo === 'mes' ? meses.map(mk => MESES[+mk.slice(5) - 1]) : ordem.map(nome);
@@ -417,7 +468,8 @@ function desenharAno() {
 for (const id of ['anoVisao', 'anoModo', 'anoLoja']) $(id).addEventListener('change', desenharAno);
 $('anoSel').addEventListener('change', carregarAno);
 $('anoSel').value = new Date().getFullYear();
-$('mes').addEventListener('change', () => carregar(false));
+$('mes').addEventListener('change', () => { lojaAtual = null; carregar(false); });
+$('abrirPassos').addEventListener('click', abrirPassos);
 $('recalcular').addEventListener('click', () => carregar(true));
 carregar(false);
 </script>

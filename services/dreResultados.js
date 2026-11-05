@@ -112,7 +112,6 @@ function montar({ mes, conferencia = [], caixa = {}, faturas = [], manual = {}, 
         manuais.push({ loja: b, id: 'classificar', rotulo: `Fornecedor sem linha: ${nome} (${valor})`, tipo: 'aviso', feito: false });
     }
     if (TAXA_MANUAL.has(b)) item(b, 'taxa', 'Taxa de cartão (total do mês)', 'numero', m.taxa);
-    if (b === 'site') item(b, 'publicidade', 'Google Ads (relatório)', 'numero', m.publicidade);
   }
   const pendencias = manuais.filter(i => !i.feito);
   const lista = l => Object.entries(detalhe[l]).map(([nome, valores]) => ({ nome, lojas: valores }))
@@ -141,7 +140,7 @@ const INICIO_MODULO = '2026-10';
 const CAMPOS_MANUAIS = { lez: ['taxa'], site: ['taxa', 'publicidade'] };
 
 // A DRE inteira de um mês. base: resultado de montar(); ctx: dados já lidos.
-function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folhaMes, employees, freteTommy, faturamentoExtra, config }) {
+function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folhaMes, employees, freteTommy, faturamentoExtra, config, googleAds = null }) {
   const cfg = C.comPadrao(config);
   const pct = cfg.percentuais;
   const lanc = faturas.map(g => ({ b: g.b, f: g.f, v: (g.vp || 0) + Math.max(0, g.va || 0) }));
@@ -177,7 +176,7 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
       ...(b === 'site' ? { ponto: 0, aluguel: 0, aluguelPct: 0, condominio: 0, fpp: 0, ar: 0, iptu: 0, energia: 0 } : L.pontoComercial(manual[b]?.boletos, d.receita, pct.aluguelPct)),
       sistema: fat('sistema'), contabilidade: fat('contabilidade'), seguro: fat('seguro'), plano: fat('plano'),
       diversos: fat('diversos'), telefone: fat('telefone'), tarifa: fat('tarifa'), acordos: fat('acordos'),
-      publicidade: b === 'site' ? manual.site?.publicidade ?? null : fat('publicidade'),
+      publicidade: b === 'site' ? googleAds ?? manual.site?.publicidade ?? null : fat('publicidade'),
     };
     // Valor digitado na tela vence o calculado; o original fica para mostrar
     const ajustes = Object.fromEntries(Object.entries(manual[b]?.ajustes || {}).filter(([, v]) => v != null));
@@ -187,6 +186,7 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
     percentuais[b] = { simples: aliq, icms, embalagens: emb };
   }
   const manuais = base.manuais.slice();
+  if (googleAds == null) manuais.push({ loja: 'site', id: 'publicidade', rotulo: 'Google Ads: o NEXO não tem o gasto deste mês', tipo: 'numero', valor: manual.site?.publicidade ?? null, feito: manual.site?.publicidade != null });
   for (const b of LOJAS) {
     if (b === 'site') continue;
     const bs = Object.entries(manual[b]?.boletos || {}).map(([chave, x]) => ({ chave, ...x }));
@@ -203,7 +203,7 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
     folhaFechada: Object.fromEntries(LOJAS.map(b => [b, !!folhaMes?.[b]?.encerrada])) };
 }
 
-function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, computeConferenciaDashboard, hojeBRT, boardsLabel, folhaDoMesComFaltas, dataDir }) {
+function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, computeConferenciaDashboard, hojeBRT, boardsLabel, folhaDoMesComFaltas, dataDir, getNexoDb }) {
   // Boleto como foi enviado: no Mongo; sem Mongo (rodando local), em disco. Só a rota
   // do dono entrega, por isso nada vai para /uploads, que é público.
   const pastaBoletos = path.join(dataDir, 'dre-boletos');
@@ -380,6 +380,20 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     return dados;
   }
 
+  // Gasto do Google Ads: o NEXO só guarda os últimos 34 dias, então o valor do mês
+  // fechado fica salvo aqui, sempre o maior já visto.
+  async function googleAdsDoMes(mes, manual, hoje) {
+    const guardado = manual.site?.ads ?? null;
+    let valor = 0;
+    try {
+      const doc = await getNexoDb()?.collection('anuncios').findOne({ _id: 'google' });
+      valor = r2((doc?.dias || []).reduce((s, d) => s + (String(d.dia).startsWith(mes) ? Number(d.custo) || 0 : 0), 0));
+    } catch (e) { console.warn('[dreResultados] Google Ads:', e.message); }
+    if (valor > (guardado || 0) && ehMesFechado(mes, hoje)) await gravarManual(mes, 'site', { ads: valor });
+    const melhor = Math.max(valor, guardado || 0);
+    return melhor || null;
+  }
+
   async function dadosDoMes(mes, recalcular) {
       const hoje = hojeBRT();
       const [foto, faturas, db, manual, hist, config] = await Promise.all([
@@ -391,10 +405,11 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
         lerConfig(),
       ]);
       const escolhidos = C.escolhidosDe(config);
+      const googleAds = await googleAdsDoMes(mes, manual, hoje);
       const parcial = montar({ mes, conferencia: foto.lojas, caixa: db.caixa || {}, faturas, manual, escolhidos });
       const dre = montarCompleta(parcial, { mes, manual, faturas, apuracoes: hist.apuracoes,
         embalagem: { pago: hist.pago, venda: vendaDe12Meses(mes, hist.faturamentoExtra) }, folhaMes: folhaDoMes(db, mes),
-        employees: db.employees || [], freteTommy: foto.freteTommy, faturamentoExtra: hist.faturamentoExtra, config });
+        employees: db.employees || [], freteTommy: foto.freteTommy, faturamentoExtra: hist.faturamentoExtra, config, googleAds });
       const pagos = faturas.map(g => ({ b: g.b, f: g.f, v: g.vp || 0 }));
       for (const [nome, f] of Object.entries(manual.lez?.faturas?.fornecedores || {}))
         pagos.push({ b: 'lez', f: nome, v: f.pago || 0 });
