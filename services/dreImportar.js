@@ -70,6 +70,11 @@ function dataSerial(n) {
   return d ? `${d.y}-${String(d.m).padStart(2, '0')}` : null;
 }
 
+function dataIso(n) {
+  const d = XLSX.SSF.parse_date_code(n);
+  return d ? `${d.y}-${String(d.m).padStart(2, '0')}-${String(d.d).padStart(2, '0')}` : '';
+}
+
 // Vale a data de competência; pago ou em aberto, como nas outras lojas.
 function lerFaturas(rows) {
   const cab = rows[1];
@@ -77,7 +82,8 @@ function lerFaturas(rows) {
   const iComp = coluna(cab, 'Data de Competencia');
   const iBaixado = coluna(cab, 'Valor Baixado'), iAberto = coluna(cab, 'Valor Em Aberto');
   const mes = mesDoFiltro(rows[0][1]);
-  const totais = {}, aClassificar = {}, fornecedores = {};
+  const totais = {}, aClassificar = {}, fornecedores = {}, aVencer = [];
+  const iVenc = coluna(cab, 'Data de Vencimento');
   let documentos = 0, foraDoMes = 0;
   for (const r of rows.slice(2)) {
     const fornecedor = rotulo(r[iForn]);
@@ -89,12 +95,14 @@ function lerFaturas(rows) {
     const f = (fornecedores[nome] ||= { pago: 0, aberto: 0 });
     f.pago = r2(f.pago + (Number(r[iBaixado]) || 0));
     f.aberto = r2(f.aberto + (Number(r[iAberto]) || 0));
+    // Parcelas em aberto da Lunelli: são o "Fornecedores" da Lez no Balancete
+    if (/LUNELLI/.test(nome) && Number(r[iAberto]) > 0) aVencer.push({ vencimento: dataIso(r[iVenc]), valor: Number(r[iAberto]) });
     const linha = linhaLez(fornecedor);
     if (linha === 'ignorar') continue;
     if (linha) totais[linha] = r2((totais[linha] || 0) + valor);
     else aClassificar[norm(fornecedor)] = r2((aClassificar[norm(fornecedor)] || 0) + valor);
   }
-  return { tipo: 'faturas', mes, totais, aClassificar, fornecedores, documentos, foraDoMes };
+  return { tipo: 'faturas', mes, totais, aClassificar, fornecedores, aVencer, documentos, foraDoMes };
 }
 
 function lerRelatorio(buffer) {

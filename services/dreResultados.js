@@ -18,6 +18,8 @@ const JSZip = require('jszip');
 const { lerBoleto } = require('./dreBoletos');
 const { gerarExcel } = require('./dreExportar');
 const extratoSimples = require('./dreExtrato');
+const agenda = require('./agenda');
+const { montarBalancete, EMPRESAS: EMPRESAS_BAL, LINHAS: LINHAS_BAL } = require('./dreBalancete');
 const C = require('./dreCadastros');
 const L = require('./dreLinhas');
 
@@ -533,7 +535,7 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
       if (await lojaFechada(rel.mes, 'lez')) return res.status(400).json({ error: 'A Lez está finalizada neste mês: reabra para enviar' });
       const em = new Date().toISOString();
       if (rel.tipo === 'vendas') await gravarManual(rel.mes, 'lez', { vendas: { receita: rel.receita, cmv: rel.cmv, em } });
-      else await gravarManual(rel.mes, 'lez', { faturas: { totais: rel.totais, aClassificar: rel.aClassificar, fornecedores: rel.fornecedores, em } });
+      else await gravarManual(rel.mes, 'lez', { faturas: { totais: rel.totais, aClassificar: rel.aClassificar, fornecedores: rel.fornecedores, aVencer: rel.aVencer, em } });
       res.json(rel);
     } catch (e) { res.status(400).json({ error: e.message }); }
   });
@@ -632,6 +634,50 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // Lembrete do painel: do dia 2 em diante, enquanto o mês anterior tiver loja aberta
+  app.get('/api/dre-resultados/pendencia', requireAuth, soDono, async (req, res) => {
+    try {
+      const hoje = hojeBRT();
+      const mes = L.mesesAntes(hoje.slice(0, 7), 1)[0];
+      if (+hoje.slice(8, 10) < 2 || mes < INICIO_MODULO) return res.json({ mes, abertas: [] });
+      const fechadas = await lerFechamentos(mes);
+      res.json({ mes, abertas: LOJAS.filter(b => !fechadas[b]).map(b => boardsLabel[b] || b) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Balancete: foto do último dia do mês
+  app.get('/api/dre-resultados/balancete', requireAuth, soDono, async (req, res) => {
+    try {
+      const mes = /^\d{4}-\d{2}$/.test(req.query.mes || '') ? req.query.mes : hojeBRT().slice(0, 7);
+      const [y, m] = mes.split('-').map(Number);
+      const fim = `${mes}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
+      const mongo = getDb();
+      const [db, manual, config] = await Promise.all([readDB(), lerManual(mes), lerConfig()]);
+      const lancs = mongo ? await mongo.collection('agendaLanc').find({ data: { $lte: fim } }, { projection: { _id: 0 } }).toArray() : [];
+      const faturas = mongo ? await mongo.collection('cpFaturas').aggregate([
+        { $match: { isPagar: true, previsao: { $ne: 'S' }, emissao: { $lte: fim }, vencimento: { $gt: fim }, $or: [{ baixa: { $in: ['', null] } }, { baixa: { $gt: fim } }] } },
+        { $group: { _id: { b: '$board', f: '$fornecedor' }, v: { $sum: { $ifNull: ['$valorLiquido', '$valor'] } } } },
+      ]).toArray() : [];
+      const escolhidos = C.escolhidosDe(config);
+      const fornecedores = {};
+      for (const g of faturas) if (linhaCaixa(g._id.f, escolhidos) === 'fornecedor') fornecedores[g._id.b] = (fornecedores[g._id.b] || 0) + g.v;
+      const estoque = {}, digitado = {};
+      for (const { board } of EMPRESAS_BAL) {
+        const custo = db.pautas?.[`${mes}-${board}`]?.estoqueManual?.custo;
+        if (custo) estoque[board] = custo;
+        if (manual[board]?.balancete) digitado[board] = manual[board].balancete;
+      }
+      // Lez: títulos a vencer da Lunelli, somando os relatórios já enviados
+      if (mongo) {
+        const docs = await mongo.collection('dreManual').find({ _id: { $lte: mes }, 'lojas.lez.faturas.aVencer': { $exists: true } }).toArray();
+        const parcelas = docs.flatMap(d => d.lojas.lez.faturas.aVencer || []).filter(p => p.vencimento > fim);
+        if (parcelas.length) fornecedores.lez = parcelas.reduce((s, p) => s + p.valor, 0);
+      }
+      const empresas = montarBalancete({ saldos: agenda.saldos(lancs, fim), estoque, fornecedores, digitado });
+      res.json({ mes, fim, empresas, ordem: EMPRESAS_BAL, linhas: LINHAS_BAL, labels: Object.fromEntries(EMPRESAS_BAL.map(e => [e.id, boardsLabel[e.board] || e.board])) });
+    } catch (e) { console.error('[dreResultados balancete]', e); res.status(500).json({ error: e.message }); }
+  });
+
   // Antes de outubro/2026 o módulo não calcula: mostra o que as planilhas têm
   app.get('/api/dre-resultados/historico', requireAuth, soDono, (req, res) => {
     const ano = String(req.query.ano || '');
@@ -698,6 +744,12 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
       const { mes, loja, campo } = req.body || {};
       const valor = req.body?.valor === '' || req.body?.valor == null ? null : Number(req.body.valor);
       const [grupo, linha] = String(campo || '').split('.');
+      if (grupo === 'balancete') {
+        if (!/^\d{4}-\d{2}$/.test(mes || '') || !EMPRESAS_BAL.some(e => e.board === loja) || !['caixa', 'estoque', 'fornecedores', 'dividas'].includes(linha) || Number.isNaN(valor))
+          return res.status(400).json({ error: 'Campo ou valor inválido' });
+        await gravarManual(mes, loja, { [campo]: valor });
+        return res.json({ ok: true });
+      }
       const ajusteOk = LOJAS.includes(loja) && ((grupo === 'ajustes' && L.ESTRUTURA.some(([id, , tipo]) => id === linha && tipo === 'item'))
         || (grupo === 'ajustesCaixa' && LINHAS_CAIXA.some(([id]) => id === linha)) || campo === 'conferidos.simples');
       if (!/^\d{4}-\d{2}$/.test(mes || '') || !(CAMPOS_MANUAIS[loja]?.includes(campo) || ajusteOk) || Number.isNaN(valor))

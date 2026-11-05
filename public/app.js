@@ -1189,6 +1189,7 @@ function _renderAvisosAdm(c) {
   _avisoPauta(strip);
   _avisoDadosFolha(strip);
   _avisoContratosLocacao(strip);
+  _avisoFechamentoMes(strip);
   if (strip.querySelector('.aviso-pill')) c.prepend(strip);
 }
 
@@ -1241,6 +1242,23 @@ function _irParaCard(bodyId, board) {
   card.scrollIntoView({ behavior: 'smooth', block: 'center' });
   card.classList.add('card-alvo');
   setTimeout(() => card.classList.remove('card-alvo'), 1800);
+}
+
+// Só do dono: do dia 2 em diante, até finalizar todas as lojas do mês anterior
+function _avisoFechamentoMes(strip) {
+  if (!S.user?.dono) return;
+  if (S.fechamentoMes === undefined) {
+    S.fechamentoMes = null;
+    apiFetch('GET', '/api/dre-resultados/pendencia').then(d => { S.fechamentoMes = d; _atualizarAvisosAdm(); }).catch(() => {});
+    return;
+  }
+  const d = S.fechamentoMes;
+  if (!d?.abertas?.length) return;
+  _avisoPilula(strip, {
+    icone: '📊', rotulo: `Fechamento de ${d.mes.split('-').reverse().join('/')}`, n: d.abertas.length, atraso: true,
+    detalhe: 'Falta finalizar: ' + d.abertas.join(' · '),
+    acao: () => window.open('/dre-resultados', '_blank'),
+  });
 }
 
 function _avisoContagem(strip) {

@@ -74,6 +74,8 @@ if (pasta) {
   assert.strictEqual(f.totais.juros, 4033.86); assert.strictEqual(f.totais.publicidade, 5736.71);
   assert.strictEqual(f.totais.sistema, 1163.26); assert.strictEqual(f.totais.plano, 2706.23);
   assert.deepStrictEqual(f.aClassificar, {});
+  assert.strictEqual(Math.round(f.aVencer.reduce((s, p) => s + p.valor, 0) * 100) / 100, 21151.76, 'Lunelli em aberto');
+  assert.ok(f.aVencer.every(p => /^\d{4}-\d{2}-\d{2}$/.test(p.vencimento)));
 }
 
 // Fechamento de Caixa: distribuição da skill, só o pago. Contagem, outubro/2026.
@@ -144,6 +146,16 @@ const conf3 = conferirLoja({ loja: 'minas', manual: {}, folhaFechada: true, dado
 assert.strictEqual(conf3.find(i => i.id === 'simples').ok, true);
 assert.strictEqual(conf3.find(i => i.id === 'extrato-receita').ok, false, 'setembro difere da planilha');
 assert.ok(conf2.some(i => i.id === 'editados'));
+// Balancete: saldo soma as contas, estoque menos fornecedores é o estoque pago
+const { montarBalancete } = require('../services/dreBalancete');
+const bal = montarBalancete({ saldos: { '3L': { CC: -34571.3, CG: 0 } }, estoque: { tommy: 658293 }, fornecedores: { tommy: 219322 }, digitado: { tommy: { dividas: 100 } } });
+assert.strictEqual(bal['3L'].caixa, -34571.3);
+assert.strictEqual(bal['3L'].ativo, 623721.7);
+assert.strictEqual(bal['3L'].passivo, 219422);
+assert.strictEqual(bal['3L'].estoquePago, 438971);
+assert.strictEqual(bal.TTS.caixa, null, 'Estação não está na Agenda');
+assert.strictEqual(bal.LF.fornecedores, null, 'Lez sem relatório fica sem fornecedores');
+assert.strictEqual(montarBalancete({ fornecedores: { lez: 21151.76 } }).LF.fornecedores, 21151.76);
 const H = require('../services/dreHistorico.json');
 assert.strictEqual(H['2026-06'].lojas.delrey.receita, 157161, 'junho corrigido pela Conferência');
 assert.strictEqual(H['2026-09'].lojas.lez.operacional, null, 'o resultado de setembro da Lez era outubro');

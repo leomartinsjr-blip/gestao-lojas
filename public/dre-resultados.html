@@ -8,7 +8,7 @@
 <style>
   :root { --bg:#f4f6f9; --bg2:#fff; --bg3:#f0f3f7; --border:#dde3ea; --text:#1f2328; --text2:#636c76;
     --green:#1a7f37; --red:#cf222e; --yellow:#9a6700; --yellowbg:#fff8c5; --blue:#0969da; color-scheme:light; }
-  * { box-sizing:border-box; margin:0; padding:0; }
+  * { box-sizing:border-box; margin:0; padding:0; } [hidden] { display:none !important; }
   body { background:var(--bg); color:var(--text); font:13px -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; }
   header { background:var(--bg2); border-bottom:1px solid var(--border); padding:10px 16px; display:flex; gap:10px; align-items:center; justify-content:center; flex-wrap:wrap; }
   h1 { font-size:15px; font-weight:600; margin-right:14px; }
@@ -65,6 +65,8 @@
   <h1>DRE/Resultados</h1>
   <label>Mês <input type="month" id="mes"></label>
   <button id="abrirPassos">Informações do mês</button>
+  <button id="enviarTudo">Enviar arquivos</button>
+  <input type="file" id="arquivosTudo" multiple accept=".pdf,.xlsx" hidden>
   <button id="recalcular" title="Busca de novo no Microvix">Recalcular</button>
   <button id="expAba">Exportar esta aba</button>
   <button id="expTudo">Exportar tudo</button>
@@ -74,12 +76,16 @@
 <main>
   <div id="msg">Carregando…</div>
   <div id="conteudo" hidden>
-    <div class="abas"><button id="abaDre" class="ativa">DRE</button><button id="abaCaixa">Fechamento de Caixa</button><button id="abaAno">Consolidado do ano</button><button id="abaCad">Cadastros</button></div>
+    <div class="abas"><button id="abaDre" class="ativa">DRE</button><button id="abaCaixa">Fechamento de Caixa</button><button id="abaAno">Consolidado do ano</button><button id="abaBal">Balancete</button><button id="abaCad">Cadastros</button></div>
     <div class="pilulas" id="pilulas"></div>
     <div id="vDre">
       <div class="painel"><h2 id="titulo"></h2><table id="tabela"></table></div>
       <div class="painel" id="finalizar"></div>
       <p class="nota" id="nota"></p>
+    </div>
+    <div id="vBal" hidden>
+      <div class="painel"><h2 id="tituloBal"></h2><table id="tabelaBal"></table></div>
+      <p class="nota">Foto do último dia do mês. Caixa pela Agenda, estoque a custo pela pauta da reunião, fornecedores pelos títulos de mercadoria a vencer depois da data. Passe o mouse no valor para editar (✎); dívidas são digitadas.</p>
     </div>
     <div id="vCad" hidden>
       <div class="painel"><h2>Custos do Escritório</h2><table id="tabCustos"></table>
@@ -216,9 +222,44 @@ function desenhar(d) {
   $('nota').textContent = `Faturas pelo vencimento, pagas ou em aberto. Passe o mouse no valor para editar (✎) ou ver a planilha. Conferência lida em ${quando}.`;
 }
 
-// Passo a passo: uma informação por vez, só o que falta no mês
+// Envio único: boletos, extratos e relatórios da Lez juntos ou separados. O servidor
+// identifica cada arquivo pelo conteúdo, e a tela mostra o que entendeu de cada um.
+const descreve = d => (d.tipo === 'boleto' ? `Boleto ${ultimo.labels[d.loja] || d.loja}: ${num(d.total)}`
+  : d.tipo === 'extrato' ? `Extrato do Simples ${d.empresa}: DAS ${num(d.das)}`
+    : d.tipo === 'vendas' ? `Vendas da Lez: ${num(d.receita)}` : 'Faturas da Lez');
+async function enviarLista(arquivos) {
+  const linhas = [];
+  let mes = null;
+  for (const arquivo of arquivos) {
+    const fd = new FormData();
+    fd.append('arquivo', arquivo);
+    const r = await fetch('/api/dre-resultados/importar', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (r.ok) mes = d.mes;
+    linhas.push(`<li class="${r.ok ? 'ok' : 'trava'}">${r.ok ? '✓' : '✗'} ${arquivo.name}: ${r.ok ? `${descreve(d)} (${d.mes.split('-').reverse().join('/')})` : d.error}</li>`);
+  }
+  if (mes) $('mes').value = mes;
+  cache = {};
+  await carregar(false);
+  return `<ul style="list-style:none;line-height:1.7">${linhas.join('')}</ul>`;
+}
+$('enviarTudo').addEventListener('click', () => $('arquivosTudo').click());
+$('arquivosTudo').addEventListener('change', async () => {
+  const lista = [...$('arquivosTudo').files];
+  $('arquivosTudo').value = '';
+  if (!lista.length) return;
+  passos = []; passoI = 0;
+  $('passo').innerHTML = '<h3>Lendo os arquivos…</h3>';
+  $('assistente').showModal();
+  $('passo').innerHTML = `<h3>Arquivos enviados</h3>${await enviarLista(lista)}<div class="acoes"><button class="prim" id="pFechar">Fechar</button></div>`;
+  $('pFechar').addEventListener('click', () => $('assistente').close());
+});
+
+// Passo a passo: primeiro os arquivos, todos juntos; depois um valor por vez
 function abrirPassos() {
-  passos = ultimo.pendencias.filter(p => p.tipo !== 'aviso');
+  const pend = ultimo.pendencias.filter(p => p.tipo !== 'aviso');
+  const arquivos = pend.filter(p => p.tipo === 'arquivo');
+  passos = [...(arquivos.length ? [{ tipo: 'lote', itens: arquivos }] : []), ...pend.filter(p => p.tipo !== 'arquivo')];
   passoI = 0;
   desenharPasso();
   $('assistente').showModal();
@@ -230,21 +271,32 @@ function desenharPasso() {
     $('pFechar').addEventListener('click', () => $('assistente').close());
     return;
   }
-  const campo = p.tipo === 'numero' ? '<input type="number" step="0.01" id="pValor" placeholder="Valor">'
-    : `<input type="file" multiple accept="${['boleto', 'extrato'].includes(p.id) ? '.pdf' : '.xlsx'}" id="pArquivo">`;
+  if (p.tipo === 'lote') {
+    $('passo').innerHTML = `<small>Passo ${passoI + 1} de ${passos.length}</small><h3>Envie os arquivos do mês</h3>
+      <small>Pode mandar tudo junto ou aos poucos; o sistema identifica cada um. Faltam:</small>
+      <ul style="list-style:none;line-height:1.7;margin:8px 0">${p.itens.map(i => `<li>${d.labels[i.loja] || i.loja}: ${i.rotulo}</li>`).join('')}</ul>
+      <input type="file" multiple accept=".pdf,.xlsx" id="pArquivo">
+      <div class="acoes"><button class="prim" id="pSalvar">Enviar e continuar</button><button id="pPular">Pular</button><button id="pFechar">Fechar</button></div>`;
+    $('pPular').addEventListener('click', () => { passoI++; desenharPasso(); });
+    $('pFechar').addEventListener('click', () => $('assistente').close());
+    $('pSalvar').addEventListener('click', async () => {
+      const lista = [...$('pArquivo').files];
+      if (!lista.length) return;
+      const resultado = await enviarLista(lista);
+      $('passo').innerHTML = `<h3>Arquivos enviados</h3>${resultado}<div class="acoes"><button class="prim" id="pSeguir">Continuar</button></div>`;
+      $('pSeguir').addEventListener('click', () => { passoI++; desenharPasso(); });
+    });
+    return;
+  }
+  const campo = '<input type="number" step="0.01" id="pValor" placeholder="Valor">';
   $('passo').innerHTML = `<small>Passo ${passoI + 1} de ${passos.length} · ${d.labels[p.loja] || p.loja}</small><h3>${p.rotulo}</h3>${campo}
     <div class="acoes"><button class="prim" id="pSalvar">Salvar e continuar</button><button id="pPular">Pular</button><button id="pFechar">Fechar</button></div>`;
   const prox = () => { passoI++; desenharPasso(); };
   $('pPular').addEventListener('click', prox);
   $('pFechar').addEventListener('click', () => $('assistente').close());
   $('pSalvar').addEventListener('click', async () => {
-    if (p.tipo === 'numero') {
-      if ($('pValor').value === '') return;
-      await salvar({ dataset: { loja: p.loja, campo: p.id }, value: $('pValor').value });
-    } else {
-      if (!$('pArquivo').files.length) return;
-      await enviar($('pArquivo'));
-    }
+    if ($('pValor').value === '') return;
+    await salvar({ dataset: { loja: p.loja, campo: p.id }, value: $('pValor').value });
     prox();
   });
 }
@@ -267,24 +319,6 @@ async function salvar(el) {
   carregar(false);
 }
 
-async function enviar(el) {
-  let mes = null;
-  for (const arquivo of el.files) {
-    const fd = new FormData();
-    fd.append('arquivo', arquivo);
-    const r = await fetch('/api/dre-resultados/importar', { method: 'POST', body: fd });
-    const d = await r.json();
-    if (!r.ok) { alert(`${arquivo.name}: ${d.error || 'não foi possível importar'}`); continue; }
-    mes = d.mes;
-  }
-  if (mes && mes !== $('mes').value) {
-    alert(`O arquivo é de ${mes.split('-').reverse().join('/')}. Abrindo esse mês.`);
-    $('mes').value = mes;
-  }
-  cache = {};
-  carregar(false);
-}
-
 async function carregar(recalcular) {
   $('msg').hidden = false; $('msg').textContent = 'Carregando…'; $('conteudo').hidden = true;
   try {
@@ -301,14 +335,45 @@ async function carregar(recalcular) {
 const ref = new Date(); ref.setDate(1); ref.setMonth(ref.getMonth() - 1);
 $('mes').value = `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}`;
 const aba = qual => {
-  for (const [v, b, k] of [['vDre', 'abaDre', 'dre'], ['vCaixa', 'abaCaixa', 'caixa'], ['vAno', 'abaAno', 'ano'], ['vCad', 'abaCad', 'cad']]) {
+  for (const [v, b, k] of [['vDre', 'abaDre', 'dre'], ['vCaixa', 'abaCaixa', 'caixa'], ['vAno', 'abaAno', 'ano'], ['vBal', 'abaBal', 'bal'], ['vCad', 'abaCad', 'cad']]) {
     $(v).hidden = k !== qual; $(b).classList.toggle('ativa', k === qual);
   }
-  $('pilulas').hidden = qual === 'ano' || qual === 'cad';
+  $('pilulas').hidden = ['ano', 'cad', 'bal'].includes(qual);
+  if (qual === 'bal') carregarBal();
   if (qual === 'ano') carregarAno();
   if (qual === 'cad') carregarCad();
 };
 $('abaCad').addEventListener('click', () => aba('cad'));
+$('abaBal').addEventListener('click', () => aba('bal'));
+
+async function carregarBal() {
+  const b = await (await fetch('/api/dre-resultados/balancete?mes=' + $('mes').value)).json();
+  if (b.error) { $('tabelaBal').innerHTML = ''; $('tituloBal').textContent = b.error; return; }
+  $('tituloBal').textContent = `Balancete em ${b.fim.split('-').reverse().join('/')}`;
+  const editaveis = ['caixa', 'estoque', 'fornecedores', 'dividas'];
+  const soma = k => b.ordem.reduce((s, e) => s + (b.empresas[e.id][k] || 0), 0);
+  const celBal = (v, tipo, e, k) => {
+    const lap = editaveis.includes(k) && e ? `<span class="ed" title="Editar valor" data-b="${e.board}" data-k="${k}">✎</span>` : '';
+    if (v == null) return `<td class="${k === 'dividas' ? '' : 'falta'}">${k === 'dividas' ? '-' : k === 'pctPago' ? '' : 'falta'}${lap}</td>`;
+    const aj = e && b.empresas[e.id].digitado.includes(k) ? 'aj' : '';
+    return `<td class="${v < 0 ? 'neg' : ''} ${aj}">${num(v)}${tipo === 'pct' ? '%' : ''}${lap}</td>`;
+  };
+  $('tabelaBal').innerHTML = `<thead><tr><th>Linha</th>${b.ordem.map(e => `<th>${e.id}<small> ${b.labels[e.id]}</small></th>`).join('')}<th>Grupo</th></tr></thead><tbody>` +
+    b.linhas.map(([k, rot, tipo]) => {
+      const total = k === 'pctPago' ? (soma('estoque') ? soma('estoquePago') / soma('estoque') * 100 : null) : soma(k);
+      return `<tr class="${tipo === 'total' ? 'total' : 'item'}"><td>${rot}</td>${b.ordem.map(e => celBal(b.empresas[e.id][k], tipo, e, k)).join('')}${celBal(total, tipo, null, k)}</tr>`;
+    }).join('') + '</tbody>';
+  $('tabelaBal').querySelectorAll('.ed').forEach(el => el.addEventListener('click', async () => {
+    const novo = prompt('Novo valor. Deixe vazio para voltar ao calculado.', '');
+    if (novo === null) return;
+    const valor = novo.trim() === '' ? '' : Number(novo.replace(/\./g, '').replace(',', '.'));
+    if (Number.isNaN(valor)) { alert('Valor inválido'); return; }
+    const r = await fetch('/api/dre-resultados/manual', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mes: $('mes').value, loja: el.dataset.b, campo: `balancete.${el.dataset.k}`, valor }) });
+    if (!r.ok) { alert((await r.json()).error || 'Não foi possível salvar'); return; }
+    carregarBal();
+  }));
+}
 
 let cad = null;
 const ROT_PCT = { encargos: 'Encargos sobre folha (%)', aluguelPct: 'Aluguel percentual (%)', icmsSite: 'ICMS do Site (%)', icmsLez: 'ICMS da Lez (%)', embalagemLez: 'Embalagens da Lez (%)' };
@@ -402,6 +467,7 @@ $('expAba').addEventListener('click', async () => {
   const mes = $('mes').value;
   if (!$('vCaixa').hidden) return baixar(`fechamento-caixa-${mes}`, [tabelaParaAba('tabelaCaixa', 'Fechamento de Caixa', $('tituloCaixa').textContent)]);
   if (!$('vAno').hidden) return baixar(`consolidado-${$('anoSel').value}`, [abaAno()]);
+  if (!$('vBal').hidden) return baixar(`balancete-${mes}`, [tabelaParaAba('tabelaBal', 'Balancete', $('tituloBal').textContent)]);
   if (!$('vCad').hidden) return alert('Abra a DRE, o Fechamento de Caixa ou o Consolidado para exportar.');
   return baixar(`dre-${mes}`, [tabelaParaAba('tabela', 'DRE', $('titulo').textContent)]);
 });
@@ -486,7 +552,7 @@ function desenharAno() {
 for (const id of ['anoVisao', 'anoModo', 'anoLoja']) $(id).addEventListener('change', desenharAno);
 $('anoSel').addEventListener('change', carregarAno);
 $('anoSel').value = new Date().getFullYear();
-$('mes').addEventListener('change', () => { lojaAtual = null; carregar(false); });
+$('mes').addEventListener('change', () => { lojaAtual = null; carregar(false); if (!$('vBal').hidden) carregarBal(); });
 $('abrirPassos').addEventListener('click', abrirPassos);
 $('recalcular').addEventListener('click', () => carregar(true));
 carregar(false);
