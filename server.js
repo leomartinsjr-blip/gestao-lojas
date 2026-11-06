@@ -4370,6 +4370,27 @@ function adiantamentosDoMes(db, year, month) {
 // Atestado/férias de um colaborador: pelo id; o registro antigo, sem id, pelo nome.
 const _ausDoEmp = (a, emp, mesmoNome) => a.empId ? a.empId === emp.id : mesmoNome();
 
+// Premiação semanal: atestado não tira o prêmio; férias e falta sem justificativa
+// tiram (Leonardo, 06/11/2026). O calendário só tem atestado e férias, e a loja
+// lança falta como atestado com "falta" na observação (Luciana da Lez, 10/10):
+// esse registro continua valendo como falta.
+const _ausenciaTiraPremio = a => a.tipo === 'ferias' ||
+  (a.tipo === 'atestado' && /\bfalta\b/i.test(a.observacao || ''));
+
+// Faltas de Dados p/ Folha entre duas datas, por colaborador. A semana pode
+// começar no mês anterior, então lê cada mês tocado pelo período.
+function _faltasNoPeriodo(db, inicio, fim) {
+  const porEmp = {};
+  const d = new Date(`${inicio.slice(0, 7)}-01T12:00:00`);
+  while (d.toISOString().slice(0, 7) <= fim.slice(0, 7)) {
+    const doMes = faltasDoMes(db, d.getFullYear(), d.getMonth() + 1).porEmp;
+    for (const [id, { dias }] of Object.entries(doMes))
+      (porEmp[id] ||= []).push(...dias.filter(ds => ds >= inicio && ds <= fim));
+    d.setMonth(d.getMonth() + 1);
+  }
+  return porEmp;
+}
+
 // Colaborador de um lançamento do Dados p/ Folha. Quem manda é o id; lançamento
 // antigo só tem o nome, e aí vale quem estava na loja no mês: dois cadastros com
 // o mesmo apelido não podem cair no desligado (Luciana da Lez, out/2026).
@@ -10461,7 +10482,7 @@ app.get('/api/folha/debug-premiacao/:year/:month', requireAdmin, async (req, res
       for (const emp of employees) {
         const empNorm = _normNameDbg(emp.apelido || emp.name);
         const empAus  = ausenciasAll.filter(a =>
-          ['ferias','atestado'].includes(a.tipo) &&
+          _ausenciaTiraPremio(a) &&
           _ausDoEmp(a, emp, () => _normNameDbg(a.colaborador) === empNorm) &&
           a.dataFim >= monthStart && a.dataInicio <= lastDayStr
         );
@@ -10478,6 +10499,8 @@ app.get('/api/folha/debug-premiacao/:year/:month', requireAdmin, async (req, res
         }
         if (days.size > 0) ausenciaDiasMapDbg[emp.id] = [...days].sort();
       }
+      for (const [id, dias] of Object.entries(_faltasNoPeriodo(db, monthStart, lastDayStr)))
+        ausenciaDiasMapDbg[id] = [...new Set([...(ausenciaDiasMapDbg[id] || []), ...dias])].sort();
 
       const empsDetalhes = employees.map(emp => {
         const vsEmp = vsalesAll[`${mk}-${emp.board}-${emp.id}`] || {};
@@ -10499,7 +10522,7 @@ app.get('/api/folha/debug-premiacao/:year/:month', requireAdmin, async (req, res
           if (ds >= monthStart && ds <= lastDayStr) {
             let bloqueio = null;
             if (vacSet.has(ds)) bloqueio = 'férias (Part%)';
-            else if (ausenciaDias.has(ds)) bloqueio = 'férias/atestado (calendário)';
+            else if (ausenciaDias.has(ds)) bloqueio = 'férias/falta';
             else if (effectiveAdmissao && ds < effectiveAdmissao) bloqueio = `antes admissão (${effectiveAdmissao})`;
             else if (emp.desligamento && ds > emp.desligamento) bloqueio = `após desligamento (${emp.desligamento})`;
             if (bloqueio && trabInteira) { trabInteira = false; motivoFalha = `${ds}: ${bloqueio}`; }
@@ -10611,17 +10634,18 @@ function calcPremiacaoSemanal(db, year, month, employees) {
     return `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
   })();
 
-  // ── Ausências (férias/atestados) → mapa de dias bloqueados por funcionário ──
-  // Usado para excluir funcionários que não trabalharam a semana inteira da premiação semanal
+  // ── Férias e faltas → mapa de dias bloqueados por funcionário ──
+  // Usado para excluir da premiação semanal quem perdeu dia por férias ou falta.
+  // Atestado não entra: ver _ausenciaTiraPremio.
   const ausencias = db.ausencias || [];
   // Normaliza nome para comparação case-insensitive sem acento
   const _normName = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
-  // Para cada funcionário, expande o range de férias/atestado em dias individuais
+  // Para cada funcionário, expande o range de férias/falta em dias individuais
   const ausenciaDiasMap = {}; // empId → Set<'YYYY-MM-DD'>
   for (const emp of employees) {
     const empNorm = _normName(emp.apelido || emp.name);
     const empAus  = ausencias.filter(a =>
-      ['ferias','atestado'].includes(a.tipo) &&
+      _ausenciaTiraPremio(a) &&
       _ausDoEmp(a, emp, () => _normName(a.colaborador) === empNorm) &&
       a.dataFim >= rangeStart && a.dataInicio <= lastDayStr
     );
@@ -10637,6 +10661,10 @@ function calcPremiacaoSemanal(db, year, month, employees) {
       }
     }
     if (days.size > 0) ausenciaDiasMap[emp.id] = days;
+  }
+  for (const [id, dias] of Object.entries(_faltasNoPeriodo(db, rangeStart, lastDayStr))) {
+    const days = (ausenciaDiasMap[id] ||= new Set());
+    for (const ds of dias) days.add(ds);
   }
   // Semana só entra depois de encerrada. Guardar quais entraram é o que permite
   // dizer, num mês em curso, que o prêmio está zerado por falta de semana fechada.
