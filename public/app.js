@@ -830,6 +830,7 @@ async function loadData() {
       const vs = (init.vsales || {})[e.id];
       return vs && Object.keys(vs.entries || {}).some(d => d.startsWith(_mk));
     });
+    S.diasSemPremio = init.diasSemPremio || {};
     S.weights      = init.weights      || {};
     S.vsales       = init.vsales       || {};
     S.weeklyMetas      = init.weeklyMetas      || {};
@@ -8541,8 +8542,10 @@ function calcWeekKpis(emp, week, extraData) {
     ].sort();
     if (_allEntries.length > 0) _effAdmissao = _allEntries[0];
   }
+  // Férias e falta tiram o prêmio da semana, igual à folha; atestado não
+  const diasSemPremio = new Set(S.diasSemPremio?.[emp.id] || []);
   const trabalhouSemanaInteira = dates.every(ds => {
-    if (empVacDays.has(ds)) return false;
+    if (empVacDays.has(ds) || diasSemPremio.has(ds)) return false;
     if (_effAdmissao && ds < _effAdmissao) return false;
     if (emp.desligamento && ds > emp.desligamento) return false;
     return true;

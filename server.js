@@ -1772,7 +1772,9 @@ app.get('/api/init', requireAuth, async (req, res) => {
       indevaResult[brd] = { daily, monthly };
     }
 
+    const semPremio = _diasSemPremio(db, employees, `${year - 1}-01-01`, `${year}-12-31`);
     res.json({
+      diasSemPremio: Object.fromEntries(Object.entries(semPremio).map(([id, dias]) => [id, [...dias]])),
       employees,
       weights:      (db.globalWeights || {})[mk] || {},
       vsales,
@@ -4389,6 +4391,33 @@ function _faltasNoPeriodo(db, inicio, fim) {
     d.setMonth(d.getMonth() + 1);
   }
   return porEmp;
+}
+
+// Dias que tiram a premiação semanal de cada colaborador. Folha e telas de meta
+// leem daqui, para mostrarem o mesmo prêmio. Registro antigo casa pelo nome: dia
+// fora do vínculo é de outro cadastro com o mesmo apelido.
+function _diasSemPremio(db, employees, inicio, fim) {
+  const norm = t => (t || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  const faltas = _faltasNoPeriodo(db, inicio, fim);
+  const out = {};
+  for (const emp of employees) {
+    const nome = norm(emp.apelido || emp.name);
+    const dias = new Set(faltas[emp.id] || []);
+    for (const a of db.ausencias || []) {
+      if (!_ausenciaTiraPremio(a) || a.dataFim < inicio || a.dataInicio > fim) continue;
+      if (!_ausDoEmp(a, emp, () => norm(a.colaborador) === nome)) continue;
+      const cur = new Date(a.dataInicio + 'T12:00:00');
+      const ate = new Date(a.dataFim + 'T12:00:00');
+      for (; cur <= ate; cur.setDate(cur.getDate() + 1)) {
+        const ds = cur.toISOString().slice(0, 10);
+        if (ds >= inicio && ds <= fim) dias.add(ds);
+      }
+    }
+    for (const ds of dias)
+      if ((emp.admissao && ds < emp.admissao) || (emp.desligamento && ds > emp.desligamento)) dias.delete(ds);
+    if (dias.size) out[emp.id] = dias;
+  }
+  return out;
 }
 
 // Colaborador de um lançamento do Dados p/ Folha. Quem manda é o id; lançamento
@@ -10634,38 +10663,8 @@ function calcPremiacaoSemanal(db, year, month, employees) {
     return `${d.getFullYear()}-${padD(d.getMonth()+1)}-${padD(d.getDate())}`;
   })();
 
-  // ── Férias e faltas → mapa de dias bloqueados por funcionário ──
-  // Usado para excluir da premiação semanal quem perdeu dia por férias ou falta.
-  // Atestado não entra: ver _ausenciaTiraPremio.
-  const ausencias = db.ausencias || [];
-  // Normaliza nome para comparação case-insensitive sem acento
-  const _normName = s => (s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'').trim();
-  // Para cada funcionário, expande o range de férias/falta em dias individuais
-  const ausenciaDiasMap = {}; // empId → Set<'YYYY-MM-DD'>
-  for (const emp of employees) {
-    const empNorm = _normName(emp.apelido || emp.name);
-    const empAus  = ausencias.filter(a =>
-      _ausenciaTiraPremio(a) &&
-      _ausDoEmp(a, emp, () => _normName(a.colaborador) === empNorm) &&
-      a.dataFim >= rangeStart && a.dataInicio <= lastDayStr
-    );
-    if (!empAus.length) continue;
-    const days = new Set();
-    for (const a of empAus) {
-      const cur = new Date(a.dataInicio + 'T12:00:00');
-      const fim = new Date(a.dataFim    + 'T12:00:00');
-      while (cur <= fim) {
-        const ds = cur.toISOString().slice(0,10);
-        if (ds >= rangeStart && ds <= lastDayStr) days.add(ds);
-        cur.setDate(cur.getDate() + 1);
-      }
-    }
-    if (days.size > 0) ausenciaDiasMap[emp.id] = days;
-  }
-  for (const [id, dias] of Object.entries(_faltasNoPeriodo(db, rangeStart, lastDayStr))) {
-    const days = (ausenciaDiasMap[id] ||= new Set());
-    for (const ds of dias) days.add(ds);
-  }
+  // Quem perdeu dia por férias ou falta não recebe a premiação da semana (atestado não conta)
+  const ausenciaDiasMap = _diasSemPremio(db, employees, rangeStart, lastDayStr);
   // Semana só entra depois de encerrada. Guardar quais entraram é o que permite
   // dizer, num mês em curso, que o prêmio está zerado por falta de semana fechada.
   const semanasAvaliadas           = [];
