@@ -2,7 +2,7 @@
 // Cálculo das linhas da DRE/Resultados, com as regras combinadas com o Leonardo em
 // 04/11/2026. Só funções puras: quem lê banco e Microvix é services/dreResultados.js.
 
-const { linhaCaixa } = require('./dreCaixa');
+const { linhaCaixa, semAcento } = require('./dreCaixa');
 const REF = require('./dreReferencia.json');
 
 const r2 = v => Math.round(v * 100) / 100;
@@ -56,9 +56,21 @@ function percentuaisEmbalagem(pagoPorLoja, vendaPorLoja, cadastrado = {}) {
 }
 
 // Extras que não são prêmio: verbas de rescisão já estão na taxa de encargos, e
-// salário-família e empréstimo consignado não são custo da loja.
-const EXTRA_FORA = /13O SALÁRIO|13º SALÁRIO|FÉRIAS PROPORCIONAIS|TERÇO CONSTITUCIONAL|SALÁRIO FAMÍLIA|EMPRÉSTIMO|AVISO PRÉVIO/;
-const EXTRA_SALARIO = /DIFERENÇA DE FÉRIAS/; // decisão do Leonardo: conta como salário
+// salário-família e empréstimo consignado não são custo da loja. Os nomes são
+// digitados na folha, então a comparação ignora acento. Férias só no começo do nome:
+// "Cobertura de férias" é pagamento a quem trabalhou e continua sendo custo.
+const EXTRA_FORA = /\b13O\b|\b13 (SAL|PROP)|DECIMO TERCEIRO|^FERIAS\b|(\bTERCO|\b1\/3) .*(FERIAS|CONSTITUCIONAL)|SALARIO FAMILIA|EMPRESTIMO|CONSIGNADO|AVISO PREVIO|MULTA (DE )?40|FGTS|\bRESCIS|\bTRCT\b|\bGRRF\b/;
+// Decisão do Leonardo: conta como salário. Vem antes de EXTRA_FORA porque saldo de
+// salário é dia trabalhado, custo real, mesmo com "rescisão" no nome.
+const EXTRA_SALARIO = /DIF(ERENCA|\.)? (DE )?FERIAS|SALDO (DE )?SALARIO/;
+
+function tipoExtra(nome) {
+  const n = semAcento(nome).replace(/[º°ª]/g, 'O');
+  if (EXTRA_SALARIO.test(n)) return 'salario';
+  return EXTRA_FORA.test(n) ? 'fora' : null;
+}
+const somaExtras = (e, tipo) => r2((e.extras || []).reduce((s, x) => s + (tipoExtra(x.nome) === tipo ? Number(x.valor) || 0 : 0), 0));
+const extrasFora = e => somaExtras(e, 'fora');
 
 // Folha do mês: fixos, comissões, premiações e ajuda por loja. O supervisor é
 // rateado como na própria folha; sócio é pró-labore e não entra na loja.
@@ -75,21 +87,20 @@ function folhaPorLoja(folhaMes, employees = []) {
       const proventos = e.proventosBruto ?? e.proventos ?? 0;
       const fixo = e.fixo || 0, compl = e.gmComplement || 0, quebra = e.quebra || 0;
       const comissao = (e.comissaoTotal || 0) + (e.comissaoLoja || 0), ajuda = e.ajudaCustoTotal || 0;
-      const somaExtras = re => (e.extras || []).reduce((s, x) => s + (re.test(norm(x.nome)) ? Number(x.valor) || 0 : 0), 0);
-      const diferencaFerias = somaExtras(EXTRA_SALARIO);
-      const resto = r2(proventos - fixo - compl - quebra - comissao - ajuda - somaExtras(EXTRA_FORA) - diferencaFerias);
+      const extraSalario = somaExtras(e, 'salario');
+      const resto = r2(proventos - fixo - compl - quebra - comissao - ajuda - extrasFora(e) - extraSalario);
       const lojas = empPorId[id]?.supervisedBoards || [];
       if (e.tipo === 'supervisor' && lojas.length) {
         for (const b of lojas) {
           loja(b).fixos += fixo / lojas.length;
           loja(b).comissoes += (e.lojaComissoes || []).find(l => l.board === b)?.comissao || 0;
         }
-        loja(board).fixos += compl + quebra + diferencaFerias;
+        loja(board).fixos += compl + quebra + extraSalario;
         loja(board).premiacoes += resto;
         loja(board).ajuda += ajuda;
       } else {
         const l = loja(board);
-        l.fixos += fixo + compl + quebra + diferencaFerias;
+        l.fixos += fixo + compl + quebra + extraSalario;
         l.comissoes += comissao;
         l.premiacoes += resto;
         l.ajuda += ajuda;
@@ -105,7 +116,7 @@ function folhaPorLoja(folhaMes, employees = []) {
 const DA_CAIXA_PARA_DRE = { sistema: 'sistema', plano: 'plano', telefone: 'telefone', contabilidade: 'contabilidade', seguros: 'seguro',
   diversos: 'diversos', marketing: 'publicidade', correios: 'diversos', vt: 'vt', classificar: 'diversos' };
 
-function linhaDre(fornecedor, board, escolhidos = {}) {
+function linhaDre(fornecedor, board, escolhidos = {}, funcionarios = []) {
   const n = norm(fornecedor);
   if (escolhidos[n]) return DA_CAIXA_PARA_DRE[escolhidos[n]] || null;
   if (/PRO INDIVISO/.test(n)) return 'acordos';
@@ -114,13 +125,13 @@ function linhaDre(fornecedor, board, escolhidos = {}) {
   if (/MN ADVOGADOS/.test(n)) return 'mantuano';
   if (/APPMAX/.test(n)) return null;
   if (board === 'site' && /MONTEREY|CEMIG|CONDOMINIO/.test(n)) return 'sala';
-  return DA_CAIXA_PARA_DRE[linhaCaixa(n)] || null;
+  return DA_CAIXA_PARA_DRE[linhaCaixa(n, {}, funcionarios)] || null;
 }
 
-function somarFaturas(lancamentos, escolhidos = {}) {
+function somarFaturas(lancamentos, escolhidos = {}, funcionarios = []) {
   const totais = {}, detalhe = {};
   for (const { b, f, v } of lancamentos) {
-    const linha = linhaDre(f, b, escolhidos);
+    const linha = linhaDre(f, b, escolhidos, funcionarios);
     if (!linha || !v) continue;
     const t = (totais[b] ||= {});
     t[linha] = r2((t[linha] || 0) + v);
@@ -205,5 +216,5 @@ function pontoComercial(boletos, receita, percentual = 5) {
   return out;
 }
 
-module.exports = { pontoComercial, aliquotaSimples, percentualIcms, percentuaisEmbalagem, folhaPorLoja, linhaDre, somarFaturas, fechar,
+module.exports = { pontoComercial, aliquotaSimples, percentualIcms, percentuaisEmbalagem, folhaPorLoja, extrasFora, linhaDre, somarFaturas, fechar,
   mesesAntes, ESTRUTURA, EMPRESA, REF, somarGrupos };

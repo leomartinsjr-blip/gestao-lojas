@@ -113,6 +113,24 @@ const comExtras = L.folhaPorLoja({ delrey: { entries: { 7: { tipo: 'vendedor', p
   { nome: 'Salário Família', valor: 135.08 }, { nome: 'Instagram da loja', valor: 600 }, { nome: 'DIFERENÇA DE FÉRIAS', valor: 100 }] } } } }, []);
 assert.strictEqual(comExtras.delrey.premiacoes, 875.96, 'só o que é prêmio fica em Premiações');
 assert.strictEqual(comExtras.delrey.fixos, 1100, 'diferença de férias vai para salário');
+// Verbas de rescisão: fora da DRE com qualquer grafia, porque a taxa de encargos já as cobre
+const soExtra = (nome, tipo = 'vendedor') => L.folhaPorLoja({ delrey: { entries: { 7: { tipo, proventos: 1100, fixo: 1000, extras: [{ nome, valor: 100 }] } } } }, []).delrey;
+for (const nome of ['13º proporcional', '13o salario proporcional', '13 Proporcional', 'Décimo terceiro', '1/3 de férias', '1/3 de ferias', 'Terco constitucional de ferias',
+  'Férias vencidas', 'FERIAS VENCIDAS', 'ferias proporcionais', 'Férias', 'Multa 40% FGTS', 'multa de 40%', 'Rescisão', 'RESCISAO', 'Verbas rescisórias', 'TRCT', 'GRRF',
+  'aviso previo indenizado', 'salario familia', 'emprestimo consignado']) {
+  assert.strictEqual(soExtra(nome).premiacoes, 0, `${nome} sai de Premiações`);
+  assert.strictEqual(soExtra(nome).fixos, 1000, `${nome} não vira salário`);
+}
+// Saldo de salário e diferença de férias são custo real: vão para Salários fixos
+for (const nome of ['Saldo de salário', 'SALDO DE SALARIO', 'Saldo salario', 'Saldo de salário (rescisão)', 'Diferença de férias', 'DIFERENCA DE FERIAS']) {
+  assert.strictEqual(soExtra(nome).fixos, 1100, `${nome} vai para salário`);
+  assert.strictEqual(soExtra(nome).premiacoes, 0, `${nome} não fica em Premiações`);
+}
+// O que é pagamento de verdade continua em Premiações
+for (const nome of ['Instagram da loja', 'Cobertura de férias', 'Prêmio semana 13', 'Prêmio 1/3 da meta'])
+  assert.strictEqual(soExtra(nome).premiacoes, 100, `${nome} continua sendo prêmio`);
+assert.strictEqual(L.folhaPorLoja({ minas: { entries: { 9: { tipo: 'supervisor', proventos: 1300, fixo: 1000, extras: [{ nome: 'Saldo de salario', valor: 200 }, { nome: 'Ferias vencidas', valor: 100 }] } } } },
+  [{ id: 9, supervisedBoards: ['minas', 'contagem'] }]).minas.fixos, 700, 'supervisor: saldo de salário fica na loja da folha');
 assert.strictEqual(Math.round(L.aliquotaSimples('delrey', '2026-10') * 10000), 1019);
 assert.strictEqual(L.linhaDre('MAGNUM LUIZ - TECNICO', 'tommy'), 'magnum');
 assert.strictEqual(L.linhaDre('FOLHA DE PAGAMENTO', 'delrey'), null);
@@ -176,6 +194,34 @@ assert.strictEqual(L.linhaDre('NOVO S.A', 'site', esc2), null, 'mercadoria não 
 assert.strictEqual(montar({ mes: '2026-10', faturas: [{ b: 'delrey', f: 'JUROS X', vp: 10 }], escolhidos: { 'JUROS X': 'diversos' } }).lojas.delrey.juros, 0);
 assert.strictEqual(C.comPadrao({ escritorio: [{ id: 'ingrid', nome: 'Ingrid', encargos: true }] }).escritorio[0].encargosPct, 19.44);
 assert.strictEqual(C.validar({ escritorio: [{ nome: '', origem: 'fixo', lojas: ['lez'] }] }), 'Todo custo precisa de nome');
+// Rescisão nas faturas: vai para a linha Salário do caixa e não entra na DRE
+const { nomesFuncionarios } = require('../services/dreCaixa');
+const func = nomesFuncionarios([{ name: 'Joana da Conceição Lima', inativo: true }, { name: 'ANA' }, { name: 'LEONARDO MARTINS JUNIOR', cargo: 'Sócio' }, { name: '' }]);
+for (const f of ['RESCISÃO FULANA', 'RESCISAO FULANA', 'RESCISORIA', 'GRRF', 'TRCT JOANA', '13O SALARIO', 'DECIMO TERCEIRO']) {
+  assert.strictEqual(linhaCaixa(f), 'salario', f);
+  assert.strictEqual(L.linhaDre(f, 'delrey'), null, f);
+}
+assert.strictEqual(linhaCaixa('GRRF FGTS'), 'fgts');
+for (const f of ['JOANA DA CONCEICAO LIMA', 'Joana da Conceição Lima', 'ACERTO - JOANA DA CONCEICAO LIMA', 'JOANA DA CONCEICAO', 'ANA']) {
+  assert.strictEqual(linhaCaixa(f, {}, func), 'salario', f);
+  assert.strictEqual(L.linhaDre(f, 'delrey', {}, func), null, f);
+}
+assert.strictEqual(L.linhaDre('ANA MODAS', 'delrey', {}, func), 'diversos', 'uma palavra só não casa no meio do nome');
+assert.strictEqual(L.linhaDre('JOANA COMERCIO', 'delrey', {}, func), 'diversos', 'o começo do nome precisa bater');
+assert.strictEqual(L.linhaDre('LEONARDO MARTINS JUNIOR', 'delrey', {}, func), 'diversos', 'sócio não é funcionário');
+assert.strictEqual(linhaCaixa('JOANA DA CONCEICAO LIMA', { 'JOANA DA CONCEICAO LIMA': 'marketing' }, func), 'marketing', 'o Mapa de fornecedores vence');
+assert.strictEqual(linhaCaixa('JUROS JOANA DA CONCEICAO LIMA', {}, func), 'juros', 'só muda o que iria para Diversos');
+const cxFunc = montarCaixa({ lojas: ['delrey'], funcionarios: func, pagos: [{ b: 'delrey', f: 'JOANA DA CONCEICAO LIMA', v: 500 }] });
+assert.strictEqual(cxFunc.linhas.find(l => l.id === 'salario').lojas.delrey, 500);
+// DRE completa: fatura de funcionária fora de Diversos, escritório sem verba de rescisão
+const fatFunc = [{ b: 'delrey', f: 'JOANA DA CONCEICAO LIMA', vp: 500, va: 0 }, { b: 'delrey', f: 'GRRF', vp: 300, va: 0 }, { b: 'delrey', f: 'FORNECEDOR NOVO', vp: 70, va: 0 }];
+const ctxEsc = ({ fora, saldo }) => ({ mes: '2026-10', manual: {}, faturas: fatFunc, apuracoes: [], embalagem: { pago: {}, venda: {} }, employees: [{ id: 2, name: 'INGRID MUNIZ' }, { id: 50, name: 'Joana da Conceição Lima' }],
+  folhaMes: { site: { entries: { 2: { tipo: 'socio', proventos: 1000 + fora + saldo, extras: [{ nome: 'Ferias vencidas', valor: fora }, { nome: 'Saldo de salario', valor: saldo }] } } } }, freteTommy: 0, faturamentoExtra: {} });
+const baseEsc = montar({ mes: '2026-10', conferencia, caixa, faturas: fatFunc });
+const semVerba = montarCompleta(baseEsc, ctxEsc({ fora: 0, saldo: 0 })), comVerba = montarCompleta(baseEsc, ctxEsc({ fora: 400, saldo: 0 })), comSaldo = montarCompleta(baseEsc, ctxEsc({ fora: 0, saldo: 600 }));
+assert.strictEqual(semVerba.lojas.delrey.diversos, 70, 'só a fatura sem nome conhecido fica em Diversos');
+assert.strictEqual(comVerba.lojas.delrey.escritorio, semVerba.lojas.delrey.escritorio, 'verba de rescisão não entra no escritório');
+assert.ok(comSaldo.lojas.delrey.escritorio > semVerba.lojas.delrey.escritorio, 'saldo de salário continua no escritório');
 assert.strictEqual(dc.lojas.contagem.encargos, 2749.84);
 assert.strictEqual(dc.lojas.tommy.frete, 485.91);
 assert.ok(dc.lojas.lez.faltam.includes('receita'));

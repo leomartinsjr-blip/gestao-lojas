@@ -28,7 +28,7 @@ const MAPA = [
   [/ALOSHOPPING/, 'diversos'],
   [/ALUGUEL|CONDOMINIO|CONDOMÍNIO|\bIPTU\b/, 'shopping'],
   [/VALE TRANSPORTE|TRANSFACIL|OTIMO DE BILHETAGEM|BHBUS|AJUDA DE CUSTO/, 'vt'],
-  [/FOLHA DE PAGAMENTO|ADIANTAMENTO|TRCT|13º|FERIAS|FÉRIAS|SALÁRIOS A PAGAR|SALARIOS A PAGAR/, 'salario'],
+  [/FOLHA DE PAGAMENTO|ADIANTAMENTO|TRCT|\bRESCIS|\bGRRF\b|13º|\b13O\b|DECIMO TERCEIRO|DÉCIMO TERCEIRO|FERIAS|FÉRIAS|SALÁRIOS A PAGAR|SALARIOS A PAGAR/, 'salario'],
   [/SEGURO|ALLIANZ/, 'seguros'],
   [/EMBALAGEN/, 'embalagens'],
   [/MIDIAS SOCIAIS|INSTAGRAM|MARKETING|CLARA SENRA|JONATHAN DE CASTRO/, 'marketing'],
@@ -39,23 +39,39 @@ const MAPA = [
 
 const r2 = v => Math.round(v * 100) / 100;
 const norm = s => String(s || '').trim().toUpperCase().replace(/\s+/g, ' ');
+const semAcento = s => norm(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const soLetras = s => semAcento(s).replace(/[^A-Z0-9]+/g, ' ').trim();
 
-// escolhidos: { FORNECEDOR: linha } do Mapa de fornecedores, que vence o mapa padrão
-function linhaCaixa(fornecedor, escolhidos = {}) {
+// Quem é pago pela folha, ativo ou desligado: a rescisão costuma vir depois do
+// desligamento. Sócio fica de fora: fatura em nome dele não é verba de funcionário.
+function nomesFuncionarios(employees) {
+  return (employees || []).filter(e => !/S[OÓ]CIO/i.test(e.cargo || '')).map(e => soLetras(e.name)).filter(Boolean);
+}
+
+// Nome igual, nome completo dentro do texto da fatura, ou fatura com o começo do
+// nome. Uma palavra só vale quando é igual: "ANA" não pode casar com "ANA MODAS".
+function ehFuncionario(fornecedor, funcionarios) {
+  const n = soLetras(fornecedor);
+  return funcionarios.some(f => n === f || (f.includes(' ') && ` ${n} `.includes(` ${f} `)) || (n.includes(' ') && f.startsWith(`${n} `)));
+}
+
+// escolhidos: { FORNECEDOR: linha } do Mapa de fornecedores, que vence o mapa padrão.
+// funcionarios: nomesFuncionarios(). Só muda o que iria para Diversos ou A classificar.
+function linhaCaixa(fornecedor, escolhidos = {}, funcionarios = []) {
   const n = norm(fornecedor);
   if (escolhidos[n]) return escolhidos[n];
-  for (const [re, linha] of MAPA) if (re.test(n)) return linha;
-  return 'classificar';
+  const linha = MAPA.find(([re]) => re.test(n))?.[1] || 'classificar';
+  return ['diversos', 'classificar'].includes(linha) && ehFuncionario(n, funcionarios) ? 'salario' : linha;
 }
 
 // pagos: [{ b, f, v }] · extras: { taxa: { loja: valor }, caixinha: {...} } · recebimentos: { loja: valor }
 // ajustes: { loja: { linha: valor } } digitados na tela, que substituem o calculado
-function montarCaixa({ lojas, pagos, extras = {}, recebimentos = {}, escolhidos = {}, ajustes = {} }) {
+function montarCaixa({ lojas, pagos, extras = {}, recebimentos = {}, escolhidos = {}, ajustes = {}, funcionarios = [] }) {
   const porLinha = Object.fromEntries(LINHAS.map(([id]) => [id, {}]));
   for (const { b, f, v } of pagos) {
     if (!v) continue;
     const nome = norm(f) || '(sem nome)';
-    const alvo = (porLinha[linhaCaixa(nome, escolhidos)][nome] ||= {});
+    const alvo = (porLinha[linhaCaixa(nome, escolhidos, funcionarios)][nome] ||= {});
     alvo[b] = r2((alvo[b] || 0) + v);
   }
   const soma = Object.fromEntries(lojas.map(b => [b, 0]));
@@ -77,4 +93,4 @@ function montarCaixa({ lojas, pagos, extras = {}, recebimentos = {}, escolhidos 
   return { linhas, soma, recebimentos, resultado };
 }
 
-module.exports = { linhaCaixa, montarCaixa, LINHAS, norm };
+module.exports = { linhaCaixa, montarCaixa, nomesFuncionarios, LINHAS, norm, semAcento };

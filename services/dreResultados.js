@@ -11,7 +11,7 @@
 
 const multer = require('multer');
 const { lerRelatorio } = require('./dreImportar');
-const { montarCaixa, linhaCaixa, LINHAS: LINHAS_CAIXA, norm: normCaixa } = require('./dreCaixa');
+const { montarCaixa, linhaCaixa, nomesFuncionarios, LINHAS: LINHAS_CAIXA, norm: normCaixa } = require('./dreCaixa');
 const fs = require('fs');
 const path = require('path');
 const JSZip = require('jszip');
@@ -168,10 +168,11 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
   for (const [nome, f] of Object.entries(manual.lez?.faturas?.fornecedores || {}))
     lanc.push({ b: 'lez', f: nome, v: (f.pago || 0) + (f.aberto || 0) });
   const nomes = Object.fromEntries(employees.map(e => [String(e.id), e.name || '']));
-  const pessoas = Object.entries(folhaMes?.site?.entries || {}).map(([id, e]) => ({ nome: nomes[id] || '', valor: e.proventos || 0 }));
+  // Mesma regra da folha das lojas: verba de rescisão já está na taxa de encargos
+  const pessoas = Object.entries(folhaMes?.site?.entries || {}).map(([id, e]) => ({ nome: nomes[id] || '', valor: r2((e.proventos || 0) - L.extrasFora(e)) }));
   const esc = C.calcularEscritorio({ itens: cfg.escritorio, pessoas, lancamentos: lanc });
   // O que foi para o rateio do escritório sai das linhas da loja que pagou
-  const { totais, detalhe } = L.somarFaturas(lanc.filter(l => !esc.usados.has(l)), C.escolhidosDe(config));
+  const { totais, detalhe } = L.somarFaturas(lanc.filter(l => !esc.usados.has(l)), C.escolhidosDe(config), nomesFuncionarios(employees));
   const folha = L.folhaPorLoja(folhaMes, employees);
   const embPct = L.percentuaisEmbalagem(embalagem.pago, embalagem.venda, { lez: pct.embalagemLez / 100 });
   const icmsCadastrado = { site: pct.icmsSite / 100, lez: pct.icmsLez / 100 };
@@ -462,7 +463,7 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
       const ajustesCaixa = Object.fromEntries(LOJAS.map(b => [b, Object.fromEntries(Object.entries(manual[b]?.ajustesCaixa || {}).filter(([, v]) => v != null))]));
       const dados = {
         ...dre,
-        caixa: montarCaixa({ lojas: LOJAS, pagos, escolhidos, ajustes: ajustesCaixa, recebimentos: coluna('receita'),
+        caixa: montarCaixa({ lojas: LOJAS, pagos, escolhidos, funcionarios: nomesFuncionarios(db.employees), ajustes: ajustesCaixa, recebimentos: coluna('receita'),
           extras: { taxa: coluna('taxa'), caixinha: coluna('caixinha') } }),
         conferenciaEm: foto.em,
         labels: Object.fromEntries(LOJAS.map(b => [b, boardsLabel[b] || b])),
@@ -718,7 +719,8 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
           for (const [nome, f] of Object.entries(d.lojas?.lez?.faturas?.fornecedores || {})) somar(nome, (f.pago || 0) + (f.aberto || 0));
       }
       const escolhidos = C.escolhidosDe(await lerConfig());
-      const lista = Object.entries(total).map(([nome, valor]) => ({ nome, valor, linha: linhaCaixa(nome, escolhidos), escolhido: !!escolhidos[nome] }))
+      const funcionarios = nomesFuncionarios((await readDB()).employees);
+      const lista = Object.entries(total).map(([nome, valor]) => ({ nome, valor, linha: linhaCaixa(nome, escolhidos, funcionarios), escolhido: !!escolhidos[nome] }))
         .sort((a, c) => (a.linha === 'classificar' ? 0 : 1) - (c.linha === 'classificar' ? 0 : 1) || a.nome.localeCompare(c.nome, 'pt-BR'));
       res.json({ lista, linhas: LINHAS_CAIXA.filter(([id]) => !['taxa', 'caixinha'].includes(id)) });
     } catch (e) { res.status(500).json({ error: e.message }); }
