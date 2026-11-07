@@ -1129,6 +1129,14 @@ const emailTransporter = (process.env.EMAIL_USER && process.env.EMAIL_PASS)
 const resetTokens = new Map();
 
 app.use(compress());
+// GET de API: navegador guarda e sempre revalida pelo ETag. Dado igual ao da
+// última vez (o normal no polling do painel) volta 304 sem corpo — economiza
+// banda sem mostrar dado velho. Rotas que definem o próprio Cache-Control
+// sobrescrevem este.
+app.use('/api', (req, res, next) => {
+  if (req.method === 'GET') res.setHeader('Cache-Control', 'private, no-cache');
+  next();
+});
 app.use(express.json({ limit: '50mb' }));
 app.use(session(sessionOpts));
 
@@ -1191,13 +1199,16 @@ app.get('/manuais/:slug', (req, res) => {
   res.sendFile(arq);
 });
 
-// Serve JS/CSS sem cache para garantir que deploys chegam ao navegador
+// JS/CSS: o navegador guarda, mas pergunta ao servidor a cada carga (no-cache +
+// ETag). Sem mudança volta um 304 vazio; depois de um deploy, o arquivo novo.
+// Antes era no-store: cada abertura de tela baixava ~2 MB de novo (app.js,
+// xlsx, style.css) e isso estourava a banda do plano no Render.
 app.use(express.static(path.join(__dirname, 'public'), {
-  etag: false,
-  lastModified: false,
+  etag: true,
+  lastModified: true,
   setHeaders(res, filePath) {
     if (/\.(js|css)$/.test(filePath)) {
-      res.setHeader('Cache-Control', 'no-store');
+      res.setHeader('Cache-Control', 'no-cache');
     }
   }
 }));

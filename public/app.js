@@ -8273,6 +8273,9 @@ function _startDayCardAutoRefresh() {
   if (!isCurrentMonth) return; // sem refresh em meses passados
   const INTERVAL = 1 * 60 * 1000; // 1 min — alinhado ao sync do servidor
   _dayCardTimer = setInterval(async () => {
+    // Aba escondida/minimizada: ninguém está vendo, não puxa nada. Eram uma
+    // requisição por vendedor a cada minuto, o dia inteiro, em cada aba aberta.
+    if (document.hidden) return;
     try {
       const pad = n => String(n).padStart(2, '0');
       const todayStr = `${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())}`;
