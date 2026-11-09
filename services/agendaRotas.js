@@ -17,7 +17,7 @@ const DESCRICOES = ['3L', 'AJUDA DE CUSTO', 'AJUSTE', 'AJUSTE SALDO', 'APORTE JU
   'DUPLI', 'DUPLI ATRASADA', 'FLMJ', 'IOF', 'IOF C/G', 'JDG', 'JUROS', 'LF', 'LMJ', 'PAGALI', 'PAGARME', 'PIX', 'PRONAMPE', 'PV', 'REDE',
   'RS', 'SALDO', 'SICOOB', 'SITE', 'STONE', 'TAR', 'TAR C/G', 'TAR MAQ', 'TAR PIX', 'TAR REN', 'TED', 'TTS', 'V.T'];
 
-function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, boardsLabel }) {
+function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, fluxoTaxasPorForma, formasPagamentoDias, boardsLabel }) {
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
   const LOCAL = path.join(os.tmpdir(), 'gestao-agenda.json');
   const lerLocal = () => { try { return JSON.parse(fs.readFileSync(LOCAL, 'utf8')); } catch { return { lancs: [], config: {} }; } };
@@ -55,6 +55,19 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, bo
       const db = getDb();
       if (db) return db.collection('agendaConfig').updateOne({ _id: emp }, { $set: campos }, { upsert: true });
       const d = lerLocal(); d.config[emp] = { ...(d.config[emp] || {}), _id: emp, ...campos }; gravarLocal(d);
+    },
+    // Depósito da caixinha que cai no dia seguinte: { 'board:YYYY-MM-DD': 'D1' }
+    async depositosD1() {
+      const db = getDb();
+      if (db) return (await db.collection('agendaConfig').findOne({ _id: 'DEPOSITOS' }))?.d || {};
+      return lerLocal().config.DEPOSITOS?.d || {};
+    },
+    async marcarDeposito(chave, d1) {
+      const db = getDb();
+      if (db) return db.collection('agendaConfig').updateOne({ _id: 'DEPOSITOS' }, d1 ? { $set: { [`d.${chave}`]: 'D1' } } : { $unset: { [`d.${chave}`]: '' } }, { upsert: true });
+      const d = lerLocal(); const m = ((d.config.DEPOSITOS ||= { _id: 'DEPOSITOS', d: {} }).d ||= {});
+      if (d1) m[chave] = 'D1'; else delete m[chave];
+      gravarLocal(d);
     },
     async substituirTudo(docs) {
       const db = getDb();
@@ -179,32 +192,98 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, bo
     } catch (e) { console.error('[agenda importar]', e); res.status(500).json({ error: e.message }); }
   });
 
-  // O que deve cair/sair no dia: REDE (venda do dia útil anterior sem a taxa; segunda = sex–dom)
-  // e DUPLI (faturas que vencem; segunda = sáb–seg). Feriado acumula conta e recebimento para o
-  // dia útil seguinte (fluxoCaixa.janelaDoDia). Fonte única do Previsto e do Resumo do dia.
+  // O que deve cair/sair no dia, por meio de recebimento:
+  //   REDE     cartão vendido no dia útil anterior, sem a taxa (segunda = sex–dom) — D+1
+  //   PIX      PIX vendido no próprio dia, sem a taxa (segunda junta sáb e dom) — D0
+  //   DEPOSITO dinheiro: não vem da venda, vem do depósito lançado no Fechamento de
+  //            caixa da loja. Cai no dia do depósito (D0) ou, se marcado, no dia útil
+  //            seguinte a esse (D+1, depósito feito depois do horário do banco).
+  //   DUPLI    faturas que vencem (segunda = sáb–seg).
+  // Feriado acumula conta e recebimento para o dia útil seguinte (fluxoCaixa.janelaDoDia).
+  // O Site não tem maquineta nem caixinha: segue venda × (1 − taxa) em D+1.
+  // Fonte única do Previsto e do Resumo do dia.
   const boardsDe = emp => [...new Set(Object.entries(agenda.BOARD[emp] || {}).filter(([c]) => c !== 'CG').map(([, b]) => b))];
   const dataDe = q => /^\d{4}-\d{2}-\d{2}$/.test(q || '') ? q : fluxoCaixa.hojeBRT();
+  const r2 = v => Math.round((v || 0) * 100) / 100;
+  const pad = n => String(n).padStart(2, '0');
+  const caixaDia = (db, b, d) => db.caixa?.[`${d.slice(0, 7)}-${b}`]?.[parseInt(d.slice(8, 10))] || null;
+
+  // Saldo da caixinha até a data (inclusive): dinheiro − sangria − depósito, voltando
+  // mês a mês até o primeiro mês sem dado (mesma conta do card de Fechamento de Caixa).
+  function saldoCaixinha(db, b, ate) {
+    let saldo = 0, [y, m] = ate.split('-').map(Number), tem = false;
+    for (let i = 0; i < 37; i++) {
+      const mes = db.caixa?.[`${y}-${pad(m)}-${b}`];
+      if (i > 0 && (!mes || !Object.keys(mes).length)) break;
+      for (const [d, e] of Object.entries(mes || {})) {
+        if (`${y}-${pad(m)}-${pad(d)}` > ate) continue;
+        saldo += (e.caixa ?? 0) - (e.sangria ?? 0) - (e.deposito ?? 0); tem = true;
+      }
+      m -= 1; if (m < 1) { m = 12; y -= 1; }
+    }
+    return tem ? r2(saldo) : null;
+  }
+
   async function previstoDoDia(boards, data) {
     const jan = fluxoCaixa.janelaDoDia(data);
-    const [db, taxas] = await Promise.all([readDB(), fluxoTaxas(fluxoCaixa.hojeBRT())]);
+    const hoje = fluxoCaixa.hojeBRT();
+    const [db, taxas, porForma, d1] = await Promise.all([readDB(), fluxoTaxas(hoje), fluxoTaxasPorForma(hoje), store.depositosD1()]);
     const mongo = getDb();
     const faturas = mongo
       ? await mongo.collection('cpFaturas').find({ isPagar: true, previsao: { $ne: 'S' }, board: { $in: boards }, vencimento: { $in: jan.pagar } },
           { projection: { _id: 0, board: 1, fornecedor: 1, parcela: 1, vencimento: 1, baixa: 1, valor: 1, valorLiquido: 1, valorPago: 1, previsao: 1 } }).toArray()
       : [];
     const r = fluxoCaixa.resumoDoDia({ db, faturas: [], taxas, boards, hoje: data });
-    const itens = boards.map(b => {
+    // Dias que interessam: cartão da janela de venda, PIX da janela do dia
+    const diasFormas = [...new Set([...jan.venda, ...jan.pagar])].sort();
+    const itens = await Promise.all(boards.map(async b => {
       const conta = b === 'site' ? 'SITE' : 'CC';
       const fs_ = faturas.filter(f => f.board === b).map(f => ({
         forn: f.fornecedor, venc: f.vencimento, parc: f.parcela, pago: !!f.baixa, previsao: f.previsao,
-        v: Math.round((f.baixa ? (f.valorPago || 0) : (f.valorLiquido ?? f.valor) - (f.valorPago || 0)) * 100) / 100,
+        v: r2(f.baixa ? (f.valorPago || 0) : (f.valorLiquido ?? f.valor) - (f.valorPago || 0)),
       })).filter(f => f.v > 0.005).sort((a, b2) => b2.v - a.v);
       const e = r.empresas[b];
-      return { board: b, label: boardsLabel[b] || b, conta, venda: e.venda, taxa: e.taxa, rede: e.entra,
-        dupli: Math.round(fs_.reduce((s, f) => s + f.v, 0) * 100) / 100, faturas: fs_ };
-    });
-    return { data: jan.alvo, pagar: jan.pagar, venda: jan.venda, itens };
+      const base = { board: b, label: boardsLabel[b] || b, conta, venda: e.venda, taxa: e.taxa,
+        dupli: r2(fs_.reduce((s, f) => s + f.v, 0)), faturas: fs_ };
+      // Sem divisão por meio: Site, ou Microvix fora do ar
+      const semDivisao = motivo => ({ ...base, rede: e.entra, cartao: e.venda, taxaCartao: e.taxa, pix: 0, pixLiq: 0, taxaPix: 0,
+        depositos: [], deposito: 0, caixinha: null, porMeio: false, motivo });
+      if (b === 'site') return semDivisao('site');
+      let formas;
+      try { formas = await formasPagamentoDias(b, diasFormas, db); }
+      catch (err) { console.warn(`[agenda formas/${b}]`, err.message); return semDivisao('microvix'); }
+      const pf = porForma[b] || {};
+      const taxaCartao = pf.cartao ?? e.taxa, taxaPix = pf.pix ?? 0;
+      const cartao = r2(jan.venda.reduce((s, d) => s + (formas[d]?.cartao || 0), 0));
+      const pix = r2(jan.pagar.reduce((s, d) => s + (formas[d]?.pix || 0), 0));
+      const dinheiroVendido = r2(jan.venda.reduce((s, d) => s + (formas[d]?.dinheiro || 0), 0));
+      // Depósitos da caixinha que caem neste dia (olha 10 dias para trás: D+1 e feriados)
+      const depositos = [];
+      for (let d = fluxoCaixa.addDias(jan.alvo, -10); d <= jan.alvo; d = fluxoCaixa.addDias(d, 1)) {
+        const v = caixaDia(db, b, d)?.deposito || 0;
+        if (v <= 0.005) continue;
+        const cai = d1[`${b}:${d}`] === 'D1' ? 'D1' : 'D0';
+        const d0 = fluxoCaixa.diaUtil(d), caiEm = cai === 'D1' ? fluxoCaixa.diaUtil(fluxoCaixa.addDias(d0, 1)) : d0;
+        if (caiEm === jan.alvo) depositos.push({ data: d, v: r2(v), cai });
+      }
+      return { ...base, porMeio: true,
+        cartao, taxaCartao, rede: r2(cartao * (1 - taxaCartao)),
+        pix, taxaPix, pixLiq: r2(pix * (1 - taxaPix)), pixParcial: jan.pagar.some(d => d >= hoje),
+        dinheiroVendido, depositos, deposito: r2(depositos.reduce((s, x) => s + x.v, 0)),
+        caixinha: saldoCaixinha(db, b, jan.alvo < hoje ? jan.alvo : hoje) };
+    }));
+    return { data: jan.alvo, pagar: jan.pagar, venda: jan.venda, hoje, itens };
   }
+
+  // PUT /api/agenda/deposito { board, data, cai: 'D0'|'D1' } — quando cai o depósito da caixinha
+  app.put('/api/agenda/deposito', requireAdmin, async (req, res) => {
+    try {
+      const { board, data, cai } = req.body || {};
+      if (!board || !/^\d{4}-\d{2}-\d{2}$/.test(data || '') || !['D0', 'D1'].includes(cai)) return res.status(400).json({ error: 'board, data e cai (D0 ou D1)' });
+      await store.marcarDeposito(`${board}:${data}`, cai === 'D1');
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
 
   // GET /api/agenda/sugestoes?emp=&data= — previsto do dia de uma empresa
   app.get('/api/agenda/sugestoes', requireAdmin, async (req, res) => {
@@ -224,7 +303,9 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, bo
       const empresas = agenda.EMPRESAS.map(emp => {
         const bs = boardsDe(emp), its = p.itens.filter(i => bs.includes(i.board));
         const faturas = its.flatMap(i => i.faturas.map(f => ({ ...f, loja: i.label }))).sort((a, b) => b.v - a.v);
-        return { emp, microvix: bs.length > 0, lojas: its.map(i => i.label), venda: soma(its, i => i.venda), rede: soma(its, i => i.rede),
+        const rede = soma(its, i => i.rede), pix = soma(its, i => i.pixLiq), deposito = soma(its, i => i.deposito);
+        return { emp, microvix: bs.length > 0, lojas: its.map(i => i.label), venda: soma(its, i => i.venda),
+          rede, pix, deposito, recebe: Math.round((rede + pix + deposito) * 100) / 100,
           dupli: soma(its, i => i.dupli), baixado: soma(faturas, f => f.pago ? f.v : 0), faturas };
       });
       res.json({ hoje: fluxoCaixa.hojeBRT(), data: p.data, pagar: p.pagar, venda: p.venda, empresas });

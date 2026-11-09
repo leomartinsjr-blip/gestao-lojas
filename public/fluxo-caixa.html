@@ -784,24 +784,51 @@ function renderSugestoes() {
   if (!AS) { $('ag-sug').innerHTML = '<div class="ag-sug muted"><span class="spinner"></span> Calculando…</div>'; $('ag-sug-sub').textContent = ''; return; }
   if (!AS.itens.length) { $('ag-sug').innerHTML = '<div class="ag-sug muted">Empresa sem Microvix: nada previsto.</div>'; $('ag-sug-sub').textContent = ''; return; }
   const faixa = ds => ds.length === 1 ? DM(ds[0]) : `${DM(ds[0])} a ${DM(ds[ds.length - 1])}`;
-  $('ag-sug-sub').textContent = `venda de ${faixa(AS.venda)} · vencimentos de ${faixa(AS.pagar)}`;
+  $('ag-sug-sub').textContent = `cartão de ${faixa(AS.venda)} · PIX, depósito e vencimentos de ${faixa(AS.pagar)}`;
   const lancado = (conta, re) => A.dia.filter(l => l.conta === conta && re.test(l.desc)).reduce((s, l) => s + l.valor, 0);
+  const pct = t => (t * 100).toFixed(2).replace('.', ',') + '%';
+  const dif = (prev, real) => real ? `<span class="ag-dif ${Math.abs(real - prev) > 1 ? 'warn' : 'pos'}">lançado ${R2(real)}${Math.abs(real - prev) > 1 ? ` · diferença ${R2(real - prev)}` : ' ✓'}</span>` : '';
+  const linha = (rot, tip, v, conta, desc, cls) => `<div class="ag-linha"><span class="lbl"${tip ? ` title="${esc(tip)}"` : ''}>${rot}</span><b class="${cls}">${R2(v)}</b>
+        <button class="fc-btn ag-lancar" data-conta="${conta}" data-desc="${desc}" data-valor="${v}" ${v ? '' : 'disabled'}>Lançar</button></div>`;
   $('ag-sug').innerHTML = AS.itens.map(it => {
-    const rede = lancado(it.conta, /^(REDE|CIELO|STONE|PAGALI|PAGARME)/), dupli = lancado(it.conta, /^DUPLI/);
-    const dif = (prev, real) => real ? `<span class="ag-dif ${Math.abs(real - prev) > 1 ? 'warn' : 'pos'}">lançado ${R2(real)}${Math.abs(real - prev) > 1 ? ` · diferença ${R2(real - prev)}` : ' ✓'}</span>` : '';
+    const rede = lancado(it.conta, /^(REDE|CIELO|STONE|PAGALI|PAGARME|CART)/), dupli = lancado(it.conta, /^DUPLI/);
+    const pix = lancado(it.conta, /^PIX/), dep = lancado(it.conta, /^DEP/);
+    const fat = it.faturas.length ? `<details><summary class="muted" style="font-size:11px;cursor:pointer">ver faturas</summary>${it.faturas.map(f =>
+        `<div class="ag-fat${f.pago ? ' pago' : ''}"><span>${esc(f.forn)}${f.parc ? ' · ' + esc(f.parc) : ''}${AS.pagar.length > 1 ? ' · ' + DM(f.venc) : ''}${f.pago ? ' (pago)' : ''}</span><span>${R2(f.v)}</span></div>`).join('')}</details>` : '';
+    const dupliHtml = linha(`DUPLI (${it.faturas.length} fatura${it.faturas.length === 1 ? '' : 's'})`, '', -it.dupli, it.conta, 'DUPLI', 'neg') + dif(-it.dupli, dupli) + fat;
+    if (!it.porMeio) return `<div class="ag-sug">
+      <h3><span>${esc(it.label)} <span class="ag-conta">${nomeConta(it.conta)}</span></span></h3>
+      ${linha('REDE (venda, líquido)', `venda ${R2(it.venda)} − taxa ${pct(it.taxa)}`, it.rede, it.conta, it.conta === 'SITE' ? 'SITE' : 'REDE', 'pos')}
+      ${dif(it.rede, rede)}
+      ${it.motivo === 'microvix' ? '<div class="muted" style="font-size:11px">Microvix não respondeu: venda total, sem separar cartão, PIX e dinheiro.</div>' : ''}
+      ${dupliHtml}</div>`;
+    const deps = it.depositos.map(d => `<div class="ag-fat"><span>depósito de ${DM(d.data)} · ${d.cai === 'D1' ? 'D+1' : 'D0'}</span><span>${R2(d.v)}
+        <button class="fc-btn ag-dep" data-board="${it.board}" data-data="${d.data}" data-cai="${d.cai === 'D1' ? 'D0' : 'D1'}" style="padding:1px 6px;font-size:11px" title="${d.cai === 'D1' ? 'Voltar para o dia do depósito' : 'Depositado depois do horário: cai no próximo dia útil'}">${d.cai === 'D1' ? '← D0' : 'D+1 →'}</button></span></div>`).join('');
     return `<div class="ag-sug">
       <h3><span>${esc(it.label)} <span class="ag-conta">${nomeConta(it.conta)}</span></span></h3>
-      <div class="ag-linha"><span class="lbl" title="venda ${R2(it.venda)} − taxa ${(it.taxa * 100).toFixed(2).replace('.', ',')}%">REDE (cartão, líquido)</span><b class="pos">${R2(it.rede)}</b>
-        <button class="fc-btn ag-lancar" data-conta="${it.conta}" data-desc="REDE" data-valor="${it.rede}" ${it.rede ? '' : 'disabled'}>Lançar</button></div>
+      ${linha('REDE (cartão D+1, líquido)', `cartão de ${faixa(AS.venda)} ${R2(it.cartao)} − taxa ${pct(it.taxaCartao)}`, it.rede, it.conta, 'REDE', 'pos')}
       ${dif(it.rede, rede)}
-      <div class="ag-linha"><span class="lbl">DUPLI (${it.faturas.length} fatura${it.faturas.length === 1 ? '' : 's'})</span><b class="neg">${R2(-it.dupli)}</b>
-        <button class="fc-btn ag-lancar" data-conta="${it.conta}" data-desc="DUPLI" data-valor="${-it.dupli}" ${it.dupli ? '' : 'disabled'}>Lançar</button></div>
-      ${dif(-it.dupli, dupli)}
-      ${it.faturas.length ? `<details><summary class="muted" style="font-size:11px;cursor:pointer">ver faturas</summary>${it.faturas.map(f =>
-        `<div class="ag-fat${f.pago ? ' pago' : ''}"><span>${esc(f.forn)}${f.parc ? ' · ' + esc(f.parc) : ''}${AS.pagar.length > 1 ? ' · ' + DM(f.venc) : ''}${f.pago ? ' (pago)' : ''}</span><span>${R2(f.v)}</span></div>`).join('')}</details>` : ''}
+      ${linha(`PIX (D0, líquido)${it.pixParcial ? ' <span class="muted" style="font-size:11px">· dia em andamento</span>' : ''}`, `PIX de ${faixa(AS.pagar)} ${R2(it.pix)}${it.taxaPix ? ' − taxa ' + pct(it.taxaPix) : ''}`, it.pixLiq, it.conta, 'PIX', 'pos')}
+      ${dif(it.pixLiq, pix)}
+      ${linha(`DEPÓSITO (dinheiro da caixinha)`, 'Depósitos lançados no Fechamento de caixa da loja', it.deposito, it.conta, 'DEPOSITO', 'pos')}
+      ${dif(it.deposito, dep)}
+      ${deps}
+      <div class="muted" style="font-size:11px">dinheiro vendido ${R2(it.dinheiroVendido || 0)} fica na caixinha${it.caixinha != null ? ` · saldo na caixinha ${R2(it.caixinha)}` : ''}</div>
+      ${dupliHtml}
     </div>`;
   }).join('');
 }
+$('ag-sug').addEventListener('click', async e => {
+  const b = e.target.closest('.ag-dep'); if (!b) return;
+  b.disabled = true;
+  try {
+    const r = await fetch('/api/agenda/deposito', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ board: b.dataset.board, data: b.dataset.data, cai: b.dataset.cai }) });
+    if (!r.ok) throw new Error((await r.json()).error || r.status);
+    AS = null; renderSugestoes(); RD = null;
+    fetch(`/api/agenda/sugestoes?emp=${agEmp}&data=${A.data}`).then(r => r.json()).then(s => { if (s.itens && A && s.data) { AS = s; renderSugestoes(); } }).catch(() => {});
+    carregarResumoDia();
+  } catch (err) { alert('Não mudou o depósito: ' + err.message); b.disabled = false; }
+});
 
 // Resumo do dia: todas as empresas, com data própria (abre em hoje, mesmo que o
 // extrato abaixo esteja no último dia lançado). Valores iguais aos do Previsto.
@@ -827,33 +854,35 @@ function renderResumoDia() {
   const brl = v => v ? R2(v).replace('R$ ', '') : '—';
   const sinal = v => v < -0.005 ? 'neg' : v > 0.005 ? 'pos' : '';
   const soma = f => RD.empresas.reduce((s, e) => s + f(e), 0);
-  const venda = soma(e => e.venda), rede = soma(e => e.rede), dupli = soma(e => e.dupli), baixado = soma(e => e.baixado);
+  const venda = soma(e => e.venda), rede = soma(e => e.recebe ?? e.rede), dupli = soma(e => e.dupli), baixado = soma(e => e.baixado);
+  const sCart = soma(e => e.rede), sPix = soma(e => e.pix || 0), sDep = soma(e => e.deposito || 0);
   const nFat = soma(e => e.faturas.length);
   $('rd-dia').textContent = `${dowDe(RD.data)} ${DM(RD.data)}`;
   $('rd-sub').textContent = RD.data === RD.hoje ? 'hoje' : '';
   const kpi = (l, v, sub, c = '') => `<div><div class="fc-card-label">${l}</div><div class="fc-card-value ${c}">${v}</div><div class="fc-card-sub">${sub}</div></div>`;
   const linha = e => {
-    if (!e.microvix) return `<tr class="off"><td><span class="fm-seta"></span><b>${e.emp}</b></td><td colspan="4" class="muted">sem Microvix</td></tr>`;
-    const n = e.faturas.length, ab = n && rdAbertos.has(e.emp), saldo = e.rede - e.dupli;
+    if (!e.microvix) return `<tr class="off"><td><span class="fm-seta"></span><b>${e.emp}</b></td><td colspan="6" class="muted">sem Microvix</td></tr>`;
+    const rec = e.recebe ?? e.rede;
+    const n = e.faturas.length, ab = n && rdAbertos.has(e.emp), saldo = rec - e.dupli;
     const variasLojas = e.lojas.length > 1, variosDias = RD.pagar.length > 1;
     return `<tr class="${n ? 'fc-row' : ''}${ab ? ' open' : ''}" data-rd="${e.emp}">
       <td><span class="fm-seta">${n ? (ab ? '▾' : '▸') : ''}</span><b>${e.emp}</b> <span class="muted" style="font-size:11px">${esc(e.lojas.join(' + '))}</span></td>
-      <td>${brl(e.venda)}</td><td class="${e.rede ? 'pos' : ''}">${brl(e.rede)}</td>
+      <td>${brl(e.venda)}</td><td class="${e.rede ? 'pos' : ''}">${brl(e.rede)}</td><td class="${e.pix ? 'pos' : ''}">${brl(e.pix)}</td><td class="${e.deposito ? 'pos' : ''}">${brl(e.deposito)}</td>
       <td class="${e.dupli ? 'neg' : ''}">${brl(e.dupli)}${n ? ` <span class="muted" style="font-size:11px">(${n})</span>` : ''}</td>
       <td class="${sinal(saldo)}"><b>${brl(saldo)}</b></td></tr>`
-      + (ab ? `<tr class="fc-det"><td colspan="5"><div class="fc-det-wrap"><table>
+      + (ab ? `<tr class="fc-det"><td colspan="7"><div class="fc-det-wrap"><table>
         <thead><tr><th>Fornecedor</th><th style="text-align:left">Parcela</th>${variasLojas ? '<th style="text-align:left">Loja</th>' : ''}${variosDias ? '<th>Vencimento</th>' : ''}<th>Valor</th></tr></thead>
         <tbody>${e.faturas.map(f => `<tr class="${f.pago ? 'pago' : ''}"><td>${esc(f.forn)}${f.pago ? ' (pago)' : ''}</td><td style="text-align:left">${esc(f.parc || '')}</td>${variasLojas ? `<td style="text-align:left">${esc(f.loja)}</td>` : ''}${variosDias ? `<td>${DM(f.venc)}</td>` : ''}<td>${brl(f.v)}</td></tr>`).join('')}</tbody>
       </table></div></td></tr>` : '');
   };
   $('rd-corpo').innerHTML = `<div class="rd-kpis">
       ${kpi('Vendeu', R2(venda), dias(RD.venda))}
-      ${kpi('Previsão de recebimento', R2(rede), `cartão sem a taxa · cai ${DM(RD.data)}`, 'pos')}
+      ${kpi('Previsão de recebimento', R2(rede), `cartão ${R2(sCart)} · PIX ${R2(sPix)} · depósito ${R2(sDep)}`, 'pos')}
       ${kpi('A pagar', R2(dupli), `${nFat} fatura${nFat === 1 ? '' : 's'} · vence${nFat === 1 ? '' : 'm'} ${dias(RD.pagar)}${baixado > 0.005 ? ` · ${R2(baixado)} já baixado` : ''}`, dupli ? 'neg' : '')}
       ${kpi('Saldo do dia', R2(rede - dupli), 'recebimento − a pagar', sinal(rede - dupli))}
     </div>
     <div class="fc-scroll"><table id="rd-tab">
-      <thead><tr><th>Empresa</th><th>Vendeu</th><th>Recebimento</th><th>A pagar</th><th>Saldo do dia</th></tr></thead>
+      <thead><tr><th>Empresa</th><th>Vendeu</th><th title="venda no cartão do dia útil anterior, sem a taxa">Cartão D+1</th><th title="PIX do dia, sem a taxa">PIX D0</th><th title="depósitos da caixinha lançados no Fechamento de caixa">Depósito</th><th>A pagar</th><th>Saldo do dia</th></tr></thead>
       <tbody>${RD.empresas.map(linha).join('')}</tbody>
     </table></div>`;
 }
