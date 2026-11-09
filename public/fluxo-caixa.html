@@ -151,9 +151,10 @@
   .ag-sug { padding: 10px 14px; border-bottom: 1px solid var(--border); }
   .ag-sug:last-child { border-bottom: none; }
   .ag-sug h3 { font-size: 12px; margin-bottom: 6px; display: flex; justify-content: space-between; gap: 8px; }
-  .ag-linha { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
+  /* rótulo | valor | botão: valores na mesma coluna, alinhados à direita */
+  .ag-linha { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 12px; padding: 4px 0; font-size: 12px; }
   .ag-linha .lbl { color: var(--text2); }
-  .ag-linha b { font-variant-numeric: tabular-nums; }
+  .ag-linha b { font-variant-numeric: tabular-nums; text-align: right; min-width: 96px; }
   .ag-dif { font-size: 11px; }
   .ag-fat { font-size: 11px; color: var(--text2); display: flex; justify-content: space-between; gap: 8px; padding: 2px 0 2px 10px; }
   .ag-fat.pago { opacity: .55; text-decoration: line-through; }
