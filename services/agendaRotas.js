@@ -317,9 +317,29 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, fl
       const rb = real?.[b];
       const taxaReal = rb && rb.cartao > 0.005 && rb.semTaxa < 0.005;
       const taxaCartao = taxaReal ? rb.taxa / rb.cartao : pf.cartao ?? e.taxa, taxaPix = 0;
-      const cartao = r2(jan.venda.reduce((s, d) => s + (formas[d]?.cartao || 0), 0));
-      const pix = r2(jan.pagar.reduce((s, d) => s + (formas[d]?.pix || 0), 0));
-      const dinheiroVendido = r2(jan.venda.reduce((s, d) => s + (formas[d]?.dinheiro || 0), 0));
+      // Dia que ainda não fechou (hoje ou adiante): a venda prevista do dia (mesma
+      // projeção do Fluxo) dividida pelo mix de cartão/PIX/dinheiro dos últimos 28
+      // dias. Hoje vale o maior entre o vendido até agora e o previsto.
+      const abertos = diasFormas.filter(d => d >= hoje);
+      let previstoDia = null;
+      if (abertos.length) {
+        const dias28 = [];
+        for (let d = fluxoCaixa.addDias(hoje, -28); d < hoje; d = fluxoCaixa.addDias(d, 1)) dias28.push(d);
+        const f28 = await formasPagamentoDias(b, dias28, db).catch(() => ({}));
+        const mix = Object.values(f28).reduce((m, f) => ({ cartao: m.cartao + (f.cartao || 0), pix: m.pix + (f.pix || 0), dinheiro: m.dinheiro + (f.dinheiro || 0) }), { cartao: 0, pix: 0, dinheiro: 0 });
+        const tot = mix.cartao + mix.pix + mix.dinheiro;
+        if (tot > 0) {
+          const prev = fluxoCaixa.criarProjecao(db, b, hoje).vendaPrevistaPorDia(abertos[abertos.length - 1]);
+          previstoDia = Object.fromEntries(abertos.map(d => [d, {
+            total: prev[d] || 0, cartao: (prev[d] || 0) * mix.cartao / tot, pix: (prev[d] || 0) * mix.pix / tot, dinheiro: (prev[d] || 0) * mix.dinheiro / tot }]));
+        }
+      }
+      const forma = (d, k) => Math.max(formas[d]?.[k] || 0, previstoDia?.[d]?.[k] || 0);
+      const previsto = !!previstoDia && abertos.some(d => (previstoDia[d]?.total || 0) > 0.005);
+      const cartao = r2(jan.venda.reduce((s, d) => s + forma(d, 'cartao'), 0));
+      const pix = r2(jan.pagar.reduce((s, d) => s + forma(d, 'pix'), 0));
+      const dinheiroVendido = r2(jan.venda.reduce((s, d) => s + forma(d, 'dinheiro'), 0));
+      if (previsto) base.venda = r2(jan.venda.reduce((s, d) => s + Math.max(e.vendas?.[d] || 0, previstoDia[d]?.total || 0), 0));
       // Depósitos da caixinha que caem neste dia (olha 10 dias para trás: D+1 e feriados)
       const depositos = [];
       for (let d = fluxoCaixa.addDias(jan.alvo, -10); d <= jan.alvo; d = fluxoCaixa.addDias(d, 1)) {
@@ -329,7 +349,7 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, fl
         const d0 = fluxoCaixa.diaUtil(d), caiEm = cai === 'D1' ? fluxoCaixa.diaUtil(fluxoCaixa.addDias(d0, 1)) : d0;
         if (caiEm === jan.alvo) depositos.push({ data: d, v: r2(v), cai });
       }
-      return { ...base, porMeio: true,
+      return { ...base, porMeio: true, previsto,
         cartao, taxaCartao, taxaReal: !!taxaReal, rede: r2(cartao * (1 - taxaCartao)),
         pix, taxaPix, pixLiq: r2(pix * (1 - taxaPix)), pixParcial: jan.pagar.some(d => d >= hoje),
         dinheiroVendido, depositos, deposito: r2(depositos.reduce((s, x) => s + x.v, 0)),
@@ -367,7 +387,7 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, fl
         const bs = boardsDe(emp), its = p.itens.filter(i => bs.includes(i.board));
         const faturas = its.flatMap(i => i.faturas.map(f => ({ ...f, loja: i.label }))).sort((a, b) => b.v - a.v);
         const rede = soma(its, i => i.rede), pix = soma(its, i => i.pixLiq), deposito = soma(its, i => i.deposito);
-        return { emp, microvix: bs.length > 0, lojas: its.map(i => i.label), venda: soma(its, i => i.venda),
+        return { emp, microvix: bs.length > 0, lojas: its.map(i => i.label), venda: soma(its, i => i.venda), previsto: its.some(i => i.previsto),
           rede, pix, deposito, recebe: Math.round((rede + pix + deposito) * 100) / 100,
           dupli: soma(its, i => i.dupli), baixado: soma(faturas, f => f.pago ? f.v : 0), faturas };
       });

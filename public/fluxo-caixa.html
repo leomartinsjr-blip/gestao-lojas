@@ -819,7 +819,8 @@ function renderSugestoes() {
         <button class="fc-btn ag-dep" data-board="${it.board}" data-data="${d.data}" data-cai="${d.cai === 'D1' ? 'D0' : 'D1'}" style="padding:1px 6px;font-size:11px" title="${d.cai === 'D1' ? 'Voltar para o dia do depósito' : 'Depositado depois do horário: cai no próximo dia útil'}">${d.cai === 'D1' ? '← D0' : 'D+1 →'}</button></span></div>`).join('');
     return `<div class="ag-sug">
       <h3><span>${esc(it.label)} <span class="ag-conta">${nomeConta(it.conta)}</span></span></h3>
-      ${linha('REDE (cartão D+1, líquido)', `cartão de ${faixa(AS.venda)} ${R2(it.cartao)} − taxa ${pct(it.taxaCartao)} ${it.taxaReal ? '(taxa de cada venda, aba Taxas)' : '(média dos últimos 3 meses)'}`, it.rede, it.conta, 'REDE', 'pos')}
+      ${it.previsto ? '<div class="muted" style="font-size:11px">dia ainda não fechou: valores pela venda prevista e pelo mix de cartão/PIX dos últimos 28 dias</div>' : ''}
+      ${linha(`REDE (cartão D+1, líquido)${it.previsto ? ' <span class="muted" style="font-size:11px">· previsão</span>' : ''}`, `cartão de ${faixa(AS.venda)} ${R2(it.cartao)} − taxa ${pct(it.taxaCartao)} ${it.taxaReal ? '(taxa de cada venda, aba Taxas)' : '(média dos últimos 3 meses)'}`, it.rede, it.conta, 'REDE', 'pos')}
       ${dif(it.rede, rede)}
       ${linha(`PIX (D0, integral)${it.pixParcial ? ' <span class="muted" style="font-size:11px">· dia em andamento</span>' : ''}`, `PIX de ${faixa(AS.pagar)} ${R2(it.pix)}${it.taxaPix ? ' − taxa ' + pct(it.taxaPix) : ''}`, it.pixLiq, it.conta, 'PIX', 'pos')}
       ${dif(it.pixLiq, pix)}
@@ -880,7 +881,7 @@ function renderResumoDia() {
     const variasLojas = e.lojas.length > 1, variosDias = RD.pagar.length > 1;
     return `<tr class="${n ? 'fc-row' : ''}${ab ? ' open' : ''}" data-rd="${e.emp}">
       <td><span class="fm-seta">${n ? (ab ? '▾' : '▸') : ''}</span><b>${e.emp}</b> <span class="muted" style="font-size:11px">${esc(e.lojas.join(' + '))}</span></td>
-      <td>${brl(e.venda)}</td><td class="${e.rede ? 'pos' : ''}">${brl(e.rede)}</td><td class="${e.pix ? 'pos' : ''}">${brl(e.pix)}</td><td class="${e.deposito ? 'pos' : ''}">${brl(e.deposito)}</td>
+      <td${e.previsto ? ' class="muted" title="previsão: o dia ainda não fechou"' : ''}>${e.previsto ? '≈ ' : ''}${brl(e.venda)}</td><td class="${e.rede ? 'pos' : ''}">${brl(e.rede)}</td><td class="${e.pix ? 'pos' : ''}">${brl(e.pix)}</td><td class="${e.deposito ? 'pos' : ''}">${brl(e.deposito)}</td>
       <td class="${e.dupli ? 'neg' : ''}">${brl(e.dupli)}${n ? ` <span class="muted" style="font-size:11px">(${n})</span>` : ''}</td>
       <td class="${sinal(saldo)}"><b>${brl(saldo)}</b></td></tr>`
       + (ab ? `<tr class="fc-det"><td colspan="7"><div class="fc-det-wrap"><table>
@@ -889,7 +890,9 @@ function renderResumoDia() {
       </table></div></td></tr>` : '');
   };
   $('rd-corpo').innerHTML = `<div class="rd-kpis">
-      ${kpi('Vendeu', R2(venda), dias(RD.venda))}
+      ${RD.empresas.some(e => e.previsto)
+        ? kpi('Venda prevista', '≈ ' + R2(venda), `${dias(RD.venda)} · dia ainda não fechou: projeção do Fluxo, dividida pelo mix de cartão/PIX dos últimos 28 dias`)
+        : kpi('Vendeu', R2(venda), dias(RD.venda))}
       ${kpi('Previsão de recebimento', R2(rede), `cartão ${R2(sCart)} · PIX ${R2(sPix)} · depósito ${R2(sDep)}`, 'pos')}
       ${kpi('A pagar', R2(dupli), `${nFat} fatura${nFat === 1 ? '' : 's'} · vence${nFat === 1 ? '' : 'm'} ${dias(RD.pagar)}${baixado > 0.005 ? ` · ${R2(baixado)} já baixado` : ''}`, dupli ? 'neg' : '')}
       ${kpi('Saldo do dia', R2(rede - dupli), 'recebimento − a pagar', sinal(rede - dupli))}
