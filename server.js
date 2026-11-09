@@ -4731,6 +4731,81 @@ app.put('/api/caixa/:year/:month/:board/:day', requireAuth, async (req, res) => 
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── formasPorDia — dinheiro, PIX e cartão por dia a partir do LinxMovimento ──
+// Mesmas regras do fechamento de caixa: só venda (S) e devolução (DS, negativa),
+// sem cancelados, série 999, remessa (CFOP 5910/6910) e linhas fora do relatório.
+// total_* repete o total do documento em cada item, por isso conta 1× por documento.
+const r2c = v => Math.round((v || 0) * 100) / 100;
+function formasPorDia(movRows, cnpjClean) {
+  const { parseBrNum } = require('./services/microvix');
+  const out = {}, seenDocs = new Set();
+  const dataDe = s => {
+    const t = String(s || '').trim();
+    const a = t.match(/^(\d{2})\/(\d{2})\/(\d{4})/);
+    if (a) return `${a[3]}-${a[2]}-${a[1]}`;
+    const b = t.match(/^(\d{4}-\d{2}-\d{2})/);
+    return b ? b[1] : null;
+  };
+  for (const r of movRows) {
+    const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
+    if (rowCnpj && rowCnpj !== cnpjClean) continue;
+    if (r.cancelado === 'S' || r.cancelado === '1') continue;
+    if (r.operacao !== 'S' && r.operacao !== 'DS') continue;
+    if ((r.soma_relatorio || 'S').toUpperCase() === 'N') continue;
+    const serie = String(r.serie || r.serie_documento || r.num_serie || '').trim();
+    if (serie === '999') continue;
+    if (serie === '4' && r.operacao !== 'DS') continue;
+    if (CFOP_SEM_RECEITA.has(String(r.id_cfop || '').trim())) continue;
+    const doc = String(r.documento || '').trim();
+    if (!doc || seenDocs.has(doc)) continue;
+    seenDocs.add(doc);
+    const data = dataDe(r.data_documento || r.data_emissao || '');
+    if (!data) continue;
+    const sign = r.operacao === 'DS' ? -1 : 1;
+    const f = (out[data] ||= { dinheiro: 0, pix: 0, cartao: 0 });
+    f.dinheiro += sign * parseBrNum(r.total_dinheiro || '0');
+    f.pix      += sign * parseBrNum(r.total_pix || '0');
+    f.cartao   += sign * parseBrNum(r.total_cartao || '0');
+  }
+  for (const f of Object.values(out)) for (const k of Object.keys(f)) f[k] = r2c(f[k]);
+  return out;
+}
+
+// Formas de pagamento por dia para a Agenda bancária. Usa o que o fechamento de
+// caixa já gravou (db.caixa, sincronizado todo dia às 08:00); o dia que não tem
+// PIX/cartão gravado (hoje, ou antes desta versão) vem ao vivo do Microvix, com
+// cache: 10 min para hoje, 12 h para dias passados.
+const _formasCache = new Map();
+async function formasPagamentoDias(board, dias, db) {
+  const out = {}, faltam = [];
+  const hoje = fluxoCaixa.hojeBRT();
+  for (const d of dias) {
+    const e = db.caixa?.[`${d.slice(0, 7)}-${board}`]?.[parseInt(d.slice(8, 10))];
+    if (e && e.pix != null && e.cartao != null && d < hoje)
+      out[d] = { dinheiro: r2c(e.caixa), pix: r2c(e.pix), cartao: r2c(e.cartao), fonte: 'caixa' };
+    else if (d <= hoje) faltam.push(d);
+  }
+  if (!faltam.length) return out;
+  const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+  const cnpj = lojas[board];
+  if (!cnpj) return out;
+  faltam.sort();
+  const ini = faltam[0], fim = faltam[faltam.length - 1];
+  const chaveCache = `${board}:${ini}:${fim}`;
+  const ttl = fim >= hoje ? 10 * 60e3 : 12 * 3600e3;
+  let c = _formasCache.get(chaveCache);
+  if (!c || Date.now() - c.em > ttl) {
+    const { fetchMovimento } = require('./services/microvix');
+    const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
+    const rows = await fetchMovimento(cnpj, ini, fim, chave);
+    c = { em: Date.now(), porDia: formasPorDia(rows, cnpj.replace(/\D/g, '')) };
+    _formasCache.set(chaveCache, c);
+    if (_formasCache.size > 200) _formasCache.delete(_formasCache.keys().next().value);
+  }
+  for (const d of faltam) out[d] = { ...(c.porDia[d] || { dinheiro: 0, pix: 0, cartao: 0 }), fonte: 'microvix', parcial: d >= hoje };
+  return out;
+}
+
 // ── syncCaixaBoard — lógica compartilhada entre endpoint e cron ────────────
 // Sincroniza dinheiro + sangria de um board para year/month.
 // Nunca inclui o dia de hoje — cap em d-1.
@@ -4784,29 +4859,16 @@ async function syncCaixaBoard(board, year, month, dayOnly = null) {
   const errors       = {};
   const cnpjClean    = cnpj.replace(/\D/g, '');
 
-  // Cash sales via LinxMovimento (deduplicado por documento)
+  // Dinheiro, PIX e cartão do dia via LinxMovimento (deduplicado por documento).
+  // PIX e cartão vão para a Agenda bancária: PIX cai no dia, cartão em D+1.
+  const pixByDay = {}, cartaoByDay = {};
   try {
-    const movRows  = await fetchMovimento(cnpj, dtIni, dtFin, chave);
-    const seenDocs = new Set();
-    for (const r of movRows) {
-      const rowCnpj = (r.cnpj_emp || r.cnpj || '').replace(/\D/g, '');
-      if (rowCnpj && rowCnpj !== cnpjClean) continue;
-      if (r.cancelado === 'S' || r.cancelado === '1') continue;
-      if (r.operacao !== 'S' && r.operacao !== 'DS') continue;
-      if ((r.soma_relatorio || 'S').toUpperCase() === 'N') continue;
-      const serie = String(r.serie || r.serie_documento || r.num_serie || '').trim();
-      if (serie === '999') continue;
-      if (serie === '4' && r.operacao !== 'DS') continue;
-      if (CFOP_SEM_RECEITA.has(String(r.id_cfop || '').trim())) continue;
-      const doc = String(r.documento || '').trim();
-      if (!doc || seenDocs.has(doc)) continue;
-      seenDocs.add(doc);
-      const day = extractDay(r.data_documento || r.data_emissao || '');
-      if (!day) continue;
-      const val = parseBrNum(r.total_dinheiro || '0');
-      if (val === 0) continue;
-      const sign = r.operacao === 'DS' ? -1 : 1;
-      caixaByDay[day] = (caixaByDay[day] || 0) + sign * val;
+    const movRows = await fetchMovimento(cnpj, dtIni, dtFin, chave);
+    for (const [data, f] of Object.entries(formasPorDia(movRows, cnpjClean))) {
+      const day = parseInt(data.slice(8, 10));
+      if (f.dinheiro) caixaByDay[day] = f.dinheiro;
+      if (f.pix) pixByDay[day] = f.pix;
+      if (f.cartao) cartaoByDay[day] = f.cartao;
     }
   } catch (e) {
     errors.movimento = e.message;
@@ -4842,6 +4904,8 @@ async function syncCaixaBoard(board, year, month, dayOnly = null) {
       ...prev,
       caixa:    caixaByDay[d]   ?? 0,
       sangria:  sangriaByDay[d] ?? 0,
+      // Só grava PIX/cartão se o movimento veio: sem eles a Agenda busca ao vivo
+      ...(errors.movimento ? {} : { pix: r2c(pixByDay[d] ?? 0), cartao: r2c(cartaoByDay[d] ?? 0) }),
       syncedAt: new Date().toISOString(),
     };
   }
@@ -10164,13 +10228,26 @@ async function fluxoTaxas(hoje) {
   const [y, m] = hoje.split('-').map(Number);
   const ini = new Date(Date.UTC(y, m - 4, 1)).toISOString().slice(0, 10);
   const fim = fluxoCaixa.addDias(`${y}-${String(m).padStart(2, '0')}-01`, -1);
-  const taxas = {};
+  const taxas = {}, porForma = {};
   try {
     const { porLoja } = await computeConferenciaDashboard(ini, fim);
-    for (const l of porLoja || []) if (l.vlrLiquido > 0) taxas[l.board] = (l.vlrTaxa || 0) / l.vlrLiquido;
+    for (const l of porLoja || []) {
+      if (l.vlrLiquido > 0) taxas[l.board] = (l.vlrTaxa || 0) / l.vlrLiquido;
+      // Taxa sobre o que passou em cada meio (para a Agenda: cartão e PIX separados)
+      const card = (l.vlrCartao || 0) - (l.vlrPix || 0), taxaCard = (l.vlrTaxa || 0) - (l.vlrTaxaPix || 0);
+      porForma[l.board] = {
+        cartao: card > 0 ? taxaCard / card : null,
+        pix: l.vlrPix > 0 ? (l.vlrTaxaPix || 0) / l.vlrPix : null,
+      };
+    }
   } catch (e) { console.warn('[fluxoCaixa] taxas:', e.message); }
-  _fluxoTaxas = { em: Date.now(), taxas };
+  _fluxoTaxas = { em: Date.now(), taxas, porForma };
   return taxas;
+}
+// { board: { cartao, pix } } — fração descontada em cada meio (null = sem dado)
+async function fluxoTaxasPorForma(hoje) {
+  await fluxoTaxas(hoje);
+  return _fluxoTaxas?.porForma || {};
 }
 
 app.get('/fluxo-caixa', (req, res) => res.sendFile(path.join(__dirname, 'public/fluxo-caixa.html')));
@@ -10210,7 +10287,7 @@ app.get('/api/fluxo-caixa', requireAdmin, async (req, res) => {
 
 // Agenda bancária (extrato C/C e C/G por empresa) — services/agendaRotas.js
 const agendaApi = require('./services/agendaRotas').register(app, {
-  getDb: () => mongoDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, boardsLabel: BOARDS_LABEL,
+  getDb: () => mongoDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, fluxoTaxasPorForma, formasPagamentoDias, boardsLabel: BOARDS_LABEL,
 });
 
 // DRE/Resultados, só do dono — services/dreResultados.js
@@ -11925,7 +12002,7 @@ async function computeConferenciaDashboard(dtIni, dtFin) {
       if (erro) { porLoja[board] = { board, erro }; continue; }
 
       const loja = { board, vlrLiquido:0, vlrBruto:0, vlrDesconto:0, vlrCusto:0, qtdItens:0,
-                     vlrCartao:0, vlrTaxa:0, vlrCartaoSemTaxa:0 };
+                     vlrCartao:0, vlrTaxa:0, vlrCartaoSemTaxa:0, vlrPix:0, vlrTaxaPix:0 };
       const seenDocs = new Set();
       const docSign  = {}; // documento válido da loja → sinal (+1 venda, -1 devolução)
       const identMap = {}; // identificador → documento (LinxMovimentoPlanos usa identificador)
@@ -12088,6 +12165,7 @@ async function computeConferenciaDashboard(dtIni, dtFin) {
         loja.vlrCartao += p.valor;
         loja.vlrTaxa   += vlrTaxa;
         if (taxa === null) loja.vlrCartaoSemTaxa += p.valor;
+        if (p.isPix) { loja.vlrPix += p.valor; loja.vlrTaxaPix += vlrTaxa; }
 
         if (board === 'site') continue; // fora das Taxas por Modalidade
         const gk = `${label}::${mod}`;
