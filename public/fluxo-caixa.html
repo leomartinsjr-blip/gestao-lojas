@@ -807,9 +807,9 @@ function renderSugestoes() {
         <button class="fc-btn ag-dep" data-board="${it.board}" data-data="${d.data}" data-cai="${d.cai === 'D1' ? 'D0' : 'D1'}" style="padding:1px 6px;font-size:11px" title="${d.cai === 'D1' ? 'Voltar para o dia do depósito' : 'Depositado depois do horário: cai no próximo dia útil'}">${d.cai === 'D1' ? '← D0' : 'D+1 →'}</button></span></div>`).join('');
     return `<div class="ag-sug">
       <h3><span>${esc(it.label)} <span class="ag-conta">${nomeConta(it.conta)}</span></span></h3>
-      ${linha('REDE (cartão D+1, líquido)', `cartão de ${faixa(AS.venda)} ${R2(it.cartao)} − taxa ${pct(it.taxaCartao)}`, it.rede, it.conta, 'REDE', 'pos')}
+      ${linha('REDE (cartão D+1, líquido)', `cartão de ${faixa(AS.venda)} ${R2(it.cartao)} − taxa ${pct(it.taxaCartao)} ${it.taxaReal ? '(taxa de cada venda, aba Taxas)' : '(média dos últimos 3 meses)'}`, it.rede, it.conta, 'REDE', 'pos')}
       ${dif(it.rede, rede)}
-      ${linha(`PIX (D0, líquido)${it.pixParcial ? ' <span class="muted" style="font-size:11px">· dia em andamento</span>' : ''}`, `PIX de ${faixa(AS.pagar)} ${R2(it.pix)}${it.taxaPix ? ' − taxa ' + pct(it.taxaPix) : ''}`, it.pixLiq, it.conta, 'PIX', 'pos')}
+      ${linha(`PIX (D0, integral)${it.pixParcial ? ' <span class="muted" style="font-size:11px">· dia em andamento</span>' : ''}`, `PIX de ${faixa(AS.pagar)} ${R2(it.pix)}${it.taxaPix ? ' − taxa ' + pct(it.taxaPix) : ''}`, it.pixLiq, it.conta, 'PIX', 'pos')}
       ${dif(it.pixLiq, pix)}
       ${linha(`DEPÓSITO (dinheiro da caixinha)`, 'Depósitos lançados no Fechamento de caixa da loja', it.deposito, it.conta, 'DEPOSITO', 'pos')}
       ${dif(it.deposito, dep)}

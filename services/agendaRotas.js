@@ -17,7 +17,7 @@ const DESCRICOES = ['3L', 'AJUDA DE CUSTO', 'AJUSTE', 'AJUSTE SALDO', 'APORTE JU
   'DUPLI', 'DUPLI ATRASADA', 'FLMJ', 'IOF', 'IOF C/G', 'JDG', 'JUROS', 'LF', 'LMJ', 'PAGALI', 'PAGARME', 'PIX', 'PRONAMPE', 'PV', 'REDE',
   'RS', 'SALDO', 'SICOOB', 'SITE', 'STONE', 'TAR', 'TAR C/G', 'TAR MAQ', 'TAR PIX', 'TAR REN', 'TED', 'TTS', 'V.T'];
 
-function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, fluxoTaxasPorForma, formasPagamentoDias, boardsLabel }) {
+function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, fluxoTaxasPorForma, taxaCartaoDias = async () => null, formasPagamentoDias, boardsLabel }) {
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
   const LOCAL = path.join(os.tmpdir(), 'gestao-agenda.json');
   const lerLocal = () => { try { return JSON.parse(fs.readFileSync(LOCAL, 'utf8')); } catch { return { lancs: [], config: {} }; } };
@@ -227,7 +227,8 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, fl
   async function previstoDoDia(boards, data) {
     const jan = fluxoCaixa.janelaDoDia(data);
     const hoje = fluxoCaixa.hojeBRT();
-    const [db, taxas, porForma, d1] = await Promise.all([readDB(), fluxoTaxas(hoje), fluxoTaxasPorForma(hoje), store.depositosD1()]);
+    const [db, taxas, porForma, d1, real] = await Promise.all([readDB(), fluxoTaxas(hoje), fluxoTaxasPorForma(hoje), store.depositosD1(),
+      taxaCartaoDias(jan.venda).catch(err => { console.warn('[agenda taxa real]', err.message); return null; })]);
     const mongo = getDb();
     const faturas = mongo
       ? await mongo.collection('cpFaturas').find({ isPagar: true, previsao: { $ne: 'S' }, board: { $in: boards }, vencimento: { $in: jan.pagar } },
@@ -253,7 +254,12 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, fl
       try { formas = await formasPagamentoDias(b, diasFormas, db); }
       catch (err) { console.warn(`[agenda formas/${b}]`, err.message); return semDivisao('microvix'); }
       const pf = porForma[b] || {};
-      const taxaCartao = pf.cartao ?? e.taxa, taxaPix = pf.pix ?? 0;
+      // Cartão: taxa de cada venda dos dias (aba Taxas, como cobra a Rede); sem esse dado,
+      // a média dos 3 últimos meses. Venda sem taxa cadastrada também cai na média.
+      // PIX cai integral; a tarifa do mês é debitada de uma vez no início do mês seguinte.
+      const rb = real?.[b];
+      const taxaReal = rb && rb.cartao > 0.005 && rb.semTaxa < 0.005;
+      const taxaCartao = taxaReal ? rb.taxa / rb.cartao : pf.cartao ?? e.taxa, taxaPix = 0;
       const cartao = r2(jan.venda.reduce((s, d) => s + (formas[d]?.cartao || 0), 0));
       const pix = r2(jan.pagar.reduce((s, d) => s + (formas[d]?.pix || 0), 0));
       const dinheiroVendido = r2(jan.venda.reduce((s, d) => s + (formas[d]?.dinheiro || 0), 0));
@@ -267,7 +273,7 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, fl
         if (caiEm === jan.alvo) depositos.push({ data: d, v: r2(v), cai });
       }
       return { ...base, porMeio: true,
-        cartao, taxaCartao, rede: r2(cartao * (1 - taxaCartao)),
+        cartao, taxaCartao, taxaReal: !!taxaReal, rede: r2(cartao * (1 - taxaCartao)),
         pix, taxaPix, pixLiq: r2(pix * (1 - taxaPix)), pixParcial: jan.pagar.some(d => d >= hoje),
         dinheiroVendido, depositos, deposito: r2(depositos.reduce((s, x) => s + x.v, 0)),
         caixinha: saldoCaixinha(db, b, jan.alvo < hoje ? jan.alvo : hoje) };

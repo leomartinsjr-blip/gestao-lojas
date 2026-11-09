@@ -10250,6 +10250,37 @@ async function fluxoTaxasPorForma(hoje) {
   return _fluxoTaxas?.porForma || {};
 }
 
+// Cartão e taxa de cada venda nos dias pedidos, pela aba Taxas (mesma conta da
+// Conferência, que bate com o extrato da Rede venda a venda). Só dias fechados.
+// { board: { cartao, taxa } } — cartão sem o PIX. Um dia por vez, com cache de 12 h,
+// para o Previsto e o Resumo do dia não refazerem a leitura de todas as lojas.
+const _taxaDiaCache = new Map();
+function _taxaDoDia(d) {
+  const c = _taxaDiaCache.get(d);
+  if (c && Date.now() - c.em < 12 * 3600e3) return c.p;
+  const p = computeConferenciaDashboard(d, d).then(({ porLoja }) => {
+    const out = {};
+    for (const l of porLoja || []) out[l.board] = {
+      cartao: (l.vlrCartao || 0) - (l.vlrPix || 0), taxa: (l.vlrTaxa || 0) - (l.vlrTaxaPix || 0), semTaxa: l.vlrCartaoSemTaxa || 0,
+    };
+    return out;
+  });
+  p.catch(() => _taxaDiaCache.delete(d));
+  _taxaDiaCache.set(d, { em: Date.now(), p });
+  if (_taxaDiaCache.size > 120) _taxaDiaCache.delete(_taxaDiaCache.keys().next().value);
+  return p;
+}
+async function taxaCartaoDias(dias) {
+  if (!dias.length || dias.some(d => d >= fluxoCaixa.hojeBRT())) return null;
+  const out = {};
+  for (const dia of await Promise.all(dias.map(_taxaDoDia)))
+    for (const [b, v] of Object.entries(dia)) {
+      const o = (out[b] ||= { cartao: 0, taxa: 0, semTaxa: 0 });
+      o.cartao += v.cartao; o.taxa += v.taxa; o.semTaxa += v.semTaxa;
+    }
+  return out;
+}
+
 app.get('/fluxo-caixa', (req, res) => res.sendFile(path.join(__dirname, 'public/fluxo-caixa.html')));
 
 app.get('/api/fluxo-caixa', requireAdmin, async (req, res) => {
@@ -10287,7 +10318,7 @@ app.get('/api/fluxo-caixa', requireAdmin, async (req, res) => {
 
 // Agenda bancária (extrato C/C e C/G por empresa) — services/agendaRotas.js
 const agendaApi = require('./services/agendaRotas').register(app, {
-  getDb: () => mongoDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, fluxoTaxasPorForma, formasPagamentoDias, boardsLabel: BOARDS_LABEL,
+  getDb: () => mongoDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, fluxoTaxasPorForma, taxaCartaoDias, formasPagamentoDias, boardsLabel: BOARDS_LABEL,
 });
 
 // DRE/Resultados, só do dono — services/dreResultados.js
