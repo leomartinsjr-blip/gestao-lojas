@@ -13832,10 +13832,32 @@ app.post('/api/conferencia/conciliacao-rede', requireEscritorioOrAdmin, async (r
     if (!board || !dtIni || !dtFin || !Array.isArray(linhas)) {
       return res.status(400).json({ error: 'board, dtIni, dtFin e linhas obrigatórios' });
     }
+    res.json(await conciliarRede(board, dtIni, dtFin, linhas));
+  } catch (e) { res.status(e.status || 500).json({ error: e.message }); }
+});
 
+// POST /api/conferencia/conciliacao-rede-api { board, dtIni, dtFin }
+// Mesmo cruzamento, com as vendas buscadas direto na API Gestão de Vendas da Rede.
+app.post('/api/conferencia/conciliacao-rede-api', requireEscritorioOrAdmin, async (req, res) => {
+  try {
+    const { board, dtIni, dtFin } = req.body || {};
+    const redeApi = require('./services/redeApi');
+    const pv = redeApi.PV_DA_LOJA[board];
+    if (!pv) return res.status(400).json({ error: 'Loja sem estabelecimento Rede cadastrado' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dtIni || '') || !/^\d{4}-\d{2}-\d{2}$/.test(dtFin || '') || dtIni > dtFin)
+      return res.status(400).json({ error: 'período inválido' });
+    if (!redeApi.configurada()) return res.status(400).json({ error: 'API da Rede não configurada no servidor' });
+    const vendas = await redeApi.vendas(pv, dtIni, dtFin);
+    const linhas = vendas.filter(v => v.status === 'APPROVED')
+      .map(v => ({ nsu: String(v.nsu), bandeira: v.bandeira, valor: v.amount, data: v.saleDate }));
+    res.json({ ...(await conciliarRede(board, dtIni, dtFin, linhas)), fonte: 'api', pv });
+  } catch (e) { res.status(e.status || 502).json({ error: e.message }); }
+});
+
+async function conciliarRede(board, dtIni, dtFin, linhas) {
     const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const cnpj  = lojas[board];
-    if (!cnpj) return res.status(400).json({ error: `Loja "${board}" não configurada` });
+    if (!cnpj) throw Object.assign(new Error(`Loja "${board}" não configurada`), { status: 400 });
     const chave     = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
     const cnpjClean = cnpj.replace(/\D/g, '');
 
@@ -13888,16 +13910,15 @@ app.post('/api/conferencia/conciliacao-rede', requireEscritorioOrAdmin, async (r
       return (ordem[a.status] ?? 9) - (ordem[b.status] ?? 9);
     });
 
-    res.json({
+    return {
       board, dtIni, dtFin,
       totalMx: Object.keys(mxMap).length,
       totalRede: Object.keys(redeMap).length,
       ok: resultado.filter(r => r.status === 'ok').length,
       divergencias: resultado.filter(r => r.status !== 'ok').length,
       resultado,
-    });
-  } catch (e) { res.status(500).json({ error: e.message }); }
-});
+    };
+}
 
 // ════════════════════════════════════════════════════════════════════════════
 // BALANÇO DE LOJA — leitura do coletor × estoque (services/balancoRotas.js)

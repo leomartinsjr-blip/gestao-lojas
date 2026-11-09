@@ -2237,6 +2237,19 @@
     } catch(e) { $('cResult').innerHTML=`<div class="cf-empty" style="color:${P('alert')}">⚠ ${esc(e.message)}</div>`; }
   }
 
+  // Sem arquivo: busca as vendas na API da Rede (D-1) e faz o mesmo cruzamento.
+  $('cBuscarRede').addEventListener('click', async () => {
+    const board=$('cBoard').value, dtIni=$('cDtIni').value, dtFin=$('cDtFin').value;
+    if (!board||!dtIni||!dtFin) return alert('Preencha loja e período.');
+    const btn=$('cBuscarRede'); btn.disabled=true;
+    $('cResult').innerHTML=`<div class="cf-empty"><span class="spinner"></span> Buscando as vendas na Rede e cruzando com o Microvix…</div>`;
+    try {
+      renderConciliacao(await api('POST','/api/conferencia/conciliacao-rede-api',{board,dtIni,dtFin}));
+      $('cResult').insertAdjacentHTML('afterbegin',`<div style="padding:0 0 10px;color:${P('muted')};font-size:11px">Vendas buscadas na API da Rede (atualizadas até ontem).</div>`);
+    } catch(e) { $('cResult').innerHTML=`<div class="cf-empty" style="color:${P('alert')}">⚠ ${esc(e.message)}</div>`; }
+    btn.disabled=false;
+  });
+
   async function parseRedeFile(file) {
     return new Promise((resolve,reject) => {
       const reader=new FileReader();
