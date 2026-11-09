@@ -290,6 +290,19 @@
         </div>
       </div>
     </div>
+    <div class="fc-panel">
+      <div class="fc-panel-hd"><h2>Pesquisar lançamentos</h2><span class="muted" id="agb-sub">descrição ou valor, em uma empresa ou em todas</span></div>
+      <div class="ag-form" style="border-top:none">
+        <input type="search" id="agb-q" placeholder="Descrição ou valor (ex.: DUPLI, 6.821,05)" style="flex:1 1 220px">
+        <select id="agb-emp" title="Empresa"></select>
+        <select id="agb-conta" title="Conta"></select>
+        <label class="muted">de <input type="date" id="agb-de"></label>
+        <label class="muted">até <input type="date" id="agb-ate"></label>
+        <button class="fc-btn" id="agb-ir">Pesquisar</button>
+        <button class="fc-btn" id="agb-xls" title="Baixa em Excel tudo o que a pesquisa encontrar">Exportar Excel</button>
+      </div>
+      <div class="fc-scroll"><table id="agb-tab"></table></div>
+    </div>
   </div>
   <div id="fc-main" style="display:none">
     <div id="fc-cards"></div>
@@ -705,6 +718,7 @@ async function carregarAgenda(data) {
     A = j; AS = null;
     $('fc-msg').style.display = 'none'; $('ag-main').style.display = '';
     renderAgenda();
+    preparaBusca();
     if (!RD) carregarResumoDia();
     fetch(`/api/agenda/sugestoes?emp=${agEmp}&data=${A.data}`).then(r => r.json()).then(s => { if (s.itens && A && s.data) { AS = s; renderSugestoes(); } }).catch(() => {});
   } catch (e) {
@@ -958,6 +972,46 @@ $('ag-painel').addEventListener('change', async e => {
 const trocaEmpAgenda = emp => { agEmp = emp; carregarAgenda(); };
 $('ag-painel').addEventListener('click', e => { const tr = e.target.closest('tr[data-emp]'); if (tr && !e.target.matches('input')) trocaEmpAgenda(tr.dataset.emp); });
 $('ag-chips').addEventListener('click', e => { const b = e.target.closest('.fm-chip'); if (b) trocaEmpAgenda(b.dataset.emp); });
+
+// ── Pesquisa e exportação dos lançamentos da agenda ───────────────────────────
+// Empresa e contas vêm da agenda carregada; o período abre no mês corrente.
+function preparaBusca() {
+  if ($('agb-emp').options.length || !A) return;
+  $('agb-emp').innerHTML = '<option value="">Todas as empresas</option>' + A.empresas.map(e => `<option>${e.emp}</option>`).join('');
+  $('agb-emp').value = agEmp;
+  const contas = [...new Set(A.empresas.flatMap(e => e.contas))];
+  $('agb-conta').innerHTML = '<option value="">Todas as contas</option>' + contas.map(c => `<option value="${esc(c)}">${esc(nomeConta(c))}</option>`).join('');
+  $('agb-de').value = A.hoje.slice(0, 8) + '01'; $('agb-ate').value = A.hoje;
+}
+const filtrosBusca = () => new URLSearchParams({ q: $('agb-q').value.trim(), emp: $('agb-emp').value, conta: $('agb-conta').value, de: $('agb-de').value, ate: $('agb-ate').value });
+let AB = null;
+async function pesquisarAgenda() {
+  $('agb-tab').innerHTML = '<tbody><tr><td class="muted"><span class="spinner"></span> Pesquisando…</td></tr></tbody>';
+  try {
+    const r = await fetch('/api/agenda/busca?' + filtrosBusca());
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.status);
+    AB = j; renderBusca();
+  } catch (e) { $('agb-tab').innerHTML = `<tbody><tr><td class="neg">Erro na pesquisa: ${esc(e.message)}</td></tr></tbody>`; }
+}
+function renderBusca() {
+  const brl = v => R2(v).replace('R$ ', '');
+  if (!AB.n) { $('agb-tab').innerHTML = '<tbody><tr><td class="muted">Nenhum lançamento encontrado.</td></tr></tbody>'; $('agb-sub').textContent = ''; return; }
+  $('agb-sub').textContent = `${AB.n.toLocaleString('pt-BR')} lançamento(s)${AB.n > AB.lancs.length ? ` · mostrando os ${AB.lancs.length} primeiros (a exportação traz todos)` : ''} · clique numa linha para abrir o dia`;
+  $('agb-tab').innerHTML = `<thead><tr><th>Data</th><th style="text-align:left">Empresa</th><th style="text-align:left">Conta</th><th style="text-align:left">Descrição</th><th>Valor</th><th style="text-align:left">Lançado por</th></tr></thead><tbody>`
+    + AB.lancs.map(l => `<tr class="fc-row" data-emp="${l.emp}" data-data="${l.data}"><td>${DM(l.data)}/${l.data.slice(2, 4)}</td><td style="text-align:left">${l.emp}</td>
+      <td style="text-align:left"><span class="ag-conta ${esc(l.conta)}">${esc(nomeConta(l.conta))}${l.espelho ? ' → C/G' : ''}</span></td>
+      <td style="text-align:left">${esc(l.desc)}</td><td class="${l.valor < 0 ? 'neg' : 'pos'}">${brl(l.valor)}</td><td class="muted" style="text-align:left">${esc(l.por || '')}</td></tr>`).join('')
+    + `</tbody><tfoot><tr><td colspan="4">Entradas <span class="pos">${brl(AB.entradas)}</span> · Saídas <span class="neg">${brl(AB.saidas)}</span> · Total</td><td class="${AB.total < 0 ? 'neg' : ''}"><b>${brl(AB.total)}</b></td><td></td></tr></tfoot>`;
+}
+$('agb-ir').addEventListener('click', pesquisarAgenda);
+$('agb-q').addEventListener('keydown', e => { if (e.key === 'Enter') pesquisarAgenda(); });
+$('agb-xls').addEventListener('click', () => { location.href = '/api/agenda/exportar?' + filtrosBusca(); });
+$('agb-tab').addEventListener('click', e => {
+  const tr = e.target.closest('tr.fc-row'); if (!tr) return;
+  agEmp = tr.dataset.emp; carregarAgenda(tr.dataset.data);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+});
 $('ag-prev').addEventListener('click', () => carregarAgenda(diaUtilAg(A.data, -1)));
 $('ag-next').addEventListener('click', () => carregarAgenda(diaUtilAg(A.data, 1)));
 $('ag-hoje').addEventListener('click', () => carregarAgenda(A.hoje));

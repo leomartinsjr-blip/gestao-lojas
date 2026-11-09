@@ -106,6 +106,63 @@ function register(app, { getDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, fl
     } catch (e) { console.error('[agenda]', e); res.status(500).json({ error: e.message }); }
   });
 
+  // Pesquisa: empresa ('' = todas), conta, período e texto. O texto procura na
+  // descrição (sem acento, sem caixa) e, se for um número (6.821,05), no valor.
+  const semAcento = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase().trim();
+  async function pesquisar(q) {
+    const emp = agenda.EMPRESAS.includes(q.emp) ? q.emp : '';
+    const de = /^\d{4}-\d{2}-\d{2}$/.test(q.de || '') ? q.de : '0000-00-00';
+    const ate = /^\d{4}-\d{2}-\d{2}$/.test(q.ate || '') ? q.ate : '9999-12-31';
+    const texto = semAcento(q.q);
+    const num = /^[-−]?[\d.]*,?\d+$/.test(texto) ? Math.abs(parseFloat(texto.replace('−', '-').replace(/\./g, '').replace(',', '.'))) : NaN;
+    const todos = await store.lancs(emp ? { emp } : {});
+    return todos.filter(l => l.data >= de && l.data <= ate && !l.abertura
+      && (!q.conta || l.conta === q.conta)
+      && (!texto || semAcento(l.desc).includes(texto) || (Number.isFinite(num) && Math.abs(Math.abs(l.valor) - num) < 0.005)))
+      .sort((a, b) => a.data.localeCompare(b.data) || a.emp.localeCompare(b.emp) || ordem(a, b));
+  }
+
+  // GET /api/agenda/busca?emp=&conta=&de=&ate=&q= — até 1.000 linhas, com os totais de tudo
+  app.get('/api/agenda/busca', requireAdmin, async (req, res) => {
+    try {
+      const ls = await pesquisar(req.query);
+      const soma = f => Math.round(ls.reduce((s, l) => s + (f(l) ? l.valor : 0), 0) * 100) / 100;
+      res.json({ n: ls.length, entradas: soma(l => l.valor > 0), saidas: soma(l => l.valor < 0), total: soma(() => true),
+        lancs: ls.slice(0, 1000).map(({ id, emp, data, conta, desc, valor, espelho, por }) => ({ id, emp, data, conta, desc, valor, espelho, por })) });
+    } catch (e) { console.error('[agenda busca]', e); res.status(500).json({ error: e.message }); }
+  });
+
+  // GET /api/agenda/exportar?… — mesmos filtros, planilha Excel com todas as linhas
+  app.get('/api/agenda/exportar', requireAdmin, async (req, res) => {
+    try {
+      const ExcelJS = require('exceljs');
+      const ls = await pesquisar(req.query);
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('Agenda', { views: [{ state: 'frozen', ySplit: 1 }] });
+      ws.columns = [
+        { header: 'Data', key: 'data', width: 12 }, { header: 'Empresa', key: 'emp', width: 10 }, { header: 'Conta', key: 'conta', width: 9 },
+        { header: 'Descrição', key: 'desc', width: 34 }, { header: 'Valor', key: 'valor', width: 15 }, { header: 'Lançado por', key: 'por', width: 18 },
+      ];
+      for (const l of ls) {
+        const [y, m, d] = l.data.split('-').map(Number);
+        ws.addRow({ data: new Date(Date.UTC(y, m - 1, d)), emp: l.emp, conta: ({ CC: 'C/C', CG: 'C/G' })[l.conta] || l.conta,
+          desc: l.desc + (l.espelho ? ' (→ C/G)' : ''), valor: l.valor, por: l.por || (l.origem === 'planilha' ? 'planilha' : '') });
+      }
+      const fim = ls.length + 1;
+      const tot = ws.addRow({ desc: 'TOTAL', valor: { formula: `SUM(E2:E${fim})`, result: ls.reduce((s, l) => s + l.valor, 0) } });
+      tot.font = { bold: true };
+      ws.getRow(1).font = { bold: true };
+      ws.getColumn('data').numFmt = 'dd/mm/yyyy';
+      ws.getColumn('valor').numFmt = '#,##0.00;[Red]-#,##0.00';
+      if (ls.length) ws.autoFilter = { from: 'A1', to: `F${fim}` };
+      const nome = ['agenda', req.query.emp || 'todas', req.query.de, req.query.ate].filter(Boolean).join('-');
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename="${nome.replace(/[^\w.-]/g, '_')}.xlsx"`);
+      await wb.xlsx.write(res);
+      res.end();
+    } catch (e) { console.error('[agenda exportar]', e); if (!res.headersSent) res.status(500).json({ error: e.message }); }
+  });
+
   const validar = b => {
     const valor = Number(b.valor);
     if (!agenda.EMPRESAS.includes(b.emp)) return 'empresa inválida';
