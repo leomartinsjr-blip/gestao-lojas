@@ -19,19 +19,23 @@ const BANDEIRA = {
   13: 'Amex', 14: 'Elo', 15: 'Hiper', 74: 'Banescard', 76: 'JCB', 77: 'Credz',
 };
 
-const configurada = () => !!(process.env.REDE_CLIENT_ID && process.env.REDE_CLIENT_SECRET);
+// Tolera o valor colado com espaço, quebra de linha ou aspas em volta no painel do Render
+const limpa = v => String(v || '').trim().replace(/^["']|["']$/g, '').trim();
+const credenciais = () => ({ id: limpa(process.env.REDE_CLIENT_ID), secret: limpa(process.env.REDE_CLIENT_SECRET) });
+const configurada = () => { const c = credenciais(); return !!(c.id && c.secret); };
 
 let _token = null; // { valor, ate }
 async function token() {
   if (_token && Date.now() < _token.ate) return _token.valor;
   if (!configurada()) throw new Error('API da Rede não configurada (REDE_CLIENT_ID / REDE_CLIENT_SECRET)');
-  const basic = Buffer.from(`${process.env.REDE_CLIENT_ID}:${process.env.REDE_CLIENT_SECRET}`).toString('base64');
+  const { id, secret } = credenciais();
+  const basic = Buffer.from(`${id}:${secret}`).toString('base64');
   const r = await fetch(`${BASE}/oauth2/token`, {
     method: 'POST', body: 'grant_type=client_credentials',
     headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/x-www-form-urlencoded' },
   });
   const j = await r.json().catch(() => ({}));
-  if (!r.ok || !j.access_token) throw new Error(`Rede recusou o login (HTTP ${r.status})`);
+  if (!r.ok || !j.access_token) throw new Error(`Rede recusou o login (HTTP ${r.status}): confira REDE_CLIENT_ID e REDE_CLIENT_SECRET no Render (client id com ${id.length} caracteres, secret com ${secret.length})`);
   _token = { valor: j.access_token, ate: Date.now() + Math.max(60, (j.expires_in || 1440) - 120) * 1000 };
   return _token.valor;
 }
