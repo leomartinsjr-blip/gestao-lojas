@@ -13854,6 +13854,25 @@ app.post('/api/conferencia/conciliacao-rede-api', requireEscritorioOrAdmin, asyn
   } catch (e) { res.status(e.status || 502).json({ error: e.message }); }
 });
 
+// GET /api/conferencia/rede-api-dia?board=&date= — vendas de cartão do dia pela API da
+// Rede, no formato do extrato do Passo 2 ({ mod, bandeira, valor }). A Rede só tem até
+// ontem e não traz PIX. Sem dado: { rows: null, motivo }.
+app.get('/api/conferencia/rede-api-dia', requireAuth, async (req, res) => {
+  try {
+    const { board, date } = req.query;
+    const redeApi = require('./services/redeApi');
+    const pv = redeApi.PV_DA_LOJA[board];
+    if (!pv || !redeApi.configurada()) return res.json({ rows: null, motivo: '' });
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date || '')) return res.status(400).json({ error: 'date inválida' });
+    if (date >= fluxoCaixa.hojeBRT()) return res.json({ rows: null, motivo: 'A Rede só disponibiliza as vendas a partir do dia seguinte. Arraste o extrato ou volte amanhã.' });
+    const MOD = { CREDIT: 'crédito', DEBIT: 'débito' };
+    const rows = (await redeApi.vendas(pv, date, date)).filter(v => v.status === 'APPROVED' && MOD[v.modality?.type])
+      .map(v => ({ mod: MOD[v.modality.type], bandeira: v.bandeira, valor: v.amount }));
+    if (!rows.length) return res.json({ rows: null, motivo: 'A Rede não tem venda de cartão neste dia (ou ainda não processou). Arraste o extrato se precisar.' });
+    res.json({ rows });
+  } catch (e) { res.json({ rows: null, motivo: 'Não deu para buscar na Rede: ' + e.message }); }
+});
+
 async function conciliarRede(board, dtIni, dtFin, linhas) {
     const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const cnpj  = lojas[board];

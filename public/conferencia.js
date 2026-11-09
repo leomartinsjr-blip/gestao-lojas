@@ -336,7 +336,7 @@
       } else {
         _rotinaStatus = null; _rotinaBoard = null; _rotinaDate = null;
       }
-      _redeRows = null; _redeRowsSource = null; _redeRowsServerInfo = null;
+      _redeRows = null; _redeRowsSource = null; _redeRowsServerInfo = null; _redeApiPulado = false;
       _confirmacoesManual = {}; _saldoReserva = {};
       render(_data);
     } catch(e) {
@@ -688,8 +688,9 @@
   // ── Conciliação de Cartões (Passo 2) ────────────────────────────────────
   let _redeRows = null; // linhas parseadas do Excel da Rede
 
-  let _redeRowsSource = null; // 'manual' | 'server'
+  let _redeRowsSource = null; // 'manual' | 'server' | 'api'
   let _redeRowsServerInfo = null; // { uploadedBy, uploadedAt }
+  let _redeApiPulado = false, _redeApiAviso = ''; // Reimportar pula a API; aviso quando a API não tem o dia
 
   let _confirmacoesManual = {}; // { 'pix_direto': 200.00, 'cielo': 300.00, ... }
   let _confManualSaveTimer = null;
@@ -717,6 +718,16 @@
         }
       } catch(e) { /* server may not have data yet */ }
     }
+    // Sem extrato salvo: busca o dia direto na API da Rede (cartões; a Rede só tem até ontem).
+    // "Reimportar" desliga a busca para poder arrastar o arquivo, que também traz o PIX.
+    _redeApiAviso = '';
+    if (!_redeRows && !_redeApiPulado) {
+      try {
+        const r = await api('GET', `/api/conferencia/rede-api-dia?board=${_rotinaBoard}&date=${_rotinaDate}`);
+        if (r.rows) { _redeRows = r.rows; _redeRowsSource = 'api'; }
+        else _redeApiAviso = r.motivo || '';
+      } catch(e) { _redeApiAviso = 'Não deu para buscar na Rede: ' + e.message; }
+    }
 
     // Auto-load confirmações manuais e saldo reserva
     try {
@@ -730,7 +741,10 @@
     const isDone = st.cartoesOk;
     const serverBadge = (_redeRowsSource === 'server' && _redeRowsServerInfo)
       ? `<span style="font-size:10px;color:var(--cf-muted);margin-left:6px">📅 extrato mensal • por ${_redeRowsServerInfo.uploadedBy||'?'}</span>`
-      : '';
+      : _redeRowsSource === 'api'
+        ? `<span style="font-size:10px;color:var(--cf-muted);margin-left:6px">🔗 buscado na API da Rede · só cartões: confirme o PIX na linha "PIX Direto" ou reimporte o extrato</span>`
+        : '';
+    const apiAviso = !_redeRows && _redeApiAviso ? `<div style="font-size:11px;color:var(--cf-muted);margin-bottom:8px">${esc(_redeApiAviso)}</div>` : '';
 
     el.innerHTML = `
       <div class="conc-box">
@@ -740,7 +754,7 @@
           ${isDone ? '<span class="conc-badge ok" style="margin-left:8px">✅ Confirmado</span>' : '<span class="conc-badge nok" style="margin-left:8px">Pendente</span>'}
         </div>
         <div class="conc-body">
-          ${_redeRows ? renderConcTable() : renderDropZone()}
+          ${_redeRows ? renderConcTable() : apiAviso + renderDropZone()}
           ${_redeRows ? `
             <div class="conc-summary">
               <span class="conc-file-info">📎 <strong>${_redeRows.length}</strong> transações${serverBadge}</span>
@@ -773,7 +787,7 @@
     }
 
     const reimp = el.querySelector('#concReimportar');
-    if (reimp) reimp.onclick = () => { _redeRows = null; _redeRowsSource = null; _redeRowsServerInfo = null; renderCartoesSection(); };
+    if (reimp) reimp.onclick = () => { _redeRows = null; _redeRowsSource = null; _redeRowsServerInfo = null; _redeApiPulado = true; renderCartoesSection(); };
 
     el.querySelectorAll('.gap-toggle-row').forEach(row => {
       row.addEventListener('click', () => {
