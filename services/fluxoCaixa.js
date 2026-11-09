@@ -177,7 +177,8 @@ function criarProjecao(db, board, hoje) {
 
   return {
     avgD, ritmo, realAteOntem, vendaOntem: vendaDia[ontem] || 0, metodo: ritmo != null ? 'ritmo' : '3meses',
-    projMes, realizado, base, vendaPrevistaPorDia, vendaDoDia: d => vendaDia[d] || 0,
+    projMes, realizado, base, vendaPrevistaPorDia,
+    vendaDoDia: d => { lerMes(+d.slice(0, 4), +d.slice(5, 7)); return vendaDia[d] || 0; },
     crescimentos: cres,
   };
 }
@@ -196,8 +197,16 @@ function calcular({ db, faturas, taxas, saldos, boards, lancamentos = [], hoje =
   for (const b of boards) {
     const pj = criarProjecao(db, b, hoje);
     const liq = 1 - (taxas[b] ?? 0.025);
-    // Venda de ontem cai hoje (ou na segunda).
-    if (pj.vendaOntem > 0) slot(diaUtil(hoje), b).recebe += pj.vendaOntem * liq;
+    // Venda já feita que ainda não caiu no saldo. Com a data do saldo (último lançamento
+    // da agenda): toda venda desde esse dia cujo D+1 é depois dele — o que já devia ter
+    // caído e não está lançado entra hoje. Sem data: só a venda de ontem, que cai hoje.
+    const sd = saldos?.[b]?.data;
+    if (sd && sd < hoje) {
+      for (let d = sd; d < hoje; d = addDias(d, 1)) {
+        const v = pj.vendaDoDia(d), cai = diaUtil(addDias(d, 1));
+        if (v > 0 && cai > sd) slot(cai < hoje ? diaUtil(hoje) : cai, b).recebe += v * liq;
+      }
+    } else if (!sd && pj.vendaOntem > 0) slot(diaUtil(hoje), b).recebe += pj.vendaOntem * liq;
     const prev = pj.vendaPrevistaPorDia(ate);
     for (const [d, v] of Object.entries(prev)) {
       slot(d, b).vendas += v;

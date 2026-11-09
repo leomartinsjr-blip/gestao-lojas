@@ -10306,8 +10306,9 @@ app.get('/api/fluxo-caixa', requireAdmin, async (req, res) => {
     }
     const meta = mongoDb ? await mongoDb.collection('cpMeta').findOne({ _id: 'main' }) : db.contasPagar;
     const ag = await agendaApi.saldosParaFluxo(+hoje.slice(0, 4)).catch(() => null);
-    if (ag) for (const [b, v] of Object.entries(ag.atual))
-      if (!saldos[b] || (saldos[b].data || '') <= ag.ultimo) saldos[b] = { valor: v, data: ag.ultimo, por: 'agenda' };
+    // Saldo da agenda até hoje (sem lançamento futuro), na data do último lançamento de cada loja
+    if (ag) for (const [b, p] of Object.entries(ag.partida || {}))
+      if (p.ultimo && (!saldos[b] || (saldos[b].data || '') <= p.ultimo)) saldos[b] = { valor: p.valor, data: p.ultimo, por: 'agenda' };
     res.json({
       ...fluxoCaixa.calcular({ db, faturas, taxas, saldos, boards, lancamentos, hoje, dias }),
       labels: Object.fromEntries(boards.map(b => [b, BOARDS_LABEL[b] || b.toUpperCase()])),

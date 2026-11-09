@@ -177,7 +177,7 @@
   }
 </style>
 </head>
-<body class="modo-mes">
+<body class="modo-agenda">
 <div id="fc-topbar">
   <button class="fc-btn" onclick="location.href='/'">
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
@@ -187,16 +187,12 @@
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
     Fluxo de Caixa
   </div>
-  <div class="fc-seg" id="fc-modo"><button data-m="mes" class="active">Mensal</button><button data-m="dia">Diário</button><button data-m="agenda">Agenda</button></div>
+  <div class="fc-seg" id="fc-modo"><button data-m="agenda" class="active">Agenda</button><button data-m="dia">Semanal</button><button data-m="mes">Mensal</button></div>
   <div class="fc-filters">
     <span class="so-dia"><select id="fc-loja" title="Empresa"><option value="">Consolidado</option></select></span>
     <span class="so-mes"><select id="fc-ano" title="Ano"></select></span>
     <span class="so-dia">
     <label class="fc-chk" title="Faturas vencidas sem baixa no Microvix — quase sempre já pagas (folha, empréstimo, impostos)"><input type="checkbox" id="fc-atraso"> Incluir vencidas sem baixa</label>
-    <select id="fc-dias" title="Horizonte">
-      <option value="30">30 dias</option><option value="60">60 dias</option>
-      <option value="90" selected>90 dias</option><option value="180">180 dias</option><option value="365">12 meses</option>
-    </select>
     </span>
     <button class="fc-btn" id="fc-sync" title="Relê as faturas do Microvix agora (automático todo dia às 7h)">Sincronizar Microvix</button>
     <button class="fc-btn" id="fc-reload" title="Recalcular">
@@ -307,7 +303,7 @@
       <div class="fc-panel-hd">
         <h2>Entradas e saídas</h2>
         <div class="fc-seg" id="fc-agrup">
-          <button data-g="dia">Dia</button><button data-g="semana" class="active">Semana</button><button data-g="mes">Mês</button>
+          <button data-g="semana" class="active">Semana</button><button data-g="dia">Dia</button>
         </div>
       </div>
       <div class="fc-scroll"><table id="fc-tab"></table></div>
@@ -343,7 +339,9 @@ const abertos = new Set();
 async function carregar() {
   $('fc-msg').style.display = ''; $('fc-err').style.display = 'none';
   try {
-    const r = await fetch('/api/fluxo-caixa?dias=' + $('fc-dias').value);
+    // 12 semanas cheias, de segunda a domingo, a partir da semana de hoje
+    const hj = new Date(Date.now() - 3 * 3600e3), dow = (hj.getUTCDay() + 6) % 7;
+    const r = await fetch('/api/fluxo-caixa?dias=' + (84 - dow));
     if (r.status === 401 || r.status === 403) { location.href = '/'; return; }
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || r.status);
@@ -370,7 +368,7 @@ function preencheLojas(X) {
 }
 
 // ── Quadro mensal por empresa ───────────────────────────────────────────────
-let M = null, modo = 'mes';
+let M = null, modo = 'agenda';
 const anoAtual = new Date(Date.now() - 3 * 3600e3).getUTCFullYear();
 $('fc-ano').innerHTML = [anoAtual - 1, anoAtual].map(a => `<option${a === anoAtual ? ' selected' : ''}>${a}</option>`).join('');
 
@@ -1037,7 +1035,7 @@ $('fc-sync').addEventListener('click', async () => {
       }
     }
     D = null; M = null;
-    modo === 'mes' ? await carregarMensal() : await carregar();
+    modo === 'mes' ? await carregarMensal() : modo === 'dia' ? await carregar() : await carregarAgenda(A?.data);
     btn.textContent = 'Sincronizado ✓';
   } catch (e) { alert('Não sincronizou: ' + e.message); btn.textContent = 'Sincronizar Microvix'; }
   btn.disabled = false;
@@ -1201,9 +1199,8 @@ $('fc-saldos').addEventListener('click', async e => {
 });
 $('fc-loja').addEventListener('change', () => { abertos.clear(); if (D) render(); if (M) renderMensal(); });
 $('fc-atraso').addEventListener('change', render);
-$('fc-dias').addEventListener('change', carregar);
 $('fc-reload').addEventListener('click', () => modo === 'mes' ? carregarMensal() : modo === 'agenda' ? (carregarAgenda(A?.data), RD && carregarResumoDia(RD.data)) : carregar());
-carregarMensal();
+trocaModo('agenda');
 </script>
 </body>
 </html>
