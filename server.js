@@ -10306,13 +10306,13 @@ app.get('/api/fluxo-caixa', requireAdmin, async (req, res) => {
     const boards = Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}'));
     const ate   = fluxoCaixa.addDias(hoje, dias);
     const corte = fluxoCaixa.addDias(hoje, -95);
-    const [db, taxas, lancamentos] = await Promise.all([readDB(), fluxoTaxas(hoje), fluxoLancamentos()]);
+    const [db, taxas, lancamentos, emAberto] = await Promise.all([readDB(), fluxoTaxas(hoje), fluxoLancamentos(), fluxoEmAberto()]);
     let faturas, saldos = {};
     if (mongoDb) {
       [faturas] = await Promise.all([
         mongoDb.collection('cpFaturas').find(
           { isPagar: true, previsao: { $ne: 'S' }, vencimento: { $gte: corte, $lte: ate }, baixa: { $in: ['', null] } },
-          { projection: { _id: 0, board: 1, fornecedor: 1, documento: 1, parcela: 1, vencimento: 1, baixa: 1, valor: 1, valorLiquido: 1, valorPago: 1, isPagar: 1 } },
+          { projection: { _id: 0, board: 1, codigo_fatura: 1, fornecedor: 1, documento: 1, parcela: 1, vencimento: 1, baixa: 1, valor: 1, valorLiquido: 1, valorPago: 1, isPagar: 1 } },
         ).toArray(),
         mongoDb.collection('fluxoSaldos').find().forEach(s => { saldos[s._id] = { valor: s.valor, data: s.data, por: s.por }; }),
       ]);
@@ -10326,7 +10326,7 @@ app.get('/api/fluxo-caixa', requireAdmin, async (req, res) => {
     if (ag) for (const [b, p] of Object.entries(ag.partida || {}))
       if (p.ultimo && (!saldos[b] || (saldos[b].data || '') <= p.ultimo)) saldos[b] = { valor: p.valor, data: p.ultimo, por: 'agenda' };
     res.json({
-      ...fluxoCaixa.calcular({ db, faturas, taxas, saldos, boards, lancamentos, hoje, dias }),
+      ...fluxoCaixa.calcular({ db, faturas, taxas, saldos, boards, lancamentos, hoje, dias, emAberto: emAberto.chaves }),
       labels: Object.fromEntries(boards.map(b => [b, BOARDS_LABEL[b] || b.toUpperCase()])),
       faturasSyncedAt: meta?.syncedAt || null,
     });
@@ -10355,13 +10355,13 @@ app.get('/api/fluxo-caixa/dia', requireAdmin, async (req, res) => {
     const hoje = fluxoCaixa.hojeBRT();
     const boards = Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}'));
     const { pagar } = fluxoCaixa.janelaDoDia(hoje);
-    const [db, taxas] = await Promise.all([readDB(), fluxoTaxas(hoje)]);
-    const faturas = mongoDb
+    const [db, taxas, emAberto] = await Promise.all([readDB(), fluxoTaxas(hoje), fluxoEmAberto()]);
+    const faturas = (mongoDb
       ? await mongoDb.collection('cpFaturas').find(
           { isPagar: true, previsao: { $ne: 'S' }, vencimento: { $in: pagar }, baixa: { $in: ['', null] } },
-          { projection: { _id: 0, board: 1, fornecedor: 1, documento: 1, parcela: 1, vencimento: 1, baixa: 1, valor: 1, valorLiquido: 1, valorPago: 1, isPagar: 1 } },
+          { projection: { _id: 0, board: 1, codigo_fatura: 1, fornecedor: 1, documento: 1, parcela: 1, vencimento: 1, baixa: 1, valor: 1, valorLiquido: 1, valorPago: 1, isPagar: 1 } },
         ).toArray()
-      : (await readContasPagar(pagar[0], pagar[pagar.length - 1])).rows;
+      : (await readContasPagar(pagar[0], pagar[pagar.length - 1])).rows).filter(f => !emAberto.chaves.has(fluxoCaixa.chaveEmAberto(f)));
     res.json({
       ...fluxoCaixa.resumoDoDia({ db, faturas, taxas, boards, hoje }),
       labels: Object.fromEntries(boards.map(b => [b, BOARDS_LABEL[b] || b.toUpperCase()])),
@@ -10376,19 +10376,51 @@ async function fluxoLancamentos() {
   return ((await readDB()).fluxoLancamentos || []).slice().sort((a, b) => a.data.localeCompare(b.data));
 }
 
+// Contas que o usuário deixou em aberto: saem do fluxo (Semanal, Mensal e card do dia)
+// enquanto não tiverem baixa. Chave = loja|código da fatura (cada parcela tem o seu).
+async function fluxoEmAberto() {
+  const lista = mongoDb ? await mongoDb.collection('fluxoEmAberto').find().toArray()
+    : Object.values((await readDB()).fluxoEmAberto || {});
+  return { lista, chaves: new Set(lista.map(x => x._id)) };
+}
+
+// PUT /api/fluxo-caixa/em-aberto { board, codigo, marcar, forn, venc, valor }
+app.put('/api/fluxo-caixa/em-aberto', requireAdmin, async (req, res) => {
+  try {
+    const { board, codigo, marcar, forn = '', venc = '', valor = 0 } = req.body || {};
+    if (!board || !codigo) return res.status(400).json({ error: 'board e codigo obrigatórios' });
+    const _id = fluxoCaixa.chaveEmAberto({ board, codigo_fatura: codigo });
+    const doc = { _id, board, codigo: String(codigo), forn, venc, valor: Number(valor) || 0,
+      por: req.session.user?.name || req.session.user?.login || '', em: new Date() };
+    if (mongoDb) {
+      const col = mongoDb.collection('fluxoEmAberto');
+      if (marcar) await col.replaceOne({ _id }, doc, { upsert: true }); else await col.deleteOne({ _id });
+    } else {
+      const db = await readDB();
+      db.fluxoEmAberto ||= {};
+      if (marcar) db.fluxoEmAberto[_id] = doc; else delete db.fluxoEmAberto[_id];
+      await writeDB(db);
+    }
+    res.json({ ok: true });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // GET /api/fluxo-caixa/mensal?ano= — quadro mês a mês por empresa
 app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
   try {
     const hoje  = fluxoCaixa.hojeBRT();
     const ano   = parseInt(req.query.ano) || +hoje.slice(0, 4);
     const boards = Object.keys(JSON.parse(process.env.MICROVIX_LOJAS || '{}'));
-    const [db, taxas, lancamentos] = await Promise.all([readDB(), fluxoTaxas(hoje), fluxoLancamentos()]);
+    const [db, taxas, lancamentos, emAberto] = await Promise.all([readDB(), fluxoTaxas(hoje), fluxoLancamentos(), fluxoEmAberto()]);
     let faturasMes = [], catManual = {};
     const saldosAno = {}, saldosMes = {};
+    // Deixada em aberto sai enquanto não tiver baixa; paga, volta a contar
+    const semEmAberto = emAberto.lista.length
+      ? { $nor: emAberto.lista.map(x => ({ board: x.board, codigo_fatura: x.codigo, baixa: { $in: ['', null] } })) } : {};
     if (mongoDb) {
       [faturasMes] = await Promise.all([
         mongoDb.collection('cpFaturas').aggregate([
-          { $match: { isPagar: true, previsao: { $ne: 'S' }, vencimento: { $gte: `${ano}-01-01`, $lte: `${ano}-12-31` } } },
+          { $match: { isPagar: true, previsao: { $ne: 'S' }, vencimento: { $gte: `${ano}-01-01`, $lte: `${ano}-12-31` }, ...semEmAberto } },
           // vp = pago (com baixa, o que saiu com juros/multa); va = em aberto (líquido de desconto e abatimento)
           { $group: { _id: { b: '$board', m: { $substrCP: ['$vencimento', 0, 7] }, f: '$fornecedor' },
             vp: { $sum: { $cond: [{ $and: [{ $gt: ['$baixa', ''] }, { $gt: ['$valorPago', 0] }] }, '$valorPago', 0] } },
@@ -10401,7 +10433,7 @@ app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
       ]);
     } else {
       for (const f of (await readContasPagar(`${ano}-01-01`, `${ano}-12-31`)).rows)
-        if (f.isPagar && f.previsao !== 'S') faturasMes.push({ b: f.board, m: f.vencimento.slice(0, 7), f: f.fornecedor,
+        if (f.isPagar && f.previsao !== 'S' && (f.baixa || !emAberto.chaves.has(fluxoCaixa.chaveEmAberto(f)))) faturasMes.push({ b: f.board, m: f.vencimento.slice(0, 7), f: f.fornecedor,
           vp: f.baixa ? (f.valorPago || 0) : 0, va: f.baixa ? 0 : (f.valorLiquido ?? f.valor) - (f.valorPago || 0) });
       for (const [k, v] of Object.entries(db.fluxoSaldosAno || {})) if (k.startsWith(ano + '-')) saldosAno[k.slice(5)] = v;
       catManual = db.fluxoCategorias || {};
@@ -10414,10 +10446,10 @@ app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
       const faturasAbertas = mongoDb
         ? await mongoDb.collection('cpFaturas').find(
             { isPagar: true, previsao: { $ne: 'S' }, vencimento: { $gte: corte, $lte: fimAno }, baixa: { $in: ['', null] } },
-            { projection: { _id: 0, board: 1, vencimento: 1, baixa: 1, valor: 1, valorLiquido: 1, valorPago: 1, isPagar: 1, previsao: 1 } },
+            { projection: { _id: 0, board: 1, codigo_fatura: 1, vencimento: 1, baixa: 1, valor: 1, valorLiquido: 1, valorPago: 1, isPagar: 1, previsao: 1 } },
           ).toArray()
         : (await readContasPagar(corte, fimAno)).rows;
-      atual = fluxoCaixa.mesAtualPelaAgenda({ db, faturasAbertas, taxas, lancamentos, partida: agenda.partida, boards, hoje });
+      atual = fluxoCaixa.mesAtualPelaAgenda({ db, faturasAbertas, taxas, lancamentos, partida: agenda.partida, boards, hoje, emAberto: emAberto.chaves });
     }
     res.json({
       ...fluxoCaixa.calcularMensal({ db, faturasMes, catManual, lancamentos, taxas, saldosAno, boards, hoje, ano, atual }),

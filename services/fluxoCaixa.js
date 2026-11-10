@@ -186,7 +186,10 @@ function criarProjecao(db, board, hoje) {
 // ── Cálculo do fluxo ──────────────────────────────────────────────────────
 // taxas: { board: fração descontada da venda (ex.: 0.025) }
 // saldos: { board: { valor, data } }
-function calcular({ db, faturas, taxas, saldos, boards, lancamentos = [], hoje = hojeBRT(), dias = 90 }) {
+// emAberto: Set de chaveEmAberto — contas que o usuário deixou em aberto: aparecem na
+// lista, mas não saem do saldo.
+const chaveEmAberto = f => `${f.board}|${f.codigo_fatura}`;
+function calcular({ db, faturas, taxas, saldos, boards, lancamentos = [], hoje = hojeBRT(), dias = 90, emAberto = new Set() }) {
   const ate = addDias(hoje, dias - 1);
   const corteAtraso = addDias(hoje, -DIAS_ATRASO_CONSIDERADO);
   const porDia = {}; // data → board → { vendas, recebe, paga, atraso }
@@ -235,11 +238,13 @@ function calcular({ db, faturas, taxas, saldos, boards, lancamentos = [], hoje =
     const atrasada = f.vencimento < desde(f.board);
     const d = diaUtil(atrasada ? hoje : f.vencimento);
     if (d > ate) continue;
+    const base = { d, venc: f.vencimento, b: f.board, forn: f.fornecedor, doc: f.documento,
+      parc: f.parcela, v: Math.round(resta * 100) / 100, atraso: atrasada, codigo: f.codigo_fatura || null };
+    if (emAberto.has(chaveEmAberto(f))) { contas.push({ ...base, emAberto: true }); continue; }
     const s = slot(d, f.board);
     s.paga += resta;
     if (atrasada) s.atraso += resta;
-    contas.push({ d, venc: f.vencimento, b: f.board, forn: f.fornecedor, doc: f.documento,
-      parc: f.parcela, v: Math.round(resta * 100) / 100, atraso: atrasada });
+    contas.push(base);
   }
 
   for (const m of movimentosManuais(lancamentos)) {
@@ -324,7 +329,7 @@ function resumoDoDia({ db, faturas, taxas, boards, hoje = hojeBRT() }) {
 // anterior já caiu, em D+1) e as faturas abertas que ainda vão vencer. Vencida sem
 // baixa fica fora: se foi paga já saiu do saldo, se não foi segue à parte como risco.
 // Loja sem lançamento no mês não entra e o mês atual fica pela conta do Mensal.
-function mesAtualPelaAgenda({ db, faturasAbertas = [], taxas, lancamentos = [], partida = {}, boards, hoje = hojeBRT() }) {
+function mesAtualPelaAgenda({ db, faturasAbertas = [], taxas, lancamentos = [], partida = {}, boards, hoje = hojeBRT(), emAberto = new Set() }) {
   const [hy, hm] = hoje.split('-').map(Number);
   const mk = `${hy}-${pad(hm)}`, fim = `${mk}-${pad(diasNoMes(hy, hm))}`;
   const corte = addDias(hoje, -DIAS_ATRASO_CONSIDERADO);
@@ -341,7 +346,7 @@ function mesAtualPelaAgenda({ db, faturasAbertas = [], taxas, lancamentos = [], 
     let venda = 0, aPagar = 0, vencidas = 0;
     for (let d = p.ultimo; d <= fim; d = addDias(d, 1)) venda += d < hoje ? pj.vendaDoDia(d) : prev[d] || 0;
     for (const f of faturasAbertas) {
-      if (f.board !== b || !f.isPagar || f.baixa || f.previsao === 'S' || !f.vencimento) continue;
+      if (f.board !== b || !f.isPagar || f.baixa || f.previsao === 'S' || !f.vencimento || emAberto.has(chaveEmAberto(f))) continue;
       const resta = (f.valorLiquido ?? f.valor ?? 0) - (f.valorPago || 0);
       if (resta <= 0.009 || f.vencimento > fim || f.vencimento < corte) continue;
       if (f.vencimento >= desde) aPagar += resta; else vencidas += resta;
@@ -405,4 +410,4 @@ function calcularMensal({ db, faturasMes, catManual = {}, lancamentos = [], taxa
   return { ano, hoje, meses, status, boards, empresas, nomesCategorias: NOMES_CATEGORIAS };
 }
 
-module.exports = { calcular, calcularMensal, mesAtualPelaAgenda, resumoDoDia, janelaDoDia, criarProjecao, diaUtil, ehDiaUtil, ehFeriado, hojeBRT, addDias, EMPRESA, NOMES_CATEGORIAS, normForn };
+module.exports = { chaveEmAberto, calcular, calcularMensal, mesAtualPelaAgenda, resumoDoDia, janelaDoDia, criarProjecao, diaUtil, ehDiaUtil, ehFeriado, hojeBRT, addDias, EMPRESA, NOMES_CATEGORIAS, normForn };

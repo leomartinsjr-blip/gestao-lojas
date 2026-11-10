@@ -1160,8 +1160,8 @@ function tabelaSemanal(bs, pref) {
     if (aberto) {
       const cs = contas.filter(c => c.d >= g.ini && c.d <= g.fim);
       h += `<tr class="fc-det"><td colspan="6"><div class="fc-det-wrap">${cs.length ? `<table>
-        <tr><th>Paga em</th><th>Vencimento</th>${bs.length > 1 ? '<th>Loja</th>' : ''}<th>Fornecedor</th><th>Documento</th><th>Parcela</th><th>Valor</th></tr>
-        ${cs.map(c => `<tr${c.atraso && !$('fc-atraso').checked ? ' class="fora" title="fora do saldo"' : ''}><td>${DM(c.d)}</td><td>${DM(c.venc)}${c.atraso ? ' <span class="tag tag-atraso">atraso</span>' : ''}</td>${bs.length > 1 ? `<td>${esc(D.labels[c.b])}</td>` : ''}<td style="text-align:left">${c.manual ? '<span class="tag tag-man">manual</span> ' : ''}${esc(c.forn)}</td><td>${esc(c.doc && c.doc !== '0' ? c.doc : '')}</td><td>${esc(c.parc)}</td><td class="${c.entrada ? 'pos' : ''}">${c.entrada ? '+ ' : ''}${R2(c.v)}</td></tr>`).join('')}
+        <tr><th>Paga em</th><th>Vencimento</th>${bs.length > 1 ? '<th>Loja</th>' : ''}<th>Fornecedor</th><th>Documento</th><th>Parcela</th><th>Valor</th><th title="Marcada, a conta fica em aberto e sai do fluxo (Semanal e Mensal) até ter baixa no Microvix">Deixar em aberto</th></tr>
+        ${cs.map(c => `<tr${c.emAberto ? ' class="fora" title="deixada em aberto: fora do fluxo"' : c.atraso && !$('fc-atraso').checked ? ' class="fora" title="fora do saldo"' : ''}><td>${DM(c.d)}</td><td>${DM(c.venc)}${c.atraso ? ' <span class="tag tag-atraso">atraso</span>' : ''}</td>${bs.length > 1 ? `<td>${esc(D.labels[c.b])}</td>` : ''}<td style="text-align:left">${c.manual ? '<span class="tag tag-man">manual</span> ' : ''}${c.emAberto ? '<span class="tag tag-atraso">em aberto</span> ' : ''}${esc(c.forn)}</td><td>${esc(c.doc && c.doc !== '0' ? c.doc : '')}</td><td>${esc(c.parc)}</td><td class="${c.entrada ? 'pos' : ''}">${c.entrada ? '+ ' : ''}${R2(c.v)}</td><td>${c.codigo && !c.manual ? `<input type="checkbox" class="fc-aberto" data-i="${D.contas.indexOf(c)}"${c.emAberto ? ' checked' : ''}>` : ''}</td></tr>`).join('')}
         </table>` : '<span class="muted">Nenhuma conta a pagar neste período.</span>'}</div></td></tr>`;
     }
   }
@@ -1259,6 +1259,28 @@ const abreFecha = e => {
 };
 $('fc-tab').addEventListener('click', abreFecha);
 $('fc-lojas').addEventListener('click', abreFecha);
+
+// Deixar em aberto: grava no servidor e tira (ou devolve) a conta do dia sem recarregar
+async function marcaEmAberto(e) {
+  const cb = e.target.closest('input.fc-aberto'); if (!cb) return;
+  const c = D.contas[+cb.dataset.i];
+  cb.disabled = true;
+  try {
+    const r = await fetch('/api/fluxo-caixa/em-aberto', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ board: c.b, codigo: c.codigo, marcar: cb.checked, forn: c.forn, venc: c.venc, valor: c.v }) });
+    if (!r.ok) throw new Error((await r.json()).error || r.status);
+    const l = D.linhas.find(x => x.d === c.d);
+    if (l) {
+      const x = (l.b[c.b] ||= { vendas: 0, recebe: 0, paga: 0, atraso: 0 }), s = cb.checked ? -1 : 1;
+      x.paga += s * c.v;
+      if (c.atraso) x.atraso += s * c.v;
+    }
+    c.emAberto = cb.checked;
+    render();
+  } catch (err) { alert('Não salvou: ' + err.message); cb.checked = !cb.checked; cb.disabled = false; }
+}
+$('fc-tab').addEventListener('change', marcaEmAberto);
+$('fc-lojas').addEventListener('change', marcaEmAberto);
 $('fc-agrup').addEventListener('click', e => {
   const b = e.target.closest('button'); if (!b) return;
   agrup = b.dataset.g;
