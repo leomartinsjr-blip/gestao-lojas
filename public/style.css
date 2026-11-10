@@ -1892,6 +1892,8 @@ td.wk-td.kpi-neg,  .ds-table td.kpi-neg,  .perf-proj-table td.kpi-neg  { backgro
 .perf-proj-table .total-row td { font-weight: 700; background: rgba(var(--accent-rgb),.05) !important; }
 .perf-proj-table .d26-sep { border-left: 2px solid rgba(var(--accent-rgb),.4) !important; background: rgba(var(--accent-rgb),.04); }
 .perf-proj-table .d26     { background: rgba(var(--accent-rgb),.04); }
+.perf-proj-table .d27-sep { border-left: 2px solid rgba(var(--warn-rgb),.45) !important; background: rgba(var(--warn-rgb),.06); font-weight: 600; }
+.perf-proj-table .d27     { background: rgba(var(--warn-rgb),.06); }
 .pf-pos { color: var(--up); } .pf-neg { color: var(--down); }
 
 .folgas-empty-row td {

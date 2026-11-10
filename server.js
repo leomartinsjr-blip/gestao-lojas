@@ -8251,8 +8251,8 @@ app.post('/api/perf/export', requireAdmin, async (req, res) => {
     const COR_PROJ      = 'FFB45309'; // âmbar
 
     const histYears = [2022, 2023, 2024, 2025];
-    const headers = ['Mês', '2022', 'Δ', '2023', 'Δ', '2024', 'Δ', '2025 (ref)', 'Δ', '2026', 'Δ 26/25', 'Δ 26/24', 'Δ 26/23', 'Δ 26/22'];
-    const colWidths = [13, 11, 8, 11, 8, 11, 8, 12, 8, 12, 10, 10, 10, 10];
+    const headers = ['Mês', '2022', 'Δ', '2023', 'Δ', '2024', 'Δ', '2025 (ref)', 'Δ', '2026', 'Δ 26/25', 'Δ 26/24', 'Δ 26/23', 'Δ 26/22', '2027 (proj)', 'Δ 27/26'];
+    const colWidths = [13, 11, 8, 11, 8, 11, 8, 12, 8, 12, 10, 10, 10, 10, 12, 10];
 
     const pctCell = (cell, v, bold = false) => {
       cell.value = v == null ? '—' : `${v > 0 ? '+' : ''}${v.toFixed(1)}%`;
@@ -8291,6 +8291,7 @@ app.post('/api/perf/export', requireAdmin, async (req, res) => {
         [`Acumulado ${kpis.acumuladoLabel || ''}`, fmtBRLs(kpis.acumulado)],
         ['Média últimos 3 meses', `${fmtPcts(kpis.mediaUltimos3)}${kpis.mediaDetalhe ? `  (${kpis.mediaDetalhe})` : ''}`],
         ['Projeção 2026 (ano)', `${fmtBRLs(kpis.projecaoAno)}  (${fmtPcts(kpis.pProj)} vs 2025)`],
+        ['Projeção 2027 (ano)', `${fmtBRLs(kpis.projecao2027)}  (${fmtPcts(kpis.p2726)} vs 2026)`],
       ];
       kpiRows.forEach(([label, value]) => {
         ws.mergeCells(r, 1, r, 4);
@@ -8361,6 +8362,16 @@ app.post('/api/perf/export', requireAdmin, async (req, res) => {
           dCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
         });
 
+        const v27Cell = ws.getCell(rowNum, c++);
+        v27Cell.value = row.v27 == null ? '—' : Math.round(row.v27);
+        if (row.v27 != null) v27Cell.numFmt = '#,##0';
+        v27Cell.font = { size: 9, bold: true, color: { argb: COR_PROJ } };
+        v27Cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+        v27Cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        const d27Cell = ws.getCell(rowNum, c++);
+        pctCell(d27Cell, row.d2726);
+        d27Cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: bg } };
+
         ws.getRow(rowNum).height = 15;
         ws.getRow(rowNum).eachCell(cell => {
           cell.border = { left: { style: 'thin', color: { argb: COR_BORDER } }, right: { style: 'thin', color: { argb: COR_BORDER } } };
@@ -8390,6 +8401,11 @@ app.post('/api/perf/export', requireAdmin, async (req, res) => {
         const dCell = ws.getCell(totRowNum, c++);
         pctCell(dCell, d, true);
       });
+      const v27TotCell = ws.getCell(totRowNum, c++);
+      v27TotCell.value = Math.round(tot.v27 || 0);
+      v27TotCell.numFmt = '#,##0';
+      v27TotCell.alignment = { horizontal: 'right', vertical: 'middle' };
+      pctCell(ws.getCell(totRowNum, c++), tot.tot2726, true);
       ws.getRow(totRowNum).eachCell(cell => {
         cell.font = cell.font ? { ...cell.font, bold: true } : { bold: true, size: 9 };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: COR_TOTAL_BG } };

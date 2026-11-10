@@ -115,6 +115,7 @@ function montar({ mes, conferencia = [], caixa = {}, faturas = [], manual = {}, 
         manuais.push({ loja: b, id: 'classificar', rotulo: `Fornecedor sem linha: ${nome} (${valor})`, tipo: 'aviso', feito: false });
     }
     if (TAXA_MANUAL.has(b)) item(b, 'taxa', 'Taxa de cartão (total do mês)', 'numero', m.taxa);
+    if (b === 'lez') item(b, 'subsidio', 'Subsídio recebido no mês (0 se não teve)', 'numero', m.subsidio);
   }
   const pendencias = manuais.filter(i => !i.feito);
   const lista = l => Object.entries(detalhe[l]).map(([nome, valores]) => ({ nome, lojas: valores }))
@@ -158,7 +159,7 @@ function conferirLoja({ loja, dados, manual, folhaFechada, extratos = {}, fatura
 
 const HISTORICO = require('./dreHistorico.json');
 const INICIO_MODULO = '2026-10';
-const CAMPOS_MANUAIS = { lez: ['taxa'], site: ['taxa', 'publicidade'] };
+const CAMPOS_MANUAIS = { lez: ['taxa', 'subsidio'], site: ['taxa', 'publicidade'] };
 
 // A DRE inteira de um mês. base: resultado de montar(); ctx: dados já lidos.
 function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folhaMes, employees, freteTommy, faturamentoExtra, config, googleAds = null, extratos = {} }) {
@@ -190,6 +191,8 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
       icms: d.cmv != null && icms != null ? r2(d.cmv * icms) : null,
       embalagens: d.receita != null && emb != null ? r2(d.receita * emb) : null,
       frete: b === 'tommy' ? freteTommy ?? null : 0,
+      // Digitado positivo (valor recebido); na DRE entra negativo, abatendo o custo
+      subsidio: b === 'lez' && manual.lez?.subsidio ? -manual.lez.subsidio : 0,
       fixos, comissoes,
       encargos: fixos != null ? r2((fixos + comissoes) * pct.encargos / 100) : null,
       premiacoes: f ? f.premiacoes : semFolha,

@@ -3825,6 +3825,19 @@ function calcPerfMetrics(k, curMonthOverride = null) {
   return { d25, d26, yoyReal, yoyFull, last3, last3idx, avgD, proj, realAcum, projTotal, total25, curMonthOverride };
 }
 
+// Projeção 2027 (mesma regra da programação anual): 2026 mês a mês (realizado
+// + projetado) × (1 + média dos últimos 3 meses) da própria loja. Total e
+// Surfers somam as lojas, cada uma com a sua variação.
+function calcPerf2027(k) {
+  const lojas = k === 'total' ? _ALL_STORES_FOR_TOTAL : k === 'surfers' ? SURFERS_STORES : null;
+  if (lojas) {
+    const partes = lojas.filter(b => PERF_2026[b] && PERF_HIST[b]).map(calcPerf2027);
+    return PERF_MONTHS.map((_, i) => partes.every(p => p[i] === null) ? null : partes.reduce((s, p) => s + (p[i] || 0), 0));
+  }
+  const m = calcPerfMetrics(k, computeCurMonthProj(k));
+  return m.proj.map(v => v === null ? null : Math.round(v * (1 + m.avgD / 100)));
+}
+
 let perfChart = null, perfAnnualChart = null;
 
 const ALL_STORES = ['delrey','minas','contagem','estacao','tommy','lez','site'];
@@ -3849,6 +3862,8 @@ async function fetchMissingPerfData(board) {
     });
     return;
   }
+  // A projeção 2027 do Surfers soma as lojas, então elas precisam estar carregadas
+  if (board === 'surfers') await Promise.all(SURFERS_STORES.map(b => fetchMissingPerfData(b)));
   if (!PERF_2026[board]) return;
   for (let i = 0; i < PERF_CUR; i++) {
     if (PERF_2026[board][i] !== null) continue;
@@ -6214,6 +6229,10 @@ function renderPerfStore(k) {
   const pProj = (m.projTotal - m.total25) / m.total25 * 100;
   const sign  = n => n > 0 ? '+' : '';
   const cls   = n => n >= 0 ? 'pf-pos' : 'pf-neg';
+  const p27   = calcPerf2027(k);
+  const tot27 = p27.reduce((a, v) => a + (v || 0), 0);
+  const p2726 = m.projTotal ? (tot27 - m.projTotal) / m.projTotal * 100 : null;
+  const base27 = (k === 'total' || k === 'surfers') ? 'soma das lojas' : `2026 ${sign(m.avgD)}${m.avgD.toFixed(1)}% (média 3 meses)`;
 
   // ── KPI badges ──────────────────────────────────────────────────────────
   const exportBtnHtml = (k === 'surfers' || k === 'total')
@@ -6242,6 +6261,11 @@ function renderPerfStore(k) {
         <div class="perf-kpi-value">${fmtBRLk(m.projTotal)}</div>
         <div class="perf-kpi-sub ${cls(pProj)}">${sign(pProj)}${pProj.toFixed(1)}% vs 2025</div>
       </div>
+      <div class="perf-kpi" style="border-color:rgba(var(--accent-rgb),.4)">
+        <div class="perf-kpi-label">Projeção 2027 (ano)</div>
+        <div class="perf-kpi-value">${fmtBRLk(tot27)}</div>
+        <div class="perf-kpi-sub">${p2726 !== null ? `<span class="${cls(p2726)}">${sign(p2726)}${p2726.toFixed(1)}% vs 2026</span> · ` : ''}${base27}</div>
+      </div>
     </div>`;
 
   // ── Annual history ────────────────────────────────────────────────────────
@@ -6252,7 +6276,7 @@ function renderPerfStore(k) {
   // ── Projection table ─────────────────────────────────────────────────────
   let tableHtml = `
     <div class="perf-chart-box">
-      <div class="perf-chart-title">Histórico Mensal — 2022 a 2026</div>
+      <div class="perf-chart-title">Histórico Mensal — 2022 a 2026 · Projeção 2027</div>
       <div style="overflow-x:auto">
       <table class="perf-proj-table">
         <thead><tr>
@@ -6262,6 +6286,7 @@ function renderPerfStore(k) {
           <th>2024</th><th>Δ</th>
           <th>2025 (ref)</th><th>Δ</th>
           <th>2026</th><th class="d26-sep">Δ 26/25</th><th class="d26">Δ 26/24</th><th class="d26">Δ 26/23</th><th class="d26">Δ 26/22</th>
+          <th class="d27-sep">2027 (proj)</th><th class="d27">Δ 27/26</th>
         </tr></thead><tbody>`;
   const histYears = [2022, 2023, 2024, 2025];
   let colTotals = { 2022:0, 2023:0, 2024:0, 2025:0, v26:0 };
@@ -6291,6 +6316,8 @@ function renderPerfStore(k) {
         </td>`).join('')}
       <td style="color:${isProj?'var(--warn)':'inherit'}">${v26 !== null ? fmtBRL(v26) : '—'}</td>
       ${dCell(d2625,'d26-sep')}${dCell(d2624,'d26')}${dCell(d2623,'d26')}${dCell(d2622,'d26')}
+      <td class="d27-sep">${p27[i] !== null ? fmtBRL(p27[i]) : '—'}</td>
+      ${dCell(p27[i] !== null && v26 ? (p27[i] - v26) / v26 * 100 : null, 'd27')}
     </tr>`;
   });
   // Totals row
@@ -6310,11 +6337,13 @@ function renderPerfStore(k) {
     `).join('')}
     <td>${fmtBRL(colTotals.v26)}</td>
     ${totDCell(tot2625,'d26-sep')}${totDCell(tot2624,'d26')}${totDCell(tot2623,'d26')}${totDCell(tot2622,'d26')}
+    <td class="d27-sep">${fmtBRL(tot27)}</td>
+    ${totDCell(colTotals.v26 ? (tot27 - colTotals.v26) / colTotals.v26 * 100 : null, 'd27')}
   </tr></tfoot></table></div></div>`;
 
   body.innerHTML = kpiHtml + tableHtml + `
     <div class="perf-chart-box">
-      <div class="perf-chart-title">${BOARDS[k]?.label} — Histórico Anual (2022–2026 proj.)</div>
+      <div class="perf-chart-title">${BOARDS[k]?.label} — Histórico Anual (2022–2026 proj. · 2027 proj.)</div>
       <div class="perf-chart-sub">Barras: total anual · Linha: variação % vs ano anterior</div>
       <div class="perf-chart-wrap" style="height:220px"><canvas id="perfAnnualCanvas"></canvas></div>
     </div>
@@ -6331,10 +6360,10 @@ function renderPerfStore(k) {
   if (perfAnnualChart) { perfAnnualChart.destroy(); perfAnnualChart = null; }
 
   // ── Annual chart ───────────────────────────────────────────────────────
-  const annualLabels = [...HIST_YEARS.map(String), '2026 proj'];
-  const annualValues = [...annualTotals, m.projTotal];
-  const annualColors = [cssVar('--border2'),cssVar('--border2'),cssVar('--border2'),color+'99',`${color}55`];
-  const annualBorders= [cssVar('--border2'),cssVar('--border2'),cssVar('--border2'),color,color];
+  const annualLabels = [...HIST_YEARS.map(String), '2026 proj', '2027 proj'];
+  const annualValues = [...annualTotals, m.projTotal, tot27];
+  const annualColors = [cssVar('--border2'),cssVar('--border2'),cssVar('--border2'),color+'99',`${color}55`,`${color}22`];
+  const annualBorders= [cssVar('--border2'),cssVar('--border2'),cssVar('--border2'),color,color,color];
   const annualYoYFull= annualValues.map((v,i) => i===0?null:(v-annualValues[i-1])/annualValues[i-1]*100);
 
   perfAnnualChart = new Chart(document.getElementById('perfAnnualCanvas'), {
@@ -6435,6 +6464,7 @@ function _buildPerfStorePayload(k) {
   const curProj = computeCurMonthProj(k);
   const m = calcPerfMetrics(k, curProj);
   const sign = n => n > 0 ? '+' : '';
+  const p27 = calcPerf2027(k);
 
   const histYears = [2022, 2023, 2024, 2025];
   let colTotals = { 2022:0, 2023:0, 2024:0, 2025:0, v26:0 };
@@ -6451,8 +6481,12 @@ function _buildPerfStorePayload(k) {
     const d2624  = v26 !== null && h[2] !== null && h[2] !== 0 ? (v26 - h[2]) / h[2] * 100 : null;
     const d2623  = v26 !== null && h[1] !== null && h[1] !== 0 ? (v26 - h[1]) / h[1] * 100 : null;
     const d2622  = v26 !== null && h[0] !== null && h[0] !== 0 ? (v26 - h[0]) / h[0] * 100 : null;
-    return { mes: mn, isProj, h, deltas, v26, d2625, d2624, d2623, d2622 };
+    const v27    = p27[i];
+    const d2726  = v27 !== null && v26 ? (v27 - v26) / v26 * 100 : null;
+    return { mes: mn, isProj, h, deltas, v26, d2625, d2624, d2623, d2622, v27, d2726 };
   });
+  const tot27 = p27.reduce((a, v) => a + (v || 0), 0);
+  const tot2726 = colTotals.v26 ? (tot27 - colTotals.v26) / colTotals.v26 * 100 : null;
   const totDeltas = histYears.map((y,j) => j === 0 || colTotals[histYears[j-1]] === 0 ? null : (colTotals[y]-colTotals[histYears[j-1]])/colTotals[histYears[j-1]]*100);
   const tot2625 = colTotals[2025] !== 0 ? (colTotals.v26 - colTotals[2025]) / colTotals[2025] * 100 : null;
   const tot2624 = colTotals[2024] !== 0 ? (colTotals.v26 - colTotals[2024]) / colTotals[2024] * 100 : null;
@@ -6472,9 +6506,11 @@ function _buildPerfStorePayload(k) {
       mediaDetalhe: m.last3idx.map((idx,j) => m.last3[j] !== null ? `${PERF_MONTHS[idx]}${idx === PERF_CUR ? ' (proj)' : ''} ${sign(m.last3[j])}${m.last3[j].toFixed(1)}%` : null).filter(Boolean).join(' · '),
       projecaoAno: m.projTotal,
       pProj,
+      projecao2027: tot27,
+      p2726: tot2726,
     },
     rows,
-    totals: { ...colTotals, totDeltas, tot2625, tot2624, tot2623, tot2622 },
+    totals: { ...colTotals, totDeltas, tot2625, tot2624, tot2623, tot2622, v27: tot27, tot2726 },
   };
 }
 

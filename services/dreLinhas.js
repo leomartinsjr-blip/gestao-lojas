@@ -144,7 +144,7 @@ function somarFaturas(lancamentos, escolhidos = {}, funcionarios = []) {
 // Categorias da DRE: cada grupo soma as linhas logo abaixo dele
 const GRUPOS = {
   deducoes: ['simples', 'icms'],
-  custos: ['cmv', 'embalagens', 'frete'],
+  custos: ['cmv', 'subsidio', 'embalagens', 'frete'],
   salarios: ['fixos', 'comissoes', 'encargos', 'escritorio', 'premiacoes', 'vt'],
   administrativo: ['caixinha', 'sistema', 'contabilidade', 'seguro', 'plano', 'diversos', 'telefone'],
   marketing: ['publicidade'],
@@ -158,7 +158,8 @@ const ESTRUTURA = [
   ['simples', 'Simples', 'item'], ['icms', 'ICMS de entrada', 'item'],
   ['receitaLiquida', 'Receita líquida', 'total'],
   ['custos', 'Custos das vendas', 'grupo'],
-  ['cmv', 'CMV', 'item'], ['embalagens', 'Embalagens', 'item'], ['frete', 'Frete', 'item'],
+  // Subsídio: o que a Lez recebe da marca; fica negativo e abate o custo
+  ['cmv', 'CMV', 'item'], ['subsidio', 'Subsídio', 'item'], ['embalagens', 'Embalagens', 'item'], ['frete', 'Frete', 'item'],
   ['lucroBruto', 'Lucro bruto', 'total'],
   ['salarios', 'Salários', 'grupo'],
   ['fixos', 'Salários fixos', 'item'], ['comissoes', 'Comissões', 'item'], ['encargos', 'Encargos', 'item'],
@@ -197,7 +198,7 @@ function fechar(l) {
   const obrigatorias = ['receita', 'simples', 'icms', 'cmv', 'embalagens', ...despesas, 'juros'];
   const out = { ...l, ...somarGrupos(l) };
   out.receitaLiquida = r2(v('receita') - v('simples') - v('icms'));
-  out.lucroBruto = r2(out.receitaLiquida - v('cmv') - v('embalagens') - v('frete'));
+  out.lucroBruto = r2(out.receitaLiquida - v('cmv') - v('subsidio') - v('embalagens') - v('frete'));
   out.operacional = r2(out.lucroBruto - despesas.reduce((s, k) => s + v(k), 0));
   out.liquido = r2(out.operacional - v('juros'));
   out.sobra = r2(out.liquido - v('emprestimos') - v('acordos'));
