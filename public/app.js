@@ -6276,7 +6276,7 @@ function renderPerfStore(k) {
   // ── Projection table ─────────────────────────────────────────────────────
   let tableHtml = `
     <div class="perf-chart-box">
-      <div class="perf-chart-title">Histórico Mensal — 2022 a 2026 · Projeção 2027</div>
+      <div class="perf-chart-title">Histórico Mensal (R$) — 2022 a 2026 · Projeção 2027</div>
       <div style="overflow-x:auto">
       <table class="perf-proj-table">
         <thead><tr>
@@ -6285,9 +6285,12 @@ function renderPerfStore(k) {
           <th>2023</th><th>Δ</th>
           <th>2024</th><th>Δ</th>
           <th>2025 (ref)</th><th>Δ</th>
-          <th>2026</th><th class="d26-sep">Δ 26/25</th><th class="d26">Δ 26/24</th><th class="d26">Δ 26/23</th><th class="d26">Δ 26/22</th>
+          <th>2026</th><th class="d26-sep">Δ 26/25</th>
           <th class="d27-sep">2027 (proj)</th><th class="d27">Δ 27/26</th>
+          <th class="d26">Δ 26/24</th><th class="d26">Δ 26/23</th><th class="d26">Δ 26/22</th>
         </tr></thead><tbody>`;
+  // Sem "R$" nas células: com 2027 a tabela ficou larga e os valores quebravam em duas linhas
+  const fmtN = n => n == null ? '—' : Math.round(n).toLocaleString('pt-BR');
   const histYears = [2022, 2023, 2024, 2025];
   let colTotals = { 2022:0, 2023:0, 2024:0, 2025:0, v26:0 };
   PERF_MONTHS.forEach((mn, i) => {
@@ -6310,14 +6313,15 @@ function renderPerfStore(k) {
     tableHtml += `<tr>
       <td style="white-space:nowrap">${mn}${projTag}</td>
       ${h.map((v, j) => `
-        <td>${fmtBRL(v)}</td>
+        <td style="white-space:nowrap">${fmtN(v)}</td>
         <td class="${deltas[j] !== null ? cls(deltas[j]) : ''}" style="font-size:.72rem;white-space:nowrap">
           ${deltas[j] !== null ? sign(deltas[j])+deltas[j].toFixed(1)+'%' : '—'}
         </td>`).join('')}
-      <td style="color:${isProj?'var(--warn)':'inherit'}">${v26 !== null ? fmtBRL(v26) : '—'}</td>
-      ${dCell(d2625,'d26-sep')}${dCell(d2624,'d26')}${dCell(d2623,'d26')}${dCell(d2622,'d26')}
-      <td class="d27-sep">${p27[i] !== null ? fmtBRL(p27[i]) : '—'}</td>
+      <td style="white-space:nowrap;color:${isProj?'var(--warn)':'inherit'}">${fmtN(v26)}</td>
+      ${dCell(d2625,'d26-sep')}
+      <td class="d27-sep" style="white-space:nowrap">${fmtN(p27[i])}</td>
       ${dCell(p27[i] !== null && v26 ? (p27[i] - v26) / v26 * 100 : null, 'd27')}
+      ${dCell(d2624,'d26')}${dCell(d2623,'d26')}${dCell(d2622,'d26')}
     </tr>`;
   });
   // Totals row
@@ -6332,13 +6336,14 @@ function renderPerfStore(k) {
   tableHtml += `</tbody><tfoot><tr class="total-row">
     <td>TOTAL</td>
     ${histYears.map((y,j) => `
-      <td>${fmtBRL(colTotals[y])}</td>
+      <td style="white-space:nowrap">${fmtN(colTotals[y])}</td>
       <td class="${totDeltas[j]!==null?cls(totDeltas[j]):''}" style="font-size:.72rem">${totDeltas[j]!==null?sign(totDeltas[j])+totDeltas[j].toFixed(1)+'%':'—'}</td>
     `).join('')}
-    <td>${fmtBRL(colTotals.v26)}</td>
-    ${totDCell(tot2625,'d26-sep')}${totDCell(tot2624,'d26')}${totDCell(tot2623,'d26')}${totDCell(tot2622,'d26')}
-    <td class="d27-sep">${fmtBRL(tot27)}</td>
+    <td style="white-space:nowrap">${fmtN(colTotals.v26)}</td>
+    ${totDCell(tot2625,'d26-sep')}
+    <td class="d27-sep" style="white-space:nowrap">${fmtN(tot27)}</td>
     ${totDCell(colTotals.v26 ? (tot27 - colTotals.v26) / colTotals.v26 * 100 : null, 'd27')}
+    ${totDCell(tot2624,'d26')}${totDCell(tot2623,'d26')}${totDCell(tot2622,'d26')}
   </tr></tfoot></table></div></div>`;
 
   body.innerHTML = kpiHtml + tableHtml + `
