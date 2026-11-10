@@ -10384,6 +10384,10 @@ async function fluxoEmAberto() {
   return { lista, chaves: new Set(lista.map(x => x._id)) };
 }
 
+app.get('/api/fluxo-caixa/em-aberto', requireAdmin, async (req, res) => {
+  try { res.json({ lista: (await fluxoEmAberto()).lista }); } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // PUT /api/fluxo-caixa/em-aberto { board, codigo, marcar, forn, venc, valor }
 app.put('/api/fluxo-caixa/em-aberto', requireAdmin, async (req, res) => {
   try {

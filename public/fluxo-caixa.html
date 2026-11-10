@@ -127,7 +127,9 @@
   .fm-x { background: none; border: none; color: var(--text2); cursor: pointer; font-size: 15px; }
   .fm-x:hover { color: var(--red); }
   /* Agenda bancária */
-  body.modo-agenda .so-dia, body.modo-agenda .so-mes { display: none; }
+  body.modo-agenda .so-dia, body.modo-agenda .so-mes, body.modo-contas .so-dia, body.modo-contas .so-mes { display: none; }
+  .fc-ct td, .fc-ct th { white-space: nowrap; }
+  .fc-ct tbody tr.fc-row { cursor: pointer; }
   body.modo-agenda #fc-body { max-width: 1500px; }
   .ag-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
   @media (max-width: 1000px) { .ag-grid { grid-template-columns: 1fr; } }
@@ -187,7 +189,7 @@
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
     Fluxo de Caixa
   </div>
-  <div class="fc-seg" id="fc-modo"><button data-m="agenda" class="active">Agenda</button><button data-m="dia">Semanal</button><button data-m="mes">Mensal</button></div>
+  <div class="fc-seg" id="fc-modo"><button data-m="agenda" class="active">Agenda</button><button data-m="dia">Semanal</button><button data-m="mes">Mensal</button><button data-m="contas">Contas do mês</button></div>
   <div class="fc-filters">
     <span class="so-dia"><select id="fc-loja" title="Empresa"><option value="">Consolidado</option></select></span>
     <span class="so-mes"><select id="fc-ano" title="Ano"></select></span>
@@ -302,6 +304,18 @@
         <button class="fc-btn" id="agb-xls" title="Baixa em Excel tudo o que a pesquisa encontrar">Exportar Excel</button>
       </div>
       <div class="fc-scroll"><table id="agb-tab"></table></div>
+    </div>
+  </div>
+  <div id="ct-main" style="display:none">
+    <div class="fc-panel">
+      <div class="fc-panel-hd"><h2>Contas a pagar do mês</h2>
+        <span class="muted">pelo vencimento, sintético por fornecedor · clique no fornecedor para ver as faturas</span></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+        <input type="month" id="ct-mes">
+        <select id="ct-loja"><option value="">Todas as lojas</option></select>
+        <input type="search" id="ct-busca" placeholder="Filtrar fornecedor">
+      </div>
+      <div id="ct-corpo"></div>
     </div>
   </div>
   <div id="fc-main" style="display:none">
@@ -1061,11 +1075,97 @@ function trocaModo(m) {
   $('fm-main').style.display = m === 'mes' && M ? '' : 'none';
   $('fc-main').style.display = m === 'dia' && D ? '' : 'none';
   $('ag-main').style.display = m === 'agenda' && A ? '' : 'none';
+  $('ct-main').style.display = m === 'contas' && CT ? '' : 'none';
+  if (m === 'contas' && !CT) carregarContas();
   if (m === 'mes' && !M) carregarMensal();
   if (m === 'dia' && !D) carregar();
   if (m === 'agenda') carregarAgenda(A?.data);
 }
 $('fc-modo').addEventListener('click', e => { const b = e.target.closest('button'); if (b) trocaModo(b.dataset.m); });
+
+// ── Contas do mês: todas as faturas a pagar do mês, por loja, uma linha por fornecedor ──
+let CT = null;
+const ctAbertos = new Set();
+async function carregarContas() {
+  $('fc-msg').style.display = ''; $('fc-err').style.display = 'none'; $('ct-main').style.display = 'none';
+  try {
+    if (!$('ct-mes').value) $('ct-mes').value = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7);
+    const mk = $('ct-mes').value, [y, m] = mk.split('-').map(Number);
+    const ate = `${mk}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
+    const [r1, r2] = await Promise.all([fetch(`/api/contas-pagar?de=${mk}-01&ate=${ate}`), fetch('/api/fluxo-caixa/em-aberto')]);
+    if (r1.status === 401 || r1.status === 403) { location.href = '/'; return; }
+    const j = await r1.json(), ea = await r2.json();
+    if (!r1.ok) throw new Error(j.error || r1.status);
+    const marcadas = new Set((ea.lista || []).map(x => x._id));
+    const itens = (j.items || []).filter(f => f.isPagar && f.previsao !== 'S').map(f => {
+      const valor = f.valorLiquido ?? f.valor ?? 0;
+      return { ...f, v: valor, pago: f.baixa ? (f.valorPago || 0) : 0, aberto: f.baixa ? 0 : Math.max(0, valor - (f.valorPago || 0)),
+        emAberto: !f.baixa && marcadas.has(`${f.board}|${f.codigo_fatura}`) };
+    });
+    CT = { mk, itens, labels: D?.labels || M?.labels || {}, hoje: new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10) };
+    const lojas = [...new Set(itens.map(f => f.board))];
+    const sel = $('ct-loja'), atual = sel.value;
+    sel.innerHTML = '<option value="">Todas as lojas</option>' + lojas.map(b => `<option value="${b}">${esc(EMP[b] ? EMP[b] + ' · ' : '')}${esc(CT.labels[b] || b)}</option>`).join('');
+    sel.value = lojas.includes(atual) ? atual : '';
+    $('fc-msg').style.display = 'none'; $('ct-main').style.display = '';
+    renderContas();
+  } catch (e) {
+    $('fc-msg').style.display = 'none';
+    $('fc-err').style.display = ''; $('fc-err').textContent = 'Erro ao carregar as contas: ' + e.message;
+  }
+}
+
+function renderContas() {
+  const ordem = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'site'];
+  const busca = $('ct-busca').value.trim().toUpperCase();
+  const lojas = [...new Set(CT.itens.map(f => f.board))].sort((a, b) => (ordem.indexOf(a) + 1 || 99) - (ordem.indexOf(b) + 1 || 99))
+    .filter(b => !$('ct-loja').value || b === $('ct-loja').value);
+  const soma = (fs, k) => fs.reduce((s, f) => s + (f[k] || 0), 0);
+  const html = lojas.map(b => {
+    const fs = CT.itens.filter(f => f.board === b && (!busca || (f.fornecedor || '').toUpperCase().includes(busca)));
+    if (!fs.length) return '';
+    const porForn = {};
+    for (const f of fs) (porForn[f.fornecedor || '(sem nome)'] ||= []).push(f);
+    const linhas = Object.keys(porForn).sort((a, c) => a.localeCompare(c, 'pt-BR')).map(nome => {
+      const g = porForn[nome], k = b + '|' + nome, aberto = ctAbertos.has(k), deixadas = g.filter(f => f.emAberto);
+      let h = `<tr class="fc-row${aberto ? ' open' : ''}" data-ct="${esc(k)}"><td style="text-align:left">${esc(nome)}${deixadas.length ? ` <span class="tag tag-atraso" title="${R(soma(deixadas, 'aberto'))} fora do fluxo">${deixadas.length} em aberto</span>` : ''}</td>
+        <td>${g.length}</td><td>${R(soma(g, 'v'))}</td><td class="muted">${soma(g, 'pago') ? R(soma(g, 'pago')) : '—'}</td><td class="neg">${soma(g, 'aberto') ? R(soma(g, 'aberto')) : '—'}</td></tr>`;
+      if (aberto) h += `<tr class="fc-det"><td colspan="5"><div class="fc-det-wrap"><table>
+        <tr><th>Vencimento</th><th>Documento</th><th>Parcela</th><th>Valor</th><th>Situação</th><th title="Marcada, a conta fica em aberto e sai do fluxo (Semanal e Mensal) até ter baixa no Microvix">Deixar em aberto</th></tr>
+        ${g.sort((a, c) => (a.vencimento || '').localeCompare(c.vencimento || '')).map(f => `<tr${f.emAberto ? ' class="fora" title="deixada em aberto: fora do fluxo"' : ''}>
+          <td>${f.vencimento ? DM(f.vencimento) : ''}</td><td>${esc(f.documento && f.documento !== '0' ? f.documento : '')}</td><td>${esc(f.parcela || '')}</td><td>${R2(f.v)}</td>
+          <td>${f.baixa ? `<span class="pos">pago ${DM(f.baixa)}</span>` : f.vencimento < CT.hoje ? '<span class="neg">vencida</span>' : 'a vencer'}</td>
+          <td>${!f.baixa && f.codigo_fatura ? `<input type="checkbox" class="ct-aberto" data-i="${CT.itens.indexOf(f)}"${f.emAberto ? ' checked' : ''}>` : ''}</td></tr>`).join('')}
+        </table></div></td></tr>`;
+      return h;
+    }).join('');
+    return `<div style="margin-bottom:18px"><h3 style="margin:6px 0"><span style="color:${corEmp(b)}">●</span> ${esc(EMP[b] ? EMP[b] + ' · ' : '')}${esc(CT.labels[b] || b)}</h3>
+      <div class="fc-scroll"><table class="fc-ct"><thead><tr><th style="text-align:left">Fornecedor</th><th>Faturas</th><th>Valor</th><th>Pago</th><th>Em aberto</th></tr></thead>
+      <tbody>${linhas}</tbody><tfoot><tr><td style="text-align:left">Total</td><td>${fs.length}</td><td>${R(soma(fs, 'v'))}</td><td>${R(soma(fs, 'pago'))}</td><td>${R(soma(fs, 'aberto'))}</td></tr></tfoot></table></div></div>`;
+  }).join('');
+  $('ct-corpo').innerHTML = html || '<span class="muted">Nenhuma conta a pagar neste mês.</span>';
+}
+$('ct-corpo').addEventListener('click', e => {
+  const tr = e.target.closest('tr.fc-row'); if (!tr || !tr.dataset.ct) return;
+  ctAbertos.has(tr.dataset.ct) ? ctAbertos.delete(tr.dataset.ct) : ctAbertos.add(tr.dataset.ct);
+  renderContas();
+});
+$('ct-corpo').addEventListener('change', async e => {
+  const cb = e.target.closest('input.ct-aberto'); if (!cb) return;
+  const f = CT.itens[+cb.dataset.i];
+  cb.disabled = true;
+  try {
+    const r = await fetch('/api/fluxo-caixa/em-aberto', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ board: f.board, codigo: f.codigo_fatura, marcar: cb.checked, forn: f.fornecedor, venc: f.vencimento, valor: f.aberto }) });
+    if (!r.ok) throw new Error((await r.json()).error || r.status);
+    f.emAberto = cb.checked;
+    D = null; M = null; // Semanal e Mensal recalculam na próxima vez que abrir
+    renderContas();
+  } catch (err) { alert('Não salvou: ' + err.message); cb.checked = !cb.checked; cb.disabled = false; }
+});
+$('ct-mes').addEventListener('change', carregarContas);
+$('ct-loja').addEventListener('change', renderContas);
+$('ct-busca').addEventListener('input', renderContas);
 $('fc-ano').addEventListener('change', carregarMensal);
 
 // Faturas alteradas no Microvix só chegam no sync das 7h; aqui dá para puxar na hora.
@@ -1093,7 +1193,7 @@ $('fc-sync').addEventListener('click', async () => {
       }
     }
     D = null; M = null;
-    modo === 'mes' ? await carregarMensal() : modo === 'dia' ? await carregar() : await carregarAgenda(A?.data);
+    modo === 'contas' ? await carregarContas() : modo === 'mes' ? await carregarMensal() : modo === 'dia' ? await carregar() : await carregarAgenda(A?.data);
     btn.textContent = 'Sincronizado ✓';
   } catch (e) { alert('Não sincronizou: ' + e.message); btn.textContent = 'Sincronizar Microvix'; }
   btn.disabled = false;
@@ -1304,7 +1404,7 @@ $('fc-saldos').addEventListener('click', async e => {
 });
 $('fc-loja').addEventListener('change', () => { abertos.clear(); if (D) render(); if (M) renderMensal(); });
 $('fc-atraso').addEventListener('change', render);
-$('fc-reload').addEventListener('click', () => modo === 'mes' ? carregarMensal() : modo === 'agenda' ? (carregarAgenda(A?.data), RD && carregarResumoDia(RD.data)) : carregar());
+$('fc-reload').addEventListener('click', () => modo === 'contas' ? carregarContas() : modo === 'mes' ? carregarMensal() : modo === 'agenda' ? (carregarAgenda(A?.data), RD && carregarResumoDia(RD.data)) : carregar());
 trocaModo('agenda');
 </script>
 </body>
