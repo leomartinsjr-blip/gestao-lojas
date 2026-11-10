@@ -223,12 +223,16 @@ function calcular({ db, faturas, taxas, saldos, boards, lancamentos = [], hoje =
       taxa: 1 - liq, meses };
   }
 
+  // Mesma regra do Mensal (mesAtualPelaAgenda): saldo com lançamento de hoje na agenda
+  // já tem os pagamentos de hoje, então o que vence hoje e está sem baixa conta como vencida.
+  const desde = b => (saldos?.[b]?.data >= hoje ? addDias(hoje, 1) : hoje);
+
   for (const f of faturas) {
     if (!boards.includes(f.board) || !f.isPagar || f.baixa || f.previsao === 'S') continue;
     // Valor líquido = fatura − desconto − abatimento + juros + multa (o que de fato vai sair).
     const resta = (f.valorLiquido ?? f.valor ?? 0) - (f.valorPago || 0);
     if (resta <= 0.009 || !f.vencimento || f.vencimento < corteAtraso || f.vencimento > ate) continue;
-    const atrasada = f.vencimento < hoje;
+    const atrasada = f.vencimento < desde(f.board);
     const d = diaUtil(atrasada ? hoje : f.vencimento);
     if (d > ate) continue;
     const s = slot(d, f.board);
@@ -239,7 +243,7 @@ function calcular({ db, faturas, taxas, saldos, boards, lancamentos = [], hoje =
   }
 
   for (const m of movimentosManuais(lancamentos)) {
-    if (!boards.includes(m.b) || m.d < hoje) continue;
+    if (!boards.includes(m.b) || m.d < desde(m.b)) continue;
     const d = diaUtil(m.d);
     if (d > ate) continue;
     if (m.v > 0) slot(d, m.b).recebe += m.v; else slot(d, m.b).paga -= m.v;
