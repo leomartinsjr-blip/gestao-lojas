@@ -10119,7 +10119,14 @@ app.get('/api/contas-pagar', requireAdmin, async (req, res) => {
     const dtFin = req.query.ate || today;
     const cp    = await readContasPagar(dtIni, dtFin);
     const items = (cp.rows || []).sort((a, b) => (a.vencimento || '').localeCompare(b.vencimento || ''));
-    res.json({ items, errors: [], dtIni, dtFin, syncedAt: cp.syncedAt || null });
+    // Setor de cada fornecedor: o mesmo do Fechamento de Caixa da DRE (mapa padrão +
+    // Mapa de fornecedores dos Cadastros + funcionário vira Salário).
+    const dreCaixa = require('./services/dreCaixa');
+    const [cfg, db] = await Promise.all([mongoDb ? mongoDb.collection('dreConfig').findOne({ _id: 'main' }) : null, readDB()]);
+    const escolhidos = require('./services/dreCadastros').escolhidosDe(cfg);
+    const funcionarios = dreCaixa.nomesFuncionarios(db.employees);
+    for (const f of items) f.setor = dreCaixa.linhaCaixa(f.fornecedor, escolhidos, funcionarios);
+    res.json({ items, errors: [], dtIni, dtFin, syncedAt: cp.syncedAt || null, setores: dreCaixa.LINHAS });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 

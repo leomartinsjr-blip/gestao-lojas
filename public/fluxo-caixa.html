@@ -130,6 +130,10 @@
   body.modo-agenda .so-dia, body.modo-agenda .so-mes, body.modo-contas .so-dia, body.modo-contas .so-mes { display: none; }
   .fc-ct td, .fc-ct th { white-space: nowrap; }
   .fc-ct tbody tr.fc-row { cursor: pointer; }
+  .fc-ct tr.ct-setor td { font-weight: 600; }
+  .fc-ct tr.ct-forn td:first-child { padding-left: 30px; }
+  .fc-ct tr.ct-forn td { font-size: 12px; }
+  .ct-seta { display: inline-block; width: 14px; color: var(--text2); }
   body.modo-agenda #fc-body { max-width: 1500px; }
   .ag-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
   @media (max-width: 1000px) { .ag-grid { grid-template-columns: 1fr; } }
@@ -309,11 +313,12 @@
   <div id="ct-main" style="display:none">
     <div class="fc-panel">
       <div class="fc-panel-hd"><h2>Contas a pagar do mês</h2>
-        <span class="muted">pelo vencimento, sintético por fornecedor · clique no fornecedor para ver as faturas</span></div>
+        <span class="muted">pelo vencimento, por setor como no Fechamento de Caixa da DRE · clique no setor para ver os fornecedores e no fornecedor para ver as faturas</span></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
         <input type="month" id="ct-mes">
         <select id="ct-loja"><option value="">Todas as lojas</option></select>
         <input type="search" id="ct-busca" placeholder="Filtrar fornecedor">
+        <button type="button" id="ct-expandir">Expandir tudo</button>
       </div>
       <div id="ct-corpo"></div>
     </div>
@@ -1086,6 +1091,7 @@ $('fc-modo').addEventListener('click', e => { const b = e.target.closest('button
 // ── Contas do mês: todas as faturas a pagar do mês, por loja, uma linha por fornecedor ──
 let CT = null;
 const ctAbertos = new Set();
+let ctExpandir = null; // true = tudo aberto, false = tudo fechado (inclusive na busca), null = clique a clique
 async function carregarContas() {
   $('fc-msg').style.display = ''; $('fc-err').style.display = 'none'; $('ct-main').style.display = 'none';
   try {
@@ -1102,7 +1108,7 @@ async function carregarContas() {
       return { ...f, v: valor, pago: f.baixa ? (f.valorPago || 0) : 0, aberto: f.baixa ? 0 : Math.max(0, valor - (f.valorPago || 0)),
         emAberto: !f.baixa && marcadas.has(`${f.board}|${f.codigo_fatura}`) };
     });
-    CT = { mk, itens, labels: D?.labels || M?.labels || { delrey: 'Del Rey', minas: 'Minas', contagem: 'Contagem', estacao: 'Estação', tommy: 'Tommy', site: 'Site' }, hoje: new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10) };
+    CT = { mk, itens, setores: j.setores || [], labels: D?.labels || M?.labels || { delrey: 'Del Rey', minas: 'Minas', contagem: 'Contagem', estacao: 'Estação', tommy: 'Tommy', site: 'Site' }, hoje: new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10) };
     const lojas = [...new Set(itens.map(f => f.board))];
     const sel = $('ct-loja'), atual = sel.value;
     sel.innerHTML = '<option value="">Todas as lojas</option>' + lojas.map(b => `<option value="${b}">${esc(EMP[b] ? EMP[b] + ' · ' : '')}${esc(CT.labels[b] || b)}</option>`).join('');
@@ -1124,30 +1130,49 @@ function renderContas() {
   const html = lojas.map(b => {
     const fs = CT.itens.filter(f => f.board === b && (!busca || (f.fornecedor || '').toUpperCase().includes(busca)));
     if (!fs.length) return '';
-    const porForn = {};
-    for (const f of fs) (porForn[f.fornecedor || '(sem nome)'] ||= []).push(f);
-    const linhas = Object.keys(porForn).sort((a, c) => a.localeCompare(c, 'pt-BR')).map(nome => {
-      const g = porForn[nome], k = b + '|' + nome, aberto = ctAbertos.has(k), deixadas = g.filter(f => f.emAberto);
-      let h = `<tr class="fc-row${aberto ? ' open' : ''}" data-ct="${esc(k)}"><td style="text-align:left">${esc(nome)}${deixadas.length ? ` <span class="tag tag-atraso" title="${R(soma(deixadas, 'aberto'))} fora do fluxo">${deixadas.length} em aberto</span>` : ''}</td>
-        <td>${g.length}</td><td>${R(soma(g, 'v'))}</td><td class="muted">${soma(g, 'pago') ? R(soma(g, 'pago')) : '—'}</td><td class="neg">${soma(g, 'aberto') ? R(soma(g, 'aberto')) : '—'}</td></tr>`;
-      if (aberto) h += `<tr class="fc-det"><td colspan="5"><div class="fc-det-wrap"><table>
+    const porSetor = {};
+    for (const f of fs) ((porSetor[f.setor || 'classificar'] ||= {})[f.fornecedor || '(sem nome)'] ||= []).push(f);
+    const nomeSetor = id => CT.setores.find(x => x[0] === id)?.[1] || id;
+    const ordemSetor = id => { const i = CT.setores.findIndex(x => x[0] === id); return i < 0 ? 999 : i; };
+    const tags = g => { const d = g.filter(f => f.emAberto); return d.length ? ` <span class="tag tag-atraso" title="${R(soma(d, 'aberto'))} fora do fluxo">${d.length} em aberto</span>` : ''; };
+    const cols = g => `<td>${g.length}</td><td>${R(soma(g, 'v'))}</td><td class="muted">${soma(g, 'pago') ? R(soma(g, 'pago')) : '—'}</td><td class="neg">${soma(g, 'aberto') ? R(soma(g, 'aberto')) : '—'}</td>`;
+    const linhas = Object.keys(porSetor).sort((x, y) => ordemSetor(x) - ordemSetor(y)).map(sid => {
+      const porForn = porSetor[sid], todas = Object.values(porForn).flat();
+      const ks = b + '#' + sid, abertoS = ctExpandir === true || ctAbertos.has(ks);
+      let hs = `<tr class="fc-row ct-setor${abertoS ? ' open' : ''}" data-ct="${esc(ks)}"><td style="text-align:left"><span class="ct-seta">${abertoS ? '▾' : '▸'}</span>${esc(nomeSetor(sid))} <span class="muted" style="font-weight:400">· ${Object.keys(porForn).length} forn.</span>${tags(todas)}</td>${cols(todas)}</tr>`;
+      if (!abertoS) return hs;
+      return hs + Object.keys(porForn).sort((a, c) => a.localeCompare(c, 'pt-BR')).map(nome => {
+        const g = porForn[nome], k = b + '|' + nome, aberto = ctAbertos.has(k);
+        let h = `<tr class="fc-row ct-forn${aberto ? ' open' : ''}" data-ct="${esc(k)}"><td style="text-align:left">${esc(nome)}${tags(g)}</td>${cols(g)}</tr>`;
+        if (aberto) h += `<tr class="fc-det"><td colspan="5"><div class="fc-det-wrap"><table>
         <tr><th>Vencimento</th><th>Documento</th><th>Parcela</th><th>Valor</th><th>Situação</th><th title="Marcada, a conta fica em aberto e sai do fluxo (Semanal e Mensal) até ter baixa no Microvix">Deixar em aberto</th></tr>
         ${g.sort((a, c) => (a.vencimento || '').localeCompare(c.vencimento || '')).map(f => `<tr${f.emAberto ? ' class="fora" title="deixada em aberto: fora do fluxo"' : ''}>
           <td>${f.vencimento ? DM(f.vencimento) : ''}</td><td>${esc(f.documento && f.documento !== '0' ? f.documento : '')}</td><td>${esc(f.parcela || '')}</td><td>${R2(f.v)}</td>
           <td>${f.baixa ? `<span class="pos">pago ${DM(f.baixa)}</span>` : f.vencimento < CT.hoje ? '<span class="neg">vencida</span>' : 'a vencer'}</td>
           <td>${!f.baixa && f.codigo_fatura ? `<input type="checkbox" class="ct-aberto" data-i="${CT.itens.indexOf(f)}"${f.emAberto ? ' checked' : ''}>` : ''}</td></tr>`).join('')}
         </table></div></td></tr>`;
-      return h;
+        return h;
+      }).join('');
     }).join('');
     return `<div style="margin-bottom:18px"><h3 style="margin:6px 0"><span style="color:${corEmp(b)}">●</span> ${esc(EMP[b] ? EMP[b] + ' · ' : '')}${esc(CT.labels[b] || b)}</h3>
-      <div class="fc-scroll"><table class="fc-ct"><thead><tr><th style="text-align:left">Fornecedor</th><th>Faturas</th><th>Valor</th><th>Pago</th><th>Em aberto</th></tr></thead>
+      <div class="fc-scroll"><table class="fc-ct"><thead><tr><th style="text-align:left">Setor / fornecedor</th><th>Faturas</th><th>Valor</th><th>Pago</th><th>Em aberto</th></tr></thead>
       <tbody>${linhas}</tbody><tfoot><tr><td style="text-align:left">Total</td><td>${fs.length}</td><td>${R(soma(fs, 'v'))}</td><td>${R(soma(fs, 'pago'))}</td><td>${R(soma(fs, 'aberto'))}</td></tr></tfoot></table></div></div>`;
   }).join('');
   $('ct-corpo').innerHTML = html || '<span class="muted">Nenhuma conta a pagar neste mês.</span>';
 }
 $('ct-corpo').addEventListener('click', e => {
   const tr = e.target.closest('tr.fc-row'); if (!tr || !tr.dataset.ct) return;
+  if (ctExpandir !== null) { // saindo do "expandir tudo"/busca: guarda o que está aberto
+    document.querySelectorAll('#ct-corpo tr.ct-setor.open').forEach(x => ctAbertos.add(x.dataset.ct));
+    ctExpandir = null; $('ct-expandir').textContent = 'Expandir tudo';
+  }
   ctAbertos.has(tr.dataset.ct) ? ctAbertos.delete(tr.dataset.ct) : ctAbertos.add(tr.dataset.ct);
+  renderContas();
+});
+$('ct-expandir').addEventListener('click', () => {
+  const abrir = $('ct-expandir').textContent === 'Expandir tudo';
+  ctAbertos.clear(); ctExpandir = abrir ? true : null;
+  $('ct-expandir').textContent = abrir ? 'Recolher tudo' : 'Expandir tudo';
   renderContas();
 });
 $('ct-corpo').addEventListener('change', async e => {
@@ -1165,7 +1190,11 @@ $('ct-corpo').addEventListener('change', async e => {
 });
 $('ct-mes').addEventListener('change', carregarContas);
 $('ct-loja').addEventListener('change', renderContas);
-$('ct-busca').addEventListener('input', renderContas);
+$('ct-busca').addEventListener('input', () => { // buscando, abre tudo para mostrar o fornecedor
+  ctExpandir = $('ct-busca').value.trim() ? true : null; ctAbertos.clear();
+  $('ct-expandir').textContent = ctExpandir ? 'Recolher tudo' : 'Expandir tudo';
+  renderContas();
+});
 $('fc-ano').addEventListener('change', carregarMensal);
 
 // Faturas alteradas no Microvix só chegam no sync das 7h; aqui dá para puxar na hora.
