@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Fluxo de Caixa</title>
 <link rel="icon" type="image/jpeg" href="favicon.jpg">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   :root {
     --bg: #f4f6f9; --bg2: #ffffff; --bg3: #f0f3f7; --border: #dde3ea; --border2: #b9c2cd;
@@ -37,6 +36,7 @@
   .fc-card-label { color: var(--text2); font-size: 11px; margin-bottom: 4px; }
   .fc-card-value { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .fc-card-sub { color: var(--text2); font-size: 11px; margin-top: 3px; }
+  #fc-cards .fc-card:nth-child(n+5) { border-color: rgba(88,166,255,.45); }
   #fm-atual { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; margin-bottom: 16px; line-height: 1.7; }
   #fm-atual b { font-variant-numeric: tabular-nums; }
   .pos { color: var(--green); } .neg { color: var(--red); } .warn { color: var(--yellow); }
@@ -44,7 +44,6 @@
   .fc-panel-hd { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
   .fc-panel-hd h2 { font-size: 13px; font-weight: 600; flex: 1; }
   .fc-panel-note { color: var(--text2); font-size: 11px; padding: 8px 14px; border-top: 1px solid var(--border); line-height: 1.5; }
-  .fc-chart { height: 260px; padding: 10px 14px; }
   .fc-scroll { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; }
   th { background: var(--bg3); color: var(--text2); font-size: 10px; font-weight: 600; padding: 7px 12px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; text-transform: uppercase; letter-spacing: .03em; }
@@ -134,6 +133,16 @@
   .fc-ct tr.ct-forn td:first-child { padding-left: 30px; }
   .fc-ct tr.ct-forn td { font-size: 12px; }
   .ct-seta { display: inline-block; width: 14px; color: var(--text2); }
+  .fc-sem-lojas > tbody > tr.fc-row > td { font-size: 12px; font-weight: 600; }
+  .fc-det-wrap th.esq { text-align: left; }
+  .fc-lojas-tit { font-size: 13px; font-weight: 600; margin: 4px 2px 8px; }
+  .fc-loja { margin-bottom: 8px; }
+  .fc-loja-hd { cursor: pointer; border-bottom: none; }
+  .fc-loja.open .fc-loja-hd { border-bottom: 1px solid var(--border); }
+  .fc-loja-hd:hover { background: var(--bg3); }
+  .fc-loja-saldos { font-size: 12px; font-variant-numeric: tabular-nums; display: inline-flex; gap: 6px; align-items: baseline; }
+  #fc-tab td:last-child, .fc-tab-loja td:last-child { font-size: 13px; }
+  #fc-tab > tbody > tr.fc-row > td:first-child, .fc-tab-loja > tbody > tr.fc-row > td:first-child { font-weight: 600; }
   body.modo-agenda #fc-body { max-width: 1500px; }
   .ag-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(300px, 1fr); gap: 16px; align-items: start; }
   @media (max-width: 1000px) { .ag-grid { grid-template-columns: 1fr; } }
@@ -327,11 +336,6 @@
     <div id="fc-cards"></div>
 
     <div class="fc-panel">
-      <div class="fc-panel-hd"><h2>Saldo previsto</h2><span class="muted" id="fc-chart-sub"></span></div>
-      <div class="fc-chart"><canvas id="fc-chart"></canvas></div>
-    </div>
-
-    <div class="fc-panel">
       <div class="fc-panel-hd">
         <h2 id="fc-tab-tit">Entradas e saídas</h2>
         <div class="fc-seg" id="fc-agrup">
@@ -366,8 +370,9 @@ const nomeMes = mk => MES[+mk.slice(5, 7) - 1] + '/' + mk.slice(2, 4);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const addDias = (s, n) => { const d = new Date(s + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 
-let D = null, chart = null, agrup = 'semana';
+let D = null, agrup = 'semana';
 const abertos = new Set();
+const lojasAbertas = new Set(); // quadros por loja do Semanal abertos
 
 async function carregar() {
   $('fc-msg').style.display = ''; $('fc-err').style.display = 'none';
@@ -1288,10 +1293,29 @@ function tabelaSemanal(bs, pref) {
       <td class="${g.saldo >= 0 ? '' : 'neg'}"><b>${R(g.saldo)}</b></td></tr>`;
     if (aberto) {
       const cs = contas.filter(c => c.d >= g.ini && c.d <= g.fim);
-      h += `<tr class="fc-det"><td colspan="6"><div class="fc-det-wrap">${cs.length ? `<table>
-        <tr><th>Paga em</th><th>Vencimento</th>${bs.length > 1 ? '<th>Loja</th>' : ''}<th>Fornecedor</th><th>Documento</th><th>Parcela</th><th>Valor</th><th title="Marcada, a conta fica em aberto e sai do fluxo (Semanal e Mensal) até ter baixa no Microvix">Deixar em aberto</th></tr>
-        ${cs.map(c => `<tr${c.emAberto ? ' class="fora" title="deixada em aberto: fora do fluxo"' : c.atraso && !$('fc-atraso').checked ? ' class="fora" title="fora do saldo"' : ''}><td>${DM(c.d)}</td><td>${DM(c.venc)}${c.atraso ? ' <span class="tag tag-atraso">atraso</span>' : ''}</td>${bs.length > 1 ? `<td>${esc(D.labels[c.b])}</td>` : ''}<td style="text-align:left">${c.manual ? '<span class="tag tag-man">manual</span> ' : ''}${c.emAberto ? '<span class="tag tag-atraso">em aberto</span> ' : ''}${esc(c.forn)}</td><td>${esc(c.doc && c.doc !== '0' ? c.doc : '')}</td><td>${esc(c.parc)}</td><td class="${c.entrada ? 'pos' : ''}">${c.entrada ? '+ ' : ''}${R2(c.v)}</td><td>${c.codigo && !c.manual ? `<input type="checkbox" class="fc-aberto" data-i="${D.contas.indexOf(c)}"${c.emAberto ? ' checked' : ''}>` : ''}</td></tr>`).join('')}
-        </table>` : '<span class="muted">Nenhuma conta a pagar neste período.</span>'}</div></td></tr>`;
+      const tabContas = lista => `<table>
+        <tr><th>Paga em</th><th>Vencimento</th><th class="esq">Fornecedor</th><th>Documento</th><th>Parcela</th><th>Valor</th><th title="Marcada, a conta fica em aberto e sai do fluxo (Semanal e Mensal) até ter baixa no Microvix">Deixar em aberto</th></tr>
+        ${lista.map(c => `<tr${c.emAberto ? ' class="fora" title="deixada em aberto: fora do fluxo"' : c.atraso && !$('fc-atraso').checked ? ' class="fora" title="fora do saldo"' : ''}><td>${DM(c.d)}</td><td>${DM(c.venc)}${c.atraso ? ' <span class="tag tag-atraso">atraso</span>' : ''}</td><td style="text-align:left">${c.manual ? '<span class="tag tag-man">manual</span> ' : ''}${c.emAberto ? '<span class="tag tag-atraso">em aberto</span> ' : ''}${esc(c.forn)}</td><td>${esc(c.doc && c.doc !== '0' ? c.doc : '')}</td><td>${esc(c.parc)}</td><td class="${c.entrada ? 'pos' : ''}">${c.entrada ? '+ ' : ''}${R2(c.v)}</td><td>${c.codigo && !c.manual ? `<input type="checkbox" class="fc-aberto" data-i="${D.contas.indexOf(c)}"${c.emAberto ? ' checked' : ''}>` : ''}</td></tr>`).join('')}
+        </table>`;
+      let det;
+      if (!cs.length) det = '<span class="muted">Nenhuma conta a pagar neste período.</span>';
+      else if (bs.length === 1) det = tabContas(cs);
+      else {
+        // Consolidado: primeiro uma linha por loja (sintético), clique abre as contas dela
+        const ordem = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'site'];
+        const lojas = [...new Set(cs.map(c => c.b))].sort((a, b) => (ordem.indexOf(a) + 1 || 99) - (ordem.indexOf(b) + 1 || 99));
+        det = `<table class="fc-sem-lojas"><tr><th class="esq">Loja</th><th>Contas</th><th>A pagar</th><th>Fora do saldo</th></tr>${lojas.map(b => {
+          const lc = cs.filter(c => c.b === b), kl = g.k + '|' + b, abL = abertos.has(pref + agrup + kl);
+          const fora = c => c.emAberto || (c.atraso && !$('fc-atraso').checked);
+          const pagar = lc.filter(c => !c.entrada && !fora(c)).reduce((s, c) => s + c.v, 0);
+          const ent = lc.filter(c => c.entrada).reduce((s, c) => s + c.v, 0);
+          const vFora = lc.filter(c => !c.entrada && fora(c)).reduce((s, c) => s + c.v, 0);
+          return `<tr class="fc-row${abL ? ' open' : ''}" data-k="${esc(kl)}" data-p="${pref}"><td style="text-align:left"><span class="ct-seta">${abL ? '▾' : '▸'}</span><span style="color:${corEmp(b)}">●</span> ${esc(EMP[b] ? EMP[b] + ' · ' : '')}${esc(D.labels[b] || b)}</td>
+            <td>${lc.length}</td><td class="neg">${pagar ? R(pagar) : '—'}${ent ? ` <span class="pos">+ ${R(ent)}</span>` : ''}</td><td class="muted">${vFora ? R(vFora) : '—'}</td></tr>`
+            + (abL ? `<tr class="fc-det"><td colspan="4"><div class="fc-det-wrap">${tabContas(lc)}</div></td></tr>` : '');
+        }).join('')}</table>`;
+      }
+      h += `<tr class="fc-det"><td colspan="6"><div class="fc-det-wrap">${det}</div></td></tr>`;
     }
   }
   h += `</tbody><tfoot><tr><td>Total</td><td class="muted">${R(tot.vendas)}</td><td class="pos">${R(tot.recebe)}</td><td class="neg">${R(tot.paga)}</td><td class="${tot.recebe - tot.paga >= 0 ? 'pos' : 'neg'}">${R(tot.recebe - tot.paga)}</td><td>${R(fim)}</td></tr></tfoot>`;
@@ -1316,40 +1340,16 @@ function render() {
     ['Menor saldo', min.d ? R(min.saldo) : '—', min.d ? 'em ' + DM(min.d) : '', min.saldo < 0 ? 'neg' : ''],
   ].map(([l, v, s, c]) => `<div class="fc-card"><div class="fc-card-label">${l}</div><div class="fc-card-value ${c}">${v}</div><div class="fc-card-sub">${s}</div></div>`).join('');
 
-  // Gráfico
-  $('fc-chart-sub').textContent = bs.length > 1 ? 'todas as lojas' : D.labels[bs[0]];
-  const css = getComputedStyle(document.documentElement);
-  const cor = v => css.getPropertyValue(v).trim();
-  const cfg = {
-    data: {
-      labels: dias.map(x => DM(x.d)),
-      datasets: [
-        { type: 'line', label: 'Saldo', data: dias.map(x => Math.round(x.saldo)), borderColor: cor('--blue'), backgroundColor: 'rgba(88,166,255,.08)', fill: true, pointRadius: 0, tension: .2, yAxisID: 'y', order: 0 },
-        { type: 'bar', label: 'Entradas', data: dias.map(x => Math.round(x.recebe)), backgroundColor: 'rgba(63,185,80,.55)', yAxisID: 'y', order: 1 },
-        { type: 'bar', label: 'Saídas', data: dias.map(x => -Math.round(x.paga)), backgroundColor: 'rgba(248,81,73,.55)', yAxisID: 'y', order: 1 },
-      ],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false, interaction: { mode: 'index', intersect: false },
-      plugins: { legend: { labels: { color: cor('--text2'), boxWidth: 12 } },
-        tooltip: { callbacks: { label: c => `${c.dataset.label}: ${R(c.dataset.label === 'Saídas' ? -c.raw : c.raw)}` } } },
-      scales: {
-        x: { ticks: { color: cor('--text2'), maxTicksLimit: 14 }, grid: { display: false } },
-        y: { ticks: { color: cor('--text2'), callback: v => (v / 1000).toLocaleString('pt-BR') + 'k' }, grid: { color: 'rgba(139,148,158,.12)' } },
-      },
-    },
-  };
-  if (chart) chart.destroy();
-  chart = new Chart($('fc-chart'), cfg);
 
   // Quadro do consolidado (ou da loja escolhida) e, no consolidado, um quadro por loja
   $('fc-tab-tit').textContent = bs.length > 1 ? 'Entradas e saídas — consolidado' : `Entradas e saídas — ${nomeEmp(D, bs[0])}`;
   $('fc-tab').innerHTML = tabelaSemanal(bs, 'c').html;
-  $('fc-lojas').innerHTML = bs.length > 1 ? D.boards.map(b => {
-    const t = tabelaSemanal([b], b);
-    return `<div class="fc-panel"><div class="fc-panel-hd"><h2><span style="color:${corEmp(b)}">●</span> ${esc(nomeEmp(D, b))}</h2>
-      <span class="muted">saldo em conta ${R(t.ini)}${D.saldos[b]?.data ? ' em ' + DM(D.saldos[b].data) : ' · <span class="warn">não informado</span>'} · fim do período <b class="${t.fim < 0 ? 'neg' : ''}">${R(t.fim)}</b></span></div>
-      <div class="fc-scroll"><table class="fc-tab-loja">${t.html}</table></div></div>`;
+  $('fc-lojas').innerHTML = bs.length > 1 ? `<div class="fc-lojas-tit">Por loja <span class="muted">· clique para abrir as semanas</span></div>` + D.boards.map(b => {
+    const t = tabelaSemanal([b], b), ab = lojasAbertas.has(b);
+    return `<div class="fc-panel fc-loja${ab ? ' open' : ''}"><div class="fc-panel-hd fc-loja-hd" data-b="${b}"><span class="ct-seta">${ab ? '▾' : '▸'}</span><h2><span style="color:${corEmp(b)}">●</span> ${esc(nomeEmp(D, b))}</h2>
+      <span class="fc-loja-saldos"><span class="muted">hoje${D.saldos[b]?.data ? ' (' + DM(D.saldos[b].data) + ')' : ''}</span> ${D.saldos[b] ? `<b class="${t.ini < 0 ? 'neg' : ''}">${R(t.ini)}</b>` : '<span class="warn">não informado</span>'}
+      <span class="muted">→ ${DM(D.ate)}</span> <b class="${t.fim < 0 ? 'neg' : 'pos'}">${R(t.fim)}</b></span></div>
+      ${ab ? `<div class="fc-scroll"><table class="fc-tab-loja">${t.html}</table></div>` : ''}</div>`;
   }).join('') : '';
 
   // Projeção de vendas
@@ -1387,7 +1387,11 @@ const abreFecha = e => {
   render();
 };
 $('fc-tab').addEventListener('click', abreFecha);
-$('fc-lojas').addEventListener('click', abreFecha);
+$('fc-lojas').addEventListener('click', e => {
+  const hd = e.target.closest('.fc-loja-hd');
+  if (hd) { lojasAbertas.has(hd.dataset.b) ? lojasAbertas.delete(hd.dataset.b) : lojasAbertas.add(hd.dataset.b); return render(); }
+  abreFecha(e);
+});
 
 // Deixar em aberto: grava no servidor e tira (ou devolve) a conta do dia sem recarregar
 async function marcaEmAberto(e) {
