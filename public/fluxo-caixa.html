@@ -135,7 +135,8 @@
   .ct-mesano { display: inline-flex; gap: 4px; align-items: center; }
   .ct-mesano .fc-btn { padding: 3px 10px; font-size: 14px; line-height: 1; }
   .ct-seta { display: inline-block; width: 14px; color: var(--text2); }
-  .fc-sem-lojas > tbody > tr.fc-row > td { font-size: 12px; font-weight: 600; }
+  tr.ct-loja-sem > td { font-size: 12px; background: var(--bg); }
+  tr.ct-loja-sem > td:first-child { padding-left: 26px; font-weight: 500 !important; }
   .fc-det-wrap th.esq { text-align: left; }
   .fc-lojas-tit { font-size: 13px; font-weight: 600; margin: 4px 2px 8px; }
   .fc-loja { margin-bottom: 8px; }
@@ -1284,7 +1285,7 @@ function rotuloGrupo(k, primeiro, ultimo) {
 
 // Quadro de entradas e saídas de um conjunto de lojas (consolidado ou uma loja).
 // pref separa o abre/fecha de cada quadro.
-function tabelaSemanal(bs, pref) {
+function gruposSemanal(bs) {
   const { ini, dias } = serie(bs);
   const grupos = [], porK = {};
   const grupo = (k, d) => porK[k] || (porK[k] = grupos[grupos.push({ k, ini: d, fim: d, vendas: 0, recebe: 0, paga: 0, atraso: 0, saldo: null }) - 1]);
@@ -1297,6 +1298,13 @@ function tabelaSemanal(bs, pref) {
     const k = chaveGrupo(agrup === 'semana' ? addDias(x.d, 1) : x.d);
     if (porK[k]) porK[k].vendas += x.vendas;
   }
+  return { ini, dias, grupos, porK };
+}
+
+function tabelaSemanal(bs, pref) {
+  const { ini, dias, grupos } = gruposSemanal(bs);
+  // No consolidado, cada semana aberta mostra as lojas com as mesmas colunas
+  const porLoja = bs.length > 1 ? Object.fromEntries(bs.map(b => [b, gruposSemanal([b]).porK])) : null;
   const tot = grupos.reduce((a, g) => ({ vendas: a.vendas + g.vendas, recebe: a.recebe + g.recebe, paga: a.paga + g.paga, atraso: a.atraso + g.atraso }), { vendas: 0, recebe: 0, paga: 0, atraso: 0 });
   const fim = dias.length ? dias[dias.length - 1].saldo : ini;
   const contas = D.contas.filter(c => bs.includes(c.b));
@@ -1317,25 +1325,22 @@ function tabelaSemanal(bs, pref) {
         <tr><th>Paga em</th><th>Vencimento</th><th class="esq">Fornecedor</th><th>Documento</th><th>Parcela</th><th>Valor</th><th title="Marcada, a conta fica em aberto e sai do fluxo (Semanal e Mensal) até ter baixa no Microvix">Deixar em aberto</th></tr>
         ${lista.map(c => `<tr${c.emAberto ? ' class="fora" title="deixada em aberto: fora do fluxo"' : c.atraso && !$('fc-atraso').checked ? ' class="fora" title="fora do saldo"' : ''}><td>${DM(c.d)}</td><td>${DM(c.venc)}${c.atraso ? ' <span class="tag tag-atraso">atraso</span>' : ''}</td><td style="text-align:left">${c.manual ? '<span class="tag tag-man">manual</span> ' : ''}${c.emAberto ? '<span class="tag tag-atraso">em aberto</span> ' : ''}${esc(c.forn)}</td><td>${esc(c.doc && c.doc !== '0' ? c.doc : '')}</td><td>${esc(c.parc)}</td><td class="${c.entrada ? 'pos' : ''}">${c.entrada ? '+ ' : ''}${R2(c.v)}</td><td>${c.codigo && !c.manual ? `<input type="checkbox" class="fc-aberto" data-i="${D.contas.indexOf(c)}"${c.emAberto ? ' checked' : ''}>` : ''}</td></tr>`).join('')}
         </table>`;
-      let det;
-      if (!cs.length) det = '<span class="muted">Nenhuma conta a pagar neste período.</span>';
-      else if (bs.length === 1) det = tabContas(cs);
-      else {
-        // Consolidado: primeiro uma linha por loja (sintético), clique abre as contas dela
+      if (bs.length === 1) {
+        h += `<tr class="fc-det"><td colspan="6"><div class="fc-det-wrap">${cs.length ? tabContas(cs) : '<span class="muted">Nenhuma conta a pagar neste período.</span>'}</div></td></tr>`;
+      } else {
         const ordem = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'site'];
-        const lojas = [...new Set(cs.map(c => c.b))].sort((a, b) => (ordem.indexOf(a) + 1 || 99) - (ordem.indexOf(b) + 1 || 99));
-        det = `<table class="fc-sem-lojas"><tr><th class="esq">Loja</th><th>Contas</th><th>A pagar</th><th>Fora do saldo</th></tr>${lojas.map(b => {
-          const lc = cs.filter(c => c.b === b), kl = g.k + '|' + b, abL = abertos.has(pref + agrup + kl);
-          const fora = c => c.emAberto || (c.atraso && !$('fc-atraso').checked);
-          const pagar = lc.filter(c => !c.entrada && !fora(c)).reduce((s, c) => s + c.v, 0);
-          const ent = lc.filter(c => c.entrada).reduce((s, c) => s + c.v, 0);
-          const vFora = lc.filter(c => !c.entrada && fora(c)).reduce((s, c) => s + c.v, 0);
-          return `<tr class="fc-row${abL ? ' open' : ''}" data-k="${esc(kl)}" data-p="${pref}"><td style="text-align:left"><span class="ct-seta">${abL ? '▾' : '▸'}</span><span style="color:${corEmp(b)}">●</span> ${esc(EMP[b] ? EMP[b] + ' · ' : '')}${esc(D.labels[b] || b)}</td>
-            <td>${lc.length}</td><td class="neg">${pagar ? R(pagar) : '—'}${ent ? ` <span class="pos">+ ${R(ent)}</span>` : ''}</td><td class="muted">${vFora ? R(vFora) : '—'}</td></tr>`
-            + (abL ? `<tr class="fc-det"><td colspan="4"><div class="fc-det-wrap">${tabContas(lc)}</div></td></tr>` : '');
-        }).join('')}</table>`;
+        const lojas = [...bs].sort((a, b) => (ordem.indexOf(a) + 1 || 99) - (ordem.indexOf(b) + 1 || 99));
+        for (const b of lojas) {
+          const gl = porLoja[b][g.k]; if (!gl) continue;
+          const lc = cs.filter(c => c.b === b), kl = g.k + '|' + b, abL = abertos.has(pref + agrup + kl), rl = gl.recebe - gl.paga;
+          h += `<tr class="fc-row ct-loja-sem${abL ? ' open' : ''}" data-k="${esc(kl)}" data-p="${pref}">
+            <td><span class="ct-seta">${lc.length ? (abL ? '▾' : '▸') : ''}</span><span style="color:${corEmp(b)}">●</span> ${esc(EMP[b] ? EMP[b] + ' · ' : '')}${esc(D.labels[b] || b)}${lc.length ? ` <span class="muted">· ${lc.length} conta${lc.length > 1 ? 's' : ''}</span>` : ''}</td>
+            <td class="muted">${R(gl.vendas)}</td><td class="pos">${R(gl.recebe)}</td>
+            <td class="neg">${gl.paga ? R(gl.paga) : '—'}${gl.atraso ? ` <span class="tag tag-atraso" title="${R(gl.atraso)} vencidas sem baixa">${$('fc-atraso').checked ? 'atraso' : '+ ' + R(gl.atraso) + ' sem baixa'}</span>` : ''}</td>
+            <td class="${rl >= 0 ? 'pos' : 'neg'}">${R(rl)}</td><td class="${gl.saldo >= 0 ? '' : 'neg'}">${R(gl.saldo)}</td></tr>`;
+          if (abL && lc.length) h += `<tr class="fc-det"><td colspan="6"><div class="fc-det-wrap">${tabContas(lc)}</div></td></tr>`;
+        }
       }
-      h += `<tr class="fc-det"><td colspan="6"><div class="fc-det-wrap">${det}</div></td></tr>`;
     }
   }
   h += `</tbody><tfoot><tr><td>Total</td><td class="muted">${R(tot.vendas)}</td><td class="pos">${R(tot.recebe)}</td><td class="neg">${R(tot.paga)}</td><td class="${tot.recebe - tot.paga >= 0 ? 'pos' : 'neg'}">${R(tot.recebe - tot.paga)}</td><td>${R(fim)}</td></tr></tfoot>`;
