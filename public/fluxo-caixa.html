@@ -132,6 +132,8 @@
   .fc-ct tr.ct-setor td { font-weight: 600; }
   .fc-ct tr.ct-forn td:first-child { padding-left: 30px; }
   .fc-ct tr.ct-forn td { font-size: 12px; }
+  .ct-mesano { display: inline-flex; gap: 4px; align-items: center; }
+  .ct-mesano .fc-btn { padding: 3px 10px; font-size: 14px; line-height: 1; }
   .ct-seta { display: inline-block; width: 14px; color: var(--text2); }
   .fc-sem-lojas > tbody > tr.fc-row > td { font-size: 12px; font-weight: 600; }
   .fc-det-wrap th.esq { text-align: left; }
@@ -324,7 +326,8 @@
       <div class="fc-panel-hd"><h2>Contas a pagar do mês</h2>
         <span class="muted">pelo vencimento, por setor como no Fechamento de Caixa da DRE · clique no setor para ver os fornecedores e no fornecedor para ver as faturas</span></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
-        <input type="month" id="ct-mes">
+        <input type="hidden" id="ct-mes">
+        <span class="ct-mesano"><button type="button" class="fc-btn" id="ct-ant" title="Mês anterior">‹</button><select id="ct-m"></select><select id="ct-a"></select><button type="button" class="fc-btn" id="ct-prox" title="Mês seguinte">›</button></span>
         <select id="ct-loja"><option value="">Todas as lojas</option></select>
         <input type="search" id="ct-busca" placeholder="Filtrar fornecedor">
         <button type="button" id="ct-expandir">Expandir tudo</button>
@@ -1102,6 +1105,7 @@ async function carregarContas() {
   try {
     if (!$('ct-mes').value) $('ct-mes').value = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 7);
     const mk = $('ct-mes').value, [y, m] = mk.split('-').map(Number);
+    ctMesAno(mk);
     const ate = `${mk}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0')}`;
     const [r1, r2] = await Promise.all([fetch(`/api/contas-pagar?de=${mk}-01&ate=${ate}`), fetch('/api/fluxo-caixa/em-aberto')]);
     if (r1.status === 401 || r1.status === 403) { location.href = '/'; return; }
@@ -1193,7 +1197,23 @@ $('ct-corpo').addEventListener('change', async e => {
     renderContas();
   } catch (err) { alert('Não salvou: ' + err.message); cb.checked = !cb.checked; cb.disabled = false; }
 });
-$('ct-mes').addEventListener('change', carregarContas);
+// Mês e ano em listas (o seletor nativo de mês deixava digitar ano 0027)
+const MESES_LONGOS = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+function ctMesAno(mk) {
+  const [y, m] = mk.split('-').map(Number), anoHoje = new Date().getFullYear();
+  const anos = []; for (let a = Math.min(2024, y); a <= Math.max(anoHoje + 1, y); a++) anos.push(a);
+  $('ct-m').innerHTML = MESES_LONGOS.map((n, i) => `<option value="${i + 1}"${i + 1 === m ? ' selected' : ''}>${n}</option>`).join('');
+  $('ct-a').innerHTML = anos.map(a => `<option${a === y ? ' selected' : ''}>${a}</option>`).join('');
+}
+function ctIr(y, m) {
+  if (m < 1) { y--; m = 12; } if (m > 12) { y++; m = 1; }
+  $('ct-mes').value = `${y}-${String(m).padStart(2, '0')}`;
+  carregarContas();
+}
+$('ct-m').addEventListener('change', () => ctIr(+$('ct-a').value, +$('ct-m').value));
+$('ct-a').addEventListener('change', () => ctIr(+$('ct-a').value, +$('ct-m').value));
+$('ct-ant').addEventListener('click', () => ctIr(+$('ct-a').value, +$('ct-m').value - 1));
+$('ct-prox').addEventListener('click', () => ctIr(+$('ct-a').value, +$('ct-m').value + 1));
 $('ct-loja').addEventListener('change', renderContas);
 $('ct-busca').addEventListener('input', () => { // buscando, abre tudo para mostrar o fornecedor
   ctExpandir = $('ct-busca').value.trim() ? true : null; ctAbertos.clear();
