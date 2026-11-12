@@ -264,6 +264,41 @@ async function readContasPagar(dtIni, dtFin) {
   return { ...cp, rows };
 }
 
+// Faturas de uma loja em duas leituras. O LinxFaturas filtra pela data de EMISSÃO:
+//  1. histórico: emitidas de 2020 até hoje (pesada: a Del Rey passa de 120 mil linhas)
+//  2. emissão futura: até o fim do ano seguinte — a programação anual lançada no
+//     Microvix com emissão 01/01/2027 etc. (pequena). Antes de 12/11/2026 não era lida.
+// Se o histórico der timeout, a programação entra mesmo assim (troca só as de emissão futura).
+async function syncFaturasLoja(board, cnpj, chave, today, { soFuturas = false } = {}) {
+  const amanha = new Date(Date.parse(today + 'T12:00:00Z') + 864e5).toISOString().slice(0, 10);
+  const fimProx = `${+today.slice(0, 4) + 1}-12-31`;
+  const ler = async (ini, fim) => {
+    const rows = [];
+    await _fetchFaturas(cnpj, chave, ini, fim, r => {
+      const fat = _normalizeFatura(r, board, board, today);
+      if (fat && fat.isPagar) rows.push(fat);
+    });
+    return rows;
+  };
+  let futuras = null, erroFut = null, hist = null, erroHist = null;
+  try { futuras = await ler(amanha, fimProx); } catch (e) { erroFut = e; }
+  if (!soFuturas) try { hist = await ler('2020-01-01', today); } catch (e) { erroHist = e; }
+  if (mongoDb) {
+    const colF = mongoDb.collection('cpFaturas');
+    if (hist) {
+      // Futuras que não vieram agora: mantém as que já estavam gravadas
+      const fut = futuras || await colF.find({ board, emissao: { $gt: today } }, { projection: { _id: 0 } }).toArray();
+      await writeContasPagarBoard(board, [...hist, ...fut]);
+    } else if (futuras) {
+      await colF.deleteMany({ board, emissao: { $gt: today } });
+      if (futuras.length) await colF.insertMany(futuras);
+    }
+  }
+  const rows = [...(hist || []), ...(futuras || [])];
+  const erro = erroHist ? `histórico: ${erroHist.message}${futuras ? ' (programação futura lida)' : ''}` : erroFut ? `emissão futura: ${erroFut.message}` : null;
+  return { rows, erro, futuras: futuras ? futuras.length : null };
+}
+
 async function writeContasPagarBoard(board, rows) {
   if (mongoDb) {
     await mongoDb.collection('cpFaturas').deleteMany({ board });
@@ -10181,7 +10216,7 @@ app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
     const dtIni  = '2020-01-01'; // cobre parcelamentos longos (ex: Simples Nacional 111x)
     // O LinxFaturas filtra pela data de EMISSÃO: a programação do ano seguinte é lançada
     // com emissão futura (01/01/2027 etc.) e não vinha lendo só até hoje (12/11/2026)
-    const dtFin  = req.body?.ate || `${+today.slice(0, 4) + 1}-12-31`;
+    const dtFin  = `${+today.slice(0, 4) + 1}-12-31`; // histórico até hoje + emissão futura (syncFaturasLoja)
     const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const boards = Object.entries(lojas);
     const errors = [];
@@ -10191,19 +10226,11 @@ app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
     for (const [board, cnpj] of boards) {
       const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
       try {
-        const rows = [];
-        // Callback normaliza na hora — linhas brutas nunca acumulam em memória
-        await _fetchFaturas(cnpj, chave, dtIni, dtFin, r => {
-          const fat = _normalizeFatura(r, board, board, today);
-          if (fat && fat.isPagar) rows.push(fat);
-        });
+        const { rows, erro, futuras } = await syncFaturasLoja(board, cnpj, chave, today, { soFuturas: !!req.body?.soFuturas });
         total += rows.length;
-        if (mongoDb) {
-          await writeContasPagarBoard(board, rows);
-        } else {
-          fallbackRows.push(...rows);
-        }
-        console.log(`[contasPagar/sync] ${board}: ${rows.length} faturas`);
+        if (!mongoDb) fallbackRows.push(...rows);
+        if (erro) errors.push({ board, error: erro });
+        console.log(`[contasPagar/sync] ${board}: ${rows.length} faturas (${futuras ?? '?'} com emissão futura)${erro ? ' — ' + erro : ''}`);
       } catch (e) {
         errors.push({ board, error: e.message });
         console.warn(`[contasPagar/sync] ${board}: ${e.message}`);
@@ -10211,7 +10238,9 @@ app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
     }
 
     const syncedAt = new Date().toISOString();
-    await writeContasPagarMeta({ syncedAt, dtIni, dtFin, errors });
+    // Só a programação futura: não marca como leitura completa
+    if (!req.body?.soFuturas) await writeContasPagarMeta({ syncedAt, dtIni, dtFin, errors });
+    else console.log(`[contasPagar/sync] só emissão futura: ${total} faturas`);
 
     if (!mongoDb) {
       const db = await readDB();
@@ -17472,20 +17501,16 @@ initMongo()
         for (const [board, cnpj] of boards) {
           const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
           try {
-            const rows = [];
-            await _fetchFaturas(cnpj, chave, dtIni, dtFin, r => {
-              const fat = _normalizeFatura(r, board, board, today);
-              if (fat && fat.isPagar) rows.push(fat);
-            });
-            await writeContasPagarBoard(board, rows);
+            const { rows, erro, futuras } = await syncFaturasLoja(board, cnpj, chave, today);
             total += rows.length;
-            console.log(`[ContasPagar] ${board}: ${rows.length} faturas`);
+            if (erro) errors.push({ board, error: erro });
+            console.log(`[ContasPagar] ${board}: ${rows.length} faturas (${futuras ?? '?'} com emissão futura)${erro ? ' — ' + erro : ''}`);
           } catch (e) {
             errors.push({ board, error: e.message });
             console.error(`[ContasPagar] ${board}:`, e.message);
           }
         }
-        await writeContasPagarMeta({ syncedAt: new Date().toISOString(), dtIni, dtFin: today, errors });
+        await writeContasPagarMeta({ syncedAt: new Date().toISOString(), dtIni, dtFin, errors });
         console.log(`[ContasPagar] Sync OK — ${total} faturas a pagar`);
       }, { timezone: 'America/Sao_Paulo' });
       console.log('[ContasPagar] Cron agendado para 07:00 America/Sao_Paulo');
