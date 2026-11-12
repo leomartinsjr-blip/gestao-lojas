@@ -70,6 +70,18 @@
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .conf td, .conf th { text-align: left; white-space: normal; }
+  .ped td input[type=date], .ped td input[type=text] { font-size: 12px; padding: 2px 5px; }
+  .ped td input.dias { width: 92px; text-align: right; }
+  .ped td input.dig, .ped td input[type=date].dig { border-color: var(--yellow); background: #fff8e6; }
+  .ped tr.ign td { opacity: .45; }
+  .ped .parc { font-size: 11px; color: var(--text2); white-space: normal; text-align: left; min-width: 220px; max-width: 360px; }
+  .ped td.esq { text-align: left; white-space: normal; }
+  .novo { display: flex; gap: 8px; flex-wrap: wrap; align-items: end; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+  .novo label { display: grid; gap: 3px; font-size: 11px; color: var(--text2); }
+  .novo input, .novo select { font-size: 12px; }
+  .seg2 { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .seg2 button { background: none; border: none; color: var(--text2); padding: 3px 10px; font-size: 12px; cursor: pointer; }
+  .seg2 button.active { background: rgba(9,105,218,.1); color: var(--blue); font-weight: 600; }
   .conf td.n { text-align: right; }
   @media (max-width: 640px) { #cp-body { padding: 10px; margin-top: 110px; } .cp-filtros { margin-left: 0; } }
 </style>
@@ -130,7 +142,7 @@ async function carregar(atualizar) {
     if (!r.ok) throw new Error(j.error || r.status);
     D = j;
     $('cp-colecao').innerHTML = D.colecoes.map(c => `<option${c === D.colecao ? ' selected' : ''}>${c}</option>`).join('');
-    if (!aba || !(D.lojas.includes(aba) || aba === 'marcas' || aba === 'conf')) aba = D.lojas[0];
+    if (!aba || !(D.lojas.includes(aba) || ['marcas', 'conf', 'ped'].includes(aba))) aba = D.lojas[0];
     $('cp-msg').style.display = 'none'; $('cp-main').style.display = '';
     if (D.erros.length) { $('cp-err').style.display = ''; $('cp-err').textContent = 'Parte do Microvix não respondeu: ' + D.erros.join(' · '); }
     render();
@@ -145,7 +157,9 @@ function render() {
   const nAlerta = b => { const a = D.porLoja[b].alertas; return a.pendMaior.length + a.semEstoque.length; };
   $('cp-abas').innerHTML = D.lojas.map(b => `<button class="aba${aba === b ? ' active' : ''}" data-a="${b}"><span style="color:${COR[b]}">●</span> <b>${EMP[b] || ''}</b> ${esc(D.labels[b])}</button>`).join('')
     + `<button class="aba${aba === 'marcas' ? ' active' : ''}" data-a="marcas">Marcas (todas as lojas)</button>`
-    + `<button class="aba${aba === 'conf' ? ' active' : ''}" data-a="conf">Conferência${D.lojas.some(nAlerta) ? '<span class="alerta">●</span>' : ''}</button>`;
+    + `<button class="aba${aba === 'conf' ? ' active' : ''}" data-a="conf">Conferência${D.lojas.some(nAlerta) ? '<span class="alerta">●</span>' : ''}</button>`
+    + `<button class="aba${aba === 'ped' ? ' active' : ''}" data-a="ped">Pedidos e pagamentos</button>`;
+  if (aba === 'ped') { $('cp-conteudo').innerHTML = telaPedidos(); if (!PD || PD.filtro !== pedFiltro()) carregarPedidos(); return; }
   $('cp-conteudo').innerHTML = aba === 'marcas' ? telaMarcas() : aba === 'conf' ? telaConferencia() : telaLoja(aba);
   document.querySelectorAll('.dias-btn').forEach(b => b.classList.toggle('active', +b.dataset.d === dias));
 }
@@ -238,6 +252,105 @@ function telaConferencia() {
   return h + `</tbody></table></div><div class="nota">A soma do % passa de 100% quando há % digitado: a cota é rateada pelo total, então o excedente se dilui entre as marcas (como na planilha).</div></div>`;
 }
 
+// ── Pedidos e pagamentos ──
+let PD = null, pedVer = 'abertos';
+const pedFiltro = () => pedVer === 'abertos' ? 'abertos' : D.colecao;
+const fmtParc = ps => ps.length ? ps.map(p => `${DM(p.d)} <b>${fmt0(p.valor)}</b>`).join(' · ') : '<span class="muted">—</span>';
+async function carregarPedidos(atualizar) {
+  PD = { filtro: pedFiltro(), carregando: true };
+  if (aba === 'ped') $('cp-conteudo').innerHTML = telaPedidos();
+  try {
+    const q = new URLSearchParams({ ...(pedVer === 'colecao' ? { colecao: D.colecao } : {}), ...(atualizar ? { atualizar: 1 } : {}) });
+    const r = await fetch('/api/compras-plano/pedidos?' + q);
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.status);
+    PD = { ...j, filtro: pedFiltro() };
+  } catch (e) { PD = { filtro: pedFiltro(), erro: e.message }; }
+  if (aba === 'ped') $('cp-conteudo').innerHTML = telaPedidos();
+}
+function telaPedidos() {
+  const lojaOpts = D.lojas.map(b => `<option value="${b}">${esc(D.labels[b])}</option>`).join('');
+  let h = `<div class="painel"><div class="painel-hd"><h2>Pedidos de compra — entrega e pagamento</h2>
+    <div class="seg2" id="ped-ver"><button data-v="abertos" class="${pedVer === 'abertos' ? 'active' : ''}">Com pendente (todas as coleções)</button><button data-v="colecao" class="${pedVer === 'colecao' ? 'active' : ''}">Entrega na ${D.colecao}</button></div></div>
+    <div class="novo"><b style="align-self:center">Pedido manual</b>
+      <label>Loja<select id="nm-loja">${lojaOpts}</select></label>
+      <label>Marca<input type="text" id="nm-marca" placeholder="NEW ERA" style="width:120px"></label>
+      <label>Setor<input type="text" id="nm-setor" placeholder="BONE" style="width:100px"></label>
+      <label>Valor a custo (R$)<input type="text" id="nm-valor" placeholder="0" style="width:100px;text-align:right"></label>
+      <label>Entrega<input type="date" id="nm-entrega"></label>
+      <label>Prazo (dias da entrega)<input type="text" id="nm-dias" value="30/60/90" style="width:100px;text-align:right"></label>
+      <label>Obs.<input type="text" id="nm-obs" style="width:160px"></label>
+      <button class="cp-btn" id="nm-add">Lançar</button></div>`;
+  if (!PD || PD.carregando) return h + `<div style="padding:30px;text-align:center" class="muted"><span class="spinner"></span> Lendo os pedidos do Microvix…</div></div>`;
+  if (PD.erro) return h + `<div style="padding:20px" class="neg">Erro: ${esc(PD.erro)}</div></div>`;
+  const lista = PD.lista;
+  const tot = k => lista.filter(p => !p.ignorar).reduce((s, p) => s + p[k], 0);
+  h += `<div class="scroll"><table class="ped"><thead><tr><th>Loja</th><th>Pedido</th><th>Marcas</th><th>Data</th><th title="Previsão de entrega; digite para mudar (vale para a coleção e para o pagamento)">Entrega</th>
+    <th>Valor</th><th>Entregue</th><th>Pendente</th><th>Plano Microvix</th><th title="Dias depois da entrega, separados por barra (ex.: 30/60/90)">Prazo (dias)</th>
+    <th style="text-align:left">Parcelas do pendente (vão para o Fluxo de Caixa)</th><th title="Desmarque para tirar este pedido do Fluxo de Caixa">No fluxo</th><th></th></tr></thead><tbody>`;
+  for (const p of lista) {
+    const i = PD.lista.indexOf(p);
+    h += `<tr class="${p.ignorar ? 'ign' : ''}"><td><span style="color:${COR[p.b]}">●</span> ${esc(D.labels[p.b])}</td>
+      <td>${p.manual ? '<span class="tag tag-man">manual</span>' : esc(p.pedido)}</td>
+      <td class="esq" title="${esc(p.porMarca.map(m => m.marca + ': ' + fmt0(m.valor)).join(' · '))}">${esc(p.marcas.join(', '))}${p.obs ? ` <span class="muted">· ${esc(p.obs)}</span>` : ''}</td>
+      <td>${p.data ? DM(p.data) : ''}</td>
+      <td><input type="date" class="p-ent${p.entregaDig && !p.manual ? ' dig' : ''}" data-i="${i}" value="${p.entrega || ''}" title="${p.entregas.length > 1 ? 'Entregas do Microvix: ' + p.entregas.map(DM).join(', ') : ''}"></td>
+      <td>${N(p.valor)}</td><td>${N(p.entregue)}</td><td>${N(p.pendente)}</td><td>${esc(p.plano || '')}</td>
+      <td><input type="text" class="dias p-dias${p.diasDig && !p.manual ? ' dig' : ''}" data-i="${i}" value="${p.diasDig || ''}" placeholder="${p.diasPadrao}"></td>
+      <td class="parc">${fmtParc(p.parcelas)}</td>
+      <td style="text-align:center">${p.manual ? `<label title="Recebido: sai do pendente"><input type="checkbox" class="p-rec" data-i="${i}"${p.recebido ? ' checked' : ''}> recebido</label>` : `<input type="checkbox" class="p-fluxo" data-i="${i}"${p.ignorar ? '' : ' checked'}>`}</td>
+      <td>${p.manual ? `<button class="cp-btn p-del" data-i="${i}" title="Apagar">×</button>` : ''}</td></tr>`;
+  }
+  h += `</tbody><tfoot><tr><td>Total</td><td>${lista.length}</td><td></td><td></td><td></td><td>${N(tot('valor'))}</td><td>${N(tot('entregue'))}</td><td>${N(tot('pendente'))}</td><td></td><td></td><td></td><td></td><td></td></tr></tfoot></table></div>
+    <div class="nota">Pedidos de compra do Microvix (sem cancelados) e os lançados aqui. A entrega e o prazo digitados ficam em amarelo; vazio usa o do Microvix (o plano "COMPRA 3X" vira 30/60/90 dias da entrega).
+    Só o <b>pendente</b> vira parcela no Fluxo de Caixa (categoria Mercadoria): o que já chegou tem fatura no Microvix. Entrega que já passou e segue pendente conta a partir de hoje.
+    ${PD.erros?.length ? '<br><span class="neg">Não leu: ' + esc(PD.erros.join(' · ')) + '</span>' : ''}</div></div>`;
+  return h;
+}
+async function pedPut(corpo) {
+  const r = await fetch('/api/compras-plano/pedido', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+  if (!r.ok) throw new Error((await r.json()).error || r.status);
+}
+async function manualSalvar(p, mudar) {
+  const corpo = { loja: p.b, marca: p.marcas[0], setor: p.setor || '', valor: p.valor, entrega: p.entrega, dias: p.dias, obs: p.obs, recebido: p.recebido, ...mudar };
+  const r = await fetch('/api/compras-plano/manual/' + p.id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+  if (!r.ok) throw new Error((await r.json()).error || r.status);
+}
+$('cp-conteudo').addEventListener('change', async e => {
+  const t = e.target; if (!PD?.lista || !t.dataset.i) return;
+  const p = PD.lista[+t.dataset.i];
+  try {
+    if (t.matches('.p-ent')) p.manual ? await manualSalvar(p, { entrega: t.value }) : await pedPut({ b: p.b, pedido: p.pedido, entrega: t.value || null });
+    else if (t.matches('.p-dias')) p.manual ? await manualSalvar(p, { dias: t.value || '30' }) : await pedPut({ b: p.b, pedido: p.pedido, dias: t.value || null });
+    else if (t.matches('.p-fluxo')) await pedPut({ b: p.b, pedido: p.pedido, ignorar: !t.checked });
+    else if (t.matches('.p-rec')) await manualSalvar(p, { recebido: t.checked });
+    else return;
+    await carregarPedidos(); carregar(false);
+  } catch (err) { alert('Não salvou: ' + err.message); }
+});
+$('cp-conteudo').addEventListener('click', async e => {
+  const v = e.target.closest('#ped-ver button');
+  if (v) { pedVer = v.dataset.v; PD = null; render(); return; }
+  if (e.target.closest('#nm-add')) {
+    const corpo = { loja: $('nm-loja').value, marca: $('nm-marca').value, setor: $('nm-setor').value, valor: parseBR($('nm-valor').value),
+      entrega: $('nm-entrega').value, dias: $('nm-dias').value, obs: $('nm-obs').value };
+    try {
+      const r = await fetch('/api/compras-plano/manual', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) });
+      if (!r.ok) throw new Error((await r.json()).error || r.status);
+      await carregarPedidos(); carregar(false);
+    } catch (err) { alert('Não lançou: ' + err.message); }
+    return;
+  }
+  const del = e.target.closest('.p-del');
+  if (del) {
+    const p = PD.lista[+del.dataset.i];
+    if (!confirm(`Apagar o pedido manual de ${p.marcas.join(', ')} (R$ ${fmt0(p.valor)})?`)) return;
+    const r = await fetch('/api/compras-plano/manual/' + p.id, { method: 'DELETE' });
+    if (!r.ok) return alert('Não apagou');
+    await carregarPedidos(); carregar(false);
+  }
+});
+
 // ── Eventos ──
 $('cp-abas').addEventListener('click', e => { const b = e.target.closest('.aba'); if (!b) return; aba = b.dataset.a; render(); window.scrollTo({ top: 0 }); });
 $('cp-conteudo').addEventListener('click', e => {
@@ -276,8 +389,8 @@ $('cp-dias').addEventListener('click', e => {
   document.querySelectorAll('#cp-dias button').forEach(x => x.classList.toggle('active', x === b));
   carregar(false);
 });
-$('cp-colecao').addEventListener('change', () => carregar(false));
-$('cp-atualizar').addEventListener('click', () => carregar(true));
+$('cp-colecao').addEventListener('change', () => { PD = null; carregar(false); });
+$('cp-atualizar').addEventListener('click', () => { PD = null; carregar(true); });
 document.querySelectorAll('#cp-dias button').forEach(x => x.classList.toggle('active', +x.dataset.d === dias));
 carregar(false);
 </script>

@@ -225,6 +225,59 @@ function montarLoja({ vendas, estoque, itens, prem, pct = {}, ajustes = {} }) {
   return { linhas, total, calc: { markup, cotaTotal: r2(cotaTotal), minimoTotal: r2(minimoTotal), mediaMensal: r2(mediaMensal), vendaTotal: r2(vendaTotal) }, alertas };
 }
 
+// ── Pedidos e parcelas (funções puras) ───────────────────────────────────
+// Prazo do plano do Microvix: "COMPRA 3X" → 30/60/90 dias da entrega
+function diasDoPlano(plano) {
+  const n = +((String(plano || '').match(/(\d+)\s*X/i) || [])[1] || 1);
+  return Array.from({ length: Math.min(Math.max(n, 1), 12) }, (_, i) => 30 * (i + 1)).join('/');
+}
+const lerDias = s => String(s || '').split(/[\/;,\s]+/).map(Number).filter(n => Number.isFinite(n) && n >= 0 && n <= 720);
+
+// itens: do Microvix (já com marca/setor) · ajustes: { 'b|pedido': { entrega, dias, ignorar } }
+// manuais: [{ _id, loja, marca, setor, valor, entrega, dias, obs, recebido }]
+// Devolve os pedidos da loja, cada item com a entrega efetiva (a digitada vence a do Microvix).
+function juntarPedidos(b, itens, ajustes = {}, manuais = []) {
+  const ped = new Map();
+  for (const i of itens) {
+    const k = `${b}|${i.pedido}`, aj = ajustes[k] || {};
+    const p = ped.get(k) || { b, pedido: i.pedido, data: i.data, fornecedor: i.fornecedor, plano: i.plano, itens: [], manual: false,
+      entregaDig: aj.entrega || null, diasDig: aj.dias || null, ignorar: !!aj.ignorar };
+    p.itens.push({ ...i, entrega: aj.entrega || i.entrega || i.data });
+    ped.set(k, p);
+  }
+  for (const m of manuais.filter(x => x.loja === b)) {
+    const valor = Number(m.valor) || 0;
+    ped.set(`${b}|M-${m._id}`, { b, pedido: `M-${m._id}`, id: String(m._id), data: m.criado || m.entrega, fornecedor: '', plano: '', manual: true, obs: m.obs || '', setor: String(m.setor || '').toUpperCase(),
+      entregaDig: m.entrega, diasDig: m.dias || null, ignorar: false, recebido: !!m.recebido,
+      itens: [{ pedido: `M-${m._id}`, marca: String(m.marca || '').toUpperCase(), setor: String(m.setor || '(sem setor)').toUpperCase(), entrega: m.entrega,
+        valor, entregue: m.recebido ? valor : 0, pendente: m.recebido ? 0 : valor }] });
+  }
+  return [...ped.values()].map(p => {
+    const soma = k => r2(p.itens.reduce((t, i) => t + (i[k] || 0), 0));
+    const entregas = [...new Set(p.itens.map(i => i.entrega).filter(Boolean))].sort();
+    const marcas = [...new Set(p.itens.map(i => i.marca))];
+    return { ...p, valor: soma('valor'), entregue: soma('entregue'), pendente: soma('pendente'), entrega: entregas[0] || p.data,
+      entregas, marcas, diasPadrao: p.manual ? '30' : diasDoPlano(p.plano), dias: p.diasDig || (p.manual ? '30' : diasDoPlano(p.plano)) };
+  });
+}
+
+// Parcelas do que falta entregar: cada entrega pendente dividida pelos dias do prazo.
+// Entrega que já passou e segue pendente conta a partir de hoje.
+function parcelasDoPedido(p, hoje) {
+  if (p.ignorar || p.pendente < 0.5) return [];
+  const dias = lerDias(p.dias);
+  if (!dias.length) return [];
+  const porEntrega = {};
+  for (const i of p.itens) if (i.pendente > 0) porEntrega[i.entrega || hoje] = (porEntrega[i.entrega || hoje] || 0) + i.pendente;
+  const out = [];
+  for (const [ent, v] of Object.entries(porEntrega)) {
+    const base = ent < hoje ? hoje : ent;
+    const parte = r2(v / dias.length);
+    dias.forEach((d, i) => out.push({ d: addDias(base, d), valor: i === dias.length - 1 ? r2(v - parte * (dias.length - 1)) : parte }));
+  }
+  return out.sort((a, c) => a.d.localeCompare(c.d));
+}
+
 // ── Rotas ────────────────────────────────────────────────────────────────
 function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, criarProjecao, hojeBRT, boardsLabel = {} }) {
   const lojasEnv = () => JSON.parse(process.env.MICROVIX_LOJAS || '{}');
@@ -236,6 +289,46 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
     if (db) await db.collection('comprasPlano').updateOne({ _id: id }, { $set: { ...set, em: new Date() } }, { upsert: true });
     else memoria[id] = { ...(memoria[id] || {}), ...set };
   };
+
+  const col = nome => { const db = getDb(); return db ? db.collection(nome) : null; };
+  memoria.pedAjustes ||= {}; memoria.manuais ||= [];
+  async function ajustesPedidos() {
+    const c = col('comprasPedidos');
+    if (!c) return memoria.pedAjustes;
+    return Object.fromEntries((await c.find().toArray()).map(x => [x._id, x]));
+  }
+  async function manuaisLista() { const c = col('comprasManuais'); return c ? c.find().toArray() : memoria.manuais; }
+  // Pedidos da loja (Microvix + manuais) com entrega e prazo efetivos
+  async function pedidosLoja(b, hoje, forcar, aj, man) {
+    const itens = await ler.pedidos(b, hoje, forcar);
+    return juntarPedidos(b, itens, aj || await ajustesPedidos(), man || await manuaisLista());
+  }
+  // Parcelas pendentes de todas as lojas, gravadas para o Fluxo de Caixa ler sem ir ao Microvix
+  let gravando = null;
+  async function atualizarParcelas(forcar) {
+    if (gravando) return gravando;
+    gravando = (async () => {
+      const hoje = hojeBRT(), [aj, man] = await Promise.all([ajustesPedidos(), manuaisLista()]);
+      const lista = [];
+      for (const b of LOJAS.filter(x => lojasEnv()[x])) {
+        for (const p of await pedidosLoja(b, hoje, forcar, aj, man))
+          for (const x of parcelasDoPedido(p, hoje))
+            lista.push({ b, d: x.d, valor: x.valor, pedido: p.pedido, marca: p.marcas.slice(0, 3).join('/') || '(sem marca)' });
+      }
+      const doc = { _id: 'atual', em: new Date(), lista };
+      const c = col('comprasParcelas');
+      if (c) await c.replaceOne({ _id: 'atual' }, doc, { upsert: true }); else memoria.parcelas = doc;
+      return doc;
+    })().finally(() => { gravando = null; });
+    return gravando;
+  }
+  // Para o Fluxo: lê o gravado; se tiver mais de 12 h, recalcula em segundo plano
+  async function parcelasPrevistas() {
+    const c = col('comprasParcelas');
+    const doc = c ? await c.findOne({ _id: 'atual' }) : memoria.parcelas;
+    if (!doc || Date.now() - new Date(doc.em) > 12 * 3600e3) atualizarParcelas().catch(e => console.error('[compras] parcelas:', e.message));
+    return (doc && doc.lista) || [];
+  }
 
   // Previsão padrão: projeção do Dash (a mesma do Fluxo) nos meses que faltam da coleção
   function previsaoPadrao(dbJson, b, meses, hoje) {
@@ -258,15 +351,16 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
       const dbJson = await readDB();
 
       const porLoja = {}, erros = [];
+      const [ajPed, man] = await Promise.all([ajustesPedidos(), manuaisLista()]);
       await Promise.all(lojas.map(async b => {
         const [v, e, p, plano] = await Promise.all([
           ler.vendas(b, dtIni, dtFin, forcar).catch(err => { erros.push(`${b} venda: ${err.message}`); return {}; }),
           ler.estoque(b, hoje, forcar).catch(err => { erros.push(`${b} estoque: ${err.message}`); return {}; }),
-          ler.pedidos(b, hoje, forcar).catch(err => { erros.push(`${b} pedidos: ${err.message}`); return []; }),
+          pedidosLoja(b, hoje, forcar, ajPed, man).catch(err => { erros.push(`${b} pedidos: ${err.message}`); return []; }),
           lerPlano(`${colecao}|${b}`),
         ]);
         // Pedido entra na coleção pela previsão de entrega (sem previsão, pela data do pedido)
-        const itens = p.filter(i => { const d = i.entrega || i.data; return d >= per.ini && d <= per.fim; });
+        const itens = p.flatMap(x => x.itens).filter(i => { const d = i.entrega || i.data; return d >= per.ini && d <= per.fim; });
         const vendaPeriodo = Object.values(v).reduce((t, o) => t + Object.values(o).reduce((s, x) => s + x, 0), 0);
         const padrao = {
           previsao: meses.length ? previsaoPadrao(dbJson, b, meses, hoje) : 0, meses: meses.length,
@@ -279,6 +373,84 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
       }));
       res.json({ colecao, colecoes: lista, periodo: per, meses: meses.map(([y, m]) => `${y}-${pad(m)}`), dias, hoje, venda: { dtIni, dtFin },
         lojas, labels: Object.fromEntries(lojas.map(b => [b, boardsLabel[b] || b])), porLoja, erros });
+      if (!erros.length) atualizarParcelas().catch(e => console.error('[compras] parcelas:', e.message));
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Pedidos de todas as lojas: abertos (com pendente) ou todos com entrega na coleção
+  app.get('/api/compras-plano/pedidos', requireAdmin, async (req, res) => {
+    try {
+      const hoje = hojeBRT(), forcar = req.query.atualizar === '1';
+      const per = req.query.colecao ? periodo(req.query.colecao) : null;
+      const [aj, man] = await Promise.all([ajustesPedidos(), manuaisLista()]);
+      const lojas = LOJAS.filter(b => lojasEnv()[b]), erros = [], lista = [];
+      await Promise.all(lojas.map(async b => {
+        try {
+          for (const p of await pedidosLoja(b, hoje, forcar, aj, man)) {
+            const naColecao = per ? p.itens.some(i => (i.entrega || i.data) >= per.ini && (i.entrega || i.data) <= per.fim) : true;
+            if (!(per ? naColecao : p.pendente > 0.5 || p.manual)) continue;
+            const { itens, ...resto } = p;
+            lista.push({ ...resto, colecao: colecaoDe(p.entrega || p.data), parcelas: parcelasDoPedido(p, hoje),
+              porMarca: Object.entries(itens.reduce((o, i) => { const x = (o[i.marca] ||= { valor: 0, pendente: 0 }); x.valor += i.valor; x.pendente += i.pendente; return o; }, {}))
+                .map(([marca, x]) => ({ marca, valor: r2(x.valor), pendente: r2(x.pendente) })).sort((a, c) => c.valor - a.valor) });
+          }
+        } catch (e) { erros.push(`${b}: ${e.message}`); }
+      }));
+      lista.sort((a, c) => (a.entrega || '').localeCompare(c.entrega || '') || a.b.localeCompare(c.b));
+      res.json({ hoje, lojas, labels: Object.fromEntries(lojas.map(b => [b, boardsLabel[b] || b])), lista, erros });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // PUT { b, pedido, entrega: 'YYYY-MM-DD'|null, dias: '30/60/90'|null, ignorar: bool }
+  app.put('/api/compras-plano/pedido', requireAdmin, async (req, res) => {
+    try {
+      const { b, pedido } = req.body || {};
+      if (!LOJAS.includes(b) || !pedido) return res.status(400).json({ error: 'loja e pedido obrigatórios' });
+      const id = `${b}|${pedido}`, set = {}, unset = {};
+      if ('entrega' in req.body) { if (/^\d{4}-\d{2}-\d{2}$/.test(req.body.entrega || '')) set.entrega = req.body.entrega; else unset.entrega = 1; }
+      if ('dias' in req.body) { const d = lerDias(req.body.dias); if (d.length) set.dias = d.join('/'); else unset.dias = 1; }
+      if ('ignorar' in req.body) { if (req.body.ignorar) set.ignorar = true; else unset.ignorar = 1; }
+      const c = col('comprasPedidos');
+      if (c) await c.updateOne({ _id: id }, { ...(Object.keys(set).length ? { $set: { ...set, em: new Date() } } : {}), ...(Object.keys(unset).length ? { $unset: unset } : {}) }, { upsert: true });
+      else { const x = { ...(memoria.pedAjustes[id] || {}), ...set }; for (const k of Object.keys(unset)) delete x[k]; memoria.pedAjustes[id] = x; }
+      await atualizarParcelas();
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Pedido manual (o que não está no Microvix): POST cria, PUT altera, DELETE apaga
+  const lerManual = body => {
+    const m = { loja: body.loja, marca: String(body.marca || '').trim().toUpperCase(), setor: String(body.setor || '').trim().toUpperCase() || '(SEM SETOR)',
+      valor: num(body.valor), entrega: body.entrega, dias: lerDias(body.dias).join('/') || '30', obs: String(body.obs || '').slice(0, 200), recebido: !!body.recebido };
+    if (!LOJAS.includes(m.loja) || !m.marca || !(m.valor > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(m.entrega || '')) return null;
+    return m;
+  };
+  app.post('/api/compras-plano/manual', requireAdmin, async (req, res) => {
+    try {
+      const m = lerManual(req.body || {});
+      if (!m) return res.status(400).json({ error: 'loja, marca, valor e entrega obrigatórios' });
+      const doc = { _id: require('crypto').randomUUID().slice(0, 8), ...m, criado: hojeBRT(), por: req.session?.user?.name || '' };
+      const c = col('comprasManuais'); if (c) await c.insertOne(doc); else memoria.manuais.push(doc);
+      await atualizarParcelas();
+      res.json({ ok: true, id: doc._id });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  app.put('/api/compras-plano/manual/:id', requireAdmin, async (req, res) => {
+    try {
+      const m = lerManual(req.body || {});
+      if (!m) return res.status(400).json({ error: 'loja, marca, valor e entrega obrigatórios' });
+      const c = col('comprasManuais');
+      if (c) await c.updateOne({ _id: req.params.id }, { $set: m }); else Object.assign(memoria.manuais.find(x => x._id === req.params.id) || {}, m);
+      await atualizarParcelas();
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  app.delete('/api/compras-plano/manual/:id', requireAdmin, async (req, res) => {
+    try {
+      const c = col('comprasManuais');
+      if (c) await c.deleteOne({ _id: req.params.id }); else memoria.manuais = memoria.manuais.filter(x => x._id !== req.params.id);
+      await atualizarParcelas();
+      res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
@@ -315,6 +487,7 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
+  return { parcelasPrevistas, atualizarParcelas };
 }
 
-module.exports = { register, montarLoja, periodo, colecaoDe, colecoesPerto, mesesRestantes, LOJAS };
+module.exports = { register, juntarPedidos, parcelasDoPedido, diasDoPlano, montarLoja, periodo, colecaoDe, colecoesPerto, mesesRestantes, LOJAS };

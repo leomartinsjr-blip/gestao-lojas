@@ -10337,6 +10337,16 @@ async function taxaCartaoDias(dias) {
 
 app.get('/fluxo-caixa', (req, res) => res.sendFile(path.join(__dirname, 'public/fluxo-caixa.html')));
 
+// Parcelas previstas dos pedidos de compra ainda não entregues (Planejamento de
+// Compras): entram como fatura em aberto, categoria Mercadoria. Quando a mercadoria
+// chega, o pendente cai e a fatura real do Microvix toma o lugar.
+const NOME_PEDIDO = p => `PEDIDO DE COMPRA · ${p.marca}`;
+async function faturasDePedidos(de, ate) {
+  const lista = await comprasApi.parcelasPrevistas().catch(e => { console.error('[fluxo] pedidos:', e.message); return []; });
+  return lista.filter(p => p.d >= de && p.d <= ate).map(p => ({ board: p.b, codigo_fatura: '', fornecedor: NOME_PEDIDO(p), documento: `pedido ${p.pedido}`,
+    parcela: '', vencimento: p.d, baixa: '', valor: p.valor, valorLiquido: p.valor, valorPago: 0, isPagar: true, previsao: 'N', pedidoCompra: true }));
+}
+
 app.get('/api/fluxo-caixa', requireAdmin, async (req, res) => {
   try {
     const hoje  = fluxoCaixa.hojeBRT();
@@ -10358,6 +10368,7 @@ app.get('/api/fluxo-caixa', requireAdmin, async (req, res) => {
       faturas = (await readContasPagar(corte, ate)).rows;
       saldos = db.fluxoSaldos || {};
     }
+    faturas = faturas.concat(await faturasDePedidos(corte, ate));
     const meta = mongoDb ? await mongoDb.collection('cpMeta').findOne({ _id: 'main' }) : db.contasPagar;
     const ag = await agendaApi.saldosParaFluxo(+hoje.slice(0, 4)).catch(() => null);
     // Saldo da agenda até hoje (sem lançamento futuro), na data do último lançamento de cada loja
@@ -10378,7 +10389,7 @@ const agendaApi = require('./services/agendaRotas').register(app, {
 
 // Planejamento de compras por coleção (planilhas PEDIDOS S27/W27) — services/comprasPlano.js
 app.get('/compras-plano', (req, res) => res.sendFile(path.join(__dirname, 'public/compras-plano.html')));
-require('./services/comprasPlano').register(app, {
+const comprasApi = require('./services/comprasPlano').register(app, {
   getDb: () => mongoDb, readDB, requireAdmin, microvix: require('./services/microvix'),
   getCatalog: () => _getCatalog(JSON.parse(process.env.MICROVIX_LOJAS || '{}')),
   criarProjecao: fluxoCaixa.criarProjecao, hojeBRT: fluxoCaixa.hojeBRT, boardsLabel: BOARDS_LABEL,
@@ -10489,6 +10500,11 @@ app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
       catManual = db.fluxoCategorias || {};
       for (const [k, v] of Object.entries(db.fluxoSaldosMes || {})) { const [b, mes] = k.split('|'); if (mes.startsWith(ano + '-')) (saldosMes[b] ||= {})[mes] = v; }
     }
+    // Pedidos de compra pendentes: Mercadoria, em aberto, pelo mês da parcela
+    for (const f of await faturasDePedidos(`${ano}-01-01`, `${ano}-12-31`)) {
+      faturasMes.push({ b: f.board, m: f.vencimento.slice(0, 7), f: f.fornecedor, vp: 0, va: f.valorLiquido });
+      catManual[fluxoCaixa.normForn(f.fornecedor)] ||= 'Mercadoria';
+    }
     const agenda = await agendaApi.saldosParaFluxo(ano).catch(() => null);
     let atual = {};
     if (agenda && ano === +hoje.slice(0, 4)) {
@@ -10499,6 +10515,7 @@ app.get('/api/fluxo-caixa/mensal', requireAdmin, async (req, res) => {
             { projection: { _id: 0, board: 1, codigo_fatura: 1, vencimento: 1, baixa: 1, valor: 1, valorLiquido: 1, valorPago: 1, isPagar: 1, previsao: 1 } },
           ).toArray()
         : (await readContasPagar(corte, fimAno)).rows;
+      faturasAbertas.push(...await faturasDePedidos(hoje, fimAno));
       atual = fluxoCaixa.mesAtualPelaAgenda({ db, faturasAbertas, taxas, lancamentos, partida: agenda.partida, boards, hoje, emAberto: emAberto.chaves });
     }
     res.json({
