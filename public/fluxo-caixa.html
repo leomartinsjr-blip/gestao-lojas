@@ -431,7 +431,7 @@ async function carregarMensal() {
   try {
     const r = await fetch('/api/fluxo-caixa/mensal?ano=' + $('fc-ano').value);
     if (r.status === 401 || r.status === 403) { location.href = '/'; return; }
-    const j = await r.json();
+    let j = await r.json();
     if (!r.ok) throw new Error(j.error || r.status);
     if (M?.ano !== j.ano) janIni = null; // outro ano: volta para o mês atual
     // Ano que ainda não começou: parte do saldo previsto em 31/12 do ano anterior,
@@ -443,6 +443,18 @@ async function carregarMensal() {
         M = ant;
         j.saldoAnterior = Object.fromEntries(ant.boards.map(b => [b, serieEmpresa(b).fim[11]]));
         M = guardado;
+      }
+    }
+    // Ano atual: a janela de 3 meses antes e 3 depois atravessa a virada do ano.
+    // Out–dez junta o ano seguinte (jan–mar, quando ainda não há compra lançada);
+    // jan–mar junta o anterior. As colunas do ano escolhido continuam sendo as do ano.
+    const [hy, hm] = j.hoje.split('-').map(Number);
+    if (j.ano === hy && (hm >= 10 || hm <= 3)) {
+      const viz = hm >= 10 ? hy + 1 : hy - 1;
+      const rv = await fetch('/api/fluxo-caixa/mensal?ano=' + viz).catch(() => null);
+      if (rv && rv.ok) {
+        const v = await rv.json();
+        j = viz > hy ? juntarAnos(j, v, j.ano) : juntarAnos(v, j, j.ano);
       }
     }
     M = j;
@@ -463,29 +475,63 @@ const JAN = 7;
 let janIni = null, janTodo = false;
 function janPadrao() {
   let i = M.status.indexOf('parcial');
-  if (i < 0) i = M.status.lastIndexOf('real') >= 11 ? 11 : Math.max(0, M.status.indexOf('prev'));
-  return Math.max(0, Math.min(i - 3, 11));
+  if (i < 0) i = M.status.lastIndexOf('real') >= nM() - 1 ? nM() - 1 : Math.max(0, M.status.indexOf('prev'));
+  return Math.max(0, Math.min(i - 3, nM() - JAN));
 }
 function aplicarJanela() {
   if (!M) return;
   if (janIni == null) janIni = janPadrao();
-  const ini = janTodo ? 0 : janIni, fim = janTodo ? 11 : Math.min(11, janIni + JAN - 1);
+  const n = nM(), off = M.off || 0;
+  const ini = janTodo ? off : janIni, fim = janTodo ? off + 11 : Math.min(n - 1, janIni + JAN - 1);
+  $('fm-jan-cur').max = Math.max(0, n - JAN);
   for (const t of [$('fm-resumo'), $('fm-tab')]) for (const tr of t.rows) {
-    if (tr.cells.length < 14) continue; // linha sem as 12 colunas (ex.: "nenhum")
-    for (let i = 0; i < 12; i++) tr.cells[i + 1].classList.toggle('fora-jan', i < ini || i > fim);
+    if (tr.cells.length < n + 2) continue; // linha sem as colunas dos meses (ex.: "nenhum")
+    for (let i = 0; i < n; i++) tr.cells[i + 1].classList.toggle('fora-jan', i < ini || i > fim);
   }
   $('fm-jan-cur').value = janIni; $('fm-jan-cur').disabled = janTodo;
   $('fm-jan-ant').disabled = janTodo || janIni <= 0;
-  $('fm-jan-prox').disabled = janTodo || janIni + JAN - 1 >= 11;
+  $('fm-jan-prox').disabled = janTodo || janIni + JAN - 1 >= n - 1;
   $('fm-jan-rot').textContent = `${nomeMes(M.meses[ini])} a ${nomeMes(M.meses[fim])}`;
   $('fm-jan-todo').textContent = janTodo ? '3 meses antes e depois' : 'Ano todo';
 }
 $('fm-jan-ant').addEventListener('click', () => { janIni = Math.max(0, janIni - 1); aplicarJanela(); });
-$('fm-jan-prox').addEventListener('click', () => { janIni = Math.min(11, janIni + 1); aplicarJanela(); });
+$('fm-jan-prox').addEventListener('click', () => { janIni = Math.min(nM() - JAN, janIni + 1); aplicarJanela(); });
 $('fm-jan-cur').addEventListener('input', e => { janIni = +e.target.value; aplicarJanela(); });
 $('fm-jan-todo').addEventListener('click', () => { janTodo = !janTodo; if (!janTodo) janIni = janPadrao(); aplicarJanela(); });
 
-const soma12 = arrs => arrs.reduce((t, a) => t.map((v, i) => v + (a[i] || 0)), Array(12).fill(0));
+// N meses na tela: 12, ou 24 quando o ano vizinho foi juntado. M.off = onde começa o ano escolhido.
+const nM = () => (M && M.meses ? M.meses.length : 12);
+const soma12 = arrs => arrs.reduce((t, a) => t.map((v, i) => v + (a[i] || 0)), Array(nM()).fill(0));
+
+function juntarAnos(A, B, ano) {
+  const z = () => Array(12).fill(0);
+  const cat = (a, b) => [...(a || z()), ...(b || z())];
+  const porChave = (a = {}, b = {}) => Object.fromEntries([...new Set([...Object.keys(a), ...Object.keys(b)])].map(k => [k, cat(a[k], b[k])]));
+  const sel = ano === A.ano ? A : B;
+  const out = { ...sel, ano, off: ano === A.ano ? 0 : 12, anos: [A.ano, B.ano],
+    meses: [...A.meses, ...B.meses], status: [...A.status, ...B.status], empresas: {}, saldosMes: {},
+    agenda: { ...(A.agenda || {}), abertura: A.agenda?.abertura, fimMes: {} } };
+  for (const b of sel.boards) {
+    const ea = A.empresas[b] || {}, eb = B.empresas[b] || {};
+    const cats = {};
+    for (const c of new Set([...Object.keys(ea.categorias || {}), ...Object.keys(eb.categorias || {})])) {
+      const ca = ea.categorias?.[c] || {}, cb = eb.categorias?.[c] || {};
+      cats[c] = { total: cat(ca.total, cb.total), forn: porChave(ca.forn, cb.forn) };
+    }
+    out.empresas[b] = { ...(sel.empresas[b] || {}), saldoIni: ea.saldoIni ?? null,
+      vendas: cat(ea.vendas, eb.vendas), taxaV: cat(ea.taxaV, eb.taxaV), despesas: cat(ea.despesas, eb.despesas),
+      entradas: porChave(ea.entradas, eb.entradas), saidas: porChave(ea.saidas, eb.saidas),
+      transf: { entra: cat(ea.transf?.entra, eb.transf?.entra), sai: cat(ea.transf?.sai, eb.transf?.sai) },
+      categorias: cats, atual: ea.atual || eb.atual || null };
+    // Saldo real de 01/jan do ano B (digitado ou da Agenda) = fim de dez do ano A
+    const jan = eb.saldoIni ?? B.agenda?.abertura?.[b];
+    out.saldosMes[b] = { ...(A.saldosMes?.[b] || {}), ...(B.saldosMes?.[b] || {}) };
+    out.agenda.fimMes[b] = { ...(A.agenda?.fimMes?.[b] || {}), ...(B.agenda?.fimMes?.[b] || {}) };
+    if (jan != null && out.saldosMes[b][`${A.ano}-12`] == null && out.agenda.fimMes[b][`${A.ano}-12`] == null)
+      out.saldosMes[b][`${A.ano}-12`] = jan;
+  }
+  return out;
+}
 
 // Uma empresa por vez (abas no topo). Linhas: saldo no início, entradas, saídas,
 // resultado e saldo no fim do mês. Entradas e saídas abrem no detalhe; as saídas
@@ -495,7 +541,7 @@ const soma12 = arrs => arrs.reduce((t, a) => t.map((v, i) => v + (a[i] || 0)), A
 const togM = new Set();
 const abertoM = k => k.endsWith('|sai') ? !togM.has(k) : togM.has(k); // saídas abertas por padrão
 const N = v => Math.abs(v) < .5 ? '<span class="z">—</span>' : (v < 0 ? '−' : '') + Math.abs(Math.round(v)).toLocaleString('pt-BR');
-const tot12 = a => a.reduce((s, v) => s + v, 0);
+const tot12 = a => a.slice(M?.off || 0, (M?.off || 0) + 12).reduce((s, v) => s + v, 0);
 const fmt2 = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const parseBR = t => {
   t = String(t).trim().replace(/[R$\s]/g, '').replace('−', '-');
@@ -509,7 +555,7 @@ const corEmp = b => ({ delrey: '#0969da', minas: '#1a7f37', contagem: '#bf8700',
 function juntaCategorias(es) {
   const out = {};
   for (const e of es) for (const [cat, c] of Object.entries(e.categorias || {})) {
-    const o = (out[cat] ||= { total: Array(12).fill(0), forn: {} });
+    const o = (out[cat] ||= { total: Array(nM()).fill(0), forn: {} });
     o.total = soma12([o.total, c.total]);
     for (const [f, a] of Object.entries(c.forn)) o.forn[f] = soma12([o.forn[f] || [], a]);
   }
@@ -598,7 +644,7 @@ function blocoMensal(x, chave, sal, editBoard) {
 
   // Saldo no início do mês (01/jan editável na empresa)
   h += `<tr class="ini"><td>Saldo no início do mês</td>${sal.inicio.map((v, i) => {
-    if (i === 0 && editBoard) {
+    if (i === 0 && editBoard && !M.off) {
       const ini = M.empresas[editBoard].saldoIni, agIni = M.agenda?.abertura?.[editBoard] ?? M.saldoAnterior?.[editBoard];
       return `<td><input type="text" class="fm-ini${(ini ?? agIni ?? 0) < 0 ? ' neg' : ''}${ini == null && agIni != null ? ' ag' : ''}" data-b="${editBoard}" inputmode="decimal" placeholder="${agIni != null ? fmt2(agIni) : '01/jan'}" value="${ini != null ? fmt2(ini) : ''}" title="${agIni != null && ini == null ? (M.agenda?.abertura?.[editBoard] != null ? 'Saldo de partida da agenda' : 'Saldo previsto em 31/12 do ano anterior — digite o real quando souber') : 'Saldo em conta em 01/jan'}"></td>`;
     }
@@ -658,17 +704,18 @@ function blocoMensal(x, chave, sal, editBoard) {
 function cardsMensal(sal, res) {
   const iReal = M.status.lastIndexOf('real');
   const iAtual = Math.max(0, M.status.indexOf('parcial'));
-  const futuros = sal.fim.map((v, i) => ({ v, i })).filter(o => M.status[o.i] !== 'real');
+  const futuros = sal.fim.map((v, i) => ({ v, i })).filter(o => M.status[o.i] !== 'real' && o.i >= (M.off || 0) && o.i < (M.off || 0) + 12);
   const min = futuros.reduce((m, o) => o.v < m.v ? o : m, { v: Infinity, i: -1 });
   const dia01 = i => { const d = new Date(+M.meses[i].slice(0, 4), +M.meses[i].slice(5, 7), 1); return `01/${String(d.getMonth() + 1).padStart(2, '0')}`; };
   const c = (l, v, s, cls) => `<div class="fc-card"><div class="fc-card-label">${l}</div><div class="fc-card-value ${cls}">${v}</div><div class="fc-card-sub">${s}</div></div>`;
   const sinal = v => v < 0 ? 'neg' : 'pos';
-  const resPrev = tot12(res.slice(iAtual));
+  const off = M.off || 0;
+  const resPrev = res.slice(iAtual, off + 12).reduce((s, v) => s + v, 0);
   return [
     iReal >= 0 ? c(`Saldo em ${dia01(iReal)}`, R(sal.fim[iReal]), 'fim de ' + nomeMes(M.meses[iReal]), sinal(sal.fim[iReal])) : '',
     c(`Resultado ${M.ano}`, R(tot12(res)), 'realizado + previsto', sinal(tot12(res))),
     M.status.includes('real') && M.status.some(s => s !== 'real') ? c('Resultado previsto', R(resPrev), `${nomeMes(M.meses[iAtual])} a dez`, sinal(resPrev)) : '',
-    c('Saldo previsto em 31/12', R(sal.fim[11]), 'fim do ano', sinal(sal.fim[11])),
+    c('Saldo previsto em 31/12', R(sal.fim[off + 11]), 'fim do ano', sinal(sal.fim[off + 11])),
     min.i >= 0 ? c('Menor saldo previsto', R(min.v), 'fim de ' + nomeMes(M.meses[min.i]), sinal(min.v)) : '',
   ].join('');
 }
