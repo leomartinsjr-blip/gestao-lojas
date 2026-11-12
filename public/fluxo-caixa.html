@@ -77,6 +77,11 @@
   /* Quadro mensal */
   body.modo-mes #fc-body { max-width: 1680px; }
   .fm-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+  .fm-janela { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; flex-wrap: wrap; }
+  .fm-janela input[type=range] { width: 220px; accent-color: var(--blue); }
+  .fm-jan-rot { font-size: 12px; font-weight: 600; min-width: 140px; }
+  .fm-janela .fc-btn { padding: 3px 10px; }
+  .fm-tab .fora-jan { display: none; }
   .fm-chip { background: var(--bg2); border: 1px solid var(--border); border-radius: 18px; color: var(--text2); padding: 6px 14px; font-size: 12px; cursor: pointer; }
   .fm-chip b { color: var(--text); font-weight: 600; margin-right: 5px; }
   .fm-chip:hover { border-color: var(--border2); }
@@ -227,6 +232,13 @@
     <div class="fm-chips" id="fm-chips"></div>
     <div id="fm-cards"></div>
     <div id="fm-atual" style="display:none"></div>
+    <div class="fm-janela" id="fm-janela">
+      <button type="button" class="fc-btn" id="fm-jan-ant" title="Mês anterior">‹</button>
+      <input type="range" id="fm-jan-cur" min="0" max="11" step="1" title="Arraste para mudar os meses mostrados">
+      <button type="button" class="fc-btn" id="fm-jan-prox" title="Mês seguinte">›</button>
+      <span id="fm-jan-rot" class="fm-jan-rot"></span>
+      <button type="button" class="fc-btn" id="fm-jan-todo">Ano todo</button>
+    </div>
     <div class="fc-panel" id="fm-resumo-panel">
       <div class="fc-panel-hd"><h2>Saldo no fim de cada mês, por empresa</h2><span class="muted">clique numa empresa para abrir</span></div>
       <div class="fc-scroll"><table class="fm-tab" id="fm-resumo"></table></div>
@@ -421,6 +433,7 @@ async function carregarMensal() {
     if (r.status === 401 || r.status === 403) { location.href = '/'; return; }
     const j = await r.json();
     if (!r.ok) throw new Error(j.error || r.status);
+    if (M?.ano !== j.ano) janIni = null; // outro ano: volta para o mês atual
     M = j;
     preencheLojas(M);
     mostraSync(M.faturasSyncedAt);
@@ -433,6 +446,33 @@ async function carregarMensal() {
     $('fc-err').style.display = ''; $('fc-err').textContent = 'Erro ao calcular: ' + e.message;
   }
 }
+
+// Janela de meses: 3 antes e 3 depois do mês atual (cursor para andar; "Ano todo" mostra os 12)
+const JAN = 7;
+let janIni = null, janTodo = false;
+function janPadrao() {
+  let i = M.status.indexOf('parcial');
+  if (i < 0) i = M.status.lastIndexOf('real') >= 11 ? 11 : Math.max(0, M.status.indexOf('prev'));
+  return Math.max(0, Math.min(i - 3, 11));
+}
+function aplicarJanela() {
+  if (!M) return;
+  if (janIni == null) janIni = janPadrao();
+  const ini = janTodo ? 0 : janIni, fim = janTodo ? 11 : Math.min(11, janIni + JAN - 1);
+  for (const t of [$('fm-resumo'), $('fm-tab')]) for (const tr of t.rows) {
+    if (tr.cells.length < 14) continue; // linha sem as 12 colunas (ex.: "nenhum")
+    for (let i = 0; i < 12; i++) tr.cells[i + 1].classList.toggle('fora-jan', i < ini || i > fim);
+  }
+  $('fm-jan-cur').value = janIni; $('fm-jan-cur').disabled = janTodo;
+  $('fm-jan-ant').disabled = janTodo || janIni <= 0;
+  $('fm-jan-prox').disabled = janTodo || janIni + JAN - 1 >= 11;
+  $('fm-jan-rot').textContent = `${nomeMes(M.meses[ini])} a ${nomeMes(M.meses[fim])}`;
+  $('fm-jan-todo').textContent = janTodo ? '3 meses antes e depois' : 'Ano todo';
+}
+$('fm-jan-ant').addEventListener('click', () => { janIni = Math.max(0, janIni - 1); aplicarJanela(); });
+$('fm-jan-prox').addEventListener('click', () => { janIni = Math.min(11, janIni + 1); aplicarJanela(); });
+$('fm-jan-cur').addEventListener('input', e => { janIni = +e.target.value; aplicarJanela(); });
+$('fm-jan-todo').addEventListener('click', () => { janTodo = !janTodo; if (!janTodo) janIni = janPadrao(); aplicarJanela(); });
 
 const soma12 = arrs => arrs.reduce((t, a) => t.map((v, i) => v + (a[i] || 0)), Array(12).fill(0));
 
@@ -534,7 +574,7 @@ function blocoConsolidado() {
 function cabecalho(rotulo) {
   const ST = { real: 'realizado', parcial: 'mês atual', prev: 'previsto' };
   return `<thead><tr><th>${rotulo}</th>${M.meses.map((mk, i) =>
-    `<th class="${M.status[i] === 'prev' ? 'fut' : ''}${M.status[i] === 'parcial' ? ' cur fut' : ''}">${nomeMes(mk)}<span class="st">${ST[M.status[i]]}</span></th>`).join('')}<th class="tot">Total</th></tr></thead>`;
+    `<th class="${M.status[i] === 'prev' ? 'fut' : ''}${M.status[i] === 'parcial' ? ' cur fut' : ''}">${nomeMes(mk)}<span class="st">${ST[M.status[i]]}</span></th>`).join('')}<th class="tot">Total do ano</th></tr></thead>`;
 }
 
 function blocoMensal(x, chave, sal, editBoard) {
@@ -650,6 +690,7 @@ function renderMensal() {
   $('fm-atual').innerHTML = quadro;
   $('fm-atual').style.display = quadro ? '' : 'none';
   $('fm-tab').innerHTML = cabecalho('R$') + '<tbody>' + blocoMensal(x, chave, sal, b || null) + '</tbody>';
+  aplicarJanela();
   $('fm-note').innerHTML = `Vendas: meses fechados = realizado (lançamento diário do Dash); mês atual = projeção do Dash ou o vendido até ontem, o que for maior; meses seguintes = projeção. Taxa da maquineta = média dos últimos 3 meses da Conferência. Saídas do Microvix pelo vencimento: nos meses fechados só o que foi pago (com baixa, como no Fechamento de Caixa); no mês atual e nos seguintes também o que está em aberto, pelo valor líquido (sem desconto e abatimento). A coluna do mês atual mostra o mês inteiro; o saldo no fim dele parte do saldo real da Agenda e soma só o que falta, como no quadro acima.
     ${b ? 'Saldo: digite o de 01/jan no início e, em cada mês que fechou, o saldo real que havia nas contas no dia 01 seguinte — o acumulado passa a partir dele.' : 'Saldo do consolidado = soma das empresas (abra uma empresa para informar os saldos reais).'}`;
 
