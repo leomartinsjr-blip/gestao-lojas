@@ -291,7 +291,7 @@ function telaPedidos() {
   for (const p of lista) {
     const i = PD.lista.indexOf(p);
     h += `<tr class="${p.ignorar ? 'ign' : ''}"><td><span style="color:${COR[p.b]}">●</span> ${esc(D.labels[p.b])}</td>
-      <td>${p.manual ? '<span class="tag tag-man">manual</span>' : esc(p.pedido)}</td>
+      <td>${p.manual ? '<span class="tag tag-man">manual</span>' : esc(p.pedido)}${p.atrasado ? '<span class="tag tag-red" title="Entrega há mais de 60 dias e ainda pendente: provável saldo não encerrado no Microvix. Fica fora do fluxo; marque No fluxo se ainda vem.">atrasado</span>' : ''}</td>
       <td class="esq" title="${esc(p.porMarca.map(m => m.marca + ': ' + fmt0(m.valor)).join(' · '))}">${esc(p.marcas.join(', '))}${p.obs ? ` <span class="muted">· ${esc(p.obs)}</span>` : ''}</td>
       <td>${p.data ? DM(p.data) : ''}</td>
       <td><input type="date" class="p-ent${p.entregaDig && !p.manual ? ' dig' : ''}" data-i="${i}" value="${p.entrega || ''}" title="${p.entregas.length > 1 ? 'Entregas do Microvix: ' + p.entregas.map(DM).join(', ') : ''}"></td>
@@ -303,7 +303,7 @@ function telaPedidos() {
   }
   h += `</tbody><tfoot><tr><td>Total</td><td>${lista.length}</td><td></td><td></td><td></td><td>${N(tot('valor'))}</td><td>${N(tot('entregue'))}</td><td>${N(tot('pendente'))}</td><td></td><td></td><td></td><td></td><td></td></tr></tfoot></table></div>
     <div class="nota">Pedidos de compra do Microvix (sem cancelados) e os lançados aqui. A entrega e o prazo digitados ficam em amarelo; vazio usa o do Microvix (o plano "COMPRA 3X" vira 30/60/90 dias da entrega).
-    Só o <b>pendente</b> vira parcela no Fluxo de Caixa (categoria Mercadoria): o que já chegou tem fatura no Microvix. Entrega que já passou e segue pendente conta a partir de hoje.
+    Só o <b>pendente</b> vira parcela no Fluxo de Caixa (categoria Mercadoria): o que já chegou tem fatura no Microvix. Entrega que já passou e segue pendente conta a partir de hoje; com mais de 60 dias de atraso o pedido fica fora do fluxo (provável saldo não encerrado no Microvix) até você marcar "No fluxo".
     ${PD.erros?.length ? '<br><span class="neg">Não leu: ' + esc(PD.erros.join(' · ')) + '</span>' : ''}</div></div>`;
   return h;
 }

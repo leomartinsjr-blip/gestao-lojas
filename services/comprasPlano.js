@@ -236,19 +236,23 @@ const lerDias = s => String(s || '').split(/[\/;,\s]+/).map(Number).filter(n => 
 // itens: do Microvix (já com marca/setor) · ajustes: { 'b|pedido': { entrega, dias, ignorar } }
 // manuais: [{ _id, loja, marca, setor, valor, entrega, dias, obs, recebido }]
 // Devolve os pedidos da loja, cada item com a entrega efetiva (a digitada vence a do Microvix).
-function juntarPedidos(b, itens, ajustes = {}, manuais = []) {
+// Pedido com entrega há mais de 60 dias e ainda pendente é, quase sempre, saldo que não foi
+// encerrado no Microvix (12/11/2026: R$ 866 mil assim, a maioria de 2025): fica fora do
+// fluxo, como a fatura vencida há mais de 90 dias. Religa-se pedido a pedido.
+const DIAS_ATRASO_PEDIDO = 60;
+function juntarPedidos(b, itens, ajustes = {}, manuais = [], hoje = new Date().toISOString().slice(0, 10)) {
   const ped = new Map();
   for (const i of itens) {
     const k = `${b}|${i.pedido}`, aj = ajustes[k] || {};
     const p = ped.get(k) || { b, pedido: i.pedido, data: i.data, fornecedor: i.fornecedor, plano: i.plano, itens: [], manual: false,
-      entregaDig: aj.entrega || null, diasDig: aj.dias || null, ignorar: !!aj.ignorar };
+      entregaDig: aj.entrega || null, diasDig: aj.dias || null, ignorarDig: aj.ignorar ?? null };
     p.itens.push({ ...i, entrega: aj.entrega || i.entrega || i.data });
     ped.set(k, p);
   }
   for (const m of manuais.filter(x => x.loja === b)) {
     const valor = Number(m.valor) || 0;
     ped.set(`${b}|M-${m._id}`, { b, pedido: `M-${m._id}`, id: String(m._id), data: m.criado || m.entrega, fornecedor: '', plano: '', manual: true, obs: m.obs || '', setor: String(m.setor || '').toUpperCase(),
-      entregaDig: m.entrega, diasDig: m.dias || null, ignorar: false, recebido: !!m.recebido,
+      entregaDig: m.entrega, diasDig: m.dias || null, ignorarDig: false, recebido: !!m.recebido,
       itens: [{ pedido: `M-${m._id}`, marca: String(m.marca || '').toUpperCase(), setor: String(m.setor || '(sem setor)').toUpperCase(), entrega: m.entrega,
         valor, entregue: m.recebido ? valor : 0, pendente: m.recebido ? 0 : valor }] });
   }
@@ -256,7 +260,8 @@ function juntarPedidos(b, itens, ajustes = {}, manuais = []) {
     const soma = k => r2(p.itens.reduce((t, i) => t + (i[k] || 0), 0));
     const entregas = [...new Set(p.itens.map(i => i.entrega).filter(Boolean))].sort();
     const marcas = [...new Set(p.itens.map(i => i.marca))];
-    return { ...p, valor: soma('valor'), entregue: soma('entregue'), pendente: soma('pendente'), entrega: entregas[0] || p.data,
+    const atrasado = !p.manual && soma('pendente') > 0.5 && entregas.length && entregas[entregas.length - 1] < addDias(hoje, -DIAS_ATRASO_PEDIDO);
+    return { ...p, atrasado, ignorar: p.ignorarDig != null ? p.ignorarDig : !!atrasado, valor: soma('valor'), entregue: soma('entregue'), pendente: soma('pendente'), entrega: entregas[0] || p.data,
       entregas, marcas, diasPadrao: p.manual ? '30' : diasDoPlano(p.plano), dias: p.diasDig || (p.manual ? '30' : diasDoPlano(p.plano)) };
   });
 }
@@ -275,7 +280,9 @@ function parcelasDoPedido(p, hoje) {
     const parte = r2(v / dias.length);
     dias.forEach((d, i) => out.push({ d: addDias(base, d), valor: i === dias.length - 1 ? r2(v - parte * (dias.length - 1)) : parte }));
   }
-  return out.sort((a, c) => a.d.localeCompare(c.d));
+  const porDia = {};
+  for (const x of out) porDia[x.d] = r2((porDia[x.d] || 0) + x.valor);
+  return Object.entries(porDia).map(([d, valor]) => ({ d, valor })).sort((a, c) => a.d.localeCompare(c.d));
 }
 
 // ── Rotas ────────────────────────────────────────────────────────────────
@@ -301,7 +308,7 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
   // Pedidos da loja (Microvix + manuais) com entrega e prazo efetivos
   async function pedidosLoja(b, hoje, forcar, aj, man) {
     const itens = await ler.pedidos(b, hoje, forcar);
-    return juntarPedidos(b, itens, aj || await ajustesPedidos(), man || await manuaisLista());
+    return juntarPedidos(b, itens, aj || await ajustesPedidos(), man || await manuaisLista(), hoje);
   }
   // Parcelas pendentes de todas as lojas, gravadas para o Fluxo de Caixa ler sem ir ao Microvix
   let gravando = null;
@@ -409,7 +416,7 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
       const id = `${b}|${pedido}`, set = {}, unset = {};
       if ('entrega' in req.body) { if (/^\d{4}-\d{2}-\d{2}$/.test(req.body.entrega || '')) set.entrega = req.body.entrega; else unset.entrega = 1; }
       if ('dias' in req.body) { const d = lerDias(req.body.dias); if (d.length) set.dias = d.join('/'); else unset.dias = 1; }
-      if ('ignorar' in req.body) { if (req.body.ignorar) set.ignorar = true; else unset.ignorar = 1; }
+      if ('ignorar' in req.body) set.ignorar = !!req.body.ignorar; // explícito: vence a regra do atraso
       const c = col('comprasPedidos');
       if (c) await c.updateOne({ _id: id }, { ...(Object.keys(set).length ? { $set: { ...set, em: new Date() } } : {}), ...(Object.keys(unset).length ? { $unset: unset } : {}) }, { upsert: true });
       else { const x = { ...(memoria.pedAjustes[id] || {}), ...set }; for (const k of Object.keys(unset)) delete x[k]; memoria.pedAjustes[id] = x; }
