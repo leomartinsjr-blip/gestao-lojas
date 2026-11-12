@@ -150,7 +150,8 @@ function criarProjecao(db, board, hoje) {
 
   function projMes(y, m) {
     if (y === hy && m === hm && ritmo != null) return ritmo;
-    const b = base(y - 1, m);
+    // Base ainda não fechada (nov/27 sobre nov/26 em andamento): usa a projeção dela
+    const b = (y - 1) * 12 + m >= hy * 12 + hm ? projMes(y - 1, m) : base(y - 1, m);
     return b > 0 ? Math.round(b * (1 + avgD)) : 0;
   }
 

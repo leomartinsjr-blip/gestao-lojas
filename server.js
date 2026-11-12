@@ -10179,7 +10179,9 @@ app.post('/api/contas-pagar/sync', requireAdmin, async (req, res) => {
   try {
     const today  = new Date().toISOString().slice(0, 10);
     const dtIni  = '2020-01-01'; // cobre parcelamentos longos (ex: Simples Nacional 111x)
-    const dtFin  = req.body?.ate || today;
+    // O LinxFaturas filtra pela data de EMISSÃO: a programação do ano seguinte é lançada
+    // com emissão futura (01/01/2027 etc.) e não vinha lendo só até hoje (12/11/2026)
+    const dtFin  = req.body?.ate || `${+today.slice(0, 4) + 1}-12-31`;
     const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
     const boards = Object.entries(lojas);
     const errors = [];
@@ -17463,14 +17465,15 @@ initMongo()
         const dtIni  = '2020-01-01';
         const lojas  = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
         const boards = Object.entries(lojas);
-        console.log(`[ContasPagar] Sync diário ${dtIni} → ${today} (${boards.length} loja(s))`);
+        const dtFin  = `${+today.slice(0, 4) + 1}-12-31`; // emissão futura: programação do ano seguinte
+        console.log(`[ContasPagar] Sync diário ${dtIni} → ${dtFin} (${boards.length} loja(s))`);
         let total = 0;
         const errors = [];
         for (const [board, cnpj] of boards) {
           const chave = process.env[`MICROVIX_CHAVE_${board.toUpperCase()}`] || process.env.MICROVIX_CHAVE;
           try {
             const rows = [];
-            await _fetchFaturas(cnpj, chave, dtIni, today, r => {
+            await _fetchFaturas(cnpj, chave, dtIni, dtFin, r => {
               const fat = _normalizeFatura(r, board, board, today);
               if (fat && fat.isPagar) rows.push(fat);
             });
