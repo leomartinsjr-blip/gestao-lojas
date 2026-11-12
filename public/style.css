@@ -255,6 +255,14 @@ body {
   transition: border-color .15s, color .15s, background .15s;
 }
 .nav-cat-trigger:hover { color: var(--text); border-color: var(--border2); }
+/* Atalho direto na barra (sem menu): Fluxo de Caixa, usado todo dia */
+.nav-direto {
+  display: flex; align-items: center; gap: .35rem; height: 100%;
+  color: var(--accent); border: 1px solid var(--accent); background: rgba(var(--accent-rgb),.10);
+  border-radius: .375rem; font-size: .75rem; font-weight: 600; padding: .3rem .6rem;
+  white-space: nowrap; text-decoration: none; transition: background .15s;
+}
+.nav-direto:hover { background: rgba(var(--accent-rgb),.2); }
 .nav-cat-trigger.nav-cat-open {
   color: var(--accent); border-color: var(--accent); background: rgba(var(--accent-rgb),.12);
 }
@@ -4460,6 +4468,7 @@ body.indeva-standalone { display:flex; flex-direction:column; height:100dvh; ove
     font-size: .88rem; color: var(--text);
   }
   .nav-cat-trigger.nav-cat-open { background: transparent; border: none; color: var(--accent); }
+  .nav-direto { min-height: 46px; padding: .78rem .35rem; font-size: .88rem; border: none; background: transparent; border-radius: 0; }
 
   /* Sanfona: o dropdown para de flutuar e abre embaixo da própria categoria. */
   .nav-cat-dropdown {
