@@ -105,9 +105,9 @@ function criarLeitura({ microvix, getCatalog, lojasEnv }) {
 
   // Estoque a custo médio por marca/setor
   async function estoque(b, hoje, forcar) {
-    return comCache(`e|${b}|${hoje}`, 3600e3, async () => {
+    return comCache(`e2|${b}|${hoje}`, 3600e3, async () => {
       const cat = await getCatalog();
-      const out = {};
+      const out = {}, pv = {};
       let ts = 0;
       for (let p = 0; p < 80; p++) {
         const raw = await microvix.postRequest(microvix.buildRequest('LinxProdutosDetalhes', cnpjDe(b), [
@@ -120,13 +120,17 @@ function criarLeitura({ microvix, getCatalog, lojasEnv }) {
           const q = num(r.quantidade);
           if (q <= 0) continue;
           const [m, s] = chaveMS(infoDe(cat, String(r.cod_produto || '').trim(), String(r.cod_barra || '').trim()));
-          ((out[m] ||= {})[s] = (out[m][s] || 0) + q * num(r.custo_medio || r.preco_custo));
+          const cu = num(r.custo_medio || r.preco_custo);
+          ((out[m] ||= {})[s] = (out[m][s] || 0) + q * cu);
+          // Markup cheio: só o que tem custo e preço (preço de venda de tabela ÷ custo médio)
+          const p = num(r.preco_venda);
+          if (cu > 0 && p > 0) { const x = ((pv[m] ||= {})[s] ||= { c: 0, v: 0 }); x.c += q * cu; x.v += q * p; }
         }
         const mx = Math.max(...rows.map(r => +r.timestamp || 0));
         if (mx <= ts) break;
         ts = mx;
       }
-      return out;
+      return { porMS: out, precos: pv };
     }, forcar);
   }
 
@@ -167,7 +171,10 @@ function criarLeitura({ microvix, getCatalog, lojasEnv }) {
 // vendas/estoque: { MARCA: { SETOR: valor } } · itens: pedidos já filtrados do período
 // prem: { previsao, meses, cmv, cobertura, vendaMedia } · pct: { MARCA: 0..1 digitado }
 // ajustes: { MARCA: { realizado, pendente } }
-function montarLoja({ vendas, estoque, itens, prem, pct = {}, ajustes = {} }) {
+// precos: { MARCA: { SETOR: { c: custo, v: venda de tabela } } } do estoque atual → markup a preço cheio
+function montarLoja({ vendas, estoque, itens, prem, pct = {}, ajustes = {}, precos = {} }) {
+  const mk = x => x && x.c > 0 ? Math.round(x.v / x.c * 100) / 100 : null;
+  const somaPv = o => Object.values(o || {}).reduce((a, x) => ({ c: a.c + x.c, v: a.v + x.v }), { c: 0, v: 0 });
   const marcas = new Set([...Object.keys(vendas), ...Object.keys(estoque), ...itens.map(i => i.marca), ...Object.keys(pct), ...Object.keys(ajustes)]);
   const soma = o => Object.values(o || {}).reduce((s, v) => s + v, 0);
   const vendaTotal = Object.values(vendas).reduce((s, o) => s + Math.max(0, soma(o)), 0);
@@ -180,13 +187,13 @@ function montarLoja({ vendas, estoque, itens, prem, pct = {}, ajustes = {} }) {
     const setores = new Set([...Object.keys(vendas[m] || {}), ...Object.keys(estoque[m] || {}), ...itens.filter(i => i.marca === m).map(i => i.setor)]);
     const doSetor = s => {
       const its = itens.filter(i => i.marca === m && i.setor === s);
-      return { setor: s, venda: r2(vendas[m]?.[s] || 0), estoque: r2(estoque[m]?.[s] || 0),
+      return { setor: s, markup: mk(precos[m]?.[s]), venda: r2(vendas[m]?.[s] || 0), estoque: r2(estoque[m]?.[s] || 0),
         realizado: r2(its.reduce((t, i) => t + i.valor, 0)), pendente: r2(its.reduce((t, i) => t + i.pendente, 0)) };
     };
     const ss = [...setores].map(doSetor).sort((a, b) => b.venda - a.venda || b.estoque - a.estoque);
     const venda = r2(ss.reduce((t, s) => t + s.venda, 0));
     const aj = ajustes[m] || {};
-    return { marca: m, setores: ss, venda, pctVenda: vendaTotal > 0 ? Math.max(0, venda) / vendaTotal : 0,
+    return { marca: m, markup: mk(somaPv(precos[m])), setores: ss, venda, pctVenda: vendaTotal > 0 ? Math.max(0, venda) / vendaTotal : 0,
       pctDigitado: pct[m] != null ? pct[m] : null,
       estoque: r2(ss.reduce((t, s) => t + s.estoque, 0)),
       realizadoMx: r2(ss.reduce((t, s) => t + s.realizado, 0)), pendenteMx: r2(ss.reduce((t, s) => t + s.pendente, 0)),
@@ -232,7 +239,9 @@ function montarLoja({ vendas, estoque, itens, prem, pct = {}, ajustes = {} }) {
     pendMaior: linhas.filter(l => l.pendente > l.realizado + 0.5).map(l => l.marca),
     semEstoque: linhas.filter(l => l.pct > 0 && l.estoque < 0.5).map(l => l.marca),
   };
-  return { linhas, total, calc: { markup, cotaTotal: r2(cotaTotal), minimoTotal: r2(minimoTotal), mediaMensal: r2(mediaMensal), vendaTotal: r2(vendaTotal) }, alertas };
+  const pvLoja = somaPv(Object.fromEntries(Object.entries(precos).map(([m, o]) => [m, somaPv(o)])));
+  total.markup = mk(pvLoja);
+  return { linhas, total, calc: { markupCheio: mk(pvLoja), markup, cotaTotal: r2(cotaTotal), minimoTotal: r2(minimoTotal), mediaMensal: r2(mediaMensal), vendaTotal: r2(vendaTotal) }, alertas };
 }
 
 // ── Pedidos e parcelas (funções puras) ───────────────────────────────────
@@ -392,7 +401,7 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
       const base = {};
       const dadosLoja = b => base[b] ||= Promise.all([
         ler.vendas(b, dtIni, dtFin, forcar).catch(erro(b, 'venda')).then(x => x || { porMS: {}, cmv: null }),
-        ler.estoque(b, hoje, forcar).catch(erro(b, 'estoque')).then(x => x || {}),
+        ler.estoque(b, hoje, forcar).catch(erro(b, 'estoque')).then(x => x || { porMS: {}, precos: {} }),
         pedidosLoja(b, hoje, forcar, ajPed, man).catch(erro(b, 'pedidos')).then(x => x || []),
       ]);
       // Uma coleção de uma loja. A que ainda não começou parte da previsão de sobra
@@ -403,7 +412,7 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
         const [vr, eAtual, p] = await dadosLoja(b);
         const v = vr.porMS || {};
         const plano = await lerPlano(`${col}|${b}`);
-        let estoque = eAtual, estoqueDe = null;
+        let estoque = eAtual.porMS || {}, estoqueDe = null;
         if (pr.ini > hoje && nivel < 6) {
           const ant = colecaoDe(addDias(pr.ini, -1));
           const r = await calcLoja(ant, b, nivel + 1);
@@ -420,7 +429,7 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
         };
         const digit = plano.premissas || {};
         const prem = Object.fromEntries(Object.keys(padrao).map(k => [k, digit[k] != null ? digit[k] : padrao[k]]));
-        return { ...montarLoja({ vendas: v, estoque, itens, prem, pct: plano.pct || {}, ajustes: plano.ajustes || {} }),
+        return { ...montarLoja({ vendas: v, estoque, itens, prem, pct: plano.pct || {}, ajustes: plano.ajustes || {}, precos: eAtual.precos || {} }),
           premissas: prem, padrao, digitado: digit, pedidos: itens.length, estoqueDe };
       })();
       await Promise.all(lojas.map(async b => { porLoja[b] = await calcLoja(colecao, b); }));

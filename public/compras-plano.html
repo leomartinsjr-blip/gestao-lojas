@@ -74,7 +74,7 @@
   table.grp th.gh { text-align: center; font-size: 10px; letter-spacing: .06em; border-bottom: 1px solid var(--border); }
   table.grp .g1 { background: #eef4fc; } table.grp .g2 { background: #fdf4e3; } table.grp .g3 { background: #eaf6ee; }
   table.grp .g4 { background: #f3effc; } table.grp .g5 { background: #f1f3f5; }
-  table.grp tr > :nth-child(4), table.grp tr > :nth-child(7), table.grp tr > :nth-child(9), table.grp tr > :nth-child(11),
+  table.grp tr > :nth-child(4), table.grp tr > :nth-child(7), table.grp tr > :nth-child(9), table.grp tr > :nth-child(11), table.grp tr > :nth-child(15), table.grp tr.gh-row > :nth-child(7),
   table.grp tr.gh-row > :nth-child(2), table.grp tr.gh-row > :nth-child(3), table.grp tr.gh-row > :nth-child(4), table.grp tr.gh-row > :nth-child(5), table.grp tr.gh-row > :nth-child(6) { border-left: 2px solid var(--border2); }
   table.grp tbody tr.marca > :nth-child(n+2):nth-child(-n+3), table.grp tfoot tr > :nth-child(n+2):nth-child(-n+3) { background: rgba(9,105,218,.04); }
   table.grp tbody tr.marca > :nth-child(n+4):nth-child(-n+6), table.grp tfoot tr > :nth-child(n+4):nth-child(-n+6) { background: rgba(191,135,0,.06); }
@@ -136,6 +136,7 @@ const N = v => v == null ? '' : Math.abs(v) < .5 ? '<span class="muted">—</spa
 const NC = v => v == null ? '' : `<span class="${v < -.5 ? 'neg' : ''}">${N(v)}</span>`;
 const P = (v, d = 1) => v == null ? '' : (v * 100).toFixed(d).replace('.', ',') + '%';
 const X = v => v == null ? '<span class="muted">—</span>' : `<span class="${v < 0 ? 'neg' : v < 3 ? 'warn' : ''}">${v.toFixed(1).replace('.', ',')}</span>`;
+const MKP = v => v == null ? '<span class="muted">—</span>' : v.toFixed(2).replace('.', ',');
 const fmt0 = v => Math.round(v).toLocaleString('pt-BR');
 const parseBR = t => { t = String(t).trim().replace(/[R$\s%]/g, ''); if (t === '') return null; const v = parseFloat(t.replace(/\./g, '').replace(',', '.')); return Number.isFinite(v) ? v : NaN; };
 const EMP = { delrey: 'LMJ', minas: 'JDG', contagem: 'PV', estacao: 'TTS' };
@@ -194,7 +195,8 @@ function telaLoja(b) {
       ${campo('cmv', 'CMV médio (%)', `Custo médio ÷ venda dos últimos ${D.dias} dias da loja (Microvix)`, 1)}
       ${campo('vendaMedia', 'Venda média mensal (R$)', `Base do mínimo: venda dos últimos ${D.dias} dias ÷ ${D.dias / 30}`)}
       ${campo('cobertura', 'Cobertura (x) — você define', 'Estoque mínimo = N meses de venda a custo; defina por loja', 1)}
-      <div class="calc">Markup<br><b>${c.markup.toFixed(2).replace('.', ',')}</b></div>
+      <div class="calc" title="100 ÷ CMV: converte a venda real em custo">Markup pelo CMV<br><b>${c.markup.toFixed(2).replace('.', ',')}</b></div>
+      <div class="calc" title="Preço de venda de tabela ÷ custo médio do estoque de hoje">Markup a preço cheio<br><b>${c.markupCheio == null ? '—' : c.markupCheio.toFixed(2).replace('.', ',')}</b></div>
       <div class="calc">Média mensal<br><b>R$ ${fmt0(c.mediaMensal)}</b></div>
       <div class="calc">Cota de compra<br><b>R$ ${fmt0(c.cotaTotal)}</b></div>
       <div class="calc">Estoque mínimo ${String(p.cobertura).replace('.', ',')}x<br><b>R$ ${fmt0(c.minimoTotal)}</b></div>
@@ -203,13 +205,13 @@ function telaLoja(b) {
   h += `<div class="painel"><div class="painel-hd"><h2>Marcas — clique para abrir os setores e o ajuste manual</h2>
     <span class="muted">% da venda de ${DM(D.venda.dtIni)} a ${DM(D.venda.dtFin)} · ${L.pedidos} itens de pedido com entrega na coleção${L.estoqueDe ? ` · <b class="azul">estoque = previsão de sobra da ${L.estoqueDe}</b>` : ''}</span></div>
     <div class="scroll"><table class="grp"><thead>
-      <tr class="gh-row"><th class="gh"></th><th class="gh g1" colspan="2">VENDA E COTA</th><th class="gh g2" colspan="3">PEDIDOS</th><th class="gh g3" colspan="2">ESTOQUE</th><th class="gh g4" colspan="2">COMPRA</th><th class="gh g5" colspan="4">GIRO</th></tr>
+      <tr class="gh-row"><th class="gh"></th><th class="gh g1" colspan="2">VENDA E COTA</th><th class="gh g2" colspan="3">PEDIDOS</th><th class="gh g3" colspan="2">ESTOQUE</th><th class="gh g4" colspan="2">COMPRA</th><th class="gh g5" colspan="4">GIRO</th><th class="gh g1">PREÇO</th></tr>
       <tr><th>Marca <span class="muted" style="text-transform:none;font-weight:400">· curva ABC</span></th><th title="Venda dos últimos dias, ou digitado">% venda</th><th title="Previsão × CMV, rateada pelo %">Cota compra</th>
       <th title="Pedidos de compra com entrega na coleção, sem cancelados (a custo)">Realizado</th><th>% entregue</th><th title="Pedido − entregue">Pendente</th>
       <th title="Saldo × custo médio">Estoque</th><th title="Venda média ÷ markup × cobertura, rateado pelo %">Est. mínimo</th>
       <th title="Cota + mínimo − estoque">Necessidade</th><th title="Necessidade − pendente">Saldo p/ comprar</th>
       <th title="Média mensal × % ÷ markup (a custo)">Fat. mensal</th><th title="(Estoque − mínimo) ÷ fat. mensal">Cobert.</th><th title="Com o pendente">Cobert. c/ pend.</th>
-      <th title="Pendente + estoque − fat. mensal × meses">Previsão sobra</th></tr></thead><tbody>`;
+      <th title="Pendente + estoque − fat. mensal × meses">Previsão sobra</th><th title="Preço de venda de tabela ÷ custo médio do estoque de hoje (preço cheio)">Markup cheio</th></tr></thead><tbody>`;
   for (const l of L.linhas) {
     const k = b + '|' + l.marca, ab = abertos.has(k);
     const manual = l.ajRealizado || l.ajPendente;
@@ -218,18 +220,18 @@ function telaLoja(b) {
       <td><input type="text" class="pct${l.pctDigitado != null ? ' dig' : ''}" data-m="${esc(l.marca)}" value="${l.pctDigitado != null ? P(l.pctDigitado, 2) : ''}" placeholder="${P(l.pctVenda, 1)}" title="Venda: ${P(l.pctVenda, 2)}. Digite para fixar; vazio volta para a venda."></td>
       <td>${N(l.cota)}</td><td>${N(l.realizado)}</td><td>${l.entregue == null ? '' : P(l.entregue, 0)}</td><td>${N(l.pendente)}</td>
       <td>${N(l.estoque)}</td><td>${N(l.minimo)}</td><td>${NC(l.necessidade)}</td><td class="${l.saldoComprar > .5 ? 'azul' : ''}">${NC(l.saldoComprar)}</td>
-      <td>${N(l.fatMensal)}</td><td>${X(l.cobertura)}</td><td>${X(l.coberturaPend)}</td><td>${NC(l.sobra)}</td></tr>`;
+      <td>${N(l.fatMensal)}</td><td>${X(l.cobertura)}</td><td>${X(l.coberturaPend)}</td><td>${NC(l.sobra)}</td><td>${MKP(l.markup)}</td></tr>`;
     if (!ab) continue;
     for (const s of l.setores) h += `<tr class="setor"><td>${esc(s.setor)}</td><td>${P(s.pct, 1)}</td><td>${N(s.cota)}</td><td>${N(s.realizado)}</td><td></td><td>${N(s.pendente)}</td>
-      <td>${N(s.estoque)}</td><td>${N(s.minimo)}</td><td>${NC(s.necessidade)}</td><td>${NC(s.saldoComprar)}</td><td>${N(s.fatMensal)}</td><td>${X(s.cobertura)}</td><td>${X(s.coberturaPend)}</td><td>${NC(s.sobra)}</td></tr>`;
-    h += `<tr class="ajuste"><td colspan="14">Ajuste manual (o que não está nos pedidos do Microvix, soma ao que veio de lá):
+      <td>${N(s.estoque)}</td><td>${N(s.minimo)}</td><td>${NC(s.necessidade)}</td><td>${NC(s.saldoComprar)}</td><td>${N(s.fatMensal)}</td><td>${X(s.cobertura)}</td><td>${X(s.coberturaPend)}</td><td>${NC(s.sobra)}</td><td>${MKP(s.markup)}</td></tr>`;
+    h += `<tr class="ajuste"><td colspan="15">Ajuste manual (o que não está nos pedidos do Microvix, soma ao que veio de lá):
       realizado <input type="text" class="aj" data-m="${esc(l.marca)}" data-c="realizado" value="${l.ajRealizado ? fmt0(l.ajRealizado) : ''}" placeholder="0">
       pendente <input type="text" class="aj" data-m="${esc(l.marca)}" data-c="pendente" value="${l.ajPendente ? fmt0(l.ajPendente) : ''}" placeholder="0">
       <span class="muted"> · do Microvix: realizado R$ ${fmt0(l.realizadoMx)}, pendente R$ ${fmt0(l.pendenteMx)}</span></td></tr>`;
   }
   const t = L.total;
   h += `</tbody><tfoot><tr><td>Total</td><td>${P(t.pct, 1)}</td><td>${N(t.cota)}</td><td>${N(t.realizado)}</td><td>${t.entregue == null ? '' : P(t.entregue, 0)}</td><td>${N(t.pendente)}</td>
-    <td>${N(t.estoque)}</td><td>${N(t.minimo)}</td><td>${NC(t.necessidade)}</td><td>${NC(t.saldoComprar)}</td><td>${N(t.fatMensal)}</td><td></td><td></td><td>${NC(t.sobra)}</td></tr></tfoot></table></div>
+    <td>${N(t.estoque)}</td><td>${N(t.minimo)}</td><td>${NC(t.necessidade)}</td><td>${NC(t.saldoComprar)}</td><td>${N(t.fatMensal)}</td><td></td><td></td><td>${NC(t.sobra)}</td><td>${MKP(t.markup)}</td></tr></tfoot></table></div>
     <div class="nota">Realizado e pendente vêm dos pedidos de compra do Microvix com previsão de entrega de ${periodoTxt()} (sem previsão, pela data do pedido); cancelados ficam de fora e pedido encerrado não tem pendente. Estoque = saldo de hoje × custo médio; numa coleção que ainda não começou, é a previsão de sobra da coleção anterior (marca e setor, sem negativo). Coluna "Saldo p/ comprar" em azul = ainda cabe comprar; negativo = já comprou além da cota.
     Cobertura em meses: vermelho abaixo de zero, amarelo abaixo de 3.</div></div>`;
   return h;
