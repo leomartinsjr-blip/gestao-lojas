@@ -248,6 +248,7 @@ function montarLoja({ vendas, estoque, itens, prem, pct = {}, ajustes = {}, prec
 // pela entrega. A previsão de entrega sozinha engana: pedidos de Winter 27 estão com entrega
 // 01/01/2027, dentro da Summer 27 (12/11/2026).
 function colecaoDoItem(i) {
+  if (i.colecaoNexo) return i.colecaoNexo;
   const m = String(i.colecao || '').toUpperCase().match(/(SUMMER|WINTER)\s*(\d{2})/);
   if (m) return `${m[1]} ${m[2]}`;
   return colecaoDe(i.entrega || i.data || new Date().toISOString().slice(0, 10));
@@ -256,7 +257,7 @@ function colecaoDoItem(i) {
 // ── Pedidos e parcelas (funções puras) ───────────────────────────────────
 // Prazo do plano do Microvix: "COMPRA 3X" → 30/60/90 dias da entrega
 function diasDoPlano(plano) {
-  const n = +((String(plano || '').match(/(\d+)\s*X/i) || [])[1] || 1);
+  const n = +((String(plano || '').match(/(\d+)\s*X/i) || [])[1] || 3);
   return Array.from({ length: Math.min(Math.max(n, 1), 12) }, (_, i) => 30 * (i + 1)).join('/');
 }
 const lerDias = s => String(s || '').split(/[\/;,\s]+/).map(Number).filter(n => Number.isFinite(n) && n >= 0 && n <= 720);
@@ -273,9 +274,17 @@ function juntarPedidos(b, itens, ajustes = {}, manuais = [], hoje = new Date().t
   for (const i of itens) {
     const k = `${b}|${i.pedido}`, aj = ajustes[k] || {};
     const p = ped.get(k) || { b, pedido: i.pedido, data: i.data, fornecedor: i.fornecedor, plano: i.plano, itens: [], manual: false,
-      entregaDig: aj.entrega || null, diasDig: aj.dias || null, ignorarDig: aj.ignorar ?? null, pendenteDig: aj.pendente ?? null };
+      entregaDig: aj.entrega || null, diasDig: aj.dias || null, ignorarDig: aj.ignorar ?? null, pendenteDig: aj.pendente ?? null, valorDig: aj.valor ?? null,
+      nexo: i.nexo || null, aLancar: !!i.aLancar };
     p.itens.push({ ...i, entrega: aj.entrega || i.entrega || i.data, pendenteMx: i.pendente });
     ped.set(k, p);
+  }
+  // Valor digitado: escala os itens (o pendente acompanha na mesma proporção)
+  for (const p of ped.values()) {
+    if (p.valorDig == null) continue;
+    const tot = p.itens.reduce((t, i) => t + i.valor, 0);
+    const f = tot > 0 ? p.valorDig / tot : 0;
+    for (const i of p.itens) { i.valorMx = i.valor; i.valor = r2(i.valor * f); i.pendente = r2(i.pendente * f); i.pendenteMx = i.pendente; }
   }
   // Pendente digitado: reparte entre os itens na proporção do pendente do Microvix
   // (sem pendente lá, na proporção do valor)
@@ -298,19 +307,34 @@ function juntarPedidos(b, itens, ajustes = {}, manuais = [], hoje = new Date().t
     const marcas = [...new Set(p.itens.map(i => i.marca))];
     const atrasado = !p.manual && soma('pendente') > 0.5 && entregas.length && entregas[entregas.length - 1] < addDias(hoje, -DIAS_ATRASO_PEDIDO);
     const pendenteMx = r2(p.itens.reduce((t, i) => t + (i.pendenteMx ?? i.pendente), 0));
-    return { ...p, pendenteMx, atrasado, ignorar: p.ignorarDig != null ? p.ignorarDig : !!atrasado, valor: soma('valor'), entregue: soma('entregue'), pendente: soma('pendente'), entrega: entregas[0] || p.data,
+    const valorMx = r2(p.itens.reduce((t, i) => t + (i.valorMx ?? i.valor), 0));
+    return { ...p, pendenteMx, valorMx, atrasado, ignorar: p.ignorarDig != null ? p.ignorarDig : !!atrasado, valor: soma('valor'), entregue: soma('entregue'), pendente: soma('pendente'), entrega: entregas[0] || p.data,
       entregas, marcas, diasPadrao: p.manual ? '30' : diasDoPlano(p.plano), dias: p.diasDig || (p.manual ? '30' : diasDoPlano(p.plano)) };
   });
 }
 
 // Parcelas do que falta entregar: cada entrega pendente dividida pelos dias do prazo.
 // Entrega que já passou e segue pendente conta a partir de hoje.
-function parcelasDoPedido(p, hoje) {
+// dist: { COLECAO: { MARCA: { 'YYYY-MM': % } } } — a marca que compra a coleção inteira
+// e recebe ao longo do semestre: cada mês é uma NF, e o prazo conta de cada uma. A data
+// digitada no pedido vence a distribuição (entrega de uma vez).
+function entregasDoItem(i, p, dist, hoje) {
+  const d = !p.entregaDig && dist[colecaoDoItem(i)]?.[i.marca];
+  const meses = d ? Object.entries(d).filter(([, v]) => v > 0) : [];
+  const soma = meses.reduce((t, [, v]) => t + v, 0);
+  if (!soma) return [[i.entrega || hoje, i.pendente]];
+  const dia = String(i.entrega || '').slice(8, 10) || '01';
+  return meses.map(([mk, v]) => {
+    const ult = new Date(Date.UTC(+mk.slice(0, 4), +mk.slice(5, 7), 0)).getUTCDate();
+    return [`${mk}-${String(Math.min(+dia, ult)).padStart(2, '0')}`, i.pendente * v / soma];
+  });
+}
+function parcelasDoPedido(p, hoje, dist = {}) {
   if (p.ignorar || p.pendente < 0.5) return [];
   const dias = lerDias(p.dias);
   if (!dias.length) return [];
   const porEntrega = {};
-  for (const i of p.itens) if (i.pendente > 0) porEntrega[i.entrega || hoje] = (porEntrega[i.entrega || hoje] || 0) + i.pendente;
+  for (const i of p.itens) if (i.pendente > 0) for (const [ent, v] of entregasDoItem(i, p, dist, hoje)) porEntrega[ent] = (porEntrega[ent] || 0) + v;
   const out = [];
   for (const [ent, v] of Object.entries(porEntrega)) {
     const base = ent < hoje ? hoje : ent;
@@ -323,7 +347,7 @@ function parcelasDoPedido(p, hoje) {
 }
 
 // ── Rotas ────────────────────────────────────────────────────────────────
-function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, criarProjecao, hojeBRT, boardsLabel = {} }) {
+function register(app, { getDb, getNexoDb = () => null, readDB, requireAdmin, microvix, getCatalog, criarProjecao, hojeBRT, boardsLabel = {} }) {
   const lojasEnv = () => JSON.parse(process.env.MICROVIX_LOJAS || '{}');
   const ler = criarLeitura({ microvix, getCatalog, lojasEnv });
   let memoria = {};
@@ -342,21 +366,66 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
     return Object.fromEntries((await c.find().toArray()).map(x => [x._id, x]));
   }
   async function manuaisLista() { const c = col('comprasManuais'); return c ? c.find().toArray() : memoria.manuais; }
-  // Pedidos da loja (Microvix + manuais) com entrega e prazo efetivos
+  // Pedidos computados no NEXO (aba Compras): coleção, marca, custo por loja e o nº do
+  // pedido de compra no Microvix (quando já lançado). É por eles que a coleção é montada.
+  let nexoCache = null;
+  async function pedidosNexo() {
+    if (nexoCache && Date.now() - nexoCache.em < 120e3) return nexoCache.v;
+    const ndb = getNexoDb();
+    if (!ndb) return [];
+    const docs = await ndb.collection('compras_pedidos').find({ computado: { $exists: true } },
+      { projection: { computado: 1, feitos: 1, 'linhas.custo': 1, 'linhas.setor': 1, 'linhas.porLoja': 1 } }).toArray();
+    const v = [];
+    for (const d of docs) {
+      const cp = d.computado || {};
+      for (const [b, x] of Object.entries(cp.porLoja || {})) {
+        if (!(x.custo > 0)) continue;
+        const setores = {};
+        for (const l of d.linhas || []) { const q = Number(l.porLoja?.[b]) || 0; if (q > 0) { const s = String(l.setor || '(sem setor)').trim().toUpperCase(); setores[s] = (setores[s] || 0) + q * (Number(l.custo) || 0); } }
+        const somaS = Object.values(setores).reduce((t, y) => t + y, 0);
+        if (somaS > 0) for (const s of Object.keys(setores)) setores[s] = r2(setores[s] * x.custo / somaS); else setores['(SEM SETOR)'] = x.custo;
+        const num = String((d.feitos || {})['compra:' + b]?.numero || '').trim();
+        v.push({ b, id: String(d._id), colecao: String(cp.colecao || '').toUpperCase(), marca: String(cp.marca || '').toUpperCase(), numero: num || null,
+          valor: r2(x.custo), setores, em: cp.em ? new Date(cp.em).toISOString().slice(0, 10) : null });
+      }
+    }
+    nexoCache = { em: Date.now(), v };
+    return v;
+  }
+  // Pedidos da loja: os do Microvix (com a coleção do NEXO quando o nº está lá), os do NEXO
+  // ainda sem nº no Microvix ("a lançar", todo pendente) e os manuais
   async function pedidosLoja(b, hoje, forcar, aj, man) {
-    const itens = await ler.pedidos(b, hoje, forcar);
+    const [itensMx, nexo] = await Promise.all([ler.pedidos(b, hoje, forcar), pedidosNexo().catch(() => [])]);
+    const daLoja = nexo.filter(n => n.b === b);
+    const porNumero = new Map(daLoja.filter(n => n.numero).map(n => [n.numero, n]));
+    const itens = itensMx.map(i => { const n = porNumero.get(String(i.pedido)); return n ? { ...i, colecaoNexo: n.colecao, nexo: { id: n.id, marca: n.marca, colecao: n.colecao } } : i; });
+    const lancados = new Set(itensMx.map(i => String(i.pedido)));
+    for (const n of daLoja) {
+      if (n.numero && lancados.has(n.numero)) continue;   // já veio do Microvix
+      const per = periodo(n.colecao);
+      for (const [s, valor] of Object.entries(n.setores)) itens.push({ pedido: `N-${n.id.slice(-6)}`, data: n.em || hoje, entrega: per ? per.ini : hoje, fornecedor: '',
+        marca: n.marca, setor: s, colecao: n.colecao, colecaoNexo: n.colecao, plano: '', valor, entregue: 0, pendente: valor, aLancar: true,
+        nexo: { id: n.id, marca: n.marca, colecao: n.colecao, numero: n.numero } });
+    }
     return juntarPedidos(b, itens, aj || await ajustesPedidos(), man || await manuaisLista(), hoje);
   }
+  // Distribuição da entrega por marca e mês, uma por coleção (vale para todas as lojas)
+  async function distribuicoes() {
+    const c = col('comprasPlano');
+    const docs = c ? await c.find({ _id: { $regex: '\\|entrega$' } }).toArray() : Object.entries(memoria).filter(([k]) => k.endsWith('|entrega')).map(([k, v]) => ({ _id: k, ...v }));
+    return Object.fromEntries(docs.map(d => [d._id.split('|')[0], d.dist || {}]));
+  }
+
   // Parcelas pendentes de todas as lojas, gravadas para o Fluxo de Caixa ler sem ir ao Microvix
   let gravando = null;
   async function atualizarParcelas(forcar) {
     if (gravando) return gravando;
     gravando = (async () => {
-      const hoje = hojeBRT(), [aj, man] = await Promise.all([ajustesPedidos(), manuaisLista()]);
+      const hoje = hojeBRT(), [aj, man, dist] = await Promise.all([ajustesPedidos(), manuaisLista(), distribuicoes()]);
       const lista = [];
       for (const b of LOJAS.filter(x => lojasEnv()[x])) {
         for (const p of await pedidosLoja(b, hoje, forcar, aj, man))
-          for (const x of parcelasDoPedido(p, hoje))
+          for (const x of parcelasDoPedido(p, hoje, dist))
             lista.push({ b, d: x.d, valor: x.valor, pedido: p.pedido, marca: p.marcas.slice(0, 3).join('/') || '(sem marca)' });
       }
       const doc = { _id: 'atual', em: new Date(), lista };
@@ -430,7 +499,8 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
           estoqueDe = ant;
         }
         // Pedido entra na coleção pela previsão de entrega (sem previsão, pela data do pedido)
-        const itens = p.flatMap(x => x.itens).filter(i => colecaoDoItem(i) === col);
+        // A coleção é montada pelos pedidos do NEXO (pelo nº) e pelos manuais
+        const itens = p.filter(x => x.nexo || x.manual).flatMap(x => x.itens).filter(i => colecaoDoItem(i) === col);
         const vendaPeriodo = Object.values(v).reduce((t, o) => t + Object.values(o).reduce((s, x) => s + x, 0), 0);
         const padrao = {
           previsao: ms.length ? previsaoPadrao(dbJson, b, ms, hoje) : 0, meses: mesesFaltantes(pr, hoje),
@@ -453,7 +523,7 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
     try {
       const hoje = hojeBRT(), forcar = req.query.atualizar === '1';
       const per = req.query.colecao ? periodo(req.query.colecao) : null;
-      const [aj, man] = await Promise.all([ajustesPedidos(), manuaisLista()]);
+      const [aj, man, dist] = await Promise.all([ajustesPedidos(), manuaisLista(), distribuicoes()]);
       const lojas = LOJAS.filter(b => lojasEnv()[b]), erros = [], lista = [];
       await Promise.all(lojas.map(async b => {
         try {
@@ -461,14 +531,20 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
             const naColecao = per ? p.itens.some(i => colecaoDoItem(i) === String(req.query.colecao).toUpperCase()) : true;
             if (!(per ? naColecao : p.pendente > 0.5 || p.manual)) continue;
             const { itens, ...resto } = p;
-            lista.push({ ...resto, colecao: [...new Set(itens.map(colecaoDoItem))].join(' / '), parcelas: parcelasDoPedido(p, hoje),
+            lista.push({ ...resto, colecao: [...new Set(itens.map(colecaoDoItem))].join(' / '), parcelas: parcelasDoPedido(p, hoje, dist),
+              distribuida: !p.entregaDig && itens.some(i => dist[colecaoDoItem(i)]?.[i.marca]),
               porMarca: Object.entries(itens.reduce((o, i) => { const x = (o[i.marca] ||= { valor: 0, pendente: 0 }); x.valor += i.valor; x.pendente += i.pendente; return o; }, {}))
                 .map(([marca, x]) => ({ marca, valor: r2(x.valor), pendente: r2(x.pendente) })).sort((a, c) => c.valor - a.valor) });
           }
         } catch (e) { erros.push(`${b}: ${e.message}`); }
       }));
       lista.sort((a, c) => (a.entrega || '').localeCompare(c.entrega || '') || a.b.localeCompare(c.b));
-      res.json({ hoje, lojas, labels: Object.fromEntries(lojas.map(b => [b, boardsLabel[b] || b])), lista, erros });
+      // Marcas da coleção (pedidos do NEXO e manuais) para a grade de distribuição
+      const colSel = req.query.colecao ? String(req.query.colecao).toUpperCase() : null;
+      const marcasCol = colSel ? [...new Set(lista.filter(p => p.nexo || p.manual).flatMap(p => p.marcas))].sort() : [];
+      res.json({ hoje, lojas, labels: Object.fromEntries(lojas.map(b => [b, boardsLabel[b] || b])), lista, erros,
+        distribuicao: colSel ? { colecao: colSel, meses: periodo(colSel) ? mesesRestantes(periodo(colSel), '2000-01-01').map(([y, m]) => `${y}-${pad(m)}`) : [],
+          marcas: marcasCol, dist: dist[colSel] || {} } : null });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
@@ -481,10 +557,26 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
       if ('entrega' in req.body) { if (/^\d{4}-\d{2}-\d{2}$/.test(req.body.entrega || '')) set.entrega = req.body.entrega; else unset.entrega = 1; }
       if ('dias' in req.body) { const d = lerDias(req.body.dias); if (d.length) set.dias = d.join('/'); else unset.dias = 1; }
       if ('ignorar' in req.body) set.ignorar = !!req.body.ignorar; // explícito: vence a regra do atraso
+      if ('valor' in req.body) { const v = req.body.valor; if (v === null || v === '') unset.valor = 1; else if (Number.isFinite(+v) && +v >= 0) set.valor = +v; }
       if ('pendente' in req.body) { const v = req.body.pendente; if (v === null || v === '') unset.pendente = 1; else if (Number.isFinite(+v) && +v >= 0) set.pendente = +v; }
       const c = col('comprasPedidos');
       if (c) await c.updateOne({ _id: id }, { ...(Object.keys(set).length ? { $set: { ...set, em: new Date() } } : {}), ...(Object.keys(unset).length ? { $unset: unset } : {}) }, { upsert: true });
       else { const x = { ...(memoria.pedAjustes[id] || {}), ...set }; for (const k of Object.keys(unset)) delete x[k]; memoria.pedAjustes[id] = x; }
+      await atualizarParcelas();
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // PUT { colecao, marca, mes: 'YYYY-MM', pct } — % da entrega da marca naquele mês
+  app.put('/api/compras-plano/entrega', requireAdmin, async (req, res) => {
+    try {
+      const colecao = String(req.body?.colecao || '').toUpperCase(), marca = String(req.body?.marca || '').toUpperCase(), mes = req.body?.mes;
+      if (!periodo(colecao) || !marca || !/^\d{4}-\d{2}$/.test(mes || '')) return res.status(400).json({ error: 'coleção, marca e mês obrigatórios' });
+      const id = `${colecao}|entrega`, campo = `dist.${marca.replace(/\./g, '')}.${mes}`;
+      const v = req.body.pct === null || req.body.pct === '' ? null : +req.body.pct;
+      const c = col('comprasPlano');
+      if (c) await c.updateOne({ _id: id }, v ? { $set: { [campo]: v, em: new Date() } } : { $unset: { [campo]: 1 } }, { upsert: true });
+      else { const d = (memoria[id] ||= { dist: {} }).dist; (d[marca] ||= {}); if (v) d[marca][mes] = v; else delete d[marca][mes]; }
       await atualizarParcelas();
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -585,4 +677,4 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
   return { parcelasPrevistas, atualizarParcelas };
 }
 
-module.exports = { colecaoDoItem, register, juntarPedidos, parcelasDoPedido, diasDoPlano, montarLoja, periodo, colecaoDe, colecoesPerto, mesesRestantes, LOJAS };
+module.exports = { entregasDoItem, colecaoDoItem, register, juntarPedidos, parcelasDoPedido, diasDoPlano, montarLoja, periodo, colecaoDe, colecoesPerto, mesesRestantes, LOJAS };

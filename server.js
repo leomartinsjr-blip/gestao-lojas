@@ -10390,7 +10390,7 @@ const agendaApi = require('./services/agendaRotas').register(app, {
 // Planejamento de compras por coleção (planilhas PEDIDOS S27/W27) — services/comprasPlano.js
 app.get('/compras-plano', (req, res) => res.sendFile(path.join(__dirname, 'public/compras-plano.html')));
 const comprasApi = require('./services/comprasPlano').register(app, {
-  getDb: () => mongoDb, readDB, requireAdmin, microvix: require('./services/microvix'),
+  getDb: () => mongoDb, getNexoDb: () => (mongoDb ? mongoDb.client.db(process.env.NEXO_MONGODB_DB || 'integracao_site') : null), readDB, requireAdmin, microvix: require('./services/microvix'),
   getCatalog: () => _getCatalog(JSON.parse(process.env.MICROVIX_LOJAS || '{}')),
   criarProjecao: fluxoCaixa.criarProjecao, hojeBRT: fluxoCaixa.hojeBRT, boardsLabel: BOARDS_LABEL,
 });

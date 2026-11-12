@@ -53,9 +53,18 @@
   tr.marca { cursor: pointer; }
   tr.marca:hover td { background: var(--bg3); }
   tr.marca.open td { background: #eef4fc; }
-  tr.marca td:first-child { font-weight: 600; }
-  tr.setor td { font-size: 12px; color: var(--text2); background: #fafbfc; }
-  tr.setor td:first-child { padding-left: 30px; }
+  tr.marca td { border-top: 2px solid var(--border2); font-size: 13px; padding-top: 8px; padding-bottom: 8px; }
+  tr.marca td:first-child { font-weight: 700; font-size: 13.5px; }
+  tr.marca.open td { background: #e3edfb !important; }
+  tr.setor td { font-size: 12px; color: #3d444d; background: #f7f9fb !important; border-bottom: 1px dashed var(--border); }
+  tr.setor td:first-child { padding-left: 40px; font-weight: 600; box-shadow: inset 4px 0 0 #b9c8dc; }
+  tr.setor td:first-child::before { content: '└ '; color: var(--border2); }
+  .ped td input.val { width: 92px; text-align: right; }
+  .tag-nexo { background: rgba(26,127,55,.12); color: var(--green); }
+  .tag-mes { background: rgba(130,80,223,.12); color: #8250df; }
+  .dist input { width: 52px; text-align: right; font-size: 12px; padding: 2px 4px; }
+  .dist td.tot { font-weight: 700; }
+  .dist td.tot.ok { color: var(--green); } .dist td.tot.erro { color: var(--red); }
   tr.ajuste td { background: #fafbfc; text-align: left; font-size: 12px; }
   tr.ajuste input { width: 110px; text-align: right; }
   tfoot td { font-weight: 700; background: var(--bg3); }
@@ -311,17 +320,28 @@ function telaPedidos() {
   if (PD.erro) return h + `<div style="padding:20px" class="neg">Erro: ${esc(PD.erro)}</div></div>`;
   const lista = PD.lista;
   const tot = k => lista.filter(p => !p.ignorar).reduce((s, p) => s + p[k], 0);
+  if (PD.distribuicao && PD.distribuicao.marcas.length) {
+    const DI = PD.distribuicao;
+    h += `<div class="painel-hd" style="border-top:1px solid var(--border)"><h2>Entrega por mês — ${DI.colecao} <span class="muted" style="font-weight:400">(% de cada marca que chega no mês; cada mês vira uma NF com o prazo do pedido)</span></h2></div>
+      <div class="scroll"><table class="dist"><thead><tr><th>Marca</th>${DI.meses.map(m => `<th>${nomeMes(m)}</th>`).join('')}<th>Total</th></tr></thead><tbody>`;
+    for (const m of DI.marcas) {
+      const d = DI.dist[m] || {}, soma = Object.values(d).reduce((s, v) => s + v, 0);
+      h += `<tr><td>${esc(m)}</td>${DI.meses.map(mk => `<td><input type="text" class="dist-in" data-m="${esc(m)}" data-mes="${mk}" value="${d[mk] ? String(d[mk]).replace('.', ',') : ''}" placeholder="0"></td>`).join('')}
+        <td class="tot ${!soma ? '' : Math.abs(soma - 100) < .5 ? 'ok' : 'erro'}">${soma ? String(soma).replace('.', ',') + '%' : '<span class="muted">entrega única</span>'}</td></tr>`;
+    }
+    h += `</tbody></table></div><div class="nota">Marca sem % entrega de uma vez, na previsão do pedido (ou na data digitada). Com %, o pendente é repartido nos meses (o dia é o da previsão do Microvix); mês que já passou conta a partir de hoje. A data digitada no pedido vence a distribuição.</div>`;
+  }
   h += `<div class="scroll"><table class="ped"><thead><tr><th>Loja</th><th>Pedido</th><th>Marcas</th><th>Data</th><th title="Previsão de entrega; digite para mudar (vale para a coleção e para o pagamento)">Entrega</th>
     <th>Valor</th><th>Entregue</th><th title="Digite para corrigir (amarelo); vazio volta ao do Microvix">Pendente</th><th>Plano Microvix</th><th title="Dias depois da entrega, separados por barra (ex.: 30/60/90)">Prazo (dias)</th>
     <th style="text-align:left">Parcelas do pendente (vão para o Fluxo de Caixa)</th><th title="Desmarque para tirar este pedido do Fluxo de Caixa">No fluxo</th><th></th></tr></thead><tbody>`;
   for (const p of lista) {
     const i = PD.lista.indexOf(p);
     h += `<tr class="${p.ignorar ? 'ign' : ''}"><td><span style="color:${COR[p.b]}">●</span> ${esc(D.labels[p.b])}</td>
-      <td>${p.manual ? '<span class="tag tag-man">manual</span>' : esc(p.pedido)}${p.atrasado ? '<span class="tag tag-red" title="Entrega há mais de 60 dias e ainda pendente: provável saldo não encerrado no Microvix. Fica fora do fluxo; marque No fluxo se ainda vem.">atrasado</span>' : ''}</td>
+      <td>${p.manual ? '<span class="tag tag-man">manual</span>' : p.aLancar ? '<span class="tag tag-nexo" title="Pedido computado no NEXO ainda sem nº no Microvix: entra todo como pendente, pelo custo do NEXO">NEXO · a lançar</span>' : esc(p.pedido)}${p.nexo && !p.aLancar ? '<span class="tag tag-nexo" title="Pedido do NEXO: entra no planejamento da coleção ' + esc(p.nexo.colecao) + '">NEXO</span>' : ''}${p.distribuida ? '<span class="tag tag-mes" title="Entrega distribuída por mês (grade acima); cada mês é uma NF com o prazo">por mês</span>' : ''}${p.atrasado ? '<span class="tag tag-red" title="Entrega há mais de 60 dias e ainda pendente: provável saldo não encerrado no Microvix. Fica fora do fluxo; marque No fluxo se ainda vem.">atrasado</span>' : ''}</td>
       <td class="esq" title="${esc(p.porMarca.map(m => m.marca + ': ' + fmt0(m.valor)).join(' · '))}">${esc(p.marcas.join(', '))}${p.obs ? ` <span class="muted">· ${esc(p.obs)}</span>` : ''}</td>
       <td>${p.data ? DM(p.data) : ''}</td>
       <td><input type="date" class="p-ent${p.entregaDig && !p.manual ? ' dig' : ''}" data-i="${i}" value="${p.entrega || ''}" title="${p.entregas.length > 1 ? 'Entregas do Microvix: ' + p.entregas.map(DM).join(', ') : ''}"></td>
-      <td>${N(p.valor)}</td><td>${N(p.entregue)}</td>
+      <td>${p.manual ? N(p.valor) : `<input type="text" class="val p-val${p.valorDig != null ? ' dig' : ''}" data-i="${i}" value="${p.valorDig != null ? fmt0(p.valorDig) : ''}" placeholder="${fmt0(p.valorMx)}" title="Digite para corrigir; vazio volta ao do pedido">`}</td><td>${N(p.entregue)}</td>
       <td>${p.manual ? N(p.pendente) : `<input type="text" class="pend p-pend${p.pendenteDig != null ? ' dig' : ''}" data-i="${i}" value="${p.pendenteDig != null ? fmt0(p.pendenteDig) : ''}" placeholder="${fmt0(p.pendenteMx)}" title="Microvix: R$ ${fmt0(p.pendenteMx)}">`}</td><td>${esc(p.plano || '')}</td>
       <td><input type="text" class="dias p-dias${p.diasDig && !p.manual ? ' dig' : ''}" data-i="${i}" value="${p.diasDig || ''}" placeholder="${p.diasPadrao}"></td>
       <td class="parc">${fmtParc(p.parcelas)}</td>
@@ -329,7 +349,7 @@ function telaPedidos() {
       <td>${p.manual ? `<button class="cp-btn p-del" data-i="${i}" title="Apagar">×</button>` : ''}</td></tr>`;
   }
   h += `</tbody><tfoot><tr><td>Total</td><td>${lista.length}</td><td></td><td></td><td></td><td>${N(tot('valor'))}</td><td>${N(tot('entregue'))}</td><td>${N(tot('pendente'))}</td><td></td><td></td><td></td><td></td><td></td></tr></tfoot></table></div>
-    <div class="nota">Pedidos de compra do Microvix (sem cancelados) e os lançados aqui. A entrega e o prazo digitados ficam em amarelo; vazio usa o do Microvix (o plano "COMPRA 3X" vira 30/60/90 dias da entrega).
+    <div class="nota">O planejamento da coleção usa os pedidos do NEXO (pelo nº do pedido no Microvix; os "a lançar" entram todo pendentes, pelo custo do NEXO) e os manuais. Pedido do Microvix fora do NEXO aparece aqui e no fluxo, mas não no planejamento. Valor e pendente são editáveis (amarelo).<br>Pedidos de compra do Microvix (sem cancelados) e os lançados aqui. A entrega e o prazo digitados ficam em amarelo; vazio usa o do Microvix (o plano "COMPRA 3X" vira 30/60/90 dias da entrega).
     Só o <b>pendente</b> vira parcela no Fluxo de Caixa (categoria Mercadoria): o que já chegou tem fatura no Microvix. Entrega que já passou e segue pendente conta a partir de hoje; com mais de 60 dias de atraso o pedido fica fora do fluxo (provável saldo não encerrado no Microvix) até você marcar "No fluxo".
     ${PD.erros?.length ? '<br><span class="neg">Não leu: ' + esc(PD.erros.join(' · ')) + '</span>' : ''}</div></div>`;
   return h;
@@ -344,12 +364,23 @@ async function manualSalvar(p, mudar) {
   if (!r.ok) throw new Error((await r.json()).error || r.status);
 }
 $('cp-conteudo').addEventListener('change', async e => {
-  const t = e.target; if (!PD?.lista || !t.dataset.i) return;
+  const t = e.target;
+  if (t.matches('.dist-in')) {
+    const v = parseBR(t.value); if (Number.isNaN(v)) return alert('Informe o %, ex.: 30');
+    try {
+      const r = await fetch('/api/compras-plano/entrega', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ colecao: PD.distribuicao.colecao, marca: t.dataset.m, mes: t.dataset.mes, pct: v }) });
+      if (!r.ok) throw new Error((await r.json()).error || r.status);
+      await carregarPedidos();
+    } catch (err) { alert('Não salvou: ' + err.message); }
+    return;
+  }
+  if (!PD?.lista || !t.dataset.i) return;
   const p = PD.lista[+t.dataset.i];
   try {
     if (t.matches('.p-ent')) p.manual ? await manualSalvar(p, { entrega: t.value }) : await pedPut({ b: p.b, pedido: p.pedido, entrega: t.value || null });
     else if (t.matches('.p-dias')) p.manual ? await manualSalvar(p, { dias: t.value || '30' }) : await pedPut({ b: p.b, pedido: p.pedido, dias: t.value || null });
     else if (t.matches('.p-fluxo')) await pedPut({ b: p.b, pedido: p.pedido, ignorar: !t.checked });
+    else if (t.matches('.p-val')) { const v = parseBR(t.value); if (Number.isNaN(v)) return alert('Valor inválido'); await pedPut({ b: p.b, pedido: p.pedido, valor: v }); }
     else if (t.matches('.p-pend')) { const v = parseBR(t.value); if (Number.isNaN(v)) return alert('Valor inválido'); await pedPut({ b: p.b, pedido: p.pedido, pendente: v }); }
     else if (t.matches('.p-rec')) await manualSalvar(p, { recebido: t.checked });
     else return;
