@@ -214,6 +214,12 @@ function montarLoja({ vendas, estoque, itens, prem, pct = {}, ajustes = {} }) {
   }).filter(l => l.pct > 0 || l.estoque > 0.5 || l.realizado > 0.5 || l.pendente > 0.5)
     .sort((a, b) => b.pct - a.pct || b.estoque - a.estoque);
 
+  // Curva ABC pela venda: A até 80% acumulado, B até 95%, C o resto (sem venda = C)
+  let acum = 0;
+  for (const l of [...linhas].sort((a, b) => b.pctVenda - a.pctVenda)) {
+    const antes = acum; acum += l.pctVenda;
+    l.curva = l.pctVenda <= 0 ? 'C' : antes < 0.80 ? 'A' : antes < 0.95 ? 'B' : 'C';
+  }
   const tot = k => r2(linhas.reduce((t, l) => t + (l[k] || 0), 0));
   const total = { pct: linhas.reduce((t, l) => t + l.pct, 0), venda: tot('venda'), cota: tot('cota'), realizado: tot('realizado'), pendente: tot('pendente'),
     estoque: tot('estoque'), minimo: tot('minimo'), necessidade: tot('necessidade'), saldoComprar: tot('saldoComprar'), fatMensal: tot('fatMensal'), sobra: tot('sobra') };
@@ -245,9 +251,17 @@ function juntarPedidos(b, itens, ajustes = {}, manuais = [], hoje = new Date().t
   for (const i of itens) {
     const k = `${b}|${i.pedido}`, aj = ajustes[k] || {};
     const p = ped.get(k) || { b, pedido: i.pedido, data: i.data, fornecedor: i.fornecedor, plano: i.plano, itens: [], manual: false,
-      entregaDig: aj.entrega || null, diasDig: aj.dias || null, ignorarDig: aj.ignorar ?? null };
-    p.itens.push({ ...i, entrega: aj.entrega || i.entrega || i.data });
+      entregaDig: aj.entrega || null, diasDig: aj.dias || null, ignorarDig: aj.ignorar ?? null, pendenteDig: aj.pendente ?? null };
+    p.itens.push({ ...i, entrega: aj.entrega || i.entrega || i.data, pendenteMx: i.pendente });
     ped.set(k, p);
+  }
+  // Pendente digitado: reparte entre os itens na proporção do pendente do Microvix
+  // (sem pendente lá, na proporção do valor)
+  for (const p of ped.values()) {
+    if (p.pendenteDig == null) continue;
+    const base = p.itens.reduce((t, i) => t + i.pendenteMx, 0), porValor = base < 0.5;
+    const tot = porValor ? p.itens.reduce((t, i) => t + i.valor, 0) : base;
+    for (const i of p.itens) i.pendente = tot > 0 ? r2(p.pendenteDig * (porValor ? i.valor : i.pendenteMx) / tot) : 0;
   }
   for (const m of manuais.filter(x => x.loja === b)) {
     const valor = Number(m.valor) || 0;
@@ -261,7 +275,8 @@ function juntarPedidos(b, itens, ajustes = {}, manuais = [], hoje = new Date().t
     const entregas = [...new Set(p.itens.map(i => i.entrega).filter(Boolean))].sort();
     const marcas = [...new Set(p.itens.map(i => i.marca))];
     const atrasado = !p.manual && soma('pendente') > 0.5 && entregas.length && entregas[entregas.length - 1] < addDias(hoje, -DIAS_ATRASO_PEDIDO);
-    return { ...p, atrasado, ignorar: p.ignorarDig != null ? p.ignorarDig : !!atrasado, valor: soma('valor'), entregue: soma('entregue'), pendente: soma('pendente'), entrega: entregas[0] || p.data,
+    const pendenteMx = r2(p.itens.reduce((t, i) => t + (i.pendenteMx ?? i.pendente), 0));
+    return { ...p, pendenteMx, atrasado, ignorar: p.ignorarDig != null ? p.ignorarDig : !!atrasado, valor: soma('valor'), entregue: soma('entregue'), pendente: soma('pendente'), entrega: entregas[0] || p.data,
       entregas, marcas, diasPadrao: p.manual ? '30' : diasDoPlano(p.plano), dias: p.diasDig || (p.manual ? '30' : diasDoPlano(p.plano)) };
   });
 }
@@ -359,25 +374,42 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
 
       const porLoja = {}, erros = [];
       const [ajPed, man] = await Promise.all([ajustesPedidos(), manuaisLista()]);
-      await Promise.all(lojas.map(async b => {
-        const [v, e, p, plano] = await Promise.all([
-          ler.vendas(b, dtIni, dtFin, forcar).catch(err => { erros.push(`${b} venda: ${err.message}`); return {}; }),
-          ler.estoque(b, hoje, forcar).catch(err => { erros.push(`${b} estoque: ${err.message}`); return {}; }),
-          pedidosLoja(b, hoje, forcar, ajPed, man).catch(err => { erros.push(`${b} pedidos: ${err.message}`); return []; }),
-          lerPlano(`${colecao}|${b}`),
-        ]);
+      const erro = (b, o) => err => { const m = `${b} ${o}: ${err.message}`; if (!erros.includes(m)) erros.push(m); };
+      // Dados que não dependem da coleção: lidos uma vez por loja
+      const base = {};
+      const dadosLoja = b => base[b] ||= Promise.all([
+        ler.vendas(b, dtIni, dtFin, forcar).catch(erro(b, 'venda')).then(x => x || {}),
+        ler.estoque(b, hoje, forcar).catch(erro(b, 'estoque')).then(x => x || {}),
+        pedidosLoja(b, hoje, forcar, ajPed, man).catch(erro(b, 'pedidos')).then(x => x || []),
+      ]);
+      // Uma coleção de uma loja. A que ainda não começou parte da previsão de sobra
+      // da anterior (por marca e setor, sem negativo); a anterior, da dela, e assim por diante.
+      const memo = {};
+      const calcLoja = (col, b, nivel = 0) => memo[col + b] ||= (async () => {
+        const pr = periodo(col), ms = mesesRestantes(pr, hoje);
+        const [v, eAtual, p] = await dadosLoja(b);
+        const plano = await lerPlano(`${col}|${b}`);
+        let estoque = eAtual, estoqueDe = null;
+        if (pr.ini > hoje && nivel < 6) {
+          const ant = colecaoDe(addDias(pr.ini, -1));
+          const r = await calcLoja(ant, b, nivel + 1);
+          estoque = {};
+          for (const l of r.linhas) for (const s of l.setores) if (s.sobra > 0.5) (estoque[l.marca] ||= {})[s.setor] = s.sobra;
+          estoqueDe = ant;
+        }
         // Pedido entra na coleção pela previsão de entrega (sem previsão, pela data do pedido)
-        const itens = p.flatMap(x => x.itens).filter(i => { const d = i.entrega || i.data; return d >= per.ini && d <= per.fim; });
+        const itens = p.flatMap(x => x.itens).filter(i => { const d = i.entrega || i.data; return d >= pr.ini && d <= pr.fim; });
         const vendaPeriodo = Object.values(v).reduce((t, o) => t + Object.values(o).reduce((s, x) => s + x, 0), 0);
         const padrao = {
-          previsao: meses.length ? previsaoPadrao(dbJson, b, meses, hoje) : 0, meses: meses.length,
+          previsao: ms.length ? previsaoPadrao(dbJson, b, ms, hoje) : 0, meses: ms.length,
           cmv: PADRAO.cmv, cobertura: PADRAO.cobertura, vendaMedia: Math.round(vendaPeriodo / (dias / 30)),
         };
         const digit = plano.premissas || {};
         const prem = Object.fromEntries(Object.keys(padrao).map(k => [k, digit[k] != null ? digit[k] : padrao[k]]));
-        porLoja[b] = { ...montarLoja({ vendas: v, estoque: e, itens, prem, pct: plano.pct || {}, ajustes: plano.ajustes || {} }),
-          premissas: prem, padrao, digitado: digit, pedidos: itens.length };
-      }));
+        return { ...montarLoja({ vendas: v, estoque, itens, prem, pct: plano.pct || {}, ajustes: plano.ajustes || {} }),
+          premissas: prem, padrao, digitado: digit, pedidos: itens.length, estoqueDe };
+      })();
+      await Promise.all(lojas.map(async b => { porLoja[b] = await calcLoja(colecao, b); }));
       res.json({ colecao, colecoes: lista, periodo: per, meses: meses.map(([y, m]) => `${y}-${pad(m)}`), dias, hoje, venda: { dtIni, dtFin },
         lojas, labels: Object.fromEntries(lojas.map(b => [b, boardsLabel[b] || b])), porLoja, erros });
       if (!erros.length) atualizarParcelas().catch(e => console.error('[compras] parcelas:', e.message));
@@ -417,11 +449,35 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
       if ('entrega' in req.body) { if (/^\d{4}-\d{2}-\d{2}$/.test(req.body.entrega || '')) set.entrega = req.body.entrega; else unset.entrega = 1; }
       if ('dias' in req.body) { const d = lerDias(req.body.dias); if (d.length) set.dias = d.join('/'); else unset.dias = 1; }
       if ('ignorar' in req.body) set.ignorar = !!req.body.ignorar; // explícito: vence a regra do atraso
+      if ('pendente' in req.body) { const v = req.body.pendente; if (v === null || v === '') unset.pendente = 1; else if (Number.isFinite(+v) && +v >= 0) set.pendente = +v; }
       const c = col('comprasPedidos');
       if (c) await c.updateOne({ _id: id }, { ...(Object.keys(set).length ? { $set: { ...set, em: new Date() } } : {}), ...(Object.keys(unset).length ? { $unset: unset } : {}) }, { upsert: true });
       else { const x = { ...(memoria.pedAjustes[id] || {}), ...set }; for (const k of Object.keys(unset)) delete x[k]; memoria.pedAjustes[id] = x; }
       await atualizarParcelas();
       res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST { colecao } — pendente digitado = 0 em todos os pedidos do Microvix com entrega na
+  // coleção (o Leonardo zera e atualiza pedido a pedido). { colecao, desfazer: true } volta ao Microvix.
+  app.post('/api/compras-plano/zerar-pendentes', requireAdmin, async (req, res) => {
+    try {
+      const per = periodo(req.body?.colecao);
+      if (!per) return res.status(400).json({ error: 'coleção inválida' });
+      const hoje = hojeBRT(), [aj, man] = await Promise.all([ajustesPedidos(), manuaisLista()]);
+      let n = 0;
+      for (const b of LOJAS.filter(x => lojasEnv()[x])) {
+        for (const p of await pedidosLoja(b, hoje, false, aj, man)) {
+          if (p.manual || !p.itens.some(i => (i.entrega || i.data) >= per.ini && (i.entrega || i.data) <= per.fim)) continue;
+          const id = `${b}|${p.pedido}`, c = col('comprasPedidos');
+          const op = req.body.desfazer ? { $unset: { pendente: 1 } } : { $set: { pendente: 0, em: new Date() } };
+          if (c) await c.updateOne({ _id: id }, op, { upsert: true });
+          else { memoria.pedAjustes[id] ||= {}; if (req.body.desfazer) delete memoria.pedAjustes[id].pendente; else memoria.pedAjustes[id].pendente = 0; }
+          n++;
+        }
+      }
+      await atualizarParcelas();
+      res.json({ ok: true, pedidos: n });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

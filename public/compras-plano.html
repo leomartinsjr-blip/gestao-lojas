@@ -70,6 +70,23 @@
   .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
   @keyframes spin { to { transform: rotate(360deg); } }
   .conf td, .conf th { text-align: left; white-space: normal; }
+  /* Grupos de colunas: 2-3 venda/cota · 4-6 pedidos · 7-8 estoque · 9-10 compra · 11-14 giro */
+  table.grp th.gh { text-align: center; font-size: 10px; letter-spacing: .06em; border-bottom: 1px solid var(--border); }
+  table.grp .g1 { background: #eef4fc; } table.grp .g2 { background: #fdf4e3; } table.grp .g3 { background: #eaf6ee; }
+  table.grp .g4 { background: #f3effc; } table.grp .g5 { background: #f1f3f5; }
+  table.grp tr > :nth-child(4), table.grp tr > :nth-child(7), table.grp tr > :nth-child(9), table.grp tr > :nth-child(11),
+  table.grp tr.gh-row > :nth-child(2), table.grp tr.gh-row > :nth-child(3), table.grp tr.gh-row > :nth-child(4), table.grp tr.gh-row > :nth-child(5), table.grp tr.gh-row > :nth-child(6) { border-left: 2px solid var(--border2); }
+  table.grp tbody tr.marca > :nth-child(n+2):nth-child(-n+3), table.grp tfoot tr > :nth-child(n+2):nth-child(-n+3) { background: rgba(9,105,218,.04); }
+  table.grp tbody tr.marca > :nth-child(n+4):nth-child(-n+6), table.grp tfoot tr > :nth-child(n+4):nth-child(-n+6) { background: rgba(191,135,0,.06); }
+  table.grp tbody tr.marca > :nth-child(n+7):nth-child(-n+8), table.grp tfoot tr > :nth-child(n+7):nth-child(-n+8) { background: rgba(26,127,55,.05); }
+  table.grp tbody tr.marca > :nth-child(n+9):nth-child(-n+10), table.grp tfoot tr > :nth-child(n+9):nth-child(-n+10) { background: rgba(130,80,223,.05); }
+  table.grp tbody tr.marca:hover > td { filter: brightness(.97); }
+  .abc { display: inline-block; width: 18px; height: 18px; line-height: 18px; border-radius: 50%; text-align: center; font-size: 10px; font-weight: 800; color: #fff; margin-right: 6px; vertical-align: 1px; }
+  .abc-A { background: #1a7f37; } .abc-B { background: #d29922; } .abc-C { background: #cf222e; }
+  tr.marca.cv-A > td:first-child { box-shadow: inset 4px 0 0 #1a7f37; }
+  tr.marca.cv-B > td:first-child { box-shadow: inset 4px 0 0 #d29922; }
+  tr.marca.cv-C > td:first-child { box-shadow: inset 4px 0 0 #cf222e; }
+  .ped td input.pend { width: 92px; text-align: right; }
   .ped td input[type=date], .ped td input[type=text] { font-size: 12px; padding: 2px 5px; }
   .ped td input.dias { width: 92px; text-align: right; }
   .ped td input.dig, .ped td input[type=date].dig { border-color: var(--yellow); background: #fff8e6; }
@@ -184,9 +201,10 @@ function telaLoja(b) {
     </div></div>`;
 
   h += `<div class="painel"><div class="painel-hd"><h2>Marcas — clique para abrir os setores e o ajuste manual</h2>
-    <span class="muted">% da venda de ${DM(D.venda.dtIni)} a ${DM(D.venda.dtFin)} · ${L.pedidos} itens de pedido com entrega na coleção</span></div>
-    <div class="scroll"><table><thead><tr>
-      <th>Marca</th><th title="Venda dos últimos dias, ou digitado">% venda</th><th title="Previsão × CMV, rateada pelo %">Cota compra</th>
+    <span class="muted">% da venda de ${DM(D.venda.dtIni)} a ${DM(D.venda.dtFin)} · ${L.pedidos} itens de pedido com entrega na coleção${L.estoqueDe ? ` · <b class="azul">estoque = previsão de sobra da ${L.estoqueDe}</b>` : ''}</span></div>
+    <div class="scroll"><table class="grp"><thead>
+      <tr class="gh-row"><th class="gh"></th><th class="gh g1" colspan="2">VENDA E COTA</th><th class="gh g2" colspan="3">PEDIDOS</th><th class="gh g3" colspan="2">ESTOQUE</th><th class="gh g4" colspan="2">COMPRA</th><th class="gh g5" colspan="4">GIRO</th></tr>
+      <tr><th>Marca <span class="muted" style="text-transform:none;font-weight:400">· curva ABC</span></th><th title="Venda dos últimos dias, ou digitado">% venda</th><th title="Previsão × CMV, rateada pelo %">Cota compra</th>
       <th title="Pedidos de compra com entrega na coleção, sem cancelados (a custo)">Realizado</th><th>% entregue</th><th title="Pedido − entregue">Pendente</th>
       <th title="Saldo × custo médio">Estoque</th><th title="Venda média ÷ markup × cobertura, rateado pelo %">Est. mínimo</th>
       <th title="Cota + mínimo − estoque">Necessidade</th><th title="Necessidade − pendente">Saldo p/ comprar</th>
@@ -195,8 +213,8 @@ function telaLoja(b) {
   for (const l of L.linhas) {
     const k = b + '|' + l.marca, ab = abertos.has(k);
     const manual = l.ajRealizado || l.ajPendente;
-    h += `<tr class="marca${ab ? ' open' : ''}" data-k="${esc(k)}">
-      <td><span class="seta">${ab ? '▾' : '▸'}</span>${esc(l.marca)}${manual ? '<span class="tag tag-man">manual</span>' : ''}${l.pendente > l.realizado + .5 ? '<span class="tag tag-red">pend > real</span>' : ''}${l.pct > 0 && l.estoque < .5 ? '<span class="tag tag-red">sem estoque</span>' : ''}</td>
+    h += `<tr class="marca cv-${l.curva}${ab ? ' open' : ''}" data-k="${esc(k)}">
+      <td><span class="seta">${ab ? '▾' : '▸'}</span><span class="abc abc-${l.curva}" title="Curva ${l.curva}: ${l.curva === 'A' ? 'marcas que somam até 80% da venda' : l.curva === 'B' ? 'de 80% a 95% da venda' : 'últimos 5% da venda (ou sem venda)'}">${l.curva}</span>${esc(l.marca)}${manual ? '<span class="tag tag-man">manual</span>' : ''}${l.pendente > l.realizado + .5 ? '<span class="tag tag-red">pend > real</span>' : ''}${l.pct > 0 && l.estoque < .5 ? '<span class="tag tag-red">sem estoque</span>' : ''}</td>
       <td><input type="text" class="pct${l.pctDigitado != null ? ' dig' : ''}" data-m="${esc(l.marca)}" value="${l.pctDigitado != null ? P(l.pctDigitado, 2) : ''}" placeholder="${P(l.pctVenda, 1)}" title="Venda: ${P(l.pctVenda, 2)}. Digite para fixar; vazio volta para a venda."></td>
       <td>${N(l.cota)}</td><td>${N(l.realizado)}</td><td>${l.entregue == null ? '' : P(l.entregue, 0)}</td><td>${N(l.pendente)}</td>
       <td>${N(l.estoque)}</td><td>${N(l.minimo)}</td><td>${NC(l.necessidade)}</td><td class="${l.saldoComprar > .5 ? 'azul' : ''}">${NC(l.saldoComprar)}</td>
@@ -212,7 +230,7 @@ function telaLoja(b) {
   const t = L.total;
   h += `</tbody><tfoot><tr><td>Total</td><td>${P(t.pct, 1)}</td><td>${N(t.cota)}</td><td>${N(t.realizado)}</td><td>${t.entregue == null ? '' : P(t.entregue, 0)}</td><td>${N(t.pendente)}</td>
     <td>${N(t.estoque)}</td><td>${N(t.minimo)}</td><td>${NC(t.necessidade)}</td><td>${NC(t.saldoComprar)}</td><td>${N(t.fatMensal)}</td><td></td><td></td><td>${NC(t.sobra)}</td></tr></tfoot></table></div>
-    <div class="nota">Realizado e pendente vêm dos pedidos de compra do Microvix com previsão de entrega de ${periodoTxt()} (sem previsão, pela data do pedido); cancelados ficam de fora e pedido encerrado não tem pendente. Estoque = saldo de hoje × custo médio. Coluna "Saldo p/ comprar" em azul = ainda cabe comprar; negativo = já comprou além da cota.
+    <div class="nota">Realizado e pendente vêm dos pedidos de compra do Microvix com previsão de entrega de ${periodoTxt()} (sem previsão, pela data do pedido); cancelados ficam de fora e pedido encerrado não tem pendente. Estoque = saldo de hoje × custo médio; numa coleção que ainda não começou, é a previsão de sobra da coleção anterior (marca e setor, sem negativo). Coluna "Saldo p/ comprar" em azul = ainda cabe comprar; negativo = já comprou além da cota.
     Cobertura em meses: vermelho abaixo de zero, amarelo abaixo de 3.</div></div>`;
   return h;
 }
@@ -271,6 +289,8 @@ async function carregarPedidos(atualizar) {
 function telaPedidos() {
   const lojaOpts = D.lojas.map(b => `<option value="${b}">${esc(D.labels[b])}</option>`).join('');
   let h = `<div class="painel"><div class="painel-hd"><h2>Pedidos de compra — entrega e pagamento</h2>
+    <button class="cp-btn" id="ped-zerar" title="Pendente digitado = 0 em todos os pedidos do Microvix com entrega na ${D.colecao}">Zerar pendentes da ${D.colecao}</button>
+    <button class="cp-btn" id="ped-desfazer" title="Volta todos os pedidos da ${D.colecao} ao pendente do Microvix">Voltar ao Microvix</button>
     <div class="seg2" id="ped-ver"><button data-v="abertos" class="${pedVer === 'abertos' ? 'active' : ''}">Com pendente (todas as coleções)</button><button data-v="colecao" class="${pedVer === 'colecao' ? 'active' : ''}">Entrega na ${D.colecao}</button></div></div>
     <div class="novo"><b style="align-self:center">Pedido manual</b>
       <label>Loja<select id="nm-loja">${lojaOpts}</select></label>
@@ -286,7 +306,7 @@ function telaPedidos() {
   const lista = PD.lista;
   const tot = k => lista.filter(p => !p.ignorar).reduce((s, p) => s + p[k], 0);
   h += `<div class="scroll"><table class="ped"><thead><tr><th>Loja</th><th>Pedido</th><th>Marcas</th><th>Data</th><th title="Previsão de entrega; digite para mudar (vale para a coleção e para o pagamento)">Entrega</th>
-    <th>Valor</th><th>Entregue</th><th>Pendente</th><th>Plano Microvix</th><th title="Dias depois da entrega, separados por barra (ex.: 30/60/90)">Prazo (dias)</th>
+    <th>Valor</th><th>Entregue</th><th title="Digite para corrigir (amarelo); vazio volta ao do Microvix">Pendente</th><th>Plano Microvix</th><th title="Dias depois da entrega, separados por barra (ex.: 30/60/90)">Prazo (dias)</th>
     <th style="text-align:left">Parcelas do pendente (vão para o Fluxo de Caixa)</th><th title="Desmarque para tirar este pedido do Fluxo de Caixa">No fluxo</th><th></th></tr></thead><tbody>`;
   for (const p of lista) {
     const i = PD.lista.indexOf(p);
@@ -295,7 +315,8 @@ function telaPedidos() {
       <td class="esq" title="${esc(p.porMarca.map(m => m.marca + ': ' + fmt0(m.valor)).join(' · '))}">${esc(p.marcas.join(', '))}${p.obs ? ` <span class="muted">· ${esc(p.obs)}</span>` : ''}</td>
       <td>${p.data ? DM(p.data) : ''}</td>
       <td><input type="date" class="p-ent${p.entregaDig && !p.manual ? ' dig' : ''}" data-i="${i}" value="${p.entrega || ''}" title="${p.entregas.length > 1 ? 'Entregas do Microvix: ' + p.entregas.map(DM).join(', ') : ''}"></td>
-      <td>${N(p.valor)}</td><td>${N(p.entregue)}</td><td>${N(p.pendente)}</td><td>${esc(p.plano || '')}</td>
+      <td>${N(p.valor)}</td><td>${N(p.entregue)}</td>
+      <td>${p.manual ? N(p.pendente) : `<input type="text" class="pend p-pend${p.pendenteDig != null ? ' dig' : ''}" data-i="${i}" value="${p.pendenteDig != null ? fmt0(p.pendenteDig) : ''}" placeholder="${fmt0(p.pendenteMx)}" title="Microvix: R$ ${fmt0(p.pendenteMx)}">`}</td><td>${esc(p.plano || '')}</td>
       <td><input type="text" class="dias p-dias${p.diasDig && !p.manual ? ' dig' : ''}" data-i="${i}" value="${p.diasDig || ''}" placeholder="${p.diasPadrao}"></td>
       <td class="parc">${fmtParc(p.parcelas)}</td>
       <td style="text-align:center">${p.manual ? `<label title="Recebido: sai do pendente"><input type="checkbox" class="p-rec" data-i="${i}"${p.recebido ? ' checked' : ''}> recebido</label>` : `<input type="checkbox" class="p-fluxo" data-i="${i}"${p.ignorar ? '' : ' checked'}>`}</td>
@@ -323,12 +344,21 @@ $('cp-conteudo').addEventListener('change', async e => {
     if (t.matches('.p-ent')) p.manual ? await manualSalvar(p, { entrega: t.value }) : await pedPut({ b: p.b, pedido: p.pedido, entrega: t.value || null });
     else if (t.matches('.p-dias')) p.manual ? await manualSalvar(p, { dias: t.value || '30' }) : await pedPut({ b: p.b, pedido: p.pedido, dias: t.value || null });
     else if (t.matches('.p-fluxo')) await pedPut({ b: p.b, pedido: p.pedido, ignorar: !t.checked });
+    else if (t.matches('.p-pend')) { const v = parseBR(t.value); if (Number.isNaN(v)) return alert('Valor inválido'); await pedPut({ b: p.b, pedido: p.pedido, pendente: v }); }
     else if (t.matches('.p-rec')) await manualSalvar(p, { recebido: t.checked });
     else return;
     await carregarPedidos(); carregar(false);
   } catch (err) { alert('Não salvou: ' + err.message); }
 });
 $('cp-conteudo').addEventListener('click', async e => {
+  const z = e.target.closest('#ped-zerar, #ped-desfazer');
+  if (z) {
+    const desfazer = z.id === 'ped-desfazer';
+    if (!confirm(desfazer ? `Voltar o pendente de todos os pedidos da ${D.colecao} ao que está no Microvix?` : `Zerar o pendente de todos os pedidos do Microvix com entrega na ${D.colecao}? Depois você digita o pendente certo pedido a pedido.`)) return;
+    const r = await fetch('/api/compras-plano/zerar-pendentes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ colecao: D.colecao, desfazer }) });
+    const j = await r.json(); if (!r.ok) return alert('Não fez: ' + (j.error || r.status));
+    pedVer = 'colecao'; await carregarPedidos(); carregar(false); return;
+  }
   const v = e.target.closest('#ped-ver button');
   if (v) { pedVer = v.dataset.v; PD = null; render(); return; }
   if (e.target.closest('#nm-add')) {
