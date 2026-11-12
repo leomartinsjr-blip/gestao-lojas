@@ -81,9 +81,10 @@ function criarLeitura({ microvix, getCatalog, lojasEnv }) {
 
   // Venda por marca/setor (mesmos filtros do Relatório de Marcas)
   async function vendas(b, dtIni, dtFin, forcar) {
-    return comCache(`v|${b}|${dtIni}|${dtFin}`, 3 * 3600e3, async () => {
+    return comCache(`v2|${b}|${dtIni}|${dtFin}`, 3 * 3600e3, async () => {
       const [rows, cat] = await Promise.all([microvix.fetchMovimento(cnpjDe(b), dtIni, dtFin, chaveDe(b)), getCatalog()]);
       const out = {};
+      let custo = 0, valor = 0;
       for (const row of rows) {
         if (row.cancelado === 'S' || row.cancelado === '1' || row.excluido === 'S' || row.soma_relatorio === 'N') continue;
         const op = String(row.operacao || '').toUpperCase(), serie = String(row.serie || row.serie_documento || row.num_serie || '').trim();
@@ -92,10 +93,13 @@ function criarLeitura({ microvix, getCatalog, lojasEnv }) {
         const cod = String(row.cod_produto || '').replace(/\.0+$/, '').trim();
         if (!cod) continue;
         const [m, s] = chaveMS(infoDe(cat, cod, String(row.cod_barra || '').replace(/\.0+$/, '').trim()));
-        const v = (op === 'DS' ? -1 : 1) * num(row.valor_total);
+        const sinal = op === 'DS' ? -1 : 1, v = sinal * num(row.valor_total);
         ((out[m] ||= {})[s] = (out[m][s] || 0) + v);
+        // CMV como na Conferência: custo médio da época × quantidade
+        const q = num(row.quantidade || '1'), cu = num(row.custo_medio_epoca || row.preco_custo);
+        if (cu > 0) { custo += sinal * cu * q; valor += v; }
       }
-      return out;
+      return { porMS: out, cmv: valor > 0 ? Math.round(custo / valor * 1000) / 10 : null };
     }, forcar);
   }
 
@@ -211,7 +215,7 @@ function montarLoja({ vendas, estoque, itens, prem, pct = {}, ajustes = {} }) {
         sobra: r2(s.pendente + s.estoque - sf * (prem.meses || 0)) };
     });
     return l;
-  }).filter(l => l.pct > 0 || l.estoque > 0.5 || l.realizado > 0.5 || l.pendente > 0.5)
+  }).filter(l => l.pctVenda >= 0.0005 || l.pctDigitado != null)
     .sort((a, b) => b.pct - a.pct || b.estoque - a.estoque);
 
   // Curva ABC pela venda: A até 80% acumulado, B até 95%, C o resto (sem venda = C)
@@ -353,10 +357,19 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
   }
 
   // Previsão padrão: projeção do Dash (a mesma do Fluxo) nos meses que faltam da coleção
+  // Coleção em andamento: no mês atual entra só o que falta vender (projeção − vendido até ontem)
   function previsaoPadrao(dbJson, b, meses, hoje) {
     const pj = criarProjecao(dbJson, b, hoje);
-    return Math.round(meses.reduce((t, [y, m]) => t + (pj.projMes(y, m) || 0), 0));
+    const [hy, hm] = hoje.split('-').map(Number);
+    return Math.round(meses.reduce((t, [y, m]) => t + (y === hy && m === hm ? Math.max(0, (pj.projMes(y, m) || 0) - (pj.realAteOntem || 0)) : (pj.projMes(y, m) || 0)), 0));
   }
+  // Meses que faltam, em fração: dias de hoje (ou do início) até o fim da coleção ÷ 30,4
+  const mesesFaltantes = (pr, hoje) => {
+    const de = pr.ini > hoje ? pr.ini : hoje;
+    if (de > pr.fim) return 0;
+    const dias = (Date.parse(pr.fim + 'T12:00:00Z') - Date.parse(de + 'T12:00:00Z')) / 864e5 + 1;
+    return Math.round(dias / (365 / 12) * 10) / 10;
+  };
 
   app.get('/api/compras-plano', requireAdmin, async (req, res) => {
     try {
@@ -378,7 +391,7 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
       // Dados que não dependem da coleção: lidos uma vez por loja
       const base = {};
       const dadosLoja = b => base[b] ||= Promise.all([
-        ler.vendas(b, dtIni, dtFin, forcar).catch(erro(b, 'venda')).then(x => x || {}),
+        ler.vendas(b, dtIni, dtFin, forcar).catch(erro(b, 'venda')).then(x => x || { porMS: {}, cmv: null }),
         ler.estoque(b, hoje, forcar).catch(erro(b, 'estoque')).then(x => x || {}),
         pedidosLoja(b, hoje, forcar, ajPed, man).catch(erro(b, 'pedidos')).then(x => x || []),
       ]);
@@ -387,7 +400,8 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
       const memo = {};
       const calcLoja = (col, b, nivel = 0) => memo[col + b] ||= (async () => {
         const pr = periodo(col), ms = mesesRestantes(pr, hoje);
-        const [v, eAtual, p] = await dadosLoja(b);
+        const [vr, eAtual, p] = await dadosLoja(b);
+        const v = vr.porMS || {};
         const plano = await lerPlano(`${col}|${b}`);
         let estoque = eAtual, estoqueDe = null;
         if (pr.ini > hoje && nivel < 6) {
@@ -401,8 +415,8 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
         const itens = p.flatMap(x => x.itens).filter(i => { const d = i.entrega || i.data; return d >= pr.ini && d <= pr.fim; });
         const vendaPeriodo = Object.values(v).reduce((t, o) => t + Object.values(o).reduce((s, x) => s + x, 0), 0);
         const padrao = {
-          previsao: ms.length ? previsaoPadrao(dbJson, b, ms, hoje) : 0, meses: ms.length,
-          cmv: PADRAO.cmv, cobertura: PADRAO.cobertura, vendaMedia: Math.round(vendaPeriodo / (dias / 30)),
+          previsao: ms.length ? previsaoPadrao(dbJson, b, ms, hoje) : 0, meses: mesesFaltantes(pr, hoje),
+          cmv: vr.cmv || PADRAO.cmv, cobertura: PADRAO.cobertura, vendaMedia: Math.round(vendaPeriodo / (dias / 30)),
         };
         const digit = plano.premissas || {};
         const prem = Object.fromEntries(Object.keys(padrao).map(k => [k, digit[k] != null ? digit[k] : padrao[k]]));

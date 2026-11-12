@@ -189,11 +189,11 @@ function telaLoja(b) {
   let h = `<div class="painel"><div class="painel-hd"><h2>Premissas — ${esc(D.labels[b])} · ${D.colecao} <span class="muted" style="font-weight:400">(${periodoTxt()})</span></h2>
     <span class="muted">amarelo = digitado · vazio = calculado</span></div>
     <div class="prem">
-      ${campo('previsao', 'Previsão de venda (R$)', `Venda prevista nos meses que faltam (${D.meses.map(nomeMes).join(', ') || 'nenhum'}), pela projeção do Dash de Performance`)}
-      ${campo('meses', 'Meses faltantes', 'Meses da coleção que faltam, contando o atual')}
-      ${campo('cmv', 'CMV médio (%)', 'Custo sobre a venda', 1)}
+      ${campo('previsao', 'Previsão de venda (R$)', `Venda que falta até o fim da coleção (${D.meses.map(nomeMes).join(', ') || 'nenhum'}): no mês atual, projeção do Dash menos o vendido até ontem`)}
+      ${campo('meses', 'Meses faltantes', 'Dias que faltam até o fim da coleção ÷ 30,4', 1)}
+      ${campo('cmv', 'CMV médio (%)', `Custo médio ÷ venda dos últimos ${D.dias} dias da loja (Microvix)`, 1)}
       ${campo('vendaMedia', 'Venda média mensal (R$)', `Base do mínimo: venda dos últimos ${D.dias} dias ÷ ${D.dias / 30}`)}
-      ${campo('cobertura', 'Cobertura (x)', 'Estoque mínimo = N meses de venda a custo', 1)}
+      ${campo('cobertura', 'Cobertura (x) — você define', 'Estoque mínimo = N meses de venda a custo; defina por loja', 1)}
       <div class="calc">Markup<br><b>${c.markup.toFixed(2).replace('.', ',')}</b></div>
       <div class="calc">Média mensal<br><b>R$ ${fmt0(c.mediaMensal)}</b></div>
       <div class="calc">Cota de compra<br><b>R$ ${fmt0(c.cotaTotal)}</b></div>
