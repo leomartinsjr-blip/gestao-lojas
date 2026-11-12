@@ -333,7 +333,7 @@ function telaPedidos() {
   }
   h += `<div class="scroll"><table class="ped"><thead><tr><th>Loja</th><th>Pedido</th><th>Marcas</th><th>Data</th><th title="Previsão de entrega; digite para mudar (vale para a coleção e para o pagamento)">Entrega</th>
     <th>Valor</th><th>Entregue</th><th title="Digite para corrigir (amarelo); vazio volta ao do Microvix">Pendente</th><th>Plano Microvix</th><th title="Dias depois da entrega, separados por barra (ex.: 30/60/90)">Prazo (dias)</th>
-    <th style="text-align:left">Parcelas do pendente (vão para o Fluxo de Caixa)</th><th title="Desmarque para tirar este pedido do Fluxo de Caixa">No fluxo</th><th></th></tr></thead><tbody>`;
+    <th style="text-align:left">Parcelas do pendente (prévia — ainda fora do Fluxo de Caixa)</th><th title="Desmarque para tirar este pedido do Fluxo de Caixa">No fluxo</th><th></th></tr></thead><tbody>`;
   for (const p of lista) {
     const i = PD.lista.indexOf(p);
     h += `<tr class="${p.ignorar ? 'ign' : ''}"><td><span style="color:${COR[p.b]}">●</span> ${esc(D.labels[p.b])}</td>

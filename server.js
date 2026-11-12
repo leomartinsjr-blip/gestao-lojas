@@ -10342,6 +10342,9 @@ app.get('/fluxo-caixa', (req, res) => res.sendFile(path.join(__dirname, 'public/
 // chega, o pendente cai e a fatura real do Microvix toma o lugar.
 const NOME_PEDIDO = p => `PEDIDO DE COMPRA · ${p.marca}`;
 async function faturasDePedidos(de, ate) {
+  // Desligado em 12/11/2026 a pedido do Leonardo até definir como o pagamento das compras
+  // deve ser previsto (entrega ao longo do semestre, NF a NF). Religar: COMPRAS_NO_FLUXO=true.
+  if (process.env.COMPRAS_NO_FLUXO !== 'true') return [];
   const lista = await comprasApi.parcelasPrevistas().catch(e => { console.error('[fluxo] pedidos:', e.message); return []; });
   return lista.filter(p => p.d >= de && p.d <= ate).map(p => ({ board: p.b, codigo_fatura: '', fornecedor: NOME_PEDIDO(p), documento: `pedido ${p.pedido}`,
     parcela: '', vencimento: p.d, baixa: '', valor: p.valor, valorLiquido: p.valor, valorPago: 0, isPagar: true, previsao: 'N', pedidoCompra: true }));
