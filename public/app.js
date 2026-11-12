@@ -197,6 +197,8 @@ function applyUserPermissions(user) {
   if (icmsEl) icmsEl.style.display = (isAdmin || user.board === 'escritorio') ? 'flex' : 'none';
   const fluxoCaixaEl = document.getElementById('fluxoCaixaBtn');
   if (fluxoCaixaEl) fluxoCaixaEl.style.display = isAdmin ? 'flex' : 'none';
+  const comprasPlanoEl = document.getElementById('comprasPlanoBtn');
+  if (comprasPlanoEl) comprasPlanoEl.style.display = isAdmin ? 'flex' : 'none';
   const dreResultadosEl = document.getElementById('dreResultadosBtn');
   if (dreResultadosEl) dreResultadosEl.style.display = user.dono ? 'flex' : 'none';
   const conferenciaEl = document.getElementById('conferenciaBtn');

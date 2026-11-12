@@ -10376,6 +10376,14 @@ const agendaApi = require('./services/agendaRotas').register(app, {
   getDb: () => mongoDb, readDB, requireAdmin, fluxoCaixa, fluxoTaxas, fluxoTaxasPorForma, taxaCartaoDias, formasPagamentoDias, boardsLabel: BOARDS_LABEL,
 });
 
+// Planejamento de compras por coleção (planilhas PEDIDOS S27/W27) — services/comprasPlano.js
+app.get('/compras-plano', (req, res) => res.sendFile(path.join(__dirname, 'public/compras-plano.html')));
+require('./services/comprasPlano').register(app, {
+  getDb: () => mongoDb, readDB, requireAdmin, microvix: require('./services/microvix'),
+  getCatalog: () => _getCatalog(JSON.parse(process.env.MICROVIX_LOJAS || '{}')),
+  criarProjecao: fluxoCaixa.criarProjecao, hojeBRT: fluxoCaixa.hojeBRT, boardsLabel: BOARDS_LABEL,
+});
+
 // DRE/Resultados, só do dono — services/dreResultados.js
 app.get('/dre-resultados', (req, res) => {
   if (!souDono(req)) return res.redirect('/');

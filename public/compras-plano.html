@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Planejamento de Compras</title>
+<link rel="icon" type="image/jpeg" href="favicon.jpg">
+<style>
+  :root {
+    --bg: #f4f6f9; --bg2: #ffffff; --bg3: #f0f3f7; --border: #dde3ea; --border2: #b9c2cd;
+    --text: #1f2328; --text2: #636c76; --green: #1a7f37; --red: #cf222e; --yellow: #9a6700;
+    --blue: #0969da; --topbar-h: 52px; color-scheme: light;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 13px; min-height: 100vh; }
+  #cp-topbar { position: fixed; top: 0; left: 0; right: 0; min-height: var(--topbar-h); background: var(--bg2); border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; padding: 8px 16px; z-index: 100; flex-wrap: wrap; }
+  .cp-title { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .cp-btn { background: none; border: 1px solid var(--border); border-radius: 6px; color: var(--text2); cursor: pointer; padding: 4px 10px; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
+  .cp-btn:hover { color: var(--blue); border-color: var(--blue); }
+  .cp-btn:disabled { opacity: .5; cursor: default; }
+  .cp-filtros { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-left: auto; }
+  select, input[type=text] { background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; color: var(--text); padding: 4px 8px; font-size: 12px; }
+  .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .seg button { background: none; border: none; color: var(--text2); padding: 4px 10px; font-size: 12px; cursor: pointer; }
+  .seg button.active { background: rgba(9,105,218,.1); color: var(--blue); font-weight: 600; }
+  #cp-body { margin-top: calc(var(--topbar-h) + 4px); padding: 16px; max-width: 1700px; }
+  .abas { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .aba { background: var(--bg2); border: 1px solid var(--border); border-radius: 18px; color: var(--text2); padding: 6px 14px; font-size: 12px; cursor: pointer; }
+  .aba.active { border-color: var(--blue); color: var(--blue); background: rgba(9,105,218,.08); font-weight: 600; }
+  .aba .alerta { color: var(--red); font-weight: 700; margin-left: 4px; }
+  .painel { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; margin-bottom: 14px; overflow: hidden; }
+  .painel-hd { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .painel-hd h2 { font-size: 13px; font-weight: 600; flex: 1; }
+  .nota { color: var(--text2); font-size: 11px; padding: 8px 14px; border-top: 1px solid var(--border); line-height: 1.55; }
+  .muted { color: var(--text2); }
+  .pos { color: var(--green); } .neg { color: var(--red); } .warn { color: var(--yellow); } .azul { color: var(--blue); }
+  /* premissas */
+  .prem { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; padding: 12px 14px; }
+  .prem label { display: grid; gap: 3px; font-size: 11px; color: var(--text2); }
+  .prem input { width: 100%; text-align: right; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .prem input.dig { border-color: var(--yellow); background: #fff8e6; }
+  .prem .calc { font-size: 11px; color: var(--text2); }
+  .prem .calc b { color: var(--text); font-variant-numeric: tabular-nums; }
+  /* tabela */
+  .scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: var(--bg3); color: var(--text2); font-size: 10px; font-weight: 600; padding: 7px 9px; text-align: right; border-bottom: 1px solid var(--border); white-space: nowrap; text-transform: uppercase; letter-spacing: .03em; position: sticky; top: 0; }
+  td { padding: 6px 9px; border-bottom: 1px solid var(--border); text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; position: sticky; left: 0; background: inherit; z-index: 1; }
+  th:first-child { background: var(--bg3); }
+  tbody tr { background: var(--bg2); }
+  tr.marca { cursor: pointer; }
+  tr.marca:hover td { background: var(--bg3); }
+  tr.marca.open td { background: #eef4fc; }
+  tr.marca td:first-child { font-weight: 600; }
+  tr.setor td { font-size: 12px; color: var(--text2); background: #fafbfc; }
+  tr.setor td:first-child { padding-left: 30px; }
+  tr.ajuste td { background: #fafbfc; text-align: left; font-size: 12px; }
+  tr.ajuste input { width: 110px; text-align: right; }
+  tfoot td { font-weight: 700; background: var(--bg3); }
+  .seta { display: inline-block; width: 14px; color: var(--text2); }
+  input.pct { width: 62px; text-align: right; padding: 2px 5px; font-size: 12px; }
+  input.pct.dig { border-color: var(--yellow); background: #fff8e6; }
+  .tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 9px; margin-left: 5px; }
+  .tag-red { background: rgba(207,34,46,.12); color: var(--red); }
+  .tag-man { background: rgba(9,105,218,.12); color: var(--blue); }
+  #cp-msg { padding: 40px 16px; text-align: center; color: var(--text2); }
+  #cp-err { display: none; background: rgba(207,34,46,.08); border: 1px solid var(--red); border-radius: 8px; padding: 10px 14px; margin-bottom: 12px; color: var(--red); }
+  .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid var(--border); border-top-color: var(--blue); border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .conf td, .conf th { text-align: left; white-space: normal; }
+  .conf td.n { text-align: right; }
+  @media (max-width: 640px) { #cp-body { padding: 10px; margin-top: 110px; } .cp-filtros { margin-left: 0; } }
+</style>
+</head>
+<body>
+<div id="cp-topbar">
+  <button class="cp-btn" onclick="location.href='/'">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>Voltar
+  </button>
+  <div class="cp-title">
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"/></svg>
+    Planejamento de Compras
+  </div>
+  <div class="cp-filtros">
+    <select id="cp-colecao" title="Coleção"></select>
+    <span class="muted">% da venda:</span>
+    <div class="seg" id="cp-dias"><button data-d="30">30 dias</button><button data-d="60">60 dias</button><button data-d="90" class="active">90 dias</button></div>
+    <button class="cp-btn" id="cp-atualizar" title="Relê venda, estoque e pedidos do Microvix">Atualizar do Microvix</button>
+  </div>
+</div>
+
+<div id="cp-body">
+  <div id="cp-err"></div>
+  <div id="cp-msg"><span class="spinner"></span> Lendo venda, estoque e pedidos do Microvix…</div>
+  <div id="cp-main" style="display:none">
+    <div class="abas" id="cp-abas"></div>
+    <div id="cp-conteudo"></div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const N = v => v == null ? '' : Math.abs(v) < .5 ? '<span class="muted">—</span>' : (v < 0 ? '−' : '') + Math.abs(Math.round(v)).toLocaleString('pt-BR');
+const NC = v => v == null ? '' : `<span class="${v < -.5 ? 'neg' : ''}">${N(v)}</span>`;
+const P = (v, d = 1) => v == null ? '' : (v * 100).toFixed(d).replace('.', ',') + '%';
+const X = v => v == null ? '<span class="muted">—</span>' : `<span class="${v < 0 ? 'neg' : v < 3 ? 'warn' : ''}">${v.toFixed(1).replace('.', ',')}</span>`;
+const fmt0 = v => Math.round(v).toLocaleString('pt-BR');
+const parseBR = t => { t = String(t).trim().replace(/[R$\s%]/g, ''); if (t === '') return null; const v = parseFloat(t.replace(/\./g, '').replace(',', '.')); return Number.isFinite(v) ? v : NaN; };
+const EMP = { delrey: 'LMJ', minas: 'JDG', contagem: 'PV', estacao: 'TTS' };
+const COR = { delrey: '#0969da', minas: '#1a7f37', contagem: '#bf8700', estacao: '#8250df' };
+const nomeMes = mk => ['jan','fev','mar','abr','mai','jun','jul','ago','set','out','nov','dez'][+mk.slice(5, 7) - 1] + '/' + mk.slice(2, 4);
+const DM = s => s.slice(8, 10) + '/' + s.slice(5, 7) + '/' + s.slice(2, 4);
+
+let D = null, aba = null, dias = 90;
+const abertos = new Set();
+try { dias = +localStorage.getItem('cp-dias') || 90; } catch {}
+
+async function carregar(atualizar) {
+  $('cp-msg').style.display = ''; $('cp-err').style.display = 'none';
+  $('cp-msg').innerHTML = `<span class="spinner"></span> ${atualizar ? 'Relendo' : 'Lendo'} venda, estoque e pedidos do Microvix… (na primeira vez leva cerca de 30 s)`;
+  $('cp-atualizar').disabled = true;
+  try {
+    const q = new URLSearchParams({ dias, ...($('cp-colecao').value ? { colecao: $('cp-colecao').value } : {}), ...(atualizar ? { atualizar: 1 } : {}) });
+    const r = await fetch('/api/compras-plano?' + q);
+    if (r.status === 401 || r.status === 403) { location.href = '/'; return; }
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || r.status);
+    D = j;
+    $('cp-colecao').innerHTML = D.colecoes.map(c => `<option${c === D.colecao ? ' selected' : ''}>${c}</option>`).join('');
+    if (!aba || !(D.lojas.includes(aba) || aba === 'marcas' || aba === 'conf')) aba = D.lojas[0];
+    $('cp-msg').style.display = 'none'; $('cp-main').style.display = '';
+    if (D.erros.length) { $('cp-err').style.display = ''; $('cp-err').textContent = 'Parte do Microvix não respondeu: ' + D.erros.join(' · '); }
+    render();
+  } catch (e) {
+    $('cp-msg').style.display = 'none';
+    $('cp-err').style.display = ''; $('cp-err').textContent = 'Erro ao carregar: ' + e.message;
+  }
+  $('cp-atualizar').disabled = false;
+}
+
+function render() {
+  const nAlerta = b => { const a = D.porLoja[b].alertas; return a.pendMaior.length + a.semEstoque.length; };
+  $('cp-abas').innerHTML = D.lojas.map(b => `<button class="aba${aba === b ? ' active' : ''}" data-a="${b}"><span style="color:${COR[b]}">●</span> <b>${EMP[b] || ''}</b> ${esc(D.labels[b])}</button>`).join('')
+    + `<button class="aba${aba === 'marcas' ? ' active' : ''}" data-a="marcas">Marcas (todas as lojas)</button>`
+    + `<button class="aba${aba === 'conf' ? ' active' : ''}" data-a="conf">Conferência${D.lojas.some(nAlerta) ? '<span class="alerta">●</span>' : ''}</button>`;
+  $('cp-conteudo').innerHTML = aba === 'marcas' ? telaMarcas() : aba === 'conf' ? telaConferencia() : telaLoja(aba);
+  document.querySelectorAll('.dias-btn').forEach(b => b.classList.toggle('active', +b.dataset.d === dias));
+}
+
+const periodoTxt = () => `${nomeMes(D.periodo.ini)} a ${nomeMes(D.periodo.fim)}`;
+
+function telaLoja(b) {
+  const L = D.porLoja[b], p = L.premissas, d = L.digitado, pd = L.padrao, c = L.calc;
+  const campo = (k, rot, ajuda, dec = 0) => `<label>${rot}<input type="text" class="prem-in${d[k] != null ? ' dig' : ''}" data-k="${k}" value="${d[k] != null ? String(d[k]).replace('.', ',') : ''}" placeholder="${dec ? String(pd[k]).replace('.', ',') : fmt0(pd[k])}" title="${esc(ajuda)} — vazio usa o calculado (${dec ? String(pd[k]).replace('.', ',') : fmt0(pd[k])})"></label>`;
+  let h = `<div class="painel"><div class="painel-hd"><h2>Premissas — ${esc(D.labels[b])} · ${D.colecao} <span class="muted" style="font-weight:400">(${periodoTxt()})</span></h2>
+    <span class="muted">amarelo = digitado · vazio = calculado</span></div>
+    <div class="prem">
+      ${campo('previsao', 'Previsão de venda (R$)', `Venda prevista nos meses que faltam (${D.meses.map(nomeMes).join(', ') || 'nenhum'}), pela projeção do Dash de Performance`)}
+      ${campo('meses', 'Meses faltantes', 'Meses da coleção que faltam, contando o atual')}
+      ${campo('cmv', 'CMV médio (%)', 'Custo sobre a venda', 1)}
+      ${campo('vendaMedia', 'Venda média mensal (R$)', `Base do mínimo: venda dos últimos ${D.dias} dias ÷ ${D.dias / 30}`)}
+      ${campo('cobertura', 'Cobertura (x)', 'Estoque mínimo = N meses de venda a custo', 1)}
+      <div class="calc">Markup<br><b>${c.markup.toFixed(2).replace('.', ',')}</b></div>
+      <div class="calc">Média mensal<br><b>R$ ${fmt0(c.mediaMensal)}</b></div>
+      <div class="calc">Cota de compra<br><b>R$ ${fmt0(c.cotaTotal)}</b></div>
+      <div class="calc">Estoque mínimo ${String(p.cobertura).replace('.', ',')}x<br><b>R$ ${fmt0(c.minimoTotal)}</b></div>
+    </div></div>`;
+
+  h += `<div class="painel"><div class="painel-hd"><h2>Marcas — clique para abrir os setores e o ajuste manual</h2>
+    <span class="muted">% da venda de ${DM(D.venda.dtIni)} a ${DM(D.venda.dtFin)} · ${L.pedidos} itens de pedido com entrega na coleção</span></div>
+    <div class="scroll"><table><thead><tr>
+      <th>Marca</th><th title="Venda dos últimos dias, ou digitado">% venda</th><th title="Previsão × CMV, rateada pelo %">Cota compra</th>
+      <th title="Pedidos de compra com entrega na coleção, sem cancelados (a custo)">Realizado</th><th>% entregue</th><th title="Pedido − entregue">Pendente</th>
+      <th title="Saldo × custo médio">Estoque</th><th title="Venda média ÷ markup × cobertura, rateado pelo %">Est. mínimo</th>
+      <th title="Cota + mínimo − estoque">Necessidade</th><th title="Necessidade − pendente">Saldo p/ comprar</th>
+      <th title="Média mensal × % ÷ markup (a custo)">Fat. mensal</th><th title="(Estoque − mínimo) ÷ fat. mensal">Cobert.</th><th title="Com o pendente">Cobert. c/ pend.</th>
+      <th title="Pendente + estoque − fat. mensal × meses">Previsão sobra</th></tr></thead><tbody>`;
+  for (const l of L.linhas) {
+    const k = b + '|' + l.marca, ab = abertos.has(k);
+    const manual = l.ajRealizado || l.ajPendente;
+    h += `<tr class="marca${ab ? ' open' : ''}" data-k="${esc(k)}">
+      <td><span class="seta">${ab ? '▾' : '▸'}</span>${esc(l.marca)}${manual ? '<span class="tag tag-man">manual</span>' : ''}${l.pendente > l.realizado + .5 ? '<span class="tag tag-red">pend > real</span>' : ''}${l.pct > 0 && l.estoque < .5 ? '<span class="tag tag-red">sem estoque</span>' : ''}</td>
+      <td><input type="text" class="pct${l.pctDigitado != null ? ' dig' : ''}" data-m="${esc(l.marca)}" value="${l.pctDigitado != null ? P(l.pctDigitado, 2) : ''}" placeholder="${P(l.pctVenda, 1)}" title="Venda: ${P(l.pctVenda, 2)}. Digite para fixar; vazio volta para a venda."></td>
+      <td>${N(l.cota)}</td><td>${N(l.realizado)}</td><td>${l.entregue == null ? '' : P(l.entregue, 0)}</td><td>${N(l.pendente)}</td>
+      <td>${N(l.estoque)}</td><td>${N(l.minimo)}</td><td>${NC(l.necessidade)}</td><td class="${l.saldoComprar > .5 ? 'azul' : ''}">${NC(l.saldoComprar)}</td>
+      <td>${N(l.fatMensal)}</td><td>${X(l.cobertura)}</td><td>${X(l.coberturaPend)}</td><td>${NC(l.sobra)}</td></tr>`;
+    if (!ab) continue;
+    for (const s of l.setores) h += `<tr class="setor"><td>${esc(s.setor)}</td><td>${P(s.pct, 1)}</td><td>${N(s.cota)}</td><td>${N(s.realizado)}</td><td></td><td>${N(s.pendente)}</td>
+      <td>${N(s.estoque)}</td><td>${N(s.minimo)}</td><td>${NC(s.necessidade)}</td><td>${NC(s.saldoComprar)}</td><td>${N(s.fatMensal)}</td><td>${X(s.cobertura)}</td><td>${X(s.coberturaPend)}</td><td>${NC(s.sobra)}</td></tr>`;
+    h += `<tr class="ajuste"><td colspan="14">Ajuste manual (o que não está nos pedidos do Microvix, soma ao que veio de lá):
+      realizado <input type="text" class="aj" data-m="${esc(l.marca)}" data-c="realizado" value="${l.ajRealizado ? fmt0(l.ajRealizado) : ''}" placeholder="0">
+      pendente <input type="text" class="aj" data-m="${esc(l.marca)}" data-c="pendente" value="${l.ajPendente ? fmt0(l.ajPendente) : ''}" placeholder="0">
+      <span class="muted"> · do Microvix: realizado R$ ${fmt0(l.realizadoMx)}, pendente R$ ${fmt0(l.pendenteMx)}</span></td></tr>`;
+  }
+  const t = L.total;
+  h += `</tbody><tfoot><tr><td>Total</td><td>${P(t.pct, 1)}</td><td>${N(t.cota)}</td><td>${N(t.realizado)}</td><td>${t.entregue == null ? '' : P(t.entregue, 0)}</td><td>${N(t.pendente)}</td>
+    <td>${N(t.estoque)}</td><td>${N(t.minimo)}</td><td>${NC(t.necessidade)}</td><td>${NC(t.saldoComprar)}</td><td>${N(t.fatMensal)}</td><td></td><td></td><td>${NC(t.sobra)}</td></tr></tfoot></table></div>
+    <div class="nota">Realizado e pendente vêm dos pedidos de compra do Microvix com previsão de entrega de ${periodoTxt()} (sem previsão, pela data do pedido); cancelados ficam de fora e pedido encerrado não tem pendente. Estoque = saldo de hoje × custo médio. Coluna "Saldo p/ comprar" em azul = ainda cabe comprar; negativo = já comprou além da cota.
+    Cobertura em meses: vermelho abaixo de zero, amarelo abaixo de 3.</div></div>`;
+  return h;
+}
+
+function telaMarcas() {
+  const m = {};
+  for (const b of D.lojas) for (const l of D.porLoja[b].linhas) {
+    const x = (m[l.marca] ||= { marca: l.marca, cota: 0, realizado: 0, pendente: 0, estoque: 0, necessidade: 0, saldoComprar: 0, lojas: {} });
+    for (const k of ['cota', 'realizado', 'pendente', 'estoque', 'necessidade', 'saldoComprar']) x[k] += l[k];
+    x.lojas[b] = l;
+  }
+  const lista = Object.values(m).sort((a, c) => c.cota - a.cota || c.estoque - a.estoque);
+  const tot = k => lista.reduce((s, x) => s + x[k], 0);
+  let h = `<div class="painel"><div class="painel-hd"><h2>Marcas — ${D.colecao}, soma das lojas</h2><span class="muted">clique numa marca para ver por loja</span></div>
+    <div class="scroll"><table><thead><tr><th>Marca</th><th>Cota compra</th><th>Realizado</th><th>Pendente</th><th>Estoque</th><th>Necessidade</th><th>Saldo p/ comprar</th><th>% da cota</th></tr></thead><tbody>`;
+  for (const x of lista) {
+    const k = 'marcas|' + x.marca, ab = abertos.has(k);
+    h += `<tr class="marca${ab ? ' open' : ''}" data-k="${esc(k)}"><td><span class="seta">${ab ? '▾' : '▸'}</span>${esc(x.marca)}</td><td>${N(x.cota)}</td><td>${N(x.realizado)}</td><td>${N(x.pendente)}</td>
+      <td>${N(x.estoque)}</td><td>${NC(x.necessidade)}</td><td class="${x.saldoComprar > .5 ? 'azul' : ''}">${NC(x.saldoComprar)}</td><td>${P(x.cota / (tot('cota') || 1), 1)}</td></tr>`;
+    if (ab) for (const b of D.lojas) { const l = x.lojas[b]; if (!l) continue;
+      h += `<tr class="setor"><td><span style="color:${COR[b]}">●</span> ${esc(D.labels[b])}</td><td>${N(l.cota)}</td><td>${N(l.realizado)}</td><td>${N(l.pendente)}</td><td>${N(l.estoque)}</td><td>${NC(l.necessidade)}</td><td>${NC(l.saldoComprar)}</td><td>${P(l.pct, 1)} <span class="muted">da loja</span></td></tr>`; }
+  }
+  h += `</tbody><tfoot><tr><td>Total</td><td>${N(tot('cota'))}</td><td>${N(tot('realizado'))}</td><td>${N(tot('pendente'))}</td><td>${N(tot('estoque'))}</td><td>${NC(tot('necessidade'))}</td><td>${NC(tot('saldoComprar'))}</td><td></td></tr></tfoot></table></div></div>`;
+  return h;
+}
+
+function telaConferencia() {
+  let h = `<div class="painel"><div class="painel-hd"><h2>Conferência — ${D.colecao}</h2></div><div class="scroll"><table class="conf"><thead><tr>
+    <th>Loja</th><th>Marcas</th><th>Soma % venda</th><th>Pendente maior que realizado</th><th>% de venda sem estoque</th><th>Realizado</th><th>Pendente</th><th>Status</th></tr></thead><tbody>`;
+  for (const b of D.lojas) {
+    const L = D.porLoja[b], a = L.alertas, ok = !a.pendMaior.length && !a.semEstoque.length;
+    h += `<tr><td><b>${esc(D.labels[b])}</b></td><td class="n">${L.linhas.length}</td><td class="n">${P(L.total.pct, 1)}</td>
+      <td>${a.pendMaior.length ? `<span class="neg">${a.pendMaior.map(esc).join(', ')}</span>` : '<span class="muted">— nenhum —</span>'}</td>
+      <td>${a.semEstoque.length ? `<span class="neg">${a.semEstoque.map(esc).join(', ')}</span>` : '<span class="muted">— nenhum —</span>'}</td>
+      <td class="n">${N(L.total.realizado)}</td><td class="n">${N(L.total.pendente)}</td><td>${ok ? '<span class="pos">OK</span>' : '<span class="neg">conferir</span>'}</td></tr>`;
+  }
+  return h + `</tbody></table></div><div class="nota">A soma do % passa de 100% quando há % digitado: a cota é rateada pelo total, então o excedente se dilui entre as marcas (como na planilha).</div></div>`;
+}
+
+// ── Eventos ──
+$('cp-abas').addEventListener('click', e => { const b = e.target.closest('.aba'); if (!b) return; aba = b.dataset.a; render(); window.scrollTo({ top: 0 }); });
+$('cp-conteudo').addEventListener('click', e => {
+  if (e.target.closest('input')) return;
+  const tr = e.target.closest('tr.marca'); if (!tr) return;
+  abertos.has(tr.dataset.k) ? abertos.delete(tr.dataset.k) : abertos.add(tr.dataset.k);
+  render();
+});
+$('cp-conteudo').addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.matches('input')) e.target.blur(); });
+async function salvar(corpo) {
+  const r = await fetch('/api/compras-plano', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ colecao: D.colecao, loja: aba, ...corpo }) });
+  if (!r.ok) throw new Error((await r.json()).error || r.status);
+  await carregar(false);
+}
+$('cp-conteudo').addEventListener('change', async e => {
+  const t = e.target;
+  try {
+    if (t.matches('.prem-in')) {
+      const v = parseBR(t.value);
+      if (Number.isNaN(v)) return alert('Número inválido');
+      await salvar({ premissa: { [t.dataset.k]: v } });
+    } else if (t.matches('.pct')) {
+      const v = parseBR(t.value);
+      if (Number.isNaN(v)) return alert('Informe o %, ex.: 18 ou 18,5');
+      await salvar({ pct: { [t.dataset.m]: v == null ? null : v / 100 } });
+    } else if (t.matches('.aj')) {
+      const tr = t.closest('tr');
+      const val = c => parseBR(tr.querySelector(`.aj[data-c="${c}"]`).value) || 0;
+      await salvar({ ajuste: { [t.dataset.m]: { realizado: val('realizado'), pendente: val('pendente') } } });
+    }
+  } catch (err) { alert('Não salvou: ' + err.message); }
+});
+$('cp-dias').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  dias = +b.dataset.d; try { localStorage.setItem('cp-dias', dias); } catch {}
+  document.querySelectorAll('#cp-dias button').forEach(x => x.classList.toggle('active', x === b));
+  carregar(false);
+});
+$('cp-colecao').addEventListener('change', () => carregar(false));
+$('cp-atualizar').addEventListener('click', () => carregar(true));
+document.querySelectorAll('#cp-dias button').forEach(x => x.classList.toggle('active', +x.dataset.d === dias));
+carregar(false);
+</script>
+</body>
+</html>
