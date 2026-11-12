@@ -60,7 +60,10 @@
   tr.ajuste input { width: 110px; text-align: right; }
   tfoot td { font-weight: 700; background: var(--bg3); }
   .seta { display: inline-block; width: 14px; color: var(--text2); }
-  input.pct { width: 62px; text-align: right; padding: 2px 5px; font-size: 12px; }
+  input.pct { width: 70px; text-align: right; padding: 2px 6px; font-size: 14px; font-weight: 700; color: var(--text); }
+  input.pct::placeholder { color: var(--text); opacity: 1; }
+  .pctbox { display: grid; gap: 3px; justify-items: end; }
+  .pctbar { height: 4px; border-radius: 2px; background: var(--blue); opacity: .55; justify-self: end; }
   input.pct.dig { border-color: var(--yellow); background: #fff8e6; }
   .tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 9px; margin-left: 5px; }
   .tag-red { background: rgba(207,34,46,.12); color: var(--red); }
@@ -212,12 +215,13 @@ function telaLoja(b) {
       <th title="Cota + mínimo − estoque">Necessidade</th><th title="Necessidade − pendente">Saldo p/ comprar</th>
       <th title="Média mensal × % ÷ markup (a custo)">Fat. mensal</th><th title="(Estoque − mínimo) ÷ fat. mensal">Cobert.</th><th title="Com o pendente">Cobert. c/ pend.</th>
       <th title="Pendente + estoque − fat. mensal × meses">Previsão sobra</th><th title="Preço de venda de tabela ÷ custo médio do estoque de hoje (preço cheio)">Markup cheio</th></tr></thead><tbody>`;
+  const maxPct = Math.max(...L.linhas.map(x => x.pct), 0);
   for (const l of L.linhas) {
     const k = b + '|' + l.marca, ab = abertos.has(k);
     const manual = l.ajRealizado || l.ajPendente;
     h += `<tr class="marca cv-${l.curva}${ab ? ' open' : ''}" data-k="${esc(k)}">
       <td><span class="seta">${ab ? '▾' : '▸'}</span><span class="abc abc-${l.curva}" title="Curva ${l.curva}: ${l.curva === 'A' ? 'marcas que somam até 80% da venda' : l.curva === 'B' ? 'de 80% a 95% da venda' : 'últimos 5% da venda (ou sem venda)'}">${l.curva}</span>${esc(l.marca)}${manual ? '<span class="tag tag-man">manual</span>' : ''}${l.pendente > l.realizado + .5 ? '<span class="tag tag-red">pend > real</span>' : ''}${l.pct > 0 && l.estoque < .5 ? '<span class="tag tag-red">sem estoque</span>' : ''}</td>
-      <td><input type="text" class="pct${l.pctDigitado != null ? ' dig' : ''}" data-m="${esc(l.marca)}" value="${l.pctDigitado != null ? P(l.pctDigitado, 2) : ''}" placeholder="${P(l.pctVenda, 1)}" title="Venda: ${P(l.pctVenda, 2)}. Digite para fixar; vazio volta para a venda."></td>
+      <td><div class="pctbox"><input type="text" class="pct${l.pctDigitado != null ? ' dig' : ''}" data-m="${esc(l.marca)}" value="${l.pctDigitado != null ? P(l.pctDigitado, 2) : ''}" placeholder="${P(l.pctVenda, 1)}" title="Venda: ${P(l.pctVenda, 2)} (R$ ${fmt0(l.venda)}). Digite para fixar; vazio volta para a venda."><div class="pctbar" style="width:${Math.min(70, Math.round(l.pct / (maxPct || 1) * 70))}px"></div></div></td>
       <td>${N(l.cota)}</td><td>${N(l.realizado)}</td><td>${l.entregue == null ? '' : P(l.entregue, 0)}</td><td>${N(l.pendente)}</td>
       <td>${N(l.estoque)}</td><td>${N(l.minimo)}</td><td>${NC(l.necessidade)}</td><td class="${l.saldoComprar > .5 ? 'azul' : ''}">${NC(l.saldoComprar)}</td>
       <td>${N(l.fatMensal)}</td><td>${X(l.cobertura)}</td><td>${X(l.coberturaPend)}</td><td>${NC(l.sobra)}</td><td>${MKP(l.markup)}</td></tr>`;

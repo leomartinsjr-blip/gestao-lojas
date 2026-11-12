@@ -244,6 +244,15 @@ function montarLoja({ vendas, estoque, itens, prem, pct = {}, ajustes = {}, prec
   return { linhas, total, calc: { markupCheio: mk(pvLoja), markup, cotaTotal: r2(cotaTotal), minimoTotal: r2(minimoTotal), mediaMensal: r2(mediaMensal), vendaTotal: r2(vendaTotal) }, alertas };
 }
 
+// Coleção do item do pedido: a do cadastro do produto ("WINTER 27"), como no NEXO; sem ela,
+// pela entrega. A previsão de entrega sozinha engana: pedidos de Winter 27 estão com entrega
+// 01/01/2027, dentro da Summer 27 (12/11/2026).
+function colecaoDoItem(i) {
+  const m = String(i.colecao || '').toUpperCase().match(/(SUMMER|WINTER)\s*(\d{2})/);
+  if (m) return `${m[1]} ${m[2]}`;
+  return colecaoDe(i.entrega || i.data || new Date().toISOString().slice(0, 10));
+}
+
 // ── Pedidos e parcelas (funções puras) ───────────────────────────────────
 // Prazo do plano do Microvix: "COMPRA 3X" → 30/60/90 dias da entrega
 function diasDoPlano(plano) {
@@ -421,7 +430,7 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
           estoqueDe = ant;
         }
         // Pedido entra na coleção pela previsão de entrega (sem previsão, pela data do pedido)
-        const itens = p.flatMap(x => x.itens).filter(i => { const d = i.entrega || i.data; return d >= pr.ini && d <= pr.fim; });
+        const itens = p.flatMap(x => x.itens).filter(i => colecaoDoItem(i) === col);
         const vendaPeriodo = Object.values(v).reduce((t, o) => t + Object.values(o).reduce((s, x) => s + x, 0), 0);
         const padrao = {
           previsao: ms.length ? previsaoPadrao(dbJson, b, ms, hoje) : 0, meses: mesesFaltantes(pr, hoje),
@@ -449,10 +458,10 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
       await Promise.all(lojas.map(async b => {
         try {
           for (const p of await pedidosLoja(b, hoje, forcar, aj, man)) {
-            const naColecao = per ? p.itens.some(i => (i.entrega || i.data) >= per.ini && (i.entrega || i.data) <= per.fim) : true;
+            const naColecao = per ? p.itens.some(i => colecaoDoItem(i) === String(req.query.colecao).toUpperCase()) : true;
             if (!(per ? naColecao : p.pendente > 0.5 || p.manual)) continue;
             const { itens, ...resto } = p;
-            lista.push({ ...resto, colecao: colecaoDe(p.entrega || p.data), parcelas: parcelasDoPedido(p, hoje),
+            lista.push({ ...resto, colecao: [...new Set(itens.map(colecaoDoItem))].join(' / '), parcelas: parcelasDoPedido(p, hoje),
               porMarca: Object.entries(itens.reduce((o, i) => { const x = (o[i.marca] ||= { valor: 0, pendente: 0 }); x.valor += i.valor; x.pendente += i.pendente; return o; }, {}))
                 .map(([marca, x]) => ({ marca, valor: r2(x.valor), pendente: r2(x.pendente) })).sort((a, c) => c.valor - a.valor) });
           }
@@ -491,7 +500,7 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
       let n = 0;
       for (const b of LOJAS.filter(x => lojasEnv()[x])) {
         for (const p of await pedidosLoja(b, hoje, false, aj, man)) {
-          if (p.manual || !p.itens.some(i => (i.entrega || i.data) >= per.ini && (i.entrega || i.data) <= per.fim)) continue;
+          if (p.manual || !p.itens.some(i => colecaoDoItem(i) === String(req.body.colecao).toUpperCase())) continue;
           const id = `${b}|${p.pedido}`, c = col('comprasPedidos');
           const op = req.body.desfazer ? { $unset: { pendente: 1 } } : { $set: { pendente: 0, em: new Date() } };
           if (c) await c.updateOne({ _id: id }, op, { upsert: true });
@@ -576,4 +585,4 @@ function register(app, { getDb, readDB, requireAdmin, microvix, getCatalog, cria
   return { parcelasPrevistas, atualizarParcelas };
 }
 
-module.exports = { register, juntarPedidos, parcelasDoPedido, diasDoPlano, montarLoja, periodo, colecaoDe, colecoesPerto, mesesRestantes, LOJAS };
+module.exports = { colecaoDoItem, register, juntarPedidos, parcelasDoPedido, diasDoPlano, montarLoja, periodo, colecaoDe, colecoesPerto, mesesRestantes, LOJAS };
