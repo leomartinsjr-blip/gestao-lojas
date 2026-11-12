@@ -214,8 +214,13 @@ function montarLoja({ vendas, estoque, itens, prem, pct = {}, ajustes = {}, prec
       sobra: r2(pendente + x.estoque - fat * (prem.meses || 0)) };
     // Setores: mesmas contas, com o peso do setor na venda da marca (ou no estoque, sem venda)
     const totV = x.setores.reduce((t, s) => t + Math.max(0, s.venda), 0), totE = x.setores.reduce((t, s) => t + s.estoque, 0);
-    l.setores = x.setores.map(s => {
-      const ps = totV > 0 ? Math.max(0, s.venda) / totV : totE > 0 ? s.estoque / totE : 0;
+    // O ajuste manual da marca (realizado/pendente) é repartido entre os setores pelo mesmo
+    // peso: senão o pendente digitado sumia da sobra que passa para a coleção seguinte
+    const setoresBase = x.setores.length ? x.setores : [{ setor: '(SEM SETOR)', venda: 0, estoque: 0, realizado: 0, pendente: 0 }];
+    const nS = setoresBase.length;
+    l.setores = setoresBase.map(s0 => {
+      const ps = totV > 0 ? Math.max(0, s0.venda) / totV : totE > 0 ? s0.estoque / totE : 1 / nS;
+      const s = { ...s0, realizado: r2(s0.realizado + x.ajRealizado * ps), pendente: r2(s0.pendente + x.ajPendente * ps) };
       const sc = cota * ps, sm = minimo * ps, sf = fat * ps, sn = sc + sm - s.estoque;
       return { ...s, pct: x.pct * ps, cota: r2(sc), minimo: r2(sm), necessidade: r2(sn), saldoComprar: r2(sn - s.pendente),
         fatMensal: r2(sf), cobertura: sf > 0 ? (s.estoque - sm) / sf : null, coberturaPend: sf > 0 ? (s.pendente + s.estoque - sm) / sf : null,
