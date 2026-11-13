@@ -73,6 +73,7 @@
   input.pct::placeholder { color: var(--text); opacity: 1; }
   .pctbox { display: grid; gap: 3px; justify-items: end; }
   .pctbar { height: 4px; border-radius: 2px; background: var(--blue); opacity: .55; justify-self: end; }
+  .btn-nova-marca { margin-left: 10px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--blue); background: transparent; color: var(--blue); cursor: pointer; }
   input.pct.dig { border-color: var(--yellow); background: #fff8e6; }
   .tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 9px; margin-left: 5px; }
   .tag-red { background: rgba(207,34,46,.12); color: var(--red); }
@@ -214,7 +215,7 @@ function telaLoja(b) {
       <div class="calc">Estoque mínimo ${String(p.cobertura).replace('.', ',')}x<br><b>R$ ${fmt0(c.minimoTotal)}</b></div>
     </div></div>`;
 
-  h += `<div class="painel"><div class="painel-hd"><h2>Marcas — clique para abrir os setores e o ajuste manual</h2>
+  h += `<div class="painel"><div class="painel-hd"><h2>Marcas — clique para abrir os setores e o ajuste manual <button type="button" class="btn-nova-marca" title="Marca que ainda não vendeu na loja: entra com o % que você digitar">+ Marca nova</button></h2>
     <span class="muted">% da venda de ${DM(D.venda.dtIni)} a ${DM(D.venda.dtFin)} · ${L.pedidos} itens de pedido com entrega na coleção${L.estoqueDe ? ` · <b class="azul">estoque = previsão de sobra da ${L.estoqueDe}</b>` : ''}</span></div>
     <div class="scroll"><table class="grp"><thead>
       <tr class="gh-row"><th class="gh"></th><th class="gh g1" colspan="2">VENDA E COTA</th><th class="gh g2" colspan="3">PEDIDOS</th><th class="gh g3" colspan="2">ESTOQUE</th><th class="gh g4" colspan="2">COMPRA</th><th class="gh g5" colspan="4">GIRO</th><th class="gh g1">PREÇO</th></tr>
@@ -420,7 +421,16 @@ $('cp-conteudo').addEventListener('click', async e => {
 
 // ── Eventos ──
 $('cp-abas').addEventListener('click', e => { const b = e.target.closest('.aba'); if (!b) return; aba = b.dataset.a; render(); window.scrollTo({ top: 0 }); });
-$('cp-conteudo').addEventListener('click', e => {
+$('cp-conteudo').addEventListener('click', async e => {
+  if (e.target.closest('.btn-nova-marca')) {
+    const nome = (prompt('Nome da marca nova (como está no Microvix):') || '').trim().toUpperCase();
+    if (!nome) return;
+    if (D.porLoja[aba].linhas.some(l => l.marca === nome)) return alert(nome + ' já está na lista: digite o % na linha dela.');
+    const v = parseBR(prompt(`% da venda que ${nome} deve ter na loja (ex.: 2 ou 2,5):`) || '');
+    if (v == null || Number.isNaN(v) || v <= 0) return alert('Informe um % maior que zero');
+    try { await salvar({ pct: { [nome]: v / 100 } }); } catch (err) { alert('Não salvou: ' + err.message); }
+    return;
+  }
   if (e.target.closest('input')) return;
   const tr = e.target.closest('tr.marca'); if (!tr) return;
   abertos.has(tr.dataset.k) ? abertos.delete(tr.dataset.k) : abertos.add(tr.dataset.k);

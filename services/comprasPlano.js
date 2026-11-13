@@ -227,7 +227,8 @@ function montarLoja({ vendas, estoque, itens, prem, pct = {}, ajustes = {}, prec
         sobra: r2(s.pendente + s.estoque - sf * (prem.meses || 0)) };
     });
     return l;
-  }).filter(l => l.pctVenda >= 0.0005 || l.pctDigitado != null)
+  // Marca sem venda aparece se tiver % digitado (marca nova) ou pedido/ajuste na coleção
+  }).filter(l => l.pctVenda >= 0.0005 || l.pctDigitado != null || l.realizado > 0.5 || l.pendente > 0.5)
     .sort((a, b) => b.pct - a.pct || b.estoque - a.estoque);
 
   // Curva ABC pela venda: A até 80% acumulado, B até 95%, C o resto (sem venda = C)
