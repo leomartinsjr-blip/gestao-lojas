@@ -138,6 +138,7 @@
     <select id="cp-colecao" title="Coleção"></select>
     <span class="muted">% da venda:</span>
     <div class="seg" id="cp-dias"><button data-d="30">30 dias</button><button data-d="60">60 dias</button><button data-d="90" class="active">90 dias</button></div>
+    <div class="seg" id="cp-unid" title="Valores a custo (R$) ou em peças (valor ÷ custo médio por peça da marca/setor)"><button data-u="rs">R$</button><button data-u="pc">Peças</button></div>
     <button class="cp-btn" id="cp-atualizar" title="Relê venda, estoque e pedidos do Microvix">Atualizar do Microvix</button>
   </div>
 </div>
@@ -158,6 +159,22 @@ const N = v => v == null ? '' : Math.abs(v) < .5 ? '<span class="muted">—</spa
 const NC = v => v == null ? '' : `<span class="${v < -.5 ? 'neg' : ''}">${N(v)}</span>`;
 const P = (v, d = 1) => v == null ? '' : (v * 100).toFixed(d).replace('.', ',') + '%';
 const X = v => v == null ? '<span class="muted">—</span>' : `<span class="${v < 0 ? 'neg' : v < 3 ? 'warn' : ''}">${v.toFixed(1).replace('.', ',')}</span>`;
+// Peças: cada valor a custo ÷ custo médio por peça do setor (sem ele, o da marca); a marca e o
+// total somam as peças dos setores. Cobertura, % e markup não mudam.
+const KQ = ['cota', 'realizado', 'pendente', 'estoque', 'transf', 'minimo', 'necessidade', 'saldoComprar', 'fatMensal', 'sobra'];
+let unid = 'rs'; try { unid = localStorage.getItem('cp-unid') === 'pc' ? 'pc' : 'rs'; } catch {}
+function emPecas(linhas, total) {
+  const cv = (o, cu) => { const r = { ...o }; for (const k of KQ) r[k] = cu > 0 ? (o[k] || 0) / cu : null; return r; };
+  const ls = linhas.map(l => {
+    const ss = l.setores.map(s => cv(s, s.cu || l.cu));
+    const r = { ...l, setores: ss };
+    for (const k of KQ) { const vs = ss.map(s => s[k]).filter(v => v != null); r[k] = vs.length ? vs.reduce((a, v) => a + v, 0) : l.cu ? (l[k] || 0) / l.cu : null; }
+    return r;
+  });
+  const t = { ...total };
+  for (const k of KQ) t[k] = ls.reduce((a, l) => a + (l[k] || 0), 0);
+  return { linhas: ls, total: t };
+}
 const MKP = v => v == null ? '<span class="muted">—</span>' : v.toFixed(2).replace('.', ',');
 const fmt0 = v => Math.round(v).toLocaleString('pt-BR');
 const parseBR = t => { t = String(t).trim().replace(/[R$\s%]/g, ''); if (t === '') return null; const v = parseFloat(t.replace(/\./g, '').replace(',', '.')); return Number.isFinite(v) ? v : NaN; };
@@ -243,7 +260,7 @@ function telaLoja(b) {
   const tc = L.linhas.some(l => Math.abs(l.transf || 0) > 0.5);
   const TC = v => tc ? `<td class="${(v || 0) > 0.5 ? 'azul' : ''}">${Math.abs(v || 0) > 0.5 ? NC(v) : '—'}</td>` : '';
   h += `<div class="painel"><div class="painel-hd"><h2>Marcas — clique para abrir os setores e o ajuste manual <button type="button" class="btn-nova-marca" title="Marca que ainda não vendeu na loja: entra com o % que você digitar">+ Marca nova</button></h2>
-    <span class="muted">% da venda de ${DM(D.venda.dtIni)} a ${DM(D.venda.dtFin)} · ${L.pedidos} itens de pedido com entrega na coleção${L.estoqueDe ? ` · <b class="azul">estoque = previsão de sobra da ${L.estoqueDe}</b>` : ''}</span></div>
+    <span class="muted">${unid === 'pc' ? '<b>em peças</b> (valor ÷ custo médio por peça) · ' : ''}% da venda de ${DM(D.venda.dtIni)} a ${DM(D.venda.dtFin)} · ${L.pedidos} itens de pedido com entrega na coleção${L.estoqueDe ? ` · <b class="azul">estoque = previsão de sobra da ${L.estoqueDe}</b>` : ''}</span></div>
     <div class="scroll"><table class="grp${tc ? ' tc' : ''}"><thead>
       <tr class="gh-row"><th class="gh"></th><th class="gh g1" colspan="2">VENDA E COTA</th><th class="gh g2" colspan="3">PEDIDOS</th><th class="gh g3" colspan="${tc ? 3 : 2}">ESTOQUE</th><th class="gh g4" colspan="2">COMPRA</th><th class="gh g5" colspan="4">GIRO</th><th class="gh g1">PREÇO</th></tr>
       <tr><th>Marca <span class="muted" style="text-transform:none;font-weight:400">· curva ABC</span></th><th title="Venda dos últimos dias, ou digitado">% venda</th><th title="Previsão × CMV, rateada pelo %">Cota compra</th>
@@ -252,8 +269,9 @@ function telaLoja(b) {
       <th title="Cota + mínimo − estoque">Necessidade</th><th title="Necessidade − pendente">Saldo p/ comprar</th>
       <th title="Média mensal × % ÷ markup (a custo)">Fat. mensal</th><th title="(Estoque − mínimo) ÷ fat. mensal">Cobert.</th><th title="Com o pendente">Cobert. c/ pend.</th>
       <th title="Pendente + estoque − fat. mensal × meses">Previsão sobra</th><th title="Preço de venda de tabela ÷ custo médio do estoque de hoje (preço cheio)">Markup cheio</th></tr></thead><tbody>`;
-  const maxPct = Math.max(...L.linhas.map(x => x.pct), 0);
-  for (const l of L.linhas) {
+  const LV = unid === 'pc' ? emPecas(L.linhas, L.total) : L;
+  const maxPct = Math.max(...LV.linhas.map(x => x.pct), 0);
+  for (const l of LV.linhas) {
     const k = b + '|' + l.marca, ab = abertos.has(k);
     const manual = l.ajRealizado || l.ajPendente;
     h += `<tr class="marca cv-${l.curva}${ab ? ' open' : ''}" data-k="${esc(k)}">
@@ -270,7 +288,7 @@ function telaLoja(b) {
       pendente <input type="text" class="aj" data-m="${esc(l.marca)}" data-c="pendente" value="${l.ajPendente ? fmt0(l.ajPendente) : ''}" placeholder="0">
       <span class="muted"> · do Microvix: realizado R$ ${fmt0(l.realizadoMx)}, pendente R$ ${fmt0(l.pendenteMx)}</span></td></tr>`;
   }
-  const t = L.total;
+  const t = LV.total;
   h += `</tbody><tfoot><tr><td>Total</td><td>${P(t.pct, 1)}</td><td>${N(t.cota)}</td><td>${N(t.realizado)}</td><td>${t.entregue == null ? '' : P(Math.max(0, t.entregue), 0)}</td><td>${N(t.pendente)}</td>
     <td>${N(t.estoque)}</td>${TC(t.transf)}<td>${N(t.minimo)}</td><td>${NC(t.necessidade)}</td><td>${NC(t.saldoComprar)}</td><td>${N(t.fatMensal)}</td><td></td><td></td><td>${NC(t.sobra)}</td><td>${MKP(t.markup)}</td></tr></tfoot></table></div>
     <div class="nota">Realizado e pendente vêm dos pedidos de compra do Microvix com previsão de entrega de ${periodoTxt()} (sem previsão, pela data do pedido); cancelados ficam de fora e pedido encerrado não tem pendente. Estoque = saldo de hoje × custo médio; numa coleção que ainda não começou, é a previsão de sobra da coleção anterior (marca e setor, sem negativo). Coluna "Saldo p/ comprar" em azul = ainda cabe comprar; negativo = já comprou além da cota.
@@ -283,7 +301,7 @@ function telaMarcas() {
   const SOMA = ['venda', 'cota', 'realizado', 'pendente', 'estoque', 'transf', 'minimo', 'necessidade', 'saldoComprar', 'fatMensal', 'sobra'];
   const novo = marca => ({ marca, lojas: {}, mkE: 0, mkV: 0, ...Object.fromEntries(SOMA.map(k => [k, 0])) });
   const m = {}, T = novo('Total');
-  for (const b of D.lojas) for (const l of D.porLoja[b].linhas) {
+  for (const b of D.lojas) for (const l of (unid === 'pc' ? emPecas(D.porLoja[b].linhas, D.porLoja[b].total) : D.porLoja[b]).linhas) {
     const x = (m[l.marca] ||= novo(l.marca));
     for (const o of [x, T]) {
       for (const k of SOMA) o[k] += l[k] || 0;
@@ -310,7 +328,7 @@ function telaMarcas() {
   const cols = x => `<td>${N(x.cota)}</td><td>${N(x.realizado)}</td><td>${x.entregue == null ? '' : P(Math.max(0, x.entregue), 0)}</td><td>${N(x.pendente)}</td>
       <td>${N(x.estoque)}</td>${TC(x.transf)}<td>${N(x.minimo)}</td><td>${NC(x.necessidade)}</td><td class="${x.saldoComprar > .5 ? 'azul' : ''}">${NC(x.saldoComprar)}</td>
       <td>${N(x.fatMensal)}</td><td>${X(x.cobertura)}</td><td>${X(x.coberturaPend)}</td><td>${NC(x.sobra)}</td><td>${MKP(x.markup)}</td>`;
-  let h = `<div class="painel"><div class="painel-hd"><h2>Marcas — ${D.colecao}, soma das lojas</h2><span class="muted">clique numa marca para ver por loja · % da venda de ${DM(D.venda.dtIni)} a ${DM(D.venda.dtFin)}, todas as lojas</span></div>
+  let h = `<div class="painel"><div class="painel-hd"><h2>Marcas — ${D.colecao}, soma das lojas</h2><span class="muted">${unid === 'pc' ? '<b>em peças</b> · ' : ''}clique numa marca para ver por loja · % da venda de ${DM(D.venda.dtIni)} a ${DM(D.venda.dtFin)}, todas as lojas</span></div>
     <div class="scroll"><table class="grp${tc ? ' tc' : ''}"><thead>
       <tr class="gh-row"><th class="gh"></th><th class="gh g1" colspan="2">VENDA E COTA</th><th class="gh g2" colspan="3">PEDIDOS</th><th class="gh g3" colspan="${tc ? 3 : 2}">ESTOQUE</th><th class="gh g4" colspan="2">COMPRA</th><th class="gh g5" colspan="4">GIRO</th><th class="gh g1">PREÇO</th></tr>
       <tr><th>Marca <span class="muted" style="text-transform:none;font-weight:400">· curva ABC</span></th><th title="Venda da marca nas lojas ÷ venda total das lojas">% venda</th><th>Cota compra</th>
@@ -529,6 +547,13 @@ $('cp-dias').addEventListener('click', e => {
   dias = +b.dataset.d; try { localStorage.setItem('cp-dias', dias); } catch {}
   document.querySelectorAll('#cp-dias button').forEach(x => x.classList.toggle('active', x === b));
   carregar(false);
+});
+document.querySelectorAll('#cp-unid button').forEach(x => x.classList.toggle('active', x.dataset.u === unid));
+$('cp-unid').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  unid = b.dataset.u; try { localStorage.setItem('cp-unid', unid); } catch {}
+  document.querySelectorAll('#cp-unid button').forEach(x => x.classList.toggle('active', x === b));
+  if (D) render();
 });
 $('cp-colecao').addEventListener('change', () => { PD = null; carregar(false); });
 $('cp-atualizar').addEventListener('click', () => { PD = null; carregar(true); });

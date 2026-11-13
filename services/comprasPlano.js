@@ -81,9 +81,9 @@ function criarLeitura({ microvix, getCatalog, lojasEnv }) {
 
   // Venda por marca/setor (mesmos filtros do Relatório de Marcas)
   async function vendas(b, dtIni, dtFin, forcar) {
-    return comCache(`v2|${b}|${dtIni}|${dtFin}`, 3 * 3600e3, async () => {
+    return comCache(`v3|${b}|${dtIni}|${dtFin}`, 3 * 3600e3, async () => {
       const [rows, cat] = await Promise.all([microvix.fetchMovimento(cnpjDe(b), dtIni, dtFin, chaveDe(b)), getCatalog()]);
-      const out = {};
+      const out = {}, cq = {};
       let custo = 0, valor = 0;
       for (const row of rows) {
         if (row.cancelado === 'S' || row.cancelado === '1' || row.excluido === 'S' || row.soma_relatorio === 'N') continue;
@@ -97,17 +97,17 @@ function criarLeitura({ microvix, getCatalog, lojasEnv }) {
         ((out[m] ||= {})[s] = (out[m][s] || 0) + v);
         // CMV como na Conferência: custo médio da época × quantidade
         const q = num(row.quantidade || '1'), cu = num(row.custo_medio_epoca || row.preco_custo);
-        if (cu > 0) { custo += sinal * cu * q; valor += v; }
+        if (cu > 0) { custo += sinal * cu * q; valor += v; const x = ((cq[m] ||= {})[s] ||= { c: 0, q: 0 }); x.c += sinal * cu * q; x.q += sinal * q; }
       }
-      return { porMS: out, cmv: valor > 0 ? Math.round(custo / valor * 1000) / 10 : null };
+      return { porMS: out, cmv: valor > 0 ? Math.round(custo / valor * 1000) / 10 : null, custoQtd: cq };
     }, forcar);
   }
 
   // Estoque a custo médio por marca/setor
   async function estoque(b, hoje, forcar) {
-    return comCache(`e2|${b}|${hoje}`, 3600e3, async () => {
+    return comCache(`e3|${b}|${hoje}`, 3600e3, async () => {
       const cat = await getCatalog();
-      const out = {}, pv = {};
+      const out = {}, pv = {}, cq = {};
       let ts = 0;
       for (let p = 0; p < 80; p++) {
         const raw = await microvix.postRequest(microvix.buildRequest('LinxProdutosDetalhes', cnpjDe(b), [
@@ -122,6 +122,7 @@ function criarLeitura({ microvix, getCatalog, lojasEnv }) {
           const [m, s] = chaveMS(infoDe(cat, String(r.cod_produto || '').trim(), String(r.cod_barra || '').trim()));
           const cu = num(r.custo_medio || r.preco_custo);
           ((out[m] ||= {})[s] = (out[m][s] || 0) + q * cu);
+          if (cu > 0) { const x = ((cq[m] ||= {})[s] ||= { c: 0, q: 0 }); x.c += q * cu; x.q += q; }
           // Markup cheio: só o que tem custo e preço (preço de venda de tabela ÷ custo médio)
           const p = num(r.preco_venda);
           if (cu > 0 && p > 0) { const x = ((pv[m] ||= {})[s] ||= { c: 0, v: 0 }); x.c += q * cu; x.v += q * p; }
@@ -130,7 +131,7 @@ function criarLeitura({ microvix, getCatalog, lojasEnv }) {
         if (mx <= ts) break;
         ts = mx;
       }
-      return { porMS: out, precos: pv };
+      return { porMS: out, precos: pv, custoQtd: cq };
     }, forcar);
   }
 
@@ -173,7 +174,8 @@ function criarLeitura({ microvix, getCatalog, lojasEnv }) {
 // ajustes: { MARCA: { realizado, pendente } }
 // precos: { MARCA: { SETOR: { c: custo, v: venda de tabela } } } do estoque atual → markup a preço cheio
 // transf: { MARCA: { SETOR: valor } } — estoque de loja que fecha: + na que recebe, − na que fecha
-function montarLoja({ vendas, estoque, itens, prem, pct = {}, ajustes = {}, precos = {}, transf = {} }) {
+// cu: { MARCA: { SETOR: custo por peça, _: da marca } } → a tela mostra os valores em peças
+function montarLoja({ vendas, estoque, itens, prem, pct = {}, ajustes = {}, precos = {}, transf = {}, cu = {} }) {
   const mk = x => x && x.c > 0 ? Math.round(x.v / x.c * 100) / 100 : null;
   const somaPv = o => Object.values(o || {}).reduce((a, x) => ({ c: a.c + x.c, v: a.v + x.v }), { c: 0, v: 0 });
   const marcas = new Set([...Object.keys(vendas), ...Object.keys(estoque), ...itens.map(i => i.marca), ...Object.keys(pct), ...Object.keys(ajustes), ...Object.keys(transf)]);
@@ -188,13 +190,13 @@ function montarLoja({ vendas, estoque, itens, prem, pct = {}, ajustes = {}, prec
     const setores = new Set([...Object.keys(vendas[m] || {}), ...Object.keys(estoque[m] || {}), ...itens.filter(i => i.marca === m).map(i => i.setor), ...Object.keys(transf[m] || {})]);
     const doSetor = s => {
       const its = itens.filter(i => i.marca === m && i.setor === s);
-      return { setor: s, markup: mk(precos[m]?.[s]), venda: r2(vendas[m]?.[s] || 0), estoque: r2(estoque[m]?.[s] || 0), transf: r2(transf[m]?.[s] || 0),
+      return { setor: s, cu: cu[m]?.[s] || cu[m]?._ || null, markup: mk(precos[m]?.[s]), venda: r2(vendas[m]?.[s] || 0), estoque: r2(estoque[m]?.[s] || 0), transf: r2(transf[m]?.[s] || 0),
         realizado: r2(its.reduce((t, i) => t + i.valor, 0)), pendente: r2(its.reduce((t, i) => t + i.pendente, 0)) };
     };
     const ss = [...setores].map(doSetor).sort((a, b) => b.venda - a.venda || b.estoque - a.estoque);
     const venda = r2(ss.reduce((t, s) => t + s.venda, 0));
     const aj = ajustes[m] || {};
-    return { marca: m, markup: mk(somaPv(precos[m])), setores: ss, venda, pctVenda: vendaTotal > 0 ? Math.max(0, venda) / vendaTotal : 0,
+    return { marca: m, cu: cu[m]?._ || null, markup: mk(somaPv(precos[m])), setores: ss, venda, pctVenda: vendaTotal > 0 ? Math.max(0, venda) / vendaTotal : 0,
       pctDigitado: pct[m] != null ? pct[m] : null,
       estoque: r2(ss.reduce((t, s) => t + s.estoque, 0)), transf: r2(ss.reduce((t, s) => t + s.transf, 0)),
       realizadoMx: r2(ss.reduce((t, s) => t + s.realizado, 0)), pendenteMx: r2(ss.reduce((t, s) => t + s.pendente, 0)),
@@ -219,7 +221,7 @@ function montarLoja({ vendas, estoque, itens, prem, pct = {}, ajustes = {}, prec
     const totV = x.setores.reduce((t, s) => t + Math.max(0, s.venda), 0), totE = x.setores.reduce((t, s) => t + s.estoque, 0);
     // O ajuste manual da marca (realizado/pendente) é repartido entre os setores pelo mesmo
     // peso: senão o pendente digitado sumia da sobra que passa para a coleção seguinte
-    const setoresBase = x.setores.length ? x.setores : [{ setor: '(SEM SETOR)', venda: 0, estoque: 0, transf: 0, realizado: 0, pendente: 0 }];
+    const setoresBase = x.setores.length ? x.setores : [{ setor: '(SEM SETOR)', cu: x.cu, venda: 0, estoque: 0, transf: 0, realizado: 0, pendente: 0 }];
     const nS = setoresBase.length;
     l.setores = setoresBase.map(s0 => {
       const ps = totV > 0 ? Math.max(0, s0.venda) / totV : totE > 0 ? s0.estoque / totE : 1 / nS;
@@ -252,6 +254,25 @@ function montarLoja({ vendas, estoque, itens, prem, pct = {}, ajustes = {}, prec
   const pvLoja = somaPv(Object.fromEntries(Object.entries(precos).map(([m, o]) => [m, somaPv(o)])));
   total.markup = mk(pvLoja);
   return { linhas, total, calc: { markupCheio: mk(pvLoja), markup, cotaTotal: r2(cotaTotal), minimoTotal: r2(minimoTotal), mediaMensal: r2(mediaMensal), vendaTotal: r2(vendaTotal) }, alertas };
+}
+
+// Custo por peça por marca/setor: do estoque de hoje (custo médio); sem estoque, da venda
+// (custo da época). "_" = da marca inteira. Entradas: { MARCA: { SETOR: { c, q } } }
+function custoUnitario(doEstoque = {}, daVenda = {}) {
+  const out = {};
+  for (const m of new Set([...Object.keys(doEstoque), ...Object.keys(daVenda)])) {
+    const o = (out[m] = {}), tot = { e: { c: 0, q: 0 }, v: { c: 0, q: 0 } };
+    for (const s of new Set([...Object.keys(doEstoque[m] || {}), ...Object.keys(daVenda[m] || {})])) {
+      const e = doEstoque[m]?.[s], v = daVenda[m]?.[s];
+      if (e?.q > 0) { tot.e.c += e.c; tot.e.q += e.q; }
+      if (v?.q > 0 && v.c > 0) { tot.v.c += v.c; tot.v.q += v.q; }
+      const u = e?.q > 0 && e.c > 0 ? e.c / e.q : v?.q > 0 && v.c > 0 ? v.c / v.q : null;
+      if (u) o[s] = Math.round(u * 100) / 100;
+    }
+    const u = tot.e.q > 0 && tot.e.c > 0 ? tot.e.c / tot.e.q : tot.v.q > 0 ? tot.v.c / tot.v.q : null;
+    if (u) o._ = Math.round(u * 100) / 100;
+  }
+  return out;
 }
 
 // Loja que fecha (regra do Leonardo, 13/11/2026): a previsão de sobra dela, marca e setor,
@@ -565,7 +586,20 @@ function register(app, { getDb, getNexoDb = () => null, readDB, requireAdmin, mi
       // destinos (dividirSobra). Da coleção seguinte em diante ela aparece fechada e zerada.
       const fech = await lerFechamento();
       const fechaDe = b => fech[b]?.data || null;
-      const memo = {}, memoB = {}, memoT = {};
+      const memo = {}, memoB = {}, memoT = {}, memoCu = {};
+      // Custo por peça da loja; o que ela não tem (marca que vem de outra loja) usa o da rede
+      let cuRede = null;
+      const cuDe = b => memoCu[b] ||= (async () => {
+        cuRede ||= (async () => {
+          const ds = await Promise.all(lojas.map(dadosLoja)), e = {}, v = {};
+          const somar = (alvo, src) => { for (const [m, ss] of Object.entries(src || {})) for (const [s, x] of Object.entries(ss)) { const o = ((alvo[m] ||= {})[s] ||= { c: 0, q: 0 }); o.c += x.c; o.q += x.q; } };
+          for (const [vr, eA] of ds) { somar(e, eA.custoQtd); somar(v, vr.custoQtd); }
+          return custoUnitario(e, v);
+        })();
+        const [vr, eA] = await dadosLoja(b), rede = await cuRede, loja = custoUnitario(eA.custoQtd, vr.custoQtd), out = {};
+        for (const m of new Set([...Object.keys(rede), ...Object.keys(loja)])) out[m] = { ...(rede[m] || {}), ...(loja[m] || {}) };
+        return out;
+      })();
       // A transferência entra na coleção SEGUINTE à do fechamento (Leonardo, 13/11/2026: o estoque
       // do Minas, que fecha em 31/12, conta na Winter 27 das outras e não mexe na Summer 27 delas).
       const colApos = d => colecaoDe(addDias(periodo(colecaoDe(d)).fim, 1));
@@ -634,7 +668,7 @@ function register(app, { getDb, getNexoDb = () => null, readDB, requireAdmin, mi
         const digit = plano.premissas || {};
         const prem = Object.fromEntries(Object.keys(padrao).map(k => [k, digit[k] != null ? digit[k] : padrao[k]]));
         if (fechaAqui) { prem.cobertura = 0; if (digit.meses == null) prem.meses = padrao.meses; }
-        const args = { vendas: v, estoque, itens, prem, pct: plano.pct || {}, ajustes: plano.ajustes || {}, precos: eAtual.precos || {} };
+        const args = { vendas: v, estoque, itens, prem, pct: plano.pct || {}, ajustes: plano.ajustes || {}, precos: eAtual.precos || {}, cu: await cuDe(b) };
         return { args, res: { ...montarLoja(args), premissas: prem, padrao, digitado: digit, pedidos: itens.length, estoqueDe, mediaAnualMeses: anual[b]?.meses || 0,
           fecha: fechaAqui ? { data: fechaAqui, destinos: fech[b].destinos || [] } : null } };
       })();
@@ -804,4 +838,4 @@ function register(app, { getDb, getNexoDb = () => null, readDB, requireAdmin, mi
   return { parcelasPrevistas, atualizarParcelas };
 }
 
-module.exports = { dividirSobra, entregasDoItem, colecaoDoItem, register, juntarPedidos, parcelasDoPedido, diasDoPlano, montarLoja, periodo, colecaoDe, colecoesPerto, mesesRestantes, LOJAS };
+module.exports = { custoUnitario, dividirSobra, entregasDoItem, colecaoDoItem, register, juntarPedidos, parcelasDoPedido, diasDoPlano, montarLoja, periodo, colecaoDe, colecoesPerto, mesesRestantes, LOJAS };
