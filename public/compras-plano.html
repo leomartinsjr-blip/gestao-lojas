@@ -278,25 +278,53 @@ function telaLoja(b) {
   return h;
 }
 
+// Soma das lojas, com as mesmas colunas da tabela de cada loja
 function telaMarcas() {
-  const m = {};
+  const SOMA = ['venda', 'cota', 'realizado', 'pendente', 'estoque', 'transf', 'minimo', 'necessidade', 'saldoComprar', 'fatMensal', 'sobra'];
+  const novo = marca => ({ marca, lojas: {}, mkE: 0, mkV: 0, ...Object.fromEntries(SOMA.map(k => [k, 0])) });
+  const m = {}, T = novo('Total');
   for (const b of D.lojas) for (const l of D.porLoja[b].linhas) {
-    const x = (m[l.marca] ||= { marca: l.marca, cota: 0, realizado: 0, pendente: 0, estoque: 0, necessidade: 0, saldoComprar: 0, lojas: {} });
-    for (const k of ['cota', 'realizado', 'pendente', 'estoque', 'necessidade', 'saldoComprar']) x[k] += l[k];
+    const x = (m[l.marca] ||= novo(l.marca));
+    for (const o of [x, T]) {
+      for (const k of SOMA) o[k] += l[k] || 0;
+      if (l.markup && l.estoque > 0) { o.mkE += l.estoque; o.mkV += l.estoque * l.markup; }
+    }
     x.lojas[b] = l;
   }
-  const lista = Object.values(m).sort((a, c) => c.cota - a.cota || c.estoque - a.estoque);
-  const tot = k => lista.reduce((s, x) => s + x[k], 0);
-  let h = `<div class="painel"><div class="painel-hd"><h2>Marcas — ${D.colecao}, soma das lojas</h2><span class="muted">clique numa marca para ver por loja</span></div>
-    <div class="scroll"><table><thead><tr><th>Marca</th><th>Cota compra</th><th>Realizado</th><th>Pendente</th><th>Estoque</th><th>Necessidade</th><th>Saldo p/ comprar</th><th>% da cota</th></tr></thead><tbody>`;
+  // Mesmas contas da loja, sobre as somas
+  const fecha = x => {
+    x.entregue = x.realizado > 0 ? Math.max(0, (x.realizado - x.pendente) / x.realizado) : null;
+    x.cobertura = x.fatMensal > 0 ? (x.estoque - x.minimo) / x.fatMensal : null;
+    x.coberturaPend = x.fatMensal > 0 ? (x.pendente + x.estoque + Math.max(0, x.transf) - x.minimo) / x.fatMensal : null;
+    x.markup = x.mkE > 0 ? x.mkV / x.mkE : null;
+    x.pctVenda = T.venda > 0 ? Math.max(0, x.venda) / T.venda : 0;
+    return x;
+  };
+  fecha(T);
+  const lista = Object.values(m).map(fecha).sort((a, c) => c.cota - a.cota || c.estoque - a.estoque);
+  let acum = 0;
+  for (const x of [...lista].sort((a, c) => c.pctVenda - a.pctVenda)) { const antes = acum; acum += x.pctVenda; x.curva = x.pctVenda <= 0 ? 'C' : antes < 0.80 ? 'A' : antes < 0.95 ? 'B' : 'C'; }
+  const tc = lista.some(x => Math.abs(x.transf) > 0.5 || Object.values(x.lojas).some(l => Math.abs(l.transf || 0) > 0.5));
+  const TC = v => tc ? `<td class="${(v || 0) > 0.5 ? 'azul' : ''}">${Math.abs(v || 0) > 0.5 ? NC(v) : '—'}</td>` : '';
+  const maxPct = Math.max(...lista.map(x => x.pctVenda), 0);
+  const cols = x => `<td>${N(x.cota)}</td><td>${N(x.realizado)}</td><td>${x.entregue == null ? '' : P(Math.max(0, x.entregue), 0)}</td><td>${N(x.pendente)}</td>
+      <td>${N(x.estoque)}</td>${TC(x.transf)}<td>${N(x.minimo)}</td><td>${NC(x.necessidade)}</td><td class="${x.saldoComprar > .5 ? 'azul' : ''}">${NC(x.saldoComprar)}</td>
+      <td>${N(x.fatMensal)}</td><td>${X(x.cobertura)}</td><td>${X(x.coberturaPend)}</td><td>${NC(x.sobra)}</td><td>${MKP(x.markup)}</td>`;
+  let h = `<div class="painel"><div class="painel-hd"><h2>Marcas — ${D.colecao}, soma das lojas</h2><span class="muted">clique numa marca para ver por loja · % da venda de ${DM(D.venda.dtIni)} a ${DM(D.venda.dtFin)}, todas as lojas</span></div>
+    <div class="scroll"><table class="grp${tc ? ' tc' : ''}"><thead>
+      <tr class="gh-row"><th class="gh"></th><th class="gh g1" colspan="2">VENDA E COTA</th><th class="gh g2" colspan="3">PEDIDOS</th><th class="gh g3" colspan="${tc ? 3 : 2}">ESTOQUE</th><th class="gh g4" colspan="2">COMPRA</th><th class="gh g5" colspan="4">GIRO</th><th class="gh g1">PREÇO</th></tr>
+      <tr><th>Marca <span class="muted" style="text-transform:none;font-weight:400">· curva ABC</span></th><th title="Venda da marca nas lojas ÷ venda total das lojas">% venda</th><th>Cota compra</th>
+      <th>Realizado</th><th>% entregue</th><th>Pendente</th><th>Estoque</th>${tc ? '<th title="Estoque da loja que fecha: + o que as lojas recebem">Transf.</th>' : ''}<th>Est. mínimo</th>
+      <th>Necessidade</th><th>Saldo p/ comprar</th><th>Fat. mensal</th><th>Cobert.</th><th>Cobert. c/ pend.</th><th>Previsão sobra</th><th title="Média ponderada pelo estoque">Markup cheio</th></tr></thead><tbody>`;
   for (const x of lista) {
     const k = 'marcas|' + x.marca, ab = abertos.has(k);
-    h += `<tr class="marca${ab ? ' open' : ''}" data-k="${esc(k)}"><td><span class="seta">${ab ? '▾' : '▸'}</span>${esc(x.marca)}</td><td>${N(x.cota)}</td><td>${N(x.realizado)}</td><td>${N(x.pendente)}</td>
-      <td>${N(x.estoque)}</td><td>${NC(x.necessidade)}</td><td class="${x.saldoComprar > .5 ? 'azul' : ''}">${NC(x.saldoComprar)}</td><td>${P(x.cota / (tot('cota') || 1), 1)}</td></tr>`;
+    h += `<tr class="marca cv-${x.curva}${ab ? ' open' : ''}" data-k="${esc(k)}"><td><span class="seta">${ab ? '▾' : '▸'}</span><span class="abc abc-${x.curva}">${x.curva}</span>${esc(x.marca)}</td>
+      <td><div class="pctbox"><b>${P(x.pctVenda, 1)}</b><div class="pctbar" style="width:${Math.min(70, Math.round(x.pctVenda / (maxPct || 1) * 70))}px"></div></div></td>${cols(x)}</tr>`;
     if (ab) for (const b of D.lojas) { const l = x.lojas[b]; if (!l) continue;
-      h += `<tr class="setor"><td><span style="color:${COR[b]}">●</span> ${esc(D.labels[b])}</td><td>${N(l.cota)}</td><td>${N(l.realizado)}</td><td>${N(l.pendente)}</td><td>${N(l.estoque)}</td><td>${NC(l.necessidade)}</td><td>${NC(l.saldoComprar)}</td><td>${P(l.pct, 1)} <span class="muted">da loja</span></td></tr>`; }
+      h += `<tr class="setor"><td><span style="color:${COR[b]}">●</span> ${esc(D.labels[b])}</td><td>${P(l.pct, 1)} <span class="muted">da loja</span></td>${cols(l)}</tr>`; }
   }
-  h += `</tbody><tfoot><tr><td>Total</td><td>${N(tot('cota'))}</td><td>${N(tot('realizado'))}</td><td>${N(tot('pendente'))}</td><td>${N(tot('estoque'))}</td><td>${NC(tot('necessidade'))}</td><td>${NC(tot('saldoComprar'))}</td><td></td></tr></tfoot></table></div></div>`;
+  h += `</tbody><tfoot><tr><td>Total</td><td></td>${cols(T)}</tr></tfoot></table></div>
+    <div class="nota">Soma das lojas. Cobertura e % entregue refeitos sobre as somas; markup cheio é a média das lojas ponderada pelo estoque.</div></div>`;
   return h;
 }
 
