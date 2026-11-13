@@ -456,6 +456,20 @@ function register(app, { getDb, getNexoDb = () => null, readDB, requireAdmin, mi
     const [hy, hm] = hoje.split('-').map(Number);
     return Math.round(meses.reduce((t, [y, m]) => t + (y === hy && m === hm ? Math.max(0, (pj.projMes(y, m) || 0) - (pj.realAteOntem || 0)) : (pj.projMes(y, m) || 0)), 0));
   }
+  // Base do estoque mínimo (pedido do Leonardo, 13/11/2026): média dos 12 últimos meses
+  // fechados do Dash, para o fim de ano (venda esporádica) não inflar o mínimo.
+  // Mês sem dado não entra na média; sem nenhum, volta para a venda dos últimos dias.
+  function vendaMediaAnual(dbJson, b, hoje) {
+    const pj = criarProjecao(dbJson, b, hoje);
+    let [y, m] = hoje.split('-').map(Number);
+    const vals = [];
+    for (let k = 0; k < 12; k++) {
+      [y, m] = m === 1 ? [y - 1, 12] : [y, m - 1];
+      const v = pj.base(y, m);
+      if (v > 0) vals.push(v);
+    }
+    return vals.length ? { valor: Math.round(vals.reduce((a, c) => a + c, 0) / vals.length), meses: vals.length } : null;
+  }
   // Meses que faltam, em fração: dias de hoje (ou do início) até o fim da coleção ÷ 30,4
   const mesesFaltantes = (pr, hoje) => {
     const de = pr.ini > hoje ? pr.ini : hoje;
@@ -477,6 +491,7 @@ function register(app, { getDb, getNexoDb = () => null, readDB, requireAdmin, mi
       const meses = mesesRestantes(per, hoje);
       const dtFin = addDias(hoje, -1), dtIni = addDias(hoje, -dias);
       const dbJson = await readDB();
+      const anual = Object.fromEntries(lojas.map(b => [b, vendaMediaAnual(dbJson, b, hoje)]));
 
       const porLoja = {}, erros = [];
       const [ajPed, man] = await Promise.all([ajustesPedidos(), manuaisLista()]);
@@ -510,12 +525,12 @@ function register(app, { getDb, getNexoDb = () => null, readDB, requireAdmin, mi
         const vendaPeriodo = Object.values(v).reduce((t, o) => t + Object.values(o).reduce((s, x) => s + x, 0), 0);
         const padrao = {
           previsao: ms.length ? previsaoPadrao(dbJson, b, ms, hoje) : 0, meses: mesesFaltantes(pr, hoje),
-          cmv: vr.cmv || PADRAO.cmv, cobertura: PADRAO.cobertura, vendaMedia: Math.round(vendaPeriodo / (dias / 30)),
+          cmv: vr.cmv || PADRAO.cmv, cobertura: PADRAO.cobertura, vendaMedia: anual[b]?.valor ?? Math.round(vendaPeriodo / (dias / 30)),
         };
         const digit = plano.premissas || {};
         const prem = Object.fromEntries(Object.keys(padrao).map(k => [k, digit[k] != null ? digit[k] : padrao[k]]));
         return { ...montarLoja({ vendas: v, estoque, itens, prem, pct: plano.pct || {}, ajustes: plano.ajustes || {}, precos: eAtual.precos || {} }),
-          premissas: prem, padrao, digitado: digit, pedidos: itens.length, estoqueDe };
+          premissas: prem, padrao, digitado: digit, pedidos: itens.length, estoqueDe, mediaAnualMeses: anual[b]?.meses || 0 };
       })();
       await Promise.all(lojas.map(async b => { porLoja[b] = await calcLoja(colecao, b); }));
       res.json({ colecao, colecoes: lista, periodo: per, meses: meses.map(([y, m]) => `${y}-${pad(m)}`), dias, hoje, venda: { dtIni, dtFin },

@@ -206,7 +206,7 @@ function telaLoja(b) {
       ${campo('previsao', 'Previsão de venda (R$)', `Venda que falta até o fim da coleção (${D.meses.map(nomeMes).join(', ') || 'nenhum'}): no mês atual, projeção do Dash menos o vendido até ontem`)}
       ${campo('meses', 'Meses faltantes', 'Dias que faltam até o fim da coleção ÷ 30,4', 1)}
       ${campo('cmv', 'CMV médio (%)', `Custo médio ÷ venda dos últimos ${D.dias} dias da loja (Microvix)`, 1)}
-      ${campo('vendaMedia', 'Venda média mensal (R$)', `Base do mínimo: venda dos últimos ${D.dias} dias ÷ ${D.dias / 30}`)}
+      ${campo('vendaMedia', 'Venda média mensal (R$)', L.mediaAnualMeses ? `Base do mínimo: média mensal dos últimos ${L.mediaAnualMeses} meses fechados (Dash), para o fim de ano não inflar o mínimo` : `Base do mínimo: venda dos últimos ${D.dias} dias ÷ ${D.dias / 30} (sem histórico de 12 meses no Dash)`)}
       ${campo('cobertura', 'Cobertura (x) — você define', 'Estoque mínimo = N meses de venda a custo; defina por loja', 1)}
       <div class="calc" title="100 ÷ CMV: converte a venda real em custo">Markup pelo CMV<br><b>${c.markup.toFixed(2).replace('.', ',')}</b></div>
       <div class="calc" title="Preço de venda de tabela ÷ custo médio do estoque de hoje">Markup a preço cheio<br><b>${c.markupCheio == null ? '—' : c.markupCheio.toFixed(2).replace('.', ',')}</b></div>
