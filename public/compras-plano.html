@@ -74,6 +74,10 @@
   .pctbox { display: grid; gap: 3px; justify-items: end; }
   .pctbar { height: 4px; border-radius: 2px; background: var(--blue); opacity: .55; justify-self: end; }
   .btn-nova-marca { margin-left: 10px; font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--blue); background: transparent; color: var(--blue); cursor: pointer; }
+  .fech { border-top: 1px solid var(--border, #e5e7eb); margin-top: 10px; padding-top: 8px; font-size: 12px; display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
+  .fech input[type=date] { font-size: 12px; padding: 2px 4px; }
+  .fech-op { white-space: nowrap; cursor: pointer; }
+  .fech-res { flex-basis: 100%; }
   input.pct.dig { border-color: var(--yellow); background: #fff8e6; }
   .tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 9px; margin-left: 5px; }
   .tag-red { background: rgba(207,34,46,.12); color: var(--red); }
@@ -197,6 +201,20 @@ function render() {
 
 const periodoTxt = () => `${nomeMes(D.periodo.ini)} a ${nomeMes(D.periodo.fim)}`;
 
+// Loja que fecha: data, para onde vai o estoque e quanto da sobra vai para cada uma
+function quadroFechamento(b, L) {
+  const f = (D.fechamento || {})[b] || {}, ti = L.transfInfo || {};
+  const DMA = s => s ? s.split('-').reverse().join('/') : '';
+  let h = `<div class="fech"><b>Fechamento da loja</b> <input type="date" class="fech-data" value="${f.data || ''}" title="Vazio = a loja não fecha">`;
+  if (f.data) h += ` · estoque vai para ${D.lojas.filter(x => x !== b).map(x => `<label class="fech-op"><input type="checkbox" class="fech-dest" value="${x}"${(f.destinos || []).includes(x) ? ' checked' : ''}> ${esc(D.labels[x])}</label>`).join(' ')}`;
+  if (L.fechada) h += ` <span class="tag tag-red">loja fechada em ${DMA(L.fechada.data)}</span>`;
+  else if (L.fecha) h += ` <span class="muted">· vende até ${DMA(L.fecha.data)}, sem estoque mínimo; a previsão de sobra vai para as outras pela necessidade de cada uma</span>`;
+  const env = Object.entries(ti.envia || {});
+  if (env.length) h += `<div class="fech-res">Sobra prevista em ${DMA(ti.data)}: <b>R$ ${fmt0(env.reduce((s, [, v]) => s + v, 0))}</b> a custo → ${env.map(([x, v]) => `${esc(D.labels[x])} <b>R$ ${fmt0(v)}</b>`).join(' · ')}</div>`;
+  for (const [x, r] of Object.entries(ti.recebe || {})) h += `<div class="fech-res">Recebe de ${esc(D.labels[x])} em ${DMA(r.data)}: <b>R$ ${fmt0(r.valor)}</b> a custo (coluna Transf., já descontada do saldo p/ comprar)</div>`;
+  return h + '</div>';
+}
+
 function telaLoja(b) {
   const L = D.porLoja[b], p = L.premissas, d = L.digitado, pd = L.padrao, c = L.calc;
   // Valor a custo levado a preço de venda: pelo CMV (venda real) e pelo markup cheio (preço de tabela)
@@ -215,15 +233,17 @@ function telaLoja(b) {
       <div class="calc">Média mensal<br><b>R$ ${fmt0(c.mediaMensal)}</b></div>
       <div class="calc">Cota de compra<br><b>R$ ${fmt0(c.cotaTotal)}</b>${aVenda(c.cotaTotal)}</div>
       <div class="calc">Estoque mínimo ${String(p.cobertura).replace('.', ',')}x<br><b>R$ ${fmt0(c.minimoTotal)}</b>${aVenda(c.minimoTotal)}</div>
-    </div></div>`;
+    </div>${quadroFechamento(b, L)}</div>`;
 
+  const tc = L.linhas.some(l => Math.abs(l.transf || 0) > 0.5);
+  const TC = v => tc ? `<td class="${(v || 0) > 0.5 ? 'azul' : ''}">${Math.abs(v || 0) > 0.5 ? NC(v) : '—'}</td>` : '';
   h += `<div class="painel"><div class="painel-hd"><h2>Marcas — clique para abrir os setores e o ajuste manual <button type="button" class="btn-nova-marca" title="Marca que ainda não vendeu na loja: entra com o % que você digitar">+ Marca nova</button></h2>
     <span class="muted">% da venda de ${DM(D.venda.dtIni)} a ${DM(D.venda.dtFin)} · ${L.pedidos} itens de pedido com entrega na coleção${L.estoqueDe ? ` · <b class="azul">estoque = previsão de sobra da ${L.estoqueDe}</b>` : ''}</span></div>
     <div class="scroll"><table class="grp"><thead>
-      <tr class="gh-row"><th class="gh"></th><th class="gh g1" colspan="2">VENDA E COTA</th><th class="gh g2" colspan="3">PEDIDOS</th><th class="gh g3" colspan="2">ESTOQUE</th><th class="gh g4" colspan="2">COMPRA</th><th class="gh g5" colspan="4">GIRO</th><th class="gh g1">PREÇO</th></tr>
+      <tr class="gh-row"><th class="gh"></th><th class="gh g1" colspan="2">VENDA E COTA</th><th class="gh g2" colspan="3">PEDIDOS</th><th class="gh g3" colspan="${tc ? 3 : 2}">ESTOQUE</th><th class="gh g4" colspan="2">COMPRA</th><th class="gh g5" colspan="4">GIRO</th><th class="gh g1">PREÇO</th></tr>
       <tr><th>Marca <span class="muted" style="text-transform:none;font-weight:400">· curva ABC</span></th><th title="Venda dos últimos dias, ou digitado">% venda</th><th title="Previsão × CMV, rateada pelo %">Cota compra</th>
       <th title="Pedidos de compra com entrega na coleção, sem cancelados (a custo)">Realizado</th><th>% entregue</th><th title="Pedido − entregue">Pendente</th>
-      <th title="Saldo × custo médio">Estoque</th><th title="Venda média ÷ markup × cobertura, rateado pelo %">Est. mínimo</th>
+      <th title="Saldo × custo médio">Estoque</th>${tc ? '<th title="Estoque da loja que fecha: + o que esta loja recebe, − o que sai dela (a custo)">Transf.</th>' : ''}<th title="Venda média ÷ markup × cobertura, rateado pelo %">Est. mínimo</th>
       <th title="Cota + mínimo − estoque">Necessidade</th><th title="Necessidade − pendente">Saldo p/ comprar</th>
       <th title="Média mensal × % ÷ markup (a custo)">Fat. mensal</th><th title="(Estoque − mínimo) ÷ fat. mensal">Cobert.</th><th title="Com o pendente">Cobert. c/ pend.</th>
       <th title="Pendente + estoque − fat. mensal × meses">Previsão sobra</th><th title="Preço de venda de tabela ÷ custo médio do estoque de hoje (preço cheio)">Markup cheio</th></tr></thead><tbody>`;
@@ -235,19 +255,19 @@ function telaLoja(b) {
       <td><span class="seta">${ab ? '▾' : '▸'}</span><span class="abc abc-${l.curva}" title="Curva ${l.curva}: ${l.curva === 'A' ? 'marcas que somam até 80% da venda' : l.curva === 'B' ? 'de 80% a 95% da venda' : 'últimos 5% da venda (ou sem venda)'}">${l.curva}</span>${esc(l.marca)}${manual ? '<span class="tag tag-man">manual</span>' : ''}${l.pendente > l.realizado + .5 ? '<span class="tag tag-red">pend > real</span>' : ''}${l.pct > 0 && l.estoque < .5 ? '<span class="tag tag-red">sem estoque</span>' : ''}</td>
       <td><div class="pctbox"><input type="text" class="pct${l.pctDigitado != null ? ' dig' : ''}" data-m="${esc(l.marca)}" value="${l.pctDigitado != null ? P(l.pctDigitado, 2) : ''}" placeholder="${P(l.pctVenda, 1)}" title="Venda: ${P(l.pctVenda, 2)} (R$ ${fmt0(l.venda)}). Digite para fixar; vazio volta para a venda."><div class="pctbar" style="width:${Math.min(70, Math.round(l.pct / (maxPct || 1) * 70))}px"></div></div></td>
       <td>${N(l.cota)}</td><td>${N(l.realizado)}</td><td>${l.entregue == null ? '' : P(l.entregue, 0)}</td><td>${N(l.pendente)}</td>
-      <td>${N(l.estoque)}</td><td>${N(l.minimo)}</td><td>${NC(l.necessidade)}</td><td class="${l.saldoComprar > .5 ? 'azul' : ''}">${NC(l.saldoComprar)}</td>
+      <td>${N(l.estoque)}</td>${TC(l.transf)}<td>${N(l.minimo)}</td><td>${NC(l.necessidade)}</td><td class="${l.saldoComprar > .5 ? 'azul' : ''}">${NC(l.saldoComprar)}</td>
       <td>${N(l.fatMensal)}</td><td>${X(l.cobertura)}</td><td>${X(l.coberturaPend)}</td><td>${NC(l.sobra)}</td><td>${MKP(l.markup)}</td></tr>`;
     if (!ab) continue;
     for (const s of l.setores) h += `<tr class="setor"><td>${esc(s.setor)}</td><td>${P(s.pct, 1)}</td><td>${N(s.cota)}</td><td>${N(s.realizado)}</td><td></td><td>${N(s.pendente)}</td>
-      <td>${N(s.estoque)}</td><td>${N(s.minimo)}</td><td>${NC(s.necessidade)}</td><td>${NC(s.saldoComprar)}</td><td>${N(s.fatMensal)}</td><td>${X(s.cobertura)}</td><td>${X(s.coberturaPend)}</td><td>${NC(s.sobra)}</td><td>${MKP(s.markup)}</td></tr>`;
-    h += `<tr class="ajuste"><td colspan="15">Ajuste manual (o que não está nos pedidos do Microvix, soma ao que veio de lá):
+      <td>${N(s.estoque)}</td>${TC(s.transf)}<td>${N(s.minimo)}</td><td>${NC(s.necessidade)}</td><td>${NC(s.saldoComprar)}</td><td>${N(s.fatMensal)}</td><td>${X(s.cobertura)}</td><td>${X(s.coberturaPend)}</td><td>${NC(s.sobra)}</td><td>${MKP(s.markup)}</td></tr>`;
+    h += `<tr class="ajuste"><td colspan="${tc ? 16 : 15}">Ajuste manual (o que não está nos pedidos do Microvix, soma ao que veio de lá):
       realizado <input type="text" class="aj" data-m="${esc(l.marca)}" data-c="realizado" value="${l.ajRealizado ? fmt0(l.ajRealizado) : ''}" placeholder="0">
       pendente <input type="text" class="aj" data-m="${esc(l.marca)}" data-c="pendente" value="${l.ajPendente ? fmt0(l.ajPendente) : ''}" placeholder="0">
       <span class="muted"> · do Microvix: realizado R$ ${fmt0(l.realizadoMx)}, pendente R$ ${fmt0(l.pendenteMx)}</span></td></tr>`;
   }
   const t = L.total;
   h += `</tbody><tfoot><tr><td>Total</td><td>${P(t.pct, 1)}</td><td>${N(t.cota)}</td><td>${N(t.realizado)}</td><td>${t.entregue == null ? '' : P(t.entregue, 0)}</td><td>${N(t.pendente)}</td>
-    <td>${N(t.estoque)}</td><td>${N(t.minimo)}</td><td>${NC(t.necessidade)}</td><td>${NC(t.saldoComprar)}</td><td>${N(t.fatMensal)}</td><td></td><td></td><td>${NC(t.sobra)}</td><td>${MKP(t.markup)}</td></tr></tfoot></table></div>
+    <td>${N(t.estoque)}</td>${TC(t.transf)}<td>${N(t.minimo)}</td><td>${NC(t.necessidade)}</td><td>${NC(t.saldoComprar)}</td><td>${N(t.fatMensal)}</td><td></td><td></td><td>${NC(t.sobra)}</td><td>${MKP(t.markup)}</td></tr></tfoot></table></div>
     <div class="nota">Realizado e pendente vêm dos pedidos de compra do Microvix com previsão de entrega de ${periodoTxt()} (sem previsão, pela data do pedido); cancelados ficam de fora e pedido encerrado não tem pendente. Estoque = saldo de hoje × custo médio; numa coleção que ainda não começou, é a previsão de sobra da coleção anterior (marca e setor, sem negativo). Coluna "Saldo p/ comprar" em azul = ainda cabe comprar; negativo = já comprou além da cota.
     Cobertura em meses: vermelho abaixo de zero, amarelo abaixo de 3.</div></div>`;
   return h;
@@ -447,7 +467,16 @@ async function salvar(corpo) {
 $('cp-conteudo').addEventListener('change', async e => {
   const t = e.target;
   try {
-    if (t.matches('.prem-in')) {
+    if (t.matches('.fech-data, .fech-dest')) {
+      const box = t.closest('.fech');
+      const destinos = [...box.querySelectorAll('.fech-dest:checked')].map(x => x.value);
+      const dt = box.querySelector('.fech-data').value || null;
+      if (!dt && !confirm('Tirar o fechamento desta loja?')) return render();
+      const r = await fetch('/api/compras-plano/fechamento', { method: 'PUT', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ loja: aba, data: dt, destinos: box.querySelector('.fech-dest') ? destinos : undefined }) });
+      if (!r.ok) throw new Error((await r.json()).error || r.status);
+      await carregar(false);
+    } else if (t.matches('.prem-in')) {
       const v = parseBR(t.value);
       if (Number.isNaN(v)) return alert('Número inválido');
       await salvar({ premissa: { [t.dataset.k]: v } });
