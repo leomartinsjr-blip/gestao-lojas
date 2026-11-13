@@ -97,6 +97,11 @@
   table.grp tbody tr.marca > :nth-child(n+4):nth-child(-n+6), table.grp tfoot tr > :nth-child(n+4):nth-child(-n+6) { background: rgba(191,135,0,.06); }
   table.grp tbody tr.marca > :nth-child(n+7):nth-child(-n+8), table.grp tfoot tr > :nth-child(n+7):nth-child(-n+8) { background: rgba(26,127,55,.05); }
   table.grp tbody tr.marca > :nth-child(n+9):nth-child(-n+10), table.grp tfoot tr > :nth-child(n+9):nth-child(-n+10) { background: rgba(130,80,223,.05); }
+  /* Com a coluna Transf. (loja que fecha) o bloco ESTOQUE tem 3 colunas: o resto anda uma casa */
+  table.grp.tc tr > :nth-child(9), table.grp.tc tr > :nth-child(11), table.grp.tc tr > :nth-child(15) { border-left: 0; }
+  table.grp.tc tr > :nth-child(10), table.grp.tc tr > :nth-child(12), table.grp.tc tr > :nth-child(16) { border-left: 2px solid var(--border2); }
+  table.grp.tc tbody tr.marca > :nth-child(n+7):nth-child(-n+9), table.grp.tc tfoot tr > :nth-child(n+7):nth-child(-n+9) { background: rgba(26,127,55,.05); }
+  table.grp.tc tbody tr.marca > :nth-child(n+10):nth-child(-n+11), table.grp.tc tfoot tr > :nth-child(n+10):nth-child(-n+11) { background: rgba(130,80,223,.05); }
   table.grp tbody tr.marca:hover > td { filter: brightness(.97); }
   .abc { display: inline-block; width: 18px; height: 18px; line-height: 18px; border-radius: 50%; text-align: center; font-size: 10px; font-weight: 800; color: #fff; margin-right: 6px; vertical-align: 1px; }
   .abc-A { background: #1a7f37; } .abc-B { background: #d29922; } .abc-C { background: #cf222e; }
@@ -239,7 +244,7 @@ function telaLoja(b) {
   const TC = v => tc ? `<td class="${(v || 0) > 0.5 ? 'azul' : ''}">${Math.abs(v || 0) > 0.5 ? NC(v) : '—'}</td>` : '';
   h += `<div class="painel"><div class="painel-hd"><h2>Marcas — clique para abrir os setores e o ajuste manual <button type="button" class="btn-nova-marca" title="Marca que ainda não vendeu na loja: entra com o % que você digitar">+ Marca nova</button></h2>
     <span class="muted">% da venda de ${DM(D.venda.dtIni)} a ${DM(D.venda.dtFin)} · ${L.pedidos} itens de pedido com entrega na coleção${L.estoqueDe ? ` · <b class="azul">estoque = previsão de sobra da ${L.estoqueDe}</b>` : ''}</span></div>
-    <div class="scroll"><table class="grp"><thead>
+    <div class="scroll"><table class="grp${tc ? ' tc' : ''}"><thead>
       <tr class="gh-row"><th class="gh"></th><th class="gh g1" colspan="2">VENDA E COTA</th><th class="gh g2" colspan="3">PEDIDOS</th><th class="gh g3" colspan="${tc ? 3 : 2}">ESTOQUE</th><th class="gh g4" colspan="2">COMPRA</th><th class="gh g5" colspan="4">GIRO</th><th class="gh g1">PREÇO</th></tr>
       <tr><th>Marca <span class="muted" style="text-transform:none;font-weight:400">· curva ABC</span></th><th title="Venda dos últimos dias, ou digitado">% venda</th><th title="Previsão × CMV, rateada pelo %">Cota compra</th>
       <th title="Pedidos de compra com entrega na coleção, sem cancelados (a custo)">Realizado</th><th>% entregue</th><th title="Pedido − entregue">Pendente</th>
@@ -254,7 +259,7 @@ function telaLoja(b) {
     h += `<tr class="marca cv-${l.curva}${ab ? ' open' : ''}" data-k="${esc(k)}">
       <td><span class="seta">${ab ? '▾' : '▸'}</span><span class="abc abc-${l.curva}" title="Curva ${l.curva}: ${l.curva === 'A' ? 'marcas que somam até 80% da venda' : l.curva === 'B' ? 'de 80% a 95% da venda' : 'últimos 5% da venda (ou sem venda)'}">${l.curva}</span>${esc(l.marca)}${manual ? '<span class="tag tag-man">manual</span>' : ''}${l.pendente > l.realizado + .5 ? '<span class="tag tag-red">pend > real</span>' : ''}${l.pct > 0 && l.estoque < .5 ? '<span class="tag tag-red">sem estoque</span>' : ''}</td>
       <td><div class="pctbox"><input type="text" class="pct${l.pctDigitado != null ? ' dig' : ''}" data-m="${esc(l.marca)}" value="${l.pctDigitado != null ? P(l.pctDigitado, 2) : ''}" placeholder="${P(l.pctVenda, 1)}" title="Venda: ${P(l.pctVenda, 2)} (R$ ${fmt0(l.venda)}). Digite para fixar; vazio volta para a venda."><div class="pctbar" style="width:${Math.min(70, Math.round(l.pct / (maxPct || 1) * 70))}px"></div></div></td>
-      <td>${N(l.cota)}</td><td>${N(l.realizado)}</td><td>${l.entregue == null ? '' : P(l.entregue, 0)}</td><td>${N(l.pendente)}</td>
+      <td>${N(l.cota)}</td><td>${N(l.realizado)}</td><td>${l.entregue == null ? '' : P(Math.max(0, l.entregue), 0)}</td><td>${N(l.pendente)}</td>
       <td>${N(l.estoque)}</td>${TC(l.transf)}<td>${N(l.minimo)}</td><td>${NC(l.necessidade)}</td><td class="${l.saldoComprar > .5 ? 'azul' : ''}">${NC(l.saldoComprar)}</td>
       <td>${N(l.fatMensal)}</td><td>${X(l.cobertura)}</td><td>${X(l.coberturaPend)}</td><td>${NC(l.sobra)}</td><td>${MKP(l.markup)}</td></tr>`;
     if (!ab) continue;
@@ -266,7 +271,7 @@ function telaLoja(b) {
       <span class="muted"> · do Microvix: realizado R$ ${fmt0(l.realizadoMx)}, pendente R$ ${fmt0(l.pendenteMx)}</span></td></tr>`;
   }
   const t = L.total;
-  h += `</tbody><tfoot><tr><td>Total</td><td>${P(t.pct, 1)}</td><td>${N(t.cota)}</td><td>${N(t.realizado)}</td><td>${t.entregue == null ? '' : P(t.entregue, 0)}</td><td>${N(t.pendente)}</td>
+  h += `</tbody><tfoot><tr><td>Total</td><td>${P(t.pct, 1)}</td><td>${N(t.cota)}</td><td>${N(t.realizado)}</td><td>${t.entregue == null ? '' : P(Math.max(0, t.entregue), 0)}</td><td>${N(t.pendente)}</td>
     <td>${N(t.estoque)}</td>${TC(t.transf)}<td>${N(t.minimo)}</td><td>${NC(t.necessidade)}</td><td>${NC(t.saldoComprar)}</td><td>${N(t.fatMensal)}</td><td></td><td></td><td>${NC(t.sobra)}</td><td>${MKP(t.markup)}</td></tr></tfoot></table></div>
     <div class="nota">Realizado e pendente vêm dos pedidos de compra do Microvix com previsão de entrega de ${periodoTxt()} (sem previsão, pela data do pedido); cancelados ficam de fora e pedido encerrado não tem pendente. Estoque = saldo de hoje × custo médio; numa coleção que ainda não começou, é a previsão de sobra da coleção anterior (marca e setor, sem negativo). Coluna "Saldo p/ comprar" em azul = ainda cabe comprar; negativo = já comprou além da cota.
     Cobertura em meses: vermelho abaixo de zero, amarelo abaixo de 3.</div></div>`;
