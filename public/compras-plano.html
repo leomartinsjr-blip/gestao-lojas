@@ -199,6 +199,8 @@ const periodoTxt = () => `${nomeMes(D.periodo.ini)} a ${nomeMes(D.periodo.fim)}`
 
 function telaLoja(b) {
   const L = D.porLoja[b], p = L.premissas, d = L.digitado, pd = L.padrao, c = L.calc;
+  // Valor a custo levado a preço de venda: pelo CMV (venda real) e pelo markup cheio (preço de tabela)
+  const aVenda = v => `<div class="muted" style="font-size:10.5px;margin-top:2px" title="A custo × markup pelo CMV = venda real · × markup a preço cheio = preço de tabela">venda R$ ${fmt0(v * c.markup)}${c.markupCheio ? ` · cheio R$ ${fmt0(v * c.markupCheio)}` : ''}</div>`;
   const campo = (k, rot, ajuda, dec = 0) => `<label>${rot}<input type="text" class="prem-in${d[k] != null ? ' dig' : ''}" data-k="${k}" value="${d[k] != null ? String(d[k]).replace('.', ',') : ''}" placeholder="${dec ? String(pd[k]).replace('.', ',') : fmt0(pd[k])}" title="${esc(ajuda)} — vazio usa o calculado (${dec ? String(pd[k]).replace('.', ',') : fmt0(pd[k])})"></label>`;
   let h = `<div class="painel"><div class="painel-hd"><h2>Premissas — ${esc(D.labels[b])} · ${D.colecao} <span class="muted" style="font-weight:400">(${periodoTxt()})</span></h2>
     <span class="muted">amarelo = digitado · vazio = calculado</span></div>
@@ -211,8 +213,8 @@ function telaLoja(b) {
       <div class="calc" title="100 ÷ CMV: converte a venda real em custo">Markup pelo CMV<br><b>${c.markup.toFixed(2).replace('.', ',')}</b></div>
       <div class="calc" title="Preço de venda de tabela ÷ custo médio do estoque de hoje">Markup a preço cheio<br><b>${c.markupCheio == null ? '—' : c.markupCheio.toFixed(2).replace('.', ',')}</b></div>
       <div class="calc">Média mensal<br><b>R$ ${fmt0(c.mediaMensal)}</b></div>
-      <div class="calc">Cota de compra<br><b>R$ ${fmt0(c.cotaTotal)}</b></div>
-      <div class="calc">Estoque mínimo ${String(p.cobertura).replace('.', ',')}x<br><b>R$ ${fmt0(c.minimoTotal)}</b></div>
+      <div class="calc">Cota de compra<br><b>R$ ${fmt0(c.cotaTotal)}</b>${aVenda(c.cotaTotal)}</div>
+      <div class="calc">Estoque mínimo ${String(p.cobertura).replace('.', ',')}x<br><b>R$ ${fmt0(c.minimoTotal)}</b>${aVenda(c.minimoTotal)}</div>
     </div></div>`;
 
   h += `<div class="painel"><div class="painel-hd"><h2>Marcas — clique para abrir os setores e o ajuste manual <button type="button" class="btn-nova-marca" title="Marca que ainda não vendeu na loja: entra com o % que você digitar">+ Marca nova</button></h2>
