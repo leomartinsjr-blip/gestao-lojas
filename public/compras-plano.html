@@ -213,9 +213,9 @@ function quadroFechamento(b, L) {
   let h = `<div class="fech"><b>Fechamento da loja</b> <input type="date" class="fech-data" value="${f.data || ''}" title="Vazio = a loja não fecha">`;
   if (f.data) h += ` · estoque vai para ${D.lojas.filter(x => x !== b).map(x => `<label class="fech-op"><input type="checkbox" class="fech-dest" value="${x}"${(f.destinos || []).includes(x) ? ' checked' : ''}> ${esc(D.labels[x])}</label>`).join(' ')}`;
   if (L.fechada) h += ` <span class="tag tag-red">loja fechada em ${DMA(L.fechada.data)}</span>`;
-  else if (L.fecha) h += ` <span class="muted">· vende até ${DMA(L.fecha.data)}, sem estoque mínimo; a previsão de sobra vai para as outras pela necessidade de cada uma</span>`;
+  else if (L.fecha) h += ` <span class="muted">· vende até ${DMA(L.fecha.data)}, sem estoque mínimo; a previsão de sobra vai para as outras na coleção seguinte, pela necessidade de cada uma</span>`;
   const env = Object.entries(ti.envia || {});
-  if (env.length) h += `<div class="fech-res">Sobra prevista em ${DMA(ti.data)}: <b>R$ ${fmt0(env.reduce((s, [, v]) => s + v, 0))}</b> a custo → ${env.map(([x, v]) => `${esc(D.labels[x])} <b>R$ ${fmt0(v)}</b>`).join(' · ')}</div>`;
+  if (env.length) h += `<div class="fech-res">Sobra prevista em ${DMA(ti.data)}: <b>R$ ${fmt0(env.reduce((s, [, v]) => s + v, 0))}</b> a custo → ${env.map(([x, v]) => `${esc(D.labels[x])} <b>R$ ${fmt0(v)}</b>`).join(' · ')}${ti.colecao ? ` <span class="muted">· entra como estoque na ${esc(ti.colecao)} delas</span>` : ''}</div>`;
   for (const [x, r] of Object.entries(ti.recebe || {})) h += `<div class="fech-res">Recebe de ${esc(D.labels[x])} em ${DMA(r.data)}: <b>R$ ${fmt0(r.valor)}</b> a custo (coluna Transf., já descontada do saldo p/ comprar)</div>`;
   return h + '</div>';
 }

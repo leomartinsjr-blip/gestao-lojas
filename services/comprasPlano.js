@@ -566,25 +566,31 @@ function register(app, { getDb, getNexoDb = () => null, readDB, requireAdmin, mi
       const fech = await lerFechamento();
       const fechaDe = b => fech[b]?.data || null;
       const memo = {}, memoB = {}, memoT = {};
+      // A transferência entra na coleção SEGUINTE à do fechamento (Leonardo, 13/11/2026: o estoque
+      // do Minas, que fecha em 31/12, conta na Winter 27 das outras e não mexe na Summer 27 delas).
+      const colApos = d => colecaoDe(addDias(periodo(colecaoDe(d)).fim, 1));
       const calcLoja = (col, b, nivel = 0) => memo[col + b] ||= (async () => {
         const B = await calcBruto(col, b, nivel);
+        // Loja que fecha: mostra para onde vai a sobra (calculada na coleção seguinte)
+        const f = B.res.fecha?.data || B.res.fechada?.data;
+        if (f) { const Tn = await transfDe(colApos(f)); return Tn.info[b] ? { ...B.res, transfInfo: Tn.info[b] } : B.res; }
         if (!B.args) return B.res;
         const T = await transfDe(col);
         if (!T.mapas[b]) return B.res;
         return { ...B.res, ...montarLoja({ ...B.args, transf: T.mapas[b] }), transfInfo: T.info[b] };
       })();
       const transfDe = col => memoT[col] ||= (async () => {
-        const pr = periodo(col), mapas = {}, info = {};
+        const mapas = {}, info = {};
         for (const [f, cfg] of Object.entries(fech)) {
-          if (!lojas.includes(f) || !cfg.data || cfg.data < pr.ini || cfg.data > pr.fim) continue;
+          if (!lojas.includes(f) || !cfg.data || colApos(cfg.data) !== col) continue;
           const dest = (cfg.destinos || []).filter(b => lojas.includes(b) && b !== f && !(fechaDe(b) && fechaDe(b) <= cfg.data));
           if (!dest.length) continue;
-          const F = (await calcBruto(col, f)).res;
+          // Sobra da loja que fecha na coleção do fechamento × necessidade das outras nesta
+          const F = (await calcBruto(colecaoDe(cfg.data), f)).res;
           const D = Object.fromEntries(await Promise.all(dest.map(async b => [b, (await calcBruto(col, b)).res])));
           const r = dividirSobra(F, D);
           const juntar = (b, mapa) => { const o = (mapas[b] ||= {}); for (const [m, ss] of Object.entries(mapa)) for (const [s, v] of Object.entries(ss)) { (o[m] ||= {})[s] = r2((o[m][s] || 0) + v); } };
-          juntar(f, r.sai);
-          (info[f] ||= { data: cfg.data, envia: {}, recebe: {} }).envia = r.porDestino;
+          info[f] = { data: cfg.data, colecao: col, envia: r.porDestino, recebe: {} };
           for (const b of dest) { juntar(b, r.entra[b]); ((info[b] ||= { recebe: {}, envia: {} }).recebe[f] = { valor: r.porDestino[b], data: cfg.data }); }
         }
         return { mapas, info };
