@@ -3498,12 +3498,37 @@ async function checarEstoqueSite() {
   }
 
   const pos = fora.filter(x => x.qtd > 0), neg = fora.filter(x => x.qtd < 0);
-  const fmt = x => `${x.cod}${x.nome ? ' ' + x.nome : ''}: ${x.qtd > 0 ? '+' : ''}${x.qtd}`;
-  const MAX = 15;
-  const lista = fora.slice(0, MAX).map(fmt).join('; ') + (fora.length > MAX ? `; e mais ${fora.length - MAX}` : '');
+
+  // Negativo = o SITE vendeu sem a transferência da loja ter entrado. Liga cada
+  // peça negativa a uma venda do SITE do mesmo produto (a mais recente primeiro);
+  // cada peça vendida só pode ser usada uma vez. Sem venda → verificar boleta.
+  let vendas = null;
+  if (neg.length) {
+    try { vendas = await _vendasSitePorProduto(cnpj, chave, parseBrNum); }
+    catch (e) { console.warn('[estoque-site] vendas:', e.message); }
+  }
+  const comVenda = [], semVenda = [];
+  for (const x of neg) {
+    const falta = Math.round(-x.qtd);
+    const fila  = vendas ? (vendas[x.cod] || []) : [];
+    const usadas = [];
+    while (usadas.length < falta && fila.length) usadas.push(fila.shift());
+    if (usadas.length) comVenda.push({ ...x, vendas: usadas });
+    if (usadas.length < falta) semVenda.push({ ...x, qtd: -(falta - usadas.length) });
+  }
+
+  const rot = x => `${x.cod}${x.nome ? ' ' + x.nome : ''}`;
+  const fmtVenda = v => `NF ${v.doc}${v.data ? ' de ' + v.data : ''}`;
+  const blocos = [];
+  if (comVenda.length) blocos.push(`Venda do site sem transferência (${comVenda.length}): ` +
+    comVenda.map(x => `${rot(x)} → ${x.vendas.map(fmtVenda).join(', ')}`).join('; '));
+  if (semVenda.length) blocos.push(`Sem venda — verificar boleta (${semVenda.length}): ` +
+    semVenda.map(x => `${rot(x)}: ${x.qtd}`).join('; '));
+  if (neg.length && !vendas) blocos.push('(não consegui ler as vendas do SITE no Microvix — conferir à mão)');
+  if (pos.length) blocos.push(`Sobrando no SITE (${pos.length}): ` + pos.map(x => `${rot(x)}: +${x.qtd}`).join('; '));
+
   const resumo = [neg.length ? `${neg.length} negativo(s)` : '', pos.length ? `${pos.length} positivo(s)` : ''].filter(Boolean).join(', ');
-  const text = `Estoque da empresa 6 (SITE) não está zerado — ${fora.length} produto(s), ${resumo}. ` +
-    `Conferir transferência da loja e NF de baixa. ${lista}`;
+  const text = `Estoque da empresa 6 (SITE) não está zerado — ${fora.length} produto(s), ${resumo}. ` + blocos.join(' | ');
 
   if (aberta) {
     aberta.text = text;
@@ -3517,7 +3542,48 @@ async function checarEstoqueSite() {
     });
   }
   await writeDB(db);
-  return { itens: fora.length, positivos: pos.length, negativos: neg.length, atualizada: !!aberta };
+  return { itens: fora.length, positivos: pos.length, negativos: neg.length,
+    negativosComVenda: comVenda.length, verificarBoleta: semVenda.length, atualizada: !!aberta };
+}
+
+// Vendas do SITE nos últimos 90 dias, por produto: { cod: [{doc, data}, ...] }
+// com uma entrada por peça, da mais recente para a mais antiga. Mesmos filtros
+// do faturamento: sem cancelado, sem reserva B2C (documento 0), sem série J/999.
+// Devolução (DS) devolve a peça: tira a venda mais antiga daquele produto.
+async function _vendasSitePorProduto(cnpj, chave, parseBrNum) {
+  const { fetchMovimento } = require('./services/microvix');
+  const iso = d => d.toISOString().slice(0, 10);
+  const hoje = new Date(Date.now() - 3 * 3600_000);
+  const ini  = new Date(hoje.getTime() - 90 * 86400_000);
+  const rows = await fetchMovimento(cnpj, iso(ini), iso(hoje), chave);
+  const dataBR = s => {
+    const t = String(s || '').trim();
+    const m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    return m ? `${m[3]}/${m[2]}` : t.slice(0, 5);
+  };
+  const ordem = s => { const m = String(s || '').match(/^(\d{4})-(\d{2})-(\d{2})/); return m ? m[0] : String(s || ''); };
+  const vendas = {}, devol = {};
+  for (const r of rows) {
+    if (r.cancelado === 'S' || r.cancelado === '1') continue;
+    const op = String(r.operacao || '').trim().toUpperCase();
+    if (op !== 'S' && op !== 'DS') continue;
+    const serie = String(r.serie || r.serie_documento || '').trim();
+    if (serie === '999' || serie === 'J') continue;
+    const doc = parseInt(r.documento || '0');
+    if (!doc) continue;
+    const cod = String(r.cod_produto || '').replace(/\.0+$/, '').trim();
+    if (!cod) continue;
+    const q = Math.round(Math.abs(parseBrNum(r.quantidade || '1'))) || 1;
+    if (op === 'DS') { devol[cod] = (devol[cod] || 0) + q; continue; }
+    const quando = r.data_documento || r.data_lancamento || '';
+    for (let i = 0; i < q; i++)
+      (vendas[cod] = vendas[cod] || []).push({ doc, data: dataBR(quando), _o: ordem(quando) });
+  }
+  for (const cod of Object.keys(vendas)) {
+    vendas[cod].sort((a, b) => b._o.localeCompare(a._o) || b.doc - a.doc);
+    for (let i = 0; i < (devol[cod] || 0) && vendas[cod].length; i++) vendas[cod].pop();
+  }
+  return vendas;
 }
 
 // POST /api/pendencias/checar-estoque-site — roda a checagem na hora (admin)
