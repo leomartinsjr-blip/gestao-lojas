@@ -22,6 +22,8 @@ const PADRAO = {
     { id: 'mantuano', nome: 'Mantuano (MN Advogados)', origem: 'fixo', valor: 1401.08, lojas: SEIS },
   ],
   percentuais: { encargos: 29, aluguelPct: 5, icmsSite: 9.31, icmsLez: 8.98, embalagemLez: 1.4, proLabore: 30000 },
+  // Retirada de cada sócio. Parte em branco: vale o total de percentuais.proLabore
+  socios: [{ nome: 'Leonardo', valor: null }, { nome: 'Leila', valor: null }],
 };
 
 function comPadrao(salvo) {
@@ -32,7 +34,14 @@ function comPadrao(salvo) {
       : PADRAO.escritorio,
     percentuais: { ...PADRAO.percentuais, ...(salvo?.percentuais || {}) },
     fornecedores: salvo?.fornecedores || [],
+    socios: salvo?.socios?.length ? salvo.socios : PADRAO.socios,
   };
+}
+
+// Pró-labore do mês: soma das partes dos sócios; sem parte preenchida, o total cadastrado
+function proLaboreDe(cfg) {
+  const partes = (cfg.socios || []).filter(s => s.valor != null && s.valor !== '');
+  return partes.length ? r2(partes.reduce((t, s) => t + Number(s.valor), 0)) : Number(cfg.percentuais?.proLabore) || 0;
 }
 
 // Lista [{ nome, linha }] vira { NOME: linha }. É lista porque nome de fornecedor
@@ -49,6 +58,13 @@ function validar(body) {
     if (i.encargosPct != null && !(Number(i.encargosPct) >= 0)) return `Encargos inválidos em ${i.nome}`;
     if (i.origem !== 'fixo' && !String(i.termo || '').trim()) return `Informe a busca em ${i.nome}`;
     if (!Array.isArray(i.lojas) || !i.lojas.length || i.lojas.some(l => !SEIS.includes(l))) return `Escolha as lojas de ${i.nome}`;
+  }
+  if (body.socios != null) {
+    if (!Array.isArray(body.socios)) return 'Lista de sócios inválida';
+    for (const s of body.socios) {
+      if (!String(s.nome || '').trim()) return 'Todo sócio precisa de nome';
+      if (s.valor != null && s.valor !== '' && !(Number(s.valor) >= 0)) return `Retirada inválida de ${s.nome}`;
+    }
   }
   for (const [k, v] of Object.entries(body.percentuais || {}))
     if (!(k in PADRAO.percentuais) || !(Number(v) >= 0)) return `Percentual inválido: ${k}`;
@@ -80,4 +96,4 @@ function calcularEscritorio({ itens, pessoas, lancamentos }) {
   return { porLoja, detalhe, usados };
 }
 
-module.exports = { escolhidosDe, PADRAO, comPadrao, validar, calcularEscritorio, SEIS };
+module.exports = { escolhidosDe, PADRAO, comPadrao, validar, calcularEscritorio, proLaboreDe, SEIS };
