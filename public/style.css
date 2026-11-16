@@ -4789,7 +4789,6 @@ body.indeva-standalone .indeva-sa-body.indeva-ocupado .indeva-queue-card { opaci
 }
 
 /* ── Card Estoque do SITE (empresa 6 fora do zero) ───────────────────────── */
-#estoqueSiteBody { max-height: 320px; overflow-y: auto; padding: .35rem .85rem .5rem; }
 .es-grupo + .es-grupo { margin-top: .55rem; }
 .es-grupo-tit { font-size: .74rem; font-weight: 700; display: flex; align-items: baseline; gap: .35rem; flex-wrap: wrap; padding: .2rem 0; }
 .es-grupo-tit b { color: var(--down); }
@@ -4807,3 +4806,15 @@ body.indeva-standalone .indeva-sa-body.indeva-ocupado .indeva-queue-card { opaci
 .es-aviso { font-size: .74rem; color: var(--down); padding: .3rem 0; }
 .es-checar { background: none; border: 1px solid var(--border); border-radius: 4px; cursor: pointer; color: inherit; padding: 0 .35rem; margin-left: .3rem; }
 @media (max-width: 600px) { .es-acao { white-space: normal; } }
+.es-panel { max-width: 860px; }
+.es-checado { font-size: .75rem; color: var(--muted); flex: 1; }
+.es-tab th { text-align: left; font-size: .68rem; font-weight: 600; color: var(--muted); padding: .2rem .3rem; border-bottom: 1px solid var(--border2); }
+.es-chk { width: 1.4rem; }
+.es-chk input { cursor: pointer; }
+.es-data { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.es-feito td { color: var(--muted); }
+.es-feito .es-nome, .es-feito .es-cod { text-decoration: line-through; }
+.es-feito .es-qtd.neg, .es-feito .es-qtd.pos { color: var(--muted); }
+.es-feito-por { font-size: .68rem; color: var(--muted); white-space: normal; }
+.es-grupo-tit em { font-style: normal; font-weight: 400; color: var(--up); }
+.es-vazio { padding: 1.5rem; text-align: center; color: var(--up); font-weight: 600; }

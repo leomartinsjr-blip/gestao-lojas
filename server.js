@@ -3597,10 +3597,18 @@ async function checarEstoqueSite() {
   const limpa = x => ({ cod: x.cod, nome: x.nome, qtd: x.qtd });
   const itens = [
     ...comVenda.map(x => ({ ...limpa(x), qtd: -x.vendas.length, tipo: 'venda',
-      vendas: x.vendas.map(v => ({ doc: v.doc, data: v.data })) })),
+      vendas: x.vendas.map(v => ({ doc: v.doc, data: v.data, iso: v._o })) })),
     ...semVenda.map(x => ({ ...limpa(x), tipo: 'boleta' })),
     ...pos.map(x => ({ ...limpa(x), tipo: 'sobra' })),
   ];
+  // "Feito" marcado na janela continua valendo enquanto a linha for a mesma
+  // (mesmo produto, mesmo tipo, mesmas NFs); linha que sumiu leva a marca junto.
+  const feitoAntes = {};
+  for (const x of (db.estoqueSite?.itens || [])) if (x.feito) feitoAntes[x.chave] = x.feito;
+  for (const x of itens) {
+    x.chave = _chaveEstoqueSite(x);
+    if (feitoAntes[x.chave]) x.feito = feitoAntes[x.chave];
+  }
   const contagem = { produtos: fora.length, negativos: neg.length, positivos: pos.length,
     comVenda: comVenda.length, boleta: semVenda.length };
   db.estoqueSite = { checadoEm: agora, itens, contagem, vendasLidas: !neg.length || !!vendas };
@@ -3648,6 +3656,26 @@ async function _vendasSitePorProduto(cnpj, chave, parseBrNum) {
   }
   return vendas;
 }
+
+function _chaveEstoqueSite(x) {
+  return `${x.tipo}|${x.cod}|${(x.vendas || []).map(v => v.doc).join(',')}|${x.qtd}`;
+}
+
+// POST /api/estoque-site/feito { chave, feito } — marca/desmarca uma linha da
+// janela Estoque do SITE. Só quem recebe o aviso (Leonardo e Ingrid).
+app.post('/api/estoque-site/feito', requireAuth, async (req, res) => {
+  const u = req.session.user;
+  if (!['leonardo', 'ingrid'].includes(u.username)) return res.status(403).json({ error: 'Acesso restrito' });
+  try {
+    const db = await readDB();
+    const item = (db.estoqueSite?.itens || []).find(x => x.chave === req.body.chave);
+    if (!item) return res.status(404).json({ error: 'Linha não está mais na lista — atualize a janela' });
+    if (req.body.feito) item.feito = { por: u.label || u.username, em: new Date().toISOString() };
+    else delete item.feito;
+    await writeDB(db);
+    res.json({ ok: true, item });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
 
 // POST /api/pendencias/checar-estoque-site — roda a checagem na hora (admin)
 app.post('/api/pendencias/checar-estoque-site', requireAdmin, async (req, res) => {
