@@ -1911,6 +1911,7 @@ app.post('/api/employees', requireAuth, async (req, res) => {
       supervisedBoards: Array.isArray(supervisedBoards) ? supervisedBoards : [],
     };
     db.employees.push(emp);
+    redistribuirAposCadastro(db, null, emp);
     await writeDB(db);
     res.json(emp);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1929,6 +1930,7 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
     // Se foto === '' → remover; se foto !== undefined → atualizar; se undefined → não mudar
     if (foto === '') await writePhoto(id, null);
     const manter = (val, campo) => val !== undefined ? (parseFloat(val) || 0) : (db.employees[idx][campo] || 0);
+    const antes = { ...db.employees[idx] };
     db.employees[idx] = {
       ...db.employees[idx], name: name.trim(), board,
       apelido: apelido || '',
@@ -1954,6 +1956,7 @@ app.put('/api/employees/:id', requireAuth, async (req, res) => {
       desligamento: desligamento || '',
       supervisedBoards: Array.isArray(supervisedBoards) ? supervisedBoards : (db.employees[idx].supervisedBoards || []),
     };
+    redistribuirAposCadastro(db, antes, db.employees[idx]);
     await writeDB(db);
     res.json(db.employees[idx]);
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -1965,8 +1968,10 @@ app.delete('/api/employees/:id', requireAdmin, async (req, res) => {
   try {
     const id = parseInt(req.params.id);
     const db = await readDB();
+    const removido = (db.employees || []).find(e => e.id === id);
     db.employees = (db.employees || []).filter(e => e.id !== id);
     db.folgas    = (db.folgas    || []).filter(f => f.employeeId !== id);
+    if (removido) redistribuirAposCadastro(db, removido, null);
     await writePhoto(id, null); // remove foto do documento separado
     await writeDB(db);
     res.json({ ok: true });
@@ -2175,6 +2180,75 @@ app.get('/api/dailysales/:year/:month/:board', requireAuth, async (req, res) => 
     res.json(data);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+// ── Redistribuição da Meta da Loja entre os vendedores ─────────────────────
+// A meta mês de cada vendedor (vsales …meta.mensal) é gravada quando se salva
+// a Meta da Loja no Fechamento Diário: para cada dia, meta do dia ÷ vendedores
+// ativos naquele dia. Quem entra ou sai no meio do mês muda essa divisão, então
+// o cadastro do colaborador refaz a conta aqui — mesma regra do front
+// (computeSellerDayGoals/sellerDayGoal em public/app.js).
+function redistribuirMetaLoja(db, board, y, m) {
+  const mk = monthKey(y, m);
+  const metaLoja = db.dailySales?.[`${mk}-${board}`]?.meta?.mensal || 0;
+  if (!(metaLoja > 0)) return false;
+  const first = `${mk}-01`;
+  const emps = (db.employees || []).filter(e =>
+    e.board === board && e.isVendedor !== false && (!e.desligamento || e.desligamento >= first));
+  if (!emps.length) return false;
+  const days = new Date(y, m, 0).getDate();
+  const defW = +(100 / days).toFixed(6);
+  const pesos = (db.globalWeights || {})[mk] || {};
+  if (!db.vsales) db.vsales = {};
+  const vac = id => db.vsales[`${mk}-${board}-${id}`]?.meta?.vacationDays || [];
+  const total = {};
+  for (let d = 1; d <= days; d++) {
+    const ds = `${mk}-${String(d).padStart(2, '0')}`;
+    const nActive = Math.max(1, emps.filter(e => !e.omniChannel &&
+      (!e.admissao || e.admissao <= ds) && (!e.desligamento || e.desligamento >= ds) &&
+      !vac(e.id).includes(ds)).length);
+    const metaDia = metaLoja * (pesos[ds] ?? defW) / 100 / nActive;
+    for (const e of emps) {
+      const ativo = (!e.admissao || ds >= e.admissao) && (!e.desligamento || ds <= e.desligamento);
+      if (e.omniChannel || !ativo || vac(e.id).includes(ds)) continue;
+      total[e.id] = (total[e.id] || 0) + metaDia;
+    }
+  }
+  for (const e of emps) {
+    const key = `${mk}-${board}-${e.id}`;
+    if (!db.vsales[key]) db.vsales[key] = { meta: { mensal: 0 }, entries: {} };
+    if (!db.vsales[key].meta) db.vsales[key].meta = { mensal: 0 };
+    db.vsales[key].meta.mensal = total[e.id] || 0;
+  }
+  return true;
+}
+
+// Meses a refazer quando muda loja, admissão, desligamento, vendedor ou Omni:
+// os meses das datas de admissão e desligamento (antes e depois da mudança),
+// o mês corrente e o próximo. Só mexe em mês com Meta da Loja cadastrada.
+function redistribuirAposCadastro(db, antes, depois) {
+  const pega = e => e ? { board: e.board, adm: e.admissao || '', desl: e.desligamento || '',
+    vend: e.isVendedor !== false, omni: !!e.omniChannel } : null;
+  const a = pega(antes), d = pega(depois);
+  const mudouDatas = !a || !d || a.adm !== d.adm || a.desl !== d.desl;
+  const mudouResto = !a || !d || a.board !== d.board || a.vend !== d.vend || a.omni !== d.omni;
+  if (!mudouDatas && !mudouResto) return [];
+  const meses = new Set();
+  for (const x of [a, d]) if (x) for (const dt of [x.adm, x.desl])
+    if (/^\d{4}-\d{2}/.test(dt)) meses.add(dt.slice(0, 7));
+  // Mês corrente e o próximo (se a meta dele já foi lançada) sempre entram:
+  // quem saiu em novembro não pode continuar dividindo a meta de dezembro.
+  const hoje = new Date(Date.now() - 3 * 3600_000);
+  const prox = new Date(Date.UTC(hoje.getUTCFullYear(), hoje.getUTCMonth() + 1, 1));
+  meses.add(hoje.toISOString().slice(0, 7));
+  meses.add(prox.toISOString().slice(0, 7));
+  const boards = new Set([a?.board, d?.board].filter(Boolean));
+  const feitos = [];
+  for (const mk of meses) {
+    const [y, m] = mk.split('-').map(Number);
+    for (const b of boards) if (redistribuirMetaLoja(db, b, y, m)) feitos.push(`${mk}-${b}`);
+  }
+  return feitos;
+}
 
 // ── POST /api/dailysales/:year/:month/:board/meta ──────────────────────────
 app.post('/api/dailysales/:year/:month/:board/meta', requireAuth, async (req, res) => {
