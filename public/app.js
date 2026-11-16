@@ -9787,10 +9787,10 @@ function renderDadosLojas() {
   const searchEl = document.getElementById('dlSearch');
   const isAdmin  = userIsAdmin(S.user);
 
-  document.getElementById('dlEditBtn').style.display   = (!DL.editing && isAdmin) ? '' : 'none';
+  document.getElementById('dlEditBtn').style.display   = (!DL.editing && !VT.editing && isAdmin) ? '' : 'none';
   document.getElementById('dlSaveBtn').style.display   = DL.editing ? '' : 'none';
   document.getElementById('dlCancelBtn').style.display = DL.editing ? '' : 'none';
-  searchEl.style.display = DL.editing ? 'none' : '';
+  searchEl.style.display = (DL.editing || VT.editing) ? 'none' : '';
 
   const meta = document.getElementById('dlMeta');
   if (DL.editing)            meta.textContent = '';
@@ -9818,12 +9818,15 @@ function renderDadosLojas() {
     blocks = blocks.filter(b => b.hay.includes(q) || (qNum.length >= 3 && b.hay.includes(qNum)));
   }
 
+  const vitHtml = _vtRender(q);
   if (!blocks.length) {
-    body.innerHTML = `<div class="dl-empty">${DL.text.trim() ? 'Nenhuma loja encontrada.' : 'Nenhum dado cadastrado ainda.'}</div>`;
+    body.innerHTML = vitHtml + `<div class="dl-empty">${DL.text.trim() ? 'Nenhuma loja encontrada.' : 'Nenhum dado cadastrado ainda.'}</div>`;
+    _vtBind(body);
     return;
   }
-  body.innerHTML = `<div class="dl-grid">${blocks.map(_dlRenderCard).join('')}</div>`;
-  body.querySelectorAll('.dl-card').forEach((card, i) => {
+  body.innerHTML = vitHtml + `<div class="dl-grid">${blocks.map(_dlRenderCard).join('')}</div>`;
+  _vtBind(body);
+  body.querySelectorAll('.dl-grid .dl-card').forEach((card, i) => {
     card.querySelector('[data-copy-all]').addEventListener('click', () => _dlCopy(blocks[i].raw, 'Dados copiados!'));
     card.querySelectorAll('.dl-copyable').forEach(el => {
       el.addEventListener('click', () => _dlCopy(el.dataset.copy, el.previousElementSibling.textContent + ' copiado!'));
@@ -9831,16 +9834,129 @@ function renderDadosLojas() {
   });
 }
 
+// ── Vitrines das lojas (medidas em cm, para adesivos/comunicação visual) ──
+const VT_LOJAS = ['delrey','minas','contagem','estacao','tommy','lez'];
+const VT = { lojas: {}, meta: null, editing: false, draft: null };
+
+function _vtFmt(n) { return n == null ? '—' : String(n).replace('.', ','); }
+
+function _vtRender(q) {
+  const isAdmin = userIsAdmin(S.user);
+  const vitQ = q && (q.startsWith('vitr') || 'vitrines'.startsWith(q));
+  const lojas = VT_LOJAS.filter(k => !q || vitQ || BOARD_LABELS[k].toLowerCase().includes(q));
+  if (!lojas.length) return '';
+  const src = VT.editing ? VT.draft : VT.lojas;
+  const meta = (!VT.editing && VT.meta?.updatedAt)
+    ? 'Atualizado em ' + new Date(VT.meta.updatedAt).toLocaleDateString('pt-BR') + (VT.meta.updatedBy ? ' · ' + VT.meta.updatedBy : '')
+    : '';
+
+  const cards = lojas.map(k => {
+    const list = src[k] || [];
+    let rows;
+    if (VT.editing) {
+      rows = list.map((v, i) => `
+        <div class="vt-edit-row" data-loja="${k}" data-i="${i}">
+          <input class="vt-in vt-nome" data-f="nome" placeholder="Nome (ex: Porta, Lateral)" value="${_escHtml(v.nome || '')}">
+          <input class="vt-in vt-num" data-f="largura" inputmode="decimal" placeholder="Larg." value="${_escHtml(v.largura ?? '')}">
+          <span class="vt-x">×</span>
+          <input class="vt-in vt-num" data-f="altura" inputmode="decimal" placeholder="Alt." value="${_escHtml(v.altura ?? '')}">
+          <span class="vt-un">cm</span>
+          <input class="vt-in vt-obs" data-f="obs" placeholder="Obs. (opcional)" value="${_escHtml(v.obs || '')}">
+          <button class="vt-del" data-del="1" title="Remover">✕</button>
+        </div>`).join('')
+        + `<button class="vt-add" data-add="${k}">+ Vitrine</button>`;
+    } else if (!list.length) {
+      rows = `<div class="vt-vazio">Sem medida cadastrada</div>`;
+    } else {
+      rows = list.map(v => `
+        <div class="dl-row">
+          <span class="dl-label">${_escHtml(v.nome || 'Vitrine')}</span>
+          <span class="dl-val"><span class="dl-doc">${_vtFmt(v.largura)} × ${_vtFmt(v.altura)} cm</span>
+            <span class="vt-sub">larg. × alt.</span>${v.obs ? ` · ${_escHtml(v.obs)}` : ''}</span>
+        </div>`).join('');
+    }
+    return `<div class="dl-card vt-card">
+      <div class="dl-card-title"><span class="dash-store-dot" style="display:inline-block;background:var(--col-${k})"></span>${BOARD_LABELS[k]}</div>
+      <div class="dl-card-body">${rows}</div>
+    </div>`;
+  }).join('');
+
+  const btns = VT.editing
+    ? `<button class="add-item-btn" data-vt="save">Salvar vitrines</button><button class="dl-ghost-btn" data-vt="cancel">Cancelar</button>`
+    : (isAdmin && !DL.editing ? `<button class="dl-ghost-btn" data-vt="edit">Editar vitrines</button>` : '');
+
+  return `<section class="vt-sec">
+    <div class="vt-sec-hdr">
+      <span class="vt-sec-title">Vitrines</span>
+      <span class="vt-sec-hint">medidas em cm · largura × altura</span>
+      <span class="dl-meta" style="margin-left:auto">${meta}</span>
+      ${btns}
+    </div>
+    <div class="vt-grid">${cards}</div>
+  </section>`;
+}
+
+function _vtReadDraft(body) {
+  body.querySelectorAll('.vt-edit-row').forEach(r => {
+    const v = VT.draft[r.dataset.loja][+r.dataset.i];
+    r.querySelectorAll('[data-f]').forEach(inp => { v[inp.dataset.f] = inp.value; });
+  });
+}
+
+function _vtBind(body) {
+  body.querySelectorAll('[data-vt]').forEach(b => b.addEventListener('click', async () => {
+    const act = b.dataset.vt;
+    if (act === 'edit') {
+      VT.draft = {};
+      VT_LOJAS.forEach(k => { VT.draft[k] = (VT.lojas[k] || []).map(v => ({ ...v })); });
+      VT.editing = true;
+      renderDadosLojas();
+    } else if (act === 'cancel') {
+      VT.editing = false; renderDadosLojas();
+    } else if (act === 'save') {
+      _vtReadDraft(body);
+      b.disabled = true;
+      try {
+        const r = await apiFetch('PUT', '/api/vitrines-lojas', { lojas: VT.draft });
+        VT.lojas = r.lojas || {};
+        VT.meta = { updatedAt: r.updatedAt, updatedBy: r.updatedBy };
+        VT.editing = false;
+        renderDadosLojas();
+        toast('Vitrines salvas!');
+      } catch (e) { toast('Erro ao salvar: ' + e.message, true); b.disabled = false; }
+    }
+  }));
+  body.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click', () => {
+    _vtReadDraft(body);
+    VT.draft[b.dataset.add].push({ nome: '', largura: '', altura: '', obs: '' });
+    renderDadosLojas();
+    const rows = body.querySelectorAll(`.vt-edit-row[data-loja="${b.dataset.add}"]`);
+    rows[rows.length - 1]?.querySelector('.vt-nome')?.focus();
+  }));
+  body.querySelectorAll('[data-del]').forEach(b => b.addEventListener('click', () => {
+    _vtReadDraft(body);
+    const r = b.closest('.vt-edit-row');
+    VT.draft[r.dataset.loja].splice(+r.dataset.i, 1);
+    renderDadosLojas();
+  }));
+}
+
 async function openDadosLojasModal() {
   document.getElementById('dadosLojasOverlay').classList.remove('hidden');
   DL.editing = false;
+  VT.editing = false;
   document.getElementById('dlSearch').value = '';
   if (!DL.loaded) {
     document.getElementById('dadosLojasBody').innerHTML = '<div class="dl-empty">Carregando…</div>';
     try {
-      const d = await apiFetch('GET', '/api/dados-lojas');
+      const [d, v] = await Promise.all([
+        apiFetch('GET', '/api/dados-lojas'),
+        apiFetch('GET', '/api/vitrines-lojas').catch(() => ({ lojas: {} })),
+      ]);
       DL.text = d.text || '';
       DL.meta = { updatedAt: d.updatedAt, updatedBy: d.updatedBy };
+      VT.lojas = v.lojas || {};
+      VT.meta = { updatedAt: v.updatedAt, updatedBy: v.updatedBy };
       DL.loaded = true;
     } catch (e) {
       document.getElementById('dadosLojasBody').innerHTML = `<div class="dl-empty">Erro ao carregar: ${_escHtml(e.message)}</div>`;
@@ -9858,7 +9974,7 @@ function initDadosLojasModal() {
   document.getElementById('dadosLojasBtn').addEventListener('click', openDadosLojasModal);
   document.getElementById('dadosLojasClose').addEventListener('click', closeDadosLojasModal);
   document.getElementById('dadosLojasOverlay').addEventListener('click', e => {
-    if (e.target === document.getElementById('dadosLojasOverlay') && !DL.editing) closeDadosLojasModal();
+    if (e.target === document.getElementById('dadosLojasOverlay') && !DL.editing && !VT.editing) closeDadosLojasModal();
   });
   document.getElementById('dlSearch').addEventListener('input', renderDadosLojas);
 

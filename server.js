@@ -2479,6 +2479,49 @@ app.put('/api/dados-lojas', requireAdmin, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── VITRINES DAS LOJAS (medidas para adesivos/comunicação visual) ─────────
+// { lojas: { minas: [{ nome, largura, altura, obs }] }, updatedAt, updatedBy }
+// Medidas em cm. Cada loja pode ter várias vitrines/vidros.
+const VITRINE_LOJAS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'lez'];
+const VITRINES_SEED = { minas: [{ nome: 'Vitrine', largura: 151, altura: 298, obs: '' }] };
+
+function _vitrineNum(v) {
+  const n = parseFloat(String(v ?? '').replace(',', '.'));
+  return Number.isFinite(n) && n > 0 ? Math.round(n * 10) / 10 : null;
+}
+
+app.get('/api/vitrines-lojas', requireAuth, async (req, res) => {
+  try {
+    const db = await readDB();
+    const v  = db.vitrinesLojas;
+    if (!v) return res.json({ lojas: VITRINES_SEED, updatedAt: null, updatedBy: null, seed: true });
+    res.json({ lojas: v.lojas || {}, updatedAt: v.updatedAt || null, updatedBy: v.updatedBy || null });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/vitrines-lojas', requireAdmin, async (req, res) => {
+  try {
+    const src = req.body?.lojas || {};
+    const lojas = {};
+    for (const k of VITRINE_LOJAS) {
+      const list = Array.isArray(src[k]) ? src[k] : [];
+      lojas[k] = list
+        .map(x => ({
+          nome:    String(x?.nome ?? '').trim().slice(0, 60),
+          largura: _vitrineNum(x?.largura),
+          altura:  _vitrineNum(x?.altura),
+          obs:     String(x?.obs ?? '').trim().slice(0, 200),
+        }))
+        .filter(x => x.nome || x.largura || x.altura || x.obs)
+        .slice(0, 20);
+    }
+    const db = await readDB();
+    db.vitrinesLojas = { lojas, updatedAt: new Date().toISOString(), updatedBy: req.session.user.username };
+    await writeDB(db);
+    res.json({ ok: true, ...db.vitrinesLojas });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── GET /api/vsales/:year/:month/:board/:empId ─────────────────────────────
 app.get('/api/vsales/:year/:month/:board/:empId', requireAuth, async (req, res) => {
   try {

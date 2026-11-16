@@ -4818,3 +4818,31 @@ body.indeva-standalone .indeva-sa-body.indeva-ocupado .indeva-queue-card { opaci
 .es-feito-por { font-size: .68rem; color: var(--muted); white-space: normal; }
 .es-grupo-tit em { font-style: normal; font-weight: 400; color: var(--up); }
 .es-vazio { padding: 1.5rem; text-align: center; color: var(--up); font-weight: 600; }
+
+/* ── VITRINES (dentro de Dados Lojas) ─────────────────────────────────────── */
+.vt-sec { margin-bottom: 1.1rem; padding-bottom: 1rem; border-bottom: 1px solid var(--border); }
+.vt-sec-hdr { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .6rem; }
+.vt-sec-title { font-size: .8125rem; font-weight: 700; }
+.vt-sec-hint { font-size: .7rem; color: var(--muted); }
+.vt-grid { display: grid; gap: .6rem; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.vt-card { gap: .4rem; }
+.vt-card .dl-card-title { display: flex; align-items: center; }
+.vt-sub { color: var(--muted); font-size: .68rem; margin-left: .25rem; }
+.vt-vazio { font-size: .72rem; color: var(--muted); font-style: italic; }
+.vt-edit-row { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; padding: .3rem 0; border-bottom: 1px dashed var(--border); }
+.vt-in {
+  background: var(--bg); color: var(--text); border: 1px solid var(--border);
+  border-radius: .35rem; padding: .28rem .4rem; font-family: inherit; font-size: .75rem;
+}
+.vt-in:focus { outline: none; border-color: var(--accent); }
+.vt-nome { flex: 1 1 100%; }
+.vt-num { width: 58px; text-align: right; font-variant-numeric: tabular-nums; }
+.vt-obs { flex: 1 1 100%; }
+.vt-x, .vt-un { font-size: .72rem; color: var(--muted); }
+.vt-del { margin-left: auto; background: transparent; border: none; color: var(--muted); cursor: pointer; font-size: .8rem; }
+.vt-del:hover { color: var(--down, #c33); }
+.vt-add {
+  align-self: flex-start; margin-top: .3rem; background: transparent; border: 1px dashed var(--border2);
+  color: var(--muted); border-radius: .35rem; padding: .25rem .6rem; font-size: .72rem; font-weight: 600; cursor: pointer; font-family: inherit;
+}
+.vt-add:hover { color: var(--accent); border-color: var(--accent); }
