@@ -3452,6 +3452,80 @@ app.patch('/api/pendencias/:id', requireAuth, async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── Pendência automática: estoque da empresa 6 (SITE) fora do zero ─────────
+// A loja transfere para o SITE e o SITE fatura o pedido, então o saldo da
+// empresa 6 tem que voltar a zero assim que a NF de baixa sai. Sobrou peça
+// (positivo) ou faltou (negativo) → abre uma pendência para Leonardo e Ingrid.
+// Uma só pendência aberta por vez (auto: 'estoque-site'): o texto é atualizado
+// a cada checagem e ela se resolve sozinha quando o estoque zera.
+const PEND_AUTO_SITE = 'estoque-site';
+async function checarEstoqueSite() {
+  const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
+  const cnpj  = (lojas.site || '').replace(/\D/g, '');
+  if (!cnpj) return { skipped: 'board site não está em MICROVIX_LOJAS' };
+  const { fetchEstoque, parseBrNum } = require('./services/microvix');
+  const chave = process.env.MICROVIX_CHAVE_SITE || process.env.MICROVIX_CHAVE;
+  const rows  = await fetchEstoque(cnpj, chave, new Date().toISOString().slice(0, 10));
+  const catalog = _catalogCache || {};
+
+  const porCod = {};
+  for (const r of rows) {
+    const cod = String(r.cod_produto || r.codproduto || '').replace(/\.0+$/, '').trim();
+    if (!cod) continue;
+    const barra = String(r.cod_barra || r.codbarra || '').replace(/\.0+$/, '').trim();
+    porCod[cod] = porCod[cod] || { cod, barra, qtd: 0 };
+    porCod[cod].qtd += parseBrNum(r.quantidade || '0');
+  }
+  const fora = Object.values(porCod).filter(x => Math.abs(x.qtd) > 0.0001)
+    .map(x => {
+      const p = catalog[x.cod] || catalog[x.barra] || {};
+      const nome = [p.nome || p.nomeBase || '', p.desc_tam || ''].filter(Boolean).join(' ').trim();
+      return { ...x, nome };
+    })
+    .sort((a, b) => a.qtd - b.qtd);
+
+  const db = await readDB();
+  if (!db.pendencias) db.pendencias = [];
+  const aberta = db.pendencias.find(x => x.auto === PEND_AUTO_SITE && !x.resolved);
+  const agora  = new Date().toISOString();
+
+  if (!fora.length) {
+    if (aberta) {
+      Object.assign(aberta, { resolved: true, resolvedAt: agora, resolvedBy: 'Automático (estoque zerado)' });
+      await writeDB(db);
+    }
+    return { itens: 0, resolvida: !!aberta };
+  }
+
+  const pos = fora.filter(x => x.qtd > 0), neg = fora.filter(x => x.qtd < 0);
+  const fmt = x => `${x.cod}${x.nome ? ' ' + x.nome : ''}: ${x.qtd > 0 ? '+' : ''}${x.qtd}`;
+  const MAX = 15;
+  const lista = fora.slice(0, MAX).map(fmt).join('; ') + (fora.length > MAX ? `; e mais ${fora.length - MAX}` : '');
+  const resumo = [neg.length ? `${neg.length} negativo(s)` : '', pos.length ? `${pos.length} positivo(s)` : ''].filter(Boolean).join(', ');
+  const text = `Estoque da empresa 6 (SITE) não está zerado — ${fora.length} produto(s), ${resumo}. ` +
+    `Conferir transferência da loja e NF de baixa. ${lista}`;
+
+  if (aberta) {
+    aberta.text = text;
+    aberta.checadoEm = agora;
+  } else {
+    db.pendencias.push({
+      id: nextId(db), text, assignedTo: ['leonardo', 'ingrid'],
+      createdBy: 'sistema', createdByLabel: 'Automático', createdAt: agora,
+      resolved: false, resolvedAt: null, resolvedBy: null, recorrencia: null,
+      auto: PEND_AUTO_SITE, checadoEm: agora,
+    });
+  }
+  await writeDB(db);
+  return { itens: fora.length, positivos: pos.length, negativos: neg.length, atualizada: !!aberta };
+}
+
+// POST /api/pendencias/checar-estoque-site — roda a checagem na hora (admin)
+app.post('/api/pendencias/checar-estoque-site', requireAdmin, async (req, res) => {
+  try { res.json(await checarEstoqueSite()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── DELETE /api/pendencias/:id ─────────────────────────────────────────────
 app.delete('/api/pendencias/:id', requireAdmin, async (req, res) => {
   try {
@@ -17437,6 +17511,16 @@ initMongo()
           }).catch(e => console.warn('[prewarm/90d]', e.message));
         }
       }, 10_000);
+    }
+
+    // ── Cron: estoque da empresa 6 (SITE) tem que estar zerado ───────────
+    // 1 requisição por checagem; 09:30 (depois do catálogo) e 17:30.
+    if (process.env.MICROVIX_CHAVE && process.env.MICROVIX_LOJAS) {
+      cron.schedule('30 9,17 * * *', () => {
+        checarEstoqueSite()
+          .then(r => console.log('[estoque-site]', JSON.stringify(r)))
+          .catch(e => console.warn('[estoque-site]', e.message));
+      }, { timezone: 'America/Sao_Paulo' });
     }
 
     // ── Cron: foto da Margem por Loja — diário 08:00 Brasília, até ontem ────
