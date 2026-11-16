@@ -1137,8 +1137,9 @@ function _desenharPedidosSite(lugar, d) {
         </div>
         ${p.maoPropria ? `<label class="site-check site-mp"><input type="checkbox" class="site-mp-ok" data-n="${p.numero}"> <b>Postei com Mão Própria + AR</b> (obrigatório para finalizar)</label>` : ''}
         <div class="site-rastreio">Postou nos Correios? Código de rastreio:
-          <input maxlength="13" placeholder="AA123456789BR" data-n="${p.numero}">
+          <input maxlength="13" placeholder="AA123456789BR" data-n="${p.numero}" value="${esc(p.rastreio || p.codigoCorreios || '')}">
           <button class="site-finalizar" data-n="${p.numero}">Finalizar pedido</button></div>
+        ${p.codigoCorreios ? `<div class="site-linha espera">O código já vem da etiqueta impressa. Depois de postar, clique em Finalizar — ou deixe: o pedido finaliza sozinho quando os Correios registrarem a postagem.</div>` : ''}
         <div class="site-itens">${itensPorLoja(p)}</div></div>`;
     }).join('')}
   </div>`;
