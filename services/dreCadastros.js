@@ -24,6 +24,8 @@ const PADRAO = {
   percentuais: { encargos: 29, aluguelPct: 5, icmsSite: 9.31, icmsLez: 8.98, embalagemLez: 1.4, proLabore: 30000 },
   // Retirada de cada sócio. Parte em branco: vale o total de percentuais.proLabore
   socios: [{ nome: 'Leonardo', valor: null }, { nome: 'Leila', valor: null }],
+  // A Estação é à parte e tem os próprios sócios; paga R$ 2 mil por mês ao Leonardo
+  sociosEstacao: [{ nome: 'Leonardo', valor: 2000 }, { nome: 'Leila', valor: null }, { nome: 'Regina', valor: null }],
 };
 
 function comPadrao(salvo) {
@@ -35,10 +37,13 @@ function comPadrao(salvo) {
     percentuais: { ...PADRAO.percentuais, ...(salvo?.percentuais || {}) },
     fornecedores: salvo?.fornecedores || [],
     socios: salvo?.socios?.length ? salvo.socios : PADRAO.socios,
+    sociosEstacao: salvo?.sociosEstacao?.length ? salvo.sociosEstacao : PADRAO.sociosEstacao,
   };
 }
 
 // Pró-labore do mês: soma das partes dos sócios; sem parte preenchida, o total cadastrado
+const somaSocios = lista => r2((lista || []).reduce((t, s) => t + (Number(s.valor) || 0), 0));
+
 function proLaboreDe(cfg) {
   const partes = (cfg.socios || []).filter(s => s.valor != null && s.valor !== '');
   return partes.length ? r2(partes.reduce((t, s) => t + Number(s.valor), 0)) : Number(cfg.percentuais?.proLabore) || 0;
@@ -59,9 +64,10 @@ function validar(body) {
     if (i.origem !== 'fixo' && !String(i.termo || '').trim()) return `Informe a busca em ${i.nome}`;
     if (!Array.isArray(i.lojas) || !i.lojas.length || i.lojas.some(l => !SEIS.includes(l))) return `Escolha as lojas de ${i.nome}`;
   }
-  if (body.socios != null) {
-    if (!Array.isArray(body.socios)) return 'Lista de sócios inválida';
-    for (const s of body.socios) {
+  for (const lista of [body.socios, body.sociosEstacao]) {
+    if (lista == null) continue;
+    if (!Array.isArray(lista)) return 'Lista de sócios inválida';
+    for (const s of lista) {
       if (!String(s.nome || '').trim()) return 'Todo sócio precisa de nome';
       if (s.valor != null && s.valor !== '' && !(Number(s.valor) >= 0)) return `Retirada inválida de ${s.nome}`;
     }
@@ -96,4 +102,4 @@ function calcularEscritorio({ itens, pessoas, lancamentos }) {
   return { porLoja, detalhe, usados };
 }
 
-module.exports = { escolhidosDe, PADRAO, comPadrao, validar, calcularEscritorio, proLaboreDe, SEIS };
+module.exports = { escolhidosDe, PADRAO, comPadrao, validar, calcularEscritorio, proLaboreDe, somaSocios, SEIS };

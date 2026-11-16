@@ -46,7 +46,10 @@
   tbody tr:nth-child(even) td { background:#f8fafc; } tbody tr:hover td { background:#e8f1fb; }
   td.neg { color:var(--red); }
   th:first-child, td:first-child { text-align:left; position:sticky; left:0; background:var(--bg2); }
-  thead th { background:var(--bg3); font-size:12px; color:var(--text2); }
+  thead th { background:var(--bg3); font-size:12px; color:var(--text2); position:sticky; top:0; z-index:2; }
+  thead th:first-child { z-index:3; } td:first-child { z-index:1; }
+  .painel:has(> table) { max-height:calc(100vh - 110px); overflow:auto; }
+  th.aparte, td.aparte, tr.aparte td { border-left:2px solid var(--border); } tr.aparte td { background:var(--bg3); }
   tbody tr.grupo td, tbody tr.grupo:nth-child(even) td { font-weight:600; background:#ddf4ff; color:#0a3069; border-top:1px solid #b6e3ff; }
   #tabela th:last-child, #tabelaCaixa th:last-child { white-space:nowrap; }
   tbody tr.grupo td.neg { color:var(--red); } tbody tr.item td:first-child { padding-left:22px !important; }
@@ -58,7 +61,7 @@
   tr.abre.aberta td:first-child::before { content:'▾ '; }
   tr.sub td { background:var(--bg3); font-size:12px; color:var(--text2); } tr.sub td:first-child { background:var(--bg3); padding-left:30px; white-space:normal; min-width:240px; }
   .filtros { display:flex; gap:12px; align-items:center; justify-content:center; flex-wrap:wrap; padding-bottom:12px; } select { background:var(--bg3); border:1px solid var(--border); border-radius:6px; padding:5px 8px; font-size:12px; }
-  #tabCustos input[type=text], #tabCustos input[type=number], #tabSocios input, #percentuais input { background:#fff; width:100%; min-width:90px; }
+  #tabCustos input[type=text], #tabCustos input[type=number], #tabSocios input, #tabSociosEst input, #percentuais input { background:#fff; width:100%; min-width:90px; }
   #tabCustos td { white-space:normal; text-align:left; } #tabCustos label { display:inline-block; margin-right:6px; font-size:11px; }
   #percentuais label { display:inline-block; width:210px; } a { color:var(--blue); } .tira { padding:0 6px; }
   .ed { position:absolute; right:1px; top:3px; cursor:pointer; visibility:hidden; font-size:11px; color:var(--blue); } td:hover .ed { visibility:visible; }
@@ -118,7 +121,7 @@
       <div class="painel"><h2 id="gLojaTit"></h2><table id="gLoja"></table></div>
       <div class="painel"><h2 id="gPartTit"></h2><table id="gPart"></table></div>
       <div class="painel"><h2 id="gAcumTit"></h2><table id="gAcum"></table></div>
-      <p class="nota">Até setembro/2026 vem do histórico das planilhas; de outubro em diante, do módulo. As margens consideram só a venda das lojas com resultado no mês. A Estação entra no faturamento e, no resultado, a partir de outubro/2026.</p>
+      <p class="nota">Até setembro/2026 vem do histórico das planilhas; de outubro em diante, do módulo. As margens consideram só a venda das lojas com resultado no mês. A Estação é à parte: fica fora dos totais e aparece depois deles.</p>
     </div>
     <div id="vBal" hidden>
       <div class="painel"><h2 id="tituloBal"></h2><table id="tabelaBal"></table></div>
@@ -128,7 +131,9 @@
       <div class="painel"><h2>Custos do Escritório</h2><table id="tabCustos"></table>
         <div class="item"><button id="novoCusto">Adicionar custo</button></div></div>
       <div class="painel"><h2>Sócios: pró-labore por mês</h2><table id="tabSocios"></table>
-        <div class="item"><button id="novoSocio">Adicionar sócio</button><span id="sociosTotal"></span></div></div>
+        <div class="item"><button id="novoSocio">Adicionar sócio</button><span id="sociosTotal"></span></div>
+        <h2>Estação (à parte): sócios e retiradas por mês</h2><table id="tabSociosEst"></table>
+        <div class="item"><button id="novoSocioEst">Adicionar sócio</button><span id="sociosEstTotal"></span></div></div>
       <div class="painel"><h2>Percentuais</h2><div id="percentuais"></div></div>
       <div class="item"><button id="salvarCad">Salvar cadastros</button><span id="cadMsg"></span></div>
       <div class="painel"><h2>Mapa de fornecedores</h2>
@@ -163,6 +168,11 @@ const percentual = (v, base) => (base ? `<small class="pct">${num(v / base * 100
 const par = (valor, pct = '<small class="pct"></small>') => `<span class="cel"><span class="v">${valor}</span>${pct}</span>`;
 const lapis = (grupo, k, b) => `<span class="ed" title="Editar valor" data-grupo="${grupo}" data-k="${k}" data-b="${b}">✎</span>`;
 let ultimo = null, lojaAtual = null, passos = [], passoI = 0;
+// A Estação é uma operação à parte: fica fora dos totais e consolidados e aparece depois do Total
+const A_PARTE = ['estacao'];
+const doGrupo = ordem => ordem.filter(b => !A_PARTE.includes(b));
+const aParte = ordem => ordem.filter(b => A_PARTE.includes(b));
+const marcarAparte = html => html.replace('<td class="', '<td class="aparte ').replace('<td>', '<td class="aparte">');
 
 function celula({ valor, base, ref, editar = '', calculado }) {
   if (valor == null) return `<td class="falta">${par('falta')}${editar}</td>`;
@@ -189,7 +199,9 @@ function compararLinha(d, k) {
   };
   const dentro = d.ordem.filter(completa);
   const soma = pegar => dentro.reduce((s, b) => s + pegar(d.lojas[b]), 0);
-  const grupo = dentro.length ? soma(l => l[k]) / soma(l => l.receita) * 100 : null;
+  const noGrupo = doGrupo(dentro);
+  const somaG = pegar => noGrupo.reduce((s, b) => s + pegar(d.lojas[b]), 0);
+  const grupo = noGrupo.length ? somaG(l => l[k]) / somaG(l => l.receita) * 100 : null;
   const lojas = dentro.map(b => {
     const l = d.lojas[b], pct = l[k] / l.receita * 100, dif = (pct - grupo) / 100 * l.receita;
     return { b, pct, dif: k === SO_RESULTADO ? -dif : dif }; // dif > 0 é sempre pior que o grupo
@@ -240,16 +252,21 @@ function desenharComparar(d, mostrar) {
 
 // Resumo de todas: a retirada dos sócios sai do total do grupo, depois das dívidas.
 // Não é dividida por loja, como no FECHAMENTO RESULTADO.
-function linhasProLabore(d, colunas, somaLojas) {
-  const pro = d.proLabore || 0;
-  if (!pro) return '';
+function linhasProLabore(d, colunas, somaLojas, extras = []) {
+  const pro = d.proLabore || 0, proEst = d.proLaboreEstacao || 0;
+  if (!pro && !proEst) return '';
   const venda = somaLojas(b => d.lojas[b].receita);
   const vazias = colunas.map(() => '<td></td>').join('');
-  const partes = (d.socios || []).filter(s => s.valor != null && s.valor !== '');
-  const subs = partes.map(s => `<tr class="sub" hidden><td>${s.nome}</td>${vazias}<td>${par(num(-Number(s.valor)))}</td></tr>`).join('');
+  const preenchidos = l => (l || []).filter(s => s.valor != null && s.valor !== '');
+  const partes = preenchidos(d.socios), partesEst = preenchidos(d.sociosEstacao);
+  const nomes = [...new Set([...partes, ...partesEst].map(s => s.nome))];
+  const valorDe = (l, n) => { const s = l.find(x => x.nome === n); return s ? par(num(-Number(s.valor))) : par(''); };
+  const subs = nomes.map(n => `<tr class="sub" hidden><td>${n}</td>${vazias}<td>${valorDe(partes, n)}</td>${extras.map(() => `<td class="aparte">${valorDe(partesEst, n)}</td>`).join('')}</tr>`).join('');
   const sobra = somaLojas(b => d.lojas[b].sobra);
-  return `<tr class="${partes.length ? 'abre ' : ''}grupo"><td>Pró-labore dos sócios</td>${vazias}${celula({ valor: -pro, base: venda })}</tr>${subs}` +
-    `<tr class="total"><td>Resultado final (depois do pró-labore)</td>${vazias}${celula({ valor: sobra == null ? null : sobra - pro, base: venda }).replace('falta', '–')}</tr>`;
+  const estPro = extras.map(b => marcarAparte(celula({ valor: -proEst, base: d.lojas[b].receita }))).join('');
+  const estFinal = extras.map(b => marcarAparte(celula({ valor: d.lojas[b].sobra == null ? null : d.lojas[b].sobra - proEst, base: d.lojas[b].receita }).replace('falta', '–'))).join('');
+  return `<tr class="${nomes.length ? 'abre ' : ''}grupo"><td>Pró-labore dos sócios</td>${vazias}${celula({ valor: -pro, base: venda })}${estPro}</tr>${subs}` +
+    `<tr class="total"><td>Resultado final (depois do pró-labore)</td>${vazias}${celula({ valor: sobra == null ? null : sobra - pro, base: venda }).replace('falta', '–')}${estFinal}</tr>`;
 }
 
 function desenhar(d) {
@@ -258,14 +275,15 @@ function desenhar(d) {
   const fechada = b => !!d.fechamentos?.[b];
   const todas = d.ordem.every(fechada);
   if (!d.ordem.includes(lojaAtual) && lojaAtual !== 'resumo') lojaAtual = todas ? 'resumo' : d.ordem.find(b => !fechada(b));
-  const colunas = lojaAtual === 'resumo' ? d.ordem : [lojaAtual];
+  const colunas = lojaAtual === 'resumo' ? doGrupo(d.ordem) : [lojaAtual];
+  const extras = lojaAtual === 'resumo' ? aParte(d.ordem) : [];
   const soUma = colunas.length === 1;
   const mostraPlanilha = soUma && d.planilha?.[lojaAtual];
   document.body.classList.toggle('uma-loja', soUma);
   // Resumo: coluna Total, somando as lojas, com o % sobre a venda do grupo
   const somaLojas = pegar => { const vs = colunas.map(pegar); return vs.every(v => v == null) ? null : vs.reduce((s, v) => s + (v || 0), 0); };
   const colTotal = (pegar, pegarBase) => (soUma ? '' : celula({ valor: somaLojas(pegar), base: somaLojas(pegarBase) }).replace('falta', '–'));
-  const thTotal = soUma ? '' : '<th>Total</th>';
+  const thTotal = soUma ? '' : '<th>Total</th>' + extras.map(b => `<th class="aparte ${fechada(b) ? 'fechada' : ''}">${nome(b)}</th>`).join('');
 
   $('abrirPassos').textContent = d.pendencias.length ? `Informações do mês (${d.pendencias.length})` : 'Informações do mês';
   $('pilulas').innerHTML = d.ordem.map(b => `<button data-loja-sel="${b}" class="${b === lojaAtual ? 'ativa' : ''}">${fechada(b) ? '🔒 ' : ''}${nome(b)}</button>`).join('') +
@@ -276,27 +294,27 @@ function desenhar(d) {
   $('titulo').textContent = `DRE de ${m}/${a}: ${soUma ? nome(lojaAtual) : 'todas as lojas'}`;
   const cab = `<thead><tr><th>Linha</th>${colunas.map(b => `<th class="${fechada(b) ? 'fechada' : ''}">${soUma ? 'Valor e % da venda' : nome(b)}</th>`).join('')}${thTotal}${mostraPlanilha ? '<th>Planilha</th>' : ''}</tr></thead>`;
   const subs = (itens, extra) => itens.filter(i => colunas.some(b => i.lojas[b])).map(i => `<tr class="sub" hidden><td>${i.nome}</td>${colunas.map(b =>
-    `<td>${par(i.lojas[b] ? num(i.lojas[b]) : '')}</td>`).join('')}${soUma ? '' : `<td>${par(num(somaLojas(b => i.lojas[b]) || 0))}</td>`}${extra ? '<td></td>' : ''}</tr>`).join('');
+    `<td>${par(i.lojas[b] ? num(i.lojas[b]) : '')}</td>`).join('')}${soUma ? '' : `<td>${par(num(somaLojas(b => i.lojas[b]) || 0))}</td>`}${extras.map(b => `<td class="aparte">${par(i.lojas[b] ? num(i.lojas[b]) : '')}</td>`).join('')}${extra ? '<td></td>' : ''}</tr>`).join('');
+  const celDre = (b, k, tipo) => celula({
+    valor: d.lojas[b][k], base: d.lojas[b].receita, ref: d.planilha?.[b]?.[k],
+    editar: tipo === 'item' && !fechada(b) ? lapis('ajustes', k, b) : '',
+    calculado: k in (d.lojas[b].ajustado || {}) ? d.lojas[b].ajustado[k] : undefined,
+  });
   const corpo = d.estrutura.map(([k, rot, tipo]) => {
-    const itens = (d.detalhe?.[k] || []).filter(i => colunas.some(b => i.lojas[b]));
-    return `<tr class="${[itens.length ? 'abre' : '', tipo].join(' ')}"><td>${rot}</td>${colunas.map(b => celula({
-      valor: d.lojas[b][k], base: d.lojas[b].receita, ref: d.planilha?.[b]?.[k],
-      editar: tipo === 'item' && !fechada(b) ? lapis('ajustes', k, b) : '',
-      calculado: k in (d.lojas[b].ajustado || {}) ? d.lojas[b].ajustado[k] : undefined,
-    })).join('')}${colTotal(b => d.lojas[b][k], b => d.lojas[b].receita)}${mostraPlanilha ? `<td>${d.planilha[lojaAtual][k] != null ? `<span class="v">${num(d.planilha[lojaAtual][k])}</span>` : ''}</td>` : ''}</tr>${subs(itens, mostraPlanilha)}`;
+    const itens = (d.detalhe?.[k] || []).filter(i => [...colunas, ...extras].some(b => i.lojas[b]));
+    return `<tr class="${[itens.length ? 'abre' : '', tipo].join(' ')}"><td>${rot}</td>${colunas.map(b => celDre(b, k, tipo)).join('')}${colTotal(b => d.lojas[b][k], b => d.lojas[b].receita)}${extras.map(b => marcarAparte(celDre(b, k, tipo))).join('')}${mostraPlanilha ? `<td>${d.planilha[lojaAtual][k] != null ? `<span class="v">${num(d.planilha[lojaAtual][k])}</span>` : ''}</td>` : ''}</tr>${subs(itens, mostraPlanilha)}`;
   }).join('');
-  $('tabela').innerHTML = cab + `<tbody>${corpo}${soUma ? '' : linhasProLabore(d, colunas, somaLojas)}</tbody>`;
+  $('tabela').innerHTML = cab + `<tbody>${corpo}${soUma ? '' : linhasProLabore(d, colunas, somaLojas, extras)}</tbody>`;
   desenharComparar(d, !soUma);
 
   $('tituloCaixa').textContent = `Fechamento de Caixa de ${m}/${a}: ${soUma ? nome(lojaAtual) : 'todas as lojas'}`;
   const cabCx = `<thead><tr><th>Linha</th>${colunas.map(b => `<th>${soUma ? 'Valor e % dos recebimentos' : nome(b)}</th>`).join('')}${thTotal}</tr></thead>`;
-  const linhaTotal = (rot, valores) => `<tr class="total"><td>${rot}</td>${colunas.map(b => celula({ valor: valores[b] || 0, base: d.caixa.recebimentos[b] })).join('')}${colTotal(b => valores[b] || 0, b => d.caixa.recebimentos[b])}</tr>`;
-  const visiveis = d.caixa.linhas.filter(l => colunas.some(b => l.lojas[b]));
+  const celCx = (l, b) => celula({ valor: l.lojas[b] || 0, base: d.caixa.recebimentos[b], editar: fechada(b) ? '' : lapis('ajustesCaixa', l.id, b), calculado: b in (l.ajustado || {}) ? l.ajustado[b] : undefined });
+  const linhaTotal = (rot, valores) => `<tr class="total"><td>${rot}</td>${colunas.map(b => celula({ valor: valores[b] || 0, base: d.caixa.recebimentos[b] })).join('')}${colTotal(b => valores[b] || 0, b => d.caixa.recebimentos[b])}${extras.map(b => marcarAparte(celula({ valor: valores[b] || 0, base: d.caixa.recebimentos[b] }))).join('')}</tr>`;
+  const visiveis = d.caixa.linhas.filter(l => [...colunas, ...extras].some(b => l.lojas[b]));
   $('tabelaCaixa').innerHTML = cabCx + '<tbody>' + visiveis.map(l => {
-    const itens = l.detalhe.filter(i => colunas.some(b => i.lojas[b]));
-    return `<tr class="${itens.length ? 'abre' : ''}"><td>${l.nome}</td>${colunas.map(b => (l.lojas[b] || !soUma
-      ? celula({ valor: l.lojas[b] || 0, base: d.caixa.recebimentos[b], editar: fechada(b) ? '' : lapis('ajustesCaixa', l.id, b), calculado: b in (l.ajustado || {}) ? l.ajustado[b] : undefined })
-      : '<td></td>')).join('')}${colTotal(b => l.lojas[b] || 0, b => d.caixa.recebimentos[b])}</tr>${subs(itens)}`;
+    const itens = l.detalhe.filter(i => [...colunas, ...extras].some(b => i.lojas[b]));
+    return `<tr class="${itens.length ? 'abre' : ''}"><td>${l.nome}</td>${colunas.map(b => (l.lojas[b] || !soUma ? celCx(l, b) : '<td></td>')).join('')}${colTotal(b => l.lojas[b] || 0, b => d.caixa.recebimentos[b])}${extras.map(b => marcarAparte(celCx(l, b))).join('')}</tr>${subs(itens)}`;
   }).join('') + linhaTotal('Soma despesas (-)', d.caixa.soma) + linhaTotal('Recebimentos (+)', d.caixa.recebimentos) + linhaTotal('Resultado (=)', d.caixa.resultado) + '</tbody>';
 
   document.querySelectorAll('.ed').forEach(el => el.addEventListener('click', async ev => {
@@ -488,11 +506,11 @@ function numerosDoMes(d) {
   const out = { fat: 0, op: 0, div: 0, base: 0, pro: d.proLabore || 0, lojas: {} };
   for (const b of d.ordem) {
     const l = d.lojas[b];
+    const fora = A_PARTE.includes(b);
     const op = d.historico ? l.operacional : (l.faltam?.length ? null : l.operacional);
     const div = d.historico ? (l.dividas || 0) : (l.juros || 0) + (l.emprestimos || 0) + (l.acordos || 0);
     const fat = l.receita || 0;
-    out.fat += fat;
-    if (op != null) { out.op += op; out.div += div; out.base += fat; }
+    if (!fora) { out.fat += fat; if (op != null) { out.op += op; out.div += div; out.base += fat; } }
     out.lojas[b] = { fat, op, div: op != null ? div : 0, final: op != null ? op - div : null };
   }
   out.final = out.op - out.div - out.pro;
@@ -521,7 +539,7 @@ async function carregarGrupo() {
   const atual = dados[ano], antes = dados[ano - 1];
   const exemplo = Object.values(cache).find(d => d.ordem);
   if (!exemplo) return;
-  const ordem = exemplo.ordem, nome = b => exemplo.labels[b] || b;
+  const ordem = doGrupo(exemplo.ordem), separadas = aParte(exemplo.ordem), nome = b => exemplo.labels[b] || b;
 
   $('gAnual').innerHTML = gCab(anos) + '<tbody>' + [
     gLinha('Faturamento', anos.map(a => gCel(dados[a].fat))),
@@ -558,16 +576,20 @@ async function carregarGrupo() {
     const x = porLoja(b);
     return gLinha(nome(b), [gCel(x.fat), `<td>${par(atual.fat ? num(x.fat / atual.fat * 100) + '%' : '')}</td>`, gCel(x.n ? x.op : null, x.n ? pctDe(x.op, x.base) : null), gCel(x.n ? x.div : null),
       gCel(x.n ? x.op - x.div : null, x.n ? pctDe(x.op - x.div, x.base) : null), `<td>${par(String(x.n))}</td>`]);
-  }).join('') + gLinha('Total', [gCel(atual.fat), `<td>${par('100,00%')}</td>`, gCel(atual.op, pctDe(atual.op, atual.base)), gCel(atual.div), gCel(atual.op - atual.div, pctDe(atual.op - atual.div, atual.base)), `<td></td>`], 'total') + '</tbody>';
+  }).join('') + gLinha('Total', [gCel(atual.fat), `<td>${par('100,00%')}</td>`, gCel(atual.op, pctDe(atual.op, atual.base)), gCel(atual.div), gCel(atual.op - atual.div, pctDe(atual.op - atual.div, atual.base)), `<td></td>`], 'total') + separadas.map(b => {
+    const x = porLoja(b);
+    return gLinha(nome(b) + ' <small>(à parte)</small>', [gCel(x.fat), `<td>${par('–')}</td>`, gCel(x.n ? x.op : null, x.n ? pctDe(x.op, x.base) : null), gCel(x.n ? x.div : null),
+      gCel(x.n ? x.op - x.div : null, x.n ? pctDe(x.op - x.div, x.base) : null), `<td>${par(String(x.n))}</td>`], 'aparte');
+  }).join('') + '</tbody>';
 
   $('gPartTit').textContent = `Participação no faturamento mensal em ${ano}`;
   $('gPart').innerHTML = gCab([...MES_CURTO, 'Ano']) + '<tbody>' + ordem.map(b => gLinha(nome(b), [...atual.meses.map(m => (m ? `<td>${par(m.fat ? num(m.lojas[b].fat / m.fat * 100) + '%' : '')}</td>` : `<td>${par('–')}</td>`)),
     `<td>${par(atual.fat ? num(porLoja(b).fat / atual.fat * 100) + '%' : '')}</td>`])).join('') + '</tbody>';
 
   $('gAcumTit').textContent = `Resultado final acumulado por loja em ${ano} (antes do pró-labore)`;
-  $('gAcum').innerHTML = gCab([...MES_CURTO]) + '<tbody>' + ordem.map(b => {
+  $('gAcum').innerHTML = gCab([...MES_CURTO]) + '<tbody>' + [...ordem, ...separadas].map(b => {
     let ac = 0, teve = false;
-    return gLinha(nome(b), atual.meses.map(m => {
+    return gLinha(nome(b) + (A_PARTE.includes(b) ? ' <small>(à parte)</small>' : ''), atual.meses.map(m => {
       if (!m) return gCel(null);
       if (m.lojas[b].final != null) { ac += m.lojas[b].final; teve = true; }
       return gCel(teve ? ac : null);
@@ -668,11 +690,24 @@ function desenharSocios() {
     desenharSocios();
   }));
   $('tabSocios').querySelectorAll('[data-sdel]').forEach(el => el.addEventListener('click', () => { cad.socios.splice(+el.dataset.sdel, 1); desenharSocios(); }));
+  const est = cad.sociosEstacao;
+  $('tabSociosEst').innerHTML = '<thead><tr><th>Sócio ou quem recebe</th><th>Por mês (R$)</th><th></th></tr></thead><tbody>' + est.map((s, i) => `<tr data-s="${i}">
+    <td><input type="text" data-sk="nome" value="${s.nome}"></td>
+    <td><input type="number" step="0.01" data-sk="valor" value="${s.valor ?? ''}" placeholder="preencher" style="width:130px"></td>
+    <td><button class="tira" data-sdel="${i}">×</button></td></tr>`).join('') + '</tbody>';
+  $('sociosEstTotal').textContent = ` Total da Estação: ${num(est.reduce((t, s) => t + (Number(s.valor) || 0), 0))} por mês`;
+  $('tabSociosEst').querySelectorAll('[data-sk]').forEach(el => el.addEventListener('change', () => {
+    const s = est[+el.closest('tr').dataset.s];
+    s[el.dataset.sk] = el.dataset.sk === 'valor' ? (el.value === '' ? null : Number(el.value)) : el.value;
+    desenharSocios();
+  }));
+  $('tabSociosEst').querySelectorAll('[data-sdel]').forEach(el => el.addEventListener('click', () => { est.splice(+el.dataset.sdel, 1); desenharSocios(); }));
 }
+$('novoSocioEst').addEventListener('click', () => { cad.sociosEstacao.push({ nome: 'Novo sócio', valor: null }); desenharSocios(); });
 $('novoSocio').addEventListener('click', () => { cad.socios.push({ nome: 'Novo sócio', valor: null }); desenharSocios(); });
 $('novoCusto').addEventListener('click', () => { cad.escritorio.push({ id: 'n' + Date.now(), nome: 'Novo custo', origem: 'fixo', valor: 0, lojas: [...cad.lojas] }); desenharCad(); });
 $('salvarCad').addEventListener('click', async () => {
-  const r = await fetch('/api/dre-resultados/cadastros', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ escritorio: cad.escritorio, percentuais: cad.percentuais, socios: cad.socios }) });
+  const r = await fetch('/api/dre-resultados/cadastros', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ escritorio: cad.escritorio, percentuais: cad.percentuais, socios: cad.socios, sociosEstacao: cad.sociosEstacao }) });
   const d = await r.json();
   $('cadMsg').textContent = r.ok ? 'Salvo.' : d.error;
   if (r.ok) { cache = {}; carregar(false); }
@@ -770,6 +805,42 @@ function valorDe(d, id, lojas, visao) {
     : d.caixa.linhas.find(l => l.id === id)?.lojas || {};
   return lojas.reduce((s, b) => s + (fonte[b] || 0), 0);
 }
+// Pró-labore no Consolidado: o do grupo vai no consolidado/Total, o da Estação na Estação
+function linhasProAno({ meses, modo, lojas, grupoCols, depois, cel, soma }) {
+  const sel = $('anoLoja').value;
+  const proDe = (d, est) => (!d ? null : -(est ? d.proLaboreEstacao || 0 : d.proLabore || 0));
+  // Meses do histórico não têm a linha "sobra": usa operacional menos dívidas, como na planilha
+  const sobraDe = (d, ls) => {
+    if (!d) return null;
+    const v = valorDe(d, 'sobra', ls, 'dre');
+    if (v != null) return v;
+    const xs = ls.map(b => d.lojas[b]).filter(l => l && l.operacional != null);
+    return xs.length ? xs.reduce((t, l) => t + l.operacional - (l.dividas || l.juros || 0), 0) : null;
+  };
+  const venda = (mk, ls) => valorDe(cache[mk], 'receita', ls, 'dre');
+  const tr = (rot, tipo, cels) => `<tr class="${tipo}"><td>${rot}</td>${cels}</tr>`;
+  if (modo === 'mes') {
+    if (sel && !A_PARTE.includes(sel)) return ''; // loja do grupo sozinha: a retirada não é rateada
+    const est = !!sel;
+    const pros = meses.map(mk => proDe(cache[mk], est));
+    const fins = meses.map((mk, i) => { const sb = sobraDe(cache[mk], lojas); return sb == null ? null : sb + pros[i]; });
+    const vendas = meses.map(mk => venda(mk, lojas));
+    return tr('Pró-labore dos sócios', 'grupo', pros.map((v, i) => cel(v, vendas[i])).join('') + cel(soma(pros), soma(vendas)))
+      + tr('Resultado final (depois do pró-labore)', 'total', fins.map((v, i) => cel(v, vendas[i])).join('') + cel(soma(fins), soma(vendas)));
+  }
+  const vazias = grupoCols.map(() => '<td></td>').join('');
+  const proG = soma(meses.map(mk => proDe(cache[mk], false)));
+  const finG = soma(meses.map(mk => sobraDe(cache[mk], grupoCols)));
+  const vendaG = soma(meses.map(mk => venda(mk, grupoCols)));
+  const sepPro = depois.map(b => marcarAparte(cel(soma(meses.map(mk => proDe(cache[mk], true))), soma(meses.map(mk => venda(mk, [b])))))).join('');
+  const sepFin = depois.map(b => {
+    const sb = soma(meses.map(mk => sobraDe(cache[mk], [b]))), p = soma(meses.map(mk => proDe(cache[mk], true)));
+    return marcarAparte(cel(sb == null ? null : sb + (p || 0), soma(meses.map(mk => venda(mk, [b])))));
+  }).join('');
+  return tr('Pró-labore dos sócios', 'grupo', vazias + cel(proG, vendaG) + sepPro)
+    + tr('Resultado final (depois do pró-labore)', 'total', vazias + cel(finG == null ? null : finG + (proG || 0), vendaG) + sepFin);
+}
+
 function desenharAno() {
   const ano = $('anoSel').value, visao = $('anoVisao').value, modo = $('anoModo').value;
   const meses = Object.keys(cache).filter(k => k.startsWith(ano + '-')).sort();
@@ -777,7 +848,8 @@ function desenharAno() {
   const base = cache[meses[0]], ordem = base.ordem, nome = b => base.labels[b] || b;
   $('anoLojaRot').hidden = modo === 'loja';
   if (!$('anoLoja').options.length) $('anoLoja').innerHTML = '<option value="">Consolidado</option>' + ordem.map(b => `<option value="${b}">${nome(b)}</option>`).join('');
-  const lojas = $('anoLoja').value ? [$('anoLoja').value] : ordem;
+  const lojas = $('anoLoja').value ? [$('anoLoja').value] : doGrupo(ordem);
+  const grupoCols = doGrupo(ordem), depois = modo === 'mes' ? [] : aParte(ordem);
   let linhas;
   if (visao === 'dre') linhas = base.estrutura.map(([id, rot, tipo]) => [id, rot, tipo]);
   else {
@@ -788,15 +860,17 @@ function desenharAno() {
   const cel = (v, base) => `<td class="${v < 0 ? 'neg' : ''}">${v == null ? par('–') : par(num(v), percentual(v, base))}</td>`;
   const idBase = visao === 'dre' ? 'receita' : 'recebimentos';
   const soma = vs => (vs.every(v => v == null) ? null : vs.reduce((s, v) => s + (v || 0), 0));
-  const cab = modo === 'mes' ? meses.map(mk => MESES[+mk.slice(5) - 1]) : ordem.map(nome);
+  const cab = modo === 'mes' ? meses.map(mk => MESES[+mk.slice(5) - 1]) : grupoCols.map(nome);
   const corpo = linhas.map(([id, rot, tipo]) => {
     const vs = modo === 'mes' ? meses.map(mk => valorDe(cache[mk], id, lojas, visao))
-      : ordem.map(b => soma(meses.map(mk => valorDe(cache[mk], id, [b], visao))));
+      : grupoCols.map(b => soma(meses.map(mk => valorDe(cache[mk], id, [b], visao))));
+    const sep = depois.map(b => cel(soma(meses.map(mk => valorDe(cache[mk], id, [b], visao))), soma(meses.map(mk => valorDe(cache[mk], idBase, [b], visao)))));
     const bases = modo === 'mes' ? meses.map(mk => valorDe(cache[mk], idBase, lojas, visao))
-      : ordem.map(b => soma(meses.map(mk => valorDe(cache[mk], idBase, [b], visao))));
-    return `<tr class="${tipo}"><td>${rot}</td>${vs.map((v, i) => cel(v, bases[i])).join('')}${cel(soma(vs), soma(bases))}</tr>`;
+      : grupoCols.map(b => soma(meses.map(mk => valorDe(cache[mk], idBase, [b], visao))));
+    return `<tr class="${tipo}"><td>${rot}</td>${vs.map((v, i) => cel(v, bases[i])).join('')}${cel(soma(vs), soma(bases))}${sep.map(marcarAparte).join('')}</tr>`;
   }).join('');
-  $('tabelaAno').innerHTML = `<thead><tr><th>Linha</th>${cab.map(c => `<th>${c}</th>`).join('')}<th>Total</th></tr></thead><tbody>${corpo}</tbody>`;
+  const corpoPro = visao === 'dre' ? linhasProAno({ meses, modo, lojas, grupoCols, depois, cel, soma }) : '';
+  $('tabelaAno').innerHTML = `<thead><tr><th>Linha</th>${cab.map(c => `<th>${c}</th>`).join('')}<th>Total</th>${depois.map(b => `<th class="aparte">${nome(b)}</th>`).join('')}</tr></thead><tbody>${corpo}${corpoPro}</tbody>`;
 }
 for (const id of ['anoVisao', 'anoModo', 'anoLoja']) $(id).addEventListener('change', desenharAno);
 $('anoSel').addEventListener('change', carregarAno);

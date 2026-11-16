@@ -229,7 +229,7 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
   const det = { ...base.detalhe, escritorio: esc.detalhe };
   for (const k of ['sistema', 'contabilidade', 'seguro', 'plano', 'diversos', 'telefone', 'publicidade', 'tarifa', 'vt', 'acordos']) det[k] = lista(detalhe[k]);
   const ref = L.REF.planilha[mes];
-  return { ...base, lojas, percentuais, proLabore: C.proLaboreDe(cfg), socios: cfg.socios, detalhe: det, manuais, pendencias: manuais.filter(i => !i.feito), estrutura: L.ESTRUTURA,
+  return { ...base, lojas, percentuais, proLabore: C.proLaboreDe(cfg), socios: cfg.socios, proLaboreEstacao: C.somaSocios(cfg.sociosEstacao), sociosEstacao: cfg.sociosEstacao, detalhe: det, manuais, pendencias: manuais.filter(i => !i.feito), estrutura: L.ESTRUTURA,
     planilha: ref ? Object.fromEntries(Object.entries(ref).map(([b, p]) => [b, { ...p, ...L.somarGrupos(p), sobra: p.liquido, liquido: undefined }])) : null,
     folhaFechada: Object.fromEntries(LOJAS.map(b => [b, !!folhaMes?.[b]?.encerrada])) };
 }
@@ -630,12 +630,14 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     try {
       const erro = C.validar(req.body);
       if (erro) return res.status(400).json({ error: erro });
-      const socios = (req.body.socios || C.comPadrao(await lerConfig()).socios)
-        .map(s => ({ nome: String(s.nome).trim(), valor: s.valor == null || s.valor === '' ? null : Number(s.valor) }));
+      const atual = C.comPadrao(await lerConfig());
+      const limpar = lista => lista.map(s => ({ nome: String(s.nome).trim(), valor: s.valor == null || s.valor === '' ? null : Number(s.valor) }));
+      const socios = limpar(req.body.socios || atual.socios);
+      const sociosEstacao = limpar(req.body.sociosEstacao || atual.sociosEstacao);
       const percentuais = { ...req.body.percentuais };
       // Com as partes preenchidas, o total do grupo passa a ser a soma delas (Resumo do grupo lê este campo)
       if (socios.some(s => s.valor != null)) percentuais.proLabore = C.proLaboreDe({ socios, percentuais });
-      const doc = { escritorio: req.body.escritorio, percentuais, socios, fornecedores: (await lerConfig())?.fornecedores || [] };
+      const doc = { escritorio: req.body.escritorio, percentuais, socios, sociosEstacao, fornecedores: (await lerConfig())?.fornecedores || [] };
       const db = getDb();
       if (db) await db.collection('dreConfig').replaceOne({ _id: 'main' }, doc, { upsert: true });
       else memoriaConfig = doc;
