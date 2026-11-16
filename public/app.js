@@ -9915,7 +9915,8 @@ const _pendRecLabel = r => ({ daily:'Diário', weekly:'Semanal', quinzenal:'Quin
 function _renderPendenciasActive(body, filter, myUsername, refresh, isAdmin = false) {
   let items = (S.pendencias || []).filter(x => !x.resolved);
   if (filter === 'mine') items = items.filter(x => _pendMatchesMine(x, myUsername));
-  items.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
+  // Pendências automáticas (ex.: estoque do SITE fora do zero) ficam no topo
+  items.sort((a, b) => (!!b.auto - !!a.auto) || (new Date(a.createdAt) - new Date(b.createdAt)));
 
   if (!items.length) {
     body.innerHTML = '<div style="padding:.75rem 0;color:var(--muted);font-size:.8rem;text-align:center">Nenhuma pendência</div>';
