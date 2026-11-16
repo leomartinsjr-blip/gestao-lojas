@@ -1756,6 +1756,8 @@ app.get('/api/init', requireAuth, async (req, res) => {
 
     // Pendências — admin/escritorio only
     const pendencias = isAdminOrEscritorio ? (db.pendencias || []) : [];
+    // Estoque da empresa 6 (SITE) fora do zero — card próprio, para Leonardo e Ingrid
+    const estoqueSite = ['leonardo', 'ingrid'].includes(req.session.user.username) ? (db.estoqueSite || null) : null;
 
     // Embalagens: catálogo da loja + status da contagem quinzenal.
     // Vem no init para o badge e o card de aviso não precisarem de outra chamada.
@@ -1824,6 +1826,7 @@ app.get('/api/init', requireAuth, async (req, res) => {
       // painel só mostra o que a loja mandou depois disso.
       pautaVisto:   (db.pautaVistos || {})[req.session.user.username] || null,
       pendencias,
+      estoqueSite,
       embalagens,
       requisicoes,
       retiradas,
@@ -3529,9 +3532,9 @@ app.patch('/api/pendencias/:id', requireAuth, async (req, res) => {
 // ── Pendência automática: estoque da empresa 6 (SITE) fora do zero ─────────
 // A loja transfere para o SITE e o SITE fatura o pedido, então o saldo da
 // empresa 6 tem que voltar a zero assim que a NF de baixa sai. Sobrou peça
-// (positivo) ou faltou (negativo) → abre uma pendência para Leonardo e Ingrid.
-// Uma só pendência aberta por vez (auto: 'estoque-site'): o texto é atualizado
-// a cada checagem e ela se resolve sozinha quando o estoque zera.
+// (positivo) ou faltou (negativo) → aparece no card "Estoque do SITE" do painel
+// (e numa pílula da faixa de Pendências) para Leonardo e Ingrid. Cada checagem
+// regrava db.estoqueSite; quando o estoque zera, o card some sozinho.
 const PEND_AUTO_SITE = 'estoque-site';
 async function checarEstoqueSite() {
   const lojas = JSON.parse(process.env.MICROVIX_LOJAS || '{}');
@@ -3559,16 +3562,15 @@ async function checarEstoqueSite() {
     .sort((a, b) => a.qtd - b.qtd);
 
   const db = await readDB();
-  if (!db.pendencias) db.pendencias = [];
-  const aberta = db.pendencias.find(x => x.auto === PEND_AUTO_SITE && !x.resolved);
+  // Antes isto ia para a lista de Pendências; agora tem card próprio
+  // (db.estoqueSite). Limpa a pendência automática que tenha sobrado.
+  db.pendencias = (db.pendencias || []).filter(x => x.auto !== PEND_AUTO_SITE);
   const agora  = new Date().toISOString();
 
   if (!fora.length) {
-    if (aberta) {
-      Object.assign(aberta, { resolved: true, resolvedAt: agora, resolvedBy: 'Automático (estoque zerado)' });
-      await writeDB(db);
-    }
-    return { itens: 0, resolvida: !!aberta };
+    db.estoqueSite = { checadoEm: agora, itens: [], contagem: { produtos: 0 } };
+    await writeDB(db);
+    return { itens: 0 };
   }
 
   const pos = fora.filter(x => x.qtd > 0), neg = fora.filter(x => x.qtd < 0);
@@ -3591,37 +3593,20 @@ async function checarEstoqueSite() {
     if (usadas.length < falta) semVenda.push({ ...x, qtd: -(falta - usadas.length) });
   }
 
-  const rot = x => `${x.cod}${x.nome ? ' ' + x.nome : ''}`;
-  const fmtVenda = v => `NF ${v.doc}${v.data ? ' de ' + v.data : ''}`;
-  const blocos = [];
-  if (comVenda.length) blocos.push(`Venda do site sem transferência (${comVenda.length}): ` +
-    comVenda.map(x => `${rot(x)} → ${x.vendas.map(fmtVenda).join(', ')}`).join('; '));
-  if (semVenda.length) blocos.push(`Sem venda — verificar boleta (${semVenda.length}): ` +
-    semVenda.map(x => `${rot(x)}: ${x.qtd}`).join('; '));
-  if (neg.length && !vendas) blocos.push('(não consegui ler as vendas do SITE no Microvix — conferir à mão)');
-  if (pos.length) blocos.push(`Sobrando no SITE (${pos.length}): ` + pos.map(x => `${rot(x)}: +${x.qtd}`).join('; '));
-
-  const resumo = [neg.length ? `${neg.length} negativo(s)` : '', pos.length ? `${pos.length} positivo(s)` : ''].filter(Boolean).join(', ');
-  const text = `Estoque da empresa 6 (SITE) não está zerado — ${fora.length} produto(s), ${resumo}. ` + blocos.join(' | ');
-
-  // Números para a pílula da faixa de Pendências do topo do painel
+  // Linhas do card "Estoque do SITE": tipo venda | boleta | sobra
+  const limpa = x => ({ cod: x.cod, nome: x.nome, qtd: x.qtd });
+  const itens = [
+    ...comVenda.map(x => ({ ...limpa(x), qtd: -x.vendas.length, tipo: 'venda',
+      vendas: x.vendas.map(v => ({ doc: v.doc, data: v.data })) })),
+    ...semVenda.map(x => ({ ...limpa(x), tipo: 'boleta' })),
+    ...pos.map(x => ({ ...limpa(x), tipo: 'sobra' })),
+  ];
   const contagem = { produtos: fora.length, negativos: neg.length, positivos: pos.length,
     comVenda: comVenda.length, boleta: semVenda.length };
-  if (aberta) {
-    aberta.text = text;
-    aberta.checadoEm = agora;
-    aberta.contagem = contagem;
-  } else {
-    db.pendencias.push({
-      id: nextId(db), text, assignedTo: ['leonardo', 'ingrid'],
-      createdBy: 'sistema', createdByLabel: 'Automático', createdAt: agora,
-      resolved: false, resolvedAt: null, resolvedBy: null, recorrencia: null,
-      auto: PEND_AUTO_SITE, checadoEm: agora, contagem,
-    });
-  }
+  db.estoqueSite = { checadoEm: agora, itens, contagem, vendasLidas: !neg.length || !!vendas };
   await writeDB(db);
   return { itens: fora.length, positivos: pos.length, negativos: neg.length,
-    negativosComVenda: comVenda.length, verificarBoleta: semVenda.length, atualizada: !!aberta };
+    negativosComVenda: comVenda.length, verificarBoleta: semVenda.length };
 }
 
 // Vendas do SITE nos últimos 90 dias, por produto: { cod: [{doc, data}, ...] }
@@ -3666,7 +3651,10 @@ async function _vendasSitePorProduto(cnpj, chave, parseBrNum) {
 
 // POST /api/pendencias/checar-estoque-site — roda a checagem na hora (admin)
 app.post('/api/pendencias/checar-estoque-site', requireAdmin, async (req, res) => {
-  try { res.json(await checarEstoqueSite()); }
+  try {
+    const r = await checarEstoqueSite();
+    res.json({ ...r, estoqueSite: (await readDB()).estoqueSite || null });
+  }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 

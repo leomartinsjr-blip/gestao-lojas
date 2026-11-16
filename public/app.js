@@ -845,6 +845,7 @@ async function loadData() {
     S.meetingItems = init.meetingItems || [];
     S.pautaVisto   = init.pautaVisto   || null;
     S.pendencias   = init.pendencias   || [];
+    S.estoqueSite  = init.estoqueSite  || null;
     S.requisicoes  = init.requisicoes  || [];
     S.retiradas         = init.retiradas         || [];
     S.adiantamentos     = init.adiantamentos     || [];
@@ -1253,11 +1254,9 @@ function _irParaCard(bodyId, board) {
 // servidor (09:30 e 17:30) abre uma pendência para quem precisa resolver; aqui
 // ela vira pílula para quem está nela, e some quando o estoque zera.
 function _avisoEstoqueSite(strip) {
-  const eu = S.user?.username;
-  const p = (S.pendencias || []).find(x => x.auto === 'estoque-site' && !x.resolved
-    && (Array.isArray(x.assignedTo) ? x.assignedTo : [x.assignedTo]).includes(eu));
-  if (!p) return;
-  const c = p.contagem || {};
+  const d = S.estoqueSite;
+  if (!d?.itens?.length) return;
+  const c = d.contagem || {};
   const partes = [
     c.comVenda ? `${c.comVenda} venda(s) do site sem transferência` : '',
     c.boleta ? `${c.boleta} sem venda — verificar boleta` : '',
@@ -1265,8 +1264,8 @@ function _avisoEstoqueSite(strip) {
   ].filter(Boolean);
   _avisoPilula(strip, {
     icone: '📦', rotulo: 'Estoque do SITE fora do zero', n: c.produtos || null, atraso: true,
-    detalhe: partes.length ? partes.join(' · ') : p.text,
-    acao: () => _irParaCard('pendCardBody'),
+    detalhe: partes.join(' · '),
+    acao: () => _irParaCard('estoqueSiteBody'),
   });
 }
 
@@ -2312,6 +2311,9 @@ function renderDashboard() {
 
   // ── CARD: Pagamentos do dia — a pagar × venda a receber, por empresa ─────
   if (pagDiaCol) renderPagamentosDiaCard(pagDiaCol);
+
+  // ── CARD: Estoque do SITE (empresa 6 tem que estar zerada) ───────────────
+  renderEstoqueSiteCard(midCol);
 
   // ── CARD: Pendências ─────────────────────────────────────────────────────
   renderPendenciasCard(midCol);
@@ -9937,8 +9939,7 @@ const _pendRecLabel = r => ({ daily:'Diário', weekly:'Semanal', quinzenal:'Quin
 function _renderPendenciasActive(body, filter, myUsername, refresh, isAdmin = false) {
   let items = (S.pendencias || []).filter(x => !x.resolved);
   if (filter === 'mine') items = items.filter(x => _pendMatchesMine(x, myUsername));
-  // Pendências automáticas (ex.: estoque do SITE fora do zero) ficam no topo
-  items.sort((a, b) => (!!b.auto - !!a.auto) || (new Date(a.createdAt) - new Date(b.createdAt)));
+  items.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
 
   if (!items.length) {
     body.innerHTML = '<div style="padding:.75rem 0;color:var(--muted);font-size:.8rem;text-align:center">Nenhuma pendência</div>';
@@ -10081,6 +10082,60 @@ function _renderPendenciasHistory(body, refresh) {
     _renderPendenciasHistory(body, refresh);
     refresh();
   });
+}
+
+// ── Estoque do SITE ─────────────────────────────────────────────────────────
+// A loja transfere para a empresa 6 e o SITE fatura; depois da NF de baixa o
+// saldo do SITE tem que voltar a zero. O servidor confere às 09:30 e 17:30
+// (db.estoqueSite) e liga cada negativo a uma venda do site, sem repetir
+// venda; o que não tem venda é para verificar a boleta. Só Leonardo e Ingrid
+// recebem o dado. O card some quando o estoque zera.
+function renderEstoqueSiteCard(container) {
+  const d = S.estoqueSite;
+  if (!d?.itens?.length) return;
+  const esc = _escHtml;
+  const card = document.createElement('div');
+  card.className = 'main-card';
+  const quando = d.checadoEm ? new Date(d.checadoEm).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '';
+  const linha = x => `<tr>
+      <td class="es-cod">${esc(x.cod)}</td>
+      <td class="es-nome">${esc(x.nome || '')}</td>
+      <td class="es-qtd ${x.qtd < 0 ? 'neg' : 'pos'}">${x.qtd > 0 ? '+' : ''}${esc(x.qtd)}</td>
+      <td class="es-acao">${x.tipo === 'venda' ? x.vendas.map(v => `NF ${esc(v.doc)}${v.data ? ` <span>${esc(v.data)}</span>` : ''}`).join(', ')
+        : x.tipo === 'boleta' ? '<b>Verificar boleta</b>' : 'Sobrando — conferir NF de baixa'}</td>
+    </tr>`;
+  const grupo = (tipo, titulo, dica) => {
+    const its = d.itens.filter(x => x.tipo === tipo);
+    if (!its.length) return '';
+    return `<div class="es-grupo"><div class="es-grupo-tit">${titulo} <b>${its.length}</b><span>${dica}</span></div>
+      <table class="es-tab"><tbody>${its.map(linha).join('')}</tbody></table></div>`;
+  };
+  card.innerHTML = `
+    <div class="main-card-hdr">
+      <span class="main-card-title">📦 Estoque do SITE fora do zero</span>
+      <span class="main-card-sub">checado ${esc(quando)} <button class="es-checar" title="Conferir agora no Microvix">↻</button></span>
+    </div>
+    <div class="main-card-body" id="estoqueSiteBody">
+      ${d.vendasLidas === false ? '<div class="es-aviso">Não consegui ler as vendas do SITE no Microvix — os negativos estão como "verificar boleta" até a próxima checagem.</div>' : ''}
+      ${grupo('venda', 'Venda do site sem transferência', 'transferir da loja para o SITE')}
+      ${grupo('boleta', 'Sem venda no site', 'verificar boleta')}
+      ${grupo('sobra', 'Sobrando no SITE', 'peça transferida sem venda faturada')}
+    </div>`;
+  card.querySelector('.es-checar').addEventListener('click', async ev => {
+    const bt = ev.currentTarget;
+    bt.disabled = true; bt.textContent = '…';
+    try {
+      const r = await apiFetch('POST', '/api/pendencias/checar-estoque-site');
+      S.estoqueSite = r.estoqueSite || null;
+      toast(r.itens ? `${r.itens} produto(s) fora do zero no SITE` : 'Estoque do SITE zerado ✓');
+      const novo = document.createElement('div');
+      card.replaceWith(novo);
+      renderEstoqueSiteCard(novo);
+      novo.replaceWith(...novo.childNodes);
+      _atualizarAvisosAdm();
+    } catch (e) { toast('Não conferiu: ' + e.message, true); bt.disabled = false; bt.textContent = '↻'; }
+  });
+  container.appendChild(card);
 }
 
 function renderPendenciasCard(container) {
