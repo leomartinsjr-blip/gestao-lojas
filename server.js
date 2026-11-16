@@ -3530,15 +3530,19 @@ async function checarEstoqueSite() {
   const resumo = [neg.length ? `${neg.length} negativo(s)` : '', pos.length ? `${pos.length} positivo(s)` : ''].filter(Boolean).join(', ');
   const text = `Estoque da empresa 6 (SITE) não está zerado — ${fora.length} produto(s), ${resumo}. ` + blocos.join(' | ');
 
+  // Números para a pílula da faixa de Pendências do topo do painel
+  const contagem = { produtos: fora.length, negativos: neg.length, positivos: pos.length,
+    comVenda: comVenda.length, boleta: semVenda.length };
   if (aberta) {
     aberta.text = text;
     aberta.checadoEm = agora;
+    aberta.contagem = contagem;
   } else {
     db.pendencias.push({
       id: nextId(db), text, assignedTo: ['leonardo', 'ingrid'],
       createdBy: 'sistema', createdByLabel: 'Automático', createdAt: agora,
       resolved: false, resolvedAt: null, resolvedBy: null, recorrencia: null,
-      auto: PEND_AUTO_SITE, checadoEm: agora,
+      auto: PEND_AUTO_SITE, checadoEm: agora, contagem,
     });
   }
   await writeDB(db);

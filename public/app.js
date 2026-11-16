@@ -1186,6 +1186,7 @@ function _renderAvisosAdm(c) {
   strip.className = 'aviso-strip';
   strip.innerHTML = '<span class="aviso-strip-lbl">Pendências</span>';
   // Ordem pedida pelo Leonardo em 30/09/2026.
+  _avisoEstoqueSite(strip);
   _avisoVt(strip);
   _avisoNotas(strip);
   _avisoLojaAcao(strip);
@@ -1246,6 +1247,27 @@ function _irParaCard(bodyId, board) {
   card.scrollIntoView({ behavior: 'smooth', block: 'center' });
   card.classList.add('card-alvo');
   setTimeout(() => card.classList.remove('card-alvo'), 1800);
+}
+
+// Estoque da empresa 6 (SITE) tem que estar zerado. A checagem automática do
+// servidor (09:30 e 17:30) abre uma pendência para quem precisa resolver; aqui
+// ela vira pílula para quem está nela, e some quando o estoque zera.
+function _avisoEstoqueSite(strip) {
+  const eu = S.user?.username;
+  const p = (S.pendencias || []).find(x => x.auto === 'estoque-site' && !x.resolved
+    && (Array.isArray(x.assignedTo) ? x.assignedTo : [x.assignedTo]).includes(eu));
+  if (!p) return;
+  const c = p.contagem || {};
+  const partes = [
+    c.comVenda ? `${c.comVenda} venda(s) do site sem transferência` : '',
+    c.boleta ? `${c.boleta} sem venda — verificar boleta` : '',
+    c.positivos ? `${c.positivos} sobrando` : '',
+  ].filter(Boolean);
+  _avisoPilula(strip, {
+    icone: '📦', rotulo: 'Estoque do SITE fora do zero', n: c.produtos || null, atraso: true,
+    detalhe: partes.length ? partes.join(' · ') : p.text,
+    acao: () => _irParaCard('pendCardBody'),
+  });
 }
 
 // Só do dono: do dia 2 em diante, até finalizar todas as lojas do mês anterior
