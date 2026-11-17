@@ -3852,7 +3852,11 @@ function calcPerfMetrics(k, curMonthOverride = null) {
 // Projeção 2027 (mesma regra da programação anual): 2026 mês a mês (realizado
 // + projetado) × (1 + média dos últimos 3 meses) da própria loja. Total e
 // Surfers somam as lojas, cada uma com a sua variação.
+// Lojas que fecham em 31/12/2026: projeção 2027 zerada (Minas fecha 31/12/2026).
+const PERF_CLOSED_2027 = new Set(['minas']);
+
 function calcPerf2027(k) {
+  if (PERF_CLOSED_2027.has(k)) return PERF_MONTHS.map(() => 0);
   const lojas = k === 'total' ? _ALL_STORES_FOR_TOTAL : k === 'surfers' ? SURFERS_STORES : null;
   if (lojas) {
     const partes = lojas.filter(b => PERF_2026[b] && PERF_HIST[b]).map(calcPerf2027);
@@ -3860,6 +3864,31 @@ function calcPerf2027(k) {
   }
   const m = calcPerfMetrics(k, computeCurMonthProj(k));
   return m.proj.map(v => v === null ? null : Math.round(v * (1 + m.avgD / 100)));
+}
+
+// Same Store: compara só as lojas que faturaram nos DOIS períodos, mês a mês.
+// Loja que abriu depois (sem 2025) ou que fechou (Minas em 2027) sai daquele mês
+// dos dois lados, então a variação mede só quem existia nos dois anos.
+function calcSameStore(k) {
+  const lojas = (k === 'total' ? _ALL_STORES_FOR_TOTAL : SURFERS_STORES).filter(b => PERF_2026[b] && PERF_HIST[b]);
+  const series = lojas.map(b => {
+    const m = calcPerfMetrics(b, computeCurMonthProj(b));
+    return { b, v25: m.d25, v26: m.proj, v27: calcPerf2027(b) };
+  });
+  const pair = (i, fa, fb) => {
+    let a = 0, c = 0; const fora = [];
+    for (const s of series) {
+      const x = s[fa][i], y = s[fb][i];
+      if (x > 0 && y > 0) { a += x; c += y; } else fora.push(s.b);
+    }
+    return { a, b: c, fora, d: a > 0 ? (c - a) / a * 100 : null };
+  };
+  const months = PERF_MONTHS.map((_, i) => ({ y26: pair(i, 'v25', 'v26'), y27: pair(i, 'v26', 'v27') }));
+  const tot = f => {
+    const a = months.reduce((s, r) => s + r[f].a, 0), b = months.reduce((s, r) => s + r[f].b, 0);
+    return { a, b, d: a > 0 ? (b - a) / a * 100 : null };
+  };
+  return { months, t26: tot('y26'), t27: tot('y27') };
 }
 
 let perfChart = null, perfAnnualChart = null;
@@ -6256,7 +6285,8 @@ function renderPerfStore(k) {
   const p27   = calcPerf2027(k);
   const tot27 = p27.reduce((a, v) => a + (v || 0), 0);
   const p2726 = m.projTotal ? (tot27 - m.projTotal) / m.projTotal * 100 : null;
-  const base27 = (k === 'total' || k === 'surfers') ? 'soma das lojas' : `2026 ${sign(m.avgD)}${m.avgD.toFixed(1)}% (média 3 meses)`;
+  const base27 = PERF_CLOSED_2027.has(k) ? 'loja fecha em 31/12/2026'
+    : (k === 'total' || k === 'surfers') ? 'soma das lojas' : `2026 ${sign(m.avgD)}${m.avgD.toFixed(1)}% (média 3 meses)`;
 
   // ── KPI badges ──────────────────────────────────────────────────────────
   const exportBtnHtml = (k === 'surfers' || k === 'total')
@@ -6369,7 +6399,46 @@ function renderPerfStore(k) {
     ${totDCell(tot2624,'d26-sep')}${totDCell(tot2623,'d26')}${totDCell(tot2622,'d26')}
   </tr></tfoot></table></div></div>`;
 
-  body.innerHTML = kpiHtml + tableHtml + `
+  // ── Same Store (só Total e Surfers) ──────────────────────────────────────
+  let ssHtml = '';
+  if (k === 'total' || k === 'surfers') {
+    const ss = calcSameStore(k);
+    const lbl = b => BOARDS[b]?.label || b;
+    const dC = d => d !== null
+      ? `<td class="${cls(d)}" style="font-size:.72rem;white-space:nowrap">${sign(d)+d.toFixed(1)}%</td>`
+      : `<td style="font-size:.72rem;color:var(--muted)">—</td>`;
+    const foraC = f => `<td style="text-align:left;font-size:.68rem;color:var(--muted)">${f.length ? f.map(lbl).join(', ') : '—'}</td>`;
+    const all2625 = (m.projTotal - m.total25) / m.total25 * 100;
+    ssHtml = `
+    <div class="perf-chart-box">
+      <div class="perf-chart-title">Same Store — só as lojas que faturaram nos dois períodos</div>
+      <div class="perf-chart-sub">Mês a mês, loja sem faturamento em um dos anos sai das duas colunas daquele mês.
+        26/25: <span class="${cls(ss.t26.d)}">${sign(ss.t26.d)}${ss.t26.d?.toFixed(1)}%</span> same store
+        (${sign(all2625)}${all2625.toFixed(1)}% com todas) ·
+        27/26: <span class="${cls(ss.t27.d)}">${sign(ss.t27.d)}${ss.t27.d?.toFixed(1)}%</span> same store
+        (${p2726 !== null ? `${sign(p2726)}${p2726.toFixed(1)}%` : '—'} com todas)</div>
+      <div style="overflow-x:auto">
+      <table class="perf-proj-table">
+        <thead><tr>
+          <th>Mês</th><th>2025</th><th>2026</th><th>Δ 26/25</th><th style="text-align:left">Fora</th>
+          <th class="d26-sep">2026</th><th style="color:var(--warn)">2027 (proj)</th><th>Δ 27/26</th><th style="text-align:left">Fora</th>
+        </tr></thead><tbody>
+        ${PERF_MONTHS.map((mn, i) => {
+          const r = ss.months[i];
+          return `<tr>
+            <td style="white-space:nowrap">${mn}</td>
+            <td>${fmtN(r.y26.a || null)}</td><td>${fmtN(r.y26.b || null)}</td>${dC(r.y26.d)}${foraC(r.y26.fora)}
+            <td class="d26-sep">${fmtN(r.y27.a || null)}</td><td style="color:var(--warn)">${fmtN(r.y27.b || null)}</td>${dC(r.y27.d)}${foraC(r.y27.fora)}
+          </tr>`;
+        }).join('')}
+        </tbody><tfoot><tr class="total-row">
+          <td>TOTAL</td>
+          <td>${fmtN(ss.t26.a)}</td><td>${fmtN(ss.t26.b)}</td>${dC(ss.t26.d)}<td></td>
+          <td class="d26-sep">${fmtN(ss.t27.a)}</td><td style="color:var(--warn)">${fmtN(ss.t27.b)}</td>${dC(ss.t27.d)}<td></td>
+        </tr></tfoot></table></div></div>`;
+  }
+
+  body.innerHTML = kpiHtml + tableHtml + ssHtml + `
     <div class="perf-chart-box">
       <div class="perf-chart-title">${BOARDS[k]?.label} — Histórico Anual (2022–2026 proj. · 2027 proj.)</div>
       <div class="perf-chart-sub">Barras: total anual · Linha: variação % vs ano anterior</div>
