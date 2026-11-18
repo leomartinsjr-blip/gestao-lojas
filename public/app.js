@@ -6346,14 +6346,18 @@ function renderPerfStore(k) {
   const fmtN = n => n == null ? '—' : Math.round(n).toLocaleString('pt-BR');
   const histYears = [2022, 2023, 2024, 2025];
   let colTotals = { 2022:0, 2023:0, 2024:0, 2025:0, v26:0 };
+  // Meses com venda em cada coluna: a média do ano divide só por eles (loja que abriu no meio do ano)
+  const colMeses = { 2022:0, 2023:0, 2024:0, 2025:0, v26:0, v27:0 };
   PERF_MONTHS.forEach((mn, i) => {
     const h = histYears.map(y => PERF_HIST[k][y][i]);
     const real = m.d26[i];
     const proj = m.proj[i];
     const v26  = real !== null ? real : proj;
     const isProj = (real === null || i === PERF_CUR) && v26 !== null;
-    histYears.forEach(y => { colTotals[y] += PERF_HIST[k][y][i] || 0; });
+    histYears.forEach(y => { colTotals[y] += PERF_HIST[k][y][i] || 0; if (PERF_HIST[k][y][i]) colMeses[y]++; });
     if (v26 !== null) colTotals.v26 += v26;
+    if (v26) colMeses.v26++;
+    if (p27[i]) colMeses.v27++;
     const deltas = histYears.map((y,j) => j === 0 || h[j] === null || h[j-1] === null || h[j-1] === 0 ? null : (h[j] - h[j-1]) / h[j-1] * 100);
     const d2625  = v26 !== null && h[3] !== null ? (v26 - h[3]) / h[3] * 100 : null;
     const d2624  = v26 !== null && h[2] !== null ? (v26 - h[2]) / h[2] * 100 : null;
@@ -6397,6 +6401,20 @@ function renderPerfStore(k) {
     <td style="white-space:nowrap;color:var(--warn)">${fmtN(tot27)}</td>
     ${totDCell(colTotals.v26 ? (tot27 - colTotals.v26) / colTotals.v26 * 100 : null)}
     ${totDCell(tot2624,'d26-sep')}${totDCell(tot2623,'d26')}${totDCell(tot2622,'d26')}
+  </tr>${(() => {
+    // Média mensal do ano, com a variação entre as médias
+    const med = c => colMeses[c] ? (c === 'v27' ? tot27 : colTotals[c]) / colMeses[c] : null;
+    const vr = (a, b) => a != null && b ? (a - b) / b * 100 : null;
+    const mH = histYears.map(med), m26 = med('v26'), m27 = med('v27');
+    return `<tr class="total-row perf-media-row">
+    <td style="white-space:nowrap">MÉDIA/MÊS</td>
+    ${histYears.map((y, j) => `<td style="white-space:nowrap">${fmtN(mH[j])}</td>${totDCell(j === 0 ? null : vr(mH[j], mH[j - 1]))}`).join('')}
+    <td style="white-space:nowrap">${fmtN(m26)}</td>
+    ${totDCell(vr(m26, mH[3]))}
+    <td style="white-space:nowrap;color:var(--warn)">${fmtN(m27)}</td>
+    ${totDCell(vr(m27, m26))}
+    ${totDCell(vr(m26, mH[2]),'d26-sep')}${totDCell(vr(m26, mH[1]),'d26')}${totDCell(vr(m26, mH[0]),'d26')}`;
+  })()}
   </tr></tfoot></table></div></div>`;
 
   // ── Same Store (só Total e Surfers) ──────────────────────────────────────
