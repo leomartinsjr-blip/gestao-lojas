@@ -813,6 +813,7 @@ const PE_FIXAS = [['salFixos', 'Salários fixos e encargos', ['fixos', 'encFixo'
   ['administrativo', 'Administrativo', ['caixinha', 'sistema', 'contabilidade', 'seguro', 'plano', 'diversos', 'telefone']],
   ['publicidade', 'Marketing', ['publicidade']], ['tarifa', 'Tarifa bancária', ['tarifa']]];
 const INICIO_PE = '2026-10';
+const PE_LUCROS = [8, 12, 15];
 const proximoMes = mk => { const [y, m] = mk.split('-').map(Number); return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`; };
 let peAluguelPct = null;
 async function carregarPe() {
@@ -846,11 +847,18 @@ function pontoDeEquilibrio(lista, pctAluguel) {
   const totalFixo = Object.values(fixas).reduce((t, v) => t + v, 0);
   const v = Object.values(varPct).reduce((t, x) => t + x, 0), mc = 1 - v, p = pctAluguel / 100;
   const aluguelMin = soma('aluguel') / n;
-  let pe = mc > 0 ? totalFixo / mc : null, aluguelVariavel = false;
-  // Acima do mínimo, o aluguel é p% da venda: sai do fixo e entra no variável
-  if (pe != null && aluguelMin && pe * p > aluguelMin) { pe = mc - p > 0 ? (totalFixo - aluguelMin) / (mc - p) : null; aluguelVariavel = true; }
+  // Venda que deixa lucro operacional de x% da venda: fixas ÷ (margem − x).
+  // Acima do mínimo, o aluguel é p% da venda: sai do fixo e entra no variável.
+  const vendaPara = x => {
+    if (mc - x <= 0) return { venda: null };
+    const r = totalFixo / (mc - x);
+    if (!aluguelMin || r * p <= aluguelMin) return { venda: r, aluguelVariavel: false };
+    return { venda: mc - p - x > 0 ? (totalFixo - aluguelMin) / (mc - p - x) : null, aluguelVariavel: true };
+  };
+  const { venda: pe, aluguelVariavel } = vendaPara(0);
+  const metas = Object.fromEntries(PE_LUCROS.map(x => [x, vendaPara(x / 100)]));
   const vendaMedia = venda / n;
-  return { n, vendaMedia, varPct, v, mc, fixas, totalFixo, pe, aluguelVariavel, aluguelPctMedio: soma('aluguelPct') / n,
+  return { n, vendaMedia, varPct, v, mc, fixas, totalFixo, pe, aluguelVariavel, metas, aluguelPctMedio: soma('aluguelPct') / n,
     operacional: soma('operacional') / n, folga: pe != null ? vendaMedia - pe : null };
 }
 function desenharPe(meses) {
@@ -886,6 +894,13 @@ function desenharPe(meses) {
       res[b].aluguelVariavel ? `<small class="pct" title="Nesse nível de venda o aluguel percentual (${peAluguelPct}%) passa do mínimo">alug.%</small>` : undefined))),
     linha('Venda por dia no equilíbrio (30 dias)', 'item', b => td(b, par(res[b].pe == null ? '–' : num(res[b].pe / 30)))),
     linha('Venda média − equilíbrio', 'total', b => reaisPct(b, res[b].folga, res[b].pe)),
+    linha('Venda para ter lucro operacional', 'grupo', () => '<td></td>'),
+    ...PE_LUCROS.flatMap(x => [
+      linha(`${x}% de lucro (venda por mês)`, 'total', b => { const m = res[b].metas[x];
+        return td(b, par(m.venda == null ? 'não fecha' : num(m.venda), m.venda != null ? `<small class="pct" title="Lucro operacional de ${x}% da venda">${num(m.venda * x / 100)}</small>` : undefined)); }),
+      linha(`Por dia (30 dias) · % acima da venda média`, 'item', b => { const m = res[b].metas[x];
+        return td(b, par(m.venda == null ? '–' : num(m.venda / 30), m.venda == null ? undefined : `<small class="pct">${num((m.venda / res[b].vendaMedia - 1) * 100)}%</small>`)); }),
+    ]),
     linha('Resultado operacional médio', 'item', b => reaisPct(b, res[b].operacional, res[b].vendaMedia)),
   ].join('');
   $('peTit').textContent = `Ponto de equilíbrio por operação · média de até ${quantos} ${quantos === 1 ? 'mês finalizado' : 'meses finalizados'}`;
