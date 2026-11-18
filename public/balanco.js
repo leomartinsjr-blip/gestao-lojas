@@ -78,7 +78,7 @@ function desenharCards(lista) {
       : b.status === 'erro' ? `<div class="bcard-meta neg">${esc(b.erro || '')}</div>`
       : r ? `<div class="bcard-conf">Impacto confirmado<b class="${cls(r.impactoConfirmado)}">${fRS(r.impactoConfirmado)}</b></div>
         <div class="bcard-nums">
-          <div>Lido × estoque<b>${fInt(r.pecasLidas)} × ${fInt(r.pecasEstoque)}</b></div>
+          <div>Lido × estoque<b>${r.pecasLidas == null ? '—' : fInt(r.pecasLidas) + ' × ' + fInt(r.pecasEstoque)}</b></div>
           <div>Recontados<b>${r.recontados} de ${r.itens}</b></div>
           <div>A apurar<b class="${cls(r.impactoApurar)}">${fRS(r.impactoApurar)}</b></div>
           <div>Peças (final)<b class="${cls(r.pecasDifFinal)}">${fInt(r.pecasDifFinal)}</b></div>
@@ -98,7 +98,7 @@ function desenharHistorico(lista) {
     const final = (r.impactoConfirmado || 0) + (r.impactoApurar || 0);
     return `<tr class="clic" data-id="${b.id}">
       <td>${esc(mesBR(b.mes))}</td><td>${esc(b.lojaLabel)}</td><td>${dBR(b.data)}${b.hora ? ' ' + b.hora : ''}</td>
-      <td class="n">${b.resumo ? fInt(r.pecasLidas) : ''}</td><td class="n">${b.resumo ? fInt(r.pecasEstoque) : ''}</td>
+      <td class="n">${r.pecasLidas != null ? fInt(r.pecasLidas) : ''}</td><td class="n">${r.pecasEstoque != null ? fInt(r.pecasEstoque) : ''}</td>
       <td class="n">${b.resumo ? r.itens : ''}</td><td class="n">${b.resumo ? r.recontados : ''}</td>
       <td class="n ${cls(r.pecasDif)}">${b.resumo ? fInt(r.pecasDif) : ''}</td>
       <td class="n ${cls(r.pecasDifFinal)}">${b.resumo ? fInt(r.pecasDifFinal) : ''}</td>
@@ -137,9 +137,17 @@ function voltar() {
   carregarLista();
 }
 
+// Igual ao servidor: no balanço importado e finalizado, o que não foi recontado
+// mas tem observação ou é explicado por venda/trânsito fica fora
+const obsPlanilha = it => String(it.ob || '').replace(/(^|\s·\s)(AJUSTADO|REGULARIZADO): .*$/, '').trim();
+const SUPERFLUO = /SUP[EÉ]RF(LU|UL)O|AJUSTE ERRADO|\bTROCA|TIRAR (DO )?ESTOQUE|DEVOLVID|DEFEITO/i;
+const resolvidoNaPlanilha = (b, it) => b.origem === 'planilha' && b.status === 'finalizado'
+  && (SUPERFLUO.test(obsPlanilha(it)) || (vazio(it.rc) && it.st !== 'DIVERGENTE' && it.st !== 'A RECONTAR'
+    && (!!obsPlanilha(it) || ['VER VENDA', 'VER TRÂNSITO'].includes(status(it)))));
 function itensRecontagem(b) {
   const fora = new Set(b.gruposFora || []);
-  return (b.itens || []).filter(it => !fora.has(it.g) && it.l !== it.e && (it.lido || b.incluirNaoLidos));
+  return (b.itens || []).filter(it => !fora.has(it.g) && it.l !== it.e && (it.lido || b.incluirNaoLidos)
+    && !resolvidoNaPlanilha(b, it));
 }
 
 function desenharDetalhe() {

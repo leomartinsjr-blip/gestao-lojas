@@ -369,9 +369,28 @@ function sugerirTrocas(bal) {
 }
 // Itens que vão para a recontagem: lidos com diferença (e, se o balanço pedir,
 // os que têm saldo e não foram lidos)
+// Balanço antigo importado da planilha e finalizado: item que não foi recontado
+// mas tem observação (venda, troca, transferência para defeito, nota…) ou é
+// explicado por venda/trânsito já tinha sido resolvido pelo escritório. Não é
+// perda: fica fora da recontagem e dos totais. A coluna AJUSTADO?/REGULARIZADO?
+// da planilha entra junto na observação e não conta como explicação. Item que o
+// escritório marcou DIVERGENTE ou A RECONTAR na planilha fica. Item supérfluo
+// (bloco, chaveiro, display, material de PDV — "ITEM SUPERFLUO, RETIRAR ESTOQUE"),
+// ajuste errado de balanço passado e troca ("TROCAR COM 881139") saem sempre:
+// não são perda da loja no mês.
+const obsPlanilha = it => String(it.ob || '').replace(/(^|\s·\s)(AJUSTADO|REGULARIZADO): .*$/, '').trim();
+const SUPERFLUO = /SUP[EÉ]RF(LU|UL)O|AJUSTE ERRADO|\bTROCA|TIRAR (DO )?ESTOQUE|DEVOLVID|DEFEITO/i;
+function resolvidoNaPlanilha(bal, it) {
+  if (bal.origem !== 'planilha' || bal.status !== 'finalizado') return false;
+  if (SUPERFLUO.test(obsPlanilha(it))) return true;
+  if (it.rc !== null && it.rc !== undefined && it.rc !== '') return false;
+  if (it.st === 'DIVERGENTE' || it.st === 'A RECONTAR') return false;
+  return !!obsPlanilha(it) || ['VER VENDA', 'VER TRÂNSITO'].includes(statusItem(it));
+}
 function itensRecontagem(bal) {
   const fora = new Set(bal.gruposFora || []);
-  return (bal.itens || []).filter(it => !fora.has(it.g) && it.l !== it.e && (it.lido || bal.incluirNaoLidos));
+  return (bal.itens || []).filter(it => !fora.has(it.g) && it.l !== it.e && (it.lido || bal.incluirNaoLidos)
+    && !resolvidoNaPlanilha(bal, it));
 }
 
 function resumo(bal) {

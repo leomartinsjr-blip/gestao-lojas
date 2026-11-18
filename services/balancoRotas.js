@@ -262,10 +262,13 @@ function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin
       const agora = new Date().toISOString();
       const itens = lida.linhas.map(l => {
         const extra = l.extra ? `${l.extraNome.replace(/\?$/, '')}: ${l.extra}` : '';
+        // Status com anotação livre na planilha vira OK; o texto fica na observação
+        const anot = l.st === 'OK' && l.stTexto && l.stTexto.toUpperCase() !== 'OK' ? 'Status: ' + l.stTexto : '';
         return {
           c: l.cod, b: '', d: l.desc, r: l.ref, g: l.setor || '(SEM SETOR)',
           e: l.e || 0, l: l.l || 0, lido: (l.l || 0) > 0, o: null, p: l.p || 0, v: l.v || 0, t: l.t || 0,
-          rc: l.rc, ob: [l.ob, extra].filter(Boolean).join(' · '),
+          rc: l.rc, ob: [l.ob, anot, extra].filter(Boolean).join(' · '),
+          ...(l.st ? { st: l.st } : {}),
           rp: l.rc !== null ? 'planilha' : undefined, rt: l.rc !== null ? agora : undefined,
         };
       });

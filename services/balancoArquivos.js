@@ -370,6 +370,7 @@ async function excelRecontagem(bal) {
 // volta quanto para arquivar um balanço feito fora do gestão.
 const semAcento = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
+const STATUS_PLANILHA = ['OK', 'DIVERGENTE', 'VER VENDA', 'VER TRÂNSITO', 'TROCA', 'A RECONTAR'];
 async function lerPlanilhaRecontagem(buffer) {
   const wb = new ExcelJS.Workbook();
   await wb.xlsx.load(buffer);
@@ -400,7 +401,7 @@ async function lerPlanilhaRecontagem(buffer) {
   const C = {
     setor: acha(/^setor/), cod: acha(/^codigo$/), desc: acha(/^descri/), ref: acha(/^refer/),
     e: acha(/^estoque$/), l: acha(/^balanco$/), p: acha(/^preco/), rc: acha(/^qtde recont/),
-    ob: acha(/^observ/), v: acha(/^vendas/), t: acha(/transito|recebid/), extra: acha(/ajustado|regularizado/),
+    ob: acha(/^observ/), st: acha(/^status$/), v: acha(/^vendas/), t: acha(/transito|recebid/), extra: acha(/ajustado|regularizado/),
   };
   if (!C.rc) C.rc = 10;
   if (!C.ob) C.ob = 13;
@@ -429,6 +430,14 @@ async function lerPlanilhaRecontagem(buffer) {
       ref: String(g(C.ref) ?? '').trim(), e: numero(g(C.e)), l: numero(g(C.l)), p: numero(g(C.p)),
       rc: numero(g(C.rc)), ob: String(g(C.ob) ?? '').trim(), v: numero(g(C.v)), t: numero(g(C.t)),
       extra: C.extra ? String(g(C.extra) ?? '').trim() : '', extraNome: C.extra ? nomes[C.extra].toUpperCase() : '',
+      // O Status que aparece na planilha (digitado ou de fórmula) é a palavra final do escritório
+      stTexto: C.st ? String(g(C.st) ?? '').trim() : '',
+      st: (() => {
+        const t = C.st ? String(g(C.st) ?? '').trim().toUpperCase().replace('TRANSITO', 'TRÂNSITO') : '';
+        // Anotação própria no lugar do status (ACHADO BAL. ANTERIOR, SOBRA 1 / FALTAVA 2…):
+        // o escritório tirou o item das divergências, então conta como OK
+        return STATUS_PLANILHA.includes(t) ? t : t ? 'OK' : null;
+      })(),
     };
     // O export às vezes repete um bloco de setor inteiro: a mesma linha duas vezes
     const chave = [l.cod, l.e, l.l].join('|');
