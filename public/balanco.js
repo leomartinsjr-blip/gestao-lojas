@@ -91,6 +91,36 @@ function desenharCards(lista) {
   document.querySelectorAll('.bcard').forEach(el => el.onclick = () => abrir(el.dataset.id));
 }
 
+// Resultado de cada loja nos últimos 12 meses: impacto final, somando os balanços do mês
+function resumoLojas(lista) {
+  const hoje = new Date();
+  const meses = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(hoje.getFullYear(), hoje.getMonth() - i, 1);
+    meses.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+  const lojas = new Map();
+  for (const b of lista) {
+    if (!b.resumo || !meses.includes(b.mes)) continue;
+    if (!lojas.has(b.board)) lojas.set(b.board, { nome: b.lojaLabel, mes: {} });
+    const l = lojas.get(b.board);
+    l.mes[b.mes] = (l.mes[b.mes] || 0) + (b.resumo.impactoConfirmado || 0) + (b.resumo.impactoApurar || 0);
+  }
+  if (!lojas.size) return '';
+  const linhas = [...lojas.values()].sort((a, b) => a.nome.localeCompare(b.nome));
+  const totMes = {};
+  for (const l of linhas) for (const [m, v] of Object.entries(l.mes)) totMes[m] = (totMes[m] || 0) + v;
+  const soma = o => Object.values(o).reduce((a, v) => a + v, 0);
+  const cel = v => v === undefined ? '<td class="n vazio">—</td>' : `<td class="n ${cls(v)}">${fRS(v)}</td>`;
+  const tot = v => `<td class="n destaque ${cls(v)}">${fRS(v)}</td>`;
+  const curto = m => mesBR(m).replace(/\/20(\d\d)$/, '/$1');
+  return `<div class="res-lojas"><div class="res-tit">Resultado por loja · últimos 12 meses</div>
+    <div class="tbl-wrap"><table class="tbl res"><thead><tr><th>Loja</th>${meses.map(m => `<th class="n">${curto(m)}</th>`).join('')}<th class="n destaque">12 meses</th></tr></thead>
+    <tbody>${linhas.map(l => `<tr><td>${esc(l.nome)}</td>${meses.map(m => cel(l.mes[m])).join('')}${tot(soma(l.mes))}</tr>`).join('')}</tbody>
+    <tfoot><tr><td>Total</td>${meses.map(m => cel(totMes[m])).join('')}${tot(soma(totMes))}</tr></tfoot>
+    </table></div></div>`;
+}
+
 function desenharHistorico(lista) {
   if (!lista.length) { $('lista').innerHTML = '<div class="empty">Nenhum balanço ainda.</div>'; return; }
   const linhas = lista.map(b => {
@@ -105,12 +135,15 @@ function desenharHistorico(lista) {
       <td class="n destaque ${cls(final)}">${b.resumo ? fRS(final) : ''}</td>
       <td><span class="badge ${b.status}">${STATUS_LBL[b.status] || b.status}</span></td></tr>`;
   }).join('');
-  $('lista').innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr>
+  $('lista').innerHTML = resumoLojas(lista) + `<div class="tbl-wrap"><table class="tbl"><thead><tr>
     <th>Mês</th><th>Loja</th><th>Contagem</th><th class="n">Peças lidas</th><th class="n">Estoque</th><th class="n">Itens divergentes</th><th class="n">Recontados</th>
     <th class="n">Dif. peças (sistema)</th><th class="n">Dif. peças (final)</th><th class="n destaque">Impacto final</th><th>Status</th>
     </tr></thead><tbody>${linhas}</tbody></table></div>
     <div class="hint" style="margin-top:6px">Impacto final = confirmado na recontagem + o que ainda está a apurar.</div>`;
   document.querySelectorAll('tr.clic').forEach(el => el.onclick = () => abrir(el.dataset.id));
+  // Tela estreita: o resumo abre nos meses mais recentes
+  const rw = document.querySelector('.res-lojas .tbl-wrap');
+  if (rw) rw.scrollLeft = rw.scrollWidth;
 }
 
 // ── Um balanço ─────────────────────────────────────────────────────────────
