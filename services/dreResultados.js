@@ -635,6 +635,27 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     try {
       const lojas = req.body?.lojas || [];
       if (!lojas.length) return res.status(400).json({ error: 'Nenhuma loja com mês finalizado' });
+      // Quadro de funcionários: média, pessoa a pessoa, dos mesmos meses da média da loja
+      const db = await readDB();
+      const quadros = {};
+      for (const l of lojas) {
+        const meses = (l.mesesKeys || []).filter(mk => /^\d{4}-\d{2}$/.test(mk));
+        if (!l.board || !meses.length) continue;
+        const soma = {};
+        for (const mk of meses) {
+          if (!quadros[mk]) quadros[mk] = L.quadroPorLoja(folhaDoMes(db, mk), db.employees || []);
+          for (const p of Object.values(quadros[mk][l.board] || {})) {
+            const s = (soma[p.id] ||= { ...p, fixo: 0, comissao: 0, premiacao: 0, ajuda: 0, meses: 0 });
+            for (const k of ['fixo', 'comissao', 'premiacao', 'ajuda']) s[k] += p[k];
+            s.meses++;
+          }
+        }
+        // Média sobre todos os meses: quem entrou no meio pesa pelo que custou
+        l.quadro = Object.values(soma).map(p => ({ nome: p.nome, cargo: p.cargo, meses: p.meses,
+          ...Object.fromEntries(['fixo', 'comissao', 'premiacao', 'ajuda'].map(k => [k, r2(p[k] / meses.length)])) }))
+          .sort((a, b) => b.fixo - a.fixo);
+      }
+      req.body.encargos = (C.comPadrao(await lerConfig()).percentuais.encargos) / 100;
       res.attachment('simulacao-ponto-equilibrio.xlsx')
         .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         .send(Buffer.from(await gerarSimulacao(req.body)));

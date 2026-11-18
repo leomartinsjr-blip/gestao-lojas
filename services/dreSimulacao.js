@@ -37,7 +37,7 @@ const cabecalho = (row, textos) => {
   row.height = 30;
 };
 
-async function gerarSimulacao({ lojas = [], lucros = [8, 12, 15], aluguelPct = 5, rbt12 = {}, titulo = 'Simulação do ponto de equilíbrio' }) {
+async function gerarSimulacao({ lojas = [], lucros = [8, 12, 15], aluguelPct = 5, encargos = 0.29, rbt12 = {}, titulo = 'Simulação do ponto de equilíbrio' }) {
   const wb = new ExcelJS.Workbook();
   wb.calcProperties.fullCalcOnLoad = true;
   const resumo = wb.addWorksheet('Resumo', { views: [{ showGridLines: false }] });
@@ -66,13 +66,18 @@ async function gerarSimulacao({ lojas = [], lucros = [8, 12, 15], aluguelPct = 5
   const pctCel = resumo.getCell('B5');
   pctCel.value = aluguelPct / 100; pctCel.numFmt = '0.0%'; entrada(pctCel); pctCel.font = { bold: true, color: { argb: TINTA } };
   const P = 'Resumo!$B$5';
+  resumo.getCell('A6').value = 'Encargos sobre fixo + comissões';
+  resumo.getCell('A6').font = { bold: true };
+  const encCel = resumo.getCell('B6');
+  encCel.value = encargos; encCel.numFmt = '0.0%'; entrada(encCel); encCel.font = { bold: true, color: { argb: TINTA } };
+  const ENC = 'Resumo!$B$6';
 
   // Uma aba por loja: B = atual (média real), C = simulado
   const pos = {};
   lojas.forEach((l, i) => {
     const ws = wb.addWorksheet(abas[i], { views: [{ state: 'frozen', ySplit: 4, showGridLines: false }],
       pageSetup: { orientation: 'portrait', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
-    [44, 16, 16, 16, 46].forEach((w, k) => { ws.getColumn(k + 1).width = w; });
+    [44, 16, 16, 16, 16].forEach((w, k) => { ws.getColumn(k + 1).width = w; });
     ws.getCell('A1').value = `${l.nome} · simulação`;
     ws.getCell('A1').font = { bold: true, size: 14, color: { argb: AZUL } };
     ws.getCell('A2').value = `Atual = média de ${l.meses || '—'}. Simulado começa igual ao atual: mude a metragem, a venda ou qualquer célula amarela.`;
@@ -169,6 +174,66 @@ async function gerarSimulacao({ lojas = [], lucros = [8, 12, 15], aluguelPct = 5
     secao('Conferência');
     linha('opReal', 'Resultado operacional médio da DRE', { b: l.operacional ?? null, dif: false, obs: 'Valor real dos meses usados. O Atual pode diferir um pouco: o Simples aqui sai da faixa.' });
     linha('simplesReal', 'Simples médio da DRE (% da venda)', { b: l.variaveis?.simples ?? null, fmt: PCT, dif: false });
+
+    // Quadro de funcionários: bruto de cada um (média dos meses); encargos só no total.
+    // A coluna Fixo simulado (amarela) muda o salário fixo do Simulado.
+    const quadro = l.quadro || [];
+    if (quadro.length) {
+      r += 2;
+      const t = ws.getCell(r, 1);
+      t.value = 'Quadro de funcionários (bruto por mês, média dos meses usados)';
+      t.font = { bold: true, size: 11, color: { argb: AZUL } };
+      r++;
+      cabecalho(ws.getRow(r), ['Nome', 'Função', 'Salário fixo', 'Comissões', 'Premiações', 'V.T. e ajuda', 'Total bruto', 'Fixo simulado']);
+      ws.getColumn(6).width = 14; ws.getColumn(7).width = 14; ws.getColumn(8).width = 14;
+      const ini = r + 1;
+      const pessoas = [...quadro, ...Array.from({ length: 3 }, () => ({ nome: '', cargo: 'Nova contratação', novo: true }))];
+      for (const p of pessoas) {
+        r++;
+        const row = ws.getRow(r);
+        row.getCell(1).value = p.nome || null;
+        row.getCell(2).value = p.cargo + (p.meses && l.mesesKeys?.length && p.meses < l.mesesKeys.length ? ` (${p.meses} de ${l.mesesKeys.length} meses)` : '');
+        [p.fixo, p.comissao, p.premiacao, p.ajuda].forEach((v, k) => { const c = row.getCell(k + 3); c.value = p.novo ? null : v || 0; c.numFmt = NUM; });
+        row.getCell(7).value = { formula: `SUM(C${r}:F${r})` };
+        row.getCell(8).value = p.novo ? null : { formula: `C${r}` };
+        row.getCell(7).numFmt = NUM; row.getCell(8).numFmt = NUM;
+        entrada(row.getCell(8));
+        if (p.novo) { entrada(row.getCell(1)); row.getCell(2).font = { italic: true, color: { argb: 'FF636C76' } }; }
+        for (let k = 1; k <= 8; k++) row.getCell(k).border = borda;
+      }
+      const fim = r;
+      r++;
+      const tot = ws.getRow(r);
+      tot.getCell(1).value = { formula: `"Total · "&COUNTIF(C${ini}:C${fim},">0")&" pessoas"`, result: `Total · ${quadro.length} pessoas` };
+      for (let k = 3; k <= 8; k++) { const L = ws.getColumn(k).letter; tot.getCell(k).value = { formula: `SUM(${L}${ini}:${L}${fim})` }; tot.getCell(k).numFmt = NUM; }
+      for (let k = 1; k <= 8; k++) { const c = tot.getCell(k); c.font = { bold: true }; c.fill = preenche(CINZA); c.border = borda; }
+      const totR = r;
+      r++;
+      const enc = ws.getRow(r);
+      enc.getCell(1).value = { formula: `"Encargos ("&ROUND(${ENC}*100,1)&"% sobre fixo + comissões)"`, result: 'Encargos sobre fixo + comissões' };
+      enc.getCell(7).value = { formula: `(C${totR}+D${totR})*${ENC}` };
+      enc.getCell(8).value = { formula: `H${totR}*${ENC}` };
+      enc.getCell(7).numFmt = NUM; enc.getCell(8).numFmt = NUM;
+      r++;
+      const ce = ws.getRow(r);
+      ce.getCell(1).value = 'Total com encargos';
+      ce.getCell(7).value = { formula: `G${totR}+G${r - 1}` }; ce.getCell(7).numFmt = NUM;
+      ce.getCell(1).font = { bold: true }; ce.getCell(7).font = { bold: true };
+      r++;
+      const qs = ws.getRow(r);
+      qs.getCell(1).value = 'Pessoas no simulado';
+      qs.getCell(8).value = { formula: `COUNTIF(H${ini}:H${fim},">0")` };
+      r++;
+      const nota = ws.getCell(r, 1);
+      nota.value = 'Fixo simulado: zere para tirar alguém, mude o salário ou preencha uma nova contratação. A diferença (com encargos) entra no Salários fixos do Simulado. Comissão e premiação seguem como % da venda.';
+      nota.font = { size: 9, color: { argb: 'FF636C76' } };
+      // Simulado = atual + diferença dos fixos do quadro, com encargos
+      const sal = ws.getCell(rows.o_salFixos, 3);
+      sal.value = { formula: `B${rows.o_salFixos}+(H${totR}-C${totR})*(1+${ENC})` };
+      ws.getCell(rows.o_salFixos, 5).value = 'Simulado muda pelo quadro de funcionários (coluna Fixo simulado).';
+      ws.getCell(rows.o_salFixos, 5).font = { size: 9, color: { argb: 'FF636C76' } };
+      rows.qtd = totR; rows.qtdSim = r - 1;
+    }
     pos[i] = rows;
   });
 

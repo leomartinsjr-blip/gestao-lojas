@@ -116,6 +116,45 @@ function folhaPorLoja(folhaMes, employees = []) {
   return out;
 }
 
+// Mesma divisão da folhaPorLoja, pessoa a pessoa (quadro de funcionários da simulação).
+// Supervisor entra em cada loja com a parte do fixo e a comissão daquela loja.
+function quadroPorLoja(folhaMes, employees = []) {
+  if (!folhaMes) return {};
+  const empPorId = Object.fromEntries(employees.map(e => [String(e.id), e]));
+  const out = {};
+  const pessoa = (b, id, e) => {
+    const lista = (out[b] ||= {});
+    return (lista[id] ||= { id, nome: e?.name || id, cargo: e?.cargo || '', fixo: 0, comissao: 0, premiacao: 0, ajuda: 0 });
+  };
+  for (const [board, dados] of Object.entries(folhaMes)) {
+    if (!dados?.entries) continue;
+    for (const [id, e] of Object.entries(dados.entries)) {
+      if (e.tipo === 'socio') continue;
+      const emp = empPorId[id];
+      const proventos = e.proventosBruto ?? e.proventos ?? 0;
+      const fixo = e.fixo || 0, compl = e.gmComplement || 0, quebra = e.quebra || 0;
+      const comissao = (e.comissaoTotal || 0) + (e.comissaoLoja || 0), ajuda = e.ajudaCustoTotal || 0;
+      const extraSalario = somaExtras(e, 'salario');
+      const resto = r2(proventos - fixo - compl - quebra - comissao - ajuda - extrasFora(e) - extraSalario);
+      const lojas = emp?.supervisedBoards || [];
+      if (e.tipo === 'supervisor' && lojas.length) {
+        for (const b of lojas) {
+          const p = pessoa(b, id, emp);
+          p.fixo += fixo / lojas.length;
+          p.comissao += (e.lojaComissoes || []).find(l => l.board === b)?.comissao || 0;
+          if (lojas.length > 1) p.cargo = `${emp?.cargo || 'Supervisor'} (1/${lojas.length} do fixo)`;
+        }
+        const p = pessoa(board, id, emp);
+        p.fixo += compl + quebra + extraSalario; p.premiacao += resto; p.ajuda += ajuda;
+      } else {
+        const p = pessoa(board, id, emp);
+        p.fixo += fixo + compl + quebra + extraSalario; p.comissao += comissao; p.premiacao += resto; p.ajuda += ajuda;
+      }
+    }
+  }
+  return out;
+}
+
 // Fornecedor → linha da DRE. null: sai de outra fonte (CMV, folha, Simples, ICMS,
 // boleto) ou vai para o Escritório.
 const DA_CAIXA_PARA_DRE = { sistema: 'sistema', plano: 'plano', telefone: 'telefone', contabilidade: 'contabilidade', seguros: 'seguro',
@@ -223,5 +262,5 @@ function pontoComercial(boletos, receita, percentual = 5) {
   return out;
 }
 
-module.exports = { FAIXAS, rbt12, pontoComercial, aliquotaSimples, percentualIcms, percentuaisEmbalagem, folhaPorLoja, extrasFora, linhaDre, somarFaturas, fechar,
+module.exports = { FAIXAS, rbt12, quadroPorLoja, pontoComercial, aliquotaSimples, percentualIcms, percentuaisEmbalagem, folhaPorLoja, extrasFora, linhaDre, somarFaturas, fechar,
   mesesAntes, ESTRUTURA, EMPRESA, REF, somarGrupos };
