@@ -102,13 +102,12 @@ function desenharHistorico(lista) {
       <td class="n">${b.resumo ? r.itens : ''}</td><td class="n">${b.resumo ? r.recontados : ''}</td>
       <td class="n ${cls(r.pecasDif)}">${b.resumo ? fInt(r.pecasDif) : ''}</td>
       <td class="n ${cls(r.pecasDifFinal)}">${b.resumo ? fInt(r.pecasDifFinal) : ''}</td>
-      <td class="n ${cls(r.impactoSistema)}">${b.resumo ? fRS(r.impactoSistema) : ''}</td>
-      <td class="n ${cls(final)}">${b.resumo ? fRS(final) : ''}</td>
+      <td class="n destaque ${cls(final)}">${b.resumo ? fRS(final) : ''}</td>
       <td><span class="badge ${b.status}">${STATUS_LBL[b.status] || b.status}</span></td></tr>`;
   }).join('');
   $('lista').innerHTML = `<div class="tbl-wrap"><table class="tbl"><thead><tr>
     <th>Mês</th><th>Loja</th><th>Contagem</th><th class="n">Peças lidas</th><th class="n">Estoque</th><th class="n">Itens divergentes</th><th class="n">Recontados</th>
-    <th class="n">Dif. peças (sistema)</th><th class="n">Dif. peças (final)</th><th class="n">Impacto sistema</th><th class="n">Impacto final</th><th>Status</th>
+    <th class="n">Dif. peças (sistema)</th><th class="n">Dif. peças (final)</th><th class="n destaque">Impacto final</th><th>Status</th>
     </tr></thead><tbody>${linhas}</tbody></table></div>
     <div class="hint" style="margin-top:6px">Impacto final = confirmado na recontagem + o que ainda está a apurar.</div>`;
   document.querySelectorAll('tr.clic').forEach(el => el.onclick = () => abrir(el.dataset.id));
