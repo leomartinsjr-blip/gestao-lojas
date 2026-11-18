@@ -180,17 +180,25 @@ async function gerarSimulacao({ lojas = [], lucros = [8, 12, 15], aluguelPct = 5
     linha('simplesReal', 'Simples médio da DRE (% da venda)', { b: l.variaveis?.simples ?? null, fmt: PCT, dif: false });
 
     // Quadro por cargo (média dos meses usados): quantidade, salário fixo por pessoa,
-    // comissão em % da venda. Encargos só no total. As colunas amarelas do Simulado
-    // mudam Salários fixos, Comissões e Encargos sobre comissões do Simulado.
+    // comissão em % da venda e garantia mínima (se fixo + comissão ficar abaixo, a loja
+    // paga o complemento). Encargos só no total. As colunas amarelas do Simulado mudam
+    // Salários fixos, Comissões e Encargos sobre comissões do Simulado.
     const nMeses = l.mesesKeys?.length || 1;
+    const gm = l.garantiaMinima || {};
+    // Mesma regra da folha: gerente e sub têm garantia própria; vendedor com fixo não tem
+    const garantiaDe = p => (p.tipo === 'vendedor' && p.comFixo ? 0
+      : p.tipo === 'gerente' ? gm.gerente || 0
+      : (p.tipo === 'sub' || p.tipo === 'gvend') ? gm.sub || 0
+      : p.tipo === 'supervisor' ? 0 : gm.geral || 0);
     const cargos = {};
     for (const p of l.quadro || []) {
-      const nome = String(p.cargo || 'Sem cargo').trim() || 'Sem cargo';
-      const c = (cargos[nome] ||= { nome, qtd: 0, fixo: 0, comissao: 0, premiacao: 0, ajuda: 0 });
+      let nome = String(p.cargo || 'Sem cargo').trim() || 'Sem cargo';
+      if (p.tipo === 'vendedor') nome += p.comFixo ? ' (fixo + comissão)' : ' (comissionado)';
+      const c = (cargos[nome] ||= { nome, qtd: 0, fixo: 0, garantia: 0, comissao: 0, premiacao: 0, ajuda: 0, gm: garantiaDe(p) });
       c.qtd += (p.meses || nMeses) / nMeses;
-      for (const k of ['fixo', 'comissao', 'premiacao', 'ajuda']) c[k] += p[k] || 0;
+      for (const k of ['fixo', 'garantia', 'comissao', 'premiacao', 'ajuda']) c[k] += p[k] || 0;
     }
-    const lista = Object.values(cargos).sort((a, b) => b.fixo / (b.qtd || 1) - a.fixo / (a.qtd || 1));
+    const lista = Object.values(cargos).sort((a, b) => (b.fixo + b.garantia) / (b.qtd || 1) - (a.fixo + a.garantia) / (a.qtd || 1));
     if (lista.length) {
       const V = `$B$${rows.venda}`, VS = `$C$${rows.venda}`;
       r += 2;
@@ -198,9 +206,12 @@ async function gerarSimulacao({ lojas = [], lucros = [8, 12, 15], aluguelPct = 5
       t.value = 'Quadro por cargo (bruto por mês, média dos meses usados)';
       t.font = { bold: true, size: 11, color: { argb: AZUL } };
       r++;
-      cabecalho(ws.getRow(r), ['Cargo', 'Quantidade', 'Salário fixo por pessoa', 'Total fixo', 'Comissão (% da venda)', 'Comissão (R$)', 'Premiações', 'V.T. e ajuda',
-        'Total bruto', 'Quantidade simulada', 'Salário simulado por pessoa', 'Comissão simulada (%)', 'Total fixo simulado']);
-      for (let k = 6; k <= 13; k++) ws.getColumn(k).width = 15;
+      // A–K atual, L–P simulado
+      cabecalho(ws.getRow(r), ['Cargo', 'Quantidade', 'Salário fixo por pessoa', 'Total fixo', 'Comissão (% da venda)', 'Comissão (R$)',
+        'Garantia mínima por pessoa', 'Complemento de garantia pago', 'Premiações', 'V.T. e ajuda', 'Total bruto',
+        'Quantidade simulada', 'Salário simulado por pessoa', 'Comissão simulada (%)', 'Complemento de garantia simulado', 'Total fixo simulado', 'Complemento pela média (atual)']);
+      ws.getRow(r).height = 44;
+      for (let k = 6; k <= 17; k++) ws.getColumn(k).width = 15;
       const ini = r + 1;
       const linhasCargo = [...lista, ...Array.from({ length: 3 }, () => ({ nome: '', novo: true }))];
       for (const c of linhasCargo) {
@@ -209,63 +220,70 @@ async function gerarSimulacao({ lojas = [], lucros = [8, 12, 15], aluguelPct = 5
         row.getCell(1).value = c.novo ? null : c.nome;
         if (!c.novo) {
           row.getCell(2).value = Math.round(c.qtd * 100) / 100;
-          row.getCell(3).value = { formula: `IF(B${r}=0,0,D${r}/B${r})` };
           row.getCell(4).value = c.fixo;
           row.getCell(6).value = c.comissao;
-          row.getCell(7).value = c.premiacao;
-          row.getCell(8).value = c.ajuda;
-          row.getCell(10).value = { formula: `B${r}` };
-          row.getCell(11).value = { formula: `C${r}` };
-          row.getCell(12).value = { formula: `E${r}` };
+          row.getCell(8).value = c.garantia;
+          row.getCell(9).value = c.premiacao;
+          row.getCell(10).value = c.ajuda;
+          row.getCell(12).value = { formula: `B${r}` };
+          row.getCell(13).value = { formula: `C${r}` };
+          row.getCell(14).value = { formula: `E${r}` };
         }
+        row.getCell(7).value = c.novo ? null : c.gm || 0;
+        row.getCell(3).value = { formula: `IF(N(B${r})=0,0,D${r}/B${r})` };
         row.getCell(5).value = { formula: `IFERROR(F${r}/${V},0)` };
-        row.getCell(9).value = { formula: `D${r}+F${r}+G${r}+H${r}` };
-        row.getCell(13).value = { formula: `N(J${r})*N(K${r})` };
-        row.getCell(2).numFmt = '0.0#'; row.getCell(10).numFmt = '0.0#';
-        for (const k of [3, 4, 6, 7, 8, 9, 11, 13]) row.getCell(k).numFmt = NUM;
-        row.getCell(5).numFmt = PCT; row.getCell(12).numFmt = PCT;
-        for (const k of [10, 11, 12]) entrada(row.getCell(k));
-        if (c.novo) { entrada(row.getCell(1)); row.getCell(1).note = 'Novo cargo: preencha o nome, a quantidade, o salário e a comissão no Simulado.'; }
-        for (let k = 1; k <= 13; k++) row.getCell(k).border = borda;
+        row.getCell(11).value = { formula: `D${r}+F${r}+H${r}+I${r}+J${r}` };
+        // Por pessoa: se fixo + comissão (na venda simulada) ficar abaixo da garantia, paga a diferença
+        row.getCell(15).value = { formula: `IF(OR(N(L${r})=0,N(G${r})=0),0,MAX(0,G${r}-(N(M${r})+N(N${r})*${VS}/L${r}))*L${r})` };
+        row.getCell(16).value = { formula: `N(L${r})*N(M${r})` };
+        // A mesma conta com os números atuais: o Simulado soma só a diferença entre as duas
+        row.getCell(17).value = { formula: `IF(OR(N(B${r})=0,N(G${r})=0),0,MAX(0,G${r}-(N(C${r})+N(E${r})*${V}/B${r}))*B${r})` };
+        row.getCell(2).numFmt = '0.0#'; row.getCell(12).numFmt = '0.0#';
+        for (const k of [3, 4, 6, 7, 8, 9, 10, 11, 13, 15, 16, 17]) row.getCell(k).numFmt = NUM;
+        row.getCell(5).numFmt = PCT; row.getCell(14).numFmt = PCT;
+        for (const k of [7, 12, 13, 14]) entrada(row.getCell(k));
+        if (c.novo) { entrada(row.getCell(1)); row.getCell(1).note = 'Novo cargo: preencha o nome, a garantia mínima, a quantidade, o salário e a comissão no Simulado.'; }
+        for (let k = 1; k <= 17; k++) row.getCell(k).border = borda;
       }
       const fim = r;
       r++;
       const tot = ws.getRow(r);
       tot.getCell(1).value = 'Total';
-      for (const k of [2, 4, 5, 6, 7, 8, 9, 10, 12, 13]) {
+      for (const k of [2, 4, 5, 6, 8, 9, 10, 11, 12, 14, 15, 16, 17]) {
         const L = ws.getColumn(k).letter;
         tot.getCell(k).value = { formula: `SUM(${L}${ini}:${L}${fim})` };
-        tot.getCell(k).numFmt = [5, 12].includes(k) ? PCT : [2, 10].includes(k) ? '0.0#' : NUM;
+        tot.getCell(k).numFmt = [5, 14].includes(k) ? PCT : [2, 12].includes(k) ? '0.0#' : NUM;
       }
       tot.getCell(3).value = { formula: `IF(B${r}=0,0,D${r}/B${r})` }; tot.getCell(3).numFmt = NUM;
-      tot.getCell(11).value = { formula: `IF(J${r}=0,0,M${r}/J${r})` }; tot.getCell(11).numFmt = NUM;
-      for (let k = 1; k <= 13; k++) { const c = tot.getCell(k); c.font = { bold: true }; c.fill = preenche(CINZA); c.border = borda; }
+      tot.getCell(13).value = { formula: `IF(L${r}=0,0,P${r}/L${r})` }; tot.getCell(13).numFmt = NUM;
+      for (let k = 1; k <= 17; k++) { const c = tot.getCell(k); c.font = { bold: true }; c.fill = preenche(CINZA); c.border = borda; }
       const totR = r;
       r++;
       const enc = ws.getRow(r);
-      enc.getCell(1).value = { formula: `"Encargos ("&ROUND(${ENC}*100,1)&"% sobre fixo + comissões)"`, result: 'Encargos sobre fixo + comissões' };
-      enc.getCell(9).value = { formula: `(D${totR}+F${totR})*${ENC}` };
-      enc.getCell(13).value = { formula: `(M${totR}+L${totR}*${VS})*${ENC}` };
-      enc.getCell(9).numFmt = NUM; enc.getCell(13).numFmt = NUM;
+      enc.getCell(1).value = { formula: `"Encargos ("&ROUND(${ENC}*100,1)&"% sobre fixo, garantia e comissões)"`, result: 'Encargos sobre fixo, garantia e comissões' };
+      enc.getCell(11).value = { formula: `(D${totR}+H${totR}+F${totR})*${ENC}` };
+      enc.getCell(16).value = { formula: `(P${totR}+O${totR}+N${totR}*${VS})*${ENC}` };
+      enc.getCell(11).numFmt = NUM; enc.getCell(16).numFmt = NUM;
       r++;
       const ce = ws.getRow(r);
       ce.getCell(1).value = 'Total com encargos';
-      ce.getCell(9).value = { formula: `I${totR}+I${r - 1}` }; ce.getCell(9).numFmt = NUM;
-      ce.getCell(13).value = { formula: `M${totR}+L${totR}*${VS}+G${totR}+H${totR}+M${r - 1}` }; ce.getCell(13).numFmt = NUM;
-      for (const k of [1, 9, 13]) ce.getCell(k).font = { bold: true };
+      ce.getCell(11).value = { formula: `K${totR}+K${r - 1}` }; ce.getCell(11).numFmt = NUM;
+      ce.getCell(16).value = { formula: `P${totR}+O${totR}+N${totR}*${VS}+I${totR}+J${totR}+P${r - 1}` }; ce.getCell(16).numFmt = NUM;
+      for (const k of [1, 11, 16]) ce.getCell(k).font = { bold: true };
       r++;
       const nota = ws.getCell(r, 1);
-      nota.value = 'Simulado: mude a quantidade, o salário por pessoa ou a comissão de cada cargo (ou preencha um cargo novo). O total simulado com encargos usa a venda simulada; premiações e V.T. ficam como no atual.';
+      nota.value = 'Garantia mínima: se o fixo + a comissão de cada pessoa ficar abaixo, a loja paga o complemento (vem da configuração da folha; vendedor com fixo não tem). '
+        + 'Simulado: mude a quantidade, o salário por pessoa, a comissão ou a garantia de cada cargo (ou preencha um cargo novo). O complemento simulado usa a venda simulada.';
       nota.font = { size: 9, color: { argb: 'FF636C76' } };
-      // Simulado = atual + diferença do quadro: fixo (com encargos) e comissão em % da venda
+      // Simulado = atual + diferença do quadro: fixo e garantia (com encargos) e comissão em % da venda
       const liga = (id, formula, texto) => {
         ws.getCell(rows[id], 3).value = { formula };
         ws.getCell(rows[id], 5).value = texto;
         ws.getCell(rows[id], 5).font = { size: 9, color: { argb: 'FF636C76' } };
       };
-      liga('o_salFixos', `B${rows.o_salFixos}+(M${totR}-D${totR})*(1+${ENC})`, 'Simulado muda pelo quadro por cargo.');
-      liga('v_comissoes', `B${rows.v_comissoes}+(L${totR}-E${totR})`, 'Simulado muda pela comissão dos cargos.');
-      liga('v_encVar', `B${rows.v_encVar}+(L${totR}-E${totR})*${ENC}`, '');
+      liga('o_salFixos', `B${rows.o_salFixos}+(P${totR}-D${totR}+O${totR}-Q${totR})*(1+${ENC})`, 'Simulado muda pelo quadro por cargo (fixo + garantia mínima).');
+      liga('v_comissoes', `B${rows.v_comissoes}+(N${totR}-E${totR})`, 'Simulado muda pela comissão dos cargos.');
+      liga('v_encVar', `B${rows.v_encVar}+(N${totR}-E${totR})*${ENC}`, '');
       rows.qtd = totR;
     }
     pos[i] = rows;

@@ -645,15 +645,19 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
         for (const mk of meses) {
           if (!quadros[mk]) quadros[mk] = L.quadroPorLoja(folhaDoMes(db, mk), db.employees || []);
           for (const p of Object.values(quadros[mk][l.board] || {})) {
-            const s = (soma[p.id] ||= { ...p, fixo: 0, comissao: 0, premiacao: 0, ajuda: 0, meses: 0 });
-            for (const k of ['fixo', 'comissao', 'premiacao', 'ajuda']) s[k] += p[k];
+            const s = (soma[p.id] ||= { ...p, fixo: 0, garantia: 0, comissao: 0, premiacao: 0, ajuda: 0, meses: 0 });
+            for (const k of ['fixo', 'garantia', 'comissao', 'premiacao', 'ajuda']) s[k] += p[k] || 0;
+            if (p.comFixo) s.comFixo = true;
             s.meses++;
           }
         }
         // Média sobre todos os meses: quem entrou no meio pesa pelo que custou
-        l.quadro = Object.values(soma).map(p => ({ nome: p.nome, cargo: p.cargo, meses: p.meses,
-          ...Object.fromEntries(['fixo', 'comissao', 'premiacao', 'ajuda'].map(k => [k, r2(p[k] / meses.length)])) }))
+        l.quadro = Object.values(soma).map(p => ({ nome: p.nome, cargo: p.cargo, tipo: p.tipo, comFixo: !!p.comFixo, meses: p.meses,
+          ...Object.fromEntries(['fixo', 'garantia', 'comissao', 'premiacao', 'ajuda'].map(k => [k, r2(p[k] / meses.length)])) }))
           .sort((a, b) => b.fixo - a.fixo);
+        // Garantia mínima da folha da loja (por mês cheio)
+        const fc = (db.folhaConfig || {})[l.board] || {};
+        l.garantiaMinima = { geral: fc.garantiaMinima || 0, gerente: fc.garantiaMinimaGerente || fc.garantiaMinima || 0, sub: fc.garantiaMinimaSubGerente || fc.garantiaMinima || 0 };
       }
       req.body.encargos = (C.comPadrao(await lerConfig()).percentuais.encargos) / 100;
       res.attachment('simulacao-ponto-equilibrio.xlsx')

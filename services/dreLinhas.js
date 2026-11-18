@@ -124,7 +124,7 @@ function quadroPorLoja(folhaMes, employees = []) {
   const out = {};
   const pessoa = (b, id, e) => {
     const lista = (out[b] ||= {});
-    return (lista[id] ||= { id, nome: e?.name || id, cargo: e?.cargo || '', fixo: 0, comissao: 0, premiacao: 0, ajuda: 0 });
+    return (lista[id] ||= { id, nome: e?.name || id, cargo: e?.cargo || '', tipo: '', fixo: 0, garantia: 0, comissao: 0, premiacao: 0, ajuda: 0 });
   };
   for (const [board, dados] of Object.entries(folhaMes)) {
     if (!dados?.entries) continue;
@@ -145,10 +145,12 @@ function quadroPorLoja(folhaMes, employees = []) {
           if (lojas.length > 1) p.cargo = `${emp?.cargo || 'Supervisor'} (1/${lojas.length} do fixo)`;
         }
         const p = pessoa(board, id, emp);
-        p.fixo += compl + quebra + extraSalario; p.premiacao += resto; p.ajuda += ajuda;
+        p.fixo += quebra + extraSalario; p.garantia += compl; p.premiacao += resto; p.ajuda += ajuda; p.tipo = e.tipo;
       } else {
         const p = pessoa(board, id, emp);
-        p.fixo += fixo + compl + quebra + extraSalario; p.comissao += comissao; p.premiacao += resto; p.ajuda += ajuda;
+        // Garantia mínima (complemento) à parte: na simulação ela é recalculada pela venda
+        p.fixo += fixo + quebra + extraSalario; p.garantia += compl; p.comissao += comissao; p.premiacao += resto; p.ajuda += ajuda;
+        p.tipo = e.tipo || p.tipo; if (fixo > 0) p.comFixo = true;
       }
     }
   }
