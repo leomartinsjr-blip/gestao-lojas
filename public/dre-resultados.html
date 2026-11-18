@@ -106,7 +106,7 @@
 <main>
   <div id="msg">Carregando…</div>
   <div id="conteudo" hidden>
-    <div class="abas"><button id="abaDre" class="ativa">DRE</button><button id="abaCaixa">Fechamento de Caixa</button><button id="abaAno">Consolidado do ano</button><button id="abaBal">Balancete</button><button id="abaGrupo">Resumo do grupo</button><button id="abaCad">Cadastros</button></div>
+    <div class="abas"><button id="abaDre" class="ativa">DRE</button><button id="abaCaixa">Fechamento de Caixa</button><button id="abaAno">Consolidado do ano</button><button id="abaPe">Ponto de equilíbrio</button><button id="abaBal">Balancete</button><button id="abaGrupo">Resumo do grupo</button><button id="abaCad">Cadastros</button></div>
     <div class="pilulas" id="pilulas"></div>
     <div id="vDre">
       <div class="painel"><h2 id="titulo"></h2><table id="tabela"></table></div>
@@ -151,6 +151,14 @@
       </div>
       <div class="painel"><table id="tabelaAno"></table></div>
       <p class="nota">Antes de outubro/2026 o quadro mostra só o que existe nas planilhas: venda, resultado operacional, sobra e Fechamento de Caixa. O módulo completo calcula de outubro em diante. Traço indica mês sem o dado.</p>
+    </div>
+    <div id="vPe" hidden>
+      <div class="filtros">
+        <label>Média de <select id="peMeses"><option value="1">1 mês</option><option value="3" selected>3 meses</option><option value="6">6 meses</option><option value="12">12 meses</option></select></label>
+        <span id="peMsg"></span>
+      </div>
+      <div class="painel"><h2 id="peTit">Ponto de equilíbrio por operação</h2><table id="tabelaPe"></table></div>
+      <p class="nota">Só o resultado operacional: juros e dívidas ficam fora. Usa os meses finalizados de cada loja (do módulo, de outubro/2026 em diante). Custos variáveis são % da venda somada dos meses: Simples, ICMS de entrada, CMV, perdas de balanço, embalagens, frete, comissões e os encargos sobre elas, premiações e descontos de cartão. As despesas fixas são a média em reais. O aluguel entra pelo mínimo; se no ponto de equilíbrio o percentual passar do mínimo, o aluguel vira variável. Ponto de equilíbrio = despesas fixas ÷ margem de contribuição.</p>
     </div>
     <div id="vCaixa" hidden>
       <div class="painel"><h2 id="tituloCaixa"></h2><table id="tabelaCaixa"></table></div>
@@ -476,10 +484,11 @@ async function carregar(recalcular) {
 const ref = new Date(); ref.setDate(1); ref.setMonth(ref.getMonth() - 1);
 $('mes').value = `${ref.getFullYear()}-${String(ref.getMonth() + 1).padStart(2, '0')}`;
 const aba = qual => {
-  for (const [v, b, k] of [['vDre', 'abaDre', 'dre'], ['vCaixa', 'abaCaixa', 'caixa'], ['vAno', 'abaAno', 'ano'], ['vBal', 'abaBal', 'bal'], ['vGrupo', 'abaGrupo', 'grupo'], ['vCad', 'abaCad', 'cad']]) {
+  for (const [v, b, k] of [['vDre', 'abaDre', 'dre'], ['vCaixa', 'abaCaixa', 'caixa'], ['vAno', 'abaAno', 'ano'], ['vBal', 'abaBal', 'bal'], ['vGrupo', 'abaGrupo', 'grupo'], ['vCad', 'abaCad', 'cad'], ['vPe', 'abaPe', 'pe']]) {
     $(v).hidden = k !== qual; $(b).classList.toggle('ativa', k === qual);
   }
-  $('pilulas').hidden = ['ano', 'cad', 'bal', 'grupo'].includes(qual);
+  $('pilulas').hidden = ['ano', 'cad', 'bal', 'grupo', 'pe'].includes(qual);
+  if (qual === 'pe') carregarPe();
   if (qual === 'grupo') carregarGrupo();
   if (qual === 'bal') carregarBal();
   if (qual === 'ano') carregarAno();
@@ -752,6 +761,7 @@ $('expAba').addEventListener('click', async () => {
   if (!$('vAno').hidden) return baixar(`consolidado-${$('anoSel').value}`, [abaAno()]);
   if (!$('vGrupo').hidden) return baixar(`resumo-grupo-${$('grupoAno').value}`, [['gAnual', 'Comparativo anual'], ['gMes', 'Mês a mês'], ['gLoja', 'Por loja'], ['gPart', 'Participação'], ['gAcum', 'Acumulado']].map(([id, n]) => tabelaParaAba(id, n, `Resumo do grupo: ${n}`)));
   if (!$('vBal').hidden) return baixar(`balancete-${mes}`, [tabelaParaAba('tabelaBal', 'Balancete', $('tituloBal').textContent)]);
+  if (!$('vPe').hidden) return baixar(`ponto-equilibrio-${mes}`, [tabelaParaAba('tabelaPe', 'Ponto de equilíbrio', $('peTit').textContent)]);
   if (!$('vCad').hidden) return alert('Abra a DRE, o Fechamento de Caixa ou o Consolidado para exportar.');
   return baixar(`dre-${mes}`, [tabelaParaAba('tabela', 'DRE', $('titulo').textContent)]);
 });
@@ -795,6 +805,96 @@ async function carregarAno() {
   $('anoMsg').textContent = '';
   desenharAno();
 }
+// Ponto de equilíbrio: média dos últimos meses finalizados de cada loja, só o operacional
+const PE_VARIAVEIS = [['simples', 'Simples'], ['icms', 'ICMS de entrada'], ['cmv', 'CMV'], ['perdas', 'Perdas de balanço'], ['subsidio', 'Subsídio'],
+  ['embalagens', 'Embalagens'], ['frete', 'Frete'], ['comissoes', 'Comissões'], ['encVar', 'Encargos sobre comissões'], ['premiacoes', 'Premiações'], ['taxa', 'Descontos de cartão']];
+const PE_FIXAS = [['salFixos', 'Salários fixos e encargos', ['fixos', 'encFixo']], ['escritorio', 'Escritório', ['escritorio']], ['vt', 'V.T. e ajuda de custo', ['vt']],
+  ['ocupacao', 'CTO (aluguel mínimo e demais)', ['aluguel', 'condominio', 'fpp', 'ar', 'iptu', 'energia']],
+  ['administrativo', 'Administrativo', ['caixinha', 'sistema', 'contabilidade', 'seguro', 'plano', 'diversos', 'telefone']],
+  ['publicidade', 'Marketing', ['publicidade']], ['tarifa', 'Tarifa bancária', ['tarifa']]];
+const INICIO_PE = '2026-10';
+const proximoMes = mk => { const [y, m] = mk.split('-').map(Number); return m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`; };
+let peAluguelPct = null;
+async function carregarPe() {
+  const hoje = new Date(), atual = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, '0')}`;
+  if (peAluguelPct == null) {
+    try { peAluguelPct = Number((await (await fetch('/api/dre-resultados/cadastros')).json()).percentuais?.aluguelPct) || 5; } catch { peAluguelPct = 5; }
+  }
+  const meses = [];
+  for (let mk = INICIO_PE; mk <= atual; mk = proximoMes(mk)) meses.push(mk);
+  for (const mk of meses) {
+    if (cache[mk] && !cache[mk].historico) continue;
+    $('peMsg').textContent = `Lendo ${MESES[+mk.slice(5) - 1]}/${mk.slice(0, 4)}…`;
+    try { const r = await fetch('/api/dre-resultados?mes=' + mk); if (r.ok) cache[mk] = await r.json(); } catch {}
+  }
+  $('peMsg').textContent = '';
+  desenharPe(meses.filter(mk => cache[mk] && !cache[mk].historico));
+}
+// Encargos incidem sobre fixos + comissões: a parte das comissões é variável.
+// Variáveis: % da venda somada dos meses; fixas: média em reais.
+function pontoDeEquilibrio(lista, pctAluguel) {
+  const n = lista.length;
+  const ls = lista.map(l => {
+    const base = (l.fixos || 0) + (l.comissoes || 0), enc = l.encargos || 0;
+    const encVar = base ? enc * (l.comissoes || 0) / base : 0;
+    return { ...l, encVar, encFixo: enc - encVar };
+  });
+  const soma = k => ls.reduce((s, l) => s + (l[k] || 0), 0);
+  const venda = soma('receita');
+  const varPct = Object.fromEntries(PE_VARIAVEIS.map(([k]) => [k, venda ? soma(k) / venda : 0]));
+  const fixas = Object.fromEntries(PE_FIXAS.map(([k, , ids]) => [k, ids.reduce((t, id) => t + soma(id), 0) / n]));
+  const totalFixo = Object.values(fixas).reduce((t, v) => t + v, 0);
+  const v = Object.values(varPct).reduce((t, x) => t + x, 0), mc = 1 - v, p = pctAluguel / 100;
+  const aluguelMin = soma('aluguel') / n;
+  let pe = mc > 0 ? totalFixo / mc : null, aluguelVariavel = false;
+  // Acima do mínimo, o aluguel é p% da venda: sai do fixo e entra no variável
+  if (pe != null && aluguelMin && pe * p > aluguelMin) { pe = mc - p > 0 ? (totalFixo - aluguelMin) / (mc - p) : null; aluguelVariavel = true; }
+  const vendaMedia = venda / n;
+  return { n, vendaMedia, varPct, v, mc, fixas, totalFixo, pe, aluguelVariavel, aluguelPctMedio: soma('aluguelPct') / n,
+    operacional: soma('operacional') / n, folga: pe != null ? vendaMedia - pe : null };
+}
+function desenharPe(meses) {
+  const ref = cache[meses[meses.length - 1]];
+  if (!ref) { $('tabelaPe').innerHTML = ''; $('peMsg').textContent = 'Sem meses do módulo.'; return; }
+  const quantos = +$('peMeses').value;
+  const nome = b => ref.labels?.[b] || b;
+  const ordem = [...doGrupo(ref.ordem), ...aParte(ref.ordem)];
+  const res = {}, usados = {};
+  for (const b of ordem) {
+    const ms = meses.filter(mk => cache[mk].fechamentos?.[b] && cache[mk].lojas?.[b]?.receita).slice(-quantos);
+    usados[b] = ms;
+    if (ms.length) res[b] = pontoDeEquilibrio(ms.map(mk => cache[mk].lojas[b]), peAluguelPct);
+  }
+  const cols = ordem.filter(b => res[b]);
+  const sem = ordem.filter(b => !res[b]);
+  if (!cols.length) { $('tabelaPe').innerHTML = ''; $('peMsg').textContent = 'Nenhuma loja tem mês finalizado ainda.'; return; }
+  const td = (b, html, neg) => { const c = [A_PARTE.includes(b) ? 'aparte' : '', neg ? 'neg' : ''].filter(Boolean).join(' '); return `<td${c ? ` class="${c}"` : ''}>${html}</td>`; };
+  const reaisPct = (b, v, base) => td(b, par(v == null ? '–' : num(v), v != null && base ? `<small class="pct">${num(v / base * 100)}%</small>` : undefined), v < 0);
+  const soPct = (b, x) => td(b, par(num(x * 100) + '%'));
+  const linha = (rot, tipo, cel) => `<tr class="${tipo}"><td>${rot}</td>${cols.map(cel).join('')}</tr>`;
+  const rotMes = mk => `${MESES[+mk.slice(5) - 1]}/${mk.slice(2, 4)}`;
+  const corpo = [
+    linha('Meses usados', 'item', b => td(b, `<small>${usados[b].map(rotMes).join(', ')}</small>`)),
+    linha('Venda média', 'total', b => reaisPct(b, res[b].vendaMedia)),
+    linha('Custos variáveis', 'grupo', b => soPct(b, res[b].v)),
+    ...PE_VARIAVEIS.filter(([k]) => cols.some(b => res[b].varPct[k])).map(([k, rot]) => linha(rot, 'item', b => soPct(b, res[b].varPct[k]))),
+    linha('Margem de contribuição', 'total', b => soPct(b, res[b].mc)),
+    linha('Despesas fixas (média)', 'grupo', b => reaisPct(b, res[b].totalFixo, res[b].vendaMedia)),
+    ...PE_FIXAS.filter(([k]) => cols.some(b => res[b].fixas[k])).map(([k, rot]) => linha(rot, 'item', b => reaisPct(b, res[b].fixas[k], res[b].vendaMedia))),
+    linha('Aluguel percentual pago (média)', 'item', b => reaisPct(b, res[b].aluguelPctMedio, res[b].vendaMedia)),
+    linha('Ponto de equilíbrio (venda por mês)', 'total', b => td(b, par(res[b].pe == null ? 'não fecha' : num(res[b].pe),
+      res[b].aluguelVariavel ? `<small class="pct" title="Nesse nível de venda o aluguel percentual (${peAluguelPct}%) passa do mínimo">alug.%</small>` : undefined))),
+    linha('Venda por dia no equilíbrio (30 dias)', 'item', b => td(b, par(res[b].pe == null ? '–' : num(res[b].pe / 30)))),
+    linha('Venda média − equilíbrio', 'total', b => reaisPct(b, res[b].folga, res[b].pe)),
+    linha('Resultado operacional médio', 'item', b => reaisPct(b, res[b].operacional, res[b].vendaMedia)),
+  ].join('');
+  $('peTit').textContent = `Ponto de equilíbrio por operação · média de até ${quantos} ${quantos === 1 ? 'mês finalizado' : 'meses finalizados'}`;
+  $('tabelaPe').innerHTML = `<thead><tr><th>Linha</th>${cols.map(b => `<th${A_PARTE.includes(b) ? ' class="aparte"' : ''}>${nome(b)}</th>`).join('')}</tr></thead><tbody>${corpo}</tbody>`;
+  $('peMsg').textContent = sem.length ? `Sem mês finalizado: ${sem.map(nome).join(', ')}` : '';
+}
+$('abaPe').addEventListener('click', () => aba('pe'));
+$('peMeses').addEventListener('change', () => carregarPe());
+
 function valorDe(d, id, lojas, visao) {
   if (!d) return null;
   if (visao === 'dre') {
