@@ -22,7 +22,7 @@ const SHOPPING = [['aluguel', 'Aluguel mínimo', true], ['condominio', 'Condomí
   ['iptu', 'IPTU', true], ['energia', 'Energia elétrica', false]];
 const OUTRAS = [['salFixos', 'Salários fixos e encargos'], ['escritorio', 'Escritório'], ['vt', 'V.T. e ajuda de custo'],
   ['administrativo', 'Administrativo'], ['publicidade', 'Marketing'], ['tarifa', 'Tarifa bancária']];
-const NOME_EMPRESA = { LMJ: 'LMJ (Del Rey + Site)', JDG: 'JDG (Minas)', PV: 'PV (Contagem)', TTS: 'TTS (Estação)', '3L': '3L (Tommy)', LF: 'LF (Lez)' };
+const NOME_EMPRESA = { LMJ: 'LMJ (Del Rey)', JDG: 'JDG (Minas)', PV: 'PV (Contagem)', TTS: 'TTS (Estação)', '3L': '3L (Tommy)', LF: 'LF (Lez)' };
 
 const q = nome => `'${String(nome).replace(/'/g, "''")}'`;
 const nomeAba = (nome, usados) => {
@@ -122,7 +122,7 @@ async function gerarSimulacao({ lojas = [], lucros = [8, 12, 15], aluguelPct = 5
     secao('Custos variáveis (% da venda)');
     const ls = linhaEmpresa[l.empresa];
     linha('simples', 'Simples (pela faixa da empresa)', { b: ls ? `Simples!H${ls}` : (l.variaveis?.simples || 0), c: ls ? `Simples!I${ls}` : (l.variaveis?.simples || 0),
-      fmt: PCT, obs: 'Vem da aba Simples: acompanha a venda de todas as lojas da empresa.' });
+      fmt: PCT, obs: 'Vem da aba Simples. Simulado: venda simulada × 12 (o Site usa a alíquota da Del Rey).' });
     for (const [k, rot] of VARIAVEIS) linha('v_' + k, rot, { b: l.variaveis?.[k] || 0, c: igual, fmt: PCT, edB: true, edC: true });
     linha('var', 'Total dos custos variáveis', { b: `SUM(B${rows.simples}:B${r})`, c: `SUM(C${rows.simples}:C${r})`, fmt: PCT, tipo: 'total' });
     linha('mc', 'Margem de contribuição', { b: `1-${B('var')}`, c: `1-${C('var')}`, fmt: PCT, tipo: 'total' });
@@ -239,10 +239,10 @@ async function gerarSimulacao({ lojas = [], lucros = [8, 12, 15], aluguelPct = 5
 
   // Simples: faixas do Anexo I e a alíquota efetiva de cada empresa
   const sp = wb.addWorksheet('Simples', { views: [{ showGridLines: false }] });
-  [26, 30, 18, 18, 18, 18, 18, 16, 16].forEach((w, i) => { sp.getColumn(i + 1).width = w; });
+  [26, 30, 18, 18, 18, 18, 18, 16, 16, 30].forEach((w, i) => { sp.getColumn(i + 1).width = w; });
   sp.getCell('A1').value = 'Simples Nacional · alíquota efetiva pela receita dos últimos 12 meses (RBT12)';
   sp.getCell('A1').font = { bold: true, size: 13, color: { argb: AZUL } };
-  sp.getCell('A2').value = 'Alíquota efetiva = (RBT12 × alíquota nominal − parcela a deduzir) ÷ RBT12. O RBT12 simulado muda na mesma proporção da venda simulada das lojas da empresa.';
+  sp.getCell('A2').value = 'Alíquota efetiva = (RBT12 × alíquota nominal − parcela a deduzir) ÷ RBT12. Atual: RBT12 real. Simulado: venda simulada do mês × 12 (como se vendesse assim o ano todo). A Del Rey é simulada sem o Site.';
   sp.getCell('A2').font = { size: 9, color: { argb: 'FF636C76' } };
   cabecalho(sp.getRow(4), ['Faixa', 'Receita de (R$)', 'Receita até (R$)', 'Alíquota nominal', 'Parcela a deduzir']);
   FAIXAS.forEach(([ate, aliq, ded], i) => {
@@ -254,27 +254,35 @@ async function gerarSimulacao({ lojas = [], lucros = [8, 12, 15], aluguelPct = 5
   });
   const tab = `$B$5:$E$${4 + FAIXAS.length}`;
   cabecalho(sp.getRow(13), ['Empresa', 'Lojas', 'RBT12 (últimos 12 meses)', 'Venda atual das lojas (mês)', 'Venda simulada das lojas (mês)', 'RBT12 simulado',
-    'Diferença no ano', 'Alíquota efetiva atual', 'Alíquota efetiva simulada']);
+    'Diferença no ano', 'Alíquota efetiva atual', 'Alíquota efetiva simulada', 'Situação no simulado']);
   const aliq = R => `IF(N(${R})<=0,0,(${R}*VLOOKUP(${R},${tab},3,TRUE)-VLOOKUP(${R},${tab},4,TRUE))/${R})`;
   for (const e of empresas) {
     const rr = linhaEmpresa[e], row = sp.getRow(rr);
-    const idx = lojas.map((l, i) => (l.empresa === e ? i : -1)).filter(i => i >= 0);
+    const todas = lojas.map((l, i) => (l.empresa === e ? i : -1)).filter(i => i >= 0);
+    // Decisão do Leonardo: Del Rey simulada sozinha; o Site só usa a alíquota da LMJ
+    const idx = todas.length > 1 ? todas.filter(i => lojas[i].board !== 'site') : todas;
     row.getCell(1).value = NOME_EMPRESA[e] || e;
-    row.getCell(2).value = idx.map(i => lojas[i].nome).join(', ');
+    row.getCell(2).value = idx.map(i => lojas[i].nome).join(', ') + (idx.length < todas.length ? ' (o Site usa esta alíquota)' : '');
     const rbt = row.getCell(3); rbt.value = rbt12[e] || 0; rbt.numFmt = NUM; entrada(rbt);
     row.getCell(4).value = { formula: idx.map(i => `${q(abas[i])}!B${pos[i].venda}`).join('+') };
     row.getCell(5).value = { formula: idx.map(i => `${q(abas[i])}!C${pos[i].venda}`).join('+') };
-    row.getCell(6).value = { formula: `IF(D${rr}=0,C${rr},C${rr}*E${rr}/D${rr})` };
+    row.getCell(6).value = { formula: `E${rr}*12` };
     row.getCell(7).value = { formula: `F${rr}-C${rr}` };
     row.getCell(8).value = { formula: aliq(`C${rr}`) };
     row.getCell(9).value = { formula: aliq(`F${rr}`) };
+    // Acima de 3,6 mi o ICMS sai do DAS (a alíquota da tabela cai, mas a carga sobe); acima de 4,8 mi sai do Simples
+    row.getCell(10).value = { formula: `IF(F${rr}>4800000,"Sai do Simples",IF(F${rr}>3600000,"ICMS fora do DAS: carga maior",""))` };
     for (const k of [4, 5, 6, 7]) row.getCell(k).numFmt = NUM;
     row.getCell(8).numFmt = PCT; row.getCell(9).numFmt = PCT;
-    for (let k = 1; k <= 9; k++) row.getCell(k).border = borda;
+    for (let k = 1; k <= 10; k++) row.getCell(k).border = borda;
     row.getCell(9).font = { bold: true };
   }
+  const ultimaE = 13 + empresas.length;
+  if (empresas.length) sp.addConditionalFormatting({ ref: `F14:J${ultimaE}`, rules: [
+    { type: 'expression', priority: 1, formulae: ['$F14>3600000'], style: { font: { color: { argb: 'FF9C0006' }, bold: true }, fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: 'FFF8D7DA' } } } },
+  ] });
   const nota = sp.getRow(14 + empresas.length + 1).getCell(1);
-  nota.value = 'O RBT12 vem dos 12 meses antes do último mês usado na média (extrato do Simples ou tabela de faturamento). Pode digitar outro valor.';
+  nota.value = 'O RBT12 atual vem dos 12 meses antes do último mês usado na média (extrato do Simples ou tabela de faturamento). Pode digitar outro valor. Acima de R$ 3,6 milhões o ICMS é pago fora do DAS: a alíquota da tabela não mostra esse custo.';
   nota.font = { size: 9, color: { argb: 'FF636C76' } };
 
   // Resumo: os números principais de cada loja, lidos das abas
