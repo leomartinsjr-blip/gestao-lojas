@@ -17,6 +17,7 @@ const path = require('path');
 const JSZip = require('jszip');
 const { lerBoleto } = require('./dreBoletos');
 const { gerarExcel } = require('./dreExportar');
+const { gerarSimulacao } = require('./dreSimulacao');
 const extratoSimples = require('./dreExtrato');
 const agenda = require('./agenda');
 const { montarBalancete, EMPRESAS: EMPRESAS_BAL, LINHAS: LINHAS_BAL } = require('./dreBalancete');
@@ -626,6 +627,17 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
       res.attachment(`${String(req.body.nome || 'dre-resultados').replace(/[^\w-]/g, '_')}.xlsx`)
         .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
         .send(await gerarExcel(abas));
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // POST /api/dre-resultados/simulacao { lojas, lucros, aluguelPct } — planilha com fórmulas do Ponto de equilíbrio
+  app.post('/api/dre-resultados/simulacao', requireAuth, soDono, async (req, res) => {
+    try {
+      const lojas = req.body?.lojas || [];
+      if (!lojas.length) return res.status(400).json({ error: 'Nenhuma loja com mês finalizado' });
+      res.attachment('simulacao-ponto-equilibrio.xlsx')
+        .type('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        .send(Buffer.from(await gerarSimulacao(req.body)));
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

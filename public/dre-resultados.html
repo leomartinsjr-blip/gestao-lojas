@@ -155,7 +155,7 @@
     <div id="vPe" hidden>
       <div class="filtros">
         <label>Média de <select id="peMeses"><option value="1">1 mês</option><option value="3" selected>3 meses</option><option value="6">6 meses</option><option value="12">12 meses</option></select></label>
-        <span id="peMsg"></span>
+        <button id="peSimular">Baixar planilha de simulação</button><span id="peMsg"></span>
       </div>
       <div class="painel"><h2 id="peTit">Ponto de equilíbrio por operação</h2><table id="tabelaPe"></table></div>
       <p class="nota">Só o resultado operacional: juros e dívidas ficam fora. Usa os meses finalizados de cada loja (do módulo, de outubro/2026 em diante). Custos variáveis são % da venda somada dos meses: Simples, ICMS de entrada, CMV, perdas de balanço, embalagens, frete, comissões e os encargos sobre elas, premiações e descontos de cartão. As despesas fixas são a média em reais. O aluguel entra pelo mínimo; se no ponto de equilíbrio o percentual passar do mínimo, o aluguel vira variável. Ponto de equilíbrio = despesas fixas ÷ margem de contribuição.</p>
@@ -858,7 +858,7 @@ function pontoDeEquilibrio(lista, pctAluguel) {
   const { venda: pe, aluguelVariavel } = vendaPara(0);
   const metas = Object.fromEntries(PE_LUCROS.map(x => [x, vendaPara(x / 100)]));
   const vendaMedia = venda / n;
-  return { n, vendaMedia, varPct, v, mc, fixas, totalFixo, pe, aluguelVariavel, metas, aluguelPctMedio: soma('aluguelPct') / n,
+  return { n, vendaMedia, varPct, v, mc, fixas, totalFixo, aluguelMin, pe, aluguelVariavel, metas, aluguelPctMedio: soma('aluguelPct') / n,
     operacional: soma('operacional') / n, folga: pe != null ? vendaMedia - pe : null };
 }
 function desenharPe(meses) {
@@ -905,10 +905,27 @@ function desenharPe(meses) {
   ].join('');
   $('peTit').textContent = `Ponto de equilíbrio por operação · média de até ${quantos} ${quantos === 1 ? 'mês finalizado' : 'meses finalizados'}`;
   $('tabelaPe').innerHTML = `<thead><tr><th>Linha</th>${cols.map(b => `<th${A_PARTE.includes(b) ? ' class="aparte"' : ''}>${nome(b)}</th>`).join('')}</tr></thead><tbody>${corpo}</tbody>`;
+  peUltimo = { cols, res, usados, nome, rotMes };
   $('peMsg').textContent = sem.length ? `Sem mês finalizado: ${sem.map(nome).join(', ')}` : '';
 }
 $('abaPe').addEventListener('click', () => aba('pe'));
 $('peMeses').addEventListener('change', () => carregarPe());
+let peUltimo = null;
+// Planilha com fórmulas: a média de cada loja entra nas células amarelas
+$('peSimular').addEventListener('click', async () => {
+  if (!peUltimo) return alert('Abra a aba e espere carregar.');
+  const { cols, res, usados, nome, rotMes } = peUltimo;
+  const lojas = cols.map(b => ({ nome: nome(b), meses: usados[b].map(rotMes).join(', '), venda: res[b].vendaMedia, variaveis: res[b].varPct,
+    fixas: { ...res[b].fixas, ocupacao: res[b].fixas.ocupacao - res[b].aluguelMin }, aluguelMin: res[b].aluguelMin, operacional: res[b].operacional }));
+  const r = await fetch('/api/dre-resultados/simulacao', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ lojas, lucros: PE_LUCROS, aluguelPct: peAluguelPct, titulo: `Simulação do ponto de equilíbrio · média de até ${$('peMeses').value} meses finalizados` }) });
+  if (!r.ok) { alert((await r.json()).error || 'Não foi possível gerar'); return; }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(await r.blob());
+  a.download = 'simulacao-ponto-equilibrio.xlsx';
+  a.click();
+  URL.revokeObjectURL(a.href);
+});
 
 function valorDe(d, id, lojas, visao) {
   if (!d) return null;
