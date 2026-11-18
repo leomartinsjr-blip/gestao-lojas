@@ -212,7 +212,7 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
     const final = { ...calculado, ...ajustes };
     if (final.aluguel != null) final.ponto = r2(['aluguel', 'aluguelPct', 'condominio', 'fpp', 'ar', 'iptu', 'energia'].reduce((s, k) => s + (final[k] || 0), 0));
     lojas[b] = { ...L.fechar(final), ajustado: Object.fromEntries(Object.keys(ajustes).map(k => [k, calculado[k] ?? null])) };
-    percentuais[b] = { simples: aliq, icms, embalagens: emb };
+    percentuais[b] = { simples: aliq, icms, embalagens: emb, rbt12: L.rbt12(b, mes, faturamentoExtra, extratos[L.EMPRESA[b]]), empresa: L.EMPRESA[b] };
   }
   const manuais = base.manuais.slice();
   if (googleAds == null) manuais.push({ loja: 'site', id: 'publicidade', rotulo: 'Google Ads: o NEXO não tem o gasto deste mês', tipo: 'numero', valor: manual.site?.publicidade ?? null, feito: manual.site?.publicidade != null });

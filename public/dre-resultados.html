@@ -915,10 +915,18 @@ let peUltimo = null;
 $('peSimular').addEventListener('click', async () => {
   if (!peUltimo) return alert('Abra a aba e espere carregar.');
   const { cols, res, usados, nome, rotMes } = peUltimo;
-  const lojas = cols.map(b => ({ nome: nome(b), meses: usados[b].map(rotMes).join(', '), venda: res[b].vendaMedia, variaveis: res[b].varPct,
-    fixas: { ...res[b].fixas, ocupacao: res[b].fixas.ocupacao - res[b].aluguelMin }, aluguelMin: res[b].aluguelMin, operacional: res[b].operacional }));
+  // RBT12 e empresa do último mês usado de cada loja (a aba Simples soma as lojas da mesma empresa)
+  const rbt12 = {};
+  const lojas = cols.map(b => {
+    const ult = cache[usados[b][usados[b].length - 1]], pc = ult?.percentuais?.[b] || {};
+    if (pc.empresa && pc.rbt12 != null && rbt12[pc.empresa] == null) rbt12[pc.empresa] = pc.rbt12;
+    const media = k => usados[b].reduce((s, mk) => s + (cache[mk].lojas[b][k] || 0), 0) / usados[b].length;
+    return { nome: nome(b), empresa: pc.empresa, meses: usados[b].map(rotMes).join(', '), venda: res[b].vendaMedia, variaveis: res[b].varPct,
+      cto: Object.fromEntries(['aluguel', 'condominio', 'fpp', 'ar', 'iptu', 'energia'].map(k => [k, media(k)])),
+      fixas: res[b].fixas, operacional: res[b].operacional };
+  });
   const r = await fetch('/api/dre-resultados/simulacao', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ lojas, lucros: PE_LUCROS, aluguelPct: peAluguelPct, titulo: `Simulação do ponto de equilíbrio · média de até ${$('peMeses').value} meses finalizados` }) });
+    body: JSON.stringify({ lojas, rbt12, lucros: PE_LUCROS, aluguelPct: peAluguelPct, titulo: `Simulação do ponto de equilíbrio · média de até ${$('peMeses').value} meses finalizados` }) });
   if (!r.ok) { alert((await r.json()).error || 'Não foi possível gerar'); return; }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(await r.blob());

@@ -22,10 +22,15 @@ function mesesAntes(mes, n) {
 
 // Alíquota efetiva do Simples: 12 meses anteriores da empresa. faturamentoExtra
 // cobre os meses depois da tabela da planilha (fotos da Conferência e Lez importada).
-function aliquotaSimples(board, mes, faturamentoExtra = {}, extrato = null) {
+// Receita bruta dos 12 meses anteriores da empresa (RBT12). O extrato do mês anterior
+// é a fonte oficial; sem ele, tabela da planilha e fotos do módulo.
+function rbt12(board, mes, faturamentoExtra = {}, extrato = null) {
   const emp = EMPRESA[board];
-  // O extrato do mês anterior é a fonte oficial; sem ele, tabela da planilha e fotos do módulo
-  const rbt = mesesAntes(mes, 12).reduce((s, mk) => s + (extrato?.faturamento?.[mk] ?? REF.faturamento[mk]?.[emp] ?? faturamentoExtra[mk]?.[emp] ?? 0), 0);
+  return mesesAntes(mes, 12).reduce((s, mk) => s + (extrato?.faturamento?.[mk] ?? REF.faturamento[mk]?.[emp] ?? faturamentoExtra[mk]?.[emp] ?? 0), 0);
+}
+
+function aliquotaSimples(board, mes, faturamentoExtra = {}, extrato = null) {
+  const rbt = rbt12(board, mes, faturamentoExtra, extrato);
   if (!rbt) return null;
   const [, aliq, deduzir] = FAIXAS.find(f => rbt <= f[0]) || FAIXAS[FAIXAS.length - 1];
   return (rbt * aliq - deduzir) / rbt;
@@ -218,5 +223,5 @@ function pontoComercial(boletos, receita, percentual = 5) {
   return out;
 }
 
-module.exports = { pontoComercial, aliquotaSimples, percentualIcms, percentuaisEmbalagem, folhaPorLoja, extrasFora, linhaDre, somarFaturas, fechar,
+module.exports = { FAIXAS, rbt12, pontoComercial, aliquotaSimples, percentualIcms, percentuaisEmbalagem, folhaPorLoja, extrasFora, linhaDre, somarFaturas, fechar,
   mesesAntes, ESTRUTURA, EMPRESA, REF, somarGrupos };
