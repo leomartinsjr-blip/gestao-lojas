@@ -30,7 +30,8 @@ const nomeAba = (nome, usados) => {
   while (usados.has(n)) n = n.slice(0, 28) + ' ' + (usados.size + 1);
   usados.add(n); return n;
 };
-const entrada = c => { c.fill = preenche(AMARELO); c.font = { ...(c.font || {}), color: { argb: TINTA } }; };
+// Amarela = pode mexer (a planilha é protegida; o resto fica travado)
+const entrada = c => { c.fill = preenche(AMARELO); c.font = { ...(c.font || {}), color: { argb: TINTA } }; c.protection = { locked: false }; };
 const cabecalho = (row, textos) => {
   textos.forEach((t, i) => { row.getCell(i + 1).value = t; });
   row.eachCell(c => { c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = preenche(AZUL); c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; });
@@ -75,6 +76,9 @@ async function gerarSimulacao({ lojas = [], lucros = [8, 12, 15], aluguelPct = 5
   // Uma aba por loja: B = atual (média real), C = simulado
   const pos = {};
   lojas.forEach((l, i) => {
+    // Com quadro por cargo, salário fixo e comissão só mudam por ele (travados na loja)
+    const temQuadro = (l.quadro || []).length > 0;
+    const peloQuadro = k => temQuadro && ['comissoes', 'encVar', 'salFixos'].includes(k);
     const ws = wb.addWorksheet(abas[i], { views: [{ state: 'frozen', ySplit: 4, showGridLines: false }],
       pageSetup: { orientation: 'portrait', paperSize: 9, fitToPage: true, fitToWidth: 1, fitToHeight: 0 } });
     [44, 16, 16, 16, 16].forEach((w, k) => { ws.getColumn(k + 1).width = w; });
@@ -123,7 +127,7 @@ async function gerarSimulacao({ lojas = [], lucros = [8, 12, 15], aluguelPct = 5
     const ls = linhaEmpresa[l.empresa];
     linha('simples', 'Simples (pela faixa da empresa)', { b: ls ? `Simples!H${ls}` : (l.variaveis?.simples || 0), c: ls ? `Simples!I${ls}` : (l.variaveis?.simples || 0),
       fmt: PCT, obs: 'Vem da aba Simples. Simulado: venda simulada × 12 (o Site usa a alíquota da Del Rey).' });
-    for (const [k, rot] of VARIAVEIS) linha('v_' + k, rot, { b: l.variaveis?.[k] || 0, c: igual, fmt: PCT, edB: true, edC: true });
+    for (const [k, rot] of VARIAVEIS) linha('v_' + k, rot, { b: l.variaveis?.[k] || 0, c: igual, fmt: PCT, edB: !peloQuadro(k), edC: !peloQuadro(k) });
     linha('var', 'Total dos custos variáveis', { b: `SUM(B${rows.simples}:B${r})`, c: `SUM(C${rows.simples}:C${r})`, fmt: PCT, tipo: 'total' });
     linha('mc', 'Margem de contribuição', { b: `1-${B('var')}`, c: `1-${C('var')}`, fmt: PCT, tipo: 'total' });
 
@@ -145,7 +149,7 @@ async function gerarSimulacao({ lojas = [], lucros = [8, 12, 15], aluguelPct = 5
 
     secao('Outras despesas fixas (R$ por mês)');
     const primeiraO = r + 1;
-    for (const [k, rot] of OUTRAS) linha('o_' + k, rot, { b: l.fixas?.[k] || 0, c: igual, edB: true, edC: true });
+    for (const [k, rot] of OUTRAS) linha('o_' + k, rot, { b: l.fixas?.[k] || 0, c: igual, edB: !peloQuadro(k), edC: !peloQuadro(k) });
     linha('outras', 'Total das outras despesas fixas', { b: `SUM(B${primeiraO}:B${r})`, c: `SUM(C${primeiraO}:C${r})`, tipo: 'total' });
     linha('fixo', 'Despesas fixas (shopping + outras)', { b: `${B('shop')}+${B('outras')}`, c: `${C('shop')}+${C('outras')}`, tipo: 'total' });
 
@@ -346,6 +350,8 @@ async function gerarSimulacao({ lojas = [], lucros = [8, 12, 15], aluguelPct = 5
   n2.value = 'Clique no nome da loja para abrir a aba dela. Metragem, venda e custos se mudam lá; as metas e o % do aluguel, aqui.';
   n2.font = { size: 9, color: { argb: 'FF636C76' } };
 
+  // Protege sem senha: só as células amarelas aceitam digitação
+  for (const ws of wb.worksheets) await ws.protect('', { selectLockedCells: true, selectUnlockedCells: true, formatColumns: true, formatRows: true });
   return wb.xlsx.writeBuffer();
 }
 
