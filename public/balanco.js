@@ -76,11 +76,10 @@ function desenharCards(lista) {
     const r = b.resumo;
     const corpo = b.status === 'processando' ? `<div class="bcard-meta"><span class="spin" style="display:inline-block;width:12px;height:12px;vertical-align:-2px"></span> ${esc(b.etapa || 'Processando…')}</div>`
       : b.status === 'erro' ? `<div class="bcard-meta neg">${esc(b.erro || '')}</div>`
-      : r ? `<div class="bcard-nums">
+      : r ? `<div class="bcard-conf">Impacto confirmado<b class="${cls(r.impactoConfirmado)}">${fRS(r.impactoConfirmado)}</b></div>
+        <div class="bcard-nums">
           <div>Lido × estoque<b>${fInt(r.pecasLidas)} × ${fInt(r.pecasEstoque)}</b></div>
           <div>Recontados<b>${r.recontados} de ${r.itens}</b></div>
-          <div>Impacto sistema<b class="${cls(r.impactoSistema)}">${fRS(r.impactoSistema)}</b></div>
-          <div>Confirmado<b class="${cls(r.impactoConfirmado)}">${fRS(r.impactoConfirmado)}</b></div>
           <div>A apurar<b class="${cls(r.impactoApurar)}">${fRS(r.impactoApurar)}</b></div>
           <div>Peças (final)<b class="${cls(r.pecasDifFinal)}">${fInt(r.pecasDifFinal)}</b></div>
         </div>` : '';

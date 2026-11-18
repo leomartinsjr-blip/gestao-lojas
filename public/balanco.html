@@ -43,7 +43,10 @@ body { background: var(--bg); color: var(--text); font-family: 'Inter', system-u
 .bcard-top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
 .bcard-loja { font-size: 15px; font-weight: 700; }
 .bcard-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
-.bcard-nums { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 12px; }
+.bcard-conf { margin-top: 12px; padding: 10px 12px; border-radius: 8px; background: var(--surface2); font-size: 12px; color: var(--muted); }
+.bcard-conf b { display: block; font-size: 26px; font-weight: 700; line-height: 1.2; margin-top: 2px; color: var(--text); }
+.bcard-conf b.neg { color: var(--down); } .bcard-conf b.pos { color: var(--up); }
+.bcard-nums { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-top: 12px; }
 .bcard-nums div { font-size: 11px; color: var(--muted); }
 .bcard-nums b { display: block; font-size: 14px; color: var(--text); }
 
