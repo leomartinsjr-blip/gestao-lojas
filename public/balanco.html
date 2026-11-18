@@ -83,11 +83,27 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 12px; }
 .tbl .c { text-align: center; }
 .tbl td.destaque { font-size: 14px; font-weight: 700; background: var(--surface2); }
 .tbl th.destaque { color: var(--text); }
-.res-lojas { margin-bottom: 18px; }
+.res-lojas { margin-bottom: 22px; }
+.res-kpis { grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); }
+.res-kpis .kpi .vl { font-size: 20px; }
 .res-tit { font-size: 13px; font-weight: 600; margin: 0 0 8px; }
+.res-tit .hint { font-weight: 400; }
 .res-lojas .tbl-wrap { max-height: none; }
-.tbl.res td.vazio { color: var(--muted); }
-.tbl.res tfoot td { font-weight: 700; border-top: 2px solid var(--border); border-bottom: 0; }
+.tbl.res { font-size: 13px; }
+.tbl.res th, .tbl.res td { padding: 8px 10px; }
+.tbl.res td.heat { font-weight: 600; }
+.tbl.res td.vazio { color: var(--muted); text-align: center; }
+.tbl.res .fix { position: sticky; left: 0; background: var(--surface); z-index: 2; font-weight: 600; }
+.tbl.res thead .fix { background: var(--surface2); z-index: 3; }
+.tbl.res .tot { font-weight: 700; background: var(--surface2); border-left: 2px solid var(--border); white-space: nowrap; }
+.tbl.res thead th.tot { color: var(--text); }
+.tbl.res tfoot td { font-weight: 700; border-top: 2px solid var(--border); border-bottom: 0; background: var(--surface2); }
+.tbl.res tr:hover td.heat { filter: brightness(.97); }
+.tbl.hist tr.grp td { background: var(--surface2); font-weight: 700; padding-top: 9px; padding-bottom: 9px; border-top: 1px solid var(--border); }
+.tbl.hist tr.grp td .hint { font-weight: 400; }
+.tbl.hist td.loja { font-weight: 600; padding-left: 16px; }
+.tbl.hist .vazio { color: var(--muted); }
+.orig { font-size: 10px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; margin-left: 4px; vertical-align: 1px; }
 .tbl td.desc { white-space: normal; min-width: 240px; }
 /* Recontagem cabe na largura da página: colunas fixas, descrição/setor/referência quebram linha */
 table.tbl.fit { table-layout: fixed; }

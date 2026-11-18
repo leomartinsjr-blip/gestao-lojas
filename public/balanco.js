@@ -107,39 +107,76 @@ function resumoLojas(lista) {
     l.mes[b.mes] = (l.mes[b.mes] || 0) + (b.resumo.impactoConfirmado || 0) + (b.resumo.impactoApurar || 0);
   }
   if (!lojas.size) return '';
-  const linhas = [...lojas.values()].sort((a, b) => a.nome.localeCompare(b.nome));
+  const soma = o => Object.values(o).reduce((a, v) => a + v, 0);
+  const linhas = [...lojas.values()].map(l => ({ ...l, tot: soma(l.mes) })).sort((a, b) => a.nome.localeCompare(b.nome));
   const totMes = {};
   for (const l of linhas) for (const [m, v] of Object.entries(l.mes)) totMes[m] = (totMes[m] || 0) + v;
-  const soma = o => Object.values(o).reduce((a, v) => a + v, 0);
-  const cel = v => v === undefined ? '<td class="n vazio">—</td>' : `<td class="n ${cls(v)}">${fRS(v)}</td>`;
-  const tot = v => `<td class="n destaque ${cls(v)}">${fRS(v)}</td>`;
+  // Só os meses que tiveram balanço: os vazios só empurravam o total para fora da tela
+  const comBal = meses.filter(m => totMes[m] !== undefined);
+  const total = soma(totMes);
+  const nBal = lista.filter(b => b.resumo && meses.includes(b.mes)).length;
+  const porRes = [...linhas].sort((a, b) => a.tot - b.tot);
+  const pior = porRes[0], melhor = porRes[porRes.length - 1];
+  // Célula sem "R$" e sem centavos (o valor exato fica no title), com fundo pela intensidade
+  const maxAbs = Math.max(1, ...linhas.flatMap(l => Object.values(l.mes).map(Math.abs)));
+  const fCurto = v => (v < 0 ? '−' : v > 0 ? '+' : '') + Math.abs(Math.round(v)).toLocaleString('pt-BR');
+  const cel = v => {
+    if (v === undefined) return '<td class="n vazio">·</td>';
+    const a = Math.min(.38, .06 + .32 * Math.sqrt(Math.abs(v) / maxAbs));
+    const bg = v < 0 ? `rgba(var(--down-rgb),${a.toFixed(2)})` : v > 0 ? `rgba(var(--up-rgb),${a.toFixed(2)})` : 'transparent';
+    return `<td class="n heat ${cls(v)}" style="background:${bg}" title="${fRS(v)}">${fCurto(v)}</td>`;
+  };
+  const tot = v => `<td class="n tot ${cls(v)}">${fRS(v)}</td>`;
   const curto = m => mesBR(m).replace(/\/20(\d\d)$/, '/$1');
-  return `<div class="res-lojas"><div class="res-tit">Resultado por loja · últimos 12 meses</div>
-    <div class="tbl-wrap"><table class="tbl res"><thead><tr><th>Loja</th>${meses.map(m => `<th class="n">${curto(m)}</th>`).join('')}<th class="n destaque">12 meses</th></tr></thead>
-    <tbody>${linhas.map(l => `<tr><td>${esc(l.nome)}</td>${meses.map(m => cel(l.mes[m])).join('')}${tot(soma(l.mes))}</tr>`).join('')}</tbody>
-    <tfoot><tr><td>Total</td>${meses.map(m => cel(totMes[m])).join('')}${tot(soma(totMes))}</tr></tfoot>
+  const kpi = (lb, vl, sb, c = '') => `<div class="kpi"><div class="lb">${lb}</div><div class="vl ${c}">${vl}</div><div class="sb">${sb}</div></div>`;
+  return `<div class="res-lojas">
+    <div class="kpis res-kpis">
+      ${kpi('Resultado · 12 meses', fRS(total), `${linhas.length} loja(s) · ${comBal.length} mês(es) com balanço`, cls(total))}
+      ${kpi('Maior perda', esc(pior.nome), fRS(pior.tot), cls(pior.tot))}
+      ${kpi(melhor.tot < 0 ? 'Menor perda' : 'Melhor resultado', esc(melhor.nome), fRS(melhor.tot), cls(melhor.tot))}
+      ${kpi('Balanços no período', String(nBal), `de ${curto(meses[0])} a ${curto(meses[11])}`)}
+    </div>
+    <div class="res-tit">Resultado por loja e mês <span class="hint">· passe o mouse para ver o valor exato</span></div>
+    <div class="tbl-wrap"><table class="tbl res"><thead><tr><th class="fix">Loja</th>${comBal.map(m => `<th class="n">${curto(m)}</th>`).join('')}<th class="n tot">12 meses</th></tr></thead>
+    <tbody>${linhas.map(l => `<tr><td class="fix">${esc(l.nome)}</td>${comBal.map(m => cel(l.mes[m])).join('')}${tot(l.tot)}</tr>`).join('')}</tbody>
+    <tfoot><tr><td class="fix">Total</td>${comBal.map(m => `<td class="n ${cls(totMes[m])}" title="${fRS(totMes[m])}">${fCurto(totMes[m])}</td>`).join('')}${tot(total)}</tr></tfoot>
     </table></div></div>`;
 }
 
 function desenharHistorico(lista) {
   if (!lista.length) { $('lista').innerHTML = '<div class="empty">Nenhum balanço ainda.</div>'; return; }
-  const linhas = lista.map(b => {
+  const finalDe = b => (b.resumo?.impactoConfirmado || 0) + (b.resumo?.impactoApurar || 0);
+  const linha = b => {
     const r = b.resumo || {};
-    const final = (r.impactoConfirmado || 0) + (r.impactoApurar || 0);
+    const final = finalDe(b);
+    const lido = r.pecasLidas != null ? `${fInt(r.pecasLidas)} × ${fInt(r.pecasEstoque)}` : '<span class="vazio">—</span>';
     return `<tr class="clic" data-id="${b.id}">
-      <td>${esc(mesBR(b.mes))}</td><td>${esc(b.lojaLabel)}</td><td>${dBR(b.data)}${b.hora ? ' ' + b.hora : ''}</td>
-      <td class="n">${r.pecasLidas != null ? fInt(r.pecasLidas) : ''}</td><td class="n">${r.pecasEstoque != null ? fInt(r.pecasEstoque) : ''}</td>
-      <td class="n">${b.resumo ? r.itens : ''}</td><td class="n">${b.resumo ? r.recontados : ''}</td>
+      <td class="loja">${esc(b.lojaLabel)}</td>
+      <td>${dBR(b.data)}${b.hora ? ' ' + b.hora : ''}${b.origem === 'planilha' ? ' <span class="orig">planilha</span>' : ''}</td>
+      <td class="n">${lido}</td>
+      <td class="n">${b.resumo ? `${r.recontados} de ${r.itens}` : ''}</td>
       <td class="n ${cls(r.pecasDif)}">${b.resumo ? fInt(r.pecasDif) : ''}</td>
       <td class="n ${cls(r.pecasDifFinal)}">${b.resumo ? fInt(r.pecasDifFinal) : ''}</td>
       <td class="n destaque ${cls(final)}">${b.resumo ? fRS(final) : ''}</td>
       <td><span class="badge ${b.status}">${STATUS_LBL[b.status] || b.status}</span></td></tr>`;
+  };
+  // Agrupado por mês, do mais recente: cabeçalho do mês com o total
+  const porMes = new Map();
+  for (const b of [...lista].sort((a, b) => (b.mes + b.data).localeCompare(a.mes + a.data))) {
+    if (!porMes.has(b.mes)) porMes.set(b.mes, []);
+    porMes.get(b.mes).push(b);
+  }
+  const corpo = [...porMes].map(([m, bs]) => {
+    const t = bs.reduce((a, b) => a + finalDe(b), 0);
+    return `<tr class="grp"><td colspan="6">${esc(mesBR(m))} <span class="hint">· ${bs.length} balanço${bs.length > 1 ? 's' : ''}</span></td>
+      <td class="n ${cls(t)}">${fRS(t)}</td><td></td></tr>${bs.map(linha).join('')}`;
   }).join('');
-  $('lista').innerHTML = resumoLojas(lista) + `<div class="tbl-wrap"><table class="tbl"><thead><tr>
-    <th>Mês</th><th>Loja</th><th>Contagem</th><th class="n">Peças lidas</th><th class="n">Estoque</th><th class="n">Itens divergentes</th><th class="n">Recontados</th>
+  $('lista').innerHTML = resumoLojas(lista) + `<div class="res-tit" style="margin-top:6px">Balanços</div>
+    <div class="tbl-wrap"><table class="tbl hist"><thead><tr>
+    <th>Loja</th><th>Contagem</th><th class="n">Lido × estoque</th><th class="n">Recontados</th>
     <th class="n">Dif. peças (sistema)</th><th class="n">Dif. peças (final)</th><th class="n destaque">Impacto final</th><th>Status</th>
-    </tr></thead><tbody>${linhas}</tbody></table></div>
-    <div class="hint" style="margin-top:6px">Impacto final = confirmado na recontagem + o que ainda está a apurar.</div>`;
+    </tr></thead><tbody>${corpo}</tbody></table></div>
+    <div class="hint" style="margin-top:6px">Impacto final = confirmado na recontagem + o que ainda está a apurar. "planilha" = balanço antigo importado, só com as diferenças.</div>`;
   document.querySelectorAll('tr.clic').forEach(el => el.onclick = () => abrir(el.dataset.id));
   // Tela estreita: o resumo abre nos meses mais recentes
   const rw = document.querySelector('.res-lojas .tbl-wrap');
