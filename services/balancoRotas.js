@@ -14,7 +14,7 @@ const os = require('os');
 const path = require('path');
 const multer = require('multer');
 const {
-  processar, criarCadastro, resumo, txtCorrigido, statusItem, sugerirTrocas,
+  processar, criarCadastro, resumo, txtCorrigido, statusItem, sugerirTrocas, buscarCustos,
 } = require('./balanco');
 const { pdfListaCriticas, excelRecontagem, lerPlanilhaRecontagem } = require('./balancoArquivos');
 
@@ -485,6 +485,30 @@ function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin
       }
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Custo dos itens com diferença, para a DRE (balanço gravado antes de o custo
+  // ser guardado). Roda em segundo plano: a varredura do cadastro leva ~1 min.
+  const custoRodando = new Set();
+  app.post('/api/balancos/:id/custos', requireEscritorioOrAdmin, async (req, res) => {
+    try {
+      const bal = await carregar(req, res); if (!bal) return;
+      const cnpj = String(lojas()[bal.board] || '').replace(/\D/g, '');
+      if (!cnpj) return res.status(400).json({ error: `Loja ${label(bal.board)} sem CNPJ do Microvix configurado.` });
+      if (custoRodando.has(bal.id)) return res.json({ rodando: true });
+      custoRodando.add(bal.id);
+      res.json({ iniciado: true });
+      try {
+        const alvo = (bal.itens || []).filter(it => it.c && it.l !== it.e && !it.cu);
+        const mapa = await buscarCustos(cnpj, chaveDe(bal.board), alvo.map(it => String(it.c)), cadastro);
+        const atual = await ler(bal.id);
+        let n = 0;
+        for (const it of atual.itens || []) { const v = mapa.get(String(it.c)); if (v && !it.cu) { it.cu = v; n++; } }
+        await salvar(bal.id, { itens: atual.itens, custosEm: new Date().toISOString(), custosAchados: n, custosFaltam: alvo.length - n });
+        console.log(`[balanco] ${bal.id} custos: ${n} de ${alvo.length}`);
+      } catch (e) { console.warn('[balanco] custos', bal.id, e.message); await salvar(bal.id, { custosErro: e.message }).catch(() => {}); }
+      finally { custoRodando.delete(bal.id); }
+    } catch (e) { if (!res.headersSent) res.status(500).json({ error: e.message }); }
   });
 
   // ── Arquivos ─────────────────────────────────────────────────────────────

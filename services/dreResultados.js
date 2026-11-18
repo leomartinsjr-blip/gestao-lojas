@@ -22,6 +22,7 @@ const agenda = require('./agenda');
 const { montarBalancete, EMPRESAS: EMPRESAS_BAL, LINHAS: LINHAS_BAL } = require('./dreBalancete');
 const C = require('./dreCadastros');
 const L = require('./dreLinhas');
+const { resumo: resumoBalanco } = require('./balanco');
 
 const LOJAS = ['delrey', 'minas', 'contagem', 'estacao', 'tommy', 'lez', 'site'];
 
@@ -162,7 +163,7 @@ const INICIO_MODULO = '2026-10';
 const CAMPOS_MANUAIS = { lez: ['taxa', 'subsidio'], site: ['taxa', 'publicidade'] };
 
 // A DRE inteira de um mês. base: resultado de montar(); ctx: dados já lidos.
-function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folhaMes, employees, freteTommy, faturamentoExtra, config, googleAds = null, extratos = {} }) {
+function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folhaMes, employees, freteTommy, faturamentoExtra, config, googleAds = null, extratos = {}, perdas = {} }) {
   const cfg = C.comPadrao(config);
   const pct = cfg.percentuais;
   const lanc = faturas.map(g => ({ b: g.b, f: g.f, v: (g.vp || 0) + Math.max(0, g.va || 0) }));
@@ -191,6 +192,8 @@ function montarCompleta(base, { mes, manual, faturas, apuracoes, embalagem, folh
       icms: d.cmv != null && icms != null ? r2(d.cmv * icms) : null,
       embalagens: d.receita != null && emb != null ? r2(d.receita * emb) : null,
       frete: b === 'tommy' ? freteTommy ?? null : 0,
+      // Balanço finalizado no mês: perda a custo + o ICMS de entrada da loja
+      perdas: perdas[b] ? r2(perdas[b].custo * (1 + (icms || 0))) : 0,
       // Digitado positivo (valor recebido); na DRE entra negativo, abatendo o custo
       subsidio: b === 'lez' && manual.lez?.subsidio ? -manual.lez.subsidio : 0,
       fixos, comissoes,
@@ -312,6 +315,23 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
     const rows = await fetchMovimento(cnpj, `${mes}-01`, fim, process.env.MICROVIX_CHAVE_TOMMY || process.env.MICROVIX_CHAVE);
     return r2(rows.reduce((s, r) => ((r.operacao || '').trim().toUpperCase() === 'E' && r.cancelado !== 'S' && /Compra/i.test(r.desc_cfop || '')
       ? s + parseBrNum(r.frete || '0') : s), 0));
+  }
+
+  // Perda dos balanços finalizados do mês, a custo (positivo = perda). Sobra abate.
+  async function perdasDeBalanco(mes) {
+    const db = getDb();
+    if (!db) return {};
+    const bals = await db.collection('balancos').find({ mes, status: 'finalizado' }, { projection: { _id: 0, leituraTexto: 0 } }).toArray();
+    const out = {};
+    for (const bal of bals) {
+      const t = resumoBalanco(bal).total;
+      const x = (out[bal.board] ||= { custo: 0, venda: 0, semCusto: 0, balancos: 0 });
+      x.custo = r2(x.custo - t.impactoCusto);
+      x.venda = r2(x.venda - (t.impactoConfirmado + t.impactoApurar));
+      x.semCusto += t.semCusto;
+      x.balancos++;
+    }
+    return out;
   }
 
   async function dadosDoHistorico(mes) {
@@ -444,7 +464,7 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
 
   async function dadosDoMes(mes, recalcular) {
       const hoje = hojeBRT();
-      const [foto, faturas, db, manual, hist, config, extratos] = await Promise.all([
+      const [foto, faturas, db, manual, hist, config, extratos, perdas] = await Promise.all([
         conferenciaDoMes(mes, recalcular, hoje),
         faturasDoMes(mes),
         readDB(),
@@ -452,13 +472,14 @@ function register(app, { getDb, readDB, readContasPagar, requireAuth, souDono, c
         dadosDoHistorico(mes),
         lerConfig(),
         lerExtratos(mes),
+        perdasDeBalanco(mes).catch(e => { console.warn('[dreResultados] perdas de balanço:', e.message); return {}; }),
       ]);
       const escolhidos = C.escolhidosDe(config);
       const googleAds = await googleAdsDoMes(mes, manual, hoje);
       const parcial = montar({ mes, conferencia: foto.lojas, caixa: db.caixa || {}, faturas, manual, escolhidos });
       const dre = montarCompleta(parcial, { mes, manual, faturas, apuracoes: hist.apuracoes,
         embalagem: { pago: hist.pago, venda: vendaDe12Meses(mes, hist.faturamentoExtra) }, folhaMes: folhaDoMes(db, mes),
-        employees: db.employees || [], freteTommy: foto.freteTommy, faturamentoExtra: hist.faturamentoExtra, config, googleAds, extratos });
+        employees: db.employees || [], freteTommy: foto.freteTommy, faturamentoExtra: hist.faturamentoExtra, config, googleAds, extratos, perdas });
       const pagos = faturas.map(g => ({ b: g.b, f: g.f, v: g.vp || 0 }));
       for (const [nome, f] of Object.entries(manual.lez?.faturas?.fornecedores || {}))
         pagos.push({ b: 'lez', f: nome, v: f.pago || 0 });

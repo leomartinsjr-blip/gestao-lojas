@@ -251,12 +251,16 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
 
   etapa('Buscando os preços de venda…');
   const preco = new Map();
+  const custo = new Map(); // custo médio (ou o de tabela): a perda vai para a DRE a custo
   const det = await linx('LinxProdutosDetalhes', cnpj, chave, [
     { id: 'data_mov_ini', valor: '2000-01-01' },
     { id: 'data_mov_fim', valor: hojeISO() },
     { id: 'timestamp', valor: '0' },
   ]).catch(e => { console.warn('[balanco] detalhes:', e.message); return []; });
-  for (const r of det) preco.set(String(r.cod_produto).trim(), num(r.preco_venda));
+  for (const r of det) {
+    preco.set(String(r.cod_produto).trim(), num(r.preco_venda));
+    custo.set(String(r.cod_produto).trim(), num(r.custo_medio) || num(r.preco_custo));
+  }
   // Lido sem saldo não vem no detalhe geral — pergunta produto a produto
   const semPreco = [...codsEscopo].filter(c => !preco.has(c)).slice(0, 150);
   for (const c of semPreco) {
@@ -265,7 +269,7 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
         { id: 'data_mov_ini', valor: '2000-01-01' }, { id: 'data_mov_fim', valor: hojeISO() },
         { id: 'timestamp', valor: '0' }, { id: 'cod_produto', valor: c },
       ]);
-      if (r[0]) preco.set(c, num(r[0].preco_venda));
+      if (r[0]) { preco.set(c, num(r[0].preco_venda)); custo.set(c, num(r[0].custo_medio) || num(r[0].preco_custo)); }
     } catch (e) { console.warn('[balanco] preço', c, e.message); }
   }
 
@@ -291,6 +295,7 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
       lido: !!lido,
       o: lido ? lido.ordem : null,
       p: preco.get(cod) || 0,
+      cu: custo.get(cod) || 0,
       v: vendas.get(cod) || 0,
       t: transito.get(cod) || 0,
       ...(transitoNF.get(cod) ? { tn: transitoNF.get(cod) } : {}),
@@ -313,6 +318,41 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
     naoCadastrados: naoCadastrados.length,
     agrupar,
   };
+}
+
+// ── Custo dos itens (para a DRE) ───────────────────────────────────────────
+// Para os balanços gravados antes de o custo ser guardado. O código pode ser o
+// cod_produto ou o de barras (os resultados antigos da Tommy usam o de barras).
+// É o custo médio de hoje; sem ele, o de tabela.
+async function buscarCustos(cnpj, chave, codigos, cadastro) {
+  const out = new Map();
+  const cu = r => num(r.custo_medio) || num(r.preco_custo);
+  const params = [{ id: 'data_mov_ini', valor: '2000-01-01' }, { id: 'data_mov_fim', valor: hojeISO() }, { id: 'timestamp', valor: '0' }];
+  const det = await linx('LinxProdutosDetalhes', cnpj, chave, params).catch(e => { console.warn('[balanco] custos:', e.message); return []; });
+  const porCod = new Map(), porBarra = new Map();
+  for (const r of det) {
+    porCod.set(String(r.cod_produto).trim(), cu(r));
+    if (r.cod_barra) porBarra.set(normBarra(r.cod_barra), cu(r));
+  }
+  const faltam = [];
+  for (const k of new Set(codigos.map(String))) {
+    const v = porCod.get(k) || porBarra.get(normBarra(k));
+    if (v) out.set(k, v); else faltam.push(k);
+  }
+  // Sem saldo hoje não vem no detalhe geral: acha o cod_produto no cadastro e pergunta um a um
+  let cad = { porCod: new Map(), porBarra: new Map() };
+  if (faltam.length && cadastro) {
+    cad = await cadastro.buscarMicrovix(cnpj, chave, { cods: faltam, barrasN: faltam.map(normBarra) })
+      .catch(e => { console.warn('[balanco] custos/cadastro:', e.message); return cad; });
+  }
+  for (const k of faltam.slice(0, 400)) {
+    const cod = cad.porCod.get(k)?.cod || cad.porBarra.get(normBarra(k))?.cod || k;
+    try {
+      const r = await linx('LinxProdutosDetalhes', cnpj, chave, [...params, { id: 'cod_produto', valor: cod }]);
+      if (r[0] && cu(r[0])) out.set(k, cu(r[0]));
+    } catch (e) { console.warn('[balanco] custo', k, e.message); }
+  }
+  return out;
 }
 
 // ── Regras da recontagem (as mesmas fórmulas da planilha) ──────────────────
@@ -398,11 +438,13 @@ function resumo(bal) {
   const porGrupo = new Map();
   const tot = { grupo: 'TOTAL', itens: 0, recontados: 0, ok: 0, divergentes: 0, pendentes: 0,
     impactoSistema: 0, impactoConfirmado: 0, impactoApurar: 0,
-    explicadoVenda: 0, vendas: 0, explicadoTransito: 0, transito: 0, pecasDif: 0, pecasDifFinal: 0 };
+    explicadoVenda: 0, vendas: 0, explicadoTransito: 0, transito: 0, pecasDif: 0, pecasDifFinal: 0,
+    impactoCusto: 0, semCusto: 0 };
   for (const it of lista) {
     const g = grupoCurto(it.g);
     if (!porGrupo.has(g)) porGrupo.set(g, { ...tot, grupo: g, itens: 0, recontados: 0, ok: 0, divergentes: 0, pendentes: 0,
-      impactoSistema: 0, impactoConfirmado: 0, impactoApurar: 0, explicadoVenda: 0, vendas: 0, explicadoTransito: 0, transito: 0, pecasDif: 0, pecasDifFinal: 0 });
+      impactoSistema: 0, impactoConfirmado: 0, impactoApurar: 0, explicadoVenda: 0, vendas: 0, explicadoTransito: 0, transito: 0, pecasDif: 0, pecasDifFinal: 0,
+      impactoCusto: 0, semCusto: 0 });
     const s = statusItem(it);
     const dif = it.l - it.e;
     const recontado = it.rc !== null && it.rc !== undefined && it.rc !== '';
@@ -422,6 +464,10 @@ function resumo(bal) {
       o.transito += it.t || 0;
       o.pecasDif += dif;
       o.pecasDifFinal += df !== null ? df : dif;
+      // O mesmo impacto final (confirmado + a apurar), a custo: é o que vai para a DRE
+      const q = df !== null ? df : dif;
+      o.impactoCusto += q * (it.cu || 0);
+      if (q && !it.cu) o.semCusto++;
     }
   }
   const fora = new Set(bal.gruposFora || []);
@@ -455,5 +501,5 @@ function txtCorrigido(bal) {
 
 module.exports = {
   parseLeitura, processar, criarCadastro, causaProvavel, statusItem, difFinal, sugerirTrocas,
-  itensRecontagem, resumo, txtCorrigido, grupoCurto, normBarra,
+  itensRecontagem, resumo, txtCorrigido, grupoCurto, normBarra, buscarCustos,
 };
