@@ -15,6 +15,7 @@ const path = require('path');
 const multer = require('multer');
 const {
   processar, criarCadastro, resumo, txtCorrigido, statusItem, sugerirTrocas, buscarCustos,
+  itensRecontagem, naoCadastradosDe, itemParaLoja,
 } = require('./balanco');
 const { pdfListaCriticas, excelRecontagem, lerPlanilhaRecontagem } = require('./balancoArquivos');
 
@@ -133,6 +134,23 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
     } catch (e) { console.warn('[balanco] limpeza do cadastro:', e.message); }
   }, 5000);
 
+  // Recontagem cega: a loja recebe os itens a recontar sem estoque, leitura,
+  // diferença, preço nem resumo — e um status que não diz se o número bateu.
+  function paraLoja(bal) {
+    const { leituraTexto, itens, resumoFinal, notasPendentes, janelaTransito, janelaVendas, leitura, trocas, ...resto } = bal;
+    const lista = [...(bal.itens ? itensRecontagem(bal) : []), ...(bal.itens ? naoCadastradosDe(bal) : [])];
+    const lst = lista.map(it => itemParaLoja(it, bal));
+    return { ...resto, cega: true, escritorio: false, lojaLabel: label(bal.board), temLeitura: false, temPdf: false,
+      itens: bal.itens ? lst : null, resumo: null,
+      ...(trocas?.enviadaEm ? { trocas } : {}),
+      progresso: { itens: lst.filter(x => x.sl !== undefined && x.g !== '(NÃO CADASTRADO)').length,
+        porStatus: lst.reduce((a, x) => { if (x.g !== '(NÃO CADASTRADO)') a[x.sl] = (a[x.sl] || 0) + 1; return a; }, {}) } };
+  }
+  function itensDaLoja(bal, lista) {
+    const ks = new Set((Array.isArray(lista) ? lista : []).map(x => String(x.k ?? x.cod)));
+    return (bal.itens || []).filter(it => ks.has(String(it.c || it.b))).map(it => itemParaLoja(it, bal));
+  }
+
   // Resumo enxuto para a lista e o histórico
   function cabecalho(bal) {
     const { itens, leituraTexto, ...resto } = bal;
@@ -217,7 +235,10 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
           && (!filtro.board || (filtro.board.$in ? filtro.board.$in.includes(d.board) : d.board === filtro.board)))
           .sort((a, b) => (b.mes + b.data).localeCompare(a.mes + a.data));
       }
-      res.json({ balancos: docs.map(cabecalho), escritorio: ehEscritorio(req), lojas: l || Object.keys(lojas()) });
+      const lista = docs.map(cabecalho);
+      // Recontagem cega: a loja vê só quantos itens tem e quantos faltam
+      if (!ehEscritorio(req)) for (const b of lista) if (b.resumo) b.resumo = { itens: b.resumo.itens, recontados: b.resumo.recontados, pendentes: b.resumo.pendentes };
+      res.json({ balancos: lista, escritorio: ehEscritorio(req), lojas: l || Object.keys(lojas()) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
@@ -315,6 +336,7 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
     try {
       const bal = await carregar(req, res); if (!bal) return;
       const { leituraTexto, ...resto } = bal;
+      if (!ehEscritorio(req)) return res.json(paraLoja(bal));
       // Situação de hoje das notas que estavam pendentes no processamento (a loja pode já ter dado baixa)
       if (bal.notasPendentes?.length && getNfItems) {
         const nfs = await Promise.resolve(getNfItems()).catch(() => []);
@@ -372,10 +394,12 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
       if (rc !== null && (!Number.isFinite(rc) || rc < 0)) return;
       const ob = x.ob === undefined ? it.ob : String(x.ob || '').slice(0, 300);
       if (rc === it.rc && ob === it.ob) return;
+      const novoNumero = rc !== it.rc;
       Object.assign(it, { rc, ob, rp: quem(req), rt: agora, re: ehEscritorio(req) });
-      for (const k of ['rc', 'ob', 'rp', 'rt', 're']) set[`itens.${i}.${k}`] = it[k];
+      if (novoNumero && !it.re) it.cf = null; // número novo da loja: o escritório confere de novo
+      for (const k of ['rc', 'ob', 'rp', 'rt', 're', 'cf']) set[`itens.${i}.${k}`] = it[k] ?? null;
     });
-    const n = Object.keys(set).length / 5;
+    const n = Object.keys(set).length / 6;
     if (n) {
       if (col()) await salvar(bal.id, { ...set, atualizadoEm: agora });
       else await salvar(bal.id, { itens: bal.itens, atualizadoEm: agora });
@@ -388,7 +412,7 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
       const bal = await carregar(req, res); if (!bal) return;
       if (bal.status !== 'recontagem') return res.status(409).json({ error: 'Este balanço não está aberto para recontagem.' });
       const n = await aplicarRecontagens(req, bal, Array.isArray(req.body?.itens) ? req.body.itens : []);
-      res.json({ ok: true, alterados: n, resumo: resumo(bal) });
+      res.json(ehEscritorio(req) ? { ok: true, alterados: n, resumo: resumo(bal) } : { ok: true, alterados: n, itens: itensDaLoja(bal, req.body?.itens) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
@@ -458,13 +482,20 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
       if (i < 0) return res.status(404).json({ error: 'item não encontrado' });
       const fotos = bal.itens[i].fotos || [];
       if (fotos.length >= MAX_FOTOS) return res.status(409).json({ error: `No máximo ${MAX_FOTOS} fotos por item.` });
+      // Foto tirada antes de a contagem começar (da galeria) não vale
+      const tirada = Number(req.body?.tirada) || 0;
+      const inicio = new Date(`${bal.inicio || bal.data}T00:00:00-03:00`).getTime();
+      if (tirada && tirada < inicio) return res.status(400).json({ error: 'Essa foto é de antes da contagem. Tire uma foto nova, na hora.' });
       const fid = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       await guardarArquivo(bal.id, 'foto-' + fid, req.file.buffer);
-      const foto = { id: fid, em: new Date().toISOString(), por: quem(req), tipo: req.file.mimetype };
+      const foto = { id: fid, em: new Date().toISOString(), por: quem(req), tipo: req.file.mimetype, ...(tirada ? { tirada: new Date(tirada).toISOString() } : {}) };
       bal.itens[i].fotos = [...fotos, foto];
-      if (col()) await col().updateOne({ id: bal.id }, { $push: { [`itens.${i}.fotos`]: foto }, $set: { atualizadoEm: foto.em } });
+      const volta = !ehEscritorio(req) && bal.itens[i].cf; // foto nova da loja: confere de novo
+      if (volta) bal.itens[i].cf = null;
+      if (col()) await col().updateOne({ id: bal.id }, { $push: { [`itens.${i}.fotos`]: foto }, $set: { atualizadoEm: foto.em, ...(volta ? { [`itens.${i}.cf`]: null } : {}) } });
       else await salvar(bal.id, { itens: bal.itens });
-      res.json({ ok: true, foto, fotos: bal.itens[i].fotos, resumo: resumo(bal) });
+      res.json(ehEscritorio(req) ? { ok: true, foto, fotos: bal.itens[i].fotos, resumo: resumo(bal) }
+        : { ok: true, foto, fotos: bal.itens[i].fotos, item: itemParaLoja(bal.itens[i], bal) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
@@ -497,7 +528,24 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
       const db = getDb();
       if (db) await db.collection('balanco_arquivos').deleteOne({ _id: `${bal.id}:foto-${fid}` });
       else fs.rmSync(path.join(LOCAL, `${bal.id}.foto-${fid}`), { force: true });
-      res.json({ ok: true, fotos: bal.itens[i].fotos, resumo: resumo(bal) });
+      res.json(ehEscritorio(req) ? { ok: true, fotos: bal.itens[i].fotos, resumo: resumo(bal) }
+        : { ok: true, fotos: bal.itens[i].fotos, item: itemParaLoja(bal.itens[i], bal) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Escritório confere a foto da recontagem: aprova (vale o número) ou recusa (a loja reconta)
+  app.post('/api/balancos/:id/conferir', requireEscritorioOrAdmin, async (req, res) => {
+    try {
+      const bal = await carregar(req, res); if (!bal) return;
+      if (bal.status !== 'recontagem') return res.status(409).json({ error: 'Este balanço não está aberto.' });
+      const k = String(req.body?.k || '');
+      const i = (bal.itens || []).findIndex(it => String(it.c || it.b) === k);
+      if (i < 0) return res.status(404).json({ error: 'item não encontrado' });
+      const cf = req.body?.ok === null ? null : { ok: !!req.body?.ok, por: quem(req), em: new Date().toISOString(), motivo: String(req.body?.motivo || '').slice(0, 200) };
+      bal.itens[i].cf = cf;
+      if (col()) await salvar(bal.id, { [`itens.${i}.cf`]: cf, atualizadoEm: new Date().toISOString() });
+      else await salvar(bal.id, { itens: bal.itens });
+      res.json({ ok: true, cf, resumo: resumo(bal) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
@@ -563,11 +611,11 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
       });
       if (col()) await salvar(bal.id, set);
       else await salvar(bal.id, { trocas: bal.trocas, itens: bal.itens });
-      res.json({ ok: true, sts, resumo: resumo(bal) });
+      res.json(ehEscritorio(req) ? { ok: true, sts, resumo: resumo(bal) } : { ok: true, sts });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  app.post('/api/balancos/:id/importar', requireAuth, upload.single('arquivo'), async (req, res) => {
+  app.post('/api/balancos/:id/importar', requireEscritorioOrAdmin, upload.single('arquivo'), async (req, res) => {
     try {
       const bal = await carregar(req, res); if (!bal) return;
       if (bal.status !== 'recontagem') return res.status(409).json({ error: 'Este balanço não está aberto para recontagem.' });
@@ -652,7 +700,7 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
     res.setHeader('Content-Disposition', `attachment; filename="${nome.normalize('NFD').replace(/[^\x20-\x7e]/g, '')}"; filename*=UTF-8''${encodeURIComponent(nome)}`);
   };
 
-  app.get('/api/balancos/:id/pdf', requireAuth, async (req, res) => {
+  app.get('/api/balancos/:id/pdf', requireEscritorioOrAdmin, async (req, res) => {
     try {
       const bal = await carregar(req, res); if (!bal) return;
       let buf = await lerArquivo(bal.id, 'pdf');
@@ -665,7 +713,7 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
-  app.get('/api/balancos/:id/planilha', requireAuth, async (req, res) => {
+  app.get('/api/balancos/:id/planilha', requireEscritorioOrAdmin, async (req, res) => {
     try {
       const bal = await carregar(req, res); if (!bal) return;
       if (!bal.itens) return res.status(409).json({ error: 'Balanço ainda não processado.' });

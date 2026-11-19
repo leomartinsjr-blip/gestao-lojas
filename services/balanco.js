@@ -411,10 +411,19 @@ function semFoto(it, bal) {
   return !!bal?.exigeFoto && !it.st && !it.re && !(it.fotos || []).length
     && !(it.rc === null || it.rc === undefined || it.rc === '');
 }
+// Com foto obrigatória, a recontagem da loja (quantidade + foto) só vale depois
+// de o escritório conferir a foto: A CONFERIR até aprovar, RECUSADO se recusar.
+function aConferir(it, bal) {
+  return !!bal?.exigeFoto && !it.st && !it.re && !(it.rc === null || it.rc === undefined || it.rc === '')
+    && (it.fotos || []).length > 0 && !it.cf;
+}
+const recusado = (it, bal) => !!bal?.exigeFoto && !it.st && !it.re && it.cf && it.cf.ok === false;
 function statusItem(it, bal) {
   if (it.st) return it.st;
   if (it.rc === null || it.rc === undefined || it.rc === '') return causaProvavel(it);
   if (semFoto(it, bal)) return 'SEM FOTO';
+  if (aConferir(it, bal)) return 'A CONFERIR';
+  if (recusado(it, bal)) return 'RECUSADO';
   const rc = Number(it.rc);
   if (rc === it.e) return 'OK';
   if (it.t && rc < it.e && it.e - rc <= it.t) return 'VER TRÂNSITO';
@@ -426,7 +435,7 @@ function statusItem(it, bal) {
 const EXPLICADO = ['OK', 'TROCA', 'VER VENDA', 'VER TRÂNSITO'];
 function difFinal(it, bal) {
   const recontado = it.rc !== null && it.rc !== undefined && it.rc !== '';
-  if (semFoto(it, bal)) return null;
+  if (semFoto(it, bal) || aConferir(it, bal) || recusado(it, bal)) return null;
   // Venda ou trânsito automático (pela venda do período ou pela nota) já explica: não fica pendente
   const s = statusItem(it, bal);
   if (EXPLICADO.includes(s) && (it.st || recontado || s === 'VER VENDA' || s === 'VER TRÂNSITO')) return 0;
@@ -556,7 +565,27 @@ function txtCorrigido(bal) {
   return linhas.join('\r\n') + '\r\n';
 }
 
+// Recontagem cega: o que a loja vê de cada item, sem estoque, leitura nem
+// diferença, e com um status que não entrega se o número bateu.
+function statusLoja(it, bal) {
+  const s = statusItem(it, bal);
+  if (it.rc === null || it.rc === undefined || it.rc === '') {
+    if (it.st) return 'CONFERIDO';
+    return ['VER VENDA', 'VER TRÂNSITO'].includes(s) ? 'EXPLICADO' : 'RECONTAR';
+  }
+  if (s === 'SEM FOTO') return 'FALTA FOTO';
+  if (s === 'A CONFERIR') return 'ENVIADO';
+  if (s === 'RECUSADO') return 'RECONTAR DE NOVO';
+  return bal?.exigeFoto || it.st ? 'CONFERIDO' : 'ENVIADO';
+}
+function itemParaLoja(it, bal) {
+  // Estoque e leitura a loja vê (decisão do Leonardo, 18/11); preço, custo, venda e trânsito não
+  const { v, t, tn, p, cu, ...resto } = it;
+  return { ...resto, sl: statusLoja(it, bal) };
+}
+
 module.exports = {
+  statusLoja, itemParaLoja,
   parseLeitura, processar, criarCadastro, causaProvavel, statusItem, difFinal, sugerirTrocas,
   itensRecontagem, naoCadastradosDe, NAO_CADASTRADO, resumo, txtCorrigido, grupoCurto, normBarra, buscarCustos,
 };

@@ -20,19 +20,24 @@ function causa(it) {
 }
 // Foto obrigatória (balanço com exigeFoto): recontagem da loja sem foto não vale
 const semFoto = it => !!S.bal?.exigeFoto && !it.st && !it.re && !(it.fotos || []).length && !vazio(it.rc);
+// Quantidade + foto da loja só vale depois de o escritório conferir
+const aConferir = it => !!S.bal?.exigeFoto && !it.st && !it.re && !vazio(it.rc) && (it.fotos || []).length > 0 && !it.cf;
+const recusadoIt = it => !!S.bal?.exigeFoto && !it.st && !it.re && !!it.cf && it.cf.ok === false;
 function statusAuto(it) {
   if (vazio(it.rc)) return causa(it);
   if (semFoto(it)) return 'SEM FOTO';
+  if (aConferir(it)) return 'A CONFERIR';
+  if (recusadoIt(it)) return 'RECUSADO';
   const rc = Number(it.rc);
   if (rc === it.e) return 'OK';
   if (it.t && rc < it.e && it.e - rc <= it.t) return 'VER TRÂNSITO';
   return 'DIVERGENTE';
 }
-const status = it => it.st || statusAuto(it);
+const status = it => S.bal?.cega ? it.sl : (it.st || statusAuto(it));
 // Diferença depois da recontagem: OK/troca/venda/trânsito dado pelo escritório (ou trânsito
 // automático já recontado) não conta. null = pendente. Igual ao difFinal do servidor.
 const EXPLICADO = ['OK', 'TROCA', 'VER VENDA', 'VER TRÂNSITO'];
-const difFinal = it => semFoto(it) ? null : EXPLICADO.includes(status(it)) && (it.st || !vazio(it.rc) || ['VER VENDA', 'VER TRÂNSITO'].includes(status(it))) ? 0 : vazio(it.rc) ? null : Number(it.rc) - it.e;
+const difFinal = it => semFoto(it) || aConferir(it) || recusadoIt(it) ? null : EXPLICADO.includes(status(it)) && (it.st || !vazio(it.rc) || ['VER VENDA', 'VER TRÂNSITO'].includes(status(it))) ? 0 : vazio(it.rc) ? null : Number(it.rc) - it.e;
 const fDifF = it => difFinal(it) === null ? '' : fInt(difFinal(it));
 const STATUS_MANUAL = ['OK', 'DIVERGENTE', 'VER VENDA', 'VER TRÂNSITO', 'A RECONTAR', 'TROCA', 'AJUSTAR'];
 // NFs de entrada que explicam o trânsito
@@ -221,12 +226,144 @@ const resolvidoNaPlanilha = (b, it) => b.origem === 'planilha' && b.status === '
 const NAO_CADASTRADO = '(NÃO CADASTRADO)';
 const naoCadastrados = b => (b.itens || []).filter(it => it.g === NAO_CADASTRADO).sort((x, y) => (x.o ?? 0) - (y.o ?? 0));
 function itensRecontagem(b) {
+  // Recontagem cega: o servidor já manda só os itens a recontar (sem estoque nem leitura)
+  if (b.cega) return (b.itens || []).filter(it => it.g !== NAO_CADASTRADO);
   const fora = new Set(b.gruposFora || []);
   return (b.itens || []).filter(it => it.g !== NAO_CADASTRADO && !fora.has(it.g) && it.l !== it.e && (it.lido || b.incluirNaoLidos)
     && !resolvidoNaPlanilha(b, it));
 }
 
+// ── Tela da loja: recontagem cega ─────────────────────────────────────────
+// A loja não vê estoque, leitura, diferença nem valores: conta, digita e manda a
+// foto. O status não diz se o número bateu (ENVIADO até o escritório conferir).
+const PEND_LOJA = ['RECONTAR', 'FALTA FOTO', 'RECONTAR DE NOVO'];
+function desenharLoja() {
+  const b = S.bal, aberto = b.status === 'recontagem';
+  const cab = `<div class="det-head"><button class="btn" id="dVoltar">← Voltar</button>
+    <span class="det-title">${esc(b.lojaLabel)} · ${dBR(b.data)}</span><span class="badge ${b.status}">${STATUS_LBL[b.status] || b.status}</span></div>`;
+  if (b.status === 'processando' || !b.itens) {
+    $('vDet').innerHTML = cab + `<div class="proc"><span class="spin"></span><div><b>Processando…</b><div class="muted">O balanço ainda está sendo preparado.</div></div></div>`;
+    $('dVoltar').onclick = voltar; return;
+  }
+  const temTrocas = !!b.trocas?.enviadaEm;
+  $('vDet').innerHTML = cab + `<div id="progLoja"></div>
+    <div class="aviso">Para cada item: conte, digite a quantidade em <b>Contei</b> e tire a foto mostrando as peças com o <b>código</b> da etiqueta aparecendo. Sem a foto a recontagem não vale. O escritório confere cada foto.</div>
+    ${temTrocas ? `<div class="tabs noprint"><button class="tab ${S.sub !== 'trocas' ? 'active' : ''}" data-sub="recont">Recontagem</button><button class="tab ${S.sub === 'trocas' ? 'active' : ''}" data-sub="trocas">Trocas</button></div>` : ''}
+    <div id="sub"></div>`;
+  $('dVoltar').onclick = voltar;
+  document.querySelectorAll('[data-sub]').forEach(el => el.onclick = () => { S.sub = el.dataset.sub; desenharLoja(); });
+  progressoLoja();
+  if (temTrocas && S.sub === 'trocas') return desenharTrocas();
+  desenharRecontagemLoja(aberto);
+}
+function progressoLoja() {
+  const itens = itensRecontagem(S.bal), c = {};
+  for (const it of itens) c[it.sl] = (c[it.sl] || 0) + 1;
+  const p = s => c[s] || 0;
+  if ($('progLoja')) $('progLoja').innerHTML = `<div class="prog-loja">
+    <span><b>${p('RECONTAR') + p('RECONTAR DE NOVO')}</b>para recontar</span>
+    <span><b>${p('FALTA FOTO')}</b>faltando foto</span>
+    <span><b>${p('ENVIADO')}</b>enviados</span>
+    <span><b>${p('CONFERIDO')}</b>conferidos</span>
+    ${p('RECONTAR DE NOVO') ? `<span style="border-color:var(--down)"><b>${p('RECONTAR DE NOVO')}</b>recusados — recontar de novo</span>` : ''}</div>`;
+}
+function desenharRecontagemLoja(aberto) {
+  const b = S.bal, f = S.filtro;
+  const todos = itensRecontagem(b).filter(it => it.sl !== 'EXPLICADO')
+    .sort((x, y) => (PEND_LOJA.includes(y.sl) - PEND_LOJA.includes(x.sl)) || grupoCurto(x.g).localeCompare(grupoCurto(y.g)) || x.d.localeCompare(y.d));
+  const q = f.q.trim().toUpperCase();
+  const lista = todos.filter(it => (!f.pend || PEND_LOJA.includes(it.sl)) && (!q || (it.d + ' ' + it.c + ' ' + it.b + ' ' + it.r).toUpperCase().includes(q)));
+  carregarFotosSite();
+  $('sub').innerHTML = `
+    <div class="toolbar noprint">
+      <input class="inp grow" id="rQ" placeholder="Buscar código, descrição, referência…" value="${esc(f.q)}"/>
+      <label class="muted" style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="rPend" ${f.pend ? 'checked' : ''}/> só pendentes</label>
+      <span class="muted">${lista.length} de ${todos.length} itens</span>
+    </div>
+    <div class="mcards">${lista.map(cartaoLoja(aberto)).join('') || '<div class="empty">Nada com esse filtro.</div>'}</div>`;
+  const nc = naoCadastrados(b);
+  if (nc.length) $('sub').insertAdjacentHTML('beforeend', `
+    <h4 style="margin:16px 0 4px">Códigos não cadastrados (${nc.length})</h4>
+    <div class="hint" style="margin-bottom:8px">Lidos, mas não existem no Microvix: etiqueta errada ou leitura errada. Ache a peça pelo código e leia a etiqueta da loja.</div>
+    <div class="tbl-wrap" style="max-width:420px"><table class="tbl"><thead><tr><th>Código lido</th><th class="n">Peças</th></tr></thead>
+    <tbody>${nc.map(it => `<tr><td style="user-select:all">${esc(it.b)}</td><td class="n">${fInt(it.l)}</td></tr>`).join('')}</tbody></table></div>`);
+  $('rPend').onchange = e => { f.pend = e.target.checked; desenharRecontagemLoja(aberto); };
+  let tq; $('rQ').oninput = e => { clearTimeout(tq); tq = setTimeout(() => { f.q = e.target.value; desenharRecontagemLoja(aberto); const el = $('rQ'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 300); };
+  document.querySelectorAll('#sub input.rc, #sub input.ob').forEach(el => el.onchange = () => salvarItem(el));
+}
+const textoLoja = it => ({
+  'FALTA FOTO': 'Falta a foto das peças com o código aparente — sem ela a recontagem não vale.',
+  'RECONTAR DE NOVO': 'O escritório recusou a foto. Reconte, corrija a quantidade se precisar e tire uma foto nova.',
+  'ENVIADO': 'Enviado. O escritório vai conferir a foto.',
+}[it.sl] || '');
+const cartaoLoja = aberto => it => {
+  const k = esc(it.c || it.b);
+  const podeMexer = aberto && it.sl !== 'CONFERIDO';
+  return `<div class="linha-item mcard" data-k="${k}">
+    <div class="mcard-top"><span class="mcard-cod">${esc(it.c || it.b)}</span><span class="stc"><span class="${stCls(it.sl)}">${it.sl}</span></span></div>
+    <div class="mcard-grupo muted">${esc(grupoCurto(it.g))}</div>
+    <div class="mcard-prod">${exemploProduto(it)}<div class="mcard-desc">${esc(it.d)}${it.r ? `<div class="mcard-ref">Ref. ${esc(it.r)}</div>` : ''}</div></div>
+    <div class="mcard-nums"><span>Estoque <b>${fInt(it.e)}</b></span><span>Lido <b>${fInt(it.l)}</b></span></div>
+    ${it.cf && it.cf.ok === false && it.cf.motivo ? `<div class="motivo">Recusado: ${esc(it.cf.motivo)}</div>` : ''}
+    ${podeMexer ? `<div class="mcard-inp"><input class="inp rc" inputmode="numeric" placeholder="Contei" data-k="${k}" value="${vazio(it.rc) ? '' : it.rc}"/>
+      <input class="inp ob" placeholder="Observação" data-k="${k}" value="${esc(it.ob || '')}" maxlength="300"/></div>`
+      : (vazio(it.rc) ? '' : `<div class="mcard-desc">Contei: <b>${it.rc}</b> ${esc(it.ob || '')}</div>`)}
+    <div class="mcard-fotos">${botaoFotos(it, podeMexer, true)}${(it.fotos || []).map(f => `<img class="mini" loading="lazy" src="${urlFoto(f)}" data-galeria="${k}" alt="foto"/>`).join('')}</div>
+    <div class="falta-foto">${textoLoja(it)}</div>
+  </div>`;
+};
+// Depois de salvar/enviar foto na tela da loja: troca o card pelo novo, mantendo o foco
+function atualizarCartaoLoja(it) {
+  const tr = document.querySelector(`.linha-item[data-k="${CSS.escape(it.c || it.b)}"]`);
+  if (!tr) return;
+  tr.querySelector('.stc').innerHTML = `<span class="${stCls(it.sl)}">${it.sl}</span>`;
+  const box = tr.querySelector('.mcard-fotos');
+  const podeMexer = S.bal.status === 'recontagem' && it.sl !== 'CONFERIDO';
+  if (box) box.innerHTML = botaoFotos(it, podeMexer, true) + (it.fotos || []).map(f => `<img class="mini" loading="lazy" src="${urlFoto(f)}" data-galeria="${esc(it.c || it.b)}" alt="foto"/>`).join('');
+  const ff = tr.querySelector('.falta-foto'); if (ff) ff.textContent = textoLoja(it);
+  progressoLoja();
+}
+
+// ── Escritório: fila de fotos a conferir ─────────────────────────────────
+function conferirFotos(chaves, i = 0) {
+  document.getElementById('conf')?.remove();
+  if (i >= chaves.length) { desenharDetalhe(); return; }
+  const it = S.bal.itens.find(x => (x.c || x.b) === chaves[i]);
+  if (!it) return conferirFotos(chaves, i + 1);
+  const g = document.createElement('div');
+  g.id = 'galeria'; g.setAttribute('data-conf', '1');
+  const box = document.createElement('div'); box.id = 'conf';
+  const dif = Number(it.rc) - it.e;
+  g.innerHTML = `<div class="g-top"><b>Conferir foto ${i + 1} de ${chaves.length}</b><button class="btn" data-fechar>Fechar</button></div>`;
+  box.innerHTML = `<div class="g-fotos">
+      <div style="color:#fff;width:100%"><div style="font-size:24px;font-weight:800">${esc(it.c || it.b)}</div>
+        <div>${esc(it.d)}${it.r ? ' · Ref. ' + esc(it.r) : ''}</div>
+        <div class="c-num" style="margin-top:6px"><span>Estoque <b>${fInt(it.e)}</b></span><span>Lido <b>${fInt(it.l)}</b></span>
+          <span>Recontado <b>${it.rc}</b></span><span>Diferença <b style="color:${dif ? '#f88' : '#8f8'}">${fInt(dif)}</b></span></div>
+        ${it.ob ? `<div style="margin-top:4px;color:#ccc">Obs.: ${esc(it.ob)}</div>` : ''}</div>
+      ${(it.fotos || []).map(f => `<figure><img src="${urlFoto(f)}" alt="foto"/><figcaption>${esc(f.por)} · ${new Date(f.tirada || f.em).toLocaleString('pt-BR')}</figcaption></figure>`).join('')}
+      <div class="c-acoes"><button class="btn primary" data-c="ok">✓ Aprovar</button><button class="btn danger" data-c="nao">✗ Recusar</button><button class="btn" data-c="pular">Pular</button></div>
+    </div>`;
+  g.appendChild(box);
+  g.onclick = async e => {
+    if (e.target === g || e.target.dataset.fechar !== undefined) { g.remove(); desenharDetalhe(); return; }
+    const acao = e.target.dataset.c;
+    if (!acao) return;
+    if (acao === 'pular') return conferirFotos(chaves, i + 1);
+    let motivo = '';
+    if (acao === 'nao') { motivo = prompt('Motivo da recusa (a loja vê):', 'Código não aparece na foto'); if (motivo === null) return; }
+    e.target.disabled = true;
+    try {
+      const j = await api(`/api/balancos/${S.bal.id}/conferir`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ k: chaves[i], ok: acao === 'ok', motivo }) });
+      it.cf = j.cf; S.bal.resumo = j.resumo;
+      conferirFotos(chaves, i + 1);
+    } catch (err) { alert(err.message); e.target.disabled = false; }
+  };
+  document.body.appendChild(g);
+}
+
 function desenharDetalhe() {
+  if (S.bal?.cega) return desenharLoja();
   const b = S.bal, r = b.resumo, esc_ = S.escritorio;
   const aberto = b.status === 'recontagem';
   const pronto = !!b.itens && b.status !== 'processando';
@@ -303,7 +440,7 @@ function desenharRecontagem() {
   const q = f.q.trim().toUpperCase();
   const lista = todos.filter(it => (!f.g || grupoCurto(it.g) === f.g) && (!f.st || status(it) === f.st)
     && (!f.pend || difFinal(it) === null) && (!q || (it.d + ' ' + it.c + ' ' + it.b + ' ' + it.r).toUpperCase().includes(q)));
-  const sts = ['A RECONTAR', 'SEM FOTO', 'VENDA PARCIAL', 'VER VENDA', 'VER TRÂNSITO', 'OK', 'DIVERGENTE', 'TROCA', 'AJUSTAR'];
+  const sts = ['A RECONTAR', 'SEM FOTO', 'A CONFERIR', 'RECUSADO', 'VENDA PARCIAL', 'VER VENDA', 'VER TRÂNSITO', 'OK', 'DIVERGENTE', 'TROCA', 'AJUSTAR'];
   const tot = lista.reduce((a, it) => { a.e += it.e; a.l += it.l; a.i += (it.l - it.e) * it.p; return a; }, { e: 0, l: 0, i: 0 });
   $('sub').innerHTML = `
     <div class="toolbar noprint">
@@ -312,6 +449,7 @@ function desenharRecontagem() {
       <input class="inp grow" id="rQ" placeholder="Buscar descrição, código, referência…" value="${esc(f.q)}"/>
       <label class="muted" style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="rPend" ${f.pend ? 'checked' : ''}/> só pendentes</label>
       <span class="muted">${lista.length} de ${todos.length} itens</span>
+      ${S.escritorio && aberto && todos.some(aConferir) ? `<button class="btn primary" id="rConferir">Conferir fotos (${todos.filter(aConferir).length})</button>` : ''}
     </div>
     ${matchMedia('(max-width: 640px)').matches && carregarFotosSite()
       ? `<div class="mcards">${lista.map(cartaoRecont(aberto)).join('') || '<div class="empty">Nada com esse filtro.</div>'}</div>`
@@ -330,6 +468,7 @@ function desenharRecontagem() {
     <div class="tbl-wrap" style="max-width:420px"><table class="tbl"><thead><tr><th>Código lido</th><th class="n">Peças</th></tr></thead>
     <tbody>${nc.map(it => `<tr><td style="user-select:all">${esc(it.b)}</td><td class="n">${fInt(it.l)}</td></tr>`).join('')}</tbody>
     <tfoot><tr><td>Total</td><td class="n">${fInt(nc.reduce((a, it) => a + it.l, 0))}</td></tr></tfoot></table></div>`);
+  if ($('rConferir')) $('rConferir').onclick = () => conferirFotos(todos.filter(aConferir).map(it => it.c || it.b));
   $('rG').onchange = e => { f.g = e.target.value; desenharRecontagem(); };
   $('rSt').onchange = e => { f.st = e.target.value; desenharRecontagem(); };
   $('rPend').onchange = e => { f.pend = e.target.checked; desenharRecontagem(); };
@@ -446,6 +585,7 @@ function botaoFotos(it, aberto, celular) {
   return celular ? tirar : tirar + ver;
 }
 function atualizarFotosItem(tr, it) {
+  if (S.bal.cega) return atualizarCartaoLoja(it);
   if (!tr) return;
   const aberto = S.bal.status === 'recontagem';
   const box = tr.querySelector('.mcard-fotos');
@@ -482,6 +622,9 @@ inputFoto.onchange = async () => {
   inputFoto.value = '';
   if (!arq || !k) return;
   const it = S.bal.itens.find(x => (x.c || x.b) === k);
+  // Foto da galeria, tirada antes de a contagem começar, não vale
+  const inicioContagem = new Date(`${S.bal.inicio || S.bal.data}T00:00:00-03:00`).getTime();
+  if (arq.lastModified && arq.lastModified < inicioContagem) { alert('Essa foto é de antes da contagem. Tire uma foto nova, na hora.'); return; }
   // O código é o que importa: a gerente confirma que a etiqueta da foto é deste item
   if (!confirm(`Conferiu na etiqueta o código ${k}?\n\n${it?.d || ''}\n\nOK envia a foto. Cancelar descarta para tirar de novo.`)) return;
   const tr = document.querySelector(`.linha-item[data-k="${CSS.escape(k)}"]`);
@@ -491,8 +634,10 @@ inputFoto.onchange = async () => {
     const fd = new FormData();
     fd.append('k', k);
     fd.append('foto', await reduzir(arq), 'foto.jpg');
+    if (arq.lastModified) fd.append('tirada', String(arq.lastModified));
     const j = await api(`/api/balancos/${S.bal.id}/fotos`, { method: 'POST', body: fd });
-    it.fotos = j.fotos; S.bal.resumo = j.resumo;
+    it.fotos = j.fotos;
+    if (j.item) Object.assign(it, j.item); else S.bal.resumo = j.resumo;
     atualizarFotosItem(tr, it); atualizarKpis();
   } catch (e) { alert('Não foi possível enviar a foto: ' + e.message); if (btn) { btn.disabled = false; btn.textContent = '📷 Tentar de novo'; } }
 };
@@ -515,7 +660,8 @@ function abrirGaleria(k) {
     if (!confirm('Apagar esta foto?')) return;
     try {
       const j = await api(`/api/balancos/${S.bal.id}/fotos/${fid}`, { method: 'DELETE' });
-      it.fotos = j.fotos; S.bal.resumo = j.resumo;
+      it.fotos = j.fotos;
+      if (j.item) Object.assign(it, j.item); else S.bal.resumo = j.resumo;
       atualizarFotosItem(document.querySelector(`.linha-item[data-k="${CSS.escape(k)}"]`), it); atualizarKpis();
       g.remove(); if (it.fotos.length) abrirGaleria(k);
     } catch (err) { alert(err.message); }
@@ -542,8 +688,9 @@ async function salvarItem(el) {
     const j = await api(`/api/balancos/${S.bal.id}/itens`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const it = S.bal.itens.find(x => (x.c || x.b) === k);
     if (it) { it.rc = body.itens[0].rc; it.ob = body.itens[0].ob; it.re = !!S.escritorio; }
-    S.bal.resumo = j.resumo;
     el.classList.add('salvo');
+    if (S.bal.cega) { const n = (j.itens || []).find(x => (x.c || x.b) === k); if (n && it) Object.assign(it, n); atualizarCartaoLoja(it); return; }
+    S.bal.resumo = j.resumo;
     // Atualiza a linha e os indicadores sem redesenhar a tabela (não perde o foco)
     const s = status(it);
     tr.querySelector('.dif-f').textContent = fDifF(it);
@@ -554,6 +701,7 @@ async function salvarItem(el) {
 }
 
 function atualizarKpis() {
+  if (S.bal.cega || !S.bal.resumo) return;
   const t = S.bal.resumo.total;
   const kp = document.querySelectorAll('.kpi');
   if (kp.length < 6) return;
