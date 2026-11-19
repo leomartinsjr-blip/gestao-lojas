@@ -429,17 +429,20 @@ function abatimentos(it) {
   const dif = contado - it.e;
   const falta = dif < 0 ? -dif : 0, sobra = dif > 0 ? dif : 0;
   const tPend = (it.tn || []).filter(n => n.pend).reduce((a, n) => a + n.q, 0);
-  const trNota = Math.min(falta, tPend);
-  const trOutros = Math.min(falta - trNota, Math.max(0, (it.t || 0) - tPend));
+  // Nota pendente: as peças não estão na loja — o esperado é estoque − nota (abate inteira se há falta)
+  const trNota = falta > 0 ? tPend : 0;
+  const trOutros = Math.min(Math.max(0, falta - tPend), Math.max(0, (it.t || 0) - tPend));
   const venda = Math.min(sobra, it.v || 0);
-  return { dif, trNota, trOutros, venda, liquida: dif + trNota + trOutros - venda };
+  // Trânsito explica a diferença toda quando, abatido, não sobra nem falta nada
+  const explicaTransito = dif < 0 && dif + trNota + trOutros === 0;
+  return { dif, trNota, trOutros, venda, explicaTransito, liquida: dif + trNota + trOutros - venda };
 }
 // VER TRÂNSITO só resolve sozinho (sem recontagem) quando a nota pendente cobre a falta toda
-const transitoSoPorNota = it => { const a = abatimentos(it); return a.dif < 0 && a.trNota >= -a.dif; };
+const transitoSoPorNota = it => { const a = abatimentos(it); return a.explicaTransito && !a.trOutros; };
 
 function causaProvavel(it) {
   const dif = it.l - it.e;
-  if (it.t && dif < 0 && -dif <= it.t) return 'VER TRÂNSITO';
+  if (dif < 0 && abatimentos(it).explicaTransito) return 'VER TRÂNSITO';
   if (it.v > 0 && Math.abs(dif) === it.v) return 'VER VENDA';
   if (it.v > 0) return 'VENDA PARCIAL';
   return 'A RECONTAR';
@@ -466,7 +469,7 @@ function statusItem(it, bal) {
   if (recusado(it, bal)) return 'RECUSADO';
   const rc = Number(it.rc);
   if (rc === it.e) return 'OK';
-  if (it.t && rc < it.e && it.e - rc <= it.t) return 'VER TRÂNSITO';
+  if (rc < it.e && abatimentos(it).explicaTransito) return 'VER TRÂNSITO';
   return 'DIVERGENTE';
 }
 // Diferença que fica depois da recontagem. Item que o escritório deu como OK, troca,
@@ -479,7 +482,7 @@ function difFinal(it, bal) {
   // Venda ou trânsito automático (pela venda do período ou pela nota) já explica: não fica pendente
   const s = statusItem(it, bal);
   if (EXPLICADO.includes(s) && (it.st || recontado || s === 'VER VENDA' || (s === 'VER TRÂNSITO' && transitoSoPorNota(it)))) return 0;
-  return recontado ? Number(it.rc) - it.e : null;
+  return recontado ? Number(it.rc) - it.e + abatimentos(it).trNota : null;
 }
 
 // Trocas sugeridas: o que sobrou × o que faltou (diferença final, recontada ou

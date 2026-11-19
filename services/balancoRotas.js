@@ -198,7 +198,13 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
           // Observação vazia não apaga a da nota pendente que o processamento acabou de pôr
           // Observação automática antiga (nota/transferência) é trocada pela nova; a digitada fica
           const auto = /^(Notas? [\d, ]+ pendentes? de entrega|Nota \d+ pendente|Transferência \d+|NF \d+ de )/;
-          if (old) { it.rc = old.rc; it.ob = old.ob && !auto.test(old.ob) ? old.ob : it.ob; it.rp = old.rp; it.rt = old.rt; if (old.st) it.st = old.st; }
+          if (old) {
+            it.rc = old.rc ?? null; it.ob = old.ob && !auto.test(old.ob) ? old.ob : it.ob; it.rp = old.rp; it.rt = old.rt; if (old.st) it.st = old.st;
+            // Fotos, conferência do escritório e a marca de lançado pelo escritório também ficam
+            if ((old.fotos || []).length) it.fotos = old.fotos;
+            if (old.cf !== undefined) it.cf = old.cf;
+            if (old.re !== undefined) it.re = old.re;
+          }
         }
       }
       const set = {
@@ -675,7 +681,7 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
       }
       if (b.agrupar === 'setor' || b.agrupar === 'linha') { set.agrupar = b.agrupar; set.gruposFora = []; }
       if (b.diasTransito !== undefined) set.diasTransito = Math.min(60, Math.max(0, parseInt(b.diasTransito) || 0));
-      const antigas = new Map((bal.itens || []).filter(it => it.rc !== null || it.ob || it.st).map(it => [it.c || it.b, it]));
+      const antigas = new Map((bal.itens || []).filter(it => it.rc !== null || it.ob || it.st || (it.fotos || []).length || it.cf).map(it => [it.c || it.b, it]));
       await salvar(bal.id, set);
       rodar(bal.id, antigas);
       res.json({ ok: true });

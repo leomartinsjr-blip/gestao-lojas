@@ -17,15 +17,18 @@ function abat(it) {
   const dif = contado - it.e;
   const falta = dif < 0 ? -dif : 0, sobra = dif > 0 ? dif : 0;
   const tPend = (it.tn || []).filter(n => n.pend).reduce((a, n) => a + n.q, 0);
-  const trNota = Math.min(falta, tPend);
-  const trOutros = Math.min(falta - trNota, Math.max(0, (it.t || 0) - tPend));
+  // Nota pendente: as peças não estão na loja — o esperado é estoque − nota (abate inteira se há falta)
+  const trNota = falta > 0 ? tPend : 0;
+  const trOutros = Math.min(Math.max(0, falta - tPend), Math.max(0, (it.t || 0) - tPend));
   const venda = Math.min(sobra, it.v || 0);
-  return { dif, trNota, trOutros, tr: trNota + trOutros, venda, liquida: dif + trNota + trOutros - venda };
+  // Trânsito explica a diferença toda quando, abatido, não sobra nem falta nada
+  const explicaTransito = dif < 0 && dif + trNota + trOutros === 0;
+  return { dif, trNota, trOutros, tr: trNota + trOutros, venda, explicaTransito, liquida: dif + trNota + trOutros - venda };
 }
-const transitoSoPorNota = it => { const a = abat(it); return a.dif < 0 && a.trNota >= -a.dif; };
+const transitoSoPorNota = it => { const a = abat(it); return a.explicaTransito && !a.trOutros; };
 function causa(it) {
   const dif = it.l - it.e;
-  if (it.t && dif < 0 && -dif <= it.t) return 'VER TRÂNSITO';
+  if (dif < 0 && abat(it).explicaTransito) return 'VER TRÂNSITO';
   if (it.v > 0 && Math.abs(dif) === it.v) return 'VER VENDA';
   if (it.v > 0) return 'VENDA PARCIAL';
   return 'A RECONTAR';
@@ -42,14 +45,14 @@ function statusAuto(it) {
   if (recusadoIt(it)) return 'RECUSADO';
   const rc = Number(it.rc);
   if (rc === it.e) return 'OK';
-  if (it.t && rc < it.e && it.e - rc <= it.t) return 'VER TRÂNSITO';
+  if (rc < it.e && abat(it).explicaTransito) return 'VER TRÂNSITO';
   return 'DIVERGENTE';
 }
 const status = it => S.bal?.cega ? it.sl : (it.st || statusAuto(it));
 // Diferença depois da recontagem: OK/troca/venda/trânsito dado pelo escritório (ou trânsito
 // automático já recontado) não conta. null = pendente. Igual ao difFinal do servidor.
 const EXPLICADO = ['OK', 'TROCA', 'VER VENDA', 'VER TRÂNSITO'];
-const difFinal = it => semFoto(it) || aConferir(it) || recusadoIt(it) ? null : EXPLICADO.includes(status(it)) && (it.st || !vazio(it.rc) || status(it) === 'VER VENDA' || (status(it) === 'VER TRÂNSITO' && transitoSoPorNota(it))) ? 0 : vazio(it.rc) ? null : Number(it.rc) - it.e;
+const difFinal = it => semFoto(it) || aConferir(it) || recusadoIt(it) ? null : EXPLICADO.includes(status(it)) && (it.st || !vazio(it.rc) || status(it) === 'VER VENDA' || (status(it) === 'VER TRÂNSITO' && transitoSoPorNota(it))) ? 0 : vazio(it.rc) ? null : Number(it.rc) - it.e + abat(it).trNota;
 const fDifF = it => difFinal(it) === null ? '' : fInt(difFinal(it));
 const STATUS_MANUAL = ['OK', 'DIVERGENTE', 'VER VENDA', 'VER TRÂNSITO', 'A RECONTAR', 'TROCA', 'AJUSTAR'];
 // NFs de entrada que explicam o trânsito
