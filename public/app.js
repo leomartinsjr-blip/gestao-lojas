@@ -1191,6 +1191,7 @@ function _renderAvisosAdm(c) {
   _avisoEstoqueSite(strip);
   _avisoVt(strip);
   _avisoNotas(strip);
+  _avisoNotasSemBaixa(strip);
   _avisoBalanco(strip);
   _avisoLojaAcao(strip);
   _avisoContagem(strip);
@@ -1239,15 +1240,38 @@ function _avisoBalanco(strip) {
     detalhe, acao: () => _abrirBalanco(alvo.id),
   });
 }
+// Nota autorizada há mais de 15 dias e a loja não deu baixa (armazenou): ou a
+// mercadoria não chegou e alguém precisa cobrar, ou chegou e ficou sem baixa —
+// e aí o balanço conta a nota como trânsito à toa. Conta da autorização (statusAt).
+const NF_DIAS_SEM_BAIXA = 15;
+function _notasSemBaixa(lojas) {
+  const limite = Date.now() - NF_DIAS_SEM_BAIXA * 864e5;
+  return (S.nfItems || []).filter(x => !x.archived && x.status === 'autorizado' && lojas.includes(x.board)
+    && new Date(x.statusAt || x.addedAt || 0).getTime() < limite);
+}
+function _avisoNotasSemBaixa(strip, lojas = _avisoLojas()) {
+  const itens = _notasSemBaixa(lojas);
+  if (!itens.length) return;
+  const dias = x => Math.floor((Date.now() - new Date(x.statusAt || x.addedAt).getTime()) / 864e5);
+  const grupos = _avisoPorLoja(itens, lojas);
+  _avisoPilula(strip, {
+    icone: '🧾', rotulo: `Nota autorizada há +${NF_DIAS_SEM_BAIXA} dias sem baixa`, n: itens.length, atraso: true,
+    detalhe: [...grupos].map(([b, l]) => `${_avisoNomeLoja(b)}: ${l.map(x => `${String(x.text || '').split('/')[0].trim()} (${dias(x)} dias)`).join(', ')}`).join(' · ')
+      + ' — se a mercadoria chegou, dê baixa; se não, cobre o fornecedor.',
+    acao: () => _irParaCard('nfCardBody', [...grupos.keys()][0]),
+  });
+}
+
 // A loja não tinha linha de pendências; o balanço é o primeiro aviso dela aqui
 function _renderAvisosLoja(c) {
   const b = S.user?.board;
   if (!b || b === 'escritorio') return;
   const lista = (_balancoPendencias() || []).filter(x => x.board === b && (x.comLoja || x.status === 'processando'));
-  if (!lista.length) return;
   const strip = document.createElement('div');
   strip.className = 'aviso-strip aviso-strip-loja';
   strip.innerHTML = '<span class="aviso-strip-lbl">Pendências</span>';
+  _avisoNotasSemBaixa(strip, [b]);
+  if (!lista.length && !strip.querySelector('.aviso-pill')) return;
   for (const x of lista) {
     _avisoPilula(strip, {
       icone: '📋', rotulo: x.status === 'processando' ? 'Balanço sendo preparado' : 'Balanço: recontar', n: x.status === 'processando' ? null : x.comLoja,

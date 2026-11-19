@@ -627,7 +627,10 @@ function statusLoja(it, bal) {
 function itemParaLoja(it, bal) {
   // Estoque e leitura a loja vê (decisão do Leonardo, 18/11); preço, custo, venda e trânsito não
   const { v, t, tn, p, cu, ...resto } = it;
-  return { ...resto, sl: statusLoja(it, bal) };
+  // Trânsito que a loja precisa saber: nota pendente (não está na loja) e transferência/nota recente (confirmar se chegou)
+  const np = (tn || []).filter(n => n.pend).reduce((a, n) => a + n.q, 0);
+  const tf = Math.max(0, (t || 0) - np);
+  return { ...resto, ...(np ? { np } : {}), ...(tf ? { tf } : {}), sl: statusLoja(it, bal) };
 }
 
 module.exports = {

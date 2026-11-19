@@ -4,7 +4,7 @@
 
 const PDFDocument = require('pdfkit');
 const ExcelJS = require('exceljs');
-const { itensRecontagem, naoCadastradosDe, NAO_CADASTRADO, grupoCurto, statusItem } = require('./balanco');
+const { itensRecontagem, naoCadastradosDe, NAO_CADASTRADO, grupoCurto, statusItem, abatimentos } = require('./balanco');
 
 const fmtInt = n => {
   const v = Math.round(Number(n) || 0);
@@ -197,11 +197,17 @@ async function excelRecontagem(bal) {
   const periodoTransito = `${dataBR(jan.ini).slice(0, 5)}→${dataBR(jan.fim).slice(0, 5)}`;
 
   // RECONTAGEM
+  // A–P: o que se lê e imprime (Trânsito, Venda e Dif. líquida logo depois da Diferença);
+  // Q–V: auxiliares. Mesma regra da tela: com nota pendente o esperado é estoque − nota.
+  //  A Setor  B Código  C Descrição  D Referência  E Estoque  F Balanço  G Diferença
+  //  H Trânsito  I Venda  J Dif. líquida  K Preço  L Impacto  M Recontada  N Dif. Final
+  //  O Status  P Observação | Q Imp. confirmado  R Imp. a apurar  S Vendas (aux)
+  //  T Em trânsito (aux)  U Causa provável (aux)  V Nota pendente (aux)
   const ws = wb.addWorksheet('RECONTAGEM', { views: [{ state: 'frozen', ySplit: 3, topLeftCell: 'A4' }] });
-  [13.71, 11.43, 49.57, 16.43, 8.71, 8.71, 10.29, 11.43, 13.29, 14.43, 10, 19.86, 40, 18.29, 18.29, 18.29, 18.29, 18.29]
+  [13.71, 11.43, 45, 16.43, 8.71, 8.71, 10.29, 9.5, 8, 10, 11.43, 13.29, 14.43, 10, 19.86, 40, 18.29, 18.29, 14, 16, 18.29, 12]
     .forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
-  ws.mergeCells('A1:M1');
+  ws.mergeCells('A1:P1');
   const t = ws.getCell('A1');
   t.value = 'INVENTÁRIO — RECONTAGEM DE DIVERGÊNCIAS (TODOS OS SETORES)';
   t.font = { name: 'Calibri', bold: true, size: 14, color: { argb: 'FFFFFFFF' } };
@@ -215,61 +221,79 @@ async function excelRecontagem(bal) {
   ws.getCell('B2').alignment = { horizontal: 'left' };
   ws.mergeCells('D2:E2'); ws.getCell('D2').value = 'Responsável:'; ws.getCell('D2').alignment = { horizontal: 'right' };
   ws.mergeCells('F2:I2');
-  for (const c of 'BCDEFGHIJKLM') ws.getCell(c + '2').font = it2;
+  for (const c of 'BCDEFGHIJKLMNOP') ws.getCell(c + '2').font = it2;
 
-  const cab = ['Setor', 'Código', 'Descrição', 'Referência', 'Estoque', 'Balanço', 'Diferença', 'Preço Unit.', 'Impacto R$',
+  const cab = ['Setor', 'Código', 'Descrição', 'Referência', 'Estoque', 'Balanço', 'Diferença',
+    'Trânsito', 'Venda', 'Dif. líquida', 'Preço Unit.', 'Impacto R$',
     'Qtde Recontada', 'Dif. Final', 'Status', 'Observação',
-    'Impacto confirmado R$', 'Impacto a apurar R$', 'Vendas período (aux)', `Em trânsito ${periodoTransito} (aux)`, 'Causa provável (aux)'];
+    'Impacto confirmado R$', 'Impacto a apurar R$', 'Vendas período (aux)', `Em trânsito ${periodoTransito} (aux)`, 'Causa provável (aux)', 'Nota pendente (aux)'];
+  const NPRINC = 16;
   const r3 = ws.getRow(3); r3.height = 32.1;
   cab.forEach((h, i) => {
     const c = r3.getCell(i + 1);
     c.value = h;
-    const aux = i >= 13;
+    const aux = i >= NPRINC;
+    const abat = i >= 7 && i <= 9;
     c.font = { name: 'Calibri', bold: true, size: aux ? 9 : 11, color: { argb: 'FFFFFFFF' } };
-    c.fill = fill(aux ? 'FF7F7F7F' : 'FF2E75B6');
+    c.fill = fill(aux ? 'FF7F7F7F' : abat ? 'FF7B3F00' : 'FF2E75B6');
     c.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true };
     if (!aux) c.border = BORDA;
   });
+  r3.getCell(8).note = 'Peças em trânsito que explicam a falta: a nota pendente no Recebimento de NF conta inteira (as peças não estão na loja); transferência/nota recente só até a falta.';
+  r3.getCell(10).note = 'Diferença depois de abater trânsito e venda (usa a recontagem quando houver): o que ainda falta explicar.';
 
   const preto = { name: 'Calibri', size: 11, color: { argb: 'FF000000' } };
   const auxF = { name: 'Calibri', size: 10, color: { argb: 'FF404040' } };
+  const ESTATICO = ['SEM FOTO', 'A CONFERIR', 'RECUSADO'];
   itens.forEach((it, k) => {
     const r = ini + k;
     const row = ws.getRow(r); row.height = 15.95;
     const recont = it.rc === null || it.rc === undefined || it.rc === '' ? null : Number(it.rc);
+    const a = abatimentos(it);
+    const tPend = (it.tn || []).filter(n => n.pend).reduce((s, n) => s + n.q, 0);
+    const st = statusItem(it, bal);
+    // Contado = recontada quando houver, senão o balanço
+    const cont = `IF($M${r}="",$F${r},$M${r})`;
+    const falta = `MAX(0,$E${r}-${cont})`;
     const vals = [
       grupoCurto(it.g), it.c ? Number(it.c) : it.b, it.d, it.r, it.e, it.l,
       { formula: `F${r}-E${r}`, result: it.l - it.e },
+      { formula: `IF(${falta}>0,N($V${r}),0)+MIN(MAX(0,${falta}-N($V${r})),MAX(0,N($T${r})-N($V${r})))`, result: a.trNota + a.trOutros },
+      { formula: `MIN(MAX(0,${cont}-$E${r}),N($S${r}))`, result: a.venda },
+      { formula: `${cont}-$E${r}+$H${r}-$I${r}`, result: a.liquida },
       it.p,
-      { formula: `G${r}*H${r}`, result: (it.l - it.e) * it.p },
+      { formula: `G${r}*K${r}`, result: (it.l - it.e) * it.p },
       recont,
-      { formula: `IF($J${r}="","",$J${r}-$E${r})` },
-      it.st || statusItem(it, bal) === 'SEM FOTO' ? statusItem(it, bal) : { formula: `IF($J${r}="",$R${r},IF($J${r}=$E${r},"OK",IF(AND($Q${r}<>"",$J${r}<$E${r},$E${r}-$J${r}<=$Q${r}),"VER TRÂNSITO","DIVERGENTE")))`, result: statusItem(it, bal) },
+      { formula: `IF($M${r}="","",IF(OR($O${r}="OK",$O${r}="VER TRÂNSITO",$O${r}="VER VENDA",$O${r}="TROCA"),0,$M${r}-$E${r}+IF($E${r}>$M${r},N($V${r}),0)))` },
+      it.st || ESTATICO.includes(st) ? st
+        : { formula: `IF($M${r}="",$U${r},IF($M${r}=$E${r},"OK",IF(AND($M${r}<$E${r},$M${r}-$E${r}+$H${r}=0),"VER TRÂNSITO","DIVERGENTE")))`, result: st },
       it.ob || null,
-      { formula: `IF($J${r}="",0,($J${r}-$E${r})*$H${r})` },
-      { formula: `IF($J${r}="",$I${r},0)` },
+      { formula: `IF($M${r}="",0,N($N${r})*$K${r})` },
+      { formula: `IF($M${r}="",$L${r},0)` },
       it.v || null,
       it.t || null,
-      { formula: `IF(AND($Q${r}<>"",$G${r}<0,-$G${r}<=$Q${r}),"VER TRÂNSITO",IF(AND($P${r}<>"",$P${r}>0,ABS($G${r})=$P${r}),"VER VENDA",IF(AND($P${r}<>"",$P${r}>0),"VENDA PARCIAL","A RECONTAR")))` },
+      { formula: `IF(AND($G${r}<0,$G${r}+$H${r}=0),"VER TRÂNSITO",IF(AND(N($S${r})>0,ABS($G${r})=N($S${r})),"VER VENDA",IF(N($S${r})>0,"VENDA PARCIAL","A RECONTAR")))` },
+      tPend || null,
     ];
     vals.forEach((v, i) => {
       const c = row.getCell(i + 1);
       c.value = v;
       const col = i + 1;
-      if (col <= 13) { c.font = preto; c.border = BORDA; c.alignment = { horizontal: 'center', vertical: 'middle' }; }
+      if (col <= NPRINC) { c.font = preto; c.border = BORDA; c.alignment = { horizontal: 'center', vertical: 'middle' }; }
       else c.font = auxF;
       if (col === 1 || col === 3) c.alignment = { horizontal: 'left', vertical: 'middle' };
-      if (col === 8 || col === 9) c.alignment = { vertical: 'middle' };
-      if ([5, 6, 7, 10, 11, 16, 17].includes(col)) c.numFmt = FMT_INT;
-      if ([8, 9, 14, 15].includes(col)) c.numFmt = FMT_RS;
-      if (col === 10) { c.font = { ...preto, bold: true, color: { argb: 'FF0000FF' } }; c.fill = fill('FFFFF2CC'); }
-      if (col === 13) { c.font = { name: 'Calibri', size: 10, color: { argb: 'FF0000FF' } }; c.fill = fill('FFFFF2CC'); c.numFmt = '@'; c.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }; }
-      if (col >= 16) { c.fill = fill('FFFFFFFF'); c.alignment = { horizontal: 'center' }; }
+      if (col === 11 || col === 12) c.alignment = { vertical: 'middle' };
+      if ([5, 6, 7, 8, 9, 10, 13, 14, 19, 20, 22].includes(col)) c.numFmt = FMT_INT;
+      if ([11, 12, 17, 18].includes(col)) c.numFmt = FMT_RS;
+      if (col === 10) c.font = { ...preto, bold: true };
+      if (col === 13) { c.font = { ...preto, bold: true, color: { argb: 'FF0000FF' } }; c.fill = fill('FFFFF2CC'); }
+      if (col === 16) { c.font = { name: 'Calibri', size: 10, color: { argb: 'FF0000FF' } }; c.fill = fill('FFFFF2CC'); c.numFmt = '@'; c.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }; }
+      if (col >= 19) { c.fill = fill('FFFFFFFF'); c.alignment = { horizontal: 'center' }; }
     });
-    // Observação longa: a linha cresce para ela aparecer inteira (~38 caracteres por linha na coluna M)
+    // Observação longa: a linha cresce para ela aparecer inteira (~38 caracteres por linha na coluna P)
     const linhasOb = Math.ceil(String(it.ob || '').length / 38);
     if (linhasOb > 1) row.height = Math.min(15 * linhasOb, 90);
-    row.getCell(10).dataValidation = {
+    row.getCell(13).dataValidation = {
       type: 'whole', operator: 'greaterThanOrEqual', allowBlank: true, formulae: [0],
       showInputMessage: true, promptTitle: 'Recontagem', prompt: 'Digite a quantidade física contada.',
       showErrorMessage: true, errorTitle: 'Quantidade inválida', error: 'Informe um número inteiro maior ou igual a zero.',
@@ -281,30 +305,31 @@ async function excelRecontagem(bal) {
   const rng = c => `${c}${ini}:${c}${fim}`;
   const totVals = {
     B: 'TOTAL', E: { formula: `SUM(${rng('E')})` }, F: { formula: `SUM(${rng('F')})` }, G: { formula: `SUM(${rng('G')})` },
-    I: { formula: `SUM(${rng('I')})` },
-    J: { formula: `COUNT(${rng('J')})&" de "&COUNTA(${rng('B')})` },
-    L: { formula: `COUNTIF(${rng('L')},"OK")&" OK / "&COUNTIF(${rng('L')},"DIVERGENTE")&" DIV. / "&COUNTIF(${rng('L')},"VER VENDA")&" venda / "&COUNTIF(${rng('L')},"VER TRÂNSITO")&" trânsito"` },
-    N: { formula: `SUM(${rng('N')})` }, O: { formula: `SUM(${rng('O')})` },
-    P: { formula: `SUM(${rng('P')})` }, Q: { formula: `SUM(${rng('Q')})` },
+    H: { formula: `SUM(${rng('H')})` }, I: { formula: `SUM(${rng('I')})` }, J: { formula: `SUM(${rng('J')})` },
+    L: { formula: `SUM(${rng('L')})` },
+    M: { formula: `COUNT(${rng('M')})&" de "&COUNTA(${rng('B')})` },
+    O: { formula: `COUNTIF(${rng('O')},"OK")&" OK / "&COUNTIF(${rng('O')},"DIVERGENTE")&" DIV. / "&COUNTIF(${rng('O')},"VER VENDA")&" venda / "&COUNTIF(${rng('O')},"VER TRÂNSITO")&" trânsito"` },
+    Q: { formula: `SUM(${rng('Q')})` }, R: { formula: `SUM(${rng('R')})` },
+    S: { formula: `SUM(${rng('S')})` }, T: { formula: `SUM(${rng('T')})` }, V: { formula: `SUM(${rng('V')})` },
   };
-  for (const c of 'ABCDEFGHIJKLM') {
+  for (const c of 'ABCDEFGHIJKLMNOP') {
     const cell = rt.getCell(c);
     cell.value = totVals[c] ?? null;
     cell.font = branco; cell.fill = fill('FF2E75B6'); cell.border = BORDA;
-    if ('EFG'.includes(c)) cell.numFmt = FMT_INT;
-    if ('HI'.includes(c)) cell.numFmt = FMT_RS;
-    if ('JKL'.includes(c)) cell.alignment = { horizontal: 'center' };
+    if ('EFGHIJ'.includes(c)) cell.numFmt = FMT_INT;
+    if ('KL'.includes(c)) cell.numFmt = FMT_RS;
+    if ('MNO'.includes(c)) cell.alignment = { horizontal: 'center' };
   }
-  for (const c of 'NO') { const cell = rt.getCell(c); cell.value = totVals[c]; cell.numFmt = FMT_RS; cell.font = { name: 'Calibri', bold: true, size: 11 }; }
-  for (const c of 'PQR') {
+  for (const c of 'QR') { const cell = rt.getCell(c); cell.value = totVals[c]; cell.numFmt = FMT_RS; cell.font = { name: 'Calibri', bold: true, size: 11 }; }
+  for (const c of 'STUV') {
     const cell = rt.getCell(c); cell.value = totVals[c] ?? null; cell.numFmt = FMT_INT;
     cell.font = { ...auxF, bold: true }; cell.fill = fill('FFFFFFFF'); cell.alignment = { horizontal: 'center' };
   }
 
-  ws.autoFilter = `A3:M${tot}`;
-  ws.addConditionalFormatting(barra(`I${ini}:I${fim}`, 1));
+  ws.autoFilter = `A3:P${tot}`;
+  ws.addConditionalFormatting(barra(`L${ini}:L${fim}`, 1));
   ws.addConditionalFormatting({
-    ref: `L${ini}:L${fim}`,
+    ref: `O${ini}:O${fim}`,
     rules: STATUS_CORES.map(([txt, bg, fg], i) => ({
       type: 'containsText', operator: 'containsText', text: txt, priority: 2 + i,
       style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: bg } }, font: { color: { argb: fg } } },
@@ -312,7 +337,7 @@ async function excelRecontagem(bal) {
   });
   ws.pageSetup = {
     paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0,
-    blackAndWhite: true, horizontalCentered: true, printArea: `A1:M${tot}`, printTitlesRow: '1:3',
+    blackAndWhite: true, horizontalCentered: true, printArea: `A1:P${tot}`, printTitlesRow: '1:3',
     margins: { left: 0.28, right: 0.28, top: 0.39, bottom: 0.39, header: 0.31, footer: 0.31 },
   };
 
@@ -349,17 +374,17 @@ async function excelRecontagem(bal) {
     const f = {
       A: `IFERROR(IF(INDEX(${R('A')},MATCH(0,INDEX(COUNTIF($A$3:A${r - 1},${R('A')}),0),0))=0,"",INDEX(${R('A')},MATCH(0,INDEX(COUNTIF($A$3:A${r - 1},${R('A')}),0),0))),"")`,
       B: `IF($A${r}="","",COUNTIF(${R('A')},$A${r}))`,
-      C: `IF($A${r}="","",SUMPRODUCT((${R('A')}=$A${r})*ISNUMBER(${R('J')})))`,
-      D: `IF($A${r}="","",COUNTIFS(${R('A')},$A${r},${R('L')},"OK"))`,
-      E: `IF($A${r}="","",COUNTIFS(${R('A')},$A${r},${R('L')},"DIVERGENTE"))`,
+      C: `IF($A${r}="","",SUMPRODUCT((${R('A')}=$A${r})*ISNUMBER(${R('M')})))`,
+      D: `IF($A${r}="","",COUNTIFS(${R('A')},$A${r},${R('O')},"OK"))`,
+      E: `IF($A${r}="","",COUNTIFS(${R('A')},$A${r},${R('O')},"DIVERGENTE"))`,
       F: `IF($A${r}="","",$B${r}-$C${r})`,
-      G: `IF($A${r}="","",SUMIF(${R('A')},$A${r},${R('I')}))`,
-      H: `IF($A${r}="","",SUMIF(${R('A')},$A${r},${R('N')}))`,
-      I: `IF($A${r}="","",SUMIF(${R('A')},$A${r},${R('O')}))`,
-      J: `IF($A${r}="","",COUNTIFS(${R('A')},$A${r},${R('L')},"VER VENDA"))`,
-      K: `IF($A${r}="","",SUMIF(${R('A')},$A${r},${R('P')}))`,
-      L: `IF($A${r}="","",COUNTIFS(${R('A')},$A${r},${R('L')},"VER TRÂNSITO"))`,
-      M: `IF($A${r}="","",SUMIF(${R('A')},$A${r},${R('Q')}))`,
+      G: `IF($A${r}="","",SUMIF(${R('A')},$A${r},${R('L')}))`,
+      H: `IF($A${r}="","",SUMIF(${R('A')},$A${r},${R('Q')}))`,
+      I: `IF($A${r}="","",SUMIF(${R('A')},$A${r},${R('R')}))`,
+      J: `IF($A${r}="","",COUNTIFS(${R('A')},$A${r},${R('O')},"VER VENDA"))`,
+      K: `IF($A${r}="","",SUMIF(${R('A')},$A${r},${R('S')}))`,
+      L: `IF($A${r}="","",COUNTIFS(${R('A')},$A${r},${R('O')},"VER TRÂNSITO"))`,
+      M: `IF($A${r}="","",SUMIF(${R('A')},$A${r},${R('T')}))`,
     };
     for (const c of 'ABCDEFGHIJKLM') {
       const cell = row.getCell(c);
@@ -454,7 +479,7 @@ async function lerPlanilhaRecontagem(buffer) {
   const C = {
     setor: acha(/^setor/), cod: acha(/^codigo$/), desc: acha(/^descri/), ref: acha(/^refer/),
     e: acha(/^estoque$/), l: acha(/^balanco$/), p: acha(/^preco/), rc: acha(/^qtde recont/),
-    ob: acha(/^observ/), st: acha(/^status$/), v: acha(/^vendas/), t: acha(/transito|recebid/), extra: acha(/ajustado|regularizado/),
+    ob: acha(/^observ/), st: acha(/^status$/), v: acha(/^vendas/), t: acha(/em transito|recebid/) ?? acha(/^transito/), extra: acha(/ajustado|regularizado/),
   };
   if (!C.rc) C.rc = 10;
   if (!C.ob) C.ob = 13;

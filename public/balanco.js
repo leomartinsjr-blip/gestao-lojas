@@ -319,7 +319,8 @@ const cartaoLoja = aberto => it => {
     <div class="mcard-top"><span class="mcard-cod">${esc(it.c || it.b)}</span><span class="stc"><span class="${stCls(it.sl)}">${it.sl}</span></span></div>
     <div class="mcard-grupo muted">${esc(grupoCurto(it.g))}</div>
     <div class="mcard-prod">${exemploProduto(it)}<div class="mcard-desc">${esc(it.d)}${it.r ? `<div class="mcard-ref">Ref. ${esc(it.r)}</div>` : ''}</div></div>
-    <div class="mcard-nums"><span>Estoque <b>${fInt(it.e)}</b></span><span>Lido <b>${fInt(it.l)}</b></span></div>
+    <div class="mcard-nums"><span>Estoque <b>${fInt(it.e)}</b></span><span>Lido <b>${fInt(it.l)}</b></span>${it.np ? `<span>Em trânsito <b>${fInt(it.np)}</b></span><span>Deve ter na loja <b style="color:var(--accent)">${fInt(Math.max(0, it.e - it.np))}</b></span>` : ''}</div>
+    ${it.tf ? `<div class="mcard-grupo muted">${fInt(it.tf)} peça(s) chegaram por transferência/nota nos últimos dias — confira se estão na loja.</div>` : ''}
     ${it.cf && it.cf.ok === false && it.cf.motivo ? `<div class="motivo">Recusado: ${esc(it.cf.motivo)}</div>` : ''}
     ${podeMexer ? `<div class="mcard-inp"><input class="inp rc" inputmode="numeric" placeholder="Contei" data-k="${k}" value="${vazio(it.rc) ? '' : it.rc}"/>
       <input class="inp ob" placeholder="Observação" data-k="${k}" value="${esc(it.ob || '')}" maxlength="300"/></div>`
