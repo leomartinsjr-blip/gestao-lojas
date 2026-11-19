@@ -421,6 +421,22 @@ async function buscarCustos(cnpj, chave, codigos, cadastro) {
 }
 
 // ── Regras da recontagem (as mesmas fórmulas da planilha) ──────────────────
+// Quanto da diferença cada origem explica (abate), contra a quantidade contada
+// (recontada quando houver). Nota pendente no Recebimento de NF é a origem
+// confiável; transferência e nota recente explicam, mas a loja confirma.
+function abatimentos(it) {
+  const contado = it.rc === null || it.rc === undefined || it.rc === '' ? it.l : Number(it.rc);
+  const dif = contado - it.e;
+  const falta = dif < 0 ? -dif : 0, sobra = dif > 0 ? dif : 0;
+  const tPend = (it.tn || []).filter(n => n.pend).reduce((a, n) => a + n.q, 0);
+  const trNota = Math.min(falta, tPend);
+  const trOutros = Math.min(falta - trNota, Math.max(0, (it.t || 0) - tPend));
+  const venda = Math.min(sobra, it.v || 0);
+  return { dif, trNota, trOutros, venda, liquida: dif + trNota + trOutros - venda };
+}
+// VER TRÂNSITO só resolve sozinho (sem recontagem) quando a nota pendente cobre a falta toda
+const transitoSoPorNota = it => { const a = abatimentos(it); return a.dif < 0 && a.trNota >= -a.dif; };
+
 function causaProvavel(it) {
   const dif = it.l - it.e;
   if (it.t && dif < 0 && -dif <= it.t) return 'VER TRÂNSITO';
@@ -462,7 +478,7 @@ function difFinal(it, bal) {
   if (semFoto(it, bal) || aConferir(it, bal) || recusado(it, bal)) return null;
   // Venda ou trânsito automático (pela venda do período ou pela nota) já explica: não fica pendente
   const s = statusItem(it, bal);
-  if (EXPLICADO.includes(s) && (it.st || recontado || s === 'VER VENDA' || s === 'VER TRÂNSITO')) return 0;
+  if (EXPLICADO.includes(s) && (it.st || recontado || s === 'VER VENDA' || (s === 'VER TRÂNSITO' && transitoSoPorNota(it)))) return 0;
   return recontado ? Number(it.rc) - it.e : null;
 }
 
@@ -529,12 +545,12 @@ function resumo(bal) {
   const tot = { grupo: 'TOTAL', itens: 0, recontados: 0, ok: 0, divergentes: 0, pendentes: 0,
     impactoSistema: 0, impactoConfirmado: 0, impactoApurar: 0,
     explicadoVenda: 0, vendas: 0, explicadoTransito: 0, transito: 0, pecasDif: 0, pecasDifFinal: 0,
-    impactoCusto: 0, semCusto: 0 };
+    impactoCusto: 0, semCusto: 0, abNota: 0, abTransito: 0, abVenda: 0, difLiquida: 0 };
   for (const it of lista) {
     const g = grupoCurto(it.g);
     if (!porGrupo.has(g)) porGrupo.set(g, { ...tot, grupo: g, itens: 0, recontados: 0, ok: 0, divergentes: 0, pendentes: 0,
       impactoSistema: 0, impactoConfirmado: 0, impactoApurar: 0, explicadoVenda: 0, vendas: 0, explicadoTransito: 0, transito: 0, pecasDif: 0, pecasDifFinal: 0,
-      impactoCusto: 0, semCusto: 0 });
+      impactoCusto: 0, semCusto: 0, abNota: 0, abTransito: 0, abVenda: 0, difLiquida: 0 });
     const s = statusItem(it, bal);
     const dif = it.l - it.e;
     const recontado = it.rc !== null && it.rc !== undefined && it.rc !== '';
@@ -554,6 +570,8 @@ function resumo(bal) {
       o.transito += it.t || 0;
       o.pecasDif += dif;
       o.pecasDifFinal += df !== null ? df : dif;
+      const ab = abatimentos(it);
+      o.abNota += ab.trNota; o.abTransito += ab.trOutros; o.abVenda += ab.venda; o.difLiquida += ab.liquida;
       // O mesmo impacto final (confirmado + a apurar), a custo: é o que vai para a DRE
       const q = df !== null ? df : dif;
       o.impactoCusto += q * (it.cu || 0);
@@ -595,7 +613,8 @@ function statusLoja(it, bal) {
   const s = statusItem(it, bal);
   if (it.rc === null || it.rc === undefined || it.rc === '') {
     if (it.st) return 'CONFERIDO';
-    return ['VER VENDA', 'VER TRÂNSITO'].includes(s) ? 'EXPLICADO' : 'RECONTAR';
+    // Transferência/nota recente: a loja confirma se a peça chegou; só a nota pendente dispensa
+    return s === 'VER VENDA' || (s === 'VER TRÂNSITO' && transitoSoPorNota(it)) ? 'EXPLICADO' : 'RECONTAR';
   }
   if (s === 'SEM FOTO') return 'FALTA FOTO';
   if (s === 'A CONFERIR') return 'ENVIADO';
@@ -609,6 +628,7 @@ function itemParaLoja(it, bal) {
 }
 
 module.exports = {
+  abatimentos,
   statusLoja, itemParaLoja,
   parseLeitura, processar, criarCadastro, causaProvavel, statusItem, difFinal, sugerirTrocas,
   itensRecontagem, naoCadastradosDe, NAO_CADASTRADO, resumo, txtCorrigido, grupoCurto, normBarra, buscarCustos,

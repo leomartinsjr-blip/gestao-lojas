@@ -11,6 +11,18 @@ const mesBR = m => { const [a, b] = String(m || '').split('-'); return b ? `${['
 const grupoCurto = g => String(g || '').replace(/^\s*[A-Z0-9]{1,4}\s*-\s*/i, '').trim() || '(SEM GRUPO)';
 const vazio = v => v === null || v === undefined || v === '';
 
+// Mesma conta do servidor (abatimentos): o que cada origem explica da diferença
+function abat(it) {
+  const contado = vazio(it.rc) ? it.l : Number(it.rc);
+  const dif = contado - it.e;
+  const falta = dif < 0 ? -dif : 0, sobra = dif > 0 ? dif : 0;
+  const tPend = (it.tn || []).filter(n => n.pend).reduce((a, n) => a + n.q, 0);
+  const trNota = Math.min(falta, tPend);
+  const trOutros = Math.min(falta - trNota, Math.max(0, (it.t || 0) - tPend));
+  const venda = Math.min(sobra, it.v || 0);
+  return { dif, trNota, trOutros, tr: trNota + trOutros, venda, liquida: dif + trNota + trOutros - venda };
+}
+const transitoSoPorNota = it => { const a = abat(it); return a.dif < 0 && a.trNota >= -a.dif; };
 function causa(it) {
   const dif = it.l - it.e;
   if (it.t && dif < 0 && -dif <= it.t) return 'VER TRÂNSITO';
@@ -37,7 +49,7 @@ const status = it => S.bal?.cega ? it.sl : (it.st || statusAuto(it));
 // Diferença depois da recontagem: OK/troca/venda/trânsito dado pelo escritório (ou trânsito
 // automático já recontado) não conta. null = pendente. Igual ao difFinal do servidor.
 const EXPLICADO = ['OK', 'TROCA', 'VER VENDA', 'VER TRÂNSITO'];
-const difFinal = it => semFoto(it) || aConferir(it) || recusadoIt(it) ? null : EXPLICADO.includes(status(it)) && (it.st || !vazio(it.rc) || ['VER VENDA', 'VER TRÂNSITO'].includes(status(it))) ? 0 : vazio(it.rc) ? null : Number(it.rc) - it.e;
+const difFinal = it => semFoto(it) || aConferir(it) || recusadoIt(it) ? null : EXPLICADO.includes(status(it)) && (it.st || !vazio(it.rc) || status(it) === 'VER VENDA' || (status(it) === 'VER TRÂNSITO' && transitoSoPorNota(it))) ? 0 : vazio(it.rc) ? null : Number(it.rc) - it.e;
 const fDifF = it => difFinal(it) === null ? '' : fInt(difFinal(it));
 const STATUS_MANUAL = ['OK', 'DIVERGENTE', 'VER VENDA', 'VER TRÂNSITO', 'A RECONTAR', 'TROCA', 'AJUSTAR'];
 // NFs de entrada que explicam o trânsito
@@ -474,7 +486,7 @@ function desenharRecontagem() {
   const lista = todos.filter(it => (!f.g || grupoCurto(it.g) === f.g) && (!f.st || status(it) === f.st)
     && (!f.pend || difFinal(it) === null) && (!q || (it.d + ' ' + it.c + ' ' + it.b + ' ' + it.r).toUpperCase().includes(q)));
   const sts = ['A RECONTAR', 'SEM FOTO', 'A CONFERIR', 'RECUSADO', 'VENDA PARCIAL', 'VER VENDA', 'VER TRÂNSITO', 'OK', 'DIVERGENTE', 'TROCA', 'AJUSTAR'];
-  const tot = lista.reduce((a, it) => { a.e += it.e; a.l += it.l; a.i += (it.l - it.e) * it.p; return a; }, { e: 0, l: 0, i: 0 });
+  const tot = lista.reduce((a, it) => { const x = abat(it); a.e += it.e; a.l += it.l; a.i += (it.l - it.e) * it.p; a.tr += x.tr; a.vd += x.venda; a.lq += x.liquida; return a; }, { e: 0, l: 0, i: 0, tr: 0, vd: 0, lq: 0 });
   $('sub').innerHTML = `
     <div class="toolbar noprint">
       <select class="sel" id="rG"><option value="">Todos os setores</option>${grupos.map(g => `<option ${g === f.g ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
@@ -486,13 +498,17 @@ function desenharRecontagem() {
     </div>
     ${matchMedia('(max-width: 640px)').matches && carregarFotosSite()
       ? `<div class="mcards">${lista.map(cartaoRecont(aberto)).join('') || '<div class="empty">Nada com esse filtro.</div>'}</div>`
-      : `<div class="tbl-wrap"><table class="tbl fit"><colgroup><col style="width:6%"><col style="width:6.5%"><col><col style="width:7.5%">
-      <col style="width:3.8%"><col style="width:3.8%"><col style="width:3.2%"><col style="width:5.5%"><col style="width:6%"><col style="width:4.8%">
-      <col style="width:3.4%"><col style="width:9.5%"><col style="width:19%"></colgroup><thead><tr>
+      : `<div class="tbl-wrap"><table class="tbl fit"><colgroup><col style="width:5.5%"><col style="width:6%"><col><col style="width:7%">
+      <col style="width:3.5%"><col style="width:3.5%"><col style="width:3%"><col style="width:3.6%"><col style="width:3.4%"><col style="width:3.6%">
+      <col style="width:5%"><col style="width:5.5%"><col style="width:4.5%">
+      <col style="width:3.2%"><col style="width:9%"><col style="width:16%"></colgroup><thead><tr>
       <th>Setor</th><th>Código</th><th>Descrição</th><th>Referência</th><th class="n">Estoque</th><th class="n">Balanço</th><th class="n">Dif.</th>
+      <th class="n" title="Peças em trânsito que explicam a falta: nota pendente no Recebimento de NF (confiável) ou transferência/nota recente (a loja confirma)">Trânsito</th>
+      <th class="n" title="Peças vendidas no período da contagem que explicam a sobra">Venda</th>
+      <th class="n" title="Diferença depois de abater trânsito e venda: o que ainda falta explicar">Dif. líquida</th>
       <th class="n">Preço</th><th class="n">Impacto</th><th class="c">Recontada</th><th class="n">Dif. final</th><th>Status</th><th>Observação</th>
-    </tr></thead><tbody>${lista.map(linhaRecont(aberto)).join('') || '<tr><td colspan="13" class="empty">Nada com esse filtro.</td></tr>'}</tbody>
-    <tfoot><tr><td colspan="4">Total do filtro</td><td class="n">${fInt(tot.e)}</td><td class="n">${fInt(tot.l)}</td><td class="n">${fInt(tot.l - tot.e)}</td><td></td>
+    </tr></thead><tbody>${lista.map(linhaRecont(aberto)).join('') || '<tr><td colspan="16" class="empty">Nada com esse filtro.</td></tr>'}</tbody>
+    <tfoot><tr><td colspan="4">Total do filtro</td><td class="n">${fInt(tot.e)}</td><td class="n">${fInt(tot.l)}</td><td class="n">${fInt(tot.l - tot.e)}</td><td class="n">${fInt(tot.tr)}</td><td class="n">${fInt(tot.vd)}</td><td class="n ${cls(tot.lq)}"><b>${fInt(tot.lq)}</b></td><td></td>
       <td class="n ${cls(tot.i)}">${fRS(tot.i)}</td><td colspan="4"></td></tr></tfoot></table></div>`}`;
   const nc = naoCadastrados(b);
   if (nc.length) $('sub').insertAdjacentHTML('beforeend', `
@@ -514,6 +530,14 @@ function desenharRecontagem() {
   });
 }
 
+// Trânsito (nota pendente em negrito; transferência/nota recente em itálico, a confirmar), venda e o que sobra
+function celAbat(it) {
+  const a = abat(it);
+  const tr = a.tr ? `<span title="${a.trNota ? a.trNota + ' por nota pendente' : ''}${a.trNota && a.trOutros ? ' · ' : ''}${a.trOutros ? a.trOutros + ' por transferência/nota recente (a loja confirma)' : ''}"
+    style="${a.trOutros && !a.trNota ? 'font-style:italic' : 'font-weight:700'}">${fInt(a.tr)}${a.trOutros ? '?' : ''}</span>` : '';
+  return `<td class="n">${tr}</td><td class="n">${a.venda ? fInt(a.venda) : ''}</td>
+    <td class="n dif-l ${cls(a.liquida)}" style="font-weight:700">${a.liquida ? fInt(a.liquida) : '0'}</td>`;
+}
 const linhaRecont = aberto => it => {
   const k = esc(it.c || it.b);
   const s = status(it);
@@ -523,6 +547,7 @@ const linhaRecont = aberto => it => {
   return `<tr class="linha-item" data-k="${k}">
     <td>${esc(grupoCurto(it.g))}</td><td>${esc(it.c || it.b)}</td><td class="desc">${esc(it.d)}${it.lido ? '' : ' <span class="badge">não lido</span>'}${nfsTxt(it)}</td><td>${esc(it.r)}</td>
     <td class="n">${fInt(it.e)}</td><td class="n">${fInt(it.l)}</td><td class="n ${cls(dif)}">${fInt(dif)}</td>
+    ${celAbat(it)}
     <td class="n">${fRS(it.p)}</td><td class="n ${cls(dif * it.p)}">${fRS(dif * it.p)}</td>
     <td class="c">${aberto ? `<input class="inp rc" inputmode="numeric" data-k="${k}" value="${vazio(it.rc) ? '' : it.rc}"${quem}/>` : (vazio(it.rc) ? '' : `<b${quem}>${it.rc}</b>`)}</td>
     <td class="n dif-f">${difF}</td><td class="stc">${celStatus(it, aberto)}</td>
@@ -738,6 +763,7 @@ async function salvarItem(el) {
     if (S.bal.cega) { const n = (j.itens || []).find(x => (x.c || x.b) === k); if (n && it) Object.assign(it, n); atualizarCartaoLoja(it); return; }
     S.bal.resumo = j.resumo;
     // Atualiza a linha e os indicadores sem redesenhar a tabela (não perde o foco)
+    { const dl = tr.querySelector('.dif-l'); if (dl && it) { const a = abat(it); dl.textContent = a.liquida ? fInt(a.liquida) : '0'; dl.className = 'n dif-l ' + cls(a.liquida); } }
     const s = status(it);
     tr.querySelector('.dif-f').textContent = fDifF(it);
     tr.querySelector('.stc').innerHTML = celStatus(it, S.bal.status === 'recontagem');
@@ -773,7 +799,10 @@ function desenharResumo() {
     <div class="box" style="margin-bottom:12px"><b>${esc(b.lojaLabel)} — balanço de ${dBR(b.data)}${b.hora ? ' ' + b.hora : ''}</b> · mês ${esc(mesBR(b.mes))}<br/>
       <span class="muted">Leitura de ${fInt(r.pecasLidas)} peças contra ${fInt(r.pecasEstoque)} no sistema. ${t.itens} itens com diferença
       (${fInt(t.pecasDif)} peças, ${fRS(t.impactoSistema)}). Depois da recontagem: ${fInt(t.pecasDifFinal)} peças —
-      ${fRS(t.impactoConfirmado)} confirmado e ${fRS(t.impactoApurar)} ainda a apurar (${t.pendentes} itens sem recontagem).</span></div>
+      ${fRS(t.impactoConfirmado)} confirmado e ${fRS(t.impactoApurar)} ainda a apurar (${t.pendentes} itens sem recontagem).</span>
+      ${t.abNota || t.abTransito || t.abVenda ? `<div style="margin-top:6px">Abatido da diferença: <b>${fInt(t.abNota)}</b> peça(s) por nota pendente no Recebimento de NF,
+        <b>${fInt(t.abTransito)}</b> por transferência/nota recente (a loja confirma) e <b>${fInt(t.abVenda)}</b> por venda no período.
+        Diferença líquida: <b class="${cls(t.difLiquida)}">${fInt(t.difLiquida)}</b> peças.</div>` : ''}</div>
     <div class="tbl-wrap" style="margin-bottom:14px"><table class="tbl"><thead><tr>
       <th>Setor</th><th class="n">Itens</th><th class="n">Recontados</th><th class="n">OK</th><th class="n">Divergentes</th><th class="n">Pendentes</th>
       <th class="n">Dif. peças</th><th class="n">Dif. final</th><th class="n">Impacto sistema</th><th class="n">Confirmado</th><th class="n">A apurar</th>
