@@ -112,6 +112,9 @@ table.tbl.fit { table-layout: fixed; }
 .tbl.fit td { overflow: hidden; text-overflow: ellipsis; }
 .tbl.fit td.desc { min-width: 0; }
 .tbl.fit td:nth-child(1), .tbl.fit td:nth-child(4) { white-space: normal; overflow-wrap: anywhere; }
+/* Código inteiro (quebra se não couber) e larguras em %: a tabela nunca passa da tela */
+.tbl.fit td:nth-child(2) { white-space: normal; word-break: break-all; text-overflow: clip; user-select: all; }
+.tbl-wrap:has(> table.tbl.fit) { overflow-x: hidden; }
 .tbl.fit input.rc, .tbl.fit input.ob, .tbl.fit select.stsel { width: 100%; max-width: 100%; }
 .tbl tfoot td { font-weight: 700; background: var(--surface2); position: sticky; bottom: 0; }
 .tbl input.rc { width: 64px; text-align: center; height: 28px; padding: 2px 4px; font-weight: 700; }

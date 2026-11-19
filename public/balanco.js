@@ -309,9 +309,9 @@ function desenharRecontagem() {
     </div>
     ${matchMedia('(max-width: 640px)').matches
       ? `<div class="mcards">${lista.map(cartaoRecont(aberto)).join('') || '<div class="empty">Nada com esse filtro.</div>'}</div>`
-      : `<div class="tbl-wrap"><table class="tbl fit"><colgroup><col style="width:78px"><col style="width:62px"><col><col style="width:118px">
-      <col style="width:52px"><col style="width:56px"><col style="width:40px"><col style="width:82px"><col style="width:88px"><col style="width:66px">
-      <col style="width:46px"><col style="width:128px"><col style="width:140px"></colgroup><thead><tr>
+      : `<div class="tbl-wrap"><table class="tbl fit"><colgroup><col style="width:7%"><col style="width:9.5%"><col><col style="width:8%">
+      <col style="width:4.5%"><col style="width:4.5%"><col style="width:3.5%"><col style="width:6.5%"><col style="width:7%"><col style="width:6%">
+      <col style="width:4%"><col style="width:10%"><col style="width:11%"></colgroup><thead><tr>
       <th>Setor</th><th>Código</th><th>Descrição</th><th>Referência</th><th class="n">Estoque</th><th class="n">Balanço</th><th class="n">Dif.</th>
       <th class="n">Preço</th><th class="n">Impacto</th><th class="c">Recontada</th><th class="n">Dif. final</th><th>Status</th><th>Observação</th>
     </tr></thead><tbody>${lista.map(linhaRecont(aberto)).join('') || '<tr><td colspan="13" class="empty">Nada com esse filtro.</td></tr>'}</tbody>
