@@ -224,10 +224,10 @@ tr.feita td { opacity: .55; }
       <div class="fld"><label>Mês do balanço</label><input type="month" id="nMes" class="inp" required/></div>
     </div>
     <div class="row2">
-      <div class="fld"><label>Início da contagem (opcional)</label><input type="date" id="nInicio" class="inp"/>
-        <div class="hint">Se a contagem levou mais de um dia. As vendas desde esse dia contam como venda.</div></div>
-      <div class="fld"><label>Data da contagem (último dia)</label><input type="date" id="nData" class="inp" required/>
-        <div class="hint">O estoque comparado é o desse dia.</div></div>
+      <div class="fld"><label>Início da contagem</label><input type="date" id="nInicio" class="inp" required/>
+        <div class="hint">Primeiro dia da contagem. As vendas desde esse dia contam como venda.</div></div>
+      <div class="fld"><label>Fim da contagem</label><input type="date" id="nData" class="inp" required/>
+        <div class="hint">Último dia. O estoque comparado é o desse dia (igual ao início se foi num dia só).</div></div>
     </div>
     <div class="row2">
       <div class="fld"><label>Hora (opcional)</label><input type="time" id="nHora" class="inp"/>

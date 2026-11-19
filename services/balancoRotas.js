@@ -177,7 +177,8 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
       if (recontagensAntigas) {
         for (const it of r.itens) {
           const old = recontagensAntigas.get(it.c || it.b);
-          if (old) { it.rc = old.rc; it.ob = old.ob; it.rp = old.rp; it.rt = old.rt; if (old.st) it.st = old.st; }
+          // Observação vazia não apaga a da nota pendente que o processamento acabou de pôr
+          if (old) { it.rc = old.rc; it.ob = old.ob || it.ob; it.rp = old.rp; it.rt = old.rt; if (old.st) it.st = old.st; }
         }
       }
       const set = {
@@ -227,12 +228,13 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
       if (!board || !lojas()[board]) return res.status(400).json({ error: 'Escolha a loja.' });
       if (!/^\d{4}-\d{2}-\d{2}$/.test(data || '')) return res.status(400).json({ error: 'Informe a data do balanço.' });
       if (hora && !/^\d{2}:\d{2}$/.test(hora)) return res.status(400).json({ error: 'Hora no formato HH:MM.' });
-      if (inicio && (!/^\d{4}-\d{2}-\d{2}$/.test(inicio) || inicio > data)) return res.status(400).json({ error: 'O início da contagem tem que ser antes da data da contagem.' });
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(inicio || '')) return res.status(400).json({ error: 'Informe o início da contagem.' });
+      if (inicio > data) return res.status(400).json({ error: 'O início da contagem tem que ser antes do fim.' });
       if (!req.file) return res.status(400).json({ error: 'Envie o arquivo TXT da leitura.' });
       const leituraTexto = req.file.buffer.toString('latin1');
       const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const doc = {
-        id, board, data, hora: hora || null, inicio: inicio && inicio < data ? inicio : null,
+        id, board, data, hora: hora || null, inicio,
         mes: /^\d{4}-\d{2}$/.test(mes || '') ? mes : data.slice(0, 7),
         agrupar: agrupar === 'setor' ? 'setor' : agrupar === 'linha' ? 'linha' : (board === 'tommy' ? 'linha' : 'setor'),
         diasTransito: Math.min(60, Math.max(0, parseInt(diasTransito) || 7)),
@@ -482,7 +484,9 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
       if (/^\d{4}-\d{2}-\d{2}$/.test(b.data || '')) set.data = b.data;
       if (b.inicio !== undefined) {
         const dt = set.data || bal.data;
-        set.inicio = /^\d{4}-\d{2}-\d{2}$/.test(b.inicio || '') && b.inicio < dt ? b.inicio : null;
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(b.inicio || '')) return res.status(400).json({ error: 'Informe o início da contagem.' });
+        if (b.inicio > dt) return res.status(400).json({ error: 'O início da contagem tem que ser antes do fim.' });
+        set.inicio = b.inicio;
       }
       if (b.agrupar === 'setor' || b.agrupar === 'linha') { set.agrupar = b.agrupar; set.gruposFora = []; }
       if (b.diasTransito !== undefined) set.diasTransito = Math.min(60, Math.max(0, parseInt(b.diasTransito) || 0));

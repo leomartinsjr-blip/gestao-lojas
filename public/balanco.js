@@ -513,8 +513,8 @@ function desenharConfig() {
     </div>
     ${b.temLeitura ? `<div class="box"><h4>Reprocessar</h4>
       <div class="hint" style="margin:-4px 0 8px">Busca de novo estoque, vendas e preços no Microvix. As recontagens já lançadas são mantidas.</div>
-      <div class="row2"><div class="fld"><label>Início da contagem</label><input type="date" id="pInicio" class="inp" value="${esc(b.inicio || '')}"/></div>
-        <div class="fld"><label>Data (último dia)</label><input type="date" id="pData" class="inp" value="${esc(b.data)}"/></div></div>
+      <div class="row2"><div class="fld"><label>Início da contagem</label><input type="date" id="pInicio" class="inp" required value="${esc(b.inicio || b.data)}"/></div>
+        <div class="fld"><label>Fim da contagem</label><input type="date" id="pData" class="inp" value="${esc(b.data)}"/></div></div>
       <div class="row2"><div class="fld"><label>Hora</label><input type="time" id="pHora" class="inp" value="${esc(b.hora || '')}"/></div><div class="fld"></div></div>
       <div class="row2"><div class="fld"><label>Agrupar por</label><select id="pAgr" class="sel"><option value="setor" ${b.agrupar === 'setor' ? 'selected' : ''}>Setor</option><option value="linha" ${b.agrupar === 'linha' ? 'selected' : ''}>Linha</option></select></div>
         <div class="fld"><label>Trânsito (dias)</label><input type="number" id="pDias" class="inp" min="0" max="60" value="${b.diasTransito ?? 7}"/></div></div>

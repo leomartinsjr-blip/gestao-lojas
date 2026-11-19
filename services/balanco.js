@@ -197,6 +197,13 @@ async function processar({ cnpj, chave, data, hora, inicio, agrupar, diasTransit
   etapa('Buscando vendas e entradas do período…');
   const mov = await fetchMovimento(cnpj, iniMovOk, data, chave).catch(e => { console.warn('[balanco] movimento:', e.message); return []; });
   const porNota = new Map(); // numN → Map(cod → qtd)
+  const notasDoCod = new Map(); // cod → Set(número da nota pendente)
+  // Falta em produto de nota pendente: já sai com a observação para a loja
+  const obsNota = (cod, faltou) => {
+    const ns = [...(notasDoCod.get(cod) || [])];
+    if (!faltou || !ns.length) return '';
+    return ns.length === 1 ? `Nota ${ns[0]} pendente de entrega` : `Notas ${ns.join(', ')} pendentes de entrega`;
+  };
 
   const dataBR = data.split('-').reverse().join('/');
   const vendas = new Map(), transito = new Map(), transitoNF = new Map();
@@ -227,6 +234,9 @@ async function processar({ cnpj, chave, data, hora, inicio, agrupar, diasTransit
       const m = porNota.get(notaPend.numN) || new Map();
       m.set(cod, (m.get(cod) || 0) + q);
       porNota.set(notaPend.numN, m);
+      const ns = notasDoCod.get(cod) || new Set();
+      ns.add(notaPend.numero);
+      notasDoCod.set(cod, ns);
     }
     if (op === 'E' && !/devolu/i.test(r.desc_cfop || '') && ((dia && dia >= iniTransito) || notaPend)) {
       transito.set(cod, (transito.get(cod) || 0) + q);
@@ -324,7 +334,7 @@ async function processar({ cnpj, chave, data, hora, inicio, agrupar, diasTransit
       v: vendas.get(cod) || 0,
       t: transito.get(cod) || 0,
       ...(transitoNF.get(cod) ? { tn: transitoNF.get(cod) } : {}),
-      rc: null, ob: '',
+      rc: null, ob: obsNota(cod, (lido ? lido.q : 0) < (est.get(cod) || 0)),
     });
   }
   // Código lido que o Microvix não conhece: entra para não sumir da conferência
