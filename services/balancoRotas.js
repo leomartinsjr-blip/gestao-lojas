@@ -238,7 +238,7 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
         mes: /^\d{4}-\d{2}$/.test(mes || '') ? mes : data.slice(0, 7),
         agrupar: agrupar === 'setor' ? 'setor' : agrupar === 'linha' ? 'linha' : (board === 'tommy' ? 'linha' : 'setor'),
         diasTransito: Math.min(60, Math.max(0, parseInt(diasTransito) || 7)),
-        incluirNaoLidos: true, gruposFora: [],
+        incluirNaoLidos: true, gruposFora: [], exigeFoto: true,
         obs: String(obs || '').slice(0, 500),
         arquivoNome: nomeArquivo(req.file), leituraTexto,
         status: 'processando', etapa: 'Na fila…',
@@ -287,7 +287,7 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
         id, board, data, hora: null, origem: 'planilha',
         mes: /^\d{4}-\d{2}$/.test(mes || '') ? mes : data.slice(0, 7),
         agrupar: board === 'tommy' ? 'linha' : 'setor', diasTransito: 7,
-        incluirNaoLidos: true, gruposFora: [], obs: String(obs || '').slice(0, 500),
+        incluirNaoLidos: true, gruposFora: [], exigeFoto: true, obs: String(obs || '').slice(0, 500),
         arquivoNome: nomeArquivo(planilha), leituraTexto: txt ? txt.buffer.toString('latin1') : null,
         itens, leitura: null, janelaTransito: null, duplicadasRemovidas: lida.duplicadas,
         status: situacao === 'recontagem' ? 'recontagem' : 'finalizado',
@@ -338,6 +338,7 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
       const b = req.body || {};
       if (Array.isArray(b.gruposFora)) set.gruposFora = b.gruposFora.map(String);
       if (typeof b.incluirNaoLidos === 'boolean') set.incluirNaoLidos = b.incluirNaoLidos;
+      if (typeof b.exigeFoto === 'boolean') set.exigeFoto = b.exigeFoto;
       if (/^\d{4}-\d{2}$/.test(b.mes || '')) set.mes = b.mes;
       if (typeof b.obs === 'string') set.obs = b.obs.slice(0, 500);
       if (typeof b.ajustadoMicrovix === 'boolean')
@@ -371,10 +372,10 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
       if (rc !== null && (!Number.isFinite(rc) || rc < 0)) return;
       const ob = x.ob === undefined ? it.ob : String(x.ob || '').slice(0, 300);
       if (rc === it.rc && ob === it.ob) return;
-      Object.assign(it, { rc, ob, rp: quem(req), rt: agora });
-      for (const k of ['rc', 'ob', 'rp', 'rt']) set[`itens.${i}.${k}`] = it[k];
+      Object.assign(it, { rc, ob, rp: quem(req), rt: agora, re: ehEscritorio(req) });
+      for (const k of ['rc', 'ob', 'rp', 'rt', 're']) set[`itens.${i}.${k}`] = it[k];
     });
-    const n = Object.keys(set).length / 4;
+    const n = Object.keys(set).length / 5;
     if (n) {
       if (col()) await salvar(bal.id, { ...set, atualizadoEm: agora });
       else await salvar(bal.id, { itens: bal.itens, atualizadoEm: agora });
@@ -388,6 +389,65 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
       if (bal.status !== 'recontagem') return res.status(409).json({ error: 'Este balanço não está aberto para recontagem.' });
       const n = await aplicarRecontagens(req, bal, Array.isArray(req.body?.itens) ? req.body.itens : []);
       res.json({ ok: true, alterados: n, resumo: resumo(bal) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Fotos da recontagem ──────────────────────────────────────────────────
+  // A loja fotografa a quantidade com o código aparente; o escritório confere na
+  // tela. A foto já chega reduzida (JPEG) do celular e fica em balanco_arquivos
+  // como "<id>:foto-<fid>" (apagada junto com o balanço).
+  const uploadFoto = multer({ storage: multer.memoryStorage(), limits: { fileSize: 6 * 1024 * 1024 } });
+  const MAX_FOTOS = 6;
+  app.post('/api/balancos/:id/fotos', requireAuth, uploadFoto.single('foto'), async (req, res) => {
+    try {
+      const bal = await carregar(req, res); if (!bal) return;
+      if (bal.status !== 'recontagem') return res.status(409).json({ error: 'Este balanço não está aberto para recontagem.' });
+      if (!req.file || !/^image\//.test(req.file.mimetype)) return res.status(400).json({ error: 'Envie uma foto.' });
+      const k = String(req.body?.k || '');
+      const i = (bal.itens || []).findIndex(it => String(it.c || it.b) === k);
+      if (i < 0) return res.status(404).json({ error: 'item não encontrado' });
+      const fotos = bal.itens[i].fotos || [];
+      if (fotos.length >= MAX_FOTOS) return res.status(409).json({ error: `No máximo ${MAX_FOTOS} fotos por item.` });
+      const fid = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      await guardarArquivo(bal.id, 'foto-' + fid, req.file.buffer);
+      const foto = { id: fid, em: new Date().toISOString(), por: quem(req), tipo: req.file.mimetype };
+      bal.itens[i].fotos = [...fotos, foto];
+      if (col()) await col().updateOne({ id: bal.id }, { $push: { [`itens.${i}.fotos`]: foto }, $set: { atualizadoEm: foto.em } });
+      else await salvar(bal.id, { itens: bal.itens });
+      res.json({ ok: true, foto, fotos: bal.itens[i].fotos, resumo: resumo(bal) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  app.get('/api/balancos/:id/fotos/:fid', requireAuth, async (req, res) => {
+    try {
+      const bal = await carregar(req, res); if (!bal) return;
+      const fid = String(req.params.fid).replace(/[^a-z0-9]/gi, '');
+      const foto = (bal.itens || []).flatMap(it => it.fotos || []).find(f => f.id === fid);
+      const buf = foto && await lerArquivo(bal.id, 'foto-' + fid);
+      if (!buf) return res.status(404).end();
+      res.set('Content-Type', foto.tipo || 'image/jpeg');
+      res.set('Cache-Control', 'private, max-age=86400');
+      res.send(buf);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // Apaga a foto: quem tirou ou o escritório, com o balanço aberto
+  app.delete('/api/balancos/:id/fotos/:fid', requireAuth, async (req, res) => {
+    try {
+      const bal = await carregar(req, res); if (!bal) return;
+      if (bal.status !== 'recontagem') return res.status(409).json({ error: 'Este balanço não está aberto.' });
+      const fid = String(req.params.fid);
+      const i = (bal.itens || []).findIndex(it => (it.fotos || []).some(f => f.id === fid));
+      if (i < 0) return res.status(404).json({ error: 'foto não encontrada' });
+      const foto = bal.itens[i].fotos.find(f => f.id === fid);
+      if (!ehEscritorio(req) && foto.por !== quem(req)) return res.status(403).json({ error: 'Só quem tirou a foto (ou o escritório) pode apagar.' });
+      bal.itens[i].fotos = bal.itens[i].fotos.filter(f => f.id !== fid);
+      if (col()) await col().updateOne({ id: bal.id }, { $set: { [`itens.${i}.fotos`]: bal.itens[i].fotos } });
+      else await salvar(bal.id, { itens: bal.itens });
+      const db = getDb();
+      if (db) await db.collection('balanco_arquivos').deleteOne({ _id: `${bal.id}:foto-${fid}` });
+      else fs.rmSync(path.join(LOCAL, `${bal.id}.foto-${fid}`), { force: true });
+      res.json({ ok: true, fotos: bal.itens[i].fotos, resumo: resumo(bal) });
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

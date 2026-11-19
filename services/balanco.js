@@ -404,9 +404,17 @@ function causaProvavel(it) {
   if (it.v > 0) return 'VENDA PARCIAL';
   return 'A RECONTAR';
 }
-function statusItem(it) {
+// Balanço com foto obrigatória: recontagem lançada pela loja sem foto não vale —
+// o item fica SEM FOTO e a divergência continua (a apurar). Status dado pelo
+// escritório e recontagem lançada pelo escritório (re) não pedem foto.
+function semFoto(it, bal) {
+  return !!bal?.exigeFoto && !it.st && !it.re && !(it.fotos || []).length
+    && !(it.rc === null || it.rc === undefined || it.rc === '');
+}
+function statusItem(it, bal) {
   if (it.st) return it.st;
   if (it.rc === null || it.rc === undefined || it.rc === '') return causaProvavel(it);
+  if (semFoto(it, bal)) return 'SEM FOTO';
   const rc = Number(it.rc);
   if (rc === it.e) return 'OK';
   if (it.t && rc < it.e && it.e - rc <= it.t) return 'VER TRÂNSITO';
@@ -416,9 +424,10 @@ function statusItem(it) {
 // venda ou trânsito (ou trânsito automático depois de recontado) não conta: fica 0.
 // null = ainda pendente.
 const EXPLICADO = ['OK', 'TROCA', 'VER VENDA', 'VER TRÂNSITO'];
-function difFinal(it) {
+function difFinal(it, bal) {
   const recontado = it.rc !== null && it.rc !== undefined && it.rc !== '';
-  if (EXPLICADO.includes(statusItem(it)) && (it.st || recontado)) return 0;
+  if (semFoto(it, bal)) return null;
+  if (EXPLICADO.includes(statusItem(it, bal)) && (it.st || recontado)) return 0;
   return recontado ? Number(it.rc) - it.e : null;
 }
 
@@ -428,7 +437,7 @@ function difFinal(it) {
 // Na loja a troca é: entra (devolução) o código que sobrou, sai o que faltou.
 function sugerirTrocas(bal) {
   const fd = it => (it.rc === null || it.rc === undefined || it.rc === '' ? it.l : Number(it.rc)) - it.e;
-  const lista = itensRecontagem(bal).filter(it => it.c && !['VER VENDA', 'VER TRÂNSITO', 'VENDA PARCIAL'].includes(statusItem(it)));
+  const lista = itensRecontagem(bal).filter(it => it.c && !['VER VENDA', 'VER TRÂNSITO', 'VENDA PARCIAL'].includes(statusItem(it, bal)));
   const sobras = lista.filter(it => fd(it) > 0).map(it => ({ it, q: fd(it) }));
   const faltas = lista.filter(it => fd(it) < 0).map(it => ({ it, q: -fd(it) }));
   const trocas = [];
@@ -466,7 +475,7 @@ function resolvidoNaPlanilha(bal, it) {
   if (SUPERFLUO.test(obsPlanilha(it))) return true;
   if (it.rc !== null && it.rc !== undefined && it.rc !== '') return false;
   if (it.st === 'DIVERGENTE' || it.st === 'A RECONTAR') return false;
-  return !!obsPlanilha(it) || ['VER VENDA', 'VER TRÂNSITO'].includes(statusItem(it));
+  return !!obsPlanilha(it) || ['VER VENDA', 'VER TRÂNSITO'].includes(statusItem(it, bal));
 }
 // Código lido que não existe no Microvix não entra na recontagem nem nos totais:
 // é etiqueta errada ou leitura errada. Fica numa lista à parte (naoCadastradosDe).
@@ -491,10 +500,10 @@ function resumo(bal) {
     if (!porGrupo.has(g)) porGrupo.set(g, { ...tot, grupo: g, itens: 0, recontados: 0, ok: 0, divergentes: 0, pendentes: 0,
       impactoSistema: 0, impactoConfirmado: 0, impactoApurar: 0, explicadoVenda: 0, vendas: 0, explicadoTransito: 0, transito: 0, pecasDif: 0, pecasDifFinal: 0,
       impactoCusto: 0, semCusto: 0 });
-    const s = statusItem(it);
+    const s = statusItem(it, bal);
     const dif = it.l - it.e;
     const recontado = it.rc !== null && it.rc !== undefined && it.rc !== '';
-    const df = difFinal(it);
+    const df = difFinal(it, bal);
     for (const o of [porGrupo.get(g), tot]) {
       o.itens++;
       if (recontado) o.recontados++;
@@ -537,7 +546,7 @@ function txtCorrigido(bal) {
   const fora = new Set(bal.gruposFora || []);
   const itens = (bal.itens || []).filter(it => it.b && !fora.has(it.g));
   // Recontado vale a recontagem; explicado (OK/troca/venda/trânsito) fica com o estoque do sistema
-  const final = it => { const df = difFinal(it); return df === null ? it.l : Math.max(0, it.e + df); };
+  const final = it => { const df = difFinal(it, bal); return df === null ? it.l : Math.max(0, it.e + df); };
   const lidos = itens.filter(it => it.lido).sort((a, b) => a.o - b.o);
   for (const it of lidos) linhas.push(`${it.b},${final(it)}`);
   // Não lido que a loja achou na recontagem

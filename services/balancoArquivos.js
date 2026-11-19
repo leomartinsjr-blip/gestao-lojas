@@ -244,7 +244,7 @@ async function excelRecontagem(bal) {
       { formula: `G${r}*H${r}`, result: (it.l - it.e) * it.p },
       recont,
       { formula: `IF($J${r}="","",$J${r}-$E${r})` },
-      it.st ? it.st : { formula: `IF($J${r}="",$R${r},IF($J${r}=$E${r},"OK",IF(AND($Q${r}<>"",$J${r}<$E${r},$E${r}-$J${r}<=$Q${r}),"VER TRÂNSITO","DIVERGENTE")))`, result: statusItem(it) },
+      it.st || statusItem(it, bal) === 'SEM FOTO' ? statusItem(it, bal) : { formula: `IF($J${r}="",$R${r},IF($J${r}=$E${r},"OK",IF(AND($Q${r}<>"",$J${r}<$E${r},$E${r}-$J${r}<=$Q${r}),"VER TRÂNSITO","DIVERGENTE")))`, result: statusItem(it, bal) },
       it.ob || null,
       { formula: `IF($J${r}="",0,($J${r}-$E${r})*$H${r})` },
       { formula: `IF($J${r}="",$I${r},0)` },

@@ -18,8 +18,11 @@ function causa(it) {
   if (it.v > 0) return 'VENDA PARCIAL';
   return 'A RECONTAR';
 }
+// Foto obrigatória (balanço com exigeFoto): recontagem da loja sem foto não vale
+const semFoto = it => !!S.bal?.exigeFoto && !it.st && !it.re && !(it.fotos || []).length && !vazio(it.rc);
 function statusAuto(it) {
   if (vazio(it.rc)) return causa(it);
+  if (semFoto(it)) return 'SEM FOTO';
   const rc = Number(it.rc);
   if (rc === it.e) return 'OK';
   if (it.t && rc < it.e && it.e - rc <= it.t) return 'VER TRÂNSITO';
@@ -29,7 +32,7 @@ const status = it => it.st || statusAuto(it);
 // Diferença depois da recontagem: OK/troca/venda/trânsito dado pelo escritório (ou trânsito
 // automático já recontado) não conta. null = pendente. Igual ao difFinal do servidor.
 const EXPLICADO = ['OK', 'TROCA', 'VER VENDA', 'VER TRÂNSITO'];
-const difFinal = it => EXPLICADO.includes(status(it)) && (it.st || !vazio(it.rc)) ? 0 : vazio(it.rc) ? null : Number(it.rc) - it.e;
+const difFinal = it => semFoto(it) ? null : EXPLICADO.includes(status(it)) && (it.st || !vazio(it.rc)) ? 0 : vazio(it.rc) ? null : Number(it.rc) - it.e;
 const fDifF = it => difFinal(it) === null ? '' : fInt(difFinal(it));
 const STATUS_MANUAL = ['OK', 'DIVERGENTE', 'VER VENDA', 'VER TRÂNSITO', 'A RECONTAR', 'TROCA', 'AJUSTAR'];
 // NFs de entrada que explicam o trânsito
@@ -300,7 +303,7 @@ function desenharRecontagem() {
   const q = f.q.trim().toUpperCase();
   const lista = todos.filter(it => (!f.g || grupoCurto(it.g) === f.g) && (!f.st || status(it) === f.st)
     && (!f.pend || vazio(it.rc)) && (!q || (it.d + ' ' + it.c + ' ' + it.b + ' ' + it.r).toUpperCase().includes(q)));
-  const sts = ['A RECONTAR', 'VENDA PARCIAL', 'VER VENDA', 'VER TRÂNSITO', 'OK', 'DIVERGENTE', 'TROCA', 'AJUSTAR'];
+  const sts = ['A RECONTAR', 'SEM FOTO', 'VENDA PARCIAL', 'VER VENDA', 'VER TRÂNSITO', 'OK', 'DIVERGENTE', 'TROCA', 'AJUSTAR'];
   const tot = lista.reduce((a, it) => { a.e += it.e; a.l += it.l; a.i += (it.l - it.e) * it.p; return a; }, { e: 0, l: 0, i: 0 });
   $('sub').innerHTML = `
     <div class="toolbar noprint">
@@ -351,7 +354,7 @@ const linhaRecont = aberto => it => {
     <td class="n">${fRS(it.p)}</td><td class="n ${cls(dif * it.p)}">${fRS(dif * it.p)}</td>
     <td class="c">${aberto ? `<input class="inp rc" inputmode="numeric" data-k="${k}" value="${vazio(it.rc) ? '' : it.rc}"${quem}/>` : (vazio(it.rc) ? '' : `<b${quem}>${it.rc}</b>`)}</td>
     <td class="n dif-f">${difF}</td><td class="stc">${celStatus(it, aberto)}</td>
-    <td>${aberto ? `<input class="inp ob" data-k="${k}" value="${esc(it.ob || '')}" maxlength="300"/>` : esc(it.ob || '')}</td></tr>`;
+    <td><div class="cel-ob">${aberto ? `<input class="inp ob" data-k="${k}" value="${esc(it.ob || '')}" maxlength="300"/>` : `<span>${esc(it.ob || '')}</span>`}${botaoFotos(it, aberto, false)}</div></td></tr>`;
 };
 
 // Celular: um cartão por item, com a recontagem à mão (a tabela pede rolagem lateral)
@@ -366,6 +369,8 @@ const cartaoRecont = aberto => it => {
     ${aberto ? `<div class="mcard-inp"><input class="inp rc" inputmode="numeric" placeholder="Contei" data-k="${k}" value="${vazio(it.rc) ? '' : it.rc}"/>
       <input class="inp ob" placeholder="Observação" data-k="${k}" value="${esc(it.ob || '')}" maxlength="300"/></div>`
       : (vazio(it.rc) ? '' : `<div class="mcard-desc">Recontado: <b>${it.rc}</b> ${esc(it.ob || '')}</div>`)}
+    <div class="mcard-fotos">${botaoFotos(it, aberto, true)}${(it.fotos || []).map(f => `<img class="mini" loading="lazy" src="${urlFoto(f)}" data-galeria="${k}" alt="foto"/>`).join('')}</div>
+    <div class="falta-foto">${semFoto(it) ? 'Falta a foto da quantidade com o código aparente — sem ela a divergência continua.' : ''}</div>
   </div>`;
 };
 
@@ -392,6 +397,99 @@ async function salvarStatus(el) {
   } catch (e) { alert(e.message); }
 }
 
+// ── Fotos da recontagem ───────────────────────────────────────────────────
+const urlFoto = f => `/api/balancos/${S.bal.id}/fotos/${f.id}`;
+function botaoFotos(it, aberto, celular) {
+  const k = esc(it.c || it.b), n = (it.fotos || []).length;
+  const cls = n ? 'tem' : semFoto(it) ? 'falta' : '';
+  const ver = n ? `<button type="button" class="foto-btn ${cls}" data-galeria="${k}" title="Ver fotos">📷 ${n}</button>` : '';
+  if (!aberto) return celular ? '' : ver;
+  const tirar = `<button type="button" class="foto-btn ${n ? '' : cls}" data-foto="${k}" title="Tirar foto da quantidade com o código aparente">${celular ? '📷 Tirar foto' : '📷+'}</button>`;
+  return celular ? tirar : tirar + ver;
+}
+function atualizarFotosItem(tr, it) {
+  if (!tr) return;
+  const aberto = S.bal.status === 'recontagem';
+  const box = tr.querySelector('.mcard-fotos');
+  if (box) {
+    const k = esc(it.c || it.b);
+    box.innerHTML = botaoFotos(it, aberto, true) + (it.fotos || []).map(f => `<img class="mini" loading="lazy" src="${urlFoto(f)}" data-galeria="${k}" alt="foto"/>`).join('');
+    tr.querySelector('.falta-foto').textContent = semFoto(it) ? 'Falta a foto da quantidade com o código aparente — sem ela a divergência continua.' : '';
+  } else {
+    const cel = tr.querySelector('.cel-ob');
+    cel?.querySelectorAll('.foto-btn').forEach(b => b.remove());
+    cel?.insertAdjacentHTML('beforeend', botaoFotos(it, aberto, false));
+  }
+  tr.querySelector('.stc').innerHTML = celStatus(it, aberto);
+  tr.querySelector('.dif-f').textContent = fDifF(it);
+}
+// Reduz no celular antes de subir: lado maior 1600 px, JPEG — a foto do celular tem 3–5 MB
+async function reduzir(arquivo) {
+  const img = await new Promise((ok, erro) => { const i = new Image(); i.onload = () => ok(i); i.onerror = erro; i.src = URL.createObjectURL(arquivo); });
+  const esc_ = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
+  const cv = document.createElement('canvas');
+  cv.width = Math.round(img.naturalWidth * esc_); cv.height = Math.round(img.naturalHeight * esc_);
+  cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+  URL.revokeObjectURL(img.src);
+  return new Promise(ok => cv.toBlob(b => ok(b || arquivo), 'image/jpeg', 0.75));
+}
+const inputFoto = Object.assign(document.createElement('input'), { type: 'file', accept: 'image/*' });
+inputFoto.setAttribute('capture', 'environment');
+// no DOM (oculto): alguns navegadores de celular ignoram o clique num input solto
+inputFoto.hidden = true; inputFoto.id = 'inputFoto';
+document.body.appendChild(inputFoto);
+let fotoDoItem = null;
+inputFoto.onchange = async () => {
+  const arq = inputFoto.files[0], k = fotoDoItem;
+  inputFoto.value = '';
+  if (!arq || !k) return;
+  const it = S.bal.itens.find(x => (x.c || x.b) === k);
+  const tr = document.querySelector(`.linha-item[data-k="${CSS.escape(k)}"]`);
+  const btn = tr?.querySelector(`[data-foto="${CSS.escape(k)}"]`);
+  if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
+  try {
+    const fd = new FormData();
+    fd.append('k', k);
+    fd.append('foto', await reduzir(arq), 'foto.jpg');
+    const j = await api(`/api/balancos/${S.bal.id}/fotos`, { method: 'POST', body: fd });
+    it.fotos = j.fotos; S.bal.resumo = j.resumo;
+    atualizarFotosItem(tr, it); atualizarKpis();
+  } catch (e) { alert('Não foi possível enviar a foto: ' + e.message); if (btn) { btn.disabled = false; btn.textContent = '📷 Tentar de novo'; } }
+};
+function abrirGaleria(k) {
+  const it = S.bal.itens.find(x => (x.c || x.b) === k);
+  if (!it || !(it.fotos || []).length) return;
+  const aberto = S.bal.status === 'recontagem';
+  document.getElementById('galeria')?.remove();
+  const g = document.createElement('div');
+  g.id = 'galeria';
+  g.innerHTML = `<div class="g-top"><b>${esc(it.c || it.b)} · ${esc(it.d)} — estoque ${fInt(it.e)}, lido ${fInt(it.l)}${vazio(it.rc) ? '' : ', recontado ' + it.rc}</b>
+      <button class="btn" data-fechar>Fechar</button></div>
+    <div class="g-fotos">${it.fotos.map(f => `<figure><img src="${urlFoto(f)}" alt="foto"/><figcaption>${esc(f.por)} · ${new Date(f.em).toLocaleString('pt-BR')}
+      ${aberto ? ` · <a href="#" data-apagar="${f.id}" style="color:#f88">apagar</a>` : ''}</figcaption></figure>`).join('')}</div>`;
+  g.onclick = async e => {
+    if (e.target === g || e.target.dataset.fechar !== undefined) { g.remove(); return; }
+    const fid = e.target.dataset.apagar;
+    if (!fid) return;
+    e.preventDefault();
+    if (!confirm('Apagar esta foto?')) return;
+    try {
+      const j = await api(`/api/balancos/${S.bal.id}/fotos/${fid}`, { method: 'DELETE' });
+      it.fotos = j.fotos; S.bal.resumo = j.resumo;
+      atualizarFotosItem(document.querySelector(`.linha-item[data-k="${CSS.escape(k)}"]`), it); atualizarKpis();
+      g.remove(); if (it.fotos.length) abrirGaleria(k);
+    } catch (err) { alert(err.message); }
+  };
+  document.body.appendChild(g);
+}
+document.addEventListener('keydown', e => { if (e.key === 'Escape') document.getElementById('galeria')?.remove(); });
+document.addEventListener('click', e => {
+  const t = e.target.closest?.('[data-foto],[data-galeria]');
+  if (!t || t.closest('#galeria')) return;
+  if (t.dataset.foto) { fotoDoItem = t.dataset.foto; inputFoto.click(); }
+  else abrirGaleria(t.dataset.galeria);
+});
+
 async function salvarItem(el) {
   const k = el.dataset.k;
   const tr = el.closest('.linha-item');
@@ -403,13 +501,14 @@ async function salvarItem(el) {
   try {
     const j = await api(`/api/balancos/${S.bal.id}/itens`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const it = S.bal.itens.find(x => (x.c || x.b) === k);
-    if (it) { it.rc = body.itens[0].rc; it.ob = body.itens[0].ob; }
+    if (it) { it.rc = body.itens[0].rc; it.ob = body.itens[0].ob; it.re = !!S.escritorio; }
     S.bal.resumo = j.resumo;
     el.classList.add('salvo');
     // Atualiza a linha e os indicadores sem redesenhar a tabela (não perde o foco)
     const s = status(it);
     tr.querySelector('.dif-f').textContent = fDifF(it);
     tr.querySelector('.stc').innerHTML = celStatus(it, S.bal.status === 'recontagem');
+    atualizarFotosItem(tr, it);
     atualizarKpis();
   } catch (e) { el.classList.add('falhou'); el.title = e.message; }
 }
@@ -517,6 +616,7 @@ function desenharConfig() {
     </div>
     <div class="box"><h4>Recontagem</h4>
       <label style="display:flex;gap:6px;align-items:center;margin-bottom:12px"><input type="checkbox" id="cNaoLidos" ${b.incluirNaoLidos ? 'checked' : ''}/> Incluir itens com saldo que não foram lidos</label>
+      <label style="display:flex;gap:6px;align-items:center;margin-bottom:12px"><input type="checkbox" id="cFoto" ${b.exigeFoto ? 'checked' : ''}/> Foto obrigatória na recontagem da loja (sem foto, a divergência continua)</label>
       <div class="fld"><label>Mês do balanço</label><input type="month" id="cMes" class="inp" value="${esc(b.mes)}"/></div>
       <div class="fld"><label>Observação</label><input type="text" id="cObs" class="inp" value="${esc(b.obs || '')}" maxlength="500"/></div>
       <button class="btn primary" id="cSalvar">Salvar</button>
@@ -537,7 +637,7 @@ function desenharConfig() {
   $('cTodos').onclick = () => document.querySelectorAll('.cg').forEach(c => c.checked = true);
   $('cNenhum').onclick = () => document.querySelectorAll('.cg').forEach(c => c.checked = false);
   $('cSalvarG').onclick = () => patchBal({ gruposFora: [...document.querySelectorAll('.cg')].filter(c => !c.checked).map(c => c.value) });
-  $('cSalvar').onclick = () => patchBal({ incluirNaoLidos: $('cNaoLidos').checked, mes: $('cMes').value, obs: $('cObs').value });
+  $('cSalvar').onclick = () => patchBal({ incluirNaoLidos: $('cNaoLidos').checked, exigeFoto: $('cFoto').checked, mes: $('cMes').value, obs: $('cObs').value });
   if ($('pRodar')) $('pRodar').onclick = () => reprocessar({ inicio: $('pInicio').value, data: $('pData').value, hora: $('pHora').value, agrupar: $('pAgr').value, diasTransito: $('pDias').value });
   $('cExcluir').onclick = excluir;
 }

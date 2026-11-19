@@ -132,6 +132,25 @@ table.tbl.fit { table-layout: fixed; }
 .st-OK { background: #C6EFCE; color: #006100; }
 .st-TROCA { background: #E4DFEC; color: #5B3E8C; }
 .st-AJUSTAR { background: #D9D9D9; color: #262626; }
+.st-SEM-FOTO { background: #FFC7CE; color: #9C0006; }
+/* Fotos da recontagem */
+.foto-btn { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 600; border: 1px solid var(--border); background: var(--surface2); color: var(--text); border-radius: 6px; padding: 3px 8px; cursor: pointer; white-space: nowrap; }
+.foto-btn.tem { border-color: var(--up); color: var(--up); }
+.foto-btn.falta { border-color: var(--down); color: var(--down); }
+.foto-btn:disabled { opacity: .5; }
+.mcard-fotos { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.mcard-fotos .foto-btn { font-size: 14px; padding: 8px 12px; }
+.mini { width: 44px; height: 44px; object-fit: cover; border-radius: 6px; border: 1px solid var(--border); cursor: zoom-in; }
+.falta-foto { font-size: 11px; color: var(--down); margin-top: 4px; }
+.cel-ob { display: flex; gap: 4px; align-items: center; }
+.cel-ob input.ob { flex: 1; min-width: 0; }
+.cel-ob .foto-btn { padding: 3px 5px; }
+#galeria { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 50; display: flex; flex-direction: column; align-items: center; padding: 14px; gap: 10px; overflow: auto; }
+#galeria .g-top { color: #fff; display: flex; gap: 10px; align-items: center; width: 100%; max-width: 1000px; font-size: 13px; }
+#galeria .g-top b { flex: 1; }
+#galeria .g-fotos { display: flex; flex-direction: column; gap: 12px; align-items: center; max-width: 1000px; width: 100%; }
+#galeria figure { margin: 0; text-align: center; color: #ccc; font-size: 11px; }
+#galeria img { max-width: 100%; max-height: 80vh; border-radius: 8px; background: #111; }
 select.stsel { font-size: 11px; font-weight: 600; padding: 2px 4px; border-radius: 6px; border: 1px solid var(--border); max-width: 130px; }
 .nf { display: inline-block; font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 8px; background: #E2D0BB; color: #7B3F00; margin-left: 4px; white-space: nowrap; }
 .btn.ok { border-color: var(--up); color: var(--up); }
