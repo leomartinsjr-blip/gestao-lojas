@@ -15,7 +15,7 @@ const path = require('path');
 const multer = require('multer');
 const {
   processar, criarCadastro, resumo, txtCorrigido, statusItem, sugerirTrocas, buscarCustos,
-  itensRecontagem, naoCadastradosDe, itemParaLoja,
+  itensRecontagem, naoCadastradosDe, itemParaLoja, statusLoja,
 } = require('./balanco');
 const { pdfListaCriticas, excelRecontagem, lerPlanilhaRecontagem } = require('./balancoArquivos');
 
@@ -239,6 +239,31 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
       // Recontagem cega: a loja vê só quantos itens tem e quantos faltam
       if (!ehEscritorio(req)) for (const b of lista) if (b.resumo) b.resumo = { itens: b.resumo.itens, recontados: b.resumo.recontados, pendentes: b.resumo.pendentes };
       res.json({ balancos: lista, escritorio: ehEscritorio(req), lojas: l || Object.keys(lojas()) });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
+  // ── Pendências do balanço (pílula do painel) ─────────────────────────────
+  // Balanços abertos das lojas do usuário: o que está com a loja (recontar,
+  // falta foto, recusado) e as fotos esperando o escritório conferir.
+  app.get('/api/balancos-pendencias', requireAuth, async (req, res) => {
+    try {
+      const l = lojasDoUsuario(req);
+      const filtro = { status: { $in: ['recontagem', 'processando'] }, ...(l ? { board: { $in: l } } : {}) };
+      const c = col();
+      const docs = c ? await c.find(filtro, { projection: { _id: 0, leituraTexto: 0 } }).toArray()
+        : local.todos().filter(d => filtro.status.$in.includes(d.status) && (!l || l.includes(d.board)));
+      const out = docs.map(bal => {
+        const itens = bal.itens ? itensRecontagem(bal) : [];
+        let comLoja = 0, aConferir = 0;
+        for (const it of itens) {
+          const s = statusLoja(it, bal);
+          if (s === 'RECONTAR' || s === 'FALTA FOTO' || s === 'RECONTAR DE NOVO') comLoja++;
+          else if (s === 'ENVIADO' && bal.exigeFoto) aConferir++;
+        }
+        return { id: bal.id, board: bal.board, lojaLabel: label(bal.board), data: bal.data, status: bal.status,
+          comLoja, ...(ehEscritorio(req) ? { aConferir } : {}) };
+      });
+      res.json(out);
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 

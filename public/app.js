@@ -1191,6 +1191,7 @@ function _renderAvisosAdm(c) {
   _avisoEstoqueSite(strip);
   _avisoVt(strip);
   _avisoNotas(strip);
+  _avisoBalanco(strip);
   _avisoLojaAcao(strip);
   _avisoContagem(strip);
   _avisoPauta(strip);
@@ -1205,8 +1206,64 @@ function _renderAvisosAdm(c) {
 function _atualizarAvisosAdm() {
   const c = document.getElementById('boardContainer');
   if (!c?.querySelector('.dash-sector-panel')) return;
-  c.querySelector('.aviso-strip')?.remove();
+  c.querySelector('.aviso-strip:not(.aviso-strip-loja)')?.remove();
   _renderAvisosAdm(c);
+}
+
+// ── Balanço em andamento ───────────────────────────────────────────────────
+// Adm: fotos da recontagem esperando conferência e itens ainda com a loja.
+// Loja: o que falta ela fazer no balanço aberto. Vem de /api/balancos-pendencias,
+// guardado 2 min para os redesenhos do painel não ficarem pedindo.
+let _balPend = { em: 0, dados: null, chave: '' };
+function _balancoPendencias() {
+  const chave = (S.user?.username || '') + '|' + (S.user?.board || '');
+  if (_balPend.chave === chave && Date.now() - _balPend.em < 120_000) return _balPend.dados;
+  if (_balPend.carregando === chave) return _balPend.chave === chave ? _balPend.dados : null;
+  _balPend.carregando = chave;
+  apiFetch('GET', '/api/balancos-pendencias').then(d => {
+    _balPend = { em: Date.now(), dados: d || [], chave };
+    _atualizarAvisosAdm(); _atualizarAvisosLoja();
+  }).catch(() => { _balPend.carregando = null; });
+  return _balPend.chave === chave ? _balPend.dados : null;
+}
+const _abrirBalanco = id => window.open('/balanco' + (id ? '?id=' + id : ''), '_blank');
+function _avisoBalanco(strip) {
+  const lista = (_balancoPendencias() || []).filter(b => _avisoLojas().includes(b.board));
+  if (!lista.length) return;
+  const fotos = lista.reduce((s, b) => s + (b.aConferir || 0), 0);
+  const detalhe = lista.map(b => `${_avisoNomeLoja(b.board)} (${b.data.split('-').reverse().join('/')}): ${b.status === 'processando' ? 'processando'
+    : [b.aConferir ? `${b.aConferir} foto(s) para conferir` : '', b.comLoja ? `${b.comLoja} item(ns) com a loja` : ''].filter(Boolean).join(', ') || 'pronto para finalizar'}`).join(' · ');
+  const alvo = lista.slice().sort((a, b) => (b.aConferir || 0) - (a.aConferir || 0))[0];
+  _avisoPilula(strip, {
+    icone: '📋', rotulo: fotos ? 'Balanço: fotos para conferir' : 'Balanço em andamento', n: fotos || lista.length, atraso: !!fotos,
+    detalhe, acao: () => _abrirBalanco(alvo.id),
+  });
+}
+// A loja não tinha linha de pendências; o balanço é o primeiro aviso dela aqui
+function _renderAvisosLoja(c) {
+  const b = S.user?.board;
+  if (!b || b === 'escritorio') return;
+  const lista = (_balancoPendencias() || []).filter(x => x.board === b && (x.comLoja || x.status === 'processando'));
+  if (!lista.length) return;
+  const strip = document.createElement('div');
+  strip.className = 'aviso-strip aviso-strip-loja';
+  strip.innerHTML = '<span class="aviso-strip-lbl">Pendências</span>';
+  for (const x of lista) {
+    _avisoPilula(strip, {
+      icone: '📋', rotulo: x.status === 'processando' ? 'Balanço sendo preparado' : 'Balanço: recontar', n: x.status === 'processando' ? null : x.comLoja,
+      atraso: x.status !== 'processando',
+      detalhe: x.status === 'processando' ? 'O escritório está processando o balanço.' : `${x.comLoja} item(ns) para recontar, com foto. Clique para abrir a recontagem.`,
+      acao: () => _abrirBalanco(x.id),
+    });
+  }
+  const depois = c.querySelector('.ct-banner');
+  depois ? depois.after(strip) : c.prepend(strip);
+}
+function _atualizarAvisosLoja() {
+  const c = document.getElementById('boardContainer');
+  if (!c?.querySelector('.dash-sector-panel')) return;
+  c.querySelector('.aviso-strip-loja')?.remove();
+  _renderAvisosLoja(c);
 }
 
 // Lojas que este usuário enxerga — supervisor vê as dele, adm vê todas.
@@ -1582,6 +1639,7 @@ function renderDashboard() {
   c.innerHTML = '';
   _renderContagemAviso(c);
   _renderAvisosAdm(c);
+  _renderAvisosLoja(c);
   _renderPedidosSite(c);
 
   const pad = n => String(n).padStart(2, '0');
