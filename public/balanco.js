@@ -324,6 +324,47 @@ function atualizarCartaoLoja(it) {
   progressoLoja();
 }
 
+// ── Escritório: conferência na tela da foto ──────────────────────────────
+// Números do item + "Quantidade conferida" (já com o que a loja contou). Aprovar
+// com outro número grava o do escritório; aprovar com o mesmo só confirma a foto.
+function blocoConferencia(it) {
+  const dif = vazio(it.rc) ? null : Number(it.rc) - it.e;
+  return `<div class="c-bloco">
+    <div style="font-size:24px;font-weight:800;color:#fff">${esc(it.c || it.b)}</div>
+    <div style="color:#ddd">${esc(it.d)}${it.r ? ' · Ref. ' + esc(it.r) : ''}</div>
+    <div class="c-num" style="margin:6px 0"><span>Estoque <b>${fInt(it.e)}</b></span><span>Lido <b>${fInt(it.l)}</b></span>
+      <span>Loja contou <b>${vazio(it.rc) ? '—' : it.rc}</b></span>
+      ${dif === null ? '' : `<span>Diferença <b style="color:${dif ? '#f88' : '#8f8'}">${fInt(dif)}</b></span>`}
+      <span>Status <b style="font-size:14px">${esc(status(it))}</b></span></div>
+    ${it.ob ? `<div style="color:#ccc;margin-bottom:6px">Obs.: ${esc(it.ob)}</div>` : ''}
+    ${S.bal.status === 'recontagem' ? `<div class="c-acoes" style="align-items:center;flex-wrap:wrap">
+      <label style="color:#ddd;display:flex;gap:8px;align-items:center">Quantidade conferida
+        <input class="inp" id="cQtd" inputmode="numeric" value="${vazio(it.rc) ? '' : it.rc}" style="width:90px;font-size:20px;font-weight:800;text-align:center"/></label>
+      <button class="btn primary" data-c="ok">✓ Aprovar</button><button class="btn danger" data-c="nao">✗ Recusar</button>
+      ${'{PULAR}'}</div>` : ''}
+  </div>`;
+}
+// Grava a decisão. Devolve false se o usuário desistiu (cancelou o motivo).
+async function aplicarConferencia(it, acao, qtdTxt) {
+  const k = it.c || it.b;
+  let motivo = '';
+  if (acao === 'ok') {
+    const t = String(qtdTxt ?? '').trim();
+    if (!/^\d+$/.test(t)) throw new Error('Digite a quantidade conferida (número inteiro).');
+    const q = Number(t);
+    if (vazio(it.rc) || q !== Number(it.rc)) {
+      const j = await api(`/api/balancos/${S.bal.id}/itens`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ itens: [{ k, rc: q, ob: it.ob || '' }] }) });
+      it.rc = q; it.re = true; S.bal.resumo = j.resumo;
+    }
+  } else {
+    motivo = prompt('Motivo da recusa (a loja vê):', 'Código não aparece na foto');
+    if (motivo === null) return false;
+  }
+  const j = await api(`/api/balancos/${S.bal.id}/conferir`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ k, ok: acao === 'ok', motivo }) });
+  it.cf = j.cf; S.bal.resumo = j.resumo;
+  return true;
+}
+
 // ── Escritório: fila de fotos a conferir ─────────────────────────────────
 function conferirFotos(chaves, i = 0) {
   document.getElementById('conf')?.remove();
@@ -333,16 +374,10 @@ function conferirFotos(chaves, i = 0) {
   const g = document.createElement('div');
   g.id = 'galeria'; g.setAttribute('data-conf', '1');
   const box = document.createElement('div'); box.id = 'conf';
-  const dif = Number(it.rc) - it.e;
   g.innerHTML = `<div class="g-top"><b>Conferir foto ${i + 1} de ${chaves.length}</b><button class="btn" data-fechar>Fechar</button></div>`;
   box.innerHTML = `<div class="g-fotos">
-      <div style="color:#fff;width:100%"><div style="font-size:24px;font-weight:800">${esc(it.c || it.b)}</div>
-        <div>${esc(it.d)}${it.r ? ' · Ref. ' + esc(it.r) : ''}</div>
-        <div class="c-num" style="margin-top:6px"><span>Estoque <b>${fInt(it.e)}</b></span><span>Lido <b>${fInt(it.l)}</b></span>
-          <span>Recontado <b>${it.rc}</b></span><span>Diferença <b style="color:${dif ? '#f88' : '#8f8'}">${fInt(dif)}</b></span></div>
-        ${it.ob ? `<div style="margin-top:4px;color:#ccc">Obs.: ${esc(it.ob)}</div>` : ''}</div>
+      <div style="width:100%">${blocoConferencia(it).replace('{PULAR}', '<button class="btn" data-c="pular">Pular</button>')}</div>
       ${(it.fotos || []).map(f => `<figure><img src="${urlFoto(f)}" alt="foto"/><figcaption>${esc(f.por)} · ${new Date(f.tirada || f.em).toLocaleString('pt-BR')}</figcaption></figure>`).join('')}
-      <div class="c-acoes"><button class="btn primary" data-c="ok">✓ Aprovar</button><button class="btn danger" data-c="nao">✗ Recusar</button><button class="btn" data-c="pular">Pular</button></div>
     </div>`;
   g.appendChild(box);
   g.onclick = async e => {
@@ -350,13 +385,10 @@ function conferirFotos(chaves, i = 0) {
     const acao = e.target.dataset.c;
     if (!acao) return;
     if (acao === 'pular') return conferirFotos(chaves, i + 1);
-    let motivo = '';
-    if (acao === 'nao') { motivo = prompt('Motivo da recusa (a loja vê):', 'Código não aparece na foto'); if (motivo === null) return; }
     e.target.disabled = true;
     try {
-      const j = await api(`/api/balancos/${S.bal.id}/conferir`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ k: chaves[i], ok: acao === 'ok', motivo }) });
-      it.cf = j.cf; S.bal.resumo = j.resumo;
-      conferirFotos(chaves, i + 1);
+      if (await aplicarConferencia(it, acao, g.querySelector('#cQtd')?.value)) conferirFotos(chaves, i + 1);
+      else e.target.disabled = false;
     } catch (err) { alert(err.message); e.target.disabled = false; }
   };
   document.body.appendChild(g);
@@ -648,12 +680,22 @@ function abrirGaleria(k) {
   document.getElementById('galeria')?.remove();
   const g = document.createElement('div');
   g.id = 'galeria';
-  g.innerHTML = `<div class="g-top"><b>${esc(it.c || it.b)} · ${esc(it.d)} — estoque ${fInt(it.e)}, lido ${fInt(it.l)}${vazio(it.rc) ? '' : ', recontado ' + it.rc}</b>
+  g.innerHTML = `<div class="g-top"><b>${S.escritorio ? 'Foto da recontagem' : `${esc(it.c || it.b)} · ${esc(it.d)}`}</b>
       <button class="btn" data-fechar>Fechar</button></div>
+    ${S.escritorio ? `<div id="conf" style="width:100%;max-width:1000px">${blocoConferencia(it).replace('{PULAR}', '')}</div>` : ''}
     <div class="g-fotos">${it.fotos.map(f => `<figure><img src="${urlFoto(f)}" alt="foto"/><figcaption>${esc(f.por)} · ${new Date(f.em).toLocaleString('pt-BR')}
       ${aberto ? ` · <a href="#" data-apagar="${f.id}" style="color:#f88">apagar</a>` : ''}</figcaption></figure>`).join('')}</div>`;
   g.onclick = async e => {
     if (e.target === g || e.target.dataset.fechar !== undefined) { g.remove(); return; }
+    const acao = e.target.dataset.c;
+    if (acao) {
+      e.target.disabled = true;
+      try {
+        if (await aplicarConferencia(it, acao, g.querySelector('#cQtd')?.value)) { g.remove(); desenharDetalhe(); }
+        else e.target.disabled = false;
+      } catch (err) { alert(err.message); e.target.disabled = false; }
+      return;
+    }
     const fid = e.target.dataset.apagar;
     if (!fid) return;
     e.preventDefault();
@@ -668,7 +710,10 @@ function abrirGaleria(k) {
   };
   document.body.appendChild(g);
 }
-document.addEventListener('keydown', e => { if (e.key === 'Escape') document.getElementById('galeria')?.remove(); });
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.getElementById('galeria')?.remove();
+  if (e.key === 'Enter' && e.target?.id === 'cQtd') { e.preventDefault(); document.querySelector('#galeria [data-c="ok"]')?.click(); }
+});
 document.addEventListener('click', e => {
   const t = e.target.closest?.('[data-foto],[data-galeria]');
   if (!t || t.closest('#galeria')) return;
