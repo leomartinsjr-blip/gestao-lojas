@@ -204,7 +204,7 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
         origem: null, // importado de planilha com o TXT: agora é um balanço completo
         agrupar: r.agrupar, ...(r.agrupar !== bal.agrupar ? { gruposFora: [] } : {}),
         leitura: r.leitura, janelaTransito: r.janelaTransito, janelaVendas: r.janelaVendas, notasPendentes: r.notasPendentes,
-        movDepoisDaHora: r.movDepoisDaHora,
+        movDepoisDaHora: r.movDepoisDaHora, ajustesDepois: r.ajustesDepois,
         naoCadastrados: r.naoCadastrados, processadoEm: new Date().toISOString(),
       };
       await salvar(id, set);

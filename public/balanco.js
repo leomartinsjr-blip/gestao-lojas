@@ -817,7 +817,7 @@ function desenharConfig() {
       <div class="row2"><div class="fld"><label>Agrupar por</label><select id="pAgr" class="sel"><option value="setor" ${b.agrupar === 'setor' ? 'selected' : ''}>Setor</option><option value="linha" ${b.agrupar === 'linha' ? 'selected' : ''}>Linha</option></select></div>
         <div class="fld"><label>Trânsito (dias)</label><input type="number" id="pDias" class="inp" min="0" max="60" value="${b.diasTransito ?? 7}"/></div></div>
       <div class="toolbar"><button class="btn primary" id="pRodar">Reprocessar</button><a class="btn" href="/api/balancos/${b.id}/leitura">TXT original</a></div>
-      <div class="hint">Processado em ${b.processadoEm ? new Date(b.processadoEm).toLocaleString('pt-BR') : '—'} · criado por ${esc(b.criadoPor)}${b.movDepoisDaHora ? ` · ${b.movDepoisDaHora} movimentos depois da hora desfeitos` : ''}</div>
+      <div class="hint">Processado em ${b.processadoEm ? new Date(b.processadoEm).toLocaleString('pt-BR') : '—'} · criado por ${esc(b.criadoPor)}${b.movDepoisDaHora ? ` · ${b.movDepoisDaHora} movimentos depois da hora desfeitos` : ''}${b.ajustesDepois?.itens ? ` · ${b.ajustesDepois.itens} item(ns) com ajuste de estoque lançado depois da data aplicado` : ''}</div>
     </div>` : ''}
     <div class="box"><h4>Excluir</h4><div class="hint" style="margin-bottom:10px">Apaga o balanço, o PDF e as recontagens. Não tem volta.</div>
       <button class="btn danger" id="cExcluir">Excluir balanço</button></div>

@@ -195,7 +195,10 @@ async function processar({ cnpj, chave, data, hora, inicio, agrupar, diasTransit
   const iniMovOk = iniMov < limite.toISOString().slice(0, 10) ? limite.toISOString().slice(0, 10) : iniMov;
   const numerosPendentes = new Map(notas.map(n => [n.numN, n]));
   etapa('Buscando vendas e entradas do período…');
-  const mov = await fetchMovimento(cnpj, iniMovOk, data, chave).catch(e => { console.warn('[balanco] movimento:', e.message); return []; });
+  // Até hoje: os ajustes de estoque lançados depois da data do balanço também valem
+  // (a loja/escritório corrige no Microvix e reprocessa). O resto depois da data é ignorado.
+  const fimMov = hojeISO() > data ? hojeISO() : data;
+  const mov = await fetchMovimento(cnpj, iniMovOk, fimMov, chave).catch(e => { console.warn('[balanco] movimento:', e.message); return []; });
   const porNota = new Map(); // numN → Map(cod → qtd)
   const notasDoCod = new Map(); // cod → Set(número da nota pendente)
   // Falta em produto de nota pendente: já sai com a observação para a loja
@@ -208,6 +211,13 @@ async function processar({ cnpj, chave, data, hora, inicio, agrupar, diasTransit
   const dataBR = data.split('-').reverse().join('/');
   const vendas = new Map(), transito = new Map(), transitoNF = new Map();
   let movDepoisDaHora = 0;
+  const ajustesDepois = new Map(); // cod → quantidade ajustada depois da contagem (+ entra, − sai)
+  const somaAjuste = (cod, op, q) => {
+    const d = op === 'S' ? -q : (op === 'E' || op === 'DS') ? q : 0;
+    if (!d) return;
+    est.set(cod, (est.get(cod) || 0) + d);
+    ajustesDepois.set(cod, (ajustesDepois.get(cod) || 0) + d);
+  };
   for (const r of mov) {
     if (r.cancelado === 'S' || r.excluido === 'S') continue;
     const cod = String(r.cod_produto || '').trim();
@@ -220,8 +230,14 @@ async function processar({ cnpj, chave, data, hora, inicio, agrupar, diasTransit
     const serie = String(r.serie || '').trim().toUpperCase();
     const ajuste = serie === 'J' || tipo === 'J' || !parseInt(r.documento || '0');
 
-    // Saldo na hora do balanço: desfaz o que entrou/saiu depois
-    if (hora && doDia && String(r.hora_lancamento || '') > hora) {
+    // Depois da data do balanço: só o ajuste de estoque entra (é a correção da contagem)
+    if (dia && dia > data) {
+      if (ajuste) somaAjuste(cod, op, q);
+      continue;
+    }
+    // Saldo na hora do balanço: desfaz o que entrou/saiu depois — menos o ajuste,
+    // que já é a correção da contagem e fica valendo
+    if (hora && doDia && String(r.hora_lancamento || '') > hora && !ajuste) {
       if (op === 'S') est.set(cod, (est.get(cod) || 0) + q);
       else if (op === 'E' || op === 'DS') est.set(cod, (est.get(cod) || 0) - q);
       movDepoisDaHora++;
@@ -333,6 +349,7 @@ async function processar({ cnpj, chave, data, hora, inicio, agrupar, diasTransit
       cu: custo.get(cod) || 0,
       v: vendas.get(cod) || 0,
       t: transito.get(cod) || 0,
+      ...(ajustesDepois.get(cod) ? { aj: ajustesDepois.get(cod) } : {}),
       ...(transitoNF.get(cod) ? { tn: transitoNF.get(cod) } : {}),
       rc: null, ob: obsNota(cod, (lido ? lido.q : 0) < (est.get(cod) || 0)),
     });
@@ -356,6 +373,7 @@ async function processar({ cnpj, chave, data, hora, inicio, agrupar, diasTransit
         itens: m ? [...m].map(([c, q]) => ({ c, q })) : [] };
     }),
     movDepoisDaHora,
+    ajustesDepois: { itens: ajustesDepois.size, pecas: [...ajustesDepois.values()].reduce((a, v) => a + v, 0) },
     naoCadastrados: naoCadastrados.length,
     agrupar,
   };
