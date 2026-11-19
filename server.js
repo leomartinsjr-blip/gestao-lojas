@@ -14339,6 +14339,8 @@ async function conciliarRede(board, dtIni, dtFin, linhas) {
 // ════════════════════════════════════════════════════════════════════════════
 require('./services/balancoRotas').register(app, {
   getDb: () => mongoDb, requireAuth, requireEscritorioOrAdmin, boardsLabel: BOARDS_LABEL,
+  // Notas do card Recebimento de NF: as autorizadas e não armazenadas explicam falta
+  getNfItems: async () => (await readDB()).nfItems || [],
   // Cadastro de produtos que o NEXO já mantém, se estiver no mesmo cluster
   getNexoDb: () => mongoDb ? mongoDb.client.db(process.env.NEXO_MONGODB_DB || 'integracao_site') : null,
 });

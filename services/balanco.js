@@ -18,6 +18,9 @@ const {
 
 const normBarra = s => String(s || '').replace(/\D/g, '').replace(/^0+/, '');
 const num = v => parseBrNum(String(v ?? '0'));
+// Número da nota sem zeros à esquerda; "dd/mm/aaaa ..." → "aaaa-mm-dd"
+const normDoc = s => String(s || '').replace(/\D/g, '').replace(/^0+/, '');
+const isoDe = s => { const m = String(s || '').match(/^(\d{2})\/(\d{2})\/(\d{4})/); return m ? `${m[3]}-${m[2]}-${m[1]}` : ''; };
 const hojeISO = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
 
 // "70-FLIP FLOPS" / "B4-JACKETS" → "FLIP FLOPS" / "JACKETS": é como o grupo
@@ -154,7 +157,10 @@ function criarCadastro(getNexoDb) {
 // ── Processamento ──────────────────────────────────────────────────────────
 // Devolve todos os itens do escopo (lidos + com saldo), já com grupo, preço,
 // vendas e entradas do período para a causa provável.
-async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, leituraTexto, cadastro, onEtapa }) {
+// inicio: primeiro dia da contagem (vendas do início até a data contam como venda).
+// notasPendentes: notas autorizadas no Recebimento de NF e ainda não armazenadas
+// pela loja — as entradas delas explicam falta mesmo fora da janela de trânsito.
+async function processar({ cnpj, chave, data, hora, inicio, agrupar, diasTransito = 7, leituraTexto, cadastro, onEtapa, notasPendentes = [] }) {
   const etapa = onEtapa || (() => {});
   const leitura = parseLeitura(leituraTexto);
   if (!leitura.codigos) throw new Error('O arquivo não tem nenhum código de barras.');
@@ -177,8 +183,20 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
   const dIni = new Date(data + 'T12:00:00Z');
   dIni.setUTCDate(dIni.getUTCDate() - Math.max(0, Number(diasTransito) || 0));
   const iniTransito = dIni.toISOString().slice(0, 10);
+  const iniVendas = inicio && inicio < data ? inicio : data;
+  // Nota pendente: busca desde alguns dias antes de ela ser lançada no card (até 60 dias)
+  const limite = new Date(data + 'T12:00:00Z'); limite.setUTCDate(limite.getUTCDate() - 60);
+  const notas = notasPendentes.map(n => {
+    const d = new Date(String(n.addedAt || data).slice(0, 10) + 'T12:00:00Z');
+    d.setUTCDate(d.getUTCDate() - 10);
+    return { ...n, numN: normDoc(n.numero), desde: d.toISOString().slice(0, 10) };
+  }).filter(n => n.numN);
+  const iniMov = [iniTransito, iniVendas, ...notas.map(n => n.desde)].reduce((a, b) => (b < a ? b : a));
+  const iniMovOk = iniMov < limite.toISOString().slice(0, 10) ? limite.toISOString().slice(0, 10) : iniMov;
+  const numerosPendentes = new Map(notas.map(n => [n.numN, n]));
   etapa('Buscando vendas e entradas do período…');
-  const mov = await fetchMovimento(cnpj, iniTransito, data, chave).catch(e => { console.warn('[balanco] movimento:', e.message); return []; });
+  const mov = await fetchMovimento(cnpj, iniMovOk, data, chave).catch(e => { console.warn('[balanco] movimento:', e.message); return []; });
+  const porNota = new Map(); // numN → Map(cod → qtd)
 
   const dataBR = data.split('-').reverse().join('/');
   const vendas = new Map(), transito = new Map(), transitoNF = new Map();
@@ -191,6 +209,7 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
     const op = String(r.operacao || '').trim().toUpperCase();
     const tipo = String(r.tipo_transacao || '').trim().toUpperCase();
     const doDia = String(r.data_documento || '').startsWith(dataBR);
+    const dia = isoDe(r.data_documento);
     const serie = String(r.serie || '').trim().toUpperCase();
     const ajuste = serie === 'J' || tipo === 'J' || !parseInt(r.documento || '0');
 
@@ -202,8 +221,14 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
       continue;
     }
     if (ajuste) continue;
-    if (op === 'S' && tipo === 'V' && doDia) vendas.set(cod, (vendas.get(cod) || 0) + q);
-    if (op === 'E' && !/devolu/i.test(r.desc_cfop || '')) {
+    if (op === 'S' && tipo === 'V' && dia && dia >= iniVendas && dia <= data) vendas.set(cod, (vendas.get(cod) || 0) + q);
+    const notaPend = op === 'E' ? numerosPendentes.get(normDoc(r.documento)) : null;
+    if (notaPend) {
+      const m = porNota.get(notaPend.numN) || new Map();
+      m.set(cod, (m.get(cod) || 0) + q);
+      porNota.set(notaPend.numN, m);
+    }
+    if (op === 'E' && !/devolu/i.test(r.desc_cfop || '') && ((dia && dia >= iniTransito) || notaPend)) {
       transito.set(cod, (transito.get(cod) || 0) + q);
       const nfs = transitoNF.get(cod) || [];
       const doc = String(r.documento || '').trim(), d = String(r.data_documento || '').slice(0, 5);
@@ -314,6 +339,12 @@ async function processar({ cnpj, chave, data, hora, agrupar, diasTransito = 7, l
     portal,
     leitura: { codigos: leitura.codigos, pecas: leitura.pecas, invalidas: leitura.invalidas },
     janelaTransito: { ini: iniTransito, fim: data },
+    janelaVendas: { ini: iniVendas, fim: data },
+    notasPendentes: notas.map(n => {
+      const m = porNota.get(n.numN);
+      return { id: n.id, numero: n.numero, texto: n.texto, addedAt: n.addedAt, lancada: !!m,
+        itens: m ? [...m].map(([c, q]) => ({ c, q })) : [] };
+    }),
     movDepoisDaHora,
     naoCadastrados: naoCadastrados.length,
     agrupar,

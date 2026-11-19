@@ -23,7 +23,7 @@ const NOMES_LOJA = {
   estacao: 'Surfers Estação', tommy: 'Tommy Hilfiger Del Rey', lez: 'Lez a Lez',
 };
 
-function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin, boardsLabel }) {
+function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscritorioOrAdmin, boardsLabel }) {
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
   const cadastro = criarCadastro(getNexoDb);
   const lojas = () => JSON.parse(process.env.MICROVIX_LOJAS || '{}');
@@ -164,8 +164,13 @@ function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin
     try {
       if (!cnpj) throw new Error(`Loja ${label(bal.board)} sem CNPJ do Microvix configurado.`);
       let ultima = 0;
+      // Notas autorizadas no Recebimento de NF que a loja ainda não armazenou
+      const nfs = await Promise.resolve(getNfItems ? getNfItems() : []).catch(() => []);
+      const notasPendentes = (nfs || [])
+        .filter(n => n.board === bal.board && !n.archived && n.status === 'autorizado')
+        .map(n => ({ id: n.id, numero: (String(n.text || '').match(/\d+/) || [''])[0], texto: n.text, addedAt: n.addedAt }));
       const r = await processar({
-        cnpj, chave: chaveDe(bal.board), data: bal.data, hora: bal.hora || null,
+        cnpj, chave: chaveDe(bal.board), data: bal.data, hora: bal.hora || null, inicio: bal.inicio || null, notasPendentes,
         agrupar: bal.agrupar, diasTransito: bal.diasTransito, leituraTexto: bal.leituraTexto, cadastro,
         onEtapa: msg => { if (Date.now() - ultima > 1500) { ultima = Date.now(); salvar(id, { etapa: msg }).catch(() => {}); } },
       });
@@ -179,7 +184,8 @@ function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin
         status: 'recontagem', etapa: null, erro: null, itens: r.itens, portal: r.portal,
         origem: null, // importado de planilha com o TXT: agora é um balanço completo
         agrupar: r.agrupar, ...(r.agrupar !== bal.agrupar ? { gruposFora: [] } : {}),
-        leitura: r.leitura, janelaTransito: r.janelaTransito, movDepoisDaHora: r.movDepoisDaHora,
+        leitura: r.leitura, janelaTransito: r.janelaTransito, janelaVendas: r.janelaVendas, notasPendentes: r.notasPendentes,
+        movDepoisDaHora: r.movDepoisDaHora,
         naoCadastrados: r.naoCadastrados, processadoEm: new Date().toISOString(),
       };
       await salvar(id, set);
@@ -217,15 +223,16 @@ function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin
   // ── Novo balanço ─────────────────────────────────────────────────────────
   app.post('/api/balancos', requireEscritorioOrAdmin, upload.single('arquivo'), async (req, res) => {
     try {
-      const { board, data, hora, mes, agrupar, diasTransito, obs } = req.body;
+      const { board, data, hora, inicio, mes, agrupar, diasTransito, obs } = req.body;
       if (!board || !lojas()[board]) return res.status(400).json({ error: 'Escolha a loja.' });
       if (!/^\d{4}-\d{2}-\d{2}$/.test(data || '')) return res.status(400).json({ error: 'Informe a data do balanço.' });
       if (hora && !/^\d{2}:\d{2}$/.test(hora)) return res.status(400).json({ error: 'Hora no formato HH:MM.' });
+      if (inicio && (!/^\d{4}-\d{2}-\d{2}$/.test(inicio) || inicio > data)) return res.status(400).json({ error: 'O início da contagem tem que ser antes da data da contagem.' });
       if (!req.file) return res.status(400).json({ error: 'Envie o arquivo TXT da leitura.' });
       const leituraTexto = req.file.buffer.toString('latin1');
       const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
       const doc = {
-        id, board, data, hora: hora || null,
+        id, board, data, hora: hora || null, inicio: inicio && inicio < data ? inicio : null,
         mes: /^\d{4}-\d{2}$/.test(mes || '') ? mes : data.slice(0, 7),
         agrupar: agrupar === 'setor' ? 'setor' : agrupar === 'linha' ? 'linha' : (board === 'tommy' ? 'linha' : 'setor'),
         diasTransito: Math.min(60, Math.max(0, parseInt(diasTransito) || 7)),
@@ -306,6 +313,15 @@ function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin
     try {
       const bal = await carregar(req, res); if (!bal) return;
       const { leituraTexto, ...resto } = bal;
+      // Situação de hoje das notas que estavam pendentes no processamento (a loja pode já ter dado baixa)
+      if (bal.notasPendentes?.length && getNfItems) {
+        const nfs = await Promise.resolve(getNfItems()).catch(() => []);
+        const porId = new Map((nfs || []).map(n => [n.id, n]));
+        resto.notasPendentes = bal.notasPendentes.map(n => {
+          const atual = porId.get(n.id);
+          return { ...n, baixa: atual?.archived ? { em: atual.archivedAt, por: atual.archivedBy } : null, excluida: !atual };
+        });
+      }
       res.json({ ...resto, temLeitura: !!leituraTexto, temPdf: bal.temPdf || bal.origem !== 'planilha',
         lojaLabel: label(bal.board), escritorio: ehEscritorio(req),
         resumo: bal.itens ? resumo(bal) : null });
@@ -464,6 +480,10 @@ function register(app, { getDb, getNexoDb, requireAuth, requireEscritorioOrAdmin
       const b = req.body || {};
       if (b.hora !== undefined) set.hora = /^\d{2}:\d{2}$/.test(b.hora) ? b.hora : null;
       if (/^\d{4}-\d{2}-\d{2}$/.test(b.data || '')) set.data = b.data;
+      if (b.inicio !== undefined) {
+        const dt = set.data || bal.data;
+        set.inicio = /^\d{4}-\d{2}-\d{2}$/.test(b.inicio || '') && b.inicio < dt ? b.inicio : null;
+      }
       if (b.agrupar === 'setor' || b.agrupar === 'linha') { set.agrupar = b.agrupar; set.gruposFora = []; }
       if (b.diasTransito !== undefined) set.diasTransito = Math.min(60, Math.max(0, parseInt(b.diasTransito) || 0));
       const antigas = new Map((bal.itens || []).filter(it => it.rc !== null || it.ob || it.st).map(it => [it.c || it.b, it]));

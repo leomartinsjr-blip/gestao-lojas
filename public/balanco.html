@@ -224,16 +224,19 @@ tr.feita td { opacity: .55; }
       <div class="fld"><label>Mês do balanço</label><input type="month" id="nMes" class="inp" required/></div>
     </div>
     <div class="row2">
-      <div class="fld"><label>Data da contagem</label><input type="date" id="nData" class="inp" required/></div>
-      <div class="fld"><label>Hora (opcional)</label><input type="time" id="nHora" class="inp"/>
-        <div class="hint">Estoque nesse horário. Vazio = fim do dia.</div></div>
+      <div class="fld"><label>Início da contagem (opcional)</label><input type="date" id="nInicio" class="inp"/>
+        <div class="hint">Se a contagem levou mais de um dia. As vendas desde esse dia contam como venda.</div></div>
+      <div class="fld"><label>Data da contagem (último dia)</label><input type="date" id="nData" class="inp" required/>
+        <div class="hint">O estoque comparado é o desse dia.</div></div>
     </div>
     <div class="row2">
-      <div class="fld"><label>Agrupar por</label>
-        <select id="nAgrupar" class="sel"><option value="">Padrão da loja</option><option value="setor">Setor</option><option value="linha">Linha</option></select></div>
+      <div class="fld"><label>Hora (opcional)</label><input type="time" id="nHora" class="inp"/>
+        <div class="hint">Estoque nesse horário. Vazio = fim do dia.</div></div>
       <div class="fld"><label>Trânsito (dias antes)</label><input type="number" id="nDias" class="inp" min="0" max="60" value="7"/>
-        <div class="hint">Entradas desses dias explicam falta.</div></div>
+        <div class="hint">Entradas desses dias explicam falta. As notas autorizadas e ainda não armazenadas no Recebimento de NF entram sempre.</div></div>
     </div>
+    <div class="fld"><label>Agrupar por</label>
+      <select id="nAgrupar" class="sel"><option value="">Padrão da loja</option><option value="setor">Setor</option><option value="linha">Linha</option></select></div>
     <div class="fld"><label>Arquivo da leitura (TXT)</label><input type="file" id="nArq" class="inp" accept=".txt,.csv,text/plain" required style="padding:5px"/>
       <div class="hint">O mesmo arquivo do "Enviar arquivo" do Microvix: código de barras,quantidade.</div></div>
     <div class="fld"><label>Observação</label><input type="text" id="nObs" class="inp" maxlength="500"/></div>

@@ -251,6 +251,10 @@ function desenharDetalhe() {
     if (b.origem === 'planilha') avisos.push(`<div class="aviso">Importado da planilha <b>${esc(b.arquivoNome)}</b>: só os itens com diferença${b.duplicadasRemovidas ? ` (${b.duplicadasRemovidas} linhas repetidas do export foram ignoradas)` : ''}.${b.temLeitura ? '' : ' Sem o TXT da leitura, não há reprocessamento nem TXT corrigido.'}</div>`);
     if (b.naoCadastrados) avisos.push(`<div class="aviso">${b.naoCadastrados} código(s) lido(s) não existem no cadastro do Microvix — estão no grupo (NÃO CADASTRADO).</div>`);
     if (b.leitura?.invalidas?.length) avisos.push(`<div class="aviso">${b.leitura.invalidas.length} linha(s) do arquivo não foram entendidas (ex.: linha ${b.leitura.invalidas[0].linha}: "${esc(b.leitura.invalidas[0].texto)}").</div>`);
+    const entregues = situacaoNotas(b).filter(n => n.sit === 'entregue' && !n.baixa && !n.excluida);
+    if (entregues.length) avisos.push(`<div class="aviso">🧾 ${entregues.length === 1 ? 'A nota' : 'As notas'} ${entregues.map(n => '<b>' + esc(n.numero) + '</b>').join(', ')}
+      ${entregues.length === 1 ? 'está' : 'estão'} pendente${entregues.length === 1 ? '' : 's'} no Recebimento de NF, mas os produtos foram contados sem falta: sinal de que já ${entregues.length === 1 ? 'foi entregue' : 'foram entregues'}.
+      Veja em <b>Resumo das diferenças</b>.</div>`);
     if (b.status === 'finalizado') avisos.push(`<div class="aviso" style="border-left-color:var(--up)">Finalizado por ${esc(b.finalizadoPor)} em ${new Date(b.finalizadoEm).toLocaleString('pt-BR')}. Para lançar mais recontagens, reabra.</div>`);
     corpo = avisos.join('') + `
       <div class="kpis">
@@ -422,7 +426,7 @@ function desenharResumo() {
   const totQ = divergencias.reduce((a, x) => a + x.q, 0), totImp = divergencias.reduce((a, x) => a + x.imp, 0);
   const jan = b.janelaTransito || {};
   $('sub').innerHTML = `
-    <div class="toolbar noprint"><span class="muted">Vendas do dia da contagem · entradas de ${dBR(jan.ini)} a ${dBR(jan.fim)} contam como trânsito.</span><span class="grow"></span><button class="btn" onclick="window.print()">Imprimir</button></div>
+    <div class="toolbar noprint"><span class="muted">${b.janelaVendas && b.janelaVendas.ini !== b.janelaVendas.fim ? `Vendas de ${dBR(b.janelaVendas.ini)} a ${dBR(b.janelaVendas.fim)}` : 'Vendas do dia da contagem'} · entradas de ${dBR(jan.ini)} a ${dBR(jan.fim)} e das notas pendentes contam como trânsito.</span><span class="grow"></span><button class="btn" onclick="window.print()">Imprimir</button></div>
     <div class="box" style="margin-bottom:12px"><b>${esc(b.lojaLabel)} — balanço de ${dBR(b.data)}${b.hora ? ' ' + b.hora : ''}</b> · mês ${esc(mesBR(b.mes))}<br/>
       <span class="muted">Leitura de ${fInt(r.pecasLidas)} peças contra ${fInt(r.pecasEstoque)} no sistema. ${t.itens} itens com diferença
       (${fInt(t.pecasDif)} peças, ${fRS(t.impactoSistema)}). Depois da recontagem: ${fInt(t.pecasDifFinal)} peças —
@@ -432,6 +436,7 @@ function desenharResumo() {
       <th class="n">Dif. peças</th><th class="n">Dif. final</th><th class="n">Impacto sistema</th><th class="n">Confirmado</th><th class="n">A apurar</th>
       <th class="n">Expl. venda</th><th class="n">Vendas</th><th class="n">Expl. trânsito</th><th class="n">Trânsito</th>
     </tr></thead><tbody>${r.grupos.map(linha).join('')}</tbody><tfoot>${linha(t)}</tfoot></table></div>
+    ${quadroNotas(b)}
     <h4 style="margin:0 0 8px">Divergências (${divergencias.length} ${divergencias.length === 1 ? 'item' : 'itens'}, recontado quando houver)</h4>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Setor</th><th>Código</th><th>Descrição</th><th class="n">Estoque</th><th class="n">Balanço</th><th class="n">Recontada</th><th class="n">Diferença</th><th class="n">Impacto</th><th>Status</th><th>Observação</th></tr></thead>
     <tbody>${divergencias.map(({ it, q, imp }) => `<tr><td>${esc(grupoCurto(it.g))}</td><td>${esc(it.c || it.b)}</td><td class="desc">${esc(it.d)}</td><td class="n">${fInt(it.e)}</td><td class="n">${fInt(it.l)}</td><td class="n">${vazio(it.rc) ? '' : it.rc}</td><td class="n ${cls(q)}">${fInt(q)}</td><td class="n ${cls(imp)}">${fRS(imp)}</td><td><span class="${stCls(status(it))}">${status(it)}</span></td><td>${esc(it.ob || '')}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">Nenhuma divergência.</td></tr>'}</tbody>
@@ -508,8 +513,9 @@ function desenharConfig() {
     </div>
     ${b.temLeitura ? `<div class="box"><h4>Reprocessar</h4>
       <div class="hint" style="margin:-4px 0 8px">Busca de novo estoque, vendas e preços no Microvix. As recontagens já lançadas são mantidas.</div>
-      <div class="row2"><div class="fld"><label>Data</label><input type="date" id="pData" class="inp" value="${esc(b.data)}"/></div>
-        <div class="fld"><label>Hora</label><input type="time" id="pHora" class="inp" value="${esc(b.hora || '')}"/></div></div>
+      <div class="row2"><div class="fld"><label>Início da contagem</label><input type="date" id="pInicio" class="inp" value="${esc(b.inicio || '')}"/></div>
+        <div class="fld"><label>Data (último dia)</label><input type="date" id="pData" class="inp" value="${esc(b.data)}"/></div></div>
+      <div class="row2"><div class="fld"><label>Hora</label><input type="time" id="pHora" class="inp" value="${esc(b.hora || '')}"/></div><div class="fld"></div></div>
       <div class="row2"><div class="fld"><label>Agrupar por</label><select id="pAgr" class="sel"><option value="setor" ${b.agrupar === 'setor' ? 'selected' : ''}>Setor</option><option value="linha" ${b.agrupar === 'linha' ? 'selected' : ''}>Linha</option></select></div>
         <div class="fld"><label>Trânsito (dias)</label><input type="number" id="pDias" class="inp" min="0" max="60" value="${b.diasTransito ?? 7}"/></div></div>
       <div class="toolbar"><button class="btn primary" id="pRodar">Reprocessar</button><a class="btn" href="/api/balancos/${b.id}/leitura">TXT original</a></div>
@@ -522,9 +528,63 @@ function desenharConfig() {
   $('cNenhum').onclick = () => document.querySelectorAll('.cg').forEach(c => c.checked = false);
   $('cSalvarG').onclick = () => patchBal({ gruposFora: [...document.querySelectorAll('.cg')].filter(c => !c.checked).map(c => c.value) });
   $('cSalvar').onclick = () => patchBal({ incluirNaoLidos: $('cNaoLidos').checked, mes: $('cMes').value, obs: $('cObs').value });
-  if ($('pRodar')) $('pRodar').onclick = () => reprocessar({ data: $('pData').value, hora: $('pHora').value, agrupar: $('pAgr').value, diasTransito: $('pDias').value });
+  if ($('pRodar')) $('pRodar').onclick = () => reprocessar({ inicio: $('pInicio').value, data: $('pData').value, hora: $('pHora').value, agrupar: $('pAgr').value, diasTransito: $('pDias').value });
   $('cExcluir').onclick = excluir;
 }
+
+// ── Notas pendentes do Recebimento de NF ──────────────────────────────────
+// Para cada nota autorizada e não armazenada: quantas peças dela faltaram na
+// contagem (recontagem quando houver). Nenhuma falta = a mercadoria já está na loja.
+function situacaoNotas(b) {
+  const fora = new Set(b.gruposFora || []);
+  const porCod = new Map((b.itens || []).map(it => [it.c, it]));
+  return (b.notasPendentes || []).map(n => {
+    let pecas = 0, falta = 0, conferidos = 0;
+    for (const x of n.itens || []) {
+      pecas += x.q;
+      const it = porCod.get(x.c);
+      if (!it || fora.has(it.g)) continue; // sem saldo e sem leitura, ou setor fora do balanço
+      conferidos++;
+      const contado = vazio(it.rc) ? it.l : Number(it.rc);
+      falta += Math.min(x.q, Math.max(0, it.e - contado));
+    }
+    const sit = !n.lancada ? 'nao-lancada' : !conferidos ? 'sem-saldo' : falta === 0 ? 'entregue' : falta >= pecas ? 'transito' : 'parcial';
+    return { ...n, pecas, falta, sit };
+  });
+}
+function quadroNotas(b) {
+  const notas = situacaoNotas(b);
+  if (!notas.length) return '';
+  const SIT = {
+    entregue: ['<span class="st st-OK">PARECE ENTREGUE</span>', 'Nenhuma peça da nota faltou: dar baixa no Recebimento de NF.'],
+    transito: ['<span class="st st-VER-TRANSITO">EM TRÂNSITO</span>', 'Todas as peças da nota faltaram: a mercadoria não chegou.'],
+    parcial: ['<span class="st st-VENDA-PARCIAL">PARCIAL</span>', 'Parte das peças faltou: conferir a nota com a loja.'],
+    'sem-saldo': ['<span class="st">SEM SALDO</span>', 'Os produtos da nota não têm saldo nem foram lidos (ou estão em setor fora do balanço).'],
+    'nao-lancada': ['<span class="st">SEM ENTRADA</span>', 'Nota não lançada no Microvix: não mexe no estoque.'],
+  };
+  const linha = n => {
+    const [chip, txt] = SIT[n.sit];
+    const baixa = n.baixa ? `<span class="muted">baixa em ${new Date(n.baixa.em).toLocaleDateString('pt-BR')} por ${esc(n.baixa.por || '—')}</span>`
+      : n.excluida ? '<span class="muted">nota excluída do card</span>'
+      : S.escritorio && n.sit === 'entregue' ? `<button class="btn" data-baixa="${n.id}">Dar baixa</button>` : '';
+    return `<tr><td>${esc(n.texto || n.numero)}</td><td>${n.addedAt ? new Date(n.addedAt).toLocaleDateString('pt-BR') : ''}</td>
+      <td class="n">${fInt(n.pecas)}</td><td class="n ${n.falta ? 'neg' : ''}">${fInt(n.falta)}</td><td>${chip}</td><td class="muted">${txt}</td><td>${baixa}</td></tr>`;
+  };
+  return `<h4 style="margin:0 0 8px">Notas pendentes no Recebimento de NF (${notas.length})</h4>
+    <div class="hint" style="margin:-4px 0 8px">Notas autorizadas e ainda não armazenadas pela loja quando o balanço foi processado. As entradas delas explicam falta mesmo antes da janela de trânsito.</div>
+    <div class="tbl-wrap" style="margin-bottom:14px"><table class="tbl"><thead><tr><th>Nota</th><th>No card desde</th><th class="n">Peças</th><th class="n">Faltaram</th><th>Situação</th><th></th><th></th></tr></thead>
+    <tbody>${notas.map(linha).join('')}</tbody></table></div>`;
+}
+document.addEventListener('click', async e => {
+  const id = e.target?.dataset?.baixa;
+  if (!id) return;
+  if (!confirm('Dar baixa nesta nota no Recebimento de NF (armazenada pela loja)?')) return;
+  e.target.disabled = true;
+  try {
+    await api(`/api/nf-items/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ checked: true }) });
+    abrir(S.bal.id, true);
+  } catch (err) { alert(err.message); e.target.disabled = false; }
+});
 
 async function patchBal(body) {
   try {
@@ -574,7 +634,7 @@ $('nCancelar').onclick = () => $('modal').classList.add('hidden');
 $('fNovo').onsubmit = async e => {
   e.preventDefault();
   const fd = new FormData();
-  fd.append('board', $('nLoja').value); fd.append('mes', $('nMes').value); fd.append('data', $('nData').value);
+  fd.append('board', $('nLoja').value); fd.append('mes', $('nMes').value); fd.append('data', $('nData').value); fd.append('inicio', $('nInicio').value);
   fd.append('hora', $('nHora').value); fd.append('agrupar', $('nAgrupar').value); fd.append('diasTransito', $('nDias').value);
   fd.append('obs', $('nObs').value); fd.append('arquivo', $('nArq').files[0]);
   $('nEnviar').disabled = true; $('nErr').textContent = '';
