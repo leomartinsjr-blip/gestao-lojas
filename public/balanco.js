@@ -363,7 +363,8 @@ const cartaoRecont = aberto => it => {
   const s = status(it);
   const dif = it.l - it.e;
   return `<div class="linha-item mcard" data-k="${k}">
-    <div class="mcard-top"><span class="muted">${esc(grupoCurto(it.g))} · ${esc(it.c || it.b)}</span><span class="stc"><span class="${stCls(s)}">${s}</span></span></div>
+    <div class="mcard-top"><span class="mcard-cod">${esc(it.c || it.b)}</span><span class="stc"><span class="${stCls(s)}">${s}</span></span></div>
+    <div class="mcard-grupo muted">${esc(grupoCurto(it.g))}</div>
     <div class="mcard-prod">${exemploProduto(it)}<div class="mcard-desc">${esc(it.d)}${it.lido ? '' : ' <span class="badge">não lido</span>'}
       ${it.r ? `<div class="mcard-ref">Ref. ${esc(it.r)}</div>` : ''}${nfsTxt(it)}</div></div>
     <div class="mcard-nums"><span>Estoque <b>${fInt(it.e)}</b></span><span>Lido <b>${fInt(it.l)}</b></span><span>Dif. <b class="${cls(dif)}">${fInt(dif)}</b></span><span>Final <b class="dif-f">${fDifF(it)}</b></span></div>
@@ -481,6 +482,8 @@ inputFoto.onchange = async () => {
   inputFoto.value = '';
   if (!arq || !k) return;
   const it = S.bal.itens.find(x => (x.c || x.b) === k);
+  // O código é o que importa: a gerente confirma que a etiqueta da foto é deste item
+  if (!confirm(`Conferiu na etiqueta o código ${k}?\n\n${it?.d || ''}\n\nOK envia a foto. Cancelar descarta para tirar de novo.`)) return;
   const tr = document.querySelector(`.linha-item[data-k="${CSS.escape(k)}"]`);
   const btn = tr?.querySelector(`[data-foto="${CSS.escape(k)}"]`);
   if (btn) { btn.disabled = true; btn.textContent = 'Enviando…'; }
