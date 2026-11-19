@@ -290,7 +290,7 @@ function desenharRecontagemLoja(aberto) {
     <tbody>${nc.map(it => `<tr><td style="user-select:all">${esc(it.b)}</td><td class="n">${fInt(it.l)}</td></tr>`).join('')}</tbody></table></div>`);
   $('rPend').onchange = e => { f.pend = e.target.checked; desenharRecontagemLoja(aberto); };
   let tq; $('rQ').oninput = e => { clearTimeout(tq); tq = setTimeout(() => { f.q = e.target.value; desenharRecontagemLoja(aberto); const el = $('rQ'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 300); };
-  document.querySelectorAll('#sub input.rc, #sub input.ob').forEach(el => el.onchange = () => salvarItem(el));
+  document.querySelectorAll('#sub input.rc, #sub input.ob, #sub textarea.ob').forEach(el => el.onchange = () => salvarItem(el));
 }
 const textoLoja = it => ({
   'FALTA FOTO': 'Falta a foto das peças com o código aparente — sem ela a recontagem não vale.',
@@ -486,9 +486,9 @@ function desenharRecontagem() {
     </div>
     ${matchMedia('(max-width: 640px)').matches && carregarFotosSite()
       ? `<div class="mcards">${lista.map(cartaoRecont(aberto)).join('') || '<div class="empty">Nada com esse filtro.</div>'}</div>`
-      : `<div class="tbl-wrap"><table class="tbl fit"><colgroup><col style="width:7%"><col style="width:9.5%"><col><col style="width:8%">
-      <col style="width:4.5%"><col style="width:4.5%"><col style="width:3.5%"><col style="width:6.5%"><col style="width:7%"><col style="width:6%">
-      <col style="width:4%"><col style="width:10%"><col style="width:11%"></colgroup><thead><tr>
+      : `<div class="tbl-wrap"><table class="tbl fit"><colgroup><col style="width:6%"><col style="width:6.5%"><col><col style="width:7.5%">
+      <col style="width:3.8%"><col style="width:3.8%"><col style="width:3.2%"><col style="width:5.5%"><col style="width:6%"><col style="width:4.8%">
+      <col style="width:3.4%"><col style="width:9.5%"><col style="width:19%"></colgroup><thead><tr>
       <th>Setor</th><th>Código</th><th>Descrição</th><th>Referência</th><th class="n">Estoque</th><th class="n">Balanço</th><th class="n">Dif.</th>
       <th class="n">Preço</th><th class="n">Impacto</th><th class="c">Recontada</th><th class="n">Dif. final</th><th>Status</th><th>Observação</th>
     </tr></thead><tbody>${lista.map(linhaRecont(aberto)).join('') || '<tr><td colspan="13" class="empty">Nada com esse filtro.</td></tr>'}</tbody>
@@ -506,7 +506,7 @@ function desenharRecontagem() {
   $('rSt').onchange = e => { f.st = e.target.value; desenharRecontagem(); };
   $('rPend').onchange = e => { f.pend = e.target.checked; desenharRecontagem(); };
   let tq; $('rQ').oninput = e => { clearTimeout(tq); tq = setTimeout(() => { f.q = e.target.value; desenharRecontagem(); const el = $('rQ'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 300); };
-  document.querySelectorAll('#sub input.rc, #sub input.ob').forEach(el => el.onchange = () => salvarItem(el));
+  document.querySelectorAll('#sub input.rc, #sub input.ob, #sub textarea.ob').forEach(el => el.onchange = () => salvarItem(el));
   document.querySelectorAll('#sub select.stsel').forEach(el => el.onchange = () => salvarStatus(el));
   // Enter no campo da recontagem pula para o próximo item
   document.querySelectorAll('#sub input.rc').forEach((el, i, arr) => el.onkeydown = e => {
@@ -526,7 +526,7 @@ const linhaRecont = aberto => it => {
     <td class="n">${fRS(it.p)}</td><td class="n ${cls(dif * it.p)}">${fRS(dif * it.p)}</td>
     <td class="c">${aberto ? `<input class="inp rc" inputmode="numeric" data-k="${k}" value="${vazio(it.rc) ? '' : it.rc}"${quem}/>` : (vazio(it.rc) ? '' : `<b${quem}>${it.rc}</b>`)}</td>
     <td class="n dif-f">${difF}</td><td class="stc">${celStatus(it, aberto)}</td>
-    <td><div class="cel-ob">${aberto ? `<input class="inp ob" data-k="${k}" value="${esc(it.ob || '')}" maxlength="300"/>` : `<span>${esc(it.ob || '')}</span>`}${botaoFotos(it, aberto, false)}</div></td></tr>`;
+    <td><div class="cel-ob">${aberto ? `<textarea class="inp ob" data-k="${k}" rows="1" maxlength="300">${esc(it.ob || '')}</textarea>` : `<span class="ob-txt">${esc(it.ob || '')}</span>`}${botaoFotos(it, aberto, false)}</div></td></tr>`;
 };
 
 // Celular: um cartão por item, com a recontagem à mão (a tabela pede rolagem lateral)
@@ -725,7 +725,7 @@ document.addEventListener('click', e => {
 async function salvarItem(el) {
   const k = el.dataset.k;
   const tr = el.closest('.linha-item');
-  const rcEl = tr.querySelector('input.rc'), obEl = tr.querySelector('input.ob');
+  const rcEl = tr.querySelector('input.rc'), obEl = tr.querySelector('input.ob, textarea.ob');
   const rcTxt = rcEl.value.trim();
   if (rcTxt !== '' && !/^\d+$/.test(rcTxt)) { rcEl.classList.add('falhou'); rcEl.title = 'Só número inteiro'; return; }
   const body = { itens: [{ k, rc: rcTxt === '' ? null : Number(rcTxt), ob: obEl.value }] };

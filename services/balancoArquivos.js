@@ -198,7 +198,7 @@ async function excelRecontagem(bal) {
 
   // RECONTAGEM
   const ws = wb.addWorksheet('RECONTAGEM', { views: [{ state: 'frozen', ySplit: 3, topLeftCell: 'A4' }] });
-  [13.71, 11.43, 49.57, 16.43, 8.71, 8.71, 10.29, 11.43, 13.29, 14.43, 10, 19.86, 24.71, 18.29, 18.29, 18.29, 18.29, 18.29]
+  [13.71, 11.43, 49.57, 16.43, 8.71, 8.71, 10.29, 11.43, 13.29, 14.43, 10, 19.86, 40, 18.29, 18.29, 18.29, 18.29, 18.29]
     .forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
   ws.mergeCells('A1:M1');
@@ -263,9 +263,12 @@ async function excelRecontagem(bal) {
       if ([5, 6, 7, 10, 11, 16, 17].includes(col)) c.numFmt = FMT_INT;
       if ([8, 9, 14, 15].includes(col)) c.numFmt = FMT_RS;
       if (col === 10) { c.font = { ...preto, bold: true, color: { argb: 'FF0000FF' } }; c.fill = fill('FFFFF2CC'); }
-      if (col === 13) { c.font = { name: 'Calibri', size: 10, color: { argb: 'FF0000FF' } }; c.fill = fill('FFFFF2CC'); c.numFmt = '@'; c.alignment = { horizontal: 'left', vertical: 'middle' }; }
+      if (col === 13) { c.font = { name: 'Calibri', size: 10, color: { argb: 'FF0000FF' } }; c.fill = fill('FFFFF2CC'); c.numFmt = '@'; c.alignment = { horizontal: 'left', vertical: 'middle', wrapText: true }; }
       if (col >= 16) { c.fill = fill('FFFFFFFF'); c.alignment = { horizontal: 'center' }; }
     });
+    // Observação longa: a linha cresce para ela aparecer inteira (~38 caracteres por linha na coluna M)
+    const linhasOb = Math.ceil(String(it.ob || '').length / 38);
+    if (linhasOb > 1) row.height = Math.min(15 * linhasOb, 90);
     row.getCell(10).dataValidation = {
       type: 'whole', operator: 'greaterThanOrEqual', allowBlank: true, formulae: [0],
       showInputMessage: true, promptTitle: 'Recontagem', prompt: 'Digite a quantidade física contada.',
