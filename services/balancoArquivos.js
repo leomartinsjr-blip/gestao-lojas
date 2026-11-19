@@ -4,7 +4,7 @@
 
 const PDFDocument = require('pdfkit');
 const ExcelJS = require('exceljs');
-const { itensRecontagem, grupoCurto, statusItem } = require('./balanco');
+const { itensRecontagem, naoCadastradosDe, NAO_CADASTRADO, grupoCurto, statusItem } = require('./balanco');
 
 const fmtInt = n => {
   const v = Math.round(Number(n) || 0);
@@ -103,7 +103,7 @@ function pdfListaCriticas(bal, { lojaLabel }) {
     cabecalhoColunas();
 
     const escopo = (bal.itens || []).filter(it => !fora.has(it.g));
-    const lidos = escopo.filter(it => it.lido);
+    const lidos = escopo.filter(it => it.lido && it.g !== NAO_CADASTRADO);
     const grupos = [...new Set(lidos.map(it => it.g))].sort((a, b) => a.localeCompare(b));
     for (const g of grupos) {
       garante(RH * 3);
@@ -129,6 +129,29 @@ function pdfListaCriticas(bal, { lojaLabel }) {
       totais(naoLidos, 'Total não lido');
       doc.font('Helvetica').fontSize(7).fillColor(cinza)
         .text(`Total de ${naoLidos.length.toLocaleString('pt-BR')} registro(s) listado(s).`, L + 2, y);
+      y += 18;
+    }
+
+    // Códigos lidos que não existem no Microvix: só a lista, fora da comparação
+    const semCadastro = naoCadastradosDe(bal);
+    if (semCadastro.length) {
+      garante(RH * 4, false);
+      doc.font('Helvetica-Bold').fontSize(8).fillColor(escuro)
+        .text(`Códigos não cadastrados no Microvix (${semCadastro.length})`, L, y);
+      y += 11;
+      doc.font('Helvetica').fontSize(7).fillColor(cinza)
+        .text('Fora da comparação: etiqueta errada ou leitura errada. Achar a peça pelo código e ler a etiqueta da loja.', L, y, { width: W });
+      y += 12;
+      for (const it of semCadastro) {
+        garante(RH, false);
+        doc.font('Helvetica').fontSize(7.5).fillColor(escuro)
+          .text(it.b, L + 2, y + 2, { width: 120, lineBreak: false })
+          .text(`${it.l} peça(s)`, L + 130, y + 2, { width: 80, lineBreak: false });
+        y += RH;
+      }
+      const pcs = semCadastro.reduce((a, it) => a + it.l, 0);
+      doc.font('Helvetica-Bold').fontSize(7.5).text(`Total: ${pcs.toLocaleString('pt-BR')} peça(s)`, L + 2, y + 2);
+      y += RH;
     }
 
     const range = doc.bufferedPageRange();
@@ -360,6 +383,33 @@ async function excelRecontagem(bal) {
 
   // Fórmulas recalculam ao abrir (o resumo depende delas)
   wb.calcProperties = { fullCalcOnLoad: true };
+  // Códigos não cadastrados: aba à parte, sem comparação
+  const nc = naoCadastradosDe(bal);
+  if (nc.length) {
+    const ws2 = wb.addWorksheet('NÃO CADASTRADOS');
+    [22, 14, 50].forEach((w, i) => { ws2.getColumn(i + 1).width = w; });
+    ws2.mergeCells('A1:C1');
+    ws2.getCell('A1').value = 'CÓDIGOS LIDOS QUE NÃO EXISTEM NO MICROVIX';
+    ws2.getCell('A1').font = { name: 'Calibri', bold: true, size: 13, color: { argb: 'FFFFFFFF' } };
+    ws2.getCell('A1').fill = fill('FF1F3864');
+    ws2.getCell('A1').alignment = { horizontal: 'center' };
+    ws2.getCell('A2').value = 'Fora da comparação: etiqueta errada ou leitura errada. Achar a peça pelo código e ler a etiqueta da loja.';
+    ws2.getCell('A2').font = { italic: true, size: 9, color: { argb: 'FF595959' } };
+    const h = ws2.getRow(3);
+    ['Código lido', 'Quantidade', 'Observação'].forEach((t, i) => {
+      const c = h.getCell(i + 1); c.value = t; c.font = { bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = fill('FF2F5597'); c.border = BORDA;
+    });
+    nc.forEach((it, i) => {
+      const row = ws2.getRow(4 + i);
+      row.getCell(1).value = it.b;
+      row.getCell(2).value = it.l; row.getCell(2).numFmt = FMT_INT;
+      row.getCell(3).value = it.ob || '';
+      for (let k = 1; k <= 3; k++) row.getCell(k).border = BORDA;
+    });
+    const tr = ws2.getRow(4 + nc.length);
+    tr.getCell(1).value = 'Total'; tr.getCell(1).font = { bold: true };
+    tr.getCell(2).value = { formula: `SUM(B4:B${3 + nc.length})` }; tr.getCell(2).numFmt = FMT_INT; tr.getCell(2).font = { bold: true };
+  }
   return wb.xlsx.writeBuffer();
 }
 

@@ -214,9 +214,12 @@ const SUPERFLUO = /SUP[EÉ]RF(LU|UL)O|AJUSTE ERRADO|\bTROCA|TIRAR (DO )?ESTOQUE|
 const resolvidoNaPlanilha = (b, it) => b.origem === 'planilha' && b.status === 'finalizado'
   && (SUPERFLUO.test(obsPlanilha(it)) || (vazio(it.rc) && it.st !== 'DIVERGENTE' && it.st !== 'A RECONTAR'
     && (!!obsPlanilha(it) || ['VER VENDA', 'VER TRÂNSITO'].includes(status(it)))));
+// Código que não existe no Microvix fica fora da recontagem: lista à parte
+const NAO_CADASTRADO = '(NÃO CADASTRADO)';
+const naoCadastrados = b => (b.itens || []).filter(it => it.g === NAO_CADASTRADO).sort((x, y) => (x.o ?? 0) - (y.o ?? 0));
 function itensRecontagem(b) {
   const fora = new Set(b.gruposFora || []);
-  return (b.itens || []).filter(it => !fora.has(it.g) && it.l !== it.e && (it.lido || b.incluirNaoLidos)
+  return (b.itens || []).filter(it => it.g !== NAO_CADASTRADO && !fora.has(it.g) && it.l !== it.e && (it.lido || b.incluirNaoLidos)
     && !resolvidoNaPlanilha(b, it));
 }
 
@@ -249,7 +252,7 @@ function desenharDetalhe() {
     const avisos = [];
     if (b.status === 'erro') avisos.push(`<div class="aviso erro">${esc(b.erro)}</div>`);
     if (b.origem === 'planilha') avisos.push(`<div class="aviso">Importado da planilha <b>${esc(b.arquivoNome)}</b>: só os itens com diferença${b.duplicadasRemovidas ? ` (${b.duplicadasRemovidas} linhas repetidas do export foram ignoradas)` : ''}.${b.temLeitura ? '' : ' Sem o TXT da leitura, não há reprocessamento nem TXT corrigido.'}</div>`);
-    if (b.naoCadastrados) avisos.push(`<div class="aviso">${b.naoCadastrados} código(s) lido(s) não existem no cadastro do Microvix — estão no grupo (NÃO CADASTRADO).</div>`);
+    if (naoCadastrados(b).length) avisos.push(`<div class="aviso">${naoCadastrados(b).length} código(s) lido(s) não existem no Microvix — ficam fora da recontagem, na lista <b>Códigos não cadastrados</b> no fim da aba Recontagem.</div>`);
     if (b.leitura?.invalidas?.length) avisos.push(`<div class="aviso">${b.leitura.invalidas.length} linha(s) do arquivo não foram entendidas (ex.: linha ${b.leitura.invalidas[0].linha}: "${esc(b.leitura.invalidas[0].texto)}").</div>`);
     const entregues = situacaoNotas(b).filter(n => n.sit === 'entregue' && !n.baixa && !n.excluida);
     if (entregues.length) avisos.push(`<div class="aviso">🧾 ${entregues.length === 1 ? 'A nota' : 'As notas'} ${entregues.map(n => '<b>' + esc(n.numero) + '</b>').join(', ')}
@@ -317,6 +320,13 @@ function desenharRecontagem() {
     </tr></thead><tbody>${lista.map(linhaRecont(aberto)).join('') || '<tr><td colspan="13" class="empty">Nada com esse filtro.</td></tr>'}</tbody>
     <tfoot><tr><td colspan="4">Total do filtro</td><td class="n">${fInt(tot.e)}</td><td class="n">${fInt(tot.l)}</td><td class="n">${fInt(tot.l - tot.e)}</td><td></td>
       <td class="n ${cls(tot.i)}">${fRS(tot.i)}</td><td colspan="4"></td></tr></tfoot></table></div>`}`;
+  const nc = naoCadastrados(b);
+  if (nc.length) $('sub').insertAdjacentHTML('beforeend', `
+    <h4 style="margin:16px 0 4px">Códigos não cadastrados (${nc.length})</h4>
+    <div class="hint" style="margin-bottom:8px">Lidos, mas não existem no Microvix: etiqueta errada ou leitura errada. Ficam fora da comparação — achar a peça pelo código e ler a etiqueta da loja.</div>
+    <div class="tbl-wrap" style="max-width:420px"><table class="tbl"><thead><tr><th>Código lido</th><th class="n">Peças</th></tr></thead>
+    <tbody>${nc.map(it => `<tr><td style="user-select:all">${esc(it.b)}</td><td class="n">${fInt(it.l)}</td></tr>`).join('')}</tbody>
+    <tfoot><tr><td>Total</td><td class="n">${fInt(nc.reduce((a, it) => a + it.l, 0))}</td></tr></tfoot></table></div>`);
   $('rG').onchange = e => { f.g = e.target.value; desenharRecontagem(); };
   $('rSt').onchange = e => { f.st = e.target.value; desenharRecontagem(); };
   $('rPend').onchange = e => { f.pend = e.target.checked; desenharRecontagem(); };

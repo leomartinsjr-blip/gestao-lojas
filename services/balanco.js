@@ -468,9 +468,14 @@ function resolvidoNaPlanilha(bal, it) {
   if (it.st === 'DIVERGENTE' || it.st === 'A RECONTAR') return false;
   return !!obsPlanilha(it) || ['VER VENDA', 'VER TRÂNSITO'].includes(statusItem(it));
 }
+// Código lido que não existe no Microvix não entra na recontagem nem nos totais:
+// é etiqueta errada ou leitura errada. Fica numa lista à parte (naoCadastradosDe).
+const NAO_CADASTRADO = '(NÃO CADASTRADO)';
+const naoCadastradosDe = bal => (bal.itens || []).filter(it => it.g === NAO_CADASTRADO)
+  .sort((a, b) => (a.o ?? 0) - (b.o ?? 0));
 function itensRecontagem(bal) {
   const fora = new Set(bal.gruposFora || []);
-  return (bal.itens || []).filter(it => !fora.has(it.g) && it.l !== it.e && (it.lido || bal.incluirNaoLidos)
+  return (bal.itens || []).filter(it => it.g !== NAO_CADASTRADO && !fora.has(it.g) && it.l !== it.e && (it.lido || bal.incluirNaoLidos)
     && !resolvidoNaPlanilha(bal, it));
 }
 
@@ -542,5 +547,5 @@ function txtCorrigido(bal) {
 
 module.exports = {
   parseLeitura, processar, criarCadastro, causaProvavel, statusItem, difFinal, sugerirTrocas,
-  itensRecontagem, resumo, txtCorrigido, grupoCurto, normBarra, buscarCustos,
+  itensRecontagem, naoCadastradosDe, NAO_CADASTRADO, resumo, txtCorrigido, grupoCurto, normBarra, buscarCustos,
 };
