@@ -770,6 +770,7 @@ function showResetPasswordPage(token) {
 async function logout() {
   try { await apiFetch('POST', '/api/logout'); } catch {}
   S.user = null;
+  _crmResumo = { chave: null, dados: null };
   showLogin();
 }
 
@@ -2601,7 +2602,8 @@ function renderCrmCard(col) {
   const fimMes = `${S.year}-${pad(S.month)}-${pad(new Date(S.year, S.month, 0).getDate())}`;
   const hoje = new Date(), hojeIso = `${hoje.getFullYear()}-${pad(hoje.getMonth() + 1)}-${pad(hoje.getDate())}`;
   const ate = fimMes < hojeIso ? fimMes : hojeIso;
-  const chave = `${de}|${ate}`;
+  // Inclui quem está logado: o logout não recarrega a página e o próximo login não pode ver o cache do anterior
+  const chave = `${S.user?.username || ''}|${S.user?.board || ''}|${de}|${ate}`;
 
   const pct = (n, d) => d ? (n / d * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—';
   // Status da meta: célula colorida, e o número escrito (nunca só a cor)
@@ -2609,6 +2611,9 @@ function renderCrmCard(col) {
 
   const desenhar = d => {
     if (d.semLojas) { card.remove(); return; }
+    // Login de loja só vê a própria loja
+    const lojaDoLogin = S.user?.board && S.user.board !== 'escritorio' ? S.user.board : null;
+    if (lojaDoLogin) d = { ...d, vendedores: (d.vendedores || []).filter(v => v.board === lojaDoLogin), lojas: (d.lojas || []).filter(l => l.board === lojaDoLogin) };
     const vs = d.vendedores || [];
     const umaLoja = (d.lojas || []).length === 1;
     // Uma linha por loja (ou por vendedor, quando é uma loja só)
