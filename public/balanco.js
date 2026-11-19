@@ -41,7 +41,8 @@ const difFinal = it => semFoto(it) || aConferir(it) || recusadoIt(it) ? null : E
 const fDifF = it => difFinal(it) === null ? '' : fInt(difFinal(it));
 const STATUS_MANUAL = ['OK', 'DIVERGENTE', 'VER VENDA', 'VER TRÂNSITO', 'A RECONTAR', 'TROCA', 'AJUSTAR'];
 // NFs de entrada que explicam o trânsito
-const nfsTxt = it => (it.tn || []).map(n => `<span class="nf" title="Entrada em ${esc(n.d)}: ${fInt(n.q)} peça(s)">NF ${esc(n.n)} · ${esc(n.d)} · ${fInt(n.q)}</span>`).join('');
+const nfsTxt = it => (it.tn || []).map(n => { const tipo = n.tp === 'T' ? 'Transf.' : n.pend ? 'NF pendente' : 'NF';
+  return `<span class="nf" title="${n.tp === 'T' ? 'Transferência de outra loja' : 'Entrada'} em ${esc(n.d)}: ${fInt(n.q)} peça(s)">${tipo} ${esc(n.n)} · ${esc(n.d)} · ${fInt(n.q)} pç</span>`; }).join('');
 const stCls = s => 'st st-' + s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/ /g, '-');
 const STATUS_LBL = { recontagem: 'Em recontagem', finalizado: 'Finalizado', processando: 'Processando', erro: 'Erro' };
 

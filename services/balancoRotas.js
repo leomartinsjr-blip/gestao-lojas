@@ -196,7 +196,9 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
         for (const it of r.itens) {
           const old = recontagensAntigas.get(it.c || it.b);
           // Observação vazia não apaga a da nota pendente que o processamento acabou de pôr
-          if (old) { it.rc = old.rc; it.ob = old.ob || it.ob; it.rp = old.rp; it.rt = old.rt; if (old.st) it.st = old.st; }
+          // Observação automática antiga (nota/transferência) é trocada pela nova; a digitada fica
+          const auto = /^(Notas? [\d, ]+ pendentes? de entrega|Nota \d+ pendente|Transferência \d+|NF \d+ de )/;
+          if (old) { it.rc = old.rc; it.ob = old.ob && !auto.test(old.ob) ? old.ob : it.ob; it.rp = old.rp; it.rt = old.rt; if (old.st) it.st = old.st; }
         }
       }
       const set = {

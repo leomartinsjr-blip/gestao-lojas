@@ -201,11 +201,14 @@ async function processar({ cnpj, chave, data, hora, inicio, agrupar, diasTransit
   const mov = await fetchMovimento(cnpj, iniMovOk, fimMov, chave).catch(e => { console.warn('[balanco] movimento:', e.message); return []; });
   const porNota = new Map(); // numN → Map(cod → qtd)
   const notasDoCod = new Map(); // cod → Set(número da nota pendente)
-  // Falta em produto de nota pendente: já sai com a observação para a loja
+  // Falta explicada por entrada (nota pendente, transferência ou nota recente): já sai
+  // com a observação para a loja, com o número e a quantidade de cada uma
   const obsNota = (cod, faltou) => {
-    const ns = [...(notasDoCod.get(cod) || [])];
-    if (!faltou || !ns.length) return '';
-    return ns.length === 1 ? `Nota ${ns[0]} pendente de entrega` : `Notas ${ns.join(', ')} pendentes de entrega`;
+    const nfs = transitoNF.get(cod) || [];
+    if (!faltou || !nfs.length) return '';
+    return nfs.map(n => n.pend ? `Nota ${n.n} pendente de entrega: ${n.q} pç`
+      : n.tp === 'T' ? `Transferência ${n.n} de ${n.d}: ${n.q} pç`
+      : `NF ${n.n} de ${n.d}: ${n.q} pç`).join(' · ');
   };
 
   const dataBR = data.split('-').reverse().join('/');
@@ -258,8 +261,11 @@ async function processar({ cnpj, chave, data, hora, inicio, agrupar, diasTransit
       transito.set(cod, (transito.get(cod) || 0) + q);
       const nfs = transitoNF.get(cod) || [];
       const doc = String(r.documento || '').trim(), d = String(r.data_documento || '').slice(0, 5);
-      const ja = nfs.find(x => x.n === doc);
-      if (ja) ja.q += q; else nfs.push({ n: doc, d, q });
+      // Transferência entre lojas: série 999 / tipo T / CFOP de transferência
+      const transf = serie === '999' || tipo === 'T' || /transfer/i.test(r.desc_cfop || '');
+      const ja = nfs.find(x => normDoc(x.n) === normDoc(doc));
+      if (ja) ja.q += q;
+      else nfs.push({ n: notaPend ? notaPend.numero : doc, d, q, ...(transf ? { tp: 'T' } : {}), ...(notaPend ? { pend: true } : {}) });
       transitoNF.set(cod, nfs);
     }
   }
