@@ -17,7 +17,8 @@ body { background: var(--bg); color: var(--text); font-family: 'Inter', system-u
 .bl-logo-sub { font-size: 11px; color: var(--muted); }
 #userLabel { margin-left: auto; font-size: 12px; color: var(--muted); }
 
-.page { max-width: 1280px; margin: 0 auto; padding: 22px 20px 60px; }
+/* Usa a largura toda da tela: a recontagem tem 13 colunas */
+.page { max-width: none; margin: 0 auto; padding: 22px 24px 60px; }
 .tabs { display: flex; gap: 6px; margin-bottom: 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
 .tab { background: none; border: none; color: var(--muted); font: inherit; font-size: 13px; font-weight: 600; padding: 9px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
 .tab:hover { color: var(--text); }
