@@ -427,7 +427,9 @@ const EXPLICADO = ['OK', 'TROCA', 'VER VENDA', 'VER TRÂNSITO'];
 function difFinal(it, bal) {
   const recontado = it.rc !== null && it.rc !== undefined && it.rc !== '';
   if (semFoto(it, bal)) return null;
-  if (EXPLICADO.includes(statusItem(it, bal)) && (it.st || recontado)) return 0;
+  // Venda ou trânsito automático (pela venda do período ou pela nota) já explica: não fica pendente
+  const s = statusItem(it, bal);
+  if (EXPLICADO.includes(s) && (it.st || recontado || s === 'VER VENDA' || s === 'VER TRÂNSITO')) return 0;
   return recontado ? Number(it.rc) - it.e : null;
 }
 

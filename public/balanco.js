@@ -32,7 +32,7 @@ const status = it => it.st || statusAuto(it);
 // Diferença depois da recontagem: OK/troca/venda/trânsito dado pelo escritório (ou trânsito
 // automático já recontado) não conta. null = pendente. Igual ao difFinal do servidor.
 const EXPLICADO = ['OK', 'TROCA', 'VER VENDA', 'VER TRÂNSITO'];
-const difFinal = it => semFoto(it) ? null : EXPLICADO.includes(status(it)) && (it.st || !vazio(it.rc)) ? 0 : vazio(it.rc) ? null : Number(it.rc) - it.e;
+const difFinal = it => semFoto(it) ? null : EXPLICADO.includes(status(it)) && (it.st || !vazio(it.rc) || ['VER VENDA', 'VER TRÂNSITO'].includes(status(it))) ? 0 : vazio(it.rc) ? null : Number(it.rc) - it.e;
 const fDifF = it => difFinal(it) === null ? '' : fInt(difFinal(it));
 const STATUS_MANUAL = ['OK', 'DIVERGENTE', 'VER VENDA', 'VER TRÂNSITO', 'A RECONTAR', 'TROCA', 'AJUSTAR'];
 // NFs de entrada que explicam o trânsito
@@ -302,7 +302,7 @@ function desenharRecontagem() {
   const grupos = [...new Set(todos.map(it => grupoCurto(it.g)))];
   const q = f.q.trim().toUpperCase();
   const lista = todos.filter(it => (!f.g || grupoCurto(it.g) === f.g) && (!f.st || status(it) === f.st)
-    && (!f.pend || vazio(it.rc)) && (!q || (it.d + ' ' + it.c + ' ' + it.b + ' ' + it.r).toUpperCase().includes(q)));
+    && (!f.pend || difFinal(it) === null) && (!q || (it.d + ' ' + it.c + ' ' + it.b + ' ' + it.r).toUpperCase().includes(q)));
   const sts = ['A RECONTAR', 'SEM FOTO', 'VENDA PARCIAL', 'VER VENDA', 'VER TRÂNSITO', 'OK', 'DIVERGENTE', 'TROCA', 'AJUSTAR'];
   const tot = lista.reduce((a, it) => { a.e += it.e; a.l += it.l; a.i += (it.l - it.e) * it.p; return a; }, { e: 0, l: 0, i: 0 });
   $('sub').innerHTML = `
