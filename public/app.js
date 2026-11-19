@@ -1063,28 +1063,10 @@ function _desenharPedidosSite(lugar, d) {
   if (!lugar.isConnected) return;
   const esc = _escHtml;
   const brl = v => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-  // Pílula para adm/escritório: vai para a linha de Pendências (ou cria uma)
-  // A postar = nota e etiqueta prontas, falta a loja postar e informar o rastreio
-  const aPostar = d.pend ? (d.pend.pedidos || []).filter(p => p.etapa === 'postar' && p.etiqueta) : [];
-  if (d.pend && (d.pend.aFaturar || d.pend.semEtiqueta || aPostar.length)) {
-    const c = document.getElementById('boardContainer');
-    let strip = c.querySelector('.aviso-strip');
-    if (!strip) {
-      strip = document.createElement('div');
-      strip.className = 'aviso-strip';
-      strip.innerHTML = '<span class="aviso-strip-lbl">Pendências</span>';
-      lugar.after(strip);
-    }
-    if (d.pend.aFaturar) _avisoPilula(strip, { icone: '🧾', rotulo: 'Pedidos do site a faturar', n: d.pend.aFaturar, atraso: true,
-      detalhe: d.pend.pedidos.filter(p => p.etapa === 'transferir').map(p => `Pedido ${p.numero}`).join(' · '),
-      acao: () => window.open('/nexo?ir=pedidos', '_blank') });
-    if (d.pend.semEtiqueta) _avisoPilula(strip, { icone: '🏷', rotulo: 'Pedidos do site sem etiqueta', n: d.pend.semEtiqueta,
-      detalhe: d.pend.pedidos.filter(p => p.etapa === 'postar' && !p.etiqueta).map(p => `Pedido ${p.numero}`).join(' · '),
-      acao: () => window.open('/nexo?ir=pedidos', '_blank') });
-    if (aPostar.length) _avisoPilula(strip, { icone: '📮', rotulo: 'Pedidos do site a postar', n: aPostar.length,
-      detalhe: aPostar.map(p => `Pedido ${p.numero}`).join(' · '),
-      acao: () => window.open('/nexo?ir=pedidos', '_blank') });
-  }
+  // Pílulas do adm/escritório: a linha de Pendências é refeita a cada aviso que
+  // chega (balanço, VT…) e apagava estas — agora elas saem do cache dentro do
+  // próprio desenho da linha (_avisoPedidosSite), e aqui só pede o redesenho.
+  if (d.pend) _atualizarAvisosAdm();
   const lista = (d.lista || []).filter(p => p.etapa !== 'enviado' || (p.rastreio && p.souQuemPosta));
   if (!lista.length) return;
   const board = S.user.board;
@@ -1182,11 +1164,30 @@ function _desenharPedidosSite(lugar, d) {
 //
 // Só quem não é loja vê: todas esperam resposta do adm, e a loja já acompanha
 // o que mandou dentro do próprio Loja em Ação.
+// Pedidos do site (NEXO), do cache de _carregarSite. A postar = nota e etiqueta
+// prontas, falta a loja postar e informar o rastreio.
+function _avisoPedidosSite(strip) {
+  const p = _siteCache?.pend;
+  if (!p) return;
+  const aPostar = (p.pedidos || []).filter(x => x.etapa === 'postar' && x.etiqueta);
+  const abrir = () => window.open('/nexo?ir=pedidos', '_blank');
+  if (p.aFaturar) _avisoPilula(strip, { icone: '🧾', rotulo: 'Pedidos do site a faturar', n: p.aFaturar, atraso: true,
+    detalhe: (p.pedidos || []).filter(x => x.etapa === 'transferir').map(x => `Pedido ${x.numero}`).join(' · '), acao: abrir });
+  if (p.semEtiqueta) _avisoPilula(strip, { icone: '🏷', rotulo: 'Pedidos do site sem etiqueta', n: p.semEtiqueta,
+    detalhe: (p.pedidos || []).filter(x => x.etapa === 'postar' && !x.etiqueta).map(x => `Pedido ${x.numero}`).join(' · '), acao: abrir });
+  if (aPostar.length) _avisoPilula(strip, { icone: '📮', rotulo: 'Pedidos do site a postar', n: aPostar.length,
+    detalhe: aPostar.map(x => `Pedido ${x.numero}`).join(' · '), acao: abrir });
+}
+
 function _renderAvisosAdm(c) {
-  if (S.user?.board) return;
+  // Escritório vê só os pedidos do site; o adm vê a linha toda
+  const escritorio = S.user?.board === 'escritorio';
+  if (S.user?.board && !escritorio) return;
   const strip = document.createElement('div');
   strip.className = 'aviso-strip';
   strip.innerHTML = '<span class="aviso-strip-lbl">Pendências</span>';
+  _avisoPedidosSite(strip);
+  if (escritorio) { if (strip.querySelector('.aviso-pill')) _poeLinhaAvisos(c, strip); return; }
   // Ordem pedida pelo Leonardo em 30/09/2026.
   _avisoEstoqueSite(strip);
   _avisoVt(strip);
@@ -1199,7 +1200,12 @@ function _renderAvisosAdm(c) {
   _avisoDadosFolha(strip);
   _avisoContratosLocacao(strip);
   _avisoFechamentoMes(strip);
-  if (strip.querySelector('.aviso-pill')) c.prepend(strip);
+  if (strip.querySelector('.aviso-pill')) _poeLinhaAvisos(c, strip);
+}
+// Sempre no topo do painel, logo abaixo do quadro dos pedidos do site (quando houver)
+function _poeLinhaAvisos(c, strip) {
+  const site = c.querySelector(':scope > .site-lugar');
+  site ? site.after(strip) : c.prepend(strip);
 }
 
 // O alerta do VT chega depois do painel já desenhado (vem de outra chamada),
