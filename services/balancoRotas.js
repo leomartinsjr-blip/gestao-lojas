@@ -392,6 +392,56 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── Foto de exemplo do produto (site) ───────────────────────────────────
+  // O feed do Google Merchant da Loja Integrada é público e tem a foto de cada
+  // SKU ativo no site; o SKU começa com o código do Microvix ("878054-VN0A7YDU-BLK-M").
+  // Acha pelo código e, se não tiver, por outra cor/tamanho da mesma referência.
+  // Guardado em memória por 6 h (o XML tem ~6 MB).
+  const FEED_SITE = process.env.FEED_LI_URL || 'https://www.lojasurfers.com.br/xml/7fbdc/googlemerchant.xml';
+  const normRef = s => String(s || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  let feedSite = { em: 0, porCod: new Map(), porRef: new Map(), carregando: null };
+  async function fotosDoSite() {
+    if (Date.now() - feedSite.em < 6 * 3600e3) return feedSite;
+    if (feedSite.carregando) return feedSite.carregando;
+    feedSite.carregando = (async () => {
+      try {
+        const r = await fetch(FEED_SITE, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; GestaoLojas/1.0; balanco)' }, signal: AbortSignal.timeout(60000) });
+        if (!r.ok) throw new Error('feed do site respondeu ' + r.status);
+        const xml = await r.text();
+        const porCod = new Map(), porRef = new Map();
+        const campo = (it, t) => { const m = it.match(new RegExp('<' + t + '>(?:<!\\[CDATA\\[)?([\\s\\S]*?)(?:\\]\\]>)?</' + t + '>')); return m ? m[1].trim() : ''; };
+        for (const it of xml.split('<item>').slice(1)) {
+          const img = campo(it, 'g:image_link'), id = campo(it, 'g:id');
+          const m = id.match(/^(\d+)-([^-]+)/);
+          if (!img || !m) continue;
+          const mini = img.replace('/800x800/', '/300x300/');
+          porCod.set(m[1], mini);
+          if (!porRef.has(normRef(m[2]))) porRef.set(normRef(m[2]), mini);
+        }
+        feedSite = { em: Date.now(), porCod, porRef, carregando: null };
+      } catch (e) {
+        console.warn('[balanco] fotos do site:', e.message);
+        feedSite = { ...feedSite, em: Date.now() - 5.5 * 3600e3, carregando: null }; // tenta de novo em 30 min
+      }
+      return feedSite;
+    })();
+    return feedSite.carregando;
+  }
+  app.get('/api/balancos/:id/fotos-site', requireAuth, async (req, res) => {
+    try {
+      const bal = await carregar(req, res); if (!bal) return;
+      const f = await fotosDoSite();
+      const out = {};
+      for (const it of bal.itens || []) {
+        if (!it.c) continue;
+        const url = f.porCod.get(String(it.c)) || (it.r && f.porRef.get(normRef(it.r)));
+        if (url) out[it.c] = url;
+      }
+      res.set('Cache-Control', 'private, max-age=3600');
+      res.json(out);
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── Fotos da recontagem ──────────────────────────────────────────────────
   // A loja fotografa a quantidade com o código aparente; o escritório confere na
   // tela. A foto já chega reduzida (JPEG) do celular e fica em balanco_arquivos

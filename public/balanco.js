@@ -313,7 +313,7 @@ function desenharRecontagem() {
       <label class="muted" style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="rPend" ${f.pend ? 'checked' : ''}/> só pendentes</label>
       <span class="muted">${lista.length} de ${todos.length} itens</span>
     </div>
-    ${matchMedia('(max-width: 640px)').matches
+    ${matchMedia('(max-width: 640px)').matches && carregarFotosSite()
       ? `<div class="mcards">${lista.map(cartaoRecont(aberto)).join('') || '<div class="empty">Nada com esse filtro.</div>'}</div>`
       : `<div class="tbl-wrap"><table class="tbl fit"><colgroup><col style="width:7%"><col style="width:9.5%"><col><col style="width:8%">
       <col style="width:4.5%"><col style="width:4.5%"><col style="width:3.5%"><col style="width:6.5%"><col style="width:7%"><col style="width:6%">
@@ -364,7 +364,8 @@ const cartaoRecont = aberto => it => {
   const dif = it.l - it.e;
   return `<div class="linha-item mcard" data-k="${k}">
     <div class="mcard-top"><span class="muted">${esc(grupoCurto(it.g))} · ${esc(it.c || it.b)}</span><span class="stc"><span class="${stCls(s)}">${s}</span></span></div>
-    <div class="mcard-desc">${esc(it.d)}${it.lido ? '' : ' <span class="badge">não lido</span>'}${nfsTxt(it)}</div>
+    <div class="mcard-prod">${exemploProduto(it)}<div class="mcard-desc">${esc(it.d)}${it.lido ? '' : ' <span class="badge">não lido</span>'}
+      ${it.r ? `<div class="mcard-ref">Ref. ${esc(it.r)}</div>` : ''}${nfsTxt(it)}</div></div>
     <div class="mcard-nums"><span>Estoque <b>${fInt(it.e)}</b></span><span>Lido <b>${fInt(it.l)}</b></span><span>Dif. <b class="${cls(dif)}">${fInt(dif)}</b></span><span>Final <b class="dif-f">${fDifF(it)}</b></span></div>
     ${aberto ? `<div class="mcard-inp"><input class="inp rc" inputmode="numeric" placeholder="Contei" data-k="${k}" value="${vazio(it.rc) ? '' : it.rc}"/>
       <input class="inp ob" placeholder="Observação" data-k="${k}" value="${esc(it.ob || '')}" maxlength="300"/></div>`
@@ -396,6 +397,42 @@ async function salvarStatus(el) {
     atualizarKpis();
   } catch (e) { alert(e.message); }
 }
+
+// ── Foto de exemplo (site) ou busca no Google ────────────────────────────
+// Só para a loja reconhecer a peça: vem do feed do site pelo código ou pela
+// referência. Sem foto no site, um atalho para o Google Imagens.
+const fotosSite = { id: null, mapa: {} };
+function carregarFotosSite() {
+  if (fotosSite.id !== S.bal.id) {
+    fotosSite.id = S.bal.id; fotosSite.mapa = {};
+    api(`/api/balancos/${S.bal.id}/fotos-site`).then(m => {
+      fotosSite.mapa = m || {};
+      document.querySelectorAll('.mcard .ex-google[data-c]').forEach(a => {
+        const url = fotosSite.mapa[a.dataset.c];
+        if (url) a.outerHTML = `<img class="ex-site" loading="lazy" src="${esc(url)}" data-ampliar="${esc(url)}" alt="foto do site"/>`;
+      });
+    }).catch(() => {});
+  }
+  return true;
+}
+function exemploProduto(it) {
+  const url = fotosSite.mapa[it.c];
+  if (url) return `<img class="ex-site" loading="lazy" src="${esc(url)}" data-ampliar="${esc(url)}" alt="foto do site"/>`;
+  if (!it.c) return '';
+  const q = encodeURIComponent([it.d.replace(/\s+(PP|P|M|G|GG|XG|U|\d{2})$/i, ''), it.r].filter(Boolean).join(' '));
+  return `<a class="ex-google" data-c="${esc(it.c)}" href="https://www.google.com/search?tbm=isch&q=${q}" target="_blank" rel="noopener">sem foto no site<br/>ver no Google</a>`;
+}
+document.addEventListener('click', e => {
+  const url = e.target?.dataset?.ampliar;
+  if (!url) return;
+  document.getElementById('galeria')?.remove();
+  const g = document.createElement('div');
+  g.id = 'galeria';
+  g.innerHTML = `<div class="g-top"><b>Foto do site (exemplo)</b><button class="btn" data-fechar>Fechar</button></div>
+    <div class="g-fotos"><img src="${esc(url.replace('/300x300/', '/800x800/'))}" alt="foto do site" style="background:#fff"/></div>`;
+  g.onclick = ev => { if (ev.target === g || ev.target.dataset.fechar !== undefined) g.remove(); };
+  document.body.appendChild(g);
+});
 
 // ── Fotos da recontagem ───────────────────────────────────────────────────
 const urlFoto = f => `/api/balancos/${S.bal.id}/fotos/${f.id}`;
