@@ -187,7 +187,7 @@ function ordemPlanilha(bal) {
     .sort((a, b) => grupoCurto(a.g).localeCompare(grupoCurto(b.g)) || a.d.localeCompare(b.d));
 }
 
-async function excelRecontagem(bal) {
+async function excelRecontagem(bal, historico) {
   const wb = new ExcelJS.Workbook();
   wb.creator = 'Gestão de Lojas';
   const itens = ordemPlanilha(bal);
@@ -408,6 +408,23 @@ async function excelRecontagem(bal) {
     blackAndWhite: true, horizontalCentered: true, printArea: `A1:M${rTot}`, printTitlesRow: '1:3',
     margins: { left: 0.51, right: 0.51, top: 0.79, bottom: 0.79, header: 0.31, footer: 0.31 },
   };
+
+  // HISTÓRICO: uma linha por movimento de cada item da recontagem
+  if (historico) {
+    const wh = wb.addWorksheet('HISTÓRICO', { views: [{ state: 'frozen', ySplit: 1 }] });
+    [11, 45, 12, 12, 12, 8, 16, 38, 8, 8, 12, 8].forEach((w, i) => { wh.getColumn(i + 1).width = w; });
+    wh.addRow(['Código', 'Descrição', 'Emissão', 'Lançamento', 'Documento', 'Série', 'Tipo', 'Cliente/Fornec.', 'Qtd.', 'Saldo', 'Valor Unit.', 'CFOP'])
+      .eachCell(c => { c.font = { name: 'Calibri', bold: true, color: { argb: 'FFFFFFFF' } }; c.fill = fill('FF2E75B6'); c.border = BORDA; });
+    for (const it of itens) {
+      for (const m of historico.itens[it.c]?.l || []) {
+        const row = wh.addRow([Number(it.c) || it.c, it.d, dataBR(m.em), dataBR(m.la), m.doc, m.se, m.tp,
+          m.cc ? [m.cc, historico.nomes[m.cc]].filter(Boolean).join('-') : '', m.q, m.s, m.vu, m.cf]);
+        row.getCell(11).numFmt = FMT_RS;
+      }
+    }
+    wh.autoFilter = `A1:L${wh.rowCount}`;
+    wh.pageSetup = { paperSize: 9, orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, printTitlesRow: '1:1' };
+  }
 
   // Fórmulas recalculam ao abrir (o resumo depende delas)
   wb.calcProperties = { fullCalcOnLoad: true };

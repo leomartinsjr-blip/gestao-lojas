@@ -295,6 +295,7 @@ function desenharRecontagemLoja(aberto) {
       <input class="inp grow" id="rQ" placeholder="Buscar código, descrição, referência…" value="${esc(f.q)}"/>
       <label class="muted" style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="rPend" ${f.pend ? 'checked' : ''}/> só pendentes</label>
       <span class="muted">${lista.length} de ${todos.length} itens</span>
+      <span id="hBarra"></span>
     </div>
     <div class="mcards">${lista.map(cartaoLoja(aberto)).join('') || '<div class="empty">Nada com esse filtro.</div>'}</div>`;
   const nc = naoCadastrados(b);
@@ -303,6 +304,7 @@ function desenharRecontagemLoja(aberto) {
     <div class="hint" style="margin-bottom:8px">Lidos, mas não existem no Microvix: etiqueta errada ou leitura errada. Ache a peça pelo código e leia a etiqueta da loja.</div>
     <div class="tbl-wrap" style="max-width:420px"><table class="tbl"><thead><tr><th>Código lido</th><th class="n">Peças</th></tr></thead>
     <tbody>${nc.map(it => `<tr><td style="user-select:all">${esc(it.b)}</td><td class="n">${fInt(it.l)}</td></tr>`).join('')}</tbody></table></div>`);
+  iniciarHistorico();
   $('rPend').onchange = e => { f.pend = e.target.checked; desenharRecontagemLoja(aberto); };
   let tq; $('rQ').oninput = e => { clearTimeout(tq); tq = setTimeout(() => { f.q = e.target.value; desenharRecontagemLoja(aberto); const el = $('rQ'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 300); };
   document.querySelectorAll('#sub input.rc, #sub input.ob, #sub textarea.ob').forEach(el => el.onchange = () => salvarItem(el));
@@ -318,7 +320,7 @@ const cartaoLoja = aberto => it => {
   return `<div class="linha-item mcard" data-k="${k}">
     <div class="mcard-top"><span class="mcard-cod">${esc(it.c || it.b)}</span><span class="stc"><span class="${stCls(it.sl)}">${it.sl}</span></span></div>
     <div class="mcard-grupo muted">${esc(grupoCurto(it.g))}</div>
-    <div class="mcard-prod">${exemploProduto(it)}<div class="mcard-desc">${esc(it.d)}${it.r ? `<div class="mcard-ref">Ref. ${esc(it.r)}</div>` : ''}</div></div>
+    <div class="mcard-prod">${exemploProduto(it)}<div class="mcard-desc">${esc(it.d)}${it.r ? `<div class="mcard-ref">Ref. ${esc(it.r)}</div>` : ''}${histBt(it)}</div></div>
     <div class="mcard-nums"><span>Estoque <b>${fInt(it.e)}</b></span><span>Lido <b>${fInt(it.l)}</b></span>${it.np ? `<span>Em trânsito <b>${fInt(it.np)}</b></span><span>Deve ter na loja <b style="color:var(--accent)">${fInt(Math.max(0, it.e - it.np))}</b></span>` : ''}</div>
     ${it.tf ? `<div class="mcard-grupo muted">${fInt(it.tf)} peça(s) chegaram por transferência/nota nos últimos dias — confira se estão na loja.</div>` : ''}
     ${it.cf && it.cf.ok === false && it.cf.motivo ? `<div class="motivo">Recusado: ${esc(it.cf.motivo)}</div>` : ''}
@@ -498,6 +500,7 @@ function desenharRecontagem() {
       <input class="inp grow" id="rQ" placeholder="Buscar descrição, código, referência…" value="${esc(f.q)}"/>
       <label class="muted" style="display:flex;gap:5px;align-items:center"><input type="checkbox" id="rPend" ${f.pend ? 'checked' : ''}/> só pendentes</label>
       <span class="muted">${lista.length} de ${todos.length} itens</span>
+      ${S.escritorio ? '<span id="hBarra" style="display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap"></span>' : ''}
       ${S.escritorio && aberto && todos.some(aConferir) ? `<button class="btn primary" id="rConferir">Conferir fotos (${todos.filter(aConferir).length})</button>` : ''}
     </div>
     ${matchMedia('(max-width: 640px)').matches && carregarFotosSite()
@@ -521,6 +524,7 @@ function desenharRecontagem() {
     <div class="tbl-wrap" style="max-width:420px"><table class="tbl"><thead><tr><th>Código lido</th><th class="n">Peças</th></tr></thead>
     <tbody>${nc.map(it => `<tr><td style="user-select:all">${esc(it.b)}</td><td class="n">${fInt(it.l)}</td></tr>`).join('')}</tbody>
     <tfoot><tr><td>Total</td><td class="n">${fInt(nc.reduce((a, it) => a + it.l, 0))}</td></tr></tfoot></table></div>`);
+  iniciarHistorico();
   if ($('rConferir')) $('rConferir').onclick = () => conferirFotos(todos.filter(aConferir).map(it => it.c || it.b));
   $('rG').onchange = e => { f.g = e.target.value; desenharRecontagem(); };
   $('rSt').onchange = e => { f.st = e.target.value; desenharRecontagem(); };
@@ -531,6 +535,81 @@ function desenharRecontagem() {
   // Enter no campo da recontagem pula para o próximo item
   document.querySelectorAll('#sub input.rc').forEach((el, i, arr) => el.onkeydown = e => {
     if (e.key === 'Enter') { e.preventDefault(); el.blur(); arr[i + 1]?.focus(); arr[i + 1]?.select(); }
+  });
+}
+
+// ── Histórico de movimento (a loja vê sem os valores) ────────────────────────────────────
+// Pintado direto no DOM: chega depois da tabela e não pode tirar o foco de quem digita.
+const histBt = it => it.c ? ` <button type="button" class="hbt hidden" data-h="${esc(it.c)}"></button>` : '';
+const H = { chave: '', d: null, etapa: '', erro: '', rodando: false, abertos: new Set(), todos: false, timer: null };
+function iniciarHistorico() {
+  const chave = S.bal.id + '|' + (S.bal.processadoEm || '');
+  if (H.chave !== chave) {
+    clearTimeout(H.timer);
+    Object.assign(H, { chave, d: null, etapa: '', erro: '', rodando: true, abertos: new Set(), todos: false });
+    carregarHistorico();
+  }
+  pintarHistorico();
+}
+async function carregarHistorico() {
+  const chave = H.chave, id = chave.split('|')[0];
+  clearTimeout(H.timer);
+  let j;
+  try { j = await api(`/api/balancos/${id}/historico`); } catch (e) { j = { erro: e.message }; }
+  if (H.chave !== chave) return;
+  H.rodando = !!j.rodando; H.etapa = j.etapa || ''; H.erro = j.erro || '';
+  if (j.historico) H.d = j.historico;
+  if (H.rodando && S.bal?.id === id) H.timer = setTimeout(carregarHistorico, 4000);
+  else if (H.rodando) H.chave = ''; // saiu do balanço: recomeça quando voltar
+  pintarHistorico();
+}
+async function pedirHistorico(meses) {
+  try {
+    await api(`/api/balancos/${S.bal.id}/historico`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ meses }) });
+    H.rodando = true; H.etapa = 'Histórico: na fila…';
+    pintarHistorico();
+    carregarHistorico();
+  } catch (e) { alert(e.message); }
+}
+function tabelaHistorico(cod) {
+  const x = H.d.itens[cod];
+  const v = n => n === null || n === undefined ? '–' : fInt(n);
+  // Mais novo em cima: é o que explica a diferença
+  const ls = x.l.slice().reverse();
+  return `<div class="hist"><table><thead><tr><th>Lançamento</th><th>Emissão</th><th>Doc./Série</th><th>Tipo</th><th>Cliente/Fornec.</th><th class="n">Qtd.</th><th class="n">Saldo</th>${S.escritorio ? '<th class="n">Valor unit.</th>' : ''}<th>CFOP</th></tr></thead><tbody>
+    ${ls.map(m => `<tr class="${m.la > S.bal.data ? 'depois' : ''}"><td>${dBR(m.la)} ${esc(m.h)}</td><td>${dBR(m.em)}</td><td>${esc(m.doc)}/${esc(m.se)}</td><td>${esc(m.tp)}</td>
+      <td>${m.cc ? esc([m.cc, H.d.nomes[m.cc]].filter(Boolean).join('-')) : ''}</td><td class="n ${cls(m.q)}">${m.q > 0 ? '+' : '−'}${fInt(Math.abs(m.q))}</td><td class="n"><b>${v(m.s)}</b></td>${S.escritorio ? `<td class="n">${fRS(m.vu)}</td>` : ''}<td>${esc(m.cf)}</td></tr>`).join('')
+      || '<tr><td colspan="9" class="muted">Sem movimento no período.</td></tr>'}
+    </tbody></table><div class="muted">Saldo antes de ${dBR(H.d.ini)}: ${v(x.a)}${ls.some(m => m.la > S.bal.data) ? ' · em itálico, depois da data do balanço' : ''}</div></div>`;
+}
+function pintarHistorico() {
+  const barra = $('hBarra');
+  if (!barra || !S.bal || !H.chave.startsWith(S.bal.id + '|')) return;
+  const d = H.d;
+  const erro = H.erro ? `<span class="neg">${esc(H.erro)}</span>` : '';
+  barra.innerHTML = H.rodando ? `<span class="muted">${esc(H.etapa || 'Carregando histórico…')}</span>`
+    : !S.escritorio ? (d ? `<button class="btn" id="hTodos">${H.todos ? 'Ocultar históricos' : 'Mostrar históricos'}</button>` : '')
+    : !d ? `<button class="btn" id="hBuscar">Buscar histórico</button>${erro}`
+    : `<button class="btn" id="hTodos">${H.todos ? 'Ocultar históricos' : 'Mostrar históricos'}</button>
+      <button class="btn" id="hAtual" title="Busca de novo no Microvix. Última busca: ${new Date(d.em).toLocaleString('pt-BR')}, desde ${dBR(d.ini)}">↻</button>
+      ${d.meses < 84 ? '<button class="btn" id="hMais" title="Busca 7 anos no Microvix: demora alguns minutos">Histórico completo</button>' : ''}
+      ${d.falhas.length ? `<span class="neg" title="${d.falhas.map(f => f.map(dBR).join(' a ')).join(', ')}">${d.falhas.length} período(s) sem resposta</span>` : ''}${erro}`;
+  if ($('hBuscar')) $('hBuscar').onclick = () => pedirHistorico(24);
+  if ($('hAtual')) $('hAtual').onclick = () => pedirHistorico(d.meses);
+  if ($('hMais')) $('hMais').onclick = () => pedirHistorico(84);
+  if ($('hTodos')) $('hTodos').onclick = () => { H.todos = !H.todos; H.abertos.clear(); pintarHistorico(); };
+  document.querySelectorAll('#sub .hist-linha').forEach(el => el.remove());
+  document.querySelectorAll('#sub .hbt').forEach(bt => {
+    const cod = bt.dataset.h, x = d?.itens[cod];
+    bt.classList.toggle('hidden', !x);
+    if (!x) return;
+    const aberto = H.todos !== H.abertos.has(cod); // abertos = exceções ao "todos"
+    bt.textContent = `${aberto ? '▾' : '▸'} Histórico (${x.l.length})`;
+    bt.onclick = () => { if (!H.abertos.delete(cod)) H.abertos.add(cod); pintarHistorico(); };
+    if (!aberto) return;
+    const linha = bt.closest('.linha-item');
+    if (linha.tagName === 'TR') linha.insertAdjacentHTML('afterend', `<tr class="hist-linha"><td colspan="16">${tabelaHistorico(cod)}</td></tr>`);
+    else linha.insertAdjacentHTML('beforeend', `<div class="hist-linha">${tabelaHistorico(cod)}</div>`);
   });
 }
 
@@ -549,7 +628,7 @@ const linhaRecont = aberto => it => {
   const difF = fDifF(it);
   const quem = it.rp ? ` title="Lançado por ${esc(it.rp)} em ${new Date(it.rt).toLocaleString('pt-BR')}"` : '';
   return `<tr class="linha-item" data-k="${k}">
-    <td>${esc(grupoCurto(it.g))}</td><td>${esc(it.c || it.b)}</td><td class="desc">${esc(it.d)}${it.lido ? '' : ' <span class="badge">não lido</span>'}${nfsTxt(it)}</td><td>${esc(it.r)}</td>
+    <td>${esc(grupoCurto(it.g))}</td><td>${esc(it.c || it.b)}</td><td class="desc">${esc(it.d)}${it.lido ? '' : ' <span class="badge">não lido</span>'}${nfsTxt(it)}${histBt(it)}</td><td>${esc(it.r)}</td>
     <td class="n">${fInt(it.e)}</td><td class="n">${fInt(it.l)}</td><td class="n ${cls(dif)}">${fInt(dif)}</td>
     ${celAbat(it)}
     <td class="n">${fRS(it.p)}</td><td class="n ${cls(dif * it.p)}">${fRS(dif * it.p)}</td>
@@ -567,7 +646,7 @@ const cartaoRecont = aberto => it => {
     <div class="mcard-top"><span class="mcard-cod">${esc(it.c || it.b)}</span><span class="stc"><span class="${stCls(s)}">${s}</span></span></div>
     <div class="mcard-grupo muted">${esc(grupoCurto(it.g))}</div>
     <div class="mcard-prod">${exemploProduto(it)}<div class="mcard-desc">${esc(it.d)}${it.lido ? '' : ' <span class="badge">não lido</span>'}
-      ${it.r ? `<div class="mcard-ref">Ref. ${esc(it.r)}</div>` : ''}${nfsTxt(it)}</div></div>
+      ${it.r ? `<div class="mcard-ref">Ref. ${esc(it.r)}</div>` : ''}${nfsTxt(it)}${histBt(it)}</div></div>
     <div class="mcard-nums"><span>Estoque <b>${fInt(it.e)}</b></span><span>Lido <b>${fInt(it.l)}</b></span><span>Dif. <b class="${cls(dif)}">${fInt(dif)}</b></span><span>Final <b class="dif-f">${fDifF(it)}</b></span></div>
     ${aberto ? `<div class="mcard-inp"><input class="inp rc" inputmode="numeric" placeholder="Contei" data-k="${k}" value="${vazio(it.rc) ? '' : it.rc}"/>
       <input class="inp ob" placeholder="Observação" data-k="${k}" value="${esc(it.ob || '')}" maxlength="300"/></div>`

@@ -12,11 +12,13 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const zlib = require('zlib');
 const multer = require('multer');
 const {
   processar, criarCadastro, resumo, txtCorrigido, statusItem, sugerirTrocas, buscarCustos,
   itensRecontagem, naoCadastradosDe, itemParaLoja, statusLoja,
 } = require('./balanco');
+const { buscarHistorico } = require('./balancoHistorico');
 const { pdfListaCriticas, excelRecontagem, lerPlanilhaRecontagem } = require('./balancoArquivos');
 
 const NOMES_LOJA = {
@@ -216,6 +218,7 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
         naoCadastrados: r.naoCadastrados, processadoEm: new Date().toISOString(),
       };
       await salvar(id, set);
+      rodarHistorico(id, 24); // segue sozinho, sem segurar a recontagem
       await gerarPdf({ ...bal, ...set });
     } catch (e) {
       console.error('[balanco] processar', id, e);
@@ -696,7 +699,7 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
         await c.deleteOne({ id: bal.id });
         await getDb().collection('balanco_arquivos').deleteMany({ _id: { $regex: '^' + bal.id + ':' } });
       } else {
-        for (const ext of ['json', 'pdf']) fs.rmSync(path.join(LOCAL, `${bal.id}.${ext}`), { force: true });
+        for (const ext of ['json', 'pdf', 'hist']) fs.rmSync(path.join(LOCAL, `${bal.id}.${ext}`), { force: true });
       }
       res.json({ ok: true });
     } catch (e) { res.status(500).json({ error: e.message }); }
@@ -726,6 +729,60 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
     } catch (e) { if (!res.headersSent) res.status(500).json({ error: e.message }); }
   });
 
+  // Histórico de movimento dos itens com diferença. A loja também vê
+  // (decisão do Leonardo, 23/11), mas sem os valores: entrada e transferência
+  // saem a custo. Buscar no Microvix é só do escritório. Guardado comprimido,
+  // fora do documento do balanço.
+  const histRodando = new Map(); // id → etapa
+  const histErro = new Map();    // id → mensagem
+  async function lerHistorico(id) {
+    const buf = await lerArquivo(id, 'hist');
+    return buf ? JSON.parse(zlib.gunzipSync(buf).toString('utf8')) : null;
+  }
+  async function rodarHistorico(id, meses) {
+    if (histRodando.has(id)) return;
+    histRodando.set(id, 'Histórico: na fila…');
+    histErro.delete(id);
+    try {
+      const bal = await ler(id);
+      const cnpj = String(lojas()[bal.board] || '').replace(/\D/g, '');
+      if (!cnpj) throw new Error(`Loja ${label(bal.board)} sem CNPJ do Microvix configurado.`);
+      const cods = [...new Set((bal.itens || []).filter(it => it.c && it.l !== it.e).map(it => String(it.c)))];
+      const h = await buscarHistorico({ cnpj, chave: chaveDe(bal.board), cods, meses, onEtapa: m => histRodando.set(id, m) });
+      // Excluído enquanto buscava: não deixa arquivo órfão
+      if (await ler(id)) await guardarArquivo(id, 'hist', zlib.gzipSync(JSON.stringify(h)));
+    } catch (e) {
+      console.warn('[balanco] histórico', id, e.message);
+      histErro.set(id, e.message);
+    } finally { histRodando.delete(id); }
+  }
+  app.get('/api/balancos/:id/historico', requireAuth, async (req, res) => {
+    try {
+      const bal = await carregar(req, res); if (!bal) return;
+      if (histRodando.has(bal.id)) return res.json({ rodando: true, etapa: histRodando.get(bal.id) });
+      const historico = await lerHistorico(bal.id);
+      if (!ehEscritorio(req)) {
+        if (historico) {
+          const visiveis = new Set(itensRecontagem(bal).map(it => String(it.c)));
+          for (const [c, x] of Object.entries(historico.itens)) {
+            if (!visiveis.has(c)) delete historico.itens[c];
+            else for (const m of x.l) delete m.vu;
+          }
+        }
+        return res.json({ rodando: false, erro: null, historico });
+      }
+      res.json({ rodando: false, erro: histErro.get(bal.id) || null, historico });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+  app.post('/api/balancos/:id/historico', requireEscritorioOrAdmin, async (req, res) => {
+    try {
+      const bal = await carregar(req, res); if (!bal) return;
+      if (!bal.itens || bal.status === 'processando') return res.status(409).json({ error: 'Balanço ainda não processado.' });
+      rodarHistorico(bal.id, Math.min(96, Math.max(1, parseInt(req.body?.meses) || 24)));
+      res.json({ rodando: true });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── Arquivos ─────────────────────────────────────────────────────────────
   const nomeBase = bal => `Balanço ${label(bal.board)} ${bal.data.split('-').reverse().join('-')}`;
   const anexo = (res, nome, tipo) => {
@@ -750,7 +807,7 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
     try {
       const bal = await carregar(req, res); if (!bal) return;
       if (!bal.itens) return res.status(409).json({ error: 'Balanço ainda não processado.' });
-      const buf = await excelRecontagem(bal);
+      const buf = await excelRecontagem(bal, await lerHistorico(bal.id).catch(() => null));
       anexo(res, `Recontagem ${label(bal.board)} ${bal.data.split('-').reverse().join('-')}.xlsx`,
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.send(Buffer.from(buf));

@@ -108,6 +108,13 @@ table.tbl { border-collapse: collapse; width: 100%; font-size: 12px; }
 .tbl td.desc { white-space: normal; min-width: 240px; }
 /* Recontagem cabe na largura da página: colunas fixas, descrição/setor/referência quebram linha */
 table.tbl.fit { table-layout: fixed; }
+.hbt { background: none; border: 1px solid var(--border); border-radius: 8px; color: var(--accent); font: inherit; font-size: 10px; font-weight: 600; padding: 1px 6px; margin-left: 4px; cursor: pointer; white-space: nowrap; }
+.tbl.fit tbody tr.hist-linha > td { white-space: normal; overflow: visible; background: var(--surface2); padding: 6px 12px 8px; }
+.hist { overflow-x: auto; font-size: 11px; }
+.hist table { border-collapse: collapse; width: 100%; max-width: 980px; margin-bottom: 4px; }
+.hist table th, .hist table td { position: static !important; background: none !important; border: 0 !important; border-bottom: 1px solid var(--border) !important; padding: 2px 6px !important; white-space: nowrap !important; word-break: normal !important; overflow: visible !important; text-align: left; }
+.hist table th.n, .hist table td.n { text-align: right; }
+.hist tr.depois td { font-style: italic; opacity: .7; }
 .tbl.fit th, .tbl.fit td { padding-left: 5px; padding-right: 5px; }
 /* Grade de planilha: linhas e colunas separadas */
 .tbl.fit th, .tbl.fit td { border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
@@ -232,7 +239,7 @@ tr.feita td { opacity: .55; }
   .tbl-wrap { max-height: none; }
 }
 @media print {
-  .bl-topbar, .tabs, .toolbar, .det-head .btn, .noprint { display: none !important; }
+  .bl-topbar, .tabs, .toolbar, .det-head .btn, .noprint, .hbt { display: none !important; }
   body { background: #fff; color: #000; }
   .tbl-wrap { max-height: none; overflow: visible; border: none; }
   .tbl th { position: static; }
