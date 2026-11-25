@@ -450,15 +450,17 @@ function causaProvavel(it) {
 // Balanço com foto obrigatória: recontagem lançada pela loja sem foto não vale —
 // o item fica SEM FOTO e a divergência continua (a apurar). Status dado pelo
 // escritório e recontagem lançada pelo escritório (re) não pedem foto.
+// Contou 0: não há peça para fotografar — vai sem foto, mas o escritório confere.
+const contouZero = it => it.rc !== null && it.rc !== undefined && it.rc !== '' && Number(it.rc) === 0;
 function semFoto(it, bal) {
-  return !!bal?.exigeFoto && !it.st && !it.re && !(it.fotos || []).length
+  return !!bal?.exigeFoto && !it.st && !it.re && !(it.fotos || []).length && !contouZero(it)
     && !(it.rc === null || it.rc === undefined || it.rc === '');
 }
 // Com foto obrigatória, a recontagem da loja (quantidade + foto) só vale depois
 // de o escritório conferir a foto: A CONFERIR até aprovar, RECUSADO se recusar.
 function aConferir(it, bal) {
   return !!bal?.exigeFoto && !it.st && !it.re && !(it.rc === null || it.rc === undefined || it.rc === '')
-    && (it.fotos || []).length > 0 && !it.cf;
+    && ((it.fotos || []).length > 0 || contouZero(it)) && !it.cf;
 }
 const recusado = (it, bal) => !!bal?.exigeFoto && !it.st && !it.re && it.cf && it.cf.ok === false;
 function statusItem(it, bal) {

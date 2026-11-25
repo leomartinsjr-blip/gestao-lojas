@@ -432,7 +432,10 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
       if (rc === it.rc && ob === it.ob) return;
       const novoNumero = rc !== it.rc;
       Object.assign(it, { rc, ob, rp: quem(req), rt: agora, re: ehEscritorio(req) });
-      if (novoNumero && !it.re) it.cf = null; // número novo da loja: o escritório confere de novo
+      // Número novo da loja: o escritório confere de novo. No 0 recusado não há foto nova
+      // para reenviar: mudar a observação já devolve para conferir.
+      const zeroDeNovo = !ehEscritorio(req) && it.cf?.ok === false && it.rc !== null && Number(it.rc) === 0 && !(it.fotos || []).length;
+      if ((novoNumero || zeroDeNovo) && !it.re) it.cf = null;
       for (const k of ['rc', 'ob', 'rp', 'rt', 're', 'cf']) set[`itens.${i}.${k}`] = it[k] ?? null;
     });
     const n = Object.keys(set).length / 6;

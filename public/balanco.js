@@ -34,9 +34,11 @@ function causa(it) {
   return 'A RECONTAR';
 }
 // Foto obrigatória (balanço com exigeFoto): recontagem da loja sem foto não vale
-const semFoto = it => !!S.bal?.exigeFoto && !it.st && !it.re && !(it.fotos || []).length && !vazio(it.rc);
+// Contou 0: não há peça para fotografar — vai sem foto, mas o escritório confere
+const contouZero = it => !vazio(it.rc) && Number(it.rc) === 0;
+const semFoto = it => !!S.bal?.exigeFoto && !it.st && !it.re && !(it.fotos || []).length && !vazio(it.rc) && !contouZero(it);
 // Quantidade + foto da loja só vale depois de o escritório conferir
-const aConferir = it => !!S.bal?.exigeFoto && !it.st && !it.re && !vazio(it.rc) && (it.fotos || []).length > 0 && !it.cf;
+const aConferir = it => !!S.bal?.exigeFoto && !it.st && !it.re && !vazio(it.rc) && ((it.fotos || []).length > 0 || contouZero(it)) && !it.cf;
 const recusadoIt = it => !!S.bal?.exigeFoto && !it.st && !it.re && !!it.cf && it.cf.ok === false;
 function statusAuto(it) {
   if (vazio(it.rc)) return causa(it);
@@ -264,7 +266,7 @@ function desenharLoja() {
   }
   const temTrocas = !!b.trocas?.enviadaEm;
   $('vDet').innerHTML = cab + `<div id="progLoja"></div>
-    <div class="aviso">Para cada item: conte, digite a quantidade em <b>Contei</b> e tire a foto mostrando as peças com o <b>código</b> da etiqueta aparecendo. Sem a foto a recontagem não vale. O escritório confere cada foto.</div>
+    <div class="aviso">Para cada item: conte, digite a quantidade em <b>Contei</b> e tire a foto mostrando as peças com o <b>código</b> da etiqueta aparecendo. Sem a foto a recontagem não vale. Não achou nenhuma peça? Digite <b>0</b>: não precisa de foto. O escritório confere cada item.</div>
     ${temTrocas ? `<div class="tabs noprint"><button class="tab ${S.sub !== 'trocas' ? 'active' : ''}" data-sub="recont">Recontagem</button><button class="tab ${S.sub === 'trocas' ? 'active' : ''}" data-sub="trocas">Trocas</button></div>` : ''}
     <div id="sub"></div>`;
   $('dVoltar').onclick = voltar;
@@ -310,7 +312,10 @@ function desenharRecontagemLoja(aberto) {
   let tq; $('rQ').oninput = e => { clearTimeout(tq); tq = setTimeout(() => { f.q = e.target.value; desenharRecontagemLoja(aberto); const el = $('rQ'); el.focus(); el.setSelectionRange(el.value.length, el.value.length); }, 300); };
   document.querySelectorAll('#sub input.rc, #sub input.ob, #sub textarea.ob').forEach(el => el.onchange = () => salvarItem(el));
 }
-const textoLoja = it => ({
+const textoLoja = it => contouZero(it) && !(it.fotos || []).length && S.bal?.exigeFoto && ({
+  'ENVIADO': 'Enviado com 0 peças, sem foto. O escritório vai conferir.',
+  'RECONTAR DE NOVO': 'O escritório recusou o 0. Procure de novo: se achar, corrija a quantidade e tire a foto; se não achar, escreva na observação onde procurou.',
+}[it.sl]) || ({
   'FALTA FOTO': 'Falta a foto das peças com o código aparente — sem ela a recontagem não vale.',
   'RECONTAR DE NOVO': 'O escritório recusou a foto. Reconte, corrija a quantidade se precisar e tire uma foto nova.',
   'ENVIADO': 'Enviado. O escritório vai conferir a foto.',
@@ -377,7 +382,7 @@ async function aplicarConferencia(it, acao, qtdTxt) {
       it.rc = q; it.re = true; S.bal.resumo = j.resumo;
     }
   } else {
-    motivo = prompt('Motivo da recusa (a loja vê):', 'Código não aparece na foto');
+    motivo = prompt('Motivo da recusa (a loja vê):', contouZero(it) && !(it.fotos || []).length ? 'Procure de novo' : 'Código não aparece na foto');
     if (motivo === null) return false;
   }
   const j = await api(`/api/balancos/${S.bal.id}/conferir`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ k, ok: acao === 'ok', motivo }) });
@@ -397,6 +402,7 @@ function conferirFotos(chaves, i = 0) {
   g.innerHTML = `<div class="g-top"><b>Conferir foto ${i + 1} de ${chaves.length}</b><button class="btn" data-fechar>Fechar</button></div>`;
   box.innerHTML = `<div class="g-fotos">
       <div style="width:100%">${blocoConferencia(it).replace('{PULAR}', '<button class="btn" data-c="pular">Pular</button>')}</div>
+      ${(it.fotos || []).length ? '' : '<div style="color:#ddd">Sem foto: a loja contou 0 (não achou o produto).</div>'}
       ${(it.fotos || []).map(f => `<figure><img src="${urlFoto(f)}" alt="foto"/><figcaption>${esc(f.por)} · ${new Date(f.tirada || f.em).toLocaleString('pt-BR')}</figcaption></figure>`).join('')}
     </div>`;
   g.appendChild(box);
