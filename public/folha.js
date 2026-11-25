@@ -514,7 +514,12 @@ let FP = {
     ySel.appendChild(o);
   }
   mSel.addEventListener('change', loadPeriod);
-  ySel.addEventListener('change', loadPeriod);
+  // Na aba do 13º só o ano conta; a folha do mês recarrega junto
+  ySel.addEventListener('change', () => {
+    if (D13.ativo && !d13PodeSair()) { ySel.value = D13.ano; return; }
+    loadPeriod();
+    if (D13.ativo) d13Carregar();
+  });
   renderStoreButtons('');
   await loadPeriod();
 })();

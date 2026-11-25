@@ -10944,6 +10944,9 @@ app.get('/folha',  (req, res) => res.sendFile(path.join(__dirname, 'public/folha
 app.get('/marcas', (req, res) => res.sendFile(path.join(__dirname, 'public/marcas.html')));
 app.get('/icms',   requireEscritorioOrAdmin, (req, res) => res.sendFile(path.join(__dirname, 'public/icms.html')));
 
+// 13º salário (1ª parcela em novembro, 2ª em dezembro)
+require('./services/decimoTerceiroRotas').register(app, { requireAdmin, readDB, writeDB, boardsLabel: BOARDS_LABEL });
+
 // GET /api/folha/config — configurações por loja (faixas de meta, GM, DSR, prêmios)
 app.get('/api/folha/config', requireAuth, async (req, res) => {
   try {
