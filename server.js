@@ -14711,6 +14711,7 @@ app.put('/api/dre/:ano/:mes/:loja', requireAdmin, async (req, res) => {
 // Ao fechar, cada ação vira item de pauta (meetingItems) da loja, que é onde a
 // cobrança do mês seguinte já acontece hoje.
 
+const pautaConf = require('./services/pautaConferencia');
 const PAUTA_BOARDS = BOARDS.filter(b => b !== 'admin' && b !== 'escritorio');
 
 function pautaKey(y, m, board) { return `${monthKey(y, m)}-${board}`; }
@@ -15317,7 +15318,7 @@ function pautaVazia(y, m, board) {
     realizadaEm: '', participantes: '',
     comentarios: { performance: '', vendedores: '', crm: '', rh: '', produtos: '', balanco: '' },
     vendedorNotas: {},
-    rhItens: [], demandas: [], acoes: [],
+    rhItens: [], demandas: [], acoes: [], conferencia: [],
     estoqueManual: { custo: 0, venda: 0, data: '', obs: '' },
     metaProximoMes: { valor: 0, obs: '' },
     balanco: { diferenca: 0, data: '', obs: '', imagens: [] },
@@ -15329,23 +15330,6 @@ function pautaVazia(y, m, board) {
 function pautaDaLoja(db, y, m, board) {
   const p = db.pautas?.[pautaKey(y, m, board)];
   return p ? { ...pautaVazia(y, m, board), ...p } : pautaVazia(y, m, board);
-}
-
-// Ações combinadas no mês anterior, com o status atual do item de pauta gerado
-function pautaAcoesAnteriores(db, y, m, board) {
-  const { y: py, m: pm } = pautaMesAnterior(y, m);
-  const anterior = db.pautas?.[pautaKey(py, pm, board)];
-  if (!anterior?.acoes?.length) return [];
-  const itens = db.meetingItems || [];
-  return anterior.acoes.map(a => {
-    const item = a.meetingItemId ? itens.find(x => x.id === a.meetingItemId) : null;
-    return {
-      texto: a.texto, responsavel: a.responsavel || '', prazo: a.prazo || '',
-      year: py, month: pm,
-      feito: item ? !!(item.checked || item.archived) : false,
-      naPauta: !!item,
-    };
-  });
 }
 
 // ── Prints do fechamento de balanço ──────────────────────────────────────────
@@ -15450,7 +15434,7 @@ app.get('/api/pauta/:year/:month/:board', requireEscritorioOrAdmin, async (req, 
         estoqueHistorico: pautaEstoqueHistorico(db, y, m, board, 12),
         rh:              pautaRH(db, board, y, m, hoje),
         pendencias:      pautaPendencias(db, board),
-        acoesAnteriores: pautaAcoesAnteriores(db, y, m, board),
+        conferir:        pautaConf.aConferir(db, y, m, board),
         hoje,
       },
     });
@@ -15501,6 +15485,7 @@ app.put('/api/pauta/:year/:month/:board', requireEscritorioOrAdmin, async (req, 
     const campos = ['participantes', 'realizadaEm', 'comentarios', 'vendedorNotas',
                     'rhItens', 'demandas', 'acoes', 'estoqueManual', 'metaProximoMes', 'balanco', 'produtosResumo', 'roteiro'];
     for (const c of campos) if (c in req.body) p[c] = req.body[c];
+    if ('conferencia' in req.body) p.conferencia = pautaConf.limpar(req.body.conferencia);
 
     // A lista de prints é do servidor: quem manda nela são as rotas de imagem.
     // Senão um autosave disparado antes do upload voltar apagaria o print.
@@ -15812,7 +15797,8 @@ async function gerarRoteiroIA(y, m, board, quem, produtos) {
         }
       : null,
     pendenciasAbertas: pautaPendencias(db, board).map(x => x.text),
-    acoesDoMesAnterior: pautaAcoesAnteriores(db, y, m, board),
+    solicitadoNaReuniaoAnterior: pautaConf.aConferir(db, y, m, board).map(i => ({ secao: i.campo, texto: i.texto, mes: `${i.month}/${i.year}`,
+      situacao: (p.conferencia || []).find(c => c.ch === i.ch)?.estado || (i.feitoNaLoja ? 'feito' : 'a conferir') })),
     demandasAnotadas: p.demandas || [],
     comentariosDoGestor: p.comentarios || {},
   };

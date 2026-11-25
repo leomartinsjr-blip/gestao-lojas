@@ -162,6 +162,13 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-u
 .pa-pend-txt{flex:1;min-width:0;line-height:1.45}
 .pa-check{color:var(--up);font-weight:700}
 .pa-uncheck{color:var(--down);font-weight:700}
+.pa-conf-acts{display:flex;gap:.3rem;flex-shrink:0}
+.pa-conf-acts button{background:transparent;border:1px solid var(--border);border-radius:var(--r-sm);color:var(--muted);font:inherit;font-size:.72rem;font-weight:600;padding:.2rem .5rem;cursor:pointer;white-space:nowrap}
+.pa-conf-acts button:hover{color:var(--text)}
+.pa-conf-acts .f.on{background:rgba(var(--up-rgb),.12);border-color:var(--up);color:var(--up)}
+.pa-conf-acts .n.on{background:rgba(var(--down-rgb),.1);border-color:var(--down);color:var(--down)}
+.pa-pend.feito .pa-pend-txt{text-decoration:line-through;color:var(--muted)}
+.pa-conf-papel{display:none}
 
 /* ── Produtos x estoque ── */
 .pa-prod-head{display:flex;align-items:center;gap:.6rem;flex-wrap:wrap;margin-bottom:.8rem}
@@ -291,6 +298,9 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-u
   .pa-alert.info{border-left-color:#0a4fa8}
   .pa-alert.ok{border-left-color:#0b6b22}
   .pa-pend{border-bottom-color:#bbb}
+  .pa-conf-acts{display:none}
+  .pa-conf-papel{display:inline;white-space:nowrap;color:#000;font-weight:700;font-size:.72rem}
+  .pa-pend.feito .pa-pend-txt{color:#333}
 
   /* Campos preenchidos na reunião */
   .pa-ta,.pa-inp,.pa-nota-inp{background:#fff;color:#000;border-color:#999}
@@ -348,6 +358,7 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-u
           <input class="pa-inp grow" id="metaProxObs" placeholder="Como chegou nesse número (opcional)">
         </div>
         <div class="pa-legend" id="metaProxDeriv"></div>
+        <div data-conf="performance"></div>
         <div class="pa-ta-lbl">Comentário da reunião</div>
         <textarea class="pa-ta" id="cmtPerformance" placeholder="O que explicou o mês: clima, campanha, obra na rua, equipe reduzida…"></textarea>
       </div>
@@ -366,6 +377,7 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-u
         <div class="pa-legend">Só a equipe do mês — quem saiu no meio dele continua aqui. O número grande é o % da meta do vendedor no mês; embaixo, a diferença em pontos para o % que a loja fez no mesmo mês.
         Verde ficou acima da loja — puxou o resultado. Vermelho ficou abaixo. Num mês fraco da loja, 85% pode ser bom; num mês forte, 100% pode ser pouco.
         A média desses meses e a comparação com o mês atual estão no quadro dos vendedores, acima.</div>
+        <div data-conf="vendedores"></div>
         <div class="pa-ta-lbl">Comentário sobre a equipe</div>
         <textarea class="pa-ta" id="cmtVendedores" placeholder="Quem puxou o resultado, quem precisa de acompanhamento, o que foi combinado individualmente…"></textarea>
       </div>
@@ -381,6 +393,7 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-u
         <div id="crmBox"><div class="pa-empty">Carregando os números do CRM…</div></div>
         <div class="pa-legend">Agenda: clientes que entraram na lista do vendedor no mês (campanhas, aniversário e pós-venda). Realizada: quantos % ele chamou — verde a partir de 80%, amarelo de 50% a 80%, vermelho abaixo.
         Vendas influenciadas: compras dos clientes chamados, em qualquer loja, do dia da mensagem até 30 dias depois. Atrasados: aniversário ou pós-venda que passou do prazo sem contato. Cadastro: % das vendas com o cliente cadastrado (meta 90%).</div>
+        <div data-conf="crm"></div>
         <div class="pa-ta-lbl">Comentário sobre o CRM</div>
         <textarea class="pa-ta" id="cmtCrm" placeholder="Quem não chamou a agenda, o que voltou em venda, o que foi combinado…"></textarea>
       </div>
@@ -393,6 +406,7 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-u
         <span class="pa-card-title">Pendências de RH <span class="pa-card-sub" id="rhSub"></span></span>
       </div>
       <div class="pa-card-body">
+        <div data-conf="rh"></div>
         <div id="rhAuto"></div>
         <div class="pa-sub-hdr">Pendências anotadas na reunião</div>
         <div class="pa-lista" id="rhItens"></div>
@@ -444,6 +458,7 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-u
         <div class="pa-tbl-wrap"><table class="pa-tbl" id="estHistTbl"></table></div>
         <div class="pa-legend" id="estHistLegend"></div>
 
+        <div data-conf="produtos"></div>
         <div class="pa-ta-lbl">Comentário sobre produto e estoque</div>
         <textarea class="pa-ta" id="cmtProdutos" placeholder="O que falta na loja, o que está encalhado, o que pedir ou transferir…"></textarea>
       </div>
@@ -473,6 +488,7 @@ body{background:var(--bg);color:var(--text);font-family:'IBM Plex Sans',system-u
         <input type="file" id="balFile" accept="image/*" multiple style="display:none">
         <div class="pa-imgs" id="balImgs"></div>
 
+        <div data-conf="balanco"></div>
         <div class="pa-ta-lbl">Comentário sobre o balanço</div>
         <textarea class="pa-ta" id="cmtBalanco" placeholder="Onde a diferença se concentrou, o que já foi conferido, o que fica combinado…"></textarea>
       </div>

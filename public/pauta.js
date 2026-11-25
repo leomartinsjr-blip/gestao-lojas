@@ -74,7 +74,9 @@ function queueSave() {
 }
 
 async function salvar() {
-  if (!S.pauta || _saving) return;
+  if (!S.pauta) return;
+  // Já salvando: grava de novo depois, senão o clique do meio se perde
+  if (_saving) { queueSave(); return; }
   clearTimeout(_saveT); _saveT = null;
   _saving = true;
   $('saving').classList.add('on');
@@ -88,6 +90,7 @@ async function salvar() {
       rhItens:       p.rhItens,
       demandas:      p.demandas,
       acoes:         p.acoes,
+      conferencia:   p.conferencia,
       estoqueManual: p.estoqueManual,
       metaProximoMes: p.metaProximoMes,
       balanco:       p.balanco,
@@ -123,6 +126,7 @@ async function carregar() {
     if (!Array.isArray(S.pauta.rhItens))  S.pauta.rhItens  = [];
     if (!Array.isArray(S.pauta.demandas)) S.pauta.demandas = [];
     if (!Array.isArray(S.pauta.acoes))    S.pauta.acoes    = [];
+    if (!Array.isArray(S.pauta.conferencia)) S.pauta.conferencia = [];
     renderTudo();
     $('loading').style.display = 'none';
     $('content').style.display = '';
@@ -141,6 +145,7 @@ function renderTudo() {
   renderHistorico();
   renderRH();
   renderPendencias();
+  renderConferencia();
   renderLista('acoes');
   renderProdutos();
   renderEstoqueManual();
@@ -1049,7 +1054,7 @@ function renderLista(campo) {
 
 // ── 5 · Pendências e ações anteriores ────────────────────────────────────────
 function renderPendencias() {
-  const { pendencias, acoesAnteriores } = S.dados;
+  const { pendencias } = S.dados;
   $('pendSub').textContent = `${pendencias.length} aberta${pendencias.length === 1 ? '' : 's'}`;
   const html = [];
 
@@ -1065,19 +1070,54 @@ function renderPendencias() {
       </div>`).join(''));
   }
 
-  html.push('<div class="pa-sub-hdr">Ações combinadas no mês anterior</div>');
-  if (!acoesAnteriores.length) {
-    html.push('<div class="pa-empty">Nenhuma ação registrada na reunião anterior.</div>');
-  } else {
-    html.push(acoesAnteriores.map(a => `
-      <div class="pa-pend">
-        <span class="${a.feito ? 'pa-check' : 'pa-uncheck'}">${a.feito ? '✔' : '✕'}</span>
-        <span class="pa-pend-txt">${esc(a.texto)}${a.responsavel ? ` <span class="mut">· ${esc(a.responsavel)}</span>` : ''}${a.prazo ? ` <span class="mut">· até ${fData(a.prazo)}</span>` : ''}</span>
-        <span class="pa-pend-mes">${a.feito ? 'resolvida' : a.naPauta ? 'em aberto' : 'não enviada'}</span>
-      </div>`).join(''));
-  }
+  html.push('<div data-conf="acoes"></div>');
 
   $('pendBody').innerHTML = html.join('');
+}
+
+// ── Checklist: o que foi escrito na reunião anterior ─────────────────────────
+function estadoConf(it) {
+  const x = S.pauta.conferencia.find(c => c.ch === it.ch);
+  return x ? x.estado : it.feitoNaLoja ? 'feito' : '';
+}
+
+function renderConferencia() {
+  const todos = S.dados.conferir || [];
+  const antM = S.month === 1 ? 12 : S.month - 1;
+  const antY = S.month === 1 ? S.year - 1 : S.year;
+  document.querySelectorAll('[data-conf]').forEach(el => {
+    const campo = el.dataset.conf;
+    const lista = todos.filter(i => i.campo === campo);
+    const titulo = `${campo === 'acoes' ? 'Ações combinadas' : 'Solicitado'} em ${MESES[antM - 1]}/${antY}`;
+    if (!lista.length) {
+      el.innerHTML = campo === 'rh' || campo === 'acoes'
+        ? `<div class="pa-sub-hdr">${titulo}</div><div class="pa-empty">Nada registrado na reunião anterior.</div>` : '';
+      return;
+    }
+    const n = lista.filter(i => estadoConf(i) === 'feito').length;
+    el.innerHTML = `<div class="pa-sub-hdr">${titulo} <span class="pa-card-sub">${n} de ${lista.length} feito${n === 1 ? '' : 's'}</span></div>`
+      + lista.map(it => {
+        const e = estadoConf(it);
+        const velho = it.month !== antM || it.year !== antY;
+        const i = todos.indexOf(it);
+        return `<div class="pa-pend ${e}">
+          ${velho ? `<span class="pa-pend-mes">${pad(it.month)}/${String(it.year).slice(2)}</span>` : ''}
+          <span class="pa-pend-txt">${esc(it.texto)}${it.feitoNaLoja ? ' <span class="mut">· resolvida na pauta da loja</span>' : ''}</span>
+          <span class="pa-conf-papel">${e === 'feito' ? '[X] Feito' : e === 'nao' ? '[ ] Não feito' : '[ ] A conferir'}</span>
+          <span class="pa-conf-acts">
+            <button type="button" class="f ${e === 'feito' ? 'on' : ''}" aria-pressed="${e === 'feito'}" data-ci="${i}" data-e="feito">✓ Feito</button>
+            <button type="button" class="n ${e === 'nao' ? 'on' : ''}" aria-pressed="${e === 'nao'}" data-ci="${i}" data-e="nao">✕ Não feito</button>
+          </span></div>`;
+      }).join('');
+    el.querySelectorAll('[data-ci]').forEach(b => b.addEventListener('click', () => {
+      const { ch } = todos[+b.dataset.ci], e = b.dataset.e;
+      const antes = S.pauta.conferencia.find(c => c.ch === ch)?.estado;
+      S.pauta.conferencia = S.pauta.conferencia.filter(c => c.ch !== ch);
+      if (antes !== e) S.pauta.conferencia.push({ ch, estado: e });
+      renderConferencia();
+      queueSave();
+    }));
+  });
 }
 
 // ── 4 · Produtos e serviços vendidos × estoque ───────────────────────────────
