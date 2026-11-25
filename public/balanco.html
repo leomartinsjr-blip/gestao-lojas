@@ -186,7 +186,7 @@ table.tbl.fit { table-layout: fixed; }
 .cel-ob { display: flex; gap: 4px; align-items: center; }
 .cel-ob input.ob { flex: 1; min-width: 0; }
 .cel-ob .foto-btn { padding: 3px 5px; }
-#galeria { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 50; display: flex; flex-direction: column; align-items: center; padding: 14px; gap: 10px; overflow: auto; }
+#galeria { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 300; display: flex; flex-direction: column; align-items: center; padding: 14px; gap: 10px; overflow: auto; }
 #galeria .g-top { color: #fff; display: flex; gap: 10px; align-items: center; width: 100%; max-width: 1000px; font-size: 13px; }
 #galeria .g-top b { flex: 1; }
 #galeria .g-fotos { display: flex; flex-direction: column; gap: 12px; align-items: center; max-width: 1000px; width: 100%; }
@@ -239,6 +239,21 @@ tr.feita td { opacity: .55; }
   .bl-logo-sub { display: none; }
   #userLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #lkInicio { height: 40px; flex-shrink: 0; }
+  /* Fechar sempre à mão, mesmo com a foto rolada */
+  #galeria { padding: 0 12px 14px; }
+  #galeria .g-top { position: sticky; top: 0; background: #000; padding: 10px 0; z-index: 1; }
+  #galeria .g-top .btn { height: 42px; }
+  /* Abaixo de 16px o iPhone dá zoom ao tocar no campo */
+  .inp, .sel, .mcard-inp input.ob { font-size: 16px; }
+  .mcard-inp input.inp { height: 42px; }
+  .toolbar #rQ { flex: 1 1 100%; }
+  /* Trocas: um cartão por linha, com a caixa de feita à vista */
+  .tbl-trocas thead { display: none; }
+  .tbl-trocas, .tbl-trocas tbody, .tbl-trocas tr { display: block; width: 100%; }
+  .tbl-trocas tr { padding: 8px 4px; border-bottom: 1px solid var(--border); }
+  .tbl-trocas td { display: block; white-space: normal; border: 0; text-align: left !important; }
+  .tbl-trocas td::before { content: attr(data-l) ' '; color: var(--muted); font-size: 11px; }
+  .tbl-trocas .tFeita { width: 26px; height: 26px; vertical-align: middle; margin-left: 6px; }
   .row2 { grid-template-columns: 1fr; }
   .tbl-wrap { max-height: none; }
 }

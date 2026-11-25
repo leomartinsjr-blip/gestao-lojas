@@ -100,6 +100,7 @@ function desenharCards(lista) {
     const r = b.resumo;
     const corpo = b.status === 'processando' ? `<div class="bcard-meta"><span class="spin" style="display:inline-block;width:12px;height:12px;vertical-align:-2px"></span> ${esc(b.etapa || 'Processando…')}</div>`
       : b.status === 'erro' ? `<div class="bcard-meta neg">${esc(b.erro || '')}</div>`
+      : r && !S.escritorio && r.impactoConfirmado === undefined ? `<div class="bcard-conf">Recontados<b>${fInt(r.recontados)} de ${fInt(r.itens)}</b></div>`
       : r ? `<div class="bcard-conf">Impacto confirmado<b class="${cls(r.impactoConfirmado)}">${fRS(r.impactoConfirmado)}</b></div>
         <div class="bcard-nums">
           <div>Lido × estoque<b>${r.pecasLidas == null ? '—' : fInt(r.pecasLidas) + ' × ' + fInt(r.pecasEstoque)}</b></div>
@@ -744,7 +745,7 @@ function atualizarFotosItem(tr, it) {
 }
 // Reduz no celular antes de subir: lado maior 1600 px, JPEG — a foto do celular tem 3–5 MB
 async function reduzir(arquivo) {
-  const img = await new Promise((ok, erro) => { const i = new Image(); i.onload = () => ok(i); i.onerror = erro; i.src = URL.createObjectURL(arquivo); });
+  const img = await new Promise((ok, erro) => { const i = new Image(); i.onload = () => ok(i); i.onerror = () => erro(new Error('o celular não abriu essa imagem. Tire a foto pela câmera, em JPEG.')); i.src = URL.createObjectURL(arquivo); });
   const esc_ = Math.min(1, 1600 / Math.max(img.naturalWidth, img.naturalHeight));
   const cv = document.createElement('canvas');
   cv.width = Math.round(img.naturalWidth * esc_); cv.height = Math.round(img.naturalHeight * esc_);
@@ -835,12 +836,13 @@ async function salvarItem(el) {
   const tr = el.closest('.linha-item');
   const rcEl = tr.querySelector('input.rc'), obEl = tr.querySelector('input.ob, textarea.ob');
   const rcTxt = rcEl.value.trim();
-  if (rcTxt !== '' && !/^\d+$/.test(rcTxt)) { rcEl.classList.add('falhou'); rcEl.title = 'Só número inteiro'; return; }
+  if (rcTxt !== '' && !/^\d+$/.test(rcTxt)) { rcEl.classList.add('falhou'); rcEl.title = 'Só número inteiro'; avisoItem(tr, 'Não salvou: a quantidade é só número inteiro.'); return; }
   const body = { itens: [{ k, rc: rcTxt === '' ? null : Number(rcTxt), ob: obEl.value }] };
   [rcEl, obEl].forEach(x => x.classList.remove('salvo', 'falhou'));
   try {
     const j = await api(`/api/balancos/${S.bal.id}/itens`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
     const it = S.bal.itens.find(x => (x.c || x.b) === k);
+    avisoItem(tr, '');
     if (it) { it.rc = body.itens[0].rc; it.ob = body.itens[0].ob; it.re = !!S.escritorio; }
     el.classList.add('salvo');
     if (S.bal.cega) { const n = (j.itens || []).find(x => (x.c || x.b) === k); if (n && it) Object.assign(it, n); atualizarCartaoLoja(it); return; }
@@ -852,7 +854,18 @@ async function salvarItem(el) {
     tr.querySelector('.stc').innerHTML = celStatus(it, S.bal.status === 'recontagem');
     atualizarFotosItem(tr, it);
     atualizarKpis();
-  } catch (e) { el.classList.add('falhou'); el.title = e.message; }
+  } catch (e) {
+    el.classList.add('falhou'); el.title = e.message;
+    // No celular não há "title": sem aviso a loja acha que salvou
+    avisoItem(tr, 'Não salvou' + (e.message === 'Failed to fetch' || e.message === 'Load failed' ? ' (sem internet)' : ': ' + e.message) + '.', () => salvarItem(el));
+  }
+}
+function avisoItem(tr, msg, repetir) {
+  tr.querySelector('.nao-salvou')?.remove();
+  const inp = msg && tr.querySelector('.mcard-inp');
+  if (!inp) return;
+  inp.insertAdjacentHTML('afterend', `<div class="motivo nao-salvou"><b>${esc(msg)}</b>${repetir ? ' <button type="button" class="btn">Salvar de novo</button>' : ''}</div>`);
+  const b = tr.querySelector('.nao-salvou .btn'); if (b) b.onclick = repetir;
 }
 
 function atualizarKpis() {
@@ -918,14 +931,14 @@ function desenharTrocas() {
     </div>
     <div class="hint" style="margin-bottom:8px">Pega o que sobrou e o que faltou depois da recontagem (itens explicados por venda ou trânsito ficam fora). Casa primeiro pela mesma referência e mesmo preço; depois pelo mesmo setor e mesmo preço. Setores diferentes não trocam.
       Na loja, faça a troca no Microvix: <span class="troca-ent">entra</span> (devolução) o código que sobrou e <span class="troca-sai">sai</span> o que faltou.</div>
-    ${itens.length ? `<div class="tbl-wrap"><table class="tbl"><thead><tr>
+    ${itens.length ? `<div class="tbl-wrap"><table class="tbl tbl-trocas"><thead><tr>
       <th>Setor</th><th>Entra (sobrou)</th><th>Sai (faltou)</th><th class="n">Qtd</th><th class="n">Valor</th><th>Por</th><th class="c">Feita</th>
     </tr></thead><tbody>${itens.map(t => `<tr class="${t.feita ? 'feita' : ''}">
-      <td>${esc(t.setor)}</td>
-      <td><span class="troca-ent">${esc(t.entra.c)}</span> ${esc(t.entra.d)}<div class="muted" style="font-size:11px">${esc(t.entra.r)}</div></td>
-      <td><span class="troca-sai">${esc(t.sai.c)}</span> ${esc(t.sai.d)}<div class="muted" style="font-size:11px">${esc(t.sai.r)}</div></td>
-      <td class="n">${fInt(t.q)}</td><td class="n">${fRS(t.q * t.p)}</td><td>${t.criterio === 'referência' ? 'mesma referência' : 'mesmo setor'}</td>
-      <td class="c"><input type="checkbox" class="tFeita" data-id="${t.id}" ${t.feita ? 'checked' : ''} title="${t.feita ? `Feita por ${esc(t.feitaPor)} em ${new Date(t.feitaEm).toLocaleString('pt-BR')}` : 'Marcar como feita'}"/></td></tr>`).join('')}</tbody></table></div>`
+      <td data-l="Setor">${esc(t.setor)}</td>
+      <td data-l="Entra"><span class="troca-ent">${esc(t.entra.c)}</span> ${esc(t.entra.d)}<div class="muted" style="font-size:11px">${esc(t.entra.r)}</div></td>
+      <td data-l="Sai"><span class="troca-sai">${esc(t.sai.c)}</span> ${esc(t.sai.d)}<div class="muted" style="font-size:11px">${esc(t.sai.r)}</div></td>
+      <td class="n" data-l="Qtd">${fInt(t.q)}</td><td class="n" data-l="Valor">${fRS(t.q * t.p)}</td><td data-l="Por">${t.criterio === 'referência' ? 'mesma referência' : 'mesmo setor'}</td>
+      <td class="c" data-l="Feita"><input type="checkbox" class="tFeita" data-id="${t.id}" ${t.feita ? 'checked' : ''} title="${t.feita ? `Feita por ${esc(t.feitaPor)} em ${new Date(t.feitaEm).toLocaleString('pt-BR')}` : 'Marcar como feita'}"/></td></tr>`).join('')}</tbody></table></div>`
       : (T ? '<div class="empty">Nenhuma troca possível: não há sobra e falta do mesmo valor no mesmo setor.</div>' : '')}`;
   if ($('tGerar')) $('tGerar').onclick = async () => {
     if (T?.enviadaEm && !confirm('Gerar de novo? A lista enviada para a loja é substituída (as já feitas ficam).')) return;
