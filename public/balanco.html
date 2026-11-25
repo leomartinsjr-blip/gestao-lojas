@@ -234,7 +234,11 @@ tr.feita td { opacity: .55; }
 
 @media (max-width: 640px) {
   .page { padding: 14px 10px 50px; }
-  .bl-topbar { padding: 0 12px; }
+  .bl-topbar { padding: 0 12px; gap: 8px; }
+  .bl-logo { min-width: 0; }
+  .bl-logo-sub { display: none; }
+  #userLabel { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #lkInicio { height: 40px; flex-shrink: 0; }
   .row2 { grid-template-columns: 1fr; }
   .tbl-wrap { max-height: none; }
 }
@@ -258,6 +262,7 @@ tr.feita td { opacity: .55; }
     </div>
   </div>
   <span id="userLabel"></span>
+  <a class="btn noprint" href="/" id="lkInicio">← Início</a>
 </div>
 
 <div class="page">

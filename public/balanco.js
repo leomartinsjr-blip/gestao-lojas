@@ -386,7 +386,7 @@ async function aplicarConferencia(it, acao, qtdTxt) {
 
 // ── Escritório: fila de fotos a conferir ─────────────────────────────────
 function conferirFotos(chaves, i = 0) {
-  document.getElementById('conf')?.remove();
+  document.querySelectorAll('#galeria').forEach(x => x.remove());
   if (i >= chaves.length) { desenharDetalhe(); return; }
   const it = S.bal.itens.find(x => (x.c || x.b) === chaves[i]);
   if (!it) return conferirFotos(chaves, i + 1);
