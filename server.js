@@ -1120,6 +1120,39 @@ function statusContagem(db, board) {
 }
 
 function monthKey(y, m) { return `${y}-${String(m).padStart(2,'0')}`; }
+
+// ── Pesos diários do SITE ────────────────────────────────────────────────────
+// O % diário global é de loja física (sábado forte). O site fatura em dia útil:
+// todo dia pesa 100/dias, o peso de sábado e domingo vai para a segunda seguinte
+// e o fim de semana do fim do mês vai para o último dia útil. Mesma regra da aba
+// Vendas do NEXO (pesosSite em integracao-site/src/vendasRegras.js). Se o SITE
+// salvar pesos no modal, eles ficam em db.siteWeights e mandam sobre a regra.
+function pesosSiteRegra(y, m) {
+  const n = new Date(y, m, 0).getDate();
+  const base = 100 / n;
+  const dias = Array.from({ length: n }, (_, i) => `${monthKey(y, m)}-${String(i + 1).padStart(2, '0')}`);
+  const dow = ds => new Date(ds + 'T12:00:00Z').getUTCDay();
+  const pesos = Object.fromEntries(dias.map(d => [d, 0]));
+  let guardado = 0;
+  for (const d of dias) {
+    const w = dow(d);
+    if (w === 0 || w === 6) { guardado += base; continue; }
+    pesos[d] += base + (w === 1 ? guardado : 0);
+    if (w === 1) guardado = 0;
+  }
+  if (guardado) pesos[[...dias].reverse().find(d => ![0, 6].includes(dow(d)))] += guardado;
+  return pesos;
+}
+// Pesos do mês ('AAAA-MM') para a loja — SITE tem os seus, as demais o global.
+function pesosDoMes(db, mk, board) {
+  if (board === 'site') {
+    const salvo = (db.siteWeights || {})[mk];
+    if (salvo && Object.keys(salvo).length) return salvo;
+    const [y, m] = mk.split('-').map(Number);
+    return pesosSiteRegra(y, m);
+  }
+  return (db.globalWeights || {})[mk] || {};
+}
 function cardKey(y, m, board, section) { return `${monthKey(y,m)}-${board}-${section}`; }
 
 function ensureCard(db, y, m, board, section) {
@@ -1814,6 +1847,7 @@ app.get('/api/init', requireAuth, async (req, res) => {
       diasSemPremio: Object.fromEntries(Object.entries(semPremio).map(([id, dias]) => [id, [...dias]])),
       employees,
       weights:      (db.globalWeights || {})[mk] || {},
+      siteWeights:  pesosDoMes(db, mk, 'site'),
       vsales,
       weeklyMetas:  (db.weeklyMetas   || {})[mk] || {},
       folgas:       (db.folgas || []).filter(f => f.date.startsWith(prefix)),
@@ -2200,7 +2234,7 @@ function redistribuirMetaLoja(db, board, y, m) {
   if (!emps.length) return false;
   const days = new Date(y, m, 0).getDate();
   const defW = +(100 / days).toFixed(6);
-  const pesos = (db.globalWeights || {})[mk] || {};
+  const pesos = pesosDoMes(db, mk, board);
   if (!db.vsales) db.vsales = {};
   const vac = id => db.vsales[`${mk}-${board}-${id}`]?.meta?.vacationDays || [];
   const total = {};
@@ -2306,7 +2340,7 @@ app.get('/api/weights/:year/:month', requireAuth, async (req, res) => {
   try {
     const key = monthKey(parseInt(req.params.year), parseInt(req.params.month));
     const db  = await readDB();
-    res.json((db.globalWeights || {})[key] || {});
+    res.json(pesosDoMes(db, key, req.query.board));
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -2315,8 +2349,10 @@ app.post('/api/weights/:year/:month', requireAuth, async (req, res) => {
   try {
     const key = monthKey(parseInt(req.params.year), parseInt(req.params.month));
     const db  = await readDB();
-    if (!db.globalWeights) db.globalWeights = {};
-    db.globalWeights[key] = req.body.weights || {};
+    // SITE guarda os seus à parte; as lojas físicas dividem o global
+    const campo = req.query.board === 'site' ? 'siteWeights' : 'globalWeights';
+    if (!db[campo]) db[campo] = {};
+    db[campo][key] = req.body.weights || {};
     await writeDB(db);
     res.json({ ok: true });
   } catch (e) { res.status(500).json({ error: e.message }); }
@@ -2650,7 +2686,7 @@ app.get('/api/excel/:year/:month/:board', requireAuth, async (req, res) => {
     const mkKey    = `${y}-${pad(m)}`;
     const dsKey    = `${y}-${pad(m)}-${board}`;
     const metaLoja = db.dailySales?.[dsKey]?.meta?.mensal || 0;
-    const gWeights = (db.globalWeights || {})[mkKey] || {};
+    const gWeights = pesosDoMes(db, mkKey, board);
     const defW     = 100 / N;
 
     const vsMap = {};
@@ -2940,7 +2976,7 @@ app.get('/api/excel-vendedor/:year/:month/:board', requireAuth, async (req, res)
       if (cfgCache[k]) return cfgCache[k];
       const dsKey   = `${yy}-${pad(mm)}-${board}`;
       const metaLoja = db.dailySales?.[dsKey]?.meta?.mensal || 0;
-      const gWeights = (db.globalWeights || {})[k] || {};
+      const gWeights = pesosDoMes(db, k, board);
       const N = new Date(yy, mm, 0).getDate();
       cfgCache[k] = { metaLoja, gWeights, defW: 100 / N };
       return cfgCache[k];
@@ -11215,8 +11251,8 @@ function calcPremiacaoSemanal(db, year, month, employees) {
   // proporcionalmente e a loja "batia meta" numa semana em que não bateu.
   const mkOf     = ds  => ds.slice(0, 7);
   const daysInMk = mkX => { const [y2, m2] = mkX.split('-').map(Number); return new Date(y2, m2, 0).getDate(); };
-  const dayWeight = ds => {
-    const w = (db.globalWeights || {})[mkOf(ds)] || {};
+  const dayWeight = (ds, board) => {
+    const w = pesosDoMes(db, mkOf(ds), board);
     return w[ds] !== undefined ? w[ds] : 100 / daysInMk(mkOf(ds));
   };
   const weekDays = (ws, we) => {
@@ -11271,7 +11307,7 @@ function calcPremiacaoSemanal(db, year, month, employees) {
     if (!ativoNoDia(emp, ds)) return 0;               // fora da janela admissão/desligamento
     const mkX = mkOf(ds);
     if (vacDaysMk(emp.id, board, mkX).includes(ds)) return 0;  // férias (Part%)
-    const w = dayWeight(ds);
+    const w = dayWeight(ds, board);
     const metaLoja = metaLojaOf(mkX, board);
     if (metaLoja > 0) {
       const nActive = Math.max(1, (allVendByBoard[board] || []).filter(e =>
@@ -14802,8 +14838,8 @@ function pautaConversaoPorVendedor(db, y, m, board) {
 
 // Peso do dia no mês: quanto aquele dia vale do total (a soma do mês é 100).
 // Sem peso cadastrado, o mês é linear. Mesma regra da Planilha do Mês.
-function pautaPesoDoDia(db, y, m) {
-  const w = (db.globalWeights || {})[monthKey(y, m)] || {};
+function pautaPesoDoDia(db, y, m, board) {
+  const w = pesosDoMes(db, monthKey(y, m), board);
   const padrao = 100 / new Date(y, m, 0).getDate();
   return ds => (w[ds] ?? padrao);
 }
@@ -14914,7 +14950,7 @@ function pautaTotaisLoja(db, y, m, board) {
     .reduce((s, [, v]) => s + (Number(v) || 0), 0);
   if (fluxoPorta > 0) fluxo = fluxoPorta;
 
-  const peso = pautaPesoDoDia(db, y, m);
+  const peso = pautaPesoDoDia(db, y, m, board);
   let pesoAcum = 0;
   const totalDias = new Date(y, m, 0).getDate();
   for (let d = 1; d <= totalDias; d++) {
@@ -14947,7 +14983,7 @@ function pautaVendedores(db, y, m, board, pctLoja) {
   const { corte, fechado } = pautaCorte(y, m, todayBRT());
   const noCorte = ds => corte ? ds <= corte : false; // mês futuro não tem nada a contar
 
-  const peso = pautaPesoDoDia(db, y, m);
+  const peso = pautaPesoDoDia(db, y, m, board);
   let pesoAcum = 0;
   const totalDias = new Date(y, m, 0).getDate();
   for (let d = 1; d <= totalDias; d++) {

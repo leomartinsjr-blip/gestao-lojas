@@ -835,6 +835,7 @@ async function loadData() {
     });
     S.diasSemPremio = init.diasSemPremio || {};
     S.weights      = init.weights      || {};
+    S.siteWeights  = init.siteWeights  || {};
     S.vsales       = init.vsales       || {};
     S.weeklyMetas      = init.weeklyMetas      || {};
     S.dailySalesMeta   = init.dailySalesMeta   || {};
@@ -1506,15 +1507,18 @@ function _avisoPauta(strip) {
 // que decidem se o mês está de pé — e as barras do mês contra a linha da meta,
 // que é o que mostra a forma do mês, não só o ponto de hoje.
 function _renderResumoRede(panel, ctx) {
-  const { visible, byBoard, prefix, cutoff, daysInMonth, defW, weightAccum } = ctx;
+  const { visible, byBoard, prefix, cutoff, daysInMonth, defW } = ctx;
+  let { weightAccum } = ctx;
   const pad2 = n => String(n).padStart(2, '0');
 
   let metaMes = 0, realizado = 0;
   const porDia = {};
+  const metaPorLoja = {};
   for (const [bk] of visible) {
     for (const emp of (byBoard[bk] || [])) {
       const vs = S.vsales[emp.id] || {};
       metaMes += vs.meta?.mensal || 0;
+      metaPorLoja[bk] = (metaPorLoja[bk] || 0) + (vs.meta?.mensal || 0);
       for (const [dia, ent] of Object.entries(vs.entries || {})) {
         if (!dia.startsWith(prefix)) continue;
         const v = ent.value || 0;
@@ -1526,8 +1530,9 @@ function _renderResumoRede(panel, ctx) {
   // Sem meta e sem venda não há resumo — some em vez de mostrar quatro traços.
   if (metaMes <= 0 && realizado <= 0) return;
 
-  const pesoDe   = d => (S.weights[d] ?? defW);
-  const metaDe   = d => metaMes * pesoDe(d) / 100;
+  // Cada loja com o seu peso (o SITE não vende no peso de loja física)
+  const metaDe   = d => Object.entries(metaPorLoja).reduce((s, [bk, mm]) => s + mm * (pesosDaLoja(bk)[d] ?? defW) / 100, 0);
+  if (metaMes > 0) weightAccum = Object.entries(metaPorLoja).reduce((s, [bk, mm]) => s + mm * pesoAcumulado(bk, cutoff), 0) / metaMes;
   const projecao = weightAccum > 0 ? realizado / (weightAccum / 100) : null;
   const pctProj = metaMes   > 0 && projecao != null ? projecao / metaMes * 100 : null;
   const falta   = projecao != null ? metaMes - projecao : null;
@@ -1647,6 +1652,29 @@ let _resumoObs = null;
 // A faixa de chips no topo saiu a pedido do Leonardo: o painel já mostra todas
 // as lojas e a faixa do dia dá o número de cada uma. DASH_BOARD_FILTER continua
 // existindo e vazio, que é o mesmo que "todas" — visibleBoards() segue igual.
+
+// ── Pesos diários por loja ────────────────────────────────────────────────
+// O peso global é de loja física. O SITE tem os seus (regra de dia útil do
+// NEXO, pesosSiteRegra no server.js, ou o que o admin salvou no modal do SITE).
+// Mês da tela → S; outro mês (card do dia) → DASH_DAY.
+function pesosDaLoja(board, y = S.year, m = S.month) {
+  const daTela = y === S.year && m === S.month;
+  if (board === 'site') return (daTela ? S.siteWeights : DASH_DAY.siteWeights) || {};
+  return (daTela ? S.weights : DASH_DAY.weights) || {};
+}
+// Soma dos pesos do mês da tela até 'ate' (inclusive)
+function pesoAcumulado(board, ate) {
+  const dias = new Date(S.year, S.month, 0).getDate();
+  const defW = +(100 / dias).toFixed(6);
+  const w = pesosDaLoja(board);
+  let acc = 0;
+  for (let d = 1; d <= dias; d++) {
+    const ds = `${S.year}-${String(S.month).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    if (!ate || ds > ate) break;
+    acc += (w[ds] ?? defW);
+  }
+  return acc;
+}
 
 function renderDashboard() {
   if (_dayCardTimer) { clearInterval(_dayCardTimer); _dayCardTimer = null; }
@@ -1833,9 +1861,10 @@ function renderDashboard() {
         const friYear = parseInt(fri.slice(0, 4)), friMonth = parseInt(fri.slice(5, 7));
         if (friYear !== S.year || friMonth !== S.month) {
           if (!DASH_DAY.weightsKey || DASH_DAY.weightsKey !== `${friYear}-${friMonth}`) {
-            [DASH_DAY.weights, DASH_DAY.dailySalesMeta] = await Promise.all([
+            [DASH_DAY.weights, DASH_DAY.dailySalesMeta, DASH_DAY.siteWeights] = await Promise.all([
               apiFetch('GET', `/api/weights/${friYear}/${friMonth}`).catch(() => ({})),
               apiFetch('GET', `/api/dailysales-meta/${friYear}/${friMonth}`).catch(() => ({})),
+              apiFetch('GET', `/api/weights/${friYear}/${friMonth}?board=site`).catch(() => ({})),
             ]);
             DASH_DAY.weightsKey = `${friYear}-${friMonth}`;
           }
@@ -1868,9 +1897,10 @@ function renderDashboard() {
       const cardMonth = parseInt(d.slice(5, 7));
       if (cardYear !== S.year || cardMonth !== S.month) {
         if (!DASH_DAY.weightsKey || DASH_DAY.weightsKey !== `${cardYear}-${cardMonth}`) {
-          [DASH_DAY.weights, DASH_DAY.dailySalesMeta] = await Promise.all([
+          [DASH_DAY.weights, DASH_DAY.dailySalesMeta, DASH_DAY.siteWeights] = await Promise.all([
             apiFetch('GET', `/api/weights/${cardYear}/${cardMonth}`).catch(() => ({})),
             apiFetch('GET', `/api/dailysales-meta/${cardYear}/${cardMonth}`).catch(() => ({})),
+            apiFetch('GET', `/api/weights/${cardYear}/${cardMonth}?board=site`).catch(() => ({})),
           ]);
           DASH_DAY.weightsKey = `${cardYear}-${cardMonth}`;
         }
@@ -1978,7 +2008,7 @@ function renderDashboard() {
         const e = entries[ds];
         if (e) { valor += e.value||0; pecas += e.pecas||0; atend += e.atendimentos||0; }
       }
-      const metaAccum = mensal * perfWeightAccum / 100;
+      const metaAccum = mensal * pesoAcumulado(bk, perfCutoff) / 100;
       const pctMeta   = mensal > 0 ? valor / mensal * 100 : null;
       const projecao  = (valor > 0 && metaAccum > 0) ? valor/metaAccum*mensal : null;
       const pctProj   = projecao != null && mensal > 0 ? projecao / mensal * 100 : null;
@@ -1991,7 +2021,7 @@ function renderDashboard() {
     _boardRowData[bk] = rowData;
     let totV=0, totP=0, totA=0, totM=0;
     for (const d of rowData) { totV+=d.valor; totP+=d.pecas; totA+=d.atend; totM+=d.mensal; }
-    const ma = totM * perfWeightAccum / 100;
+    const ma = totM * pesoAcumulado(bk, perfCutoff) / 100;
     const bFluxo = Object.values(S.storeFluxo?.[bk] || {}).reduce((s, v) => s + (v || 0), 0);
     const bIndevaM = S.indevaStats?.[bk]?.monthly || {};
     let biTotal = 0, biConv = 0;
@@ -2023,7 +2053,7 @@ function renderDashboard() {
     });
   }
 
-  let grandValor=0, grandPecas=0, grandAtend=0, grandMeta=0, grandFluxo=0;
+  let grandValor=0, grandPecas=0, grandAtend=0, grandMeta=0, grandFluxo=0, grandMetaAccum=0;
 
   for (const [bk, bc] of sortedVisible) {
     const emps = byBoard[bk] || [];
@@ -2046,7 +2076,7 @@ function renderDashboard() {
     // Compute totals before rendering (needed for collapsed header)
     let totValor=0, totPecas=0, totAtend=0, totMeta=0;
     for (const d of rowData) { totValor += d.valor; totPecas += d.pecas; totAtend += d.atend; totMeta += d.mensal; }
-    const totMetaAccum = totMeta * perfWeightAccum / 100;
+    const totMetaAccum = totMeta * pesoAcumulado(bk, perfCutoff) / 100;
     const totPctMeta = totMeta > 0 ? totValor/totMeta*100 : null;
     const totProj  = (totValor > 0 && totMetaAccum > 0) ? totValor/totMetaAccum*totMeta : null;
     const totPctProj = totProj != null && totMeta > 0 ? totProj/totMeta*100 : null;
@@ -2059,7 +2089,7 @@ function renderDashboard() {
     const totConv = tiTotal > 0 ? tiConv / tiTotal * 100 : (totFluxo > 0 && totAtend > 0 ? totAtend / totFluxo * 100 : null);
     const tpProjCls = totPctProj == null ? '' : totPctProj >= 100 ? 'kpi-pos' : totPctProj >= 80 ? 'kpi-warn' : 'kpi-neg';
 
-    grandValor += totValor; grandPecas += totPecas; grandAtend += totAtend; grandMeta += totMeta; grandFluxo += totFluxo;
+    grandValor += totValor; grandPecas += totPecas; grandAtend += totAtend; grandMeta += totMeta; grandFluxo += totFluxo; grandMetaAccum += totMetaAccum;
 
     const metaKey = `${bk}-${S.year}-${S.month}`;
     if (totMeta > 0 && totValor >= totMeta && !META_ACHIEVED.has(metaKey)) {
@@ -2144,7 +2174,7 @@ function renderDashboard() {
   }
 
   if (isAdmin && [...visible].length > 1 && (grandValor > 0 || grandMeta > 0)) {
-    const gMetaAccum = grandMeta * perfWeightAccum / 100;
+    const gMetaAccum = grandMetaAccum;
     const gPctMeta = grandMeta > 0 ? grandValor / grandMeta * 100 : null;
     const gProj  = (grandValor > 0 && gMetaAccum > 0) ? grandValor / gMetaAccum * grandMeta : null;
     const gPctProj = gProj != null && grandMeta > 0 ? gProj / grandMeta * 100 : null;
@@ -2986,7 +3016,7 @@ function _renderDayCardBody(body, dateStr) {
       const atend   = entry.atendimentos || 0;
       const metaDia = sellerDayGoal({
         dateStr,
-        dayWeight,
+        dayWeight: pesosDaLoja(bk, cardYear, cardMonth)[dateStr] ?? defW,
         metaLoja,
         onVacation:      (vsale.meta?.vacationDays || []).includes(dateStr),
         boardVendors:    byBoard[bk],
@@ -3181,12 +3211,11 @@ function _lastWeekendDates() {
 function _renderWeekendCardBody(body, dates) {
   const fV = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-  function _getWeight(dateStr) {
+  function _getWeight(dateStr, bk) {
     const yr = parseInt(dateStr.slice(0, 4));
     const mo = parseInt(dateStr.slice(5, 7));
     const defW = +(100 / new Date(yr, mo, 0).getDate()).toFixed(6);
-    const weights = (yr === S.year && mo === S.month) ? S.weights : (DASH_DAY.weights || {});
-    return weights[dateStr] ?? defW;
+    return pesosDaLoja(bk, yr, mo)[dateStr] ?? defW;
   }
 
   function _getMetaLoja(dateStr, bk) {
@@ -3249,7 +3278,7 @@ function _renderWeekendCardBody(body, dates) {
         empAtend += entry.atendimentos || 0;
         empMeta  += sellerDayGoal({
           dateStr:          d,
-          dayWeight:        _getWeight(d),
+          dayWeight:        _getWeight(d, bk),
           metaLoja:         _getMetaLoja(d, bk),
           // Dia fora da janela de admissão/desligamento do PRÓPRIO vendedor → sem meta naquele dia.
           // sellerDayGoal só zera por férias; sem isso, quem não estava na casa no dia ainda
@@ -3741,7 +3770,8 @@ async function _loadCompCard(body) {
   // Uma linha por loja — projeção do mês vs. mesmo mês do ano anterior
   const rows = STORE_KEYS.map(k => {
     const real  = realized[k];
-    const proj  = wAccum > 0 && real > 0 ? real / wAccum * 100 : (real || null);
+    const wLoja = cutoff ? pesoAcumulado(k, cutoff) : 0;
+    const proj  = wLoja > 0 && real > 0 ? real / wLoja * 100 : (real || null);
     const ly    = PERF_HIST[k]?.[S.year - 1]?.[mi] || null;
     return { k, bc: BOARDS[k], proj, ly, delta: proj && ly ? (proj - ly) / ly * 100 : null };
   });
@@ -3905,17 +3935,24 @@ function computeCurMonthProj(board) {
   }
   if (wAccum === 0) return null;
   const boards = board === 'total' ? _ALL_STORES_FOR_TOTAL : board === 'surfers' ? SURFERS_STORES : [board];
-  let realized = 0;
+  // Cada loja projeta com o próprio peso corrido (o SITE tem o seu)
+  const realPorLoja = {};
   for (const emp of S.employees) {
     if (!boards.includes(emp.board) || !isVend(emp)) continue;
     const entries = (S.vsales[emp.id] || {}).entries || {};
     for (let d = 1; d <= daysInMonth; d++) {
       const ds = `${S.year}-${pad(S.month)}-${pad(d)}`;
       if (ds > perfCutoff) break;
-      realized += entries[ds]?.value || 0;
+      realPorLoja[emp.board] = (realPorLoja[emp.board] || 0) + (entries[ds]?.value || 0);
     }
   }
-  return realized > 0 ? Math.round(realized * 100 / wAccum) : null;
+  let proj = 0, realized = 0;
+  for (const [b, r] of Object.entries(realPorLoja)) {
+    realized += r;
+    const wb = pesoAcumulado(b, perfCutoff);
+    proj += wb > 0 ? r * 100 / wb : r;
+  }
+  return realized > 0 ? Math.round(proj) : null;
 }
 
 function calcPerfMetrics(k, curMonthOverride = null) {
@@ -6840,7 +6877,7 @@ async function loadAndRenderDaily(board) {
       isVend(e) &&
       (!e.desligamento || e.desligamento >= _firstOfMonth)
     );
-    PD.weights       = await apiFetch('GET', `/api/weights/${PD.year}/${PD.month}`);
+    PD.weights       = await apiFetch('GET', `/api/weights/${PD.year}/${PD.month}${board === 'site' ? '?board=site' : ''}`);
     PD.fluxo         = await apiFetch('GET', `/api/storefluxo/${PD.year}/${PD.month}/${board}`);
     PD.boardSettings = await apiFetch('GET', '/api/board-settings');
     PD.allVsales  = {};
@@ -7293,7 +7330,7 @@ function buildTotalSheet(isAdmin) {
           <span class="ds-meta-seg-val" id="dsTotalSuperVal">${superMetaTotal}</span>
         </div>
       </div>
-      ${isAdmin ? `<div class="ds-weight-hint-row"><span class="ds-weight-hint">· Clique em <strong>Peso%</strong> para ajustar (global — vale p/ todas as lojas)</span></div>` : ''}
+      ${isAdmin ? `<div class="ds-weight-hint-row"><span class="ds-weight-hint">· Clique em <strong>Peso%</strong> para ajustar ${PD.board === 'site' ? '(só do SITE — dia útil, fim de semana na segunda)' : '(global — vale p/ todas as lojas, menos o SITE)'}</span></div>` : ''}
       ${isAdmin && metaCheckIssues.length > 0 ? `
         <div style="margin-top:8px;padding:8px 12px;border:1px solid var(--down);border-radius:6px;background:color-mix(in srgb, var(--down) 12%, transparent);font-size:12.5px;color:var(--down)">
           ⚠️ A soma das metas diárias dos vendedores não bate com a meta da loja em ${metaCheckIssues.length} dia(s):
@@ -7395,7 +7432,7 @@ function buildTotalSheet(isAdmin) {
 function _syncPDToS() {
   if (PD.year !== S.year || PD.month !== S.month) return;
   for (const [empId, data] of Object.entries(PD.allVsales)) S.vsales[empId] = data;
-  if (PD.weights && Object.keys(PD.weights).length) Object.assign(S.weights, PD.weights);
+  if (PD.weights && Object.keys(PD.weights).length) Object.assign(PD.board === 'site' ? (S.siteWeights ||= {}) : S.weights, PD.weights);
   renderDashboard();
   _checkWeeklyCelebrations();
 }
@@ -7621,7 +7658,7 @@ function startGlobalWeightEdit(td) {
     const val = parseFloat(inp.value) || defW;
     PD.weights[dateStr] = val;
     try {
-      await apiFetch('POST', `/api/weights/${PD.year}/${PD.month}`, { weights: PD.weights });
+      await apiFetch('POST', `/api/weights/${PD.year}/${PD.month}${PD.board === 'site' ? '?board=site' : ''}`, { weights: PD.weights });
     } catch(e) { toast('Erro ao salvar peso: ' + e.message, true); }
     renderVendedorSheet();
     _syncPDToS();
@@ -7636,7 +7673,7 @@ function openWeightsModal() {
   const days   = new Date(year, month, 0).getDate();
   const defW   = +(100 / days).toFixed(6);
   const DAY_S  = ['Dom','Seg','Ter','Qua','Qui','Sex','Sáb'];
-  document.getElementById('weightsMonthLbl').textContent = `${MONTHS_PT[month-1]} ${year}`;
+  document.getElementById('weightsMonthLbl').textContent = `${MONTHS_PT[month-1]} ${year}${PD.board === 'site' ? ' · SITE' : ''}`;
 
   let html = '<div class="weights-grid">';
   for (let d = 1; d <= days; d++) {
@@ -7684,11 +7721,12 @@ async function saveWeights() {
     return;
   }
   try {
-    await apiFetch('POST', `/api/weights/${PD.year}/${PD.month}`, { weights });
+    await apiFetch('POST', `/api/weights/${PD.year}/${PD.month}${PD.board === 'site' ? '?board=site' : ''}`, { weights });
     PD.weights = weights;
     toast('Pesos salvos ✓');
     closeWeightsModal();
     renderVendedorSheet();
+    _syncPDToS();
   } catch(e) { toast('Erro ao salvar pesos: ' + e.message, true); }
 }
 
@@ -8605,11 +8643,12 @@ async function loadMonthData(year, month) {
   if (WK.cache[key]) return WK.cache[key];
   // Usa a lista completa (não filtrada pelo mês atual da tela) para não deixar de buscar
   // as vendas de um vendedor que está inativo hoje mas trabalhou no mês sendo consultado.
-  const [emps, weights, weeklyMetas, dailySalesMeta] = await Promise.all([
+  const [emps, weights, weeklyMetas, dailySalesMeta, siteWeights] = await Promise.all([
     Promise.resolve(S.allEmployees || S.employees),
     apiFetch('GET', `/api/weights/${year}/${month}`).catch(() => ({})),
     apiFetch('GET', `/api/weekly-metas/${year}/${month}`).catch(() => ({})),
     apiFetch('GET', `/api/dailysales-meta/${year}/${month}`).catch(() => ({})),
+    apiFetch('GET', `/api/weights/${year}/${month}?board=site`).catch(() => ({})),
   ]);
   const vsalesArr = await Promise.all(emps.map(emp =>
     apiFetch('GET', `/api/vsales/${year}/${month}/${emp.board}/${emp.id}`)
@@ -8619,6 +8658,7 @@ async function loadMonthData(year, month) {
   const data = {
     vsales: Object.fromEntries(vsalesArr),
     weights: weights || {},
+    siteWeights: siteWeights || {},
     weeklyMetas: weeklyMetas || {},
     dailySalesMeta: dailySalesMeta || {},
   };
@@ -8690,12 +8730,12 @@ function calcWeekKpis(emp, week, extraData) {
     let vsalesForMonth = S.vsales;
     if (mk === curKey) {
       const daysInMonth = new Date(S.year, S.month, 0).getDate();
-      dayWeight  = S.weights[ds] ?? +(100 / daysInMonth).toFixed(6);
+      dayWeight  = pesosDaLoja(emp.board)[ds] ?? +(100 / daysInMonth).toFixed(6);
       metaLoja   = S.dailySalesMeta?.[emp.board] || 0;
     } else if (extraData?.[mk]) {
       const [y, m] = mk.split('-').map(Number);
       const dim  = new Date(y, m, 0).getDate();
-      dayWeight      = extraData[mk].weights?.[ds] ?? +(100 / dim).toFixed(6);
+      dayWeight      = (emp.board === 'site' ? extraData[mk].siteWeights : extraData[mk].weights)?.[ds] ?? +(100 / dim).toFixed(6);
       metaLoja       = extraData[mk].dailySalesMeta?.[emp.board] || 0;
       vsalesForMonth = extraData[mk].vsales || {};
     }
@@ -8745,10 +8785,10 @@ function calcWeekKpis(emp, week, extraData) {
     const monthKey = ds.slice(0, 7);
     if (monthKey === curKey) {
       const daysInMonth = new Date(S.year, S.month, 0).getDate();
-      weekWeightAccum += (S.weights[ds] ?? +(100 / daysInMonth).toFixed(6));
+      weekWeightAccum += (pesosDaLoja(emp.board)[ds] ?? +(100 / daysInMonth).toFixed(6));
     } else if (extraData?.[monthKey]?.weights) {
       const [y2, m2] = monthKey.split('-').map(Number);
-      weekWeightAccum += (extraData[monthKey].weights[ds] ?? +(100 / new Date(y2, m2, 0).getDate()).toFixed(6));
+      weekWeightAccum += ((emp.board === 'site' ? extraData[monthKey].siteWeights || {} : extraData[monthKey].weights)[ds] ?? +(100 / new Date(y2, m2, 0).getDate()).toFixed(6));
     }
     let projEntry;
     if (monthKey === curKey) {
