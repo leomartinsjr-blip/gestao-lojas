@@ -924,10 +924,44 @@ function desenharResumo() {
       <th class="n">Expl. venda</th><th class="n">Vendas</th><th class="n">Expl. trânsito</th><th class="n">Trânsito</th>
     </tr></thead><tbody>${r.grupos.map(linha).join('')}</tbody><tfoot>${linha(t)}</tfoot></table></div>
     ${quadroNotas(b)}
+    <div id="cruzLojas" class="box" style="margin-bottom:14px"><h4>Faltou aqui × sobrou em outra loja</h4><span class="muted">Comparando com os balanços das outras lojas…</span></div>
     <h4 style="margin:0 0 8px">Divergências (${divergencias.length} ${divergencias.length === 1 ? 'item' : 'itens'}, recontado quando houver)</h4>
     <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Setor</th><th>Código</th><th>Descrição</th><th class="n">Estoque</th><th class="n">Balanço</th><th class="n">Recontada</th><th class="n">Diferença</th><th class="n">Impacto</th><th>Status</th><th>Observação</th></tr></thead>
     <tbody>${divergencias.map(({ it, q, imp }) => `<tr><td>${esc(grupoCurto(it.g))}</td><td>${esc(it.c || it.b)}</td><td class="desc">${esc(it.d)}</td><td class="n">${fInt(it.e)}</td><td class="n">${fInt(it.l)}</td><td class="n">${vazio(it.rc) ? '' : it.rc}</td><td class="n ${cls(q)}">${fInt(q)}</td><td class="n ${cls(imp)}">${fRS(imp)}</td><td><span class="${stCls(status(it))}">${status(it)}</span></td><td>${esc(it.ob || '')}</td></tr>`).join('') || '<tr><td colspan="10" class="empty">Nenhuma divergência.</td></tr>'}</tbody>
     <tfoot><tr><td colspan="6">Total</td><td class="n ${cls(totQ)}">${fInt(totQ)}</td><td class="n ${cls(totImp)}">${fRS(totImp)}</td><td colspan="2"></td></tr></tfoot></table></div>`;
+  desenharCruzamento(b);
+}
+
+// Faltou aqui × sobrou em outra loja (e o contrário), pelo mesmo código, contra o
+// balanço mais próximo de cada outra loja. Peça que pode ter ido para a loja errada.
+async function desenharCruzamento(b) {
+  const el = () => document.getElementById('cruzLojas');
+  let j;
+  try { j = await api(`/api/balancos/${b.id}/outras-lojas`); }
+  catch (e) { if (el()) el().innerHTML = `<h4>Faltou aqui × sobrou em outra loja</h4><span class="muted">Não deu para comparar: ${esc(e.message)}</span>`; return; }
+  const box = el();
+  if (!box || S.bal?.id !== b.id) return;
+  const titulo = '<h4>Faltou aqui × sobrou em outra loja</h4>';
+  const base = j.balancos.length
+    ? `Comparado com ${j.balancos.map(o => `<b>${esc(o.lojaLabel)}</b> (${dBR(o.data)}${o.status === 'finalizado' ? '' : ', em recontagem'})`).join(', ')} — o balanço mais próximo de cada loja, até ${j.janela} dias antes ou depois. Diferença recontada quando houver.`
+    : `Nenhuma outra loja tem balanço até ${j.janela} dias antes ou depois de ${dBR(b.data)}.`;
+  if (!j.itens.length) { box.innerHTML = `${titulo}<div class="muted">${base}</div>${j.balancos.length ? '<div style="margin-top:6px">Nenhum código que faltou aqui sobrou em outra loja (nem o contrário).</div>' : ''}`; return; }
+  const qtd = (q, conf) => `<b class="${cls(q)}">${q > 0 ? '+' : ''}${fInt(q)}</b>${conf ? '' : ' <span class="muted" title="Sem recontagem: diferença da leitura">(leitura)</span>'}`;
+  const faltas = j.itens.filter(x => x.q < 0), sobras = j.itens.filter(x => x.q > 0);
+  const valor = l => l.reduce((a, x) => a + x.casadas * x.p, 0);
+  const pecas = l => l.reduce((a, x) => a + x.casadas, 0);
+  const tabela = (lista, rotulo, rotuloLa) => !lista.length ? '' : `
+    <div style="margin:10px 0 6px"><b>${rotulo}</b> — ${lista.length} ${lista.length === 1 ? 'código' : 'códigos'}, ${fInt(pecas(lista))} peça(s) que se explicam entre as lojas (${fRS(valor(lista))})</div>
+    <div class="tbl-wrap"><table class="tbl"><thead><tr><th>Setor</th><th>Código</th><th>Descrição</th><th>Referência</th><th class="n">Aqui</th><th>${rotuloLa}</th><th class="n">Peças</th><th class="n">Valor</th></tr></thead>
+    <tbody>${lista.map(x => `<tr><td>${esc(x.g)}</td><td>${esc(x.c)}</td><td class="desc">${esc(x.d)}</td><td>${esc(x.r || '')}</td>
+      <td class="n">${qtd(x.q, x.confirmado)}</td>
+      <td>${x.outras.map(y => `<a href="#" class="cruz-abrir" data-id="${esc(y.id)}" title="Abrir o balanço de ${esc(y.lojaLabel)}">${esc(y.lojaLabel)}</a> ${qtd(y.q, y.confirmado)}`).join('<br>')}</td>
+      <td class="n">${fInt(x.casadas)}</td><td class="n">${fRS(x.casadas * x.p)}</td></tr>`).join('')}</tbody>
+    <tfoot><tr><td colspan="6">Total</td><td class="n">${fInt(pecas(lista))}</td><td class="n">${fRS(valor(lista))}</td></tr></tfoot></table></div>`;
+  box.innerHTML = `${titulo}<div class="muted">${base}</div>
+    ${tabela(faltas, 'Faltou aqui e sobrou em outra loja', 'Sobrou em')}
+    ${tabela(sobras, 'Sobrou aqui e faltou em outra loja', 'Faltou em')}`;
+  box.querySelectorAll('.cruz-abrir').forEach(a => a.onclick = ev => { ev.preventDefault(); abrir(a.dataset.id); });
 }
 
 // ── Aba Trocas ─────────────────────────────────────────────────────────────

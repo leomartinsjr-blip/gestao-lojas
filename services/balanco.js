@@ -635,8 +635,40 @@ function itemParaLoja(it, bal) {
   return { ...resto, ...(np ? { np } : {}), ...(tf ? { tf } : {}), sl: statusLoja(it, bal) };
 }
 
+// Faltou numa loja × sobrou em outra (o mesmo código): peça que pode ter ido para a
+// loja errada numa transferência ou foi bipada no lugar de outra. A diferença de cada
+// item é a final (recontada) quando houver, senão a da leitura; item explicado por
+// venda/trânsito dá 0 e fica fora. outros = balanços de outras lojas (um por loja).
+function cruzarLojas(bal, outros) {
+  const difs = b => {
+    const m = new Map();
+    for (const it of itensRecontagem(b)) {
+      if (!it.c) continue;
+      const df = difFinal(it, b);
+      const q = df ?? (it.l - it.e);
+      if (q) m.set(String(it.c), { it, q, confirmado: df !== null });
+    }
+    return m;
+  };
+  const aqui = difs(bal);
+  const lados = (outros || []).map(o => ({ o, m: difs(o) }));
+  const itens = [];
+  for (const [c, x] of aqui) {
+    const outras = [];
+    for (const { o, m } of lados) {
+      const y = m.get(c);
+      if (y && Math.sign(y.q) !== Math.sign(x.q)) outras.push({ id: o.id, board: o.board, data: o.data, q: y.q, confirmado: y.confirmado });
+    }
+    if (!outras.length) continue;
+    // Peças que se explicam entre as lojas: o menor dos dois lados
+    const casadas = Math.min(Math.abs(x.q), outras.reduce((a, y) => a + Math.abs(y.q), 0));
+    itens.push({ c, d: x.it.d, r: x.it.r, g: grupoCurto(x.it.g), p: x.it.p, q: x.q, confirmado: x.confirmado, casadas, outras });
+  }
+  return itens.sort((a, b) => (a.q < 0 ? 0 : 1) - (b.q < 0 ? 0 : 1) || a.g.localeCompare(b.g) || b.casadas * b.p - a.casadas * a.p);
+}
+
 module.exports = {
-  abatimentos,
+  abatimentos, cruzarLojas,
   statusLoja, itemParaLoja,
   parseLeitura, processar, criarCadastro, causaProvavel, statusItem, difFinal, sugerirTrocas,
   itensRecontagem, naoCadastradosDe, NAO_CADASTRADO, resumo, txtCorrigido, grupoCurto, normBarra, buscarCustos,

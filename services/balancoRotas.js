@@ -16,7 +16,7 @@ const zlib = require('zlib');
 const multer = require('multer');
 const {
   processar, criarCadastro, resumo, txtCorrigido, statusItem, sugerirTrocas, buscarCustos,
-  itensRecontagem, naoCadastradosDe, itemParaLoja, statusLoja,
+  itensRecontagem, naoCadastradosDe, itemParaLoja, statusLoja, cruzarLojas,
 } = require('./balanco');
 const { buscarHistorico } = require('./balancoHistorico');
 const { pdfListaCriticas, excelRecontagem, lerPlanilhaRecontagem } = require('./balancoArquivos');
@@ -786,8 +786,41 @@ function register(app, { getDb, getNexoDb, getNfItems, requireAuth, requireEscri
     } catch (e) { res.status(500).json({ error: e.message }); }
   });
 
+  // ── Faltou aqui × sobrou em outra loja ───────────────────────────────────
+  // Compara com o balanço mais próximo (até 60 dias antes ou depois) de cada outra
+  // loja do mesmo portal Microvix — a Tommy tem códigos próprios.
+  const JANELA_CRUZAR = 60;
+  app.get('/api/balancos/:id/outras-lojas', requireEscritorioOrAdmin, async (req, res) => {
+    try {
+      const bal = await carregar(req, res); if (!bal) return;
+      if (!bal.itens) return res.json({ janela: JANELA_CRUZAR, balancos: [], itens: [] });
+      const dia = iso => Date.parse(`${iso}T12:00:00Z`);
+      const desloca = n => new Date(dia(bal.data) + n * 86400e3).toISOString().slice(0, 10);
+      const filtro = { board: { $ne: bal.board }, status: { $nin: ['processando', 'erro'] },
+        data: { $gte: desloca(-JANELA_CRUZAR), $lte: desloca(JANELA_CRUZAR) } };
+      const c = col();
+      const docs = c ? await c.find(filtro, { projection: { _id: 0, leituraTexto: 0 } }).toArray()
+        : local.todos().filter(d => d.board !== bal.board && !filtro.status.$nin.includes(d.status)
+          && d.data >= filtro.data.$gte && d.data <= filtro.data.$lte);
+      const mesmoPortal = o => (bal.portal && o.portal) ? o.portal === bal.portal : (o.board === 'tommy') === (bal.board === 'tommy');
+      const porLoja = new Map();
+      for (const o of docs) {
+        if (!o.itens || !mesmoPortal(o)) continue;
+        const atual = porLoja.get(o.board);
+        if (!atual || Math.abs(dia(o.data) - dia(bal.data)) < Math.abs(dia(atual.data) - dia(bal.data))) porLoja.set(o.board, o);
+      }
+      const outros = [...porLoja.values()];
+      const itens = cruzarLojas(bal, outros);
+      for (const it of itens) for (const y of it.outras) y.lojaLabel = label(y.board);
+      res.json({ janela: JANELA_CRUZAR,
+        balancos: outros.map(o => ({ id: o.id, board: o.board, lojaLabel: label(o.board), data: o.data, status: o.status }))
+          .sort((a, b) => a.lojaLabel.localeCompare(b.lojaLabel)),
+        itens });
+    } catch (e) { res.status(500).json({ error: e.message }); }
+  });
+
   // ── Arquivos ─────────────────────────────────────────────────────────────
-  const nomeBase = bal => `Balanço ${label(bal.board)} ${bal.data.split('-').reverse().join('-')}`;
+  const nomeBase =bal => `Balanço ${label(bal.board)} ${bal.data.split('-').reverse().join('-')}`;
   const anexo = (res, nome, tipo) => {
     res.setHeader('Content-Type', tipo);
     res.setHeader('Content-Disposition', `attachment; filename="${nome.normalize('NFD').replace(/[^\x20-\x7e]/g, '')}"; filename*=UTF-8''${encodeURIComponent(nome)}`);
