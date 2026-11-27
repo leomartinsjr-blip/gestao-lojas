@@ -1120,11 +1120,14 @@ function _desenharPedidosSite(lugar, d) {
             : '<span class="site-btn off" title="O escritório anexa a etiqueta gerada no Microvix">🏷 Etiqueta: aguardando escritório</span>'}
           ${check('separado', 'Separado')} ${check('embalado', 'Embalado')}
         </div>
-        ${p.maoPropria ? `<label class="site-check site-mp"><input type="checkbox" class="site-mp-ok" data-n="${p.numero}"> <b>Postei com Mão Própria + AR</b> (obrigatório para finalizar)</label>` : ''}
+        ${p.codigoCorreios
+          // Etiqueta gerada pelo robô: só os Correios finalizam (o rastro confirma a postagem).
+          // O botão aqui respondia "finalizado" e o pedido voltava para a janela (27/11).
+          ? `<div class="site-linha espera">📦 Etiqueta <b>${esc(p.codigoCorreios)}</b> — poste nos Correios. O pedido sai daqui sozinho quando os Correios registrarem a postagem (pode levar algumas horas).</div>`
+          : `${p.maoPropria ? `<label class="site-check site-mp"><input type="checkbox" class="site-mp-ok" data-n="${p.numero}"> <b>Postei com Mão Própria + AR</b> (obrigatório para finalizar)</label>` : ''}
         <div class="site-rastreio">Postou nos Correios? Código de rastreio:
-          <input maxlength="13" placeholder="AA123456789BR" data-n="${p.numero}" value="${esc(p.rastreio || p.codigoCorreios || '')}">
-          <button class="site-finalizar" data-n="${p.numero}">Finalizar pedido</button></div>
-        ${p.codigoCorreios ? `<div class="site-linha espera">O código já vem da etiqueta impressa. Depois de postar, clique em Finalizar — ou deixe: o pedido finaliza sozinho quando os Correios registrarem a postagem.</div>` : ''}
+          <input maxlength="13" placeholder="AA123456789BR" data-n="${p.numero}" value="${esc(p.rastreio || '')}">
+          <button class="site-finalizar" data-n="${p.numero}">Finalizar pedido</button></div>`}
         <div class="site-itens">${itensPorLoja(p)}</div></div>`;
     }).join('')}
   </div>`;
