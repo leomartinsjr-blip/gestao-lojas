@@ -55,6 +55,9 @@ const status = it => S.bal?.cega ? it.sl : (it.st || statusAuto(it));
 // automático já recontado) não conta. null = pendente. Igual ao difFinal do servidor.
 const EXPLICADO = ['OK', 'TROCA', 'VER VENDA', 'VER TRÂNSITO'];
 const difFinal = it => semFoto(it) || aConferir(it) || recusadoIt(it) ? null : EXPLICADO.includes(status(it)) && (it.st || !vazio(it.rc) || status(it) === 'VER VENDA' || (status(it) === 'VER TRÂNSITO' && transitoSoPorNota(it))) ? 0 : vazio(it.rc) ? null : Number(it.rc) - it.e + abat(it).trNota;
+// Impacto da linha: com recontagem vale a Dif. final (o mesmo do cartão "Impacto confirmado");
+// sem recontagem, a diferença da leitura do coletor
+const impItem = it => (difFinal(it) ?? (it.l - it.e)) * it.p;
 const fDifF = it => difFinal(it) === null ? '' : fInt(difFinal(it));
 const STATUS_MANUAL = ['OK', 'DIVERGENTE', 'VER VENDA', 'VER TRÂNSITO', 'A RECONTAR', 'TROCA', 'AJUSTAR'];
 // NFs de entrada que explicam o trânsito
@@ -499,7 +502,7 @@ function desenharRecontagem() {
   const lista = todos.filter(it => (!f.g || grupoCurto(it.g) === f.g) && (!f.st || status(it) === f.st)
     && (!f.pend || difFinal(it) === null) && (!q || (it.d + ' ' + it.c + ' ' + it.b + ' ' + it.r).toUpperCase().includes(q)));
   const sts = ['A RECONTAR', 'SEM FOTO', 'A CONFERIR', 'RECUSADO', 'VENDA PARCIAL', 'VER VENDA', 'VER TRÂNSITO', 'OK', 'DIVERGENTE', 'TROCA', 'AJUSTAR'];
-  const tot = lista.reduce((a, it) => { const x = abat(it); a.e += it.e; a.l += it.l; a.i += (it.l - it.e) * it.p; a.tr += x.tr; a.vd += x.venda; a.lq += x.liquida; return a; }, { e: 0, l: 0, i: 0, tr: 0, vd: 0, lq: 0 });
+  const tot = lista.reduce((a, it) => { const x = abat(it); a.e += it.e; a.l += it.l; a.i += impItem(it); a.tr += x.tr; a.vd += x.venda; a.lq += x.liquida; return a; }, { e: 0, l: 0, i: 0, tr: 0, vd: 0, lq: 0 });
   $('sub').innerHTML = `
     <div class="toolbar noprint">
       <select class="sel" id="rG"><option value="">Todos os setores</option>${grupos.map(g => `<option ${g === f.g ? 'selected' : ''}>${esc(g)}</option>`).join('')}</select>
@@ -628,6 +631,13 @@ function celAbat(it) {
   return `<td class="n">${tr}</td><td class="n">${a.venda ? fInt(a.venda) : ''}</td>
     <td class="n dif-l ${cls(a.liquida)}" style="font-weight:700">${a.liquida ? fInt(a.liquida) : '0'}</td>`;
 }
+// Recontagem ou status mudou: a célula Impacto acompanha a Dif. final sem redesenhar a tabela
+function atualizarImpacto(tr, it) {
+  const c = tr && it && tr.querySelector('td.imp');
+  if (!c) return;
+  const v = impItem(it);
+  c.textContent = fRS(v); c.className = 'n imp ' + cls(v);
+}
 const linhaRecont = aberto => it => {
   const k = esc(it.c || it.b);
   const s = status(it);
@@ -638,7 +648,7 @@ const linhaRecont = aberto => it => {
     <td>${esc(grupoCurto(it.g))}</td><td>${esc(it.c || it.b)}</td><td class="desc">${esc(it.d)}${it.lido ? '' : ' <span class="badge">não lido</span>'}${nfsTxt(it)}${histBt(it)}</td><td>${esc(it.r)}</td>
     <td class="n">${fInt(it.e)}</td><td class="n">${fInt(it.l)}</td><td class="n ${cls(dif)}">${fInt(dif)}</td>
     ${celAbat(it)}
-    <td class="n">${fRS(it.p)}</td><td class="n ${cls(dif * it.p)}">${fRS(dif * it.p)}</td>
+    <td class="n">${fRS(it.p)}</td><td class="n imp ${cls(impItem(it))}">${fRS(impItem(it))}</td>
     <td class="c">${aberto ? `<input class="inp rc" inputmode="numeric" data-k="${k}" value="${vazio(it.rc) ? '' : it.rc}"${quem}/>` : (vazio(it.rc) ? '' : `<b${quem}>${it.rc}</b>`)}</td>
     <td class="n dif-f">${difF}</td><td class="stc">${celStatus(it, aberto)}</td>
     <td><div class="cel-ob">${aberto ? `<textarea class="inp ob" data-k="${k}" rows="1" maxlength="300">${esc(it.ob || '')}</textarea>` : `<span class="ob-txt">${esc(it.ob || '')}</span>`}${botaoFotos(it, aberto, false)}</div></td></tr>`;
@@ -680,6 +690,7 @@ async function salvarStatus(el) {
     if (it) it.st = st;
     S.bal.resumo = j.resumo;
     el.closest('.linha-item')?.querySelector('.dif-f')?.replaceChildren(fDifF(it));
+    atualizarImpacto(el.closest('.linha-item'), it);
     el.closest('.stc').innerHTML = celStatus(it, true);
     document.querySelector(`.stc select[data-k="${CSS.escape(k)}"]`)?.addEventListener('change', e => salvarStatus(e.target));
     atualizarKpis();
@@ -748,6 +759,7 @@ function atualizarFotosItem(tr, it) {
   }
   tr.querySelector('.stc').innerHTML = celStatus(it, aberto);
   tr.querySelector('.dif-f').textContent = fDifF(it);
+  atualizarImpacto(tr, it);
 }
 // Reduz no celular antes de subir: lado maior 1600 px, JPEG — a foto do celular tem 3–5 MB
 async function reduzir(arquivo) {
@@ -857,6 +869,7 @@ async function salvarItem(el) {
     { const dl = tr.querySelector('.dif-l'); if (dl && it) { const a = abat(it); dl.textContent = a.liquida ? fInt(a.liquida) : '0'; dl.className = 'n dif-l ' + cls(a.liquida); } }
     const s = status(it);
     tr.querySelector('.dif-f').textContent = fDifF(it);
+    atualizarImpacto(tr, it);
     tr.querySelector('.stc').innerHTML = celStatus(it, S.bal.status === 'recontagem');
     atualizarFotosItem(tr, it);
     atualizarKpis();
